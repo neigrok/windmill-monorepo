@@ -85,6 +85,33 @@ for (const surface of ['tree', 'board']) {
   });
 }
 
+hostTest('Chromium: on a phone a guide the session receives mid-edit is said in the sheet with Load latest, which takes it, and Cancel then leaves without asking', async () => {
+  const { page, errors } = await openHost({ width: 390, height: 844 });
+  try {
+    await page.evaluate(() => window.session.setGuide('One step a week.'));
+    await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+    await page.getByRole('button', { name: 'Edit guide' }).click();
+    await page.keyboard.type(' Written');
+    await page.evaluate(() => window.session.setGuide('Two steps a week.'));
+    const notice = page.locator('.st-guide-status');
+    await notice.waitFor();
+    assert.deepEqual({ said: await notice.textContent(), role: await notice.getAttribute('role'), draft: await page.locator('.st-guide-field').inputValue(), width: (await box(page, '.st-guide-status')).width },
+      { said: 'Guide changed elsewhere. Save replaces the newer guide. Load latest replaces your draft.Load latest', role: 'status', draft: 'One step a week. Written', width: 358 });
+    await page.getByRole('button', { name: 'Load latest' }).click();
+    assert.deepEqual({ draft: await page.locator('.st-guide-field').inputValue(), said: await notice.count() }, { draft: 'Two steps a week.', said: 0 });
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
+    assert.deepEqual({ asked: await page.getByRole('alertdialog').count(), read: await page.locator('.st-guide-prose').textContent(), guide: await page.evaluate(() => window.session.lattice.guide) },
+      { asked: 0, read: 'Two steps a week.', guide: 'Two steps a week.' });
+    assert.deepEqual(await guideEvents(page), [
+      { step: 'open', door: 'row', view: 'graph', role: 'owner' },
+      { step: 'edit', via: 'pencil' },
+      { step: 'loadLatest' },
+    ]);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
 hostTest('Chromium: a reader on the app route sees the author\'s note on the tree, and the share route shows no guide', async () => {
   const reader = await openHost({ width: 390, height: 844, role: 'reader', appUrl: true });
   try {

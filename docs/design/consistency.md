@@ -588,11 +588,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Roadmap
 
-- **Guide · save and conflict recovery (17).** The shipped desktop and phone editors retain a draft when saving fails.
-  `roadmap-guide-save` reports the failure, but neither editor tells the owner. The approved design offers *Try again*
-  for offline and server failures and *Copy draft* for a refused save. [Three save failures](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=858-75016).
-  The shipped phone editor can overwrite a guide changed elsewhere without warning. The approved phone editor keeps
-  the draft and offers *Load latest*. [Changed elsewhere](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69852).
 - **Guide · boards against tokens and undrawn desktop states (17).** The [desktop boards](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69888)
   type `#884321` on Save, the field edge, the Read guide link, focus rings and the caret, and no token holds it. Web
   builds Save, the field edge, rings and the caret on `--color-brand` and the link on `--text-link`; Save's white label
@@ -600,6 +595,17 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   (first in its flow, above the filter strip), the reader's card with *Read note*, the compact *Add guide* card, and
   the device tree's footer line. 17.36 draws Save solid on an empty draft while 17.22 *Before typing* draws it off; web
   keeps it off. 17.38 and 17.39 omit the device line that 17.29 draws; web shows it above the row.
+  The recovery boards ([three save failures](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=858-75016),
+  [17.31–17.32](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69845)) type three tints no token holds:
+  `#fcf0e8` under the desktop failure line, `#fbf3eb` under the phone's and `#f7f3e6` under the phone's *Guide changed
+  elsewhere*. Web builds both failure lines on `--color-danger-bg` and the notice on `--surface-sunken`, and the
+  *Draft copied* tick on `--color-brand`. The desktop failure block is 74 px where the board's is 72, because the
+  design-system Button is 46 px tall where the boards draw 44. The `🧩 Board / Guide save failed` component's
+  description (781:43205) still says Save stays and the phone line is 12 px; the boards it is placed on draw the line's
+  act in Save's place and the phone line at 14 px, and web follows the boards. Built and not drawn: a guide changed
+  elsewhere from 744 px (one line, *Changed elsewhere. Saving replaces that version.*, with *Load latest*), *Draft
+  copied* on phones (the phone's line on `--surface-sunken`, with Cancel and Done), and a failed save's line under a
+  *changed elsewhere* line when both stand.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a

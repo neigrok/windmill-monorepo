@@ -168,7 +168,9 @@ lone surrogate becomes the replacement glyph drawn for it, so no door sends text
 the server's admission, guards the session's and the device's doors. `useRoomGuide` decides who sees it (the owner always, a reader on
 the app route when it holds words, nobody in the shared-reader mode or the demo), holds whether its note stands open and routes a
 save: `SyncSession.setGuide` when the session can take the write, else the device store for a tree that lives only here
-(`setLocalGuide`, which refuses a tree whose record is gone), else `PATCH /v1/trees/{id}`.
+(`setLocalGuide`, which refuses a tree whose record is gone), else `PATCH /v1/trees/{id}`. A save answers null once a door
+took the guide and otherwise why none did, which `saveFailureReason` reads from the error and the door: `offline` for a
+request that never arrived, `refused` for a 4xx or text a door would not admit, `server`, or `device`.
 
 The guide is a note on the tree. `GuideEntry` is the note at rest, which the room hands to the view that shows it: from
 744px a card, over the Graph's canvas under the row and first in the Board's flow, with the first line and Read guide; on
@@ -180,12 +182,18 @@ text. The owner presses the prose or the pencil, or Enter, and writes in the sam
 and a press outside asks to leave. The field is as tall as its draft until the note's bound makes it scroll, and on
 phones the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
 the guide. While a save is in flight the frame holds: the field is read-only and nothing leaves until it settles. A
-save by someone who is no longer the owner writes through no door and keeps the draft on screen. While the note holds
+save by someone who is no longer the owner writes through no door and is refused. While the note holds
 the window, Escape, ⌘↩ and Tab work wherever focus stands. The note keeps its draft across a change of band, and closes
 when the tree changes or the guide stops being shown. Leaving a draft returns to where writing began (the note read, or the tree for a guide begun from Add guide),
 at once when nothing changed and through Discard draft? when something did. Closing hands focus back to the entry. The
-footer keeps a status line with one act above who reads the guide: from 744px a guide changed elsewhere mid-edit says so
-there and offers Load latest. A guide set elsewhere replaces the entry's line and the read note's text with one
+footer keeps a status line with one act above who reads the guide: a guide changed elsewhere mid-edit says so there and
+offers Load latest, which replaces the draft, so Cancel then leaves at once; on phones the line also says what Save
+replaces. A save no door took keeps the draft and leaves one line (`role="alert"`) where the footer says who reads the
+guide, and its act takes Save's place and the focus: Try again for `offline`, `server` and `device`, which runs the
+same save, and Copy draft for `refused`, which puts the whole draft on the clipboard and, once it is there, says Draft
+copied with Done, which leaves the draft without asking. A clipboard that refuses leaves Copy draft standing. From 744px
+the line and the actions share one tinted block; on phones the line is a block above them. Editing the draft or Load
+latest clears the line and brings Save back. A guide set elsewhere replaces the entry's line and the read note's text with one
 crossfade (`useArrivalFade`), none under reduced motion; the note dissolves in and out over 160ms. On the Graph from
 744px the card and the note read in place publish their boxes to `useGraphGeometry`: `viewportInsets` frames the tree
 to their right while 320px of canvas stays, keeps captions out from under them, seats the card below a refusal banner

@@ -44,6 +44,15 @@ export function guideLengthBucket(length) {
   return '4501-5000';
 }
 
+// Why a save no door took failed, as its event carries it and the note's line says it: the request never arrived, the
+// guide was refused (the server's 4xx, or text a door would not admit), or the door itself failed: the server, else this
+// device's store or session.
+export function saveFailureReason(error, door) {
+  if (error?.status === 0) return 'offline';
+  if (error instanceof InadmissibleGuide || (error?.status >= 400 && error.status < 500)) return 'refused';
+  return door === 'server' ? 'server' : 'device';
+}
+
 export class GuideDraft {
   constructor(base, text = base) {
     this.base = withLineFeeds(base);

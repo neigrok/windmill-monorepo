@@ -224,8 +224,10 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Start writing the guide: a click or a tap on its text, Enter, its pencil, or Add guide | `roadmap_guide` | `step: edit`, `via: click/tap/key/pencil/add` |
 | Save the guide, its length in code points as a bucket | `roadmap_guide` | `step: save`, `outcome: saved/cleared/unchanged`, `length: 0/1-500/501-2000/2001-4500/4501-5000` |
 | A guide save no door took, and why: no connection, a refusal (the server's 4xx, text it would not admit, or a save by someone who is no longer the owner, which writes through no door), the server, or this device's store or session | `roadmap_guide` | `step: save`, `outcome: failed`, `length: 0/1-500/501-2000/2001-4500/4501-5000`, `reason: offline/refused/server/device` |
+| Try again on the line a failed guide save left, or ⌘↩ while it stands: the same save runs again, and its own `save` row follows | `roadmap_guide` | `step: retry`, `reason: offline/server/device` |
+| Copy draft on the line a refused guide save left: the whole draft reached the clipboard, or the clipboard refused it | `roadmap_guide` | `step: copy`, `outcome: copied/failed` |
 | A guide save that replaced a guide changed elsewhere since its writing began | `roadmap_guide` | `step: conflict` |
-| Discard a changed guide draft, by choice or because the room closed the note over it (the tree changed or the guide stopped being shown), or take the guide saved elsewhere | `roadmap_guide` | `step: discard/loadLatest` |
+| Discard a changed guide draft, by choice (Discard, or Done once the draft is copied) or because the room closed the note over it (the tree changed or the guide stopped being shown), or take the guide saved elsewhere with Load latest | `roadmap_guide` | `step: discard/loadLatest` |
 | Export this roadmap | `roadmap_export` | `outcome: done/failed`, `door: more/sheet` |
 | Settings' Export all | `roadmap_export` | `outcome: done/partial/failed`, `door: settings` |
 | Shortcut help | `roadmap_shortcuts_open` | `view: board/graph` |
@@ -302,7 +304,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-switcher-rename` | The switcher's rename: a server failure, a request lost while visible and online, or an exception | The old name returns |
 | `roadmap-switcher-delete` | The switcher's delete: a server failure, a request lost while visible and online, or an exception | The row stays |
 | `roadmap-guide` | The render of the guide's entry on the tree or of its open note | A failed entry is not drawn; a failed note closes |
-| `roadmap-guide-save` | A guide save the session could not take, written to this device's store or through `PATCH /v1/trees/{id}`: a server failure, a request lost while visible and online, or an exception | The draft stays open with Save; a guide the session takes reports as any structure write does, under `roadmap-sync-*` |
+| `roadmap-guide-save` | A guide save the session could not take, written to this device's store or through `PATCH /v1/trees/{id}`: a server failure, a request lost while visible and online, or an exception | The draft stays open under one line that says why, with Try again, or Copy draft for a refusal; a guide the session takes reports as any structure write does, under `roadmap-sync-*` |
 | `roadmap-plant` | Planting a roadmap, blank, pasted or from a quest: a server failure, a request lost while visible and online, or an exception | The door's own error, or a device roadmap when the server can't be reached |
 | `roadmap-tend` | Ask AI's reads and its send: a server failure, a request lost while visible and online, or a 200 that is not JSON | Ask AI's `failed` answer; the bar reopens with its sentence unless explicitly dismissed during the run, and announces the same failure copy when opened |
 | `roadmap-sync-notify` | Notifying after a local write, a server frame, an epoch change or a discard projection | The write's receipt stays |

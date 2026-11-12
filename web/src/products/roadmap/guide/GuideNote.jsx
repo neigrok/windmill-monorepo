@@ -1,9 +1,9 @@
-// The guide open (17.18b–17.19h, 17.21–17.23, 17.26, 17.29, 17.33–17.38): the note in place on the tree from 744px, a
+// The guide open (17.18–17.19h, 17.21–17.23, 17.26, 17.29, 17.31–17.38): the note in place on the tree from 744px, a
 // bottom sheet on phones. It reads until its owner presses the prose or the pencil, then writes in the same frame.
 
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
-import { BookOpen, Pencil, X } from 'lucide-react';
+import { AlertCircle, BookOpen, Pencil, X } from 'lucide-react';
 import { Button } from '../../../design-system';
 import { focusableElements } from '../../../design-system/feedback/dialogFocus.js';
 import { track } from '../../../telemetry/beacon.js';
@@ -13,6 +13,17 @@ import { coverBeneath, useComposerViewport, useCoveredLayer } from '../step/comp
 import { GuideDraft, hasGuide, withLineFeeds } from './GuideDraft.js';
 import { useArrivalFade } from './useGuide.js';
 import './guide.css';
+
+// The line that stands in the footer once a save found no door, by the reason the save answered, and after its draft was
+// copied: the fact, the way out and the one act that helps. This device's store fails in the server's words.
+const COULD_NOT_SAVE = { fact: t('roadmap.guide.saveFailed'), wayOut: t('roadmap.guide.saveFailedWayOut'), act: 'retry', label: t('roadmap.common.tryAgain') };
+const RECOVERY_LINES = {
+  offline: { fact: t('roadmap.guide.saveOffline'), wayOut: t('roadmap.guide.saveOfflineWayOut'), act: 'retry', label: t('roadmap.common.tryAgain') },
+  refused: { fact: t('roadmap.guide.saveRefused'), wayOut: t('roadmap.guide.saveRefusedWayOut'), act: 'copy', label: t('roadmap.guide.copyDraft') },
+  server: COULD_NOT_SAVE,
+  device: COULD_NOT_SAVE,
+  copied: { fact: t('roadmap.guide.draftCopied'), wayOut: t('roadmap.guide.draftCopiedNote'), act: 'done', label: t('roadmap.guide.done') },
+};
 
 // Reading from 744px shares the room: the tree beside the note stays live. Writing, and the phone's sheet in either
 // mode, holds the window: everything beneath is inert and a press outside asks to leave. `view` is the view the entry
@@ -34,6 +45,9 @@ export function GuideNote({ guide, band, view, onSeat }) {
   const [caret, setCaret] = useState(() => (opening ? { offset: opening.offset, scroll: 0 } : null));
   const [discarding, setDiscarding] = useState(false);
   const [saving, setSaving] = useState(false);
+  // What the footer says instead of who reads the guide: null, or which recovery line stands and its count, so a line
+  // said again is a new one to a screen reader.
+  const [line, setLine] = useState(null);
   const [ringed, setRinged] = useState(false);
   const [entering, setEntering] = useState(true);
   const [seat, setSeat] = useState(seatOverEntry);
@@ -42,19 +56,22 @@ export function GuideNote({ guide, band, view, onSeat }) {
   const prose = useRef(null);
   const field = useRef(null);
   const confirmation = useRef(null);
+  const actions = useRef(null);
   const lastPress = useRef(guide.opened.keyboard ? 'key' : 'pointer');
   const enterDown = useRef(false);
   const settled = useRef(false);
   const held = useRef(null);
   const keys = useRef(null);
   const titleId = useId();
-  const countId = useId();
+  const describerId = useId();
   const discardId = useId();
   const lossId = useId();
   const viewport = useComposerViewport(phone);
   const writing = draft !== null;
   const modal = phone || writing;
   const savable = writing && draft.changed && draft.fits;
+  const standing = line && RECOVERY_LINES[line.says];
+  const copied = line?.says === 'copied';
   held.current = draft;
   useArrivalFade(prose, guide.arrival);
 
@@ -73,6 +90,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
   // Leaving the draft returns to where writing began: the note read, or the tree for a guide begun from Add guide.
   const leave = () => {
     setDiscarding(false);
+    setLine(null);
     if (!writing || opening) {
       close();
       return;
@@ -100,16 +118,43 @@ export function GuideNote({ guide, band, view, onSeat }) {
     });
   };
 
+  // A save no door took leaves its reason standing as a line; one made while that line offers Try again is the retry.
   const save = async () => {
     if (!savable || saving || discarding) return;
+    if (standing?.act === 'retry') track('roadmap_guide', { step: 'retry', reason: line.says });
     setSaving(true);
-    const saved = await guide.save(draft);
+    const reason = await guide.save(draft);
     setSaving(false);
-    if (saved) leave();
+    if (!reason) {
+      leave();
+      return;
+    }
+    setLine((before) => ({ says: reason, nth: (before?.nth ?? 0) + 1 }));
+  };
+
+  // The whole draft goes to the clipboard. A clipboard that refuses leaves the line as it stood, and a draft edited
+  // meanwhile has no line left to change.
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(draft.text);
+    } catch {
+      track('roadmap_guide', { step: 'copy', outcome: 'failed' });
+      return;
+    }
+    track('roadmap_guide', { step: 'copy', outcome: 'copied' });
+    setLine((before) => before && { says: 'copied', nth: before.nth + 1 });
+  };
+
+  // Discard, and Done once the draft is copied, drop a changed draft by choice; neither leaves under a save in flight.
+  const discard = () => {
+    if (saving) return;
+    track('roadmap_guide', { step: 'discard' });
+    leave();
   };
 
   const loadLatest = () => {
     track('roadmap_guide', { step: 'loadLatest' });
+    setLine(null);
     setCaret({ offset: text.length, scroll: 0 });
     setDraft(new GuideDraft(guide.text));
   };
@@ -219,6 +264,12 @@ export function GuideNote({ guide, band, view, onSeat }) {
     else field.current?.focus({ preventScroll: true });
   }, [discarding]);
 
+  // A recovery line's one act takes focus as the line appears: Enter runs it, the field rests and a phone's keyboard
+  // goes down.
+  useLayoutEffect(() => {
+    if (line) actions.current?.lastElementChild.focus({ preventScroll: true });
+  }, [line]);
+
   // Closing hands focus back to the guide's entry on the tree, unless it already went somewhere else. A changed draft
   // the room closed over, because the tree or the route moved on, is a draft discarded.
   useEffect(() => () => {
@@ -238,6 +289,10 @@ export function GuideNote({ guide, band, view, onSeat }) {
   if (entering) paperClasses.push('is-entering');
   if (phone) paperClasses.push('st-guide-paper--phone');
   if (writing) paperClasses.push('st-guide-paper--writing');
+  // The footer's last button: the standing line's act, else Save, which waits for a change that fits.
+  const act = standing
+    ? { label: standing.label, run: { retry: save, copy, done: discard }[standing.act], waits: false }
+    : { label: t('roadmap.common.save'), run: save, waits: !savable };
 
   const seated = !phone && seat !== null;
   const note = (
@@ -299,11 +354,12 @@ export function GuideNote({ guide, band, view, onSeat }) {
           </p>
         )}
         {writing && <>
-          <textarea ref={field} rows={1} className={`st-guide-field${draft.fits ? '' : ' st-guide-field--over'}`}
-            aria-labelledby={titleId} aria-describedby={countId} value={draft.text} readOnly={saving}
+          <textarea ref={field} rows={1} className={`st-guide-field${draft.fits ? '' : ' st-guide-field--over'}${standing ? ' st-guide-field--resting' : ''}`}
+            aria-labelledby={titleId} aria-describedby={describerId} value={draft.text} readOnly={saving}
             placeholder={t('roadmap.guide.placeholder')}
             onChange={(event) => {
               const { value } = event.target;
+              setLine(null);
               setDraft((current) => current.writing(value));
             }}
             onKeyDown={(event) => {
@@ -313,28 +369,45 @@ export function GuideNote({ guide, band, view, onSeat }) {
               else enterDown.current = true;
             }}
             onKeyUp={(event) => { if (event.key === 'Enter') enterDown.current = false; }} />
-          {/* A status line with its one act stands first; then who reads the guide, the count, and Cancel and Save. */}
-          <footer className="st-guide-footer">
-            {!phone && draft.outdatedBy(guide.text) && (
+          {/* A guide changed elsewhere stands first with its one act. Then who reads the guide and the count, or in
+              their place the line a failed save or a copied draft left; then Cancel and that line's act, else Save. */}
+          <footer className={`st-guide-footer${standing ? ` st-guide-footer--${copied ? 'copied' : 'failed'}` : ''}`}>
+            {draft.outdatedBy(guide.text) && (
               <div className="st-guide-status" role="status">
-                <span>{t('roadmap.guide.changedElsewhere')}</span>
-                <Button variant="ghost" size="sm" onClick={loadLatest}>{t('roadmap.guide.loadLatest')}</Button>
+                {phone ? <>
+                  <span><strong>{t('roadmap.guide.changedElsewherePhone')}</strong> <span>{t('roadmap.guide.changedElsewherePhoneNote')}</span></span>
+                  <button type="button" className="st-guide-load" onClick={loadLatest}>{t('roadmap.guide.loadLatest')}</button>
+                </> : <>
+                  <span>{t('roadmap.guide.changedElsewhere')}</span>
+                  <Button variant="ghost" size="sm" onClick={loadLatest}>{t('roadmap.guide.loadLatest')}</Button>
+                </>}
               </div>
             )}
-            {!(phone && draft.counted) && <p className="st-guide-audience">{audience}</p>}
-            <p id={countId} className={`st-guide-count${draft.fits ? '' : ' st-guide-count--over'}`} aria-live="polite">
-              {draft.counted ? guideCounter(draft) : ''}
-            </p>
-            <div className="st-guide-actions">
-              {phone ? <>
-                <button type="button" className="st-guide-cancel" onClick={requestLeave}>{t('roadmap.common.cancel')}</button>
-                <button type="button" className="st-guide-save" aria-disabled={savable ? undefined : 'true'}
-                  aria-busy={saving ? 'true' : undefined} aria-describedby={countId} onClick={save}>{t('roadmap.common.save')}</button>
-              </> : <>
-                <Button variant="secondary" onClick={requestLeave}>{t('roadmap.common.cancel')}</Button>
-                <Button variant={draft.changed ? 'primary' : 'secondary'} held={!savable} ariaBusy={saving} describedBy={countId}
-                  onClick={save}>{t('roadmap.common.save')}</Button>
+            <div className="st-guide-closing">
+              {standing ? (
+                <p key={line.nth} id={describerId} className="st-guide-line" role={copied ? 'status' : 'alert'}>
+                  {copied
+                    ? <span className="st-guide-line-mark" aria-hidden>✓</span>
+                    : <AlertCircle size={phone ? 16 : 20} strokeWidth={1.67} aria-hidden />}
+                  <span className="st-guide-line-words"><strong>{standing.fact}</strong> <span>{standing.wayOut}</span></span>
+                </p>
+              ) : <>
+                {!(phone && draft.counted) && <p className="st-guide-audience">{audience}</p>}
+                <p id={describerId} className={`st-guide-count${draft.fits ? '' : ' st-guide-count--over'}`} aria-live="polite">
+                  {draft.counted ? guideCounter(draft) : ''}
+                </p>
               </>}
+              <div ref={actions} className="st-guide-actions">
+                {phone ? <>
+                  <button type="button" className="st-guide-cancel" onClick={requestLeave}>{t('roadmap.common.cancel')}</button>
+                  <button type="button" className="st-guide-save" aria-disabled={act.waits ? 'true' : undefined}
+                    aria-busy={saving ? 'true' : undefined} aria-describedby={describerId} onClick={act.run}>{act.label}</button>
+                </> : <>
+                  <Button variant="secondary" onClick={requestLeave}>{t('roadmap.common.cancel')}</Button>
+                  <Button variant={draft.changed ? 'primary' : 'secondary'} held={act.waits} ariaBusy={saving} describedBy={describerId}
+                    onClick={act.run}>{act.label}</Button>
+                </>}
+              </div>
             </div>
           </footer>
         </>}
@@ -348,10 +421,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
             <p id={lossId}>{DISCARD_DRAFT.body}</p>
             <div>
               <Button variant="secondary" size={phone ? 'lg' : 'md'} onClick={() => setDiscarding(false)}>{DISCARD_DRAFT.keepEditing}</Button>
-              <Button variant="danger" size={phone ? 'lg' : 'md'} onClick={() => {
-                track('roadmap_guide', { step: 'discard' });
-                leave();
-              }}>{DISCARD_DRAFT.discard}</Button>
+              <Button variant="danger" size={phone ? 'lg' : 'md'} onClick={discard}>{DISCARD_DRAFT.discard}</Button>
             </div>
           </section>
         </div>

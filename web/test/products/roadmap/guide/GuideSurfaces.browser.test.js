@@ -25,11 +25,12 @@ import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
 const root = createRoot(document.getElementById('root'));
 window.mount = (options = {}) => {
   window.writes = [];
+  if (options.door === 'device') localStorage.setItem('windmill:device-trees', JSON.stringify({ sail: { title: 'Learn to sail', claimed: false, owner: null } }));
   function Room() {
     const [text, setText] = useState(options.guide ?? '');
     const tree = useMemo(() => new SkillTree({ id: 'sail', title: 'Learn to sail', guide: text, nodes: [] }), [text]);
     const [sessionRef] = useState(() => ({ current: { treeId: 'sail', setGuide: (next) => {
-      if (options.door === 'server') return false;
+      if (options.door) return false;
       window.writes.push(next);
       setText(next);
       return true;
@@ -64,10 +65,12 @@ function start() {
         resolveId(id) {
           if (id === '/guide-entry.js') return '\0guide-entry';
           if (id.endsWith('/telemetry/beacon.js')) return '\0guide-beacon';
+          if (id.endsWith('/telemetry/sentry.js')) return '\0guide-issues';
         },
         load(id) {
           if (id === '\0guide-entry') return entry;
           if (id === '\0guide-beacon') return beacon;
+          if (id === '\0guide-issues') return 'export function captureError(product, operation, stack) { (window.issues ??= []).push({ operation, stack: !!stack }); }';
         },
         configureServer(vite) {
           vite.middlewares.use('/guide-test', (_request, response) => {
@@ -87,10 +90,10 @@ after(async () => {
   await server?.close();
 });
 
-async function open(options = {}, { engine = chromium, width = 1440, height = 960, reducedMotion = 'no-preference' } = {}) {
+async function open(options = {}, { engine = chromium, width = 1440, height = 960, reducedMotion = 'no-preference', permissions = [] } = {}) {
   await start();
   if (!browsers.has(engine)) browsers.set(engine, await engine.launch({ headless: true }));
-  const page = await browsers.get(engine).newPage({ viewport: { width, height }, reducedMotion });
+  const page = await browsers.get(engine).newPage({ viewport: { width, height }, reducedMotion, permissions });
   await withBrowserErrors(page, async () => {
     await page.goto(`${origin}/guide-test`);
     await page.waitForFunction(() => window.entryReady);
@@ -108,6 +111,43 @@ const caretState = (page) => field(page).evaluate((box) => ({ start: box.selecti
 const arrivalFades = (page) => page.evaluate(() => document.querySelector('.st-guide-prose').getAnimations().filter((animation) => !(animation instanceof CSSAnimation)).length);
 const focusedName = (page) => page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.className);
 const stepInert = (page) => page.locator('#step').evaluate((step) => Boolean(step.closest('[inert]')));
+const issues = (page) => page.evaluate(() => window.issues ?? []);
+const tint = (page, selector, token) => page.locator(selector).evaluate((element, name) => {
+  const probe = document.createElement('span');
+  probe.style.backgroundColor = `var(${name})`;
+  element.append(probe);
+  const expected = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return getComputedStyle(element).backgroundColor === expected;
+}, token);
+
+// What the page said, apart from the line a browser writes by itself for a request lost or answered with an error.
+function complaintsOf(page) {
+  const said = [];
+  page.on('pageerror', (error) => said.push(error.stack ?? error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error' && !message.text().startsWith('Failed to load resource')) said.push(message.text());
+  });
+  return said;
+}
+
+// The server's door as the browser meets it: the preflight passes, and each PATCH in turn is lost on the way, answered
+// with a status, or taken.
+async function serverDoor(page, answers) {
+  const sent = [];
+  await page.route('**/v1/trees/**', async (route) => {
+    const headers = { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true', 'access-control-allow-methods': 'PATCH', 'access-control-allow-headers': 'content-type' };
+    if (route.request().method() !== 'PATCH') {
+      await route.fulfill({ status: 204, headers });
+      return;
+    }
+    sent.push(JSON.parse(route.request().postData()).guide);
+    const answer = answers.shift() ?? 200;
+    if (answer === 'lost') await route.abort('internetdisconnected');
+    else await route.fulfill({ status: answer, contentType: 'application/json', headers, body: '{}' });
+  });
+  return sent;
+}
 
 // A point inside a line of the prose: `height` is its line height, 32px from 744px and 25px on phones.
 async function linePoint(page, line, from = 'start', height = 32) {
@@ -742,19 +782,31 @@ test('Chromium: Enter held on the entry opens the note once: it neither runs on 
   } finally { await empty.close(); }
 });
 
-test('Chromium: an owner demoted mid-draft saves nothing, is told it was refused, and keeps the draft', async () => {
+test('Chromium: an owner demoted mid-draft saves nothing and is told it was refused; a clipboard that refuses the copy leaves Copy draft standing, and Cancel still asks', async () => {
   const page = await open({ guide: GUIDE });
   try {
     await withBrowserErrors(page, async () => {
+      await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+        writeText: async () => { throw new DOMException('Fixture clipboard refusal', 'NotAllowedError'); },
+      } }));
       await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
       await page.getByRole('button', { name: 'Edit guide' }).click();
       await page.keyboard.type(' Written');
       await page.evaluate(() => window.setRoom({ owner: false }));
       await page.waitForFunction(() => document.querySelector('.st-guide-card').getAttribute('aria-label').startsWith('Author’s note'));
       await page.keyboard.press('Meta+Enter');
-      await page.waitForFunction(() => window.events.some(({ props }) => props.outcome === 'failed'));
-      assert.deepEqual({ writes: await page.evaluate(() => window.writes), draft: await field(page).inputValue(), last: (await events(page)).at(-1) },
-        { writes: [], draft: `${GUIDE} Written`, last: { step: 'save', outcome: 'failed', length: '1-500', reason: 'refused' } });
+      const line = page.getByRole('alert');
+      await line.waitFor();
+      assert.deepEqual({ line: await line.textContent(), writes: await page.evaluate(() => window.writes), draft: await field(page).inputValue(), last: (await events(page)).at(-1) },
+        { line: 'The server refused this save. Copy your draft to keep it.', writes: [], draft: `${GUIDE} Written`, last: { step: 'save', outcome: 'failed', length: '1-500', reason: 'refused' } });
+      await page.getByRole('button', { name: 'Copy draft' }).click();
+      await page.waitForFunction(() => window.events.some(({ props }) => props.step === 'copy'));
+      assert.deepEqual({ footer: await page.locator('.st-guide-footer').textContent(), copied: await page.getByRole('status').count(), last: (await events(page)).at(-1) },
+        { footer: 'The server refused this save. Copy your draft to keep it.CancelCopy draft', copied: 0, last: { step: 'copy', outcome: 'failed' } });
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      await page.getByRole('alertdialog', { name: 'Discard draft?' }).waitFor();
+      await page.getByRole('button', { name: 'Keep editing' }).click();
+      assert.deepEqual({ line: await line.count(), draft: await field(page).inputValue(), issues: await issues(page) }, { line: 1, draft: `${GUIDE} Written`, issues: [] });
     });
   } finally { await page.close(); }
 });
@@ -834,4 +886,270 @@ test('Chromium: the note dissolves in over 160ms and Discard draft? over 120ms, 
       }), ['solid', '2px', '-2px', '5px', 18, 18]);
     });
   } finally { await phone.close(); }
+});
+
+for (const engine of [chromium, webkit]) {
+  test(`${engine.name()}: a save lost on the way says so in one line with Try again, which runs the save again; the line follows the reason, and editing restores Save`, async () => {
+    const page = await open({ guide: GUIDE, door: 'server' }, { engine });
+    const complaints = complaintsOf(page);
+    try {
+      const sent = await serverDoor(page, ['lost', 503, 200]);
+      await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+      await page.getByRole('button', { name: 'Edit guide' }).click();
+      await page.keyboard.type(' Written');
+      await page.getByRole('button', { name: 'Save' }).click();
+      const line = page.getByRole('alert');
+      await line.waitFor();
+      await settled(page);
+      assert.deepEqual({
+        line: await line.textContent(),
+        footer: await page.locator('.st-guide-footer').textContent(),
+        focus: await page.evaluate(() => document.activeElement.textContent),
+        draft: await field(page).inputValue(),
+        held: await field(page).evaluate((box) => box.readOnly),
+        described: await field(page).evaluate((box) => box.getAttribute('aria-describedby') === document.querySelector('[role="alert"]').id),
+        block: await page.locator('.st-guide-closing').evaluate((block) => {
+          const [box, footer, act] = [block, block.parentElement, block.querySelector('.st-guide-actions > :last-child')].map((element) => element.getBoundingClientRect());
+          return { around: [act.top - box.top, box.bottom - act.bottom, box.right - act.right], fills: box.width === footer.width };
+        }),
+        tinted: await tint(page, '.st-guide-closing', '--color-danger-bg'),
+        fieldEdge: await field(page).evaluate((box) => {
+          const paper = getComputedStyle(box.closest('.st-guide-paper'));
+          return [getComputedStyle(box).borderTopWidth, getComputedStyle(box).borderTopColor === paper.borderTopColor];
+        }),
+      }, {
+        line: 'You’re offline. Try again when you’re back online.',
+        footer: 'You’re offline. Try again when you’re back online.CancelTry again',
+        focus: 'Try again',
+        draft: `${GUIDE} Written`,
+        held: false,
+        described: true,
+        block: { around: [14, 14, 14], fills: true },
+        tinted: true,
+        fieldEdge: ['1px', true],
+      });
+      const stops = [];
+      for (let press = 0; press < 3; press += 1) {
+        await page.keyboard.press('Tab');
+        stops.push(await page.evaluate(() => (document.activeElement.tagName === 'TEXTAREA' ? 'TEXTAREA' : document.activeElement.textContent)));
+      }
+      assert.deepEqual(stops, ['TEXTAREA', 'Cancel', 'Try again']);
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() => document.querySelector('[role="alert"]')?.textContent === 'Couldn’t save just now. Try again in a moment.');
+      assert.equal(await page.locator('.st-guide-footer').textContent(), 'Couldn’t save just now. Try again in a moment.CancelTry again');
+      await field(page).fill(`${GUIDE} Rewritten`);
+      assert.deepEqual({ line: await line.count(), footer: await page.locator('.st-guide-footer').textContent() },
+        { line: 0, footer: 'Your agents and people you share this tree with can read the guide.CancelSave' });
+      await page.keyboard.press('Meta+Enter');
+      await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
+      assert.deepEqual(sent, [`${GUIDE} Written`, `${GUIDE} Written`, `${GUIDE} Rewritten`]);
+      assert.deepEqual((await events(page)).slice(2), [
+        { step: 'save', outcome: 'failed', length: '1-500', reason: 'offline' },
+        { step: 'retry', reason: 'offline' },
+        { step: 'save', outcome: 'failed', length: '1-500', reason: 'server' },
+        { step: 'save', outcome: 'saved', length: '1-500' },
+      ]);
+      assert.deepEqual(await issues(page), [{ operation: 'roadmap-guide-save', stack: true }, { operation: 'roadmap-guide-save', stack: true }]);
+      const told = JSON.stringify([await page.evaluate(() => window.events), await issues(page), complaints]);
+      for (const word of WORDS) assert.equal(told.includes(word), false, word);
+      assert.deepEqual(complaints, []);
+    } finally { await page.close(); }
+  });
+
+  test(`${engine.name()}: on a phone a refused save offers Copy draft, which copies the whole draft, and Done leaves it without asking`, async () => {
+    const page = await open({ guide: GUIDE, band: 'phone', door: 'server' },
+      { engine, width: 390, height: 844, permissions: engine === chromium ? ['clipboard-read', 'clipboard-write'] : [] });
+    const complaints = complaintsOf(page);
+    try {
+      const sent = await serverDoor(page, [403]);
+      await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+      await page.getByRole('button', { name: 'Edit guide' }).click();
+      await page.keyboard.type(' Written');
+      await page.getByRole('button', { name: 'Save' }).click();
+      const line = page.getByRole('alert');
+      await line.waitFor();
+      await settled(page);
+      assert.deepEqual({
+        footer: await page.locator('.st-guide-footer').textContent(),
+        focus: await page.evaluate(() => document.activeElement.textContent),
+        draft: await field(page).inputValue(),
+        tinted: await tint(page, '[role="alert"]', '--color-danger-bg'),
+        ...await page.locator('.st-guide-paper').evaluate((sheet) => {
+          const [said, actions, act] = ['[role="alert"]', '.st-guide-actions', '.st-guide-save'].map((selector) => sheet.querySelector(selector).getBoundingClientRect());
+          return {
+            line: [said.left, said.width, said.height],
+            actions: [actions.top - said.bottom, actions.height, sheet.getBoundingClientRect().bottom - actions.bottom],
+            act: [act.width, act.height, window.innerWidth - act.right],
+            ruled: getComputedStyle(sheet.querySelector('.st-guide-footer')).borderTopColor === getComputedStyle(sheet).backgroundColor,
+          };
+        }),
+      }, {
+        footer: 'The server refused this save. Copy your draft to keep it.CancelCopy draft',
+        focus: 'Copy draft',
+        draft: `${GUIDE} Written`,
+        tinted: true,
+        line: [16, 358, 58],
+        actions: [8, 44, 16],
+        act: [104, 44, 16],
+        ruled: false,
+      });
+      await page.getByRole('button', { name: 'Copy draft' }).click();
+      const copied = page.getByRole('status');
+      await copied.waitFor();
+      assert.deepEqual({ footer: await page.locator('.st-guide-footer').textContent(), failed: await line.count(), focus: await page.evaluate(() => document.activeElement.textContent) },
+        { footer: '✓Draft copied. The guide still has your last saved version.CancelDone', failed: 0, focus: 'Done' });
+      if (engine === chromium) assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `${GUIDE} Written`);
+      await page.getByRole('button', { name: 'Done' }).click();
+      await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
+      assert.deepEqual({ asked: await page.getByRole('alertdialog').count(), read: await prose(page).textContent(), sent, issues: await issues(page) },
+        { asked: 0, read: GUIDE, sent: [`${GUIDE} Written`], issues: [] });
+      assert.deepEqual((await events(page)).slice(2), [
+        { step: 'save', outcome: 'failed', length: '1-500', reason: 'refused' },
+        { step: 'copy', outcome: 'copied' },
+        { step: 'discard' },
+      ]);
+      assert.deepEqual(complaints, []);
+    } finally { await page.close(); }
+  });
+
+  test(`${engine.name()}: on a phone a guide changed elsewhere mid-edit says what Save and Load latest each replace, and after Load latest Cancel leaves without asking`, async () => {
+    const page = await open({ guide: GUIDE, band: 'phone' }, { engine, width: 390, height: 844 });
+    try {
+      await withBrowserErrors(page, async () => {
+        await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+        await page.getByRole('button', { name: 'Edit guide' }).click();
+        await page.keyboard.type(' Written');
+        await page.evaluate((text) => window.setElsewhere(text), ELSEWHERE);
+        const notice = page.getByRole('status');
+        await notice.waitFor();
+        await settled(page);
+        assert.deepEqual({
+          footer: await page.locator('.st-guide-footer').textContent(),
+          draft: await field(page).inputValue(),
+          notice: await notice.evaluate((said) => {
+            const [box, load] = [said.getBoundingClientRect(), said.querySelector('button').getBoundingClientRect()];
+            return [box.left, box.width, box.height, load.width, load.height, box.right - load.right];
+          }),
+        }, {
+          footer: 'Guide changed elsewhere. Save replaces the newer guide. Load latest replaces your draft.Load latestVisible to your agents and people you share with.CancelSave',
+          draft: `${GUIDE} Written`,
+          notice: [16, 358, 65, 100, 44, 6],
+        });
+        const stops = [];
+        for (let press = 0; press < 4; press += 1) {
+          await page.keyboard.press('Tab');
+          stops.push(await page.evaluate(() => (document.activeElement.tagName === 'TEXTAREA' ? 'TEXTAREA' : document.activeElement.textContent)));
+        }
+        assert.deepEqual(stops, ['Load latest', 'Cancel', 'Save', 'TEXTAREA']);
+        await page.getByRole('button', { name: 'Load latest' }).click();
+        assert.deepEqual({ draft: await field(page).inputValue(), notice: await notice.count(), focused: (await caretState(page)).focused },
+          { draft: ELSEWHERE, notice: 0, focused: true });
+        await page.getByRole('button', { name: 'Cancel' }).click();
+        await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
+        assert.deepEqual({ asked: await page.getByRole('alertdialog').count(), read: await prose(page).textContent() }, { asked: 0, read: ELSEWHERE });
+        await page.getByRole('button', { name: 'Edit guide' }).click();
+        await page.keyboard.type(' Written');
+        await page.evaluate((text) => window.setElsewhere(text), GUIDE);
+        await notice.waitFor();
+        await page.getByRole('button', { name: 'Save' }).click();
+        await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
+        assert.deepEqual(await page.evaluate(() => window.writes), [`${ELSEWHERE} Written`]);
+        assert.deepEqual((await events(page)).slice(2), [
+          { step: 'loadLatest' },
+          { step: 'edit', via: 'pencil' },
+          { step: 'save', outcome: 'saved', length: '1-500' },
+          { step: 'conflict' },
+        ]);
+      });
+    } finally { await page.close(); }
+  });
+}
+
+test('Chromium: a first guide the server refuses can be copied whole from the note, and Done returns to Add guide', async () => {
+  const page = await open({ door: 'server' }, { permissions: ['clipboard-read', 'clipboard-write'] });
+  const complaints = complaintsOf(page);
+  try {
+    await serverDoor(page, [401]);
+    await page.getByRole('button', { name: 'Add guide', exact: true }).click();
+    await page.keyboard.type('Maya and I take the dinghy out on Sundays.\nNext Sunday, practice coming alongside the dock.');
+    await page.keyboard.press('Meta+Enter');
+    await page.getByRole('alert').waitFor();
+    assert.deepEqual({ footer: await page.locator('.st-guide-footer').textContent(), focus: await page.evaluate(() => document.activeElement.textContent) },
+      { footer: 'The server refused this save. Copy your draft to keep it.CancelCopy draft', focus: 'Copy draft' });
+    await page.keyboard.press('Enter');
+    await page.getByRole('status').waitFor();
+    await settled(page);
+    assert.deepEqual({
+      footer: await page.locator('.st-guide-footer').textContent(),
+      block: await page.locator('.st-guide-closing').evaluate((block) => block.getBoundingClientRect().height),
+      tinted: await tint(page, '.st-guide-closing', '--surface-sunken'),
+      clipboard: await page.evaluate(() => navigator.clipboard.readText()),
+    }, {
+      footer: '✓Draft copied. The guide still has your last saved version.CancelDone',
+      block: 92,
+      tinted: true,
+      clipboard: 'Maya and I take the dinghy out on Sundays.\nNext Sunday, practice coming alongside the dock.',
+    });
+    await page.getByRole('button', { name: 'Done' }).click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.waitForFunction(() => document.activeElement.matches('.st-guide-card[aria-label="Add guide"]'));
+    assert.deepEqual((await events(page)).slice(2), [
+      { step: 'save', outcome: 'failed', length: '1-500', reason: 'refused' },
+      { step: 'copy', outcome: 'copied' },
+      { step: 'discard' },
+    ]);
+    const told = JSON.stringify([await page.evaluate(() => window.events), await issues(page), complaints]);
+    for (const word of ['Maya', 'dinghy', 'Sunday', 'dock']) assert.equal(told.includes(word), false, word);
+    assert.deepEqual({ issues: await issues(page), complaints }, { issues: [], complaints: [] });
+  } finally { await page.close(); }
+});
+
+test('Chromium: a device tree whose store could not take the guide says the save failed, and each failed Try again is said anew', async () => {
+  const page = await open({ guide: GUIDE, door: 'device', device: true });
+  try {
+    await withBrowserErrors(page, async () => {
+      await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+      await page.getByRole('button', { name: 'Edit guide' }).click();
+      await page.keyboard.type(' Written');
+      await page.getByRole('button', { name: 'Save' }).click();
+      await page.getByRole('alert').waitFor();
+      assert.equal(await page.locator('.st-guide-footer').textContent(), 'Couldn’t save just now. Try again in a moment.CancelTry again');
+      await page.evaluate(() => { window.firstLine = document.querySelector('[role="alert"]'); });
+      await page.getByRole('button', { name: 'Try again' }).click();
+      await page.waitForFunction(() => window.events.filter(({ props }) => props.outcome === 'failed').length === 2);
+      await page.waitForFunction(() => document.querySelector('.st-guide-actions > :last-child').getAttribute('aria-busy') === null);
+      assert.deepEqual({
+        saidAnew: await page.evaluate(() => document.querySelector('[role="alert"]') !== window.firstLine && !window.firstLine.isConnected),
+        footer: await page.locator('.st-guide-footer').textContent(),
+        draft: await field(page).inputValue(),
+      }, { saidAnew: true, footer: 'Couldn’t save just now. Try again in a moment.CancelTry again', draft: `${GUIDE} Written` });
+      assert.deepEqual((await events(page)).slice(2), [
+        { step: 'save', outcome: 'failed', length: '1-500', reason: 'device' },
+        { step: 'retry', reason: 'device' },
+        { step: 'save', outcome: 'failed', length: '1-500', reason: 'device' },
+      ]);
+      assert.deepEqual(await issues(page), [{ operation: 'roadmap-guide-save', stack: true }, { operation: 'roadmap-guide-save', stack: true }]);
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: a guide changed elsewhere while a failed save\'s line stands is said above it, and Load latest clears both', async () => {
+  const page = await open({ guide: GUIDE, door: 'server' });
+  const complaints = complaintsOf(page);
+  try {
+    await serverDoor(page, [503]);
+    await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+    await page.getByRole('button', { name: 'Edit guide' }).click();
+    await page.keyboard.type(' Written');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('alert').waitFor();
+    await page.evaluate((text) => window.setElsewhere(text), ELSEWHERE);
+    await page.getByRole('status').waitFor();
+    assert.equal(await page.locator('.st-guide-footer').textContent(),
+      'Changed elsewhere. Saving replaces that version.Load latestCouldn’t save just now. Try again in a moment.CancelTry again');
+    await page.getByRole('button', { name: 'Load latest' }).click();
+    assert.deepEqual({ draft: await field(page).inputValue(), footer: await page.locator('.st-guide-footer').textContent() },
+      { draft: ELSEWHERE, footer: 'Your agents and people you share this tree with can read the guide.CancelSave' });
+    assert.deepEqual(complaints, []);
+  } finally { await page.close(); }
 });

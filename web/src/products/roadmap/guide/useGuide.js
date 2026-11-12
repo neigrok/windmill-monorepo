@@ -5,7 +5,7 @@ import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { setGuide } from '../persistence/TreeRegistry.js';
 import { reportUnexpectedFailure } from '../reportFailure.js';
 import { setLocalGuide } from '../sync/localTrees.js';
-import { InadmissibleGuide, guideLengthBucket, hasGuide } from './GuideDraft.js';
+import { guideLengthBucket, hasGuide, saveFailureReason } from './GuideDraft.js';
 
 // The room's guide: whether this person sees one, whether its note stands open, the door a save takes and the beat a
 // guide set elsewhere earns. Null where no guide shows: the shared reader's route and the demo, and a reader's tree
@@ -36,17 +36,18 @@ export function useRoomGuide({ treeId, tree, who, deviceLine, sessionRef }) {
 
   // The session's stamped register when it can take the write, as a rename; before its lattice loads, the device blob
   // for a tree that lives only here and the server's PATCH for the rest. A save over a guide that changed since writing
-  // began, last writer winning, leaves a conflict beside it.
+  // began, last writer winning, leaves a conflict beside it. It answers null once a door took the guide or nothing
+  // changed, else why none did: the reason its event carries and the note's line says.
   const save = useCallback(async (draft) => {
     const next = draft.saved;
     const length = guideLengthBucket(next ? draft.length : 0);
     if (!owner) {
       track('roadmap_guide', { step: 'save', outcome: 'failed', length, reason: 'refused' });
-      return false;
+      return 'refused';
     }
     if (next === text) {
       track('roadmap_guide', { step: 'save', outcome: 'unchanged', length });
-      return true;
+      return null;
     }
     ownWrite.current = next;
     let door = 'session';
@@ -59,14 +60,13 @@ export function useRoomGuide({ treeId, tree, who, deviceLine, sessionRef }) {
     } catch (error) {
       ownWrite.current = null;
       reportUnexpectedFailure('roadmap-guide-save', error);
-      const refused = error instanceof InadmissibleGuide || (error?.status >= 400 && error.status < 500);
-      track('roadmap_guide', { step: 'save', outcome: 'failed', length,
-        reason: error?.status === 0 ? 'offline' : refused ? 'refused' : door === 'server' ? 'server' : 'device' });
-      return false;
+      const reason = saveFailureReason(error, door);
+      track('roadmap_guide', { step: 'save', outcome: 'failed', length, reason });
+      return reason;
     }
     track('roadmap_guide', { step: 'save', outcome: next ? 'saved' : 'cleared', length });
     if (draft.outdatedBy(text)) track('roadmap_guide', { step: 'conflict' });
-    return true;
+    return null;
   }, [treeId, text, owner, sessionRef]);
 
   const shown = Boolean(tree) && !who.shared && !who.demo && (who.owner || (who.reader && hasGuide(text)));
