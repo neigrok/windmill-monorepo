@@ -146,9 +146,10 @@ Amplitude key intentionally disables forwarding.
 
 The inventory has 93 HTTP write registrations: REST platform 27, roadmap 13, gym 33 (20 of them
 retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two
-standalone transport duplicates leaves 89 production HTTP operations. MCP has 38 write declarations
-(roadmap 24, gym 14); compatibility aliases share their canonical operation. Coach has 29 operations
-(ask 2, gym abilities 6, scoped roadmap abilities 21). The catalogs have eleven production commands
+standalone transport duplicates leaves 89 production HTTP operations. MCP has one write operation
+per write tool in the tables below, and a compatibility alias shares its canonical operation. Coach
+has ask's operations and one per gym ability and per roadmap ability a tend is offered, each in the
+tables below. The catalogs have eleven production commands
 (gym 9, journal 2), plus four probe commands. Background coverage includes 23 scheduled/stage
 operations plus sync publication, Amplitude forwarding and the AI usage ledger (26 background
 operations). Server-origin entry points include the gym door, ServerCall metadata, session refresh,

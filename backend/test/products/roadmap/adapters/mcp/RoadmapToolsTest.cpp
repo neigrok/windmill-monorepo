@@ -7719,3 +7719,47 @@ TEST(mcp_the_retired_edge_tools_are_refused_as_unknown_tools) {
   CHECK(h->trees.byId["t"] == stored);
   CHECK_EQ(h->ops.byTree["t"].size(), rows);
 }
+
+// The lists the batch tools take are published whole — bounds, each item's properties, what an item requires, and no
+// other key — so a caller is refused at the schema what the handler would refuse. Prose aside, every key is pinned.
+TEST(mcp_the_batch_tools_publish_their_lists_whole) {
+  Harness h;
+  std::function<Json::Value(Json::Value)> shape = [&](Json::Value schema) {
+    if (schema.isObject()) {
+      if (schema.isMember("description") && schema["description"].isString()) schema.removeMember("description");
+      for (const std::string& key : schema.getMemberNames()) schema[key] = shape(schema[key]);
+    }
+    if (schema.isArray())
+      for (Json::ArrayIndex i = 0; i < schema.size(); ++i) schema[i] = shape(schema[i]);
+    return schema;
+  };
+  std::map<std::string, Json::Value> lists;
+  for (const Json::Value& tool : h.tools.listTools(h.actor)) {
+    const Json::Value& properties = tool["inputSchema"]["properties"];
+    for (const char* list : {"add", "remove", "updates", "nodeIds"})
+      if (properties.isMember(list))  // through text, so a count reads the same whether it was built signed or not
+        lists[tool["name"].asString() + "." + list] = parse(dump(shape(properties[list])));
+  }
+  const Json::Value edges = parse(R"({"type":"array","maxItems":500,"uniqueItems":true,"items":{"type":"object",
+    "additionalProperties":false,"required":["from","to"],"properties":{"from":{"type":"string","maxLength":128},
+    "to":{"type":"string","maxLength":128}}}})");
+  const Json::Value links = parse(R"({"type":"array","maxItems":32,"items":{"type":"object","additionalProperties":false,
+    "required":["url"],"properties":{"label":{"type":"string","maxLength":200},"url":{"type":"string","maxLength":2048}}}})");
+  Json::Value addLinks = links;
+  addLinks["minItems"] = 1;
+  Json::Value updates = parse(R"({"type":"array","minItems":1,"maxItems":200,"items":{"type":"object",
+    "additionalProperties":false,"required":["nodeId"],"properties":{
+      "nodeId":{"type":"string","maxLength":128},"label":{"type":"string","maxLength":200},
+      "color":{"type":"string","enum":["terracotta","olive","gold","brick","sky","plum"]},
+      "kind":{"type":"string","maxLength":128},"description":{"type":"string","maxLength":16000},
+      "appendDescription":{"type":"string","maxLength":16000},"icon":{"type":"string","maxLength":64},
+      "opens":{"type":"string","maxLength":128},"status":{"type":"string","enum":["complete","none"]},
+      "outOfOrder":{"type":"boolean"}}}})");
+  updates["items"]["properties"]["links"] = links;
+  updates["items"]["properties"]["addLinks"] = addLinks;
+  CHECK_EQ(lists.at("change_edges.add"), edges);
+  CHECK_EQ(lists.at("change_edges.remove"), edges);
+  CHECK_EQ(lists.at("update_nodes.updates"), updates);
+  CHECK_EQ(lists.at("delete_node.nodeIds"),
+           parse(R"({"type":"array","minItems":1,"maxItems":200,"items":{"type":"string","maxLength":128}})"));
+}
