@@ -357,6 +357,51 @@ TEST(graft_state_sets_clears_and_leaves_the_tree_a_node_opens) {
   CHECK_EQ(g.exportNode(nid("n"))->opensAt, at(4));
 }
 
+// A node a delete left keeps its registers, the tree it opened among them. A graft that brings it back and names no
+// tree clears that pointer, as create_node does on a reused id, so no batch restores a pointer it does not name; its
+// description and links come back as they were, and a present node's omitted pointer stays.
+TEST(graft_state_brings_a_deleted_node_back_opening_nothing_unless_the_document_names_a_tree) {
+  LooseGraph g;
+  for (const char* id : {"gone", "here"}) {
+    g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+    g.setDescription(nid(id), "Read it", at(1));
+    g.setLinks(nid(id), {Link{"home", "https://windmill.works"}}, at(1));
+    g.setOpens(nid(id), TreeId{"t_sub"}, at(1));
+  }
+  g.deleteNode(nid("gone"), at(2));
+
+  Graft unnamed;
+  unnamed.document.nodes = {spec("gone", {}), spec("here", {})};
+  unnamed.omittedNodeRegisters[nid("gone")] = omittedAllBut({});
+  unnamed.omittedNodeRegisters[nid("here")] = omittedAllBut({});
+  const GraphState frame = graftState(g, unnamed, at(3));
+  CHECK(frame == (GraphState{{NodeStateEntry{.id = nid("gone"), .createdAt = at(3), .opensAt = at(3)}}, {}}));
+  LooseGraph revived = g;
+  revived.join(frame);
+  NodeStateEntry back = *g.exportNode(nid("gone"));
+  back.createdAt = at(3);
+  back.opens = TreeId{};
+  back.opensAt = at(3);
+  CHECK(*revived.exportNode(nid("gone")) == back);
+  CHECK(revived.hasNode(nid("gone")));
+  CHECK(revived.pointers() == (std::map<NodeId, TreeId>{{nid("here"), TreeId{"t_sub"}}}));
+
+  NodeSpec named = spec("gone", {});
+  named.opens = TreeId{"t_two"};
+  Graft names;
+  names.document.nodes = {named};
+  names.omittedNodeRegisters[nid("gone")] = omittedAllBut({NodeRegister::opens});
+  CHECK(graftState(g, names, at(3)) ==
+        (GraphState{{NodeStateEntry{.id = nid("gone"), .createdAt = at(3), .opens = TreeId{"t_two"}, .opensAt = at(3)}}, {}}));
+
+  NodeSpec same = spec("gone", {});
+  same.opens = TreeId{"t_sub"};
+  Graft resends;
+  resends.document.nodes = {same};
+  resends.omittedNodeRegisters[nid("gone")] = omittedAllBut({NodeRegister::opens});
+  CHECK(graftState(g, resends, at(3)) == (GraphState{{NodeStateEntry{.id = nid("gone"), .createdAt = at(3)}}, {}}));
+}
+
 // A register the document leaves off a kind is stamped unset, so the join keeps what the legend
 // holds; a new kind's omitted register lands as its default. Hue always lands.
 TEST(graft_legend_leaves_an_omitted_kind_register_alone_and_defaults_it_on_a_new_kind) {

@@ -27,7 +27,9 @@ enum class KindRegister { label, description, crossBranchExempt };
 // One bulk arrival: a document upserted by id, and the ids it deletes outright. A tombstoned node
 // loses every present edge touching it, in either direction. The two omitted maps name, per id, the
 // registers the document did not spell out: the graft leaves those alone, so a node or kind the tree
-// already holds keeps its value and a new one lands with the default. An id absent from its map
+// already holds keeps its value and a new one lands with the default. `opens` is the exception on a
+// node the graft brings back from a delete: left out, it is cleared, so a revived node opens only the
+// tree the document names. An id absent from its map
 // carried every register, and an empty value is carried like any other. `nodeKinds` names the legend
 // kind the document files a node under, until resolveKinds turns it into the node's colour.
 struct Graft {

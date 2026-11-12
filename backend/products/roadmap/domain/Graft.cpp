@@ -119,7 +119,10 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
     land(carried(NodeRegister::status), &Entry::status, &Entry::statusAt, normalizeSeedStatus(node.status));
     land(carried(NodeRegister::description), &Entry::description, &Entry::descriptionAt, node.description);
     land(carried(NodeRegister::links), &Entry::links, &Entry::linksAt, node.links);
-    land(carried(NodeRegister::opens), &Entry::opens, &Entry::opensAt, node.opens);
+    // A node the graft brings back opens the tree the batch names and no other, as a node created on a deleted id
+    // does: left out, the pointer the delete left is cleared.
+    const bool broughtBack = held && !graph.hasNode(node.id);
+    land(carried(NodeRegister::opens) || broughtBack, &Entry::opens, &Entry::opensAt, node.opens);
     if (entry != Entry{.id = node.id}) upserted.emplace(node.id, std::move(entry));  // it lands something
     for (const NodeId& prereq : node.prerequisites) {
       const Edge edge{prereq, node.id};
