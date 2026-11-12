@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { TreeChoices, pastedTreeId } from '../../../../src/products/roadmap/step/TreeChoices.js';
 
@@ -33,6 +34,14 @@ test('pastedTreeId — this app’s share and app addresses name their roadmap, 
     ' t_fedcba9876543210 ',
   ].map((text) => pastedTreeId(text, ORIGIN)), Array.from({ length: 8 }, (_, index) => (index === 7 ? 't_fedcba9876543210' : 't_0123456789abcdef')));
   assert.equal(pastedTreeId('http://localhost:5198/t/t_0123456789abcdef', 'http://localhost:5198'), 't_0123456789abcdef');
+});
+
+test('pastedTreeId names the roadmap of every address the backend builds for a roadmap or a step (packages/api-contract/roadmap-addresses.json)', () => {
+  const { cases } = JSON.parse(readFileSync(new URL('../../../../../packages/api-contract/roadmap-addresses.json', import.meta.url), 'utf8'));
+  assert.deepEqual(
+    cases.map((one) => `${one.address} ${pastedTreeId(`${ORIGIN}${one.address}`, ORIGIN)}`),
+    cases.map((one) => `${one.address} ${one.treeId}`),
+  );
 });
 
 test('pastedTreeId — another site’s address, a path that only looks like one, an id of another form and an address still being typed name none', () => {
