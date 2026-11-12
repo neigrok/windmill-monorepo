@@ -108,6 +108,7 @@ add_library(windmill_roadmap
   products/roadmap/domain/TrunkTree.cpp
   products/roadmap/domain/UnlockRules.cpp
   products/roadmap/domain/TreeHealth.cpp
+  products/roadmap/domain/Guides.cpp
   products/roadmap/domain/OpenedTrees.cpp
   products/roadmap/domain/TreeSummary.cpp
   products/roadmap/domain/Gallery.cpp
@@ -276,6 +277,7 @@ add_executable(windmill_domain_tests
   test/products/roadmap/domain/TrunkTreeTest.cpp
   test/products/roadmap/domain/UnlockRulesTest.cpp
   test/products/roadmap/domain/TreeHealthTest.cpp
+  test/products/roadmap/domain/GuidesTest.cpp
   test/products/roadmap/domain/OpenedTreesTest.cpp
   test/products/roadmap/domain/TreeSummaryTest.cpp
   test/products/roadmap/domain/GalleryTest.cpp
