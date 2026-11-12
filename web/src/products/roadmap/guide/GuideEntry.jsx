@@ -29,7 +29,7 @@ export function GuideEntry({ guide, band, view }) {
   useArrivalFade(excerpt, guide.arrival);
   const open = (event) => {
     const keyboard = event.detail === 0;
-    track('roadmap_guide', { step: 'open', door: phone ? 'row' : 'card', view, role: guide.owner ? 'owner' : 'reader', above: above > 0 ? 'some' : 'none' });
+    track('roadmap_guide', { step: 'open', door: phone ? 'row' : 'card', view, role: guide.owner ? 'owner' : 'reader', above: guide.aboveUnread ? 'unread' : above > 0 ? 'some' : 'none' });
     if (reads) {
       guide.open(null, keyboard);
       return;

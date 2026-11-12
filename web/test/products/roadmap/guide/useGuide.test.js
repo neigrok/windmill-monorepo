@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderHook } from '../../gym/harness.mjs';
 import { GuideDraft, InadmissibleGuide, guideLengthBucket, saveFailureReason } from '../../../../src/products/roadmap/guide/GuideDraft.js';
-import { guidesAbove } from '../../../../src/products/roadmap/guide/GuidesAbove.js';
+import { guidesAbove, readFailureReason } from '../../../../src/products/roadmap/guide/GuidesAbove.js';
 import { useRoomGuide } from '../../../../src/products/roadmap/guide/useGuide.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { MissingDeviceTree } from '../../../../src/products/roadmap/sync/localTrees.js';
@@ -110,11 +110,14 @@ function readWith({ holder = 'u_olya', claimed = true, answer = async () => ({ g
     holder,
     LocalTreeRegistry: class { get(id) { return { id, claimed }; } },
     AbortController,
+    Error,
     readGuides: (treeId, signal) => { calls.push(['read', treeId, signal.aborted]); return answer(signal); },
-    setRead: (read) => calls.push(['held', { ...read, above: [...read.above] }]),
+    setRead: (read) => calls.push(['held', read && { ...read, above: read.above && [...read.above] }]),
     guidesAbove,
+    readFailureReason,
     t: (key) => ({ 'roadmap.common.untitled': 'Untitled roadmap' })[key],
-    reportUnexpectedFailure: (operation, error) => calls.push(['report', operation, error.status]),
+    reportUnexpectedFailure: (operation, error, tags) => calls.push(['report', operation, error.status, { ...tags }]),
+    reportRoadmapFailure: (operation, error, tags) => calls.push(['report', operation, error.message, { ...tags }]),
   });
   return { effect, calls };
 }
@@ -131,6 +134,7 @@ test('the guides above are read once for the tree’s holder and held for that t
   await turn();
 
   assert.deepEqual(calls, [
+    ['held', { treeId: 't_sail', holder: 'u_olya', above: null }],
     ['read', 't_sail', false],
     ['held', { treeId: 't_sail', holder: 'u_olya', above: [
       { treeId: 't_life', title: 'My life', text: 'Health first.' },
@@ -148,16 +152,37 @@ test('nobody but the holder asks, and a tree that lives only on this device has 
   }
 });
 
-test('a read that failed holds nothing and reports once under its static name, with nothing the server said', async () => {
-  for (const status of [503, 500, 0, 404]) {
-    const { effect, calls } = readWith({ answer: async () => { throw Object.assign(new Error('the trees above My life could not be read'), { status }); } });
+test('a read that failed holds nothing and reports once under its static name with the kind of failure, and nothing the server said', async () => {
+  for (const [status, code, reason] of [[503, 'guides-unavailable', 'unavailable'], [503, undefined, 'server'], [500, undefined, 'server'], [0, 'unreachable', 'network'], [404, undefined, 'server']]) {
+    const { effect, calls } = readWith({ answer: async () => { throw Object.assign(new Error('the trees above My life could not be read'), { status, code }); } });
     effect();
     await turn();
-    assert.deepEqual(calls, [['read', 't_sail', false], ['report', 'roadmap-guides-load', status]]);
+    assert.deepEqual(calls, [
+      ['held', { treeId: 't_sail', holder: 'u_olya', above: null }],
+      ['read', 't_sail', false],
+      ['report', 'roadmap-guides-load', status, { reason }],
+    ], `${status} ${code}`);
   }
 });
 
-test('leaving the tree aborts the read, and what it answers or how it fails afterwards is dropped', async () => {
+test('an answer that is not the contract’s shape reports once as such, and its well-formed guides are still held', async () => {
+  const life = { treeId: 't_life', title: 'My life', text: 'Health first.' };
+  for (const [reply, above] of [
+    [null, []], [{}, []], [{ guides: { treeId: 't_life' } }, []], [{ items: [life] }, []],
+    [{ guides: [{ tree_id: 't_life', name: 'My life', guide: 'Health first.' }, null, 7] }, []],
+    [{ guides: [life, { treeId: '', title: 'An empty id', text: 'Words.' }, { treeId: 't_textless' }] }, [life]],
+  ]) {
+    const { effect, calls } = readWith({ answer: async () => reply });
+    effect();
+    await turn();
+    assert.deepEqual(calls.slice(2), [
+      ['held', { treeId: 't_sail', holder: 'u_olya', above }],
+      ['report', 'roadmap-guides-load', 'Guides reply not the contract shape', { reason: 'shape' }],
+    ], JSON.stringify(reply));
+  }
+});
+
+test('leaving the tree aborts the read and drops what was held, and what the read answers or how it fails afterwards is dropped', async () => {
   for (const settle of [(answer) => answer.resolve({ guides: [{ treeId: 't_life', title: 'My life', text: 'Health first.' }] }), (answer) => answer.reject(new DOMException('The operation was aborted.', 'AbortError'))]) {
     const answer = {};
     const signals = [];
@@ -169,7 +194,7 @@ test('leaving the tree aborts the read, and what it answers or how it fails afte
     await turn();
 
     assert.deepEqual(signals.map((signal) => signal.aborted), [true]);
-    assert.deepEqual(calls, [['read', 't_sail', false]]);
+    assert.deepEqual(calls, [['held', { treeId: 't_sail', holder: 'u_olya', above: null }], ['read', 't_sail', false], ['held', null]]);
   }
 });
 
@@ -177,7 +202,12 @@ test('leaving the tree aborts the read, and what it answers or how it fails afte
 function roomGuide(t) {
   const asked = [];
   const priorFetch = globalThis.fetch;
-  globalThis.fetch = (url, init) => new Promise((resolve) => asked.push({ url: new URL(url).pathname, signal: init.signal, answer: (guides) => resolve({ ok: true, status: 200, json: async () => ({ guides }) }) }));
+  globalThis.fetch = (url, init) => new Promise((resolve) => asked.push({
+    url: new URL(url).pathname,
+    signal: init.signal,
+    answer: (guides) => resolve({ ok: true, status: 200, json: async () => ({ guides }) }),
+    fail: (status) => resolve({ ok: false, status, json: async () => ({ code: 'guides-unavailable' }) }),
+  }));
   t.after(() => { globalThis.fetch = priorFetch; });
   const room = { treeId: 't_sail', holder: 'u_olya', owner: true, guide: 'Sundays on the water.' };
   const hook = renderHook(t, () => useRoomGuide({
@@ -190,16 +220,17 @@ function roomGuide(t) {
   }));
   return { room, hook, asked };
 }
+const aboveOf = ({ above, aboveUnread }) => ({ above, aboveUnread });
 
-test('the room’s guide carries the guides above beside the tree’s own text, which stays the room’s', async (t) => {
+test('the room’s guide carries the guides above beside the tree’s own text, which stays the room’s, and says while they are unread', async (t) => {
   const { room, hook, asked } = roomGuide(t);
-  assert.deepEqual(hook.tree.above, []);
+  assert.deepEqual(aboveOf(hook.tree), { above: [], aboveUnread: true });
 
   asked[0].answer([{ treeId: 't_year', title: 'My year', text: 'Three things this year.', yours: true }, { treeId: 't_sail', title: 'Learn to sail', text: 'An older copy of this guide.', yours: true }]);
   await turn();
 
   assert.deepEqual(asked.map(({ url }) => url), ['/v1/trees/t_sail/guides']);
-  assert.deepEqual(hook.tree.above, [{ treeId: 't_year', title: 'My year', text: 'Three things this year.' }]);
+  assert.deepEqual(aboveOf(hook.tree), { above: [{ treeId: 't_year', title: 'My year', text: 'Three things this year.' }], aboveUnread: false });
   assert.equal(hook.tree.text, 'Sundays on the water.');
 
   room.guide = 'Saved since.';
@@ -207,6 +238,18 @@ test('the room’s guide carries the guides above beside the tree’s own text, 
   assert.equal(hook.tree.text, 'Saved since.');
   assert.deepEqual(hook.tree.above, [{ treeId: 't_year', title: 'My year', text: 'Three things this year.' }]);
   assert.equal(asked.length, 1);
+});
+
+test('a read that answers nothing above is read, and one that fails stays unread', async (t) => {
+  const none = roomGuide(t);
+  none.asked[0].answer([{ treeId: 't_sail', title: 'Learn to sail', text: 'Sundays on the water.', yours: true }]);
+  await turn();
+  assert.deepEqual(aboveOf(none.hook.tree), { above: [], aboveUnread: false });
+
+  const failed = roomGuide(t);
+  failed.asked[0].fail(503);
+  await turn();
+  assert.deepEqual(aboveOf(failed.hook.tree), { above: [], aboveUnread: true });
 });
 
 test('a reply for a tree the room has left is never shown, and a lapsed session is shown nothing from above', async (t) => {
@@ -225,12 +268,35 @@ test('a reply for a tree the room has left is never shown, and a lapsed session 
 
   room.holder = null;
   hook.redraw();
-  assert.deepEqual(hook.tree.above, []);
+  assert.deepEqual(aboveOf(hook.tree), { above: [], aboveUnread: false });
   assert.equal(hook.tree.text, 'Sundays on the water.');
   assert.deepEqual(asked.map(({ signal }) => signal.aborted), [true, true]);
 });
 
-test('a reader is asked for nothing and shown nothing from above', async (t) => {
+test('what was read for a holder before a lapse is dropped: a return reads again, shows nothing until that read answers, and nothing if it fails', async (t) => {
+  const year = { treeId: 't_year', title: 'My year', text: 'Three things this year.' };
+  for (const [settle, after] of [[(read) => read.answer([{ ...year, yours: true }]), { above: [year], aboveUnread: false }], [(read) => read.fail(503), { above: [], aboveUnread: true }]]) {
+    const { room, hook, asked } = roomGuide(t);
+    asked[0].answer([{ treeId: 't_life', title: 'My life', text: 'Health first.', yours: true }]);
+    await turn();
+    assert.deepEqual(hook.tree.above, [{ treeId: 't_life', title: 'My life', text: 'Health first.' }]);
+
+    room.holder = null;
+    hook.redraw();
+    assert.deepEqual(aboveOf(hook.tree), { above: [], aboveUnread: false });
+
+    room.holder = 'u_olya';
+    hook.redraw();
+    assert.deepEqual(asked.map(({ signal }) => signal.aborted), [true, false]);
+    assert.deepEqual(aboveOf(hook.tree), { above: [], aboveUnread: true });
+
+    settle(asked[1]);
+    await turn();
+    assert.deepEqual(aboveOf(hook.tree), after);
+  }
+});
+
+test('a reader is asked for nothing, shown nothing from above, and nothing of theirs is unread', async (t) => {
   const { room, hook, asked } = roomGuide(t);
   room.owner = false;
   room.holder = null;
@@ -238,5 +304,5 @@ test('a reader is asked for nothing and shown nothing from above', async (t) => 
   await turn();
 
   assert.deepEqual(asked.map(({ signal }) => signal.aborted), [true]);
-  assert.deepEqual(hook.tree.above, []);
+  assert.deepEqual(aboveOf(hook.tree), { above: [], aboveUnread: false });
 });

@@ -3,10 +3,10 @@ import { track } from '../../../telemetry/beacon.js';
 import { t } from '../i18n/index.js';
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { readGuides, setGuide } from '../persistence/TreeRegistry.js';
-import { reportUnexpectedFailure } from '../reportFailure.js';
+import { reportRoadmapFailure, reportUnexpectedFailure } from '../reportFailure.js';
 import { setLocalGuide } from '../sync/localTrees.js';
 import { guideLengthBucket, hasGuide, saveFailureReason } from './GuideDraft.js';
-import { guidesAbove } from './GuidesAbove.js';
+import { guidesAbove, readFailureReason } from './GuidesAbove.js';
 
 const NONE_ABOVE = Object.freeze([]);
 
@@ -16,7 +16,7 @@ const NONE_ABOVE = Object.freeze([]);
 // opened to read, or to write from that offset, and whether a key opened it. `entry` holds the guide's control on the
 // tree, which the note opens from and hands focus back to. `above` holds the guides of the holder's trees above this
 // one, farthest first, each { treeId, title, text }: empty where there are none and for anyone but `holder`, the
-// account that holds the room as its owner.
+// account that holds the room as its owner. `aboveUnread` says a read of them was asked and has not answered, or failed.
 export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef }) {
   const text = tree?.guide ?? '';
   const { owner } = who;
@@ -75,20 +75,31 @@ export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef
     return null;
   }, [treeId, text, owner, sessionRef]);
 
-  // The guides above are read once each time the room opens a tree for its holder, and kept in memory alone. A tree
-  // that lives only on this device has none to ask for. Leaving the tree aborts the read, a reply is held for the tree
-  // and the holder it was read for, and a read that failed leaves the tree's own guide standing and says nothing.
+  // The guides above are read once each time the room opens a tree for its holder, and kept in memory alone: `read` is
+  // null until one is asked, then { treeId, holder, above }, where `above` is null until the read answers. A tree that
+  // lives only on this device has none to ask for. Leaving the tree, or the holder going, aborts the read and drops
+  // what it brought, so a return reads again. A read that failed leaves the tree's own guide standing and says
+  // nothing; it reports once, as does an answer that is not the contract's shape, whose well-formed guides still show.
   useEffect(() => {
     if (!holder || new LocalTreeRegistry().get(treeId)?.claimed === false) return undefined;
     const request = new AbortController();
+    setRead({ treeId, holder, above: null });
     readGuides(treeId, request.signal).then((reply) => {
-      if (!request.signal.aborted) setRead({ treeId, holder, above: guidesAbove(reply, { treeId, untitled: t('roadmap.common.untitled') }) });
+      if (request.signal.aborted) return;
+      const { above, shaped } = guidesAbove(reply, { treeId, untitled: t('roadmap.common.untitled') });
+      setRead({ treeId, holder, above });
+      if (!shaped) reportRoadmapFailure('roadmap-guides-load', new Error('Guides reply not the contract shape'), { reason: 'shape' });
     }, (error) => {
-      if (!request.signal.aborted) reportUnexpectedFailure('roadmap-guides-load', error);
+      if (!request.signal.aborted) reportUnexpectedFailure('roadmap-guides-load', error, { reason: readFailureReason(error) });
     });
-    return () => request.abort();
+    return () => {
+      request.abort();
+      setRead(null);
+    };
   }, [treeId, holder]);
-  const above = holder && read?.treeId === treeId && read.holder === holder ? read.above : NONE_ABOVE;
+  const asked = holder && read?.treeId === treeId && read.holder === holder ? read : null;
+  const above = asked?.above ?? NONE_ABOVE;
+  const aboveUnread = asked !== null && asked.above === null;
 
   const shown = Boolean(tree) && !who.shared && !who.demo && (who.owner || (who.reader && hasGuide(text)));
   const roadmapTitle = tree?.title?.trim() || t('roadmap.common.untitled');
@@ -97,6 +108,7 @@ export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef
   return useMemo(() => (shown ? {
     text,
     above,
+    aboveUnread,
     owner: who.owner,
     deviceOnly: Boolean(deviceLine),
     roadmapTitle,
@@ -106,7 +118,7 @@ export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef
     open: (writing = null, keyboard = false) => setOpened({ writing, keyboard }),
     close: () => setOpened(null),
     save,
-  } : null), [shown, text, above, who.owner, deviceLine, roadmapTitle, arrival, opened, save]);
+  } : null), [shown, text, above, aboveUnread, who.owner, deviceLine, roadmapTitle, arrival, opened, save]);
 }
 
 // The one crossfade a guide set elsewhere earns where it is read: none on a first showing, none under reduced motion.

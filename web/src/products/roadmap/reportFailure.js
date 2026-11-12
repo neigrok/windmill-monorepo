@@ -22,10 +22,11 @@ export function pageWatching() {
 
 const STORAGE_REFUSALS = new Set(['SecurityError', 'QuotaExceededError']);
 
-// A refusal, a request nobody was waiting on and a browser refusing storage are expected answers; anything else reports.
-export function reportUnexpectedFailure(operation, error) {
+// A refusal, a request nobody was waiting on and a browser refusing storage are expected answers; anything else reports,
+// under the tags its boundary gives it.
+export function reportUnexpectedFailure(operation, error, tags) {
   if (STORAGE_REFUSALS.has(error?.name)) return;
   if (error?.status === 0 && !pageWatching()) return;
   if (error?.status > 0 && error.status < 500) return;
-  reportRoadmapFailure(operation, error);
+  reportRoadmapFailure(operation, error, tags);
 }

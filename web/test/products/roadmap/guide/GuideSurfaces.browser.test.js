@@ -73,7 +73,7 @@ function start() {
         load(id) {
           if (id === '\0guide-entry') return entry;
           if (id === '\0guide-beacon') return beacon;
-          if (id === '\0guide-issues') return 'export function captureError(product, operation, stack) { (window.issues ??= []).push({ operation, stack: !!stack }); }';
+          if (id === '\0guide-issues') return 'export function captureError(product, operation, stack, route, tags) { (window.issues ??= []).push({ operation, stack: !!stack, ...(tags ? { tags } : {}) }); }';
         },
         configureServer(vite) {
           vite.middlewares.use('/guide-test', (_request, response) => {
@@ -106,7 +106,8 @@ async function open(options = {}, { engine = chromium, width = 1440, height = 96
 }
 
 // The room of the tree's holder under the guides the server answers for it: `guides` is the route's reply, a status it
-// fails with, or 'lost' for a request that never arrives. `asked` counts the reads, and a read is over before it answers.
+// fails with, 'lost' for a request that never arrives, or { body } for a 200 that says that and nothing else. `asked`
+// counts the reads, and a read is over before it answers.
 async function openHeld(guides, options = {}, browser = {}) {
   await start();
   const asked = [];
@@ -116,6 +117,7 @@ async function openHeld(guides, options = {}, browser = {}) {
     const headers = { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true' };
     if (guides === 'lost') await route.abort('internetdisconnected');
     else if (typeof guides === 'number') await route.fulfill({ status: guides, contentType: 'application/json', headers, body: JSON.stringify({ code: 'guides-unavailable', error: 'the trees above My life could not be read' }) });
+    else if (!Array.isArray(guides)) await route.fulfill({ status: 200, contentType: 'application/json', headers, body: guides.body });
     else await route.fulfill({ status: 200, contentType: 'application/json', headers, body: JSON.stringify({ guides }) });
   });
   if (browser.online === false) await browserOnline(page, false);
@@ -1747,18 +1749,19 @@ test('Chromium: the card’s line names one tree, two, or the two farthest and h
   } finally { await page.close(); }
 });
 
-test('Chromium: a read of the guides above that fails leaves the tree’s own guide alone and says nothing; it reports once, except with no connection', async () => {
-  for (const [guides, online, reported] of [[503, true, 1], ['lost', true, 1], ['lost', false, 0], [404, true, 0]]) {
+test('Chromium: a read of the guides above that fails leaves the tree’s own guide alone and says nothing; it reports once with the kind of failure, except with no connection or a refusal', async () => {
+  for (const [guides, online, reason] of [[503, true, 'unavailable'], [500, true, 'server'], ['lost', true, 'network'], ['lost', false, null], [404, true, null]]) {
     const { page, asked } = await openHeld(guides, { guide: GUIDE }, { online });
     try {
       const said = complaintsOf(page);
       const card = page.getByRole('button', { name: 'Guide: One step a week.' });
-      await page.waitForFunction((count) => (window.issues ?? []).length === count, reported);
+      await page.waitForFunction((count) => (window.issues ?? []).length === count, reason ? 1 : 0);
       assert.equal(await card.textContent(), 'GuideOne step a week.Read guide→');
       await card.click();
-      await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
+      const note = page.getByRole('dialog', { name: 'Guide', exact: true });
+      await note.waitFor();
       assert.deepEqual({
-        stack: await page.locator('.st-guide-stack').count(),
+        above: await page.locator('.st-guide-from').count(),
         prose: await prose(page).textContent(),
         said: await page.locator('[role="alert"], [role="status"]').count(),
         issues: await issues(page),
@@ -1766,14 +1769,54 @@ test('Chromium: a read of the guides above that fails leaves the tree’s own gu
         events: await events(page),
         complaints: said,
       }, {
-        stack: 0,
+        above: 0,
         prose: GUIDE,
         said: 0,
-        issues: Array.from({ length: reported }, () => ({ operation: 'roadmap-guides-load', stack: true })),
+        issues: reason ? [{ operation: 'roadmap-guides-load', stack: true, tags: { reason } }] : [],
         asked: ['GET'],
-        events: [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }],
+        events: [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'unread' }],
         complaints: [],
       }, `${guides} ${online ? 'online' : 'offline'}`);
+    } finally { await page.close(); }
+  }
+});
+
+test('Chromium: a 200 that is not the contract’s shape reports once as such and says nothing on screen; the well-formed guides in it are still shown', async () => {
+  const life = { treeId: 't_life', title: 'My life', text: 'Health first, then craft.', yours: true };
+  for (const [body, line] of [
+    ['<!doctype html><title>My life</title>Health first', null],
+    ['{"guides":[{"treeId":"t_life","title":"My life","text":"Health first, then craft', null],
+    ['null', null], ['{}', null], ['{"guides":{"treeId":"t_life"}}', null],
+    [JSON.stringify({ items: [life] }), null],
+    [JSON.stringify({ guides: [{ tree_id: 't_life', name: 'My life', guide: 'Health first' }, null, 7] }), null],
+    [JSON.stringify({ guides: [life, { treeId: '', title: 'An empty id', text: 'Words.' }] }), 'With a guide from My life'],
+  ]) {
+    const { page, asked } = await openHeld({ body }, { guide: GUIDE });
+    try {
+      const said = complaintsOf(page);
+      await page.waitForFunction(() => (window.issues ?? []).length === 1);
+      const card = page.getByRole('button', { name: 'Guide: One step a week.' });
+      assert.equal(await card.textContent(), `GuideOne step a week.${line ?? ''}Read guide→`, body);
+      await card.click();
+      await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
+      const sent = JSON.stringify([await issues(page), await page.evaluate(() => window.events)]);
+      assert.deepEqual({
+        above: await page.locator('.st-guide-from').count(),
+        said: await page.locator('[role="alert"], [role="status"]').count(),
+        issues: await issues(page),
+        asked,
+        events: await events(page),
+        words: ['life', 'Health', 'craft'].filter((word) => sent.includes(word)),
+        complaints: said,
+      }, {
+        above: line ? 1 : 0,
+        said: 0,
+        issues: [{ operation: 'roadmap-guides-load', stack: true, tags: { reason: 'shape' } }],
+        asked: ['GET'],
+        events: [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: line ? 'some' : 'none' }],
+        words: [],
+        complaints: [],
+      }, body);
     } finally { await page.close(); }
   }
 });

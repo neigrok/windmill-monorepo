@@ -255,10 +255,15 @@ opens a tree for its holder, the account the tree visit acts for (`GET /v1/trees
 hands them on as `above`, each `{ treeId, title, text }` (`guidesAbove` in `guide/GuidesAbove.js`): the reply without
 the tree's own entry, since the room holds that guide and a save shows at once. A reader, the shared-reader mode, the
 demo, a device with nobody signed in, a tree that lives only on this device and a lapsed session make no read and are
-shown nothing from above. The guides from above live in memory alone. Leaving the tree aborts the read, and a reply is
-held for the tree and the holder it was read for. A read that fails leaves the tree's own guide standing and says
-nothing; a server failure and a request lost while visible and online report as `roadmap-guides-load`. A guide a fork
-brought with it stands among the others, and a tree with no title takes *Untitled roadmap*.
+shown nothing from above. The guides from above live in memory alone. Leaving the tree aborts the read and drops what
+it brought, as the holder going does, so a return reads again and nothing read earlier stands in the meantime. A read
+that fails leaves the tree's own guide standing and says nothing. It reports once as `roadmap-guides-load` under one
+tag, `reason`: `unavailable` where the server could not read the trees above, `server` for any other 5xx, `network`
+for a request lost while visible and online, and `shape` for a 200 that is not the contract's, one that is not JSON
+among them (`readFailureReason`; `guidesAbove` says whether an answer is shaped). What is well formed in such an
+answer still shows. A tree answered twice stands once, where it stood farthest, a guide a fork brought with it stands
+among the others, and a tree with no title takes *Untitled roadmap*. The open event says what the entry knew at the
+press: `none`, `some`, or `unread` while the read has not answered or after it failed.
 
 The guide is a note on the tree. `GuideEntry` is the note at rest, which the room hands to the view that shows it: from
 744px a card, over the Graph's canvas under the row and first in the Board's flow, with the first line and Read guide; on

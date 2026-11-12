@@ -75,6 +75,20 @@ test('a direct link has no way back: its history entry says nothing of a visit',
   assert.deepEqual(readTreeVisit({ roadmapCameFrom: { title: 'My year', view: 'tree' } }), { from: null, through: null, view: null, door: null });
 });
 
+test('only an entry that names a step, or null for a way up, as what was gone through is a return', (t) => {
+  browser(t, '/#/app/t_sail');
+  const back = (roadmapWentThrough, more = {}) => readTreeVisit({ roadmapWentThrough, ...more });
+
+  assert.deepEqual(back({ stepId: 'rig', view: 'board' }), { from: null, through: 'rig', view: 'board', door: 'back' });
+  assert.deepEqual(back({ stepId: null, view: 'tree' }), { from: null, through: null, view: 'tree', door: 'back' });
+  assert.deepEqual(back({ stepId: null }), { from: null, through: null, view: null, door: 'back' });
+  assert.deepEqual(back({ stepId: null, view: 'tree' }, { roadmapCameFrom: { treeId: 't_year', view: 'board' } }), { from: 't_year', through: null, view: 'tree', door: 'back' });
+  for (const odd of [undefined, null, 'rig', 7, {}, { view: 'tree' }, { stepId: 7 }, { stepId: undefined, view: 'tree' }, { stepId: {} }, []]) {
+    assert.deepEqual(back(odd), { from: null, through: null, view: null, door: null }, JSON.stringify(odd));
+  }
+  assert.deepEqual(readTreeVisit(null), { from: null, through: null, view: null, door: null });
+});
+
 test('going in leaves ids and a view on the two entries and no title, and coming back finds the step gone through', (t) => {
   const { window, entries, here } = browser(t);
   let navigated = 0;

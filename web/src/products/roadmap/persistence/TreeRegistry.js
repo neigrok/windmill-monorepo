@@ -115,8 +115,9 @@ export function setGuide(treeId, guide) {
 }
 
 // The guides a roadmap's agents are given (GET /v1/trees/:id/guides → { guides: [{ treeId, title, text, yours }] }): to
-// its owner those of their trees above it, farthest first, then its own. `signal` aborts the read, which then rejects
-// as the browser's abort; any other failure keeps its status and the server's code, and none of what the reply said.
+// its owner those of their trees above it, farthest first, then its own. A 200 that is not JSON answers null. `signal`
+// aborts the read, which then rejects as the browser's abort; any other failure keeps its status and the server's
+// code, and none of what the reply said.
 export async function readGuides(treeId, signal) {
   let response;
   try {
@@ -125,7 +126,7 @@ export async function readGuides(treeId, signal) {
     if (signal?.aborted) throw error;
     throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
   }
-  if (response.ok) return response.json();
+  if (response.ok) return response.json().catch(() => null);
   const body = await response.json().catch(() => ({}));
   throw new AuthError('Could not read the guides', { code: body.code, status: response.status });
 }

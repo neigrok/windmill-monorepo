@@ -119,6 +119,12 @@ test('readGuides — GETs the tree’s guides credentialed under the caller’s 
   assert.deepEqual(calls, [{ url: `${BASE}/v1/trees/t_abc/guides`, init: { credentials: 'include', signal } }]);
 });
 
+test('readGuides — a 200 that is not JSON answers null, never a failure of the read', async () => {
+  stubFetch(() => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token < in JSON'); } }));
+
+  assert.equal(await readGuides('t_abc'), null);
+});
+
 test('readGuides — a refusal keeps its status and code and nothing the server said, and a lost request is unreachable', async () => {
   for (const [status, body] of [[503, { code: 'guides-unavailable', error: 'the trees above My life could not be read' }], [404, { error: 'no such tree' }], [500, {}]]) {
     stubFetch(() => ({ ok: false, status, json: async () => body }));
