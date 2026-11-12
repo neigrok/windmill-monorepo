@@ -20,8 +20,6 @@ NodeStateEntry entryOf(const NodeId& id, const NodeRecord& record) {
   entry.colorAt = record.color.stamp;
   entry.order = record.order.value;
   entry.orderAt = record.order.stamp;
-  entry.position = record.position.value;
-  entry.positionAt = record.position.stamp;
   entry.status = record.status.value;
   entry.statusAt = record.status.stamp;
   entry.description = record.description.value;
@@ -36,7 +34,7 @@ NodeStateEntry entryOf(const NodeId& id, const NodeRecord& record) {
 
 LooseGraph::LooseGraph(const TreeData& seed, const Hlc& at) {
   for (const auto& node : seed.nodes) {
-    createNode(node.id, node.label, node.icon, node.color, node.position, at, node.status);
+    createNode(node.id, node.label, node.icon, node.color, at, node.status);
     if (!node.order.empty()) setOrder(node.id, node.order, at);
     if (!node.description.empty()) setDescription(node.id, node.description, at);
     if (!node.links.empty()) setLinks(node.id, node.links, at);
@@ -56,7 +54,6 @@ LooseGraph::LooseGraph(const GraphState& state) {
     record.icon = {node.icon, node.iconAt};
     record.color = {node.color, node.colorAt};
     record.order = {node.order, node.orderAt};
-    record.position = {node.position, node.positionAt};
     record.status = {normalizeSeedStatus(node.status), node.statusAt};
     record.description = {node.description, node.descriptionAt};
     record.links = {node.links, node.linksAt};
@@ -68,37 +65,41 @@ LooseGraph::LooseGraph(const GraphState& state) {
   }
 }
 
-void LooseGraph::join(const GraphState& state) {
+bool LooseGraph::join(const GraphState& state) {
+  bool took = false;
   for (const auto& node : state.nodes) {
-    NodeRecord& record = nodes_[node.id];
-    record.life.add(node.createdAt);
-    record.life.remove(node.deletedAt);
-    record.label.merge(node.label, node.labelAt);
-    record.icon.merge(node.icon, node.iconAt);
-    record.color.merge(node.color, node.colorAt);
-    record.order.merge(node.order, node.orderAt);
-    record.position.merge(node.position, node.positionAt);
-    record.status.merge(normalizeSeedStatus(node.status), node.statusAt);
-    record.description.merge(node.description, node.descriptionAt);
-    record.links.merge(node.links, node.linksAt);
-    record.opens.merge(node.opens, node.opensAt);
+    const auto [held, fresh] = nodes_.try_emplace(node.id);
+    NodeRecord& record = held->second;
+    bool nodeTook = record.life.add(node.createdAt);
+    nodeTook |= record.life.remove(node.deletedAt);
+    nodeTook |= record.label.merge(node.label, node.labelAt);
+    nodeTook |= record.icon.merge(node.icon, node.iconAt);
+    nodeTook |= record.color.merge(node.color, node.colorAt);
+    nodeTook |= record.order.merge(node.order, node.orderAt);
+    nodeTook |= record.status.merge(normalizeSeedStatus(node.status), node.statusAt);
+    nodeTook |= record.description.merge(node.description, node.descriptionAt);
+    nodeTook |= record.links.merge(node.links, node.linksAt);
+    nodeTook |= record.opens.merge(node.opens, node.opensAt);
+    if (fresh && !nodeTook) nodes_.erase(held);
+    took |= nodeTook;
   }
   for (const auto& edge : state.edges) {
-    ElementSet& element = edges_[edge.edge];
-    element.add(edge.addedAt);
-    element.remove(edge.removedAt);
+    const auto [held, fresh] = edges_.try_emplace(edge.edge);
+    bool edgeTook = held->second.add(edge.addedAt);
+    edgeTook |= held->second.remove(edge.removedAt);
+    if (fresh && !edgeTook) edges_.erase(held);
+    took |= edgeTook;
   }
+  return took;
 }
 
 void LooseGraph::createNode(const NodeId& id, const std::string& label, const std::string& icon,
-                            NodeColor color, const std::optional<Vec2>& position, const Hlc& at,
-                            const std::optional<std::string>& status) {
+                            NodeColor color, const Hlc& at, const std::optional<std::string>& status) {
   NodeRecord& record = nodes_[id];
   record.life.add(at);
   record.label.merge(label, at);
   record.icon.merge(icon, at);
   record.color.merge(color, at);
-  if (position) record.position.merge(position, at);
   if (status) record.status.merge(normalizeSeedStatus(status), at);
 }
 
@@ -116,10 +117,6 @@ void LooseGraph::setIcon(const NodeId& id, const std::string& icon, const Hlc& a
 
 void LooseGraph::setColor(const NodeId& id, NodeColor color, const Hlc& at) {
   nodes_[id].color.merge(color, at);
-}
-
-void LooseGraph::setPosition(const NodeId& id, const Vec2& position, const Hlc& at) {
-  nodes_[id].position.merge(position, at);
 }
 
 void LooseGraph::setDescription(const NodeId& id, const std::string& description, const Hlc& at) {
@@ -196,7 +193,6 @@ std::optional<NodeSpec> LooseGraph::nodeView(const NodeId& id) const {
   spec.icon = record.icon.value;
   spec.color = record.color.value;
   spec.order = record.order.value;
-  spec.position = record.position.value;
   spec.status = record.status.value;
   spec.description = record.description.value;
   spec.links = record.links.value;
@@ -285,7 +281,6 @@ TreeData LooseGraph::toTreeData(const TreeId& id, const std::string& title) cons
     spec.icon = record.icon.value;
     spec.color = record.color.value;
     spec.order = record.order.value;
-    spec.position = record.position.value;
     spec.status = record.status.value;
     spec.description = record.description.value;
     spec.links = record.links.value;

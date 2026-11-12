@@ -114,6 +114,17 @@ TEST(join_folds_a_partial_legend_and_is_commutative) {
   CHECK(renamedFirst.has(kid("infra")));
 }
 
+// A kind that carries no stamp is no information: the join takes nothing and keeps no record of the id it named.
+TEST(join_of_a_kind_that_carries_no_stamp_takes_nothing_and_leaves_the_legend_as_it_was) {
+  Legend legend = Legend::seededDefaults(at(1));
+  const LegendState before = legend.exportState();
+  KindStateEntry ghost;
+  ghost.id = kid("ghost");
+
+  CHECK_FALSE(legend.join(LegendState{{ghost}}));
+  CHECK(legend.exportState() == before);
+}
+
 TEST(join_keeps_more_a_concurrent_edit_survives_a_delete_and_a_re_add_resurrects_it) {
   Legend seeded = Legend::seededDefaults(at(1));
 

@@ -112,8 +112,7 @@ Json::Value progressStatusArgument(const Json::Value& value) {
 }
 
 // Each register an imported node or kind may leave out, by its name on this surface: a node's
-// `seedStatus` is the document's `status`. A node's position is not on this surface, so every
-// imported node leaves it out and keeps the one it holds.
+// `seedStatus` is the document's `status`.
 constexpr std::pair<const char*, NodeRegister> kImportedNodeRegisters[] = {
     {"label", NodeRegister::label},             {"icon", NodeRegister::icon},
     {"color", NodeRegister::color},             {"order", NodeRegister::order},
@@ -1237,7 +1236,6 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
   for (const Json::Value& node : args["nodes"]) {
     const NodeId id{node["id"].asString()};
     std::set<NodeRegister>& omitted = graft.omittedNodeRegisters[id];
-    omitted.insert(NodeRegister::position);
     for (const auto& [field, held] : kImportedNodeRegisters)
       if (node[field].isNull()) omitted.insert(held);
     if (node["prerequisites"].isNull()) graft.omittedPrerequisites.insert(id);

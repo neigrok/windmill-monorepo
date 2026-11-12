@@ -48,9 +48,10 @@ A subgraph uses the same envelope in a socket frame and the HTTP tree response's
 ```
 
 Node and kind registers use flat value/stamp pairs such as `label`/`labelAt`; life uses
-`createdAt`/`deletedAt`. A node's registers are `label`, `icon`, `color`, `order`, `position`,
-`status`, `description`, `links` and `opens`, the id of the tree the node opens or `""` for none.
-Edges use `from`, `to`, `addedAt` and `removedAt`. Title and guide are
+`createdAt`/`deletedAt`. A node's registers are `label`, `icon`, `color`, `order`, `status`,
+`description`, `links` and `opens`, the id of the tree the node opens or `""` for none. A node holds no
+position: every client lays the graph out itself, and a frame that still carries `position` or
+`positionAt` lands without them. Edges use `from`, `to`, `addedAt` and `removedAt`. Title and guide are
 `{v, at}`; coverage maps each actor to its greatest stamp. Omitted sections and fields never delete
 data. The browser lattice joins, stores and writes the guide as it does the title: one stamped register
 in the structure lane, outside the undo journal. It joins `opens` by its stamp, stores it with the
@@ -75,12 +76,14 @@ subscribes again from an empty vector, because a reader's coverage counts pointe
 | `graft` | imported/bootstrap state; contributes content without coverage |
 
 The server broadcasts admitted writes with `intent: live` and `seq`. A persisted write receives
-`subgraphAck {treeId, frameId, seq?}`; a duplicate can be acknowledged without a new seq. The room
+`subgraphAck {treeId, frameId, seq?}`. A frame that lands nothing — a duplicate, one whose every
+stamp the server holds already, or one that carries no stamp a register keeps — is acknowledged
+without a seq, so its sender's gestures are confirmed, and is not saved, logged or broadcast. The room
 tracks seen frame IDs, and the op log enforces `(tree_id, op_id)` uniqueness. The op log contains
 one coarse headline per frame, not the full envelope. A frame leaves a deed only when it creates or
 deletes a node, writes a node's label, color, description or links, adds or removes an edge, creates
 a legend kind or writes a kind's hue, label, description or rank. Every other frame leaves
-none: one that writes only a node's icon, order, position, status or `opens`, removes a kind, or sets
+none: one that writes only a node's icon, order, status or `opens`, removes a kind, or sets
 the title or the guide.
 
 `reject {treeId, frameId?, code, reason}` reports a refusal. Clients branch on `code`, preserving

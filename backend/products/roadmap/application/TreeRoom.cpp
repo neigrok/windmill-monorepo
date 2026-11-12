@@ -35,17 +35,19 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
     clock_.observe(mark);
     if (stamp < mark) stamp = mark;  // the frame's causal position, for the feed op
   }
-  if (incoming.title) title_.merge(incoming.title->value, incoming.title->stamp);
-  if (incoming.guide && incoming.guide->stamp > guide_.stamp) {
+  const bool titleTook = incoming.title && title_.merge(incoming.title->value, incoming.title->stamp);
+  const bool guideTook = incoming.guide && incoming.guide->stamp > guide_.stamp;
+  if (guideTook) {
     guide_ = *incoming.guide;
     guideInherited_ = false;  // the guide that won is a write of this tree's, not its source's
   }
-  graph_.join(incoming.graph);
-  legend_.join(incoming.legend);
+  const bool graphTook = graph_.join(incoming.graph);
+  const bool legendTook = legend_.join(incoming.legend);
+  if (!titleTook && !guideTook && !graphTook && !legendTook) return std::nullopt;
   markDirty(incoming.graph, incoming.legend);
   ++head_;
   // One op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
-  // double-counts. A nudge (position only) is not feed-worthy, so nothing is queued.
+  // double-counts. A frame with no feed-worthy deed (headline) queues nothing.
   if (std::optional<Command> deed = headline(incoming.graph, incoming.legend))
     pendingOps_.push_back(AppliedOp{head_, incoming.frameId, *deed, stamp, actor});
   bus_.broadcastSubgraph(id_, head_, incoming);

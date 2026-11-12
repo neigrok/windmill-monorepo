@@ -30,7 +30,6 @@ NodeStateEntry maskNode(const NodeStateEntry& node, const VersionVector& since) 
   if (!since.covers(node.iconAt))     { masked.icon = node.icon;         masked.iconAt = node.iconAt; }
   if (!since.covers(node.colorAt))    { masked.color = node.color;       masked.colorAt = node.colorAt; }
   if (!since.covers(node.orderAt))    { masked.order = node.order;       masked.orderAt = node.orderAt; }
-  if (!since.covers(node.positionAt)) { masked.position = node.position; masked.positionAt = node.positionAt; }
   if (!since.covers(node.statusAt))   { masked.status = node.status;     masked.statusAt = node.statusAt; }
   if (!since.covers(node.descriptionAt)) { masked.description = node.description; masked.descriptionAt = node.descriptionAt; }
   if (!since.covers(node.linksAt))       { masked.links = node.links;             masked.linksAt = node.linksAt; }
@@ -41,7 +40,7 @@ NodeStateEntry maskNode(const NodeStateEntry& node, const VersionVector& since) 
 bool nodeUncovered(const NodeStateEntry& node, const VersionVector& since) {
   return !since.covers(node.createdAt) || !since.covers(node.deletedAt) || !since.covers(node.labelAt)
       || !since.covers(node.iconAt) || !since.covers(node.colorAt) || !since.covers(node.orderAt)
-      || !since.covers(node.positionAt) || !since.covers(node.statusAt) || !since.covers(node.descriptionAt)
+      || !since.covers(node.statusAt) || !since.covers(node.descriptionAt)
       || !since.covers(node.linksAt) || !since.covers(node.opensAt);
 }
 
@@ -72,7 +71,6 @@ VersionVector frontier(const GraphState& graph, const LegendState& legend) {
     vector.observe(node.iconAt);
     vector.observe(node.colorAt);
     vector.observe(node.orderAt);
-    vector.observe(node.positionAt);
     vector.observe(node.statusAt);
     vector.observe(node.descriptionAt);
     vector.observe(node.linksAt);

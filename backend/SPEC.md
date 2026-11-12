@@ -14,7 +14,7 @@ self-edges and edges to absent nodes. Every write merges into it; graph writes a
 rejected for structure. Validity is a read model, not a gate.
 
 - `LooseGraph` — the authoritative state. Nodes are `NodeRecord`s (an `ElementSet` life plus LWW
-  registers: label, icon, color, order, position, status, description, links, opens); edges are an
+  registers: label, icon, color, order, status, description, links, opens); edges are an
   `ElementSet` per `(from, to)`.
 - `opens` — a node's pointer at another tree: that tree's id, or empty for none. A document node
   carries it as `opens` and omits it when empty; a lattice entry carries `opens` and `opensAt`. The
@@ -203,8 +203,9 @@ Derived read models:
 
 `NodeColor ∈ {terracotta, olive, gold, brick, sky, plum}`.
 
-The server never computes layout and never renders. Positions are authored nudges it stores and
-serves; geometry is entirely client-side.
+The server never computes layout and never renders, and a node holds no position: every client lays
+the graph out itself. A document or a frame that still carries a node's `position` or `positionAt`
+is taken without them, key by key, and is never refused for them.
 
 ### Progress
 
@@ -265,7 +266,11 @@ set stamp `at`; any other shape makes the frame `bad-frame`, so no value is coer
 `TreeRoom::joinSubgraph` dedupes on `frameId`, folds the frame's stamps into the room clock,
 joins graph + legend + title + guide, assigns the next `seq`, queues a headline deed for the op log,
 and broadcasts the frame to subscribers. A frame that sets only the title or the guide has no
-headline deed, so it leaves no `tree_ops` row and no activity entry. Duplicates return no seq. A broadcast carries the room's `seq` and always
+headline deed, so it leaves no `tree_ops` row and no activity entry. A frame that lands nothing — a
+duplicate `frameId`, one whose every stamp the room already holds, or one that carries no stamp, as
+when its entries hold only keys no register keeps — takes no seq and leaves the room as it was, with
+no record of an id only it named: it is not saved, logged or broadcast. Its sender is still
+answered, by a `subgraphAck` that carries no `seq`. A broadcast carries the room's `seq` and always
 states `intent: live`, whatever intent the frame arrived with — echoing a `flush` would make every
 subscriber treat it as a re-baselining graft.
 
@@ -302,18 +307,20 @@ committed before its connection dropped lands once. Only a room closing — `evi
 - `DeleteNode` is a plain tombstone. The record and every field survive so the node can be
   resurrected; its edges stay in the document and are filtered from the derived DAG view. A child
   that loses its only live parent becomes a root — visible as `maskedWork`, never re-tethered.
-- `TransitiveReduction` and `PruneDangling` are written by nothing. A row of either that the log
-  holds decodes and replays as nothing: a row is logged only after the lattice holding its effect is
-  saved, so a replayed tail holds no such row. The Activity feed still tells a past
+- `RepositionNode`, `TransitiveReduction` and `PruneDangling` are written by nothing. A row of any
+  of them that the log holds decodes and replays as nothing: a row is logged only after the lattice
+  holding its effect is saved, so a replayed tail holds no such row. A node holds no position, so the
+  feed skips a `RepositionNode`, alone or inside a `Batch` whose other members it tells, and a stored
+  `CreateNode` row's `x` and `y` are read past. The Activity feed still tells a past
   `TransitiveReduction`.
 - A `DescribeKind` without a description sets nothing: it replays as nothing and the feed skips it,
   alone or inside a `Batch` whose other members it tells.
 - `RecolorKind` is atomic: it swaps a kind's hue and repaints every node wearing the old hue.
 - `validate(graph, legend, command)` runs at the edge. A graph command is refused only for a
-  malformed or over-cap field, or — `RenameNode` · `SetNodeColor` · `RepositionNode` ·
-  `AnnotateNode` — an id no present node carries (`no node in this tree is named "x"`), so no
-  edit plants a phantom. Legend commands may be refused — hue uniqueness, ≤6 kinds, no in-use
-  removal, length caps are all locally decidable on the authoritative state.
+  malformed or over-cap field, or — `RenameNode` · `SetNodeColor` · `AnnotateNode` — an id no
+  present node carries (`no node in this tree is named "x"`), so no edit plants a phantom. Legend
+  commands may be refused — hue uniqueness, ≤6 kinds, no in-use removal, length caps are all locally
+  decidable on the authoritative state.
 
 ### Bounds
 
@@ -574,7 +581,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | Table | Holds |
 | --- | --- |
 | `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
-| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open |
+| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open; `pos_x`, `pos_y` and `pos_hlc` are neither read nor written, and stay so an earlier image can run on this database |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
 | `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp; `cross_branch_exempt` and `cross_branch_exempt_hlc` are neither read nor written, and stay so an earlier image can run on this database |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |

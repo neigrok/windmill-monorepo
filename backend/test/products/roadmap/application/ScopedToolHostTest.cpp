@@ -60,8 +60,8 @@ struct ClosedSchemaToolHost : RecordingToolHost {
     create["name"] = "create_node";
     create["inputSchema"] = closedObject({"treeId", "label"});
 
-    Json::Value item = closedObject({"id", "position"});
-    item["properties"]["position"] = closedObject({"x", "y"});
+    Json::Value item = closedObject({"id", "link"});
+    item["properties"]["link"] = closedObject({"label", "url"});
     Json::Value import(Json::objectValue);
     import["name"] = "import_subgraph";
     import["inputSchema"] = closedObject({"treeId", "nodes"});
@@ -212,16 +212,16 @@ TEST(scoped_tool_host_refuses_an_unknown_nested_argument_by_its_json_path) {
   const ToolResult refused = scoped.callTool("import_subgraph", args, tender("u1"));
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
-           std::string("import_subgraph: unknown argument \"nodes[1].deleted\". nodes[1] takes: id, position."));
+           std::string("import_subgraph: unknown argument \"nodes[1].deleted\". nodes[1] takes: id, link."));
   CHECK_EQ(inner.calls.size(), std::size_t{0});
 
   Json::Value deep(Json::objectValue);
-  Json::Value placed(Json::objectValue); placed["id"] = "a";
-  placed["position"]["x"] = "1";
-  placed["position"]["z"] = "2";
-  deep["nodes"].append(placed);
+  Json::Value linked(Json::objectValue); linked["id"] = "a";
+  linked["link"]["url"] = "https://windmill.works";
+  linked["link"]["title"] = "Home";
+  deep["nodes"].append(linked);
   CHECK_EQ(message(scoped.callTool("import_subgraph", deep, tender("u1"))),
-           std::string("import_subgraph: unknown argument \"nodes[0].position.z\". nodes[0].position takes: x, y."));
+           std::string("import_subgraph: unknown argument \"nodes[0].link.title\". nodes[0].link takes: label, url."));
   CHECK_EQ(inner.calls.size(), std::size_t{0});
 }
 

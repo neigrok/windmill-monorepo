@@ -21,7 +21,7 @@ struct Marking {
 
   Marking() {
     LooseGraph sub;
-    sub.createNode(nid("s"), "S", "", NodeColor::sky, std::nullopt, at(1));
+    sub.createNode(nid("s"), "S", "", NodeColor::sky, at(1));
     trees.byId["sub"] = StoredTree{sub.exportState(), LegendState{}, {"Sub", {}}, 0, owner};
   }
 

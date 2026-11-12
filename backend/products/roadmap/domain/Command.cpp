@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -65,7 +64,7 @@ struct Overages {
 // quoted back: echoing it would make the refusal as expensive as the request.
 std::optional<std::string> nodeFieldBounds(const NodeId& id, const std::string& label, const std::string& icon,
                                            const std::string& description, const std::vector<Link>& links,
-                                           const TreeId& opens, const std::optional<Vec2>& position) {
+                                           const TreeId& opens) {
   if (id.empty()) return "a node has an empty id";
   Overages idOver;
   idOver.note("a node id", id.str(), kMaxIdLength);
@@ -78,8 +77,6 @@ std::optional<std::string> nodeFieldBounds(const NodeId& id, const std::string& 
   over.noteLinks(links);
   over.note("opens", opens.str(), kMaxIdLength);
   if (std::optional<std::string> bad = over.sentence()) return named + *bad;
-  if (position && !(std::isfinite(position->x) && std::isfinite(position->y)))
-    return named + "position is not finite";
   return std::nullopt;
 }
 
@@ -177,9 +174,9 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
   std::visit(overloaded{
     [&](const RenameNode& c) { graph.setLabel(c.id, c.label, at); },
     [&](const SetNodeColor& c) { graph.setColor(c.id, c.color, at); },
-    [&](const RepositionNode& c) { graph.setPosition(c.id, c.position, at); },
+    [&](const RepositionNode&) {},
     [&](const CreateNode& c) {
-      graph.createNode(c.id, c.label, c.icon, c.color, c.position, at);
+      graph.createNode(c.id, c.label, c.icon, c.color, at);
       if (!c.description.empty()) graph.setDescription(c.id, c.description, at);
       if (!c.links.empty()) graph.setLinks(c.id, c.links, at);
       if (c.opens) graph.setOpens(c.id, *c.opens, at);
@@ -250,8 +247,6 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       over.noteLinks(c.links);
       if (c.opens) over.note("opens", c.opens->str(), kMaxIdLength);
       if (auto bad = over.sentence()) return bad;
-      if (c.position && !(std::isfinite(c.position->x) && std::isfinite(c.position->y)))
-        return "position is not finite";
       if (!graph.hasNode(c.id) && graph.presentNodeCount() >= kMaxNodes)
         return "tree is at node capacity (" + std::to_string(kMaxNodes) +
                " nodes) — delete a node before adding another";
@@ -278,11 +273,6 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       Overages over;
       over.note("label", c.label, kMaxNodeLabelLength);
       if (auto bad = over.sentence()) return bad;
-      return present(c.id);
-    },
-    [&](const RepositionNode& c) -> std::optional<std::string> {
-      if (auto bad = idBounds(c.id)) return bad;
-      if (!(std::isfinite(c.position.x) && std::isfinite(c.position.y))) return "position is not finite";
       return present(c.id);
     },
     [&](const SetNodeColor& c) -> std::optional<std::string> {
@@ -373,10 +363,6 @@ std::optional<Command> changedPart(const NodeSpec& node, const Command& command)
       if (node.color == c.color) return std::nullopt;
       return c;
     },
-    [&](const RepositionNode& c) -> std::optional<Command> {
-      if (node.position == std::optional<Vec2>(c.position)) return std::nullopt;
-      return c;
-    },
     [&](const AnnotateNode& c) -> std::optional<Command> {
       AnnotateNode landed{c.id};
       if (differs(c.description, node.description)) landed.description = c.description;
@@ -406,7 +392,7 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     if (!seen.insert(patch.nodeId).second)
       return "updates repeats nodeId " + quoted(patch.nodeId.str());
     if (!patch.label && !patch.icon && !patch.description && !patch.appendDescription && !patch.hue.color &&
-        !patch.hue.kind && !patch.position && !patch.links && !patch.addLinks && !patch.opens)
+        !patch.hue.kind && !patch.links && !patch.addLinks && !patch.opens)
       return "node " + quoted(patch.nodeId.str()) + ": pass at least one field to patch";
     for (const auto& [field, value] : {std::pair{"label", &patch.label}, {"icon", &patch.icon},
                                        {"description", &patch.description},
@@ -438,7 +424,6 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     std::vector<Command> candidates;
     if (patch.label) candidates.push_back(RenameNode{patch.nodeId, *patch.label});
     if (color) candidates.push_back(SetNodeColor{patch.nodeId, *color});
-    if (patch.position) candidates.push_back(RepositionNode{patch.nodeId, *patch.position});
     if (patch.description || patch.appendDescription || patch.icon || links || patch.opens)
       candidates.push_back(
           AnnotateNode{patch.nodeId, patch.description, links, patch.icon, patch.appendDescription, patch.opens});
@@ -626,7 +611,7 @@ std::optional<Admission> admit(const LooseGraph& graph, const Graft& incoming) {
   std::set<Edge> arrivingEdges;
   for (const NodeSpec& node : incoming.document.nodes) {
     if (std::optional<std::string> bad =
-            nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.opens, node.position))
+            nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.opens))
       return Admission{Admission::Verdict::malformed, *bad};
     if (!graph.hasNode(node.id)) arrivingNodes.insert(node.id);  // a graft upserts: a present id costs nothing
     for (const NodeId& prereq : node.prerequisites)
@@ -650,7 +635,7 @@ std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incomi
   std::map<NodeId, ElementSet> nodeLives;
   for (const NodeStateEntry& node : incoming.nodes) {
     if (std::optional<std::string> bad =
-            nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.opens, node.position))
+            nodeFieldBounds(node.id, node.label, node.icon, node.description, node.links, node.opens))
       return Admission{Admission::Verdict::malformed, *bad};
     auto [life, fresh] = nodeLives.try_emplace(node.id);
     if (fresh) life->second = graph.lifeOf(node.id).value_or(ElementSet{});
@@ -709,7 +694,7 @@ std::optional<Admission> admit(const Legend& legend, const LegendState& incoming
 
 std::optional<Command> headline(const GraphState& graph, const LegendState& legend) {
   for (const NodeStateEntry& n : graph.nodes)
-    if (n.createdAt.isSet()) return CreateNode{n.id, n.label, n.icon, n.color, {}, n.position, n.description, n.links};
+    if (n.createdAt.isSet()) return CreateNode{n.id, n.label, n.icon, n.color, {}, n.description, n.links};
   for (const NodeStateEntry& n : graph.nodes)
     if (n.deletedAt.isSet()) return DeleteNode{n.id};
   for (const KindStateEntry& k : legend.kinds)

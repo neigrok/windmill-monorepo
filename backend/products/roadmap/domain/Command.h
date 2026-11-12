@@ -47,14 +47,12 @@ std::size_t byteOffsetOfCodePoint(const std::string& utf8, std::size_t index);
 
 struct RenameNode { NodeId id; std::string label; };
 struct SetNodeColor { NodeId id; NodeColor color; };
-struct RepositionNode { NodeId id; Vec2 position; };
 struct CreateNode {
   NodeId id;
   std::string label;
   std::string icon;
   NodeColor color = NodeColor::terracotta;
   std::vector<NodeId> prerequisites;
-  std::optional<Vec2> position;
   std::string description;
   std::vector<Link> links;
   // The tree the node opens. Set, it is written, and an empty id opens none: a create on an id a
@@ -78,8 +76,10 @@ struct AddEdge { NodeId from; NodeId to; };
 struct RemoveEdge { NodeId from; NodeId to; };
 struct ReconnectEdge { NodeId oldFrom; NodeId oldTo; NodeId newFrom; NodeId newTo; };
 struct DeleteNode { NodeId id; };
-// Written by nothing; a stored row of either decodes and replays as nothing. A row is logged only after the lattice
-// holding its effect is saved, so a replay never needs one to act.
+// Written by nothing; a stored row of any of these decodes and replays as nothing. A row is logged only after the
+// lattice holding its effect is saved, so a replay never needs one to act. A node holds no position, so a
+// RepositionNode row has nothing to set.
+struct RepositionNode {};
 struct TransitiveReduction {};
 struct PruneDangling {};
 
@@ -122,7 +122,6 @@ struct NodePatch {
   std::optional<std::string> description;
   std::optional<std::string> appendDescription;
   HueChoice hue;
-  std::optional<Vec2> position;
   std::optional<std::vector<Link>> links;
   std::optional<std::vector<Link>> addLinks;
   std::optional<TreeId> opens;  // an empty id clears the tree the node opens
@@ -243,8 +242,8 @@ bool isBlankGuide(const std::string& guide);
 std::optional<Admission> admitStampedGuide(const std::string& guide);
 
 // The single feed-worthy deed a subgraph delta represents, read off which lattice fields the frame
-// sets. Salience order: a node's own life, then legend deeds, then a node's fields, then edges. A
-// position-only or empty frame is nullopt.
+// sets. Salience order: a node's own life, then legend deeds, then a node's fields, then edges. A frame that sets
+// none of these is nullopt.
 std::optional<Command> headline(const GraphState& graph, const LegendState& legend);
 
 }

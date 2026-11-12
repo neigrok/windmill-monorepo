@@ -57,7 +57,7 @@ TEST(room_next_stamp_dominates_a_replayed_op_after_restart) {
 TEST(room_next_stamp_dominates_the_loaded_document_state) {
   LooseGraph loaded;
   Hlc old{8000, 2, "old"};
-  loaded.createNode(nid("seed"), "S", "i", NodeColor::sky, std::nullopt, old);
+  loaded.createNode(nid("seed"), "S", "i", NodeColor::sky, old);
   FakeBus bus;
   TreeRoom room(tid(), {"T", {}}, {}, false, std::move(loaded), Legend{}, 0, std::nullopt,
                 Visibility::private_, 0, bus);
@@ -73,7 +73,7 @@ Subgraph frameWith(const char* frameId, const NodeId& node, const Hlc& stamp) {
   frame.frameId = frameId;
   frame.actor = stamp.actor;
   LooseGraph graph;
-  graph.createNode(node, "N", "icon", NodeColor::sky, std::nullopt, stamp);
+  graph.createNode(node, "N", "icon", NodeColor::sky, stamp);
   frame.graph = graph.exportState();
   return frame;
 }
@@ -107,23 +107,43 @@ TEST(room_join_subgraph_queues_its_headline_for_the_feed) {
   CHECK_EQ(deed->label, std::string("N"));
 }
 
-TEST(room_join_subgraph_reposition_only_frame_queues_nothing) {
+// A frame that lands nothing — one re-sending stamps the room holds, one whose entries carry no stamp, as a frame that
+// carried only keys no register keeps arrives, or one with no entry at all — takes no seq, queues no op, is told to no
+// one and leaves the room as it was, the ids it named unrecorded.
+TEST(room_join_subgraph_a_frame_that_lands_nothing_takes_no_seq_is_told_to_no_one_and_leaves_the_room_as_it_was) {
   FakeBus bus;
   TreeRoom room = makeRoom(bus);
 
-  Subgraph frame;
-  frame.treeId = tid();
-  frame.frameId = "f1";
-  NodeStateEntry moved;
-  moved.id = nid("a");
-  moved.position = Vec2{3, 4};
-  moved.positionAt = at(9);
-  frame.graph.nodes.push_back(moved);
+  Subgraph created;
+  created.treeId = tid();
+  created.frameId = "f1";
+  created.graph.nodes.push_back(NodeStateEntry{.id = nid("a"), .createdAt = at(9), .label = "A", .labelAt = at(9)});
+  Subgraph again = created;
+  again.frameId = "f2";
+  Subgraph bare;
+  bare.treeId = tid();
+  bare.frameId = "f3";
+  bare.graph.nodes = {NodeStateEntry{.id = nid("a")}, NodeStateEntry{.id = nid("ghost")}};
+  bare.graph.edges = {EdgeStateEntry{Edge{nid("a"), nid("ghost")}, {}, {}}};
+  KindStateEntry kind;
+  kind.id = KindId{"ghost"};
+  bare.legend.kinds = {kind};
+  Subgraph empty;
+  empty.treeId = tid();
+  empty.frameId = "f4";
 
-  Seq seq = *room.joinSubgraph(frame, uid());
-  CHECK_EQ(seq, static_cast<Seq>(1));
+  CHECK(room.joinSubgraph(created, uid()) == std::optional<Seq>(1));
+  const GraphState landed = room.exportState();
+  const LegendState legend = room.exportLegend();
+  CHECK(room.joinSubgraph(again, uid()) == std::nullopt);
+  CHECK(room.joinSubgraph(bare, uid()) == std::nullopt);
+  CHECK(room.joinSubgraph(empty, uid()) == std::nullopt);
+  CHECK_EQ(room.head(), static_cast<Seq>(1));
+  CHECK(room.exportState() == landed);
+  CHECK(room.exportLegend() == legend);
+  CHECK(room.dirtyState() == (std::pair<GraphState, LegendState>{landed, LegendState{}}));
   CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
-  CHECK(room.pendingOps().empty());
+  CHECK_EQ(room.pendingOps().size(), 1u);
 }
 
 TEST(room_join_subgraph_edge_frame_queues_a_link) {
@@ -262,7 +282,7 @@ TEST(room_validate_speaks_for_the_live_state) {
   apply(room, AddKind{KindId{"sky"}, NodeColor::sky}, 1);
   CHECK(room.validate(AddKind{KindId{"dupe"}, NodeColor::sky}).has_value());
   CHECK_FALSE(room.validate(AddKind{KindId{"gold"}, NodeColor::gold}).has_value());
-  apply(room, CreateNode{nid("a"), "A", "i", NodeColor::sky, {}, std::nullopt}, 2);
+  apply(room, CreateNode{nid("a"), "A", "i", NodeColor::sky}, 2);
   CHECK_FALSE(room.validate(RenameNode{nid("a"), "x"}).has_value());
   CHECK_EQ(room.validate(RenameNode{nid("anything"), "x"}),
            std::optional<std::string>("no node in this tree is named \"anything\""));
@@ -272,7 +292,7 @@ TEST(room_recoloring_a_kind_repaints_nodes) {
   FakeBus bus;
   TreeRoom room = makeRoom(bus);
 
-  apply(room, CreateNode{nid("a"), "A", "i", NodeColor::olive, {}, std::nullopt}, 1);
+  apply(room, CreateNode{nid("a"), "A", "i", NodeColor::olive}, 1);
   apply(room, AddKind{KindId{"learn"}, NodeColor::olive}, 2);
   apply(room, RecolorKind{KindId{"learn"}, NodeColor::brick}, 3);
 
@@ -423,7 +443,7 @@ TEST(room_import_loses_a_re_sent_kind_to_a_remove_stamped_before_it_that_arrives
   FakeBus bus;
   TreeRoom room = makeRoom(bus);
   apply(room, AddKind{KindId{"backend"}, NodeColor::sky, "Backend"}, 10);
-  apply(room, CreateNode{nid("review"), "Review", "", NodeColor::sky, {}, std::nullopt}, 20);
+  apply(room, CreateNode{nid("review"), "Review", "", NodeColor::sky}, 20);
 
   Graft graft;
   graft.document.kinds = {{KindId{"backend"}, NodeColor::sky, "Backend services"}};
@@ -483,7 +503,7 @@ TEST(room_replays_a_round_trip_rehue_to_the_room_it_left) {
   FakeBus bus;
   TreeRoom live = makeRoom(bus);
   apply(live, AddKind{KindId{"k"}, NodeColor::sky, "K"}, 1);
-  apply(live, CreateNode{nid("a"), "A", "", NodeColor::sky, {}, std::nullopt}, 2);
+  apply(live, CreateNode{nid("a"), "A", "", NodeColor::sky}, 2);
   const LooseGraph persisted{live.exportState()};
   const Legend persistedLegend{live.exportLegend()};
 
@@ -495,9 +515,8 @@ TEST(room_replays_a_round_trip_rehue_to_the_room_it_left) {
   a.label = "A";
   a.color = NodeColor::sky;
   graft.document.nodes = {a};
-  graft.omittedNodeRegisters[nid("a")] = {NodeRegister::icon, NodeRegister::order, NodeRegister::position,
-                                          NodeRegister::status, NodeRegister::description, NodeRegister::links,
-                                          NodeRegister::opens};
+  graft.omittedNodeRegisters[nid("a")] = {NodeRegister::icon,        NodeRegister::order, NodeRegister::status,
+                                          NodeRegister::description, NodeRegister::links, NodeRegister::opens};
   REQUIRE(live.importTree(graft, 10, uid()).has_value());
   live.landPendingOps(log);
   CHECK(live.snapshot().nodes[0].color == NodeColor::plum);
@@ -526,8 +545,8 @@ TEST(room_applies_an_empty_batch_as_a_no_op_that_mints_no_seq) {
 TEST(room_hands_its_pointers_to_a_caller_who_can_write_the_tree_and_to_nobody_else) {
   FakeBus bus;
   LooseGraph graph;
-  graph.createNode(nid("idea"), "Idea", "", NodeColor::sky, std::nullopt, at(1));
-  graph.createNode(nid("plain"), "Plain", "", NodeColor::sky, std::nullopt, at(2));
+  graph.createNode(nid("idea"), "Idea", "", NodeColor::sky, at(1));
+  graph.createNode(nid("plain"), "Plain", "", NodeColor::sky, at(2));
   graph.setOpens(nid("idea"), tid("t_sub"), at(3));
   const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, uid("owner"), Visibility::public_, 0, bus);
   const TreeRoom nobodys(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, std::nullopt, Visibility::public_, 0, bus);

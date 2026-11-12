@@ -9,7 +9,7 @@ import { ProgressLattice } from './progressLattice.js';
 import { materialize } from './materialize.js';
 import { UNSENDABLE, isOwnershipRefusal, isSessionRefusal, strandsTheBank } from './refusals.js';
 import { SyncStore } from './SyncStore.js';
-import { frameWrites, outboxStamps, outboxWrites, pendingGestures, pendingRecordCount, retainedProgressGestures, writeStamps } from './pendingWrites.js';
+import { frameWrites, outboxStamps, outboxWrites, pendingGestures, pendingRecordCount, retainedGestures, writeStamps } from './pendingWrites.js';
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { ProgressStore } from '../persistence/ProgressStore.js';
 import { GENESIS_STAMP } from '../model/Legend.js';
@@ -175,7 +175,7 @@ export class SyncSession {
       structureInFlight: this.rebaselining?.has('structure') ? 0 : inFlightCount('structure', this.inFlight),
       progressInFlight: this.rebaselining?.has('progress') ? 0 : inFlightCount('progress', this.progressInFlight),
       structureGestures: this.rebaselining?.has('structure') ? 0 : Object.keys(this.gestures.structure).length,
-      progressGestures: this.rebaselining?.has('progress') ? 0 : Object.keys(retainedProgressGestures(owedProgress, this.gestures.progress)).length,
+      progressGestures: this.rebaselining?.has('progress') ? 0 : Object.keys(retainedGestures('progress', owedProgress, this.gestures.progress)).length,
       rebaselining: this.rebaselining != null,
       refused: this.refusals.values().next().value ?? null,
       receiptVersion: this.receiptVersion,
@@ -332,7 +332,6 @@ export class SyncSession {
       label: n.label ?? '', labelAt: genesis, icon: n.icon ?? '', iconAt: genesis,
       color: n.color ?? 'terracotta', colorAt: genesis,
       order: n.order ?? '', orderAt: genesis,
-      ...(n.position ? { position: n.position, positionAt: genesis } : {}),
       ...(n.status ? { status: n.status, statusAt: genesis } : {}),
       ...(n.description ? { description: n.description, descriptionAt: genesis } : {}),
       ...(n.links?.length ? { links: n.links, linksAt: genesis } : {}),
@@ -392,10 +391,12 @@ export class SyncSession {
       this.emitProjection('structure');
     }
     restored(this.progress, saved?.progress);
-    this.gestures.structure = pendingGestures(saved?.gestures?.structure ? {} : this.lattice.toFrame(), this.confirmedStructure.toFrame(), saved?.gestures?.structure);
+    const restoredFrame = this.lattice.toFrame();
+    this.gestures.structure = pendingGestures(saved?.gestures?.structure ? {} : restoredFrame, this.confirmedStructure.toFrame(),
+      retainedGestures('structure', restoredFrame, saved?.gestures?.structure));
     // localStorage residue folds in uncovered, so the first graft flushes it.
     if (this.registry) new ProgressStore().drainInto(this.treeId, this.progress, this.reportInvalidProgressMark);
-    this.gestures.progress = pendingGestures(this.progress.toFrame(), this.confirmedProgress.toFrame(), retainedProgressGestures(this.progress.toFrame(), saved?.gestures?.progress));
+    this.gestures.progress = pendingGestures(this.progress.toFrame(), this.confirmedProgress.toFrame(), retainedGestures('progress', this.progress.toFrame(), saved?.gestures?.progress));
     if (this.progress.marks.size) {
       this.progress.seedClock(this.clock);
       this.emitProjection('progress');
@@ -695,7 +696,7 @@ export class SyncSession {
       frontier = this.progress.join(frame, this.reportInvalidProgressMark);
       this.confirmedProgress = new ProgressLattice();
       this.confirmedProgress.join(frame);
-      this.gestures.progress = pendingGestures(this.progress.toFrame(), this.confirmedProgress.toFrame(), retainedProgressGestures(this.progress.toFrame(), this.gestures.progress));
+      this.gestures.progress = pendingGestures(this.progress.toFrame(), this.confirmedProgress.toFrame(), retainedGestures('progress', this.progress.toFrame(), this.gestures.progress));
     } catch (error) {
       this.reportOnce('roadmap-sync-frame', error);
       this.forceReconnect();

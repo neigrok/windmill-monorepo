@@ -83,7 +83,6 @@ function newNode() {
     icon: { v: '', at: { ...UNSET } },
     color: { v: 'terracotta', at: { ...UNSET } },
     order: { v: '', at: { ...UNSET } },  // fractional-index key, scoped to the parent; '' falls back to creation time
-    position: { v: null, at: { ...UNSET } },
     status: { v: null, at: { ...UNSET } },
     description: { v: '', at: { ...UNSET } },
     links: { v: [], at: { ...UNSET } },
@@ -228,8 +227,6 @@ export class TreeLattice {
       mergeLww(record.icon, n.icon ?? '', fold(parseHlc(n.iconAt)));
       mergeLww(record.color, n.color ?? 'terracotta', fold(parseHlc(n.colorAt)));
       mergeLww(record.order, typeof n.order === 'string' ? n.order : '', fold(parseHlc(n.orderAt)));
-      const position = n.position && typeof n.position === 'object' ? { x: n.position.x, y: n.position.y } : null;
-      mergeLww(record.position, position, fold(parseHlc(n.positionAt)));
       mergeLww(record.status, n.status === 'active' || n.status === 'inProgress' ? 'none' : n.status ?? null, fold(parseHlc(n.statusAt)));
       mergeLww(record.description, typeof n.description === 'string' ? n.description : '', fold(parseHlc(n.descriptionAt)));
       // Mirrors the backend's linksFromJson: bare strings become url-only links, other shapes drop.
@@ -416,7 +413,6 @@ export class TreeLattice {
         createdAt: { ...record.life.addedAt },  // the creation stamp that fallback compares
         createdMs: stampedMs(record.life.addedAt),  // when the step was added to this tree; null is unknown
         prerequisites: parentsOf.get(id) ?? [],
-        position: record.position.v ? { ...record.position.v } : undefined,
         status: record.status.v ?? undefined,
         description: record.description.v || undefined,
         links: record.links.v.length ? record.links.v.map((l) => ({ ...l })) : undefined,

@@ -8,7 +8,7 @@ static NodeId nid(const char* s) { return NodeId{std::string(s)}; }
 static Hlc at(std::uint64_t ms, const char* actor = "a") { return Hlc{ms, 0, actor}; }
 
 static void put(LooseGraph& g, const char* id) {
-  g.createNode(nid(id), id, "icon", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid(id), id, "icon", NodeColor::sky, at(1));
 }
 
 TEST(clean_graph_reports_clean) {
@@ -49,14 +49,14 @@ TEST(masked_work_flags_a_tombstoned_parent_with_a_live_child) {
   LooseGraph g;
   put(g, "parent");
   g.deleteNode(nid("parent"), at(10));           // the delete stands
-  g.createNode(nid("child"), "Child", "x", NodeColor::gold, std::nullopt, at(20));
+  g.createNode(nid("child"), "Child", "x", NodeColor::gold, at(20));
   g.addEdge(nid("parent"), nid("child"), at(21)); // a live child hangs off the tombstone
 
   auto report = TreeDiagnostics::assess(g, Legend{});
   REQUIRE_EQ(report.maskedWork.size(), 1u);
   CHECK_EQ(report.maskedWork[0], nid("parent"));
 
-  g.createNode(nid("parent"), "Parent", "x", NodeColor::sky, std::nullopt, at(30));
+  g.createNode(nid("parent"), "Parent", "x", NodeColor::sky, at(30));
   CHECK_EQ(TreeDiagnostics::assess(g, Legend{}).maskedWork.size(), 0u);
 }
 
@@ -102,7 +102,7 @@ TEST(high_in_degree_smell) {
   put(g, "child");
   for (int i = 0; i < 5; ++i) {
     std::string parent = "p" + std::to_string(i);
-    g.createNode(NodeId{parent}, parent, "icon", NodeColor::sky, std::nullopt, at(1));
+    g.createNode(NodeId{parent}, parent, "icon", NodeColor::sky, at(1));
     g.addEdge(NodeId{parent}, nid("child"), at(2));
   }
   auto report = TreeDiagnostics::assess(g, Legend{});
@@ -118,10 +118,10 @@ TEST(a_hue_no_kind_wears_is_one_smell_per_hue_and_an_empty_legend_is_one_line) {
   put(g, "worn");
   for (int i = 0; i < 12; ++i) {
     const std::string id = "o" + std::string(i < 10 ? "0" : "") + std::to_string(i);
-    g.createNode(NodeId{id}, id, "icon", NodeColor::olive, std::nullopt, at(1));
+    g.createNode(NodeId{id}, id, "icon", NodeColor::olive, at(1));
   }
-  g.createNode(nid("plum"), "plum", "icon", NodeColor::plum, std::nullopt, at(1));
-  g.createNode(nid("gone"), "gone", "icon", NodeColor::plum, std::nullopt, at(1));
+  g.createNode(nid("plum"), "plum", "icon", NodeColor::plum, at(1));
+  g.createNode(nid("gone"), "gone", "icon", NodeColor::plum, at(1));
   g.deleteNode(nid("gone"), at(2));
   const Legend legend({{KindId{"k"}, NodeColor::sky, "K"}}, at(1));
 

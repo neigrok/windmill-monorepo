@@ -23,7 +23,7 @@ TEST(version_vector_observe_and_cover) {
 
 TEST(frontier_folds_every_stamp_a_state_carries) {
   LooseGraph graph;
-  graph.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(4));
+  graph.createNode(nid("a"), "A", "x", NodeColor::sky, at(4));
   graph.addEdge(nid("a"), nid("a"), at(7, "b"));
   Legend legend = Legend::seededDefaults(at(2, "c"));
 
@@ -36,7 +36,7 @@ TEST(frontier_folds_every_stamp_a_state_carries) {
 
 TEST(a_frames_frontier_folds_its_title_and_guide_beside_its_graph_and_legend) {
   LooseGraph graph;
-  graph.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(4));
+  graph.createNode(nid("a"), "A", "x", NodeColor::sky, at(4));
   Subgraph frame;
   frame.graph = graph.exportState();
   frame.legend = Legend::seededDefaults(at(2, "c")).exportState();
@@ -50,8 +50,8 @@ TEST(a_frames_frontier_folds_its_title_and_guide_beside_its_graph_and_legend) {
 
 TEST(delta_against_empty_reconstructs_the_whole_state) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, Vec2{1, 2}, at(1));
-  source.createNode(nid("b"), "B", "y", NodeColor::gold, std::nullopt, at(2));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  source.createNode(nid("b"), "B", "y", NodeColor::gold, at(2));
   source.addEdge(nid("a"), nid("b"), at(3));
   Legend legend = Legend::seededDefaults(at(1));
 
@@ -69,7 +69,7 @@ TEST(delta_against_empty_reconstructs_the_whole_state) {
 
 TEST(delta_against_full_frontier_is_empty) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   Legend legend = Legend::seededDefaults(at(1));
   VersionVector full = frontier(source.exportState(), legend.exportState());
 
@@ -81,7 +81,7 @@ TEST(delta_against_full_frontier_is_empty) {
 
 TEST(delta_masks_fields_the_peer_already_covers) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   source.setColor(nid("a"), NodeColor::brick, at(5));  // a later field the peer has not seen
 
   VersionVector peer;
@@ -100,7 +100,7 @@ TEST(delta_masks_fields_the_peer_already_covers) {
 // The order register rides anti-entropy exactly like color: frontier observes orderAt, nodeUncovered detects it, maskNode carries it.
 TEST(delta_carries_an_order_write_the_peer_has_not_yet_seen) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   GraphState orderWrite;  // no domain command sets order — it arrives as a register join
   NodeStateEntry entry;
   entry.id = nid("a");
@@ -122,14 +122,14 @@ TEST(delta_carries_an_order_write_the_peer_has_not_yet_seen) {
   CHECK(delta.coverage->covers(at(5)));    // frontier folded the order stamp into coverage
 
   LooseGraph target;                        // a peer holding only the create reconciles in one join
-  target.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  target.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   target.join(delta.graph);
   CHECK_EQ(target.exportNode(nid("a"))->order, std::string("a5"));
 }
 
 TEST(delta_carries_opens_to_a_peer_that_has_not_seen_the_write_and_masks_it_once_covered) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   source.setOpens(nid("a"), TreeId{"t_sailing"}, at(5));
 
   VersionVector behind;
@@ -143,7 +143,7 @@ TEST(delta_carries_opens_to_a_peer_that_has_not_seen_the_write_and_masks_it_once
   CHECK(delta.coverage->covers(at(5)));  // the frontier folded the pointer's stamp into coverage
 
   LooseGraph target;  // a peer holding only the create reconciles in one join
-  target.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  target.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   target.join(delta.graph);
   CHECK(target.exportState() == source.exportState());
 
@@ -195,20 +195,20 @@ TEST(a_readers_view_says_which_tree_no_node_opens_and_drops_an_entry_left_with_n
 
 TEST(two_divergent_replicas_reconcile_to_the_full_join_in_one_exchange) {
   LooseGraph baseGraph;
-  baseGraph.createNode(nid("root"), "Root", "x", NodeColor::sky, std::nullopt, at(1));
+  baseGraph.createNode(nid("root"), "Root", "x", NodeColor::sky, at(1));
   GraphState base = baseGraph.exportState();
   Legend baseLegend = Legend::seededDefaults(at(1));
   LegendState baseLegendState = baseLegend.exportState();
 
   LooseGraph xGraph(base);
   xGraph.setLabel(nid("root"), "Root-X", at(30, "x"));
-  xGraph.createNode(nid("x1"), "X1", "x", NodeColor::gold, std::nullopt, at(31, "x"));
+  xGraph.createNode(nid("x1"), "X1", "x", NodeColor::gold, at(31, "x"));
   Legend xLegend(baseLegendState);
   xLegend.addKind(kid("infra"), NodeColor::sky, at(32, "x"));
 
   LooseGraph yGraph(base);
   yGraph.deleteNode(nid("root"), at(20, "y"));
-  yGraph.createNode(nid("y1"), "Y1", "x", NodeColor::plum, std::nullopt, at(21, "y"));
+  yGraph.createNode(nid("y1"), "Y1", "x", NodeColor::plum, at(21, "y"));
   yGraph.addEdge(nid("root"), nid("y1"), at(22, "y"));
   Legend yLegend(baseLegendState);
   yLegend.setLabel(kid("build"), "Build-Y", at(23, "y"));
@@ -240,7 +240,7 @@ TEST(two_divergent_replicas_reconcile_to_the_full_join_in_one_exchange) {
 
 TEST(joining_a_delta_advances_the_receiver_to_cover_it) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(5, "s"));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(5, "s"));
   Legend legend = Legend::seededDefaults(at(1, "s"));
 
   LooseGraph peer;
