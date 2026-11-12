@@ -1327,3 +1327,23 @@ test('the steps whose pointer this device wrote and the server has not confirmed
   assert.deepEqual([...session.ownPointers()], []);
   await settle([store]);
 });
+
+for (const code of ['sign-in-required', 'no-such-tree']) {
+  test(`a ${code} refusal on a write makes the session a reader for pointers until a writer answers: the next pointer waits, owed`, async (t) => {
+    const env = environment(t);
+    const store = env.store();
+    const session = await env.session(store);
+    session.ws.open();
+    session.receive(answer(twoSteps(), 1, 'writer'));
+    session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_sail' });
+    await settle([store]);
+    const [refused] = session.ws.frames.filter((frame) => frame.t === 'subgraph');
+    session.receive({ t: 'reject', treeId: 'tree', frameId: refused.frameId, code, reason: 'no' });
+    assert.equal(session.writesPointers, false);
+
+    session.dispatch({ kind: 'SetNodeTree', id: 'a', opens: 't_coast' });
+    await settle([store]);
+    assert.deepEqual(pointerWrites(session), ['k:t_sail'], 'nothing more leaves for a connection the server stopped taking for a writer');
+    assert.deepEqual([...session.ownPointers()].sort(), ['a', 'k']);
+  });
+}
