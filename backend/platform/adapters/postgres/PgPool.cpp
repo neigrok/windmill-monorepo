@@ -39,6 +39,8 @@ std::unique_ptr<pqxx::connection> PgPool::acquire() {
     auto opened = std::make_unique<pqxx::connection>(connString_);
     pqxx::work txn{*opened};
     txn.exec("SET statement_timeout = '5s'");  // a runaway query can't pin its borrower forever
+    // Every statement here is a short one, planned on each call: compiling its plan costs more than running it.
+    txn.exec("SET jit = off");
     txn.commit();
     return opened;
   } catch (...) {
