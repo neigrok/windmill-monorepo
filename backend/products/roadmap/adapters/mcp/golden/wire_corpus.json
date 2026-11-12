@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 21,
+  "schemaVersion" : 22,
   "steps" : 
   [
     {
@@ -54,7 +54,7 @@
         "structuredContent" : null
       },
       "step" : 1,
-      "tool" : "describe_tree"
+      "tool" : "update_tree"
     },
     {
       "result" : 

@@ -1779,7 +1779,7 @@ ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& 
 }
 
 // The guide is user content: a refusal names its bound and its type, never its text.
-ToolResult describeTree(TreeRegistry& registry, const TreeId& tree, const Json::Value& args, const UserId& caller) {
+ToolResult updateTree(TreeRegistry& registry, const TreeId& tree, const Json::Value& args, const UserId& caller) {
   const Json::Value& title = args["title"];
   const Json::Value& guide = args["guide"];
   if (title.isNull() && guide.isNull())
@@ -1862,7 +1862,7 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
   std::optional<UserId> reader = caller.empty() ? std::nullopt : std::optional<UserId>(caller);
 
   if (name == "delete_tree")     return removeTree(treeRegistry_, tree, caller);
-  if (name == "update_tree" || name == "describe_tree") return describeTree(treeRegistry_, tree, arguments, caller);
+  if (name == "update_tree") return updateTree(treeRegistry_, tree, arguments, caller);
   if (name == "get_tree")        return readTree(registry_, treeRegistry_, progress_, appOrigin_, tree, arguments, reader);
   if (name == "get_nodes")       return readNodes(registry_, treeRegistry_, progress_, appOrigin_, tree, arguments, reader);
   if (name == "get_diagnostics") return readDiagnostics(registry_, treeRegistry_, tree, arguments, reader);

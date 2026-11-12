@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 21;
+constexpr int kWireCorpusVersion = 22;
 
 struct Step {
   const char* tool;
@@ -39,7 +39,7 @@ Json::Value strings(std::vector<const char*> values) {
 std::vector<Step> plan() {
   return {
       {"get_tree", kNoArgs},
-      {"describe_tree", with("guide", "Ship the root first; render and sync follow it.")},
+      {"update_tree", with("guide", "Ship the root first; render and sync follow it.")},
       {"add_kind", obj({{"id", "infra"}, {"hue", "plum"}, {"label", "Infra"},
                         {"description", "the plumbing under the product"}})},
       {"create_node", obj({{"id", "root"}, {"label", "Ship v1"}, {"color", "gold"}})},

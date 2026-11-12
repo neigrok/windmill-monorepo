@@ -330,7 +330,7 @@ TEST(a_run_reads_no_tree_above_the_tended_one) {
   } agent;
   test::Harness tended;
   tended.plant("t_root", tended.caller, "The method of every tree under this one.", {"t"});
-  CHECK_FALSE(tended.call("describe_tree", test::with("guide", "Rig first, then sail.")).isError);
+  CHECK_FALSE(tended.call("update_tree", test::with("guide", "Rig first, then sail.")).isError);
   Harness h;
   TendingService service(h.runs, agent, tended.tools, tended.registry, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
 
