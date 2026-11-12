@@ -8,7 +8,7 @@ const guide = await closuresIn('guide/useGuide.js');
 
 // The save as written, its collaborators recorded: which door took the write, what reported and what was told. It answers
 // null once a door took the guide, else why none did.
-function saveWith({ ready = true, sessionTree = 'sail', claimed = true, owner = true, patch = async () => {}, local = async () => {} } = {}) {
+function saveWith({ ready = true, sessionTree = 'sail', claimed = true, owner = true, online = true, patch = async () => {}, local = async () => {} } = {}) {
   const calls = [];
   const save = guide.callback('save', {
     treeId: 'sail',
@@ -27,6 +27,7 @@ function saveWith({ ready = true, sessionTree = 'sail', claimed = true, owner = 
     track: (name, props) => calls.push(['event', name, { ...props }]),
     guideLengthBucket,
     saveFailureReason,
+    navigator: { onLine: online },
   });
   return { save, calls };
 }
@@ -62,8 +63,10 @@ test('before its lattice loads, a device tree takes the write in its own store a
 test('a save no door took reports its static operation and answers why, the bounded reason its event carries', async () => {
   const failing = (status) => async () => { throw Object.assign(new Error('private server sentence'), { status }); };
   for (const [options, status, reason] of [
-    [{ ready: false, patch: failing(0) }, 0, 'offline'],
+    [{ ready: false, online: false, patch: failing(0) }, 0, 'offline'],
+    [{ ready: false, patch: failing(0) }, 0, 'server'],
     [{ ready: false, patch: failing(403) }, 403, 'refused'],
+    [{ ready: false, patch: failing(429) }, 429, 'server'],
     [{ ready: false, patch: failing(503) }, 503, 'server'],
     [{ ready: new InadmissibleGuide() }, undefined, 'refused'],
     [{ ready: false, claimed: false, local: async () => { throw new MissingDeviceTree(); } }, undefined, 'device'],

@@ -255,7 +255,8 @@
   background: var(--surface-hover);
 }
 .st-guide-paper :is(button, textarea):focus-visible,
-.st-guide-prose.is-ringed:focus {
+.st-guide-prose.is-ringed:focus,
+.st-guide-save.is-ringed:focus {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
@@ -301,10 +302,10 @@
 .st-guide-field--over {
   border-color: var(--color-danger);
 }
-/* While a recovery line stands, the field rests on the plain edge until it is focused again; its text does not move. */
+/* While a recovery line stands, the field rests on the plain edge until it is focused again: the edge's colour alone
+   changes, so its box and its text stay where they were. */
 .st-guide-field--resting:not(:focus) {
-  padding: 16.5px 18.5px;
-  border: 1px solid var(--border-default);
+  border-color: var(--border-default);
 }
 .st-guide-footer {
   display: flex;
@@ -388,11 +389,8 @@
   flex-shrink: 0;
   color: var(--color-danger);
 }
-.st-guide-line-mark {
-  flex-shrink: 0;
-  width: 20px;
+.st-guide-footer--copied .st-guide-line > svg {
   color: var(--color-brand);
-  font: 700 20px/24px var(--font-body);
 }
 .st-guide-line-words {
   display: flex;
@@ -413,7 +411,9 @@
   gap: 9px;
 }
 
-/* ---- The note on phones: a sheet as tall as its text, the footer riding the keyboard while writing. ---- */
+/* ---- The note on phones: a sheet as tall as its text, the footer riding the keyboard while writing. Where the sheet is
+   too short for what it holds, the field gives up its height first and then the sheet scrolls under Cancel and the
+   footer's button, which stay at its foot. ---- */
 .st-guide-paper--phone {
   position: relative;
   gap: 0;
@@ -425,6 +425,8 @@
 }
 .st-guide-paper--phone.st-guide-paper--writing {
   padding-bottom: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .st-guide-grabber {
   flex-shrink: 0;
@@ -481,13 +483,12 @@
   flex-wrap: nowrap;
   align-items: stretch;
   gap: 3px;
-  padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 16px 0;
   border-top: 1px solid var(--border-default);
 }
 /* On phones a recovery line is a block of its own above the actions, under no rule. */
 .st-guide-paper--phone > .st-guide-footer--failed,
 .st-guide-paper--phone > .st-guide-footer--copied {
-  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   border-top-color: transparent;
 }
 .st-guide-paper--phone .st-guide-footer > .st-guide-closing {
@@ -506,11 +507,6 @@
 }
 .st-guide-paper--phone .st-guide-footer--copied .st-guide-line {
   background: var(--surface-sunken);
-}
-.st-guide-paper--phone .st-guide-line-mark {
-  width: 16px;
-  font-size: 16px;
-  line-height: 20px;
 }
 .st-guide-paper--phone .st-guide-line-words {
   gap: 0;
@@ -549,8 +545,15 @@
   font-weight: 700;
 }
 .st-guide-paper--phone .st-guide-actions {
+  position: sticky;
+  bottom: 0;
   flex: none;
   justify-content: space-between;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface-card);
+}
+.st-guide-paper--phone .st-guide-line + .st-guide-actions {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 .st-guide-cancel,
 .st-guide-save,

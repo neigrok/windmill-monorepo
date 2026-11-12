@@ -60,7 +60,7 @@ export function useRoomGuide({ treeId, tree, who, deviceLine, sessionRef }) {
     } catch (error) {
       ownWrite.current = null;
       reportUnexpectedFailure('roadmap-guide-save', error);
-      const reason = saveFailureReason(error, door);
+      const reason = saveFailureReason(error, door, navigator.onLine !== false);
       track('roadmap_guide', { step: 'save', outcome: 'failed', length, reason });
       return reason;
     }

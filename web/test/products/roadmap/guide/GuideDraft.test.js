@@ -47,23 +47,28 @@ test('a saved length leaves as one of five bounded labels', () => {
     ['0', '1-500', '1-500', '501-2000', '501-2000', '2001-4500', '2001-4500', '4501-5000', '4501-5000']);
 });
 
-test('a failed save is offline when the request never arrived, refused on a 4xx or inadmissible text, and else the fault of the door that failed', () => {
+test('a failed save is offline only when the request never arrived and the browser reports no connection, refused on a 4xx that trying again cannot change or on inadmissible text, and else the fault of the door that failed', () => {
   const answered = (status) => Object.assign(new Error('private server sentence'), { status });
+  const online = true;
   assert.deepEqual([
-    saveFailureReason(answered(0), 'server'),
-    saveFailureReason(answered(0), 'device'),
-    saveFailureReason(answered(400), 'server'),
-    saveFailureReason(answered(401), 'server'),
-    saveFailureReason(answered(499), 'server'),
-    saveFailureReason(new InadmissibleGuide(), 'session'),
-    saveFailureReason(new InadmissibleGuide(), 'device'),
-    saveFailureReason(answered(500), 'server'),
-    saveFailureReason(answered(503), 'server'),
-    saveFailureReason(new TypeError('private'), 'server'),
-    saveFailureReason(new Error('local tree changed during a write'), 'device'),
-    saveFailureReason(new Error('private'), 'session'),
-    saveFailureReason(undefined, 'device'),
-  ], ['offline', 'offline', 'refused', 'refused', 'refused', 'refused', 'refused', 'server', 'server', 'server', 'device', 'device', 'device']);
+    saveFailureReason(answered(0), 'server', false),
+    saveFailureReason(answered(0), 'server', online),
+    saveFailureReason(answered(400), 'server', online),
+    saveFailureReason(answered(401), 'server', online),
+    saveFailureReason(answered(403), 'server', false),
+    saveFailureReason(answered(404), 'server', online),
+    saveFailureReason(answered(499), 'server', online),
+    saveFailureReason(answered(408), 'server', online),
+    saveFailureReason(answered(429), 'server', online),
+    saveFailureReason(new InadmissibleGuide(), 'session', online),
+    saveFailureReason(new InadmissibleGuide(), 'device', false),
+    saveFailureReason(answered(500), 'server', online),
+    saveFailureReason(answered(503), 'server', false),
+    saveFailureReason(new TypeError('private'), 'server', online),
+    saveFailureReason(new Error('local tree changed during a write'), 'device', online),
+    saveFailureReason(new Error('private'), 'session', false),
+    saveFailureReason(undefined, 'device', online),
+  ], ['offline', 'server', 'refused', 'refused', 'refused', 'refused', 'refused', 'server', 'server', 'refused', 'refused', 'server', 'server', 'server', 'device', 'device', 'device']);
 });
 
 test('a paste carrying a NUL or a lone surrogate saves what the person sees: no NUL, the lone half as its replacement glyph', () => {

@@ -3,7 +3,7 @@
 
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
-import { AlertCircle, BookOpen, Pencil, X } from 'lucide-react';
+import { AlertCircle, BookOpen, Check, Pencil, X } from 'lucide-react';
 import { Button } from '../../../design-system';
 import { focusableElements } from '../../../design-system/feedback/dialogFocus.js';
 import { track } from '../../../telemetry/beacon.js';
@@ -15,7 +15,8 @@ import { useArrivalFade } from './useGuide.js';
 import './guide.css';
 
 // The line that stands in the footer once a save found no door, by the reason the save answered, and after its draft was
-// copied: the fact, the way out and the one act that helps. This device's store fails in the server's words.
+// copied: the fact, the way out and the one act that helps. This device's store fails in the server's words, and Done
+// returns a copied draft's line to the refusal it answered.
 const COULD_NOT_SAVE = { fact: t('roadmap.guide.saveFailed'), wayOut: t('roadmap.guide.saveFailedWayOut'), act: 'retry', label: t('roadmap.common.tryAgain') };
 const RECOVERY_LINES = {
   offline: { fact: t('roadmap.guide.saveOffline'), wayOut: t('roadmap.guide.saveOfflineWayOut'), act: 'retry', label: t('roadmap.common.tryAgain') },
@@ -56,7 +57,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
   const prose = useRef(null);
   const field = useRef(null);
   const confirmation = useRef(null);
-  const actions = useRef(null);
+  const stop = useRef(-1);
   const lastPress = useRef(guide.opened.keyboard ? 'key' : 'pointer');
   const enterDown = useRef(false);
   const settled = useRef(false);
@@ -119,6 +120,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
   };
 
   // A save no door took leaves its reason standing as a line; one made while that line offers Try again is the retry.
+  // The line moves no focus: it stands under the control the person used, the field after ⌘↩ or the footer's button.
   const save = async () => {
     if (!savable || saving || discarding) return;
     if (standing?.act === 'retry') track('roadmap_guide', { step: 'retry', reason: line.says });
@@ -145,14 +147,9 @@ export function GuideNote({ guide, band, view, onSeat }) {
     setLine((before) => before && { says: 'copied', nth: before.nth + 1 });
   };
 
-  // Discard, and Done once the draft is copied, drop a changed draft by choice; neither leaves under a save in flight.
-  const discard = () => {
-    if (saving) return;
-    track('roadmap_guide', { step: 'discard' });
-    leave();
-  };
-
+  // A save in flight holds the draft it is sending, as it holds the frame.
   const loadLatest = () => {
+    if (saving) return;
     track('roadmap_guide', { step: 'loadLatest' });
     setLine(null);
     setCaret({ offset: text.length, scroll: 0 });
@@ -170,9 +167,15 @@ export function GuideNote({ guide, band, view, onSeat }) {
       else requestLeave();
       return;
     }
+    // ⌘↩ presses Save or Try again and no other act, and a held key is one press: its repeats neither save again nor
+    // press the button focus stands on.
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && writing) {
       event.preventDefault();
-      save();
+      if (!event.repeat && (!standing || standing.act === 'retry')) save();
+      return;
+    }
+    if (event.key === 'Enter' && event.repeat && event.target.closest?.('button')) {
+      event.preventDefault();
       return;
     }
     if (event.key !== 'Tab') return;
@@ -264,11 +267,34 @@ export function GuideNote({ guide, band, view, onSeat }) {
     else field.current?.focus({ preventScroll: true });
   }, [discarding]);
 
-  // A recovery line's one act takes focus as the line appears: Enter runs it, the field rests and a phone's keyboard
-  // goes down.
+  // Crossing 744px swaps the footer's buttons for the other band's, which drops the focus one of them held to the page:
+  // the stop in the same place takes it.
   useLayoutEffect(() => {
-    if (line) actions.current?.lastElementChild.focus({ preventScroll: true });
-  }, [line]);
+    if (document.activeElement === document.body) focusableElements(paper.current)[stop.current]?.focus({ preventScroll: true });
+  }, [phone]);
+
+  // When the field gives up height, to a line that arrives beneath it or a keyboard that rises, the caret's line stays
+  // in view. A textarea does not say where its caret is drawn, so a hidden copy of the text before the caret measures it.
+  useLayoutEffect(() => {
+    const box = field.current;
+    if (!box) return undefined;
+    let height = box.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const shrank = box.clientHeight < height;
+      height = box.clientHeight;
+      if (!shrank || document.activeElement !== box) return;
+      const copy = document.createElement('div');
+      copy.className = box.className;
+      copy.style.cssText = `position: absolute; visibility: hidden; box-sizing: border-box; width: ${box.clientWidth}px; height: auto; min-height: 0; max-height: none; border: 0; white-space: pre-wrap; animation: none;`;
+      copy.textContent = `${box.value.slice(0, box.selectionEnd)}\u200b`;
+      box.after(copy);
+      const foot = copy.offsetHeight;
+      copy.remove();
+      if (foot > box.scrollTop + box.clientHeight) box.scrollTop = foot - box.clientHeight;
+    });
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [writing]);
 
   // Closing hands focus back to the guide's entry on the tree, unless it already went somewhere else. A changed draft
   // the room closed over, because the tree or the route moved on, is a draft discarded.
@@ -289,10 +315,19 @@ export function GuideNote({ guide, band, view, onSeat }) {
   if (entering) paperClasses.push('is-entering');
   if (phone) paperClasses.push('st-guide-paper--phone');
   if (writing) paperClasses.push('st-guide-paper--writing');
-  // The footer's last button: the standing line's act, else Save, which waits for a change that fits.
+  // The footer's last button: the standing line's act, else Save, which waits for a change that fits. Done keeps the
+  // draft and returns to the refusal it was copied under; leaving it is Cancel's to ask.
+  const acts = { retry: save, copy, done: () => setLine((before) => before && { says: 'refused', nth: before.nth + 1 }) };
   const act = standing
-    ? { label: standing.label, run: { retry: save, copy, done: discard }[standing.act], waits: false }
+    ? { label: standing.label, run: acts[standing.act], waits: false }
     : { label: t('roadmap.common.save'), run: save, waits: !savable };
+  // A press leaves focus on the button, which Safari would not: what the press brings, a line or its next act, stands
+  // under the control the person used, and a phone's keyboard goes down.
+  const press = (event) => {
+    if (act.waits) return;
+    event.currentTarget.focus({ preventScroll: true });
+    act.run();
+  };
 
   const seated = !phone && seat !== null;
   const note = (
@@ -302,6 +337,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
         aria-labelledby={titleId} tabIndex={-1}
         style={seated ? { maxHeight: `calc(100dvh - ${seat.top + 24}px)` } : undefined}
         onAnimationEnd={() => setEntering(false)}
+        onFocus={(event) => { stop.current = focusableElements(paper.current).indexOf(event.target); }}
         onKeyDown={modal ? undefined : (event) => {
           if (event.key !== 'Escape' || event.defaultPrevented) return;
           event.preventDefault();
@@ -387,8 +423,8 @@ export function GuideNote({ guide, band, view, onSeat }) {
               {standing ? (
                 <p key={line.nth} id={describerId} className="st-guide-line" role={copied ? 'status' : 'alert'}>
                   {copied
-                    ? <span className="st-guide-line-mark" aria-hidden>✓</span>
-                    : <AlertCircle size={phone ? 16 : 20} strokeWidth={1.67} aria-hidden />}
+                    ? <Check size={phone ? 16 : 20} strokeWidth={1.67} absoluteStrokeWidth aria-hidden />
+                    : <AlertCircle size={phone ? 16 : 20} strokeWidth={1.67} absoluteStrokeWidth aria-hidden />}
                   <span className="st-guide-line-words"><strong>{standing.fact}</strong> <span>{standing.wayOut}</span></span>
                 </p>
               ) : <>
@@ -397,15 +433,16 @@ export function GuideNote({ guide, band, view, onSeat }) {
                   {draft.counted ? guideCounter(draft) : ''}
                 </p>
               </>}
-              <div ref={actions} className="st-guide-actions">
+              <div className="st-guide-actions">
                 {phone ? <>
                   <button type="button" className="st-guide-cancel" onClick={requestLeave}>{t('roadmap.common.cancel')}</button>
-                  <button type="button" className="st-guide-save" aria-disabled={act.waits ? 'true' : undefined}
-                    aria-busy={saving ? 'true' : undefined} aria-describedby={describerId} onClick={act.run}>{act.label}</button>
+                  <button type="button" className={`st-guide-save${ringed ? ' is-ringed' : ''}`} aria-disabled={act.waits ? 'true' : undefined}
+                    aria-busy={saving ? 'true' : undefined} aria-describedby={describerId}
+                    onFocus={() => setRinged(lastPress.current === 'key')} onClick={press}>{act.label}</button>
                 </> : <>
                   <Button variant="secondary" onClick={requestLeave}>{t('roadmap.common.cancel')}</Button>
                   <Button variant={draft.changed ? 'primary' : 'secondary'} held={act.waits} ariaBusy={saving} describedBy={describerId}
-                    onClick={act.run}>{act.label}</Button>
+                    onClick={press}>{act.label}</Button>
                 </>}
               </div>
             </div>
@@ -421,7 +458,10 @@ export function GuideNote({ guide, band, view, onSeat }) {
             <p id={lossId}>{DISCARD_DRAFT.body}</p>
             <div>
               <Button variant="secondary" size={phone ? 'lg' : 'md'} onClick={() => setDiscarding(false)}>{DISCARD_DRAFT.keepEditing}</Button>
-              <Button variant="danger" size={phone ? 'lg' : 'md'} onClick={discard}>{DISCARD_DRAFT.discard}</Button>
+              <Button variant="danger" size={phone ? 'lg' : 'md'} onClick={() => {
+                track('roadmap_guide', { step: 'discard' });
+                leave();
+              }}>{DISCARD_DRAFT.discard}</Button>
             </div>
           </section>
         </div>
