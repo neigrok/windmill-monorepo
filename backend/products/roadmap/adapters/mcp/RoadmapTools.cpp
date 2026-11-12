@@ -87,11 +87,7 @@ std::optional<std::string> commandKindFor(const std::string& tool) {
   if (tool == "move_node")      return "RepositionNode";
   if (tool == "tidy")           return "TransitiveReduction";
   if (tool == "add_kind")       return "AddKind";
-  if (tool == "rename_kind")    return "RenameKind";
-  if (tool == "describe_kind")  return "DescribeKind";
   if (tool == "remove_kind")    return "RemoveKind";
-  if (tool == "reorder_kinds")  return "ReorderKinds";
-  if (tool == "recolor_kind")   return "RecolorKind";
   return std::nullopt;
 }
 
@@ -101,8 +97,7 @@ bool namesAnExistingNode(const std::string& tool) {
 }
 
 bool namesAnExistingKind(const std::string& tool) {
-  return tool == "rename_kind" || tool == "describe_kind" || tool == "remove_kind" ||
-         tool == "recolor_kind";
+  return tool == "remove_kind";
 }
 
 // `prefix` is blank at the top level and "nodes[3]." inside a list. A node's label, icon and
@@ -336,24 +331,7 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
       return bad;
     return optionalBool(args["crossBranchExempt"], "crossBranchExempt");
   }
-  if (tool == "rename_kind")
-    return requireString(args["label"], "label", Empty::allowed, kMaxKindLabelLength);
-  if (tool == "describe_kind") {
-    if (args["description"].isNull() && args["crossBranchExempt"].isNull())
-      return "nothing to set — pass \"description\", \"crossBranchExempt\", or both.";
-    if (std::optional<std::string> bad =
-            optionalString(args["description"], "description", kMaxKindDescriptionLength))
-      return bad;
-    return optionalBool(args["crossBranchExempt"], "crossBranchExempt");
-  }
-  if (tool == "remove_kind") return std::nullopt;  // its handle is all it takes
-  if (tool == "reorder_kinds") {
-    if (args["order"].isNull())
-      return "missing required argument \"order\" — the kind ids in the order you want them";
-    return optionalStrings(args["order"], "order", kMaxIdLength);
-  }
-  if (tool == "recolor_kind") return requireOneOf(args["hue"], "hue", kHues);
-  return std::nullopt;  // tidy takes nothing beyond treeId
+  return std::nullopt;  // remove_kind takes its handle alone, and tidy nothing beyond treeId
 }
 
 // Holds the tree's strand and opens the room; an absent tree becomes a tool-level error.
@@ -1496,7 +1474,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     tombstoned["nodes"] = static_cast<Json::UInt64>(footprint.tombstonedNodes.size());
     tombstoned["edges"] = static_cast<Json::UInt64>(footprint.tombstonedEdges.size());
     out["tombstoned"] = tombstoned;
-    // A held kind the batch re-hues carries its nodes, as recolor_kind does; the receipt counts them.
+    // A held kind the batch re-hues carries the nodes wearing its old hue; the receipt counts them.
     if (const Repaint repaint = room.repaintOf(graft); !repaint.rehued.empty())
       out["repaintedNodes"] = static_cast<Json::UInt64>(repaint.nodes.size());
     if (dryRun) {

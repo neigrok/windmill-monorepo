@@ -282,11 +282,7 @@ listed separately because their only server writes are authentication refresh or
 | `MCP roadmap_delete_node` (and unambiguous `delete_node` alias) | `mcp.roadmap_delete_node` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_tidy` (and unambiguous `tidy` alias) | `mcp.roadmap_tidy` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_add_kind` (and unambiguous `add_kind` alias) | `mcp.roadmap_add_kind` | completion; bounded refusal or result | unexpected |
-| `MCP roadmap_rename_kind` (and unambiguous `rename_kind` alias) | `mcp.roadmap_rename_kind` | completion; bounded refusal or result | unexpected |
-| `MCP roadmap_describe_kind` (and unambiguous `describe_kind` alias) | `mcp.roadmap_describe_kind` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_remove_kind` (and unambiguous `remove_kind` alias) | `mcp.roadmap_remove_kind` | completion; bounded refusal or result | unexpected |
-| `MCP roadmap_reorder_kinds` (and unambiguous `reorder_kinds` alias) | `mcp.roadmap_reorder_kinds` | completion; bounded refusal or result | unexpected |
-| `MCP roadmap_recolor_kind` (and unambiguous `recolor_kind` alias) | `mcp.roadmap_recolor_kind` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_update_kind` (and unambiguous `update_kind` alias) | `mcp.roadmap_update_kind` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_set_progress` (and unambiguous `set_progress` alias) | `mcp.roadmap_set_progress` | completion; bounded refusal or result; `opens-a-tree` when the call recorded no mark and at least one was refused as the tree's writer's on a node that opens a tree | unexpected |
 | `MCP roadmap_import_subgraph` (and unambiguous `import_subgraph` alias) | `mcp.roadmap_import_subgraph` | completion; bounded refusal or result; `opens-not-yours` when an `opens` names a tree that does not stand or is not the caller's; `kind-unknown` when a `kind` on any node names a kind the legend does not hold, `kind-hue-mismatch` when the `color` sent beside it is another hue than that kind wears; `opens-a-tree` when the graft changed nothing and its `progress[]` recorded no mark and had at least one refused as on a node that opens a tree; `failed`, the graft committed, when applying its `progress[]` throws; a clear of the marks on removed nodes that throws is its own `roadmap.import.clear_marks` line and leaves this one `ok` | unexpected |
@@ -351,11 +347,7 @@ listed separately because their only server writes are authentication refresh or
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.delete_node` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.tidy` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.add_kind` | completion; bounded stage outcome | unexpected |
-| `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.rename_kind` | completion; bounded stage outcome | unexpected |
-| `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.describe_kind` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.remove_kind` | completion; bounded stage outcome | unexpected |
-| `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.reorder_kinds` | completion; bounded stage outcome | unexpected |
-| `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.recolor_kind` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.update_kind` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.set_progress` | completion; bounded stage outcome; `opens-a-tree` when the call recorded no mark and at least one was refused as on a node that opens a tree | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.import_subgraph` | completion; bounded stage outcome | unexpected |

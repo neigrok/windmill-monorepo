@@ -268,7 +268,7 @@ TEST(room_validate_speaks_for_the_live_state) {
            std::optional<std::string>("no node in this tree is named \"anything\""));
 }
 
-TEST(room_recolor_kind_repaints_nodes) {
+TEST(room_recoloring_a_kind_repaints_nodes) {
   FakeBus bus;
   TreeRoom room = makeRoom(bus);
 

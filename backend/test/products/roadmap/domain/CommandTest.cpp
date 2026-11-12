@@ -47,7 +47,7 @@ TEST(transitive_reduction_drops_redundant_edge) {
   CHECK(g.edgePresent(nid("b"), nid("c")));
 }
 
-TEST(recolor_kind_swaps_hue_and_repaints_nodes) {
+TEST(recoloring_a_kind_swaps_hue_and_repaints_nodes) {
   LooseGraph g;
   g.createNode(nid("a"), "A", "x", NodeColor::olive, std::nullopt, at(1));
   g.createNode(nid("b"), "B", "x", NodeColor::olive, std::nullopt, at(1));
@@ -180,7 +180,7 @@ TEST(headline_delete_wins_over_the_spliced_edges) {
   CHECK_EQ(c->id, nid("a"));
 }
 
-TEST(headline_recolor_kind_wins_over_the_node_colors_it_fans_out) {
+TEST(headline_a_kind_recolor_wins_over_the_node_colors_it_fans_out) {
   GraphState g;
   NodeStateEntry n = nodeWrite("a");
   n.color = NodeColor::sky; n.colorAt = at(3);
@@ -598,7 +598,7 @@ TEST(admit_guide_holds_five_thousand_characters_whatever_their_bytes_and_refuses
   CHECK_EQ(cut->reason, std::string("the guide is not valid UTF-8"));
 }
 
-TEST(describe_kind_writes_only_the_registers_it_carries) {
+TEST(describing_a_kind_writes_only_the_registers_it_carries) {
   LooseGraph g;
   Legend legend = Legend::seededDefaults(at(1));
 

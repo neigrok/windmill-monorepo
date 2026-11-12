@@ -212,28 +212,6 @@ TEST(mcp_add_kind_shows_in_legend_and_rejects_a_taken_hue) {
   CHECK(h.call("add_kind", dupe).isError);
 }
 
-TEST(mcp_recolor_kind_repaints_nodes) {
-  Harness h;
-  Json::Value node(Json::objectValue);
-  node["id"] = "a";
-  node["label"] = "A";
-  node["color"] = "olive";
-  h.call("create_node", node);
-  Json::Value k(Json::objectValue);
-  k["id"] = "learn";
-  k["hue"] = "olive";
-  h.call("add_kind", k);
-
-  Json::Value recolor(Json::objectValue);
-  recolor["id"] = "learn";
-  recolor["hue"] = "brick";
-  CHECK_FALSE(h.call("recolor_kind", recolor).isError);
-
-  const Json::Value got = body(h.call("get_tree", Json::Value(Json::objectValue)));
-  CHECK_EQ(got["tree"]["nodes"][0]["color"].asString(), std::string("brick"));
-  CHECK_EQ(got["tree"]["kinds"][0]["hue"].asString(), std::string("brick"));
-}
-
 TEST(mcp_remove_kind_rejected_while_a_node_wears_its_hue) {
   Harness h;
   Json::Value node(Json::objectValue);
@@ -2532,7 +2510,7 @@ TEST(mcp_kind_joins_a_nodes_color_to_the_legend_and_is_omitted_when_no_kind_wear
   CHECK_EQ(claimed[0]["kind"].asString(), std::string("frontend"));
 }
 
-TEST(mcp_describe_kind_flips_the_exemption_and_get_health_skips_those_edges) {
+TEST(mcp_an_imported_kind_flips_the_exemption_and_get_health_skips_those_edges) {
   Harness h;
   plantTwoBranches(h);
 
@@ -2547,10 +2525,15 @@ TEST(mcp_describe_kind_flips_the_exemption_and_get_health_skips_those_edges) {
   CHECK_EQ(dump(before), std::string("[{\"crossBranchExempt\":false,\"id\":\"build\"},"
                                      "{\"crossBranchExempt\":false,\"id\":\"review\"}]"));
 
-  Json::Value flip(Json::objectValue);
-  flip["id"] = "review";
-  flip["crossBranchExempt"] = true;
-  CHECK_FALSE(h.call("describe_kind", flip).isError);
+  // An import's kind carries the flag onto a kind the legend holds; the registers it leaves out keep what they hold.
+  const auto flip = [&](const char* kind, const char* hue, bool exempt) {
+    Json::Value sent = parse(R"({"nodes":[],"kinds":[{}]})");
+    sent["kinds"][0]["id"] = kind;
+    sent["kinds"][0]["hue"] = hue;
+    sent["kinds"][0]["crossBranchExempt"] = exempt;
+    CHECK_FALSE(h.call("import_subgraph", sent).isError);
+  };
+  flip("review", "plum", true);
   Json::Value exempt = body(h.call("get_health", kNoArgs));
   CHECK_EQ(exempt["crossBranch"].asInt(), 0);
   CHECK_EQ(exempt["crossBranchExempt"].asInt(), 1);
@@ -2564,20 +2547,11 @@ TEST(mcp_describe_kind_flips_the_exemption_and_get_health_skips_those_edges) {
            std::string("looking back"));  // the flag write left the description alone
 
   // Either endpoint: the sky side of b -> d is enough once build is the exempt kind instead.
-  flip["crossBranchExempt"] = false;
-  CHECK_FALSE(h.call("describe_kind", flip).isError);
-  flip["id"] = "build";
-  flip["crossBranchExempt"] = true;
-  CHECK_FALSE(h.call("describe_kind", flip).isError);
+  flip("review", "plum", false);
+  flip("build", "sky", true);
   Json::Value otherSide = body(h.call("get_health", kNoArgs));
   CHECK_EQ(otherSide["crossBranch"].asInt(), 0);
   CHECK_EQ(otherSide["crossBranchExempt"].asInt(), 1);
-
-  CHECK_EQ(message(h.call("describe_kind", with("id", "build"))),
-           std::string("describe_kind: nothing to set — pass \"description\", \"crossBranchExempt\", or both."));
-  flip["crossBranchExempt"] = "yes";
-  CHECK_EQ(message(h.call("describe_kind", flip)),
-           std::string("describe_kind: argument \"crossBranchExempt\" must be a boolean, got string"));
 }
 
 TEST(mcp_add_kind_seeds_the_exemption_inline_and_import_subgraph_round_trips_it) {
@@ -5743,7 +5717,7 @@ TEST(mcp_an_annotation_lands_only_the_fields_that_differ_through_every_door) {
   }
 }
 
-// An import that changes a held kind's hue repaints every node wearing the old hue, as recolor_kind does, in the
+// An import that changes a held kind's hue repaints every node wearing the old hue, as a re-hue does, in the
 // graft's frame: the receipt counts them and the dry run previews the count.
 TEST(mcp_an_import_that_rehues_a_kind_repaints_the_nodes_that_wore_its_hue) {
   Harness h;
@@ -6047,7 +6021,7 @@ TEST(mcp_a_colour_sent_as_held_beside_a_kind_is_an_echo_and_the_kind_lands) {
   };
   const auto fallen = [&] {  // a and b hold olive, which infra no longer wears
     auto h = seeded();
-    CHECK_FALSE(h->call("recolor_kind", parse(R"({"id":"infra","hue":"terracotta"})")).isError);
+    CHECK_FALSE(h->call("update_kind", parse(R"({"id":"infra","hue":"terracotta"})")).isError);
     for (const char* id : {"a", "b"}) {
       Json::Value olive = parse(R"({"color":"olive"})");
       olive["nodeId"] = id;
@@ -7068,8 +7042,8 @@ Json::Value opRows(Harness& h) {
 
 }
 
-// update_kind relabels, re-briefs and re-hues a kind in one call: one op under one seq, the kind's nodes repainted as
-// recolor_kind repaints them and counted, and the rest of the legend untouched.
+// update_kind relabels, re-briefs and re-hues a kind in one call: one op under one seq, every node wearing the kind's
+// old hue repainted and counted, and the rest of the legend untouched.
 TEST(mcp_update_kind_relabels_rebriefs_and_rehues_a_kind_in_one_op) {
   auto h = kindTree();
   const std::size_t rows = h->ops.byTree["t"].size();
@@ -7091,19 +7065,47 @@ TEST(mcp_update_kind_relabels_rebriefs_and_rehues_a_kind_in_one_op) {
              {"id":"c","color":"gold","kind":"j"}])"));
 }
 
-// Each field alone lands what its earlier tool lands: on twin trees, update_kind and rename_kind, describe_kind or
-// recolor_kind leave the same stored tree and the same op rows.
-TEST(mcp_update_kind_with_one_field_equals_its_earlier_tool) {
-  for (const auto& [earlier, arguments] : std::vector<std::pair<const char*, const char*>>{
-           {"rename_kind", R"({"id":"k","label":"Kay"})"},
-           {"describe_kind", R"({"id":"k","description":"New brief."})"},
-           {"recolor_kind", R"({"id":"k","hue":"plum"})"}}) {
-    auto before = kindTree();
-    auto after = kindTree();
-    CHECK_FALSE(before->call(earlier, parse(arguments)).isError);
-    CHECK_FALSE(after->call("update_kind", parse(arguments)).isError);
-    CHECK(before->trees.byId["t"] == after->trees.byId["t"]);
-    CHECK_EQ(opRows(*before), opRows(*after));
+// Each field alone lands as its own command — RenameKind, DescribeKind or RecolorKind — as one op row under one seq: the
+// legend takes it, a new hue repaints the kind's nodes and the receipt counts them, and the Activity feed tells it in
+// that command's sentence.
+TEST(mcp_update_kind_lands_each_field_alone_as_its_own_command) {
+  for (const auto& [arguments, receipt, row, kinds, nodes, summary] :
+       std::vector<std::tuple<const char*, const char*, const char*, const char*, const char*, const char*>>{
+           {R"({"id":"k","label":"Kay"})", R"({"applied":true,"id":"k"})",
+            R"({"kind":"RenameKind","payload":{"id":"k","label":"Kay"}})",
+            R"([{"id":"k","hue":"sky","label":"Kay","description":"Brief."},{"id":"j","hue":"gold","label":"J","description":""}])",
+            R"([{"id":"a","color":"sky"},{"id":"b","color":"sky"},{"id":"c","color":"gold"}])", "renamed a kind to Kay"},
+           {R"({"id":"k","description":"New brief."})", R"({"applied":true,"id":"k"})",
+            R"({"kind":"DescribeKind","payload":{"id":"k","description":"New brief."}})",
+            R"([{"id":"k","hue":"sky","label":"K","description":"New brief."},{"id":"j","hue":"gold","label":"J","description":""}])",
+            R"([{"id":"a","color":"sky"},{"id":"b","color":"sky"},{"id":"c","color":"gold"}])", "described a kind"},
+           {R"({"id":"k","hue":"plum"})", R"({"applied":true,"id":"k","repaintedNodes":2})",
+            R"({"kind":"RecolorKind","payload":{"id":"k","hue":"plum"}})",
+            R"([{"id":"k","hue":"plum","label":"K","description":"Brief."},{"id":"j","hue":"gold","label":"J","description":""}])",
+            R"([{"id":"a","color":"plum"},{"id":"b","color":"plum"},{"id":"c","color":"gold"}])", "recolored a kind plum"}}) {
+    auto h = kindTree();
+    const std::size_t rows = h->ops.byTree["t"].size();
+    const Json::Int64 seq = body(h->call("get_tree", parse(R"({"includeGuides":false})")))["seq"].asInt64();
+    Json::Value expected = parse(receipt);
+    expected["seq"] = seq + 1;
+    expected["diagnosticsClean"] = true;
+    expected["introducedDiagnostics"] = Json::Value(Json::arrayValue);
+    CHECK_EQ(body(h->call("update_kind", parse(arguments))), expected);
+
+    REQUIRE_EQ(h->ops.byTree["t"].size(), rows + 1);
+    const AppliedOp& op = h->ops.byTree["t"].back();
+    Json::Value landed(Json::objectValue);
+    landed["kind"] = commandKind(op.command);
+    landed["payload"] = commandPayload(op.command);
+    CHECK_EQ(landed, parse(row));
+    CHECK_EQ(static_cast<Json::Int64>(op.seq), seq + 1);
+    CHECK_EQ(body(h->call("get_tree", parse(R"({"includeGuides":false,"fields":["id"],
+      "kindFields":["id","hue","label","description"]})")))["tree"]["kinds"],
+             parse(kinds));
+    CHECK_EQ(body(h->call("get_nodes", parse(R"({"nodeIds":["a","b","c"],"fields":["id","color"]})")))["nodes"],
+             parse(nodes));
+    CHECK_EQ(activityFeed(h->registry.open(TreeId{"t"})->snapshot(), h->ops.byTree["t"], 1).back().summary,
+             std::string(summary));
   }
 }
 
@@ -7128,21 +7130,19 @@ TEST(mcp_update_kind_leaves_out_what_the_kind_holds) {
   CHECK((std::holds_alternative<DescribeKind>(h->ops.byTree["t"].back().command)));
 }
 
-// A refusal is worded as the earlier tools word it — an unknown kind as rename_kind, a taken hue as recolor_kind — and a
-// call that sends nothing to set names all three fields; nothing is applied, and the earlier `kindId` is not taken.
-TEST(mcp_update_kind_refuses_in_the_words_of_the_earlier_tools) {
+// An unknown kind, a hue another kind wears and a missing id are refused naming what is wrong, a call that sends nothing
+// to set names all three fields, and a `kindId` is not taken; nothing is applied.
+TEST(mcp_update_kind_refuses_an_unknown_kind_a_taken_hue_and_nothing_to_set) {
   auto h = kindTree();
   const StoredTree stored = h->trees.byId["t"];
-  const auto words = [&](const char* tool, const char* arguments) {
-    const std::string said = message(h->call(tool, parse(arguments)));
-    return said.substr(said.find(": ") + 2);
-  };
-  CHECK_EQ(words("update_kind", R"({"id":"x","label":"X"})"), words("rename_kind", R"({"id":"x","label":"X"})"));
-  CHECK_EQ(words("update_kind", R"({"id":"k","hue":"gold"})"), words("recolor_kind", R"({"id":"k","hue":"gold"})"));
+  CHECK_EQ(message(h->call("update_kind", parse(R"({"id":"x","label":"X"})"))),
+           std::string("update_kind: no kind \"x\" in this legend"));
+  CHECK_EQ(message(h->call("update_kind", parse(R"({"id":"k","hue":"gold"})"))),
+           std::string("update_kind: hue \"gold\" already belongs to kind \"j\" — a hue names one kind, so pick a "
+                       "free one"));
   CHECK_EQ(message(h->call("update_kind", parse(R"({"label":"Kay"})"))),
            std::string("update_kind: missing required argument \"id\". Call get_tree and read `kinds` to list this "
                        "legend's ids."));
-  CHECK_EQ(words("update_kind", R"({"label":"Kay"})"), words("rename_kind", R"({"label":"Kay"})"));
   CHECK_EQ(message(h->call("update_kind", parse(R"({"id":"k"})"))),
            std::string("update_kind: nothing to set — pass at least one of \"label\", \"description\", \"hue\"."));
   CompositeToolHost gate(std::vector<ToolModule>{{h->tools, ""}});
@@ -7762,4 +7762,51 @@ TEST(mcp_the_batch_tools_publish_their_lists_whole) {
   CHECK_EQ(lists.at("update_nodes.updates"), updates);
   CHECK_EQ(lists.at("delete_node.nodeIds"),
            parse(R"({"type":"array","minItems":1,"maxItems":200,"items":{"type":"string","maxLength":128}})"));
+}
+
+// A legend's order is the order its kinds were created or imported in: create_tree keeps the order it is sent, add_kind
+// places a kind after the last, and an import places its new kinds after the last in batch order while a kind it
+// re-sends keeps its place.
+TEST(mcp_a_legends_order_is_the_order_its_kinds_were_created_or_imported_in) {
+  Harness h;
+  const auto order = [&](const char* tree) {
+    Json::Value args(Json::objectValue);
+    args["treeId"] = tree;
+    args["kindFields"] = list({"id"});
+    const Json::Value read = body(h.tools.callTool("get_tree", args, h.actor));
+    std::vector<std::string> ids;
+    for (const Json::Value& kind : read["tree"]["kinds"]) ids.push_back(kind["id"].asString());
+    return ids;
+  };
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[],"kinds":[{"id":"z","hue":"sky"},{"id":"y","hue":"plum"},
+    {"id":"x","hue":"gold"}]})")).isError);
+  CHECK_EQ(order("t"), (std::vector<std::string>{"z", "y", "x"}));
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"w","hue":"olive"})")).isError);
+  CHECK_EQ(order("t"), (std::vector<std::string>{"z", "y", "x", "w"}));
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[],"kinds":[{"id":"v","hue":"brick"},{"id":"x","hue":"gold",
+    "label":"Ex"}]})")).isError);
+  CHECK_EQ(order("t"), (std::vector<std::string>{"z", "y", "x", "w", "v"}));
+
+  const Json::Value created = body(h.tools.callTool(
+      "create_tree", parse(R"({"title":"Ordered","kinds":[{"id":"q","hue":"sky"},{"id":"p","hue":"plum"}]})"), h.actor));
+  CHECK_EQ(order(created["treeId"].asCString()), (std::vector<std::string>{"q", "p"}));
+}
+
+// rename_kind, describe_kind, recolor_kind and reorder_kinds are retired, update_kind being the one tool that changes a
+// kind: no declaration carries them, and a call to one is refused as a tool the server does not have, in the gate's own
+// words, with nothing written.
+TEST(mcp_the_retired_kind_tools_are_refused_as_unknown_tools) {
+  auto h = kindTree();
+  const StoredTree stored = h->trees.byId["t"];
+  const std::size_t rows = h->ops.byTree["t"].size();
+  CompositeToolHost gate(std::vector<ToolModule>{{h->tools, ""}});
+  for (const std::string name : {"rename_kind", "describe_kind", "recolor_kind", "reorder_kinds"}) {
+    for (const Json::Value& tool : h->tools.listTools(h->actor)) CHECK(tool["name"].asString() != name);
+    const ToolResult refused = gate.callTool(name, parse(R"({"treeId":"t","id":"k","label":"Kay","description":"B",
+      "hue":"plum","order":["j","k"]})"), h->actor);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), name + ": no such tool on this server — call tools/list for the whole surface.");
+  }
+  CHECK(h->trees.byId["t"] == stored);
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
 }

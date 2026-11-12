@@ -207,8 +207,8 @@ const std::set<std::string> kBulkEdits = {"import_subgraph", "prune", "tidy", "p
 const std::set<std::string> kIdempotentWrites = {
     "delete_tree",  "update_tree",   "rename_node",   "set_node_color", "move_node",
     "delete_node",  "tidy",
-    "add_kind",     "rename_kind",   "describe_kind", "remove_kind",    "reorder_kinds",
-    "recolor_kind", "update_kind",   "set_progress",  "import_subgraph", "prune", "patch_nodes", "change_edges"};
+    "add_kind",     "remove_kind",   "update_kind",   "set_progress",  "import_subgraph", "prune", "patch_nodes",
+    "change_edges"};
 
 // `read` answers questions, `write` changes the document, and `delete` destroys something a
 // person authored. `delete` is never implied by `write`: a connection without that level does
@@ -541,7 +541,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "edgeCount − crossBranchExempt). Branches derive from "
         "colour: a node's branch is the run of same-hue trunk parents above it, so an edge joining "
         "two hues counts as `crossBranch` — unless either endpoint wears a kind marked "
-        "`crossBranchExempt` (add_kind / describe_kind), in which case it is counted in "
+        "`crossBranchExempt` (set by add_kind, create_tree or an import's kinds), in which case it is counted in "
         "`crossBranchExempt` instead and weighs nothing — out of the score's numerator and its "
         "denominator both, while `edgeCount` stays every live edge. Fails if the tree currently has "
         "cycles/dangling edges — fix those first.",
@@ -763,32 +763,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     tools.push_back(tool("add_kind", Access::write,
         "Add a legend kind: a named, described hue. The hue must be free (unique per kind) and the "
         "legend must have fewer than 6 kinds. `label`, `description` and `crossBranchExempt` may be "
-        "set inline, or later with rename_kind / describe_kind.",
+        "set inline; update_kind changes the label, description and hue later, and an import's `kinds` the "
+        "flag.",
         p, {"treeId", "id", "hue"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    p["id"] = kindHandle();
-    p["kindId"] = kindHandleAlias();
-    p["label"] = cappedStr("The kind's label (sentence-case, one or two words; \"\" = unlabeled).",
-                           kMaxKindLabelLength);
-    tools.push_back(tool("rename_kind", Access::write, "Set a legend kind's label.", p, {"treeId", "id", "label"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    p["id"] = kindHandle();
-    p["kindId"] = kindHandleAlias();
-    p["description"] = cappedStr("The kind's description (plain text; the generator's sorting brief).",
-                                 kMaxKindDescriptionLength);
-    p["crossBranchExempt"] = boolean(
-        "Whether get_health leaves every edge touching a node of this kind out of its cross-branch "
-        "count. Omit to leave it as it is.");
-    tools.push_back(tool("describe_kind", Access::write,
-        "Set a legend kind's `description`, its `crossBranchExempt` flag, or both; a field you omit "
-        "keeps its value.",
-        p, {"treeId", "id"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -796,28 +773,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["id"] = kindHandle();
     p["kindId"] = kindHandleAlias();
     tools.push_back(tool("remove_kind", Access::del,
-        "Remove a legend kind. Rejected while any node still wears its hue — recolor or repaint those "
-        "nodes first.",
+        "Remove a legend kind. Rejected while any node still wears its hue — give those nodes another hue "
+        "or kind first.",
         p, {"treeId", "id"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    p["order"] = strArray("The kind ids in the desired order (legend order = generation priority).",
-                          kMaxIdLength);
-    tools.push_back(tool("reorder_kinds", Access::write, "Reorder the legend. The first kind is the generation fallback.",
-                      p, {"treeId", "order"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    p["id"] = kindHandle();
-    p["kindId"] = kindHandleAlias();
-    p["hue"] = enumStr("The new hue — must be free (not owned by another kind).", kHues);
-    tools.push_back(tool("recolor_kind", Access::write,
-        "Atomically change a kind's hue and repaint every node wearing the old hue to the new one, as "
-        "one op / one undo step.",
-        p, {"treeId", "id", "hue"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -828,7 +786,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["hue"] = enumStr("The kind's new hue — must be free (not owned by another kind).", kHues);
     tools.push_back(tool("update_kind", Access::write,
         "Change a legend kind's `label`, `description` or `hue` — any of them, at least one — as ONE op "
-        "under one seq. A new `hue` repaints every node wearing the kind's old hue, as recolor_kind does, "
+        "under one seq. A new `hue` repaints every node wearing the kind's old hue, "
         "and the receipt counts them in `repaintedNodes`. A field sent as the kind holds it is left out; a "
         "call that changes nothing writes nothing and answers `unchanged: true` with the tree's current `seq`.",
         p, {"treeId", "id"}));
@@ -958,7 +916,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "the value the tree holds (a new id gets the default), and every field you send replaces it — "
         "an explicit \"\" or [] clears it. A node deleted earlier and re-sent comes back with the fields "
         "it had, but for the tree it opened: it opens the tree this batch names for it, or none. A kind "
-        "you re-send with a new hue repaints the nodes wearing its old hue, as recolor_kind does, judged "
+        "you re-send with a new hue repaints the nodes wearing its old hue, judged "
         "against the legend before the batch (so two kinds can swap hues); a node you file by `kind` takes "
         "the hue that kind wears after the batch, a node you send a `color` that differs from the one it "
         "holds keeps that colour, and the receipt's repaintedNodes counts the rest. The "

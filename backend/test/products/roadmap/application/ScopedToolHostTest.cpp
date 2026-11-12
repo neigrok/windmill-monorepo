@@ -116,7 +116,7 @@ TEST(scoped_tool_host_withholds_update_tree_so_a_run_reads_the_guide_and_never_s
   const std::vector<std::string> names = toolNames(scoped.declareTools());
   CHECK_FALSE(has(names, "update_tree"));
   CHECK(has(names, "get_tree"));
-  CHECK(has(names, "describe_kind"));
+  CHECK(has(names, "update_kind"));
 
   const std::size_t broadcasts = h.bus.subgraphBroadcasts.size();
   const ToolResult refused =

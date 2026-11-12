@@ -60,10 +60,8 @@ TEST(mcp_every_roadmap_tool_declares_the_grant_level_that_reaches_it) {
   CHECK_EQ(deletes, (std::vector<std::string>{"delete_tree", "delete_node", "remove_kind"}));
   CHECK_EQ(writes, (std::vector<std::string>{
                        "patch_nodes", "update_nodes", "change_edges", "create_tree", "update_tree", "create_node", "annotate_node", "rename_node", "set_node_color",
-                       "move_node", "tidy", "add_kind",
-                       "rename_kind", "describe_kind", "reorder_kinds", "recolor_kind", "update_kind", "set_progress",
-                       "import_subgraph", "prune"}));
-  CHECK_EQ(catalog.size(), std::size_t{30});
+                       "move_node", "tidy", "add_kind", "update_kind", "set_progress", "import_subgraph", "prune"}));
+  CHECK_EQ(catalog.size(), std::size_t{26});
 }
 
 TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
@@ -71,7 +69,7 @@ TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
   const ToolCaller author{h.caller, parseToolScope("roadmap:read roadmap:write")};
   const Json::Value visible = h.tools.listTools(author);
 
-  CHECK_EQ(visible.size(), 27u);
+  CHECK_EQ(visible.size(), 23u);
   for (const char* destructive : {"delete_tree", "delete_node", "remove_kind"})
     CHECK(toolNamed(visible, destructive) == nullptr);
   for (const char* ordinary : {"get_tree", "create_node", "change_edges", "prune"})
@@ -177,9 +175,6 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
   REQUIRE(creation != nullptr);
   CHECK_EQ((*creation)["inputSchema"]["properties"]["parentId"]["maxLength"].asUInt64(), 128u);
   CHECK_EQ((*creation)["inputSchema"]["properties"]["prerequisites"]["items"]["maxLength"].asUInt64(), 128u);
-  const Json::Value* reorder = toolNamed(catalog, "reorder_kinds");
-  REQUIRE(reorder != nullptr);
-  CHECK_EQ((*reorder)["inputSchema"]["properties"]["order"]["items"]["maxLength"].asUInt64(), 128u);
   const Json::Value* search = toolNamed(catalog, "find_nodes");
   REQUIRE(search != nullptr);
   CHECK_EQ((*search)["inputSchema"]["properties"]["kind"]["maxLength"].asUInt64(), 128u);
@@ -570,8 +565,7 @@ TEST(mcp_every_tool_failure_names_the_tool_exactly_once) {
   const std::vector<const char*> tools = {"get_tree",      "update_tree",  "get_progress", "find_nodes", "create_node",
                                           "annotate_node", "rename_node",  "move_node",  "delete_node",
                                           "set_node_color",
-                                          "add_kind",      "rename_kind",  "describe_kind",
-                                          "remove_kind",   "reorder_kinds", "recolor_kind",
+                                          "add_kind",      "remove_kind",  "update_kind",
                                           "set_progress",  "import_subgraph"};
   for (const char* name : tools) {
     Json::Value nonsense(Json::objectValue);
@@ -735,44 +729,27 @@ TEST(mcp_set_progress_refuses_two_routes_at_once) {
 
 TEST(mcp_a_kind_handle_is_read_under_either_spelling) {
   Harness h;
-  Json::Value kind(Json::objectValue);
-  kind["id"] = "build";
-  kind["hue"] = "sky";
-  h.call("add_kind", kind);
+  for (const char* added : {R"({"id":"build","hue":"sky"})", R"({"id":"spare","hue":"olive"})"})
+    CHECK_FALSE(h.call("add_kind", parse(added)).isError);
 
-  CHECK_FALSE(h.call("rename_kind", [] {
-                Json::Value args(Json::objectValue);
-                args["kindId"] = "build";
-                args["label"] = "Build";
-                return args;
-              }())
-                  .isError);
-  Json::Value byId(Json::objectValue);
-  byId["id"] = "build";
-  byId["description"] = "the making of things";
-  CHECK_FALSE(h.call("describe_kind", byId).isError);
-
+  CHECK_FALSE(h.call("update_kind", parse(R"({"id":"build","label":"Build","description":"the making of things"})")).isError);
+  CHECK_FALSE(h.call("remove_kind", parse(R"({"kindId":"spare"})")).isError);
   Json::Value args(Json::objectValue);
   args["kindFields"] = list({"id", "label", "description"});
-  const Json::Value legend = body(h.call("get_tree", args))["tree"]["kinds"][0];
-  CHECK_EQ(legend["label"].asString(), std::string("Build"));
-  CHECK_EQ(legend["description"].asString(), std::string("the making of things"));
+  CHECK_EQ(body(h.call("get_tree", args))["tree"]["kinds"],
+           parse(R"([{"id":"build","label":"Build","description":"the making of things"}])"));
 
-  Json::Value missing(Json::objectValue);
-  missing["label"] = "Nameless";
-  ToolResult refused = h.call("rename_kind", missing);
+  ToolResult refused = h.call("remove_kind", kNoArgs);
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
-           std::string("rename_kind: missing required argument \"id\". Call get_tree and read "
+           std::string("remove_kind: missing required argument \"id\". Call get_tree and read "
                        "`kinds` to list this legend's ids."));
 
   const Json::Value catalog = h.tools.listTools(h.actor);
-  for (const char* name : {"rename_kind", "describe_kind", "remove_kind", "recolor_kind"}) {
-    const Json::Value* tool = toolNamed(catalog, name);
-    REQUIRE(tool != nullptr);
-    CHECK(( *tool)["inputSchema"]["properties"].isMember("kindId"));
-    CHECK(( *tool)["inputSchema"]["properties"].isMember("id"));
-  }
+  const Json::Value* removal = toolNamed(catalog, "remove_kind");
+  REQUIRE(removal != nullptr);
+  CHECK((*removal)["inputSchema"]["properties"].isMember("kindId"));
+  CHECK((*removal)["inputSchema"]["properties"].isMember("id"));
 }
 
 TEST(mcp_a_legend_refusal_names_the_hue_its_holder_and_the_limit) {
@@ -833,9 +810,8 @@ TEST(mcp_every_write_tool_denies_a_private_tree_exactly_as_it_denies_an_absent_o
   const std::vector<const char*> writes = {"create_node", "annotate_node", "rename_node",
                                            "set_node_color", "move_node",  "delete_node",
                                            "change_edges",
-                                           "tidy",          "add_kind",    "rename_kind",
-                                           "describe_kind", "remove_kind", "reorder_kinds",
-                                           "recolor_kind",  "prune",       "import_subgraph",
+                                           "tidy",          "add_kind",    "remove_kind",
+                                           "update_kind",   "prune",       "import_subgraph",
                                            "set_progress",  "delete_tree", "update_tree"};
   for (const char* name : writes) {
     Json::Value args(Json::objectValue);

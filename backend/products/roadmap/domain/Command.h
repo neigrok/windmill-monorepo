@@ -182,8 +182,9 @@ struct KindUpdatePlan {
   bool landsNothing() const { return commands.empty(); }
 };
 
-// Each field sent is validated as its own command is, so an unknown kind, a taken hue or a field over its cap is refused
-// in the words rename_kind, describe_kind and recolor_kind use; an update that sends no field is refused naming all three.
+// Each field sent is validated as its own command is — RenameKind, DescribeKind, RecolorKind — so an unknown kind, a
+// taken hue or a field over its cap is refused in that command's words; an update that sends no field is refused naming
+// all three.
 std::variant<KindUpdatePlan, std::string> planKindUpdate(const LooseGraph& graph, const Legend& legend,
                                                          const KindUpdate& update);
 
