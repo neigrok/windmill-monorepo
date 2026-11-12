@@ -1,7 +1,7 @@
-/* The guide (17.18–17.39, 28.29–28.33): a note on the tree. At rest it is a card on the canvas from 744px and a row under
-   the head on phones; open, it is the note in place from 744px and a bottom sheet on phones, reading or writing in one
-   frame. A save no door took leaves one line with its act where the footer says who reads the guide. The guides of the
-   trees above stand before the tree's own, each under its tree's name. */
+/* The guide (17.18–17.39, 28.29–28.33): a note on the tree. At rest it is a card on the canvas from 744px and a row
+   under the head on phones; open, it is the note in place from 744px and a bottom sheet on phones, reading or writing
+   in one frame. A save no door took leaves one line with its act where the footer says who reads the guide. The guides
+   of the trees above stand before the tree's own, each under its tree's name. */
 
 /* ---- At rest from 744px: the card. ---- */
 .st-guide-card {
@@ -84,14 +84,21 @@
   flex-shrink: 0;
   margin-top: 2.5px;
 }
+/* The line holds two lines and never loses its count: a title too long for its line gives way with an ellipsis,
+   keeping clear of the words the sentence sets beside it on that line. */
 .st-guide-card-above > span {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  flex: 1;
   min-width: 0;
-  overflow-wrap: anywhere;
+  max-height: 38px;
+  overflow: hidden;
+}
+.st-guide-card-tree {
+  display: inline-block;
+  max-width: calc(100% - 9.5em);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
 }
 .st-guide-rule {
   flex-shrink: 0;
@@ -307,7 +314,11 @@
 }
 
 /* ---- The guides from above, farthest first, then this tree's own under its name: one stack that scrolls inside the
-   note. Its edge stands 4px out, so the prose's focus ring is drawn whole. ---- */
+   note. Its edge stands 4px out, so the prose's focus ring is drawn whole, and its own ring is drawn inside that edge.
+   With nothing above, the element that holds the text makes no box. ---- */
+.st-guide-alone {
+  display: contents;
+}
 .st-guide-stack {
   display: flex;
   flex: 0 1 auto;
@@ -317,8 +328,14 @@
   max-height: 525px;
   margin: -4px;
   padding: 4px;
+  border-radius: 6px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  outline: none;
+}
+.st-guide-stack.is-ringed:focus {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
 }
 .st-guide-stack > * {
   flex-shrink: 0;
@@ -403,13 +420,17 @@ button.st-guide-from-name {
   cursor: pointer;
 }
 /* While the guide is written the guides from above stay over the field, dimmed, and scroll by themselves; this tree's
-   name stays on the field. Where the window is short they give up their height before the field gives up any. */
+   name stays on the field. Where the window is short they give up their height before the field gives up any, and
+   are not drawn where what is left holds less than one name and one line. */
 .st-guide-context {
   display: flex;
   flex: 0 100 auto;
   flex-direction: column;
   gap: 14px;
   min-height: 0;
+}
+.st-guide-context[hidden] {
+  display: none;
 }
 .st-guide-context > .st-guide-stack {
   max-height: 264px;
@@ -603,7 +624,7 @@ button.st-guide-from-name {
 .st-guide-paper--phone .st-guide-pencil {
   background: var(--surface-sunken);
 }
-.st-guide-paper--phone > .st-guide-prose {
+.st-guide-paper--phone > .st-guide-alone > .st-guide-prose {
   max-height: none;
   margin: 6px 18px 0;
   padding: 0 4px;
@@ -611,7 +632,7 @@ button.st-guide-from-name {
   font-size: 17px;
   line-height: 25px;
 }
-.st-guide-paper--phone > .st-guide-prose.is-ringed:focus,
+.st-guide-paper--phone > .st-guide-alone > .st-guide-prose.is-ringed:focus,
 .st-guide-paper--phone .st-guide-stack > .st-guide-prose.is-ringed:focus {
   outline-offset: -2px;
 }

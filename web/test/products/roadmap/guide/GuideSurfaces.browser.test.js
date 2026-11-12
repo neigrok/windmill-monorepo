@@ -1842,11 +1842,15 @@ test('Chromium: a reader and a room with no holder ask for nothing and are shown
     const note = page.getByRole('dialog', { name: 'Guide', exact: true });
     await note.waitFor();
     assert.deepEqual({
-      body: await note.locator(':scope > *').evaluateAll((parts) => parts.map((part) => part.classList[0])),
+      body: await note.locator(':scope > *').evaluateAll((parts) => parts.map((part) => `${part.classList[0]} ${getComputedStyle(part).display}`)),
+      text: await prose(page).evaluate((own) => own.parentElement.classList[0]),
+      stops: await note.locator('[tabindex="0"]').evaluateAll((stops) => stops.map((stop) => stop.classList[0])),
       asked,
       events: await events(page),
     }, {
-      body: ['st-guide-heading', 'st-guide-rule', 'st-guide-prose'],
+      body: ['st-guide-heading flex', 'st-guide-rule block', 'st-guide-alone contents'],
+      text: 'st-guide-alone',
+      stops: ['st-guide-prose'],
       asked: ['GET'],
       events: [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }],
     });
@@ -1915,4 +1919,227 @@ test('Chromium: guides from above that answer while the note already reads stand
       assert.equal(await page.locator('.st-guide-card-above').textContent(), 'With guides from My life and My year');
     });
   } finally { await page.close(); }
+});
+
+// A tree's own guide long enough to scroll, under two guides from above that are as long.
+const longOwn = () => Array.from({ length: 50 }, (_, line) => `Line ${String(line + 1).padStart(3, '0')} of this tree's own guide, long enough to wrap now and then.`).join('\n');
+const longAbove = () => [
+  { treeId: 't_life', title: 'My life', text: Array.from({ length: 40 }, (_, line) => `Life line ${line + 1}: health first, then craft, then money.`).join('\n'), yours: true },
+  { treeId: 't_year', title: 'My year', text: Array.from({ length: 40 }, (_, line) => `Year line ${line + 1}: sail, run, read.`).join('\n'), yours: true },
+];
+// Whether the caret's line is inside what the field shows, measured as the note measures it: a hidden copy of the text before the caret.
+const caretInView = (page) => field(page).evaluate((box) => {
+  const copy = document.createElement('div');
+  copy.className = box.className;
+  copy.style.cssText = `position: absolute; visibility: hidden; box-sizing: border-box; width: ${box.clientWidth}px; height: auto; min-height: 0; max-height: none; border: 0; white-space: pre-wrap; animation: none;`;
+  copy.textContent = `${box.value.slice(0, box.selectionEnd)}​`;
+  box.after(copy);
+  const foot = copy.offsetHeight;
+  copy.remove();
+  const line = parseFloat(getComputedStyle(box).lineHeight);
+  return { caret: box.selectionStart, inView: foot - line >= box.scrollTop - 1 && foot <= box.scrollTop + box.clientHeight + 1 };
+});
+// Scrolls whatever scrolls while reading so `words` of this tree's text stand near its top, and answers a point on them.
+const pointOn = (page, words) => page.evaluate((target) => {
+  const own = document.querySelector('.st-guide-prose');
+  const at = own.firstChild.data.indexOf(target);
+  const range = document.createRange();
+  range.setStart(own.firstChild, at);
+  range.setEnd(own.firstChild, at + target.length);
+  const scroller = document.querySelector('.st-guide-stack') ?? own;
+  scroller.scrollTop += range.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 60;
+  const box = range.getBoundingClientRect();
+  return { x: box.left + 3, y: box.top + box.height / 2 };
+}, words);
+// Where the stack stands and what of this tree's guide shows in it.
+const standingOf = (page) => page.evaluate(() => {
+  const stack = document.querySelector('.st-guide-stack');
+  const shown = stack.getBoundingClientRect();
+  const own = document.querySelector('.st-guide-prose').getBoundingClientRect();
+  return { scrollTop: Math.round(stack.scrollTop), ownInView: own.top < shown.bottom && own.bottom > shown.top, focus: document.activeElement.classList[0] };
+});
+
+for (const [engine, band, width, height] of [[chromium, 'desktop', 1440, 960], [chromium, 'phone', 390, 844], [webkit, 'desktop', 1440, 960]]) {
+  test(`${engine.name()}, ${band}: under guides from above a press on this tree's text writes where it landed with its line in view, and leaving the draft returns the note to where it was read`, async () => {
+    const { page } = await openHeld([...longAbove(), { treeId: 'sail', title: 'Learn to sail', text: longOwn(), yours: true }], { guide: longOwn(), band }, { engine, width, height });
+    try {
+      await page.locator(band === 'phone' ? '.st-guide-row' : '.st-guide-card').click();
+      await page.locator('.st-guide-stack').waitFor();
+      await settled(page);
+      const point = await pointOn(page, 'Line 003');
+      await page.mouse.click(point.x, point.y);
+      await field(page).waitFor();
+      assert.deepEqual(await caretInView(page), { caret: longOwn().indexOf('Line 003'), inView: true });
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      await page.locator('.st-guide-stack').waitFor();
+
+      await pointOn(page, 'Line 020');
+      await page.locator('.st-guide-hint').scrollIntoViewIfNeeded();
+      const read = await standingOf(page);
+      await page.locator('.st-guide-hint').click();
+      await field(page).waitFor();
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      await page.locator('.st-guide-stack').waitFor();
+      assert.deepEqual(await standingOf(page), { scrollTop: read.scrollTop, ownInView: true, focus: 'st-guide-prose' });
+    } finally { await page.close(); }
+  });
+}
+
+test('Chromium: a draft begun from the pencil while a guide from above is read, then saved or cancelled, returns the note with this tree’s guide in view under its name', async () => {
+  for (const leave of ['Cancel', 'Save']) {
+    const { page } = await openHeld([...longAbove(), { treeId: 'sail', title: 'Learn to sail', text: longOwn(), yours: true }], { guide: longOwn() });
+    try {
+      await page.locator('.st-guide-card').click();
+      await page.locator('.st-guide-stack').waitFor();
+      await settled(page);
+      assert.deepEqual(await standingOf(page), { scrollTop: 0, ownInView: false, focus: 'st-guide-stack' });
+      await page.getByRole('button', { name: 'Edit guide' }).click();
+      await field(page).waitFor();
+      if (leave === 'Save') await page.keyboard.type(' Saved words.');
+      await page.getByRole('button', { name: leave, exact: true }).click();
+      await page.locator('.st-guide-stack').waitFor();
+      assert.deepEqual(await page.evaluate(() => {
+        const stack = document.querySelector('.st-guide-stack');
+        const shown = stack.getBoundingClientRect();
+        const name = document.querySelector('.st-guide-own').getBoundingClientRect();
+        const own = document.querySelector('.st-guide-prose');
+        return { nameAtTop: Math.round(name.top - shown.top), ownInView: own.getBoundingClientRect().top < shown.bottom, focus: document.activeElement.classList[0], saved: own.textContent.endsWith('Saved words.') };
+      }), { nameAtTop: 4, ownInView: true, focus: 'st-guide-prose', saved: leave === 'Save' }, leave);
+    } finally { await page.close(); }
+  }
+});
+
+test('Chromium: a note opened by a key under guides that start this tree’s text below the fold rests its focus on the stack, ringed; it scrolls from there, Enter leaves nothing, and Tab walks the names and then the text', async () => {
+  const { page } = await openHeld([...longAbove(), { treeId: 'sail', title: 'Learn to sail', text: GUIDE, yours: true }], { guide: GUIDE });
+  try {
+    await withBrowserErrors(page, async () => {
+      await page.getByRole('button', { name: 'Guide: One step a week.' }).press('Enter');
+      const note = page.getByRole('dialog', { name: 'Guide', exact: true });
+      await note.waitFor();
+      await settled(page);
+      const stack = page.locator('.st-guide-stack');
+      assert.deepEqual({
+        focus: await focusedName(page),
+        ring: await stack.evaluate((element) => getComputedStyle(element).outlineStyle),
+        role: await stack.getAttribute('role'),
+        named: await stack.evaluate((element) => document.getElementById(element.getAttribute('aria-labelledby')).textContent),
+      }, { focus: 'st-guide-stack is-ringed', ring: 'solid', role: 'region', named: 'Guide' });
+
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('PageDown');
+      await page.waitForFunction(() => document.querySelector('.st-guide-stack').scrollTop > 0);
+      assert.deepEqual({ writing: await field(page).count(), entered: await page.evaluate(() => window.entered), open: await note.count() }, { writing: 0, entered: [], open: 1 });
+
+      const walked = [];
+      for (let stop = 0; stop < 3; stop += 1) {
+        await page.keyboard.press('Tab');
+        walked.push(await page.evaluate(() => (document.activeElement.classList.contains('st-guide-prose') ? 'this tree’s text' : document.activeElement.textContent)));
+      }
+      assert.deepEqual(walked, ['My life', 'My year', 'this tree’s text']);
+      await page.keyboard.press('Enter');
+      await page.getByRole('dialog', { name: 'Edit guide' }).waitFor();
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: under short guides from above a note opened by a key rests its focus on this tree’s text, ringed, and Enter writes, as with nothing above', async () => {
+  const { page } = await openHeld(repliedGuides(GUIDE), { guide: GUIDE });
+  try {
+    await withBrowserErrors(page, async () => {
+      await page.getByRole('button', { name: 'Guide: One step a week.' }).press('Enter');
+      await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
+      await settled(page);
+      assert.equal(await focusedName(page), 'st-guide-prose st-guide-prose--owner is-ringed');
+      await page.keyboard.press('Enter');
+      await page.getByRole('dialog', { name: 'Edit guide' }).waitFor();
+      assert.deepEqual(await caretState(page), { start: GUIDE.length, end: GUIDE.length, focused: true });
+    });
+  } finally { await page.close(); }
+});
+
+test('Chromium: guides from above that answer while a long note is being read move nothing: the line read stays in view with its selection, and the press before they answered said they were unread', async () => {
+  await start();
+  const page = await open({ mount: false });
+  try {
+    const answered = {};
+    await page.route('**/v1/trees/sail/guides', async (route) => {
+      await new Promise((resolve) => { answered.now = resolve; });
+      await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ guides: [...longAbove(), { treeId: 'sail', title: 'Learn to sail', text: longOwn(), yours: true }] }) });
+    });
+    await page.evaluate((mounted) => window.mount(mounted), { guide: longOwn(), holder: 'u_olya' });
+    await page.locator('.st-guide-card').click();
+    await prose(page).waitFor();
+    await settled(page);
+    await pointOn(page, 'Line 030');
+    const standing = () => page.evaluate(() => {
+      const own = document.querySelector('.st-guide-prose');
+      const at = own.firstChild.data.indexOf('Line 030');
+      const range = document.createRange();
+      range.setStart(own.firstChild, at);
+      range.setEnd(own.firstChild, at + 8);
+      if (String(getSelection()) === '') getSelection().addRange(range);
+      const shown = (document.querySelector('.st-guide-stack') ?? own).getBoundingClientRect();
+      return { lineFromTop: Math.round(range.getBoundingClientRect().top - shown.top), selected: String(getSelection()), stacked: document.querySelectorAll('.st-guide-from').length };
+    });
+    const before = await standing();
+    assert.deepEqual(before, { lineFromTop: 60, selected: 'Line 030', stacked: 0 });
+
+    const read = page.waitForEvent('requestfinished', (request) => request.url().endsWith('/guides'));
+    answered.now();
+    await read;
+    await page.locator('.st-guide-stack').waitFor();
+    assert.deepEqual(await standing(), { lineFromTop: 64, selected: 'Line 030', stacked: 2 });
+    assert.deepEqual(await events(page), [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'unread' }]);
+  } finally { await page.close(); }
+});
+
+test('Chromium: the card’s line never loses its count: where two long titles do not fit its two lines, the titles give way', async () => {
+  const titled = (count) => ['The year I finally learn to sail a dinghy single-handed', 'Everything I want from the next ten years of my life', 'C', 'D', 'E', 'F', 'G', 'H'].slice(0, count).map((title, index) => ({ treeId: `t_${index}`, title, text: 'A guide.', yours: true }));
+  for (const [count, said] of [
+    [8, 'With guides from The year I finally learn to sail a dinghy single-handed, Everything I want from the next ten years of my life and 6 more trees'],
+    [3, 'With guides from The year I finally learn to sail a dinghy single-handed, Everything I want from the next ten years of my life and 1 more tree'],
+    [2, 'With guides from The year I finally learn to sail a dinghy single-handed and Everything I want from the next ten years of my life'],
+    [1, 'With a guide from The year I finally learn to sail a dinghy single-handed'],
+  ]) {
+    const { page } = await openHeld(titled(count), { guide: GUIDE });
+    try {
+      assert.deepEqual(await page.locator('.st-guide-card-above > span').evaluate((line) => {
+        const shown = line.getBoundingClientRect();
+        const words = [...line.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          return [...range.getClientRects()].every((box) => box.left >= shown.left - 1 && box.right <= shown.right + 1 && box.bottom <= shown.bottom + 1);
+        });
+        return { text: line.textContent, clipped: line.scrollHeight > line.clientHeight + 1, lines: Math.round(shown.height / 19), wordsShown: words.every(Boolean),
+          titlesGiveWay: [...line.querySelectorAll('.st-guide-card-tree')].map((title) => title.scrollWidth > title.clientWidth) };
+      }), { text: said, clipped: false, lines: count === 1 ? 1 : 2, wordsShown: true, titlesGiveWay: Array.from({ length: Math.min(count, 2) }, () => true) }, said);
+    } finally { await page.close(); }
+  }
+});
+
+test('Chromium: while a guide is written from 744px the guides above are readable or not drawn: a long draft in a short window takes their place, and they return when the draft leaves the room', async () => {
+  for (const height of [960, 900, 860, 800, 700]) {
+    const { page } = await openHeld([...longAbove(), { treeId: 'sail', title: 'Learn to sail', text: longOwn(), yours: true }], { guide: longOwn() }, { width: 1440, height });
+    try {
+      await withBrowserErrors(page, async () => {
+        await page.locator('.st-guide-card').click();
+        await page.getByRole('button', { name: 'Edit guide' }).click();
+        await field(page).waitFor();
+        await settled(page);
+        const drawn = () => page.evaluate(() => {
+          const context = document.querySelector('.st-guide-context');
+          const above = context.querySelector('.st-guide-stack');
+          const paper = document.querySelector('.st-guide-paper').getBoundingClientRect();
+          return { above: above.clientHeight, name: context.querySelector('.st-guide-own').getClientRects().length, inWindow: paper.bottom <= innerHeight - 24 };
+        });
+        assert.deepEqual(await drawn(), { above: 0, name: 0, inWindow: true }, `a 50-line draft at ${height}px`);
+
+        await page.keyboard.press('ControlOrMeta+A');
+        await page.keyboard.type('One line.');
+        await page.waitForFunction(() => document.querySelector('.st-guide-context > .st-guide-stack').clientHeight > 0);
+        const short = await drawn();
+        assert.deepEqual({ readable: short.above >= 8 + 19 + 6 + 26, name: short.name, inWindow: short.inWindow }, { readable: true, name: 1, inWindow: true }, `a one-line draft at ${height}px: ${short.above}px`);
+      });
+    } finally { await page.close(); }
+  }
 });

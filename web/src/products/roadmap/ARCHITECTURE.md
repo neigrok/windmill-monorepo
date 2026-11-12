@@ -270,13 +270,21 @@ The guide is a note on the tree. `GuideEntry` is the note at rest, which the roo
 phones a row under the head of both views, beneath the device line when the tree carries one, with up to three lines.
 A reader's entry says Author's note, and an owner without a guide gets Add guide. Under guides from above the card
 adds one line naming their trees, the two farthest and then how many more (`namedAbove`), and the row a count beside
-its title; a tree with no guide of its own then keeps the written entry without an excerpt. `GuideNote` is the note
+its title; a tree with no guide of its own then keeps the written entry without an excerpt. The line holds two lines
+and never loses its count: a title too long for its line gives way with an ellipsis. `GuideNote` is the note
 open. From 744px it stands in place over its entry and shares the room while it reads; on phones it is a bottom sheet
 as tall as its text. The guides from above stand first in it, farthest first, each under its tree's name and in the
 secondary ink, then this tree's own under its name, and the whole stack scrolls inside the note. They are plain text
-with no caret and no tint; a tree with no guide of its own has Add guide as its block and no pencil. While the guide is
-written from 744px they stay over the field, dimmed, scrolling by themselves and giving up their height before the
-field does, and their names do not act; on phones the editor holds this tree's guide alone. The draft, its count and
+with no caret and no tint; a tree with no guide of its own has Add guide as its block and no pencil. This tree's text
+is one mounted element with or without guides above it, so guides that answer while it is read move nothing: the
+line read stays where it was, with its selection. The note's focus rests on this tree's text; under guides from above
+that start that text below the fold it rests on the stack, ringed when a key brought it, which scrolls from the
+keyboard, does nothing on Enter and leads by Tab to each name and then the text. A press on the text under a stack
+writes from where it landed with the caret's line in view, the field scrolled as far as the text itself was, and
+leaving the draft returns the stack to where it was read, this tree's guide in view. While the guide is
+written from 744px the guides from above stay over the field, dimmed, scrolling by themselves, and their names do not
+act. They take what the window leaves once the field has its height, and where that holds less than one name and one
+line of text they are not drawn; on phones the editor holds this tree's guide alone. The draft, its count and
 its save never hold them. The owner presses the prose, the hint beside this tree's name or the pencil, or Enter, and
 writes in the same frame from where the press landed
 (`caretPositionFromPoint`, or Safari's `caretRangeFromPoint`); writing holds the window, so everything beneath is inert

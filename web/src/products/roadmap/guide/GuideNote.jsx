@@ -29,6 +29,25 @@ const RECOVERY_LINES = {
   copied: { fact: t('roadmap.guide.draftCopied'), wayOut: t('roadmap.guide.draftCopiedNote'), act: 'done', label: t('roadmap.guide.done') },
 };
 
+// The window's edge the note keeps clear beneath it from 744px.
+const NOTE_FOOT = 24;
+// What the guides from above need to be read while the guide is written: the stack's 4px edges round one name and one
+// line of text, then this tree's name under it.
+const LEAST_CONTEXT = 8 + 19 + 6 + 26 + 14 + 19;
+
+// A textarea does not say where its caret is drawn, so a hidden copy of the text before the caret measures the foot of
+// the caret's line, in the field's own box.
+function caretFoot(box) {
+  const copy = document.createElement('div');
+  copy.className = box.className;
+  copy.style.cssText = `position: absolute; visibility: hidden; box-sizing: border-box; width: ${box.clientWidth}px; height: auto; min-height: 0; max-height: none; border: 0; white-space: pre-wrap; animation: none;`;
+  copy.textContent = `${box.value.slice(0, box.selectionEnd)}\u200b`;
+  box.after(copy);
+  const foot = copy.offsetHeight;
+  copy.remove();
+  return foot;
+}
+
 // Reading from 744px shares the room: the tree beside the note stays live. Writing, and the phone's sheet in either
 // mode, holds the window: everything beneath is inert and a press outside asks to leave. `view` is the view the entry
 // stands on, so the note follows its entry when the view changes; `onSeat` hears the box the note holds on the canvas
@@ -39,6 +58,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
   const opening = guide.opened.writing;
   const text = withLineFeeds(guide.text);
   const written = hasGuide(guide.text);
+  const stacked = above.length > 0;
   const openTree = useContext(TreeDoor);
   // The note stands over its entry, grown 4px to the left and 16px up: measured in the window, and in the room the
   // note shares while it reads.
@@ -57,12 +77,21 @@ export function GuideNote({ guide, band, view, onSeat }) {
   const [ringed, setRinged] = useState(false);
   const [entering, setEntering] = useState(true);
   const [seat, setSeat] = useState(seatOverEntry);
+  const [crowded, setCrowded] = useState(false);
   const layer = useRef(null);
   const paper = useRef(null);
   const stack = useRef(null);
   const prose = useRef(null);
   const add = useRef(null);
+  const ownHead = useRef(null);
+  const context = useRef(null);
   const field = useRef(null);
+  // Where the stack stood when writing began, and how far this tree's text was scrolled as guides from above came to
+  // stand over it: read while the note renders, before the text is seated under them.
+  const resumeAt = useRef(null);
+  const wasStacked = useRef(stacked);
+  const scrolledAlone = useRef(0);
+  if (stacked && !wasStacked.current) scrolledAlone.current = prose.current?.scrollTop ?? 0;
   const confirmation = useRef(null);
   const stop = useRef(-1);
   const lastPress = useRef(guide.opened.keyboard ? 'key' : 'pointer');
@@ -115,15 +144,29 @@ export function GuideNote({ guide, band, view, onSeat }) {
     leave();
   };
 
-  // Flushed, so the field takes focus inside the press that asked for it and a phone raises its keyboard. What scrolls
-  // while reading is the prose, or the stack that holds it under the guides from above.
-  const begin = (via, offset) => {
+  // How far this tree's text is scrolled, as a share of what is hidden of it: its own scroll with nothing above, and
+  // under guides from above how far it has passed the top of the stack that scrolls.
+  const proseScroll = () => {
+    const own = prose.current;
+    if (!own) return 0;
+    if (!stacked) {
+      const hidden = own.scrollHeight - own.clientHeight;
+      return hidden > 0 ? own.scrollTop / hidden : 0;
+    }
+    const hidden = own.offsetHeight - stack.current.clientHeight;
+    const passed = stack.current.getBoundingClientRect().top - own.getBoundingClientRect().top;
+    return hidden > 0 ? Math.min(1, Math.max(0, passed / hidden)) : 0;
+  };
+
+  // Flushed, so the field takes focus inside the press that asked for it and a phone raises its keyboard. `landed`
+  // says the press landed in the text: under guides from above its line is then brought into view, as the field
+  // stands lower and shorter than the text did.
+  const begin = (via, offset, landed = false) => {
     track('roadmap_guide', { step: 'edit', via });
-    const scroller = stack.current ?? prose.current;
-    const hidden = scroller ? scroller.scrollHeight - scroller.clientHeight : 0;
-    const scroll = hidden > 0 ? scroller.scrollTop / hidden : 0;
+    resumeAt.current = stacked ? stack.current.scrollTop : null;
+    const scroll = proseScroll();
     flushSync(() => {
-      setCaret({ offset, scroll });
+      setCaret({ offset, scroll, shown: stacked && landed });
       setDraft(new GuideDraft(guide.text));
     });
   };
@@ -240,7 +283,8 @@ export function GuideNote({ guide, band, view, onSeat }) {
     return () => window.removeEventListener('resize', place);
   }, [phone, view]);
 
-  // A guide that holds no words under no guide from above has nothing to read: one cleared here or elsewhere closes the note.
+  // A guide that holds no words under no guide from above has nothing to read: one cleared here or elsewhere closes
+  // the note.
   useEffect(() => {
     if (!writing && !written && above.length === 0) guide.close();
   }, [writing, written, above]);
@@ -265,17 +309,76 @@ export function GuideNote({ guide, band, view, onSeat }) {
     box.focus({ preventScroll: true });
     box.setSelectionRange(caret.offset, caret.offset);
     box.scrollTop = caret.scroll * (box.scrollHeight - box.clientHeight);
+    if (!caret.shown) return;
+    const edges = getComputedStyle(box);
+    const foot = caretFoot(box);
+    const head = foot - parseFloat(edges.paddingBottom) - parseFloat(edges.lineHeight) - parseFloat(edges.paddingTop);
+    if (foot > box.scrollTop + box.clientHeight) box.scrollTop = foot - box.clientHeight;
+    else if (head < box.scrollTop) box.scrollTop = head;
   }, [caret]);
 
+  // Where the note's focus rests while it reads: this tree's text, or Add guide where it has none. Under guides from
+  // above that start it below the fold, the stack takes the focus and its ring in its place: it scrolls from the
+  // keyboard, Enter does nothing there, and Tab walks the names above and then the text.
+  const rest = () => {
+    const own = prose.current ?? add.current;
+    if (!stacked || !own) return own;
+    const firstLine = own.getBoundingClientRect().top + parseFloat(getComputedStyle(own).lineHeight);
+    return firstLine <= stack.current.getBoundingClientRect().bottom ? own : stack.current;
+  };
+
+  // Leaving a draft returns the stack to where it was read, with this tree's guide in view: brought to the top where
+  // it would stand outside.
   useLayoutEffect(() => {
-    if (!writing) (prose.current ?? add.current)?.focus({ preventScroll: true });
+    if (writing) return;
+    if (stacked && resumeAt.current !== null) {
+      const frame = stack.current;
+      frame.scrollTop = resumeAt.current;
+      const own = (prose.current ?? add.current).getBoundingClientRect();
+      const line = parseFloat(getComputedStyle(prose.current ?? add.current).lineHeight);
+      const shown = frame.getBoundingClientRect();
+      if (own.top + line > shown.bottom || own.bottom - line < shown.top) {
+        frame.scrollTop += ownHead.current.getBoundingClientRect().top - shown.top - parseFloat(getComputedStyle(frame).paddingTop);
+      }
+    }
+    resumeAt.current = null;
+    rest()?.focus({ preventScroll: true });
   }, [writing, modal]);
 
-  // Guides from above that arrive or leave while the note reads re-seat this tree's block, which drops the focus it
-  // held to the page: the block takes it back.
+  // Guides from above that answer while the note reads stand over this tree's text and move nothing: the text stays
+  // mounted with its selection, and the stack scrolls on by what now stands above it. Where they go, the focus the
+  // stack held falls to the page, and the text takes it.
   useLayoutEffect(() => {
-    if (!writing && document.activeElement === document.body) (prose.current ?? add.current)?.focus({ preventScroll: true });
-  }, [above]);
+    const own = prose.current;
+    if (stacked && !wasStacked.current && !writing && own) {
+      const frame = stack.current;
+      const standsAt = own.getBoundingClientRect().top - frame.getBoundingClientRect().top - parseFloat(getComputedStyle(frame).paddingTop) + frame.scrollTop;
+      frame.scrollTop = standsAt + scrolledAlone.current;
+    }
+    wasStacked.current = stacked;
+    if (!writing && document.activeElement === document.body) rest()?.focus({ preventScroll: true });
+  }, [stacked]);
+
+  // While the guide is written from 744px the guides from above take what the window leaves once the field has its
+  // height. Where that cannot hold one name and one line of text they are not drawn.
+  const contextual = writing && !phone && stacked;
+  useLayoutEffect(() => {
+    if (!contextual) return undefined;
+    const fit = () => {
+      const frame = paper.current;
+      const taken = context.current.hidden ? -parseFloat(getComputedStyle(frame).rowGap) : context.current.offsetHeight;
+      const room = window.innerHeight - NOTE_FOOT - frame.getBoundingClientRect().top - (frame.offsetHeight - taken);
+      setCrowded(room < LEAST_CONTEXT);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    for (const part of [paper.current, field.current, context.current]) observer.observe(part);
+    window.addEventListener('resize', fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', fit);
+    };
+  }, [contextual]);
 
   useLayoutEffect(() => {
     if (discarding) confirmation.current.focus({ preventScroll: true });
@@ -289,7 +392,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
   }, [phone]);
 
   // When the field gives up height, to a line that arrives beneath it or a keyboard that rises, the caret's line stays
-  // in view. A textarea does not say where its caret is drawn, so a hidden copy of the text before the caret measures it.
+  // in view.
   useLayoutEffect(() => {
     const box = field.current;
     if (!box) return undefined;
@@ -298,13 +401,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
       const shrank = box.clientHeight < height;
       height = box.clientHeight;
       if (!shrank || document.activeElement !== box) return;
-      const copy = document.createElement('div');
-      copy.className = box.className;
-      copy.style.cssText = `position: absolute; visibility: hidden; box-sizing: border-box; width: ${box.clientWidth}px; height: auto; min-height: 0; max-height: none; border: 0; white-space: pre-wrap; animation: none;`;
-      copy.textContent = `${box.value.slice(0, box.selectionEnd)}\u200b`;
-      box.after(copy);
-      const foot = copy.offsetHeight;
-      copy.remove();
+      const foot = caretFoot(box);
       if (foot > box.scrollTop + box.clientHeight) box.scrollTop = foot - box.clientHeight;
     });
     observer.observe(box);
@@ -344,8 +441,8 @@ export function GuideNote({ guide, band, view, onSeat }) {
     act.run();
   };
 
-  // The prose holds the note's focus: a reader scrolls it from the keyboard, and to its owner it is the guide's field at
-  // rest, read-only until a press or Enter writes from it.
+  // The prose holds the note's focus: a reader scrolls it from the keyboard, and to its owner it is the guide's field
+  // at rest, read-only until a press or Enter writes from it.
   const ownGuide = (
     <p ref={prose} className={`st-guide-prose${owner ? ' st-guide-prose--owner' : ''}${ringed ? ' is-ringed' : ''}`}
       tabIndex={0} role={owner ? 'textbox' : 'region'} aria-labelledby={titleId}
@@ -359,7 +456,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
         const range = point ? null : document.caretRangeFromPoint?.(event.clientX, event.clientY);
         const [node, at] = point ? [point.offsetNode, point.offset] : [range?.startContainer, range?.startOffset];
         const landed = node?.nodeType === Node.TEXT_NODE && event.currentTarget.contains(node);
-        begin(phone ? 'tap' : 'click', landed ? at : text.length);
+        begin(phone ? 'tap' : 'click', landed ? at : text.length, landed);
       } : undefined}
       onKeyDown={owner ? (event) => {
         if (event.key !== 'Enter' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -391,7 +488,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
   });
   // This tree's own guide comes last under its name, where the hint says what a press on the prose does and does it.
   const ownName = (
-    <p className="st-guide-own">
+    <p ref={ownHead} className="st-guide-own">
       <BookOpen size={14} strokeWidth={1.67} absoluteStrokeWidth aria-hidden />
       <span>{t('roadmap.guide.thisTree', { tree: guide.roadmapTitle })}</span>
       {!writing && written && (
@@ -409,7 +506,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
       style={seated ? { left: seat.left - (modal ? 0 : seat.roomLeft), top: seat.top - (modal ? 0 : seat.roomTop) } : undefined}>
       <section ref={paper} className={paperClasses.join(' ')} role="dialog" aria-modal={modal ? 'true' : undefined}
         aria-labelledby={titleId} tabIndex={-1}
-        style={seated ? { maxHeight: `calc(100dvh - ${seat.top + 24}px)` } : undefined}
+        style={seated ? { maxHeight: `calc(100dvh - ${seat.top + NOTE_FOOT}px)` } : undefined}
         onAnimationEnd={() => setEntering(false)}
         onFocus={(event) => { stop.current = focusableElements(paper.current).indexOf(event.target); }}
         onKeyDown={modal ? undefined : (event) => {
@@ -438,22 +535,26 @@ export function GuideNote({ guide, band, view, onSeat }) {
           )}
         </header>
         {!phone && <span className="st-guide-rule" />}
-        {/* Under guides from above the note reads one stack, which scrolls as the prose does alone; a tree with no guide
-            of its own has Add guide as its block. From 744px the guides from above stay over the field while it writes. */}
-        {!writing && (above.length > 0 ? (
-          <div ref={stack} className="st-guide-stack">
-            {fromAbove}
-            {ownName}
-            {written ? ownGuide : (
+        {/* Under guides from above the note reads one stack, which scrolls as the prose does alone and takes the focus
+            where this tree's text starts out of view; a tree with no guide of its own has Add guide as its block. With
+            nothing above the same element stands aside, so the text stays mounted when guides from above answer. From
+            744px they stay over the field while it writes, where the window has the room. */}
+        {!writing && (
+          <div ref={stack} className={stacked ? `st-guide-stack${ringed ? ' is-ringed' : ''}` : 'st-guide-alone'}
+            {...(stacked ? { tabIndex: 0, role: 'region', 'aria-labelledby': titleId } : {})}
+            onFocus={(event) => { if (event.target === event.currentTarget) setRinged(lastPress.current === 'key'); }}>
+            {stacked && fromAbove}
+            {stacked && ownName}
+            {written || !stacked ? ownGuide : (
               <button ref={add} type="button" className="st-guide-add" onClick={() => begin('add', 0)}>
                 <Plus size={18} strokeWidth={1.67} aria-hidden />
                 <span>{GUIDE.add}</span>
               </button>
             )}
           </div>
-        ) : ownGuide)}
-        {writing && !phone && above.length > 0 && (
-          <div className="st-guide-context">
+        )}
+        {contextual && (
+          <div ref={context} className="st-guide-context" hidden={crowded}>
             <div className="st-guide-stack">{fromAbove}</div>
             {ownName}
           </div>

@@ -13,9 +13,10 @@ import { namedAbove } from './GuidesAbove.js';
 import { useArrivalFade } from './useGuide.js';
 import './guide.css';
 
-// `view` is the view the entry stands on, as its open event says it. Guides from above are said beside the tree's own:
-// on the card's line by their trees, on the row by their count. An owner's tree with no guide of its own and none above
-// offers Add guide, which opens the note already writing: flushed, so the field takes focus inside the tap that asked.
+// `view` is the view the entry stands on, as its open event says it; the event also says what the entry knew of the
+// guides above at the press. Guides from above are said beside the tree's own: on the card's line by their trees, on
+// the row by their count. An owner's tree with no guide of its own and none above offers Add guide, which opens the
+// note already writing: flushed, so the field takes focus inside the tap that asked.
 export function GuideEntry({ guide, band, view }) {
   const phone = band === 'phone';
   const written = hasGuide(guide.text);
@@ -26,6 +27,9 @@ export function GuideEntry({ guide, band, view }) {
   const Glyph = reads ? BookOpen : Plus;
   const excerpt = useRef(null);
   const aboveId = useId();
+  // A title in the card's line stands in a box of its own, which gives way before the line loses its count.
+  const named = namedAbove(guide.above);
+  const treeTitle = (title) => (title === null ? null : <span className="st-guide-card-tree">{title}</span>);
   useArrivalFade(excerpt, guide.arrival);
   const open = (event) => {
     const keyboard = event.detail === 0;
@@ -68,7 +72,7 @@ export function GuideEntry({ guide, band, view }) {
         {above > 0 && (
           <span id={aboveId} className="st-guide-card-above">
             <OpeningGlyph face="open" size={14} />
-            <span>{guidesFromAbove(namedAbove(guide.above))}</span>
+            <span>{guidesFromAbove({ first: treeTitle(named.first), second: treeTitle(named.second), more: named.more })}</span>
           </span>
         )}
         <span className="st-guide-rule" />

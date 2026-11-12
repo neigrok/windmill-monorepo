@@ -644,7 +644,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   entry stands without its line until the read answers. A guide a fork brought with it is shown like the others. While
   the guide is written from 744px the chevrons over the guides from above are drawn as on 28.31 and do not act:
   leaving a draft is Cancel's to ask. The hint beside this tree's name (*Click to edit*, *Tap to edit*) writes from
-  the end of the guide, as the pencil does.
+  the end of the guide, as the pencil does. Where the window leaves the guides from above less than one name and one
+  line of text over the field, they are not drawn while the guide is written. A title too long for the card's line
+  gives way with an ellipsis, so the line keeps its count. Where this tree's text starts below the fold of the note,
+  the note's focus rests on the stack, which wears the ring a key earns.
 - **Section 28 · two sentences wait for their actions.** 28.36 and 28.41 end the loop's line with *Detach one side.*
   and 28.39 and 28.42 end the missing tree's with *Choose another, or detach it.* The web has neither detach nor the
   picker, so the lines stop at the fact (*A loop with … : this never completes.*, *This tree can’t be found.*). Both
