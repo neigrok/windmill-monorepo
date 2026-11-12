@@ -444,3 +444,15 @@ TEST(a_fork_keeps_every_opens_as_it_stands_or_clears_them_all) {
   }
   CHECK(g.forkState(Hlc{100, 0, "srv"}, ForkOpens::cleared) == planted);
 }
+
+TEST(the_pointers_of_a_graph_are_the_trees_its_present_nodes_open_and_no_others) {
+  LooseGraph g;
+  for (const char* id : {"opens", "cleared", "deleted", "plain"}) g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+  g.setOpens(nid("opens"), TreeId{"t_sailing"}, at(2));
+  g.setOpens(nid("cleared"), TreeId{"t_rowing"}, at(2));
+  g.setOpens(nid("cleared"), TreeId{}, at(3));
+  g.setOpens(nid("deleted"), TreeId{"t_rowing"}, at(2));
+  g.deleteNode(nid("deleted"), at(3));
+
+  CHECK(g.pointers() == (std::map<NodeId, TreeId>{{nid("opens"), TreeId{"t_sailing"}}}));
+}

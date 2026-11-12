@@ -3,8 +3,10 @@
 #include "test/testing.h"
 
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <random>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -47,6 +49,17 @@ OpenedTrees opened(const std::vector<TreeData>& trees, const std::map<std::strin
   }
   return OpenedTrees(std::move(standing));
 }
+
+
+// What is wrong with a tree's pointers, read off the pointers the tree holds.
+PointerDiagnostics diagnosed(const OpenedTrees& judged, const TreeData& data) {
+  std::map<NodeId, TreeId> pointers;
+  for (const NodeSpec& node : data.nodes)
+    if (!node.opens.empty()) pointers.emplace(node.id, node.opens);
+  return judged.diagnose(data.id, pointers);
+}
+
+TreeOnLoop on(const std::string& id) { return {tid(id), "Tree " + id}; }
 
 }
 
@@ -354,4 +367,294 @@ TEST(the_same_trees_in_another_order_give_the_same_answer) {
   CHECK(answer({"a", "b", "c", "d", "e"}, false) == expected);
   CHECK(answer({"e", "d", "c", "b", "a"}, false) == expected);
   CHECK(answer({"c", "e", "a", "d", "b"}, true) == expected);
+}
+
+TEST(two_trees_that_open_each_other_are_each_told_their_own_way_back) {
+  const TreeData a = tree("a", {step("to-b", "b"), step("plain")});
+  const TreeData b = tree("b", {step("to-a", "a")});
+
+  const OpenedTrees both = opened({a, b});
+
+  CHECK(diagnosed(both, a) == (PointerDiagnostics{{{nid("to-b"), {on("b"), on("a")}}}, 0, {}, 0}));
+  CHECK(diagnosed(both, b) == (PointerDiagnostics{{{nid("to-a"), {on("a"), on("b")}}}, 0, {}, 0}));
+}
+
+TEST(a_tree_that_opens_itself_is_told_a_way_back_of_itself_alone) {
+  const TreeData self = tree("self", {step("again", "self"), step("done")});
+
+  CHECK(diagnosed(opened({self}), self) == (PointerDiagnostics{{{nid("again"), {on("self")}}}, 0, {}, 0}));
+}
+
+TEST(a_loop_of_four_is_told_its_shortest_way_back_and_between_two_as_short_the_one_by_tree_id) {
+  const TreeData root = tree("root", {step("round", "a"), step("short", "d")});
+  const TreeData a = tree("a", {step("to-long", "long1"), step("to-c", "c"), step("to-b", "b")});
+  const TreeData b = tree("b", {step("on", "d")});
+  const TreeData c = tree("c", {step("on", "d")});
+  const TreeData d = tree("d", {step("back", "root")});
+  const TreeData long1 = tree("long1", {step("on", "long2")});
+  const TreeData long2 = tree("long2", {step("on", "long3")});
+  const TreeData long3 = tree("long3", {step("back", "root")});
+
+  const OpenedTrees all = opened({root, a, b, c, d, long1, long2, long3});
+
+  CHECK(diagnosed(all, root) ==
+        (PointerDiagnostics{{{nid("round"), {on("a"), on("b"), on("d"), on("root")}}, {nid("short"), {on("d"), on("root")}}}, 0, {}, 0}));
+  CHECK(diagnosed(all, long2) ==
+        (PointerDiagnostics{{{nid("on"), {on("long3"), on("root"), on("a"), on("long1"), on("long2")}}}, 0, {}, 0}));
+}
+
+// Two ways as short that part at the second tree, and two that part at the third: the smaller id at the first place
+// they differ, whatever comes after it.
+TEST(between_two_ways_as_short_the_smaller_tree_id_is_taken_at_the_first_place_they_differ) {
+  const std::vector<TreeData> second{tree("t", {step("n", "s")}), tree("s", {step("1", "c"), step("2", "b")}),
+                                     tree("b", {step("1", "z")}), tree("c", {step("1", "a")}),
+                                     tree("z", {step("1", "t")}), tree("a", {step("1", "t")})};
+  CHECK(diagnosed(opened(second), second.front()) ==
+        (PointerDiagnostics{{{nid("n"), {on("s"), on("b"), on("z"), on("t")}}}, 0, {}, 0}));
+
+  const std::vector<TreeData> third{tree("t", {step("n", "s")}), tree("s", {step("1", "m")}),
+                                    tree("m", {step("1", "y"), step("2", "x")}), tree("x", {step("1", "q")}),
+                                    tree("y", {step("1", "p")}), tree("q", {step("1", "t")}), tree("p", {step("1", "t")})};
+  CHECK(diagnosed(opened(third), third.front()) ==
+        (PointerDiagnostics{{{nid("n"), {on("s"), on("m"), on("x"), on("q"), on("t")}}}, 0, {}, 0}));
+}
+
+TEST(a_loop_among_other_trees_is_not_this_trees) {
+  const TreeData root = tree("root", {step("down", "x"), step("leaf", "plain")});
+  const TreeData x = tree("x", {step("to-y", "y")});
+  const TreeData y = tree("y", {step("to-x", "x")});
+  const TreeData plain = tree("plain", {step("p")});
+
+  const OpenedTrees all = opened({root, x, y, plain});
+
+  CHECK(diagnosed(all, root) == PointerDiagnostics{});
+  CHECK(diagnosed(all, x) == (PointerDiagnostics{{{nid("to-y"), {on("y"), on("x")}}}, 0, {}, 0}));
+}
+
+TEST(two_nodes_of_one_tree_on_the_same_loop_are_two_entries_in_node_id_order) {
+  const TreeData root = tree("root", {step("second", "sub"), step("plain"), step("first", "sub")});
+  const TreeData sub = tree("sub", {step("back", "root")});
+
+  CHECK(diagnosed(opened({root, sub}), root) ==
+        (PointerDiagnostics{{{nid("first"), {on("sub"), on("root")}}, {nid("second"), {on("sub"), on("root")}}}, 0, {}, 0}));
+}
+
+// The owner's standing trees are all a pointer may name, so a removed tree, someone else's and free text read alike.
+TEST(a_pointer_at_a_removed_tree_at_someone_elses_and_at_free_text_dangles_and_a_valid_one_does_not) {
+  const TreeData root = tree("root", {step("removed", "t_removed"), step("valid", "sub"), step("theirs", "t_theirs"),
+                                      step("text", "not a tree id, \"quoted\""), step("plain")});
+  const TreeData sub = tree("sub", {step("gone-below", "t_removed")});
+
+  const OpenedTrees mine = opened({root, sub});
+
+  CHECK(diagnosed(mine, root) == (PointerDiagnostics{{},
+                                                     0,
+                                                     {{nid("removed"), tid("t_removed")},
+                                                      {nid("text"), tid("not a tree id, \"quoted\"")},
+                                                      {nid("theirs"), tid("t_theirs")}},
+                                                     0}));
+  CHECK(diagnosed(mine, sub) == (PointerDiagnostics{{}, 0, {{nid("gone-below"), tid("t_removed")}}, 0}));
+}
+
+// A tree that does not stand among the owner's is on no loop, whatever its nodes name.
+TEST(a_tree_that_is_not_among_the_standing_ones_is_told_no_loop) {
+  const TreeData stray = tree("stray", {step("to-a", "a"), step("again", "stray")});
+  const TreeData a = tree("a", {step("to-stray", "stray")});
+
+  CHECK(diagnosed(opened({a}), stray) == (PointerDiagnostics{{}, 0, {{nid("again"), tid("stray")}}, 0}));
+}
+
+TEST(the_same_account_in_another_order_is_told_the_same_loops_and_dangling_pointers) {
+  const auto answer = [](bool reversed) {
+    std::vector<std::vector<NodeSpec>> nodes{
+        {step("round", "a"), step("gone", "t_removed"), step("short", "d"), step("again", "root"), step("plain")},
+        {step("to-c", "c"), step("to-b", "b"), step("x")},
+        {step("on", "d")},
+        {step("on", "d"), step("y")},
+        {step("back", "root"), step("side", "a")}};
+    if (reversed)
+      for (std::vector<NodeSpec>& held : nodes) std::reverse(held.begin(), held.end());
+    std::vector<TreeData> trees{tree("root", nodes[0]), tree("a", nodes[1]), tree("b", nodes[2]), tree("c", nodes[3]),
+                                tree("d", nodes[4])};
+    if (reversed) std::reverse(trees.begin(), trees.end());
+    return diagnosed(opened(trees), reversed ? trees.back() : trees.front());
+  };
+
+  const PointerDiagnostics expected{{{nid("again"), {on("root")}},
+                                     {nid("round"), {on("a"), on("b"), on("d"), on("root")}},
+                                     {nid("short"), {on("d"), on("root")}}},
+                                    0,
+                                    {{nid("gone"), tid("t_removed")}},
+                                    0};
+  CHECK(answer(false) == expected);
+  CHECK(answer(true) == expected);
+}
+
+// A way of eight trees is listed whole and ends with the node's own tree. A longer one is cut to the eight nearest
+// the node, the tree it opens first, and counts the trees left off, the node's own tree the last of them.
+TEST(a_way_back_lists_its_first_eight_trees_and_counts_the_rest) {
+  const auto ring = [](int trees) {
+    std::vector<TreeData> account;
+    for (int k = 0; k < trees; ++k) account.push_back(tree("r" + std::to_string(10 + k), {step("next", "r" + std::to_string(10 + (k + 1) % trees))}));
+    return account;
+  };
+
+  const std::vector<TreeData> eight = ring(8);
+  CHECK(diagnosed(opened(eight), eight.front()) ==
+        (PointerDiagnostics{{{nid("next"), {on("r11"), on("r12"), on("r13"), on("r14"), on("r15"), on("r16"), on("r17"), on("r10")}}},
+                            0, {}, 0}));
+
+  const std::vector<TreeOnLoop> firstEight{on("r11"), on("r12"), on("r13"), on("r14"), on("r15"), on("r16"), on("r17"), on("r18")};
+  const std::vector<TreeData> nine = ring(9);
+  CHECK(diagnosed(opened(nine), nine.front()) == (PointerDiagnostics{{{nid("next"), firstEight, 1}}, 0, {}, 0}));
+  const std::vector<TreeData> forty = ring(40);
+  CHECK(diagnosed(opened(forty), forty.front()) == (PointerDiagnostics{{{nid("next"), firstEight, 32}}, 0, {}, 0}));
+}
+
+// Each list holds its first fifty by node id and counts the rest, so what is built follows the caps and not the tree:
+// ten thousand nodes on one loop of a hundred trees are fifty entries of eight trees.
+TEST(the_lists_hold_their_first_fifty_by_node_id_and_count_the_rest_whatever_the_tree_holds) {
+  const auto name = [](const char* prefix, int k) { return prefix + std::to_string(100000 + k); };
+  std::vector<NodeSpec> nodes;
+  for (int k = 0; k < 10000; ++k) nodes.push_back(step(name("loop", k), "w100"));
+  for (int k = 0; k < 300; ++k) nodes.push_back(step(name("gone", k), "t_removed" + std::to_string(k)));
+  std::reverse(nodes.begin(), nodes.end());
+  std::vector<TreeData> account{tree("root", nodes)};
+  for (int k = 0; k < 100; ++k) account.push_back(tree("w" + std::to_string(100 + k), {step("next", k < 99 ? "w" + std::to_string(101 + k) : "root")}));
+
+  const PointerDiagnostics told = diagnosed(opened(account), account.front());
+
+  PointerDiagnostics expected;
+  for (int k = 0; k < 50; ++k) {
+    expected.treeLoops.push_back({nid(name("loop", k)), {on("w100"), on("w101"), on("w102"), on("w103"), on("w104"), on("w105"), on("w106"), on("w107")}, 93});
+    expected.danglingPointers.push_back({nid(name("gone", k)), tid("t_removed" + std::to_string(k))});
+  }
+  expected.treeLoopsOmitted = 9950;
+  expected.danglingPointersOmitted = 250;
+  CHECK(told == expected);
+}
+
+// The walk back reads each pointer between two standing trees once, whatever the asked tree's nodes and however long
+// their ways: on an account where every tree on the way also opens every tree the asked tree opens, all of them
+// farther from it and sorted before the next tree on the way, it is the account's pointers and no more.
+TEST(the_walk_back_reads_each_pointer_between_standing_trees_once_on_an_account_full_of_decoys) {
+  const auto far = [](int k) { return "a" + std::to_string(1000 + k); };
+  const auto way = [](int k) { return "c" + std::to_string(1000 + k); };
+  const auto account = [&](int size) {
+    std::vector<TreeData> trees;
+    std::vector<NodeSpec> own;
+    for (int n = 0; n < size; ++n) own.push_back(step("n" + std::to_string(1000 + n), far(n)));
+    trees.push_back(tree("z", own));
+    for (int n = 0; n < size; ++n) trees.push_back(tree(far(n), {step("in", way(1))}));
+    for (int k = 1; k <= size; ++k) {
+      std::vector<NodeSpec> held;
+      for (int n = 0; n < size; ++n) held.push_back(step("d" + std::to_string(n), far(n)));
+      held.push_back(step("next", k == size ? "z" : way(k + 1)));
+      trees.push_back(tree(way(k), held));
+    }
+    return trees;
+  };
+
+  for (const int size : {20, 40, 80}) {
+    const std::vector<TreeData> trees = account(size);
+    const OpenedTrees judged = opened(trees);
+
+    const WaysBack back = judged.waysBackTo(tid("z"));
+    CHECK_EQ(back.walked, static_cast<std::size_t>(size * size + 3 * size));
+    CHECK_EQ(back.ways.size(), static_cast<std::size_t>(2 * size + 1));
+    CHECK_EQ(back.ways.at(tid(far(0))).pointers, size + 1);
+    CHECK_EQ(back.ways.at(tid(far(0))).next, tid(way(1)));
+
+    const PointerDiagnostics told = diagnosed(judged, trees.front());
+    CHECK_EQ(told.treeLoops.size(), static_cast<std::size_t>(std::min(size, 50)));
+    CHECK_EQ(told.treeLoopsOmitted, static_cast<std::size_t>(std::max(size - 50, 0)));
+    CHECK(told.treeLoops.front() ==
+          (TreeLoop{nid("n1000"), {on(far(0)), on(way(1)), on(way(2)), on(way(3)), on(way(4)), on(way(5)), on(way(6)), on(way(7))},
+                    static_cast<std::size_t>(size + 2 - 8)}));
+  }
+}
+
+TEST(the_pointers_an_edit_set_are_the_ones_the_tree_holds_now_and_did_not_hold_before) {
+  const std::map<NodeId, TreeId> before{{nid("kept"), tid("a")}, {nid("moved"), tid("a")}, {nid("cleared"), tid("a")}};
+  const std::map<NodeId, TreeId> after{{nid("kept"), tid("a")}, {nid("moved"), tid("b")}, {nid("new"), tid("a")}};
+
+  CHECK(pointersSetSince(before, after) == (std::map<NodeId, TreeId>{{nid("moved"), tid("b")}, {nid("new"), tid("a")}}));
+  CHECK(treesOpenedBy(after) == (std::set<TreeId>{tid("a"), tid("b")}));
+}
+
+// The way back enumerated: of every way from the opened tree to the node's own that passes no tree twice, the
+// shortest, and of those the first by tree id; then the caps.
+TEST(random_accounts_are_told_the_way_back_that_an_enumeration_of_every_way_finds) {
+  std::mt19937 random(20261113);
+  const auto below = [&](unsigned bound) { return static_cast<unsigned>(random() % bound); };
+  int disagreements = 0;
+  int loops = 0;
+  int cut = 0;
+  for (int account = 0; account < 600; ++account) {
+    const unsigned count = 1 + below(11);
+    std::vector<std::string> ids;
+    for (unsigned t = 0; t < count; ++t) ids.push_back(std::string(1, static_cast<char>('a' + below(26))) + std::to_string(t));
+    std::vector<TreeData> trees;
+    std::map<TreeId, const TreeData*> byId;
+    // One account in four is a ring with a few shortcuts, so some ways back are longer than a path lists.
+    const bool ring = below(4) == 0;
+    for (unsigned t = 0; t < count; ++t) {
+      std::vector<NodeSpec> nodes;
+      const unsigned nodeCount = ring ? 0 : below(4);
+      for (unsigned n = 0; n < nodeCount; ++n) {
+        std::string opens;
+        if (below(100) < 60) opens = below(100) < 85 ? ids[below(count)] : "t_removed";
+        nodes.push_back(step("n" + std::to_string(n), opens));
+      }
+      if (ring) nodes.push_back(step("next", ids[(t + 1) % count]));
+      if (ring && below(100) < 10) nodes.push_back(step("shortcut", ids[below(count)]));
+      trees.push_back(tree(ids[t], nodes));
+    }
+    for (const TreeData& data : trees) byId[data.id] = &data;
+
+    const std::function<void(const TreeId&, const TreeId&, std::vector<TreeId>&, std::vector<std::vector<TreeId>>&)> walk =
+        [&](const TreeId& at, const TreeId& home, std::vector<TreeId>& way, std::vector<std::vector<TreeId>>& ways) {
+          way.push_back(at);
+          if (at == home) {
+            ways.push_back(way);
+          } else {
+            for (const TreeId& next : treesOpenedBy(*byId.at(at)))
+              if (byId.count(next) && std::find(way.begin(), way.end(), next) == way.end()) walk(next, home, way, ways);
+          }
+          way.pop_back();
+        };
+
+    const OpenedTrees judged = opened(trees);
+    for (const TreeData& data : trees) {
+      PointerDiagnostics expected;
+      std::map<NodeId, TreeId> pointers;
+      for (const NodeSpec& node : data.nodes)
+        if (!node.opens.empty()) pointers.emplace(node.id, node.opens);
+      for (const auto& [node, target] : pointers) {
+        if (!byId.count(target)) {
+          expected.danglingPointers.push_back({node, target});
+          continue;
+        }
+        std::vector<TreeId> way;
+        std::vector<std::vector<TreeId>> ways;
+        walk(target, data.id, way, ways);
+        if (ways.empty()) continue;
+        const std::vector<TreeId>& best = *std::min_element(
+            ways.begin(), ways.end(), [](const std::vector<TreeId>& left, const std::vector<TreeId>& right) {
+              return left.size() != right.size() ? left.size() < right.size() : left < right;
+            });
+        TreeLoop loop{node, {}};
+        for (std::size_t listed = 0; listed < std::min(best.size(), kMaxLoopPath); ++listed)
+          loop.path.push_back({best[listed], byId.at(best[listed])->title});
+        loop.pathOmitted = best.size() - loop.path.size();
+        if (loop.pathOmitted > 0) ++cut;
+        expected.treeLoops.push_back(loop);
+        ++loops;
+      }
+      if (!(judged.diagnose(data.id, pointers) == expected)) ++disagreements;
+    }
+  }
+  CHECK_EQ(disagreements, 0);
+  CHECK(loops > 300);
+  CHECK(cut > 0);
 }

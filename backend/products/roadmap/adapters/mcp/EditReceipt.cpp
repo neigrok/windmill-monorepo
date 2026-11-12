@@ -11,7 +11,8 @@ namespace {
 
 constexpr std::size_t kMostNamed = 5;
 
-std::string quoted(const NodeId& node) { return "\"" + node.str() + "\""; }
+template <typename Tag>
+std::string quoted(const Id<Tag>& id) { return "\"" + id.str() + "\""; }
 
 std::string named(const Cycle& cycle) {
   std::string members;
@@ -22,9 +23,20 @@ std::string named(const Cycle& cycle) {
   return "cycle among " + members;
 }
 
+std::string named(const TreeLoop& loop) {
+  std::string way;
+  for (const TreeOnLoop& on : loop.path) {
+    if (!way.empty()) way += " -> ";
+    way += quoted(on.tree);
+  }
+  if (loop.pathOmitted > 0) way += " and " + std::to_string(loop.pathOmitted) + " more";
+  return "loop of trees from " + quoted(loop.node) + " through " + way;
+}
+
 }  // namespace
 
-void answerDiagnostics(const TreeDiagnostics& before, const TreeDiagnostics& after, Json::Value& receipt) {
+void answerDiagnostics(const TreeDiagnostics& before, const TreeDiagnostics& after, Json::Value& receipt,
+                       const PointerDiagnostics& closed) {
   std::set<std::vector<NodeId>> knownCycles;
   for (const Cycle& cycle : before.cycles) knownCycles.insert(cycle.members);
   const std::set<Edge> knownDangling(before.dangling.begin(), before.dangling.end());
@@ -38,11 +50,13 @@ void answerDiagnostics(const TreeDiagnostics& before, const TreeDiagnostics& aft
       introduced.push_back("dangling edge " + quoted(edge.from) + " -> " + quoted(edge.to));
   for (const Edge& edge : after.selfEdges)
     if (!knownSelfEdges.count(edge)) introduced.push_back("self-edge on " + quoted(edge.from));
+  for (const TreeLoop& loop : closed.treeLoops) introduced.push_back(named(loop));
+  const std::size_t all = introduced.size() + closed.treeLoopsOmitted;
 
   Json::Value list(Json::arrayValue);
   for (std::size_t i = 0; i < introduced.size() && i < kMostNamed; ++i) list.append(introduced[i]);
-  if (introduced.size() > kMostNamed)
-    list.append("and " + std::to_string(introduced.size() - kMostNamed) +
+  if (all > kMostNamed)
+    list.append("and " + std::to_string(all - kMostNamed) +
                 " more — call get_diagnostics for the whole list");
 
   receipt["diagnosticsClean"] = after.clean();

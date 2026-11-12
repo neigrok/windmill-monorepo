@@ -131,10 +131,34 @@ void TreeApi::getGuides(const drogon::HttpRequestPtr& req, HttpCallback&& callba
 }
 
 void TreeApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
-  Json::Value body;
-  if (!readRoom(treeId, callerOf(req), [&](TreeRoom& room) { body = toJson(room.diagnose()); })) {
+  const std::optional<UserId> caller = callerOf(req);
+  TreeDiagnostics graph;
+  std::optional<std::map<NodeId, TreeId>> pointers;
+  if (!readRoom(treeId, caller, [&](TreeRoom& room) {
+        graph = room.diagnose();
+        if (canWrite(caller, room.owner())) pointers = room.pointers();
+      })) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
+  }
+  if (!pointers) {
+    callback(jsonResponse(toJson(graph)));
+    return;
+  }
+  // The pointers are followed for the tree's writer alone and OUTSIDE the room strand, as getProgress loads. A follow
+  // that fails leaves the graph's diagnostics and a flag: the graph is still told.
+  Json::Value body;
+  WriteObservation observation{"roadmap.diagnostics.follow", "roadmap", "rest"};
+  try {
+    const OpenedTrees opened(trees_->openedFrom(*caller, treesOpenedBy(*pointers)));
+    body = toJson(graph, opened.diagnose(TreeId{treeId}, *pointers));
+    observation.skip();
+  } catch (const std::bad_alloc&) {
+    throw;
+  } catch (const std::exception& failure) {
+    observation.fail(failure);
+    body = toJson(graph);
+    body["pointerDiagnosticsUnavailable"] = true;
   }
   callback(jsonResponse(body));
 }

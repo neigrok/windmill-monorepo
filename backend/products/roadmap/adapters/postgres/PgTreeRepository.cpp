@@ -422,14 +422,17 @@ std::map<TreeId, std::string> PgTreeRepository::titlesOwnedBy(const UserId& owne
   return titles;
 }
 
-std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, const std::set<TreeId>& opened) {
+std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, const std::set<TreeId>& opened,
+                                                          std::optional<std::chrono::milliseconds> budget) {
   if (opened.empty()) return {};
   Json::Value ids(Json::arrayValue);
   for (const TreeId& tree : opened) ids.append(tree.str());
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  // The budget is this transaction's alone: the connection goes back to the pool under its own limit.
+  if (budget) txn.exec("SET LOCAL statement_timeout = '" + std::to_string(budget->count()) + "ms'");
   // One statement: the counts and the marks are one snapshot, and no node row leaves the database.
-  pqxx::result rows = txn.exec_params(
+  const char* statement =
       "WITH RECURSIVE reached(id, title) AS ("
       "  SELECT t.id, t.title FROM trees t "
       "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid "
@@ -452,8 +455,14 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
       "           WHERE p.tree_id = r.id AND (p.tree_id, p.user_id) >= (r.id, $1::text) "
       "             AND (p.tree_id, p.user_id) <= (r.id, $1::text) AND p.status = 'complete')) AS marked "
       "  FROM tree_nodes n WHERE n.tree_id = r.id AND n.present GROUP BY n.opens"
-      ") c ON true",
-      owner.str(), dump(ids));
+      ") c ON true";
+  pqxx::result rows;
+  try {
+    rows = txn.exec_params(statement, owner.str(), dump(ids));
+  } catch (const pqxx::sql_error& error) {
+    if (budget && std::string{error.sqlstate()} == "57014") throw FollowTimedOut{};
+    throw;
+  }
 
   std::map<TreeId, OpenedTree> trees;
   for (const auto& row : rows) {

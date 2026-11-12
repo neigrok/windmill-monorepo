@@ -259,7 +259,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       row["position"]["required"].append("y");
       row["links"] = linkArray("Replacement links; an empty list clears them.");
       row["opens"] = cappedStr("Id of a tree you own that this node opens; empty string clears it. One naming "
-                               "a tree that is not yours refuses the whole batch.", kMaxIdLength);
+                               "a tree that is not yours refuses the whole batch. A tree that leads back to "
+                               "this one lands, and `introducedDiagnostics` names the loop after the graph's "
+                               "errors, within its five lines: a tree on a loop never completes.", kMaxIdLength);
       p["updates"] = objArray("1..200 distinct existing nodes, each with at least one field to change.", row, {"nodeId"});
       p["updates"]["minItems"] = 1;
       p["updates"]["maxItems"] = static_cast<Json::UInt64>(kMaxPatchNodes);
@@ -287,11 +289,17 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     properties["applied"] = boolean("True after the batch has been accepted, including a no-op retry.");
     properties["dryRun"] = boolean("True when the listed changes are a preview.");
     properties["diagnosticsClean"] = boolean("Whether the graph after an applied batch has no structural errors.");
-    properties["introducedDiagnostics"] = strArray("New structural errors after an applied batch.", 0);
+    properties["introducedDiagnostics"] = strArray(
+        patches ? "New structural errors after an applied batch, then each loop of trees a pointer it set closed: "
+                  "five lines in all, and a count of the rest."
+                : "New structural errors after an applied batch.", 0);
     properties["introducedDiagnostics"]["items"].removeMember("maxLength");
     output["required"] = Json::Value(Json::arrayValue);
     for (const char* field : {"treeId", "seq", "applied", "dryRun"}) output["required"].append(field);
     if (patches) {
+      properties["pointerDiagnosticsUnavailable"] = boolean(
+          "True when the batch set a pointer and the trees it opens could not be read in time, so no loop of "
+          "trees is named: read get_diagnostics. Absent otherwise.");
       for (const char* field : {"changedNodeIds", "unchangedNodeIds"}) {
         properties[field] = strArray("Node ids in input order, partitioned by whether the patch changes them.", kMaxIdLength);
         output["required"].append(field);
@@ -415,6 +423,22 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
+    p["includePointers"] = boolean(
+        "On a tree you own, also answer what is wrong with the trees its nodes open. `treeLoops` holds one "
+        "{node, path} per node whose pointer leads back to this tree, the first 50 in node id order, and "
+        "`treeLoopsOmitted` counts the rest. `path` is a shortest way back as [{treeId, title}], the tree "
+        "the node opens first and this tree last, the smaller tree id taken where two ways are as short. "
+        "It lists at most 8 trees: a longer way is cut to its first 8, so it does not end with this tree, "
+        "and `pathOmitted` counts the trees left off, this tree the last of them. A tree on such a loop "
+        "never completes, and a loop among other trees is reported when one of them is read. "
+        "`danglingPointers` holds one {node, treeId} per node whose pointer names no tree of yours that "
+        "stands — a removed tree, someone else's, or any other text — the first 50 in node id order, and "
+        "`danglingPointersOmitted` counts the rest: such a node is an ordinary node. Both lists are `[]` "
+        "when there is none, the three counts are absent when nothing is left off, and neither list is "
+        "among the errors `diagnosticsClean` and get_health count. Repair either by re-pointing the "
+        "node's `opens` or clearing it with \"\". `pointerDiagnosticsUnavailable: true` says the opened "
+        "trees could not be read just now and both lists are left out — read again later. On a tree you "
+        "do not own neither list is answered. Default true; false leaves both out and reads no other tree.");
     tools.push_back(tool("get_diagnostics", Access::read,
         "Report how the roadmap departs from a valid skill tree: cycles, dangling edges (an "
         "endpoint is missing), self-edges, and structural smells. Edits are never rejected, so an "
@@ -517,8 +541,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["opens"] = cappedStr("Optional id of a tree you own that this node opens: the node points at that tree, "
                            "is complete for you when that tree is, and get_tree, get_nodes and find_nodes "
                            "answer the tree's id, title and state under the `opens` field. A tree that is not "
-                           "yours is refused. Omit, or pass \"\", and the node opens none, whatever a deleted "
-                           "node under the same id opened.",
+                           "yours is refused. A tree that leads back to this one lands, and the receipt's "
+                           "`introducedDiagnostics` names the loop after the graph's errors, within its five "
+                           "lines: a tree on a loop never completes. Omit, or pass \"\", and the node opens "
+                           "none, whatever a deleted node under the same id opened.",
                            kMaxIdLength);
     p["id"] = cappedStr("Optional id to PROPOSE for the new node; minted from the label if omitted. "
                         "(`nodeId` names a node that already exists and is not accepted here.)",
@@ -550,7 +576,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["opens"] = cappedStr("The id of a tree you own that this node opens: the node points at that tree, is "
                            "complete for you when that tree is, and get_tree, get_nodes and find_nodes answer "
                            "the tree's id, title and state under the `opens` field. A tree that is not yours "
-                           "is refused. \"\" clears it; omit to leave it unchanged.",
+                           "is refused. A tree that leads back to this one lands, and the receipt's "
+                           "`introducedDiagnostics` names the loop after the graph's errors, within its five "
+                           "lines: a tree on a loop never completes. \"\" clears it; omit to leave it unchanged.",
                            kMaxIdLength);
     tools.push_back(tool("annotate_node", Access::write,
         "Set a node's free annotation: its `description` (or `appendDescription`, which joins onto the "
@@ -812,7 +840,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     nodeFields["links"] = linkArray("Optional external references.");
     nodeFields["opens"] = cappedStr("Optional id of a tree you own that this node opens — the id as a string, "
                                     "which is the `treeId` inside the `opens` get_tree answers. \"\" clears it, "
-                                    "and one naming a tree that is not yours refuses the whole import.",
+                                    "and one naming a tree that is not yours refuses the whole import. Left "
+                                    "out, a node the tree holds keeps the tree it opens, and a node this import "
+                                    "brings back from a delete opens none. A tree that leads back to this one "
+                                    "lands, and `introducedDiagnostics` names the loop after the graph's errors, "
+                                    "within its five lines: a tree on a loop never completes.",
                                     kMaxIdLength);
 
     Json::Value progressFields(Json::objectValue);
@@ -871,7 +903,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "UNIONED with the ones it already has unless prerequisiteMode is \"replace\"; a new id is "
         "added; the tree's title is not touched. Every other field you leave off a node or kind keeps "
         "the value the tree holds (a new id gets the default), and every field you send replaces it — "
-        "an explicit \"\" or [] clears it. The "
+        "an explicit \"\" or [] clears it. A node deleted earlier and re-sent comes back with the fields "
+        "it had, but for the tree it opened: it opens the tree this batch names for it, or none. The "
         "only removals are the ones you ask for: `tombstone` ids (which need the roadmap:delete grant), "
         "and under \"replace\" the prerequisite edges your batch does not name. `position` is optional — the web canvas lays "
         "the tree out from its structure. The receipt counts what the batch carried — `nodes`, "

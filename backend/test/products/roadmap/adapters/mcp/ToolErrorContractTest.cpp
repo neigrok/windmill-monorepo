@@ -871,7 +871,19 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
                             "a node that opens another of your trees follows that tree",
                             "A tree is complete when it has at least one node and",
                             "a tree whose pointers lead back to it never is",
-                            "Your mark on it is kept and still answered as"})
+                            "Your mark on it is kept and still answered as",
+                            "On a tree you own, `roadmap_get_diagnostics` also reports what is wrong with the trees its nodes",
+                            "`treeLoops` lists each node whose pointer leads back to the tree, with a shortest `path`",
+                            "`danglingPointers` lists each node whose pointer names no tree of yours that stands",
+                            "Each list holds its first 50 nodes and a `path`\nits first 8 trees",
+                            "`treeLoopsOmitted`, `danglingPointersOmitted` and a loop's `pathOmitted` count",
+                            "a `path` that is cut does not end with this tree",
+                            "Neither list changes\n`diagnosticsClean`",
+                            "An edit that sets `opens` and closes a loop of\ntrees names it in "
+                            "`introducedDiagnostics` after the graph's errors, within that list's five lines",
+                            "`pointerDiagnosticsUnavailable: true` says the opened trees could not be read in time",
+                            "`includePointers: false` leaves both lists out",
+                            "A deleted node it brings back opens the tree the\nbatch names for it, or none"})
     CHECK(text.find(claim) != std::string::npos);
   for (const char* claim : {"read its guides with get_tree: those of your trees above it and its own, farthest first",
                             "They add; where they disagree, what to follow is your call",
@@ -887,6 +899,42 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
     CHECK(getTree.find(claim) != std::string::npos);
   CHECK_EQ((*toolNamed(tools, "get_tree"))["inputSchema"]["properties"]["includeGuides"]["type"].asString(),
            std::string("boolean"));
+  const Json::Value& includePointers = (*toolNamed(tools, "get_diagnostics"))["inputSchema"]["properties"]["includePointers"];
+  CHECK_EQ(includePointers["type"].asString(), std::string("boolean"));
+  for (const char* claim : {"On a tree you own, also answer what is wrong with the trees its nodes open",
+                            "`treeLoops` holds one {node, path} per node whose pointer leads back to this tree, the first 50 in node id order",
+                            "`treeLoopsOmitted` counts the rest",
+                            "the tree the node opens first and this tree last, the smaller tree id taken where two ways are as short",
+                            "It lists at most 8 trees: a longer way is cut to its first 8, so it does not end with this tree",
+                            "`pathOmitted` counts the trees left off, this tree the last of them",
+                            "a loop among other trees is reported when one of them is read",
+                            "`danglingPointers` holds one {node, treeId} per node whose pointer names no tree of yours that stands",
+                            "`danglingPointersOmitted` counts the rest",
+                            "the three counts are absent when nothing is left off",
+                            "neither list is among the errors `diagnosticsClean` and get_health count",
+                            "`pointerDiagnosticsUnavailable: true` says the opened trees could not be read just now",
+                            "On a tree you do not own neither list is answered",
+                            "Default true; false leaves both out and reads no other tree"})
+    CHECK(includePointers["description"].asString().find(claim) != std::string::npos);
+  for (const char* tool : {"create_node", "annotate_node"})
+    CHECK((*toolNamed(tools, tool))["inputSchema"]["properties"]["opens"]["description"].asString().find(
+              "A tree that leads back to this one lands, and the receipt's `introducedDiagnostics` names the loop after "
+              "the graph's errors, within its five lines") != std::string::npos);
+  for (const Json::Value& nodeFields :
+       {(*toolNamed(tools, "patch_nodes"))["inputSchema"]["properties"]["updates"]["items"]["properties"],
+        (*toolNamed(tools, "import_subgraph"))["inputSchema"]["properties"]["nodes"]["items"]["properties"]})
+    CHECK(nodeFields["opens"]["description"].asString().find(
+              "A tree that leads back to this one lands, and `introducedDiagnostics` names the loop after the graph's "
+              "errors, within its five lines") != std::string::npos);
+  CHECK((*toolNamed(tools, "import_subgraph"))["inputSchema"]["properties"]["nodes"]["items"]["properties"]["opens"]["description"]
+            .asString()
+            .find("a node this import brings back from a delete opens none") != std::string::npos);
+  CHECK((*toolNamed(tools, "import_subgraph"))["description"].asString().find(
+            "A node deleted earlier and re-sent comes back with the fields it had, but for the tree it opened: it opens "
+            "the tree this batch names for it, or none") != std::string::npos);
+  CHECK_EQ((*toolNamed(tools, "patch_nodes"))["outputSchema"]["properties"]["pointerDiagnosticsUnavailable"]["type"].asString(),
+           std::string("boolean"));
+  CHECK_FALSE((*toolNamed(tools, "change_edges"))["outputSchema"]["properties"].isMember("pointerDiagnosticsUnavailable"));
 
   h.call("create_node", node("a", "A"));
   Json::Value rename(Json::objectValue);

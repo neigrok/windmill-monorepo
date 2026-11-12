@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 16;
+constexpr int kWireCorpusVersion = 17;
 
 struct Step {
   const char* tool;
@@ -91,7 +91,7 @@ std::vector<Step> plan() {
                                   array.append(mark("ghost", "active"));
                                   return array;
                                 }()}})},
-      // The harness holds one tree, so the tree a node opens is the tree it is in.
+      // The harness holds one tree, so the tree a node opens is the tree it is in: a loop of trees the receipt and get_diagnostics name.
       {"annotate_node", obj({{"nodeId", "docs"}, {"opens", "t"}})},
       {"find_nodes", with("query", "render")},
       {"find_nodes", with("state", "locked")},

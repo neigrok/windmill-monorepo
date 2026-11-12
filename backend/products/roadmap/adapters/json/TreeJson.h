@@ -26,6 +26,11 @@ Json::Value nodeToJson(const NodeSpec& node);
 Json::Value toJson(const TreeData& data);
 Json::Value toJson(const Progress& progress);
 Json::Value toJson(const TreeDiagnostics& diagnostics);
+// A tree's diagnostics as its writer is answered them: the graph's, and beside them `treeLoops` as
+// [{node, path: [{treeId, title}], pathOmitted?}] and `danglingPointers` as [{node, treeId}], the pointer as it is
+// stored. `treeLoopsOmitted`, `danglingPointersOmitted` and a loop's `pathOmitted` count what the domain's caps left
+// off, and are absent when that is nothing.
+Json::Value toJson(const TreeDiagnostics& diagnostics, const PointerDiagnostics& pointers);
 Json::Value toJson(const TreeSummary& summary);   // one registry row (GET /v1/trees)
 // `opens` of GET /v1/trees/{id}, by node id; `loop` marks an opening whose tree is among `leadingBack`.
 Json::Value toJson(const std::map<NodeId, Opening>& openings, const std::set<TreeId>& leadingBack);
