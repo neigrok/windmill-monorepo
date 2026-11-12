@@ -1,6 +1,13 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Icon } from '../../../design-system/Icon.jsx';
+import { nodeGlyph } from '../OpeningMarks.jsx';
+
+// A node's glyph as SVG markup: the mark of the tree it opens, else the design system's icon of that name.
+export function glyphMarkup(name, props) {
+  const Mark = nodeGlyph(name);
+  return renderToStaticMarkup(Mark ? createElement(Mark, props) : createElement(Icon, { name, ...props }));
+}
 
 // Rasterizes node icons into an alpha-mask atlas the node shader samples; onReady fires once the canvas is complete so the scene can re-upload it.
 const CELL = 192;
@@ -14,7 +21,7 @@ export class IconAtlas {
     this.names = new Set(iconNames);
     const glyphs = [];
     for (const name of this.names) {
-      const markup = renderToStaticMarkup(createElement(Icon, { name, color: '#ffffff', size: CELL, strokeWidth: 2.25 }));
+      const markup = glyphMarkup(name, { color: '#ffffff', size: CELL, strokeWidth: 2.25 });
       if (markup) glyphs.push({ name, markup });
       if (glyphs.length === CAPACITY) break;
     }

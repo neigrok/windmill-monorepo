@@ -232,6 +232,99 @@
   flex-shrink: 0;
   color: var(--text-secondary);
 }
+/* The tree a step opens: a card row with its glyph tile, title, done of total and bar; the whole row goes in. */
+.st-board-step-tree {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: var(--surface-card);
+  font-family: var(--font-body);
+  text-align: left;
+  color: var(--text-primary);
+}
+button.st-board-step-tree {
+  cursor: pointer;
+}
+.st-board-step-tree-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+}
+.st-board-step-tree--empty .st-board-step-tree-glyph {
+  color: var(--text-tertiary);
+}
+.st-board-step-tree--complete .st-board-step-tree-glyph {
+  background: var(--kind-olive-soft);
+  color: var(--text-primary);
+}
+.st-board-step-tree--missing .st-board-step-tree-glyph {
+  color: var(--color-danger);
+}
+.st-board-step-tree-facts {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.st-board-step-tree-title {
+  overflow-wrap: anywhere;
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 20px;
+}
+.st-board-step-tree-state {
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+.st-board-step-tree-facts .st-tree-bar {
+  margin-top: 5px;
+}
+.st-board-step-tree-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.st-board-step-tree-rule {
+  margin: 0;
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+/* Where Complete sat: what completes the step, beside the way into its tree. */
+.st-board-step-tree-band {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+.st-board-step-tree-band > svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
+.st-board-step-tree-band--missing > svg {
+  color: var(--color-danger);
+}
+
 .st-board-step-row--need {
   padding: 0 12px;
   background: var(--surface-sunken);

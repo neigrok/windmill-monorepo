@@ -53,10 +53,12 @@ Node and kind registers use flat value/stamp pairs such as `label`/`labelAt`; li
 Edges use `from`, `to`, `addedAt` and `removedAt`. Title and guide are
 `{v, at}`; coverage maps each actor to its greatest stamp. Omitted sections and fields never delete
 data. The browser lattice joins, stores and writes the guide as it does the title: one stamped register
-in the structure lane, outside the undo journal. It does not hold `opens`: it reads past the pair in a
-frame and never sends it, so a stored pointer stays as it is. The server sends the pointer only to a
-caller who can write the tree; every other reader's frames and `GET` state carry `opens` empty and
-`opensAt` unset ([the model](../backend/SPEC.md#model)).
+in the structure lane, outside the undo journal. It joins `opens` by its stamp and stores it with the
+node's other registers, and never sends it: no door of the web writes the pointer, so
+`sync/pendingWrites.js` leaves the pair out of what a replica counts unsent, and a frame that says
+nothing of it changes nothing. The server sends the pointer only to a caller who can write the tree;
+every other reader's frames and `GET` state carry `opens` empty and `opensAt` unset
+([the model](../backend/SPEC.md#model)).
 
 | Intent | Meaning |
 |---|---|

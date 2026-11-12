@@ -18,6 +18,8 @@ import { StepDetail } from '/src/products/roadmap/step/StepDetail.jsx';
 import { StepComposer } from '/src/products/roadmap/step/StepComposer.jsx';
 import { useStepAddress, stepIsStale } from '/src/products/roadmap/step/stepAddress.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
+import { Openings } from '/src/products/roadmap/model/Opening.js';
+import { TreeDoor } from '/src/products/roadmap/room/useTreeVisit.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { advanceProgress } from '/src/products/roadmap/model/progress.js';
 import { toggleSubtask } from '/src/products/roadmap/model/NodeWorkspace.js';
@@ -29,7 +31,7 @@ const without = (steps, id) => steps.filter((step) => step.id !== id).map((step)
 
 // Like the shell: the route follows the URL in a transition, and each roadmap is its own view, keyed by its id, that
 // loads its tree a beat after it mounts.
-window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds = [], linked = true, others = {}, editingEnabled = false, selectable = false }) => {
+window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds = [], linked = true, others = {}, editingEnabled = false, selectable = false, opens = {} }) => {
   const trees = { sail: nodes, ...others };
   const routeTree = () => window.location.hash.split('?')[0].replace('#/app/', '');
   function App() {
@@ -48,7 +50,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
   function Room({ treeId }) {
     const [steps, setSteps] = useState(null);
     useEffect(() => { Promise.resolve().then(() => setSteps(trees[treeId])); }, []);
-    const tree = useMemo(() => (steps === null ? null : new SkillTree({ id: treeId, title: 'Learn to sail', nodes: steps })), [steps]);
+    const tree = useMemo(() => (steps === null ? null : new SkillTree(Openings.fromWire(opens).onto({ id: treeId, title: 'Learn to sail', nodes: steps }, { joined: true }))), [steps]);
     const [progress, setProgress] = useState({ completed: new Set(completed), completedAt: Object.fromEntries(completed.map((id, index) => [id, index + 1])) });
     const [selectedId, setSelectedId] = useState(null);
     const [editing, setEditing] = useState(null);
@@ -71,7 +73,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
     window.restoreSteps = () => setSteps(trees[treeId]);
     if (tree === null) return null;
     const open = address.id !== null && tree.nodesById.has(address.id);
-    return React.createElement('div', { style: { position: 'fixed', inset: 0 } },
+    return React.createElement(TreeDoor.Provider, { value: (id, door) => call('tree ' + id + ' ' + door) }, React.createElement('div', { style: { position: 'fixed', inset: 0 } },
       React.createElement('div', { className: 'st-view-layer--board is-active', style: { position: 'absolute', inset: 0, zIndex: 18 } },
         React.createElement(BoardView, { tree, completed: progress.completed, completedAt: progress.completedAt, selectedId,
           onSelect: (id) => { setSelectedId(id); address.open(id, 'card'); }, onAnchor: setSelectedId, breakpoint, active: true,
@@ -111,7 +113,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
           setSteps((current) => current.map((node) => node.id === request.id ? { ...node, ...request } : node));
           return { ok: true };
         },
-      }));
+      })));
   }
   createRoot(document.getElementById('root')).render(React.createElement(App));
 };
@@ -170,14 +172,14 @@ const learnToSailNodes = [
   { id: 'solo', label: 'Sail solo', prerequisites: ['triangle', 'bowline'], color: 'gold' },
 ];
 
-async function openRoom({ viewport, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], linked = true, others = {}, start = '#/app/sail', clock = false, permissions = [], editingEnabled = false }, errors) {
+async function openRoom({ viewport, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], linked = true, others = {}, start = '#/app/sail', clock = false, permissions = [], editingEnabled = false, opens = {} }, errors) {
   const context = await browser.newContext({ viewport, permissions });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   if (clock) await page.clock.install();
   await page.goto(`${origin}/step-detail-test${start}`);
   await page.waitForFunction(() => window.entryReady);
-  await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], editable, workspaces, kinds, linked, others, editingEnabled });
+  await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], editable, workspaces, kinds, linked, others, editingEnabled, opens });
   await page.locator('.st-board-card:visible').first().waitFor();
   return page;
 }
@@ -199,6 +201,88 @@ const waitForColumn = (page, name, titles) => page.waitForFunction(({ name, titl
   return JSON.stringify(shown) === JSON.stringify(titles);
 }, { name, titles });
 const card = (page, label) => page.locator('.st-board-card:visible', { has: page.locator('.st-board-card-title', { hasText: new RegExp(`^${label}$`) }) });
+
+// What the step detail shows of the tree a step opens, and every button where Complete and Reset would sit.
+const treeParts = (page) => page.evaluate(() => {
+  const layer = document.querySelector('.st-board-step-layer');
+  const text = (selector) => layer.querySelector(selector)?.textContent ?? null;
+  return {
+    status: text('.st-board-step-status-label'),
+    row: [text('.st-board-step-tree-title'), text('.st-board-step-tree-state')],
+    rule: text('.st-board-step-tree-rule'),
+    band: text('.st-board-step-tree-band'),
+    actions: [...layer.querySelectorAll('.st-board-step-buttons button, .st-board-step-offer button')].map((button) => button.textContent),
+  };
+});
+
+for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 }]) {
+  test(`Chromium ${viewport.width}: a step that opens a tree offers no Complete, no Reset and no subtask offer: it says what completes it, and its row and Open tree go in`, async () => {
+    await start();
+    const errors = [];
+    const page = await openRoom({
+      viewport,
+      nodes: learnToSailNodes.map((node) => ({ wind: { ...node, opens: 't_wind' }, rig: { ...node, opens: 't_rig' }, bowline: { ...node, opens: 't_gone' }, dock: { ...node, opens: 'sail' } }[node.id] ?? node)),
+      opens: {
+        dock: { treeId: 'sail', title: 'Learn to sail', state: 'open', done: 3, total: 8, loop: true },
+        wind: { treeId: 't_wind', title: 'Wind drills', state: 'open', done: 3, total: 8, loop: false },
+        rig: { treeId: 't_rig', title: 'Rig the boat', state: 'complete', done: 4, total: 4, loop: false },
+        bowline: { treeId: 't_gone', missing: true },
+      },
+      workspaces: { wind: { subtasks: [{ id: 's1', label: 'Watch the flag', done: true }], note: '', links: [] } },
+    }, errors);
+    try {
+      await card(page, 'Read the wind').locator('.st-board-card-title').click();
+      await page.locator('.st-board-step-layer').waitFor();
+      assert.deepEqual(await treeParts(page), {
+        status: 'Up next', row: ['Wind drills', '3 of 8 done'], rule: 'Done when every step in Wind drills is done.',
+        band: 'Completes with its tree', actions: ['Open tree'],
+      });
+      await page.getByRole('tab', { name: STEP_DETAIL.sections.workspace, exact: true }).click();
+      assert.deepEqual((await treeParts(page)).actions, viewport.width < 744 ? ['Add note', 'Open tree'] : ['Open tree']);
+      await page.getByRole('tab', { name: STEP_DETAIL.sections.overview, exact: true }).click();
+      await page.locator('.st-board-step-layer').getByRole('button', { name: 'Open Wind drills · 3 of 8 done', exact: true }).click();
+      await page.locator('.st-board-step-buttons').getByRole('button', { name: 'Open tree', exact: true }).click();
+      await page.keyboard.press('Escape');
+
+      if (viewport.width < 744) await page.getByRole('tab', { name: /^Done/ }).click();
+      await card(page, 'Rig the boat').locator('.st-board-card-title').click();
+      assert.deepEqual(await treeParts(page), {
+        status: 'Done', row: ['Rig the boat', '4 of 4 done'], rule: 'Done because every step in Rig the boat is done.',
+        band: 'Completed by its tree', actions: ['Open tree'],
+      });
+      await page.keyboard.press('Escape');
+
+      if (viewport.width < 744) await page.getByRole('tab', { name: /^Up next/ }).click();
+      await card(page, 'Tie a bowline').locator('.st-board-card-title').click();
+      assert.deepEqual(await treeParts(page), {
+        status: 'Up next', row: ['Tree not found', 'Nothing at the other end'], rule: 'This tree can’t be found.',
+        band: 'Can’t complete yet', actions: [],
+      });
+      assert.equal(await page.locator('button.st-board-step-tree').count(), 0);
+      await page.keyboard.press('Escape');
+
+      if (viewport.width < 744) await page.getByRole('tab', { name: /^Locked/ }).click();
+      assert.equal(await card(page, 'Leave the dock').locator('.st-board-tree-pill--leads, .st-board-tree-pill-chevron').count(), 0);
+      await card(page, 'Leave the dock').locator('.st-board-tree-pill').click();
+      const own = await treeParts(page);
+      assert.deepEqual({ row: own.row, rule: own.rule, band: own.band, actions: own.actions }, {
+        row: ['Learn to sail', '3 of 8 done · opens Learn to sail back'], rule: 'A loop with Learn to sail: this never completes.',
+        band: 'Won’t complete by itself', actions: [],
+      });
+      assert.equal(await page.locator('button.st-board-step-tree').count(), 0);
+      assert.equal(await page.locator('.st-board-step-layer').getByRole('button', { name: /^Open/ }).count(), 0);
+      await page.keyboard.press('Escape');
+      if (viewport.width < 744) await page.getByRole('tab', { name: /^Up next/ }).click();
+
+      await card(page, 'Read the wind').locator('.st-board-tree-pill').click();
+      assert.deepEqual(await calls(page), ['tree wind step', 'tree wind step', 'tree wind pill']);
+      assert.equal(await hash(page), '#/app/sail');
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.context().close();
+    }
+  });
+}
 
 test('Chromium: the real step menu places Select after Graph and before Delete and dispatches its step once', async () => {
   await start();

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RoomProgress } from '../../../../src/products/roadmap/room/useRoomProgress.js';
+import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 
 function roomFixture(t, { restoreError = null, overrides = {}, mine = true } = {}) {
@@ -19,7 +20,7 @@ function roomFixture(t, { restoreError = null, overrides = {}, mine = true } = {
     treeRef: { current: tree }, seedRef: { current: { id: 'sail', mine } },
     sceneRef: { current: { announceCeremony: (message, options) => calls.push(['ceremony', message, options]) } },
     sessionRef: { current: { markProgress: (ids, status) => calls.push(['write', ids, status]) } },
-    returnLedger: { save: (id, value) => calls.push(['ledger', id, value.completed]) },
+    returnLedger: { load: () => null, save: (id, value) => calls.push(['ledger', id, value.completed]) },
     milestoneLedger: { has: (treeId, id) => offered.has(id), markOffered: (treeId, id) => offered.add(id) },
     emit: (event) => calls.push(['emit', event.verb, event.nodeId]),
     showToast: (message, options) => calls.push(['toast', message, options]),
@@ -137,4 +138,72 @@ test('a remote mark adopts the owner\'s lane and says what moved; anyone else ke
   const reader = roomFixture(t, { mine: false });
   assert.equal(reader.acts.adoptRemote({ completed: ['wind'], completedAt: {} }), null);
   assert.deepEqual(reader.acts.snapshot.completed, new Set());
+});
+
+// My year: an ordinary root, a step that opens a tree behind it, and an ordinary step behind that.
+function yearFixture(t, opening) {
+  const fixture = roomFixture(t);
+  fixture.acts.collaborators.treeRef.current = new SkillTree({ id: 'sail', title: 'My year', nodes: [
+    { id: 'plan', label: 'Plan the year', prerequisites: [] },
+    { id: 'sail', label: 'Learn to sail', prerequisites: ['plan'], opens: opening.treeId, opening },
+    { id: 'maya', label: 'Take Maya sailing', prerequisites: ['sail'] },
+  ] });
+  return fixture;
+}
+const sailing = (state, done) => Opening.fromWire({ treeId: 't_sail', title: 'Learn to sail', state, done, total: 8, loop: false });
+
+test('no mark reaches a step that opens a tree from any door: nothing changes, nothing is sent and nothing is said', (t) => {
+  for (const opening of [sailing('open', 3), sailing('complete', 8), Opening.fromWire({ treeId: 't_gone', missing: true }), Opening.unread('t_sail')]) {
+    const { acts, calls } = yearFixture(t, opening);
+    acts.adoptLoaded({ completed: ['plan'], completedAt: { plan: 1 } });
+    const before = acts.snapshot;
+
+    acts.complete('sail', { at: 100 });
+    acts.complete('sail', { quiet: true });
+    acts.reset('sail');
+    acts.restore('sail', { completed: new Set(['sail']) });
+    acts.markDone(new Set(['sail']));
+
+    assert.equal(acts.snapshot, before);
+    assert.deepEqual(calls, []);
+  }
+});
+
+test('a bulk Mark done marks the ordinary steps of a selection and leaves the one that opens a tree', (t) => {
+  const { acts, calls } = yearFixture(t, sailing('open', 3));
+  acts.markDone(new Set(['plan', 'sail', 'maya']));
+
+  assert.deepEqual(calls.filter(([kind]) => kind === 'write'), [['write', ['plan', 'maya'], 'complete']]);
+  assert.deepEqual(acts.snapshot.completed, new Set(['plan', 'maya']));
+  assert.deepEqual(calls.filter(([kind]) => kind === 'event'), [['event', 'roadmap_board_complete', { door: 'bulk', count: '2-5' }]]);
+});
+
+test('the ledger and the crown read what stands complete: a step whose tree is done counts with no mark of its own', (t) => {
+  const { acts, calls } = yearFixture(t, sailing('complete', 8));
+  acts.adoptLoaded({ completed: ['plan'], completedAt: { plan: 1 } });
+  acts.complete('maya', { at: 100 });
+
+  assert.deepEqual(calls.filter(([kind]) => kind === 'ledger'), [['ledger', 'sail', ['plan', 'sail', 'maya']]]);
+  assert.equal(calls.find(([kind]) => kind === 'ceremony')[1], 'Tree complete — 3/3 steps.');
+});
+
+test('a roadmap that read nothing of a tree one of its steps opens adds the person’s own marks to what the ledger holds, and recomputes nothing', (t) => {
+  const { acts, calls } = yearFixture(t, Opening.unread('t_sail'));
+  acts.collaborators.returnLedger.load = () => ({ completed: ['plan', 'sail'], at: 1 });
+  acts.adoptLoaded({ completed: ['plan'], completedAt: { plan: 1 } });
+
+  acts.complete('maya', { quiet: true });
+  acts.adoptRemote({ completed: new Set(['plan', 'maya']), completedAt: {} });
+  acts.reset('maya');
+
+  assert.deepEqual(calls.filter(([kind]) => kind === 'ledger'), [['ledger', 'sail', ['plan', 'sail', 'maya']], ['ledger', 'sail', ['plan', 'sail']]]);
+});
+
+test('with no ledger yet, a roadmap that read nothing of its trees starts none from a mark', (t) => {
+  const { acts, calls } = yearFixture(t, Opening.unread('t_sail'));
+  acts.adoptLoaded({ completed: ['plan'], completedAt: { plan: 1 } });
+
+  acts.complete('maya', { quiet: true });
+
+  assert.deepEqual(calls.filter(([kind]) => kind === 'ledger'), []);
 });

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { plantedToast, welcomeBackToast } from '../copy.js';
 import { DEMO_STAGED_COMPLETED, DEMO_TREE_ID } from '../demo/demoStage.js';
 import { layoutNameFrom, loadLayoutEngine } from '../layout/index.js';
+import { Openings } from '../model/Opening.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';
@@ -17,6 +18,9 @@ import { frontierTarget, opensOnFrontier, viewportInsets } from '../graph/viewpo
 import { track } from '../../../telemetry/beacon.js';
 
 const deviceTrees = new LocalTreeRegistry();
+// A pointer the load read nothing of waits this long for the pointers to settle, and its read is given this long.
+const POINTER_READ_AFTER_MS = 600;
+const POINTER_READ_LIMIT_MS = 10000;
 
 // A saved camera the layout and its format still mean, and the step that place remembered if the tree still holds it.
 function savedPlace(place, seed) {
@@ -87,17 +91,22 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
         setLoading(false);
         return;
       }
-      const { seed, overlay, serverActivity } = read;
+      const { overlay, serverActivity } = read;
+      const owner = read.seed.mine === true && !shared && !demo;
+      // Only its owner's room reads what a step opens: anyone else sees an ordinary step. A device's copy read none, so its pointers stand unread.
+      let openings = owner ? read.seed.openings ?? new Openings() : null;
+      const standing = (projection, joined) => (openings ? openings.onto(projection, { joined }) : projection);
+      const seed = standing(read.seed, false);
       const nextTree = new SkillTree(seed);
       const states = UnlockRules.derive(nextTree, overlay);
       const model = nextTree.toRenderModel(structure.layoutPositions(nextTree), states);
 
       const mountedScene = sceneRef.current;
       const remembers = !demo && desktopEditorRef.current;
-      const sinceIds = ReturnLedger.since(overlay.completed, remembers ? returnLedger.load(seed.id) : null, states);
+      const completed = UnlockRules.completed(nextTree, overlay);
+      const sinceIds = ReturnLedger.since(completed, remembers ? returnLedger.load(seed.id) : null, states);
       if (sinceIds.length) mountedScene?.armReturnRecap(sinceIds, welcomeBackToast({ count: sinceIds.length }));
 
-      const owner = seed.mine === true && !shared && !demo;
       const born = owner && peekBorn(seed.id);
       const place = savedPlace(placeKept ? placeStore.load(layoutRef.current.name) : null, seed);
       const onFrontier = opensOnFrontier({ savedCamera: place.camera, owner, born, stepCount: seed.nodes.length });
@@ -128,15 +137,42 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       workspace.pushArcs();
       if (place.selection) setSelectedId(place.selection);
       if (placeKept && mountedScene) placeStore.save({ treeId: seed.id, layout: layoutRef.current.name, camera: mountedScene.getViewpoint(), selectedId: place.selection });
-      if (remembers) returnLedger.save(seed.id, { completed: [...overlay.completed], at: Date.now() });
+      // A load that could not read a tree one of its steps opens does not know what stands complete, so it leaves the ledger as it was.
+      if (remembers && Openings.known(nextTree.nodes) !== 'unread') returnLedger.save(seed.id, { completed: [...completed], at: Date.now() });
       setLoading(false);
       if (shared && seed.id === DEMO_TREE_ID) track('demo_open', { treeId: seed.id });
 
       // Only owned trees enter the device index, so a visited share cannot be claimed.
       sessionRef.current?.close();
       peersRef.current.clear();
+      let projected = read.seed;
+      const stand = () => {
+        const shown = standing(projected, session.joinedServer);
+        latest.current.structure.onTreeChanged(shown);
+        workspace.pushArcs();
+        return shown;
+      };
+      // The facts follow the pointers: a pointer the load read nothing of has the roadmap read once more, and a read
+      // that fails or still says nothing of it is not asked again.
+      let asked = '';
+      const followPointers = (shown) => {
+        if (!openings?.read) return;
+        const unread = shown.nodes.flatMap((step) => (step.opening?.face === 'unread' ? `${step.id}>${step.opening.treeId}` : [])).join(' ');
+        if (unread === '' || unread === asked) return;
+        asked = unread;
+        setTimeout(async () => {
+          if (cancelled || asked !== unread) return;
+          const fresh = await new HttpTreeRepository({ treeId }).loadTree({ signal: AbortSignal.timeout(POINTER_READ_LIMIT_MS) }).catch(() => null);
+          if (cancelled || fresh?.mine !== true) return;
+          openings = fresh.openings;
+          stand();
+        }, POINTER_READ_AFTER_MS);
+      };
       const session = new SyncSession({ treeId: seed.id, title: seed.title, guide: seed.guide ?? '', registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
-        .onTreeChanged((data) => latest.current.structure.onTreeChanged(data))
+        .onTreeChanged((data) => {
+          projected = data;
+          followPointers(stand());
+        })
         .onPresence((frame) => peersRef.current.set(frame.actor, {
           name: frame.profile?.name, color: frame.profile?.color,
           cursor: frame.cursor ?? null, selection: frame.selection ?? null,

@@ -111,6 +111,13 @@ export class LocalTreeRegistry {
     return this.list(owner).find((entry) => entry.id === id) ?? null;
   }
 
+  // The row of a tree this device holds as that account's own. Anonymous work is nobody's yet, and a holder a lapse
+  // retains is not asked: the caller names the account.
+  owned(id, owner) {
+    const entry = this.entries()[id];
+    return owner && entry?.owner === owner && entry.title ? { id, title: entry.title } : null;
+  }
+
   // The owner is stamped at birth so a tree planted offline by a signed-in person is not anonymous
   // work the next account may claim.
   record(id, title, owner = deviceOwner()) {
@@ -133,13 +140,13 @@ export class LocalTreeRegistry {
 
   // Known entries keep their claim state and their owner: a session never re-attributes a row. An
   // unknown tree arriving through sync is born claimed, stamped only if this load has a confirmed
-  // answer.
-  touch(id, title) {
+  // answer, or as the account its owner's room names.
+  touch(id, title, owner = confirmation() ? deviceOwner() : undefined) {
     const entries = this.entries();
     const known = entries[id];
     entries[id] = known
       ? { ...known, title, updatedAt: Date.now() }
-      : { title, updatedAt: Date.now(), claimed: true, ...(confirmation() ? { owner: deviceOwner() } : {}) };
+      : { title, updatedAt: Date.now(), claimed: true, ...(owner === undefined ? {} : { owner }) };
     this.write(entries);
   }
 

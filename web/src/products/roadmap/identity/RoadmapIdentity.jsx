@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { Activity, Compass, Download, GitFork, Keyboard, MoreHorizontal, Settings, Share, Sparkles } from 'lucide-react';
+import { Activity, ChevronLeft, Compass, Download, GitFork, Keyboard, MoreHorizontal, Settings, Share, Sparkles } from 'lucide-react';
 import { Tooltip } from '../../../design-system';
 import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
@@ -9,13 +9,15 @@ import { usePopoverDismissal } from '../popoverDismissal.js';
 import { RoadmapSheet } from './RoadmapSheet.jsx';
 import { ViewSwitch } from './ViewSwitch.jsx';
 import { countBucket } from '../board/acts.js';
-import { DEMO_BYLINE, LABELS, ROADMAP_VERBS, formatCount, nextChip, progressFigure, progressLabel, reasonLine, upNextCount } from '../copy.js';
+import { DEMO_BYLINE, LABELS, ROADMAP_VERBS, backTo, formatCount, nextChip, progressFigure, progressLabel, reasonLine, upNextCount } from '../copy.js';
 import './identity.css';
 
 const FULL_DESKTOP_QUERY = '(min-width: 1280px)';
 
+// `back` is the tree this one was gone into from, with the way back to it: a chip in the first slot from 744px, a
+// chevron with that tree as an eyebrow over the title on a phone.
 export function RoadmapIdentity({
-  band, view, role, title, switcher, progress, onSwitchView, graphUnavailable = false, onGraphUnavailable, find, next,
+  band, view, role, title, back = null, switcher, progress, onSwitchView, graphUnavailable = false, onGraphUnavailable, find, next,
   onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom, onActivity, activityOpen = false,
 }) {
   const bar = useRef(null);
@@ -122,6 +124,7 @@ export function RoadmapIdentity({
 
   const showSwitcher = title !== undefined && !sheetAvailable && !phone && owner && !!switcher;
   const showHeading = title !== undefined && !sheetAvailable && !showSwitcher;
+  const eyebrow = back && phone ? <span className="st-roadmap-eyebrow" aria-hidden>{back.title}</span> : null;
 
   return (
     <div
@@ -132,15 +135,22 @@ export function RoadmapIdentity({
       data-view={view}
     >
       {role === 'demo' && phone && <span className="st-roadmap-sample">{DEMO_BYLINE.phone}</span>}
+      {back && title !== undefined && (
+        <button type="button" className={`st-roadmap-back st-roadmap-back--${phone ? 'phone' : 'wide'}`} aria-label={backTo({ screen: back.title })} onClick={back.onBack}>
+          <ChevronLeft size={phone ? 20 : 16} strokeWidth={1.66667} absoluteStrokeWidth aria-hidden />
+          {!phone && <span>{back.title}</span>}
+        </button>
+      )}
       <div className="st-roadmap-context">
         {sheetAvailable && (
-          <button ref={titleButton} className="st-roadmap-title st-roadmap-title-button" type="button"
+          <button ref={titleButton} className={`st-roadmap-title st-roadmap-title-button${eyebrow ? ' st-roadmap-title--from' : ''}`} type="button"
             aria-label={title} aria-haspopup="dialog" aria-expanded={open === 'sheet'} onClick={() => toggle('sheet')}>
+            {eyebrow}
             {title}
           </button>
         )}
         {showSwitcher && <div className="st-roadmap-switcher">{switcher}</div>}
-        {showHeading && <h1 ref={titleButton} tabIndex={-1} className="st-roadmap-title" title={title}>{title}</h1>}
+        {showHeading && <h1 ref={titleButton} tabIndex={-1} className={`st-roadmap-title${eyebrow ? ' st-roadmap-title--from' : ''}`} title={title}>{eyebrow}{title}</h1>}
       </div>
       {role === 'demo' && !phone && <span className="st-roadmap-sample">{DEMO_BYLINE.wide}</span>}
       {title !== undefined && progress && (

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBucket, deletable, editGesture, receiptUndo, recolorOutcome } from './acts.js';
 import { sharedKind } from '../model/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
-import { UnlockRules } from '../model/UnlockRules.js';
-import { LABELS, SAVE_FAILURE, deleteFailedToast } from '../copy.js';
+import { UnlockRules, takesMark } from '../model/UnlockRules.js';
+import { LABELS, SAVE_FAILURE, TREE, deleteFailedToast, treeBand } from '../copy.js';
 import { BoardQuery } from './Board.js';
 
 export class BoardComposer {
@@ -121,6 +121,11 @@ export class BoardActs {
     if (!c.active || !c.owner || !c.tree || !['swipe', 'key'].includes(door)) return false;
     const tree = this.held ? this.held.projected(c.tree) : c.tree;
     if (UnlockRules.derive(tree, c.progress).get(id) !== 'available') return false;
+    const step = tree.nodesById.get(id);
+    if (!takesMark(step)) {
+      this.sayTreeCompletes(step);
+      return false;
+    }
     const before = c.progress;
     const after = c.completeStep(id, { door: 'board', at: c.now() });
     const outcome = completionOutcome(tree, before, after, id);
@@ -140,6 +145,17 @@ export class BoardActs {
     });
     c.track('roadmap_board_complete', { door });
     return true;
+  }
+
+  // A step that opens a tree completes nothing by hand: the toast says what does, and offers the way in where there is one.
+  sayTreeCompletes(step) {
+    const c = this.collaborators;
+    const said = treeBand(step.opening, { column: 'upNext' });
+    if (!said) return;
+    c.showToast(said, {
+      surface: 'board', act: 'tree', reveal: null, holdMs: 6000,
+      ...(step.opening.leads && c.openTree ? { action: { label: TREE.open, run: () => c.openTree(step.id, 'toast') } } : {}),
+    });
   }
 
   create(request) {

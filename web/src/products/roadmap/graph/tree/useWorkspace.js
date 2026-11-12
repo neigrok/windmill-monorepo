@@ -10,7 +10,7 @@ import {
 
 const workspaceStore = new WorkspaceStore();
 
-export function useWorkspace({ seedRef, sceneRef }) {
+export function useWorkspace({ seedRef, sceneRef, treeRef }) {
   const [workspaceByNode, setWorkspaceByNode] = useState(() => ({})); // { nodeId: workspace } — sub-tasks, note, links
   const workspaceByNodeRef = useRef({}); // nodeId → workspace; the fresh read for arc pushes + persistence
 
@@ -21,15 +21,21 @@ export function useWorkspace({ seedRef, sceneRef }) {
     workspaceStore.save(seedRef.current.id, byNode);
   }, [seedRef]);
 
-  // Nodes absent from the map mean no arc. Reads the fresh ref, so it can fire right after a commit.
+  // Nodes absent from the map mean no arc. Reads the fresh ref, so it can fire right after a commit. A step that opens a
+  // tree gauges that tree in place of its sub-tasks, and draws none where there is nothing to count.
   const pushArcs = useCallback(() => {
     const arcs = new Map();
     for (const [nodeId, ws] of Object.entries(workspaceByNodeRef.current)) {
       const fraction = arcFraction(ws);
       if (fraction !== null) arcs.set(nodeId, fraction);
     }
+    for (const step of treeRef.current?.nodes ?? []) {
+      if (!step.opening) continue;
+      if (step.opening.gauge === null) arcs.delete(step.id);
+      else arcs.set(step.id, step.opening.gauge);
+    }
     sceneRef.current?.setArcs?.(arcs);
-  }, [sceneRef]);
+  }, [sceneRef, treeRef]);
 
   // Seats the saved workspaces for a freshly-loaded tree; the caller pushes the arcs once the model is applied.
   const hydrateWorkspaces = useCallback((treeId) => {

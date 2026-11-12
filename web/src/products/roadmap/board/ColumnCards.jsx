@@ -1,22 +1,23 @@
 // A column's run of step cards: only the cards in view render, each measured as it paints, with a spacer standing in for
 // every stretch skipped. A folded Done ends with the Show all row. Steps that arrive while the Board is mounted wake once.
 
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { regroup, DONE_RECENT_LIMIT } from './Board.js';
 import { StepCard } from './StepCard.jsx';
 import { SHOW_ALL } from './traversal.js';
 import { reasonLine, showAllDone } from '../copy.js';
 import { prefersReducedMotion } from '../theme.js';
+import { TreeDoor } from '../room/useTreeVisit.js';
 
-const WAKE_MS = 2400; // the Arrived edge settles over two 1200ms pulses
+export const WAKE_MS = 2400; // the Arrived edge settles over two 1200ms pulses
 const OVERSCAN = 10;
 const FIRST_PAINT = { first: 0, last: 15 };
 const FIRST_RUN = { gap: 8, width: 360 };
 const NOTHING_ARRIVED = new Set();
 
 // A card's frame (padding and border above and below its text), the width its sides take (padding, border, the kind rail
-// and its gap), and each clamped line's height with a Nunito glyph's average advance.
-const CARD = { frame: 26, sides: 46, gap: 4 };
+// and its gap), a tree pill's height, and each clamped line's height with a Nunito glyph's average advance.
+const CARD = { frame: 26, sides: 46, gap: 4, pill: 26 };
 const LINES = {
   title: { height: 24, advance: 7.6 },
   reason: { height: 18, advance: 5.8 },
@@ -41,7 +42,8 @@ export function estimatedHeight(card, width) {
     [card.step.description?.trim() ?? '', LINES.excerpt],
   ].filter(([text], index) => index === 0 || text !== '');
   const lines = texts.map(([text, line]) => Math.min(2, Math.max(1, Math.ceil((text.length * line.advance) / room))) * line.height);
-  return CARD.frame + lines.reduce((sum, height) => sum + height, 0) + (texts.length - 1) * CARD.gap;
+  const rows = card.opening && card.opening.face !== 'unread' ? [...lines, CARD.pill] : lines;
+  return CARD.frame + rows.reduce((sum, height) => sum + height, 0) + (rows.length - 1) * CARD.gap;
 }
 
 // A column's cards stacked top to bottom with a gap between, in px from the run's top edge.
@@ -258,6 +260,7 @@ export function useRegroup(board, { quiet = 0, phone = false, root } = {}) {
 // render, so focus and a reveal from the Graph reach them wherever the column has scrolled.
 export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVED, selectedId, onSelect, onExpandDone, swipe = false, onComplete, selection = null, selectable, onHold, leaving = NOTHING_ARRIVED, pinned = NOTHING_ARRIVED, dimmed = NOTHING_ARRIVED }) {
   const [swiped, setSwiped] = useState(null);
+  const openTree = useContext(TreeDoor);
   const listRef = useRef(null);
   const heights = useRef(new Map());
   const latest = useRef(null);
@@ -398,6 +401,7 @@ export function ColumnCards({ shown, stopId, pendingId, arrived = NOTHING_ARRIVE
               open={swiped === cards[item].id}
               onSwipe={setSwiped}
               onComplete={onComplete}
+              onOpenTree={openTree}
               leaving={leaving.has(cards[item].id)}
               dimmed={dimmed.has(cards[item].id)}
             />

@@ -31,6 +31,7 @@ export default function AuthProvider({ children }) {
   const [user, setUser] = useState(hint);
   const [status, setStatus] = useState('loading');
   const [account, setAccount] = useState(null);
+  const [confirmed, setConfirmed] = useState(false);
   const [lapsed, setLapsed] = useState(false);
   const [question, setQuestion] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -82,6 +83,8 @@ export default function AuthProvider({ children }) {
     const value = seat.receive(me, options);
     if (!value) return;
     setUser(value.user); setStatus(value.status); setAccount(value.account);
+    // The server has answered for this account since the page loaded; a start with no connection stands on the cached hint until it does.
+    setConfirmed(Boolean(value.account) && roomOwnership.current.confirmed === value.account.id);
     setLapsed(seat.lapsed);
     if (revision === roomOwnership.current.revision && !syncSession.engine?.device.meta.deviceCleanup
       && (!roomOwnership.current.target || roomOwnership.current.target === value.account?.id)) {
@@ -381,7 +384,7 @@ export default function AuthProvider({ children }) {
     setDeviceLineHolders((holders) => holders + 1);
     return () => setDeviceLineHolders((holders) => holders - 1);
   }, []);
-  return <AuthContext.Provider value={{ user, status, account, lapsed, roomChanging, signIn, signOut, closeAccount, refresh, holdDeviceLine }}>
+  return <AuthContext.Provider value={{ user, status, account, confirmed, lapsed, roomChanging, signIn, signOut, closeAccount, refresh, holdDeviceLine }}>
     <div style={{ display: 'contents' }} inert={question && !upgradeRequired ? '' : undefined}>{children}</div>
     {!session.online && roomStatus?.status?.connectivity !== 'offline' && (
       <div role="status" style={{

@@ -59,7 +59,7 @@ export class StepDraft {
   placement(tree, completed) {
     const draft = this.reconcile(tree);
     if (this.baseline && !tree.nodesById.has(this.id)) return { column: null, body: null };
-    const nodes = this.baseline ? tree.nodes.map((step) => step.id === draft.id ? draft : step) : [...tree.nodes, draft];
+    const nodes = this.baseline ? tree.nodes.map((step) => (step.id === draft.id ? { ...step, prerequisites: draft.prerequisites } : step)) : [...tree.nodes, draft];
     const states = UnlockRules.derive({ nodes }, { completed });
     const prerequisites = draft.prerequisites.map((id) => tree.nodesById.get(id));
     const unmet = prerequisites.filter((step) => states.get(step.id) !== 'complete');

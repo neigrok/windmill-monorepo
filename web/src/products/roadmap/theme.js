@@ -43,6 +43,11 @@ export function nodeForm(label, parentCount, childCount) {
   return 0; // linked
 }
 
+// The glyph at the centre of a node that opens a tree, by what the tree has come to (Opening.face), as the names a
+// render node's `icon` carries apart from the design system's; OpeningMarks.jsx draws them. The mark stays when the
+// tree is done, as the Complete tier already says so.
+export const TREE_GLYPHS = { open: 'tree:mark', empty: 'tree:mark', unread: 'tree:mark', complete: 'tree:mark', loop: 'tree:loop', missing: 'tree:missing' };
+
 export function isDone(state) {
   return state === 'complete';
 }
