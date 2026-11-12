@@ -530,3 +530,86 @@ TEST(pg_a_node_follows_the_tree_it_opens_and_the_registry_list_counts_it) {
   CHECK(counts() == (std::map<std::string, std::string>{{kTree.str(), "1/2"}, {kFork.str(), "1/1"}}));
   registry.stop();
 }
+
+// The statement behind `guides`: the owner's standing trees whose present pointers lead down to a tree, each once at
+// its shortest distance, within eight pointers, and never the tree itself, whatever loops exist.
+TEST(pg_trees_above_answers_the_owners_standing_trees_whose_present_pointers_lead_down_to_a_tree_within_eight) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const auto id = [](const std::string& name) { return TreeId{"t_pgtest_above_" + name}; };
+  const auto clear = [] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    for (const char* table : {"tree_nodes", "tree_edges", "tree_kinds"})
+      txn.exec(std::string("DELETE FROM ") + table + " WHERE tree_id LIKE 't\\_pgtest\\_above\\_%'");
+    txn.exec("DELETE FROM trees WHERE id LIKE 't\\_pgtest\\_above\\_%'");
+    txn.commit();
+  };
+  clear();
+  PgTreeRepository trees{pgTestPool()};
+  const auto plant = [&](const std::string& name, const UserId& owner, const std::string& guide,
+                         const std::vector<std::string>& opens, bool guideInherited = false) {
+    TreeData data;
+    data.id = id(name);
+    for (const std::string& opened : opens) {
+      NodeSpec pointer;
+      pointer.id = NodeId{"to-" + opened};
+      pointer.label = opened;
+      pointer.opens = id(opened);
+      data.nodes.push_back(pointer);
+    }
+    trees.create(id(name), LooseGraph(data, Hlc{1'700'000'000'000, 0, "r_a"}).exportState(), LegendState{}, "Tree " + name,
+                 owner);
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("UPDATE trees SET guide = $2, guide_inherited = $3 WHERE id = $1", id(name).str(), guide, guideInherited);
+    txn.commit();
+  };
+  plant("leaf", kSam, "Leaf.", {"top", "leaf"});
+  plant("mid", kSam, "Mid.", {"leaf"});
+  plant("both", kSam, "Both ways.", {"leaf", "mid"});
+  plant("top", kSam, "Top.", {"both", "mid"});
+  plant("inherited", kSam, "Its author's.", {"leaf"}, true);
+  plant("silent", kSam, "", {"leaf"});
+  plant("removed", kSam, "Removed.", {"leaf"});
+  trees.softDelete(id("removed"));
+  plant("beyond", kSam, "Reached only through the removed tree.", {"removed"});
+  plant("theirs", kEve, "Eve's.", {"leaf"});
+  plant("tombstoned", kSam, "Its pointer was deleted.", {"leaf"});
+  {
+    const std::optional<StoredTree> stored = trees.load(id("tombstoned"));
+    REQUIRE(stored.has_value());
+    LooseGraph graph(stored->state);
+    graph.deleteNode(NodeId{"to-leaf"}, Hlc{1'700'000'000'001, 0, "r_a"});
+    REQUIRE(trees.save(id("tombstoned"), graph.exportState(), LegendState{}, stored->title, stored->guide, stored->head));
+  }
+  plant("up1", kSam, "Up 1.", {"leaf"});
+  for (int level = 2; level <= 9; ++level)
+    plant("up" + std::to_string(level), kSam, "Up " + std::to_string(level) + ".", {"up" + std::to_string(level - 1)});
+
+  std::map<TreeId, TreeAbove> aboveLeaf{{id("mid"), {1, "Tree mid", "Mid.", false}},
+                                        {id("both"), {1, "Tree both", "Both ways.", false}},
+                                        {id("top"), {2, "Tree top", "Top.", false}},
+                                        {id("inherited"), {1, "Tree inherited", "Its author's.", true}},
+                                        {id("silent"), {1, "Tree silent", "", false}}};
+  for (int level = 1; level <= 8; ++level)
+    aboveLeaf.emplace(id("up" + std::to_string(level)),
+                      TreeAbove{level, "Tree up" + std::to_string(level), "Up " + std::to_string(level) + ".", false});
+  CHECK(trees.treesAbove(kSam, id("leaf")) == aboveLeaf);
+
+  std::map<TreeId, TreeAbove> aboveTop{{id("leaf"), {1, "Tree leaf", "Leaf.", false}},
+                                       {id("mid"), {2, "Tree mid", "Mid.", false}},
+                                       {id("both"), {2, "Tree both", "Both ways.", false}},
+                                       {id("inherited"), {2, "Tree inherited", "Its author's.", true}},
+                                       {id("silent"), {2, "Tree silent", "", false}}};
+  for (int level = 1; level <= 7; ++level)
+    aboveTop.emplace(id("up" + std::to_string(level)),
+                     TreeAbove{level + 1, "Tree up" + std::to_string(level), "Up " + std::to_string(level) + ".", false});
+  CHECK(trees.treesAbove(kSam, id("top")) == aboveTop);
+
+  CHECK(trees.treesAbove(kEve, id("leaf")) == (std::map<TreeId, TreeAbove>{}));
+  CHECK(trees.treesAbove(kEve, id("theirs")) == (std::map<TreeId, TreeAbove>{}));
+  CHECK(trees.treesAbove(kSam, id("removed")) == (std::map<TreeId, TreeAbove>{}));
+  CHECK(trees.treesAbove(kSam, id("absent")) == (std::map<TreeId, TreeAbove>{}));
+  clear();
+}

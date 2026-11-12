@@ -145,6 +145,10 @@ struct FakeTreeRepository : TreeRepository {
   bool latticeLoadsFail = false;  // load throws, the way a dropped connection does; loadAccess still answers
   bool openedReadsFail = false;  // openedFrom throws, the way a dropped connection does
   std::function<void()> duringOpenedRead;  // runs inside openedFrom, the way a slow statement holds its caller
+  // One entry per treesAbove read: the tree it walked up from.
+  std::vector<TreeId> aboveReads;
+  bool aboveReadsFail = false;  // treesAbove throws, the way a dropped connection does
+  std::function<void()> duringAboveRead;  // runs inside treesAbove, the way a slow statement holds its caller
   bool savesFail = false;  // save throws, the way a write Postgres refuses does
   std::optional<StoredTree> load(const TreeId& tree) override {
     if (latticeLoadsFail) throw std::runtime_error("connection reset mid-read");
@@ -299,6 +303,32 @@ struct FakeTreeRepository : TreeRepository {
       for (const auto& [target, pointers] : walked.pointers) reached.push_back(target);
     }
     return trees;
+  }
+  // The real statement's rules: this owner's standing trees only, level by level up the present pointers, so each
+  // sits at its shortest distance, the walk ends at kMaxLevelsAbove and `tree` is never above itself.
+  std::map<TreeId, TreeAbove> treesAbove(const UserId& owner, const TreeId& tree) override {
+    aboveReads.push_back(tree);
+    if (aboveReadsFail) throw std::runtime_error("connection reset mid-read");
+    if (duringAboveRead) duringAboveRead();
+    std::map<TreeId, TreeAbove> above;
+    const std::optional<StoredTree> asked = row(tree);
+    if (!asked || asked->owner != std::optional<UserId>(owner)) return above;
+    std::set<TreeId> level{tree};
+    for (int distance = 1; distance <= kMaxLevelsAbove && !level.empty(); ++distance) {
+      std::set<TreeId> next;
+      for (const auto& [id, stored] : byId) {
+        const TreeId opener{id};
+        if (opener == tree || above.count(opener) || deletedIds.count(id) || stored.owner != std::optional<UserId>(owner))
+          continue;
+        const std::set<TreeId> opened = treesOpenedBy(LooseGraph(stored.state).toTreeData(opener, stored.title.value));
+        if (std::none_of(level.begin(), level.end(), [&](const TreeId& below) { return opened.count(below) > 0; }))
+          continue;
+        above.emplace(opener, TreeAbove{distance, stored.title.value, stored.guide.value, stored.guideInherited});
+        next.insert(opener);
+      }
+      level = std::move(next);
+    }
+    return above;
   }
   void softDelete(const TreeId& tree) override { deletedIds.insert(tree.str()); }
   void rename(const TreeId& tree, const Lww<std::string>& title) override {

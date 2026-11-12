@@ -83,6 +83,10 @@ std::map<TreeId, OpenedTree> TreeRegistry::openedFrom(const UserId& owner, const
   return trees_.openedFrom(owner, opened);
 }
 
+std::map<TreeId, TreeAbove> TreeRegistry::treesAbove(const UserId& owner, const TreeId& tree) {
+  return trees_.treesAbove(owner, tree);
+}
+
 TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& caller) {
   // The strand serializes the retirement against the tree's socket frames, so no concurrent open()
   // can reload the tree between the delete and the drop.
