@@ -8,6 +8,8 @@
 
 #include <map>
 #include <set>
+#include <string>
+#include <variant>
 #include <vector>
 
 namespace wm {
@@ -26,14 +28,22 @@ enum class KindRegister { label, description, crossBranchExempt };
 // loses every present edge touching it, in either direction. The two omitted maps name, per id, the
 // registers the document did not spell out: the graft leaves those alone, so a node or kind the tree
 // already holds keeps its value and a new one lands with the default. An id absent from its map
-// carried every register, and an empty value is carried like any other.
+// carried every register, and an empty value is carried like any other. `nodeKinds` names the legend
+// kind the document files a node under, until resolveKinds turns it into the node's colour.
 struct Graft {
   TreeData document;
   PrerequisiteMode prerequisites = PrerequisiteMode::merge;
   std::vector<NodeId> tombstones;
   std::map<NodeId, std::set<NodeRegister>> omittedNodeRegisters;
   std::map<KindId, std::set<KindRegister>> omittedKindRegisters;
+  std::map<NodeId, KindId> nodeKinds;
 };
+
+// The graft with every node's kind turned into the hue that kind wears in the legend the graft leaves:
+// `legend` with the document's own kinds upserted, so one batch can add a kind and file nodes under it.
+// Such a node carries its colour register. A kind that legend does not hold, or a colour sent beside it
+// that disagrees, refuses the whole graft with resolveHue's sentence, naming `nodes[i].kind`.
+std::variant<Graft, std::string> resolveKinds(const Legend& legend, Graft graft);
 
 // What joining a graft does beyond the upsert itself. `keptEdges` and `replacedEdges` are the same
 // set under the two modes — present edges into a node the document re-sends (present or tombstoned:

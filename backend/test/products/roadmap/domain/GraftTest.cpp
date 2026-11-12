@@ -471,3 +471,31 @@ TEST(graft_legend_leaves_out_a_kind_sent_as_held_so_a_concurrent_rename_stands) 
 TEST(graft_legend_is_empty_when_the_document_carries_no_kinds) {
   CHECK(graftLegend(Legend{}, Graft{}, at(1)) == LegendState{});
 }
+
+// One batch can add a kind and file nodes under it: a node's kind lands as the hue it wears in the legend
+// the batch leaves, and the node carries its colour register as if it had sent the hue.
+TEST(resolve_kinds_files_nodes_under_the_legend_the_batch_leaves) {
+  const Legend legend({{KindId{"build"}, NodeColor::terracotta, "Build"}}, at(1));
+  Graft graft;
+  graft.document.kinds = {{KindId{"owner"}, NodeColor::gold}, {KindId{"build"}, NodeColor::sky}};
+  graft.document.nodes = {spec("a", {}), spec("b", {})};
+  graft.omittedNodeRegisters[nid("a")] = omittedAllBut({});
+  graft.omittedNodeRegisters[nid("b")] = omittedAllBut({NodeRegister::color});
+  graft.document.nodes[1].color = NodeColor::sky;
+  graft.nodeKinds = {{nid("a"), KindId{"owner"}}, {nid("b"), KindId{"build"}}};
+
+  const std::variant<Graft, std::string> filed = resolveKinds(legend, graft);
+  REQUIRE(std::holds_alternative<Graft>(filed));
+  const Graft& landed = std::get<Graft>(filed);
+  CHECK_EQ(landed.document.nodes[0].color, NodeColor::gold);
+  CHECK_EQ(landed.document.nodes[1].color, NodeColor::sky);
+  CHECK(landed.omittedNodeRegisters.at(nid("a")) == omittedAllBut({NodeRegister::color}));
+  CHECK(landed.omittedNodeRegisters.at(nid("b")) == omittedAllBut({NodeRegister::color}));
+  CHECK(landed.nodeKinds.empty());
+
+  graft.nodeKinds[nid("b")] = KindId{"ghost"};
+  const std::variant<Graft, std::string> refused = resolveKinds(legend, graft);
+  REQUIRE(std::holds_alternative<std::string>(refused));
+  CHECK_EQ(std::get<std::string>(refused),
+           std::string("nodes[1].kind \"ghost\" is not a kind of this tree; its legend holds \"build\", \"owner\""));
+}

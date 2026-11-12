@@ -182,6 +182,18 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
   const Json::Value* search = toolNamed(catalog, "find_nodes");
   REQUIRE(search != nullptr);
   CHECK_EQ((*search)["inputSchema"]["properties"]["kind"]["maxLength"].asUInt64(), 128u);
+  const Json::Value* recolor = toolNamed(catalog, "set_node_color");
+  const Json::Value* patch = toolNamed(catalog, "patch_nodes");
+  REQUIRE(recolor != nullptr);
+  REQUIRE(patch != nullptr);
+  for (const Json::Value* kind : {&(*creation)["inputSchema"]["properties"]["kind"],
+                                  &(*recolor)["inputSchema"]["properties"]["kind"],
+                                  &arrays["nodes"]["items"]["properties"]["kind"],
+                                  &(*patch)["inputSchema"]["properties"]["updates"]["items"]["properties"]["kind"]}) {
+    CHECK_EQ((*kind)["type"].asString(), std::string("string"));
+    CHECK_EQ((*kind)["maxLength"].asUInt64(), 128u);
+  }
+  CHECK_EQ((*recolor)["inputSchema"]["required"], list({"treeId", "nodeId"}));
   const Json::Value* planting = toolNamed(catalog, "create_tree");
   REQUIRE(planting != nullptr);
   CHECK_EQ((*planting)["inputSchema"]["properties"]["title"]["maxLength"].asUInt64(), 200u);

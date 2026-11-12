@@ -2340,7 +2340,7 @@ TEST(mcp_import_subgraph_behind_the_gate_refuses_a_nested_key_by_its_path) {
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
            std::string("import_subgraph: unknown argument \"nodes[1].deleted\". nodes[1] takes: color, "
-                       "description, icon, id, label, links, opens, order, position, prerequisites, seedStatus."));
+                       "description, icon, id, kind, label, links, opens, order, position, prerequisites, seedStatus."));
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);
 
   Json::Value deeper = node("x", "X");
@@ -4004,6 +4004,191 @@ TEST(mcp_a_read_follows_pointers_after_it_has_let_go_of_the_trees_strand) {
     CHECK_EQ(readMeanwhile, parse(R"([{"id":"a","state":"available"}])"));
   }
   CHECK_EQ(h.trees.openedReads.size(), 3u);
+}
+
+TEST(mcp_create_node_files_the_node_under_the_kind_it_names_and_says_so) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"owner","hue":"gold","label":"Owner"})")).isError);
+
+  const ToolResult created = h.call("create_node", parse(R"({"label":"Ship v1","kind":"owner"})"));
+  CHECK_FALSE(created.isError);
+  CHECK_EQ(body(created), parse(R"({"applied":true,"seq":2,"id":"ship-v1","kind":"owner","diagnosticsClean":true,
+    "introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["ship-v1"],"fields":["id","color","kind"]})"))),
+           parse(R"({"treeId":"t","seq":2,"nodes":[{"id":"ship-v1","color":"gold","kind":"owner"}],"missingNodeIds":[]})"));
+}
+
+TEST(mcp_create_node_refuses_a_kind_the_legend_does_not_hold_or_a_colour_that_disagrees) {
+  Harness h;
+  CHECK_EQ(message(h.call("create_node", parse(R"({"label":"Ship","kind":"owner"})"))),
+           std::string("create_node: kind \"owner\" is not a kind of this tree, whose legend holds none — add one "
+                       "with roadmap_add_kind first"));
+  for (const char* kind : {R"({"id":"developer","hue":"terracotta"})", R"({"id":"designer","hue":"olive"})",
+                           R"({"id":"owner","hue":"gold"})"})
+    CHECK_FALSE(h.call("add_kind", parse(kind)).isError);
+  CHECK_EQ(message(h.call("create_node", parse(R"({"label":"Ship","kind":"ownr"})"))),
+           std::string("create_node: kind \"ownr\" is not a kind of this tree; its legend holds \"developer\", "
+                       "\"designer\", \"owner\""));
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const ToolResult behindTheGate =
+      gate.callTool("create_node", parse(R"({"treeId":"t","label":"Ship","kind":"ownr"})"), h.actor);
+  CHECK_EQ(message(behindTheGate), message(h.call("create_node", parse(R"({"label":"Ship","kind":"ownr"})"))));
+  CHECK_EQ(toolWriteOutcome(behindTheGate), std::string("refused"));
+  CHECK_EQ(message(h.call("create_node", parse(R"({"label":"Ship","kind":"owner","color":"sky"})"))),
+           std::string("create_node: kind \"owner\" wears gold, but color is \"sky\" — send one of the two, or both "
+                       "when they agree"));
+  CHECK_EQ(message(h.call("create_node", parse(R"({"label":"Ship","kind":""})"))),
+           std::string("create_node: argument \"kind\" must be a non-empty string, got \"\""));
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["count"].asUInt64(), 0u);
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), 3u);
+
+  CHECK_EQ(body(h.call("create_node", parse(R"({"label":"Ship","kind":"owner","color":"gold"})"))),
+           parse(R"({"applied":true,"seq":4,"id":"ship","kind":"owner","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("create_node", parse(R"({"label":"Plan"})"))),
+           parse(R"({"applied":true,"seq":5,"id":"plan","kind":"developer","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+}
+
+TEST(mcp_set_node_color_takes_a_kind_and_answers_the_kind_the_node_wears) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"owner","hue":"gold"})")).isError);
+  CHECK_EQ(body(h.call("create_node", parse(R"({"label":"Ship"})"))),
+           parse(R"({"applied":true,"seq":2,"id":"ship","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+
+  CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"ship","kind":"owner"})"))),
+           parse(R"({"applied":true,"seq":3,"id":"ship","kind":"owner","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"ship","kind":"owner","color":"gold"})"))),
+           parse(R"({"applied":true,"seq":4,"id":"ship","kind":"owner","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(message(h.call("set_node_color", parse(R"({"nodeId":"ship","kind":"owner","color":"plum"})"))),
+           std::string("set_node_color: kind \"owner\" wears gold, but color is \"plum\" — send one of the two, or "
+                       "both when they agree"));
+  CHECK_EQ(message(h.call("set_node_color", parse(R"({"nodeId":"ship","kind":"crew"})"))),
+           std::string("set_node_color: kind \"crew\" is not a kind of this tree; its legend holds \"owner\""));
+  CHECK_EQ(message(h.call("set_node_color", parse(R"({"nodeId":"ship"})"))),
+           std::string("set_node_color: missing required argument \"color\" or \"kind\" — the hue the node takes, or "
+                       "the legend kind whose hue it takes"));
+  CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"ship","color":"sky"})"))),
+           parse(R"({"applied":true,"seq":5,"id":"ship","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["ship"],"fields":["id","color","kind"]})"))),
+           parse(R"({"treeId":"t","seq":5,"nodes":[{"id":"ship","color":"sky"}],"missingNodeIds":[]})"));
+}
+
+// A client frame can land a second kind on a hue a kind already wears. A write that names its kind is
+// answered with that kind, which wears the node's hue by construction; one that names none answers from
+// the hue join the read field `kind` uses.
+TEST(mcp_a_node_write_that_names_a_kind_answers_that_kind_when_two_kinds_share_its_hue) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"backend","hue":"sky"})")).isError);
+  Subgraph frame;
+  frame.treeId = TreeId{"t"};
+  frame.frameId = "client-add-kind";
+  frame.actor = "r_client";
+  frame.intent = SubgraphIntent::live;
+  const Hlc stamp{5000, 0, "r_client"};
+  frame.legend.kinds.push_back(KindStateEntry{.id = KindId{"zinfra"}, .createdAt = stamp, .hue = NodeColor::sky,
+                                              .hueAt = stamp, .rank = 1, .rankAt = stamp});
+  REQUIRE(h.registry.open(TreeId{"t"})->joinSubgraph(frame, h.caller).has_value());
+
+  CHECK_EQ(body(h.call("create_node", parse(R"({"label":"N","kind":"backend"})"))),
+           parse(R"({"applied":true,"seq":3,"id":"n","kind":"backend","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"n","kind":"backend"})"))),
+           parse(R"({"applied":true,"seq":4,"id":"n","kind":"backend","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"n","color":"sky"})"))),
+           parse(R"({"applied":true,"seq":5,"id":"n","kind":"zinfra","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+}
+
+TEST(mcp_patch_nodes_takes_a_kind_per_row_and_one_bad_row_writes_nothing) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"owner","hue":"gold"})")).isError);
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"designer","hue":"olive"})")).isError);
+  CHECK_FALSE(h.call("create_node", node("a", "A")).isError);
+  CHECK_FALSE(h.call("create_node", node("b", "B")).isError);
+  const Json::Value before = body(h.call("get_tree", kNoArgs));
+
+  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"owner"},{"nodeId":"b","kind":"ghost"}]})"))),
+           std::string("patch_nodes: updates[1].kind \"ghost\" is not a kind of this tree; its legend holds \"owner\", "
+                       "\"designer\""));
+  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"owner"},
+    {"nodeId":"b","kind":"designer","color":"sky"}]})"))),
+           std::string("patch_nodes: updates[1].kind \"designer\" wears olive, but updates[1].color is \"sky\" — send "
+                       "one of the two, or both when they agree"));
+  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","kind":""}]})"))),
+           std::string("patch_nodes: argument \"updates[0].kind\" must be a non-empty string, got \"\""));
+  CHECK_EQ(body(h.call("get_tree", kNoArgs)), before);
+
+  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"owner"},
+    {"nodeId":"b","kind":"designer","color":"olive"}]})"))),
+           parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":5,"changedNodeIds":["a","b"],"unchangedNodeIds":[],
+    "diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a","b"],"fields":["id","color","kind"]})"))),
+           parse(R"({"treeId":"t","seq":5,"nodes":[{"id":"a","color":"gold","kind":"owner"},
+    {"id":"b","color":"olive","kind":"designer"}],"missingNodeIds":[]})"));
+}
+
+TEST(mcp_import_subgraph_files_nodes_under_a_kind_the_same_batch_adds) {
+  Harness h;
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"kinds":[{"id":"owner","hue":"gold","label":"Owner"}],
+    "nodes":[{"id":"ship","label":"Ship","kind":"owner"},{"id":"plan","label":"Plan","kind":"owner","color":"gold"}]})"))),
+           parse(R"({"nodes":2,"edges":0,"kinds":1,"nodeCollisions":[],"kindCollisions":[],"newNodes":2,"newKinds":1,
+    "prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,"tombstoned":{"nodes":0,"edges":0},"graphApplied":true,
+    "progressApplied":true,"imported":true,"seq":1,"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["ship","plan"],"fields":["id","label","color","kind"]})"))),
+           parse(R"({"treeId":"t","seq":1,"nodes":[{"id":"ship","label":"Ship","color":"gold","kind":"owner"},
+    {"id":"plan","label":"Plan","color":"gold","kind":"owner"}],"missingNodeIds":[]})"));
+}
+
+TEST(mcp_import_subgraph_refuses_a_kind_its_legend_does_not_hold_and_writes_nothing) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"developer","hue":"terracotta"})")).isError);
+
+  const Json::Value unknown =
+      parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},{"id":"c","label":"C","kind":"ownr"}]})");
+  const std::string refusal("import_subgraph: nodes[2].kind \"ownr\" is not a kind of this tree; its legend holds "
+                            "\"developer\"");
+  CHECK_EQ(message(h.call("import_subgraph", unknown)), refusal);
+  Json::Value preview = unknown;
+  preview["dryRun"] = true;
+  CHECK_EQ(message(h.call("import_subgraph", preview)), refusal);
+  CHECK_EQ(message(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","kind":"developer","color":"sky"}]})"))),
+           std::string("import_subgraph: nodes[0].kind \"developer\" wears terracotta, but nodes[0].color is \"sky\" — "
+                       "send one of the two, or both when they agree"));
+  CHECK_EQ(message(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","kind":""}]})"))),
+           std::string("import_subgraph: argument \"nodes[0].kind\" must be a non-empty string, got \"\""));
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["count"].asUInt64(), 0u);
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), 1u);
+}
+
+TEST(mcp_import_subgraph_re_files_a_node_by_kind_alone_and_keeps_its_other_fields) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"owner","hue":"gold"})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"review","label":"Backend review","icon":"magnifier",
+    "color":"sky"}]})")).isError);
+
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"review","kind":"owner"}]})"))),
+           parse(R"({"nodes":1,"edges":0,"kinds":0,"nodeCollisions":["review"],"kindCollisions":[],"newNodes":0,
+    "newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,"tombstoned":{"nodes":0,"edges":0},
+    "graphApplied":true,"progressApplied":true,"imported":true,"seq":3,"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["review"],"fields":["id","label","icon","color","kind"]})"))),
+           parse(R"({"treeId":"t","seq":3,"nodes":[{"id":"review","label":"Backend review","icon":"magnifier",
+    "color":"gold","kind":"owner"}],"missingNodeIds":[]})"));
+}
+
+// A node's kind and the tree it opens are separate registers, so one write may name both.
+TEST(mcp_a_node_write_may_name_its_kind_and_the_tree_it_opens_together) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"owner","hue":"gold"})")).isError);
+  CHECK_EQ(body(h.call("create_node", parse(R"({"id":"a","label":"A","kind":"owner","opens":"t_sub"})"))),
+           parse(R"({"applied":true,"seq":2,"id":"a","kind":"owner","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"b","label":"B","kind":"owner","opens":"t_sub"}]})"))
+                  .isError);
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"crew","hue":"sky"})")).isError);
+  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"crew","opens":""}]})"))),
+           parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":5,"changedNodeIds":["a"],"unchangedNodeIds":[],
+    "diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","color","kind","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","color":"sky","kind":"crew"},
+    {"id":"b","color":"gold","kind":"owner","opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}}])"));
 }
 
 // Guides add: the method a tree above holds comes with the tree worked under it, farthest first and the tree's own last.

@@ -103,6 +103,12 @@ std::optional<std::string> checkAnnotation(const Json::Value& node, const std::s
   return optionalLinks(node["links"], prefix + "links");
 }
 
+// A legend kind id a node write files the node under; which kinds exist is the room's to say.
+std::optional<std::string> optionalKind(const Json::Value& value, const std::string& path) {
+  if (value.isNull()) return std::nullopt;
+  return requireString(value, path, Empty::rejected, kMaxIdLength);
+}
+
 Json::Value progressStatusArgument(const Json::Value& value) {
   if (!value.isString()) return value;
   const auto status = parseProgressStatus(value.asString());
@@ -130,6 +136,7 @@ std::optional<std::string> checkImportedNode(const Json::Value& node, const std:
   if (std::optional<std::string> bad = optionalString(node["label"], path + ".label")) return bad;
   if (std::optional<std::string> bad = optionalString(node["icon"], path + ".icon")) return bad;
   if (std::optional<std::string> bad = optionalOneOf(node["color"], path + ".color", kHues)) return bad;
+  if (std::optional<std::string> bad = optionalKind(node["kind"], path + ".kind")) return bad;
   if (std::optional<std::string> bad = optionalOneOf(progressStatusArgument(node["seedStatus"]), path + ".seedStatus", kStatuses))
     return bad;
   if (!node["status"].isNull()) return path + kSeedStatusMoved;
@@ -199,6 +206,7 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
     if (std::optional<std::string> bad = optionalString(args["id"], "id", kMaxIdLength)) return bad;
     if (std::optional<std::string> bad = optionalString(args["icon"], "icon")) return bad;
     if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues)) return bad;
+    if (std::optional<std::string> bad = optionalKind(args["kind"], "kind")) return bad;
     if (std::optional<std::string> bad = optionalStrings(args["prerequisites"], "prerequisites", kMaxIdLength))
       return bad;
     if (std::optional<std::string> bad = optionalString(args["parentId"], "parentId", kMaxIdLength))
@@ -228,7 +236,13 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
     return checkAnnotation(args, "");
   }
   if (tool == "rename_node") return requireString(args["label"], "label", Empty::allowed);
-  if (tool == "set_node_color") return requireOneOf(args["color"], "color", kHues);
+  if (tool == "set_node_color") {
+    if (args["color"].isNull() && args["kind"].isNull())
+      return "missing required argument \"color\" or \"kind\" — the hue the node takes, or the legend kind "
+             "whose hue it takes";
+    if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues)) return bad;
+    return optionalKind(args["kind"], "kind");
+  }
   if (tool == "move_node") {
     if (std::optional<std::string> bad = requireNumber(args["x"], "x")) return bad;
     return requireNumber(args["y"], "y");
@@ -287,6 +301,14 @@ ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   return fn(*room);
 }
 
+// The legend's hue -> kind id join: a node wears the kind its colour is the hue of, or none. The read
+// field `kind` answers from it, and so does a colour-setting write that named no kind.
+std::map<NodeColor, KindId> kindByHue(const std::vector<Kind>& kinds) {
+  std::map<NodeColor, KindId> join;
+  for (const Kind& kind : kinds) join[kind.hue] = kind.id;
+  return join;
+}
+
 // What a read takes from the room while it holds the tree's strand; every repository read comes after it lets go.
 struct RoomRead {
   TreeData data;
@@ -311,8 +333,7 @@ NodeReadContext readContextFor(TreeRegistry& trees, ProgressService& progress, c
   const bool needsMarks = fields.count(NodeField::status) || needsStates;
   NodeReadContext context;
   if (needsMarks && caller) context.marks = progress.progressOf(data.id, *caller);
-  if (fields.count(NodeField::kind))
-    for (const Kind& kind : data.kinds) context.kindByHue[kind.hue] = kind.id;
+  if (fields.count(NodeField::kind)) context.kindByHue = kindByHue(data.kinds);
   const bool follows = (needsStates || fields.count(NodeField::opens)) && canWrite(caller, read.owner);
   if (!follows) {
     if (needsStates) context.states = UnlockRules::derive(data.nodes, context.marks);
@@ -559,6 +580,14 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
       return ToolResult::failure("no node in this tree is named \"" + payload["id"].asString() + "\"" +
                                  ". " + kNodeHandle.hint);
 
+    const bool setsHue = tool == "create_node" || tool == "set_node_color";
+    if (setsHue && payload.isMember("kind")) {
+      HueChoice choice{parseColor(payload.get("color", "").asString()), KindId{payload["kind"].asString()}};
+      const auto hue = room.resolveHue(choice, "");
+      if (const auto* refusal = std::get_if<std::string>(&hue)) return ToolResult::failure(*refusal);
+      payload["color"] = std::string(toString(*std::get<std::optional<NodeColor>>(hue)));
+    }
+
     // Unreachable by construction: prepareEdit has already refused everything the decode can.
     std::optional<Command> command = commandFromJson(kind, payload);
     if (!command)
@@ -582,6 +611,15 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     out["seq"] = static_cast<Json::Int64>(seq);
     answerDiagnostics(before, room.diagnose(), out);
     if (payload.isMember("id")) out["id"] = payload["id"];
+    // A write that named its kind wears it, as resolveHue just said; one that named none is answered
+    // from the hue join, for the hue its command landed.
+    if (setsHue && payload.isMember("kind")) out["kind"] = payload["kind"];
+    if (setsHue && !payload.isMember("kind")) {
+      const NodeColor hue = std::holds_alternative<CreateNode>(*command) ? std::get<CreateNode>(*command).color
+                                                                          : std::get<SetNodeColor>(*command).color;
+      const std::map<NodeColor, KindId> worn = kindByHue(room.kinds());
+      if (worn.count(hue)) out["kind"] = worn.at(hue).str();
+    }
     return ToolResult::json(out);
   });
 }
@@ -611,6 +649,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
       if (row.isMember("color"))
         if (std::optional<std::string> bad = requireOneOf(row["color"], path + ".color", kHues))
           return ToolResult::failure(*bad);
+      if (std::optional<std::string> bad = optionalKind(row["kind"], path + ".kind")) return ToolResult::failure(*bad);
       if (row.isMember("position")) {
         if (!row["position"].isObject()) return ToolResult::failure(path + ".position must be an object with x and y");
         for (const char* axis : {"x", "y"})
@@ -629,7 +668,8 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
       if (row.isMember("label")) patch.label = row["label"].asString();
       if (row.isMember("icon")) patch.icon = row["icon"].asString();
       if (row.isMember("description")) patch.description = row["description"].asString();
-      if (row.isMember("color")) patch.color = parseColor(row["color"].asString());
+      if (row.isMember("color")) patch.hue.color = parseColor(row["color"].asString());
+      if (row["kind"].isString()) patch.hue.kind = KindId{row["kind"].asString()};
       if (row.isMember("position")) patch.position = Vec2{row["position"]["x"].asDouble(), row["position"]["y"].asDouble()};
       if (row.isMember("links")) patch.links = linksFromJson(row["links"]);
       if (row.isMember("opens")) {
@@ -988,9 +1028,11 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
   // A field the batch leaves off a node or a kind is not sent blank: the graft stamps that register
   // unset, so a node or kind the tree already holds keeps its value and a new one lands with the default.
   for (const Json::Value& node : args["nodes"]) {
-    std::set<NodeRegister>& omitted = graft.omittedNodeRegisters[NodeId{node["id"].asString()}];
+    const NodeId id{node["id"].asString()};
+    std::set<NodeRegister>& omitted = graft.omittedNodeRegisters[id];
     for (const auto& [field, held] : kImportedNodeRegisters)
       if (node[field].isNull()) omitted.insert(held);
+    if (node["kind"].isString()) graft.nodeKinds[id] = KindId{node["kind"].asString()};
   }
   for (const Json::Value& kind : args["kinds"]) {
     std::set<KindRegister>& omitted = graft.omittedKindRegisters[KindId{kind["id"].asString()}];
@@ -1028,6 +1070,9 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     TreeData current = room.snapshot();  // collision = an incoming id already present (an upsert overwrites it)
     if (std::optional<std::string> bad = checkMergedLegend(current.kinds, incoming.kinds))
       return ToolResult::failure(*bad);
+    std::variant<Graft, std::string> filed = room.resolveKinds(graft);
+    if (const auto* refusal = std::get_if<std::string>(&filed)) return ToolResult::failure(*refusal);
+    graft = std::get<Graft>(std::move(filed));
     std::set<std::string> presentNodes, presentKinds;
     for (const NodeSpec& n : current.nodes) presentNodes.insert(n.id.str());
     for (const Kind& k : current.kinds) presentKinds.insert(k.id.str());

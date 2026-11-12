@@ -468,10 +468,10 @@ TEST(scoped_tool_host_names_no_withheld_word_among_the_keys_an_unknown_argument_
   ScopedToolHost scoped(h.tools, TreeId{"t"});
 
   CHECK_EQ(message(scoped.callTool("create_node", parse(R"({"label":"B","open":"t_sub"})"), h.actor)),
-           std::string("create_node: unknown argument \"open\". This tool takes: color, description, icon, id, label, "
-                       "links, parentId, prerequisites, treeId, x, y."));
+           std::string("create_node: unknown argument \"open\". This tool takes: color, description, icon, id, kind, "
+                       "label, links, parentId, prerequisites, treeId, x, y."));
   CHECK_EQ(message(scoped.callTool("import_subgraph", parse(R"({"nodes":[{"id":"n","open":"t_sub"}]})"), h.actor)),
            std::string("import_subgraph: unknown argument \"nodes[0].open\". nodes[0] takes: color, description, icon, "
-                       "id, label, links, order, position, prerequisites, seedStatus."));
+                       "id, kind, label, links, order, position, prerequisites, seedStatus."));
   CHECK_EQ(test::body(h.call("get_tree", test::kNoArgs))["count"].asUInt64(), 0u);
 }
