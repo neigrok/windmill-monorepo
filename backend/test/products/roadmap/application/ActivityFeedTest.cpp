@@ -104,6 +104,33 @@ TEST(activity_sums_a_batch_by_verb_under_its_first_members_subject) {
   CHECK_EQ(events[1].node, nid("renderer"));
 }
 
+// A batch of kind commands, as update_kind lands one, says each member's own sentence, joined as a batch joins its
+// parts, under the first member's verb; a batch of node commands beside it still counts by verb.
+TEST(activity_tells_a_batch_of_kind_commands_in_each_members_own_sentence) {
+  std::vector<AppliedOp> ops = {
+      op(10, Batch{{RenameKind{KindId{"k"}, "Builder"}, DescribeKind{KindId{"k"}, std::string("Brief."), std::nullopt}}},
+         "dev", 10000),
+      op(11, Batch{{RenameKind{KindId{"k"}, "Maker"}, DescribeKind{KindId{"k"}, std::string("Another."), std::nullopt},
+                    RecolorKind{KindId{"k"}, NodeColor::plum}}},
+         "u5", 11000),
+      op(12, Batch{{DescribeKind{KindId{"k"}, std::string("Third."), std::nullopt}, RecolorKind{KindId{"k"}, NodeColor::sky}}},
+         "dev", 12000),
+      op(13, Batch{{DeleteNode{nid("renderer")}, RemoveEdge{nid("product"), nid("renderer")}}}, "dev", 13000),
+  };
+  std::vector<std::string> rows;
+  for (const ActivityEvent& event : activityFeed(currentTree(), ops, 100))
+    rows.push_back(std::to_string(event.seq) + " " + std::to_string(event.at) + " " + event.actor + " | " + event.verb +
+                   " | " + event.node.str() + " | " + event.label + " | " + event.kind + " | " + event.summary);
+
+  CHECK_EQ(rows, (std::vector<std::string>{
+                     "10 10000 You | renamed-kind |  | Builder |  | renamed a kind to Builder and described a kind",
+                     "11 11000 Guest 5 | renamed-kind |  | Maker |  | renamed a kind to Maker and described a kind and "
+                     "recolored a kind plum",
+                     "12 12000 You | described-kind |  |  |  | described a kind and recolored a kind sky",
+                     "13 13000 You | removed | renderer | WebGL2 renderer | sky | removed 1 node and unlinked 1 link",
+                 }));
+}
+
 // The feed goes to every reader of a tree, so it never says which tree a node opens.
 TEST(activity_names_no_tree_a_node_opens) {
   CreateNode created{nid("renderer"), "WebGL2 renderer", "zap", NodeColor::sky, {}, std::nullopt};

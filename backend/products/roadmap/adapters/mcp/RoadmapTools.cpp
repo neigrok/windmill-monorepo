@@ -1002,6 +1002,49 @@ std::optional<std::string> applyProgressBatch(
   return std::nullopt;
 }
 
+// A kind's label, description and hue, any of them, as ONE op under one seq: a single command, or a Batch of them, so a
+// replay lands what the call landed. What the kind already holds is left out, and a call that changes nothing writes
+// nothing and answers the tree's head.
+ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Value& args, Clock& clock,
+                      const UserId& actor) {
+  std::string kind;
+  if (std::optional<std::string> bad = requireHandle(args, kKindHandle, "", kind)) return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = optionalString(args["label"], "label", kMaxKindLabelLength))
+    return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = optionalString(args["description"], "description", kMaxKindDescriptionLength))
+    return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = optionalOneOf(args["hue"], "hue", kHues)) return ToolResult::failure(*bad);
+  KindUpdate update{KindId{kind}};
+  if (args["label"].isString()) update.label = args["label"].asString();
+  if (args["description"].isString()) update.description = args["description"].asString();
+  if (args["hue"].isString()) update.hue = parseColor(args["hue"].asString());
+
+  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+    if (!canRead(actor, room.owner(), room.visibility()))
+      return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
+      return ToolResult::failure(writeRefusalSentence(*refusal));
+    const std::variant<KindUpdatePlan, std::string> planned = room.planKindUpdate(update);
+    if (const auto* refusal = std::get_if<std::string>(&planned)) return ToolResult::failure(*refusal);
+    const KindUpdatePlan& plan = std::get<KindUpdatePlan>(planned);
+
+    const TreeDiagnostics before = room.diagnose();
+    Seq seq = room.head();
+    if (!plan.landsNothing()) {
+      seq = room.applyCommands(plan.commands, clock.nowMs(), actor);  // a lone command logs as itself
+      registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
+    }
+    Json::Value out(Json::objectValue);
+    out["applied"] = true;
+    out["seq"] = static_cast<Json::Int64>(seq);
+    out["id"] = update.id.str();
+    if (plan.landsNothing()) out["unchanged"] = true;
+    if (plan.repaintedNodes) out["repaintedNodes"] = static_cast<Json::UInt64>(*plan.repaintedNodes);
+    answerDiagnostics(before, room.diagnose(), out);
+    return ToolResult::json(out);
+  });
+}
+
 // The caller's own completion marks on the nodes a write removes, cleared to none through landMarks — stamped after the
 // marks they clear, written in one batch, sent to the caller's open sessions — so a revive of the node brings none
 // back; anyone else's marks stay theirs. Answers how many clears landed. A delete, an import's tombstones and prune
@@ -1745,6 +1788,8 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
     return deleteNodes(registry_, progress_, bus_, tree, arguments, clock_, caller);
   if (name == "disconnect")
     return disconnectEdges(registry_, tree, arguments, clock_, caller);
+  if (name == "update_kind")
+    return updateKind(registry_, tree, arguments, clock_, caller);
 
   if (commandKindFor(name)) return applyEdit(registry_, treeRegistry_, tree, name, arguments, clock_, caller);
 

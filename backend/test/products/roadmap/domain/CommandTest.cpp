@@ -1300,3 +1300,80 @@ TEST(create_node_on_a_deleted_id_clears_the_pointer_it_carries_empty_and_leaves_
   CHECK_EQ(left.nodeView(nid("a"))->opens, tid("t_sub"));
   CHECK_EQ(left.exportNode(nid("a"))->opensAt, at(2));
 }
+
+// A kind update's plan as text: each command with every field it carries, then how many nodes it repaints, or the
+// refusal it answers.
+static std::string planned(const LooseGraph& graph, const Legend& legend, const KindUpdate& update) {
+  const std::variant<KindUpdatePlan, std::string> result = planKindUpdate(graph, legend, update);
+  if (const auto* refusal = std::get_if<std::string>(&result)) return "refused: " + *refusal;
+  const KindUpdatePlan& plan = std::get<KindUpdatePlan>(result);
+  std::string text;
+  for (const Command& command : plan.commands) {
+    if (!text.empty()) text += "; ";
+    if (const auto* c = std::get_if<RenameKind>(&command)) text += "RenameKind " + c->id.str() + " \"" + c->label + "\"";
+    else if (const auto* c = std::get_if<DescribeKind>(&command))
+      text += "DescribeKind " + c->id.str() + " " + (c->description ? "\"" + *c->description + "\"" : "-") + " " +
+              (c->crossBranchExempt ? (*c->crossBranchExempt ? "exempt" : "not exempt") : "-");
+    else if (const auto* c = std::get_if<RecolorKind>(&command))
+      text += "RecolorKind " + c->id.str() + " " + std::string(toString(c->hue));
+    else text += "another command";
+  }
+  if (plan.commands.empty()) text = "lands nothing";
+  if (plan.repaintedNodes) text += " | repaints " + std::to_string(*plan.repaintedNodes);
+  return text;
+}
+
+// A kind k on sky, labelled and briefed, worn by a and b, beside a kind j on gold worn by c.
+static LooseGraph kindWearers() {
+  LooseGraph g;
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("c"), "C", "x", NodeColor::gold, std::nullopt, at(1));
+  return g;
+}
+static Legend kindLegend() {
+  return Legend({{kid("k"), NodeColor::sky, "K", "Brief."}, {kid("j"), NodeColor::gold, "J", ""}}, at(1));
+}
+
+// Each field sent lands as its own command, in the order label, description, hue, all under one plan; a new hue counts
+// the nodes it repaints; and a field sent as the kind holds it is left out, so an update of only held values lands
+// nothing — the kind's own hue beside a new label included.
+TEST(kind_update_plan_lands_the_fields_the_kind_does_not_hold) {
+  const LooseGraph g = kindWearers();
+  const Legend legend = kindLegend();
+  const auto update = [](std::optional<std::string> label, std::optional<std::string> description,
+                         std::optional<NodeColor> hue) {
+    return KindUpdate{kid("k"), std::move(label), std::move(description), hue};
+  };
+
+  CHECK_EQ(planned(g, legend, update("Kay", std::nullopt, std::nullopt)), std::string("RenameKind k \"Kay\""));
+  CHECK_EQ(planned(g, legend, update(std::nullopt, "New brief.", std::nullopt)),
+           std::string("DescribeKind k \"New brief.\" -"));
+  CHECK_EQ(planned(g, legend, update(std::nullopt, "", std::nullopt)), std::string("DescribeKind k \"\" -"));
+  CHECK_EQ(planned(g, legend, update(std::nullopt, std::nullopt, NodeColor::plum)),
+           std::string("RecolorKind k plum | repaints 2"));
+  CHECK_EQ(planned(g, legend, update("Kay", "New brief.", NodeColor::plum)),
+           std::string("RenameKind k \"Kay\"; DescribeKind k \"New brief.\" -; RecolorKind k plum | repaints 2"));
+
+  CHECK_EQ(planned(g, legend, update("K", std::nullopt, std::nullopt)), std::string("lands nothing"));
+  CHECK_EQ(planned(g, legend, update(std::nullopt, "Brief.", std::nullopt)), std::string("lands nothing"));
+  CHECK_EQ(planned(g, legend, update(std::nullopt, std::nullopt, NodeColor::sky)), std::string("lands nothing"));
+  CHECK_EQ(planned(g, legend, update("K", "Brief.", NodeColor::sky)), std::string("lands nothing"));
+  CHECK_EQ(planned(g, legend, update("Kay", std::nullopt, NodeColor::sky)), std::string("RenameKind k \"Kay\""));
+}
+
+// An update is refused whole, in the words of the command its field would be: one that sends nothing names all three
+// fields, an unknown kind is named, and a hue another kind wears names that kind — a new label beside it lands nothing.
+TEST(kind_update_plan_refuses_nothing_sent_an_unknown_kind_and_a_taken_hue) {
+  const LooseGraph g = kindWearers();
+  const Legend legend = kindLegend();
+
+  CHECK_EQ(planned(g, legend, KindUpdate{kid("k")}),
+           std::string("refused: nothing to set — pass at least one of \"label\", \"description\", \"hue\"."));
+  CHECK_EQ(planned(g, legend, KindUpdate{kid("x"), std::string("X")}),
+           std::string("refused: no kind \"x\" in this legend"));
+  CHECK_EQ(planned(g, legend, KindUpdate{kid("x"), std::nullopt, std::nullopt, NodeColor::plum}),
+           std::string("refused: no kind \"x\" in this legend"));
+  CHECK_EQ(planned(g, legend, KindUpdate{kid("k"), std::string("Kay"), std::nullopt, NodeColor::gold}),
+           std::string("refused: hue \"gold\" already belongs to kind \"j\" — a hue names one kind, so pick a free one"));
+}
