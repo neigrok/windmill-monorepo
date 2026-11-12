@@ -22,10 +22,12 @@ export function handleRoomKey(event, room) {
     }
   }
   if (event.defaultPrevented) return;
+  // Whatever covers the room holds the keyboard: under a step open over it, a dialog, the composer or the guide's note
+  // being written, no key below reaches the room, wherever focus stands in the cover.
+  if (room.covered()) return;
 
-  const covered = room.covered();
   const typing = isTyping(document.activeElement);
-  const boardAction = boardKey(event, { typing, covered });
+  const boardAction = boardKey(event, { typing });
   if (boardAction === 'activity') {
     if (!room.activityEnabled) return;
     event.preventDefault();
@@ -37,7 +39,7 @@ export function handleRoomKey(event, room) {
     return;
   }
   if (room.desktopEditor && modified(event) && event.key.toLowerCase() === 'z') {
-    if (covered || typing) return;
+    if (typing) return;
     event.preventDefault();
     track('roadmap_board_undo', { act: event.shiftKey ? 'redoKey' : 'undoKey' });
     if (event.shiftKey) room.redo();
@@ -51,7 +53,7 @@ export function handleRoomKey(event, room) {
     return;
   }
   if (event.key === 'Escape') {
-    if (!covered) room.stepBack();
+    room.stepBack();
     return;
   }
   const plainKey = !modified(event) && !event.altKey && !typing;
@@ -75,7 +77,7 @@ export function handleRoomKey(event, room) {
     return;
   }
   if (event.key === '?' && !modified(event) && !event.altKey) {
-    if (covered || typing) return;
+    if (typing) return;
     event.preventDefault();
     room.toggleShortcuts();
     return;

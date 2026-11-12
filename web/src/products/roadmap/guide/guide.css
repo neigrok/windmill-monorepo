@@ -1,5 +1,6 @@
 /* The guide (17.18–17.39): a note on the tree. At rest it is a card on the canvas from 744px and a row under the head on
-   phones; open, it is the note in place from 744px and a bottom sheet on phones, reading or writing in one frame. */
+   phones; open, it is the note in place from 744px and a bottom sheet on phones, reading or writing in one frame. A save
+   no door took leaves one line with its act where the footer says who reads the guide. */
 
 /* ---- At rest from 744px: the card. ---- */
 .st-guide-card {
@@ -254,7 +255,8 @@
   background: var(--surface-hover);
 }
 .st-guide-paper :is(button, textarea):focus-visible,
-.st-guide-prose.is-ringed:focus {
+.st-guide-prose.is-ringed:focus,
+.st-guide-save.is-ringed:focus {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
@@ -299,6 +301,11 @@
 }
 .st-guide-field--over {
   border-color: var(--color-danger);
+}
+/* While a recovery line stands, the field rests on the plain edge until it is focused again: the edge's colour alone
+   changes, so its box and its text stay where they were. */
+.st-guide-field--resting:not(:focus) {
+  border-color: var(--border-default);
 }
 .st-guide-footer {
   display: flex;
@@ -350,7 +357,63 @@
   gap: 12px;
 }
 
-/* ---- The note on phones: a sheet as tall as its text, the footer riding the keyboard while writing. ---- */
+/* ---- A failed save's line, and a copied draft's: from 744px one block holds the line and the actions. ---- */
+.st-guide-closing {
+  display: contents;
+}
+.st-guide-footer--failed > .st-guide-closing,
+.st-guide-footer--copied > .st-guide-closing {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  gap: 9px;
+  box-sizing: border-box;
+  padding: 14px;
+  border-radius: var(--radius-md);
+}
+.st-guide-footer--failed > .st-guide-closing {
+  background: var(--color-danger-bg);
+}
+.st-guide-footer--copied > .st-guide-closing {
+  background: var(--surface-sunken);
+}
+.st-guide-line {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+}
+.st-guide-line > svg {
+  flex-shrink: 0;
+  color: var(--color-danger);
+}
+.st-guide-footer--copied .st-guide-line > svg {
+  color: var(--color-brand);
+}
+.st-guide-line-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.st-guide-line-words > strong {
+  font: 700 16px/22px var(--font-body);
+}
+.st-guide-line-words > span {
+  max-width: 230px;
+  color: var(--text-secondary);
+  font: 400 14px/20px var(--font-body);
+}
+.st-guide-line + .st-guide-actions {
+  flex: none;
+  gap: 9px;
+}
+
+/* ---- The note on phones: a sheet as tall as its text, the footer riding the keyboard while writing. Where the sheet is
+   too short for what it holds, the field gives up its height first and then the sheet scrolls under Cancel and the
+   footer's button, which stay at its foot. ---- */
 .st-guide-paper--phone {
   position: relative;
   gap: 0;
@@ -362,6 +425,8 @@
 }
 .st-guide-paper--phone.st-guide-paper--writing {
   padding-bottom: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .st-guide-grabber {
   flex-shrink: 0;
@@ -418,8 +483,56 @@
   flex-wrap: nowrap;
   align-items: stretch;
   gap: 3px;
-  padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 16px 0;
   border-top: 1px solid var(--border-default);
+}
+/* On phones a recovery line is a block of its own above the actions, under no rule. */
+.st-guide-paper--phone > .st-guide-footer--failed,
+.st-guide-paper--phone > .st-guide-footer--copied {
+  border-top-color: transparent;
+}
+.st-guide-paper--phone .st-guide-footer > .st-guide-closing {
+  display: contents;
+}
+.st-guide-paper--phone .st-guide-line {
+  flex: none;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 5px;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+}
+.st-guide-paper--phone .st-guide-footer--failed .st-guide-line {
+  background: var(--color-danger-bg);
+}
+.st-guide-paper--phone .st-guide-footer--copied .st-guide-line {
+  background: var(--surface-sunken);
+}
+.st-guide-paper--phone .st-guide-line-words {
+  gap: 0;
+}
+.st-guide-paper--phone .st-guide-line-words > strong {
+  font-size: 14px;
+  line-height: 20px;
+}
+.st-guide-paper--phone .st-guide-line-words > span {
+  max-width: none;
+}
+.st-guide-paper--phone .st-guide-status {
+  flex: none;
+  min-height: 0;
+  padding: 6px 6px 6px 12px;
+}
+.st-guide-paper--phone .st-guide-status > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.st-guide-paper--phone .st-guide-status strong {
+  font: 700 14px/20px var(--font-body);
+}
+.st-guide-paper--phone .st-guide-status strong + span {
+  font: 500 12px/16px var(--font-body);
 }
 .st-guide-paper--phone .st-guide-audience {
   flex: none;
@@ -432,11 +545,19 @@
   font-weight: 700;
 }
 .st-guide-paper--phone .st-guide-actions {
+  position: sticky;
+  bottom: 0;
   flex: none;
   justify-content: space-between;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface-card);
+}
+.st-guide-paper--phone .st-guide-line + .st-guide-actions {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 .st-guide-cancel,
-.st-guide-save {
+.st-guide-save,
+.st-guide-load {
   min-height: 44px;
   padding: 0 10px;
   border: 0;
@@ -455,6 +576,16 @@
 .st-guide-save[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
+}
+.st-guide-footer--failed .st-guide-save,
+.st-guide-footer--copied .st-guide-save {
+  min-width: 104px;
+  padding: 0 10px;
+}
+.st-guide-load {
+  flex-shrink: 0;
+  min-width: 100px;
+  background: var(--surface-card);
 }
 
 /* ---- Discard draft?: a card over the note from 744px, a sheet at the foot of the phone. ---- */
