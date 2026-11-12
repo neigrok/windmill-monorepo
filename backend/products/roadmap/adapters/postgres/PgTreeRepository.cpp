@@ -430,23 +430,29 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
   pqxx::work txn{*conn};
   // One statement: the counts and the marks are one snapshot, and no node row leaves the database.
   pqxx::result rows = txn.exec_params(
-      "WITH RECURSIVE reached(id) AS ("
-      "  SELECT t.id FROM trees t "
+      "WITH RECURSIVE reached(id, title) AS ("
+      "  SELECT t.id, t.title FROM trees t "
       "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid "
       "    AND t.id IN (SELECT jsonb_array_elements_text($2::jsonb)) "
       // UNION keeps each tree once, which is what ends the walk on a loop.
       "  UNION "
-      "  SELECT t.id FROM reached r "
-      "  JOIN tree_nodes n ON n.tree_id = r.id AND n.present AND n.opens <> '' "
-      "  JOIN trees t ON t.id = n.opens AND t.deleted_at IS NULL AND t.owner_id = $1::uuid"
+      "  SELECT t.id, t.title FROM reached r "
+      // Each LATERAL runs once per row before it, so each table is read by its key whatever the planner expects.
+      "  CROSS JOIN LATERAL (SELECT DISTINCT n.opens FROM tree_nodes n WHERE n.tree_id = r.id AND n.present) o "
+      "  CROSS JOIN LATERAL (SELECT s.id, s.title, s.owner_id, s.deleted_at FROM trees s WHERE s.id = o.opens LIMIT 1) t "
+      "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid"
       ") "
       // A row is a tree and one target: '' for its nodes that open none, NULL for a tree with no node.
-      "SELECT t.id, t.title, n.opens, count(n.node_id) AS nodes, "
-      "       count(*) FILTER (WHERE p.status = 'complete') AS marked "
-      "FROM reached r JOIN trees t ON t.id = r.id "
-      "LEFT JOIN tree_nodes n ON n.tree_id = r.id AND n.present "
-      "LEFT JOIN node_progress p ON p.tree_id = n.tree_id AND p.node_id = n.node_id AND p.user_id = $1::text "
-      "GROUP BY t.id, t.title, n.opens",
+      "SELECT r.id, r.title, c.opens, c.nodes, c.marked "
+      "FROM reached r LEFT JOIN LATERAL ("
+      "  SELECT n.opens, count(*) AS nodes, "
+      "         count(*) FILTER (WHERE n.node_id IN ("
+      "           SELECT p.node_id FROM node_progress p "
+      // Only node_progress_pkey can serve the row comparisons, which bound the scan to this tree and reader.
+      "           WHERE p.tree_id = r.id AND (p.tree_id, p.user_id) >= (r.id, $1::text) "
+      "             AND (p.tree_id, p.user_id) <= (r.id, $1::text) AND p.status = 'complete')) AS marked "
+      "  FROM tree_nodes n WHERE n.tree_id = r.id AND n.present GROUP BY n.opens"
+      ") c ON true",
       owner.str(), dump(ids));
 
   std::map<TreeId, OpenedTree> trees;

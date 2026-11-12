@@ -59,7 +59,9 @@ rejected for structure. Validity is a read model, not a gate.
   and every such tree their pointers lead to: one statement over `trees`, `tree_nodes` and the
   owner's `node_progress` that reaches each tree once and answers, per tree and tree it opens, how
   many present nodes open it and how many of those the owner marked, beside the tree's title and
-  its nodes that open none. It is made once per reply, after the tree's strand is released, and not
+  its nodes that open none. Each reached tree's nodes and marks are read through
+  `tree_nodes_pkey` and `node_progress_pkey`, so the cost follows the trees reached and not the
+  size of the tables. It is made once per reply, after the tree's strand is released, and not
   at all for a caller who cannot write the tree, for fields that ask for neither `state` nor
   `opens`, or for a tree that holds no pointer. Where every tree of an owner is already loaded with
   its marks (`TreeRegistry::list`, `PgReminderRepository::readinessFor`), `openedAmong`
