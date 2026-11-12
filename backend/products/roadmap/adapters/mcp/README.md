@@ -216,7 +216,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells, each one line with the `count` of nodes it covers and the first ten as `nodes` (one per kind some node has: `label-too-long`, `empty-icon`, `high-in-degree`; one `unclaimed-hue` line per hue no legend kind wears, with the `hue`; or one node-less `empty-legend` line for a tree whose legend holds no kind), so the list is bounded whatever the tree's size; on a tree the caller owns also `treeLoops` and `danglingPointers` (see `opens`) |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
-| read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose set_progress carried `outOfOrder: true` |
+| read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose mark carried `outOfOrder: true`, from `set_progress` or an import's `progress` row |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
 | edit | `patch_nodes` | 1–200 existing nodes, replacement fields (`opens` among them, and a hue as `color` or legend `kind`) with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
 | edit | `change_edges` | 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, optional `expectedSeq` and `dryRun` |
@@ -556,7 +556,11 @@ and none overrides another.
   tombstones and carried `progress[]` — before anything lands, its dry run included. A `title` is
   not an argument: the gate refuses one by name, and the import never touches the tree's title.
   Progress (max 1000 supplied marks) commits in a separate atomic repository batch under the room
-  strand. Receipts distinguish `graphApplied` and `progressApplied`, with `progressError` or
+  strand. Its rows are `set_progress`'s bulk rows: one schema (`progressRow()` in the catalog) and one
+  parse (`readMark`), so `outOfOrder: true` on a completion is kept on the mark and answered
+  `acknowledged: true`, and `prerequisitesMet` is judged against the tree the graft leaves, with the
+  overlay as the whole batch commits it. The marks `get_progress` answers (`completed`, `cleared`,
+  `outOfOrder`) go back through an import as rows and change nothing. Receipts distinguish `graphApplied` and `progressApplied`, with `progressError` or
   `progressSkipped` when requested progress cannot all be applied; a committed graft is not undone
   by a later overlay failure. It is **upsert by id**: an incoming id already present is reported
   in `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
@@ -627,7 +631,8 @@ and none overrides another.
   against the committed batch, so a subtree completed out of dependency order still reports
   correctly. The room strand covers node validation, commit and broadcast; delete/prune cannot
   interleave an orphan mark. Unknown node ids are rejected before any overlay mutation. A completion
-  meant to land before its prerequisites carries `outOfOrder: true` (single and bulk forms, with
+  meant to land before its prerequisites carries `outOfOrder: true` (single and bulk forms, and an
+  import's `progress` rows, with
   `status: complete` only): the word is stored on the row beside the status, under the same stamp,
   so the next mark on that node from any surface replaces it; the receipt answers
   `acknowledged: true` beside `prerequisitesMet`, `get_progress` lists those ids under

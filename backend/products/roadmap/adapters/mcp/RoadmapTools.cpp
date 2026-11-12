@@ -979,16 +979,22 @@ std::optional<std::string> applyProgressBatch(
   return std::nullopt;
 }
 
-// `outOfOrder` is a word about a completion, so it rides only a `complete` status.
-std::optional<std::string> readOutOfOrder(const Json::Value& update, const std::string& path,
-                                          ProgressStatus status, bool& outOfOrder) {
-  const std::string key = path.empty() ? "outOfOrder" : path + ".outOfOrder";
-  if (std::optional<std::string> bad = optionalBool(update["outOfOrder"], key)) return bad;
-  outOfOrder = update["outOfOrder"].asBool();
+// One progress row as a write sends it: `nodeId` (or the legacy `id`), `status`, and `outOfOrder`, a word about a
+// completion that rides only a `complete` status. set_progress, single or bulk, and an import's progress rows read a
+// row by this, so each takes the same checks; `path` names the row in a refusal ("" for set_progress's flat form).
+std::variant<RequestedMark, std::string> readMark(const Json::Value& row, const std::string& path) {
+  const std::string field = path.empty() ? "" : path + ".";
+  std::string node;
+  if (std::optional<std::string> bad = requireHandle(row, kNodeHandle, path, node)) return *bad;
+  if (std::optional<std::string> bad = requireOneOf(progressStatusArgument(row["status"]), field + "status", kStatuses))
+    return *bad;
+  const ProgressStatus status = *parseProgressStatus(row["status"].asString());
+  if (std::optional<std::string> bad = optionalBool(row["outOfOrder"], field + "outOfOrder")) return *bad;
+  const bool outOfOrder = row["outOfOrder"].asBool();
   if (outOfOrder && status != ProgressStatus::complete)
-    return "argument \"" + key + "\" acknowledges completing a node before its prerequisites, so it rides " +
-           "status \"complete\" only, got \"" + progressStatusName(status) + "\"";
-  return std::nullopt;
+    return "argument \"" + field + "outOfOrder\" acknowledges completing a node before its prerequisites, so it " +
+           "rides status \"complete\" only, got \"" + progressStatusName(status) + "\"";
+  return RequestedMark{NodeId{node}, status, outOfOrder};
 }
 
 ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus,
@@ -1009,32 +1015,16 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
     if (std::optional<std::string> bad = requireObjects(args["updates"], "updates", kMaxProgressUpdates))
       return ToolResult::failure(*bad);
     for (Json::ArrayIndex i = 0; i < args["updates"].size(); ++i) {
-      const std::string row = "updates[" + std::to_string(i) + "]";
-      std::string node;
-      if (std::optional<std::string> bad = requireHandle(args["updates"][i], kNodeHandle, row, node))
-        return ToolResult::failure(*bad);
-      if (std::optional<std::string> bad =
-              requireOneOf(progressStatusArgument(args["updates"][i]["status"]), row + ".status", kStatuses))
-        return ToolResult::failure(*bad);
-      const ProgressStatus status = *parseProgressStatus(args["updates"][i]["status"].asString());
-      bool outOfOrder = false;
-      if (std::optional<std::string> bad = readOutOfOrder(args["updates"][i], row, status, outOfOrder))
-        return ToolResult::failure(*bad);
-      requested.push_back({NodeId{node}, status, outOfOrder});
+      std::variant<RequestedMark, std::string> mark = readMark(args["updates"][i], "updates[" + std::to_string(i) + "]");
+      if (const auto* bad = std::get_if<std::string>(&mark)) return ToolResult::failure(*bad);
+      requested.push_back(std::get<RequestedMark>(std::move(mark)));
     }
     if (requested.empty()) return ToolResult::failure("argument \"updates\" is an empty list — pass "
                                                       "at least one {nodeId, status} to mark.");
   } else {
-    std::string node;
-    if (std::optional<std::string> bad = requireHandle(args, kNodeHandle, "", node))
-      return ToolResult::failure(*bad);
-    if (std::optional<std::string> bad = requireOneOf(progressStatusArgument(args["status"]), "status", kStatuses))
-      return ToolResult::failure(*bad);
-    const ProgressStatus status = *parseProgressStatus(args["status"].asString());
-    bool outOfOrder = false;
-    if (std::optional<std::string> bad = readOutOfOrder(args, "", status, outOfOrder))
-      return ToolResult::failure(*bad);
-    requested.push_back({NodeId{node}, status, outOfOrder});
+    std::variant<RequestedMark, std::string> mark = readMark(args, "");
+    if (const auto* bad = std::get_if<std::string>(&mark)) return ToolResult::failure(*bad);
+    requested.push_back(std::get<RequestedMark>(std::move(mark)));
   }
 
   Json::Value results, skipped;
@@ -1117,15 +1107,6 @@ std::optional<std::string> checkImport(const Json::Value& args) {
   if (std::optional<std::string> bad = checkKinds(args["kinds"], 0)) return bad;
 
   if (std::optional<std::string> bad = optionalObjects(args["progress"], "progress", kMaxProgressUpdates)) return bad;
-  for (Json::ArrayIndex i = 0; i < args["progress"].size(); ++i) {
-    const std::string row = "progress[" + std::to_string(i) + "]";
-    std::string node;
-    if (std::optional<std::string> bad = requireHandle(args["progress"][i], kNodeHandle, row, node))
-      return bad;
-    if (std::optional<std::string> bad =
-            requireOneOf(progressStatusArgument(args["progress"][i]["status"]), row + ".status", kStatuses))
-      return bad;
-  }
 
   if (!args["dryRun"].isNull() && !args["dryRun"].isBool())
     return "argument \"dryRun\" must be a boolean, got " + typeName(args["dryRun"]);
@@ -1186,6 +1167,13 @@ std::optional<std::string> checkMergedLegend(const std::vector<Kind>& current,
 ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressService& progress, PresenceBus& bus,
                           const TreeId& tree, const Json::Value& args, Clock& clock, const ToolCaller& caller) {
   if (std::optional<std::string> bad = checkImport(args)) return ToolResult::failure(*bad);
+  // The marks the import carries, read as set_progress reads its rows; they land after the graft, on the tree it leaves.
+  std::vector<RequestedMark> carried;
+  for (Json::ArrayIndex i = 0; i < args["progress"].size(); ++i) {
+    std::variant<RequestedMark, std::string> mark = readMark(args["progress"][i], "progress[" + std::to_string(i) + "]");
+    if (const auto* bad = std::get_if<std::string>(&mark)) return ToolResult::failure(*bad);
+    carried.push_back(std::get<RequestedMark>(std::move(mark)));
+  }
   if (std::optional<std::string> bad = checkExpectedSeq(args)) return ToolResult::failure(*bad);
   // The tool is write-level, but a tombstone is what delete_node does, and `delete` is never implied
   // by `write`: refused before the tree is read, in the composite's own words.
@@ -1304,16 +1292,13 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
       for (const NodeId& id : footprint.tombstonedNodes) tombstone.append(id.str());
       out["tombstone"] = tombstone;
       // Carried progress naming no node the graft would leave behind.
-      if (args["progress"].isArray()) {
+      if (!carried.empty()) {
         std::set<std::string> afterGraft = presentNodes;
         for (const NodeSpec& n : incoming.nodes) afterGraft.insert(n.id.str());
         for (const NodeId& id : footprint.tombstonedNodes) afterGraft.erase(id.str());
         Json::Value skipped(Json::arrayValue);
-        for (const Json::Value& u : args["progress"]) {
-          const Json::Value& handle =
-              u[kNodeHandle.published].isNull() ? u[kNodeHandle.alias] : u[kNodeHandle.published];
-          if (!afterGraft.count(handle.asString())) skipped.append(handle.asString());
-        }
+        for (const RequestedMark& mark : carried)
+          if (!afterGraft.count(mark.node.str())) skipped.append(mark.node.str());
         if (!skipped.empty()) out["progressSkipped"] = skipped;
       }
       return ToolResult::json(out);
@@ -1349,38 +1334,27 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     return ToolResult::json(out);
   });
   grafted = withClosedLoops(trees, actor, tree, pointerEdit, grafted);
-  if (grafted.isError || dryRun || !(args.isMember("progress") && args["progress"].isArray()))
-    return grafted;
-
-  std::vector<RequestedMark> requested;
-  for (const Json::Value& u : args["progress"]) {
-    const Json::Value& handle =
-        u[kNodeHandle.published].isNull() ? u[kNodeHandle.alias] : u[kNodeHandle.published];
-    requested.push_back({NodeId{handle.asString()}, *parseProgressStatus(u["status"].asString()), false});
-  }
-  if (!requested.empty()) {
-    try {
-      Json::Value results, skipped;
-      const std::optional<std::string> error =
-          applyProgressBatch(registry, progress, bus, tree, clock, actor, requested, false, results, skipped);
-      if (error) {
-        grafted.payload["progressApplied"] = false;
-        grafted.payload["progressError"] = "The graph committed, but the requested progress did not apply: " + *error;
-      } else {
-        grafted.payload["progress"] = results;
-        if (!skipped.empty()) {
-          grafted.payload["progressSkipped"] = skipped;
-          grafted.payload["progressApplied"] = false;
-          grafted.payload["progressError"] = "Some requested progress names nodes absent after the graft; those ids are listed in progressSkipped.";
-        }
-      }
-    } catch (const std::exception&) {
+  if (grafted.isError || dryRun || carried.empty()) return grafted;
+  try {
+    Json::Value results, skipped;
+    const std::optional<std::string> error =
+        applyProgressBatch(registry, progress, bus, tree, clock, actor, carried, false, results, skipped);
+    if (error) {
       grafted.payload["progressApplied"] = false;
-      grafted.payload["progressError"] = "The graph committed, but the requested progress outcome is uncertain. Read get_progress before retrying progress changes.";
+      grafted.payload["progressError"] = "The graph committed, but the requested progress did not apply: " + *error;
+    } else {
+      grafted.payload["progress"] = results;
+      if (!skipped.empty()) {
+        grafted.payload["progressSkipped"] = skipped;
+        grafted.payload["progressApplied"] = false;
+        grafted.payload["progressError"] = "Some requested progress names nodes absent after the graft; those ids are listed in progressSkipped.";
+      }
     }
-    return ToolResult::json(grafted.payload);
+  } catch (const std::exception&) {
+    grafted.payload["progressApplied"] = false;
+    grafted.payload["progressError"] = "The graph committed, but the requested progress outcome is uncertain. Read get_progress before retrying progress changes.";
   }
-  return grafted;
+  return ToolResult::json(grafted.payload);
 }
 
 ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, const TreeId& tree,
