@@ -17,7 +17,11 @@ export class UnlockRules {
   }
 
   static derive(tree, progress) {
-    const completed = UnlockRules.completed(tree, progress);
+    return UnlockRules.statesUnder(tree, UnlockRules.completed(tree, progress));
+  }
+
+  // Every step's state under a completed set: complete if it is in it, available once every prerequisite is, locked otherwise.
+  static statesUnder(tree, completed) {
     const states = new Map();
 
     for (const node of tree.nodes) {
@@ -37,6 +41,20 @@ export class UnlockRules {
 // the roadmap no longer holds opens nothing.
 export function takesMark(step) {
   return !step?.opening;
+}
+
+// What giving the step `id` a tree to open does to a hand's mark there and to the steps after it. `marked` says the
+// step holds a mark, which is set aside while the pointer stands and returns when it goes. `relocks` counts the steps
+// up next now that lock again because the step is done no longer; a tree that is `complete` keeps it done.
+export function treeAttachment(tree, progress, id, { complete }) {
+  const marked = progress.completed.has(id);
+  const standing = UnlockRules.completed(tree, progress);
+  if (complete || !standing.has(id)) return { marked, relocks: 0 };
+  const without = new Set(standing);
+  without.delete(id);
+  const was = UnlockRules.statesUnder(tree, standing);
+  const now = UnlockRules.statesUnder(tree, without);
+  return { marked, relocks: tree.nodes.filter((step) => was.get(step.id) === 'available' && now.get(step.id) === 'locked').length };
 }
 
 // Authored order; a prerequisite listed twice still gates once.
