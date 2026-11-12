@@ -783,15 +783,16 @@ test('a pointer the owner’s graft carried stays on this device: a graft that s
 });
 
 // A live session over four ordinary steps whose socket then drops, so the marks that follow are queued. `sockets` is
-// every socket the session has held, and `subscribed` answers a (re)connect with the server's structure and marks.
+// every socket the session has held, and `subscribed` answers a (re)connect with the server's structure and marks, as a
+// writer's answer unless `reach` says otherwise.
 async function sessionWithQueuedMarks(env, store, marks) {
   const steps = { nodes: ['a', 'b', 'k', 'z'].map((id) => ({ id, createdAt: '100:0:srv', label: id, labelAt: '100:0:srv' })), edges: [], kinds: [] };
   const session = await env.session(store);
   const sockets = [session.ws];
-  const subscribed = (structure = {}, seq = 1, serverMarks = []) => {
+  const subscribed = (structure = {}, seq = 1, serverMarks = [], reach = 'writer') => {
     if (session.ws.readyState === 3) { session.connect(); sockets.push(session.ws); }
     session.ws.open();
-    session.receive({ t: 'subgraph', intent: 'delta', nodes: [], edges: [], kinds: [], ...structure, seq });
+    session.receive({ t: 'subgraph', intent: 'delta', nodes: [], edges: [], kinds: [], ...structure, seq, ...(reach ? { reach } : {}) });
     session.receive({ t: 'progress', intent: 'graft', marks: serverMarks });
     return settle([store]);
   };
@@ -1028,7 +1029,7 @@ test('Undo leaves a pointer alone once a peer has set it since, and ⌘Z walks a
   await settle([store]);
 });
 
-test('a tree attached with no connection is owed through a reload and goes with the first flush, whatever the graft says of pointers', async (t) => {
+test('a tree attached with no connection is owed through a reload, waits through an answer with no reach, and goes with the first writer’s flush', async (t) => {
   const env = environment(t);
   const store = env.store();
   const { session } = await sessionWithQueuedMarks(env, store, []);
@@ -1040,12 +1041,19 @@ test('a tree attached with no connection is owed through a reload and goes with 
 
   const reopened = await env.session(env.store());
   assert.deepEqual({ opens: opened(reopened).k, pending: reopened.pendingStructureCount(), gestures: reopened.pendingEditCount() }, { opens: 't_other', pending: 1, gestures: 1 });
-  reopened.ws.open();
   const steps = ['a', 'b', 'k', 'z'].map((id) => ({ id, createdAt: '100:0:srv', label: id, labelAt: '100:0:srv', opens: '', opensAt: '0:0:' }));
+  reopened.ws.open();
   reopened.receive({ t: 'subgraph', intent: 'delta', nodes: steps, edges: [], kinds: [], seq: 1 });
   reopened.receive({ t: 'progress', intent: 'graft', marks: [] });
   await settle([store]);
+  assert.deepEqual({ sent: pointerFrames([reopened.ws]), pending: reopened.pendingStructureCount() }, { sent: [], pending: 1 });
 
+  reopened.ackedServerVector = new VersionVector();
+  reopened.ws.close();
+  reopened.connect();
+  reopened.ws.open();
+  reopened.receive({ t: 'subgraph', intent: 'delta', nodes: steps, edges: [], kinds: [], seq: 1, reach: 'writer' });
+  await settle([store]);
   assert.deepEqual(pointerFrames([reopened.ws]), [{ intent: 'flush', nodes: [{ id: 'k', opens: 't_other', stamped: true }] }]);
 });
 
@@ -1093,4 +1101,229 @@ test('two tabs hold a mark set aside: neither sends it, neither counts it, and t
   assert.deepEqual([owed(first.session).pending, owed(second).pending].every((pending) => pending <= 1), true);
   assert.deepEqual(await storedMarks(storeB), ['b:complete', 'k:complete']);
   assert.deepEqual((await storeB.load('tree')).epochs, { structure: 0, progress: 0 });
+});
+
+// Whether the server takes this session for a writer of the tree is the `reach` of its answer to a subscribe. Only a writer's
+// answer speaks for pointers: a reader's, and one with no reach, are shown none of them.
+const twoSteps = (extra = {}) => ['a', 'k'].map((id) => ({ id, createdAt: '100:0:srv', label: id, labelAt: '100:0:srv', ...(extra[id] ?? {}) }));
+const answer = (nodes, seq, reach) => ({ t: 'subgraph', intent: 'delta', nodes, edges: [], kinds: [], seq, coverage: { srv: '900:0:srv' }, ...(reach ? { reach } : {}) });
+const hidden = (id) => ({ id, createdAt: '100:0:srv', label: id, labelAt: '100:0:srv', opens: '', opensAt: '0:0:' });
+const pointerWrites = (session) => session.ws.frames.filter((frame) => frame.t === 'subgraph').map((frame) => frame.nodes.map((node) => `${node.id}:${node.opens ?? '-'}`).join(','));
+
+for (const reach of ['reader', null]) {
+  test(`a lapse in place, answered as ${reach ?? 'nothing (no reach)'}: nothing owed, the pointer stays, and a detach made then waits, owed, until a writer answers`, async (t) => {
+    const env = environment(t);
+    const store = env.store();
+    const session = await env.session(store);
+    session.ws.open();
+    session.receive(answer(twoSteps({ k: { opens: 't_sail', opensAt: '200:0:srv' } }), 1, 'writer'));
+    session.receive({ t: 'progress', intent: 'graft', marks: [] });
+    session.ws.close(); session.connect(); session.ws.open();
+    session.receive(answer([hidden('k'), { id: 'a', label: 'renamed', labelAt: '300:0:srv' }], 2, reach));
+    await settle([store]);
+    assert.deepEqual({ owed: session.pendingStructureCount(), sent: pointerWrites(session), opens: opened(session).k }, { owed: 0, sent: [], opens: 't_sail' });
+
+    assert.notEqual(session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: '' }), null);
+    await settle([store]);
+    assert.deepEqual({ owed: session.pendingStructureCount(), sent: pointerWrites(session), opens: opened(session).k }, { owed: 1, sent: [], opens: '' });
+
+    session.ws.close(); session.connect(); session.ws.open();
+    session.receive(answer([], 3, 'writer'));
+    assert.deepEqual({ resubscribed: session.ws.readyState, vector: session.ackedServerVector.marks.size }, { resubscribed: 3, vector: 0 }, 'a reader turned writer asks again from nothing');
+    session.connect(); session.ws.open();
+    session.receive(answer(twoSteps({ a: { label: 'renamed', labelAt: '300:0:srv' }, k: { opens: 't_sail', opensAt: '200:0:srv' } }), 3, 'writer'));
+    await settle([store]);
+    assert.deepEqual(pointerWrites(session), ['k:']);
+    session.receive({ t: 'subgraphAck', treeId: 'tree', frameId: session.ws.frames.find((frame) => frame.t === 'subgraph').frameId });
+    assert.equal(session.pendingStructureCount(), 0);
+  });
+}
+
+test('a lapse on reload, a full reader’s graft over a stored record: nothing owed or sent, the pointer stays, and a detach waits for a writer', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const first = await env.session(store);
+  first.ws.open();
+  first.receive(answer(twoSteps({ k: { opens: 't_sail', opensAt: '200:0:srv' } }), 1, 'writer'));
+  await settle([store]);
+  first.close();
+
+  const session = await env.session(env.store());
+  session.ws.open();
+  session.receive(answer([hidden('a'), hidden('k')], 1, 'reader'));
+  await settle([store]);
+  assert.deepEqual({ owed: session.pendingStructureCount(), gestures: session.pendingEditCount(), sent: pointerWrites(session), opens: opened(session).k },
+    { owed: 0, gestures: 0, sent: [], opens: 't_sail' });
+  session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: '' });
+  await settle([store]);
+  assert.deepEqual({ owed: session.pendingStructureCount(), sent: pointerWrites(session) }, { owed: 1, sent: [] });
+});
+
+test('a pointer this device wrote and the server never confirmed stays owed across a reader’s graft and goes once a writer answers', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const session = await env.session(store);
+  session.ws.open();
+  session.receive(answer(twoSteps({ k: { opens: 't_sail', opensAt: '200:0:srv' } }), 1, 'writer'));
+  session.ws.close();
+  session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_coast' });
+  session.ackedServerVector = new VersionVector(); session.connect(); session.ws.open();
+  session.receive(answer([hidden('a'), hidden('k')], 1, 'reader'));
+  await settle([store]);
+  assert.deepEqual({ owed: session.pendingStructureCount(), sent: pointerWrites(session) }, { owed: 1, sent: [] });
+
+  session.ws.close(); session.connect(); session.ws.open();
+  session.receive(answer([], 2, 'writer'));
+  session.connect(); session.ws.open();
+  session.receive(answer(twoSteps({ k: { opens: 't_sail', opensAt: '200:0:srv' } }), 2, 'writer'));
+  await settle([store]);
+  assert.deepEqual({ owed: session.pendingStructureCount(), sent: pointerWrites(session) }, { owed: 1, sent: ['k:t_coast'] });
+});
+
+test('a writer’s full graft is the server’s word on pointers, an older or an empty one included: the newer pointer here is owed and sent again', async (t) => {
+  for (const restored of [{ opens: 't_old', opensAt: '150:0:srv' }, {}]) {
+    const env = environment(t);
+    const store = env.store();
+    const session = await env.session(store);
+    session.ws.open();
+    session.receive(answer(twoSteps(), 1, 'writer'));
+    session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_sail' });
+    await settle([store]);
+    session.receive({ t: 'subgraphAck', treeId: 'tree', frameId: session.ws.frames.find((frame) => frame.t === 'subgraph').frameId });
+    await settle([store]);
+    assert.equal(session.pendingStructureCount(), 0);
+
+    session.ackedServerVector = new VersionVector(); session.ws.close(); session.connect(); session.ws.open();
+    session.receive(answer(twoSteps({ k: restored }), 1, 'writer'));
+    await settle([store]);
+    assert.deepEqual({ thisDevice: opened(session).k, owed: session.pendingStructureCount(), resent: pointerWrites(session) }, { thisDevice: 't_sail', owed: 1, resent: ['k:t_sail'] });
+    session.close();
+  }
+});
+
+test('an answer that turns from reader to writer subscribes again from nothing, so a pointer changed while it read arrives, once', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const session = await env.session(store);
+  session.ws.open();
+  session.receive(answer(twoSteps(), 1, 'writer'));
+  session.ws.close(); session.connect(); session.ws.open();
+  session.receive(answer([], 1, 'reader'));
+  const subscribes = () => session.ws.frames.filter((frame) => frame.t === 'subscribe');
+
+  session.ws.close(); session.connect(); session.ws.open();
+  assert.deepEqual(Object.keys(subscribes()[0].vector), ['srv'], 'a sign-in in place asks from the reader’s coverage');
+  session.receive(answer([], 2, 'writer'));
+  assert.equal(session.ws.readyState, 3);
+  assert.equal(opened(session).k, '');
+
+  session.connect(); session.ws.open();
+  assert.deepEqual(subscribes()[0].vector, {});
+  session.receive(answer(twoSteps({ k: { opens: 't_sail', opensAt: '400:0:srv' } }), 2, 'writer'));
+  await settle([store]);
+  assert.deepEqual({ opens: opened(session).k, open: session.ws.readyState, owed: session.pendingStructureCount() }, { opens: 't_sail', open: 1, owed: 0 });
+
+  session.receive(answer([], 2, 'writer'));
+  assert.equal(session.ws.readyState, 1, 'a writer answering a writer asks nothing again');
+});
+
+test('a writer’s live attach goes at once, and the same session answered as a reader sends its next one nowhere', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const session = await env.session(store);
+  session.ws.open();
+  session.receive(answer(twoSteps(), 1, 'writer'));
+  session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_sail' });
+  await settle([store]);
+  assert.deepEqual(pointerWrites(session), ['k:t_sail']);
+
+  session.ws.close(); session.connect(); session.ws.open();
+  session.receive(answer([], 2, 'reader'));
+  session.dispatch({ kind: 'SetNodeTree', id: 'a', opens: 't_coast' });
+  await settle([store]);
+  assert.deepEqual(pointerWrites(session), []);
+  assert.equal(session.pendingStructureCount(), 2);
+});
+
+test('a refused attach, then Discard: the pointer goes, and the mark set aside behind it is owed again and goes once after the graft', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const session = await env.session(store);
+  session.ws.open();
+  session.receive(answer(twoSteps(), 1, 'writer'));
+  session.receive({ t: 'progress', intent: 'graft', marks: [] });
+  session.ws.close();
+  session.markProgress(['k'], 'complete');
+  session.connect(); session.ws.open();
+  session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: 't_sail' });
+  session.receive(answer([], 1, 'writer'));
+  session.receive({ t: 'progress', intent: 'graft', marks: [] });
+  await settle([store]);
+  const sent = session.ws.frames.filter((frame) => frame.t === 'subgraph');
+  assert.deepEqual({ subgraphs: pointerWrites(session), marks: session.ws.frames.filter((frame) => frame.t === 'progress').length }, { subgraphs: ['k:t_sail'], marks: 0 });
+  session.receive({ t: 'reject', treeId: 'tree', frameId: sent[0].frameId, code: 'bad-frame', reason: 'no' });
+  assert.equal(session.statusSnapshot().refused?.lane, 'structure');
+  assert.equal(await session.discard(), true);
+  await settle([store]);
+  session.ws.open();
+  session.receive(answer(twoSteps(), 1, 'writer'));
+  session.receive({ t: 'progress', intent: 'graft', marks: [] });
+  await settle([store]);
+  const marks = session.ws.frames.filter((frame) => frame.t === 'progress').map((frame) => frame.marks.map((mark) => `${mark.node}:${mark.status}`).join(','));
+  assert.deepEqual({ opens: opened(session).k, owedStructure: session.pendingStructureCount(), marks, owedMarks: session.pendingProgressCount() },
+    { opens: '', owedStructure: 0, marks: ['k:complete'], owedMarks: 1 });
+});
+
+test('detach with no connection, then Undo of the detach, then a writer’s answer: one pointer write and no mark go', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const session = await env.session(store);
+  session.ws.open();
+  session.receive(answer(twoSteps({ k: { opens: 't_sail', opensAt: '200:0:srv' } }), 1, 'writer'));
+  session.receive({ t: 'progress', intent: 'graft', marks: [] });
+  session.markProgress(['k'], 'complete');
+  await settle([store]);
+  session.ws.close();
+  const detached = session.dispatch({ kind: 'SetNodeTree', id: 'k', opens: '' });
+  assert.equal(session.pendingProgressCount(), 1, 'the mark is owed again while the pointer is gone');
+  session.revert(detached);
+  assert.equal(session.pendingProgressCount(), 0);
+  session.connect(); session.ws.open();
+  session.receive(answer([], 1, 'writer'));
+  session.receive({ t: 'progress', intent: 'graft', marks: [] });
+  await settle([store]);
+  assert.deepEqual({ subgraphs: pointerWrites(session), marks: session.ws.frames.filter((frame) => frame.t === 'progress').length, opens: opened(session).k },
+    { subgraphs: ['k:t_sail'], marks: 0, opens: 't_sail' });
+});
+
+test('a step that opens a tree, deleted and brought back by Undo, opens it again; the mark set aside stays aside throughout', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const session = await env.session(store);
+  session.ws.open();
+  session.receive(answer(twoSteps({ k: { opens: 't_sail', opensAt: '200:0:srv' } }), 1, 'writer'));
+  session.receive({ t: 'progress', intent: 'graft', marks: [] });
+  session.markProgress(['k'], 'complete');
+  session.dispatch({ kind: 'DeleteNode', id: 'k' });
+  assert.deepEqual({ present: session.lattice.hasNode('k'), owedMarks: session.pendingProgressCount() }, { present: false, owedMarks: 0 });
+  session.undo();
+  await settle([store]);
+  assert.deepEqual({ present: session.lattice.hasNode('k'), opens: opened(session).k, owedMarks: session.pendingProgressCount(), marksSent: session.ws.frames.filter((frame) => frame.t === 'progress').length },
+    { present: true, opens: 't_sail', owedMarks: 0, marksSent: 0 });
+});
+
+test('the steps whose pointer this device wrote and the server has not confirmed, and only those', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const session = await env.session(store);
+  session.ws.open();
+  session.receive(answer(twoSteps({ k: { opens: 't_sail', opensAt: '200:0:srv' } }), 1, 'writer'));
+  assert.deepEqual([...session.ownPointers()], []);
+  session.dispatch({ kind: 'SetNodeTree', id: 'a', opens: 't_coast' });
+  session.dispatch({ kind: 'RenameNode', id: 'k', label: 'renamed' });
+  await settle([store]);
+  assert.deepEqual([...session.ownPointers()], ['a']);
+  session.receive({ t: 'subgraphAck', treeId: 'tree', frameId: session.ws.frames.find((frame) => frame.t === 'subgraph').frameId });
+  assert.deepEqual([...session.ownPointers()], []);
+  await settle([store]);
 });

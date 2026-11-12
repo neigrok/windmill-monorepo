@@ -78,6 +78,8 @@ export class SyncSession {
     this.phase = 'offline';                         // offline | syncing | live
     this.ready = false;
     this.joinedServer = false;                      // the server's state has joined this lattice since the session began
+    this.reach = null;                              // 'writer' or 'reader': what the server last took this connection for
+    this.confirmations = 0;                         // structure the server has confirmed: acks, grafts and peers' frames
     this.lastSeq = 0;
     this.fullGraftPending = false;
     this.sent = new Set();                          // frameIds we authored — echoes already applied
@@ -93,6 +95,7 @@ export class SyncSession {
     this.peerHandler = null;
     this.progressHandler = null;
     this.drainedHandler = null;
+    this.confirmedHandler = null;
     this.presence = null;
     this.presenceTimer = null;
     this.pagehide = null;
@@ -121,6 +124,28 @@ export class SyncSession {
   onPeer(handler) { this.peerHandler = handler; return this; }
   onProgress(handler) { this.progressHandler = handler; return this; }
   onDrained(handler) { this.drainedHandler = handler; return this; }
+  onConfirmed(handler) { this.confirmedHandler = handler; return this; }
+
+  // Only a writer's answer speaks for the trees steps open: the server hides them from anyone else.
+  get writesPointers() { return this.reach === 'writer'; }
+
+  // The steps whose pointer this device wrote and the server has not confirmed.
+  ownPointers() {
+    return new Set(Object.keys(this.unconfirmedWrites('structure')).flatMap((key) => {
+      const [section, id, field] = JSON.parse(key);
+      return section === 'nodes' && field === 'opensAt' ? [id] : [];
+    }));
+  }
+
+  // The server confirmed structure: one more round for whoever reads what a confirmation made true.
+  noteConfirmed() {
+    this.confirmations += 1;
+    try {
+      this.confirmedHandler?.();
+    } catch (error) {
+      this.reportFailure('roadmap-sync-notify', error);
+    }
+  }
 
   subscribeStatus(handler) {
     this.statusHandlers.add(handler);
@@ -527,9 +552,17 @@ export class SyncSession {
     if (frame.t === 'reject') return this.receiveReject(frame);
   }
 
-  // A subscribe graft replaces the subscribe frontier and seq, then flushes unconfirmed registers.
+  // A subscribe graft replaces the subscribe frontier and seq, then flushes unconfirmed registers. Its `reach` says whether
+  // the server takes this connection for a writer of the tree; an answer without one is a reader's.
   receiveState(frame) {
+    const reach = frame.reach === 'writer' ? 'writer' : 'reader';
     if (!this.fullGraftPending && typeof frame.seq === 'number' && frame.seq < this.lastSeq) {
+      this.ackedServerVector = new VersionVector();
+      this.forceReconnect();
+      return;
+    }
+    // A reader's coverage counts pointers it was never shown, so a reader turned writer asks again from nothing.
+    if (!this.fullGraftPending && reach === 'writer' && this.reach === 'reader') {
       this.ackedServerVector = new VersionVector();
       this.forceReconnect();
       return;
@@ -540,10 +573,11 @@ export class SyncSession {
       frontier = this.lattice.join(frame);
       coverage = frame.coverage ? VersionVector.fromJSON(frame.coverage) : frontier;
       if (this.fullGraftPending) {
-        // A full graft is everything the server holds but the pointers it hides from a reader, so one it is silent on stays confirmed.
-        const confirmedPointers = this.confirmedStructure.pointers();
+        // A writer's full graft is the server's word on every register, pointers included. A reader's is silent on
+        // pointers, so the ones the server confirmed before stay confirmed.
+        const confirmedPointers = reach === 'writer' ? null : this.confirmedStructure.pointers();
         this.confirmedStructure = this.confirmedStructure.baseline();
-        this.confirmedStructure.join(confirmedPointers);
+        if (confirmedPointers) this.confirmedStructure.join(confirmedPointers);
       }
       this.confirmedStructure.join(frame);
       if (this.fullGraftPending) this.gestures.structure = pendingGestures(this.lattice.toFrame(), this.confirmedStructure.toFrame(), this.gestures.structure);
@@ -559,10 +593,12 @@ export class SyncSession {
     this.fullGraftPending = false;
     this.confirmedKnown.structure = true;
     this.joinedServer = true;
+    this.reach = reach;
     this.persistNow();
     this.rebaselining?.delete('structure');
     if (this.rebaselining?.size === 0) this.rebaselining = null;
     this.ready = this.rebaselining == null;
+    this.noteConfirmed();
     this.emitProjection('structure');
     this.flush();
     this.phase = this.rebaselining ? 'syncing' : 'live';
@@ -594,6 +630,7 @@ export class SyncSession {
     this.lastSeq = frame.seq;  // advance only after a successful join
     const mine = frame.frameId && this.sent.has(frame.frameId);
     this.scheduleSave();
+    if (!mine) this.noteConfirmed();
     if (!mine) this.emitProjection('structure');
     this.releaseMarks(pointed);
     this.emitStatus();
@@ -619,6 +656,7 @@ export class SyncSession {
     this.inFlight.delete(frame.frameId);
     this.sent.delete(frame.frameId);
     this.persistNow();
+    this.noteConfirmed();
     this.noteDrained();
     this.emitStatus();
   }
@@ -818,6 +856,8 @@ export class SyncSession {
   receiveReject(frame) {
     const lane = this.inFlight.has(frame.frameId) ? 'structure'
       : this.progressInFlight.has(frame.frameId) ? 'progress' : null;
+    // The server stops taking this connection for a writer without a word: refusing its writes is how it says so.
+    if (isSessionRefusal(frame) || frame.code === 'no-such-tree') this.reach = 'reader';
     if (strandsTheBank(frame) && lane && !isOwnershipRefusal(frame) && !isSessionRefusal(frame)) {
       const refusal = this.standRefusal(lane, frame.code);
       for (const handler of this.refusalHandlers) handler(refusal);
@@ -1051,10 +1091,10 @@ export class SyncSession {
     if (this.rebaselining?.has('structure') || this.discardPending) return;
     if (this.ws?.readyState !== WebSocket.OPEN) return;
     this.sendWithEpoch('structure', (socket) => {
-      if (intent === 'flush') {
-        writes = outboxWrites(writes, this.confirmedStructure.toFrame(), this.inFlight.values());
-        if (writesNothing(writes)) return;
-      }
+      if (intent === 'flush') writes = outboxWrites(writes, this.confirmedStructure.toFrame(), this.inFlight.values());
+      // A pointer goes only to a server that takes this connection for a writer; until one does it stays owed here.
+      if (!this.writesPointers) writes = frameWrites(writes, (key) => JSON.parse(key)[2] !== 'opensAt');
+      if (writesNothing(writes)) return;
       const frameId = crypto.randomUUID?.() ?? `f-${Date.now()}-${Math.random()}`;
       this.sent.add(frameId);
       const frame = {
