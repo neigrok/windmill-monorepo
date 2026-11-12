@@ -1,6 +1,7 @@
-/* The guide (17.18–17.39): a note on the tree. At rest it is a card on the canvas from 744px and a row under the head on
-   phones; open, it is the note in place from 744px and a bottom sheet on phones, reading or writing in one frame. A save
-   no door took leaves one line with its act where the footer says who reads the guide. */
+/* The guide (17.18–17.39, 28.29–28.33): a note on the tree. At rest it is a card on the canvas from 744px and a row under
+   the head on phones; open, it is the note in place from 744px and a bottom sheet on phones, reading or writing in one
+   frame. A save no door took leaves one line with its act where the footer says who reads the guide. The guides of the
+   trees above stand before the tree's own, each under its tree's name. */
 
 /* ---- At rest from 744px: the card. ---- */
 .st-guide-card {
@@ -72,6 +73,26 @@
   font: 400 23px/32px var(--font-body);
   overflow-wrap: anywhere;
 }
+.st-guide-card-above {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--text-secondary);
+  font: 700 13px/19px var(--font-body);
+}
+.st-guide-card-above > svg {
+  flex-shrink: 0;
+  margin-top: 2.5px;
+}
+.st-guide-card-above > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .st-guide-rule {
   flex-shrink: 0;
   height: 1px;
@@ -120,8 +141,17 @@
   min-width: 0;
   color: var(--text-primary);
 }
+.st-guide-row-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .st-guide-row-title {
   font: 700 15px/20px var(--font-body);
+}
+.st-guide-row-above {
+  color: var(--text-secondary);
+  font: 600 12px/16px var(--font-body);
 }
 .st-guide-row-excerpt {
   display: -webkit-box;
@@ -274,6 +304,122 @@
 }
 .st-guide-prose--owner {
   cursor: text;
+}
+
+/* ---- The guides from above, farthest first, then this tree's own under its name: one stack that scrolls inside the
+   note. Its edge stands 4px out, so the prose's focus ring is drawn whole. ---- */
+.st-guide-stack {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  max-height: 525px;
+  margin: -4px;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.st-guide-stack > * {
+  flex-shrink: 0;
+}
+.st-guide-stack > .st-guide-prose {
+  max-height: none;
+  overflow: visible;
+}
+.st-guide-from {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.st-guide-from-name,
+.st-guide-own {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font: 700 13px/19px var(--font-body);
+  overflow-wrap: anywhere;
+}
+.st-guide-from-name {
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+}
+button.st-guide-from-name {
+  cursor: pointer;
+}
+.st-guide-from-name > svg,
+.st-guide-own > svg,
+.st-guide-hint > svg {
+  flex-shrink: 0;
+  margin-top: 2.5px;
+}
+.st-guide-from-name > span,
+.st-guide-own > span:not(.st-guide-hint) {
+  flex: 1;
+  min-width: 0;
+}
+.st-guide-from-name > svg:last-child {
+  color: var(--text-tertiary);
+}
+.st-guide-from-text {
+  margin: 0;
+  color: var(--text-secondary);
+  font: 400 22px/32px var(--font-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.st-guide-divide {
+  height: 1px;
+  background: var(--border-default);
+}
+.st-guide-own {
+  color: var(--text-primary);
+}
+.st-guide-hint {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-weight: 400;
+  cursor: pointer;
+}
+.st-guide-add {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-link);
+  font: 700 16px/22px var(--font-body);
+  cursor: pointer;
+}
+/* While the guide is written the guides from above stay over the field, dimmed, and scroll by themselves; this tree's
+   name stays on the field. */
+.st-guide-context {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+.st-guide-context > .st-guide-stack {
+  max-height: 264px;
+}
+.st-guide-context .st-guide-from {
+  opacity: 0.6;
+}
+.st-guide-context .st-guide-from-text {
+  font-size: 18px;
+  line-height: 26px;
 }
 .st-guide-field {
   flex: 0 1 auto;
@@ -465,8 +611,26 @@
   font-size: 17px;
   line-height: 25px;
 }
-.st-guide-paper--phone > .st-guide-prose.is-ringed:focus {
+.st-guide-paper--phone > .st-guide-prose.is-ringed:focus,
+.st-guide-paper--phone .st-guide-stack > .st-guide-prose.is-ringed:focus {
   outline-offset: -2px;
+}
+.st-guide-paper--phone > .st-guide-stack {
+  gap: 12px;
+  max-height: none;
+  margin: 6px 0 0;
+  padding: 0 22px;
+}
+.st-guide-paper--phone .st-guide-stack > .st-guide-prose {
+  margin: 0 -4px;
+  padding: 0 4px;
+  border-radius: 5px;
+  font-size: 17px;
+  line-height: 25px;
+}
+.st-guide-paper--phone .st-guide-from-text {
+  font-size: 15px;
+  line-height: 22px;
 }
 .st-guide-paper--phone > .st-guide-field {
   min-height: 41px;
@@ -680,6 +844,7 @@
 .st-guide-paper.is-entering,
 .st-guide-layer.is-entering > .st-guide-backdrop,
 .st-guide-prose,
+.st-guide-add,
 .st-guide-field,
 .st-guide-footer {
   animation: st-guide-dissolve 160ms ease-out;
@@ -691,6 +856,7 @@
   .st-guide-paper.is-entering,
   .st-guide-layer.is-entering > .st-guide-backdrop,
   .st-guide-prose,
+  .st-guide-add,
   .st-guide-field,
   .st-guide-footer,
   .st-guide-discard {

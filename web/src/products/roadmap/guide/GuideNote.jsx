@@ -1,14 +1,17 @@
-// The guide open (17.18–17.19h, 17.21–17.23, 17.26, 17.29, 17.31–17.38): the note in place on the tree from 744px, a
-// bottom sheet on phones. It reads until its owner presses the prose or the pencil, then writes in the same frame.
+// The guide open (17.18–17.19h, 17.21–17.23, 17.26, 17.29, 17.31–17.38, 28.30, 28.31, 28.33): the note in place on the
+// tree from 744px, a bottom sheet on phones. It reads until its owner presses the prose or the pencil, then writes in
+// the same frame. The guides above the tree stand before its own, farthest first, and are only ever read here.
 
-import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
-import { AlertCircle, BookOpen, Check, Pencil, X } from 'lucide-react';
+import { AlertCircle, BookOpen, Check, ChevronRight, Pencil, Plus, X } from 'lucide-react';
 import { Button } from '../../../design-system';
 import { focusableElements } from '../../../design-system/feedback/dialogFocus.js';
 import { track } from '../../../telemetry/beacon.js';
-import { DISCARD_DRAFT, GUIDE, LABELS, guideCounter } from '../copy.js';
+import { DISCARD_DRAFT, GUIDE, LABELS, guideCounter, guideOfThisTree } from '../copy.js';
 import { t } from '../i18n/index.js';
+import { OpeningGlyph } from '../OpeningMarks.jsx';
+import { TreeDoor } from '../room/useTreeVisit.js';
 import { coverBeneath, useComposerViewport, useCoveredLayer } from '../step/composerFocus.js';
 import { GuideDraft, hasGuide, withLineFeeds } from './GuideDraft.js';
 import { useArrivalFade } from './useGuide.js';
@@ -32,9 +35,11 @@ const RECOVERY_LINES = {
 // while it reads in place.
 export function GuideNote({ guide, band, view, onSeat }) {
   const phone = band === 'phone';
-  const { owner } = guide;
+  const { owner, above } = guide;
   const opening = guide.opened.writing;
   const text = withLineFeeds(guide.text);
+  const written = hasGuide(guide.text);
+  const openTree = useContext(TreeDoor);
   // The note stands over its entry, grown 4px to the left and 16px up: measured in the window, and in the room the
   // note shares while it reads.
   const seatOverEntry = () => {
@@ -54,7 +59,9 @@ export function GuideNote({ guide, band, view, onSeat }) {
   const [seat, setSeat] = useState(seatOverEntry);
   const layer = useRef(null);
   const paper = useRef(null);
+  const stack = useRef(null);
   const prose = useRef(null);
+  const add = useRef(null);
   const field = useRef(null);
   const confirmation = useRef(null);
   const stop = useRef(-1);
@@ -108,11 +115,13 @@ export function GuideNote({ guide, band, view, onSeat }) {
     leave();
   };
 
-  // Flushed, so the field takes focus inside the press that asked for it and a phone raises its keyboard.
+  // Flushed, so the field takes focus inside the press that asked for it and a phone raises its keyboard. What scrolls
+  // while reading is the prose, or the stack that holds it under the guides from above.
   const begin = (via, offset) => {
     track('roadmap_guide', { step: 'edit', via });
-    const hidden = prose.current.scrollHeight - prose.current.clientHeight;
-    const scroll = hidden > 0 ? prose.current.scrollTop / hidden : 0;
+    const read = stack.current ?? prose.current;
+    const hidden = read ? read.scrollHeight - read.clientHeight : 0;
+    const scroll = hidden > 0 ? read.scrollTop / hidden : 0;
     flushSync(() => {
       setCaret({ offset, scroll });
       setDraft(new GuideDraft(guide.text));
@@ -231,10 +240,10 @@ export function GuideNote({ guide, band, view, onSeat }) {
     return () => window.removeEventListener('resize', place);
   }, [phone, view]);
 
-  // A guide that holds no words has nothing to read: one cleared here or elsewhere closes the note.
+  // A guide that holds no words under no guide from above has nothing to read: one cleared here or elsewhere closes the note.
   useEffect(() => {
-    if (!writing && !hasGuide(guide.text)) guide.close();
-  }, [writing, guide.text]);
+    if (!writing && !written && above.length === 0) guide.close();
+  }, [writing, written, above]);
 
   // The field is as tall as its draft, until the note's bound makes it scroll.
   useLayoutEffect(() => {
@@ -259,7 +268,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
   }, [caret]);
 
   useLayoutEffect(() => {
-    if (!writing) prose.current?.focus({ preventScroll: true });
+    if (!writing) (prose.current ?? add.current)?.focus({ preventScroll: true });
   }, [writing, modal]);
 
   useLayoutEffect(() => {
@@ -329,6 +338,62 @@ export function GuideNote({ guide, band, view, onSeat }) {
     act.run();
   };
 
+  // The prose holds the note's focus: a reader scrolls it from the keyboard, and to its owner it is the guide's field at
+  // rest, read-only until a press or Enter writes from it.
+  const ownGuide = (
+    <p ref={prose} className={`st-guide-prose${owner ? ' st-guide-prose--owner' : ''}${ringed ? ' is-ringed' : ''}`}
+      tabIndex={0} role={owner ? 'textbox' : 'region'} aria-labelledby={titleId}
+      aria-readonly={owner ? 'true' : undefined} aria-multiline={owner ? 'true' : undefined}
+      onFocus={() => setRinged(lastPress.current === 'key')}
+      onClick={owner ? (event) => {
+        const selected = window.getSelection();
+        if (selected && !selected.isCollapsed && event.currentTarget.contains(selected.anchorNode)) return;
+        // The press's offset in the prose's one text node: caretPositionFromPoint, or Safari's caretRangeFromPoint.
+        const point = document.caretPositionFromPoint?.(event.clientX, event.clientY);
+        const range = point ? null : document.caretRangeFromPoint?.(event.clientX, event.clientY);
+        const [node, at] = point ? [point.offsetNode, point.offset] : [range?.startContainer, range?.startOffset];
+        const landed = node?.nodeType === Node.TEXT_NODE && event.currentTarget.contains(node);
+        begin(phone ? 'tap' : 'click', landed ? at : text.length);
+      } : undefined}
+      onKeyDown={owner ? (event) => {
+        if (event.key !== 'Enter' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+        event.preventDefault();
+        if (!event.repeat) begin('key', text.length);
+      } : undefined}>
+      {text}
+    </p>
+  );
+  const fromAbove = above.map((from) => {
+    const name = <>
+      <OpeningGlyph face="open" size={14} />
+      <span>{from.title}</span>
+      <ChevronRight size={14} strokeWidth={1.67} absoluteStrokeWidth aria-hidden />
+    </>;
+    return (
+      <React.Fragment key={from.treeId}>
+        <div className="st-guide-from">
+          {openTree && !writing
+            ? <button type="button" className="st-guide-from-name" onClick={() => openTree(from.treeId, 'guide')}>{name}</button>
+            : <p className="st-guide-from-name">{name}</p>}
+          <p className="st-guide-from-text">{from.text}</p>
+        </div>
+        <span className="st-guide-divide" />
+      </React.Fragment>
+    );
+  });
+  const ownName = (
+    <p className="st-guide-own">
+      <BookOpen size={14} strokeWidth={1.67} absoluteStrokeWidth aria-hidden />
+      <span>{guideOfThisTree({ tree: guide.roadmapTitle })}</span>
+      {!writing && written && (
+        <span className="st-guide-hint" onClick={() => begin(phone ? 'tap' : 'click', text.length)}>
+          <Pencil size={14} strokeWidth={1.67} absoluteStrokeWidth aria-hidden />
+          {phone ? t('roadmap.guide.tapToEdit') : t('roadmap.guide.clickToEdit')}
+        </span>
+      )}
+    </p>
+  );
+
   const seated = !phone && seat !== null;
   const note = (
     <div className={`st-guide-seat${phone ? ' st-guide-seat--phone' : ''}`}
@@ -351,7 +416,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
             <p>{phone && <BookOpen size={14} strokeWidth={1.67} aria-hidden />}<span>{guide.roadmapTitle}</span></p>
             <h2 id={titleId}>{title}</h2>
           </div>
-          {!writing && owner && (
+          {!writing && owner && written && (
             <button type="button" className="st-guide-pencil" aria-label={t('roadmap.guide.edit')}
               onClick={() => begin('pencil', text.length)}>
               <Pencil size={18} strokeWidth={1.67} aria-hidden />
@@ -364,30 +429,25 @@ export function GuideNote({ guide, band, view, onSeat }) {
           )}
         </header>
         {!phone && <span className="st-guide-rule" />}
-        {/* The prose holds the note's focus: a reader scrolls it from the keyboard, and to its owner it is the guide's
-            field at rest, read-only until a press or Enter writes from it. */}
-        {!writing && (
-          <p ref={prose} className={`st-guide-prose${owner ? ' st-guide-prose--owner' : ''}${ringed ? ' is-ringed' : ''}`}
-            tabIndex={0} role={owner ? 'textbox' : 'region'} aria-labelledby={titleId}
-            aria-readonly={owner ? 'true' : undefined} aria-multiline={owner ? 'true' : undefined}
-            onFocus={() => setRinged(lastPress.current === 'key')}
-            onClick={owner ? (event) => {
-              const selected = window.getSelection();
-              if (selected && !selected.isCollapsed && event.currentTarget.contains(selected.anchorNode)) return;
-              // The press's offset in the prose's one text node: caretPositionFromPoint, or Safari's caretRangeFromPoint.
-              const point = document.caretPositionFromPoint?.(event.clientX, event.clientY);
-              const range = point ? null : document.caretRangeFromPoint?.(event.clientX, event.clientY);
-              const [node, at] = point ? [point.offsetNode, point.offset] : [range?.startContainer, range?.startOffset];
-              const landed = node?.nodeType === Node.TEXT_NODE && event.currentTarget.contains(node);
-              begin(phone ? 'tap' : 'click', landed ? at : text.length);
-            } : undefined}
-            onKeyDown={owner ? (event) => {
-              if (event.key !== 'Enter' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-              event.preventDefault();
-              if (!event.repeat) begin('key', text.length);
-            } : undefined}>
-            {text}
-          </p>
+        {/* A guide from above is named by its tree, which its chevron goes into while the note reads, and is plain text:
+            no caret, no tint. This tree's own comes last under its name. */}
+        {!writing && (above.length > 0 ? (
+          <div ref={stack} className="st-guide-stack">
+            {fromAbove}
+            {ownName}
+            {written ? ownGuide : (
+              <button ref={add} type="button" className="st-guide-add" onClick={() => begin('add', 0)}>
+                <Plus size={18} strokeWidth={1.67} aria-hidden />
+                <span>{GUIDE.add}</span>
+              </button>
+            )}
+          </div>
+        ) : ownGuide)}
+        {writing && !phone && above.length > 0 && (
+          <div className="st-guide-context">
+            <div className="st-guide-stack">{fromAbove}</div>
+            {ownName}
+          </div>
         )}
         {writing && <>
           <textarea ref={field} rows={1} className={`st-guide-field${draft.fits ? '' : ' st-guide-field--over'}${standing ? ' st-guide-field--resting' : ''}`}

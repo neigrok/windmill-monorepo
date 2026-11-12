@@ -159,7 +159,35 @@ test('opening a tree from a step says which door and where, and nothing of the t
 
   assert.deepEqual(entries.map(({ href }) => href), ['/#/app/t_year', '/#/app/t_sail']);
   assert.deepEqual(events, [{ name: 'roadmap_tree_open', props: { door: 'pill', view: 'board', band: 'phone' } }]);
-  assert.deepEqual(TREE_DOORS, ['pill', 'swipe', 'toast', 'step', 'dock', 'panel', 'bar']);
+  assert.deepEqual(TREE_DOORS, ['pill', 'swipe', 'toast', 'step', 'dock', 'panel', 'bar', 'guide']);
+});
+
+test('the guide’s door goes up into a tree above, which no step here opens: its entry names this tree, and the one left names no step', (t) => {
+  const { window, entries } = browser(t, '/#/app/t_sail');
+  const events = [];
+  const sail = new SkillTree({ id: 't_sail', title: 'Learn to sail', nodes: [{ id: 'rig', label: 'Rig the boat', prerequisites: [] }] });
+  const registry = deviceIndex();
+  const hook = renderHook(t, () => useTreeVisit({ room: { standingTreeRef: { current: sail }, viewRef: { current: 'tree' } }, arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry, track: (name, props) => events.push({ name, props }) }));
+
+  assert.equal(hook.tree.open('t_sail', 'guide'), false);
+  assert.equal(hook.tree.open(undefined, 'guide'), false);
+  assert.equal(hook.tree.open('t_year', 'pill'), false);
+  assert.equal(hook.tree.open('t_year', 'guide'), true);
+
+  assert.deepEqual(entries.map((entry) => ({ href: entry.href, kept: kept(entry) })), [
+    { href: '/#/app/t_sail', kept: { roadmapWentThrough: { stepId: null, view: 'tree' } } },
+    { href: '/#/app/t_year', kept: { roadmapCameFrom: { treeId: 't_sail', view: 'tree' } } },
+  ]);
+  assert.deepEqual(events, [{ name: 'roadmap_tree_open', props: { door: 'guide', view: 'graph', band: 'desktop' } }]);
+  const above = renderHook(t, () => useTreeVisit({ room: room('tree'), arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry, track: () => {} }));
+  assert.deepEqual(visitOf(above.tree), { from: { id: 't_sail', title: 'Learn to sail' }, through: null, view: 'tree', door: 'tree' });
+
+  window.history.back();
+  assert.deepEqual(readTreeVisit(), { from: null, through: null, view: 'tree', door: 'back' });
+  const returned = renderHook(t, () => useTreeVisit({ room: { standingTreeRef: { current: sail }, viewRef: { current: 'tree' } }, arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry, track: (name, props) => events.push({ name, props }) }));
+  assert.deepEqual(visitOf(returned.tree), { from: null, through: null, view: 'tree', door: 'back' });
+  assert.deepEqual(events.slice(1), [{ name: 'roadmap_tree_back', props: { band: 'desktop' } }]);
+  assert.deepEqual(kept(entries[0]), {});
 });
 
 test('a step that opens the tree it stands in goes nowhere: no entry, no event, and no return for a later reload to report', (t) => {

@@ -80,6 +80,9 @@ import {
   noStepsMatch,
   showMore,
   draftLine,
+  guidesFromAbove,
+  guidesAboveCount,
+  guideOfThisTree,
 } from '../../../src/products/roadmap/copy.js';
 
 test('copy — the canon strings the demo speaks verbatim', () => {
@@ -576,4 +579,16 @@ test('where Complete sat: what completes the step, by its column and what its tr
     missing: ['Can’t complete yet', 'Can’t complete yet', null],
     unread: [null, null, null],
   });
+});
+
+test('the guide’s card says whose guides apply from above: one tree, two, or the two farthest and how many more', () => {
+  assert.equal(guidesFromAbove({ first: 'My life', second: null, more: 0 }), 'With a guide from My life');
+  assert.equal(guidesFromAbove({ first: 'My life', second: 'My year', more: 0 }), 'With guides from My life and My year');
+  assert.equal(guidesFromAbove({ first: 'My life', second: 'My year', more: 1 }), 'With guides from My life, My year and 1 more tree');
+  assert.equal(guidesFromAbove({ first: 'My life', second: 'My year', more: 2 }), 'With guides from My life, My year and 2 more trees');
+});
+
+test('the guide’s row counts the guides from above, and the note names this tree’s own', () => {
+  assert.equal(guidesAboveCount({ count: 2 }), '+2 from above');
+  assert.equal(guideOfThisTree({ tree: 'Learn to sail' }), 'Learn to sail · this tree');
 });
