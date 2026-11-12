@@ -7,7 +7,7 @@ unknown.
 
 | Question | What to read | What to do when coverage is missing |
 |---|---|---|
-| Do builders activate? | For the 20 people who personally try the starter, count owned trees with at least three present nodes and the owner's first completion on that tree within 48 hours of its creation. | Confirm the participant's own tree through a consented observation. Keep guest-only attempts in the 20. Label manual evidence. |
+| Do builders activate? | For the 20 people who personally try the starter, count each builder once if they own a copy of the starter with at least three present nodes and complete a node on it within 48 hours of creation. | Confirm the participant's own tree through a consented observation. Keep guest-only attempts in the 20. Label manual evidence. |
 | Do they return? | Read days 7–14 after signup. The SQL window includes day 7 and ends just before day 14. The weekly view requires 14 days of maturity and includes any attributed activity. | Reconcile the pilot cohort separately. Where the claim is a Roadmap return, verify activity on the tree. An unrelated event cannot establish that. |
 | Do lifters return to log? | Of ten qualified native testers, count distinct people who log two distinct sessions with at least five sets each within seven days of their first set. | With permission, ask each tester to check the dates and counts in their own history. Record only eligibility, threshold met, assistance and evidence type. Keep nonstarters in the denominator. |
 
