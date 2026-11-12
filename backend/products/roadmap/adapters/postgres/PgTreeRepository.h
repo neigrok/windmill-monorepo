@@ -24,6 +24,9 @@ class PgTreeRepository : public TreeRepository {
 public:
   explicit PgTreeRepository(std::shared_ptr<PgPool> pool);
 
+  // What treesAbove runs, over (owner, tree, levels): named so its Postgres test can ask the plan what it reads.
+  static const char* treesAboveStatement();
+
   std::optional<StoredTree> load(const TreeId& tree) override;
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override;
   std::optional<UserId> retiredOwner(const TreeId& tree) override;

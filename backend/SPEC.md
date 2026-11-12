@@ -92,12 +92,14 @@ rejected for structure. Validity is a read model, not a gate.
   whose guide is empty is left out, the tree's own included; each tree appears once; and past 8
   entries the farthest are dropped, so the nearest trees and the tree's own guide keep their
   places. `yours` says the reader owns that tree and wrote its current guide. The trees above come
-  from `TreeRepository::treesAbove(owner, tree)`: one recursive statement that starts at the tree,
-  finds the trees that open each reached tree through `tree_nodes_opens_idx` and each of their rows
-  through `trees_pkey`, keeps a tree once per distance and ends at 8 levels, so its cost follows
-  the pointer nodes that name the trees reached and not the size of the tables. It is made once
-  per reply that answers `guides`, after the tree's strand is released, and not at all for a caller
-  who cannot write the tree, who is answered the tree's own guide alone.
+  from `TreeRepository::treesAbove(owner, tree)`: one statement that starts from the owner's own
+  standing trees, reads the trees each of them opens through `tree_nodes_pointers_idx`, walks
+  those pointers upward from the tree, keeping a tree once per distance and ending at 8 levels,
+  and reads the title and guide of each tree above through `trees_pkey`. Its cost follows the
+  owner's own trees and their pointers: no row of another account is read, however many of its
+  nodes point at the tree. It is made once per reply that answers `guides`, after the tree's strand
+  is released, and not at all for a caller who cannot write the tree, who is answered the tree's
+  own guide alone.
 
 Derived read models:
 
@@ -350,8 +352,8 @@ being `"complete"` or `"open"` and `loop` true when the opened tree leads back t
 read, and `{treeId, missing: true}` for one that is not valid (`OpenedTrees`, Model). It is computed
 on the read, off the stored rows and after the tree's strand is released, and nothing pushes it; for
 any other caller the key is absent. When the pointers cannot be followed the owner is answered
-`503 opens-unavailable`, not the `404` of an absent tree; every other reader, and a tree that holds
-no pointer, is answered as before.
+`503 opens-unavailable`, not the `404` of an absent tree. No other reader's answer depends on that
+read, and for a tree that holds no pointer it is not made: `opens` is `{}`.
 
 `guides` (Model) is an array of `{treeId, title, text, yours}`. A caller who can write the tree is
 answered the guides of their trees above it, farthest first, and the tree's own last, read off the
@@ -442,7 +444,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | Table | Holds |
 | --- | --- |
 | `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
-| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, which is how the trees above a tree are walked |
+| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
 | `tree_kinds` | one row per legend kind: hue, label, description, cross_branch_exempt, rank, each with its stamp |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |

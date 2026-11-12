@@ -17,6 +17,7 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -611,5 +612,80 @@ TEST(pg_trees_above_answers_the_owners_standing_trees_whose_present_pointers_lea
   CHECK(trees.treesAbove(kEve, id("theirs")) == (std::map<TreeId, TreeAbove>{}));
   CHECK(trees.treesAbove(kSam, id("removed")) == (std::map<TreeId, TreeAbove>{}));
   CHECK(trees.treesAbove(kSam, id("absent")) == (std::map<TreeId, TreeAbove>{}));
+  clear();
+}
+
+// The socket and PUT admit any pointer text, so anyone who knows a tree's id can point at it: the walk starts from
+// the owner's own trees, and what another account plants is neither answered nor read.
+TEST(pg_a_strangers_flood_of_pointers_at_a_tree_changes_neither_the_trees_above_it_nor_the_rows_the_walk_reads) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const auto clear = [] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("DELETE FROM tree_nodes WHERE tree_id LIKE 't\\_pgtest\\_flood\\_%'");
+    txn.exec("DELETE FROM trees WHERE id LIKE 't\\_pgtest\\_flood\\_%'");
+    txn.commit();
+  };
+  clear();
+  PgTreeRepository trees{pgTestPool()};
+  const TreeId leaf{std::string("t_pgtest_flood_leaf")};
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO trees (id, title, owner_id, head_seq, guide) VALUES "
+                    "('t_pgtest_flood_leaf', 'Leaf', $1::uuid, 0, 'Leaf.'), ('t_pgtest_flood_mid', 'Mid', $1::uuid, 0, 'Mid.'), "
+                    "('t_pgtest_flood_top', 'Top', $1::uuid, 0, 'Top.')",
+                    kSam.str());
+    txn.exec("INSERT INTO tree_nodes (tree_id, node_id, created_hlc, opens, opens_hlc, present) "
+             "SELECT t.id, 'n' || n, '1:0:r_a', CASE WHEN n = 1 THEN t.opens ELSE '' END, '1:0:r_a', true "
+             "FROM (VALUES ('t_pgtest_flood_leaf', ''), ('t_pgtest_flood_mid', 't_pgtest_flood_leaf'), "
+             "             ('t_pgtest_flood_top', 't_pgtest_flood_mid')) AS t(id, opens), generate_series(1, 20) n");
+    txn.commit();
+  }
+  // What each table gave the statement, filtered rows included, with sequential scans off: a table of a few pages
+  // is rightly read whole, which would count every row in it.
+  const auto rowsRead = [&] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("SET LOCAL enable_seqscan = off");
+    const pqxx::result explained =
+        txn.exec_params(std::string("EXPLAIN (ANALYZE, TIMING OFF, FORMAT JSON) ") + PgTreeRepository::treesAboveStatement(),
+                        kSam.str(), leaf.str(), kMaxLevelsAbove);
+    std::map<std::string, double> read;
+    std::vector<Json::Value> nodes{parse(explained[0][0].as<std::string>())[0]["Plan"]};
+    while (!nodes.empty()) {
+      const Json::Value node = nodes.back();
+      nodes.pop_back();
+      for (const Json::Value& child : node["Plans"]) nodes.push_back(child);
+      if (!node.isMember("Relation Name")) continue;
+      read[node["Relation Name"].asString()] +=
+          node["Actual Loops"].asDouble() * (node["Actual Rows"].asDouble() + node["Rows Removed by Filter"].asDouble() +
+                                             node["Rows Removed by Index Recheck"].asDouble());
+    }
+    return read;
+  };
+  const std::map<TreeId, TreeAbove> above{{TreeId{std::string("t_pgtest_flood_mid")}, {1, "Mid", "Mid.", false}},
+                                          {TreeId{std::string("t_pgtest_flood_top")}, {2, "Top", "Top.", false}}};
+  CHECK(trees.treesAbove(kSam, leaf) == above);
+  const std::map<std::string, double> readBefore = rowsRead();
+  std::vector<std::string> tablesRead;
+  for (const auto& [table, rows] : readBefore) tablesRead.push_back(table);
+  CHECK_EQ(tablesRead, (std::vector<std::string>{"tree_nodes", "trees"}));
+
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO trees (id, title, owner_id, head_seq, guide) "
+                    "SELECT 't_pgtest_flood_eve' || g, 'Flood', $1::uuid, 0, 'Not above.' FROM generate_series(1, 4) g",
+                    kEve.str());
+    txn.exec("INSERT INTO tree_nodes (tree_id, node_id, created_hlc, opens, opens_hlc, present) "
+             "SELECT 't_pgtest_flood_eve' || g, 'n' || n, '1:0:r_e', 't_pgtest_flood_leaf', '1:0:r_e', true "
+             "FROM generate_series(1, 4) g, generate_series(1, 500) n");
+    txn.commit();
+  }
+
+  CHECK(trees.treesAbove(kSam, leaf) == above);
+  CHECK(rowsRead() == readBefore);
   clear();
 }

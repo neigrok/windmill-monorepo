@@ -354,9 +354,10 @@ and none overrides another.
 - **Only the caller's own trees.** A caller who cannot write the tree, signed in or not, is
   answered the tree's own guide alone when it has one, `yours: false`, and the trees above are not
   read. Someone else's tree that points at this one is above it for nobody.
-- **Cost.** One read of the stored rows per first page (`TreeRegistry::treesAbove`: one recursive
-  statement through `tree_nodes_opens_idx` and `trees_pkey`), made for a caller who can write the
-  tree, after the tree's strand is released. A read that fails fails the call.
+- **Cost.** One read of the stored rows per first page (`TreeRegistry::treesAbove`: one statement
+  over the caller's own standing trees and the trees they open, through `tree_nodes_pointers_idx`),
+  made for a caller who can write the tree, after the tree's strand is released. It reads no row of
+  another account, whoever points at the tree. A read that fails fails the call.
 - **A tend** is answered no `guides` (`ScopedToolHost.cpp`).
 
 ## Edges and health

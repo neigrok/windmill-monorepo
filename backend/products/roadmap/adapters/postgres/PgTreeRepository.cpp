@@ -472,28 +472,36 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
   return trees;
 }
 
+const char* PgTreeRepository::treesAboveStatement() {
+  // Driven from the owner's own standing trees, so no row of another account is read, whoever points at the tree.
+  return "WITH RECURSIVE owned(id) AS MATERIALIZED ("
+         "  SELECT t.id FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL"
+         "), "
+         // The LATERAL runs once per owned tree, so each tree's pointers are read by its key whatever the planner
+         // expects; tree_nodes_pointers_idx serves only a scan that states its predicate.
+         "pointers(tree, opens) AS MATERIALIZED ("
+         "  SELECT o.id, p.opens FROM owned o "
+         "  CROSS JOIN LATERAL (SELECT DISTINCT n.opens FROM tree_nodes n "
+         "                      WHERE n.tree_id = o.id AND n.present AND n.opens <> '') p"
+         "), "
+         "reached(id, distance) AS ("
+         "  SELECT o.id, 0 FROM owned o WHERE o.id = $2 "
+         // UNION keeps a tree once per distance and the levels end the walk, so a loop costs no more than its trees.
+         "  UNION "
+         "  SELECT p.tree, r.distance + 1 FROM reached r JOIN pointers p ON p.opens = r.id "
+         "  WHERE r.distance < $3 AND p.tree <> $2"
+         ") "
+         // The guides are read by key, for the trees above alone.
+         "SELECT g.id, nearest.distance, g.title, g.guide, g.guide_inherited "
+         "FROM (SELECT r.id, min(r.distance) AS distance FROM reached r WHERE r.distance > 0 GROUP BY r.id) nearest "
+         "CROSS JOIN LATERAL (SELECT s.id, s.title, s.guide, s.guide_inherited FROM trees s WHERE s.id = nearest.id LIMIT 1) g";
+}
+
 std::map<TreeId, TreeAbove> PgTreeRepository::treesAbove(const UserId& owner, const TreeId& tree) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   // One statement: the walk and the guides it answers are one snapshot.
-  pqxx::result rows = txn.exec_params(
-      "WITH RECURSIVE reached(id, distance) AS ("
-      // Each subquery is cut off from the filters around it, so each table is read by its key whatever the planner expects.
-      "  SELECT t.id, 0 FROM (SELECT s.id, s.owner_id, s.deleted_at FROM trees s WHERE s.id = $2 LIMIT 1) t "
-      "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid "
-      // UNION keeps a tree once per distance and the levels end the walk, so a loop costs no more than its trees.
-      "  UNION "
-      "  SELECT p.id, r.distance + 1 FROM reached r "
-      // tree_nodes_opens_idx serves only a scan that states its predicate, and holds nodes of removed trees too.
-      "  CROSS JOIN LATERAL (SELECT DISTINCT n.tree_id FROM tree_nodes n "
-      "                      WHERE n.opens = r.id AND n.present AND n.opens <> '') o "
-      "  CROSS JOIN LATERAL (SELECT s.id, s.owner_id, s.deleted_at FROM trees s WHERE s.id = o.tree_id LIMIT 1) p "
-      "  WHERE r.distance < $3 AND p.deleted_at IS NULL AND p.owner_id = $1::uuid AND p.id <> $2"
-      ") "
-      "SELECT g.id, nearest.distance, g.title, g.guide, g.guide_inherited "
-      "FROM (SELECT r.id, min(r.distance) AS distance FROM reached r WHERE r.distance > 0 GROUP BY r.id) nearest "
-      "CROSS JOIN LATERAL (SELECT s.id, s.title, s.guide, s.guide_inherited FROM trees s WHERE s.id = nearest.id LIMIT 1) g",
-      owner.str(), tree.str(), kMaxLevelsAbove);
+  pqxx::result rows = txn.exec_params(treesAboveStatement(), owner.str(), tree.str(), kMaxLevelsAbove);
 
   std::map<TreeId, TreeAbove> above;
   for (const auto& row : rows)

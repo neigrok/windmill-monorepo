@@ -32,11 +32,12 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   `guides` (`SPEC.md`, Model) follows the same line. The trees above a tree are the caller's own:
   they are read only for a caller `canWrite` admits, after the tree's strand is released, and each
   must stand and belong to that caller, so someone else's tree that points at this one — the socket
-  and `PUT` admit any pointer text — is above it for nobody. Every other reader is answered the
-  tree's own guide alone, `yours: false`, with no read of the trees above: no key, id, title or
-  timing says a tree of the owner's opens this one. A tend is answered no `guides`: `ScopedToolHost`
-  cuts the key from its `get_tree` reply, so a run reads the tended tree's own guide and no other
-  tree's id, title or words.
+  and `PUT` admit any pointer text — is above it for nobody, and the read starts from the caller's
+  own trees, so what another account points at a tree costs its owner's read nothing. Every other
+  reader is answered the tree's own guide alone, `yours: false`, with no read of the trees above: no
+  key, id, title or timing says a tree of the owner's opens this one. A tend is answered no
+  `guides`: `ScopedToolHost` cuts the key from its `get_tree` reply, so a run reads the tended
+  tree's own guide and no other tree's id, title or words.
 - **Document writes** (`PUT`, WS `subgraph`, structural MCP tools) require
   a session (anonymous → `401`) and gate on `canWrite`, which is ownership and nothing else. **A tree
   is born owned** — the owner is written by the same insert that creates the row (create, fork, `PUT`
