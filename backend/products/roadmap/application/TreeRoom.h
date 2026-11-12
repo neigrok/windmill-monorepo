@@ -68,10 +68,12 @@ public:
     return wm::withLinksAdded(held ? held->links : std::vector<Link>{}, added, path);
   }
 
-  // Each is stamped from the room clock and joined as one frame setting that register alone, so it
-  // broadcasts and LWW-merges like any other field write, and leaves no op row.
-  Seq rename(const std::string& title, std::uint64_t nowMs);
-  Seq setGuide(const std::string& guide, std::uint64_t nowMs);
+  // The title and the guide, each set only when sent, stamped from the room clock and joined as one frame, so a
+  // call that sets both lands both at one seq; it broadcasts and LWW-merges like any other field write, and leaves
+  // no op row. rename and setGuide set one each.
+  Seq describe(const std::optional<std::string>& title, const std::optional<std::string>& guide, std::uint64_t nowMs);
+  Seq rename(const std::string& title, std::uint64_t nowMs) { return describe(title, std::nullopt, nowMs); }
+  Seq setGuide(const std::string& guide, std::uint64_t nowMs) { return describe(std::nullopt, guide, nowMs); }
 
   // Server-origin edit: stamped from the room clock, applied, queued for the op log, broadcast as
   // one subgraph. The frameId is minted from the (unique) stamp.

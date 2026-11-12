@@ -10,6 +10,7 @@
 #include "products/roadmap/ports/TreeRepository.h"
 
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <variant>
@@ -58,11 +59,30 @@ public:
   // RoomRegistry. A tree whose row went away under its live room answers notFound.
   enum class Renaming { renamed, notFound, notYours, nobodysTree, blankTitle, malformedTitle, nulInTitle };
   Renaming rename(const TreeId& tree, const UserId& caller, const std::string& title);
+  // The title a rename lands: trimmed, cut to kMaxTitleChars, or the refusal of a blank, malformed or NUL-holding one.
+  static std::variant<std::string, Renaming> titleFrom(const std::string& title);
+  // The words a title refusal is answered in, on every door.
+  static const char* sentenceOf(Renaming refusal);
 
-  // admit → read gate → owner check → set the guide through the tree's room, durable before it
-  // answers the seq the guide took. An empty guide clears it, and so does one of only whitespace. A
-  // tree the caller cannot read, or whose row went away under its live room, answers notFound; a
-  // guide past kMaxGuideChars, not valid UTF-8 or carrying a NUL answers its Admission.
+  // A title, a guide, or both, each set only when sent: rename's title rule and the guide's admission judge both
+  // before either lands → read gate → owner check → one frame through the tree's room, durable before it answers
+  // the seq it took. A title equal to the one the tree has is left out, and a call left with nothing to set lands
+  // nothing and answers the head, `unchanged`. A tree whose row went away under its live room answers notFound.
+  struct Description {
+    std::optional<std::string> title;
+    std::optional<std::string> guide;
+  };
+  struct Described {
+    Seq seq = 0;
+    bool unchanged = false;
+  };
+  std::variant<Described, Renaming, Admission> describe(const TreeId& tree, const UserId& caller,
+                                                        const Description& sent);
+
+  // describe with a guide alone: the seq the guide took. An empty guide clears it, and so does one of
+  // only whitespace. A tree the caller cannot read, or whose row went away under its live room,
+  // answers notFound; a guide past kMaxGuideChars, not valid UTF-8 or carrying a NUL answers its
+  // Admission.
   enum class GuideRefusal { notFound, notYours, nobodysTree };
   std::variant<Seq, GuideRefusal, Admission> setGuide(const TreeId& tree, const UserId& caller, const std::string& guide);
 
