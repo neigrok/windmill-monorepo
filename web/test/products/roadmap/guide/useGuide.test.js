@@ -7,10 +7,11 @@ import { closuresIn } from '../sourceClosures.js';
 const guide = await closuresIn('guide/useGuide.js');
 
 // The save as written, its collaborators recorded: which door took the write, what reported and what was told.
-function saveWith({ ready = true, sessionTree = 'sail', claimed = true, patch = async () => {}, local = async () => {} } = {}) {
+function saveWith({ ready = true, sessionTree = 'sail', claimed = true, owner = true, patch = async () => {}, local = async () => {} } = {}) {
   const calls = [];
   const save = guide.callback('save', {
     treeId: 'sail',
+    owner,
     text: 'One step a week.',
     ownWrite: { current: null },
     sessionRef: { current: { treeId: sessionTree, setGuide: (next) => {
@@ -85,4 +86,10 @@ test('a save over a guide changed elsewhere since writing began leaves a conflic
   const quiet = saveWith();
   await quiet.save(new GuideDraft('One step a week.', 'Mine.'));
   assert.deepEqual(quiet.calls.slice(1), [['event', 'roadmap_guide', { step: 'save', outcome: 'saved', length: '1-500' }]]);
+});
+
+test('a save by someone who is not the owner writes through no door and says it was refused', async () => {
+  const { save, calls } = saveWith({ owner: false });
+  assert.equal(await save(new GuideDraft('One step a week.', 'Two steps a week.')), false);
+  assert.deepEqual(calls, [['event', 'roadmap_guide', { step: 'save', outcome: 'failed', length: '1-500', reason: 'refused' }]]);
 });

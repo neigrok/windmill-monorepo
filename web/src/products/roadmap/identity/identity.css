@@ -403,17 +403,16 @@
   padding-bottom: 12px;
 }
 
-/* The roadmap page and a page it opens (Activity, the guide) share one footprint, which the guide's row grows. */
-.st-board-sheet.st-roadmap-sheet--page-entry,
-.st-board-sheet.st-roadmap-sheet--page {
-  height: calc(611px + var(--st-roadmap-sheet-guide, 0px));
+.st-board-sheet.st-roadmap-sheet--activity-entry,
+.st-board-sheet.st-roadmap-sheet--activity {
+  height: 611px;
 }
 
-.st-board-sheet.st-roadmap-sheet--page {
+.st-board-sheet.st-roadmap-sheet--activity {
   overflow: hidden;
 }
 
-.st-roadmap-sheet--page > .st-board-sheet-heading {
+.st-roadmap-sheet--activity > .st-board-sheet-heading {
   flex-shrink: 0;
   gap: 4px;
 }

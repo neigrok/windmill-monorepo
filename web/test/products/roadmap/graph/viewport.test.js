@@ -131,3 +131,20 @@ test('a first view opens on the frontier only for an owner with no saved place a
   ];
   assert.deepEqual(cases.map(([facts]) => opensOnFrontier(facts)), cases.map(([, expected]) => expected));
 });
+
+test('the guide holds the top-left corner: the camera frames the tree to its right while the canvas has room, and no caption sits under it', () => {
+  const cameraBlock = { width: 248, height: 50 };
+  const card = { left: 28, top: 154, width: 414, height: 241 };
+  const note = { left: 24, top: 138, width: 642, height: 385 };
+  assert.deepEqual(viewportInsets({ breakpoint: 'desktop', rowBottom: 116, cameraBlock, guideBox: card, width: 1440 }), {
+    top: 116, right: 24, bottom: 24, left: 466,
+    blocks: [MINIMAP_BLOCK, card, { right: 24, bottom: 24, width: 248, height: 50 }],
+  });
+  assert.equal(viewportInsets({ breakpoint: 'desktop', guideBox: note, width: 1440, dockOpen: true }).left, 690);
+  assert.equal(viewportInsets({ breakpoint: 'desktop', guideBox: note, width: 1024, dockOpen: true }).left, 24);
+  assert.deepEqual(viewportInsets({ breakpoint: 'tablet', rowBottom: 104, cameraBlock, guideBox: card, width: 744 }), {
+    top: 104, right: 12, bottom: 16, left: 12,
+    blocks: [card, { right: 24, bottom: 24, width: 248, height: 50 }],
+  });
+  assert.deepEqual(viewportInsets({ breakpoint: 'phone', guideBox: card, width: 390 }).blocks, []);
+});
