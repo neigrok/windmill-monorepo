@@ -15,29 +15,44 @@ struct Cycle {
   std::vector<NodeId> members;
 };
 
-// A warning about one node.
+// The nodes a smell covers: every one counted, the first `cap` named in the order nodes are reported, so a smell stays
+// one short line whatever the tree's size.
+struct CountedNodes {
+  static constexpr std::size_t cap = 10;
+
+  std::size_t count = 0;
+  std::vector<NodeId> named;
+
+  void add(const NodeId& node) {
+    if (named.size() < cap) named.push_back(node);
+    ++count;
+  }
+
+  bool operator==(const CountedNodes&) const = default;
+};
+
+// One kind of per-node warning — `label-too-long`, `empty-icon`, `high-in-degree` — and the nodes it covers.
 struct Smell {
-  NodeId node;
   std::string kind;
+  CountedNodes nodes;
 
   bool operator==(const Smell&) const = default;
 };
 
-// A hue present nodes wear that no kind of the legend does: how many wear it, and the first of them in the order nodes
-// are reported, at most TreeDiagnostics::unclaimedNamed, so the smell stays one short line whatever the tree's size.
+// A hue present nodes wear that no kind of the legend does, and the nodes wearing it.
 struct UnclaimedHue {
   NodeColor hue;
-  std::size_t count = 0;
-  std::vector<NodeId> nodes;
+  CountedNodes nodes;
 
   bool operator==(const UnclaimedHue&) const = default;
 };
 
 // How a LooseGraph departs from a valid tree, read beside its legend. Errors (cycles, dangling,
-// self-edges) block the SkillTree projection; smells are warnings: `smells` about one node each,
-// `unclaimedHues` one per hue no kind wears, and `legendEmpty` in their place for a tree with nodes
-// whose legend holds no kind, where every hue would be one. `maskedWork` is nodes deleted while a
-// subtree of live children hangs off them — the delete stands, resurrecting the parent re-connects it.
+// self-edges) block the SkillTree projection; smells are warnings, one line each however many nodes
+// they cover: `smells` one per kind some node has, in the order above, `unclaimedHues` one per hue no
+// kind wears, and `legendEmpty` in their place for a tree with nodes whose legend holds no kind, where
+// every hue would be one. `maskedWork` is nodes deleted while a subtree of live children hangs off
+// them — the delete stands, resurrecting the parent re-connects it.
 struct TreeDiagnostics {
   std::vector<Cycle> cycles;
   std::vector<Edge> dangling;
@@ -53,7 +68,6 @@ struct TreeDiagnostics {
 
   static constexpr std::size_t maxLabel = 256;
   static constexpr std::size_t inDegreeSmell = 4;
-  static constexpr std::size_t unclaimedNamed = 10;
 };
 
 }

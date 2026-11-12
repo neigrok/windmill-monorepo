@@ -465,12 +465,16 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     tools.push_back(tool("get_diagnostics", Access::read,
         "Report how the roadmap departs from a valid skill tree: cycles, dangling edges (an "
         "endpoint is missing), self-edges, and structural smells. Edits are never rejected, so an "
-        "edit that forms a cycle still succeeds — this is how you find and fix it. Smells are "
-        "`label-too-long`, `empty-icon` and `high-in-degree`, one per node, and one `unclaimed-hue` line "
-        "per hue no legend kind wears, with that `hue`, the `count` of nodes wearing it and the first ten "
-        "of them as `nodes` — or, on a tree whose legend holds no kind, one `empty-legend` line instead. An "
-        "`empty-icon` smell clears with `annotate_node {nodeId, icon}`; an `unclaimed-hue` one when its "
-        "nodes take a kind's hue (`set_node_color`) or a kind comes to wear the hue.",
+        "edit that forms a cycle still succeeds — this is how you find and fix it. Each smell is one "
+        "line, whatever the tree's size, with the `count` of nodes it covers and the first ten of them as "
+        "`nodes`: one per kind some node has — `label-too-long`, `empty-icon`, `high-in-degree` — and one "
+        "`unclaimed-hue` line per hue no legend kind wears, with that `hue`; or, on a tree whose legend "
+        "holds no kind, one `empty-legend` line instead of the hue lines. To find the rest past the first "
+        "ten: find_nodes with `color` lists every node on an unclaimed hue; find_nodes cannot filter on a "
+        "missing icon, a long label or many prerequisites, so read get_tree with `fields` [\"id\",\"icon\"], "
+        "[\"id\",\"label\"] or [\"id\",\"prerequisites\"] for those. An `empty-icon` smell clears "
+        "with `annotate_node {nodeId, icon}`; an `unclaimed-hue` one when its nodes take a kind's hue "
+        "(`set_node_color`) or a kind comes to wear the hue.",
         p, {"treeId"}));
   }
   {
