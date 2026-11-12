@@ -221,8 +221,9 @@ for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 
     const errors = [];
     const page = await openRoom({
       viewport,
-      nodes: learnToSailNodes.map((node) => ({ wind: { ...node, opens: 't_wind' }, rig: { ...node, opens: 't_rig' }, bowline: { ...node, opens: 't_gone' } }[node.id] ?? node)),
+      nodes: learnToSailNodes.map((node) => ({ wind: { ...node, opens: 't_wind' }, rig: { ...node, opens: 't_rig' }, bowline: { ...node, opens: 't_gone' }, dock: { ...node, opens: 'sail' } }[node.id] ?? node)),
       opens: {
+        dock: { treeId: 'sail', title: 'Learn to sail', state: 'open', done: 3, total: 8, loop: true },
         wind: { treeId: 't_wind', title: 'Wind drills', state: 'open', done: 3, total: 8, loop: false },
         rig: { treeId: 't_rig', title: 'Rig the boat', state: 'complete', done: 4, total: 4, loop: false },
         bowline: { treeId: 't_gone', missing: true },
@@ -259,6 +260,19 @@ for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 
       });
       assert.equal(await page.locator('button.st-board-step-tree').count(), 0);
       await page.keyboard.press('Escape');
+
+      if (viewport.width < 744) await page.getByRole('tab', { name: /^Locked/ }).click();
+      assert.equal(await card(page, 'Leave the dock').locator('.st-board-tree-pill--leads, .st-board-tree-pill-chevron').count(), 0);
+      await card(page, 'Leave the dock').locator('.st-board-tree-pill').click();
+      const own = await treeParts(page);
+      assert.deepEqual({ row: own.row, rule: own.rule, band: own.band, actions: own.actions }, {
+        row: ['Learn to sail', '3 of 8 done · opens Learn to sail back'], rule: 'A loop with Learn to sail: this never completes.',
+        band: 'Won’t complete by itself', actions: [],
+      });
+      assert.equal(await page.locator('button.st-board-step-tree').count(), 0);
+      assert.equal(await page.locator('.st-board-step-layer').getByRole('button', { name: /^Open/ }).count(), 0);
+      await page.keyboard.press('Escape');
+      if (viewport.width < 744) await page.getByRole('tab', { name: /^Up next/ }).click();
 
       await card(page, 'Read the wind').locator('.st-board-tree-pill').click();
       assert.deepEqual(await calls(page), ['tree wind step', 'tree wind step', 'tree wind pill']);

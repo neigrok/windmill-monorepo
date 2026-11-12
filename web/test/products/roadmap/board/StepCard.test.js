@@ -130,6 +130,7 @@ function myYearCards() {
     { id: 'book', label: 'Write the book', prerequisites: ['plan'], color: 'olive', opens: 't_book', opening: opened('t_book', 'Book draft', 'open', 0, 0) },
     { id: 'bike', label: 'Fix the bike', prerequisites: ['plan'], color: 'terracotta', opens: 't_gone', opening: Opening.fromWire({ treeId: 't_gone', missing: true }) },
     { id: 'late', label: 'Run a 10K', prerequisites: ['plan'], color: 'terracotta', opens: 't_late', opening: Opening.unread('t_late') },
+    { id: 'again', label: 'Do it all again', prerequisites: ['plan'], color: 'gold', opens: 'year', opening: opened('year', 'My year', 'open', 1, 9, true).inItsOwnTree() },
   ] });
   const board = new Board(tree, { completed: new Set(['plan']), completedAt: { plan: 1 } });
   return new Map(board.columns.flatMap((column) => column.cards).map((card) => [card.id, card]));
@@ -143,13 +144,14 @@ const pillOf = (id, props = {}) => {
 
 test('StepCard — a step that opens a tree wears its pill: done of total, the tree named only where its title says more, or the one thing in the way', () => {
   const door = { onOpenTree: () => {} };
-  assert.deepEqual(['sail', 'read', 'coast', 'loop', 'book', 'bike', 'late', 'plan'].map((id) => pillOf(id, door)), [
+  assert.deepEqual(['sail', 'read', 'coast', 'loop', 'book', 'bike', 'again', 'late', 'plan'].map((id) => pillOf(id, door)), [
     { classes: 'st-board-tree-pill st-board-tree-pill--open st-board-tree-pill--leads', words: '3 of 8', column: 'upNext' },
     { classes: 'st-board-tree-pill st-board-tree-pill--complete st-board-tree-pill--leads', words: 'Reading list · 12 of 12', column: 'done' },
     { classes: 'st-board-tree-pill st-board-tree-pill--open st-board-tree-pill--leads', words: 'Coast trip · 0 of 5', column: 'locked' },
     { classes: 'st-board-tree-pill st-board-tree-pill--loop st-board-tree-pill--leads', words: 'Loops back', column: 'upNext' },
     { classes: 'st-board-tree-pill st-board-tree-pill--empty st-board-tree-pill--leads', words: 'Book draft · No steps', column: 'upNext' },
     { classes: 'st-board-tree-pill st-board-tree-pill--missing', words: 'Not found', column: 'upNext' },
+    { classes: 'st-board-tree-pill st-board-tree-pill--loop', words: 'My year · Loops back', column: 'upNext' },
     null,
     null,
   ]);
@@ -176,6 +178,7 @@ test('StepCard — a press on the pill goes into the tree, a press anywhere else
   assert.deepEqual(presses('sail', true), [['tree', 'sail', 'pill']]);
   assert.deepEqual(presses('sail', false), [['step', 'sail']]);
   assert.deepEqual(presses('bike', true), [['step', 'bike']]);
+  assert.deepEqual(presses('again', true), [['step', 'again']]);
   assert.deepEqual(presses('sail', true, { selecting: true }), [['step', 'sail']]);
   assert.deepEqual(presses('sail', true, { onOpenTree: null }), [['step', 'sail']]);
 });
@@ -187,11 +190,12 @@ test('StepCard — the swipe of a card that opens a tree reveals Open, never Com
   }));
   const action = (html) => /<button type="button" class="st-board-swipe-complete"[^>]*aria-label="([^"]*)">.*<span>([^<]*)<\/span><\/button>/.exec(html)?.slice(1) ?? null;
 
-  assert.deepEqual(['sail', 'loop', 'book', 'late', 'bike', 'coast', 'read'].map((id) => action(swiped(id))), [
+  assert.deepEqual(['sail', 'loop', 'book', 'late', 'bike', 'again', 'coast', 'read'].map((id) => action(swiped(id))), [
     ['Open the tree of Learn to sail', 'Open'],
     ['Open the tree of Learn to sail', 'Open'],
     ['Open the tree of Write the book', 'Open'],
     ['Open the tree of Run a 10K', 'Open'],
+    null,
     null,
     null,
     null,

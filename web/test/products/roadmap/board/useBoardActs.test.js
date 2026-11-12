@@ -861,6 +861,7 @@ test('C or a swipe on a card that opens a tree completes nothing: the toast says
     [Opening.fromWire({ treeId: 't_wind', title: 'Wind drills', state: 'open', done: 0, total: 0, loop: false }), 'Completes with its tree', true],
     [Opening.fromWire({ treeId: 't_wind', title: 'Wind drills', state: 'open', done: 3, total: 8, loop: true }), 'Won’t complete by itself', true],
     [Opening.fromWire({ treeId: 't_gone', missing: true }), 'Can’t complete yet', false],
+    [Opening.fromWire({ treeId: 'sail', title: 'Sail', state: 'open', done: 1, total: 2, loop: true }).inItsOwnTree(), 'Won’t complete by itself', false],
     [Opening.unread('t_wind'), null, false],
   ];
   for (const [opening, said, leads] of cases) {

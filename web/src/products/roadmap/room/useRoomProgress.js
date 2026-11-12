@@ -41,12 +41,25 @@ export class RoomProgress {
     return tree ? UnlockRules.completed(tree, progress) : progress.completed;
   }
 
-  // A roadmap that could not read a tree one of its steps opens does not know what stands complete, and witnesses nothing.
-  witness(next) {
+  // What stands complete goes to the return ledger, so the next visit recaps only what happened since. A roadmap that
+  // could not read a tree one of its steps opens does not know that set: it adds the person's own `marked` steps to
+  // what the ledger holds and recomputes nothing.
+  witness(next, marked = null) {
     if (!this.ownMarks) return;
     const { seedRef, treeRef, returnLedger } = this.collaborators;
-    if (treeRef.current && Openings.known(treeRef.current.nodes) === 'unread') return;
-    returnLedger.save(seedRef.current.id, { completed: [...this.completedUnder(next)], at: Date.now() });
+    const treeId = seedRef.current.id;
+    if (!treeRef.current || Openings.known(treeRef.current.nodes) !== 'unread') {
+      returnLedger.save(treeId, { completed: [...this.completedUnder(next)], at: Date.now() });
+      return;
+    }
+    const held = returnLedger.load(treeId);
+    if (!held || !marked) return;
+    const completed = new Set(held.completed);
+    for (const id of marked.ids) {
+      if (marked.target === 'complete') completed.add(id);
+      else completed.delete(id);
+    }
+    returnLedger.save(treeId, { completed: [...completed], at: Date.now() });
   }
 
   push(nodeIds, wireStatus) {
@@ -60,7 +73,7 @@ export class RoomProgress {
     if (ids.some((id) => !takesMark(steps?.get(id)))) return this.snapshot;
     const next = advanceProgress(this.snapshot, ids, target, at);
     this.commit(next);
-    this.witness(next);
+    this.witness(next, { ids, target });
     this.push(wire, target);
     return next;
   }

@@ -20,7 +20,7 @@ function roomFixture(t, { restoreError = null, overrides = {}, mine = true } = {
     treeRef: { current: tree }, seedRef: { current: { id: 'sail', mine } },
     sceneRef: { current: { announceCeremony: (message, options) => calls.push(['ceremony', message, options]) } },
     sessionRef: { current: { markProgress: (ids, status) => calls.push(['write', ids, status]) } },
-    returnLedger: { save: (id, value) => calls.push(['ledger', id, value.completed]) },
+    returnLedger: { load: () => null, save: (id, value) => calls.push(['ledger', id, value.completed]) },
     milestoneLedger: { has: (treeId, id) => offered.has(id), markOffered: (treeId, id) => offered.add(id) },
     emit: (event) => calls.push(['emit', event.verb, event.nodeId]),
     showToast: (message, options) => calls.push(['toast', message, options]),
@@ -187,11 +187,23 @@ test('the ledger and the crown read what stands complete: a step whose tree is d
   assert.equal(calls.find(([kind]) => kind === 'ceremony')[1], 'Tree complete — 3/3 steps.');
 });
 
-test('a roadmap that read nothing of a tree one of its steps opens witnesses nothing: the ledger keeps what the last full load saw', (t) => {
+test('a roadmap that read nothing of a tree one of its steps opens adds the person’s own marks to what the ledger holds, and recomputes nothing', (t) => {
   const { acts, calls } = yearFixture(t, Opening.unread('t_sail'));
+  acts.collaborators.returnLedger.load = () => ({ completed: ['plan', 'sail'], at: 1 });
   acts.adoptLoaded({ completed: ['plan'], completedAt: { plan: 1 } });
+
   acts.complete('maya', { quiet: true });
   acts.adoptRemote({ completed: new Set(['plan', 'maya']), completedAt: {} });
+  acts.reset('maya');
+
+  assert.deepEqual(calls.filter(([kind]) => kind === 'ledger'), [['ledger', 'sail', ['plan', 'sail', 'maya']], ['ledger', 'sail', ['plan', 'sail']]]);
+});
+
+test('with no ledger yet, a roadmap that read nothing of its trees starts none from a mark', (t) => {
+  const { acts, calls } = yearFixture(t, Opening.unread('t_sail'));
+  acts.adoptLoaded({ completed: ['plan'], completedAt: { plan: 1 } });
+
+  acts.complete('maya', { quiet: true });
 
   assert.deepEqual(calls.filter(([kind]) => kind === 'ledger'), []);
 });

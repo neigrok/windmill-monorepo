@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { Opening, Openings } from '../../../../src/products/roadmap/model/Opening.js';
 
-const facts = (opening) => ({ ...opening, dangling: opening.dangling, face: opening.face, gauge: opening.gauge });
+const facts = (opening) => ({ ...opening, dangling: opening.dangling, leads: opening.leads, face: opening.face, gauge: opening.gauge });
 
 test('an opening is built from each shape the server answers', () => {
   const read = {
@@ -15,17 +15,17 @@ test('an opening is built from each shape the server answers', () => {
   };
 
   assert.deepEqual(Object.fromEntries(Object.entries(read).map(([name, opening]) => [name, facts(opening)])), {
-    open: { treeId: 't_sail', read: true, valid: true, complete: false, title: 'Learn to sail', done: 3, total: 8, loop: false, dangling: false, face: 'open', gauge: 3 / 8 },
-    complete: { treeId: 't_read', read: true, valid: true, complete: true, title: 'Reading list', done: 12, total: 12, loop: false, dangling: false, face: 'complete', gauge: 1 },
-    loop: { treeId: 't_loop', read: true, valid: true, complete: false, title: 'Learn to sail', done: 3, total: 8, loop: true, dangling: false, face: 'loop', gauge: 3 / 8 },
-    empty: { treeId: 't_book', read: true, valid: true, complete: false, title: 'Book draft', done: 0, total: 0, loop: false, dangling: false, face: 'empty', gauge: 0 },
-    missing: { treeId: 't_bike', read: true, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, dangling: true, face: 'missing', gauge: null },
+    open: { treeId: 't_sail', read: true, valid: true, complete: false, title: 'Learn to sail', done: 3, total: 8, loop: false, own: false, dangling: false, leads: true, face: 'open', gauge: 3 / 8 },
+    complete: { treeId: 't_read', read: true, valid: true, complete: true, title: 'Reading list', done: 12, total: 12, loop: false, own: false, dangling: false, leads: true, face: 'complete', gauge: 1 },
+    loop: { treeId: 't_loop', read: true, valid: true, complete: false, title: 'Learn to sail', done: 3, total: 8, loop: true, own: false, dangling: false, leads: true, face: 'loop', gauge: 3 / 8 },
+    empty: { treeId: 't_book', read: true, valid: true, complete: false, title: 'Book draft', done: 0, total: 0, loop: false, own: false, dangling: false, leads: true, face: 'empty', gauge: 0 },
+    missing: { treeId: 't_bike', read: true, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, own: false, dangling: true, leads: false, face: 'missing', gauge: null },
   });
 });
 
 test('a pointer with no facts read is unread: it names its tree and claims nothing else', () => {
   assert.deepEqual(facts(Opening.unread('t_sail')), {
-    treeId: 't_sail', read: false, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, dangling: false, face: 'unread', gauge: null,
+    treeId: 't_sail', read: false, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, own: false, dangling: false, leads: true, face: 'unread', gauge: null,
   });
 });
 
@@ -111,4 +111,27 @@ test('a roadmap says what it knows of the trees its steps open in one word', () 
   assert.equal(Openings.known([{ id: 'plan' }]), 'none');
   assert.equal(Openings.known([{ id: 'plan' }, { id: 'sail', opening: read }, { id: 'bike', opening: missing }]), 'read');
   assert.equal(Openings.known([{ id: 'sail', opening: read }, { id: 'late', opening: Opening.unread('t_book') }]), 'unread');
+});
+
+test('a step that opens the tree it stands in keeps its opening and has no door: found trees lead, a tree not found does not', () => {
+  const openings = Openings.fromWire({
+    again: { treeId: 't_year', title: 'My year', state: 'open', done: 1, total: 3, loop: true },
+    sail: { treeId: 't_sail', title: 'Learn to sail', state: 'open', done: 3, total: 8, loop: false },
+    bike: { treeId: 't_gone', missing: true },
+  });
+  const projection = { id: 't_year', title: 'My year', nodes: [
+    { id: 'again', label: 'Do it all again', prerequisites: [], opens: 't_year' },
+    { id: 'sail', label: 'Learn to sail', prerequisites: [], opens: 't_sail' },
+    { id: 'bike', label: 'Fix the bike', prerequisites: [], opens: 't_gone' },
+  ] };
+
+  const stood = (joined) => openings.onto(projection, { joined }).nodes.map(({ id, opening }) => ({ id, face: opening.face, own: opening.own, leads: opening.leads }));
+  const expected = [
+    { id: 'again', face: 'loop', own: true, leads: false },
+    { id: 'sail', face: 'open', own: false, leads: true },
+    { id: 'bike', face: 'missing', own: false, leads: false },
+  ];
+  assert.deepEqual(stood(false), expected);
+  assert.deepEqual(stood(true), expected);
+  assert.deepEqual(new Openings().onto(projection, { joined: true }).nodes.map(({ opening }) => [opening.face, opening.leads]), [['unread', false], ['unread', true], ['unread', true]]);
 });

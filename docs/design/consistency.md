@@ -633,8 +633,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   deleted since the load shows the generic load error, with no way back but the browser's. During an outage
   `roadmap-opens-load` reports once per page load. The row's Export writes the raw marks, so a step done by its tree
   exports unchecked (filed with the export).
-- **Section 28 · no door without an account.** A lapsed session and a device's copy with nobody signed in show the
-  tree's mark on such a step and no Open tree, pill press, swipe Open or way back; no board draws this state.
+- **Section 28 · no door without an account.** A lapsed session, a device's copy with nobody signed in and a page
+  that started with no connection (until the server answers for the account) show the tree's mark on such a step and
+  no Open tree, pill press, swipe Open or way back; no board draws this state.
+- **Section 28 · a step that opens the tree it stands in.** No board draws it. It keeps the loop's mark and words
+  (*Loops back*, *Won’t complete by itself*) and has no door: no chevron on the pill, no Tree row to press, no Open
+  tree.
 - **Section 28 · read-me and fixtures.** The read-me 28.00 still lists the tree switcher's delete confirmation
   under "Not drawn"; it is drawn as 🚧 28.50–28.52. Coast trip reads "0 of 5" on 28.00 and 28.02 and "No steps" on
   28.14 and 28.44. The picker on 28.14 leaves out My life, though its NOTE says the rows are the switcher's list

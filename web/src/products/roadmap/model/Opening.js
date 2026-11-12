@@ -2,9 +2,10 @@
 // until the roadmap is read again, on a load or once a pointer changes.
 
 export class Opening {
-  constructor({ treeId, read, valid = false, complete = false, title = '', done = 0, total = 0, loop = false }) {
+  constructor({ treeId, read, valid = false, complete = false, title = '', done = 0, total = 0, loop = false, own = false }) {
     this.treeId = treeId;
     this.read = read;
+    this.own = own;
     this.valid = valid;
     this.complete = complete;
     this.title = title;
@@ -31,6 +32,14 @@ export class Opening {
   // The server found no tree of the owner's at the other end: an ordinary step that follows its mark, with nowhere to
   // go. An unread pointer is not taken for one, so no mark is trusted that the server may be ignoring.
   get dangling() { return this.read && !this.valid; }
+
+  // The same opening where the tree it names is the one its step stands in.
+  inItsOwnTree() {
+    return new Opening({ ...this, own: true });
+  }
+
+  // Whether a door can lead there: not where nothing was found, and not into the tree the step stands in.
+  get leads() { return !this.dangling && !this.own; }
 
   // The one of six ways a surface shows it.
   get face() {
@@ -91,7 +100,8 @@ export class Openings {
       ...treeData,
       nodes: treeData.nodes.map((step) => {
         const opening = standing(step);
-        return opening ? { ...step, opening } : step;
+        if (!opening) return step;
+        return { ...step, opening: opening.treeId === treeData.id ? opening.inItsOwnTree() : opening };
       }),
     };
   }

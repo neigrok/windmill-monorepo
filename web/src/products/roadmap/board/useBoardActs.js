@@ -154,7 +154,7 @@ export class BoardActs {
     if (!said) return;
     c.showToast(said, {
       surface: 'board', act: 'tree', reveal: null, holdMs: 6000,
-      ...(step.opening.dangling || !c.openTree ? {} : { action: { label: TREE.open, run: () => c.openTree(step.id, 'toast') } }),
+      ...(step.opening.leads && c.openTree ? { action: { label: TREE.open, run: () => c.openTree(step.id, 'toast') } } : {}),
     });
   }
 

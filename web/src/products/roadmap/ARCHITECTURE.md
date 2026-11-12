@@ -142,11 +142,13 @@ nothing else of those trees. It goes when the account that held the device signs
 `UnlockRules.completed` is the one rule: a step that opens a tree is complete exactly when that tree is, whatever its
 mark and its prerequisites, and one whose pointer leads nowhere follows its mark. No hand marks such a step
 (`takesMark`): no door offers Complete or Reset on it, `markDoneTargets` leaves it out, and `RoomProgress.mark` changes
-and sends nothing for one. A mark queued before the pointer arrived is never sent either: `SyncSession.flushProgress`
-withdraws it from the replica and its stored record as a Discard withdraws a refused write, which also clears Undo;
-where the record will not let it go, it is asked once and the mark stays unsent. The return ledger and the milestones
-read the same completed set, and a roadmap with an `unread` opening saves nothing to the return ledger, as it does not
-know what stands complete.
+and sends nothing for one. A mark that such a step already holds, made before the pointer arrived, is set aside
+(`SyncSession.owedFrames`): it stays on the device as it is, and while the lattice record holds a pointer it is not sent
+and not counted as unsent, in the outbox, in the status the room shows or in what keeps a refusal standing. Nothing
+else changes for it: no reconnect, no rebaseline, and Discard and Undo are what they are without it. When the pointer
+goes the mark is an ordinary unsent one again and goes with the next flush. The return ledger and the milestones read
+the same completed set. A roadmap with an `unread` opening does not know that set, so it recomputes nothing: it adds
+the person's own marks to what the ledger holds, and a load in that state leaves the ledger as it was.
 
 | Surface | What it shows of the tree |
 |---|---|
@@ -156,17 +158,22 @@ know what stands complete.
 | Graph node | The tree's mark at its centre (a loop's, or an alert where nothing is found) and done of total on the sub-task arc |
 | Dock, tablet panel, phone bar | Done of total, and Open tree in place of Complete |
 
-An `unread` opening shows the mark and Open tree and says nothing else: no pill, no row, no words. A dangling one
-(`Not found`) goes nowhere, and a step that opens the tree it stands in goes nowhere and says nothing.
+An `unread` opening shows the mark and Open tree and says nothing else: no pill, no row, no words. `Opening.leads`
+says whether a door can lead there. A dangling one (`Not found`) and a step that opens the tree it stands in have no
+door on any surface: the pill has no chevron and opens the step, the Tree row is not a button, and no Open tree, swipe
+or toast action is offered. Such a step keeps its tree's mark and its loop's words.
 
 `room/useTreeVisit.js` goes in and comes back. Going in pushes `#/app/<treeId>`; the entry of the tree gone into names the
 roadmap the person came from, and the entry they left keeps the step they went through. Both are history state, never
 tree data, so a direct link has no way back, a chain pops one tree per press and the browser's Back reads what the chip
 reads. A history entry outlives a sign-out, so it holds ids and a view and no title. The room acts on it only for its
-holder, the signed-in account that holds the room as its owner: the way back shows where this device's index
-(`LocalTreeRegistry.owned`) keeps the roadmap it leads to as that account's, under the title the index keeps, and without
-a holder there is no way back, no carried view or step, no door into a tree and no event. So a lapsed session, a
-device's copy with nobody signed in and a reader keep the tree's mark and go nowhere. An arrival is settled as the room
+holder: the account that holds the room as its owner, once the server has answered for it in this document (`confirmed`
+in the shell's auth context; a page that starts with no connection stands on the cached account, which is not one).
+The way back shows where this device's index (`LocalTreeRegistry.owned`) keeps the roadmap it leads to as that
+account's, under the title the index keeps; `open` writes that row for the roadmap it leaves before it navigates, as its
+session may not have stored anything yet. Without a holder there is no way back, no carried view or step, no door into
+a tree and no event. So a lapsed session, a device's copy with nobody signed in, a start with no connection and a reader
+keep the tree's mark and go nowhere. An arrival is settled as the room
 opens: the step and the view leave the entry, which keeps the roadmap it was reached from, so a reload shows the way
 back and is otherwise an ordinary visit. The identity row shows the way back as a chip in its first slot from 744px, and
 as a chevron with the roadmap's title over the tree's on phones. Coming back mounts the roadmap again, so it loads
