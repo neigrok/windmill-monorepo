@@ -576,6 +576,13 @@ std::variant<EdgeChangePlan, std::string> planEdgeChanges(
   const std::size_t before = graph.presentEdgeCount();
   const std::size_t after = before - plan.removed.size() + plan.added.size();
   if (std::optional<Admission> refusal = growthWithin(0, 0, before, after)) return refusal->reason;
+
+  if (plan.removed.size() == 1 && plan.added.size() == 1) {
+    const Edge& left = plan.removed.front();
+    const Edge& taken = plan.added.front();
+    if (left.from == taken.from || left.to == taken.to)
+      plan.batch.commands = {ReconnectEdge{left.from, left.to, taken.from, taken.to}};
+  }
   return plan;
 }
 

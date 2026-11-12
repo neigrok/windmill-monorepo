@@ -1739,7 +1739,8 @@ TEST(mcp_change_edges_refuses_a_malformed_batch_whole) {
   const Seq before = headOf(h);
 
   CHECK_EQ(message(h.call("change_edges", kNoArgs)),
-           std::string("change_edges: add and remove must contain 1 to 500 edges in total"));
+           std::string("change_edges: add and remove must contain 1 to 500 edges in total. Call get_tree with fields "
+                       "[\"id\",\"prerequisites\"] to list the edges this tree has."));
 
   Json::Value halfRow(Json::objectValue);
   halfRow["remove"] = edgeList({{"a", "b"}});
@@ -7541,24 +7542,72 @@ TEST(mcp_change_edges_adds_one_edge_as_one_add_edge_row) {
   }
 }
 
-// A move — the old edge removed and the new one added in one call — is ONE op row under one seq, a Batch of the
-// removal and the addition, and the Activity feed tells it by its two parts under the removal's subject.
-TEST(mcp_change_edges_moves_an_edge_in_one_op_row) {
-  auto h = edgeTree();
-  const std::size_t before = h->ops.byTree["t"].size();
-  CHECK_EQ(body(h->call("change_edges", parse(R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"a","to":"c"}]})"))),
-           parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":2,"addedEdges":[{"from":"a","to":"c"}],
-             "removedEdges":[{"from":"a","to":"b"}],"unchangedEdges":0,"diagnosticsClean":true,
-             "introducedDiagnostics":[]})"));
-  CHECK_EQ(rowsSince(*h, before), parse(R"([{"seq":2,"kind":"Batch","payload":{"commands":[
-    {"kind":"RemoveEdge","payload":{"from":"a","to":"b"}},{"kind":"AddEdge","payload":{"from":"a","to":"c"}}]}}])"));
-  CHECK_EQ(prerequisitesOf(*h), parse(R"([{"id":"a","prerequisites":[]},{"id":"b","prerequisites":[]},
-    {"id":"c","prerequisites":["a"]}])"));
+// A move — one edge removed and one added that keeps its source or its target, both landing — is the one command that
+// moves an edge, as a lone change is its own command: ONE ReconnectEdge op row under one seq, which the Activity feed
+// tells as a reroute naming the edge it now is.
+TEST(mcp_change_edges_moves_an_edge_as_one_reconnect_edge_row) {
+  for (const auto& [args, receipt, row, prerequisites, event] :
+       std::vector<std::tuple<const char*, const char*, const char*, const char*, std::vector<std::string>>>{
+           {R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"a","to":"c"}]})",
+            R"({"treeId":"t","applied":true,"dryRun":false,"seq":2,"addedEdges":[{"from":"a","to":"c"}],
+              "removedEdges":[{"from":"a","to":"b"}],"unchangedEdges":0,"diagnosticsClean":true,"introducedDiagnostics":[]})",
+            R"([{"seq":2,"kind":"ReconnectEdge","payload":{"oldFrom":"a","oldTo":"b","newFrom":"a","newTo":"c"}}])",
+            R"([{"id":"a","prerequisites":[]},{"id":"b","prerequisites":[]},{"id":"c","prerequisites":["a"]}])",
+            {"2", "", "rerouted", "c", "C", "terracotta", "rerouted A → C"}},
+           {R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"c","to":"b"}]})",
+            R"({"treeId":"t","applied":true,"dryRun":false,"seq":2,"addedEdges":[{"from":"c","to":"b"}],
+              "removedEdges":[{"from":"a","to":"b"}],"unchangedEdges":0,"diagnosticsClean":true,"introducedDiagnostics":[]})",
+            R"([{"seq":2,"kind":"ReconnectEdge","payload":{"oldFrom":"a","oldTo":"b","newFrom":"c","newTo":"b"}}])",
+            R"([{"id":"a","prerequisites":[]},{"id":"b","prerequisites":["c"]},{"id":"c","prerequisites":[]}])",
+            {"2", "", "rerouted", "b", "B", "terracotta", "rerouted C → B"}}}) {
+    auto h = edgeTree();
+    const std::size_t before = h->ops.byTree["t"].size();
+    CHECK_EQ(body(h->call("change_edges", parse(args))), parse(receipt));
+    CHECK_EQ(rowsSince(*h, before), parse(row));
+    CHECK_EQ(prerequisitesOf(*h), parse(prerequisites));
+    const ActivityEvent moved = activityFeed(h->registry.open(TreeId{"t"})->snapshot(), h->ops.byTree["t"], 1).back();
+    CHECK_EQ((std::vector<std::string>{std::to_string(moved.seq), moved.actor, moved.verb, moved.node.str(), moved.label,
+                                       moved.kind, moved.summary}),
+             event);
+  }
+}
 
-  const ActivityEvent moved = activityFeed(h->registry.open(TreeId{"t"})->snapshot(), h->ops.byTree["t"], 1).back();
-  CHECK_EQ((std::vector<std::string>{std::to_string(moved.seq), moved.actor, moved.verb, moved.node.str(), moved.label,
-                                     moved.kind, moved.summary}),
-           (std::vector<std::string>{"2", "", "unlinked", "b", "B", "terracotta", "unlinked 1 link and linked 1 link"}));
+// A removal and an addition that keep neither the source nor the target in its place are two changes, not a move: one
+// Batch row of both, which the feed tells by its parts under the removal's subject.
+TEST(mcp_change_edges_lands_a_removal_and_an_unrelated_addition_as_one_batch) {
+  for (const char* args : {R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"c","to":"d"}]})",
+                           R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"b","to":"c"}]})"}) {
+    auto h = edgeTree();
+    CHECK_FALSE(h->call("create_node", node("d", "D")).isError);
+    const std::size_t before = h->ops.byTree["t"].size();
+    const Json::Value added = parse(args)["add"][0];
+    CHECK_FALSE(h->call("change_edges", parse(args)).isError);
+    Json::Value rows = parse(R"([{"seq":3,"kind":"Batch","payload":{"commands":[
+      {"kind":"RemoveEdge","payload":{"from":"a","to":"b"}},{"kind":"AddEdge","payload":{}}]}}])");
+    rows[0]["payload"]["commands"][1]["payload"] = added;
+    CHECK_EQ(rowsSince(*h, before), rows);
+    const ActivityEvent changed = activityFeed(h->registry.open(TreeId{"t"})->snapshot(), h->ops.byTree["t"], 1).back();
+    CHECK_EQ((std::vector<std::string>{changed.verb, changed.node.str(), changed.summary}),
+             (std::vector<std::string>{"unlinked", "b", "unlinked 1 link and linked 1 link"}));
+  }
+}
+
+// A move whose one half is an echo — the edge to add is held, or the edge to remove is absent — lands the other half
+// alone, as its own command.
+TEST(mcp_change_edges_lands_the_lone_half_of_a_move_as_itself) {
+  for (const auto& [args, row] : std::vector<std::pair<const char*, const char*>>{
+           {R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"a","to":"c"}]})",
+            R"([{"seq":3,"kind":"RemoveEdge","payload":{"from":"a","to":"b"}}])"},
+           {R"({"remove":[{"from":"b","to":"c"}],"add":[{"from":"a","to":"c"}]})",
+            R"([])"},
+           {R"({"remove":[{"from":"c","to":"b"}],"add":[{"from":"b","to":"c"}]})",
+            R"([{"seq":3,"kind":"AddEdge","payload":{"from":"b","to":"c"}}])"}}) {
+    auto h = edgeTree();
+    CHECK_FALSE(h->call("change_edges", parse(R"({"add":[{"from":"a","to":"c"}]})")).isError);
+    const std::size_t before = h->ops.byTree["t"].size();
+    CHECK_FALSE(h->call("change_edges", parse(args)).isError);
+    CHECK_EQ(rowsSince(*h, before), parse(row));
+  }
 }
 
 // A move whose new edge names a node the tree does not hold lands nothing: the old edge stays and no op row is

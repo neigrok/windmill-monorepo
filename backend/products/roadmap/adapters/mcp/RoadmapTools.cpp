@@ -1135,7 +1135,13 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, ProgressS
       for (const NodeId& node : rows) out[changed.count(node) ? "changedNodeIds" : "unchangedNodeIds"].append(node.str());
     } else {
       const auto result = room.planEdgeChanges(edges);
-      if (const auto* error = std::get_if<std::string>(&result)) return ToolResult::failure(*error);
+      if (const auto* error = std::get_if<std::string>(&result)) {
+        // A call that names no edge is told where the tree's edges are listed.
+        if (edges.add.empty() && edges.remove.empty())
+          return ToolResult::failure(*error + ". Call get_tree with fields [\"id\",\"prerequisites\"] to list the edges "
+                                              "this tree has.");
+        return ToolResult::failure(*error);
+      }
       const EdgeChangePlan& plan = std::get<EdgeChangePlan>(result);
       batch = plan.batch;
       landsNothing = plan.landsNothing();
