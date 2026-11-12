@@ -262,12 +262,18 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
   }
   if (tool == "annotate_node") {
     if (args["description"].isNull() && args["appendDescription"].isNull() && args["icon"].isNull() &&
-        args["links"].isNull() && args["opens"].isNull())
+        args["links"].isNull() && args["addLinks"].isNull() && args["opens"].isNull())
       return "nothing to set — pass at least one of \"description\", \"appendDescription\", \"icon\", "
-             "\"links\", \"opens\".";
+             "\"links\", \"addLinks\", \"opens\".";
     if (!args["description"].isNull() && !args["appendDescription"].isNull())
       return "\"description\" and \"appendDescription\" are both given — pass one: description "
              "replaces the body, appendDescription joins onto it.";
+    if (!args["links"].isNull() && !args["addLinks"].isNull())
+      return "\"links\" and \"addLinks\" are both given — pass one: links replaces the set, addLinks "
+             "joins onto it.";
+    if (args["addLinks"].isArray() && args["addLinks"].empty())
+      return "addLinks, when sent, names at least one link — leave it out to keep the node's links as they are";
+    if (std::optional<std::string> bad = optionalLinks(args["addLinks"], "addLinks")) return bad;
     if (std::optional<std::string> bad = optionalString(args["appendDescription"], "appendDescription"))
       return bad;
     if (std::optional<std::string> bad = optionalString(args["icon"], "icon")) return bad;
@@ -666,6 +672,13 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     if (namesAnExistingNode(tool) && !room.hasNode(NodeId{payload["id"].asString()}))
       return ToolResult::failure("no node in this tree is named \"" + payload["id"].asString() + "\"" +
                                  ". " + kNodeHandle.hint);
+
+    if (payload.isMember("addLinks")) {
+      const auto joined =
+          room.linksWith(NodeId{payload["id"].asString()}, linksFromJson(payload["addLinks"]), "addLinks");
+      if (const auto* refusal = std::get_if<std::string>(&joined)) return ToolResult::failure(*refusal);
+      payload["links"] = linksToJson(std::get<std::vector<Link>>(joined));
+    }
 
     const bool setsHue = tool == "create_node" || tool == "set_node_color";
     if (setsHue && payload.isMember("kind")) {

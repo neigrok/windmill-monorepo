@@ -556,6 +556,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         kMaxNodeDescriptionLength);
     p["icon"] = cappedStr("The node's icon name/emoji; \"\" clears it.", kMaxIconLength);
     p["links"] = linkArray("The node's external references — replaces the existing set (omit to leave unchanged).");
+    p["addLinks"] = linkArray("References to add after the ones the node holds, in the order sent: a url the node "
+                              "already holds keeps its place and takes the label sent with it. The cap is on the "
+                              "set the node would then hold. Not with `links`.");
+    p["addLinks"]["minItems"] = 1;
     p["opens"] = cappedStr("The id of a tree you own that this node opens: the node points at that tree, is "
                            "complete for you when that tree is, and get_tree, get_nodes and find_nodes answer "
                            "the tree's id, title and state under the `opens` field. A tree that is not yours "
@@ -565,7 +569,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                            kMaxIdLength);
     tools.push_back(tool("annotate_node", Access::write,
         "Set a node's free annotation: its `description` (or `appendDescription`, which joins onto the "
-        "existing body instead of replacing it — send one of the two), its `icon`, its `links`, and/or "
+        "existing body instead of replacing it — send one of the two), its `icon`, its `links` (or "
+        "`addLinks`, which joins onto the set instead of replacing it — send one of the two), and/or "
         "the tree it `opens`. "
         "Each field is optional — an omitted field is left untouched; `links` replaces the whole set "
         "when given — but at least one must be given. This is the verb that sets or clears an icon "

@@ -44,6 +44,19 @@ export function guideLengthBucket(length) {
   return '4501-5000';
 }
 
+const WORTH_TRYING_AGAIN = new Set([408, 429]);
+
+// Why a save no door took failed, as its event carries it and the note's line says it. Offline is the browser's word:
+// the request never arrived and `online`, what navigator.onLine reports, is false; a request lost while online is the
+// server's failure. Refused is a 4xx that trying again cannot change, or text a door would not admit. The rest is the
+// door that failed: the server, else this device's store or session.
+export function saveFailureReason(error, door, online) {
+  if (error?.status === 0) return online ? 'server' : 'offline';
+  if (error instanceof InadmissibleGuide) return 'refused';
+  if (error?.status >= 400 && error.status < 500 && !WORTH_TRYING_AGAIN.has(error.status)) return 'refused';
+  return door === 'server' ? 'server' : 'device';
+}
+
 export class GuideDraft {
   constructor(base, text = base) {
     this.base = withLineFeeds(base);

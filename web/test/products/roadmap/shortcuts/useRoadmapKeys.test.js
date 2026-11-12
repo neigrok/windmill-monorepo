@@ -38,6 +38,17 @@ test('covered: undo, redo, help and paste leave whatever is covering the room al
   assert.deepEqual(covered.calls, []);
 });
 
+test('covered: no key reaches the room beneath, on the Graph or the Board, with focus on a button of whatever covers it', (t) => {
+  for (const boardActive of [false, true]) {
+    const covered = room(t, { covered: true, boardActive });
+    for (const chord of [
+      { key: 'Backspace' }, { key: 'Delete' }, { key: 'a', metaKey: true }, { key: 'f' }, { key: '0' },
+      { key: '/' }, { key: 'g' }, { key: 'a' }, { key: 'Escape' }, { key: '?' }, { key: 'z', metaKey: true },
+    ]) covered.key(chord);
+    assert.deepEqual(covered.calls, [], boardActive ? 'board' : 'graph');
+  }
+});
+
 test('an uncovered Board keeps undo, redo, shortcuts and paste, while typing keeps native paste and help keys', (t) => {
   const open = room(t);
   open.key({ key: 'z', metaKey: true });
