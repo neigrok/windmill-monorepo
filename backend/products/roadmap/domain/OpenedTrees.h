@@ -91,6 +91,10 @@ public:
   std::size_t walked() const { return walked_; }
 
 private:
+  // Each standing tree whose pointers lead to `tree`, by the fewest pointers that take it there; `tree` itself at
+  // none when it stands.
+  std::map<TreeId, int> pointersBackTo(const TreeId& tree) const;
+
   std::map<TreeId, OpenedTree> standing_;
   std::map<TreeId, std::vector<TreeId>> openers_;
   std::map<TreeId, int> pending_;

@@ -386,7 +386,7 @@ A node may point at another tree: `opens` holds that tree's id.
   the receipt's `introducedDiagnostics`. A pointer left as it was is not named again, and an edit
   that clears or re-points a pointer says nothing of the loop it removed, as no receipt names a
   removed diagnostic. Every other edit — one that only clears a pointer and a dry run among them —
-  follows nothing and answers the receipt it always did. When that follow fails the edit has
+  follows nothing, and its receipt names the graph's errors alone. When that follow fails the edit has
   landed: its receipt carries the graph's diagnostics and `pointerDiagnosticsUnavailable: true`,
   and the failure is reported as `roadmap.diagnostics.follow`, door `mcp`.
 - **A tend** is answered neither key and follows no pointer (`ScopedToolHost.cpp`).

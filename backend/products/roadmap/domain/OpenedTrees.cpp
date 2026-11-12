@@ -83,26 +83,11 @@ std::map<NodeId, Opening> OpenedTrees::openings(const TreeData& tree) const {
   return openings;
 }
 
-std::set<TreeId> OpenedTrees::leadingBackTo(const TreeId& tree) const {
-  std::set<TreeId> leading;
-  if (!standing_.count(tree)) return leading;
-  std::vector<TreeId> reached{tree};
-  while (!reached.empty()) {
-    const TreeId led = reached.back();
-    reached.pop_back();
-    if (!leading.insert(led).second) continue;
-    const auto openers = openers_.find(led);
-    if (openers == openers_.end()) continue;
-    reached.insert(reached.end(), openers->second.begin(), openers->second.end());
-  }
-  return leading;
-}
-
-PointerDiagnostics OpenedTrees::diagnose(const TreeData& tree) const {
-  // The fewest pointers from each standing tree back to `tree`, counted a level of openers at a time.
+std::map<TreeId, int> OpenedTrees::pointersBackTo(const TreeId& tree) const {
   std::map<TreeId, int> pointersBack;
   std::vector<TreeId> level;
-  if (standing_.count(tree.id)) level.push_back(tree.id);
+  if (standing_.count(tree)) level.push_back(tree);
+  // A level of openers at a time, so each tree is met first at its fewest pointers.
   for (int distance = 0; !level.empty(); ++distance) {
     std::vector<TreeId> above;
     for (const TreeId& below : level) {
@@ -112,6 +97,17 @@ PointerDiagnostics OpenedTrees::diagnose(const TreeData& tree) const {
     }
     level = std::move(above);
   }
+  return pointersBack;
+}
+
+std::set<TreeId> OpenedTrees::leadingBackTo(const TreeId& tree) const {
+  std::set<TreeId> leading;
+  for (const auto& [led, pointers] : pointersBackTo(tree)) leading.insert(led);
+  return leading;
+}
+
+PointerDiagnostics OpenedTrees::diagnose(const TreeData& tree) const {
+  const std::map<TreeId, int> pointersBack = pointersBackTo(tree.id);
 
   std::map<NodeId, TreeId> pointers;
   for (const NodeSpec& node : tree.nodes)
