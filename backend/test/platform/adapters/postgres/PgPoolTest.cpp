@@ -59,6 +59,16 @@ TEST(pg_pool_reuses_one_connection_across_sequential_borrows) {
   CHECK_EQ(pool.idleConnections(), static_cast<std::size_t>(1));
 }
 
+TEST(pg_pool_hands_out_connections_that_stop_a_statement_at_five_seconds_and_compile_no_plan) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  PgPool pool{testConnString()};
+
+  PgLease lease{pool};
+  pqxx::work txn{*lease};
+  CHECK_EQ(txn.exec("SHOW statement_timeout")[0][0].as<std::string>(), std::string("5s"));
+  CHECK_EQ(txn.exec("SHOW jit")[0][0].as<std::string>(), std::string("off"));
+}
+
 TEST(pg_pool_never_opens_more_than_its_ceiling_under_concurrent_borrowers) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   PgPool pool{testConnString(), 3};
