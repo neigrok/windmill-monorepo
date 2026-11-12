@@ -341,6 +341,20 @@ A tend does not count such a write as an edit, unless the reply carries `progres
   `fields` value never in a default. A tend is offered it. The reminder mail's tree link and the
   share page's canonical and `og:url` are built by the same functions.
 
+## A link's url
+
+- **What is taken.** A link a node holds is one a person can open: `create_node`, `annotate_node`
+  (`links` and `addLinks`), a `patch_nodes` row and an `import_subgraph` node trim each url's
+  surrounding ASCII whitespace and refuse one that does not then start with `http:`, `https:` or
+  `mailto:`, in any case — the schemes the web shows a link with (`SAFE_URL`) — naming the link by
+  its path (`links[1].url`, `nodes[0].links[2].url`) and the schemes taken, never the url, with
+  nothing applied. `shownLinkUrl` and `shownLinks` in `domain/Command` are the rule;
+  `packages/api-contract/roadmap-link-urls.json` holds its cases, read by the domain tests and by the
+  web's `NodeWorkspace` test. `addLinks` joins trimmed urls, so a url sent with spaces around it is
+  the link the node already holds.
+- **What is not.** Links a tree already holds are not judged or rewritten, and the REST and socket
+  doors do not take this rule.
+
 ## A node's hue: `color` or `kind`
 
 `create_node`, `set_node_color`, each `patch_nodes` row and each `import_subgraph` node name the

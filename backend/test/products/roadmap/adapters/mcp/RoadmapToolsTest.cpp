@@ -5930,3 +5930,51 @@ TEST(mcp_an_import_that_files_a_node_by_kind_beside_a_rehue_lands_the_kind_it_na
   CHECK_EQ(filed(*round), parse(R"([{"id":"a","color":"olive","kind":"k"},{"id":"b","color":"olive","kind":"k"},
     {"id":"c","color":"plum","kind":"j"}])"));
 }
+
+// A link a node holds is one a person can open: every door that writes links trims a url's surrounding whitespace and
+// refuses one that does not start with http:, https: or mailto:, naming it by its path, with nothing applied.
+TEST(mcp_every_door_that_writes_links_takes_only_urls_a_person_can_open) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","links":[{"url":"https://a.example/"}]})")).isError);
+  const StoredTree stored = h.trees.byId["t"];
+  const std::size_t rows = h.ops.byTree["t"].size();
+  const auto with = [](const char* arguments, const char* url) {
+    Json::Value args = parse(arguments);
+    for (const char* list : {"links", "addLinks", "updates", "nodes"}) {
+      if (!args.isMember(list)) continue;
+      Json::Value& links = std::string(list) == "updates" || std::string(list) == "nodes"
+                               ? args[list][args[list].size() - 1]["links"] : args[list];
+      links[1]["url"] = url;
+    }
+    return args;
+  };
+  for (const char* url : {"javascript:alert(1)", "data:text/html,hi", "vbscript:x", "example.com", "   "}) {
+    for (const auto& [tool, arguments, path] : std::vector<std::tuple<std::string, const char*, std::string>>{
+             {"create_node", R"({"id":"b","label":"B","links":[{"url":"https://ok.example"},{}]})", "links[1].url"},
+             {"annotate_node", R"({"nodeId":"a","links":[{"url":"https://ok.example"},{}]})", "links[1].url"},
+             {"annotate_node", R"({"nodeId":"a","addLinks":[{"url":"https://ok.example"},{}]})", "addLinks[1].url"},
+             {"patch_nodes", R"({"updates":[{"nodeId":"a","label":"A2","links":[{"url":"https://ok.example"},{}]}]})",
+              "updates[0].links[1].url"},
+             {"import_subgraph", R"({"nodes":[{"id":"a","label":"A2"},{"id":"c","label":"C",
+                "links":[{"url":"https://ok.example"},{}]}]})", "nodes[1].links[1].url"}})
+      CHECK_EQ(message(h.call(tool.c_str(), with(arguments, url))),
+               tool + ": " + path + " must start with http:, https: or mailto:, the links a person can open");
+  }
+  CHECK(h.trees.byId["t"] == stored);
+  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","links":[{"url":" https://b.example/ "},
+    {"url":"HTTPS://A.example"},{"url":"mailto:a@b.example"}]})")).isError);
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","addLinks":[{"url":"\thttps://a.example/ ","label":"A"}]})"))
+                  .isError);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})")))["nodes"],
+           parse(R"([{"id":"a","links":[{"url":"https://a.example/","label":"A"}]}])"));
+  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","links":[{"url":" https://a.example/","label":"A"},
+    {"url":"\nhttps://p.example "}]}]})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","label":"C","links":[{"url":" https://c.example "}]}]})"))
+                  .isError);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a","b","c"],"fields":["id","links"]})")))["nodes"],
+           parse(R"([{"id":"a","links":[{"url":"https://a.example/","label":"A"},{"url":"https://p.example"}]},
+             {"id":"b","links":[{"url":"https://b.example/"},{"url":"HTTPS://A.example"},{"url":"mailto:a@b.example"}]},
+             {"id":"c","links":[{"url":"https://c.example"}]}])"));
+}

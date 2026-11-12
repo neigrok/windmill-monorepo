@@ -1,6 +1,7 @@
 #include "products/roadmap/domain/Command.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -448,6 +449,31 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     if (plan.batch.commands.size() != before) plan.changedNodeIds.push_back(patch.nodeId);
   }
   return plan;
+}
+
+std::optional<std::string> shownLinkUrl(std::string_view url) {
+  constexpr std::string_view kAsciiWhitespace = " \t\n\f\r";
+  const std::size_t first = url.find_first_not_of(kAsciiWhitespace);
+  if (first == std::string_view::npos) return std::nullopt;
+  const std::string_view trimmed = url.substr(first, url.find_last_not_of(kAsciiWhitespace) - first + 1);
+  const auto startsWith = [&](std::string_view scheme) {
+    return trimmed.size() >= scheme.size() &&
+           std::equal(scheme.begin(), scheme.end(), trimmed.begin(),
+                      [](char lower, char sent) { return lower == std::tolower(static_cast<unsigned char>(sent)); });
+  };
+  if (!startsWith("http:") && !startsWith("https:") && !startsWith("mailto:")) return std::nullopt;
+  return std::string(trimmed);
+}
+
+std::variant<std::vector<Link>, std::string> shownLinks(std::vector<Link> links, const std::string& path) {
+  for (std::size_t i = 0; i < links.size(); ++i) {
+    std::optional<std::string> url = shownLinkUrl(links[i].url);
+    if (!url)
+      return path + "[" + std::to_string(i) + "].url must start with http:, https: or mailto:, the links a person "
+                    "can open";
+    links[i].url = std::move(*url);
+  }
+  return links;
 }
 
 std::variant<std::vector<Link>, std::string> withLinksAdded(const std::vector<Link>& held,

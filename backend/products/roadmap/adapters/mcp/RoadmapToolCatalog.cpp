@@ -150,7 +150,9 @@ Json::Value linkArray(const char* description) {
   Json::Value link(Json::objectValue);
   link["type"] = "object";
   Json::Value fields(Json::objectValue);
-  fields["url"] = cappedStr("The link target (href).", kMaxLinkUrlLength);
+  fields["url"] = cappedStr("The link target (href), starting with http:, https: or mailto: — the links a person is "
+                            "shown; whitespace around it is trimmed, and any other url is refused by its path.",
+                            kMaxLinkUrlLength);
   fields["label"] = cappedStr("Optional display text (defaults to the url).", kMaxLinkLabelLength);
   link["properties"] = fields;
   Json::Value required(Json::arrayValue);

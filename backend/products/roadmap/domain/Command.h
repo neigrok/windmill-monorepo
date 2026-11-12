@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -155,6 +156,15 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates);
 std::variant<EdgeChangePlan, std::string> planEdgeChanges(
     const LooseGraph& graph, const EdgeChanges& changes);
+
+// A link url a person can open, as a node holds it: surrounding ASCII whitespace trimmed, then starting with http:,
+// https: or mailto: in any case — the schemes the web shows (packages/api-contract/roadmap-link-urls.json). Nothing
+// when the url is not one.
+std::optional<std::string> shownLinkUrl(std::string_view url);
+
+// `links` with every url trimmed, or the refusal of the first url nobody would be shown, named under `path`
+// (`links`, `nodes[0].links`) by its index and saying which schemes are taken, never echoing the url.
+std::variant<std::vector<Link>, std::string> shownLinks(std::vector<Link> links, const std::string& path);
 
 // `held` with `added` joined on in the order sent; a held url keeps its place and takes a sent label.
 std::variant<std::vector<Link>, std::string> withLinksAdded(const std::vector<Link>& held,

@@ -3,6 +3,9 @@
 #include "products/roadmap/domain/LooseGraph.h"
 #include "test/testing.h"
 
+#include <json/json.h>
+
+#include <fstream>
 #include <limits>
 
 using namespace wm;
@@ -1007,7 +1010,6 @@ TEST(node_patch_plan_rejects_invalid_last_row_duplicates_and_empty_patches) {
   CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, last})));
 }
 
-// The row whose kind refuses the batch hands back its KindRefusal, the reason beside the sentence.
 // What a node edit lands on the node it names: only the fields that differ, or nothing at all.
 TEST(the_part_of_a_node_edit_that_lands_is_the_fields_that_differ) {
   NodeSpec node;
@@ -1039,6 +1041,7 @@ TEST(the_part_of_a_node_edit_that_lands_is_the_fields_that_differ) {
   CHECK_EQ(std::get<RenameNode>(*renamed).label, std::string("B"));
 }
 
+// The row whose kind refuses the batch hands back its KindRefusal, the reason beside the sentence.
 TEST(node_patch_plan_hands_back_the_kind_refusal_of_the_row_that_named_the_kind) {
   const LooseGraph graph = seeded();
   const Legend legend({{kid("owner"), NodeColor::gold, "Owner", ""}}, at(1));
@@ -1085,6 +1088,30 @@ TEST(edge_change_plan_validates_net_capacity_and_all_endpoints_before_apply) {
   CHECK(std::get<EdgeChangePlan>(retry).batch.commands.empty());
   CHECK(std::holds_alternative<std::string>(planEdgeChanges(graph, EdgeChanges{replace.add, replace.add})));
   CHECK(std::holds_alternative<std::string>(planEdgeChanges(graph, EdgeChanges{replace.add, {replace.remove[0], replace.remove[0]}})));
+}
+
+// packages/api-contract/roadmap-link-urls.json: the web shows each url the vector marks shown, and the domain takes
+// exactly those; a url is trimmed of the whitespace around it before it is judged.
+TEST(a_link_url_is_taken_exactly_when_the_web_shows_it) {
+  std::ifstream stream(WM_ROADMAP_LINK_URLS, std::ios::binary);
+  Json::Value vector;
+  stream >> vector;
+  REQUIRE_EQ(vector["cases"].size(), 17u);
+  for (const Json::Value& one : vector["cases"])
+    CHECK_EQ(shownLinkUrl(one["url"].asString()).has_value(), one["shown"].asBool());
+  CHECK(shownLinkUrl(" \t https://a.example/ \n") == std::optional<std::string>("https://a.example/"));
+  CHECK_FALSE(shownLinkUrl("   ").has_value());
+
+  const auto refused = shownLinks(
+      {Link{.label = "Ok", .url = "https://ok.example"}, Link{.label = "", .url = " javascript:alert(1)"}}, "nodes[2].links");
+  REQUIRE(std::holds_alternative<std::string>(refused));
+  CHECK_EQ(std::get<std::string>(refused),
+           std::string("nodes[2].links[1].url must start with http:, https: or mailto:, the links a person can open"));
+  const auto trimmed = shownLinks(
+      {Link{.label = "Mail", .url = " mailto:a@b.example "}, Link{.label = "", .url = "\tHTTPS://A.example\n"}}, "links");
+  REQUIRE(std::holds_alternative<std::vector<Link>>(trimmed));
+  CHECK((std::get<std::vector<Link>>(trimmed) ==
+         std::vector<Link>{{.label = "Mail", .url = "mailto:a@b.example"}, {.label = "", .url = "HTTPS://A.example"}}));
 }
 
 TEST(create_node_opens_the_tree_it_names_and_opens_none_without_one) {
