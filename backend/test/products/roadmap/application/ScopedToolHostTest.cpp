@@ -308,7 +308,7 @@ TEST(scoped_tool_host_offers_a_tend_no_argument_and_no_field_for_the_tree_a_node
   for (const auto& [name, schema] : plain)
     if (dump(schema).find("\"opens\"") != std::string::npos) plainlyNaming.push_back(name);
   CHECK_EQ(plainlyNaming, (std::vector<std::string>{"annotate_node", "create_node", "find_nodes", "get_nodes",
-                                                    "get_tree", "import_subgraph", "patch_nodes"}));
+                                                    "get_tree", "import_subgraph", "patch_nodes", "update_nodes"}));
   for (const auto& [name, schema] : tended) CHECK_EQ(dump(schema).find("\"opens\""), std::string::npos);
 
   Json::Value create = plain.at("create_node");
@@ -317,9 +317,11 @@ TEST(scoped_tool_host_offers_a_tend_no_argument_and_no_field_for_the_tree_a_node
   Json::Value annotate = plain.at("annotate_node");
   annotate["properties"].removeMember("opens");
   CHECK_EQ(tended.at("annotate_node"), annotate);
-  Json::Value patch = plain.at("patch_nodes");
-  patch["properties"]["updates"]["items"]["properties"].removeMember("opens");
-  CHECK_EQ(tended.at("patch_nodes"), patch);
+  for (const char* batch : {"patch_nodes", "update_nodes"}) {
+    Json::Value patch = plain.at(batch);
+    patch["properties"]["updates"]["items"]["properties"].removeMember("opens");
+    CHECK_EQ(tended.at(batch), patch);
+  }
   Json::Value import = plain.at("import_subgraph");
   import["properties"]["nodes"]["items"]["properties"].removeMember("opens");
   CHECK_EQ(tended.at("import_subgraph"), import);
