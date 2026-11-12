@@ -158,6 +158,29 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
 std::variant<EdgeChangePlan, std::string> planEdgeChanges(
     const LooseGraph& graph, const EdgeChanges& changes);
 
+// An update of one legend kind: the fields it sends, each optional.
+struct KindUpdate {
+  KindId id;
+  std::optional<std::string> label;
+  std::optional<std::string> description;
+  std::optional<NodeColor> hue;
+};
+
+// What a kind update lands: one command per field that holds another value on the kind — RenameKind, DescribeKind,
+// RecolorKind, in that order — and, when the hue changes, how many nodes it repaints. It lands nothing when every field
+// sent is the one the kind holds.
+struct KindUpdatePlan {
+  std::vector<Command> commands;
+  std::optional<std::size_t> repaintedNodes;
+
+  bool landsNothing() const { return commands.empty(); }
+};
+
+// Each field sent is validated as its own command is, so an unknown kind, a taken hue or a field over its cap is refused
+// in the words rename_kind, describe_kind and recolor_kind use; an update that sends no field is refused naming all three.
+std::variant<KindUpdatePlan, std::string> planKindUpdate(const LooseGraph& graph, const Legend& legend,
+                                                         const KindUpdate& update);
+
 // A link url a person can open, as a node holds it: surrounding ASCII whitespace trimmed, then starting with http:,
 // https: or mailto: in any case — the schemes the web shows (packages/api-contract/roadmap-link-urls.json). Nothing
 // when the url is not one.

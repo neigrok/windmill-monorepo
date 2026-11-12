@@ -52,6 +52,7 @@ const std::vector<Row> kRoadmap = {
     {"remove_kind", "Roadmap · Remove kind", false, true, true},
     {"reorder_kinds", "Roadmap · Reorder kinds", false, false, true},
     {"recolor_kind", "Roadmap · Recolor kind", false, false, true},
+    {"update_kind", "Roadmap · Update kind", false, false, true},
     {"set_progress", "Roadmap · Set progress", false, false, true},
     {"import_subgraph", "Roadmap · Import subgraph", false, true, true},
     {"prune", "Roadmap · Prune", false, true, true},

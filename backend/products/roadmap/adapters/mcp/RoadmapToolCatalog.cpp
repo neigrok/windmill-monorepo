@@ -207,7 +207,7 @@ const std::set<std::string> kIdempotentWrites = {
     "delete_tree",  "update_tree",   "describe_tree", "rename_node",   "set_node_color", "move_node",
     "connect",      "disconnect",    "reconnect",     "delete_node",    "tidy",
     "add_kind",     "rename_kind",   "describe_kind", "remove_kind",    "reorder_kinds",
-    "recolor_kind", "set_progress",  "import_subgraph", "prune", "patch_nodes", "change_edges"};
+    "recolor_kind", "update_kind",   "set_progress",  "import_subgraph", "prune", "patch_nodes", "change_edges"};
 
 // `read` answers questions, `write` changes the document, and `delete` destroys something a
 // person authored. `delete` is never implied by `write`: a connection without that level does
@@ -823,6 +823,20 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "Atomically change a kind's hue and repaint every node wearing the old hue to the new one, as "
         "one op / one undo step.",
         p, {"treeId", "id", "hue"}));
+  }
+  {
+    Json::Value p(Json::objectValue);
+    p["treeId"] = treeHandle();
+    p["id"] = cappedStr("The id of the kind to change.", kMaxIdLength);
+    p["label"] = cappedStr("The kind's new label; \"\" clears it.", kMaxKindLabelLength);
+    p["description"] = cappedStr("The kind's new sorting brief; \"\" clears it.", kMaxKindDescriptionLength);
+    p["hue"] = enumStr("The kind's new hue — must be free (not owned by another kind).", kHues);
+    tools.push_back(tool("update_kind", Access::write,
+        "Change a legend kind's `label`, `description` or `hue` — any of them, at least one — as ONE op "
+        "under one seq. A new `hue` repaints every node wearing the kind's old hue, as recolor_kind does, "
+        "and the receipt counts them in `repaintedNodes`. A field sent as the kind holds it is left out; a "
+        "call that changes nothing writes nothing and answers `unchanged: true` with the tree's current `seq`.",
+        p, {"treeId", "id"}));
   }
   {
     Json::Value p = progressRow();  // the single form is one row, flat

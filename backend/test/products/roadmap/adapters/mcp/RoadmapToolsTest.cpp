@@ -7130,3 +7130,117 @@ TEST(mcp_a_readers_mark_stamped_ahead_moves_nothing_of_the_owners) {
   };
   CHECK_EQ(run(true), run(false));
 }
+
+namespace {
+
+// A kind k on sky, labelled and briefed, worn by a and b, and a kind j on gold.
+std::unique_ptr<Harness> kindTree() {
+  auto h = std::make_unique<Harness>();
+  CHECK_FALSE(h->call("add_kind", parse(R"({"id":"k","hue":"sky","label":"K","description":"Brief."})")).isError);
+  CHECK_FALSE(h->call("add_kind", parse(R"({"id":"j","hue":"gold","label":"J"})")).isError);
+  CHECK_FALSE(h->call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","kind":"k"},
+    {"id":"b","label":"B","kind":"k"},{"id":"c","label":"C","kind":"j"}]})")).isError);
+  return h;
+}
+
+// An op row as the log holds it, every field but the server's receipt time.
+Json::Value opRows(Harness& h) {
+  Json::Value rows(Json::arrayValue);
+  for (const AppliedOp& op : h.ops.byTree["t"]) {
+    Json::Value row(Json::objectValue);
+    row["seq"] = static_cast<Json::Int64>(op.seq);
+    row["opId"] = op.opId;
+    row["command"] = static_cast<Json::UInt64>(op.command.index());
+    row["payload"] = commandPayload(op.command);
+    row["hlc"] = toString(op.hlc);
+    row["actor"] = op.actor.str();
+    rows.append(row);
+  }
+  return rows;
+}
+
+}
+
+// update_kind relabels, re-briefs and re-hues a kind in one call: one op under one seq, the kind's nodes repainted as
+// recolor_kind repaints them and counted, and the rest of the legend untouched.
+TEST(mcp_update_kind_relabels_rebriefs_and_rehues_a_kind_in_one_op) {
+  auto h = kindTree();
+  const std::size_t rows = h->ops.byTree["t"].size();
+  const Json::Int64 seq = body(h->call("get_tree", parse(R"({"includeGuides":false})")))["seq"].asInt64();
+
+  Json::Value expected = parse(R"({"applied":true,"id":"k","repaintedNodes":2,"diagnosticsClean":true,
+    "introducedDiagnostics":[]})");
+  expected["seq"] = seq + 1;
+  CHECK_EQ(body(h->call("update_kind", parse(R"({"id":"k","label":"Kay","description":"New brief.","hue":"plum"})"))),
+           expected);
+  REQUIRE_EQ(h->ops.byTree["t"].size(), rows + 1);
+  CHECK(std::holds_alternative<Batch>(h->ops.byTree["t"].back().command));
+  CHECK_EQ(body(h->call("get_tree", parse(R"({"includeGuides":false,"fields":["id","color","kind"],
+    "kindFields":["id","hue","label","description"]})")))["tree"]["kinds"],
+           parse(R"([{"id":"k","hue":"plum","label":"Kay","description":"New brief."},
+             {"id":"j","hue":"gold","label":"J","description":""}])"));
+  CHECK_EQ(body(h->call("get_nodes", parse(R"({"nodeIds":["a","b","c"],"fields":["id","color","kind"]})")))["nodes"],
+           parse(R"([{"id":"a","color":"plum","kind":"k"},{"id":"b","color":"plum","kind":"k"},
+             {"id":"c","color":"gold","kind":"j"}])"));
+}
+
+// Each field alone lands what its earlier tool lands: on twin trees, update_kind and rename_kind, describe_kind or
+// recolor_kind leave the same stored tree and the same op rows.
+TEST(mcp_update_kind_with_one_field_equals_its_earlier_tool) {
+  for (const auto& [earlier, arguments] : std::vector<std::pair<const char*, const char*>>{
+           {"rename_kind", R"({"id":"k","label":"Kay"})"},
+           {"describe_kind", R"({"id":"k","description":"New brief."})"},
+           {"recolor_kind", R"({"id":"k","hue":"plum"})"}}) {
+    auto before = kindTree();
+    auto after = kindTree();
+    CHECK_FALSE(before->call(earlier, parse(arguments)).isError);
+    CHECK_FALSE(after->call("update_kind", parse(arguments)).isError);
+    CHECK(before->trees.byId["t"] == after->trees.byId["t"]);
+    CHECK_EQ(opRows(*before), opRows(*after));
+  }
+}
+
+// A field sent as the kind holds it is left out, so a call that changes nothing writes nothing and answers unchanged
+// with the tree's seq; one that changes one field of three lands that field alone, as its earlier tool would.
+TEST(mcp_update_kind_leaves_out_what_the_kind_holds) {
+  auto h = kindTree();
+  const std::size_t rows = h->ops.byTree["t"].size();
+  const StoredTree stored = h->trees.byId["t"];
+  const Json::Int64 seq = body(h->call("get_tree", parse(R"({"includeGuides":false})")))["seq"].asInt64();
+
+  Json::Value unchanged = parse(R"({"applied":true,"id":"k","unchanged":true,"diagnosticsClean":true,
+    "introducedDiagnostics":[]})");
+  unchanged["seq"] = seq;
+  CHECK_EQ(body(h->call("update_kind", parse(R"({"id":"k","label":"K","description":"Brief.","hue":"sky"})"))),
+           unchanged);
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
+  CHECK(h->trees.byId["t"] == stored);
+
+  CHECK_FALSE(h->call("update_kind", parse(R"({"id":"k","label":"K","description":"Changed.","hue":"sky"})")).isError);
+  REQUIRE_EQ(h->ops.byTree["t"].size(), rows + 1);
+  CHECK((std::holds_alternative<DescribeKind>(h->ops.byTree["t"].back().command)));
+}
+
+// A refusal is worded as the earlier tools word it — an unknown kind as rename_kind, a taken hue as recolor_kind — and a
+// call that sends nothing to set names all three fields; nothing is applied, and the earlier `kindId` is not taken.
+TEST(mcp_update_kind_refuses_in_the_words_of_the_earlier_tools) {
+  auto h = kindTree();
+  const StoredTree stored = h->trees.byId["t"];
+  const auto words = [&](const char* tool, const char* arguments) {
+    const std::string said = message(h->call(tool, parse(arguments)));
+    return said.substr(said.find(": ") + 2);
+  };
+  CHECK_EQ(words("update_kind", R"({"id":"x","label":"X"})"), words("rename_kind", R"({"id":"x","label":"X"})"));
+  CHECK_EQ(words("update_kind", R"({"id":"k","hue":"gold"})"), words("recolor_kind", R"({"id":"k","hue":"gold"})"));
+  CHECK_EQ(message(h->call("update_kind", parse(R"({"label":"Kay"})"))),
+           std::string("update_kind: missing required argument \"id\". Call get_tree and read `kinds` to list this "
+                       "legend's ids."));
+  CHECK_EQ(words("update_kind", R"({"label":"Kay"})"), words("rename_kind", R"({"label":"Kay"})"));
+  CHECK_EQ(message(h->call("update_kind", parse(R"({"id":"k"})"))),
+           std::string("update_kind: nothing to set — pass at least one of \"label\", \"description\", \"hue\"."));
+  CompositeToolHost gate(std::vector<ToolModule>{{h->tools, ""}});
+  CHECK_EQ(message(gate.callTool("update_kind", parse(R"({"treeId":"t","kindId":"k","label":"Kay"})"), h->actor)),
+           std::string("update_kind: unknown argument \"kindId\". This tool takes: description, hue, id, label, "
+                       "treeId."));
+  CHECK(h->trees.byId["t"] == stored);
+}

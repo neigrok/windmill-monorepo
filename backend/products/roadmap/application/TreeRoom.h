@@ -121,6 +121,9 @@ public:
   std::variant<EdgeChangePlan, std::string> planEdgeChanges(const EdgeChanges& changes) const {
     return wm::planEdgeChanges(graph_, changes);
   }
+  std::variant<KindUpdatePlan, std::string> planKindUpdate(const KindUpdate& update) const {
+    return wm::planKindUpdate(graph_, legend_, update);
+  }
 
   // Advances head + dedup set; does not re-persist or re-broadcast.
   void replay(const AppliedOp& op);

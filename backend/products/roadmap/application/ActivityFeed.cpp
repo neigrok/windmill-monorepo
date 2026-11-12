@@ -90,33 +90,46 @@ public:
 
 private:
   // Summed by verb in first-appearance order, under the first member's verb and subject:
-  // "removed 2 nodes and unlinked 3 links". Nudges inside it count for nothing.
+  // "removed 2 nodes and unlinked 3 links". A member about the legend is no count of anything and says, in its place,
+  // the sentence it says alone: "renamed a kind to Builder and described a kind". Nudges inside it count for nothing.
   std::optional<ActivityEvent> batch(const Batch& batch) const {
-    std::vector<std::pair<std::string, int>> countByVerb;
+    struct Part {
+      std::string verb;
+      int count = 0;
+      std::optional<std::string> ownSentence;  // a legend member's
+    };
+    std::vector<Part> parts;
     std::optional<ActivityEvent> first;
     for (const Command& member : batch.commands) {
       std::optional<ActivityEvent> event = (*this)(member);
       if (!event) continue;
       if (!first) first = event;
-      auto counted = std::find_if(countByVerb.begin(), countByVerb.end(),
-                                  [&](const auto& entry) { return entry.first == event->verb; });
-      if (counted == countByVerb.end()) countByVerb.emplace_back(event->verb, 1);
-      else ++counted->second;
+      if (aboutTheLegend(event->verb)) {
+        parts.push_back({event->verb, 0, event->summary});
+        continue;
+      }
+      auto counted = std::find_if(parts.begin(), parts.end(),
+                                  [&](const Part& part) { return !part.ownSentence && part.verb == event->verb; });
+      if (counted == parts.end()) parts.push_back({event->verb, 1, std::nullopt});
+      else ++counted->count;
     }
     if (!first) return std::nullopt;
     std::string summary;
-    for (const auto& [verb, count] : countByVerb) {
+    for (const Part& part : parts) {
       if (!summary.empty()) summary += " and ";
-      summary += verb + " " + std::to_string(count) + " " + noun(verb) + (count == 1 ? "" : "s");
+      summary += part.ownSentence ? *part.ownSentence
+                                  : part.verb + " " + std::to_string(part.count) + " " + noun(part.verb) +
+                                        (part.count == 1 ? "" : "s");
     }
     first->summary = summary;
     return first;
   }
 
+  static bool aboutTheLegend(const std::string& verb) { return verb.find("-kind") != std::string::npos; }
+
   static std::string noun(const std::string& verb) {
     if (verb == "linked" || verb == "unlinked" || verb == "rerouted") return "link";
     if (verb == "added" || verb == "removed" || verb == "renamed" || verb == "recolored") return "node";
-    if (verb.size() > 5 && verb.compare(verb.size() - 5, 5, "-kind") == 0) return "kind";
     return "edit";
   }
 
