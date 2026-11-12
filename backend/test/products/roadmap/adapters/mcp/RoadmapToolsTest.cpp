@@ -928,8 +928,6 @@ TEST(mcp_find_nodes_answers_an_index_and_get_tree_the_shape) {
   Harness h;
   Json::Value a = node("a", "A");
   a["description"] = "four thousand bytes of prose live here";
-  a["x"] = 12.0;
-  a["y"] = 34.0;
   h.call("create_node", a);
   Json::Value k(Json::objectValue);
   k["id"] = "infra";
@@ -3216,6 +3214,8 @@ TEST(mcp_update_nodes_refuses_the_whole_batch_and_dry_run_changes_nothing) {
     CHECK(h.call("update_nodes", parse(json)).isError);
     CHECK_EQ(body(h.call("get_tree", kNoArgs)), before);
   }
+  CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"b","status":"complete"},{"nodeId":"b","status":"none"}]})"))),
+           std::string("update_nodes: updates repeats nodeId \"b\""));
   CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"b","description":null}]})"))),
            std::string("update_nodes: missing required argument \"updates[0].description\""));
   CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"b","opens":null}]})"))),
@@ -7856,4 +7856,13 @@ TEST(mcp_a_position_a_client_set_survives_every_mcp_write_to_its_node) {
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A2","icon":"star"}]})")).isError);
   CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","label":"A3","color":"plum"})"))).isError);
   CHECK((positionOfA() == std::optional<Vec2>(Vec2{120, 60})));
+}
+
+// An import's progress row still takes a node by the legacy `id`, which the schema publishes deprecated beside `nodeId`.
+TEST(mcp_an_import_progress_row_takes_its_node_by_the_legacy_id) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"id":"a","status":"complete"}]})")))["progress"],
+           parse(R"([{"nodeId":"a","prerequisitesMet":true,"status":"complete"}])"));
+  CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["a"],"outOfOrder":[]})"));
 }
