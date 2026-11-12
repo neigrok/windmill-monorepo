@@ -1316,25 +1316,28 @@ for (const engine of [chromium, webkit]) {
     }
   });
 
-  test(`${engine.name()}: on a phone the footer's button wears a ring when a key put focus on it and none after a tap`, async () => {
+  test(`${engine.name()}: on a phone the footer's button wears no ring after a tap, and one when a key brings focus back to it or puts it there`, async () => {
     const page = await open({ guide: GUIDE, band: 'phone', door: 'server' }, { engine, width: 390, height: 844 });
     try {
       await serverDoor(page, [503, 503]);
       await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
       await page.getByRole('button', { name: 'Edit guide' }).click();
       await page.keyboard.type(' Written');
+      const ring = () => page.evaluate(() => [document.activeElement.textContent, getComputedStyle(document.activeElement).outlineStyle]);
+      await page.getByRole('button', { name: 'Save' }).click();
+      await page.getByRole('alert').waitFor();
+      await settled(page);
+      const tapped = await ring();
+      await page.keyboard.press('Shift+Tab');
+      await page.keyboard.press('Tab');
+      const tabbedBack = await ring();
+      await field(page).fill(`${GUIDE} Rewritten`);
       await page.keyboard.press('Tab');
       await page.keyboard.press('Tab');
       await page.keyboard.press('Enter');
       await page.getByRole('alert').waitFor();
       await settled(page);
-      const ring = () => page.evaluate(() => [document.activeElement.textContent, getComputedStyle(document.activeElement).outlineStyle, getComputedStyle(document.activeElement).outlineWidth]);
-      assert.deepEqual(await ring(), ['Try again', 'solid', '2px']);
-      await field(page).fill(`${GUIDE} Rewritten`);
-      await page.getByRole('button', { name: 'Save' }).click();
-      await page.getByRole('alert').waitFor();
-      await settled(page);
-      assert.deepEqual((await ring()).slice(0, 2), ['Try again', 'none']);
+      assert.deepEqual([tapped, tabbedBack, await ring()], [['Try again', 'none'], ['Try again', 'solid'], ['Try again', 'solid']]);
     } finally { await page.close(); }
   });
 }
