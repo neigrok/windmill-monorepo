@@ -132,8 +132,9 @@ TEST(a_stored_create_or_annotate_row_without_opens_still_decodes_and_touches_no_
   CHECK_EQ(graph.exportNode(NodeId{"a"})->opensAt, (Hlc{2, 0, "srv"}));
 }
 
-// No write sends a ReorderKinds any more, but the log holds the rows it wrote: one decodes, alone or inside a Batch, and
-// replays the order it set, so neither the row nor the Batch around it is skipped.
+// No tool sends a ReorderKinds any more, but the log holds the rows it wrote and a client's frame can still land one:
+// one decodes, alone or inside a Batch, and replays the order it set, so neither the row nor the Batch around it is
+// skipped. One with an empty order, as a frame that moved no kind leaves, replays as nothing.
 TEST(a_stored_legend_reorder_row_still_decodes_and_replays_the_order_it_set) {
   const std::optional<Command> row = commandFromJson("ReorderKinds", parse("{\"order\":[\"learn\",\"build\"]}"));
   REQUIRE(row.has_value());
@@ -151,6 +152,14 @@ TEST(a_stored_legend_reorder_row_still_decodes_and_replays_the_order_it_set) {
                 Hlc{1, 0, "seed"});
   merge(graph, legend, *batch, Hlc{2, 0, "seed"});
   std::vector<std::string> order;
+  for (const Kind& kind : legend.kinds()) order.push_back(kind.id.str() + " " + kind.label);
+  CHECK_EQ(order, (std::vector<std::string>{"learn Learn", "build Make"}));
+
+  const std::optional<Command> empty = commandFromJson("ReorderKinds", parse("{\"order\":[]}"));
+  REQUIRE(empty.has_value());
+  CHECK(std::get<ReorderKinds>(*empty).order.empty());
+  merge(graph, legend, *empty, Hlc{3, 0, "seed"});
+  order.clear();
   for (const Kind& kind : legend.kinds()) order.push_back(kind.id.str() + " " + kind.label);
   CHECK_EQ(order, (std::vector<std::string>{"learn Learn", "build Make"}));
 }

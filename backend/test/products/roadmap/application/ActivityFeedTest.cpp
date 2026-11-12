@@ -131,8 +131,8 @@ TEST(activity_tells_a_batch_of_kind_commands_in_each_members_own_sentence) {
                  }));
 }
 
-// No write reorders a legend any more, but the log holds the rows that did: the feed still tells one, alone and as a
-// part of a Batch.
+// No tool reorders a legend any more, but the log holds the rows that did and a client's frame can still land one:
+// the feed still tells one, alone and as a part of a Batch.
 TEST(activity_still_tells_a_past_reorder_of_the_legend) {
   std::vector<AppliedOp> ops = {
       op(20, ReorderKinds{{KindId{"learn"}, KindId{"build"}}}, "dev", 20000),
