@@ -656,6 +656,15 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   under "Not drawn"; it is drawn as 🚧 28.50–28.52. Coast trip reads "0 of 5" on 28.00 and 28.02 and "No steps" on
   28.14 and 28.44. The picker on 28.14 leaves out My life, though its NOTE says the rows are the switcher's list
   minus the current tree. 28.38 (the tree was removed between loads) has no phone twin.
+- **Section 28 · making it is drawn twice (28.13–28.23, 28.44, 28.46 and 🚧 28.54–28.67).** Journey 3 stands attach, fork
+  first, change and detach on the step editor of 19, which the web does not have. Journey 10 restates it on the step modal
+  and page: a Tree section with *None* and a +, the picker as a page in the modal, Change tree and Detach tree under the
+  section's own ⋯, so a step with a tree shows two ⋯ of different scope. Its picker takes the phone's context line
+  (*For Learn to sail · 5 trees*) where 28.14 has a caption, lists My life and reads Coast trip as *0 of 5 done*.
+  Journey 10 adds one toast Journey 3 does not draw, *Tree detached*, for a step that held no mark. Its four parts
+  (Tree picker row, Tree heading, Tree menu, Tree sheet) sit in the journey's parts frame, not in Components.
+- **Phone step page · 20.01 against the build.** 🚀 20.01 (397:28208) draws the counts and chevrons short of the right
+  edge, a two-colour identity rail and no Shell row; the build runs them to the edge under the Shell row.
 - **Tree switcher · delete row.** The shipped confirmation is one line with an ellipsis (`confirmCopy` in
   `identity/TreeSwitcher.jsx`), while 🚀 03.03 draws it wrapping; 28.50 needs it to wrap. Rename and delete show
   on hover only, so a touch tablet from 744 px has no clear way to them. The open trigger has no left padding.
