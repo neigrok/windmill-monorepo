@@ -979,6 +979,19 @@ std::optional<std::string> applyProgressBatch(
   return std::nullopt;
 }
 
+// The caller's own completion marks on nodes a write deletes, cleared to none in one batch stamped from the room's
+// clock, so a revive of the node brings none back; anyone else's marks stay theirs. Answers how many it cleared. An
+// import's tombstones and delete_node clear by this.
+std::size_t clearMarksOn(ProgressService& progress, TreeRoom& room, const TreeId& tree, const UserId& actor,
+                         const std::vector<NodeId>& deleted, Clock& clock) {
+  const Progress overlay = progress.progressOf(tree, actor);
+  std::vector<ProgressWrite> clears;
+  for (const NodeId& node : deleted)
+    if (overlay.completed.count(node)) clears.push_back({node, ProgressStatus::none, {}, room.nextStamp(clock.nowMs()), false});
+  if (!clears.empty()) progress.setStatuses(tree, actor, clears, clock.nowMs());
+  return clears.size();
+}
+
 // One progress row as a write sends it: `nodeId` (or the legacy `id`), `status`, and `outOfOrder`, a word about a
 // completion that rides only a `complete` status. set_progress, single or bulk, and an import's progress rows read a
 // row by this, so each takes the same checks; `path` names the row in a refusal ("" for set_progress's flat form).
@@ -1314,13 +1327,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     out["graphApplied"] = true;
     out["progressApplied"] = true;
     try {
-      const Progress overlay = progress.progressOf(tree, actor);
-      std::vector<ProgressWrite> clears;
-      for (const NodeId& node : footprint.tombstonedNodes) {
-        if (!overlay.completed.count(node)) continue;
-        clears.push_back({node, ProgressStatus::none, {}, room.nextStamp(clock.nowMs()), false});
-      }
-      if (!clears.empty()) progress.setStatuses(tree, actor, clears, clock.nowMs());
+      clearMarksOn(progress, room, tree, actor, footprint.tombstonedNodes, clock);
     } catch (const std::exception&) {
       out["progressApplied"] = false;
       out["progressError"] = "The graph committed, but clearing progress on removed nodes failed. Read get_progress before retrying progress changes.";
@@ -1455,25 +1462,17 @@ ToolResult deleteNodes(RoomRegistry& registry, ProgressService& progress, const 
     for (const Command& command : commands)
       if (std::optional<std::string> reason = room.validate(command)) return ToolResult::failure(*reason);
 
-    // The caller's own marks on what is going: cleared to none, as prune clears an orphan's.
-    std::vector<NodeId> orphans;
-    if (prune) {
-      const Progress overlay = progress.progressOf(tree, actor);
-      for (const NodeId& node : targets)
-        if (overlay.completed.count(node)) orphans.push_back(node);
-    }
-
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.applyCommands(commands, clock.nowMs(), actor);
     registry.persist(tree);
-    for (const NodeId& node : orphans)
-      progress.setStatus({}, tree, actor, node, ProgressStatus::none, false, room.nextStamp(clock.nowMs()), clock.nowMs());
+    // The caller's own marks on what is going, cleared in the same call with or without prune.
+    const std::size_t cleared = clearMarksOn(progress, room, tree, actor, targets, clock);
 
     Json::Value ids(Json::arrayValue);
     for (const NodeId& node : targets) ids.append(node.str());
     Json::Value pruned(Json::objectValue);
     pruned["edges"] = static_cast<int>(dangled.size());
-    pruned["progress"] = static_cast<int>(orphans.size());
+    pruned["progress"] = static_cast<int>(cleared);
 
     Json::Value out(Json::objectValue);
     out["applied"] = true;

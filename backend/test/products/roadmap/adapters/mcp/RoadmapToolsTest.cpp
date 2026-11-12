@@ -922,7 +922,8 @@ TEST(mcp_prune_clears_dangling_edges_and_orphan_progress) {
 
   h.call("set_progress", mark("a", "complete"));
   h.call("set_progress", mark("b", "complete"));
-  h.call("delete_node", with("id", "b"));
+  // Deleted by a client's frame, which clears no mark, so the orphan mark is prune's to clear.
+  h.registry.open(TreeId{"t"})->applyCommand(DeleteNode{NodeId{"b"}}, h.clock.nowMs(), h.caller);
 
   ToolResult result = h.call("prune", kNoArgs);
   CHECK_FALSE(result.isError);
@@ -1637,8 +1638,8 @@ TEST(mcp_delete_node_without_prune_still_lists_the_edges_it_dangled) {
   CHECK_EQ(introduced(receipt),
            (std::vector<std::string>{"dangling edge \"a\" -> \"b\"", "dangling edge \"b\" -> \"c\""}));
   CHECK_EQ(receipt["pruned"]["edges"].asInt(), 0);
-  CHECK_EQ(receipt["pruned"]["progress"].asInt(), 0);
-  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 2u);  // the mark on b stays
+  CHECK_EQ(receipt["pruned"]["progress"].asInt(), 1);
+  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 1u);  // the caller's mark on b goes with it
 
   const Json::Value legacy = body(h.call("delete_node", with("id", "c")));
   CHECK(legacy["applied"].asBool());
@@ -6455,4 +6456,36 @@ TEST(mcp_import_progress_rows_carry_out_of_order_as_set_progress_rows_do) {
   REQUIRE_EQ(receipt["progress"].size(), 3u);
   for (const Json::Value& row : receipt["progress"]) CHECK_EQ(row["unchanged"], Json::Value(true));
   CHECK_EQ(body(h.call("get_progress", everyMark)), held);
+}
+
+// A delete clears the caller's own mark on each node it deletes, in the same call, by either form and with or without
+// prune, counted in pruned.progress; a mark someone else holds on the node stays theirs, and a revive of the node later
+// brings no cleared mark back.
+TEST(mcp_delete_node_clears_the_callers_marks_on_the_nodes_it_deletes) {
+  for (const auto& [arguments, cleared, left] : std::vector<std::tuple<const char*, int, const char*>>{
+           {R"({"nodeId":"a"})", 1, R"({"completed":["b"],"cleared":["a"]})"},
+           {R"({"nodeId":"a","prune":true})", 1, R"({"completed":["b"],"cleared":["a"]})"},
+           {R"({"nodeIds":["a","b","c"]})", 2, R"({"completed":[],"cleared":["a","b"]})"},
+           {R"({"nodeIds":["a","b","c"],"prune":true})", 2, R"({"completed":[],"cleared":["a","b"]})"}}) {
+    Harness h;
+    h.trees.byId["t"].visibility = Visibility::public_;
+    CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},
+      {"id":"c","label":"C"}]})")).isError);
+    CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+      {"nodeId":"b","status":"complete"}]})")).isError);
+    const ToolCaller stranger{uid("stranger"), ToolScope::everything()};
+    const auto progressOf = [&](const ToolCaller& who) {
+      return body(h.tools.callTool("get_progress", parse(R"({"treeId":"t","fields":["completed","cleared"]})"), who));
+    };
+    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"a","status":"complete"})"), stranger)
+                    .isError);
+
+    CHECK_EQ(body(h.call("delete_node", parse(arguments)))["pruned"]["progress"].asInt(), cleared);
+    CHECK_EQ(progressOf(h.actor), parse(left));
+    CHECK_EQ(progressOf(stranger), parse(R"({"completed":["a"],"cleared":[]})"));
+
+    CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
+    CHECK_EQ(progressOf(h.actor), parse(left));
+    CHECK_EQ(progressOf(stranger), parse(R"({"completed":["a"],"cleared":[]})"));
+  }
 }
