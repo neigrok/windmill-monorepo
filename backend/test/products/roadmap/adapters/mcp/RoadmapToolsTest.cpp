@@ -5982,6 +5982,24 @@ TEST(mcp_every_door_that_writes_links_takes_only_urls_a_person_can_open) {
 // A link a node already holds is not the write's word: a tree holding a url the rule refuses, written before the rule or
 // by a client frame, reads and sends back as held at every door that writes links, and only the urls a write brings
 // are judged. A new node, or a new tree, holds nothing, so the same links are refused there, and nothing is applied.
+TEST(mcp_create_node_on_a_deleted_nodes_id_holds_none_of_its_links) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+  AnnotateNode planted{NodeId{"a"}};
+  planted.links = std::vector<Link>{{.label = "J", .url = "javascript:alert(1)"}};
+  h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"a"})")).isError);
+  const std::size_t rows = h.ops.byTree["t"].size();
+
+  const std::string refused =
+      "create_node: links[0].url must start with http:, https: or mailto:, the links a person can open";
+  CHECK_EQ(message(h.call("create_node", parse(R"j({"id":"a","label":"A","links":["javascript:alert(1)"]})j"))),
+           refused);
+  CHECK_EQ(message(h.call("create_node", parse(R"j({"label":"A","links":["javascript:alert(1)"]})j"))), refused);
+  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+  CHECK_FALSE(h.call("create_node", parse(R"j({"id":"a","label":"A","links":["https://ok.example/"]})j")).isError);
+}
+
 TEST(mcp_a_link_a_node_already_holds_is_sent_back_as_held_at_every_door) {
   Harness h;
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);

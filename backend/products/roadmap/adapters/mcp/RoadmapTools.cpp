@@ -715,12 +715,14 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
       return ToolResult::failure("no node in this tree is named \"" + payload["id"].asString() + "\"" +
                                  ". " + kNodeHandle.hint);
 
-    // The links this write sends, judged against the ones the node holds: only the urls it brings are its word.
+    // The links this write sends, judged against the ones the node holds: only the urls it brings are its word. A
+    // node being created holds none, whatever a deleted node under its id held.
     if (payload.isMember("links") || payload.isMember("addLinks")) {
       const NodeId node{payload["id"].asString()};
       const auto links = payload.isMember("addLinks")
                              ? room.withLinksAdded(node, linksFromJson(payload["addLinks"]), "addLinks")
-                             : room.shownLinks(node, linksFromJson(payload["links"]), "links");
+                             : tool == "create_node" ? shownLinks({}, linksFromJson(payload["links"]), "links")
+                                                     : room.shownLinks(node, linksFromJson(payload["links"]), "links");
       if (const auto* refusal = std::get_if<std::string>(&links)) return ToolResult::failure(*refusal);
       payload["links"] = linksToJson(std::get<std::vector<Link>>(links));
     }
