@@ -167,7 +167,7 @@ test('a step that opens the tree it stands in goes nowhere: no entry, no event, 
   const events = [];
   const track = (name, props) => events.push({ name, props });
   const self = new SkillTree({ id: 't_year', title: 'My year', nodes: [
-    { id: 'again', label: 'Again', prerequisites: [], opens: 't_year', opening: Opening.fromWire({ treeId: 't_year', title: 'My year', state: 'open', done: 0, total: 1, loop: true }) },
+    { id: 'again', label: 'Again', prerequisites: [], opens: 't_year', opening: Opening.fromWire({ treeId: 't_year', title: 'My year', state: 'open', done: 0, total: 1, loop: true }).inItsOwnTree() },
   ] });
   const hook = renderHook(t, () => useTreeVisit({ room: { standingTreeRef: { current: self }, viewRef: { current: 'board' } }, arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry: deviceIndex(), track }));
 
@@ -216,4 +216,19 @@ test('a return nobody holds is settled all the same: a reader who comes back, th
 
   assert.deepEqual(kept(here()), {});
   assert.deepEqual(events, []);
+});
+
+test('going in writes the roadmap’s row in the device’s index first, as the holder’s, so the way back is there on a first visit before the session has stored anything', (t) => {
+  browser(t);
+  const disk = new Map();
+  const registry = new LocalTreeRegistry({ getItem: (key) => disk.get(key) ?? null, setItem: (key, value) => disk.set(key, value) });
+  const leaving = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry, track: () => {} }));
+  assert.equal(registry.owned('t_year', 'u_olya'), null);
+
+  assert.equal(leaving.tree.open('sail', 'pill'), true);
+
+  const arrived = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry, track: () => {} }));
+  assert.deepEqual(arrived.tree.from, { id: 't_year', title: 'My year' });
+  const elsewhere = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: { from: 't_year', through: null, view: null, door: null }, holder: 'u_maya', band: 'desktop', registry, track: () => {} }));
+  assert.equal(elsewhere.tree.from, null);
 });

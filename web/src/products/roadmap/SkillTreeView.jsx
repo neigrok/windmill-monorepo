@@ -80,7 +80,7 @@ const leavesWithItsView = (toast) => toast.surface === 'board' || toast.surface 
 export function SkillTreeView({ treeId, demo = false }) {
   const openSignInDoor = useSignInDoor();
   const { breakpoint, shared } = useViewMode();
-  const { status, refresh, account, lapsed: sessionLapsed } = useAuth();
+  const { status, refresh, account, confirmed: accountConfirmed, lapsed: sessionLapsed } = useAuth();
   const [room] = useState(roomHandles);
   const [anchors] = useState(chromeAnchors);
   const [framing] = useState(cameraFraming);
@@ -168,8 +168,9 @@ export function SkillTreeView({ treeId, demo = false }) {
     stopEditing();
     collapse();
   }, [closeComposer, stopEditing, collapse]);
-  // The account that holds this room as its owner: a lapsed session or a device's copy with nobody signed in has none.
-  const holder = owner && status === 'signed-in' && account && !lapsed ? account.id : null;
+  // The account that holds this room as its owner, once the server has answered for it in this document: a lapsed
+  // session, a device's copy with nobody signed in and a start with no connection have none.
+  const holder = owner && accountConfirmed && !lapsed ? account.id : null;
   const treeVisit = useTreeVisit({ room, arrival, holder, band: breakpoint });
   const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, carried: treeVisit, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
   const { decidedView, boardActive, canvasView, shownView, boardFacts, boardAwaitsRoadmap, switchView, onSwitchView } = view;

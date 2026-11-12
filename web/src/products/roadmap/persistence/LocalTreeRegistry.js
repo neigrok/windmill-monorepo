@@ -140,13 +140,13 @@ export class LocalTreeRegistry {
 
   // Known entries keep their claim state and their owner: a session never re-attributes a row. An
   // unknown tree arriving through sync is born claimed, stamped only if this load has a confirmed
-  // answer.
-  touch(id, title) {
+  // answer, or as the account its owner's room names.
+  touch(id, title, owner = confirmation() ? deviceOwner() : undefined) {
     const entries = this.entries();
     const known = entries[id];
     entries[id] = known
       ? { ...known, title, updatedAt: Date.now() }
-      : { title, updatedAt: Date.now(), claimed: true, ...(confirmation() ? { owner: deviceOwner() } : {}) };
+      : { title, updatedAt: Date.now(), claimed: true, ...(owner === undefined ? {} : { owner }) };
     this.write(entries);
   }
 

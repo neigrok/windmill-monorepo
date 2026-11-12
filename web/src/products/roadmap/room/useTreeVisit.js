@@ -15,11 +15,11 @@ export const TreeDoor = createContext(null);
 // Every surface that offers the way into a step's tree, as `roadmap_tree_open` names it.
 export const TREE_DOORS = Object.freeze(['pill', 'swipe', 'toast', 'step', 'dock', 'panel', 'bar']);
 
-// One door into a step's tree for a surface to offer: null where the step opens none, its pointer dangles or no tree
-// can be gone into here.
+// One door into a step's tree for a surface to offer: null where the step opens none, its opening leads nowhere or no
+// tree can be gone into here.
 export function useTreeDoor(step, door) {
   const open = useContext(TreeDoor);
-  return step?.opening && !step.opening.dangling && open ? () => open(step.id, door) : null;
+  return step?.opening?.leads && open ? () => open(step.id, door) : null;
 }
 
 const CAME_FROM = 'roadmapCameFrom';
@@ -74,12 +74,14 @@ export function useTreeVisit({ room, arrival, holder, band, registry = deviceTre
     if (!TREE_DOORS.includes(door)) throw new Error(`unknown tree door "${door}"`);
     const tree = room.standingTreeRef.current;
     const opening = tree?.nodesById.get(stepId)?.opening;
-    if (!opening || opening.dangling || opening.treeId === tree.treeId) return false;
+    if (!opening?.leads) return false;
     const view = room.viewRef.current;
     track('roadmap_tree_open', { door, view: view === 'board' ? 'board' : 'graph', band });
+    // The way back reads this roadmap's row in the device's index, which its session may not have written yet.
+    registry.touch(tree.treeId, tree.title, holder);
     enterTree(opening.treeId, { from: tree.treeId, stepId, view });
     return true;
-  }, [room, band]);
+  }, [room, band, holder]);
   const back = useCallback(() => window.history.back(), []);
 
   const from = useMemo(() => (holder && arrival.from ? registry.owned(arrival.from, holder) : null), [holder, arrival.from]);
