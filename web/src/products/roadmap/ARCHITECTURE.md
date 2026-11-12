@@ -270,8 +270,9 @@ The guide is a note on the tree. `GuideEntry` is the note at rest, which the roo
 phones a row under the head of both views, beneath the device line when the tree carries one, with up to three lines.
 A reader's entry says Author's note, and an owner without a guide gets Add guide. Under guides from above the card
 adds one line naming their trees, the two farthest and then how many more (`namedAbove`), and the row a count beside
-its title; a tree with no guide of its own then keeps the written entry without an excerpt. The line holds two lines
-and never loses its count: a title too long for its line gives way with an ellipsis. `GuideNote` is the note
+its title; a tree with no guide of its own then keeps the written entry without an excerpt. The line is one line and
+never loses its count, whatever the font measures: the sentence's own words never shrink, and the titles alone give
+way with an ellipsis; words too wide for the line together wrap rather than go. `GuideNote` is the note
 open. From 744px it stands in place over its entry and shares the room while it reads; on phones it is a bottom sheet
 as tall as its text. The guides from above stand first in it, farthest first, each under its tree's name and in the
 secondary ink, then this tree's own under its name, and the whole stack scrolls inside the note. They are plain text

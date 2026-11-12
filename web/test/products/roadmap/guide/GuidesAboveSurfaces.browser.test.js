@@ -11,7 +11,8 @@ hostGuideSurfaces({ cache: 'guide-above-test' });
 
 // The room of the tree's holder under the guides the server answers for it: `guides` is the route's reply, a status it
 // fails with, 'lost' for a request that never arrives, or { body } for a 200 that says that and nothing else. `asked`
-// counts the reads, and a read is over before it answers.
+// counts the reads. It returns once the read is over: a 200 once the room has taken it, which can come after the
+// request has finished; a failure once the request has.
 async function openHeld(guides, options = {}, browser = {}) {
   await start();
   const asked = [];
@@ -29,6 +30,7 @@ async function openHeld(guides, options = {}, browser = {}) {
   const read = held.holder ? page.waitForEvent(guides === 'lost' ? 'requestfailed' : 'requestfinished', (request) => request.url().endsWith('/guides')) : null;
   await page.evaluate((mounted) => window.mount(mounted), held);
   await read;
+  if (read && guides !== 'lost' && typeof guides !== 'number') await page.waitForFunction(() => window.aboveTaken);
   return { page, asked };
 }
 
@@ -608,8 +610,18 @@ test('Chromium: guides from above that answer while a long note is being read mo
   } finally { await page.close(); }
 });
 
-test('Chromium: the card’s line never loses its count: where two long titles do not fit its two lines, the titles give way', async () => {
+test('Chromium: the card’s line never loses its count, whatever the font: its words never shrink, and where two long titles do not fit, the titles alone give way', async () => {
   const titled = (count) => ['The year I finally learn to sail a dinghy single-handed', 'Everything I want from the next ten years of my life', 'C', 'D', 'E', 'F', 'G', 'H'].slice(0, count).map((title, index) => ({ treeId: `t_${index}`, title, text: 'A guide.', yours: true }));
+  // The card's own font, once loaded, and wider and narrower ones forced on its line, as another system's fonts or a
+  // fallback would measure. The card's own font and a narrower one keep the one line 28.29 draws; a font so wide that
+  // the sentence's words overrun the line wraps them, and still loses nothing.
+  const fonts = {
+    card: null,
+    wider: 'font-family: monospace; letter-spacing: 0.08em',
+    widest: 'font-family: monospace; letter-spacing: 0.5em',
+    narrower: 'letter-spacing: -0.06em',
+  };
+  const oneLine = (font) => font === 'card' || font === 'narrower';
   for (const [count, said] of [
     [8, 'With guides from The year I finally learn to sail a dinghy single-handed, Everything I want from the next ten years of my life and 6 more trees'],
     [3, 'With guides from The year I finally learn to sail a dinghy single-handed, Everything I want from the next ten years of my life and 1 more tree'],
@@ -618,16 +630,42 @@ test('Chromium: the card’s line never loses its count: where two long titles d
   ]) {
     const { page } = await openHeld(titled(count), { guide: GUIDE });
     try {
-      assert.deepEqual(await page.locator('.st-guide-card-above > span').evaluate((line) => {
-        const shown = line.getBoundingClientRect();
-        const words = [...line.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => {
-          const range = document.createRange();
-          range.selectNodeContents(node);
-          return [...range.getClientRects()].every((box) => box.left >= shown.left - 1 && box.right <= shown.right + 1 && box.bottom <= shown.bottom + 1);
-        });
-        return { text: line.textContent, clipped: line.scrollHeight > line.clientHeight + 1, lines: Math.round(shown.height / 19), wordsShown: words.every(Boolean),
-          titlesGiveWay: [...line.querySelectorAll('.st-guide-card-tree')].map((title) => title.scrollWidth > title.clientWidth) };
-      }), { text: said, clipped: false, lines: count === 1 ? 1 : 2, wordsShown: true, titlesGiveWay: Array.from({ length: Math.min(count, 2) }, () => true) }, said);
+      await page.evaluate(() => document.fonts.ready);
+      for (const [font, forced] of Object.entries(fonts)) {
+        const measured = await page.locator('.st-guide-card-above').evaluate((above, style) => {
+          above.style.cssText = style ?? '';
+          const line = above.querySelector(':scope > span');
+          const shown = line.getBoundingClientRect();
+          const card = above.closest('.st-guide-card');
+          const edges = getComputedStyle(card);
+          const box = card.getBoundingClientRect();
+          const inner = { left: box.left + parseFloat(edges.paddingLeft), right: box.right - parseFloat(edges.paddingRight) };
+          const words = [...line.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).flatMap((node) => {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            return [...range.getClientRects()];
+          });
+          const rows = new Set([...line.childNodes].flatMap((node) => {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            return [...range.getClientRects()].map((rect) => Math.round(rect.top));
+          }));
+          return {
+            text: line.textContent,
+            clipped: line.scrollHeight > line.clientHeight + 1 || line.scrollWidth > line.clientWidth + 1,
+            wordsShown: words.every((rect) => rect.left >= shown.left - 1 && rect.right <= shown.right + 1 && rect.top >= shown.top - 1 && rect.bottom <= shown.bottom + 1),
+            insideCard: words.every((rect) => rect.left >= inner.left - 1 && rect.right <= inner.right + 1) && shown.right <= inner.right + 1,
+            lines: rows.size,
+            titlesGiveWay: [...line.querySelectorAll('.st-guide-card-tree')].map((title) => title.scrollWidth > title.clientWidth),
+          };
+        }, forced);
+        const { lines, ...kept } = measured;
+        assert.deepEqual(oneLine(font) ? measured : kept, {
+          text: said, clipped: false, wordsShown: true, insideCard: true,
+          ...(oneLine(font) ? { lines: 1 } : {}),
+          titlesGiveWay: Array.from({ length: Math.min(count, 2) }, () => true),
+        }, `${font}: ${said} (${lines} lines)`);
+      }
     } finally { await page.close(); }
   }
 });

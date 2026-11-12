@@ -13,7 +13,7 @@ export const GUIDE = 'One step a week.\nKinds: Learn, Build.\nA step is done on 
 export const ELSEWHERE = 'Two steps a week until the June trip.\nAgents: ask first.';
 export const WORDS = ['week', 'Kinds', 'Learn', 'water', 'Agents', 'June', 'trip', 'Written'];
 const entry = `
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import '/src/styles/fonts.js';
@@ -30,6 +30,7 @@ const root = createRoot(document.getElementById('root'));
 window.mount = (options = {}) => {
   window.writes = [];
   window.entered = [];
+  window.aboveTaken = false;
   if (options.door === 'device') localStorage.setItem('windmill:device-trees', JSON.stringify({ sail: { title: 'Learn to sail', claimed: false, owner: null } }));
   function Room() {
     const [text, setText] = useState(options.guide ?? '');
@@ -47,6 +48,10 @@ window.mount = (options = {}) => {
     const phone = band === 'phone';
     const who = { owner, reader: !owner, shared: room.shared, demo: false, phone };
     const guide = useRoomGuide({ treeId: 'sail', tree, who, holder, deviceLine: options.device ? { text: 'device' } : null, sessionRef });
+    // Once committed, whether the room has taken an answer of the guides above: what it holds from above is no longer
+    // what it held as it mounted.
+    const mountedAbove = useRef(guide?.above);
+    useEffect(() => { if (guide && guide.above !== mountedAbove.current) window.aboveTaken = true; }, [guide?.above]);
     const entry = guide && React.createElement(GuideEntry, { guide, band, view: 'graph' });
     const door = holder ? (treeId, by) => { window.entered.push([treeId, by]); return true; } : null;
     return React.createElement(TreeDoor.Provider, { value: door }, React.createElement('div', { className: 'st-root' },

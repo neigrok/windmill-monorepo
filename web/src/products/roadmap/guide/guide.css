@@ -84,20 +84,24 @@
   flex-shrink: 0;
   margin-top: 2.5px;
 }
-/* The line holds two lines and never loses its count: a title too long for its line gives way with an ellipsis,
-   keeping clear of the words the sentence sets beside it on that line. */
+/* The line is one line, as 28.29 draws it, and never loses its count, whatever the font measures. The sentence's own
+   words are items that never shrink, their spaces kept; each title starts from nothing, grows to its own width where
+   the line has room, and gives way with an ellipsis where it has not. Words too wide for the line together wrap
+   rather than go. */
 .st-guide-card-above > span {
+  display: flex;
   flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
   min-width: 0;
-  max-height: 38px;
-  overflow: hidden;
+  white-space: pre;
 }
 .st-guide-card-tree {
-  display: inline-block;
-  max-width: calc(100% - 9.5em);
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: max-content;
   overflow: hidden;
   text-overflow: ellipsis;
-  vertical-align: bottom;
   white-space: nowrap;
 }
 .st-guide-rule {
