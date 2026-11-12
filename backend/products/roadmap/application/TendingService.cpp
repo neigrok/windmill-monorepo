@@ -164,9 +164,11 @@ void TendingService::execute(TendRun run, const std::shared_ptr<WriteObservation
 std::uint64_t TendingService::seqOf(const TreeId& tree, const UserId& caller) {
   // The footprint is read through the very seam the agent edits through: get_tree answers as the
   // caller with the tree's current head seq. A tree the caller can't read (or any tool error) reads
-  // as 0 — the run records no footprint rather than leaking one.
+  // as 0 — the run records no footprint rather than leaking one. Only the seq is wanted, so the read
+  // asks for no guides and walks to no tree above this one.
   Json::Value args(Json::objectValue);
   args["treeId"] = tree.str();
+  args["includeGuides"] = false;
   const ToolResult result =
       tools_.callTool("get_tree", args, ToolCaller{caller, ToolScope::everything()});
   if (result.isError || !result.payload.isObject()) return 0;

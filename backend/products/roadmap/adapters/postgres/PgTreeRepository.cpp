@@ -472,6 +472,49 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
   return trees;
 }
 
+const char* PgTreeRepository::guidedTreesAboveStatement() {
+  // Keyed on the owner's own standing trees, so its cost does not grow with the pointers other accounts plant at one.
+  return "WITH RECURSIVE owned(id, guided) AS MATERIALIZED ("
+         "  SELECT t.id, t.guide <> '' FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL"
+         "), "
+         // The LATERAL runs once per owned tree, so each tree's pointers are read by its key whatever the planner
+         // expects; tree_nodes_pointers_idx serves only a scan that states its predicate. Only a pointer at
+         // another of the owner's standing trees can lead anywhere.
+         "pointers(tree, opens) AS MATERIALIZED ("
+         "  SELECT o.id, p.opens FROM owned o "
+         "  CROSS JOIN LATERAL (SELECT DISTINCT n.opens FROM tree_nodes n "
+         "                      WHERE n.tree_id = o.id AND n.present AND n.opens <> '') p "
+         "  WHERE p.opens IN (SELECT target.id FROM owned target)"
+         "), "
+         "reached(id, distance) AS ("
+         "  SELECT o.id, 0 FROM owned o WHERE o.id = $2 "
+         // UNION keeps a tree once per distance and the levels end the walk, so a loop costs no more than its trees.
+         "  UNION "
+         "  SELECT p.tree, r.distance + 1 FROM reached r JOIN pointers p ON p.opens = r.id "
+         "  WHERE r.distance < $3 AND p.tree <> $2"
+         ") "
+         // nearestGuided's cut, made here so only the rows a reading can keep are answered: the id ordered by its bytes.
+         "SELECT g.id, nearest.distance, g.title, g.guide, g.guide_inherited "
+         "FROM (SELECT r.id, min(r.distance) AS distance FROM reached r JOIN owned o ON o.id = r.id "
+         "      WHERE r.distance > 0 AND o.guided GROUP BY r.id ORDER BY distance, r.id COLLATE \"C\" LIMIT $4) nearest "
+         "CROSS JOIN LATERAL (SELECT s.id, s.title, s.guide, s.guide_inherited FROM trees s WHERE s.id = nearest.id LIMIT 1) g";
+}
+
+std::map<TreeId, TreeAbove> PgTreeRepository::guidedTreesAbove(const UserId& owner, const TreeId& tree) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  // One statement: the walk and the guides it answers are one snapshot.
+  pqxx::result rows = txn.exec_params(guidedTreesAboveStatement(), owner.str(), tree.str(), kMaxLevelsAbove,
+                                      static_cast<int>(kMaxGuides));
+
+  std::map<TreeId, TreeAbove> above;
+  for (const auto& row : rows)
+    above.emplace(TreeId{row["id"].as<std::string>()},
+                  TreeAbove{row["distance"].as<int>(), row["title"].as<std::string>(), row["guide"].as<std::string>(),
+                            row["guide_inherited"].as<bool>()});
+  return above;
+}
+
 void PgTreeRepository::softDelete(const TreeId& tree) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};

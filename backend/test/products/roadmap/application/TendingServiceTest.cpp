@@ -4,6 +4,7 @@
 #include "products/roadmap/domain/LooseGraph.h"
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
+#include "test/products/roadmap/adapters/mcp/ToolsHarness.h"
 #include "test/testing.h"
 
 #include <algorithm>
@@ -69,13 +70,20 @@ struct FakeTendRunRepository : TendRunRepository {
   }
 };
 
+// Thread-safe where it records: the worker pool reads the seq from several threads at once.
 struct FakeToolHost : ToolHost {
   std::uint64_t seq = 0;
   bool getTreeErrors = false;
+  std::mutex mutex;
+  std::vector<Json::Value> getTreeArguments;
 
   std::vector<ToolDeclaration> declareTools() const override { return {}; }
-  ToolResult callTool(const std::string& name, const Json::Value&, const ToolCaller&) override {
+  ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller&) override {
     if (name != "get_tree") return ToolResult::failure("unexpected tool: " + name);
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      getTreeArguments.push_back(arguments);
+    }
     if (getTreeErrors) return ToolResult::failure("no such tree");
     Json::Value out(Json::objectValue);
     out["seq"] = Json::Value::UInt64(seq);
@@ -304,6 +312,37 @@ TEST(the_seq_range_is_recorded) {
   CHECK_EQ(done.status, TendStatus::done);
   CHECK_EQ(done.seqFrom, static_cast<std::uint64_t>(10));
   CHECK_EQ(done.seqTo, static_cast<std::uint64_t>(13));
+  CHECK_EQ(h.tools.getTreeArguments,
+           (std::vector<Json::Value>(2, parse(R"({"treeId":"t","includeGuides":false})"))));
+}
+
+// A run reads the tended tree alone: neither its two reads of the seq nor the agent's own get_tree walks to the
+// trees above, over the real tools.
+TEST(a_run_reads_no_tree_above_the_tended_one) {
+  struct ReadingAgent : PlanAgent {
+    Json::Value read;
+    bool configured() const override { return true; }
+    AgentOutcome run(const std::string&, const TreeId&, const UserId& user, ToolHost& tools,
+                     const std::function<void(const AgentStep&)>&) override {
+      read = test::body(tools.callTool("get_tree", Json::Value(Json::objectValue), ToolCaller{user, ToolScope::everything()}));
+      return ok("Read the tree", 0);
+    }
+  } agent;
+  test::Harness tended;
+  tended.plant("t_root", tended.caller, "The method of every tree under this one.", {"t"});
+  CHECK_FALSE(tended.call("describe_tree", test::with("guide", "Rig first, then sail.")).isError);
+  Harness h;
+  TendingService service(h.runs, agent, tended.tools, tended.registry, h.clock, h.tokens, h.entitlements, /*enabled=*/true);
+
+  const TendRun started = service.start(TreeId{"t"}, tended.caller, "u@example.com", "read it");
+  const TendRun done = awaitTerminal(h.runs, started.id);
+
+  CHECK_EQ(done.status, TendStatus::done);
+  CHECK_EQ(done.seqFrom, static_cast<std::uint64_t>(1));
+  CHECK_EQ(done.seqTo, static_cast<std::uint64_t>(1));
+  CHECK_EQ(agent.read["tree"], parse(R"({"guide":{"text":"Rig first, then sail.","yours":true},"id":"t","kinds":[],
+                                         "nodes":[],"title":"Test Roadmap"})"));
+  CHECK(tended.trees.aboveReads.empty());
 }
 
 TEST(fail_orphaned_runs_settles_running_rows_and_leaves_finished_ones_alone) {

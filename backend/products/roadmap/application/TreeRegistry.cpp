@@ -37,9 +37,8 @@ TreeRegistry::Creation TreeRegistry::create(const UserId& owner, const TreeId& i
   // one a device-born tree seeds, so a claim converges.
   const Hlc plantedAt{clock_.nowMs(), 0, std::string{TreeRoom::kServerActor}};
   GraphState state = LooseGraph(initial, plantedAt).exportState();
-  // Honour a posted legend; otherwise a blank tree is born with the three defaults.
-  LegendState legend = initial.kinds.empty() ? Legend::seededDefaults(genesis_).exportState()
-                                             : Legend(initial.kinds, genesis_).exportState();
+  // A posted legend, or the three defaults when none is posted.
+  LegendState legend = Legend(Legend::bornWith(initial.kinds), genesis_).exportState();
   try {
     trees_.create(id, state, legend, initial.title, owner);
   } catch (const DuplicateTree&) {
@@ -81,6 +80,10 @@ std::map<TreeId, std::string> TreeRegistry::titlesOwnedBy(const UserId& owner, c
 
 std::map<TreeId, OpenedTree> TreeRegistry::openedFrom(const UserId& owner, const std::set<TreeId>& opened) {
   return trees_.openedFrom(owner, opened);
+}
+
+std::map<TreeId, TreeAbove> TreeRegistry::guidedTreesAbove(const UserId& owner, const TreeId& tree) {
+  return trees_.guidedTreesAbove(owner, tree);
 }
 
 TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& caller) {

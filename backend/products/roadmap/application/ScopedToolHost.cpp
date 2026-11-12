@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <utility>
 
 namespace wm {
@@ -14,10 +15,16 @@ namespace {
 // A tool goes by its name: the cross-tree reach a single-tree tend has no use for, and the guide,
 // which the owner writes for every run to read. A word goes wherever a tool's schema carries it, as
 // an argument's key or as a value an enum lists, so a field that reaches another tree is named here
-// once and is gone from every tool that takes it or answers it.
+// once and is gone from every tool that takes it or answers it. An argument that switches such an
+// answer on carries the value every call is sent in its place, wherever a tool's schema declares it.
+struct WithheldWord {
+  std::string sentence;
+  Json::Value sent;
+};
+
 struct Withheld {
   std::map<std::string, std::string> tools;
-  std::map<std::string, std::string> words;
+  std::map<std::string, WithheldWord> words;
 };
 
 const Withheld& withheld() {
@@ -26,7 +33,8 @@ const Withheld& withheld() {
        {"list_trees", "tending edits a single tree — list_trees is out of its reach"},
        {"delete_tree", "tending edits a single tree — delete_tree is out of its reach"},
        {"describe_tree", "tending reads the tree's guide but cannot set it — describe_tree is out of its reach"}},
-      {{"opens", "tending edits a single tree — the tree a node opens is out of its reach"}}};
+      {{"opens", {"tending edits a single tree — the tree a node opens is out of its reach"}},
+       {"includeGuides", {"tending edits a single tree — the guides of the trees above it are out of its reach", false}}}};
   return reach;
 }
 
@@ -40,7 +48,7 @@ Json::Value offeredSchema(Json::Value schema) {
     schema["enum"] = listed;
   }
   if (schema.isMember("properties")) {
-    for (const auto& [word, sentence] : withheld().words) schema["properties"].removeMember(word);
+    for (const auto& [word, held] : withheld().words) schema["properties"].removeMember(word);
     for (const std::string& key : schema["properties"].getMemberNames())
       schema["properties"][key] = offeredSchema(schema["properties"][key]);
   }
@@ -59,19 +67,19 @@ ToolDeclaration offered(ToolDeclaration tool) {
 // value its enum lists — or nullopt.
 std::optional<std::string> withheldWord(const Json::Value& schema, const Json::Value& value) {
   if (!schema.isObject()) return std::nullopt;
-  const std::map<std::string, std::string>& words = withheld().words;
+  const std::map<std::string, WithheldWord>& words = withheld().words;
   if (value.isString()) {
     const auto word = words.find(value.asString());
     if (word == words.end()) return std::nullopt;
     for (const Json::Value& listed : schema["enum"])
-      if (listed == value) return word->second;
+      if (listed == value) return word->second.sentence;
     return std::nullopt;
   }
   if (value.isObject()) {
     const Json::Value& properties = schema["properties"];
     for (const std::string& key : value.getMemberNames()) {
       if (!properties.isObject() || !properties.isMember(key)) continue;
-      if (const auto word = words.find(key); word != words.end()) return word->second;
+      if (const auto word = words.find(key); word != words.end()) return word->second.sentence;
       if (std::optional<std::string> refusal = withheldWord(properties[key], value[key])) return refusal;
     }
   }
@@ -123,6 +131,9 @@ ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& 
       // so the edit can only ever land on the tree being tended.
       Json::Value scopedArgs = arguments;
       scopedArgs["treeId"] = scope_.str();
+      const Json::Value& taken = std::as_const(declared->second.descriptor)["inputSchema"]["properties"];
+      for (const auto& [word, held] : withheld().words)
+        if (!held.sent.isNull() && taken.isMember(word)) scopedArgs[word] = held.sent;
       ToolResult result = inner_.callTool(name, scopedArgs, caller);
 
       // Record what this call planted, from the tool's own result. create_node echoes the one id it

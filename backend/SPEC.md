@@ -81,6 +81,28 @@ rejected for structure. Validity is a read model, not a gate.
   work it, for agents and for people; an empty guide, or one of only whitespace, is no guide, and a
   guide a fork copied from someone else's tree stays its author's words until the owner writes one.
   Nodes carry no part of it.
+- `guides` (`domain/Guides.h`) — guides add: one tree holds the method, each tree worked under it
+  adds what is particular to it, and none overrides another. A tree P is directly above a tree T
+  when a present node of P holds a pointer at T and both stand and belong to one owner. Above is
+  that relation followed upward within 8 pointers, each tree at its shortest distance, and a tree is
+  never above itself, whatever loops exist. Only the reader's own trees count: for a caller who
+  cannot write the tree being read, nothing is above it. `guidesFor` answers what a reading of a
+  tree carries as `guides`, each entry `{treeId, title, text, yours}`: the guides of the trees
+  above, farthest first and by tree id within one distance, then the tree's own guide last. A tree
+  whose guide is empty is left out, the tree's own included; each tree appears once; and past 8
+  entries the farthest are dropped, so the nearest trees and the tree's own guide keep their
+  places. Where that cut falls inside one distance the smaller tree ids are kept, ids compared as
+  bytes. `yours` says the reader owns that tree and wrote its current guide. The trees above come
+  from `TreeRepository::guidedTreesAbove(owner, tree)`, which answers the 8 nearest that carry a
+  guide by that same rule (`nearestGuided`), so a reply never loads a guide it cannot keep. It is
+  one statement keyed on the owner's own standing trees: it reads the trees each of them opens
+  through `tree_nodes_pointers_idx`, keeps the pointers at another of the owner's standing trees,
+  walks those upward from the tree, a tree once per distance and no further than 8 levels, and
+  reads the title and guide of the trees it keeps through `trees_pkey`. Its cost follows the
+  owner's own trees and the pointers among them, whichever tree is read, and does not grow with
+  the pointers other accounts plant at a tree. It is made once per reply that answers the guides
+  above, after the tree's strand is released, and not at all for a caller who cannot write the
+  tree, who is answered the tree's own guide alone.
 
 Derived read models:
 
@@ -303,6 +325,7 @@ Registered in `products/roadmap/routes.cpp`.
 | GET · PUT · PATCH · DELETE | `/v1/trees/{id}` |
 | POST | `/v1/trees/{id}/fork` |
 | GET | `/v1/trees/{id}/progress` |
+| GET | `/v1/trees/{id}/guides` |
 | GET | `/v1/trees/{id}/diagnostics` |
 | GET | `/v1/trees/{id}/activity` |
 | PUT | `/v1/trees/{id}/og-image` |
@@ -327,14 +350,22 @@ and edge it carries with the genesis stamp: those steps take the document's fiel
 and read as unknown creation time. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
 
 `GET /v1/trees/{id}` answers `{seq, data, state, createdAt, visibility, mine}`. When the caller can
-write the tree the body also carries `opens`, an object keyed by node id with one entry per node that
-holds a pointer: `{treeId, title, state, done, total, loop}` for a valid one, `state` being
+write the tree the body also carries `opens`, an object keyed by node id with one entry per node
+that holds a pointer: `{treeId, title, state, done, total, loop}` for a valid one, `state` being
 `"complete"` or `"open"` and `loop` true when the opened tree leads back to the tree being read, and
 `{treeId, missing: true}` for one that is not valid (`OpenedTrees`, Model). It is computed on the
 read, off the stored rows and after the tree's strand is released, and nothing pushes it; for any
 other caller the key is absent. When the pointers cannot be followed the owner is answered
-`503 opens-unavailable`, not the `404` of an absent tree; every other reader, and a tree that holds
-no pointer, is answered as before.
+`503 opens-unavailable`, not the `404` of an absent tree. No other reader's answer depends on that
+read, and for a tree that holds no pointer it is not made: `opens` is `{}`.
+
+`GET /v1/trees/{id}/guides` answers `{guides}` (Model), an array of `{treeId, title, text, yours}`.
+A caller who can write the tree is answered the guides of their trees above it, farthest first,
+and the tree's own last, read off the stored rows after the tree's strand is released; when the
+trees above cannot be read they are answered `503 guides-unavailable`. Any other caller who can
+read the tree is answered its own guide alone when it has one, `yours: false`, and nothing is read
+for them. An absent tree and one the caller may not read answer the `404` the tree route gives.
+The tree route carries no guides and never makes that read.
 
 `PATCH /v1/trees/{id}` sets one register per call — `{visibility}`, `{guide}` or `{title}` — each the
 owner's alone. A body naming more than one is refused `400`, and a body that is not one JSON object
@@ -347,7 +378,12 @@ NUL is refused `400` too. The guide's writes are this, the socket's `subgraph` f
 `tree.guide: {text, yours}` on every page and no other MCP read at all, `yours` true when the caller
 owns the tree and wrote its current guide. A fork copies it, marked inherited when it is someone
 else's words (Runtime). The share page
-and the gallery do not show it.
+and the gallery do not show it. `guides` (Model) is answered by `GET /v1/trees/{id}/guides` and by
+MCP `get_tree` as `tree.guides` on the first page alone (a call without `cursor`), unless the call
+sends `includeGuides: false`, which leaves the key out and makes no read. When the trees above
+cannot be read, `get_tree` still answers: `tree.guides` holds the tree's own guide alone and
+`tree.guidesAboveUnavailable` is `true`, a key that is otherwise absent. A tend's `get_tree`
+carries `tree.guide` and no `guides`, and reads no tree above the tended one.
 
 `POST /v1/trees/{id}/tend` runs only on a tree its caller can write, since the run writes as its
 caller. A tree it cannot is a persisted refused run, answered `200` like every tend refusal and started
@@ -417,7 +453,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | Table | Holds |
 | --- | --- |
 | `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
-| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree |
+| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
 | `tree_kinds` | one row per legend kind: hue, label, description, cross_branch_exempt, rank, each with its stamp |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |

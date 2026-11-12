@@ -44,12 +44,14 @@ void Legend::join(const LegendState& state) {
   }
 }
 
-Legend Legend::seededDefaults(const Hlc& at) {
-  return Legend({{KindId{"build"}, NodeColor::terracotta, "Build", "Things you make"},
-                 {KindId{"learn"}, NodeColor::olive, "Learn", "Things you figure out"},
-                 {KindId{"milestone"}, NodeColor::gold, "Milestone", "Moments that matter"}},
-                at);
+std::vector<Kind> Legend::bornWith(const std::vector<Kind>& sent) {
+  if (!sent.empty()) return sent;
+  return {{KindId{"build"}, NodeColor::terracotta, "Build", "Things you make"},
+          {KindId{"learn"}, NodeColor::olive, "Learn", "Things you figure out"},
+          {KindId{"milestone"}, NodeColor::gold, "Milestone", "Moments that matter"}};
 }
+
+Legend Legend::seededDefaults(const Hlc& at) { return Legend(bornWith({}), at); }
 
 double Legend::nextRank() const {
   double max = -1;
