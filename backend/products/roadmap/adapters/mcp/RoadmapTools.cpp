@@ -933,18 +933,23 @@ struct RequestedMark {
 
 // The caller's marks a server write sets, landed by the one path every such write takes: set_progress, an import's
 // progress rows, and the clears a delete, an import's tombstones and prune make. Called under the tree's strand with
-// its room open. Each mark is stamped from the room's clock after the stamp the caller's mark on that node holds, so a
-// mark a replica stamped ahead of the server never outlasts a later write; the batch is written in one go; and the
-// marks that landed go to the caller's open sessions in one progress frame. Answers each mark's outcome, in order.
+// its room open. Each mark takes the room's next stamp or, when the caller's mark on that node holds a later one — a
+// replica stamped it ahead of the server — the stamp just after that one, so a later write always lands over it. The
+// room's clock does not learn that stamp, so it carries no other write of the tree ahead. The batch is written in one
+// go, and the marks that landed go to the caller's open sessions in one progress frame. Answers each mark's outcome, in
+// order.
 std::vector<ProgressOutcome> landMarks(ProgressService& progress, PresenceBus& bus, TreeRoom& room, const TreeId& tree,
                                        const UserId& user, const std::vector<RequestedMark>& marks, Clock& clock) {
-  const Progress held = progress.progressOf(tree, user);
+  // The stamp each node's mark holds as the batch leaves it so far, so a node named twice is stamped after its own row.
+  std::map<NodeId, Hlc> holds;
+  for (const auto& [node, kept] : progress.progressOf(tree, user).marks) holds.emplace(node, kept.at);
   std::vector<ProgressWrite> writes;
   for (const RequestedMark& mark : marks) {
-    const auto heldMark = held.marks.find(mark.node);
-    const Hlc after = heldMark == held.marks.end() ? Hlc{} : heldMark->second.at;
-    writes.push_back({mark.node, mark.status, room.prerequisitesOf(mark.node), room.nextStampAfter(clock.nowMs(), after),
-                      mark.outOfOrder});
+    const Hlc next = room.nextStamp(clock.nowMs());
+    const auto held = holds.find(mark.node);
+    const Hlc at = held == holds.end() ? next : std::max(next, held->second.successor(next.actor));
+    holds[mark.node] = at;
+    writes.push_back({mark.node, mark.status, room.prerequisitesOf(mark.node), at, mark.outOfOrder});
   }
   const std::uint64_t receivedAtMs = clock.nowMs();
   const std::vector<ProgressOutcome> outcomes = progress.setStatuses(tree, user, writes, receivedAtMs);
