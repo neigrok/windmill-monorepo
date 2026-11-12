@@ -1032,9 +1032,11 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, ProgressS
         patch.opens = TreeId{row["opens"].asString()};
         opened.emplace_back(path + ".opens", *patch.opens);
       }
+      // A field is sent when it holds a value: a null one is refused above where the field takes none, and is absent
+      // where it may be left out (`kind`, `outOfOrder`), as its read takes it.
       bool carriesTree = false;
-      for (const char* field : treeFields) carriesTree = carriesTree || row.isMember(field);
-      const bool carriesMark = grown && (row.isMember("status") || row.isMember("outOfOrder"));
+      for (const char* field : treeFields) carriesTree = carriesTree || !row[field].isNull();
+      const bool carriesMark = grown && (!row["status"].isNull() || !row["outOfOrder"].isNull());
       if (carriesMark) {
         std::variant<RequestedMark, std::string> mark = readMark(row, path);
         if (const auto* bad = std::get_if<std::string>(&mark)) return ToolResult::failure(*bad);
@@ -1065,6 +1067,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, ProgressS
   }
 
   const bool dryRun = args["dryRun"].asBool();
+  bool treeLanded = false;  // an op landed on the tree in this call
   std::optional<PointerEdit> pointerEdit;
   ToolResult edited = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     if (!canRead(actor, room.owner(), room.visibility()))
@@ -1132,6 +1135,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, ProgressS
       if (!landsNothing) {
         out["seq"] = static_cast<Json::Int64>(room.applyCommands(batch.commands, clock.nowMs(), actor));
         registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
+        treeLanded = true;
       }
       const TreeDiagnostics after = room.diagnose();
       if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
@@ -1140,28 +1144,37 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     return ToolResult::json(out);
   });
   edited = withClosedLoops(trees, actor, tree, pointerEdit, edited);
-  // update_nodes' marks land after its tree fields, judged against the overlay as the whole call leaves it. The tree
-  // fields have landed whatever becomes of the marks: a store that fails is told in the reply and reported under its
-  // own name, not as the call's failure.
+  // update_nodes' marks land after its tree fields, judged against the overlay as the whole call leaves it.
   if (!edited.isError && !dryRun && !marks.empty()) {
     Json::Value receipt = edited.payload;
-    WriteObservation marking{"roadmap.update_nodes.marks", "roadmap", "mcp"};
-    try {
-      Json::Value results, skipped;
-      if (std::optional<std::string> error =
-              applyProgressBatch(registry, progress, bus, tree, clock, actor, marks, true, results, skipped)) {
+    Json::Value results, skipped;
+    const auto applyMarks = [&] {
+      return applyProgressBatch(registry, progress, bus, tree, clock, actor, marks, true, results, skipped);
+    };
+    if (!treeLanded) {
+      // No tree op landed, so the marks are the call: a refusal or a failure of theirs is the call's, as set_progress's
+      // is.
+      if (std::optional<std::string> error = applyMarks()) return ToolResult::failure(*error);
+      receipt["progress"] = results;
+    } else {
+      // A tree op has landed whatever becomes of the marks: a failure of theirs is told in the reply and reported under
+      // its own name, at the call's door, not as the call's failure.
+      WriteObservation marking{"roadmap.update_nodes.marks", "roadmap", currentWriteDoor()};
+      try {
+        if (std::optional<std::string> error = applyMarks()) {
+          receipt["progressApplied"] = false;
+          receipt["progressError"] = "The marks did not apply: " + *error;
+        } else {
+          receipt["progress"] = results;
+        }
+        marking.skip();
+      } catch (const std::bad_alloc&) {
+        throw;
+      } catch (const std::exception& error) {
+        marking.fail(error);
         receipt["progressApplied"] = false;
-        receipt["progressError"] = "The marks did not apply: " + *error;
-      } else {
-        receipt["progress"] = results;
+        receipt["progressError"] = "The marks' outcome is uncertain. Read get_progress before retrying progress changes.";
       }
-      marking.skip();
-    } catch (const std::bad_alloc&) {
-      throw;
-    } catch (const std::exception& error) {
-      marking.fail(error);
-      receipt["progressApplied"] = false;
-      receipt["progressError"] = "The marks' outcome is uncertain. Read get_progress before retrying progress changes.";
     }
     edited = ToolResult::json(receipt);
   }
@@ -1477,7 +1490,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     out["progressApplied"] = true;
     // The caller's marks on what the tombstones took are cleared after the graft, which has landed whatever becomes of
     // them: a clear that fails is told in the reply and reported under its own name, not as the call's failure.
-    WriteObservation clearing{"roadmap.import.clear_marks", "roadmap", "mcp"};
+    WriteObservation clearing{"roadmap.import.clear_marks", "roadmap", currentWriteDoor()};
     try {
       clearMarksOn(progress, bus, room, tree, actor, footprint.tombstonedNodes, clock);
       clearing.skip();

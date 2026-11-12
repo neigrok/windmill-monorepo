@@ -320,7 +320,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                 "Every other field is the tree owner's alone, and a call carrying one on a tree that is not yours is "
                 "refused whole. The tree fields land as ONE op, a field the node already holds left out, and marks "
                 "land after them, answered per row in `progress`. `unchanged: true` speaks for the tree fields: they "
-                "landed nothing. expectedSeq refuses a stale call whole; dryRun applies nothing."
+                "landed nothing — and then the marks are the call, so a failure of theirs fails it, as set_progress's "
+                "does. expectedSeq refuses a stale call whole; dryRun applies nothing."
         : patches ? "Patch fields on 1..200 existing nodes atomically. Omitted fields survive; empty strings and links clear their field. "
                   "All items are validated before one operation, seq and broadcast. Exact retries skip unchanged nodes, and "
                   "a batch whose every row is unchanged writes nothing and answers `unchanged: true`. "
@@ -364,7 +365,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         mark["unchanged"] = boolean("True when you already held this mark at the row's turn.");
         properties["progress"] = objArray("One row per mark, in input order, after the tree fields landed.", mark,
                                           {"nodeId", "status", "prerequisitesMet"});
-        properties["progressApplied"] = boolean("False when the marks did not land; the tree fields, if any, did.");
+        properties["progressApplied"] =
+            boolean("False when the tree fields landed and the marks did not; a call that landed no tree field fails "
+                    "with its marks instead.");
         properties["progressError"] = str("Why the marks did not land, when progressApplied is false.");
       }
     } else {

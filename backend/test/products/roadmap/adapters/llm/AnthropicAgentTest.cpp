@@ -1,6 +1,7 @@
 #include "products/roadmap/adapters/llm/AnthropicAgent.h"
 
 #include "products/roadmap/application/ScopedToolHost.h"
+#include "platform/application/WriteObservation.h"
 #include "test/products/roadmap/adapters/mcp/ToolsHarness.h"
 #include "test/testing.h"
 
@@ -304,6 +305,48 @@ TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_sets_a_new_mark) {
   CHECK_EQ(editsOf("update_nodes", R"({"updates":[{"nodeId":"a","status":"none"}]})"), 0);
   CHECK_EQ(editsOf("update_nodes", R"({"updates":[{"nodeId":"a","label":"B","status":"none"}]})"), 0);
   CHECK_EQ(editsOf("update_nodes", R"({"updates":[{"nodeId":"a","label":"Alpha","status":"none"}]})"), 1);
+}
+
+// Under a tend, a mark that is the whole call fails the step as set_progress's does; marks that fail after a tree op
+// landed leave the step done and are told under their own name, at the tend's door — as are an import's cleared marks.
+TEST(drive_agent_fails_a_step_whose_marks_are_the_call_and_reports_late_marks_at_its_door) {
+  test::Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"b","status":"complete"})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
+  });
+  const auto stepOf = [&](const char* tool, const char* input) {
+    Json::Value call = toolUseReply(tool, "toolu_1");
+    call["content"][0]["input"] = parse(input);
+    FakeModel model;
+    model.replies.push_back(call);
+    model.replies.push_back(textReply("end_turn", "Done"));
+    Recorder rec;
+    const AgentOutcome outcome =
+        driveAgent("tend it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report());
+    return std::to_string(outcome.edits) + " edits, failed " + std::to_string(rec.steps.at(0).failed);
+  };
+
+  h.progressRepo.writesFail = true;
+  CHECK_EQ(stepOf("set_progress", R"({"nodeId":"a","status":"complete"})"), std::string("0 edits, failed 1"));
+  CHECK_EQ(stepOf("update_nodes", R"({"updates":[{"nodeId":"a","status":"complete"}]})"), std::string("0 edits, failed 1"));
+  CHECK_EQ(stepOf("update_nodes", R"({"updates":[{"nodeId":"a","label":"Alpha","status":"complete"}]})"),
+           std::string("1 edits, failed 0"));
+  CHECK_EQ(stepOf("import_subgraph", R"({"nodes":[],"tombstone":["b"]})"), std::string("1 edits, failed 0"));
+  h.progressRepo.writesFail = false;
+  installWriteSink({});
+
+  CHECK_EQ(lines, (std::vector<std::string>{
+                      "roadmap.set_progress roadmap Coach failed",
+                      "roadmap.update_nodes roadmap Coach failed",
+                      "roadmap.update_nodes.marks roadmap Coach failed",
+                      "roadmap.update_nodes roadmap Coach ok",
+                      "roadmap.import.clear_marks roadmap Coach failed",
+                      "roadmap.import_subgraph roadmap Coach ok",
+                  }));
 }
 
 // Through a tend's scoped host over the real tools, every write that changes nothing answers `unchanged` and is no edit

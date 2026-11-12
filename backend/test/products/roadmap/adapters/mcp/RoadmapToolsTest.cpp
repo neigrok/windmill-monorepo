@@ -6560,8 +6560,9 @@ TEST(mcp_a_clear_sends_the_progress_frame_set_progress_sends) {
 }
 
 // An import's tombstones clear the caller's marks after the graft has landed, so a progress store that fails there does
-// not fail the call: the reply says progressApplied: false, and the failure is reported once, under its own name.
-TEST(mcp_an_imports_failed_clear_is_reported_once_under_its_own_name) {
+// not fail the call: the reply says progressApplied: false, and the failure is reported under its own name — one
+// report, under the request's latch.
+TEST(mcp_an_imports_failed_clear_is_reported_under_its_own_name) {
   struct Failures : FailureReporter {
     std::vector<std::string> reports;
     void report(const std::string&, const std::string&, const std::string&) override {}
@@ -6953,10 +6954,10 @@ TEST(mcp_update_nodes_refuses_stale_calls_whole_and_previews_without_marking) {
   CHECK_EQ(body(h->call("get_progress", kNoArgs))["completed"], parse("[]"));
 }
 
-// The marks land after the tree fields, which have landed whatever becomes of the marks: a progress store that fails
-// there does not fail the call. The reply says so in a fixed sentence, the call's own line is `ok`, and the failure is
-// reported once, under its own name.
-TEST(mcp_update_nodes_whose_marks_fail_after_the_tree_fields_landed_says_so_and_reports_once) {
+// The marks land after a tree op the call landed, which stands whatever becomes of the marks: a progress store that
+// fails there does not fail the call. The reply says so in a fixed sentence, the call's own line is `ok`, and the
+// failure is reported under its own name — one report, under the request's latch.
+TEST(mcp_update_nodes_whose_marks_fail_after_a_tree_op_landed_says_so_and_reports_under_its_own_name) {
   struct Failures : FailureReporter {
     std::vector<std::string> reports;
     void report(const std::string&, const std::string&, const std::string&) override {}
@@ -6995,4 +6996,81 @@ TEST(mcp_update_nodes_whose_marks_fail_after_the_tree_fields_landed_says_so_and_
   CHECK_EQ(body(h->call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","label"]})")))["nodes"],
            parse(R"([{"id":"a","label":"Alpha"}])"));
   CHECK_EQ(body(h->call("get_progress", kNoArgs))["completed"], parse("[]"));
+}
+
+// When no tree op lands in the call — it sends no tree field, or only fields the node holds — its marks are the call,
+// so a progress store that fails fails it as it fails set_progress: an error reply in set_progress's words, the call's
+// own line `failed`, its report under the call's name, and no line of the marks' own.
+TEST(mcp_update_nodes_whose_marks_are_the_call_fails_with_them_as_set_progress_does) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  const auto failing = [&](const char* tool, const char* arguments) {
+    auto h = nodeTree();
+    const std::size_t rows = h->ops.byTree["t"].size();
+    CompositeToolHost gate(std::vector<ToolModule>{{h->tools, ""}});
+    std::vector<std::string> lines;
+    installWriteSink([&](const WriteCompletion& line) { lines.push_back(line.operation + " " + line.outcome); });
+    reporter.failures->reports.clear();
+    h->progressRepo.writesFail = true;
+    const ToolResult result = gate.callTool(tool, parse(arguments), h->actor);
+    installWriteSink({});
+    h->progressRepo.writesFail = false;
+    CHECK(result.isError);
+    CHECK_EQ(h->ops.byTree["t"].size(), rows);
+    CHECK_EQ(body(h->call("get_progress", kNoArgs))["completed"], parse("[]"));
+    std::vector<std::string> said{message(result)};
+    for (const std::string& line : lines) said.push_back(line);
+    for (const std::string& report : reporter.failures->reports) said.push_back(report);
+    return said;
+  };
+  const std::string type = typeid(std::runtime_error).name();
+  const std::vector<std::string> setProgress =
+      failing("roadmap_set_progress", R"({"treeId":"t","nodeId":"a","status":"complete"})");
+  CHECK_EQ(setProgress, (std::vector<std::string>{
+                            "set_progress: that call failed inside the server. The outcome may be uncertain; read the "
+                            "affected records before retrying. The detail is in the server log.",
+                            "mcp.roadmap_set_progress failed", "mcp.roadmap_set_progress roadmap mcp failed " + type}));
+  for (const char* updates : {R"([{"nodeId":"a","status":"complete"}])",
+                              R"([{"nodeId":"a","label":"A","description":"Old.","status":"complete"}])"}) {
+    const std::string arguments = std::string(R"({"treeId":"t","updates":)") + updates + "}";
+    CHECK_EQ(failing("roadmap_update_nodes", arguments.c_str()),
+             (std::vector<std::string>{
+                 "update_nodes: that call failed inside the server. The outcome may be uncertain; read the affected "
+                 "records before retrying. The detail is in the server log.",
+                 "mcp.roadmap_update_nodes failed", "mcp.roadmap_update_nodes roadmap mcp failed " + type}));
+  }
+}
+
+// A `kind` that is not a string is no kind sent, as for patch_nodes, so beside a mark it leaves the row a mark alone: on
+// the caller's tree, and on another account's public tree, where a tree field would be refused.
+TEST(mcp_update_nodes_takes_a_null_kind_beside_a_mark_as_no_tree_field) {
+  auto h = nodeTree();
+  const std::size_t rows = h->ops.byTree["t"].size();
+  const Json::Int64 seq = body(h->call("get_tree", parse(R"({"includeGuides":false})")))["seq"].asInt64();
+  Json::Value expected = parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],"dryRun":false,
+    "applied":true,"unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[],
+    "progress":[{"nodeId":"a","status":"complete","prerequisitesMet":true}]})");
+  expected["seq"] = seq;
+  CHECK_EQ(body(h->call("update_nodes", parse(R"({"updates":[{"nodeId":"a","kind":null,"status":"complete"}]})"))),
+           expected);
+
+  h->registry.setVisibility(TreeId{"t"}, Visibility::public_);
+  const ToolCaller stranger{uid("stranger"), ToolScope::everything()};
+  CHECK_EQ(body(h->tools.callTool("update_nodes",
+                                  parse(R"({"treeId":"t","updates":[{"nodeId":"a","kind":null,"outOfOrder":null,
+                                    "status":"complete"}]})"),
+                                  stranger)),
+           expected);
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
 }
