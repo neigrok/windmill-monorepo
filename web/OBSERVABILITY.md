@@ -160,7 +160,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | A state's action | `roadmap_board_state_action` | `state: error`, `action: retry` |
 | A state's action | `roadmap_board_state_action` | `state: empty`, `action: newStep` |
 | A state's action | `roadmap_board_state_action` | `state: complete`, `action: share/newStep` |
-| Go into the tree a step opens: the card's pill, the swipe's Open, the toast a C raises, the step page or modal, the Graph's dock, the tablet panel or the phone Graph's bar | `roadmap_tree_open` | `door: pill/swipe/toast/step/dock/panel/bar`, `view: board/graph`, `band: phone/tablet/desktop` |
+| Go into another tree of the owner's. Down into the tree a step opens: the card's pill, the swipe's Open, the toast a C raises, the step page or modal, the Graph's dock, the tablet panel or the phone Graph's bar. Up into a tree above: its name over its guide in the guide's note | `roadmap_tree_open` | `door: pill/swipe/toast/step/dock/panel/bar/guide`, `view: board/graph`, `band: phone/tablet/desktop` |
 | Come back to the roadmap a tree was gone into from, by the Back chip or the browser's Back, once per going in. A return after going Forward into the tree again is an ordinary visit: no `roadmap_tree_back`, the view opens by its usual door, and a step open on that entry is counted as reached by a link | `roadmap_tree_back` | `band: phone/tablet/desktop` |
 | Open the tree picker from a step's Tree section: the + on a step that opens no tree, or Change tree under the section's ⋯. Fork tree pressed on a roadmap the person can only read | `roadmap_tree_attach` | `step: open/fork`, `band: phone/tablet/desktop`, `view: board/graph` |
 | A roadmap address in Find a tree came to one of the person's own roadmaps, one they can only read, or none they can read: once for each roadmap the field named while the picker stood open. Only this app's `/t/<id>` and `/#/app/<id>` addresses and a bare tree id are addresses, read when pasted or once the field has been still for 300 ms | `roadmap_tree_attach` | `step: paste`, `outcome: own/readable/unreadable`, `band: phone/tablet/desktop`, `view: board/graph` |
@@ -227,7 +227,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Tablet and desktop roadmap switcher; a rename or a delete once the request succeeded | `roadmap_sheet` | `step: open/switch/new/browse/rename/delete`, `door: switcher` |
 | The switcher's rename or delete failed | `roadmap_sheet` | `step: rename/delete`, `door: switcher`, `outcome: failed` |
 | What's next opened, a card picked, or closed by toggle, outside pointer, genuine focus departure, Escape or context change | `roadmap_whats_next` | `step: open/pick/close`, `count: 0/1/2-5/6-20/21+` |
-| Open the guide's note from its entry on the tree: the card from 744px, the row on phones | `roadmap_guide` | `step: open`, `door: card/row`, `view: board/graph`, `role: owner/reader` |
+| Open the guide's note from its entry on the tree: the card from 744px, the row on phones, and what the entry knew of the guides above at the press: `none`, `some`, or `unread` while their read has not answered or after it failed, a 200 that is not the contract's shape among the failures | `roadmap_guide` | `step: open`, `door: card/row`, `view: board/graph`, `role: owner/reader`, `above: none/some/unread` |
 | Start writing the guide: a click or a tap on its text, Enter, its pencil, or Add guide | `roadmap_guide` | `step: edit`, `via: click/tap/key/pencil/add` |
 | Save the guide, its length in code points as a bucket | `roadmap_guide` | `step: save`, `outcome: saved/cleared/unchanged`, `length: 0/1-500/501-2000/2001-4500/4501-5000` |
 | A guide save no door took, and why: `offline` when the request never arrived and the browser reports no connection; `refused` for a 4xx that trying again cannot change, text a door would not admit, or a save by someone who is no longer the owner, which writes through no door; `server` for the server's failure, a 408 or 429, or a request lost while the browser reports a connection; `device` for this device's store or session | `roadmap_guide` | `step: save`, `outcome: failed`, `length: 0/1-500/501-2000/2001-4500/4501-5000`, `reason: offline/refused/server/device` |
@@ -290,6 +290,9 @@ A step is a thing a reader did or was told. These emit nothing:
 - A rebaseline's pending records, an online discard, Saving and Saved. Refusal counts stay local.
 - The camera, the minimap, the legend's highlight and folding, selecting one step, hovering and focus moves.
 - Closing the guide, reading it, its counter appearing and a guide set elsewhere arriving.
+- The read of the guides above a tree: asked, answered, aborted as the room leaves the tree, or refused with a 4xx. A
+  reader, a shared or demo route, a signed-out device, a tree that lives only on this device and a lapsed session make
+  no such read.
 
 `roadmap_sync_refused` `shown` fires once for the refused frame, across re-flushes, and `discard` only after the session
 confirms it. `roadmap_sync_offline` fires once per offline episode. `roadmap_device_line` `shown` fires once per visit.
@@ -326,6 +329,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-switcher-rename` | The switcher's rename: a server failure, a request lost while visible and online, or an exception | The old name returns |
 | `roadmap-switcher-delete` | The switcher's delete: a server failure, a request lost while visible and online, or an exception | The row stays |
 | `roadmap-guide` | The render of the guide's entry on the tree or of its open note | A failed entry is not drawn; a failed note closes |
+| `roadmap-guides-load` | The read of the guides above a tree for its holder (`GET /v1/trees/{id}/guides`), once per read, under the tag `reason`: `unavailable` (`503 guides-unavailable`), `server` (any other 5xx), `network` (a request lost while visible and online) or `shape` (a 200 that is not JSON, holds no array `guides`, or holds an entry without a tree id or a text) | The tree's own guide stands alone and nothing is said; under `shape` the well-formed guides above still show. What a read brought is dropped when the room leaves the tree or its holder goes, so nothing read earlier stands after a failure |
 | `roadmap-guide-save` | A guide save the session could not take, written to this device's store or through `PATCH /v1/trees/{id}`: a server failure, a request lost while visible and online, or an exception | The draft stays open under one line that says why, with Try again, or Copy draft for a refusal; a guide the session takes reports as any structure write does, under `roadmap-sync-*` |
 | `roadmap-plant` | Planting a roadmap, blank, pasted or from a quest: a server failure, a request lost while visible and online, or an exception | The door's own error, or a device roadmap when the server can't be reached |
 | `roadmap-tend` | Ask AI's reads and its send: a server failure, a request lost while visible and online, or a 200 that is not JSON | Ask AI's `failed` answer; the bar reopens with its sentence unless explicitly dismissed during the run, and announces the same failure copy when opened |

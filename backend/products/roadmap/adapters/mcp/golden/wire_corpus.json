@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 20,
+  "schemaVersion" : 21,
   "steps" : 
   [
     {
@@ -741,20 +741,15 @@
                   ]
                 },
                 {
+                  "count" : 4,
                   "kind" : "empty-icon",
-                  "node" : "docs"
-                },
-                {
-                  "kind" : "empty-icon",
-                  "node" : "launch"
-                },
-                {
-                  "kind" : "empty-icon",
-                  "node" : "render"
-                },
-                {
-                  "kind" : "empty-icon",
-                  "node" : "sync"
+                  "nodes" : 
+                  [
+                    "docs",
+                    "launch",
+                    "render",
+                    "sync"
+                  ]
                 }
               ],
               "treeLoops" : 

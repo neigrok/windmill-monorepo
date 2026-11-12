@@ -206,7 +206,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [boardOverall, setBoardOverall] = useState(null);
   useEffect(() => { setBoardComposer(null); setBoardOverall(null); setBoardReveal(null); setBoardSelect(null); }, [treeId, load.reloadKey]);
   const { syncSnapshot, deviceLine, refusal } = useRoomSyncNotices({ treeId, syncSession, owner, status, lapsed: sessionLapsed || lapsed, phone, openSignInDoor, setBoardQuiet });
-  const guide = useRoomGuide({ treeId, tree, who, deviceLine, sessionRef });
+  const guide = useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef });
   const guideView = boardActive ? 'board' : 'graph';
   const guideEntry = guide && !boardAwaitsRoadmap ? (
     <ErrorBoundary fallback={null} onCrash={(error) => reportRoadmapFailure('roadmap-guide', error)}>

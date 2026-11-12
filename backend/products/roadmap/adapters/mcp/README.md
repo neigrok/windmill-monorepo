@@ -181,7 +181,7 @@ from the products actually connected. **An empty scope is the account-wide grant
 
 Tending does not go through the composite: `TendingService` holds roadmap's host directly
 (`ScopedToolHost.h`). The two narrowings stack — `ScopedToolHost` pins a run to one tree, the
-composite pins a credential to its grant. A run is not offered `describe_tree` either: it reads the
+composite pins a credential to its grant. A run is not offered `update_tree` or `describe_tree` either: it reads the
 tree's guide through `get_tree` and never sets it. Nor is it offered the tree a node opens: the
 schemas it is handed carry no `opens` argument and no `opens` field, so a run neither reads nor sets
 a pointer, an import through it leaves the pointers the tree holds as they are, and a node it
@@ -211,12 +211,12 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | | Tool | Effect |
 | --- | --- | --- |
 | registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own; `create_tree` plants the legend sent in `kinds` (1–6 of `import_subgraph`'s kind items, each id and hue once, replacing the default Build/Learn/Milestone whole and in order; `[]`, a repeated id or hue, or seven refuse the call and plant nothing) and answers `{treeId, url, kinds: [{id, hue, label}]}`, the legend planted; each `list_trees` row carries the tree's `url` too (see `url`); a node later written with neither `color` nor `kind` is terracotta, so a legend with no terracotta kind leaves such a node under no kind |
-| registry | `describe_tree` | rename the tree with `title`, set its guide with `guide`, or both — at least one, each set only when sent, both landing as one frame at one seq or neither (`TreeRegistry::describe`). The title follows `rename`'s rule (`TreeRegistry::titleFrom`: trimmed, cut to 200 characters, a blank refused as "a tree always has a name"), and one equal to the name the tree has is not written and answers `unchanged: true` with the head; a guide is written whenever it is sent, even as the tree holds it, which is also how a fork's owner makes an inherited guide theirs; the guide is a plain-text note on what the tree is and how to work it, at most 5000 characters, and `""` or only whitespace clears it. Owner only; answers `{applied, seq}`, `seq` the head after the call, and leaves no op row; an open page receives the frame with the new title or guide |
+| registry | `update_tree` · `describe_tree` (its earlier name: one declaration and one handler, the write line named for the name called) | rename the tree with `title`, set its guide with `guide`, or both — at least one, each set only when sent, both landing as one frame at one seq or neither (`TreeRegistry::describe`). The title follows `rename`'s rule (`TreeRegistry::titleFrom`: trimmed, cut to 200 characters, a blank refused as "a tree always has a name"), and one equal to the name the tree has is not written and answers `unchanged: true` with the head; a guide is written whenever it is sent, even as the tree holds it, which is also how a fork's owner makes an inherited guide theirs; the guide is a plain-text note on what the tree is and how to work it, at most 5000 characters, and `""` or only whitespace clears it. Owner only; answers `{applied, seq}`, `seq` the head after the call, and leaves no op row; an open page receives the frame with the new title or guide |
 | read | `get_tree` | title + `url` (see `url`) + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + `guides` on the first page (see `guides`) + nodes (label, icon, color, `kind`, position, description, links, `opens`, `url`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
-| read | `get_diagnostics` | cycles / dangling / self-edges / smells (`label-too-long`, `empty-icon` and `high-in-degree` per node; one `unclaimed-hue` line per hue no legend kind wears, with the `hue`, the `count` of nodes wearing it and the first ten as `nodes`; or one node-less `empty-legend` line for a tree whose legend holds no kind); on a tree the caller owns also `treeLoops` and `danglingPointers` (see `opens`) |
+| read | `get_diagnostics` | cycles / dangling / self-edges / smells, each one line with the `count` of nodes it covers and the first ten as `nodes` (one per kind some node has: `label-too-long`, `empty-icon`, `high-in-degree`; one `unclaimed-hue` line per hue no legend kind wears, with the `hue`; or one node-less `empty-legend` line for a tree whose legend holds no kind), so the list is bounded whatever the tree's size; on a tree the caller owns also `treeLoops` and `danglingPointers` (see `opens`) |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
-| read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose set_progress carried `outOfOrder: true` |
+| read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose mark carried `outOfOrder: true`, from `set_progress` or an import's `progress` row |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
 | edit | `patch_nodes` | 1–200 existing nodes, replacement fields (`opens` among them, and a hue as `color` or legend `kind`) with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
 | edit | `change_edges` | 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, optional `expectedSeq` and `dryRun` |
@@ -556,7 +556,11 @@ and none overrides another.
   tombstones and carried `progress[]` — before anything lands, its dry run included. A `title` is
   not an argument: the gate refuses one by name, and the import never touches the tree's title.
   Progress (max 1000 supplied marks) commits in a separate atomic repository batch under the room
-  strand. Receipts distinguish `graphApplied` and `progressApplied`, with `progressError` or
+  strand. Its rows are `set_progress`'s bulk rows: one schema (`progressRow()` in the catalog) and one
+  parse (`readMark`), so `outOfOrder: true` on a completion is kept on the mark and answered
+  `acknowledged: true`, and `prerequisitesMet` is judged against the tree the graft leaves, with the
+  overlay as the whole batch commits it. The marks `get_progress` answers (`completed`, `cleared`,
+  `outOfOrder`) go back through an import as rows and change nothing. Receipts distinguish `graphApplied` and `progressApplied`, with `progressError` or
   `progressSkipped` when requested progress cannot all be applied; a committed graft is not undone
   by a later overlay failure. It is **upsert by id**: an incoming id already present is reported
   in `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
@@ -627,7 +631,8 @@ and none overrides another.
   against the committed batch, so a subtree completed out of dependency order still reports
   correctly. The room strand covers node validation, commit and broadcast; delete/prune cannot
   interleave an orphan mark. Unknown node ids are rejected before any overlay mutation. A completion
-  meant to land before its prerequisites carries `outOfOrder: true` (single and bulk forms, with
+  meant to land before its prerequisites carries `outOfOrder: true` (single and bulk forms, and an
+  import's `progress` rows, with
   `status: complete` only): the word is stored on the row beside the status, under the same stamp,
   so the next mark on that node from any surface replaces it; the receipt answers
   `acknowledged: true` beside `prerequisitesMet`, `get_progress` lists those ids under

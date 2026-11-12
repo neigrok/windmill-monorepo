@@ -150,7 +150,7 @@ for (const reload of [false, true]) for (const returning of ['A', 'B']) {
       await context.route('**/v1/**', (route) => {
         const path = new URL(route.request().url()).pathname;
         const body = path === '/v1/me' ? { user: account ? { id: account, name: account } : null }
-          : path === '/v1/trees' ? { trees: [] } : { enabled: false, runs: [] };
+          : path === '/v1/trees' ? { trees: [] } : path.endsWith('/guides') ? { guides: [] } : { enabled: false, runs: [] };
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
       });
       const page = await context.newPage();

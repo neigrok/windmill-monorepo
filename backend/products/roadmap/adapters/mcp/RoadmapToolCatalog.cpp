@@ -169,6 +169,19 @@ Json::Value linkArray(const char* description) {
   return property;
 }
 
+// One progress mark as a call sends it: set_progress's flat form and its `updates` rows, and an import's `progress`
+// rows, which the same parse reads.
+Json::Value progressRow() {
+  Json::Value fields(Json::objectValue);
+  fields["nodeId"] = nodeHandle();
+  fields["id"] = legacyNodeHandle();
+  fields["status"] = enumStr("complete or none (clear).", kStatuses);
+  fields["outOfOrder"] = boolean(
+      "With status complete only: this node is being completed before its prerequisites on purpose. "
+      "Kept on the mark, echoed as acknowledged:true beside prerequisitesMet.");
+  return fields;
+}
+
 // One legend kind as a call sends it, the same item wherever a legend is written whole or joined.
 Json::Value legendKind() {
   Json::Value fields(Json::objectValue);
@@ -191,7 +204,7 @@ Json::Value legendKind() {
 // create_tree and create_node mint an id, so a resend plants a second one.
 const std::set<std::string> kBulkEdits = {"import_subgraph", "prune", "tidy", "patch_nodes", "change_edges"};
 const std::set<std::string> kIdempotentWrites = {
-    "delete_tree",  "describe_tree", "rename_node",   "set_node_color", "move_node",
+    "delete_tree",  "update_tree",   "describe_tree", "rename_node",   "set_node_color", "move_node",
     "connect",      "disconnect",    "reconnect",     "delete_node",    "tidy",
     "add_kind",     "rename_kind",   "describe_kind", "remove_kind",    "reorder_kinds",
     "recolor_kind", "set_progress",  "import_subgraph", "prune", "patch_nodes", "change_edges"};
@@ -431,7 +444,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                            kMaxTitleChars);
     p["guide"] = cappedStr("The whole guide, replacing the one the tree has; \"\" clears it. Omit to keep it.",
                            kMaxGuideChars);
-    tools.push_back(tool("describe_tree", Access::write,
+    const std::string updateTree =
         "Rename a roadmap with `title`, set its guide with `guide`, or both: send at least one; each is set "
         "only when sent, and the two together land in one step or not at all. The title is trimmed and "
         "cut to 200 characters; a blank one is refused, and one equal to the name the tree has is not "
@@ -440,8 +453,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "note on what the tree is and "
         "how to work it, at most 5000 characters counted as Unicode code points; it replaces the guide the "
         "tree has, and \"\" clears it. get_tree carries it on every page to everyone who reads the tree, "
-        "and to you among the `guides` of your trees below this one. Only the owner may set either.",
-        p, {"treeId"}));
+        "and to you among the `guides` of your trees below this one. Only the owner may set either.";
+    // One declaration under two names: describe_tree is update_tree's earlier name, and says so.
+    tools.push_back(tool("update_tree", Access::write, updateTree.c_str(), p, {"treeId"}));
+    tools.push_back(tool("describe_tree", Access::write,
+                         (updateTree + " describe_tree is update_tree's earlier name.").c_str(), p, {"treeId"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -465,12 +481,16 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     tools.push_back(tool("get_diagnostics", Access::read,
         "Report how the roadmap departs from a valid skill tree: cycles, dangling edges (an "
         "endpoint is missing), self-edges, and structural smells. Edits are never rejected, so an "
-        "edit that forms a cycle still succeeds — this is how you find and fix it. Smells are "
-        "`label-too-long`, `empty-icon` and `high-in-degree`, one per node, and one `unclaimed-hue` line "
-        "per hue no legend kind wears, with that `hue`, the `count` of nodes wearing it and the first ten "
-        "of them as `nodes` — or, on a tree whose legend holds no kind, one `empty-legend` line instead. An "
-        "`empty-icon` smell clears with `annotate_node {nodeId, icon}`; an `unclaimed-hue` one when its "
-        "nodes take a kind's hue (`set_node_color`) or a kind comes to wear the hue.",
+        "edit that forms a cycle still succeeds — this is how you find and fix it. Each smell is one "
+        "line, whatever the tree's size, with the `count` of nodes it covers and the first ten of them as "
+        "`nodes`: one per kind some node has — `label-too-long`, `empty-icon`, `high-in-degree` — and one "
+        "`unclaimed-hue` line per hue no legend kind wears, with that `hue`; or, on a tree whose legend "
+        "holds no kind, one `empty-legend` line instead of the hue lines. To find the rest past the first "
+        "ten: find_nodes with `color` lists every node on an unclaimed hue; find_nodes cannot filter on a "
+        "missing icon, a long label or many prerequisites, so read get_tree with `fields` [\"id\",\"icon\"], "
+        "[\"id\",\"label\"] or [\"id\",\"prerequisites\"] for those. An `empty-icon` smell clears "
+        "with `annotate_node {nodeId, icon}`; an `unclaimed-hue` one when its nodes take a kind's hue "
+        "(`set_node_color`) or a kind comes to wear the hue.",
         p, {"treeId"}));
   }
   {
@@ -494,13 +514,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["fields"] = fieldArray(
         "Which id lists to return. Default {completed, outOfOrder} — `outOfOrder` is the "
-        "subset of `completed` whose set_progress carried outOfOrder:true; `cleared` (the tombstones a "
+        "subset of `completed` whose mark carried outOfOrder:true; `cleared` (the tombstones a "
         "browser reconciles against) is available but rarely useful.",
         progressVocabulary().names());
     tools.push_back(tool("get_progress", Access::read,
         "The caller's private progress overlay for a roadmap: the node ids that are completed, "
-        "and outOfOrder — the subset of completed whose set_progress carried "
-        "outOfOrder:true. Per-user, separate from the shared structure.",
+        "and outOfOrder — the subset of completed whose mark carried outOfOrder:true, from "
+        "set_progress or an import's progress row. Per-user, separate from the shared structure.",
         p, {"treeId"}));
   }
   {
@@ -805,27 +825,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         p, {"treeId", "id", "hue"}));
   }
   {
-    Json::Value updateFields(Json::objectValue);
-    updateFields["nodeId"] = nodeHandle();
-    updateFields["id"] = legacyNodeHandle();
-    updateFields["status"] = enumStr("complete or none (clear).", kStatuses);
-    updateFields["outOfOrder"] = boolean(
-        "With status complete only: this node is being completed before its prerequisites on purpose. "
-        "Kept on the mark, echoed as acknowledged:true beside prerequisitesMet.");
-
-    Json::Value p(Json::objectValue);
+    Json::Value p = progressRow();  // the single form is one row, flat
     p["treeId"] = treeHandle();
-    p["nodeId"] = nodeHandle();
-    p["id"] = legacyNodeHandle();
-    p["status"] = enumStr("complete or none (clear).", kStatuses);
-    p["outOfOrder"] = boolean(
-        "With status complete only: this node is being completed before its prerequisites on purpose. "
-        "Kept on the mark, echoed as acknowledged:true beside prerequisitesMet.");
     p["updates"] = objArray(
         "Bulk form: a list of {nodeId, status, outOfOrder?}. Resolves order internally, so completing "
         "a subtree out of dependency order no longer misreports prerequisitesMet. Pass this OR a "
         "single nodeId+status, never both.",
-        updateFields, {"nodeId", "status"});
+        progressRow(), {"nodeId", "status"});
     p["updates"]["maxItems"] = static_cast<Json::UInt64>(kMaxProgressUpdates);
     tools.push_back(tool("set_progress", Access::write,
         "Set the caller's progress. Pass a single `nodeId`+`status`, or a bulk `updates` list. Unknown "
@@ -881,10 +887,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                                     "within its five lines: a tree on a loop never completes.",
                                     kMaxIdLength);
 
-    Json::Value progressFields(Json::objectValue);
-    progressFields["nodeId"] = nodeHandle();
-    progressFields["id"] = legacyNodeHandle();
-    progressFields["status"] = enumStr("complete or none (clear).", kStatuses);
 
     p["nodes"] = objArray("The nodes to import — the shape get_tree returns when you ask it for those "
                           "fields. Pass [] to import only kinds or progress.",
@@ -895,10 +897,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                           "get_tree's default kindFields sent back erases nothing. Omit to leave the legend "
                           "untouched.",
                           legendKind(), {"id", "hue"});
-    p["progress"] = objArray("Optional carried progress, applied over the imported nodes. `nodeId` here "
+    p["progress"] = objArray("Optional carried progress, applied over the imported nodes, each row as "
+                             "set_progress's `updates` takes it: a completion made before its "
+                             "prerequisites carries outOfOrder:true and is answered acknowledged:true, and "
+                             "prerequisitesMet is judged against the tree the import leaves. `nodeId` here "
                              "names a node that exists once the import lands; a row naming none is "
                              "reported back in progressSkipped, not silently dropped.",
-                             progressFields, {"nodeId", "status"});
+                             progressRow(), {"nodeId", "status"});
     p["progress"]["maxItems"] = static_cast<Json::UInt64>(kMaxProgressUpdates);
     p["prerequisiteMode"] = enumStr(
         "How a node already in the tree — or deleted and re-sent, which revives it with its old "
