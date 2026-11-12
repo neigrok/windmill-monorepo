@@ -292,6 +292,36 @@ TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_carries_progress) 
   CHECK_EQ(editsOf(R"({"nodes":[{"id":"a","label":"B"}]})"), 1);
 }
 
+// Through a tend's scoped host over the real tools, every write that changes nothing answers `unchanged` and is no edit
+// of the run: an echoed rename, a patch and an edge batch that change nothing and an echoed import, beside one real move.
+TEST(drive_agent_counts_one_edit_among_writes_that_changed_nothing) {
+  test::Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
+    "prerequisites":["a"]}]})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  FakeModel model;
+  int id = 0;
+  for (const auto& [tool, input] : std::vector<std::pair<const char*, const char*>>{
+           {"rename_node", R"({"nodeId":"a","label":"A"})"},
+           {"patch_nodes", R"({"updates":[{"nodeId":"b","label":"B"}]})"},
+           {"change_edges", R"({"add":[{"from":"a","to":"b"}]})"},
+           {"import_subgraph", R"({"nodes":[{"id":"a","label":"A"}]})"},
+           {"move_node", R"({"nodeId":"a","x":3,"y":4})"}}) {
+    Json::Value call = toolUseReply(tool, ("toolu_" + std::to_string(++id)).c_str());
+    call["content"][0]["input"] = parse(input);
+    model.replies.push_back(call);
+  }
+  model.replies.push_back(textReply("end_turn", "Moved 1 step"));
+
+  Recorder rec;
+  const AgentOutcome outcome =
+      driveAgent("tidy it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report());
+  CHECK_EQ(outcome.edits, 1);
+  std::vector<bool> changed;
+  for (const AgentStep& step : rec.steps) changed.push_back(step.changedTree);
+  CHECK_EQ(changed, (std::vector<bool>{false, false, false, false, true}));
+}
+
 TEST(drive_agent_counts_no_edit_for_a_write_that_changed_nothing) {
   FakeToolHost host;
   host.responder = [](const std::string& name, const Json::Value&) -> ToolResult {

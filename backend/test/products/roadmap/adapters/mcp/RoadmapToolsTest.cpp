@@ -3302,7 +3302,7 @@ TEST(mcp_patch_nodes_is_one_edit_preserves_omissions_and_retries_as_noop) {
   CHECK(conflict.isError);
   CHECK_EQ(message(conflict), std::string("patch_nodes: expectedSeq conflict: requested 2, current seq is 3. Nothing changed; read get_nodes or get_tree and retry with the current seq."));
   args.removeMember("expectedSeq");
-  CHECK_EQ(body(h.call("patch_nodes", args)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":3,"changedNodeIds":[],"unchangedNodeIds":["a","b"],"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("patch_nodes", args)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":3,"changedNodeIds":[],"unchangedNodeIds":["a","b"],"diagnosticsClean":true,"introducedDiagnostics":[],"unchanged":true})"));
   CHECK_EQ(h.bus.subgraphBroadcasts.size(), 3u);
   CHECK_EQ(h.ops.byTree["t"].size(), 3u);
 }
@@ -3328,7 +3328,8 @@ TEST(mcp_patch_nodes_refuses_the_whole_batch_and_dry_run_changes_nothing) {
   CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"b","opens":null}]})"))),
            std::string("patch_nodes: missing required argument \"updates[0].opens\""));
   CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","description":""}],"dryRun":true,"expectedSeq":2})"))),
-           parse(R"({"treeId":"t","applied":false,"dryRun":true,"seq":2,"changedNodeIds":[],"unchangedNodeIds":["a"]})"));
+           parse(R"({"treeId":"t","applied":false,"dryRun":true,"seq":2,"changedNodeIds":[],"unchangedNodeIds":["a"],
+             "unchanged":true})"));
   CHECK_EQ(body(h.call("get_tree", kNoArgs)), before);
   CHECK_EQ(h.bus.subgraphBroadcasts.size(), 2u);
 }
@@ -3342,7 +3343,7 @@ TEST(mcp_change_edges_is_atomic_and_reports_cycles_and_noop_retries) {
   CHECK_EQ(body(h.call("change_edges", args)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":4,"addedEdges":[{"from":"b","to":"a"}],"removedEdges":[],"unchangedEdges":1,"diagnosticsClean":false,"introducedDiagnostics":["cycle among \"a\", \"b\""]})"));
   Json::Value retry = args;
   retry.removeMember("expectedSeq");
-  CHECK_EQ(body(h.call("change_edges", retry)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":4,"addedEdges":[],"removedEdges":[],"unchangedEdges":2,"diagnosticsClean":false,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("change_edges", retry)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":4,"addedEdges":[],"removedEdges":[],"unchangedEdges":2,"diagnosticsClean":false,"introducedDiagnostics":[],"unchanged":true})"));
   const Json::Value before = body(h.call("get_tree", kNoArgs));
   for (const char* json : {
       R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"missing","to":"a"}]})",
@@ -5626,4 +5627,35 @@ TEST(mcp_import_subgraph_takes_expected_seq_like_the_other_batch_tools) {
   REQUIRE_EQ(expectedSeqOf.size(), 3u);
   CHECK_EQ(expectedSeqOf.at("import_subgraph"), expectedSeqOf.at("patch_nodes"));
   CHECK_EQ(expectedSeqOf.at("import_subgraph"), expectedSeqOf.at("change_edges"));
+}
+
+// A patch_nodes whose rows change nothing, and a change_edges that adds only held edges and removes only absent ones,
+// answer `unchanged: true` beside their usual keys, on the dry run and for real; a batch that changes anything does not.
+TEST(mcp_a_batch_that_changes_nothing_says_unchanged) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
+    "prerequisites":["a"]}]})")).isError);
+
+  for (const char* dryRun : {"true", "false"}) {
+    const std::string tail = std::string(R"("dryRun":)") + dryRun + R"(,"applied":)" +
+                             (std::string(dryRun) == "true" ? "false" : "true") + R"(,"seq":1)" +
+                             (std::string(dryRun) == "true" ? "" : R"(,"diagnosticsClean":true,"introducedDiagnostics":[])") +
+                             R"(,"unchanged":true})";
+    CHECK_EQ(body(h.call("patch_nodes", parse(std::string(R"({"dryRun":)") + dryRun +
+                                                 R"(,"updates":[{"nodeId":"a","label":"A"}]})"))),
+             parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],)" + tail));
+    CHECK_EQ(body(h.call("change_edges", parse(std::string(R"({"dryRun":)") + dryRun +
+                                                  R"(,"add":[{"from":"a","to":"b"}],"remove":[{"from":"b","to":"a"}]})"))),
+             parse(R"({"treeId":"t","addedEdges":[],"removedEdges":[],"unchangedEdges":2,)" + tail));
+  }
+  CHECK_EQ(h.ops.byTree["t"].size(), 1u);
+
+  CHECK_FALSE(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A2"}]})"))).isMember("unchanged"));
+  CHECK_FALSE(body(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"b"}]})"))).isMember("unchanged"));
+  CHECK_EQ(h.ops.byTree["t"].size(), 3u);
+
+  const Json::Value catalog = h.tools.listTools(h.actor);
+  for (const Json::Value& tool : catalog)
+    if (tool["name"].asString() == "patch_nodes" || tool["name"].asString() == "change_edges")
+      CHECK_EQ(tool["outputSchema"]["properties"]["unchanged"]["type"].asString(), std::string("boolean"));
 }

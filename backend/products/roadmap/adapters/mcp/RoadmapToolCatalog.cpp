@@ -282,11 +282,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     }
     ToolDeclaration declaration = tool(name, Access::write,
         patches ? "Patch fields on 1..200 existing nodes atomically. Omitted fields survive; empty strings and links clear their field. "
-                  "All items are validated before one operation, seq and broadcast. Exact retries skip unchanged nodes. "
+                  "All items are validated before one operation, seq and broadcast. Exact retries skip unchanged nodes, and "
+                  "a batch whose every row is unchanged writes nothing and answers `unchanged: true`. "
                   "expectedSeq prevents overwriting intervening edits; dryRun previews changedNodeIds and unchangedNodeIds."
                 : "Add and remove 1..500 prerequisite edges atomically in one operation, seq and broadcast. "
                   "Added endpoints must exist; removing an absent edge is a no-op. Duplicates and add/remove overlap reject the entire batch. "
-                  "Cycles remain allowed and are reported through diagnostics. Exact retries do not mint a new seq; expectedSeq and dryRun are supported.",
+                  "Cycles remain allowed and are reported through diagnostics. A batch that adds only held edges and removes "
+                  "only absent ones writes nothing and answers `unchanged: true`; expectedSeq and dryRun are supported.",
         p, patches ? std::vector<const char*>{"treeId", "updates"} : std::vector<const char*>{"treeId"});
     Json::Value output(Json::objectValue);
     output["type"] = "object";
@@ -296,6 +298,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     properties["seq"]["type"] = "integer";
     properties["applied"] = boolean("True after the batch has been accepted, including a no-op retry.");
     properties["dryRun"] = boolean("True when the listed changes are a preview.");
+    properties["unchanged"] = boolean("True when the batch changes nothing, so it takes no seq. Absent otherwise.");
     properties["diagnosticsClean"] = boolean("Whether the graph after an applied batch has no structural errors.");
     properties["introducedDiagnostics"] = strArray(
         patches ? "New structural errors after an applied batch, then each loop of trees a pointer it set closed: "

@@ -279,7 +279,10 @@ Apply action for routine proposals; annotations describe each tool's effects.
 write nothing: no seq, no op row, no frame and no save. The reply is the usual one with
 `unchanged: true` added and `seq` the head the tree stands at, and the write line is `ok`. One rule
 decides it, `changesNode` in `domain/Command`: a field the edit names holds another value. A
-`patch_nodes` row that changes nothing is listed under `unchangedNodeIds` by the same rule. An
+`patch_nodes` row that changes nothing is listed under `unchangedNodeIds` by the same rule, and a
+`patch_nodes` batch whose every row is unchanged answers `unchanged: true` too, as does a
+`change_edges` batch that adds only held edges and removes only absent ones: each plan says whether
+it `landsNothing` (`NodePatchPlan`, `EdgeChangePlan`), on the dry run and for real. An
 `annotate_node` naming several fields lands whole when any of them would change, and an
 `appendDescription` with text always does.
 

@@ -855,6 +855,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
     if (std::optional<std::string> stale = staleExpectedSeq(args, room)) return ToolResult::failure(*stale);
 
     Batch batch;
+    bool landsNothing = false;
     Json::Value out(Json::objectValue);
     out["treeId"] = tree.str();
     if (name == "patch_nodes") {
@@ -864,6 +865,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
       if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
       const NodePatchPlan& plan = std::get<NodePatchPlan>(result);
       batch = plan.batch;
+      landsNothing = plan.landsNothing();
       out["changedNodeIds"] = Json::Value(Json::arrayValue);
       out["unchangedNodeIds"] = Json::Value(Json::arrayValue);
       const std::set<NodeId> changed(plan.changedNodeIds.begin(), plan.changedNodeIds.end());
@@ -874,6 +876,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
       if (const auto* error = std::get_if<std::string>(&result)) return ToolResult::failure(*error);
       const EdgeChangePlan& plan = std::get<EdgeChangePlan>(result);
       batch = plan.batch;
+      landsNothing = plan.landsNothing();
       out["addedEdges"] = Json::Value(Json::arrayValue);
       out["removedEdges"] = Json::Value(Json::arrayValue);
       for (const auto& [field, values] : {std::pair{"addedEdges", &plan.added}, {"removedEdges", &plan.removed}}) {
@@ -890,6 +893,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
     out["dryRun"] = dryRun;
     out["applied"] = !dryRun;
     out["seq"] = static_cast<Json::Int64>(room.head());
+    if (landsNothing) out["unchanged"] = true;
     if (!dryRun) {
       std::optional<std::map<NodeId, TreeId>> pointersBefore;
       if (opensATree(opened)) pointersBefore = room.pointers();
