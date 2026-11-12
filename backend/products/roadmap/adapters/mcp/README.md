@@ -278,13 +278,16 @@ Apply action for routine proposals; annotations describe each tool's effects.
 `rename_node`, `set_node_color`, `move_node` and `annotate_node` sent what the node already holds
 write nothing: no seq, no op row, no frame and no save. The reply is the usual one with
 `unchanged: true` added and `seq` the head the tree stands at, and the write line is `ok`. One rule
-decides it, `changesNode` in `domain/Command`: a field the edit names holds another value. A
+decides it, `changedPart` in `domain/Command`: a field the edit names lands only when it holds another
+value on the node, so an edit lands the fields that differ and none that repeat what the node holds. A
 `patch_nodes` row that changes nothing is listed under `unchangedNodeIds` by the same rule, and a
 `patch_nodes` batch whose every row is unchanged answers `unchanged: true` too, as does a
 `change_edges` batch that adds only held edges and removes only absent ones: each plan says whether
 it `landsNothing` (`NodePatchPlan`, `EdgeChangePlan`), on the dry run and for real. An
-`annotate_node` naming several fields lands whole when any of them would change, and an
-`appendDescription` with text always does.
+`annotate_node` or a `patch_nodes` row naming several fields lands only those that differ — the op row
+names them and nothing else — so a field it repeats is not stamped again and a client's concurrent edit
+to it stamped earlier still wins, as it does against an import; an `appendDescription` with text always
+lands.
 
 `import_subgraph` follows the same word. A graft whose frame lands nothing — every register sent as
 the tree holds it, no new edge, no tombstone, no edge a replace drops, no new or revived node or kind
@@ -446,7 +449,7 @@ A node may point at another tree: `opens` holds that tree's id.
   receipt names the graph's errors alone. The two rules agree on the pointer: an `annotate_node`
   that names only the tree the node already opens writes nothing and answers `unchanged: true`
   (An edit that changes nothing), and one that changes the pointer is a change there and is
-  followed here (`changesNode`, `pointersSetSince`).
+  followed here (`changedPart`, `pointersSetSince`).
 - **The receipt's follow is short.** The edit is durable before it, and the reply waits on that
   read alone, so the read is given 750 ms of its own (`kReceiptFollowBudget`; a statement limit
   for that one transaction, `TreeRepository::openedFrom`), not the pool's 5 s. Past it the receipt

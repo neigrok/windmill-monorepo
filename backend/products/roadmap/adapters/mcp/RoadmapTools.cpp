@@ -743,17 +743,18 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
       opened.emplace_back("opens", *annotated->opens);
     if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
 
-    // A single-node edit that changes nothing writes nothing: no seq, no op row, no frame, no save. It answers the
-    // head the tree stands at, and says so.
-    const bool changes = !namesAnExistingNode(tool) || room.changesNode(NodeId{payload["id"].asString()}, *command);
+    // A single-node edit lands only the fields that differ from what the node holds; one that changes nothing writes
+    // nothing — no seq, no op row, no frame, no save — and answers the head the tree stands at, and says so.
+    const std::optional<Command> landed =
+        namesAnExistingNode(tool) ? room.changedPart(NodeId{payload["id"].asString()}, *command) : command;
 
     // Bracketed under the strand, so whatever the tree gains between these reads, this gained.
     std::optional<std::map<NodeId, TreeId>> pointersBefore;
-    if (changes && opensATree(opened)) pointersBefore = room.pointers();
+    if (landed && opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.head();
-    if (changes) {
-      seq = room.applyCommand(*command, clock.nowMs(), actor);
+    if (landed) {
+      seq = room.applyCommand(*landed, clock.nowMs(), actor);
       registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
     }
     const TreeDiagnostics after = room.diagnose();
@@ -762,7 +763,7 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
-    if (!changes) out["unchanged"] = true;
+    if (!landed) out["unchanged"] = true;
     answerDiagnostics(before, after, out);
     if (payload.isMember("id")) out["id"] = payload["id"];
     // A write that named its kind wears it, as resolveHue just said; one that named none is answered

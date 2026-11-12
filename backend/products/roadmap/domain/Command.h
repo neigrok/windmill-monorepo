@@ -140,9 +140,11 @@ struct EdgeChangePlan {
   bool landsNothing() const { return batch.commands.empty(); }
 };
 
-// Whether a single-node edit would change the node it names: a field the command names holds another value there.
-// A patch row and a single-node verb that change nothing write nothing, by this one rule; any other command changes.
-bool changesNode(const NodeSpec& node, const Command& command);
+// The part of a single-node edit that lands on the node it names: the command with only the fields that hold
+// another value there, or nothing when none does. An appended description always lands, and any other command lands
+// whole. A patch row and a single-node verb land by this one rule, so an annotation stamps only the registers it
+// changes, as an import does.
+std::optional<Command> changedPart(const NodeSpec& node, const Command& command);
 
 // A refusal is its sentence, or the KindRefusal of the row whose `kind` refused the batch.
 std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(

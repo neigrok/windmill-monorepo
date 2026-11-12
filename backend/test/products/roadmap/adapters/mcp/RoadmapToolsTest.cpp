@@ -5395,8 +5395,8 @@ TEST(mcp_a_single_node_edit_that_changes_nothing_writes_nothing_and_says_so) {
                          "mcp.roadmap_annotate_node ok"}));
 }
 
-// A single-node edit that changes any field it names lands as it always has: a seq, an op row, and no `unchanged`.
-TEST(mcp_a_single_node_edit_that_changes_one_field_it_names_lands_whole) {
+// A single-node edit that changes any field it names lands: a seq, an op row, and no `unchanged`.
+TEST(mcp_a_single_node_edit_that_changes_one_field_it_names_lands_with_a_seq_and_a_row) {
   Harness h;
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","description":"Notes","icon":"pin",
     "links":[{"url":"https://a.example/1","label":"One"}]})")).isError);
@@ -5760,4 +5760,38 @@ TEST(mcp_describe_tree_writes_a_guide_sent_as_held_so_a_forks_owner_makes_it_the
   const std::string title = before["tree"]["title"].asString();
   CHECK_EQ(call("describe_tree", with("title", title.c_str())),
            parse("{\"applied\":true,\"seq\":" + std::to_string(seq + 1) + ",\"unchanged\":true}"));
+}
+
+// An annotation write lands only the fields that differ from what the node holds, through every door: the frame and
+// the op row carry the description alone, and a client's icon stamped before the write and joined after it wins.
+TEST(mcp_an_annotation_lands_only_the_fields_that_differ_through_every_door) {
+  for (const auto& [tool, arguments] : std::vector<std::pair<const char*, const char*>>{
+           {"annotate_node", R"({"nodeId":"a","icon":"star","description":"new"})"},
+           {"patch_nodes", R"({"updates":[{"nodeId":"a","icon":"star","description":"new"}]})"},
+           {"import_subgraph", R"({"nodes":[{"id":"a","icon":"star","description":"new"}]})"}}) {
+    Harness h;
+    CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","icon":"star","description":"old"})")).isError);
+    TreeRoom& room = *h.registry.open(TreeId{"t"});
+    Hlc held;
+    for (const NodeStateEntry& node : room.exportState().nodes)
+      if (node.id == NodeId{"a"}) held = node.iconAt;
+
+    CHECK_FALSE(h.call(tool, parse(arguments)).isError);
+    const GraphState& frame = h.bus.subgraphBroadcasts.back().subgraph.graph;
+    REQUIRE_EQ(frame.nodes.size(), 1u);
+    CHECK(frame.nodes[0].descriptionAt.isSet());
+    CHECK_FALSE(frame.nodes[0].iconAt.isSet());
+    CHECK_EQ(commandPayload(h.ops.byTree["t"].back().command), parse(R"({"id":"a","description":"new"})"));
+
+    Subgraph client;
+    client.treeId = TreeId{"t"};
+    client.frameId = std::string("client-icon-") + tool;
+    client.actor = "r_client";
+    client.intent = SubgraphIntent::live;
+    client.graph.nodes.push_back(
+        NodeStateEntry{.id = NodeId{"a"}, .icon = "anchor", .iconAt = Hlc{held.physicalMs, held.counter + 1, "r_client"}});
+    REQUIRE(room.joinSubgraph(client, h.caller).has_value());
+    CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["icon","description"]})")))["nodes"],
+             parse(R"([{"icon":"anchor","description":"new"}])"));
+  }
 }

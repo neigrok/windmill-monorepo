@@ -609,7 +609,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "after birth, so it is how an `empty-icon` smell from get_diagnostics is fixed. Every length "
         "cap counts Unicode code points, and a refusal names each field over its cap and by how much. "
         "When no field it names would change, it writes nothing and answers `unchanged: true` with the "
-        "tree's current `seq`; when any would, the whole edit lands.",
+        "tree's current `seq`; when any would, the fields that change land and a field sent as the node "
+        "already holds it is left as it is.",
         p, {"treeId", "nodeId"}));
   }
   {
