@@ -159,6 +159,8 @@ std::optional<Command> changedPart(const NodeSpec& node, const Command& command)
 // against the ones its node holds (shownLinks).
 std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates);
+// The edges a change lands, as one command each — or, when they are one edge removed and one added that keeps its
+// source or its target, as the one ReconnectEdge that moves an edge, as a lone change lands as its own command.
 std::variant<EdgeChangePlan, std::string> planEdgeChanges(
     const LooseGraph& graph, const EdgeChanges& changes);
 

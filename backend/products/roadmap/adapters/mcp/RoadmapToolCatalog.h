@@ -19,7 +19,6 @@ inline const std::vector<const char*> kNodeStates = {"locked", "available", "com
 // The two batch forms' item caps, published as `maxItems` and refused past them.
 inline constexpr std::size_t kMaxDeleteNodeIds = 200;    // delete_node's `nodeIds`
 inline constexpr std::size_t kMaxProgressUpdates = 1000;
-inline constexpr std::size_t kMaxDisconnectEdges = 500;  // disconnect's `edges`
 
 // The product half of every grant that reaches this catalog (`roadmap:write`).
 inline constexpr const char* kRoadmapProduct = "roadmap";

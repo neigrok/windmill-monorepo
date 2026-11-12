@@ -26,6 +26,13 @@ using namespace wm::test;
 
 namespace {
 
+// change_edges' arguments that add the one edge `edge`.
+Json::Value adding(const Json::Value& edge) {
+  Json::Value args(Json::objectValue);
+  args["add"].append(edge);
+  return args;
+}
+
 Json::Value everyNodeField() {
   return list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position", "status",
                "seedStatus", "state", "summary", "description", "links", "opens"});
@@ -83,7 +90,7 @@ TEST(mcp_create_node_mints_a_slug_id_and_get_tree_shows_it) {
   CHECK_EQ(got["tree"]["nodes"][0]["label"].asString(), std::string("Renderer Core"));
 }
 
-TEST(mcp_connecting_a_back_edge_surfaces_a_cycle_and_flags_it) {
+TEST(mcp_adding_a_back_edge_surfaces_a_cycle_and_flags_it) {
   Harness h;
 
   Json::Value a(Json::objectValue);
@@ -98,12 +105,12 @@ TEST(mcp_connecting_a_back_edge_surfaces_a_cycle_and_flags_it) {
   Json::Value forward(Json::objectValue);
   forward["from"] = "a";
   forward["to"] = "b";
-  CHECK(body(h.call("connect", forward))["diagnosticsClean"].asBool());
+  CHECK(body(h.call("change_edges", adding(forward)))["diagnosticsClean"].asBool());
 
   Json::Value back(Json::objectValue);
   back["from"] = "b";
   back["to"] = "a";
-  CHECK_FALSE(body(h.call("connect", back))["diagnosticsClean"].asBool());
+  CHECK_FALSE(body(h.call("change_edges", adding(back)))["diagnosticsClean"].asBool());
 
   ToolResult diag = h.call("get_diagnostics", Json::Value(Json::objectValue));
   CHECK_FALSE(diag.isError);
@@ -174,7 +181,7 @@ TEST(mcp_get_health_needs_a_valid_dag) {
   Json::Value self(Json::objectValue);
   self["from"] = "a";
   self["to"] = "a";
-  h.call("connect", self);
+  h.call("change_edges", adding(self));
   CHECK(h.call("get_health", Json::Value(Json::objectValue)).isError);
 }
 
@@ -915,11 +922,9 @@ TEST(mcp_prune_clears_dangling_edges_and_orphan_progress) {
   Json::Value edge(Json::objectValue);
   edge["from"] = "a";
   edge["to"] = "b";
-  h.call("connect", edge);
-  Json::Value toGhost(Json::objectValue);
-  toGhost["from"] = "a";
-  toGhost["to"] = "ghost";
-  h.call("connect", toGhost);
+  h.call("change_edges", adding(edge));
+  // An edge to a node the tree never held, as a client's frame may land it.
+  h.registry.open(TreeId{"t"})->applyCommand(AddEdge{NodeId{"a"}, NodeId{"ghost"}}, h.clock.nowMs(), h.caller);
 
   h.call("set_progress", mark("a", "complete"));
   h.call("set_progress", mark("b", "complete"));
@@ -1376,7 +1381,7 @@ TEST(mcp_state_still_answers_on_an_untidy_tree) {
   Json::Value back(Json::objectValue);
   back["from"] = "y";
   back["to"] = "x";
-  CHECK_FALSE(body(h.call("connect", back))["diagnosticsClean"].asBool());
+  CHECK_FALSE(body(h.call("change_edges", adding(back)))["diagnosticsClean"].asBool());
   CHECK_FALSE(body(h.call("get_diagnostics", kNoArgs))["cycles"].empty());
   CHECK_FALSE(body(h.call("get_diagnostics", kNoArgs))["dangling"].empty());
 
@@ -1455,12 +1460,11 @@ TEST(mcp_an_edit_says_whether_the_dirt_it_reports_is_its_own) {
   h.call("create_node", node("a", "A"));
   h.call("create_node", node("b", "B"));
 
-  Json::Value ghost(Json::objectValue);
-  ghost["from"] = "a";
-  ghost["to"] = "ghost";
-  const Json::Value guilty = body(h.call("connect", ghost));
+  Json::Value ghost = node("c", "C");
+  ghost["prerequisites"] = list({"ghost"});
+  const Json::Value guilty = body(h.call("create_node", ghost));
   CHECK_FALSE(guilty["diagnosticsClean"].asBool());
-  CHECK_EQ(introduced(guilty), (std::vector<std::string>{"dangling edge \"a\" -> \"ghost\""}));
+  CHECK_EQ(introduced(guilty), (std::vector<std::string>{"dangling edge \"ghost\" -> \"c\""}));
 
   Json::Value renamed(Json::objectValue);
   renamed["nodeId"] = "a";
@@ -1481,18 +1485,18 @@ TEST(mcp_an_edit_names_the_cycle_the_dangle_and_the_self_edge_it_introduced) {
   Json::Value forward(Json::objectValue);
   forward["from"] = "a";
   forward["to"] = "b";
-  CHECK_EQ(introduced(body(h.call("connect", forward))), std::vector<std::string>{});
+  CHECK_EQ(introduced(body(h.call("change_edges", adding(forward)))), std::vector<std::string>{});
 
   Json::Value back(Json::objectValue);
   back["from"] = "b";
   back["to"] = "a";
-  CHECK_EQ(introduced(body(h.call("connect", back))),
+  CHECK_EQ(introduced(body(h.call("change_edges", adding(back)))),
            (std::vector<std::string>{"cycle among \"a\", \"b\""}));
 
   Json::Value loop(Json::objectValue);
   loop["from"] = "a";
   loop["to"] = "a";
-  CHECK_EQ(introduced(body(h.call("connect", loop))),
+  CHECK_EQ(introduced(body(h.call("change_edges", adding(loop)))),
            (std::vector<std::string>{"self-edge on \"a\""}));
 
   const Json::Value deleted = body(h.call("delete_node", with("nodeId", "b")));
@@ -1511,7 +1515,7 @@ TEST(mcp_an_edit_names_the_cycle_the_dangle_and_the_self_edge_it_introduced) {
            (std::vector<std::string>{"dangling edge \"nowhere\" -> \"c\""}));
 }
 
-// --- delete_node and disconnect: the two-form batch contract ------------------------------
+// --- delete_node: the two-form batch contract ------------------------------
 
 namespace {
 
@@ -1525,9 +1529,9 @@ Json::Value edge(const char* from, const char* to) {
 // a -> b -> c -> d, with the caller's marks a complete, b complete, c cleared.
 void chain(Harness& h) {
   for (const char* id : {"a", "b", "c", "d"}) h.call("create_node", node(id, id));
-  h.call("connect", edge("a", "b"));
-  h.call("connect", edge("b", "c"));
-  h.call("connect", edge("c", "d"));
+  h.call("change_edges", adding(edge("a", "b")));
+  h.call("change_edges", adding(edge("b", "c")));
+  h.call("change_edges", adding(edge("c", "d")));
   h.call("set_progress", mark("a", "complete"));
   h.call("set_progress", mark("b", "complete"));
   h.call("set_progress", mark("c", "active"));
@@ -1575,7 +1579,8 @@ TEST(mcp_delete_node_array_with_one_missing_id_applies_nothing_and_names_it) {
 TEST(mcp_delete_node_prune_drops_the_edges_it_dangles_and_the_callers_marks_in_one_seq) {
   Harness h;
   chain(h);
-  h.call("connect", edge("a", "ghost"));  // dirt this delete did not make: it stays
+  // Dirt this delete did not make, as a client's frame may land it: it stays.
+  h.registry.open(TreeId{"t"})->applyCommand(AddEdge{NodeId{"a"}, NodeId{"ghost"}}, h.clock.nowMs(), h.caller);
   const Seq before = headOf(h);
 
   Json::Value args(Json::objectValue);
@@ -1698,46 +1703,10 @@ TEST(mcp_delete_node_refuses_neither_form_both_forms_and_a_malformed_batch) {
            (std::vector<std::string>{"a", "b", "c", "d"}));
 }
 
-TEST(mcp_disconnect_batch_removes_every_edge_under_one_seq_and_counts_the_present_ones) {
-  Harness h;
-  chain(h);
-  const Seq before = headOf(h);
 
-  Json::Value args(Json::objectValue);
-  args["edges"] = edgeList({{"a", "b"}, {"c", "d"}, {"x", "y"}});
-  ToolResult result = h.call("disconnect", args);
-  CHECK_FALSE(result.isError);
-  const Json::Value receipt = body(result);
-  CHECK_EQ(keys(receipt),
-           (std::vector<std::string>{"applied", "diagnosticsClean", "introducedDiagnostics", "removed", "seq"}));
-  CHECK(receipt["applied"].asBool());
-  CHECK_EQ(receipt["seq"].asInt64(), before + 1);
-  CHECK_EQ(receipt["removed"].asInt(), 2);
-  CHECK(receipt["diagnosticsClean"].asBool());
-  CHECK_EQ(introduced(receipt), std::vector<std::string>{});
-
-  CHECK_EQ(headOf(h), before + 1);
-  Json::Value shape(Json::objectValue);
-  shape["fields"] = list({"id", "prerequisites"});
-  const Json::Value nodes = body(h.call("get_tree", shape))["tree"]["nodes"];
-  REQUIRE_EQ(nodes.size(), 4u);
-  CHECK(nodes[0]["prerequisites"].empty());
-  CHECK(nodes[1]["prerequisites"].empty());
-  CHECK_EQ(nodes[2]["prerequisites"], list({"b"}));
-  CHECK(nodes[3]["prerequisites"].empty());
-
-  // The single form is the same contract with one edge, and an absent edge is a no-op there too:
-  // nothing lands, so no seq is minted.
-  const Json::Value single = body(h.call("disconnect", edge("b", "c")));
-  CHECK_EQ(single["removed"].asInt(), 1);
-  CHECK_EQ(single["seq"].asInt64(), before + 2);
-  const Json::Value absent = body(h.call("disconnect", edge("b", "c")));
-  CHECK(absent["applied"].asBool());
-  CHECK_EQ(absent["removed"].asInt(), 0);
-  CHECK_EQ(absent["seq"].asInt64(), before + 2);
-}
-
-TEST(mcp_disconnecting_an_edge_the_tree_never_held_plants_no_tombstone) {
+// Removing an edge the tree never held plants no tombstone: nothing lands, no seq is minted, and the lattice holds the
+// entries it held; a present edge among absent ones lands alone, as the one entry its frame touches.
+TEST(mcp_removing_an_edge_the_tree_never_held_plants_no_tombstone) {
   Harness h;
   chain(h);
   const Seq before = headOf(h);
@@ -1745,85 +1714,63 @@ TEST(mcp_disconnecting_an_edge_the_tree_never_held_plants_no_tombstone) {
   CHECK_EQ(entries, 3u);
 
   Json::Value args(Json::objectValue);
-  args["edges"] = edgeList({{"x", "y"}, {"a", "d"}, {"d", "a"}});
-  const Json::Value receipt = body(h.call("disconnect", args));
-  CHECK(receipt["applied"].asBool());
-  CHECK_EQ(receipt["removed"].asInt(), 0);
+  args["remove"] = edgeList({{"x", "y"}, {"a", "d"}, {"d", "a"}});
+  const Json::Value receipt = body(h.call("change_edges", args));
+  CHECK(receipt["unchanged"].asBool());
+  CHECK_EQ(receipt["unchangedEdges"].asInt(), 3);
   CHECK_EQ(receipt["seq"].asInt64(), before);
   CHECK_EQ(h.registry.open(tid())->exportState().edges.size(), entries);
   CHECK_EQ(h.ops.byTree["t"].size(), static_cast<std::size_t>(before));
   CHECK_EQ(h.bus.subgraphBroadcasts.size(), static_cast<std::size_t>(before));
 
-  const Json::Value single = body(h.call("disconnect", edge("x", "y")));
-  CHECK_EQ(single["removed"].asInt(), 0);
-  CHECK_EQ(h.registry.open(tid())->exportState().edges.size(), entries);
-
-  // A present edge among absent ones still lands, alone, as the one entry the frame touches.
-  args["edges"] = edgeList({{"x", "y"}, {"a", "b"}});
-  const Json::Value mixed = body(h.call("disconnect", args));
-  CHECK_EQ(mixed["removed"].asInt(), 1);
+  args["remove"] = edgeList({{"x", "y"}, {"a", "b"}});
+  const Json::Value mixed = body(h.call("change_edges", args));
+  CHECK_EQ(mixed["removedEdges"], edgeList({{"a", "b"}}));
   CHECK_EQ(mixed["seq"].asInt64(), before + 1);
   CHECK_EQ(h.registry.open(tid())->exportState().edges.size(), entries);
   CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.graph.edges.size(), 1u);
 }
 
-TEST(mcp_disconnect_refuses_neither_form_both_forms_and_a_malformed_batch) {
+// A malformed batch is refused whole, naming what is wrong, and nothing lands: no edge named, a row missing an
+// endpoint, an edge named twice, and a list past the cap.
+TEST(mcp_change_edges_refuses_a_malformed_batch_whole) {
   Harness h;
   chain(h);
   const Seq before = headOf(h);
 
-  CHECK_EQ(message(h.call("disconnect", kNoArgs)),
-           std::string("disconnect: missing required arguments \"from\" and \"to\" (or an \"edges\" list of "
-                       "{from, to}, 1 to 500 edges). Call get_tree with fields [\"id\",\"prerequisites\"] to "
-                       "list the edges this tree has."));
-
-  Json::Value both = edge("a", "b");
-  both["edges"] = edgeList({{"b", "c"}});
-  CHECK_EQ(message(h.call("disconnect", both)),
-           std::string("disconnect: pass a single \"from\"+\"to\" or an \"edges\" list, not both — one form "
-                       "names what this call removes."));
-
-  CHECK_EQ(message(h.call("disconnect", with("from", "a"))),
-           std::string("disconnect: missing required argument \"to\""));
-
-  Json::Value empty(Json::objectValue);
-  empty["edges"] = Json::Value(Json::arrayValue);
-  CHECK_EQ(message(h.call("disconnect", empty)),
-           std::string("disconnect: argument \"edges\" is an empty list — pass at least one {from, to} to remove."));
+  CHECK_EQ(message(h.call("change_edges", kNoArgs)),
+           std::string("change_edges: add and remove must contain 1 to 500 edges in total. Call get_tree with fields "
+                       "[\"id\",\"prerequisites\"] to list the edges this tree has."));
 
   Json::Value halfRow(Json::objectValue);
-  halfRow["edges"] = edgeList({{"a", "b"}});
-  halfRow["edges"][0].removeMember("to");
-  CHECK_EQ(message(h.call("disconnect", halfRow)),
-           std::string("disconnect: missing required argument \"edges[0].to\""));
+  halfRow["remove"] = edgeList({{"a", "b"}});
+  halfRow["remove"][0].removeMember("to");
+  CHECK_EQ(message(h.call("change_edges", halfRow)),
+           std::string("change_edges: missing required argument \"remove[0].to\""));
 
   Json::Value repeated(Json::objectValue);
-  repeated["edges"] = edgeList({{"a", "b"}, {"b", "c"}, {"a", "b"}});
-  CHECK_EQ(message(h.call("disconnect", repeated)),
-           std::string("disconnect: edges[2] repeats edges[0] (\"a\" -> \"b\") — an edge is named once per batch"));
+  repeated["remove"] = edgeList({{"a", "b"}, {"b", "c"}, {"a", "b"}});
+  CHECK_EQ(message(h.call("change_edges", repeated)),
+           std::string("change_edges: remove repeats edge \"a\" -> \"b\""));
 
   Json::Value tooMany(Json::objectValue);
   Json::Value many(Json::arrayValue);
   for (int i = 0; i < 501; ++i) many.append(edge("a", ("n" + std::to_string(i)).c_str()));
-  tooMany["edges"] = many;
-  CHECK_EQ(message(h.call("disconnect", tooMany)), std::string("disconnect: edges has 501 items, max 500"));
+  tooMany["remove"] = many;
+  CHECK_EQ(message(h.call("change_edges", tooMany)), std::string("change_edges: remove has 501 items, max 500"));
 
   CHECK_EQ(headOf(h), before);
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 4u);
 }
 
-TEST(mcp_delete_node_and_disconnect_publish_both_forms_in_their_schemas) {
+TEST(mcp_delete_node_publishes_both_forms_in_its_schema) {
   Harness h;
   const Json::Value catalog = h.tools.listTools(h.actor);
 
   const Json::Value* del = nullptr;
-  const Json::Value* dis = nullptr;
-  for (const Json::Value& tool : catalog) {
+  for (const Json::Value& tool : catalog)
     if (tool["name"].asString() == "delete_node") del = &tool;
-    if (tool["name"].asString() == "disconnect") dis = &tool;
-  }
   REQUIRE(del != nullptr);
-  REQUIRE(dis != nullptr);
 
   const Json::Value& deleteSchema = (*del)["inputSchema"];
   CHECK_EQ(deleteSchema["required"], list({"treeId"}));
@@ -1836,19 +1783,6 @@ TEST(mcp_delete_node_and_disconnect_publish_both_forms_in_their_schemas) {
   CHECK_EQ(deleteSchema["properties"]["prune"]["type"].asString(), std::string("boolean"));
   CHECK(deleteSchema["additionalProperties"].isBool());
   CHECK_FALSE(deleteSchema["additionalProperties"].asBool());
-
-  const Json::Value& disconnectSchema = (*dis)["inputSchema"];
-  CHECK_EQ(disconnectSchema["required"], list({"treeId"}));
-  const Json::Value& edges = disconnectSchema["properties"]["edges"];
-  CHECK_EQ(edges["type"].asString(), std::string("array"));
-  CHECK_EQ(edges["minItems"].asInt(), 1);
-  CHECK_EQ(edges["maxItems"].asInt(), 500);
-  CHECK_EQ(edges["items"]["type"].asString(), std::string("object"));
-  CHECK_EQ(edges["items"]["required"], list({"from", "to"}));
-  CHECK(edges["items"]["additionalProperties"].isBool());
-  CHECK_FALSE(edges["items"]["additionalProperties"].asBool());
-  CHECK_EQ(edges["items"]["properties"]["from"]["type"].asString(), std::string("string"));
-  CHECK_EQ(edges["items"]["properties"]["to"]["type"].asString(), std::string("string"));
 }
 
 namespace {
@@ -2527,7 +2461,7 @@ TEST(mcp_include_edges_lists_every_live_edge_and_none_of_the_tombstoned) {
   h.call("create_node", coloredNode("b", "sky", {"a"}));
   h.call("create_node", coloredNode("c", "sky", {"a", "b"}));
   h.call("create_node", coloredNode("d", "sky", {"c"}));
-  CHECK_FALSE(h.call("disconnect", edge("a", "c")).isError);  // tombstoned edge
+  CHECK_FALSE(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"c"}]})")).isError);  // tombstoned edge
   CHECK_FALSE(h.call("delete_node", with("nodeId", "d")).isError);  // tombstoned node takes c -> d with it
 
   Json::Value expected(Json::arrayValue);
@@ -3336,7 +3270,7 @@ TEST(mcp_change_edges_is_atomic_and_reports_cycles_and_noop_retries) {
   Harness h;
   h.call("create_node", node("a", "A"));
   h.call("create_node", node("b", "B"));
-  h.call("connect", parse(R"({"from":"a","to":"b"})"));
+  h.call("change_edges", parse(R"({"add":[{"from":"a","to":"b"}]})"));
   const Json::Value args = parse(R"({"add":[{"from":"b","to":"a"}],"remove":[{"from":"missing","to":"a"}],"expectedSeq":3})");
   CHECK_EQ(body(h.call("change_edges", args)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":4,"addedEdges":[{"from":"b","to":"a"}],"removedEdges":[],"unchangedEdges":1,"diagnosticsClean":false,"introducedDiagnostics":["cycle among \"a\", \"b\""]})"));
   Json::Value retry = args;
@@ -3380,7 +3314,7 @@ TEST(mcp_legacy_progress_aliases_clear_without_completing_prerequisites) {
   Harness h;
   h.call("create_node", node("a", "A"));
   h.call("create_node", node("b", "B"));
-  h.call("connect", edge("a", "b"));
+  h.call("change_edges", adding(edge("a", "b")));
   h.call("set_progress", mark("a", "complete"));
   CHECK_FALSE(h.call("set_progress", mark("a", "active")).isError);
   CHECK_FALSE(h.call("set_progress", mark("b", "inProgress")).isError);
@@ -4542,8 +4476,9 @@ TEST(mcp_an_edit_that_makes_no_node_open_a_tree_follows_nothing_and_its_receipt_
            parse(R"({"applied":true,"seq":4,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":""})"))),
            parse(R"({"applied":true,"seq":5,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  CHECK_EQ(body(h.call("connect", parse(R"({"from":"a","to":"c"})"))),
-           parse(R"({"applied":true,"seq":6,"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("change_edges", parse(R"({"add":[{"from":"a","to":"c"}]})"))),
+           parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":6,"addedEdges":[{"from":"a","to":"c"}],
+             "removedEdges":[],"unchangedEdges":0,"diagnosticsClean":true,"introducedDiagnostics":[]})"));
   const ToolResult patched = h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"b","opens":""},{"nodeId":"c","label":"C renamed"}]})"));
   CHECK_EQ(body(patched), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":7,"changedNodeIds":["b","c"],"unchangedNodeIds":[],
       "diagnosticsClean":true,"introducedDiagnostics":[]})"));
@@ -7552,4 +7487,279 @@ TEST(mcp_update_nodes_takes_a_null_kind_beside_a_mark_as_no_tree_field) {
                                   stranger)),
            expected);
   CHECK_EQ(h->ops.byTree["t"].size(), rows);
+}
+
+namespace {
+
+// Nodes a, b and c, and the one edge a → b.
+std::unique_ptr<Harness> edgeTree() {
+  auto h = std::make_unique<Harness>();
+  CHECK_FALSE(h->call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
+    "prerequisites":["a"]},{"id":"c","label":"C"}]})")).isError);
+  return h;
+}
+
+// Each node's prerequisites, as get_tree answers them.
+Json::Value prerequisitesOf(Harness& h) {
+  Json::Value shape(Json::objectValue);
+  shape["fields"] = list({"id", "prerequisites"});
+  return body(h.call("get_tree", shape))["tree"]["nodes"];
+}
+
+// The op rows the log gained since `from`, each as its kind and payload.
+Json::Value rowsSince(Harness& h, std::size_t from) {
+  Json::Value rows(Json::arrayValue);
+  const std::vector<AppliedOp>& ops = h.ops.byTree["t"];
+  for (std::size_t i = from; i < ops.size(); ++i) {
+    Json::Value row(Json::objectValue);
+    row["seq"] = static_cast<Json::Int64>(ops[i].seq);
+    row["kind"] = commandKind(ops[i].command);
+    row["payload"] = commandPayload(ops[i].command);
+    rows.append(row);
+  }
+  return rows;
+}
+
+}
+
+// One edge added is one AddEdge op row under one seq, and the receipt names it beside the diagnostics: clean for an
+// edge that closes nothing, and naming the cycle one closes.
+TEST(mcp_change_edges_adds_one_edge_as_one_add_edge_row) {
+  for (const auto& [args, receipt, rows] : std::vector<std::tuple<const char*, const char*, const char*>>{
+           {R"({"add":[{"from":"b","to":"c"}]})",
+            R"({"treeId":"t","applied":true,"dryRun":false,"seq":2,"addedEdges":[{"from":"b","to":"c"}],
+              "removedEdges":[],"unchangedEdges":0,"diagnosticsClean":true,"introducedDiagnostics":[]})",
+            R"([{"seq":2,"kind":"AddEdge","payload":{"from":"b","to":"c"}}])"},
+           {R"({"add":[{"from":"b","to":"a"}]})",
+            R"({"treeId":"t","applied":true,"dryRun":false,"seq":2,"addedEdges":[{"from":"b","to":"a"}],
+              "removedEdges":[],"unchangedEdges":0,"diagnosticsClean":false,
+              "introducedDiagnostics":["cycle among \"a\", \"b\""]})",
+            R"([{"seq":2,"kind":"AddEdge","payload":{"from":"b","to":"a"}}])"}}) {
+    auto h = edgeTree();
+    const std::size_t before = h->ops.byTree["t"].size();
+    CHECK_EQ(body(h->call("change_edges", parse(args))), parse(receipt));
+    CHECK_EQ(rowsSince(*h, before), parse(rows));
+  }
+}
+
+// A move — one edge removed and one added that keeps its source or its target, both landing — is the one command that
+// moves an edge, as a lone change is its own command: ONE ReconnectEdge op row under one seq, which the Activity feed
+// tells as a reroute naming the edge it now is.
+TEST(mcp_change_edges_moves_an_edge_as_one_reconnect_edge_row) {
+  for (const auto& [args, receipt, row, prerequisites, event] :
+       std::vector<std::tuple<const char*, const char*, const char*, const char*, std::vector<std::string>>>{
+           {R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"a","to":"c"}]})",
+            R"({"treeId":"t","applied":true,"dryRun":false,"seq":2,"addedEdges":[{"from":"a","to":"c"}],
+              "removedEdges":[{"from":"a","to":"b"}],"unchangedEdges":0,"diagnosticsClean":true,"introducedDiagnostics":[]})",
+            R"([{"seq":2,"kind":"ReconnectEdge","payload":{"oldFrom":"a","oldTo":"b","newFrom":"a","newTo":"c"}}])",
+            R"([{"id":"a","prerequisites":[]},{"id":"b","prerequisites":[]},{"id":"c","prerequisites":["a"]}])",
+            {"2", "", "rerouted", "c", "C", "terracotta", "rerouted A → C"}},
+           {R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"c","to":"b"}]})",
+            R"({"treeId":"t","applied":true,"dryRun":false,"seq":2,"addedEdges":[{"from":"c","to":"b"}],
+              "removedEdges":[{"from":"a","to":"b"}],"unchangedEdges":0,"diagnosticsClean":true,"introducedDiagnostics":[]})",
+            R"([{"seq":2,"kind":"ReconnectEdge","payload":{"oldFrom":"a","oldTo":"b","newFrom":"c","newTo":"b"}}])",
+            R"([{"id":"a","prerequisites":[]},{"id":"b","prerequisites":["c"]},{"id":"c","prerequisites":[]}])",
+            {"2", "", "rerouted", "b", "B", "terracotta", "rerouted C → B"}}}) {
+    auto h = edgeTree();
+    const std::size_t before = h->ops.byTree["t"].size();
+    CHECK_EQ(body(h->call("change_edges", parse(args))), parse(receipt));
+    CHECK_EQ(rowsSince(*h, before), parse(row));
+    CHECK_EQ(prerequisitesOf(*h), parse(prerequisites));
+    const ActivityEvent moved = activityFeed(h->registry.open(TreeId{"t"})->snapshot(), h->ops.byTree["t"], 1).back();
+    CHECK_EQ((std::vector<std::string>{std::to_string(moved.seq), moved.actor, moved.verb, moved.node.str(), moved.label,
+                                       moved.kind, moved.summary}),
+             event);
+  }
+}
+
+// A removal and an addition that keep neither the source nor the target in its place are two changes, not a move: one
+// Batch row of both, which the feed tells by its parts under the removal's subject.
+TEST(mcp_change_edges_lands_a_removal_and_an_unrelated_addition_as_one_batch) {
+  for (const char* args : {R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"c","to":"d"}]})",
+                           R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"b","to":"c"}]})"}) {
+    auto h = edgeTree();
+    CHECK_FALSE(h->call("create_node", node("d", "D")).isError);
+    const std::size_t before = h->ops.byTree["t"].size();
+    const Json::Value added = parse(args)["add"][0];
+    CHECK_FALSE(h->call("change_edges", parse(args)).isError);
+    Json::Value rows = parse(R"([{"seq":3,"kind":"Batch","payload":{"commands":[
+      {"kind":"RemoveEdge","payload":{"from":"a","to":"b"}},{"kind":"AddEdge","payload":{}}]}}])");
+    rows[0]["payload"]["commands"][1]["payload"] = added;
+    CHECK_EQ(rowsSince(*h, before), rows);
+    const ActivityEvent changed = activityFeed(h->registry.open(TreeId{"t"})->snapshot(), h->ops.byTree["t"], 1).back();
+    CHECK_EQ((std::vector<std::string>{changed.verb, changed.node.str(), changed.summary}),
+             (std::vector<std::string>{"unlinked", "b", "unlinked 1 link and linked 1 link"}));
+  }
+}
+
+// A move whose one half is an echo — the edge to add is held, or the edge to remove is absent — lands the other half
+// alone, as its own command.
+TEST(mcp_change_edges_lands_the_lone_half_of_a_move_as_itself) {
+  for (const auto& [args, row] : std::vector<std::pair<const char*, const char*>>{
+           {R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"a","to":"c"}]})",
+            R"([{"seq":3,"kind":"RemoveEdge","payload":{"from":"a","to":"b"}}])"},
+           {R"({"remove":[{"from":"b","to":"c"}],"add":[{"from":"a","to":"c"}]})",
+            R"([])"},
+           {R"({"remove":[{"from":"c","to":"b"}],"add":[{"from":"b","to":"c"}]})",
+            R"([{"seq":3,"kind":"AddEdge","payload":{"from":"b","to":"c"}}])"}}) {
+    auto h = edgeTree();
+    CHECK_FALSE(h->call("change_edges", parse(R"({"add":[{"from":"a","to":"c"}]})")).isError);
+    const std::size_t before = h->ops.byTree["t"].size();
+    CHECK_FALSE(h->call("change_edges", parse(args)).isError);
+    CHECK_EQ(rowsSince(*h, before), parse(row));
+  }
+}
+
+// A move whose new edge names a node the tree does not hold lands nothing: the old edge stays and no op row is
+// written. An edge to such a node is refused alone too.
+TEST(mcp_a_change_edges_move_lands_whole_or_not_at_all) {
+  auto h = edgeTree();
+  const StoredTree stored = h->trees.byId["t"];
+  const std::size_t rows = h->ops.byTree["t"].size();
+  for (const char* args : {R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"a","to":"ghost"}]})",
+                           R"({"add":[{"from":"a","to":"ghost"}]})"})
+    CHECK_EQ(message(h->call("change_edges", parse(args))),
+             std::string("change_edges: no node in this tree is named \"ghost\""));
+  CHECK(h->trees.byId["t"] == stored);
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
+}
+
+// Edges removed are a lone RemoveEdge row for one and one Batch for several; an edge the tree does not hold is no row
+// of it, and the receipt counts it unchanged.
+TEST(mcp_change_edges_removes_edges_as_remove_edge_rows) {
+  for (const auto& [named, receipt, rows] : std::vector<std::tuple<const char*, const char*, const char*>>{
+           {R"([{"from":"a","to":"b"}])",
+            R"({"treeId":"t","applied":true,"dryRun":false,"seq":3,"addedEdges":[],"removedEdges":[{"from":"a","to":"b"}],
+              "unchangedEdges":0,"diagnosticsClean":true,"introducedDiagnostics":[]})",
+            R"([{"seq":3,"kind":"RemoveEdge","payload":{"from":"a","to":"b"}}])"},
+           {R"([{"from":"a","to":"b"},{"from":"b","to":"c"},{"from":"x","to":"y"}])",
+            R"({"treeId":"t","applied":true,"dryRun":false,"seq":3,"addedEdges":[],
+              "removedEdges":[{"from":"a","to":"b"},{"from":"b","to":"c"}],"unchangedEdges":1,"diagnosticsClean":true,
+              "introducedDiagnostics":[]})",
+            R"([{"seq":3,"kind":"Batch","payload":{"commands":[{"kind":"RemoveEdge","payload":{"from":"a","to":"b"}},
+              {"kind":"RemoveEdge","payload":{"from":"b","to":"c"}}]}}])"}}) {
+    auto h = edgeTree();
+    CHECK_FALSE(h->call("change_edges", parse(R"({"add":[{"from":"b","to":"c"}]})")).isError);
+    const std::size_t before = h->ops.byTree["t"].size();
+    Json::Value remove(Json::objectValue);
+    remove["remove"] = parse(named);
+    CHECK_EQ(body(h->call("change_edges", remove)), parse(receipt));
+    CHECK_EQ(rowsSince(*h, before), parse(rows));
+  }
+}
+
+// change_edges takes up to 500 edges in a call and refuses 501, naming the list.
+TEST(mcp_change_edges_takes_up_to_500_edges_in_a_call) {
+  auto h = edgeTree();
+  const auto named = [](std::size_t count) {
+    Json::Value rows(Json::arrayValue);
+    for (std::size_t i = 0; i < count; ++i) rows.append(edge("a", ("absent-" + std::to_string(i)).c_str()));
+    return rows;
+  };
+  Json::Value remove(Json::objectValue);
+  remove["remove"] = named(500);
+  CHECK_EQ(body(h->call("change_edges", remove))["unchangedEdges"].asUInt(), 500u);
+  remove["remove"] = named(501);
+  CHECK_EQ(message(h->call("change_edges", remove)), std::string("change_edges: remove has 501 items, max 500"));
+}
+
+// An edge whose node is deleted and an edge from a node to itself are removed by naming them, and the diagnostics clear.
+TEST(mcp_change_edges_removes_a_dangling_and_a_self_edge_by_name) {
+  auto h = edgeTree();
+  CHECK_FALSE(h->call("change_edges", parse(R"({"add":[{"from":"c","to":"c"}]})")).isError);
+  CHECK_FALSE(h->call("delete_node", parse(R"({"nodeId":"b"})")).isError);
+  CHECK_EQ(body(h->call("get_diagnostics", kNoArgs))["dangling"].size(), 1u);
+  CHECK_EQ(body(h->call("change_edges", parse(R"({"remove":[{"from":"a","to":"b"},{"from":"c","to":"c"}]})"))),
+           parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":4,"addedEdges":[],
+             "removedEdges":[{"from":"a","to":"b"},{"from":"c","to":"c"}],"unchangedEdges":0,"diagnosticsClean":true,
+             "introducedDiagnostics":[]})"));
+  CHECK(body(h->call("get_diagnostics", kNoArgs))["dangling"].empty());
+}
+
+// A tree at its edge cap refuses one edge more, saying tidy drops the edges a longer path implies; removing one in
+// the same call makes room.
+TEST(mcp_change_edges_refuses_an_edge_past_the_cap) {
+  Harness h;
+  LooseGraph graph;
+  graph.createNode(NodeId{"a"}, "A", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "seed"});
+  graph.createNode(NodeId{"b"}, "B", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "seed"});
+  for (std::size_t i = 0; i < kMaxEdges; ++i) graph.addEdge(NodeId{"a"}, NodeId{"m-" + std::to_string(i)}, Hlc{2, 0, "seed"});
+  h.trees.byId["t"] = StoredTree{graph.exportState(), LegendState{}, {"Full", {}}, 0, h.caller};
+  CHECK_EQ(message(h.call("change_edges", parse(R"({"add":[{"from":"a","to":"b"}]})"))),
+           std::string("change_edges: this tree would hold 20001 edges, max 20000 — call tidy to drop the edges a "
+                       "longer path already implies"));
+  CHECK_EQ(body(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"m-0"}],
+    "add":[{"from":"a","to":"b"}]})")))["addedEdges"], parse(R"([{"from":"a","to":"b"}])"));
+}
+
+// An edge added that the tree holds, and one removed that it does not, write nothing and answer unchanged.
+TEST(mcp_change_edges_writes_nothing_for_an_edge_held_or_absent) {
+  auto h = edgeTree();
+  const std::size_t rows = h->ops.byTree["t"].size();
+  CHECK_EQ(body(h->call("change_edges", parse(R"({"add":[{"from":"a","to":"b"}],"remove":[{"from":"c","to":"a"}]})"))),
+           parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":1,"addedEdges":[],"removedEdges":[],
+             "unchangedEdges":2,"unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
+}
+
+// connect, disconnect and reconnect are retired, change_edges being the one edge tool: no declaration carries them, and
+// a call to one is refused as a tool the server does not have, in the gate's own words, with nothing written.
+TEST(mcp_the_retired_edge_tools_are_refused_as_unknown_tools) {
+  auto h = edgeTree();
+  const StoredTree stored = h->trees.byId["t"];
+  const std::size_t rows = h->ops.byTree["t"].size();
+  CompositeToolHost gate(std::vector<ToolModule>{{h->tools, ""}});
+  for (const std::string name : {"connect", "disconnect", "reconnect"}) {
+    for (const Json::Value& tool : h->tools.listTools(h->actor)) CHECK(tool["name"].asString() != name);
+    const ToolResult refused = gate.callTool(name, parse(R"({"treeId":"t","from":"b","to":"c","oldFrom":"a",
+      "oldTo":"b","newFrom":"a","newTo":"c"})"), h->actor);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), name + ": no such tool on this server — call tools/list for the whole surface.");
+  }
+  CHECK(h->trees.byId["t"] == stored);
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
+}
+
+// The lists the batch tools take are published whole — bounds, each item's properties, what an item requires, and no
+// other key — so a caller is refused at the schema what the handler would refuse. Prose aside, every key is pinned.
+TEST(mcp_the_batch_tools_publish_their_lists_whole) {
+  Harness h;
+  std::function<Json::Value(Json::Value)> shape = [&](Json::Value schema) {
+    if (schema.isObject()) {
+      if (schema.isMember("description") && schema["description"].isString()) schema.removeMember("description");
+      for (const std::string& key : schema.getMemberNames()) schema[key] = shape(schema[key]);
+    }
+    if (schema.isArray())
+      for (Json::ArrayIndex i = 0; i < schema.size(); ++i) schema[i] = shape(schema[i]);
+    return schema;
+  };
+  std::map<std::string, Json::Value> lists;
+  for (const Json::Value& tool : h.tools.listTools(h.actor)) {
+    const Json::Value& properties = tool["inputSchema"]["properties"];
+    for (const char* list : {"add", "remove", "updates", "nodeIds"})
+      if (properties.isMember(list))  // through text, so a count reads the same whether it was built signed or not
+        lists[tool["name"].asString() + "." + list] = parse(dump(shape(properties[list])));
+  }
+  const Json::Value edges = parse(R"({"type":"array","maxItems":500,"uniqueItems":true,"items":{"type":"object",
+    "additionalProperties":false,"required":["from","to"],"properties":{"from":{"type":"string","maxLength":128},
+    "to":{"type":"string","maxLength":128}}}})");
+  const Json::Value links = parse(R"({"type":"array","maxItems":32,"items":{"type":"object","additionalProperties":false,
+    "required":["url"],"properties":{"label":{"type":"string","maxLength":200},"url":{"type":"string","maxLength":2048}}}})");
+  Json::Value addLinks = links;
+  addLinks["minItems"] = 1;
+  Json::Value updates = parse(R"({"type":"array","minItems":1,"maxItems":200,"items":{"type":"object",
+    "additionalProperties":false,"required":["nodeId"],"properties":{
+      "nodeId":{"type":"string","maxLength":128},"label":{"type":"string","maxLength":200},
+      "color":{"type":"string","enum":["terracotta","olive","gold","brick","sky","plum"]},
+      "kind":{"type":"string","maxLength":128},"description":{"type":"string","maxLength":16000},
+      "appendDescription":{"type":"string","maxLength":16000},"icon":{"type":"string","maxLength":64},
+      "opens":{"type":"string","maxLength":128},"status":{"type":"string","enum":["complete","none"]},
+      "outOfOrder":{"type":"boolean"}}}})");
+  updates["items"]["properties"]["links"] = links;
+  updates["items"]["properties"]["addLinks"] = addLinks;
+  CHECK_EQ(lists.at("change_edges.add"), edges);
+  CHECK_EQ(lists.at("change_edges.remove"), edges);
+  CHECK_EQ(lists.at("update_nodes.updates"), updates);
+  CHECK_EQ(lists.at("delete_node.nodeIds"),
+           parse(R"({"type":"array","minItems":1,"maxItems":200,"items":{"type":"string","maxLength":128}})"));
 }

@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 23;
+constexpr int kWireCorpusVersion = 24;
 
 struct Step {
   const char* tool;
@@ -46,7 +46,7 @@ std::vector<Step> plan() {
       {"create_node", obj({{"id", "render"}, {"label", "Renderer"}, {"color", "sky"},
                            {"prerequisites", strings({"root"})}})},
       {"create_node", obj({{"id", "sync"}, {"label", "Sync"}, {"color", "brick"}})},
-      {"connect", obj({{"from", "root"}, {"to", "sync"}})},
+      {"change_edges", parse(R"({"add":[{"from":"root","to":"sync"}]})")},
       {"set_node_color", obj({{"nodeId", "sync"}, {"color", "plum"}})},
       {"rename_node", obj({{"nodeId", "render"}, {"label", "Renderer Core"}})},
       {"move_node", obj({{"nodeId", "root"}, {"x", 120}, {"y", 60}})},

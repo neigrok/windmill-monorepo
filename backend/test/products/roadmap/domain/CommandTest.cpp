@@ -1377,3 +1377,35 @@ TEST(kind_update_plan_refuses_nothing_sent_an_unknown_kind_and_a_taken_hue) {
   CHECK_EQ(planned(g, legend, KindUpdate{kid("k"), std::string("Kay"), std::nullopt, NodeColor::gold}),
            std::string("refused: hue \"gold\" already belongs to kind \"j\" — a hue names one kind, so pick a free one"));
 }
+
+
+// The plan of an edge change that moves one edge — removing it and adding one that keeps its source or its target —
+// is the one ReconnectEdge; any other removal beside an addition is the Batch of the two.
+TEST(edge_change_plan_lands_a_move_as_one_reconnect_edge) {
+  LooseGraph graph = seeded();
+  graph.createNode(nid("c"), "C", "x", NodeColor::sky, std::nullopt, at(1));
+  const auto commandsOf = [&](const EdgeChanges& changes) {
+    std::vector<std::string> kinds;
+    const auto result = planEdgeChanges(graph, changes);
+    CHECK(std::holds_alternative<EdgeChangePlan>(result));
+    if (!std::holds_alternative<EdgeChangePlan>(result)) return kinds;
+    for (const Command& command : std::get<EdgeChangePlan>(result).batch.commands) {
+      if (const auto* c = std::get_if<AddEdge>(&command)) kinds.push_back("AddEdge " + c->from.str() + " " + c->to.str());
+      else if (const auto* c = std::get_if<RemoveEdge>(&command))
+        kinds.push_back("RemoveEdge " + c->from.str() + " " + c->to.str());
+      else if (const auto* c = std::get_if<ReconnectEdge>(&command))
+        kinds.push_back("ReconnectEdge " + c->oldFrom.str() + " " + c->oldTo.str() + " " + c->newFrom.str() + " " +
+                        c->newTo.str());
+      else kinds.push_back("another command");
+    }
+    return kinds;
+  };
+  CHECK_EQ(commandsOf(EdgeChanges{{Edge{nid("a"), nid("c")}}, {Edge{nid("a"), nid("b")}}}),
+           (std::vector<std::string>{"ReconnectEdge a b a c"}));
+  CHECK_EQ(commandsOf(EdgeChanges{{Edge{nid("c"), nid("b")}}, {Edge{nid("a"), nid("b")}}}),
+           (std::vector<std::string>{"ReconnectEdge a b c b"}));
+  CHECK_EQ(commandsOf(EdgeChanges{{Edge{nid("b"), nid("c")}}, {Edge{nid("a"), nid("b")}}}),
+           (std::vector<std::string>{"RemoveEdge a b", "AddEdge b c"}));
+  CHECK_EQ(commandsOf(EdgeChanges{{Edge{nid("a"), nid("c")}, Edge{nid("c"), nid("b")}}, {Edge{nid("a"), nid("b")}}}),
+           (std::vector<std::string>{"RemoveEdge a b", "AddEdge a c", "AddEdge c b"}));
+}

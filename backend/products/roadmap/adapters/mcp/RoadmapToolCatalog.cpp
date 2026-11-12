@@ -206,7 +206,7 @@ const std::set<std::string> kBulkEdits = {"import_subgraph", "prune", "tidy", "p
                                           "change_edges"};
 const std::set<std::string> kIdempotentWrites = {
     "delete_tree",  "update_tree",   "rename_node",   "set_node_color", "move_node",
-    "connect",      "disconnect",    "reconnect",     "delete_node",    "tidy",
+    "delete_node",  "tidy",
     "add_kind",     "rename_kind",   "describe_kind", "remove_kind",    "reorder_kinds",
     "recolor_kind", "update_kind",   "set_progress",  "import_subgraph", "prune", "patch_nodes", "change_edges"};
 
@@ -330,6 +330,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                   "expectedSeq prevents overwriting intervening edits; dryRun previews changedNodeIds and unchangedNodeIds."
                 : "Add and remove 1..500 prerequisite edges atomically in one operation, seq and broadcast. "
                   "Added endpoints must exist; removing an absent edge is a no-op. Duplicates and add/remove overlap reject the entire batch. "
+                  "To move an edge, send the old one in `remove` and the new one in `add`: the two land as one step. "
                   "Cycles remain allowed and are reported through diagnostics. A batch that adds only held edges and removes "
                   "only absent ones writes nothing and answers `unchanged: true`; expectedSeq and dryRun are supported.",
         p, patches ? std::vector<const char*>{"treeId", "updates"} : std::vector<const char*>{"treeId"});
@@ -719,49 +720,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    p["from"] = cappedStr("The prerequisite node id.", kMaxIdLength);
-    p["to"] = cappedStr("The node it unlocks.", kMaxIdLength);
-    tools.push_back(tool("connect", Access::write,
-        "Add a prerequisite edge from `from` to `to` — `from` must be completed before `to`. "
-        "Idempotent; may form a cycle (surfaced by get_diagnostics, never rejected).",
-        p, {"treeId", "from", "to"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    p["from"] = cappedStr("The prerequisite node id (single form, with `to`).", kMaxIdLength);
-    p["to"] = cappedStr("The node it unlocks (single form, with `from`).", kMaxIdLength);
-    Json::Value endpoints(Json::objectValue);
-    endpoints["from"] = cappedStr("The prerequisite node id.", kMaxIdLength);
-    endpoints["to"] = cappedStr("The node it unlocks.", kMaxIdLength);
-    Json::Value edges = objArray("Batch form: the edges to remove, each named once.", endpoints, {"from", "to"});
-    edges["items"]["additionalProperties"] = false;
-    edges["minItems"] = 1;
-    edges["maxItems"] = static_cast<Json::UInt64>(kMaxDisconnectEdges);
-    p["edges"] = edges;
-    tools.push_back(tool("disconnect", Access::write,
-        "Remove prerequisite edges. Two forms, exactly one per call: a single `from`+`to`, or "
-        "`edges: [{from, to}]` (1 to 500). The whole list lands as ONE op under one seq, or not at "
-        "all: a malformed row or a repeated edge changes nothing and is named. An edge the tree does "
-        "not hold is a no-op, never a refusal; the receipt's `removed` counts the edges that were "
-        "actually present.",
-        p, {"treeId"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    p["oldFrom"] = cappedStr("Current edge source.", kMaxIdLength);
-    p["oldTo"] = cappedStr("Current edge target.", kMaxIdLength);
-    p["newFrom"] = cappedStr("New edge source.", kMaxIdLength);
-    p["newTo"] = cappedStr("New edge target.", kMaxIdLength);
-    tools.push_back(tool("reconnect", Access::write,
-        "Atomically move an edge: remove (oldFrom→oldTo) and add (newFrom→newTo) as one op / one "
-        "undo step.",
-        p, {"treeId", "oldFrom", "oldTo", "newFrom", "newTo"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
     p["nodeId"] = nodeHandle();
     p["id"] = legacyNodeHandle();
     Json::Value nodeIds = strArray("Batch form: the node ids to delete, each named once.", kMaxIdLength);
@@ -1020,7 +978,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "anything lands. "
         "One call carries at most 6 MB of description text across nodes[] (each description is still "
         "capped at 16000 characters on its own); past that the call is refused naming the size, so "
-        "split a bigger import. This collapses hundreds of create/connect/delete calls into one.",
+        "split a bigger import. This collapses hundreds of create_node, change_edges and delete_node calls into one.",
         p, {"treeId", "nodes"}));
   }
   {

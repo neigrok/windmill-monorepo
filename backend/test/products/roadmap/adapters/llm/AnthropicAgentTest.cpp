@@ -167,7 +167,7 @@ TEST(mutates_tree_counts_describe_kind_which_writes_despite_its_name) {
 
 TEST(mutates_tree_treats_everything_else_including_the_unknown_as_a_change) {
   CHECK(mutatesTree("create_node"));
-  CHECK(mutatesTree("connect"));
+  CHECK(mutatesTree("change_edges"));
   CHECK(mutatesTree("delete_node"));
   CHECK(mutatesTree("set_progress"));
   CHECK(mutatesTree("rename_node"));
@@ -347,6 +347,41 @@ TEST(drive_agent_fails_a_step_whose_marks_are_the_call_and_reports_late_marks_at
                       "roadmap.import.clear_marks roadmap Coach failed",
                       "roadmap.import_subgraph roadmap Coach ok",
                   }));
+}
+
+// A tend links and unlinks nodes through change_edges, the one edge tool: a call that changes an edge is one edit of
+// the run, and one naming only an edge the tree holds, or one it does not, is none. Each call writes its line as
+// roadmap.change_edges, door Coach, and the tree holds what the run left.
+TEST(drive_agent_links_and_unlinks_through_change_edges_and_counts_what_changed) {
+  test::Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},
+    {"id":"c","label":"C"}]})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
+  });
+  const auto editsOf = [&](const char* input) {
+    Json::Value call = toolUseReply("change_edges", "toolu_1");
+    call["content"][0]["input"] = parse(input);
+    FakeModel model;
+    model.replies.push_back(call);
+    model.replies.push_back(textReply("end_turn", "Done"));
+    Recorder rec;
+    return driveAgent("tend it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report()).edits;
+  };
+
+  CHECK_EQ(editsOf(R"({"add":[{"from":"a","to":"b"},{"from":"b","to":"c"}]})"), 1);
+  CHECK_EQ(editsOf(R"({"add":[{"from":"a","to":"b"}]})"), 0);
+  CHECK_EQ(editsOf(R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"a","to":"c"}]})"), 1);
+  CHECK_EQ(editsOf(R"({"remove":[{"from":"a","to":"b"}]})"), 0);
+  installWriteSink({});
+
+  CHECK_EQ(lines, (std::vector<std::string>(4, "roadmap.change_edges roadmap Coach ok")));
+  Json::Value shape(Json::objectValue);
+  shape["fields"] = test::list({"id", "prerequisites"});
+  CHECK_EQ(test::body(h.call("get_tree", shape))["tree"]["nodes"],
+           parse(R"([{"id":"a","prerequisites":[]},{"id":"b","prerequisites":[]},{"id":"c","prerequisites":["a","b"]}])"));
 }
 
 // Through a tend's scoped host over the real tools, every write that changes nothing answers `unchanged` and is no edit
@@ -541,7 +576,7 @@ TEST(metered_writes_one_row_per_turn_with_a_stable_run_id_and_a_climbing_iterati
   FakeToolHost host;
   FakeModel model;
   model.replies.push_back(billed(toolUseReply("create_node", "toolu_1"), 9000, 120, 0));
-  model.replies.push_back(billed(toolUseReply("connect", "toolu_2"), 400, 90, 9000));
+  model.replies.push_back(billed(toolUseReply("change_edges", "toolu_2"), 400, 90, 9000));
   model.replies.push_back(billed(textReply("end_turn", "Added 2 steps"), 500, 60, 9400));
 
   auto ledger = std::make_shared<RecordedSpend>();

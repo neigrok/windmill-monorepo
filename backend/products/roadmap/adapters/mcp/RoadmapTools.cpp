@@ -85,8 +85,6 @@ std::optional<std::string> commandKindFor(const std::string& tool) {
   if (tool == "rename_node")    return "RenameNode";
   if (tool == "set_node_color") return "SetNodeColor";
   if (tool == "move_node")      return "RepositionNode";
-  if (tool == "connect")        return "AddEdge";
-  if (tool == "reconnect")      return "ReconnectEdge";
   if (tool == "tidy")           return "TransitiveReduction";
   if (tool == "add_kind")       return "AddKind";
   if (tool == "rename_kind")    return "RenameKind";
@@ -324,18 +322,6 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
   if (tool == "move_node") {
     if (std::optional<std::string> bad = requireNumber(args["x"], "x")) return bad;
     return requireNumber(args["y"], "y");
-  }
-  if (tool == "connect") {
-    if (std::optional<std::string> bad = requireString(args["from"], "from", Empty::rejected, kMaxIdLength))
-      return bad;
-    return requireString(args["to"], "to", Empty::rejected, kMaxIdLength);
-  }
-  if (tool == "reconnect") {
-    for (const char* endpoint : {"oldFrom", "oldTo", "newFrom", "newTo"})
-      if (std::optional<std::string> bad =
-              requireString(args[endpoint], endpoint, Empty::rejected, kMaxIdLength))
-        return bad;
-    return std::nullopt;
   }
   if (tool == "add_kind") {
     if (!args[kKindHandle.alias].isNull())
@@ -1149,7 +1135,13 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, ProgressS
       for (const NodeId& node : rows) out[changed.count(node) ? "changedNodeIds" : "unchangedNodeIds"].append(node.str());
     } else {
       const auto result = room.planEdgeChanges(edges);
-      if (const auto* error = std::get_if<std::string>(&result)) return ToolResult::failure(*error);
+      if (const auto* error = std::get_if<std::string>(&result)) {
+        // A call that names no edge is told where the tree's edges are listed.
+        if (edges.add.empty() && edges.remove.empty())
+          return ToolResult::failure(*error + ". Call get_tree with fields [\"id\",\"prerequisites\"] to list the edges "
+                                              "this tree has.");
+        return ToolResult::failure(*error);
+      }
       const EdgeChangePlan& plan = std::get<EdgeChangePlan>(result);
       batch = plan.batch;
       landsNothing = plan.landsNothing();
@@ -1701,79 +1693,6 @@ ToolResult deleteNodes(RoomRegistry& registry, ProgressService& progress, Presen
   });
 }
 
-// One `from`+`to` pair or an `edges` list of them, never both, never neither.
-std::optional<std::string> disconnectTargets(const Json::Value& args, std::vector<Edge>& out) {
-  const bool single = !args["from"].isNull() || !args["to"].isNull();
-  const bool batch = !args["edges"].isNull();
-  if (!single && !batch)
-    return "missing required arguments \"from\" and \"to\" (or an \"edges\" list of {from, to}, 1 to " +
-           std::to_string(kMaxDisconnectEdges) + " edges). Call get_tree with fields "
-           "[\"id\",\"prerequisites\"] to list the edges this tree has.";
-  if (single && batch)
-    return "pass a single \"from\"+\"to\" or an \"edges\" list, not both — one form names what this call "
-           "removes.";
-  if (single) {
-    if (std::optional<std::string> bad = requireString(args["from"], "from", Empty::rejected, kMaxIdLength))
-      return bad;
-    if (std::optional<std::string> bad = requireString(args["to"], "to", Empty::rejected, kMaxIdLength))
-      return bad;
-    out = {Edge{NodeId{args["from"].asString()}, NodeId{args["to"].asString()}}};
-    return std::nullopt;
-  }
-  if (std::optional<std::string> bad = optionalObjects(args["edges"], "edges", kMaxDisconnectEdges)) return bad;
-  if (args["edges"].empty())
-    return "argument \"edges\" is an empty list — pass at least one {from, to} to remove.";
-  std::map<Edge, Json::ArrayIndex> seenAt;
-  for (Json::ArrayIndex i = 0; i < args["edges"].size(); ++i) {
-    const std::string row = "edges[" + std::to_string(i) + "]";
-    const Json::Value& item = args["edges"][i];
-    if (std::optional<std::string> bad = requireString(item["from"], row + ".from", Empty::rejected, kMaxIdLength))
-      return bad;
-    if (std::optional<std::string> bad = requireString(item["to"], row + ".to", Empty::rejected, kMaxIdLength))
-      return bad;
-    const Edge edge{NodeId{item["from"].asString()}, NodeId{item["to"].asString()}};
-    const auto [seen, fresh] = seenAt.emplace(edge, i);
-    if (!fresh)
-      return row + " repeats edges[" + std::to_string(seen->second) + "] (\"" + edge.from.str() + "\" -> \"" +
-             edge.to.str() + "\") — an edge is named once per batch";
-    out.push_back(edge);
-  }
-  return std::nullopt;
-}
-
-// An edge the tree does not hold is a no-op, per edge; the whole list lands under one seq.
-ToolResult disconnectEdges(RoomRegistry& registry, const TreeId& tree, const Json::Value& args, Clock& clock,
-                           const UserId& actor) {
-  std::vector<Edge> targets;
-  if (std::optional<std::string> bad = disconnectTargets(args, targets)) return ToolResult::failure(*bad);
-
-  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    if (!canRead(actor, room.owner(), room.visibility()))
-      return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-    if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
-      return ToolResult::failure(writeRefusalSentence(*refusal));
-
-    // Only a present edge becomes a RemoveEdge: a tombstone for an edge the lattice never held
-    // would be a phantom entry, persisted, broadcast and fed for nothing.
-    std::vector<Command> commands;
-    for (const Edge& edge : targets)
-      if (room.hasEdge(edge.from, edge.to)) commands.push_back(RemoveEdge{edge.from, edge.to});
-    for (const Command& command : commands)
-      if (std::optional<std::string> reason = room.validate(command)) return ToolResult::failure(*reason);
-
-    const TreeDiagnostics before = room.diagnose();
-    Seq seq = room.applyCommands(commands, clock.nowMs(), actor);  // an empty list leaves the head as is
-    registry.persist(tree);
-
-    Json::Value out(Json::objectValue);
-    out["applied"] = true;
-    out["seq"] = static_cast<Json::Int64>(seq);
-    answerDiagnostics(before, room.diagnose(), out);
-    out["removed"] = static_cast<int>(commands.size());
-    return ToolResult::json(out);
-  });
-}
-
 // A tree is born with the legend the call sends, whole and in its order, or with the default one when
 // it sends none. The reply answers that legend from Legend::bornWith, the rule the registry plants by,
 // in the shape get_tree answers kinds by default, and reads nothing back once the tree is inserted.
@@ -1926,8 +1845,6 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
     return pruneTree(registry_, progress_, bus_, tree, clock_, caller);
   if (name == "delete_node")
     return deleteNodes(registry_, progress_, bus_, tree, arguments, clock_, caller);
-  if (name == "disconnect")
-    return disconnectEdges(registry_, tree, arguments, clock_, caller);
   if (name == "update_kind")
     return updateKind(registry_, tree, arguments, clock_, caller);
 
