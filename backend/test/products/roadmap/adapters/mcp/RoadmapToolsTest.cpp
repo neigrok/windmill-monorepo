@@ -6766,6 +6766,10 @@ TEST(mcp_update_kind_refuses_in_the_words_of_the_earlier_tools) {
   };
   CHECK_EQ(words("update_kind", R"({"id":"x","label":"X"})"), words("rename_kind", R"({"id":"x","label":"X"})"));
   CHECK_EQ(words("update_kind", R"({"id":"k","hue":"gold"})"), words("recolor_kind", R"({"id":"k","hue":"gold"})"));
+  CHECK_EQ(message(h->call("update_kind", parse(R"({"label":"Kay"})"))),
+           std::string("update_kind: missing required argument \"id\". Call get_tree and read `kinds` to list this "
+                       "legend's ids."));
+  CHECK_EQ(words("update_kind", R"({"label":"Kay"})"), words("rename_kind", R"({"label":"Kay"})"));
   CHECK_EQ(message(h->call("update_kind", parse(R"({"id":"k"})"))),
            std::string("update_kind: nothing to set — pass at least one of \"label\", \"description\", \"hue\"."));
   CompositeToolHost gate(std::vector<ToolModule>{{h->tools, ""}});

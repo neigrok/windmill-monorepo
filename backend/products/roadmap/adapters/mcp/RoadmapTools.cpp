@@ -1007,14 +1007,14 @@ std::optional<std::string> applyProgressBatch(
 // nothing and answers the tree's head.
 ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Value& args, Clock& clock,
                       const UserId& actor) {
-  if (std::optional<std::string> bad = requireString(args["id"], "id", Empty::rejected, kMaxIdLength))
-    return ToolResult::failure(*bad);
+  std::string kind;
+  if (std::optional<std::string> bad = requireHandle(args, kKindHandle, "", kind)) return ToolResult::failure(*bad);
   if (std::optional<std::string> bad = optionalString(args["label"], "label", kMaxKindLabelLength))
     return ToolResult::failure(*bad);
   if (std::optional<std::string> bad = optionalString(args["description"], "description", kMaxKindDescriptionLength))
     return ToolResult::failure(*bad);
   if (std::optional<std::string> bad = optionalOneOf(args["hue"], "hue", kHues)) return ToolResult::failure(*bad);
-  KindUpdate update{KindId{args["id"].asString()}};
+  KindUpdate update{KindId{kind}};
   if (args["label"].isString()) update.label = args["label"].asString();
   if (args["description"].isString()) update.description = args["description"].asString();
   if (args["hue"].isString()) update.hue = parseColor(args["hue"].asString());

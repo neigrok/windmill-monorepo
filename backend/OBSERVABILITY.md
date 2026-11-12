@@ -361,6 +361,7 @@ listed separately because their only server writes are authentication refresh or
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.remove_kind` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.reorder_kinds` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.recolor_kind` | completion; bounded stage outcome | unexpected |
+| `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.update_kind` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.set_progress` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.import_subgraph` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.prune` | completion; bounded stage outcome | unexpected |
