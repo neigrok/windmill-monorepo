@@ -881,6 +881,31 @@ std::string quotedList(const std::vector<std::string>& ids) {
   return out;
 }
 
+// A legend's kinds as a call sends them, checked item by item before treeFromJson reads them, an id once
+// per list; `limit` caps the items when the list is the whole legend, 0 when it joins one.
+std::optional<std::string> checkKinds(const Json::Value& kinds, std::size_t limit) {
+  if (std::optional<std::string> bad = optionalObjects(kinds, "kinds", limit)) return bad;
+  std::map<std::string, Json::ArrayIndex> kindIdAt;
+  for (Json::ArrayIndex i = 0; i < kinds.size(); ++i) {
+    const std::string path = "kinds[" + std::to_string(i) + "]";
+    if (std::optional<std::string> bad = requireString(kinds[i]["id"], path + ".id", Empty::rejected, kMaxIdLength))
+      return bad;
+    if (std::optional<std::string> bad = requireOneOf(kinds[i]["hue"], path + ".hue", kHues)) return bad;
+    if (std::optional<std::string> bad = optionalString(kinds[i]["label"], path + ".label", kMaxKindLabelLength))
+      return bad;
+    if (std::optional<std::string> bad =
+            optionalString(kinds[i]["description"], path + ".description", kMaxKindDescriptionLength))
+      return bad;
+    if (std::optional<std::string> bad = optionalBool(kinds[i]["crossBranchExempt"], path + ".crossBranchExempt"))
+      return bad;
+    const auto [seen, fresh] = kindIdAt.emplace(kinds[i]["id"].asString(), i);
+    if (!fresh)
+      return path + ".id \"" + seen->first + "\" is already used by kinds[" + std::to_string(seen->second) +
+             "] — an id names one kind per batch";
+  }
+  return std::nullopt;
+}
+
 // Checked before treeFromJson reads it: the decoder indexes each item as an object.
 std::optional<std::string> checkImport(const Json::Value& args) {
   if (args["nodes"].isNull())
@@ -907,29 +932,7 @@ std::optional<std::string> checkImport(const Json::Value& args) {
            std::to_string(descriptionBytes - kMaxImportDescriptionBytes) + " over the " +
            std::to_string(kMaxImportDescriptionBytes) + "-byte cap one call may carry — split the import";
 
-  if (std::optional<std::string> bad = optionalObjects(args["kinds"], "kinds")) return bad;
-  std::map<std::string, Json::ArrayIndex> kindIdAt;
-  for (Json::ArrayIndex i = 0; i < args["kinds"].size(); ++i) {
-    const std::string path = "kinds[" + std::to_string(i) + "]";
-    if (std::optional<std::string> bad =
-            requireString(args["kinds"][i]["id"], path + ".id", Empty::rejected, kMaxIdLength))
-      return bad;
-    if (std::optional<std::string> bad = requireOneOf(args["kinds"][i]["hue"], path + ".hue", kHues))
-      return bad;
-    if (std::optional<std::string> bad =
-            optionalString(args["kinds"][i]["label"], path + ".label", kMaxKindLabelLength))
-      return bad;
-    if (std::optional<std::string> bad = optionalString(args["kinds"][i]["description"],
-                                                        path + ".description", kMaxKindDescriptionLength))
-      return bad;
-    if (std::optional<std::string> bad =
-            optionalBool(args["kinds"][i]["crossBranchExempt"], path + ".crossBranchExempt"))
-      return bad;
-    const auto [seen, fresh] = kindIdAt.emplace(args["kinds"][i]["id"].asString(), i);
-    if (!fresh)
-      return path + ".id \"" + seen->first + "\" is already used by kinds[" +
-             std::to_string(seen->second) + "] — an id names one kind per batch";
-  }
+  if (std::optional<std::string> bad = checkKinds(args["kinds"], 0)) return bad;
 
   if (std::optional<std::string> bad = optionalObjects(args["progress"], "progress", kMaxProgressUpdates)) return bad;
   for (Json::ArrayIndex i = 0; i < args["progress"].size(); ++i) {
@@ -1380,11 +1383,25 @@ ToolResult disconnectEdges(RoomRegistry& registry, const TreeId& tree, const Jso
   });
 }
 
-ToolResult createTree(TreeRegistry& registry, const UserId& caller, const std::string& title) {
+// A tree is born with the legend the call sends, whole and in its order, or with the default one when
+// it sends none. The reply answers that legend from Legend::bornWith, the rule the registry plants by,
+// in the shape get_tree answers kinds by default, and reads nothing back once the tree is inserted.
+ToolResult createTree(TreeRegistry& trees, const UserId& caller, const Json::Value& args) {
+  if (std::optional<std::string> bad = optionalString(args["title"], "title")) return ToolResult::failure(*bad);
+  if (args["kinds"].isArray() && args["kinds"].empty())
+    return ToolResult::failure("kinds, when sent, names at least one kind — leave it out for the default legend");
+  if (std::optional<std::string> bad = checkKinds(args["kinds"], kMaxKinds)) return ToolResult::failure(*bad);
+  const std::optional<TreeData> sent = treeFromJson(args, TreeId{});
+  if (!sent) return ToolResult::failure("this tree's title or kinds carry a field of the wrong type");
+  if (std::optional<std::string> bad = checkMergedLegend({}, sent->kinds)) return ToolResult::failure(*bad);
+
   TreeData initial;
-  initial.title = title;
+  initial.title = sent->title;
+  initial.kinds = sent->kinds;
   Json::Value out(Json::objectValue);
-  out["treeId"] = registry.create(caller, initial).str();
+  out["treeId"] = trees.create(caller, initial).str();
+  out["kinds"] = Json::Value(Json::arrayValue);
+  for (const Kind& kind : Legend::bornWith(initial.kinds)) out["kinds"].append(projectKind(kind, kLegendFields));
   return ToolResult::json(out);
 }
 
@@ -1466,11 +1483,7 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
                                typeName(arguments));
   const UserId& caller = actor.user;
 
-  if (name == "create_tree") {
-    if (std::optional<std::string> bad = optionalString(arguments["title"], "title"))
-      return ToolResult::failure(*bad);
-    return createTree(treeRegistry_, caller, arguments.get("title", "").asString());
-  }
+  if (name == "create_tree") return createTree(treeRegistry_, caller, arguments);
   if (name == "list_trees") return listRegistry(treeRegistry_, caller);
 
   if (arguments["treeId"].isNull() ||

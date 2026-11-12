@@ -153,6 +153,22 @@ Json::Value linkArray(const char* description) {
   return property;
 }
 
+// One legend kind as a call sends it, the same item wherever a legend is written whole or joined.
+Json::Value legendKind() {
+  Json::Value fields(Json::objectValue);
+  fields["id"] = cappedStr("The kind id.", kMaxIdLength);
+  fields["hue"] = enumStr("The kind's hue — unique per kind, at most 6 kinds per tree.", kHues);
+  fields["label"] = cappedStr("Optional label. Left out on a kind already in the legend, the label it "
+                              "has stays; a new kind gets an empty one.", kMaxKindLabelLength);
+  fields["description"] = cappedStr("Optional sorting brief. Left out on a kind already in the legend, "
+                                    "the brief it has stays; a new kind gets an empty one.",
+                                    kMaxKindDescriptionLength);
+  fields["crossBranchExempt"] = boolean("Optional: get_health leaves this kind's edges out of its "
+                                        "cross-branch count. Left out on a kind already in the legend, "
+                                        "its setting stays; a new kind is not exempt.");
+  return fields;
+}
+
 // The two facts the wire annotations need that the grant level does not carry (ToolHost.h derives
 // the rest). A bulk edit overwrites or removes many entries in one call and is declared destructive
 // under a write grant. An idempotent write is one a resend with the same arguments leaves unchanged;
@@ -294,10 +310,18 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["title"] = cappedStr("Optional name for the new roadmap.", kMaxTitleChars);
+    p["kinds"] = objArray("Optional legend the roadmap is born with, in the order sent: it replaces the "
+                          "default legend whole, and each id and each hue appears once. Leave it out for "
+                          "the default legend.",
+                          legendKind(), {"id", "hue"});
+    p["kinds"]["minItems"] = 1;
+    p["kinds"]["maxItems"] = static_cast<Json::UInt64>(kMaxKinds);
     tools.push_back(tool("create_tree", Access::write,
-        "Create a new empty roadmap that you own, seeded with the default legend "
-        "(Build/Learn/Milestone). Optionally name it with `title`. Returns the new treeId — pass it "
-        "to the other tools to start authoring.",
+        "Create a new empty roadmap that you own, with the legend you send in `kinds` or, without it, "
+        "the default legend (Build/Learn/Milestone). Optionally name it with `title`. Returns the new "
+        "treeId — pass it to the other tools to start authoring — and `kinds`, the legend it was born "
+        "with, in order, each as {id, hue, label}. A node later written with neither `color` nor `kind` "
+        "is terracotta, so a legend with no terracotta kind leaves such a node under no kind.",
         p, {}));
   }
   {
@@ -760,18 +784,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                                     "and one naming a tree that is not yours refuses the whole import.",
                                     kMaxIdLength);
 
-    Json::Value kindFields(Json::objectValue);
-    kindFields["id"] = cappedStr("The kind id.", kMaxIdLength);
-    kindFields["hue"] = enumStr("The kind's hue — unique per kind, at most 6 kinds per tree.", kHues);
-    kindFields["label"] = cappedStr("Optional label. Left out on a kind already in the legend, the label it "
-                                    "has stays; a new kind gets an empty one.", kMaxKindLabelLength);
-    kindFields["description"] = cappedStr("Optional sorting brief. Left out on a kind already in the legend, "
-                                          "the brief it has stays; a new kind gets an empty one.",
-                                          kMaxKindDescriptionLength);
-    kindFields["crossBranchExempt"] = boolean("Optional: get_health leaves this kind's edges out of its "
-                                              "cross-branch count. Left out on a kind already in the legend, "
-                                              "its setting stays; a new kind is not exempt.");
-
     Json::Value progressFields(Json::objectValue);
     progressFields["nodeId"] = nodeHandle();
     progressFields["id"] = legacyNodeHandle();
@@ -785,7 +797,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                           "description and crossBranchExempt you leave out keep their values, so a copy of "
                           "get_tree's default kindFields sent back erases nothing. Omit to leave the legend "
                           "untouched.",
-                          kindFields, {"id", "hue"});
+                          legendKind(), {"id", "hue"});
     p["progress"] = objArray("Optional carried progress, applied over the imported nodes. `nodeId` here "
                              "names a node that exists once the import lands; a row naming none is "
                              "reported back in progressSkipped, not silently dropped.",
