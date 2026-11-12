@@ -364,18 +364,35 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
   }, command);
 }
 
-bool changesNode(const NodeSpec& node, const Command& command) {
+std::optional<Command> changedPart(const NodeSpec& node, const Command& command) {
+  // A field the edit names lands when it holds another value on the node.
+  const auto differs = [](const auto& sent, const auto& held) { return sent && *sent != held; };
   return std::visit(overloaded{
-    [&](const RenameNode& c) { return node.label != c.label; },
-    [&](const SetNodeColor& c) { return node.color != c.color; },
-    [&](const RepositionNode& c) { return node.position != std::optional<Vec2>(c.position); },
-    [&](const AnnotateNode& c) {
-      return (c.description && node.description != *c.description) ||
-             (c.appendDescription && appendedTo(node.description, *c.appendDescription) != node.description) ||
-             (c.icon && node.icon != *c.icon) || (c.links && node.links != *c.links) ||
-             (c.opens && node.opens != *c.opens);
+    [&](const RenameNode& c) -> std::optional<Command> {
+      if (node.label == c.label) return std::nullopt;
+      return c;
     },
-    [](const auto&) { return true; },
+    [&](const SetNodeColor& c) -> std::optional<Command> {
+      if (node.color == c.color) return std::nullopt;
+      return c;
+    },
+    [&](const RepositionNode& c) -> std::optional<Command> {
+      if (node.position == std::optional<Vec2>(c.position)) return std::nullopt;
+      return c;
+    },
+    [&](const AnnotateNode& c) -> std::optional<Command> {
+      AnnotateNode landed{c.id};
+      if (differs(c.description, node.description)) landed.description = c.description;
+      if (c.appendDescription && appendedTo(node.description, *c.appendDescription) != node.description)
+        landed.appendDescription = c.appendDescription;
+      if (differs(c.icon, node.icon)) landed.icon = c.icon;
+      if (differs(c.links, node.links)) landed.links = c.links;
+      if (differs(c.opens, node.opens)) landed.opens = c.opens;
+      if (!landed.description && !landed.appendDescription && !landed.icon && !landed.links && !landed.opens)
+        return std::nullopt;
+      return landed;
+    },
+    [&](const auto&) -> std::optional<Command> { return command; },
   }, command);
 }
 
@@ -420,7 +437,7 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     const std::size_t before = plan.batch.commands.size();
     for (const Command& command : candidates) {
       if (std::optional<std::string> reason = validate(graph, legend, command)) return *reason;
-      if (changesNode(*node, command)) plan.batch.commands.push_back(command);
+      if (std::optional<Command> landed = changedPart(*node, command)) plan.batch.commands.push_back(*landed);
     }
     if (plan.batch.commands.size() != before) plan.changedNodeIds.push_back(patch.nodeId);
   }

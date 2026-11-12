@@ -1008,6 +1008,37 @@ TEST(node_patch_plan_rejects_invalid_last_row_duplicates_and_empty_patches) {
 }
 
 // The row whose kind refuses the batch hands back its KindRefusal, the reason beside the sentence.
+// What a node edit lands on the node it names: only the fields that differ, or nothing at all.
+TEST(the_part_of_a_node_edit_that_lands_is_the_fields_that_differ) {
+  NodeSpec node;
+  node.id = nid("a");
+  node.label = "A";
+  node.icon = "star";
+  node.description = "old";
+  const auto annotate = [](std::optional<std::string> description, std::optional<std::string> icon,
+                           std::optional<std::string> append = std::nullopt) {
+    return AnnotateNode{nid("a"), std::move(description), std::nullopt, std::move(icon), std::move(append), std::nullopt};
+  };
+
+  const std::optional<Command> described = changedPart(node, annotate("new", "star"));
+  REQUIRE(described.has_value());
+  const AnnotateNode& onlyDescription = std::get<AnnotateNode>(*described);
+  CHECK(onlyDescription.description == std::optional<std::string>("new"));
+  CHECK_FALSE(onlyDescription.icon.has_value());
+
+  const std::optional<Command> appended = changedPart(node, annotate(std::nullopt, "star", "more"));
+  REQUIRE(appended.has_value());
+  CHECK(std::get<AnnotateNode>(*appended).appendDescription == std::optional<std::string>("more"));
+  CHECK_FALSE(std::get<AnnotateNode>(*appended).icon.has_value());
+
+  CHECK_FALSE(changedPart(node, annotate("old", "star")).has_value());
+  CHECK_FALSE(changedPart(node, RenameNode{nid("a"), "A"}).has_value());
+  CHECK_FALSE(changedPart(node, SetNodeColor{nid("a"), NodeColor::terracotta}).has_value());
+  const std::optional<Command> renamed = changedPart(node, RenameNode{nid("a"), "B"});
+  REQUIRE(renamed.has_value());
+  CHECK_EQ(std::get<RenameNode>(*renamed).label, std::string("B"));
+}
+
 TEST(node_patch_plan_hands_back_the_kind_refusal_of_the_row_that_named_the_kind) {
   const LooseGraph graph = seeded();
   const Legend legend({{kid("owner"), NodeColor::gold, "Owner", ""}}, at(1));

@@ -96,10 +96,11 @@ public:
   // present node, or a legend rule. Server-driven undo/redo bypasses it.
   std::optional<std::string> validate(const Command& command) const;
 
-  // wm::changesNode over the node as this room holds it; a node it does not hold is changed by any edit.
-  bool changesNode(const NodeId& node, const Command& command) const {
+  // wm::changedPart over the node as this room holds it; on a node it does not hold, the edit lands whole.
+  std::optional<Command> changedPart(const NodeId& node, const Command& command) const {
     const std::optional<NodeSpec> held = graph_.nodeView(node);
-    return !held || wm::changesNode(*held, command);
+    if (!held) return command;
+    return wm::changedPart(*held, command);
   }
   std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(const std::vector<NodePatch>& updates) const {
     return wm::planNodePatches(graph_, legend_, updates);
