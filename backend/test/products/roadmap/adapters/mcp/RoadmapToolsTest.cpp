@@ -2785,7 +2785,7 @@ TEST(mcp_annotate_node_appends_to_the_description_and_refuses_both_forms_at_once
   nothing["nodeId"] = "a";
   CHECK_EQ(message(h.call("annotate_node", nothing)),
            std::string("annotate_node: nothing to set — pass at least one of \"description\", "
-                       "\"appendDescription\", \"icon\", \"links\", \"opens\"."));
+                       "\"appendDescription\", \"icon\", \"links\", \"addLinks\", \"opens\"."));
 
   Json::Value tail(Json::objectValue);
   tail["nodeId"] = "a";
@@ -2799,6 +2799,110 @@ TEST(mcp_annotate_node_appends_to_the_description_and_refuses_both_forms_at_once
   fits["appendDescription"] = std::string(16000 - 25 - 2, 'y');
   CHECK_FALSE(h.call("annotate_node", fits).isError);
   CHECK_EQ(description().size(), 16000u);
+}
+
+TEST(mcp_annotate_node_adds_links_after_the_ones_the_node_holds) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","links":[{"url":"https://a.example/1","label":"One"},
+    {"url":"https://a.example/2","label":"Two"}]})")).isError);
+
+  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","addLinks":[{"url":"https://figma.example/f","label":"Flow"},
+    {"url":"https://a.example/1","label":"Spec"}]})"))),
+           parse(R"({"applied":true,"seq":2,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})"))),
+           parse(R"({"treeId":"t","seq":2,"nodes":[{"id":"a","links":[{"url":"https://a.example/1","label":"Spec"},
+    {"url":"https://a.example/2","label":"Two"},{"url":"https://figma.example/f","label":"Flow"}]}],"missingNodeIds":[]})"));
+}
+
+// addLinks joins the other annotation fields in one write and lands as the same `links` command; a held
+// url sent without a label keeps its own, and a null addLinks is left out like any other field.
+TEST(mcp_annotate_node_adds_links_beside_the_other_annotation_fields_in_one_write) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","description":"Notes",
+    "links":[{"url":"https://a.example/1","label":"One"}]})")).isError);
+
+  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","appendDescription":"Shipped","icon":"pin",
+    "opens":"t_sub","addLinks":[{"url":"https://a.example/1"},{"url":"https://github.example/pr/7","label":"PR"}]})"))),
+           parse(R"({"applied":true,"seq":2,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","description":"Rewritten",
+    "addLinks":[{"url":"https://figma.example/f","label":"Flow"}]})"))),
+           parse(R"({"applied":true,"seq":3,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(commandPayload(h.ops.byTree["t"].back().command),
+           parse(R"({"id":"a","description":"Rewritten","links":[{"url":"https://a.example/1","label":"One"},
+    {"url":"https://github.example/pr/7","label":"PR"},{"url":"https://figma.example/f","label":"Flow"}]})"));
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","icon":"pin","addLinks":null})")).isError);
+  CHECK_EQ(commandPayload(h.ops.byTree["t"].back().command), parse(R"({"id":"a","icon":"pin"})"));
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","icon","description","links","opens"]})"))),
+           parse(R"({"treeId":"t","seq":4,"nodes":[{"id":"a","icon":"pin","description":"Rewritten",
+    "links":[{"url":"https://a.example/1","label":"One"},{"url":"https://github.example/pr/7","label":"PR"},
+    {"url":"https://figma.example/f","label":"Flow"}],"opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}}],
+    "missingNodeIds":[]})"));
+}
+
+TEST(mcp_annotate_node_refuses_links_it_cannot_add_and_leaves_the_nodes_links_as_they_were) {
+  Harness h;
+  Json::Value held = parse(R"({"id":"a","label":"A","links":[]})");
+  for (int i = 0; i < 31; ++i) held["links"].append("https://held.example/" + std::to_string(i));
+  CHECK_FALSE(h.call("create_node", held).isError);
+  const auto read = [&] { return body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})"))); };
+  const Json::Value before = read();
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const auto annotate = [&](const char* arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = "t";
+    return gate.callTool("roadmap_annotate_node", args, h.actor);
+  };
+  std::vector<WriteCompletion> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line); });
+
+  for (const auto& [arguments, refusal] : std::vector<std::pair<const char*, const char*>>{
+           {R"({"nodeId":"a","links":[{"url":"https://x.example"}],"addLinks":[{"url":"https://y.example"}]})",
+            "annotate_node: \"links\" and \"addLinks\" are both given — pass one: links replaces the set, addLinks "
+            "joins onto it."},
+           {R"({"nodeId":"a","addLinks":[]})",
+            "annotate_node: addLinks, when sent, names at least one link — leave it out to keep the node's links as "
+            "they are"},
+           {R"({"nodeId":"a","addLinks":[{"url":"https://n.example/1"},{"url":"https://n.example/2"},
+              {"url":"https://n.example/1","label":"again"}]})",
+            "annotate_node: addLinks[2].url repeats addLinks[0].url — send each link once"},
+           {R"({"nodeId":"a","addLinks":[{"url":"https://n.example/1"},{"url":"https://n.example/2"}]})",
+            "annotate_node: links would hold 33 links, 1 over the 32 cap"},
+           {R"({"nodeId":"a","addLinks":"https://n.example/1"})",
+            "annotate_node: argument \"addLinks\" must be an array of links, got string"},
+           {R"({"nodeId":"a","addLinks":[7]})",
+            "annotate_node: addLinks[0] must be an object {url, label?} or a url string, got number"}}) {
+    const ToolResult refused = annotate(arguments);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), std::string(refusal));
+  }
+  CHECK_EQ(read(), before);
+
+  CHECK_FALSE(annotate(R"({"nodeId":"a","addLinks":[{"url":"https://n.example/1","label":"Last"}]})").isError);
+  CHECK_EQ(read()["nodes"][0]["links"].size(), 32u);
+  installWriteSink({});
+
+  // One write line per call, a refusal `refused`, and no line carries a url or a label.
+  REQUIRE_EQ(lines.size(), 7u);
+  for (std::size_t i = 0; i < lines.size(); ++i) {
+    CHECK_EQ(lines[i].operation, std::string("mcp.roadmap_annotate_node"));
+    CHECK_EQ(lines[i].outcome, std::string(i < 6 ? "refused" : "ok"));
+    for (const char* content : {"example", "again", "Last"})
+      CHECK_EQ(writeCompletionJson(lines[i]).find(content), std::string::npos);
+  }
+
+  // The schema states the same bounds: the item `links` takes, at least one, at most the 32 cap.
+  const Json::Value catalog = h.tools.listTools(h.actor);
+  const Json::Value* declared = nullptr;
+  for (const Json::Value& tool : catalog)
+    if (tool["name"].asString() == "annotate_node") declared = &tool;
+  REQUIRE(declared != nullptr);
+  const Json::Value& properties = (*declared)["inputSchema"]["properties"];
+  Json::Value linksWithAtLeastOne = properties["links"];
+  linksWithAtLeastOne["minItems"] = 1;
+  linksWithAtLeastOne["description"] = properties["addLinks"]["description"];
+  CHECK_EQ(properties["addLinks"], linksWithAtLeastOne);
+  CHECK_EQ(properties["addLinks"]["maxItems"].asUInt64(), 32u);
 }
 
 namespace {

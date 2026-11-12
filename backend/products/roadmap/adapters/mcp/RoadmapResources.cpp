@@ -70,7 +70,8 @@ the hue that kind wears. `roadmap_create_node` and `roadmap_set_node_color` answ
 wears.
 
 `roadmap_patch_nodes` preserves omitted fields and replaces supplied values, including descriptions
-and links. `roadmap_annotate_node`'s append form repeats text when retried. `roadmap_change_edges`
+and links. `roadmap_annotate_node`'s append form repeats text when retried; its `addLinks` holds each
+url once. `roadmap_change_edges`
 requires existing endpoints for additions; removing an absent edge is a no-op. Both batch edit tools
 support `expectedSeq` and `dryRun`.
 

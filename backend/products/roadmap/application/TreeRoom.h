@@ -56,6 +56,12 @@ public:
   std::variant<Graft, std::string> resolveKinds(Graft incoming) const {
     return wm::resolveKinds(legend_, std::move(incoming));
   }
+  // Reads the held links under the strand the write then takes, so nothing lands between read and write.
+  std::variant<std::vector<Link>, std::string> linksWith(const NodeId& node, const std::vector<Link>& added,
+                                                         const std::string& path) const {
+    const std::optional<NodeSpec> held = graph_.nodeView(node);
+    return wm::withLinksAdded(held ? held->links : std::vector<Link>{}, added, path);
+  }
 
   // Each is stamped from the room clock and joined as one frame setting that register alone, so it
   // broadcasts and LWW-merges like any other field write, and leaves no op row.
