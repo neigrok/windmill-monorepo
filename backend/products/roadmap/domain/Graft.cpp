@@ -45,6 +45,16 @@ std::variant<Graft, KindRefusal> resolveKinds(const Legend& legend, Graft graft)
   return graft;
 }
 
+std::variant<Graft, std::string> resolveLinks(const LooseGraph& graph, Graft graft) {
+  for (std::size_t i = 0; i < graft.document.nodes.size(); ++i) {
+    NodeSpec& node = graft.document.nodes[i];
+    auto shown = shownLinks(graph.linksOf(node.id), std::move(node.links), "nodes[" + std::to_string(i) + "].links");
+    if (const auto* refusal = std::get_if<std::string>(&shown)) return *refusal;
+    node.links = std::get<std::vector<Link>>(std::move(shown));
+  }
+  return graft;
+}
+
 LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at) {
   using Entry = KindStateEntry;
   std::map<KindId, Entry> upserted;  // by id, so the frame lists each kind once, in id order

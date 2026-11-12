@@ -150,7 +150,10 @@ Json::Value linkArray(const char* description) {
   Json::Value link(Json::objectValue);
   link["type"] = "object";
   Json::Value fields(Json::objectValue);
-  fields["url"] = cappedStr("The link target (href).", kMaxLinkUrlLength);
+  fields["url"] = cappedStr("The link target (href), starting with http:, https: or mailto: — the links a person is "
+                            "shown; whitespace around it is trimmed, and any other url is refused by its path, but "
+                            "for one the node already holds, which is kept exactly as held.",
+                            kMaxLinkUrlLength);
   fields["label"] = cappedStr("Optional display text (defaults to the url).", kMaxLinkLabelLength);
   link["properties"] = fields;
   Json::Value required(Json::arrayValue);
@@ -589,8 +592,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["icon"] = cappedStr("The node's icon name/emoji; \"\" clears it.", kMaxIconLength);
     p["links"] = linkArray("The node's external references — replaces the existing set (omit to leave unchanged).");
     p["addLinks"] = linkArray("References to add after the ones the node holds, in the order sent: a url the node "
-                              "already holds keeps its place and takes the label sent with it. The cap is on the "
-                              "set the node would then hold. Not with `links`.");
+                              "already holds, whitespace around it aside, keeps its place and takes the label sent "
+                              "with it. The cap is on the set the node would then hold. Not with `links`.");
     p["addLinks"]["minItems"] = 1;
     p["opens"] = cappedStr("The id of a tree you own that this node opens: the node points at that tree, is "
                            "complete for you when that tree is, and get_tree, get_nodes and find_nodes answer "

@@ -1,0 +1,22 @@
+{
+  "note": "Which link urls a person is shown on a node: a url as the server stores it, its surrounding whitespace already trimmed, and whether the web shows it. The web shows a node's link only when its url starts with http:, https: or mailto:, in any case (SAFE_URL in web/src/products/roadmap/graph/tree/NodeWorkspace.jsx); the backend's MCP doors refuse any other (shownLinkUrl in backend/products/roadmap/domain/Command). Both read every case.",
+  "cases": [
+    {"url": "https://a.example/", "shown": true},
+    {"url": "http://a.example/", "shown": true},
+    {"url": "HTTPS://A.example", "shown": true},
+    {"url": "Http://a.example", "shown": true},
+    {"url": "mailto:a@b.example", "shown": true},
+    {"url": "MAILTO:a@b.example", "shown": true},
+    {"url": "javascript:alert(1)", "shown": false},
+    {"url": "JavaScript:alert(1)", "shown": false},
+    {"url": "data:text/html,<b>hi</b>", "shown": false},
+    {"url": "vbscript:x", "shown": false},
+    {"url": "example.com", "shown": false},
+    {"url": "//example.com", "shown": false},
+    {"url": "/local", "shown": false},
+    {"url": "ftp://a.example/", "shown": false},
+    {"url": "https//a.example", "shown": false},
+    {"url": "mailto", "shown": false},
+    {"url": "", "shown": false}
+  ]
+}

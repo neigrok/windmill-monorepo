@@ -715,11 +715,16 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
       return ToolResult::failure("no node in this tree is named \"" + payload["id"].asString() + "\"" +
                                  ". " + kNodeHandle.hint);
 
-    if (payload.isMember("addLinks")) {
-      const auto joined =
-          room.linksWith(NodeId{payload["id"].asString()}, linksFromJson(payload["addLinks"]), "addLinks");
-      if (const auto* refusal = std::get_if<std::string>(&joined)) return ToolResult::failure(*refusal);
-      payload["links"] = linksToJson(std::get<std::vector<Link>>(joined));
+    // The links this write sends, judged against the ones the node holds: only the urls it brings are its word. A
+    // node being created holds none, whatever a deleted node under its id held.
+    if (payload.isMember("links") || payload.isMember("addLinks")) {
+      const NodeId node{payload["id"].asString()};
+      const auto links = payload.isMember("addLinks")
+                             ? room.withLinksAdded(node, linksFromJson(payload["addLinks"]), "addLinks")
+                             : tool == "create_node" ? shownLinks({}, linksFromJson(payload["links"]), "links")
+                                                     : room.shownLinks(node, linksFromJson(payload["links"]), "links");
+      if (const auto* refusal = std::get_if<std::string>(&links)) return ToolResult::failure(*refusal);
+      payload["links"] = linksToJson(std::get<std::vector<Link>>(links));
     }
 
     const bool setsHue = tool == "create_node" || tool == "set_node_color";
@@ -896,11 +901,14 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
     out["seq"] = static_cast<Json::Int64>(room.head());
     if (landsNothing) out["unchanged"] = true;
     if (!dryRun) {
+      // A batch that lands nothing writes nothing — no seq, no op row, no frame, no save — as a single-node edit does.
       std::optional<std::map<NodeId, TreeId>> pointersBefore;
-      if (opensATree(opened)) pointersBefore = room.pointers();
+      if (!landsNothing && opensATree(opened)) pointersBefore = room.pointers();
       const TreeDiagnostics before = room.diagnose();
-      out["seq"] = static_cast<Json::Int64>(room.applyCommands(batch.commands, clock.nowMs(), actor));
-      registry.persist(tree);
+      if (!landsNothing) {
+        out["seq"] = static_cast<Json::Int64>(room.applyCommands(batch.commands, clock.nowMs(), actor));
+        registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
+      }
       const TreeDiagnostics after = room.diagnose();
       if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
       answerDiagnostics(before, after, out);
@@ -1224,6 +1232,11 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     if (!missing.empty())
       return ToolResult::failure("tombstone names " + quotedList(missing) +
                                  ", which this tree does not hold. " + kNodeHandle.hint);
+
+    // The links each node sends, judged against the ones its record holds, before the caps weigh what would land.
+    std::variant<Graft, std::string> shown = room.resolveLinks(std::move(graft));
+    if (const auto* refusal = std::get_if<std::string>(&shown)) return ToolResult::failure(*refusal);
+    graft = std::get<Graft>(std::move(shown));
 
     // A graft mints no Command, so the tree caps are checked here, before the dry-run branch.
     if (std::optional<Admission> refusal = room.admit(graft))

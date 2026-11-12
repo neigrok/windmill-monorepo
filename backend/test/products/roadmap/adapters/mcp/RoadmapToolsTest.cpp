@@ -5930,3 +5930,157 @@ TEST(mcp_an_import_that_files_a_node_by_kind_beside_a_rehue_lands_the_kind_it_na
   CHECK_EQ(filed(*round), parse(R"([{"id":"a","color":"olive","kind":"k"},{"id":"b","color":"olive","kind":"k"},
     {"id":"c","color":"plum","kind":"j"}])"));
 }
+
+// A link a node holds is one a person can open: every door that writes links trims a url's surrounding whitespace and
+// refuses one that does not start with http:, https: or mailto:, naming it by its path, with nothing applied.
+TEST(mcp_every_door_that_writes_links_takes_only_urls_a_person_can_open) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","links":[{"url":"https://a.example/"}]})")).isError);
+  const StoredTree stored = h.trees.byId["t"];
+  const std::size_t rows = h.ops.byTree["t"].size();
+  const auto with = [](const char* arguments, const char* url) {
+    Json::Value args = parse(arguments);
+    for (const char* list : {"links", "addLinks", "updates", "nodes"}) {
+      if (!args.isMember(list)) continue;
+      Json::Value& links = std::string(list) == "updates" || std::string(list) == "nodes"
+                               ? args[list][args[list].size() - 1]["links"] : args[list];
+      links[1]["url"] = url;
+    }
+    return args;
+  };
+  for (const char* url : {"javascript:alert(1)", "data:text/html,hi", "vbscript:x", "example.com", "   "}) {
+    for (const auto& [tool, arguments, path] : std::vector<std::tuple<std::string, const char*, std::string>>{
+             {"create_node", R"({"id":"b","label":"B","links":[{"url":"https://ok.example"},{}]})", "links[1].url"},
+             {"annotate_node", R"({"nodeId":"a","links":[{"url":"https://ok.example"},{}]})", "links[1].url"},
+             {"annotate_node", R"({"nodeId":"a","addLinks":[{"url":"https://ok.example"},{}]})", "addLinks[1].url"},
+             {"patch_nodes", R"({"updates":[{"nodeId":"a","label":"A2","links":[{"url":"https://ok.example"},{}]}]})",
+              "updates[0].links[1].url"},
+             {"import_subgraph", R"({"nodes":[{"id":"a","label":"A2"},{"id":"c","label":"C",
+                "links":[{"url":"https://ok.example"},{}]}]})", "nodes[1].links[1].url"}})
+      CHECK_EQ(message(h.call(tool.c_str(), with(arguments, url))),
+               tool + ": " + path + " must start with http:, https: or mailto:, the links a person can open");
+  }
+  CHECK(h.trees.byId["t"] == stored);
+  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","links":[{"url":" https://b.example/ "},
+    {"url":"HTTPS://A.example"},{"url":"mailto:a@b.example"}]})")).isError);
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","addLinks":[{"url":"\thttps://a.example/ ","label":"A"}]})"))
+                  .isError);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})")))["nodes"],
+           parse(R"([{"id":"a","links":[{"url":"https://a.example/","label":"A"}]}])"));
+  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","links":[{"url":" https://a.example/","label":"A"},
+    {"url":"\nhttps://p.example "}]}]})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","label":"C","links":[{"url":" https://c.example "}]}]})"))
+                  .isError);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a","b","c"],"fields":["id","links"]})")))["nodes"],
+           parse(R"([{"id":"a","links":[{"url":"https://a.example/","label":"A"},{"url":"https://p.example"}]},
+             {"id":"b","links":[{"url":"https://b.example/"},{"url":"HTTPS://A.example"},{"url":"mailto:a@b.example"}]},
+             {"id":"c","links":[{"url":"https://c.example"}]}])"));
+}
+
+// A link a node already holds is not the write's word: a tree holding a url the rule refuses, written before the rule or
+// by a client frame, reads and sends back as held at every door that writes links, and only the urls a write brings
+// are judged. A new node, or a new tree, holds nothing, so the same links are refused there, and nothing is applied.
+TEST(mcp_create_node_on_a_deleted_nodes_id_holds_none_of_its_links) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+  AnnotateNode planted{NodeId{"a"}};
+  planted.links = std::vector<Link>{{.label = "J", .url = "javascript:alert(1)"}};
+  h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"a"})")).isError);
+  const std::size_t rows = h.ops.byTree["t"].size();
+
+  const std::string refused =
+      "create_node: links[0].url must start with http:, https: or mailto:, the links a person can open";
+  CHECK_EQ(message(h.call("create_node", parse(R"j({"id":"a","label":"A","links":["javascript:alert(1)"]})j"))),
+           refused);
+  CHECK_EQ(message(h.call("create_node", parse(R"j({"label":"A","links":["javascript:alert(1)"]})j"))), refused);
+  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+  CHECK_FALSE(h.call("create_node", parse(R"j({"id":"a","label":"A","links":["https://ok.example/"]})j")).isError);
+}
+
+TEST(mcp_a_link_a_node_already_holds_is_sent_back_as_held_at_every_door) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+  AnnotateNode planted{NodeId{"a"}};
+  planted.links =
+      std::vector<Link>{{.label = "J", .url = "javascript:alert(1)"}, {.label = "", .url = "https://ok.example/"}};
+  h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
+  Json::Value document =
+      body(h.call("get_tree", parse(R"({"includeGuides":false,"fields":["id","label","links"]})")))["tree"];
+  for (const char* field : {"guide", "id", "title", "url"}) document.removeMember(field);
+  const Json::Value held = document["nodes"][0]["links"];
+  CHECK_EQ(held, parse(R"j([{"url":"javascript:alert(1)","label":"J"},{"url":"https://ok.example/"}])j"));
+
+  Json::Value annotate = parse(R"({"nodeId":"a"})");
+  annotate["links"] = held;
+  Json::Value patch = parse(R"({"updates":[{"nodeId":"a"}]})");
+  patch["updates"][0]["links"] = held;
+  const Json::Value added = parse(R"j({"nodeId":"a","addLinks":[{"url":"javascript:alert(1)"}]})j");
+  for (const auto& [tool, arguments] : std::vector<std::pair<const char*, Json::Value>>{
+           {"import_subgraph", document}, {"annotate_node", annotate}, {"patch_nodes", patch}, {"annotate_node", added}})
+    CHECK_EQ(body(h.call(tool, arguments))["unchanged"], Json::Value(true));
+
+  const std::string rule = " must start with http:, https: or mailto:, the links a person can open";
+  Json::Value more = held;
+  more.append(parse(R"({"url":"data:text/html,x"})"));
+  document["nodes"][0]["links"] = more;
+  annotate["links"] = more;
+  patch["updates"][0]["links"] = more;
+  CHECK_EQ(message(h.call("import_subgraph", document)), "import_subgraph: nodes[0].links[2].url" + rule);
+  CHECK_EQ(message(h.call("annotate_node", annotate)), "annotate_node: links[2].url" + rule);
+  CHECK_EQ(message(h.call("patch_nodes", patch)), "patch_nodes: updates[0].links[2].url" + rule);
+  CHECK_EQ(message(h.call("annotate_node", parse(R"j({"nodeId":"a","addLinks":[{"url":" javascript:alert(1)"}]})j"))),
+           "annotate_node: addLinks[0].url" + rule);
+
+  Json::Value created = parse(R"({"id":"b","label":"B"})");
+  created["links"] = held;
+  CHECK_EQ(message(h.call("create_node", created)), "create_node: links[0].url" + rule);
+  h.plant("t_copy", h.caller, "", {});
+  document["nodes"][0]["links"] = held;
+  document["treeId"] = "t_copy";
+  CHECK_EQ(message(h.tools.callTool("import_subgraph", document, ToolCaller{h.caller, ToolScope::everything()})),
+           "import_subgraph: nodes[0].links[0].url" + rule);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})")))["nodes"][0]["links"], held);
+}
+
+// A link's identity is its url trimmed: an addLinks url names the held link stored with whitespace around it, which
+// keeps its place and holds the trimmed url from then on, the link a person can see, with no second entry.
+TEST(mcp_add_links_names_a_held_link_by_its_trimmed_url) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+  AnnotateNode planted{NodeId{"a"}};
+  planted.links =
+      std::vector<Link>{{.label = "", .url = " https://a.example/"}, {.label = "", .url = "https://b.example/"}};
+  h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","addLinks":[{"url":"https://a.example/","label":"A"}]})"))
+                  .isError);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})")))["nodes"],
+           parse(R"([{"id":"a","links":[{"url":"https://a.example/","label":"A"},{"url":"https://b.example/"}]}])"));
+}
+
+// A batch edit that lands nothing takes no save, as a single-node edit and an import that land nothing take none, and
+// answers as it always has; one that lands takes one save.
+TEST(mcp_a_batch_edit_that_lands_nothing_takes_no_save) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+  const Json::Value created = body(h.call("create_node", parse(R"({"id":"b","label":"B","prerequisites":["a"]})")));
+  const std::size_t saved = h.trees.savedNodeCounts.size();
+
+  Json::Value patched = parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],"dryRun":false,
+    "applied":true,"unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[]})");
+  patched["seq"] = created["seq"];
+  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A"}]})"))), patched);
+  Json::Value edged = parse(R"({"treeId":"t","addedEdges":[],"removedEdges":[],"unchangedEdges":2,"dryRun":false,
+    "applied":true,"unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[]})");
+  edged["seq"] = created["seq"];
+  CHECK_EQ(body(h.call("change_edges", parse(R"({"add":[{"from":"a","to":"b"}],"remove":[{"from":"b","to":"a"}]})"))),
+           edged);
+  CHECK_EQ(h.trees.savedNodeCounts.size(), saved);
+
+  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A2"}]})")).isError);
+  CHECK_EQ(h.trees.savedNodeCounts.size(), saved + 1);
+  CHECK_FALSE(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"b"}]})")).isError);
+  CHECK_EQ(h.trees.savedNodeCounts.size(), saved + 2);
+}
