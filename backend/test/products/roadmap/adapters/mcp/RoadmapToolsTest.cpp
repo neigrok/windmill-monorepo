@@ -2103,7 +2103,7 @@ TEST(mcp_import_subgraph_writes_the_tree_a_node_opens_only_when_the_batch_change
                                              .opensAt = moved.nodes[0].opensAt}},
                              {}}));
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
-           parse(R"([{"id":"a","label":"A","opens":{"treeId":"t_two","title":"Second look"}}])"));
+           parse(R"([{"id":"a","label":"A","opens":{"treeId":"t_two","title":"Second look","state":"open"}}])"));
 }
 
 TEST(mcp_import_subgraph_tombstone_needs_the_delete_grant_the_way_delete_node_does) {
