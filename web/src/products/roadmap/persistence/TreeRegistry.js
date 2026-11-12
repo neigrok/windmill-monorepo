@@ -35,20 +35,50 @@ export async function listAllTrees() {
   return [
     ...server.rows.map((tree) => ({ ...tree, origin: 'server' })),
     ...device.map((tree) => ({ ...tree, origin: 'device' })),
-  ].sort((a, b) => timestampOf(b.updatedAt) - timestampOf(a.updatedAt));
+  ].sort(newestFirst);
+}
+
+// The account's roadmaps on the server alone, newest first as the switcher lists them. Where the list could not be
+// read `authoritative` is false and `status` says how: the server's answer (200 for one that is not a list), or 0 for none.
+export async function listServerTrees() {
+  const server = await fetchServerList();
+  return { ...server, rows: [...server.rows].sort(newestFirst) };
+}
+
+// What a roadmap's address comes to for the person asking (GET /v1/trees/:id): its title, its author where the server
+// names one, how many steps it holds and whether it is theirs. Null where no roadmap they can read stands there; any
+// other failure throws its status: 0 for no answer, and 200 for an answer that is not a roadmap.
+export async function readTreeCard(treeId) {
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/v1/trees/${encodeURIComponent(treeId)}`, { credentials: 'include' });
+  } catch {
+    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
+  }
+  if (response.status === 404) return null;
+  if (!response.ok) throw new AuthError('Could not read the roadmap', { status: response.status });
+  const body = await response.json().catch(() => null);
+  if (!Array.isArray(body?.data?.nodes)) throw new AuthError('Could not read the roadmap', { code: 'shape', status: response.status });
+  return { id: treeId, title: body.data.title ?? '', author: body.data.author ?? null, steps: body.data.nodes.length, mine: body.mine === true };
 }
 
 // `authoritative` says whether an empty list means anything: a 200 is the account's true list, a
 // 401 or a dead network vouches for nothing.
 async function fetchServerList() {
+  let response;
   try {
-    const response = await fetch(`${API_BASE}/v1/trees`, { credentials: 'include' });
-    if (!response.ok) return { rows: [], authoritative: false };
-    const body = await response.json();
-    return { rows: body.trees ?? [], authoritative: true };
+    response = await fetch(`${API_BASE}/v1/trees`, { credentials: 'include' });
   } catch {
-    return { rows: [], authoritative: false };
+    return { rows: [], authoritative: false, status: 0 };
   }
+  if (!response.ok) return { rows: [], authoritative: false, status: response.status };
+  const body = await response.json().catch(() => null);
+  if (body === null || !Array.isArray(body.trees ?? [])) return { rows: [], authoritative: false, status: response.status };
+  return { rows: body.trees ?? [], authoritative: true };
+}
+
+function newestFirst(a, b) {
+  return timestampOf(b.updatedAt) - timestampOf(a.updatedAt);
 }
 
 function timestampOf(updatedAt) {

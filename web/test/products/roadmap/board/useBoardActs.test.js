@@ -897,3 +897,123 @@ test('where no tree can be gone into, the toast a C raises says what completes t
   assert.deepEqual(c.toast, { message: 'Completes with its tree', surface: 'board', act: 'tree', reveal: null, holdMs: 6000 });
   assert.deepEqual(calls, []);
 });
+
+function myYear(sail = {}) {
+  return new SkillTree({ id: 't_year', title: 'My year', nodes: [
+    { id: 'plan', label: 'Plan the year', prerequisites: [], color: 'gold' },
+    { id: 'sail', label: 'Learn to sail', prerequisites: ['plan'], color: 'sky', ...sail },
+    { id: 'coast', label: 'Sail the coast', prerequisites: ['sail'], color: 'sky' },
+  ] });
+}
+const marked = (...ids) => ({ completed: new Set(ids), completedAt: {} });
+
+test('attaching a tree is one gesture with one toast: Tree attached, six seconds, in the room’s seat, and Undo reverts its receipt', () => {
+  const { acts, c, calls, receipt } = fixture({ tree: myYear(), progress: marked('plan', 'sail'), band: 'desktop' });
+
+  assert.deepEqual(acts.setTree('sail', 't_sail'), { ok: true });
+
+  assert.deepEqual(calls, [
+    ['quiet'],
+    ['dispatch', { kind: 'SetNodeTree', id: 'sail', opens: 't_sail' }],
+    ['event', 'roadmap_tree_attach', { step: 'attach', band: 'desktop', view: 'board', mark: 'kept' }],
+  ]);
+  const { action, ...toast } = c.toast;
+  assert.deepEqual(toast, { message: 'Tree attached', act: 'attach', reveal: null, holdMs: 6000 });
+  assert.deepEqual({ label: action.label, receipt: action.receipt }, { label: 'Undo', receipt: true });
+  action.run();
+  assert.deepEqual(calls.slice(3), [['quiet'], ['revert', receipt], ['event', 'roadmap_tree_attach', { step: 'undo', band: 'desktop', view: 'board' }]]);
+});
+
+test('a step that opens a tree already changes it, and a step with no mark says so in the event', () => {
+  const { acts, c, calls } = fixture({ tree: myYear({ opens: 't_sail' }), progress: marked('plan'), band: 'phone' });
+
+  assert.deepEqual(acts.setTree('sail', 't_coast'), { ok: true });
+
+  assert.deepEqual(calls, [
+    ['quiet'],
+    ['dispatch', { kind: 'SetNodeTree', id: 'sail', opens: 't_coast' }],
+    ['event', 'roadmap_tree_attach', { step: 'change', band: 'phone', view: 'board', mark: 'none' }],
+  ]);
+  assert.equal(c.toast.message, 'Tree attached');
+});
+
+test('detaching says the mark is back only where the step held one', () => {
+  const held = fixture({ tree: myYear({ opens: 't_sail' }), progress: marked('plan', 'sail'), band: 'tablet' });
+  assert.deepEqual(held.acts.setTree('sail', ''), { ok: true });
+  assert.deepEqual(held.calls, [
+    ['quiet'],
+    ['dispatch', { kind: 'SetNodeTree', id: 'sail', opens: '' }],
+    ['event', 'roadmap_tree_attach', { step: 'detach', band: 'tablet', view: 'board', mark: 'kept' }],
+  ]);
+  const { action, ...toast } = held.c.toast;
+  assert.deepEqual(toast, { message: 'Tree detached · your mark is back', act: 'detach', reveal: null, holdMs: 6000 });
+  assert.equal(action.label, 'Undo');
+
+  const bare = fixture({ tree: myYear({ opens: 't_sail' }), progress: marked('plan'), band: 'tablet' });
+  bare.acts.setTree('sail', '');
+  assert.equal(bare.c.toast.message, 'Tree detached');
+  assert.deepEqual(bare.calls.at(-1), ['event', 'roadmap_tree_attach', { step: 'detach', band: 'tablet', view: 'board', mark: 'none' }]);
+});
+
+test('the step’s page over the Graph attaches through the same act, named as the Graph', () => {
+  const { acts, calls } = fixture({ tree: myYear(), progress: marked('plan'), active: false, graphActive: true, band: 'desktop' });
+
+  assert.deepEqual(acts.setTree('sail', 't_sail'), { ok: true });
+  assert.deepEqual(calls.at(-1), ['event', 'roadmap_tree_attach', { step: 'attach', band: 'desktop', view: 'graph', mark: 'none' }]);
+});
+
+test('a write the session will not take, one that throws and a missing session say the tree could not be changed, with no Undo, and are counted', () => {
+  const refused = fixture({ tree: myYear(), progress: marked('plan', 'sail'), band: 'desktop', session: holdingSession({ dispatch: () => null }) });
+  assert.deepEqual(refused.acts.setTree('sail', 't_sail'), { ok: false });
+  assert.deepEqual(refused.c.toast, { message: 'Couldn’t change the tree. Try again.', act: 'notice' });
+  assert.deepEqual(refused.calls, [['quiet'], ['event', 'roadmap_tree_attach', { step: 'attach', band: 'desktop', view: 'board', mark: 'kept', outcome: 'refused' }]]);
+
+  const thrown = fixture({ tree: myYear({ opens: 't_sail' }), progress: marked('plan'), band: 'desktop', session: holdingSession({ dispatch: () => { throw new Error('lattice'); } }) });
+  assert.deepEqual(thrown.acts.setTree('sail', ''), { ok: false });
+  assert.deepEqual(thrown.c.toast, { message: 'Couldn’t change the tree. Try again.', act: 'notice' });
+  assert.deepEqual(thrown.calls, [['quiet'], ['report', 'roadmap-tree-attach'], ['event', 'roadmap_tree_attach', { step: 'detach', band: 'desktop', view: 'board', mark: 'none', outcome: 'failed' }]]);
+
+  const sessionless = fixture({ tree: myYear(), progress: marked('plan'), band: 'desktop', session: null });
+  assert.deepEqual(sessionless.acts.setTree('sail', 't_sail'), { ok: false });
+  assert.deepEqual(sessionless.calls, [['quiet'], ['event', 'roadmap_tree_attach', { step: 'attach', band: 'desktop', view: 'board', mark: 'none', outcome: 'refused' }]]);
+});
+
+test('a step that already opens the tree chosen, as when a peer set it while the picker stood open, writes, says and counts nothing', () => {
+  for (const [sail, opens] of [[{ opens: 't_sail' }, 't_sail'], [{}, '']]) {
+    const { acts, c, calls } = fixture({ tree: myYear(sail), progress: marked('plan'), band: 'desktop' });
+    assert.deepEqual(acts.setTree('sail', opens), { ok: true });
+    assert.deepEqual({ calls, toast: c.toast }, { calls: [], toast: undefined });
+  }
+});
+
+test('no tree is set for a reader, off both views, on a step the roadmap lacks or on one held in a pending delete', () => {
+  const quiet = (overrides, id = 'sail') => {
+    const { acts, c, calls } = fixture({ tree: myYear(), progress: marked('plan'), band: 'desktop', ...overrides });
+    return { answer: acts.setTree(id, 't_sail'), calls, toast: c.toast };
+  };
+
+  assert.deepEqual(quiet({ owner: false }), { answer: { ok: false }, calls: [], toast: undefined });
+  assert.deepEqual(quiet({ active: false, graphActive: false }), { answer: { ok: false }, calls: [], toast: undefined });
+  assert.deepEqual(quiet({}, 'gone'), { answer: { ok: false }, calls: [], toast: undefined });
+
+  const { acts, c, calls } = fixture({ tree: myYear(), progress: marked('plan'), band: 'desktop' });
+  acts.delete(['coast'], 'menu');
+  const held = c.toast;
+  assert.deepEqual(acts.setTree('coast', 't_sail'), { ok: false });
+  assert.equal(c.toast, held);
+  assert.deepEqual(calls.filter(([kind]) => kind === 'dispatch'), []);
+});
+
+test('an Undo whose receipt is spent says nothing, and one that throws reports', () => {
+  const spent = fixture({ tree: myYear(), progress: marked('plan'), band: 'desktop' });
+  spent.c.session.revert = () => false;
+  spent.acts.setTree('sail', 't_sail');
+  spent.c.toast.action.run();
+  assert.deepEqual(spent.calls.slice(3), [['quiet']]);
+
+  const thrown = fixture({ tree: myYear(), progress: marked('plan'), band: 'desktop' });
+  thrown.c.session.revert = () => { throw new Error('lattice'); };
+  thrown.acts.setTree('sail', 't_sail');
+  thrown.c.toast.action.run();
+  assert.deepEqual(thrown.calls.slice(3), [['quiet'], ['report', 'roadmap-tree-attach']]);
+});

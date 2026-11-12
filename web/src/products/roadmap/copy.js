@@ -463,13 +463,11 @@ export function treeLine(opening, lead = null) {
 
 // The step's Tree row and the Graph's dock: how far the tree is, in full. `roadmap` is the title of the one being read.
 export function treeState(opening, roadmap) {
-  const done = formatCount(opening.done);
-  const total = formatCount(opening.total);
   const states = {
-    open: () => t('roadmap.tree.state.done', { done, total }),
-    complete: () => t('roadmap.tree.state.done', { done, total }),
-    empty: () => t('roadmap.tree.line.empty'),
-    loop: () => t('roadmap.tree.state.loop', { done, total, roadmap }),
+    open: () => treeProgress(opening),
+    complete: () => treeProgress(opening),
+    empty: () => treeProgress(opening),
+    loop: () => t('roadmap.tree.state.loop', { done: formatCount(opening.done), total: formatCount(opening.total), roadmap }),
     missing: () => t('roadmap.tree.state.missing'),
     unread: () => null,
   };
@@ -477,6 +475,12 @@ export function treeState(opening, roadmap) {
 }
 
 // The Tree row's name where it is the way in: what the press does, then what the row shows.
+// How far a tree is, as the step's Tree row and the tree picker's rows say it.
+export function treeProgress({ done, total }) {
+  if (total === 0) return t('roadmap.tree.line.empty');
+  return t('roadmap.tree.state.done', { done: formatCount(done), total: formatCount(total) });
+}
+
 export function openTreeStated(opening, roadmap) {
   return t('roadmap.tree.openStated', { tree: opening.title, state: treeState(opening, roadmap) });
 }
@@ -503,6 +507,14 @@ export function treeBand(opening, { column, toGo = 0 }) {
 export function openTreeAction({ step }) {
   return t('roadmap.tree.openAction', { step });
 }
+
+// What the room's toast says once a step's tree is attached, changed or detached, and when the write could not be made.
+export const TREE_TOAST = {
+  attached: t('roadmap.tree.toast.attached'),
+  detached: t('roadmap.tree.toast.detached'),
+  detachedMarkBack: t('roadmap.tree.toast.detachedMarkBack'),
+  failed: t('roadmap.tree.toast.failed'),
+};
 
 export function prerequisitesTally({ done, total }) {
   return `${formatCount(done)} / ${formatCount(total)}`;

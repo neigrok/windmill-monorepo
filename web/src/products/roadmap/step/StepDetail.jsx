@@ -1,6 +1,7 @@
 // Roadmap step detail: a pushed page below 744px and a modal otherwise.
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import './detail.css';
 import { track } from '../../../telemetry/beacon.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
@@ -9,8 +10,10 @@ import { SAFE_URL } from '../graph/tree/NodeWorkspace.jsx';
 import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
 import { deletionCost } from '../board/acts.js';
 import { StepFacts, STEP_SECTIONS, offersCompletion, titleOf } from './StepFacts.js';
-import { handleMenuKey } from '../board/BoardControls.jsx';
+import { Sheet, handleMenuKey } from '../board/BoardControls.jsx';
+import { treeAttachment } from '../model/UnlockRules.js';
 import { StepIcons } from './StepIcons.jsx';
+import { TreePicker } from './TreePicker.jsx';
 import { OpeningBar, OpeningGlyph } from '../OpeningMarks.jsx';
 import { useTreeDoor } from '../room/useTreeVisit.js';
 import { coverBeneath, DetailFocusContext } from './composerFocus.js';
@@ -26,12 +29,15 @@ import {
 import { t } from '../i18n/index.js';
 
 const UNDO_HOLD_MS = 6000;
+// The second press of a double press on Attach comes within this; it lands where Attach was, on the step beneath.
+const DOUBLE_PRESS_MS = 500;
 const ROW_GLYPHS = { done: StepIcons.rowDone, upNext: StepIcons.rowUpNext, locked: StepIcons.rowLocked };
 const STATUS_GLYPHS = { done: StepIcons.statusDone, upNext: StepIcons.statusUpNext, locked: StepIcons.statusLocked };
 const TAB_STOP = '[data-column] [tabindex="0"], [data-column][tabindex="0"]';
 
 // `address` is the open step and how it was reached (stepAddress.js). Without `editable` the reader gets the overview and
-// the menu alone: no sections, no Complete, no Delete.
+// the menu alone: no sections, no Complete, no Delete. `treeActs` is the holder's way to attach, change and detach the
+// tree the step opens: `{ view, trees, set, lapsed }`, or null where nobody may.
 export function StepDetail({
   tree,
   completed,
@@ -58,6 +64,7 @@ export function StepDetail({
   onDeletePrompt,
   onEdit,
   onNotify,
+  treeActs = null,
 }) {
   const { id, trail, door } = address;
   const surface = breakpoint === 'phone' ? 'page' : 'modal';
@@ -71,7 +78,12 @@ export function StepDetail({
   const workspaceRef = useRef(null);
   const pinnedNoteRef = useRef(null);
   const editingRef = useRef(false);
+  const treeControl = useRef(null);
+  const closeTreePicker = useRef(null);
+  const treeChanged = useRef(false);
+  const attachedAt = useRef(-Infinity);
   const titleId = useId();
+  const pickerTitleId = useId();
   const sectionsId = useId();
   const [stepShown, setStepShown] = useState(id);
   const [section, setSection] = useState('overview');
@@ -79,6 +91,7 @@ export function StepDetail({
   const [deleting, setDeleting] = useState(false);
   const [noteEditing, setNoteEditing] = useState(false);
   const [checked, setChecked] = useState(null);
+  const [treePicker, setTreePicker] = useState(false);
   originRef.current = trail[0];
   leaveRef.current = surface === 'page' ? onBack : onClose;
   editingRef.current = noteEditing;
@@ -90,6 +103,7 @@ export function StepDetail({
     setDeleting(false);
     setNoteEditing(false);
     setChecked(null);
+    setTreePicker(false);
   }
 
   if (checked && !workspace?.subtasks?.some((item) => item.id === checked.id && item.done)) {
@@ -126,6 +140,12 @@ export function StepDetail({
     watcher.observe(layer, { childList: true, subtree: true });
     const escape = (event) => {
       if (event.key !== 'Escape' || event.defaultPrevented || layer.closest('[inert]')) return;
+      if (closeTreePicker.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeTreePicker.current();
+        return;
+      }
       if (editingRef.current) {
         event.preventDefault();
         event.stopPropagation();
@@ -183,6 +203,14 @@ export function StepDetail({
     if (door !== 'back') track('roadmap_board_step_open', { surface, column: facts.column, door });
   }, [id, door]);
 
+  // A tree attached or detached here keeps its section in view while it settles: the row arrives once the room has read the tree.
+  const treeFace = facts.opening?.face ?? null;
+  useEffect(() => {
+    if (!treeChanged.current || treePicker) return;
+    if (treeFace !== 'unread') treeChanged.current = false;
+    treeControl.current?.closest('section').scrollIntoView({ block: 'nearest' });
+  }, [treeFace, treePicker]);
+
   useEffect(() => {
     if (!outcome?.undoable) return undefined;
     const settle = setTimeout(() => setOutcome((current) => current && { ...current, undoable: false }), UNDO_HOLD_MS);
@@ -233,6 +261,59 @@ export function StepDetail({
       act('copyLink', { outcome: 'failed' });
     }
   };
+
+  // The Tree section's control takes focus back once its picker, menu or sheet has gone: the + or the ⋯, whichever stands.
+  const returnToTree = () => requestAnimationFrame(() => treeControl.current?.focus());
+  const closePicker = () => {
+    setTreePicker(false);
+    returnToTree();
+  };
+  // `chosen` is the picker's row of the tree to open, or null to open none.
+  const setTree = (chosen) => {
+    const set = treeActs.set(id, chosen);
+    treeChanged.current = set.ok;
+    return set;
+  };
+  const swallowSecondPress = (event) => {
+    if (event.detail < 2 || performance.now() - attachedAt.current > DOUBLE_PRESS_MS) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  const treeLink = editable && treeActs ? {
+    control: treeControl,
+    phone: surface === 'page',
+    layer: layerRef,
+    choose: () => {
+      track('roadmap_tree_attach', { step: 'open', band: breakpoint, view: treeActs.view });
+      setTreePicker(true);
+    },
+    detach: () => {
+      setTree(null);
+      returnToTree();
+    },
+  } : null;
+  closeTreePicker.current = treePicker && treeLink ? closePicker : null;
+  const picker = treePicker && treeLink ? (
+    <TreePicker
+      step={titleOf(facts.step)}
+      treeId={tree.treeId}
+      standing={facts.opening?.treeId ?? ''}
+      attachment={(complete) => treeAttachment(tree, { completed }, id, { complete })}
+      trees={treeActs.trees}
+      layout={surface === 'page' ? 'phone' : 'page'}
+      headingId={pickerTitleId}
+      band={breakpoint}
+      view={treeActs.view}
+      onAttach={(chosen) => {
+        if (!setTree(chosen).ok) return false;
+        attachedAt.current = performance.now();
+        closePicker();
+        return true;
+      }}
+      onLapse={treeActs.lapsed}
+      onCancel={closePicker}
+    />
+  ) : null;
 
   const menuItems = [
     stepLink && { label: STEP_DETAIL.copyLink, icon: StepIcons.copyLink, run: copyLink },
@@ -304,6 +385,10 @@ export function StepDetail({
     }}>{LABELS.undo}</button>
   </div> : null;
   const requestClose = () => {
+    if (picker) {
+      closePicker();
+      return;
+    }
     if (noteEditing) {
       workspaceRef.current?.close();
       return;
@@ -320,6 +405,7 @@ export function StepDetail({
             onUndo={undo}
             onOpenStep={onOpenStep}
             onOpenTree={openTree}
+            treeLink={treeLink}
             onViewBranch={editable && facts.column !== 'locked' ? () => { act('viewBranch'); onViewBranch(id); } : null}
           />
         )}
@@ -341,7 +427,7 @@ export function StepDetail({
     const previous = trail.length > 1 ? tree.nodesById.get(trail[trail.length - 2]) : null;
     const backLabel = previous ? titleOf(previous) : roadmapTitle;
     return (
-      <div ref={layerRef} className="st-board-step-layer" onKeyDown={onKeyDown}>
+      <div ref={layerRef} className="st-board-step-layer" onKeyDown={onKeyDown} onClickCapture={swallowSecondPress}>
         <div className="st-board-step-page" role="dialog" aria-modal="true" aria-labelledby={noteEditing ? undefined : titleId} aria-label={noteEditing ? STEP_DETAIL.editNote : undefined} tabIndex={-1}>
           <div className="st-board-step-page-nav" inert={noteEditing ? '' : undefined}>
             <button type="button" className="st-board-step-page-back" aria-label={backTo({ screen: backLabel })} onClick={onBack}>
@@ -356,6 +442,7 @@ export function StepDetail({
             {content}
           </div>
           {sheet}
+          {picker}
           <span className="st-board-step-checked-announcement" role="status" aria-live="polite" aria-atomic="true">
             {liveChecked && !noteEditing ? checkedToast({ item: checked.label }) : ''}
           </span>
@@ -371,23 +458,27 @@ export function StepDetail({
     );
   }
   return (
-    <div ref={layerRef} className="st-board-step-layer" onKeyDown={onKeyDown}>
+    <div ref={layerRef} className="st-board-step-layer" onKeyDown={onKeyDown} onClickCapture={swallowSecondPress}>
       <div className="st-board-step-scrim" onPointerDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}>
-        <div className="st-board-step-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
-          <div className="st-board-step-modal-tools">
-            {identity}
-            {menu}
-            <button type="button" className="st-board-step-icon-button" aria-label={STEP_DETAIL.close} onClick={requestClose}>
-              <StepIcons.close />
-            </button>
-          </div>
-          {sections}
-          <div className="st-board-step-modal-content" tabIndex={-1}>{content}</div>
-          {!noteEditing && (offer || actions) && (
-            <div className="st-board-step-modal-actions">
-              {offer}
-              {actions}
-            </div>
+        <div className="st-board-step-modal" role="dialog" aria-modal="true" aria-labelledby={picker ? pickerTitleId : titleId} tabIndex={-1}>
+          {picker ?? (
+            <>
+              <div className="st-board-step-modal-tools">
+                {identity}
+                {menu}
+                <button type="button" className="st-board-step-icon-button" aria-label={STEP_DETAIL.close} onClick={requestClose}>
+                  <StepIcons.close />
+                </button>
+              </div>
+              {sections}
+              <div className="st-board-step-modal-content" tabIndex={-1}>{content}</div>
+              {!noteEditing && (offer || actions) && (
+                <div className="st-board-step-modal-actions">
+                  {offer}
+                  {actions}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -407,7 +498,7 @@ function StepIdentity({ step, titleId, compact = false }) {
 
 // A locked step marks each unmet need on a sunken row with its column, on the page and in the modal (01.07, 03.07).
 // View branch closes the step and scopes the Board to it (11.01); the owner's up next and done steps offer it.
-function Overview({ facts, outcome, onUndo, onOpenStep, onOpenTree, onViewBranch }) {
+function Overview({ facts, outcome, onUndo, onOpenStep, onOpenTree, treeLink, onViewBranch }) {
   const description = facts.step.description?.trim() ?? '';
   const links = (facts.step.links ?? []).filter((link) => SAFE_URL.test(link.url));
   const needing = facts.column === 'locked';
@@ -446,7 +537,7 @@ function Overview({ facts, outcome, onUndo, onOpenStep, onOpenTree, onViewBranch
           {facts.unlocks.map((related) => <RelationRow key={related.id} related={related} onOpen={onOpenStep} />)}
         </section>
       )}
-      {facts.opening?.read && <TreeSection facts={facts} onOpen={onOpenTree} />}
+      {(facts.opening?.read || treeLink) && <TreeSection facts={facts} onOpen={onOpenTree} link={treeLink} />}
       {onViewBranch && (
         <div className="st-board-step-explore">
           <button type="button" className="st-board-step-view-branch" onClick={onViewBranch}>{STEP_DETAIL.viewBranch}</button>
@@ -496,33 +587,146 @@ function RelationRow({ related, need = false, onOpen }) {
 }
 
 // The tree a step opens, after what it needs and unlocks: the row goes into the tree, and one line says what completes
-// the step. A tree nothing was read of shows no row, as every line of it would be a guess.
-function TreeSection({ facts, onOpen }) {
+// the step. A tree nothing was read of shows no row, as every line of it would be a guess. `link` is the holder's way to
+// attach, change and detach: with it the section stands on a step that opens no tree, as None and a +.
+function TreeSection({ facts, onOpen, link }) {
   const { opening } = facts;
   const Row = onOpen ? 'button' : 'div';
   return (
-    <section className="st-board-step-relations">
-      <h3 className="st-board-step-heading"><span>{TREE.heading}</span></h3>
-      <Row className={`st-board-step-tree st-board-step-tree--${opening.face}`} {...(onOpen ? { type: 'button', onClick: onOpen, 'aria-label': openTreeStated(opening, facts.roadmap) } : {})}>
-        <span className="st-board-step-tree-glyph"><OpeningGlyph face={opening.face} size={16} check /></span>
-        <span className="st-board-step-tree-facts">
-          <span className="st-board-step-tree-title">{treeTitle(opening)}</span>
-          <span className="st-board-step-tree-state">{treeState(opening, facts.roadmap)}</span>
-          {opening.total > 0 && <OpeningBar opening={opening} />}
-        </span>
-        {onOpen && <span className="st-board-step-tree-chevron"><StepIcons.chevron /></span>}
-      </Row>
-      <p className="st-board-step-tree-rule">{treeRule(facts)}</p>
+    <section className="st-board-step-relations st-board-step-relations--tree">
+      {link ? <TreeHeading facts={facts} link={link} /> : <h3 className="st-board-step-heading"><span>{TREE.heading}</span></h3>}
+      {opening?.read && (
+        <>
+          <Row className={`st-board-step-tree st-board-step-tree--${opening.face}`} {...(onOpen ? { type: 'button', onClick: onOpen, 'aria-label': openTreeStated(opening, facts.roadmap) } : {})}>
+            <span className="st-board-step-tree-glyph"><OpeningGlyph face={opening.face} size={16} check /></span>
+            <span className="st-board-step-tree-facts">
+              <span className="st-board-step-tree-title">{treeTitle(opening)}</span>
+              <span className="st-board-step-tree-state">{treeState(opening, facts.roadmap)}</span>
+              {opening.total > 0 && <OpeningBar opening={opening} />}
+            </span>
+            {onOpen && <span className="st-board-step-tree-chevron"><StepIcons.chevron /></span>}
+          </Row>
+          <p className="st-board-step-tree-rule">{treeRule(facts, Boolean(link))}</p>
+        </>
+      )}
     </section>
   );
 }
 
+// The Tree heading with the holder's control (28.54, 28.57): None and the + that attaches a tree, or the ⋯ over Change
+// tree and Detach tree. The footnote's mark clause stands only where a mark was set aside.
+function TreeHeading({ facts, link }) {
+  const { opening, marked } = facts;
+  if (!opening) {
+    return (
+      <div className="st-board-step-tree-heading">
+        <h3 className="st-board-step-heading">
+          <span>{TREE.heading}</span>
+          <span className="st-board-step-heading-count">{t('roadmap.tree.none')}</span>
+        </h3>
+        <button ref={link.control} type="button" className="st-board-step-icon-button" aria-label={t('roadmap.treePicker.title')} onClick={link.choose}>
+          <StepIcons.add />
+        </button>
+      </div>
+    );
+  }
+  const named = marked ? t('roadmap.tree.menu.footnoteMark', { tree: opening.title }) : t('roadmap.tree.menu.footnote', { tree: opening.title });
+  const unnamed = marked ? t('roadmap.tree.menu.footnoteUnnamedMark') : t('roadmap.tree.menu.footnoteUnnamed');
+  return (
+    <div className="st-board-step-tree-heading">
+      <h3 className="st-board-step-heading"><span>{TREE.heading}</span></h3>
+      <TreeMenu link={link} title={opening.title} footnote={opening.title ? named : unnamed} />
+    </div>
+  );
+}
+
+// The Tree heading's ⋯ (28.58, 28.65). From 744px a menu under the heading, standing in the step's layer so the
+// scrolling step does not clip it, and gone once that scrolls; on phones a sheet over the whole screen with both rows
+// in the reach band. Detaching destroys nothing, so no row is danger-toned and none asks.
+function TreeMenu({ link, title, footnote }) {
+  const [place, setPlace] = useState(null);
+  const box = useRef(null);
+  const noteId = useId();
+  const open = place !== null;
+  const rows = [
+    { label: t('roadmap.tree.menu.change'), icon: StepIcons.graph, run: link.choose },
+    { label: t('roadmap.tree.menu.detach'), icon: StepIcons.close, run: link.detach },
+  ];
+  const close = () => {
+    setPlace(null);
+    link.control.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!open || link.phone) return undefined;
+    box.current.querySelector('[role="menuitem"]').focus();
+    const away = (event) => {
+      if (!box.current?.contains(event.target) && !link.control.current?.contains(event.target)) setPlace(null);
+    };
+    const moved = () => setPlace(null);
+    window.addEventListener('pointerdown', away);
+    window.addEventListener('resize', moved);
+    window.addEventListener('scroll', moved, true);
+    return () => {
+      window.removeEventListener('pointerdown', away);
+      window.removeEventListener('resize', moved);
+      window.removeEventListener('scroll', moved, true);
+    };
+  }, [open, link.phone]);
+
+  const items = (className, role) => rows.map((row) => (
+    <button key={row.label} type="button" role={role} className={className} onClick={() => {
+      close();
+      row.run();
+    }}>
+      <row.icon />
+      {row.label}
+    </button>
+  ));
+
+  return (
+    <>
+      <button
+        ref={link.control}
+        type="button"
+        className="st-board-step-icon-button"
+        aria-label={t('roadmap.tree.menu.actions')}
+        aria-haspopup={link.phone ? 'dialog' : 'menu'}
+        aria-expanded={open}
+        onClick={() => {
+          const under = link.control.current.getBoundingClientRect();
+          const layer = link.layer.current.getBoundingClientRect();
+          setPlace(open ? null : { top: under.bottom + 4 - layer.top, right: layer.right - under.right });
+        }}
+      >
+        <StepIcons.more />
+      </button>
+      {open && !link.phone && createPortal(
+        <div ref={box} className="st-board-step-tree-menu" style={place}
+          onKeyDown={(event) => handleMenuKey(event, { root: box.current, onEscape: close, onTab: () => setPlace(null) })}>
+          <div role="menu" aria-describedby={noteId}>{items('st-board-step-menu-item', 'menuitem')}</div>
+          <p id={noteId} className="st-board-step-tree-footnote">{footnote}</p>
+        </div>,
+        link.layer.current,
+      )}
+      {open && link.phone && (
+        <Sheet host={document.body} variant="tree" title={title || TREE.heading} onClose={close}
+          headingStart={title ? <span className="st-board-tree-sheet-eyebrow">{TREE.heading}</span> : null}>
+          {items('st-board-tree-sheet-row')}
+          <p className="st-board-tree-sheet-footnote">{footnote}</p>
+        </Sheet>
+      )}
+    </>
+  );
+}
+
 // What completes a step that opens a tree: the one thing in the way first, then what it still needs, then its tree.
-function treeRule({ opening, column, needs, roadmap }) {
+// Where the person can detach, a loop and a missing tree say the way out.
+function treeRule({ opening, column, needs, roadmap }, detachable) {
   const tree = opening.title;
-  if (opening.face === 'missing') return t('roadmap.tree.rule.missing');
+  if (opening.face === 'missing') return detachable ? t('roadmap.tree.rule.missingChoose') : t('roadmap.tree.rule.missing');
   if (opening.face === 'complete') return t('roadmap.tree.rule.complete', { tree });
-  if (opening.face === 'loop') return t('roadmap.tree.rule.loop', { roadmap });
+  if (opening.face === 'loop') return detachable ? t('roadmap.tree.rule.loopDetach', { roadmap }) : t('roadmap.tree.rule.loop', { roadmap });
   if (opening.face === 'empty') return t('roadmap.tree.rule.empty');
   if (column !== 'locked') return t('roadmap.tree.rule.open', { tree });
   if (needs.length === 1) return t('roadmap.tree.rule.locked', { step: titleOf(needs[0]), tree });

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { readGuides, setGuide, setVisibility } from '../../../../src/products/roadmap/persistence/TreeRegistry.js';
 import { AuthError } from '../../../../src/shell/auth/AuthClient.js';
+import { listServerTrees, readTreeCard } from '../../../../src/products/roadmap/persistence/TreeRegistry.js';
 
 const BASE = 'http://localhost:8088';
 const realFetch = global.fetch;
@@ -17,6 +18,66 @@ function stubFetch(impl) {
 }
 
 test.afterEach(() => { global.fetch = realFetch; });
+
+test('listServerTrees — the account’s server rows newest first, and a list that could not be read says how', async () => {
+  const calls = stubFetch(() => ({ ok: true, status: 200, json: async () => ({ trees: [
+    { id: 't_old', title: 'Old', done: 1, total: 4, updatedAt: '2026-01-01T00:00:00Z' },
+    { id: 't_new', title: 'New', done: 0, total: 5, updatedAt: '2026-03-01T00:00:00Z' },
+    { id: 't_mid', title: 'Mid', done: 3, total: 8, updatedAt: 1769904000000 },
+  ] }) }));
+  assert.deepEqual(await listServerTrees(), { authoritative: true, rows: [
+    { id: 't_new', title: 'New', done: 0, total: 5, updatedAt: '2026-03-01T00:00:00Z' },
+    { id: 't_mid', title: 'Mid', done: 3, total: 8, updatedAt: 1769904000000 },
+    { id: 't_old', title: 'Old', done: 1, total: 4, updatedAt: '2026-01-01T00:00:00Z' },
+  ] });
+  assert.deepEqual(calls.map(({ url, init }) => ({ url, credentials: init.credentials })), [{ url: `${BASE}/v1/trees`, credentials: 'include' }]);
+
+  stubFetch(() => ({ ok: true, status: 200, json: async () => ({ trees: [] }) }));
+  assert.deepEqual(await listServerTrees(), { authoritative: true, rows: [] });
+  stubFetch(() => ({ ok: false, status: 503, json: async () => ({}) }));
+  assert.deepEqual(await listServerTrees(), { authoritative: false, status: 503, rows: [] });
+  stubFetch(() => ({ ok: false, status: 401, json: async () => ({}) }));
+  assert.deepEqual(await listServerTrees(), { authoritative: false, status: 401, rows: [] });
+  global.fetch = async () => { throw new TypeError('failed to fetch'); };
+  assert.deepEqual(await listServerTrees(), { authoritative: false, status: 0, rows: [] });
+  stubFetch(() => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('<html>'); } }));
+  assert.deepEqual(await listServerTrees(), { authoritative: false, status: 200, rows: [] }, 'a 200 that is not a list');
+  stubFetch(() => ({ ok: true, status: 200, json: async () => ({ trees: 'nope' }) }));
+  assert.deepEqual(await listServerTrees(), { authoritative: false, status: 200, rows: [] });
+});
+
+test('readTreeCard — a roadmap someone else shares, one of the person’s own, and none they can read', async () => {
+  const calls = stubFetch(() => ({ ok: true, status: 200, json: async () => ({ mine: false, data: { title: 'Reefing course', nodes: [{ id: 'a' }, { id: 'b' }] } }) }));
+  assert.deepEqual(await readTreeCard('t_reef'), { id: 't_reef', title: 'Reefing course', author: null, steps: 2, mine: false });
+  assert.deepEqual(calls.map(({ url, init }) => ({ url, credentials: init.credentials })), [{ url: `${BASE}/v1/trees/t_reef`, credentials: 'include' }]);
+
+  stubFetch(() => ({ ok: true, status: 200, json: async () => ({ mine: true, data: { title: 'My year', author: 'Sam', nodes: [] } }) }));
+  assert.deepEqual(await readTreeCard('t_year'), { id: 't_year', title: 'My year', author: 'Sam', steps: 0, mine: true });
+
+  const odd = stubFetch(() => ({ ok: false, status: 404, json: async () => ({}) }));
+  assert.equal(await readTreeCard('a/b?c'), null);
+  assert.equal(odd[0].url, `${BASE}/v1/trees/a%2Fb%3Fc`);
+});
+
+test('readTreeCard — a server failure and a dead network throw their status, which says nothing of the roadmap', async () => {
+  stubFetch(() => ({ ok: false, status: 503, json: async () => ({ error: 'the trees this tree opens could not be read' }) }));
+  await assert.rejects(readTreeCard('t_reef'), (err) => {
+    assert.deepEqual({ kind: err instanceof AuthError, status: err.status, message: err.message }, { kind: true, status: 503, message: 'Could not read the roadmap' });
+    return true;
+  });
+  global.fetch = async () => { throw new TypeError('failed to fetch'); };
+  await assert.rejects(readTreeCard('t_reef'), (err) => {
+    assert.deepEqual({ kind: err instanceof AuthError, status: err.status, code: err.code }, { kind: true, status: 0, code: 'unreachable' });
+    return true;
+  });
+  for (const json of [async () => { throw new SyntaxError('<html>'); }, async () => ({ mine: false })]) {
+    stubFetch(() => ({ ok: true, status: 200, json }));
+    await assert.rejects(readTreeCard('t_reef'), (err) => {
+      assert.deepEqual({ kind: err instanceof AuthError, status: err.status, code: err.code }, { kind: true, status: 200, code: 'shape' });
+      return true;
+    });
+  }
+});
 
 test('setVisibility — PATCHes {visibility} credentialed and resolves on 204', async () => {
   const calls = stubFetch(() => ({ ok: true, status: 204 }));
