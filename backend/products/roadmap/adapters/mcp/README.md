@@ -54,7 +54,7 @@ rewritten.
 Legacy edit tools reuse the `commandFromJson` codec: their argument names are the command payload
 keys, save for the node handle, which the tool layer normalizes (`nodeId` → the codec's `id`)
 before the decode. `commandFromJson` answers a bare yes/no, so arguments are validated in the tool
-layer. `patch_nodes` and `change_edges` parse typed inputs and call pure domain planners; each
+layer. `patch_nodes`, `update_nodes` and `change_edges` parse typed inputs and call pure domain planners; each
 planner returns a complete command batch before the room applies anything.
 
 ## The error contract
@@ -181,7 +181,7 @@ from the products actually connected. **An empty scope is the account-wide grant
 
 Tending does not go through the composite: `TendingService` holds roadmap's host directly
 (`ScopedToolHost.h`). The two narrowings stack — `ScopedToolHost` pins a run to one tree, the
-composite pins a credential to its grant. A run is not offered `update_tree` or `describe_tree` either: it reads the
+composite pins a credential to its grant. A run is not offered `update_tree` either: it reads the
 tree's guide through `get_tree` and never sets it. Nor is it offered the tree a node opens: the
 schemas it is handed carry no `opens` argument and no `opens` field, so a run neither reads nor sets
 a pointer, an import through it leaves the pointers the tree holds as they are, and a node it
@@ -211,7 +211,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | | Tool | Effect |
 | --- | --- | --- |
 | registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own; `create_tree` plants the legend sent in `kinds` (1–6 of `import_subgraph`'s kind items, each id and hue once, replacing the default Build/Learn/Milestone whole and in order; `[]`, a repeated id or hue, or seven refuse the call and plant nothing) and answers `{treeId, url, kinds: [{id, hue, label}]}`, the legend planted; each `list_trees` row carries the tree's `url` too (see `url`); a node later written with neither `color` nor `kind` is terracotta, so a legend with no terracotta kind leaves such a node under no kind |
-| registry | `update_tree` · `describe_tree` (its earlier name: one declaration and one handler, the write line named for the name called) | rename the tree with `title`, set its guide with `guide`, or both — at least one, each set only when sent, both landing as one frame at one seq or neither (`TreeRegistry::describe`). The title follows `rename`'s rule (`TreeRegistry::titleFrom`: trimmed, cut to 200 characters, a blank refused as "a tree always has a name"), and one equal to the name the tree has is not written and answers `unchanged: true` with the head; a guide is written whenever it is sent, even as the tree holds it, which is also how a fork's owner makes an inherited guide theirs; the guide is a plain-text note on what the tree is and how to work it, at most 5000 characters, and `""` or only whitespace clears it. Owner only; answers `{applied, seq}`, `seq` the head after the call, and leaves no op row; an open page receives the frame with the new title or guide |
+| registry | `update_tree` | rename the tree with `title`, set its guide with `guide`, or both — at least one, each set only when sent, both landing as one frame at one seq or neither (`TreeRegistry::describe`). The title follows `rename`'s rule (`TreeRegistry::titleFrom`: trimmed, cut to 200 characters, a blank refused as "a tree always has a name"), and one equal to the name the tree has is not written and answers `unchanged: true` with the head; a guide is written whenever it is sent, even as the tree holds it, which is also how a fork's owner makes an inherited guide theirs; the guide is a plain-text note on what the tree is and how to work it, at most 5000 characters, and `""` or only whitespace clears it. Owner only; answers `{applied, seq}`, `seq` the head after the call, and leaves no op row; an open page receives the frame with the new title or guide |
 | read | `get_tree` | title + `url` (see `url`) + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + `guides` on the first page (see `guides`) + nodes (label, icon, color, `kind`, position, description, links, `opens`, `url`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells, each one line with the `count` of nodes it covers and the first ten as `nodes` (one per kind some node has: `label-too-long`, `empty-icon`, `high-in-degree`; one `unclaimed-hue` line per hue no legend kind wears, with the `hue`; or one node-less `empty-legend` line for a tree whose legend holds no kind), so the list is bounded whatever the tree's size; on a tree the caller owns also `treeLoops` and `danglingPointers` (see `opens`) |
@@ -219,6 +219,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose mark carried `outOfOrder: true`, from `set_progress` or an import's `progress` row |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
 | edit | `patch_nodes` | 1–200 existing nodes, replacement fields (`opens` among them, and a hue as `color` or legend `kind`) with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
+| edit | `update_nodes` | `patch_nodes`' handler grown (`applyBatchEdit`): 1–200 rows, each `nodeId` and any of `label`, `color`/`kind`, `description` or `appendDescription`, `icon`, `links` or `addLinks`, `opens`, and the caller's mark (`status` with `outOfOrder`, read by `readMark`); no `position`. The tree fields land as `patch_nodes`' batch does — one op, `changedPart` per row, `changedNodeIds`/`unchangedNodeIds`, `unchanged: true` when it lands nothing — each row judged against the node as the batch finds it. Marks land after it, as an import's `progress[]` does, answered in `progress` rows with `prerequisitesMet` judged against the overlay the whole call leaves; `unchanged` speaks for the tree batch only. When a tree op lands in the call, marks that then fail answer `progressApplied: false` and are reported as `roadmap.update_nodes.marks`; when none does — no tree field sent, or only fields the nodes hold — the marks are the call, and their refusal or failure is the call's, as `set_progress`'s is. On a tree the caller owns, a mark on a node that opens another tree of theirs is refused as `set_progress` refuses it: its row answers `refused`, naming the node and no tree, and the receipt lists it in `progressRefused` with `progressError` and `progressApplied: false`; when the marks are the call and each was refused, nothing is written, the reply is no error, and the call completes as `opens-a-tree`, as `set_progress`'s batch does. A field is sent when it holds a value: a `null` `kind` or `outOfOrder` is left out, and a `null` in a field that takes none is refused. A mark is the caller's own overlay and needs what `set_progress` needs — the write grant on the connection and read access to the tree — so a call carrying only marks works on any tree the caller reads; a call carrying any tree field passes the owner's write gate whole, and on another account's tree is refused with no mark landed. A stale `expectedSeq` refuses the whole call, marks included; `dryRun` previews the tree batch as `patch_nodes` does and lands no mark, answering none, as an import's dry run answers none (it reports only `progressSkipped`, which update_nodes refuses instead) |
 | edit | `change_edges` | 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, optional `expectedSeq` and `dryRun` |
 | edit | `create_node` | add a node — its hue as `color` or legend `kind`, `prerequisites[]`, `description`, `links`, `opens` all optional; answers `id` and the `kind` it wears |
 | edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed), its `links` — or `addLinks`, which joins links after the ones held, in the order sent (a held url, whitespace around it aside, keeps its place and takes the label sent with it; a url sent twice is refused; the 32-link cap held against the result); one of the two — and/or the tree it `opens` (`""` clears it); when no field it names would change it writes nothing (see below) |
@@ -260,7 +261,7 @@ product can declare a tool without its annotations:
   `Gym · Log set`. The composite preserves that title while publishing the canonical prefixed name.
 - `annotations.readOnlyHint` — true exactly for `read`-level tools.
 - `annotations.destructiveHint` — true for a `delete`-level tool and for the writes that
-  overwrite or remove in bulk (`patch_nodes`, `change_edges`, `import_subgraph`, `prune`, `tidy` — `kBulkEdits` beside the
+  overwrite or remove in bulk (`patch_nodes`, `update_nodes`, `change_edges`, `import_subgraph`, `prune`, `tidy` — `kBulkEdits` beside the
   catalog), unless the declaration says `proposal`: `propose_routine_removal` sits at
   `gym:delete` and mints a card the lifter applies, so it is declared non-destructive.
 - `annotations.idempotentHint` — true for every read and for the writes a resend leaves unchanged
@@ -348,7 +349,8 @@ it lists.
 ## A link's url
 
 - **What is taken.** A link a write brings to a node is one a person can open: `create_node`,
-  `annotate_node` (`links` and `addLinks`), a `patch_nodes` row and an `import_subgraph` node trim
+  `annotate_node` (`links` and `addLinks`), a `patch_nodes` row, an `update_nodes` row (`links` and `addLinks`) and an
+  `import_subgraph` node trim
   each url's surrounding ASCII whitespace and refuse one that does not then start with `http:`,
   `https:` or `mailto:`, in any case — the schemes the web shows a link with (`SAFE_URL`) — naming
   the link by its path (`links[1].url`, `nodes[0].links[2].url`) and the schemes taken, never the
@@ -371,7 +373,7 @@ it lists.
 
 ## A node's hue: `color` or `kind`
 
-`create_node`, `set_node_color`, each `patch_nodes` row and each `import_subgraph` node name the
+`create_node`, `set_node_color`, each `patch_nodes` or `update_nodes` row and each `import_subgraph` node name the
 node's hue as a `color`, as a legend `kind` id, or as both when they agree. A `kind` lands as the
 hue that kind wears in the node's `color` register: the node stores no kind of its own, so a
 `recolor_kind` repaints it with the rest of the kind. The kind is read off the room's own legend
@@ -393,12 +395,12 @@ kind. A node that names neither keeps its colour, and a new one is terracotta.
 
 A node may point at another tree: `opens` holds that tree's id.
 
-- **Write.** `create_node`, `annotate_node`, a `patch_nodes` row and an `import_subgraph` node take
-  `opens`, a string of at most 128 characters. On `create_node`, absent or `""` opens nothing: the
+- **Write.** `create_node`, `annotate_node`, a `patch_nodes` or `update_nodes` row and an `import_subgraph`
+  node take `opens`, a string of at most 128 characters. On `create_node`, absent or `""` opens nothing: the
   door always writes the pointer, so an id that is present, or that a deleted node held, keeps none
-  of the pointer it had. On the other three, absent leaves the pointer, `""` clears it and a value
-  sets it. `null` is absent, save in a `patch_nodes` row, which refuses it as it refuses a `null`
-  label. `opens` alone is something to set.
+  of the pointer it had. On the others, absent leaves the pointer, `""` clears it and a value
+  sets it. `null` is absent, save in a `patch_nodes` or `update_nodes` row, which refuses it as it refuses a
+  `null` label. `opens` alone is something to set.
 - **The target is checked at this door only.** Every non-empty `opens` in a call must name a tree
   that stands and is the caller's, asked in one read for the whole call
   (`TreeRegistry::titlesOwnedBy`), before the room is written and before a `dryRun` answers.
@@ -489,7 +491,7 @@ A node may point at another tree: `opens` holds that tree's id.
 - **A follow that fails does not fail the call.** The reply then carries the graph's diagnostics
   without the two lists and `pointerDiagnosticsUnavailable: true`, a key that is otherwise absent.
   The failure is reported once as `roadmap.diagnostics.follow`, door `mcp`.
-- **An edit that closes a loop says so.** `create_node`, `annotate_node`, `patch_nodes` and
+- **An edit that closes a loop says so.** `create_node`, `annotate_node`, `patch_nodes`, `update_nodes` and
   `import_subgraph` follow pointers once when the call changes the tree a node opens to a tree:
   after the edit is saved and the strand is released, one read starts from the trees those nodes
   now open, and only those nodes are judged. Each of them whose tree leads back to this one is a

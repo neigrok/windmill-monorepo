@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 22,
+  "schemaVersion" : 23,
   "steps" : 
   [
     {
@@ -54,7 +54,7 @@
         "structuredContent" : null
       },
       "step" : 1,
-      "tool" : "describe_tree"
+      "tool" : "update_tree"
     },
     {
       "result" : 
@@ -930,15 +930,85 @@
         "content" : 
         [
           {
-            "text" : "set_progress: \"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens",
+            "text" : 
+            {
+              "applied" : true,
+              "changedNodeIds" : 
+              [
+                "render"
+              ],
+              "diagnosticsClean" : true,
+              "dryRun" : false,
+              "introducedDiagnostics" : [],
+              "progress" : 
+              [
+                {
+                  "nodeId" : "docs",
+                  "refused" : "\"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens"
+                },
+                {
+                  "nodeId" : "sync",
+                  "prerequisitesMet" : true,
+                  "status" : "complete"
+                }
+              ],
+              "progressApplied" : false,
+              "progressError" : "Some requested progress marks nodes that open a tree, which take no mark of their own \u2014 each is complete when the tree it opens is; those ids are listed in progressRefused.",
+              "progressRefused" : 
+              [
+                "docs"
+              ],
+              "seq" : 14,
+              "treeId" : "t",
+              "unchangedNodeIds" : 
+              [
+                "docs",
+                "sync"
+              ]
+            },
             "type" : "text"
           }
         ],
-        "isError" : true,
-        "structuredContent" : null
+        "isError" : false,
+        "structuredContent" : 
+        {
+          "applied" : true,
+          "changedNodeIds" : 
+          [
+            "render"
+          ],
+          "diagnosticsClean" : true,
+          "dryRun" : false,
+          "introducedDiagnostics" : [],
+          "progress" : 
+          [
+            {
+              "nodeId" : "docs",
+              "refused" : "\"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens"
+            },
+            {
+              "nodeId" : "sync",
+              "prerequisitesMet" : true,
+              "status" : "complete"
+            }
+          ],
+          "progressApplied" : false,
+          "progressError" : "Some requested progress marks nodes that open a tree, which take no mark of their own \u2014 each is complete when the tree it opens is; those ids are listed in progressRefused.",
+          "progressRefused" : 
+          [
+            "docs"
+          ],
+          "seq" : 14,
+          "treeId" : "t",
+          "unchangedNodeIds" : 
+          [
+            "docs",
+            "sync"
+          ]
+        }
       },
       "step" : 26,
-      "tool" : "set_progress"
+      "tool" : "update_nodes"
     },
     {
       "result" : 
@@ -946,7 +1016,7 @@
         "content" : 
         [
           {
-            "text" : "set_progress: no node in this tree is named no-such-node. Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.",
+            "text" : "set_progress: \"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens",
             "type" : "text"
           }
         ],
@@ -962,7 +1032,7 @@
         "content" : 
         [
           {
-            "text" : "annotate_node: nothing to set \u2014 pass at least one of \"description\", \"appendDescription\", \"icon\", \"links\", \"addLinks\", \"opens\".",
+            "text" : "set_progress: no node in this tree is named no-such-node. Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.",
             "type" : "text"
           }
         ],
@@ -970,6 +1040,22 @@
         "structuredContent" : null
       },
       "step" : 28,
+      "tool" : "set_progress"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : "annotate_node: nothing to set \u2014 pass at least one of \"description\", \"appendDescription\", \"icon\", \"links\", \"addLinks\", \"opens\".",
+            "type" : "text"
+          }
+        ],
+        "isError" : true,
+        "structuredContent" : null
+      },
+      "step" : 29,
       "tool" : "annotate_node"
     },
     {
@@ -985,7 +1071,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 29,
+      "step" : 30,
       "tool" : "create_node"
     }
   ]

@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 22;
+constexpr int kWireCorpusVersion = 23;
 
 struct Step {
   const char* tool;
@@ -39,7 +39,7 @@ Json::Value strings(std::vector<const char*> values) {
 std::vector<Step> plan() {
   return {
       {"get_tree", kNoArgs},
-      {"describe_tree", with("guide", "Ship the root first; render and sync follow it.")},
+      {"update_tree", with("guide", "Ship the root first; render and sync follow it.")},
       {"add_kind", obj({{"id", "infra"}, {"hue", "plum"}, {"label", "Infra"},
                         {"description", "the plumbing under the product"}})},
       {"create_node", obj({{"id", "root"}, {"label", "Ship v1"}, {"color", "gold"}})},
@@ -119,6 +119,15 @@ std::vector<Step> plan() {
                                   array.append(mark("sync", "none"));
                                   return array;
                                 }()}})},
+      // update_nodes edits a node and marks two beside it: the mark on `docs` is refused there as set_progress refuses it,
+      // and the receipt lists it in progressRefused as an import does.
+      {"update_nodes", obj({{"updates", [] {
+                              Json::Value array(Json::arrayValue);
+                              array.append(obj({{"nodeId", "render"}, {"label", "Renderer v2"}}));
+                              array.append(mark("docs", "complete"));
+                              array.append(mark("sync", "complete"));
+                              return array;
+                            }()}})},
       // Four deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end.
       {"set_progress", obj({{"nodeId", "docs"}, {"status", "complete"}})},
       {"set_progress", obj({{"nodeId", "no-such-node"}, {"status", "active"}})},

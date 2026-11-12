@@ -31,6 +31,9 @@ void installWriteReporter(std::shared_ptr<FailureReporter> reporter);
 void installWriteSink(std::function<void(const WriteCompletion&)> sink);
 std::string writeRequestId();
 std::string currentWriteRequestId();
+// The door the write in progress came through (`mcp`, `Coach`, …), or "" outside one: a write a handler observes beside
+// it is told at the same door.
+std::string currentWriteDoor();
 bool claimWriteIssue();
 void reportCurrentWriteFailure(const std::exception& error);
 void reportCurrentUnknownWriteFailure();
@@ -69,6 +72,7 @@ public:
   void reportUnknownFailure();
   void failUnknown();
   const std::string& requestId() const;
+  const std::string& door() const { return completion_.door; }
 private:
   friend class WriteContext;
   void failure(const std::string& exceptionType);
