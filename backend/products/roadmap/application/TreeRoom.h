@@ -111,6 +111,8 @@ public:
   ~TreeRoom();
 
   TreeDiagnostics diagnose() const;
+  // The tree each present node opens (LooseGraph::pointers), without the copy of every node snapshot() makes.
+  std::map<NodeId, TreeId> pointers() const { return graph_.pointers(); }
   TreeData snapshot() const;
   std::vector<Kind> kinds() const { return legend_.kinds(); }  // the snapshot's legend, without its nodes
   GraphState exportState() const;

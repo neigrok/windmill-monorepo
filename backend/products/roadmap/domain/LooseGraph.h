@@ -71,6 +71,9 @@ public:
   // The one register an append reads, without the edge scan nodeView pays; "" for a never-seen id.
   std::string descriptionOf(const NodeId& id) const;
 
+  // The tree each present node opens, by node; a node that opens none is left out.
+  std::map<NodeId, TreeId> pointers() const;
+
   // Present nodes currently painted `color`: the repaint set for a RecolorKind, and the guard
   // blocking removal of a kind whose hue is still worn.
   std::vector<NodeId> nodesWithColor(NodeColor color) const;
