@@ -885,3 +885,14 @@ test('C or a swipe on a card that opens a tree completes nothing: the toast says
     assert.deepEqual(opened, leads ? [['wind', 'toast']] : []);
   }
 });
+
+test('where no tree can be gone into, the toast a C raises says what completes the step and offers nothing', () => {
+  const opening = Opening.fromWire({ treeId: 't_wind', title: 'Wind drills', state: 'open', done: 3, total: 8, loop: false });
+  const tree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [{ id: 'wind', label: 'Read the wind', prerequisites: [], color: 'blue', opens: 't_wind', opening }] });
+  const { acts, c, calls } = fixture({ tree, openTree: null });
+
+  assert.equal(acts.complete('wind', 'key'), false);
+
+  assert.deepEqual(c.toast, { message: 'Completes with its tree', surface: 'board', act: 'tree', reveal: null, holdMs: 6000 });
+  assert.deepEqual(calls, []);
+});

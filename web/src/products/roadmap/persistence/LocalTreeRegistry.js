@@ -111,6 +111,13 @@ export class LocalTreeRegistry {
     return this.list(owner).find((entry) => entry.id === id) ?? null;
   }
 
+  // The row of a tree this device holds as that account's own. Anonymous work is nobody's yet, and a holder a lapse
+  // retains is not asked: the caller names the account.
+  owned(id, owner) {
+    const entry = this.entries()[id];
+    return owner && entry?.owner === owner && entry.title ? { id, title: entry.title } : null;
+  }
+
   // The owner is stamped at birth so a tree planted offline by a signed-in person is not anonymous
   // work the next account may claim.
   record(id, title, owner = deviceOwner()) {

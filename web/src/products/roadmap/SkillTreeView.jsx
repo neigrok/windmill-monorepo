@@ -43,7 +43,7 @@ import { useRoomScene } from './room/useRoomScene.js';
 import { useRoomView } from './room/useRoomView.js';
 import { useRowVerbs } from './room/useRowVerbs.js';
 import { useStepPage } from './room/useStepPage.js';
-import { TreeDoor, useTreeVisit } from './room/useTreeVisit.js';
+import { TreeDoor, readTreeVisit, useTreeVisit } from './room/useTreeVisit.js';
 import { bulkKindChoice } from './model/bulkSelection.js';
 import { useGraphSelection } from './graph/useGraphSelection.js';
 import { ForkDoor } from './share/ForkDoor.jsx';
@@ -104,8 +104,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   const activity = useActivity({ sceneRef, selectedId });
   const { emit, ticker, feedVisible, feedSummonedRef, closeActivity } = activity;
   const { coachAllowed, demoCompletions, ctaEcho, noteCompletion } = useDemoCoach({ demo, status });
-  const stepAddress = useStepAddress();
-  const treeVisit = useTreeVisit({ room, band: breakpoint });
+  // What the history entry said of a tree visit as the room opened: a return to it is a step reached by going back.
+  const [arrival] = useState(readTreeVisit);
+  const stepAddress = useStepAddress(arrival.through === null ? 'link' : 'back');
   const [shareOpen, setShareOpen] = useState(false);
   const [forkOpen, setForkOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -167,6 +168,9 @@ export function SkillTreeView({ treeId, demo = false }) {
     stopEditing();
     collapse();
   }, [closeComposer, stopEditing, collapse]);
+  // The account that holds this room as its owner: a lapsed session or a device's copy with nobody signed in has none.
+  const holder = owner && status === 'signed-in' && account && !lapsed ? account.id : null;
+  const treeVisit = useTreeVisit({ room, arrival, holder, band: breakpoint });
   const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, carried: treeVisit, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
   const { decidedView, boardActive, canvasView, shownView, boardFacts, boardAwaitsRoadmap, switchView, onSwitchView } = view;
   room.viewRef.current = shownView;
@@ -369,7 +373,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     <ActivityPanel top={geometry.activityPanelTop} groups={activity.activityGroups} nodesById={nodesById} onClose={verbs.closeRowActivity} onOpenStep={verbs.openActivityStep} />
   ) : null;
   return (
-    <TreeDoor.Provider value={owner ? treeVisit.open : null}>
+    <TreeDoor.Provider value={treeVisit.open}>
     <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef} onFocusCapture={rememberGraphFocus}>
       <canvas
         ref={canvasRef}
@@ -393,7 +397,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             view={boardActive ? 'board' : 'tree'}
             role={who.role}
             title={boardAwaitsRoadmap ? undefined : tree?.title}
-            back={treeVisit.from === null ? null : { title: treeVisit.from, onBack: treeVisit.back }}
+            back={treeVisit.from === null ? null : { title: treeVisit.from.title, onBack: treeVisit.back }}
             switcher={owner && !phone && !boardAwaitsRoadmap ? <TreeSwitcher {...verbs.switcher} /> : null}
             progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
             onSwitchView={onSwitchView}
