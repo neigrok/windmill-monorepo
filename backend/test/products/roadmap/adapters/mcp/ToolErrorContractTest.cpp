@@ -60,10 +60,10 @@ TEST(mcp_every_roadmap_tool_declares_the_grant_level_that_reaches_it) {
   CHECK_EQ(deletes, (std::vector<std::string>{"delete_tree", "delete_node", "remove_kind"}));
   CHECK_EQ(writes, (std::vector<std::string>{
                        "patch_nodes", "update_nodes", "change_edges", "create_tree", "update_tree", "create_node", "annotate_node", "rename_node", "set_node_color",
-                       "move_node", "connect", "disconnect", "reconnect", "tidy", "add_kind",
+                       "move_node", "tidy", "add_kind",
                        "rename_kind", "describe_kind", "reorder_kinds", "recolor_kind", "update_kind", "set_progress",
                        "import_subgraph", "prune"}));
-  CHECK_EQ(catalog.size(), std::size_t{33});
+  CHECK_EQ(catalog.size(), std::size_t{30});
 }
 
 TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
@@ -71,10 +71,10 @@ TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
   const ToolCaller author{h.caller, parseToolScope("roadmap:read roadmap:write")};
   const Json::Value visible = h.tools.listTools(author);
 
-  CHECK_EQ(visible.size(), 30u);
+  CHECK_EQ(visible.size(), 27u);
   for (const char* destructive : {"delete_tree", "delete_node", "remove_kind"})
     CHECK(toolNamed(visible, destructive) == nullptr);
-  for (const char* ordinary : {"get_tree", "create_node", "disconnect", "prune"})
+  for (const char* ordinary : {"get_tree", "create_node", "change_edges", "prune"})
     CHECK(toolNamed(visible, ordinary) != nullptr);
 
   const ToolCaller reader{h.caller, parseToolScope("roadmap:read")};
@@ -168,10 +168,11 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
   CHECK_EQ(arrays["kinds"]["items"]["required"][1].asString(), std::string("hue"));
   CHECK_EQ(arrays["progress"]["items"]["required"][0].asString(), std::string("nodeId"));
 
-  const Json::Value* reconnect = toolNamed(catalog, "reconnect");
-  REQUIRE(reconnect != nullptr);
-  for (const char* endpoint : {"oldFrom", "oldTo", "newFrom", "newTo"})
-    CHECK_EQ((*reconnect)["inputSchema"]["properties"][endpoint]["maxLength"].asUInt64(), 128u);
+  const Json::Value* edges = toolNamed(catalog, "change_edges");
+  REQUIRE(edges != nullptr);
+  for (const char* side : {"add", "remove"})
+    for (const char* endpoint : {"from", "to"})
+      CHECK_EQ((*edges)["inputSchema"]["properties"][side]["items"]["properties"][endpoint]["maxLength"].asUInt64(), 128u);
   const Json::Value* creation = toolNamed(catalog, "create_node");
   REQUIRE(creation != nullptr);
   CHECK_EQ((*creation)["inputSchema"]["properties"]["parentId"]["maxLength"].asUInt64(), 128u);
@@ -294,7 +295,10 @@ TEST(mcp_every_cap_counts_code_points_not_bytes) {
   std::string cjk;
   for (int i = 0; i < 129; ++i) cjk += "\xE5\xAD\x97";
   longId["to"] = cjk;
-  CHECK_EQ(message(h.call("connect", longId)), std::string("connect: to is 129 characters, 1 over the 128 cap"));
+  Json::Value adding(Json::objectValue);
+  adding["add"].append(longId);
+  CHECK_EQ(message(h.call("change_edges", adding)),
+           std::string("change_edges: add[0].to is 129 characters, 1 over the 128 cap"));
 }
 
 TEST(mcp_an_unknown_enum_value_enumerates_the_legal_set) {
@@ -565,7 +569,7 @@ TEST(mcp_every_tool_failure_names_the_tool_exactly_once) {
   Harness h;
   const std::vector<const char*> tools = {"get_tree",      "update_tree",  "get_progress", "find_nodes", "create_node",
                                           "annotate_node", "rename_node",  "move_node",  "delete_node",
-                                          "set_node_color", "connect",     "disconnect", "reconnect",
+                                          "set_node_color",
                                           "add_kind",      "rename_kind",  "describe_kind",
                                           "remove_kind",   "reorder_kinds", "recolor_kind",
                                           "set_progress",  "import_subgraph"};
@@ -828,7 +832,7 @@ TEST(mcp_every_write_tool_denies_a_private_tree_exactly_as_it_denies_an_absent_o
 
   const std::vector<const char*> writes = {"create_node", "annotate_node", "rename_node",
                                            "set_node_color", "move_node",  "delete_node",
-                                           "connect",       "disconnect",  "reconnect",
+                                           "change_edges",
                                            "tidy",          "add_kind",    "rename_kind",
                                            "describe_kind", "remove_kind", "reorder_kinds",
                                            "recolor_kind",  "prune",       "import_subgraph",
@@ -874,12 +878,12 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   CHECK_EQ(catalog[0].mimeType, std::string("text/markdown"));
 
   const std::string& text = catalog[0].text;
-  CHECK(text.find("`roadmap_connect(from, to)` means `from` must be complete before `to` is unlocked: prerequisite first.") !=
-        std::string::npos);
+  CHECK(text.find("An edge `{from, to}`, which `roadmap_change_edges` adds and removes, means `from` must be complete "
+                  "before `to` is\nunlocked: prerequisite first.") != std::string::npos);
   CHECK(text.find("prerequisite first") != std::string::npos);
 
   const Json::Value tools = h.tools.listTools(h.actor);
-  for (const char* named : {"get_tree", "update_tree", "find_nodes", "get_diagnostics", "connect",
+  for (const char* named : {"get_tree", "update_tree", "find_nodes", "get_diagnostics",
                             "import_subgraph", "set_progress", "get_nodes", "patch_nodes", "change_edges"}) {
     CHECK(text.find("roadmap_" + std::string(named)) != std::string::npos);
     CHECK(toolNamed(tools, named) != nullptr);
@@ -1011,7 +1015,9 @@ TEST(mcp_a_string_that_is_not_valid_utf8_is_refused_by_name_before_any_cap) {
   Json::Value edge(Json::objectValue);
   edge["from"] = "a";
   edge["to"] = "\xF4\x90\x80\x80";
-  CHECK_EQ(message(h.call("connect", edge)), std::string("connect: to is not valid UTF-8"));
+  Json::Value added(Json::objectValue);
+  added["add"].append(edge);
+  CHECK_EQ(message(h.call("change_edges", added)), std::string("change_edges: add[0].to is not valid UTF-8"));
   Json::Value title(Json::objectValue);
   title["title"] = "\xFF";
   CHECK_EQ(message(h.tools.callTool("create_tree", title, h.actor)), std::string("create_tree: title is not valid UTF-8"));

@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 23,
+  "schemaVersion" : 24,
   "steps" : 
   [
     {
@@ -156,19 +156,47 @@
           {
             "text" : 
             {
+              "addedEdges" : 
+              [
+                {
+                  "from" : "root",
+                  "to" : "sync"
+                }
+              ],
               "applied" : true,
               "diagnosticsClean" : true,
+              "dryRun" : false,
               "introducedDiagnostics" : [],
-              "seq" : 6
+              "removedEdges" : [],
+              "seq" : 6,
+              "treeId" : "t",
+              "unchangedEdges" : 0
             },
             "type" : "text"
           }
         ],
         "isError" : false,
-        "structuredContent" : null
+        "structuredContent" : 
+        {
+          "addedEdges" : 
+          [
+            {
+              "from" : "root",
+              "to" : "sync"
+            }
+          ],
+          "applied" : true,
+          "diagnosticsClean" : true,
+          "dryRun" : false,
+          "introducedDiagnostics" : [],
+          "removedEdges" : [],
+          "seq" : 6,
+          "treeId" : "t",
+          "unchangedEdges" : 0
+        }
       },
       "step" : 6,
-      "tool" : "connect"
+      "tool" : "change_edges"
     },
     {
       "result" : 

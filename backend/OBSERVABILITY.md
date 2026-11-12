@@ -278,9 +278,6 @@ listed separately because their only server writes are authentication refresh or
 | `MCP roadmap_rename_node` (and unambiguous `rename_node` alias) | `mcp.roadmap_rename_node` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_set_node_color` (and unambiguous `set_node_color` alias) | `mcp.roadmap_set_node_color` | completion; bounded refusal or result; `kind-unknown` when a `kind` names a kind the legend does not hold, `kind-hue-mismatch` when the `color` sent beside it is another hue than that kind wears | unexpected |
 | `MCP roadmap_move_node` (and unambiguous `move_node` alias) | `mcp.roadmap_move_node` | completion; bounded refusal or result | unexpected |
-| `MCP roadmap_connect` (and unambiguous `connect` alias) | `mcp.roadmap_connect` | completion; bounded refusal or result | unexpected |
-| `MCP roadmap_disconnect` (and unambiguous `disconnect` alias) | `mcp.roadmap_disconnect` | completion; bounded refusal or result | unexpected |
-| `MCP roadmap_reconnect` (and unambiguous `reconnect` alias) | `mcp.roadmap_reconnect` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_delete_node` (and unambiguous `delete_node` alias) | `mcp.roadmap_delete_node` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_tidy` (and unambiguous `tidy` alias) | `mcp.roadmap_tidy` | completion; bounded refusal or result | unexpected |
 | `MCP roadmap_add_kind` (and unambiguous `add_kind` alias) | `mcp.roadmap_add_kind` | completion; bounded refusal or result | unexpected |
@@ -350,9 +347,6 @@ listed separately because their only server writes are authentication refresh or
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.rename_node` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.set_node_color` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.move_node` | completion; bounded stage outcome | unexpected |
-| `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.connect` | completion; bounded stage outcome | unexpected |
-| `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.disconnect` | completion; bounded stage outcome | unexpected |
-| `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.reconnect` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.delete_node` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.tidy` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/ScopedToolHost.cpp dispatcher` (coach) | `roadmap.add_kind` | completion; bounded stage outcome | unexpected |

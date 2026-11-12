@@ -29,7 +29,8 @@ out. Read them before working a tree.
 
 ## Edges and diagnostics
 
-`roadmap_connect(from, to)` means `from` must be complete before `to` is unlocked: prerequisite first.
+An edge `{from, to}`, which `roadmap_change_edges` adds and removes, means `from` must be complete before `to` is
+unlocked: prerequisite first.
 Cycles and detached nodes are accepted and reported by `roadmap_get_diagnostics`. In an edit receipt,
 `diagnosticsClean` describes the whole graph; `introducedDiagnostics` identifies problems added by
 that edit. Existing problems do not mean the edit caused them.
