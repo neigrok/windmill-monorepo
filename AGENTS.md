@@ -127,10 +127,10 @@ Every surface tells us what broke and what people did, never what they wrote.
   exists; file descriptive tasks to designers where it does not.
 - `docs/PRODUCT_LOG.md` is the strategy narrative.
 - Keep the running log of product progress in the Windmill dogfood tree (id `t_9362d9bc883e0a1e`)
-  via the windmill MCP: create/connect nodes for new work, `set_progress` as it lands, inspect with
-  `get_tree`/`get_diagnostics`. Bet id == node id; annotate outcomes and follow-ups on nodes. Every
-  node carries a description — one or two sentences on what the work is and why — passed inline to
-  `create_node` or backfilled with `annotate_node`.
+  via the windmill MCP: create/connect nodes for new work, `update_nodes` with a `status` as it
+  lands, inspect with `get_tree`/`get_diagnostics`. Bet id == node id; annotate outcomes and
+  follow-ups on nodes. Every node carries a description — one or two sentences on what the work is
+  and why — passed inline to `create_node` or backfilled with `update_nodes`.
 
 ## Operations
 

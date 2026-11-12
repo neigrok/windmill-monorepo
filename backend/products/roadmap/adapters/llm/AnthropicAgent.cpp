@@ -240,8 +240,7 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
   Json::Value treeArgs(Json::objectValue);
   treeArgs["treeId"] = tree.str();
   Json::Value everyNodeField(Json::arrayValue);
-  for (const char* field : {"id", "label", "icon", "color", "order", "prerequisites", "position",
-                            "status", "description", "links"})
+  for (const char* field : {"id", "label", "icon", "color", "order", "prerequisites", "status", "description", "links"})
     everyNodeField.append(field);
   Json::Value everyKindField(Json::arrayValue);
   for (const char* field : {"id", "hue", "label", "description"}) everyKindField.append(field);

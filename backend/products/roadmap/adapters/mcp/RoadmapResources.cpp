@@ -50,8 +50,9 @@ Repair either by re-pointing the node's `opens` or clearing it with `""`.
 
 ## Progress
 
-Structure is shared; progress is private to the caller. `roadmap_set_progress` accepts completion
-with unmet prerequisites and returns `prerequisitesMet: false`. Use `outOfOrder: true` when intended.
+Structure is shared; progress is private to the caller. A `roadmap_update_nodes` row's `status` sets
+your mark; it accepts a completion with unmet prerequisites and answers `prerequisitesMet: false`. Use
+`outOfOrder: true` when intended.
 
 - `status` is your mark: `complete` or `none`.
 - `seedStatus` is the document's authored baseline, carried when copying a graph.
@@ -65,9 +66,9 @@ node holds and whatever its prerequisites: its `state` is `complete` when the op
 for you, and a step waiting on it unlocks then. A tree is complete when it has at least one node and
 every node of it is complete; a tree whose pointers lead back to it never is.
 `roadmap_list_trees` counts such a node the same way. Such a node takes no mark of its own:
-`roadmap_set_progress` refuses one, in an `updates` batch as a `refused` row beside the rows it
-records, and an import's `progress[]` lists it under `progressRefused`. Mark the steps of the tree it
-opens instead. A mark the node already held is kept, still answered as `status`, and decides nothing.
+`roadmap_update_nodes` answers a row marking one as a `refused` row beside the rows it records and
+lists it under `progressRefused`, and an import's `progress[]` lists it under `progressRefused` too.
+Mark the steps of the tree it opens instead. A mark the node already held is kept, still answered as `status`, and decides nothing.
 `prerequisitesMet` reads the same completed set as `state`.
 
 ## Reads and edits
@@ -81,19 +82,17 @@ building one: `url` on `roadmap_create_tree`, every `roadmap_list_trees` row and
 `tree`, and the node field `url` that `roadmap_get_tree`, `roadmap_get_nodes` and `roadmap_find_nodes`
 answer when `fields` asks for it.
 
-A node can point at another of your trees: `opens` on `roadmap_create_node`, `roadmap_annotate_node`,
-a `roadmap_patch_nodes` row or a `roadmap_import_subgraph` node takes that tree's id, and `""` clears
-it. Reads that ask for the `opens` field answer the tree's id, title and `state` (`complete` or
+A node can point at another of your trees: `opens` on `roadmap_create_node`, a `roadmap_update_nodes`
+row or a `roadmap_import_subgraph` node takes that tree's id, and `""` clears it. Reads that ask for the `opens` field answer the tree's id, title and `state` (`complete` or
 `open`), on a tree you own.
 
-A node's hue is a `color` or a legend `kind`: `roadmap_create_node`, `roadmap_set_node_color`,
-`roadmap_patch_nodes` and the nodes of `roadmap_import_subgraph` take either, and a `kind` lands as
-the hue that kind wears. `roadmap_create_node` and `roadmap_set_node_color` answer the `kind` the node
-wears.
+A node's hue is a `color` or a legend `kind`: `roadmap_create_node`, a `roadmap_update_nodes` row
+and the nodes of `roadmap_import_subgraph` take either, and a `kind` lands as the hue that kind wears.
+`roadmap_create_node` answers the `kind` the node wears.
 
-`roadmap_patch_nodes` preserves omitted fields and replaces supplied values, including descriptions
-and links. `roadmap_annotate_node`'s append form repeats text when retried; its `addLinks` adds no
-url the node already holds. `roadmap_change_edges` requires existing endpoints for additions;
+`roadmap_update_nodes` preserves omitted fields and replaces supplied values, including descriptions
+and links; a row's `appendDescription` repeats its text when retried, and its `addLinks` adds no url
+the node already holds. `roadmap_change_edges` requires existing endpoints for additions;
 removing an absent edge is a no-op. Both batch edit tools support `expectedSeq` and `dryRun`.
 
 `roadmap_import_subgraph` upserts a graph slice: fields you send replace, fields you leave out keep

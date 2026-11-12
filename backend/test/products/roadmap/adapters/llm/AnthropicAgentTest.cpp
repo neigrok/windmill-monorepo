@@ -164,8 +164,8 @@ TEST(mutates_tree_treats_everything_else_including_the_unknown_as_a_change) {
   CHECK(mutatesTree("create_node"));
   CHECK(mutatesTree("change_edges"));
   CHECK(mutatesTree("delete_node"));
-  CHECK(mutatesTree("set_progress"));
-  CHECK(mutatesTree("rename_node"));
+  CHECK(mutatesTree("update_nodes"));
+  CHECK(mutatesTree("update_kind"));
   CHECK(mutatesTree("something_new"));  // unknown → conservative → a change
 }
 
@@ -269,8 +269,7 @@ TEST(drive_agent_counts_only_successful_mutations_as_edits) {
 // A write that answers `unchanged` changed nothing: a step of the run that neither failed nor counts as an edit.
 // Through a tend's scoped host over the real tools: an import that re-sends what the tree holds is no edit of the run,
 // unless it carries a mark the caller does not hold yet, since `unchanged` speaks for the graft and each progress row
-// for its own mark. A set_progress that repeats a mark held is no edit either, single or bulk, and update_nodes is
-// counted by the same read.
+// for its own mark. update_nodes is counted by the same read, so a mark it repeats is no edit either.
 TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_sets_a_new_mark) {
   test::Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
@@ -290,10 +289,6 @@ TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_sets_a_new_mark) {
   CHECK_EQ(editsOf("import_subgraph", marked), 1);
   CHECK_EQ(editsOf("import_subgraph", marked), 0);
   CHECK_EQ(editsOf("import_subgraph", R"({"nodes":[{"id":"a","label":"B"}]})"), 1);
-  CHECK_EQ(editsOf("set_progress", R"({"nodeId":"a","status":"complete"})"), 0);
-  CHECK_EQ(editsOf("set_progress", R"({"nodeId":"a","status":"none"})"), 1);
-  CHECK_EQ(editsOf("set_progress", R"({"updates":[{"nodeId":"a","status":"none"}]})"), 0);
-  CHECK_EQ(editsOf("set_progress", R"({"updates":[{"nodeId":"a","status":"complete"}]})"), 1);
 
   // update_nodes answers as an import does: `unchanged` for its tree batch, and a row per mark.
   CHECK_EQ(editsOf("update_nodes", R"({"updates":[{"nodeId":"a","status":"none"}]})"), 1);
@@ -302,12 +297,12 @@ TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_sets_a_new_mark) {
   CHECK_EQ(editsOf("update_nodes", R"({"updates":[{"nodeId":"a","label":"Alpha","status":"none"}]})"), 1);
 }
 
-// Under a tend, a mark that is the whole call fails the step as set_progress's does; marks that fail after a tree op
+// Under a tend, update_nodes marks that are the whole call fail the step with them; marks that fail after a tree op
 // landed leave the step done and are told under their own name, at the tend's door — as are an import's cleared marks.
 TEST(drive_agent_fails_a_step_whose_marks_are_the_call_and_reports_late_marks_at_its_door) {
   test::Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
-  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"b","status":"complete"})")).isError);
+  CHECK_FALSE(h.call("update_nodes", test::asUpdate(parse(R"({"nodeId":"b","status":"complete"})"))).isError);
   ScopedToolHost scoped(h.tools, TreeId{"t"});
   std::vector<std::string> lines;
   installWriteSink([&](const WriteCompletion& line) {
@@ -326,7 +321,6 @@ TEST(drive_agent_fails_a_step_whose_marks_are_the_call_and_reports_late_marks_at
   };
 
   h.progressRepo.writesFail = true;
-  CHECK_EQ(stepOf("set_progress", R"({"nodeId":"a","status":"complete"})"), std::string("0 edits, failed 1"));
   CHECK_EQ(stepOf("update_nodes", R"({"updates":[{"nodeId":"a","status":"complete"}]})"), std::string("0 edits, failed 1"));
   CHECK_EQ(stepOf("update_nodes", R"({"updates":[{"nodeId":"a","label":"Alpha","status":"complete"}]})"),
            std::string("1 edits, failed 0"));
@@ -335,7 +329,6 @@ TEST(drive_agent_fails_a_step_whose_marks_are_the_call_and_reports_late_marks_at
   installWriteSink({});
 
   CHECK_EQ(lines, (std::vector<std::string>{
-                      "roadmap.set_progress roadmap Coach failed",
                       "roadmap.update_nodes roadmap Coach failed",
                       "roadmap.update_nodes.marks roadmap Coach failed",
                       "roadmap.update_nodes roadmap Coach ok",
@@ -415,8 +408,53 @@ TEST(drive_agent_changes_a_kind_through_update_kind_and_counts_what_changed) {
   CHECK_EQ(tree["nodes"], parse(R"([{"id":"a","color":"plum","kind":"k"}])"));
 }
 
+// A tend renames, recolours, annotates and marks a node through update_nodes, the one tool that edits or marks nodes,
+// and is not offered `opens`: each call that changes the node is one edit of the run, one that sends what the node
+// holds is none, and each writes its line as roadmap.update_nodes, door Coach.
+TEST(drive_agent_edits_and_marks_a_node_through_update_nodes_and_counts_what_changed) {
+  test::Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
+  });
+  std::vector<std::string> offeredRow;
+  const auto editsOf = [&](const char* input) {
+    Json::Value call = toolUseReply("update_nodes", "toolu_1");
+    call["content"][0]["input"] = parse(input);
+    FakeModel model;
+    model.replies.push_back(call);
+    model.replies.push_back(textReply("end_turn", "Done"));
+    Recorder rec;
+    const int edits =
+        driveAgent("tend it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report()).edits;
+    for (const Json::Value& tool : model.requests.at(0)["tools"])
+      if (tool["name"].asString() == "update_nodes")
+        offeredRow = tool["input_schema"]["properties"]["updates"]["items"]["properties"].getMemberNames();
+    return edits;
+  };
+
+  CHECK_EQ(editsOf(R"({"updates":[{"nodeId":"a","label":"Alpha"}]})"), 1);
+  CHECK_EQ(editsOf(R"({"updates":[{"nodeId":"a","color":"plum"}]})"), 1);
+  CHECK_EQ(editsOf(R"({"updates":[{"nodeId":"a","description":"Why it matters.","links":[{"url":"https://a.example"}]}]})"), 1);
+  CHECK_EQ(editsOf(R"({"updates":[{"nodeId":"a","status":"complete"}]})"), 1);
+  CHECK_EQ(editsOf(R"({"updates":[{"nodeId":"a","label":"Alpha","color":"plum","description":"Why it matters.",
+    "links":[{"url":"https://a.example"}],"status":"complete"}]})"), 0);
+  installWriteSink({});
+
+  CHECK_EQ(offeredRow, (std::vector<std::string>{"addLinks", "appendDescription", "color", "description", "icon",
+                                                 "kind", "label", "links", "nodeId", "outOfOrder", "status"}));
+  CHECK_EQ(lines, (std::vector<std::string>(5, "roadmap.update_nodes roadmap Coach ok")));
+  Json::Value shape(Json::objectValue);
+  shape["fields"] = test::list({"id", "label", "color", "description", "links", "status"});
+  CHECK_EQ(test::body(h.call("get_tree", shape))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"Alpha","color":"plum","description":"Why it matters.",
+             "links":[{"url":"https://a.example"}],"status":"complete"}])"));
+}
+
 // Through a tend's scoped host over the real tools, every write that changes nothing answers `unchanged` and is no edit
-// of the run: an echoed rename, a patch and an edge batch that change nothing and an echoed import, beside one real move.
+// of the run: an update_nodes and an edge batch that change nothing and an echoed import, beside one real rename.
 TEST(drive_agent_counts_one_edit_among_writes_that_changed_nothing) {
   test::Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
@@ -425,16 +463,15 @@ TEST(drive_agent_counts_one_edit_among_writes_that_changed_nothing) {
   FakeModel model;
   int id = 0;
   for (const auto& [tool, input] : std::vector<std::pair<const char*, const char*>>{
-           {"rename_node", R"({"nodeId":"a","label":"A"})"},
-           {"patch_nodes", R"({"updates":[{"nodeId":"b","label":"B"}]})"},
+           {"update_nodes", R"({"updates":[{"nodeId":"a","label":"A"},{"nodeId":"b","label":"B"}]})"},
            {"change_edges", R"({"add":[{"from":"a","to":"b"}]})"},
            {"import_subgraph", R"({"nodes":[{"id":"a","label":"A"}]})"},
-           {"move_node", R"({"nodeId":"a","x":3,"y":4})"}}) {
+           {"update_nodes", R"({"updates":[{"nodeId":"a","label":"Alpha"}]})"}}) {
     Json::Value call = toolUseReply(tool, ("toolu_" + std::to_string(++id)).c_str());
     call["content"][0]["input"] = parse(input);
     model.replies.push_back(call);
   }
-  model.replies.push_back(textReply("end_turn", "Moved 1 step"));
+  model.replies.push_back(textReply("end_turn", "Renamed 1 step"));
 
   Recorder rec;
   const AgentOutcome outcome =
@@ -442,7 +479,7 @@ TEST(drive_agent_counts_one_edit_among_writes_that_changed_nothing) {
   CHECK_EQ(outcome.edits, 1);
   std::vector<bool> changed;
   for (const AgentStep& step : rec.steps) changed.push_back(step.changedTree);
-  CHECK_EQ(changed, (std::vector<bool>{false, false, false, false, true}));
+  CHECK_EQ(changed, (std::vector<bool>{false, false, false, true}));
 }
 
 TEST(drive_agent_counts_no_edit_for_a_write_that_changed_nothing) {
@@ -451,13 +488,13 @@ TEST(drive_agent_counts_no_edit_for_a_write_that_changed_nothing) {
     Json::Value reply(Json::objectValue);
     reply["applied"] = true;
     reply["seq"] = 3;
-    if (name == "set_node_color") reply["unchanged"] = true;
+    if (name == "change_edges") reply["unchanged"] = true;
     return ToolResult::json(reply);
   };
 
   FakeModel model;
-  model.replies.push_back(toolUseReply("set_node_color", "toolu_1"));
-  model.replies.push_back(toolUseReply("rename_node", "toolu_2"));
+  model.replies.push_back(toolUseReply("change_edges", "toolu_1"));
+  model.replies.push_back(toolUseReply("update_nodes", "toolu_2"));
   model.replies.push_back(textReply("end_turn", "Renamed 1 step"));
 
   Recorder rec;
@@ -480,7 +517,7 @@ TEST(drive_agent_counts_an_edit_for_a_write_whose_answer_is_no_object) {
   };
 
   FakeModel model;
-  model.replies.push_back(toolUseReply("rename_node", "toolu_1"));
+  model.replies.push_back(toolUseReply("update_nodes", "toolu_1"));
   model.replies.push_back(textReply("end_turn", "Renamed 1 step"));
 
   Recorder rec;
@@ -757,9 +794,9 @@ TEST(drive_agent_deletes_a_marked_node_through_the_progress_store_or_not_at_all)
     test::Harness h;
     h.trees.byId["t"].visibility = Visibility::public_;
     CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
-    CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})")).isError);
+    CHECK_FALSE(h.call("update_nodes", test::asUpdate(parse(R"({"nodeId":"a","status":"complete"})"))).isError);
     const ToolCaller stranger{fake::uid("stranger"), ToolScope::everything()};
-    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"a","status":"complete"})"), stranger)
+    CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"), stranger)
                     .isError);
     ScopedToolHost scoped(h.tools, TreeId{"t"});
     Json::Value call = toolUseReply("delete_node", "toolu_1");

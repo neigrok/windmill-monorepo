@@ -34,7 +34,7 @@ Json::Value adding(const Json::Value& edge) {
 }
 
 Json::Value everyNodeField() {
-  return list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position", "status",
+  return list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "status",
                "seedStatus", "state", "summary", "description", "links", "opens"});
 }
 
@@ -131,7 +131,7 @@ TEST(mcp_delete_node_removes_it_from_the_document) {
   CHECK_EQ(body(h.call("get_tree", Json::Value(Json::objectValue)))["tree"]["nodes"].size(), 0u);
 }
 
-TEST(mcp_set_progress_records_and_flags_unmet_prerequisites) {
+TEST(mcp_update_nodes_marks_and_flags_unmet_prerequisites) {
   Harness h;
   Json::Value a(Json::objectValue);
   a["id"] = "a";
@@ -146,15 +146,15 @@ TEST(mcp_set_progress_records_and_flags_unmet_prerequisites) {
   Json::Value markB(Json::objectValue);
   markB["nodeId"] = "b";
   markB["status"] = "complete";
-  ToolResult early = h.call("set_progress", markB);
+  ToolResult early = h.call("update_nodes", asUpdate(markB));
   CHECK_FALSE(early.isError);
-  CHECK_FALSE(body(early)["prerequisitesMet"].asBool());
+  CHECK_FALSE(body(early)["progress"][0]["prerequisitesMet"].asBool());
 
   Json::Value markA(Json::objectValue);
   markA["nodeId"] = "a";
   markA["status"] = "complete";
-  h.call("set_progress", markA);
-  CHECK(body(h.call("set_progress", markB))["prerequisitesMet"].asBool());
+  h.call("update_nodes", asUpdate(markA));
+  CHECK(body(h.call("update_nodes", asUpdate(markB)))["progress"][0]["prerequisitesMet"].asBool());
 
   CHECK_EQ(body(h.call("get_progress", Json::Value(Json::objectValue)))["completed"].size(), 2u);
 
@@ -411,21 +411,21 @@ TEST(mcp_create_node_wires_prerequisites_description_and_links) {
   CHECK_EQ((*cNode)["links"][0]["label"].asString(), std::string("Spec"));
 }
 
-TEST(mcp_annotate_node_sets_and_leaves_untouched_fields_alone) {
+TEST(mcp_update_nodes_annotates_and_leaves_untouched_fields_alone) {
   Harness h;
   h.call("create_node", node("a", "A"));
 
   Json::Value describe(Json::objectValue);
-  describe["id"] = "a";
+  describe["nodeId"] = "a";
   describe["description"] = "first pass";
-  CHECK_FALSE(h.call("annotate_node", describe).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(describe)).isError);
 
   Json::Value linkOnly(Json::objectValue);
-  linkOnly["id"] = "a";
+  linkOnly["nodeId"] = "a";
   Json::Value links(Json::arrayValue);
   links.append("https://only-a-url");
   linkOnly["links"] = links;
-  CHECK_FALSE(h.call("annotate_node", linkOnly).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(linkOnly)).isError);
 
   Json::Value args(Json::objectValue);
   args["fields"] = list({"id", "description", "links"});
@@ -666,7 +666,7 @@ TEST(mcp_import_subgraph_dry_run_previews_progress_that_would_skip) {
   CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 0u);
 }
 
-TEST(mcp_set_progress_bulk_is_order_safe_and_reports_each) {
+TEST(mcp_update_nodes_marks_are_order_safe_and_each_reported) {
   Harness h;
   h.call("create_node", node("a", "A"));
   Json::Value nodeB = node("b", "B");
@@ -679,23 +679,23 @@ TEST(mcp_set_progress_bulk_is_order_safe_and_reports_each) {
   Json::Value args(Json::objectValue);
   args["updates"] = updates;
 
-  ToolResult result = h.call("set_progress", args);
+  ToolResult result = h.call("update_nodes", args);
   CHECK_FALSE(result.isError);
   const Json::Value res = body(result);
-  CHECK_EQ(res["results"].size(), 2u);
-  for (const Json::Value& row : res["results"])
+  CHECK_EQ(res["progress"].size(), 2u);
+  for (const Json::Value& row : res["progress"])
     if (row["nodeId"].asString() == "b") CHECK(row["prerequisitesMet"].asBool());
 }
 
-TEST(mcp_set_progress_rejects_an_unknown_node) {
+TEST(mcp_update_nodes_refuses_a_mark_on_an_unknown_node) {
   Harness h;
-  CHECK(h.call("set_progress", mark("ghost", "complete")).isError);
+  CHECK(h.call("update_nodes", asUpdate(mark("ghost", "complete"))).isError);
 
   Json::Value updates(Json::arrayValue);
   updates.append(mark("ghost", "active"));
   Json::Value args(Json::objectValue);
   args["updates"] = updates;
-  CHECK(h.call("set_progress", args).isError);
+  CHECK(h.call("update_nodes", args).isError);
 }
 
 TEST(mcp_find_nodes_filters_by_color_kind_and_substring) {
@@ -757,15 +757,15 @@ TEST(mcp_read_tools_deny_a_private_tree_you_dont_own) {
   }
 
   const auto progArgs = [](const char* tree) {
-    Json::Value a(Json::objectValue);
-    a["treeId"] = tree; a["nodeId"] = "anything"; a["status"] = "complete";
+    Json::Value a = asUpdate(mark("anything", "complete"));
+    a["treeId"] = tree;
     return a;
   };
-  ToolResult progDenied = h.tools.callTool("set_progress", progArgs("priv"), h.actor);
-  ToolResult progAbsent = h.tools.callTool("set_progress", progArgs("nope"), h.actor);
+  ToolResult progDenied = h.tools.callTool("update_nodes", progArgs("priv"), h.actor);
+  ToolResult progAbsent = h.tools.callTool("update_nodes", progArgs("nope"), h.actor);
   CHECK(progDenied.isError);
-  CHECK_EQ(message(progDenied), std::string("set_progress: no such tree \"priv\""));
-  CHECK_EQ(message(progAbsent), std::string("set_progress: no such tree \"nope\""));
+  CHECK_EQ(message(progDenied), std::string("update_nodes: no such tree \"priv\""));
+  CHECK_EQ(message(progAbsent), std::string("update_nodes: no such tree \"nope\""));
 }
 
 TEST(mcp_an_infrastructure_failure_answers_generically_and_never_leaks_its_detail) {
@@ -904,8 +904,8 @@ TEST(mcp_prune_clears_dangling_edges_and_orphan_progress) {
   // An edge to a node the tree never held, as a client's frame may land it.
   h.registry.open(TreeId{"t"})->applyCommand(AddEdge{NodeId{"a"}, NodeId{"ghost"}}, h.clock.nowMs(), h.caller);
 
-  h.call("set_progress", mark("a", "complete"));
-  h.call("set_progress", mark("b", "complete"));
+  h.call("update_nodes", asUpdate(mark("a", "complete")));
+  h.call("update_nodes", asUpdate(mark("b", "complete")));
   // Deleted by a client's frame, which clears no mark, so the orphan mark is prune's to clear.
   h.registry.open(TreeId{"t"})->applyCommand(DeleteNode{NodeId{"b"}}, h.clock.nowMs(), h.caller);
 
@@ -948,8 +948,8 @@ TEST(mcp_find_nodes_answers_an_index_and_get_tree_the_shape) {
            (std::vector<std::string>{"color", "id", "label", "prerequisites"}));
   CHECK_EQ(keys(got["tree"]["kinds"][0]), (std::vector<std::string>{"hue", "id", "label"}));
 
-  h.call("set_progress", mark("a", "complete"));
-  h.call("set_progress", mark("a", "none"));
+  h.call("update_nodes", asUpdate(mark("a", "complete")));
+  h.call("update_nodes", asUpdate(mark("a", "none")));
   const Json::Value progress = body(h.call("get_progress", kNoArgs));
   CHECK_EQ(keys(progress), (std::vector<std::string>{"completed", "outOfOrder"}));
 }
@@ -962,10 +962,6 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   seed["order"] = "a0";
   seed["seedStatus"] = "active";
   seed["description"] = "the whole annotation";
-  Json::Value position(Json::objectValue);
-  position["x"] = 12.0;
-  position["y"] = 34.0;
-  seed["position"] = position;
   Json::Value prereqs(Json::arrayValue);
   prereqs.append("a");
   seed["prerequisites"] = prereqs;
@@ -988,7 +984,7 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   args["fields"] = everyNodeField();
   const Json::Value b = body(h.call("get_tree", args))["tree"]["nodes"][1];
   CHECK_EQ(keys(b), (std::vector<std::string>{"color", "description", "icon", "id", "label", "links",
-                                              "opens", "order", "position", "prerequisites", "seedStatus",
+                                              "opens", "order", "prerequisites", "seedStatus",
                                               "state", "status", "summary"}));  // no kind wears plum
   CHECK_EQ(b["opens"], parse(R"({"treeId":"t","title":"Test Roadmap","state":"open"})"));
   CHECK_EQ(b["id"].asString(), std::string("b"));
@@ -998,8 +994,6 @@ TEST(mcp_fields_round_trips_every_field_of_a_node) {
   CHECK_EQ(b["order"].asString(), std::string("a0"));
   REQUIRE_EQ(b["prerequisites"].size(), 1u);
   CHECK_EQ(b["prerequisites"][0].asString(), std::string("a"));
-  CHECK_EQ(b["position"]["x"].asDouble(), 12.0);
-  CHECK_EQ(b["position"]["y"].asDouble(), 34.0);
   CHECK_EQ(b["seedStatus"].asString(), std::string("none"));
   CHECK_EQ(b["status"].asString(), std::string("none"));
   CHECK_EQ(b["state"].asString(), std::string("locked"));
@@ -1098,9 +1092,9 @@ TEST(mcp_get_progress_reaches_the_cleared_tombstones_through_fields) {
   Harness h;
   h.call("create_node", node("a", "A"));
   h.call("create_node", node("b", "B"));
-  h.call("set_progress", mark("a", "complete"));
-  h.call("set_progress", mark("b", "complete"));
-  h.call("set_progress", mark("b", "none"));
+  h.call("update_nodes", asUpdate(mark("a", "complete")));
+  h.call("update_nodes", asUpdate(mark("b", "complete")));
+  h.call("update_nodes", asUpdate(mark("b", "none")));
 
   const Json::Value lean = body(h.call("get_progress", kNoArgs));
   CHECK_EQ(keys(lean), (std::vector<std::string>{"completed", "outOfOrder"}));
@@ -1124,7 +1118,7 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   CHECK(misspelled.isError);
   CHECK_EQ(message(misspelled),
            std::string("find_nodes: fields[1] \"labl\" is not one of {id, label, icon, color, kind, order, "
-                       "prerequisites, position, status, seedStatus, state, summary, description, links, opens, url}"));
+                       "prerequisites, status, seedStatus, state, summary, description, links, opens, url}"));
 
   Json::Value kindArgs(Json::objectValue);
   kindArgs["kindFields"] = list({"color"});
@@ -1215,8 +1209,8 @@ TEST(mcp_a_limit_out_of_range_and_an_unknown_cursor_are_named_errors) {
 TEST(mcp_status_answers_the_callers_own_mark_on_every_node) {
   Harness h;
   for (const char* id : {"done", "doing", "untouched"}) h.call("create_node", node(id, id));
-  h.call("set_progress", mark("done", "complete"));
-  h.call("set_progress", mark("doing", "active"));
+  h.call("update_nodes", asUpdate(mark("done", "complete")));
+  h.call("update_nodes", asUpdate(mark("doing", "active")));
 
   Json::Value args(Json::objectValue);
   args["fields"] = list({"id", "status"});
@@ -1246,9 +1240,9 @@ TEST(mcp_status_is_the_readers_own_mark_and_never_another_readers) {
   Json::Value planted = node("step", "Step");
   planted["treeId"] = "open";
   h.tools.callTool("create_node", planted, h.actor);
-  Json::Value marked = mark("step", "complete");
+  Json::Value marked = asUpdate(mark("step", "complete"));
   marked["treeId"] = "open";
-  h.tools.callTool("set_progress", marked, h.actor);
+  h.tools.callTool("update_nodes", marked, h.actor);
 
   Json::Value args(Json::objectValue);
   args["treeId"] = "open";
@@ -1276,7 +1270,7 @@ TEST(mcp_state_is_the_cascade_the_tree_derives_from_the_callers_marks) {
   Json::Value imported(Json::objectValue);
   imported["nodes"] = chain;
   CHECK_FALSE(h.call("import_subgraph", imported).isError);
-  h.call("set_progress", mark("a", "complete"));
+  h.call("update_nodes", asUpdate(mark("a", "complete")));
 
   Json::Value args(Json::objectValue);
   args["fields"] = list({"id", "state", "status"});
@@ -1288,7 +1282,7 @@ TEST(mcp_state_is_the_cascade_the_tree_derives_from_the_callers_marks) {
   CHECK_EQ(tree[1]["status"].asString(), std::string("none"));
   CHECK_EQ(tree[2]["state"].asString(), std::string("locked"));
 
-  h.call("set_progress", mark("b", "active"));
+  h.call("update_nodes", asUpdate(mark("b", "active")));
   Json::Value found = body(h.call("find_nodes", args))["nodes"];
   CHECK_EQ(ids(found), (std::vector<std::string>{"a", "b", "c"}));
   CHECK_EQ(found[1]["state"].asString(), std::string("available"));
@@ -1327,7 +1321,7 @@ TEST(mcp_find_nodes_by_state_is_the_frontier_in_one_call) {
   Json::Value imported(Json::objectValue);
   imported["nodes"] = chain;
   CHECK_FALSE(h.call("import_subgraph", imported).isError);
-  h.call("set_progress", mark("a", "complete"));
+  h.call("update_nodes", asUpdate(mark("a", "complete")));
 
   const Json::Value frontier = body(h.call("find_nodes", with("state", "available")));
   CHECK_EQ(keys(frontier), (std::vector<std::string>{"count", "nodes"}));
@@ -1393,7 +1387,7 @@ TEST(mcp_seed_status_is_the_documents_baseline_beside_the_callers_mark) {
   CHECK_EQ(unmarked["seedStatus"].asString(), std::string("complete"));
   CHECK_EQ(unmarked["status"].asString(), std::string("none"));
 
-  h.call("set_progress", mark("shipped", "active"));
+  h.call("update_nodes", asUpdate(mark("shipped", "active")));
   const Json::Value marked = body(h.call("find_nodes", args))["nodes"][0];
   CHECK_EQ(marked["seedStatus"].asString(), std::string("complete"));
   CHECK_EQ(marked["status"].asString(), std::string("none"));
@@ -1447,7 +1441,7 @@ TEST(mcp_an_edit_says_whether_the_dirt_it_reports_is_its_own) {
   Json::Value renamed(Json::objectValue);
   renamed["nodeId"] = "a";
   renamed["label"] = "A renamed";
-  const Json::Value innocent = body(h.call("rename_node", renamed));
+  const Json::Value innocent = body(h.call("update_nodes", asUpdate(renamed)));
   CHECK_FALSE(innocent["diagnosticsClean"].asBool());
   CHECK_EQ(introduced(innocent), std::vector<std::string>{});
 
@@ -1510,9 +1504,9 @@ void chain(Harness& h) {
   h.call("change_edges", adding(edge("a", "b")));
   h.call("change_edges", adding(edge("b", "c")));
   h.call("change_edges", adding(edge("c", "d")));
-  h.call("set_progress", mark("a", "complete"));
-  h.call("set_progress", mark("b", "complete"));
-  h.call("set_progress", mark("c", "active"));
+  h.call("update_nodes", asUpdate(mark("a", "complete")));
+  h.call("update_nodes", asUpdate(mark("b", "complete")));
+  h.call("update_nodes", asUpdate(mark("c", "active")));
 }
 
 Json::Value edgeList(std::vector<std::pair<const char*, const char*>> pairs) {
@@ -1878,10 +1872,10 @@ TEST(mcp_import_subgraph_replace_on_a_revived_id_removes_the_edges_its_delete_le
 TEST(mcp_import_subgraph_keeps_every_field_a_re_sent_node_leaves_out) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI"},
-    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","position":{"x":3,"y":4},
+    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0",
      "seedStatus":"complete","description":"Read the diff.","links":[{"url":"https://windmill.works/review","label":"guide"}]}]})")).isError);
   const Json::Value read = parse(R"({"nodeIds":["review"],"fields":["id","label","icon","color","order",
-    "prerequisites","position","seedStatus","description","links"]})");
+    "prerequisites","seedStatus","description","links"]})");
 
   const ToolResult result = h.call("import_subgraph", parse(R"({"nodes":[{"id":"review","prerequisites":["ask"]}]})"));
   CHECK_FALSE(result.isError);
@@ -1891,20 +1885,20 @@ TEST(mcp_import_subgraph_keeps_every_field_a_re_sent_node_leaves_out) {
     "diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":2,"nodes":[
     {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","prerequisites":["ask"],
-     "position":{"x":3.0,"y":4.0},"seedStatus":"complete","description":"Read the diff.",
+     "seedStatus":"complete","description":"Read the diff.",
      "links":[{"url":"https://windmill.works/review","label":"guide"}]}],"missingNodeIds":[]})"));
 }
 
 TEST(mcp_import_subgraph_applies_every_field_a_re_sent_node_carries_and_an_empty_one_clears_it) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI"},
-    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","position":{"x":3,"y":4},
+    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0",
      "seedStatus":"complete","description":"Read the diff.","links":[{"url":"https://windmill.works/review","label":"guide"}]}]})")).isError);
   const Json::Value read = parse(R"({"nodeIds":["review"],"fields":["id","label","icon","color","order",
-    "prerequisites","position","seedStatus","description","links"]})");
+    "prerequisites","seedStatus","description","links"]})");
 
   const ToolResult result = h.call("import_subgraph", parse(R"({"nodes":[{"id":"review","label":"Review the backend",
-    "icon":"","color":"plum","order":"","position":{"x":9,"y":10},"seedStatus":"none","description":"","links":[]}]})"));
+    "icon":"","color":"plum","order":"","seedStatus":"none","description":"","links":[]}]})"));
   CHECK_FALSE(result.isError);
   CHECK_EQ(body(result), parse(R"({"nodes":1,"edges":0,"kinds":0,"nodeCollisions":["review"],"kindCollisions":[],
     "newNodes":0,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
@@ -1912,7 +1906,7 @@ TEST(mcp_import_subgraph_applies_every_field_a_re_sent_node_carries_and_an_empty
     "diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":2,"nodes":[
     {"id":"review","label":"Review the backend","icon":"","color":"plum","prerequisites":[],
-     "position":{"x":9.0,"y":10.0},"seedStatus":"none"}],"missingNodeIds":[]})"));
+     "seedStatus":"none"}],"missingNodeIds":[]})"));
 }
 
 TEST(mcp_import_subgraph_lands_a_new_node_with_the_defaults_for_what_it_leaves_out) {
@@ -1924,7 +1918,7 @@ TEST(mcp_import_subgraph_lands_a_new_node_with_the_defaults_for_what_it_leaves_o
     "tombstoned":{"nodes":0,"edges":0},"graphApplied":true,"progressApplied":true,"imported":true,"seq":1,
     "diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["fresh"],"fields":["id","label","icon","color","order",
-    "prerequisites","position","seedStatus","description","links"]})"))),
+    "prerequisites","seedStatus","description","links"]})"))),
            parse(R"({"treeId":"t","seq":1,"nodes":[{"id":"fresh","label":"","icon":"","color":"terracotta",
     "prerequisites":[]}],"missingNodeIds":[]})"));
 }
@@ -1932,10 +1926,10 @@ TEST(mcp_import_subgraph_lands_a_new_node_with_the_defaults_for_what_it_leaves_o
 TEST(mcp_import_subgraph_replace_swaps_a_re_sent_nodes_prerequisites_and_keeps_the_fields_it_leaves_out) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI"},
-    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","position":{"x":3,"y":4},
+    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0",
      "seedStatus":"complete","description":"Read the diff.","links":[{"url":"https://windmill.works/review","label":"guide"}]}]})")).isError);
   const Json::Value read = parse(R"({"nodeIds":["review"],"fields":["id","label","icon","color","order",
-    "prerequisites","position","seedStatus","description","links"]})");
+    "prerequisites","seedStatus","description","links"]})");
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"review","prerequisites":["ask"]}]})")).isError);
 
   const ToolResult result = h.call("import_subgraph", parse(R"({"nodes":[{"id":"plan","label":"Plan"},
@@ -1947,17 +1941,17 @@ TEST(mcp_import_subgraph_replace_swaps_a_re_sent_nodes_prerequisites_and_keeps_t
     "diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":3,"nodes":[
     {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","prerequisites":["plan"],
-     "position":{"x":3.0,"y":4.0},"seedStatus":"complete","description":"Read the diff.",
+     "seedStatus":"complete","description":"Read the diff.",
      "links":[{"url":"https://windmill.works/review","label":"guide"}]}],"missingNodeIds":[]})"));
 }
 
 TEST(mcp_import_subgraph_revives_a_deleted_node_with_the_fields_it_leaves_out) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI"},
-    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","position":{"x":3,"y":4},
+    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0",
      "seedStatus":"complete","description":"Read the diff.","links":[{"url":"https://windmill.works/review","label":"guide"}]}]})")).isError);
   const Json::Value read = parse(R"({"nodeIds":["review"],"fields":["id","label","icon","color","order",
-    "prerequisites","position","seedStatus","description","links"]})");
+    "prerequisites","seedStatus","description","links"]})");
   CHECK_FALSE(h.call("delete_node", with("nodeId", "review")).isError);
 
   const ToolResult result = h.call("import_subgraph", parse(R"({"nodes":[{"id":"review"}]})"));
@@ -1968,17 +1962,17 @@ TEST(mcp_import_subgraph_revives_a_deleted_node_with_the_fields_it_leaves_out) {
     "diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":3,"nodes":[
     {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","prerequisites":[],
-     "position":{"x":3.0,"y":4.0},"seedStatus":"complete","description":"Read the diff.",
+     "seedStatus":"complete","description":"Read the diff.",
      "links":[{"url":"https://windmill.works/review","label":"guide"}]}],"missingNodeIds":[]})"));
 }
 
 TEST(mcp_import_subgraph_dry_run_of_a_field_less_node_previews_the_collision_and_changes_nothing) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI"},
-    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","position":{"x":3,"y":4},
+    {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0",
      "seedStatus":"complete","description":"Read the diff.","links":[{"url":"https://windmill.works/review","label":"guide"}]}]})")).isError);
   const Json::Value read = parse(R"({"nodeIds":["review"],"fields":["id","label","icon","color","order",
-    "prerequisites","position","seedStatus","description","links"]})");
+    "prerequisites","seedStatus","description","links"]})");
 
   const ToolResult result = h.call("import_subgraph", parse(R"({"nodes":[{"id":"review","prerequisites":["ask"]}],
     "dryRun":true})"));
@@ -1988,7 +1982,7 @@ TEST(mcp_import_subgraph_dry_run_of_a_field_less_node_previews_the_collision_and
     "tombstoned":{"nodes":0,"edges":0},"dryRun":true,"tombstone":[]})"));
   CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":1,"nodes":[
     {"id":"review","label":"Backend review","icon":"magnifier","color":"sky","order":"a0","prerequisites":[],
-     "position":{"x":3.0,"y":4.0},"seedStatus":"complete","description":"Read the diff.",
+     "seedStatus":"complete","description":"Read the diff.",
      "links":[{"url":"https://windmill.works/review","label":"guide"}]}],"missingNodeIds":[]})"));
 }
 
@@ -2207,7 +2201,7 @@ TEST(mcp_import_subgraph_answers_the_landed_graft_when_clearing_the_tombstoned_m
     return tools.callTool(name, args, ToolCaller{caller, ToolScope::everything()});
   };
   CHECK_FALSE(call("create_node", node("n", "N")).isError);
-  CHECK_FALSE(call("set_progress", mark("n", "complete")).isError);
+  CHECK_FALSE(call("update_nodes", asUpdate(mark("n", "complete"))).isError);
   progressRepo.armed = true;
 
   Json::Value args = importOf({});
@@ -2256,8 +2250,8 @@ TEST(mcp_import_subgraph_tombstones_nodes_and_edges_in_one_seq_and_clears_progre
   Harness h;
   h.call("create_node", node("a", "A"));
   CHECK_FALSE(h.call("import_subgraph", importOf({nodeWith("n", {"a"}), nodeWith("b", {"n"})})).isError);
-  CHECK_FALSE(h.call("set_progress", mark("n", "complete")).isError);
-  CHECK_FALSE(h.call("set_progress", mark("a", "complete")).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(mark("n", "complete"))).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(mark("a", "complete"))).isError);
   const Json::Int64 before = body(h.call("get_tree", kNoArgs))["seq"].asInt64();
 
   Json::Value args = importOf({});
@@ -2329,7 +2323,7 @@ TEST(mcp_import_subgraph_refuses_a_tombstone_it_cannot_honour_and_applies_nothin
 TEST(mcp_import_subgraph_dry_run_echoes_the_tombstones_and_kept_edges_and_changes_nothing) {
   Harness h;
   seedFan(h);
-  CHECK_FALSE(h.call("set_progress", mark("b", "active")).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(mark("b", "active"))).isError);
 
   Json::Value args = importOf({nodeWith("n", {"a"})});
   args["tombstone"] = list({"b"});
@@ -2367,18 +2361,15 @@ TEST(mcp_import_subgraph_behind_the_gate_refuses_a_nested_key_by_its_path) {
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
            std::string("import_subgraph: unknown argument \"nodes[1].deleted\". nodes[1] takes: color, "
-                       "description, icon, id, kind, label, links, opens, order, position, prerequisites, seedStatus."));
+                       "description, icon, id, kind, label, links, opens, order, prerequisites, seedStatus."));
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);
 
   Json::Value deeper = node("x", "X");
-  deeper["position"] = Json::Value(Json::objectValue);
-  deeper["position"]["x"] = 1;
-  deeper["position"]["z"] = 2;
+  deeper["links"] = parse(R"([{"url":"https://a.example/","z":2}])");
   Json::Value deep = importOf({deeper});
   deep["treeId"] = "t";
   CHECK_EQ(message(gate.callTool("import_subgraph", deep, h.actor)),
-           std::string("import_subgraph: unknown argument \"nodes[0].position.z\". nodes[0].position "
-                       "takes: x, y."));
+           std::string("import_subgraph: unknown argument \"nodes[0].links[0].z\". nodes[0].links[0] takes: label, url."));
 }
 
 TEST(mcp_import_subgraph_takes_no_title_and_never_touches_the_trees) {
@@ -2627,7 +2618,7 @@ TEST(mcp_get_tree_lists_edges_up_to_the_edge_count_alone_and_says_the_count_past
                        "fields [\"id\", \"prerequisites\"] instead."));
 }
 
-TEST(mcp_annotate_node_sets_and_clears_the_icon_and_the_empty_icon_smell_follows) {
+TEST(mcp_update_nodes_sets_and_clears_the_icon_and_the_empty_icon_smell_follows) {
   Harness h;
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"terracotta"})")).isError);  // a node's hue says what it is
   h.call("create_node", node("a", "A"));
@@ -2644,7 +2635,7 @@ TEST(mcp_annotate_node_sets_and_clears_the_icon_and_the_empty_icon_smell_follows
   Json::Value set(Json::objectValue);
   set["nodeId"] = "a";
   set["icon"] = "star";
-  const ToolResult setResult = h.call("annotate_node", set);
+  const ToolResult setResult = h.call("update_nodes", asUpdate(set));
   CHECK_FALSE(setResult.isError);
   CHECK(body(setResult)["applied"].asBool());
   CHECK_EQ(icon(), std::string("star"));
@@ -2653,18 +2644,18 @@ TEST(mcp_annotate_node_sets_and_clears_the_icon_and_the_empty_icon_smell_follows
   Json::Value clear(Json::objectValue);
   clear["nodeId"] = "a";
   clear["icon"] = "";
-  CHECK_FALSE(h.call("annotate_node", clear).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(clear)).isError);
   CHECK_EQ(icon(), std::string(""));
   CHECK_EQ(smells(), iconless);
 
   Json::Value over(Json::objectValue);
   over["nodeId"] = "a";
   over["icon"] = std::string(65, 'i');
-  CHECK_EQ(message(h.call("annotate_node", over)),
-           std::string("annotate_node: icon would be 65 characters, 1 over the 64 cap"));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(over))),
+           std::string("update_nodes: icon would be 65 characters, 1 over the 64 cap"));
 }
 
-TEST(mcp_annotate_node_appends_to_the_description_and_refuses_both_forms_at_once) {
+TEST(mcp_update_nodes_appends_to_the_description_and_refuses_both_forms_at_once) {
   Harness h;
   h.call("create_node", node("a", "A"));
   auto description = [&] {
@@ -2676,54 +2667,53 @@ TEST(mcp_annotate_node_appends_to_the_description_and_refuses_both_forms_at_once
   Json::Value first(Json::objectValue);
   first["nodeId"] = "a";
   first["appendDescription"] = "first entry";
-  CHECK_FALSE(h.call("annotate_node", first).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(first)).isError);
   CHECK_EQ(description(), std::string("first entry"));
 
   Json::Value second(Json::objectValue);
   second["nodeId"] = "a";
   second["appendDescription"] = "second entry";
-  CHECK_FALSE(h.call("annotate_node", second).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(second)).isError);
   CHECK_EQ(description(), std::string("first entry\n\nsecond entry"));
 
   Json::Value both(Json::objectValue);
   both["nodeId"] = "a";
   both["description"] = "one";
   both["appendDescription"] = "two";
-  const ToolResult refused = h.call("annotate_node", both);
+  const ToolResult refused = h.call("update_nodes", asUpdate(both));
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
-           std::string("annotate_node: \"description\" and \"appendDescription\" are both given — pass one: "
-                       "description replaces the body, appendDescription joins onto it."));
+           std::string("update_nodes: updates[0]: \"description\" and \"appendDescription\" are both given — pass one: description replaces the body, appendDescription joins onto it."));
   CHECK_EQ(description(), std::string("first entry\n\nsecond entry"));
 
   Json::Value nothing(Json::objectValue);
   nothing["nodeId"] = "a";
-  CHECK_EQ(message(h.call("annotate_node", nothing)),
-           std::string("annotate_node: nothing to set — pass at least one of \"description\", "
-                       "\"appendDescription\", \"icon\", \"links\", \"addLinks\", \"opens\"."));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(nothing))),
+           std::string("update_nodes: updates[0] sets nothing — pass at least one of label, color, kind, "
+                       "description, appendDescription, icon, links, addLinks, opens, status."));
 
   Json::Value tail(Json::objectValue);
   tail["nodeId"] = "a";
   tail["appendDescription"] = std::string(16000 - 25 + 1, 'y');  // the body is 25 characters and the blank line 2
-  CHECK_EQ(message(h.call("annotate_node", tail)),
-           std::string("annotate_node: description would be 16003 characters, 3 over the 16000 cap"));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(tail))),
+           std::string("update_nodes: description would be 16003 characters, 3 over the 16000 cap"));
   CHECK_EQ(description(), std::string("first entry\n\nsecond entry"));
 
   Json::Value fits(Json::objectValue);
   fits["nodeId"] = "a";
   fits["appendDescription"] = std::string(16000 - 25 - 2, 'y');
-  CHECK_FALSE(h.call("annotate_node", fits).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(fits)).isError);
   CHECK_EQ(description().size(), 16000u);
 }
 
-TEST(mcp_annotate_node_adds_links_after_the_ones_the_node_holds) {
+TEST(mcp_update_nodes_adds_links_after_the_ones_the_node_holds) {
   Harness h;
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","links":[{"url":"https://a.example/1","label":"One"},
     {"url":"https://a.example/2","label":"Two"}]})")).isError);
 
-  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","addLinks":[{"url":"https://figma.example/f","label":"Flow"},
-    {"url":"https://a.example/1","label":"Spec"}]})"))),
-           parse(R"({"applied":true,"seq":2,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","addLinks":[{"url":"https://figma.example/f","label":"Flow"},
+    {"url":"https://a.example/1","label":"Spec"}]})")))),
+           parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":2,"treeId":"t","unchangedNodeIds":[]})"));
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})"))),
            parse(R"({"treeId":"t","seq":2,"nodes":[{"id":"a","links":[{"url":"https://a.example/1","label":"Spec"},
     {"url":"https://a.example/2","label":"Two"},{"url":"https://figma.example/f","label":"Flow"}]}],"missingNodeIds":[]})"));
@@ -2731,22 +2721,22 @@ TEST(mcp_annotate_node_adds_links_after_the_ones_the_node_holds) {
 
 // addLinks joins the other annotation fields in one write and lands as the same `links` command; a held
 // url sent without a label keeps its own, and a null addLinks is left out like any other field.
-TEST(mcp_annotate_node_adds_links_beside_the_other_annotation_fields_in_one_write) {
+TEST(mcp_update_nodes_adds_links_beside_the_other_annotation_fields_in_one_write) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","description":"Notes",
     "links":[{"url":"https://a.example/1","label":"One"}]})")).isError);
 
-  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","appendDescription":"Shipped","icon":"pin",
-    "opens":"t_sub","addLinks":[{"url":"https://a.example/1"},{"url":"https://github.example/pr/7","label":"PR"}]})"))),
-           parse(R"({"applied":true,"seq":2,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","description":"Rewritten",
-    "addLinks":[{"url":"https://figma.example/f","label":"Flow"}]})"))),
-           parse(R"({"applied":true,"seq":3,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","appendDescription":"Shipped","icon":"pin",
+    "opens":"t_sub","addLinks":[{"url":"https://a.example/1"},{"url":"https://github.example/pr/7","label":"PR"}]})")))),
+           parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":2,"treeId":"t","unchangedNodeIds":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","description":"Rewritten",
+    "addLinks":[{"url":"https://figma.example/f","label":"Flow"}]})")))),
+           parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":3,"treeId":"t","unchangedNodeIds":[]})"));
   CHECK_EQ(commandPayload(h.ops.byTree["t"].back().command),
            parse(R"({"id":"a","description":"Rewritten","links":[{"url":"https://a.example/1","label":"One"},
     {"url":"https://github.example/pr/7","label":"PR"},{"url":"https://figma.example/f","label":"Flow"}]})"));
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","icon":"flag","addLinks":null})")).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","icon":"flag"})"))).isError);
   CHECK_EQ(commandPayload(h.ops.byTree["t"].back().command), parse(R"({"id":"a","icon":"flag"})"));
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","icon","description","links","opens"]})"))),
            parse(R"({"treeId":"t","seq":4,"nodes":[{"id":"a","icon":"flag","description":"Rewritten",
@@ -2755,7 +2745,7 @@ TEST(mcp_annotate_node_adds_links_beside_the_other_annotation_fields_in_one_writ
     "missingNodeIds":[]})"));
 }
 
-TEST(mcp_annotate_node_refuses_links_it_cannot_add_and_leaves_the_nodes_links_as_they_were) {
+TEST(mcp_update_nodes_refuses_links_it_cannot_add_and_leaves_the_nodes_links_as_they_were) {
   Harness h;
   Json::Value held = parse(R"({"id":"a","label":"A","links":[]})");
   for (int i = 0; i < 31; ++i) held["links"].append("https://held.example/" + std::to_string(i));
@@ -2763,30 +2753,30 @@ TEST(mcp_annotate_node_refuses_links_it_cannot_add_and_leaves_the_nodes_links_as
   const auto read = [&] { return body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})"))); };
   const Json::Value before = read();
   CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
-  const auto annotate = [&](const char* arguments) {
-    Json::Value args = parse(arguments);
+  const auto annotate = [&](const char* row) {
+    Json::Value args = asUpdate(parse(row));
     args["treeId"] = "t";
-    return gate.callTool("roadmap_annotate_node", args, h.actor);
+    return gate.callTool("roadmap_update_nodes", args, h.actor);
   };
   std::vector<WriteCompletion> lines;
   installWriteSink([&](const WriteCompletion& line) { lines.push_back(line); });
 
   for (const auto& [arguments, refusal] : std::vector<std::pair<const char*, const char*>>{
            {R"({"nodeId":"a","links":[{"url":"https://x.example"}],"addLinks":[{"url":"https://y.example"}]})",
-            "annotate_node: \"links\" and \"addLinks\" are both given — pass one: links replaces the set, addLinks "
-            "joins onto it."},
+            "update_nodes: updates[0]: \"links\" and \"addLinks\" are both given — pass one: links replaces the "
+            "set, addLinks joins onto it."},
            {R"({"nodeId":"a","addLinks":[]})",
-            "annotate_node: addLinks, when sent, names at least one link — leave it out to keep the node's links as "
-            "they are"},
+            "update_nodes: updates[0].addLinks, when sent, names at least one link — leave it out to keep the node's "
+            "links as they are"},
            {R"({"nodeId":"a","addLinks":[{"url":"https://n.example/1"},{"url":"https://n.example/2"},
               {"url":"https://n.example/1","label":"again"}]})",
-            "annotate_node: addLinks[2].url repeats addLinks[0].url — send each link once"},
+            "update_nodes: updates[0].addLinks[2].url repeats updates[0].addLinks[0].url — send each link once"},
            {R"({"nodeId":"a","addLinks":[{"url":"https://n.example/1"},{"url":"https://n.example/2"}]})",
-            "annotate_node: links would hold 33 links, 1 over the 32 cap"},
+            "update_nodes: links would hold 33 links, 1 over the 32 cap"},
            {R"({"nodeId":"a","addLinks":"https://n.example/1"})",
-            "annotate_node: argument \"addLinks\" must be an array of links, got string"},
+            "update_nodes: updates[0].addLinks must be an array"},
            {R"({"nodeId":"a","addLinks":[7]})",
-            "annotate_node: addLinks[0] must be an object {url, label?} or a url string, got number"}}) {
+            "update_nodes: updates[0].addLinks[0] must be an object {url, label?} or a url string, got number"}}) {
     const ToolResult refused = annotate(arguments);
     CHECK(refused.isError);
     CHECK_EQ(message(refused), std::string(refusal));
@@ -2800,7 +2790,7 @@ TEST(mcp_annotate_node_refuses_links_it_cannot_add_and_leaves_the_nodes_links_as
   // One write line per call, a refusal `refused`, and no line carries a url or a label.
   REQUIRE_EQ(lines.size(), 7u);
   for (std::size_t i = 0; i < lines.size(); ++i) {
-    CHECK_EQ(lines[i].operation, std::string("mcp.roadmap_annotate_node"));
+    CHECK_EQ(lines[i].operation, std::string("mcp.roadmap_update_nodes"));
     CHECK_EQ(lines[i].outcome, std::string(i < 6 ? "refused" : "ok"));
     for (const char* content : {"example", "again", "Last"})
       CHECK_EQ(writeCompletionJson(lines[i]).find(content), std::string::npos);
@@ -2810,9 +2800,9 @@ TEST(mcp_annotate_node_refuses_links_it_cannot_add_and_leaves_the_nodes_links_as
   const Json::Value catalog = h.tools.listTools(h.actor);
   const Json::Value* declared = nullptr;
   for (const Json::Value& tool : catalog)
-    if (tool["name"].asString() == "annotate_node") declared = &tool;
+    if (tool["name"].asString() == "update_nodes") declared = &tool;
   REQUIRE(declared != nullptr);
-  const Json::Value& properties = (*declared)["inputSchema"]["properties"];
+  const Json::Value& properties = (*declared)["inputSchema"]["properties"]["updates"]["items"]["properties"];
   Json::Value linksWithAtLeastOne = properties["links"];
   linksWithAtLeastOne["minItems"] = 1;
   linksWithAtLeastOne["description"] = properties["addLinks"]["description"];
@@ -2847,18 +2837,18 @@ const Json::Value* kindNamed(const Json::Value& kinds, const char* id) {
 
 // The word rides the mark: the receipt answers it, get_progress lists it, the status projection
 // shows it, the mirror echo carries it, and the next mark without it takes it away.
-TEST(mcp_set_progress_out_of_order_is_acknowledged_kept_and_shown) {
+TEST(mcp_a_mark_out_of_order_is_acknowledged_kept_and_shown) {
   Harness h;
   chainAB(h);
 
   Json::Value meant = markArgs("b", "complete");
   meant["outOfOrder"] = true;
-  ToolResult receipt = h.call("set_progress", meant);
+  ToolResult receipt = h.call("update_nodes", asUpdate(meant));
   CHECK_FALSE(receipt.isError);
-  CHECK_EQ(keys(body(receipt)), (std::vector<std::string>{"acknowledged", "nodeId", "prerequisitesMet", "status"}));
-  CHECK_FALSE(body(receipt)["prerequisitesMet"].asBool());
-  CHECK(body(receipt)["acknowledged"].asBool());
-  CHECK_EQ(body(receipt)["status"].asString(), std::string("complete"));
+  CHECK_EQ(keys(body(receipt)["progress"][0]), (std::vector<std::string>{"acknowledged", "nodeId", "prerequisitesMet", "status"}));
+  CHECK_FALSE(body(receipt)["progress"][0]["prerequisitesMet"].asBool());
+  CHECK(body(receipt)["progress"][0]["acknowledged"].asBool());
+  CHECK_EQ(body(receipt)["progress"][0]["status"].asString(), std::string("complete"));
 
   Json::Value overlay = body(h.call("get_progress", kNoArgs));
   CHECK_EQ(keys(overlay), (std::vector<std::string>{"completed", "outOfOrder"}));
@@ -2883,14 +2873,14 @@ TEST(mcp_set_progress_out_of_order_is_acknowledged_kept_and_shown) {
   REQUIRE_EQ(h.bus.progressBroadcasts.size(), 1u);
   CHECK(h.bus.progressBroadcasts.back().marks.marks.at(nid("b")).outOfOrder);
 
-  ToolResult plain = h.call("set_progress", markArgs("b", "complete"));
-  CHECK_EQ(keys(body(plain)), (std::vector<std::string>{"nodeId", "prerequisitesMet", "status"}));
-  CHECK_FALSE(body(plain)["prerequisitesMet"].asBool());
+  ToolResult plain = h.call("update_nodes", asUpdate(markArgs("b", "complete")));
+  CHECK_EQ(keys(body(plain)["progress"][0]), (std::vector<std::string>{"nodeId", "prerequisitesMet", "status"}));
+  CHECK_FALSE(body(plain)["progress"][0]["prerequisitesMet"].asBool());
   CHECK_EQ(body(h.call("get_progress", kNoArgs))["outOfOrder"].size(), 0u);
   CHECK_FALSE(h.bus.progressBroadcasts.back().marks.marks.at(nid("b")).outOfOrder);
 }
 
-TEST(mcp_set_progress_bulk_carries_out_of_order_per_update) {
+TEST(mcp_update_nodes_carries_out_of_order_per_row) {
   Harness h;
   chainAB(h);
 
@@ -2902,9 +2892,9 @@ TEST(mcp_set_progress_bulk_carries_out_of_order_per_update) {
   Json::Value args(Json::objectValue);
   args["updates"] = updates;
 
-  ToolResult receipt = h.call("set_progress", args);
+  ToolResult receipt = h.call("update_nodes", args);
   CHECK_FALSE(receipt.isError);
-  const Json::Value results = body(receipt)["results"];
+  const Json::Value results = body(receipt)["progress"];
   REQUIRE_EQ(results.size(), 2u);
   // Judged against the committed batch, b's prerequisite IS met — the word is still echoed, since it was given.
   CHECK_EQ(keys(results[0]), (std::vector<std::string>{"acknowledged", "nodeId", "prerequisitesMet", "status"}));
@@ -2918,20 +2908,19 @@ TEST(mcp_set_progress_bulk_carries_out_of_order_per_update) {
   CHECK_EQ(overlay["outOfOrder"][0].asString(), std::string("b"));
 }
 
-TEST(mcp_set_progress_refuses_out_of_order_off_a_completion_and_records_nothing) {
+TEST(mcp_a_mark_refuses_out_of_order_off_a_completion_and_records_nothing) {
   Harness h;
   chainAB(h);
 
   Json::Value active = markArgs("b", "active");
   active["outOfOrder"] = true;
-  CHECK_EQ(message(h.call("set_progress", active)),
-           std::string("set_progress: argument \"outOfOrder\" acknowledges completing a node before its "
-                       "prerequisites, so it rides status \"complete\" only, got \"none\""));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(active))),
+           std::string("update_nodes: argument \"updates[0].outOfOrder\" acknowledges completing a node before its prerequisites, so it rides status \"complete\" only, got \"none\""));
 
   Json::Value typed = markArgs("b", "complete");
   typed["outOfOrder"] = "yes";
-  CHECK_EQ(message(h.call("set_progress", typed)),
-           std::string("set_progress: argument \"outOfOrder\" must be a boolean, got string"));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(typed))),
+           std::string("update_nodes: argument \"updates[0].outOfOrder\" must be a boolean, got string"));
 
   Json::Value cleared = markArgs("a", "none");
   cleared["outOfOrder"] = true;
@@ -2940,14 +2929,13 @@ TEST(mcp_set_progress_refuses_out_of_order_off_a_completion_and_records_nothing)
   updates.append(cleared);
   Json::Value bulk(Json::objectValue);
   bulk["updates"] = updates;
-  CHECK_EQ(message(h.call("set_progress", bulk)),
-           std::string("set_progress: argument \"updates[1].outOfOrder\" acknowledges completing a node before "
-                       "its prerequisites, so it rides status \"complete\" only, got \"none\""));
+  CHECK_EQ(message(h.call("update_nodes", bulk)),
+           std::string("update_nodes: argument \"updates[1].outOfOrder\" acknowledges completing a node before its prerequisites, so it rides status \"complete\" only, got \"none\""));
 
   // A false word is just a completion.
   Json::Value plain = markArgs("b", "complete");
   plain["outOfOrder"] = false;
-  CHECK_EQ(keys(body(h.call("set_progress", plain))), (std::vector<std::string>{"nodeId", "prerequisitesMet", "status"}));
+  CHECK_EQ(keys(body(h.call("update_nodes", asUpdate(plain)))["progress"][0]), (std::vector<std::string>{"nodeId", "prerequisitesMet", "status"}));
 
   Json::Value overlay = body(h.call("get_progress", kNoArgs));
   CHECK_EQ(overlay["completed"].size(), 1u);
@@ -3009,7 +2997,7 @@ TEST(mcp_get_progress_describes_out_of_order_as_the_marks_that_carried_the_flag)
     CHECK_EQ(tool.descriptor["description"].asString(),
              std::string("The caller's private progress overlay for a roadmap: the node ids that are "
                          "completed, and outOfOrder — the subset of completed whose mark carried "
-                         "outOfOrder:true, from set_progress or an import's progress row. Per-user, "
+                         "outOfOrder:true, from an update_nodes row's `status` or an import's progress row. Per-user, "
                          "separate from the shared structure."));
     const std::string fields = tool.descriptor["inputSchema"]["properties"]["fields"]["description"].asString();
     CHECK(fields.find("the subset of `completed` whose mark carried outOfOrder:true") != std::string::npos);
@@ -3187,33 +3175,33 @@ TEST(mcp_import_subgraph_refuses_more_description_text_than_one_call_may_carry) 
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["count"].asUInt64(), 393u);
 }
 
-TEST(mcp_patch_nodes_is_one_edit_preserves_omissions_and_retries_as_noop) {
+TEST(mcp_update_nodes_is_one_edit_preserves_omissions_and_retries_as_noop) {
   Harness h;
   Json::Value a = node("a", "A");
   a["icon"] = "star";
   a["description"] = "Keep this";
   h.call("create_node", a);
   h.call("create_node", node("b", "B"));
-  Json::Value args = parse(R"({"updates":[{"nodeId":"a","label":"New A"},{"nodeId":"b","description":"New B","position":{"x":7,"y":8}}],"expectedSeq":2})");
-  const ToolResult result = h.call("patch_nodes", args);
+  Json::Value args = parse(R"({"updates":[{"nodeId":"a","label":"New A"},{"nodeId":"b","description":"New B"}],"expectedSeq":2})");
+  const ToolResult result = h.call("update_nodes", args);
   CHECK_FALSE(result.isError);
   CHECK_EQ(body(result), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":3,"changedNodeIds":["a","b"],"unchangedNodeIds":[],"diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_EQ(result.structured, body(result));
   REQUIRE_EQ(h.bus.subgraphBroadcasts.size(), 3u);
   REQUIRE_EQ(h.ops.byTree["t"].size(), 3u);
   CHECK(std::holds_alternative<Batch>(h.ops.byTree["t"].back().command));
-  Json::Value read = parse(R"({"nodeIds":["b","missing","a"],"fields":["id","label","icon","description","position"]})");
-  CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":3,"nodes":[{"id":"b","label":"B","icon":"","description":"New B","position":{"x":7.0,"y":8.0}},{"id":"a","label":"New A","icon":"star","description":"Keep this"}],"missingNodeIds":["missing"]})"));
-  const ToolResult conflict = h.call("patch_nodes", args);
+  Json::Value read = parse(R"({"nodeIds":["b","missing","a"],"fields":["id","label","icon","description"]})");
+  CHECK_EQ(body(h.call("get_nodes", read)), parse(R"({"treeId":"t","seq":3,"nodes":[{"id":"b","label":"B","icon":"","description":"New B"},{"id":"a","label":"New A","icon":"star","description":"Keep this"}],"missingNodeIds":["missing"]})"));
+  const ToolResult conflict = h.call("update_nodes", args);
   CHECK(conflict.isError);
-  CHECK_EQ(message(conflict), std::string("patch_nodes: expectedSeq conflict: requested 2, current seq is 3. Nothing changed; read get_nodes or get_tree and retry with the current seq."));
+  CHECK_EQ(message(conflict), std::string("update_nodes: expectedSeq conflict: requested 2, current seq is 3. Nothing changed; read get_nodes or get_tree and retry with the current seq."));
   args.removeMember("expectedSeq");
-  CHECK_EQ(body(h.call("patch_nodes", args)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":3,"changedNodeIds":[],"unchangedNodeIds":["a","b"],"diagnosticsClean":true,"introducedDiagnostics":[],"unchanged":true})"));
+  CHECK_EQ(body(h.call("update_nodes", args)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":3,"changedNodeIds":[],"unchangedNodeIds":["a","b"],"diagnosticsClean":true,"introducedDiagnostics":[],"unchanged":true})"));
   CHECK_EQ(h.bus.subgraphBroadcasts.size(), 3u);
   CHECK_EQ(h.ops.byTree["t"].size(), 3u);
 }
 
-TEST(mcp_patch_nodes_refuses_the_whole_batch_and_dry_run_changes_nothing) {
+TEST(mcp_update_nodes_refuses_the_whole_batch_and_dry_run_changes_nothing) {
   Harness h;
   h.call("create_node", node("a", "A"));
   h.call("create_node", node("b", "B"));
@@ -3221,19 +3209,18 @@ TEST(mcp_patch_nodes_refuses_the_whole_batch_and_dry_run_changes_nothing) {
   for (const char* json : {
       R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"missing","label":"Bad"}]})",
       R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"a","label":"Duplicate"}]})",
-      R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"b","position":{"x":1}}]})",
       R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"b","description":null}]})",
       R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"b","opens":null}]})",
       R"({"updates":[{"nodeId":"a","label":"New"},{"nodeId":"b"}]})",
       R"({"updates":[]})"}) {
-    CHECK(h.call("patch_nodes", parse(json)).isError);
+    CHECK(h.call("update_nodes", parse(json)).isError);
     CHECK_EQ(body(h.call("get_tree", kNoArgs)), before);
   }
-  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"b","description":null}]})"))),
-           std::string("patch_nodes: missing required argument \"updates[0].description\""));
-  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"b","opens":null}]})"))),
-           std::string("patch_nodes: missing required argument \"updates[0].opens\""));
-  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","description":""}],"dryRun":true,"expectedSeq":2})"))),
+  CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"b","description":null}]})"))),
+           std::string("update_nodes: missing required argument \"updates[0].description\""));
+  CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"b","opens":null}]})"))),
+           std::string("update_nodes: missing required argument \"updates[0].opens\""));
+  CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","description":""}],"dryRun":true,"expectedSeq":2})"))),
            parse(R"({"treeId":"t","applied":false,"dryRun":true,"seq":2,"changedNodeIds":[],"unchangedNodeIds":["a"],
              "unchanged":true})"));
   CHECK_EQ(body(h.call("get_tree", kNoArgs)), before);
@@ -3280,7 +3267,7 @@ TEST(mcp_get_nodes_is_bounded_and_private_and_uses_exact_ids) {
   h.registry.open(TreeId{"t"})->setVisibility(Visibility::private_);
   h.caller = uid("other");
   CHECK_EQ(message(h.call("get_nodes", parse(R"({"nodeIds":["n0"]})"))), std::string("get_nodes: no such tree \"t\""));
-  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"n0","label":"No"}]})"))), std::string("patch_nodes: no such tree \"t\""));
+  CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"n0","label":"No"}]})"))), std::string("update_nodes: no such tree \"t\""));
   CHECK_EQ(message(h.call("change_edges", parse(R"({"add":[{"from":"n0","to":"n1"}]})"))), std::string("change_edges: no such tree \"t\""));
 }
 
@@ -3289,9 +3276,9 @@ TEST(mcp_legacy_progress_aliases_clear_without_completing_prerequisites) {
   h.call("create_node", node("a", "A"));
   h.call("create_node", node("b", "B"));
   h.call("change_edges", adding(edge("a", "b")));
-  h.call("set_progress", mark("a", "complete"));
-  CHECK_FALSE(h.call("set_progress", mark("a", "active")).isError);
-  CHECK_FALSE(h.call("set_progress", mark("b", "inProgress")).isError);
+  h.call("update_nodes", asUpdate(mark("a", "complete")));
+  CHECK_FALSE(h.call("update_nodes", asUpdate(mark("a", "active"))).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(mark("b", "inProgress"))).isError);
 
   Json::Value args(Json::objectValue);
   args["fields"] = list({"completed", "cleared", "outOfOrder"});
@@ -3606,9 +3593,9 @@ TEST(mcp_a_node_opens_a_tree_through_each_write_tool_and_every_read_answers_its_
 
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B"})")).isError);
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"b","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"b","opens":"t_sub"})"))).isError);
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"c","label":"C","opens":""})")).isError);
-  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"c","opens":"t_sub"}]})"))),
+  CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"c","opens":"t_sub"}]})"))),
            parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":5,"changedNodeIds":["c"],"unchangedNodeIds":[],"diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"d","label":"D","opens":"t_sub"},{"id":"e","label":"E"}]})")).isError);
 
@@ -3629,17 +3616,16 @@ TEST(mcp_a_node_opens_a_tree_through_each_write_tool_and_every_read_answers_its_
                        {"a", "t_sub"}, {"b", "t_sub"}, {"c", "t_sub"}, {"d", "t_sub"}, {"e", ""}}));
 }
 
-TEST(mcp_annotate_node_and_patch_nodes_clear_the_tree_a_node_opens_with_an_empty_string) {
+TEST(mcp_update_nodes_clears_the_tree_a_node_opens_with_an_empty_string) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_sub"})")).isError);
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","opens":"t_sub"})")).isError);
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"c","label":"C","opens":"t_sub"})")).isError);
 
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","opens":""})")).isError);
-  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"b","opens":""},{"nodeId":"c","opens":"t_sub"}]})"))),
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":""})"))).isError);
+  CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"b","opens":""},{"nodeId":"c","opens":"t_sub"}]})"))),
            parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":5,"changedNodeIds":["b"],"unchangedNodeIds":["c"],"diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"c","description":"a note","opens":null})")).isError);
 
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
            parse(R"([{"id":"a"},{"id":"b"},{"id":"c","opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}}])"));
@@ -3684,12 +3670,12 @@ TEST(mcp_a_tree_that_is_not_the_callers_cannot_be_opened_and_absent_reads_exactl
   for (const std::string target : {"t_absent", "t_theirs", "t_nobodys", "t_gone"}) {
     CHECK_EQ(message(h.call("create_node", parse(R"({"id":"c","label":"C","opens":")" + target + R"("})"))),
              refusal("create_node", "opens", target));
-    CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","description":"kept out","opens":")" + target + R"("})"))),
-             refusal("annotate_node", "opens", target));
+    CHECK_EQ(message(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","description":"kept out","opens":")" + target + R"("})")))),
+             refusal("update_nodes", "updates[0].opens", target));
     for (const std::string dryRun : {"false", "true"}) {
-      CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","label":"Kept out"},{"nodeId":"b","opens":")" +
+      CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","label":"Kept out"},{"nodeId":"b","opens":")" +
                                                    target + R"("}],"dryRun":)" + dryRun + "}"))),
-               refusal("patch_nodes", "updates[1].opens", target));
+               refusal("update_nodes", "updates[1].opens", target));
       CHECK_EQ(message(h.call("import_subgraph",
                               parse(R"({"nodes":[{"id":"n0","opens":"t_sub"},{"id":"n1"},{"id":"n2","opens":")" + target +
                                     R"("}],"dryRun":)" + dryRun + "}"))),
@@ -3781,11 +3767,11 @@ TEST(mcp_the_trees_a_call_opens_are_read_once_and_a_reply_follows_them_only_when
   CHECK_EQ(h.trees.titleReads, (std::vector<std::set<TreeId>>{{TreeId{"t_other"}, TreeId{"t_sub"}}}));
   const std::set<TreeId> opened{TreeId{"t_other"}, TreeId{"t_sub"}};
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened}));
-  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t_other"},{"nodeId":"d","opens":"t_sub"},{"nodeId":"b","label":"B"}]})")).isError);
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t_other"},{"nodeId":"d","opens":"t_sub"},{"nodeId":"b","label":"B"}]})")).isError);
   CHECK_EQ(h.trees.titleReads.size(), 2u);
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened}));
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"e","label":"E"})")).isError);
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"e","opens":""})")).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"e","opens":""})"))).isError);
   CHECK_EQ(h.trees.titleReads.size(), 2u);
 
   CHECK_FALSE(h.call("get_tree", kNoArgs).isError);
@@ -3889,8 +3875,7 @@ TEST(mcp_a_pointer_at_a_tree_that_is_not_the_callers_completes_as_opens_not_your
   for (const std::string target : {"t_absent", "t_theirs", "t_gone"}) {
     const std::vector<std::pair<const char*, std::string>> calls = {
         {"roadmap_create_node", R"({"treeId":"t","label":"B","opens":")" + target + R"("})"},
-        {"roadmap_annotate_node", R"({"treeId":"t","nodeId":"a","opens":")" + target + R"("})"},
-        {"roadmap_patch_nodes", R"({"treeId":"t","updates":[{"nodeId":"a","opens":")" + target + R"("}],"dryRun":true})"},
+        {"roadmap_update_nodes", R"({"treeId":"t","updates":[{"nodeId":"a","opens":")" + target + R"("}],"dryRun":true})"},
         {"roadmap_import_subgraph", R"({"treeId":"t","nodes":[{"id":"a","opens":")" + target + R"("}]})"}};
     for (const auto& [tool, arguments] : calls) {
       const ToolResult refused = gate.callTool(tool, parse(arguments), h.actor);
@@ -3899,12 +3884,12 @@ TEST(mcp_a_pointer_at_a_tree_that_is_not_the_callers_completes_as_opens_not_your
       expected.push_back(std::string("mcp.") + tool + " opens-not-yours");
     }
   }
-  CHECK(gate.callTool("roadmap_annotate_node", parse(R"({"treeId":"t","nodeId":"a","opens":7})"), h.actor).isError);
-  expected.push_back("mcp.roadmap_annotate_node refused");
-  CHECK(gate.callTool("roadmap_annotate_node", parse(R"({"treeId":"t","nodeId":"a","open":"t"})"), h.actor).isError);
-  expected.push_back("mcp.roadmap_annotate_node invalid-arguments");
-  CHECK_FALSE(gate.callTool("roadmap_annotate_node", parse(R"({"treeId":"t","nodeId":"a","opens":"t"})"), h.actor).isError);
-  expected.push_back("mcp.roadmap_annotate_node ok");
+  CHECK(gate.callTool("roadmap_update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","opens":7}]})"), h.actor).isError);
+  expected.push_back("mcp.roadmap_update_nodes refused");
+  CHECK(gate.callTool("roadmap_update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","open":"t"}]})"), h.actor).isError);
+  expected.push_back("mcp.roadmap_update_nodes invalid-arguments");
+  CHECK_FALSE(gate.callTool("roadmap_update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","opens":"t"}]})"), h.actor).isError);
+  expected.push_back("mcp.roadmap_update_nodes ok");
   installWriteSink({});
 
   std::vector<std::string> observed;
@@ -3932,9 +3917,9 @@ TEST(mcp_a_node_that_opens_a_tree_is_complete_when_the_tree_is_and_the_last_mark
   CHECK_FALSE(sub("import_subgraph", R"({"nodes":[{"id":"s1","label":"S1"},{"id":"s2","label":"S2"}]})").isError);
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea"},
                                                             {"id":"next","label":"Next","prerequisites":["idea"]}]})")).isError);
-  CHECK_FALSE(sub("set_progress", R"({"nodeId":"s1","status":"complete"})").isError);
-  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"idea","status":"complete"})")).isError);
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"idea","opens":"t_sub"})")).isError);
+  CHECK_FALSE(sub("update_nodes", R"({"updates":[{"nodeId":"s1","status":"complete"}]})").isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"idea","status":"complete"})"))).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"idea","opens":"t_sub"})"))).isError);
 
   const Json::Value open = parse(
       R"([{"id":"idea","status":"complete","state":"available","opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}},
@@ -3947,7 +3932,7 @@ TEST(mcp_a_node_that_opens_a_tree_is_complete_when_the_tree_is_and_the_last_mark
   CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["idea"],"outOfOrder":[]})"));
   CHECK(counts() == (std::map<std::string, std::string>{{"t", "0/2"}, {"t_sub", "1/2"}}));
 
-  CHECK_FALSE(sub("set_progress", R"({"nodeId":"s2","status":"complete"})").isError);
+  CHECK_FALSE(sub("update_nodes", R"({"updates":[{"nodeId":"s2","status":"complete"}]})").isError);
 
   const Json::Value complete = parse(
       R"([{"id":"idea","status":"complete","state":"complete","opens":{"treeId":"t_sub","title":"Deep dive","state":"complete"}},
@@ -3982,7 +3967,7 @@ TEST(mcp_a_node_follows_a_tree_that_itself_waits_on_a_tree_it_opens) {
   CHECK_FALSE(in("t_leaf", "create_node", R"({"id":"l","label":"L"})").isError);
   CHECK_FALSE(in("t_mid", "import_subgraph", R"({"nodes":[{"id":"deeper","label":"Deeper","opens":"t_leaf"},{"id":"m","label":"M"}]})").isError);
   CHECK_FALSE(in("t", "create_node", R"({"id":"idea","label":"Idea","opens":"t_mid"})").isError);
-  CHECK_FALSE(in("t_mid", "set_progress", R"({"updates":[{"nodeId":"m","status":"complete"},{"nodeId":"deeper","status":"complete"}]})").isError);
+  CHECK_FALSE(in("t_mid", "update_nodes", R"({"updates":[{"nodeId":"m","status":"complete"},{"nodeId":"deeper","status":"complete"}]})").isError);
 
   CHECK_EQ(body(in("t", "get_tree", R"({"fields":["id","state","opens"]})"))["tree"]["nodes"],
            parse(R"([{"id":"idea","state":"available","opens":{"treeId":"t_mid","title":"Middle","state":"open"}}])"));
@@ -3991,7 +3976,7 @@ TEST(mcp_a_node_follows_a_tree_that_itself_waits_on_a_tree_it_opens) {
                      {"id":"m","state":"complete"}])"));
   CHECK(counts() == (std::map<std::string, std::string>{{"t", "0/1"}, {"t_leaf", "0/1"}, {"t_mid", "1/2"}}));
 
-  CHECK_FALSE(in("t_leaf", "set_progress", R"({"nodeId":"l","status":"complete"})").isError);
+  CHECK_FALSE(in("t_leaf", "update_nodes", R"({"updates":[{"nodeId":"l","status":"complete"}]})").isError);
 
   CHECK_EQ(body(in("t", "get_tree", R"({"fields":["id","state","opens"]})"))["tree"]["nodes"],
            parse(R"([{"id":"idea","state":"complete","opens":{"treeId":"t_mid","title":"Middle","state":"complete"}}])"));
@@ -4018,7 +4003,7 @@ TEST(mcp_a_reader_who_cannot_write_the_tree_reads_an_ordinary_node_that_follows_
   CHECK_FALSE(h.tools.callTool("create_node", parse(R"({"treeId":"t_sub","id":"s","label":"S"})"), h.actor).isError);
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},
                                                             {"id":"next","label":"Next","prerequisites":["idea"]}]})")).isError);
-  CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"idea","status":"complete"})"), stranger).isError);
+  CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"idea","status":"complete"}]})"), stranger).isError);
   const std::size_t readsForTheWrite = h.trees.openedReads.size();
 
   const char* everything = R"({"fields":["id","status","state","opens"]})";
@@ -4034,8 +4019,8 @@ TEST(mcp_a_reader_who_cannot_write_the_tree_reads_an_ordinary_node_that_follows_
            parse(R"([{"id":"idea","status":"none","state":"available","opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}},
                      {"id":"next","status":"none","state":"locked"}])"));
 
-  CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t_sub","nodeId":"s","status":"complete"})"), h.actor).isError);
-  CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"idea","status":"none"})"), stranger).isError);
+  CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t_sub","updates":[{"nodeId":"s","status":"complete"}]})"), h.actor).isError);
+  CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"idea","status":"none"}]})"), stranger).isError);
   const std::size_t readsForTheOwner = h.trees.openedReads.size();
 
   CHECK_EQ(read(stranger, "get_tree", everything)["tree"]["nodes"], unmarked);
@@ -4068,7 +4053,7 @@ TEST(mcp_a_reply_follows_pointers_in_one_read_and_reads_nothing_where_following_
   CHECK_FALSE(h.call("find_nodes", parse(R"({"state":"available","fields":["id","state","opens"]})")).isError);
   CHECK(h.trees.openedReads.empty());
 
-  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t_sub"},{"nodeId":"b","opens":"t_other"},{"nodeId":"c","opens":"t_sub"}]})")).isError);
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t_sub"},{"nodeId":"b","opens":"t_other"},{"nodeId":"c","opens":"t_sub"}]})")).isError);
   CHECK_EQ(h.trees.openedReads.size(), 1u);
   h.trees.openedReads.clear();
   CHECK_FALSE(h.call("get_tree", kNoArgs).isError);
@@ -4253,7 +4238,7 @@ TEST(mcp_get_diagnostics_reads_no_other_tree_for_a_tree_without_pointers_or_a_ca
   CHECK(h.trees.openedReads.empty());
 
   h.trees.openedReadsFail = false;
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","opens":"t_b"})")).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":"t_b"})"))).isError);
   h.trees.openedReads.clear();
   h.trees.openedReadsFail = true;
   CHECK_EQ(body(h.call("get_diagnostics", parse(R"({"includePointers":false})"))),
@@ -4349,15 +4334,14 @@ TEST(mcp_an_edit_that_closes_a_loop_of_trees_says_so_in_its_receipt_through_each
   CHECK_EQ(body(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_b"})"))),
            parse(R"({"applied":true,"seq":1,"id":"a","diagnosticsClean":true,
                "introducedDiagnostics":["loop of trees from \"a\" through \"t_b\" -> \"t\""]})"));
-  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":"t_b"})"))),
-           parse(R"({"applied":true,"seq":1,"unchanged":true,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":"t_c"})"))),
-           parse(R"({"applied":true,"seq":2,"id":"a","diagnosticsClean":true,
-               "introducedDiagnostics":["loop of trees from \"a\" through \"t_c\" -> \"t_b\" -> \"t\""]})"));
-  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":"t_sub"})"))),
-           parse(R"({"applied":true,"seq":3,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":"t_b"})")))),
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["a"]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":"t_c"})")))),
+           parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":["loop of trees from \"a\" through \"t_c\" -> \"t_b\" -> \"t\""],"seq":2,"treeId":"t","unchangedNodeIds":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":"t_sub"})")))),
+           parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":3,"treeId":"t","unchangedNodeIds":[]})"));
 
-  const ToolResult patched = h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t"}]})"));
+  const ToolResult patched = h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t"}]})"));
   CHECK_EQ(body(patched), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":4,"changedNodeIds":["a"],"unchangedNodeIds":[],
       "diagnosticsClean":true,"introducedDiagnostics":["loop of trees from \"a\" through \"t\""]})"));
   CHECK_EQ(patched.structured, body(patched));
@@ -4375,12 +4359,12 @@ TEST(mcp_an_edit_that_closes_a_loop_of_trees_says_so_in_its_receipt_through_each
            (std::vector<std::optional<std::chrono::milliseconds>>(5, std::chrono::milliseconds{750})));
 }
 
-// The two rules meet on the pointer and agree. An `annotate_node` that re-sends the tree a node opens changes
+// The two rules meet on the pointer and agree. An update_nodes row that re-sends the tree a node opens changes
 // nothing: it writes nothing, says `unchanged`, follows nothing and names no loop, on a loop or off one. One that
 // changes another field beside the same pointer lands and still follows nothing. One that changes the pointer alone
 // is changed, lands, and is followed once. A `create_node` on a present id always lands, and one that names the tree
 // the node already opens follows nothing.
-TEST(mcp_a_single_node_edit_follows_a_pointer_only_when_it_changes_it_and_says_unchanged_only_when_it_changes_nothing) {
+TEST(mcp_a_node_edit_follows_a_pointer_only_when_it_changes_it_and_says_unchanged_only_when_it_changes_nothing) {
   Harness h;
   h.plant("t_b", h.caller, "", {"t"});
   h.plant("t_sub", h.caller, "", {});
@@ -4388,24 +4372,23 @@ TEST(mcp_a_single_node_edit_follows_a_pointer_only_when_it_changes_it_and_says_u
   h.trees.openedReads.clear();
   const std::size_t saves = h.trees.savedNodeCounts.size();
 
-  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":"t_sub"})"))),
-           parse(R"({"applied":true,"seq":1,"unchanged":true,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":"t_sub"})")))),
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["a"]})"));
   CHECK_EQ(h.trees.savedNodeCounts.size(), saves);
   CHECK(h.trees.openedReads.empty());
 
-  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":"t_sub","description":"A note."})"))),
-           parse(R"({"applied":true,"seq":2,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":"t_sub","description":"A note."})")))),
+           parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":2,"treeId":"t","unchangedNodeIds":[]})"));
   CHECK_EQ(h.trees.savedNodeCounts.size(), saves + 1);
   CHECK(h.trees.openedReads.empty());
 
-  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":"t_b"})"))),
-           parse(R"({"applied":true,"seq":3,"id":"a","diagnosticsClean":true,
-               "introducedDiagnostics":["loop of trees from \"a\" through \"t_b\" -> \"t\""]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":"t_b"})")))),
+           parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":["loop of trees from \"a\" through \"t_b\" -> \"t\""],"seq":3,"treeId":"t","unchangedNodeIds":[]})"));
   CHECK_EQ(h.trees.savedNodeCounts.size(), saves + 2);
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{{TreeId{"t_b"}}}));
 
-  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":"t_b"})"))),
-           parse(R"({"applied":true,"seq":3,"unchanged":true,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":"t_b"})")))),
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":3,"treeId":"t","unchanged":true,"unchangedNodeIds":["a"]})"));
   CHECK_EQ(h.trees.savedNodeCounts.size(), saves + 2);
 
   CHECK_EQ(body(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_b"})"))),
@@ -4442,22 +4425,22 @@ TEST(mcp_an_edit_that_makes_no_node_open_a_tree_follows_nothing_and_its_receipt_
   h.trees.openedReads.clear();
   h.trees.openedReadsFail = true;
 
-  CHECK_EQ(body(h.call("rename_node", parse(R"({"nodeId":"a","label":"A renamed"})"))),
-           parse(R"({"applied":true,"seq":2,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","label":"A renamed"})")))),
+           parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":2,"treeId":"t","unchangedNodeIds":[]})"));
   CHECK_EQ(body(h.call("create_node", parse(R"({"id":"c","label":"C"})"))),
            parse(R"({"applied":true,"seq":3,"id":"c","diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","description":"a note"})"))),
-           parse(R"({"applied":true,"seq":4,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":""})"))),
-           parse(R"({"applied":true,"seq":5,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","description":"a note"})")))),
+           parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":4,"treeId":"t","unchangedNodeIds":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":""})")))),
+           parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":5,"treeId":"t","unchangedNodeIds":[]})"));
   CHECK_EQ(body(h.call("change_edges", parse(R"({"add":[{"from":"a","to":"c"}]})"))),
            parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":6,"addedEdges":[{"from":"a","to":"c"}],
              "removedEdges":[],"unchangedEdges":0,"diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  const ToolResult patched = h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"b","opens":""},{"nodeId":"c","label":"C renamed"}]})"));
+  const ToolResult patched = h.call("update_nodes", parse(R"({"updates":[{"nodeId":"b","opens":""},{"nodeId":"c","label":"C renamed"}]})"));
   CHECK_EQ(body(patched), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":7,"changedNodeIds":["b","c"],"unchangedNodeIds":[],
       "diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_EQ(patched.structured, body(patched));
-  const ToolResult previewed = h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"c","opens":"t_b"}],"dryRun":true})"));
+  const ToolResult previewed = h.call("update_nodes", parse(R"({"updates":[{"nodeId":"c","opens":"t_b"}],"dryRun":true})"));
   CHECK_EQ(body(previewed), parse(R"({"treeId":"t","applied":false,"dryRun":true,"seq":7,"changedNodeIds":["c"],"unchangedNodeIds":[]})"));
   CHECK_EQ(previewed.structured, body(previewed));
   CHECK_EQ(body(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"c"}]})"))),
@@ -4498,8 +4481,8 @@ TEST(mcp_an_edit_follows_pointers_for_its_receipt_after_it_has_let_go_of_the_tre
   };
 
   const std::vector<std::tuple<const char*, const char*, const char*>> edits = {
-      {"annotate_node", R"({"nodeId":"a","opens":"t_b"})", R"([{"id":"a"},{"id":"b"},{"id":"c"}])"},
-      {"patch_nodes", R"({"updates":[{"nodeId":"b","opens":"t_b"}]})", R"([{"id":"a"},{"id":"b"},{"id":"c"}])"},
+      {"update_nodes", R"({"updates":[{"nodeId":"a","opens":"t_b"}]})", R"([{"id":"a"},{"id":"b"},{"id":"c"}])"},
+      {"update_nodes", R"({"updates":[{"nodeId":"b","opens":"t_b"}]})", R"([{"id":"a"},{"id":"b"},{"id":"c"}])"},
       {"import_subgraph", R"({"nodes":[{"id":"c","opens":"t_b"}]})", R"([{"id":"a"},{"id":"b"},{"id":"c"}])"},
       {"create_node", R"({"id":"d","label":"D","opens":"t_b"})", R"([{"id":"a"},{"id":"b"},{"id":"c"},{"id":"d"}])"}};
   for (const auto& [tool, arguments, landed] : edits) {
@@ -4537,7 +4520,7 @@ TEST(mcp_an_edit_whose_pointers_cannot_be_followed_still_lands_and_says_so_and_e
                "introducedDiagnostics":["dangling edge \"ghost\" -> \"a\""],"pointerDiagnosticsUnavailable":true})"));
   CHECK_EQ(reporter.failures->reports,
            (std::vector<std::string>{std::string("roadmap.receipt.follow roadmap mcp failed ") + typeid(std::runtime_error).name()}));
-  const ToolResult patched = h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t"}]})"));
+  const ToolResult patched = h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t"}]})"));
   CHECK_EQ(body(patched), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":2,"changedNodeIds":["a"],"unchangedNodeIds":[],
       "diagnosticsClean":false,"introducedDiagnostics":[],"pointerDiagnosticsUnavailable":true})"));
   CHECK_EQ(patched.structured, body(patched));
@@ -4662,7 +4645,7 @@ TEST(mcp_an_edit_whose_follow_runs_past_its_budget_answers_without_the_loops_at_
   CHECK_EQ(body(h.call("create_node", parse(R"({"id":"a","label":"A","icon":"a","opens":"t_b"})"))),
            parse(R"({"applied":true,"seq":1,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[],
                "pointerDiagnosticsUnavailable":true})"));
-  const ToolResult patched = h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t"}]})"));
+  const ToolResult patched = h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t"}]})"));
   CHECK_EQ(body(patched), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":2,"changedNodeIds":["a"],"unchangedNodeIds":[],
       "diagnosticsClean":true,"introducedDiagnostics":[],"pointerDiagnosticsUnavailable":true})"));
   CHECK_EQ(patched.structured, body(patched));
@@ -4686,7 +4669,7 @@ TEST(mcp_an_exhausted_process_is_not_answered_as_pointers_that_could_not_be_foll
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_b"})")).isError);
   h.trees.duringOpenedRead = [] { throw std::bad_alloc{}; };
 
-  for (const auto& [tool, arguments] : {std::pair{"get_diagnostics", "{}"}, std::pair{"annotate_node", R"({"nodeId":"a","opens":"t"})"}}) {
+  for (const auto& [tool, arguments] : {std::pair{"get_diagnostics", "{}"}, std::pair{"update_nodes", R"({"updates":[{"nodeId":"a","opens":"t"}]})"}}) {
     bool propagated = false;
     try {
       h.call(tool, parse(arguments));
@@ -4738,27 +4721,24 @@ TEST(mcp_create_node_refuses_a_kind_the_legend_does_not_hold_or_a_colour_that_di
            parse(R"({"applied":true,"seq":5,"id":"plan","kind":"developer","diagnosticsClean":true,"introducedDiagnostics":[]})"));
 }
 
-TEST(mcp_set_node_color_takes_a_kind_and_answers_the_kind_the_node_wears) {
+TEST(mcp_an_update_nodes_row_takes_a_kind_or_a_colour_and_refuses_a_disagreeing_pair) {
   Harness h;
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"owner","hue":"gold"})")).isError);
   CHECK_EQ(body(h.call("create_node", parse(R"({"label":"Ship"})"))),
            parse(R"({"applied":true,"seq":2,"id":"ship","diagnosticsClean":true,"introducedDiagnostics":[]})"));
 
-  CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"ship","kind":"owner"})"))),
-           parse(R"({"applied":true,"seq":3,"id":"ship","kind":"owner","diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"ship","kind":"owner","color":"gold"})"))),
-           parse(R"({"applied":true,"seq":3,"id":"ship","kind":"owner","unchanged":true,"diagnosticsClean":true,
-             "introducedDiagnostics":[]})"));
-  CHECK_EQ(message(h.call("set_node_color", parse(R"({"nodeId":"ship","kind":"owner","color":"plum"})"))),
-           std::string("set_node_color: kind \"owner\" wears gold, but color is \"plum\" — send one of the two, or "
-                       "both when they agree"));
-  CHECK_EQ(message(h.call("set_node_color", parse(R"({"nodeId":"ship","kind":"crew"})"))),
-           std::string("set_node_color: kind \"crew\" is not a kind of this tree; its legend holds \"owner\""));
-  CHECK_EQ(message(h.call("set_node_color", parse(R"({"nodeId":"ship"})"))),
-           std::string("set_node_color: missing required argument \"color\" or \"kind\" — the hue the node takes, or "
-                       "the legend kind whose hue it takes"));
-  CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"ship","color":"sky"})"))),
-           parse(R"({"applied":true,"seq":4,"id":"ship","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"ship","kind":"owner"})")))),
+           parse(R"({"applied":true,"changedNodeIds":["ship"],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":3,"treeId":"t","unchangedNodeIds":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"ship","kind":"owner","color":"gold"})")))),
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":3,"treeId":"t","unchanged":true,"unchangedNodeIds":["ship"]})"));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"ship","kind":"owner","color":"plum"})")))),
+           std::string("update_nodes: updates[0].kind \"owner\" wears gold, but updates[0].color is \"plum\" — send one of the two, or both when they agree"));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"ship","kind":"crew"})")))),
+           std::string("update_nodes: updates[0].kind \"crew\" is not a kind of this tree; its legend holds \"owner\""));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"ship"})")))),
+           std::string("update_nodes: updates[0] sets nothing — pass at least one of label, color, kind, description, appendDescription, icon, links, addLinks, opens, status."));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"ship","color":"sky"})")))),
+           parse(R"({"applied":true,"changedNodeIds":["ship"],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":4,"treeId":"t","unchangedNodeIds":[]})"));
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["ship"],"fields":["id","color","kind"]})"))),
            parse(R"({"treeId":"t","seq":4,"nodes":[{"id":"ship","color":"sky"}],"missingNodeIds":[]})"));
 }
@@ -4781,15 +4761,13 @@ TEST(mcp_a_node_write_that_names_a_kind_answers_that_kind_when_two_kinds_share_i
 
   CHECK_EQ(body(h.call("create_node", parse(R"({"label":"N","kind":"backend"})"))),
            parse(R"({"applied":true,"seq":3,"id":"n","kind":"backend","diagnosticsClean":true,"introducedDiagnostics":[]})"));
-  CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"n","kind":"backend"})"))),
-           parse(R"({"applied":true,"seq":3,"id":"n","kind":"backend","unchanged":true,"diagnosticsClean":true,
-             "introducedDiagnostics":[]})"));
-  CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"n","color":"sky"})"))),
-           parse(R"({"applied":true,"seq":3,"id":"n","kind":"zinfra","unchanged":true,"diagnosticsClean":true,
-             "introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"n","kind":"backend"})")))),
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":3,"treeId":"t","unchanged":true,"unchangedNodeIds":["n"]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"n","color":"sky"})")))),
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"seq":3,"treeId":"t","unchanged":true,"unchangedNodeIds":["n"]})"));
 }
 
-TEST(mcp_patch_nodes_takes_a_kind_per_row_and_one_bad_row_writes_nothing) {
+TEST(mcp_update_nodes_takes_a_kind_per_row_and_one_bad_row_writes_nothing) {
   Harness h;
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"owner","hue":"gold"})")).isError);
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"designer","hue":"olive"})")).isError);
@@ -4797,18 +4775,16 @@ TEST(mcp_patch_nodes_takes_a_kind_per_row_and_one_bad_row_writes_nothing) {
   CHECK_FALSE(h.call("create_node", node("b", "B")).isError);
   const Json::Value before = body(h.call("get_tree", kNoArgs));
 
-  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"owner"},{"nodeId":"b","kind":"ghost"}]})"))),
-           std::string("patch_nodes: updates[1].kind \"ghost\" is not a kind of this tree; its legend holds \"owner\", "
-                       "\"designer\""));
-  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"owner"},
+  CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"owner"},{"nodeId":"b","kind":"ghost"}]})"))),
+           std::string("update_nodes: updates[1].kind \"ghost\" is not a kind of this tree; its legend holds \"owner\", \"designer\""));
+  CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"owner"},
     {"nodeId":"b","kind":"designer","color":"sky"}]})"))),
-           std::string("patch_nodes: updates[1].kind \"designer\" wears olive, but updates[1].color is \"sky\" — send "
-                       "one of the two, or both when they agree"));
-  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","kind":""}]})"))),
-           std::string("patch_nodes: argument \"updates[0].kind\" must be a non-empty string, got \"\""));
+           std::string("update_nodes: updates[1].kind \"designer\" wears olive, but updates[1].color is \"sky\" — send one of the two, or both when they agree"));
+  CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","kind":""}]})"))),
+           std::string("update_nodes: argument \"updates[0].kind\" must be a non-empty string, got \"\""));
   CHECK_EQ(body(h.call("get_tree", kNoArgs)), before);
 
-  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"owner"},
+  CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"owner"},
     {"nodeId":"b","kind":"designer","color":"olive"}]})"))),
            parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":5,"changedNodeIds":["a","b"],"unchangedNodeIds":[],
     "diagnosticsClean":true,"introducedDiagnostics":[]})"));
@@ -4871,16 +4847,14 @@ TEST(mcp_a_refused_kind_completes_as_kind_unknown_or_kind_hue_mismatch) {
   for (const auto& [tool, arguments] : std::vector<std::pair<const char*, const char*>>{
            {"roadmap_create_node", R"({"label":"Ship","kind":"pilt"})"},
            {"roadmap_create_node", R"({"label":"Ship","kind":"pilot","color":"sky"})"},
-           {"roadmap_set_node_color", R"({"nodeId":"a","kind":"pilt"})"},
-           {"roadmap_set_node_color", R"({"nodeId":"a","kind":"pilot","color":"sky"})"},
-           {"roadmap_patch_nodes", R"({"updates":[{"nodeId":"a","label":"Renamed"},{"nodeId":"b","kind":"pilt"}]})"},
-           {"roadmap_patch_nodes", R"({"updates":[{"nodeId":"a","label":"Renamed"},
+           {"roadmap_update_nodes", R"({"updates":[{"nodeId":"a","label":"Renamed"},{"nodeId":"b","kind":"pilt"}]})"},
+           {"roadmap_update_nodes", R"({"updates":[{"nodeId":"a","label":"Renamed"},
               {"nodeId":"b","kind":"pilot","color":"sky"}],"dryRun":true})"},
            {"roadmap_import_subgraph", R"({"nodes":[{"id":"n","label":"New"},{"id":"m","label":"More","kind":"pilt"}],
               "dryRun":true})"},
            {"roadmap_import_subgraph", R"({"nodes":[{"id":"n","label":"New","kind":"pilot","color":"sky"}]})"},
            {"roadmap_create_node", R"({"label":"Ship","kind":7})"},
-           {"roadmap_patch_nodes", R"({"updates":[{"nodeId":"a"}]})"},
+           {"roadmap_update_nodes", R"({"updates":[{"nodeId":"a"}]})"},
            {"roadmap_create_node", R"({"label":"Ship","knd":"pilot"})"}})
     CHECK(call(tool, arguments).isError);
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","color"]})")))["tree"]["nodes"],
@@ -4896,11 +4870,10 @@ TEST(mcp_a_refused_kind_completes_as_kind_unknown_or_kind_hue_mismatch) {
   }
   CHECK_EQ(observed, (std::vector<std::string>{
                          "mcp.roadmap_create_node kind-unknown", "mcp.roadmap_create_node kind-unknown",
-                         "mcp.roadmap_create_node kind-hue-mismatch", "mcp.roadmap_set_node_color kind-unknown",
-                         "mcp.roadmap_set_node_color kind-hue-mismatch", "mcp.roadmap_patch_nodes kind-unknown",
-                         "mcp.roadmap_patch_nodes kind-hue-mismatch", "mcp.roadmap_import_subgraph kind-unknown",
+                         "mcp.roadmap_create_node kind-hue-mismatch", "mcp.roadmap_update_nodes kind-unknown",
+                         "mcp.roadmap_update_nodes kind-hue-mismatch", "mcp.roadmap_import_subgraph kind-unknown",
                          "mcp.roadmap_import_subgraph kind-hue-mismatch", "mcp.roadmap_create_node refused",
-                         "mcp.roadmap_patch_nodes refused", "mcp.roadmap_create_node invalid-arguments",
+                         "mcp.roadmap_update_nodes refused", "mcp.roadmap_create_node invalid-arguments",
                          "mcp.roadmap_create_node ok"}));
 }
 
@@ -4929,7 +4902,7 @@ TEST(mcp_a_node_write_may_name_its_kind_and_the_tree_it_opens_together) {
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"b","label":"B","kind":"owner","opens":"t_sub"}]})"))
                   .isError);
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"crew","hue":"sky"})")).isError);
-  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"crew","opens":""}]})"))),
+  CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"crew","opens":""}]})"))),
            parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":5,"changedNodeIds":["a"],"unchangedNodeIds":[],
     "diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","color","kind","opens"]})")))["tree"]["nodes"],
@@ -5264,13 +5237,13 @@ TEST(mcp_a_tree_and_its_steps_answer_where_they_open_on_the_web) {
 }
 
 
-// A single-node edit sent what the node already holds changes nothing, so it writes nothing: no seq, no op row, no
-// frame and no save. It answers today's reply with `unchanged: true` and the tree's head, and still logs one `ok`.
-TEST(mcp_a_single_node_edit_that_changes_nothing_writes_nothing_and_says_so) {
+// An update_nodes row sent what the node already holds changes nothing, so it writes nothing: no seq, no op row, no
+// frame and no save. It answers `unchanged: true` with the tree's head, and still logs one `ok`.
+TEST(mcp_an_update_nodes_row_that_changes_nothing_writes_nothing_and_says_so) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"pilot","hue":"gold"})")).isError);
-  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","color":"gold","x":10,"y":20,"description":"Notes",
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","color":"gold","description":"Notes",
     "icon":"pin","links":[{"url":"https://a.example/1","label":"One"},{"url":"https://a.example/2","label":"Two"}],
     "opens":"t_sub"})")).isError);
   const StoredTree stored = h.trees.byId["t"];
@@ -5280,25 +5253,20 @@ TEST(mcp_a_single_node_edit_that_changes_nothing_writes_nothing_and_says_so) {
   std::vector<WriteCompletion> completions;
   installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
 
-  const std::string unchanged = R"("applied":true,"seq":2,"id":"a","unchanged":true,"diagnosticsClean":true,
-    "introducedDiagnostics":[])";
-  for (const auto& [tool, arguments, reply] : std::vector<std::tuple<std::string, const char*, std::string>>{
-           {"rename_node", R"({"nodeId":"a","label":"A"})", "{" + unchanged + "}"},
-           {"set_node_color", R"({"nodeId":"a","color":"gold"})", "{" + unchanged + R"(,"kind":"pilot"})"},
-           {"set_node_color", R"({"nodeId":"a","kind":"pilot"})", "{" + unchanged + R"(,"kind":"pilot"})"},
-           {"move_node", R"({"nodeId":"a","x":10,"y":20})", "{" + unchanged + "}"},
-           {"annotate_node", R"({"nodeId":"a","description":"Notes"})", "{" + unchanged + "}"},
-           {"annotate_node", R"({"nodeId":"a","icon":"pin"})", "{" + unchanged + "}"},
-           {"annotate_node", R"({"nodeId":"a","links":[{"url":"https://a.example/1","label":"One"},
-              {"url":"https://a.example/2","label":"Two"}]})", "{" + unchanged + "}"},
-           {"annotate_node", R"({"nodeId":"a","opens":"t_sub"})", "{" + unchanged + "}"},
-           {"annotate_node", R"({"nodeId":"a","addLinks":[{"url":"https://a.example/2","label":"Two"}]})",
-            "{" + unchanged + "}"},
-           {"annotate_node", R"({"nodeId":"a","description":"Notes","icon":"pin","opens":"t_sub"})",
-            "{" + unchanged + "}"}}) {
-    Json::Value args = parse(arguments);
+  for (const char* row : {R"({"nodeId":"a","label":"A"})", R"({"nodeId":"a","color":"gold"})",
+                          R"({"nodeId":"a","kind":"pilot"})", R"({"nodeId":"a","description":"Notes"})",
+                          R"({"nodeId":"a","icon":"pin"})",
+                          R"({"nodeId":"a","links":[{"url":"https://a.example/1","label":"One"},
+                            {"url":"https://a.example/2","label":"Two"}]})",
+                          R"({"nodeId":"a","opens":"t_sub"})",
+                          R"({"nodeId":"a","addLinks":[{"url":"https://a.example/2","label":"Two"}]})",
+                          R"({"nodeId":"a","description":"Notes","icon":"pin","opens":"t_sub"})"}) {
+    Json::Value args(Json::objectValue);
     args["treeId"] = "t";
-    CHECK_EQ(body(gate.callTool("roadmap_" + tool, args, h.actor)), parse(reply));
+    args["updates"].append(parse(row));
+    CHECK_EQ(body(gate.callTool("roadmap_update_nodes", args, h.actor)),
+             parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],"dryRun":false,"applied":true,"seq":2,
+               "unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[]})"));
   }
   installWriteSink({});
 
@@ -5308,33 +5276,30 @@ TEST(mcp_a_single_node_edit_that_changes_nothing_writes_nothing_and_says_so) {
   CHECK(h.trees.byId["t"] == stored);
   std::vector<std::string> observed;
   for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
-  CHECK_EQ(observed, (std::vector<std::string>{
-                         "mcp.roadmap_rename_node ok", "mcp.roadmap_set_node_color ok", "mcp.roadmap_set_node_color ok",
-                         "mcp.roadmap_move_node ok", "mcp.roadmap_annotate_node ok", "mcp.roadmap_annotate_node ok",
-                         "mcp.roadmap_annotate_node ok", "mcp.roadmap_annotate_node ok", "mcp.roadmap_annotate_node ok",
-                         "mcp.roadmap_annotate_node ok"}));
+  CHECK_EQ(observed, std::vector<std::string>(9, "mcp.roadmap_update_nodes ok"));
 }
 
-// A single-node edit that changes any field it names lands: a seq, an op row, and no `unchanged`.
-TEST(mcp_a_single_node_edit_that_changes_one_field_it_names_lands_with_a_seq_and_a_row) {
+// An update_nodes row that changes any field it names lands: a seq, an op row, and no `unchanged`.
+TEST(mcp_an_update_nodes_row_that_changes_one_field_it_names_lands_with_a_seq_and_a_row) {
   Harness h;
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","description":"Notes","icon":"pin",
     "links":[{"url":"https://a.example/1","label":"One"}]})")).isError);
 
-  for (const auto& [tool, arguments, seq] : std::vector<std::tuple<const char*, const char*, int>>{
-           {"annotate_node", R"({"nodeId":"a","description":"Notes","icon":"flag"})", 2},
-           {"annotate_node", R"({"nodeId":"a","addLinks":[{"url":"https://a.example/1","label":"Spec"}]})", 3},
-           {"annotate_node", R"({"nodeId":"a","appendDescription":"More"})", 4},
-           {"rename_node", R"({"nodeId":"a","label":"B"})", 5},
-           {"move_node", R"({"nodeId":"a","x":1,"y":2})", 6}}) {
-    Json::Value expected = parse(R"({"applied":true,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})");
+  for (const auto& [row, seq] : std::vector<std::pair<const char*, int>>{
+           {R"({"nodeId":"a","description":"Notes","icon":"flag"})", 2},
+           {R"({"nodeId":"a","addLinks":[{"url":"https://a.example/1","label":"Spec"}]})", 3},
+           {R"({"nodeId":"a","appendDescription":"More"})", 4},
+           {R"({"nodeId":"a","label":"B"})", 5}}) {
+    Json::Value expected = parse(R"({"treeId":"t","changedNodeIds":["a"],"unchangedNodeIds":[],"dryRun":false,
+      "applied":true,"diagnosticsClean":true,"introducedDiagnostics":[]})");
     expected["seq"] = seq;
-    CHECK_EQ(body(h.call(tool, parse(arguments))), expected);
+    Json::Value args(Json::objectValue);
+    args["updates"].append(parse(row));
+    CHECK_EQ(body(h.call("update_nodes", args)), expected);
     CHECK_EQ(h.ops.byTree["t"].size(), static_cast<std::size_t>(seq));
   }
-  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["label","icon","description","links","position"]})")))["nodes"],
-           parse(R"([{"label":"B","icon":"flag","description":"Notes\n\nMore","links":[{"url":"https://a.example/1","label":"Spec"}],
-             "position":{"x":1.0,"y":2.0}}])"));
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["label","icon","description","links"]})")))["nodes"],
+           parse(R"([{"label":"B","icon":"flag","description":"Notes\n\nMore","links":[{"url":"https://a.example/1","label":"Spec"}]}])"));
 }
 
 // An import re-sending what the tree holds lands nothing: no seq, no op row, no frame and no save. Its receipt is the
@@ -5429,44 +5394,6 @@ TEST(mcp_an_import_whose_graft_changes_nothing_still_applies_its_progress) {
   CHECK_EQ(body(h.call("get_progress", Json::Value(Json::objectValue))), parse(R"({"completed":["a"],"outOfOrder":[]})"));
 }
 
-// An import node's position, once sent, is whole: both coordinates as finite numbers, refused in patch_nodes' words
-// with nothing applied. A node with no position keeps the one it has, and a whole one lands.
-TEST(mcp_import_subgraph_takes_a_position_whole_or_not_at_all) {
-  Harness h;
-  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","position":{"x":1,"y":2}}]})")).isError);
-  const StoredTree stored = h.trees.byId["t"];
-  const std::size_t rows = h.ops.byTree["t"].size();
-
-  Json::Value infinite = parse(R"({"y":0})");
-  infinite["x"] = std::numeric_limits<double>::infinity();
-  for (const auto& [position, refusal] : std::vector<std::pair<Json::Value, std::string>>{
-           {parse("{}"), "import_subgraph: missing required argument \"nodes[1].position.x\""},
-           {parse(R"({"x":5})"), "import_subgraph: missing required argument \"nodes[1].position.y\""},
-           {parse(R"({"y":5})"), "import_subgraph: missing required argument \"nodes[1].position.x\""},
-           {Json::Value("here"), "import_subgraph: nodes[1].position must be an object with x and y"},
-           {infinite, "import_subgraph: argument \"nodes[1].position.x\" must be a finite number, got infinity"}}) {
-    Json::Value args = parse(R"({"nodes":[{"id":"a","label":"Renamed"},{"id":"b","label":"B"}]})");
-    args["nodes"][1]["position"] = position;
-    CHECK_EQ(message(h.call("import_subgraph", args)), refusal);
-  }
-  CHECK(h.trees.byId["t"] == stored);
-  CHECK_EQ(h.ops.byTree["t"].size(), rows);
-
-  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"Renamed"},
-    {"id":"b","label":"B","position":{"x":5,"y":6}}]})")).isError);
-  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a","b"],"fields":["id","label","position"]})")))["nodes"],
-           parse(R"([{"id":"a","label":"Renamed","position":{"x":1.0,"y":2.0}},
-             {"id":"b","label":"B","position":{"x":5.0,"y":6.0}}])"));
-
-  const Json::Value catalog = h.tools.listTools(h.actor);
-  const Json::Value* declared = nullptr;
-  for (const Json::Value& tool : catalog)
-    if (tool["name"].asString() == "import_subgraph") declared = &tool;
-  REQUIRE(declared != nullptr);
-  CHECK_EQ((*declared)["inputSchema"]["properties"]["nodes"]["items"]["properties"]["position"]["required"],
-           list({"x", "y"}));
-}
-
 // Under replace, a node sent without `prerequisites` keeps every edge into it, in the dry run and for real, and a
 // re-send that changes nothing else is unchanged; `[]` clears them, a list keeps exactly what it names, and a node
 // brought back from a delete without the key comes back with its edges.
@@ -5506,13 +5433,13 @@ TEST(mcp_import_subgraph_under_replace_keeps_the_edges_of_a_node_sent_without_pr
   CHECK_EQ(prerequisitesOfC(), parse(R"({"label":"C3","prerequisites":["a"]})"));
 }
 
-// import_subgraph takes `expectedSeq` as patch_nodes and change_edges do: a stale one refuses the whole call before
+// import_subgraph takes `expectedSeq` as update_nodes and change_edges do: a stale one refuses the whole call before
 // anything lands — graft, tombstones and carried progress — in their words and outcome, a dry run included; the
 // current one lands; the schema is theirs.
 TEST(mcp_import_subgraph_takes_expected_seq_like_the_other_batch_tools) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
-  CHECK_FALSE(h.call("rename_node", parse(R"({"nodeId":"a","label":"Named by a person"})")).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","label":"Named by a person"})"))).isError);
   const StoredTree stored = h.trees.byId["t"];
   const std::size_t rows = h.ops.byTree["t"].size();
   CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
@@ -5546,13 +5473,12 @@ TEST(mcp_import_subgraph_takes_expected_seq_like_the_other_batch_tools) {
   for (const Json::Value& tool : catalog)
     if (tool["inputSchema"]["properties"].isMember("expectedSeq"))
       expectedSeqOf[tool["name"].asString()] = tool["inputSchema"]["properties"]["expectedSeq"];
-  REQUIRE_EQ(expectedSeqOf.size(), 4u);
-  CHECK_EQ(expectedSeqOf.at("import_subgraph"), expectedSeqOf.at("patch_nodes"));
+  REQUIRE_EQ(expectedSeqOf.size(), 3u);
   CHECK_EQ(expectedSeqOf.at("import_subgraph"), expectedSeqOf.at("update_nodes"));
   CHECK_EQ(expectedSeqOf.at("import_subgraph"), expectedSeqOf.at("change_edges"));
 }
 
-// A patch_nodes whose rows change nothing, and a change_edges that adds only held edges and removes only absent ones,
+// An update_nodes whose rows change nothing, and a change_edges that adds only held edges and removes only absent ones,
 // answer `unchanged: true` beside their usual keys, on the dry run and for real; a batch that changes anything does not.
 TEST(mcp_a_batch_that_changes_nothing_says_unchanged) {
   Harness h;
@@ -5564,7 +5490,7 @@ TEST(mcp_a_batch_that_changes_nothing_says_unchanged) {
                              (std::string(dryRun) == "true" ? "false" : "true") + R"(,"seq":1)" +
                              (std::string(dryRun) == "true" ? "" : R"(,"diagnosticsClean":true,"introducedDiagnostics":[])") +
                              R"(,"unchanged":true})";
-    CHECK_EQ(body(h.call("patch_nodes", parse(std::string(R"({"dryRun":)") + dryRun +
+    CHECK_EQ(body(h.call("update_nodes", parse(std::string(R"({"dryRun":)") + dryRun +
                                                  R"(,"updates":[{"nodeId":"a","label":"A"}]})"))),
              parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],)" + tail));
     CHECK_EQ(body(h.call("change_edges", parse(std::string(R"({"dryRun":)") + dryRun +
@@ -5573,17 +5499,17 @@ TEST(mcp_a_batch_that_changes_nothing_says_unchanged) {
   }
   CHECK_EQ(h.ops.byTree["t"].size(), 1u);
 
-  CHECK_FALSE(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A2"}]})"))).isMember("unchanged"));
+  CHECK_FALSE(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A2"}]})"))).isMember("unchanged"));
   CHECK_FALSE(body(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"b"}]})"))).isMember("unchanged"));
   CHECK_EQ(h.ops.byTree["t"].size(), 3u);
 
   const Json::Value catalog = h.tools.listTools(h.actor);
   for (const Json::Value& tool : catalog)
-    if (tool["name"].asString() == "patch_nodes" || tool["name"].asString() == "change_edges")
+    if (tool["name"].asString() == "update_nodes" || tool["name"].asString() == "change_edges")
       CHECK_EQ(tool["outputSchema"]["properties"]["unchanged"]["type"].asString(), std::string("boolean"));
 }
 
-// update_tree, under either name, takes a `title` beside its `guide`: each lands only when sent, both together land as one
+// update_tree takes a `title` beside its `guide`: each lands only when sent, both together land as one
 // frame or not at all, by rename's own title rule, and an open page sees the new title in the frame the tree broadcasts.
 TEST(mcp_update_tree_renames_the_tree_and_sets_its_guide_in_one_step) {
   Harness h;
@@ -5687,8 +5613,7 @@ TEST(mcp_update_tree_writes_a_guide_sent_as_held_so_a_forks_owner_makes_it_their
 // the op row carry the description alone, and a client's icon stamped before the write and joined after it wins.
 TEST(mcp_an_annotation_lands_only_the_fields_that_differ_through_every_door) {
   for (const auto& [tool, arguments] : std::vector<std::pair<const char*, const char*>>{
-           {"annotate_node", R"({"nodeId":"a","icon":"star","description":"new"})"},
-           {"patch_nodes", R"({"updates":[{"nodeId":"a","icon":"star","description":"new"}]})"},
+           {"update_nodes", R"({"updates":[{"nodeId":"a","icon":"star","description":"new"}]})"},
            {"import_subgraph", R"({"nodes":[{"id":"a","icon":"star","description":"new"}]})"}}) {
     Harness h;
     CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","icon":"star","description":"old"})")).isError);
@@ -5863,8 +5788,9 @@ TEST(mcp_every_door_that_writes_links_takes_only_urls_a_person_can_open) {
     Json::Value args = parse(arguments);
     for (const char* list : {"links", "addLinks", "updates", "nodes"}) {
       if (!args.isMember(list)) continue;
+      Json::Value& row = args[list][args[list].size() - 1];
       Json::Value& links = std::string(list) == "updates" || std::string(list) == "nodes"
-                               ? args[list][args[list].size() - 1]["links"] : args[list];
+                               ? (row.isMember("links") ? row["links"] : row["addLinks"]) : args[list];
       links[1]["url"] = url;
     }
     return args;
@@ -5872,9 +5798,9 @@ TEST(mcp_every_door_that_writes_links_takes_only_urls_a_person_can_open) {
   for (const char* url : {"javascript:alert(1)", "data:text/html,hi", "vbscript:x", "example.com", "   "}) {
     for (const auto& [tool, arguments, path] : std::vector<std::tuple<std::string, const char*, std::string>>{
              {"create_node", R"({"id":"b","label":"B","links":[{"url":"https://ok.example"},{}]})", "links[1].url"},
-             {"annotate_node", R"({"nodeId":"a","links":[{"url":"https://ok.example"},{}]})", "links[1].url"},
-             {"annotate_node", R"({"nodeId":"a","addLinks":[{"url":"https://ok.example"},{}]})", "addLinks[1].url"},
-             {"patch_nodes", R"({"updates":[{"nodeId":"a","label":"A2","links":[{"url":"https://ok.example"},{}]}]})",
+             {"update_nodes", R"({"updates":[{"nodeId":"a","addLinks":[{"url":"https://ok.example"},{}]}]})",
+              "updates[0].addLinks[1].url"},
+             {"update_nodes", R"({"updates":[{"nodeId":"a","label":"A2","links":[{"url":"https://ok.example"},{}]}]})",
               "updates[0].links[1].url"},
              {"import_subgraph", R"({"nodes":[{"id":"a","label":"A2"},{"id":"c","label":"C",
                 "links":[{"url":"https://ok.example"},{}]}]})", "nodes[1].links[1].url"}})
@@ -5886,11 +5812,11 @@ TEST(mcp_every_door_that_writes_links_takes_only_urls_a_person_can_open) {
 
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","links":[{"url":" https://b.example/ "},
     {"url":"HTTPS://A.example"},{"url":"mailto:a@b.example"}]})")).isError);
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","addLinks":[{"url":"\thttps://a.example/ ","label":"A"}]})"))
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","addLinks":[{"url":"\thttps://a.example/ ","label":"A"}]})")))
                   .isError);
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})")))["nodes"],
            parse(R"([{"id":"a","links":[{"url":"https://a.example/","label":"A"}]}])"));
-  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","links":[{"url":" https://a.example/","label":"A"},
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","links":[{"url":" https://a.example/","label":"A"},
     {"url":"\nhttps://p.example "}]}]})")).isError);
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","label":"C","links":[{"url":" https://c.example "}]}]})"))
                   .isError);
@@ -5940,7 +5866,8 @@ TEST(mcp_a_link_a_node_already_holds_is_sent_back_as_held_at_every_door) {
   patch["updates"][0]["links"] = held;
   const Json::Value added = parse(R"j({"nodeId":"a","addLinks":[{"url":"javascript:alert(1)"}]})j");
   for (const auto& [tool, arguments] : std::vector<std::pair<const char*, Json::Value>>{
-           {"import_subgraph", document}, {"annotate_node", annotate}, {"patch_nodes", patch}, {"annotate_node", added}})
+           {"import_subgraph", document}, {"update_nodes", asUpdate(annotate)}, {"update_nodes", patch},
+           {"update_nodes", asUpdate(added)}})
     CHECK_EQ(body(h.call(tool, arguments))["unchanged"], Json::Value(true));
 
   const std::string rule = " must start with http:, https: or mailto:, the links a person can open";
@@ -5950,10 +5877,10 @@ TEST(mcp_a_link_a_node_already_holds_is_sent_back_as_held_at_every_door) {
   annotate["links"] = more;
   patch["updates"][0]["links"] = more;
   CHECK_EQ(message(h.call("import_subgraph", document)), "import_subgraph: nodes[0].links[2].url" + rule);
-  CHECK_EQ(message(h.call("annotate_node", annotate)), "annotate_node: links[2].url" + rule);
-  CHECK_EQ(message(h.call("patch_nodes", patch)), "patch_nodes: updates[0].links[2].url" + rule);
-  CHECK_EQ(message(h.call("annotate_node", parse(R"j({"nodeId":"a","addLinks":[{"url":" javascript:alert(1)"}]})j"))),
-           "annotate_node: addLinks[0].url" + rule);
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(annotate))), std::string("update_nodes: updates[0].links[2].url must start with http:, https: or mailto:, the links a person can open"));
+  CHECK_EQ(message(h.call("update_nodes", patch)), std::string("update_nodes: updates[0].links[2].url must start with http:, https: or mailto:, the links a person can open"));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(parse(R"j({"nodeId":"a","addLinks":[{"url":" javascript:alert(1)"}]})j")))),
+           std::string("update_nodes: updates[0].addLinks[0].url must start with http:, https: or mailto:, the links a person can open"));
 
   Json::Value created = parse(R"({"id":"b","label":"B"})");
   created["links"] = held;
@@ -5975,7 +5902,7 @@ TEST(mcp_add_links_names_a_held_link_by_its_trimmed_url) {
   planted.links =
       std::vector<Link>{{.label = "", .url = " https://a.example/"}, {.label = "", .url = "https://b.example/"}};
   h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","addLinks":[{"url":"https://a.example/","label":"A"}]})"))
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","addLinks":[{"url":"https://a.example/","label":"A"}]})")))
                   .isError);
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})")))["nodes"],
            parse(R"([{"id":"a","links":[{"url":"https://a.example/","label":"A"},{"url":"https://b.example/"}]}])"));
@@ -5992,7 +5919,7 @@ TEST(mcp_a_batch_edit_that_lands_nothing_takes_no_save) {
   Json::Value patched = parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],"dryRun":false,
     "applied":true,"unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[]})");
   patched["seq"] = created["seq"];
-  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A"}]})"))), patched);
+  CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A"}]})"))), patched);
   Json::Value edged = parse(R"({"treeId":"t","addedEdges":[],"removedEdges":[],"unchangedEdges":2,"dryRun":false,
     "applied":true,"unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[]})");
   edged["seq"] = created["seq"];
@@ -6000,7 +5927,7 @@ TEST(mcp_a_batch_edit_that_lands_nothing_takes_no_save) {
            edged);
   CHECK_EQ(h.trees.savedNodeCounts.size(), saved);
 
-  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A2"}]})")).isError);
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A2"}]})")).isError);
   CHECK_EQ(h.trees.savedNodeCounts.size(), saved + 1);
   CHECK_FALSE(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"b"}]})")).isError);
   CHECK_EQ(h.trees.savedNodeCounts.size(), saved + 2);
@@ -6008,7 +5935,7 @@ TEST(mcp_a_batch_edit_that_lands_nothing_takes_no_save) {
 
 // A colour sent beside a kind that wears another hue is an echo when it is the colour the node holds, and the kind is
 // the write's word: a read carrying both, sent back after the kind's re-hue, lands every node of that kind on its new
-// hue, and so do a patch row and set_node_color. A third colour, or a disagreeing pair on a node the tree does not
+// hue, and so does an update_nodes row. A third colour, or a disagreeing pair on a node the tree does not
 // hold, is refused as before, under kind-hue-mismatch.
 TEST(mcp_a_colour_sent_as_held_beside_a_kind_is_an_echo_and_the_kind_lands) {
   const auto seeded = [] {
@@ -6025,7 +5952,7 @@ TEST(mcp_a_colour_sent_as_held_beside_a_kind_is_an_echo_and_the_kind_lands) {
     for (const char* id : {"a", "b"}) {
       Json::Value olive = parse(R"({"color":"olive"})");
       olive["nodeId"] = id;
-      CHECK_FALSE(h->call("set_node_color", olive).isError);
+      CHECK_FALSE(h->call("update_nodes", asUpdate(olive)).isError);
     }
     return h;
   };
@@ -6047,16 +5974,9 @@ TEST(mcp_a_colour_sent_as_held_beside_a_kind_is_an_echo_and_the_kind_lands) {
   CHECK_EQ(filed(*round), landed);
 
   auto patched = fallen();
-  CHECK_EQ(body(patched->call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","color":"olive","kind":"infra"},
+  CHECK_EQ(body(patched->call("update_nodes", parse(R"({"updates":[{"nodeId":"a","color":"olive","kind":"infra"},
     {"nodeId":"b","color":"olive","kind":"infra"}]})")))["changedNodeIds"], parse(R"(["a","b"])"));
   CHECK_EQ(filed(*patched), landed);
-  auto set = fallen();
-  for (const char* id : {"a", "b"}) {
-    Json::Value refiled = parse(R"({"color":"olive","kind":"infra"})");
-    refiled["nodeId"] = id;
-    CHECK_EQ(body(set->call("set_node_color", refiled))["kind"], Json::Value("infra"));
-  }
-  CHECK_EQ(filed(*set), landed);
 
   auto refusing = fallen();
   CompositeToolHost gate(std::vector<ToolModule>{{refusing->tools, ""}});
@@ -6066,10 +5986,8 @@ TEST(mcp_a_colour_sent_as_held_beside_a_kind_is_an_echo_and_the_kind_lands) {
   for (const auto& [tool, arguments, sentence] : std::vector<std::tuple<const char*, const char*, std::string>>{
            {"import_subgraph", R"({"nodes":[{"id":"a","color":"gold","kind":"infra"}]})",
             "nodes[0].kind \"infra\" wears terracotta, but nodes[0].color is \"gold\"" + agree},
-           {"patch_nodes", R"({"updates":[{"nodeId":"a","color":"gold","kind":"infra"}]})",
+           {"update_nodes", R"({"updates":[{"nodeId":"a","color":"gold","kind":"infra"}]})",
             "updates[0].kind \"infra\" wears terracotta, but updates[0].color is \"gold\"" + agree},
-           {"set_node_color", R"({"nodeId":"a","color":"gold","kind":"infra"})",
-            "kind \"infra\" wears terracotta, but color is \"gold\"" + agree},
            {"import_subgraph", R"({"nodes":[{"id":"n","label":"N","color":"olive","kind":"infra"}]})",
             "nodes[0].kind \"infra\" wears terracotta, but nodes[0].color is \"olive\"" + agree},
            {"create_node", R"({"id":"n","label":"N","color":"olive","kind":"infra"})",
@@ -6079,42 +5997,40 @@ TEST(mcp_a_colour_sent_as_held_beside_a_kind_is_an_echo_and_the_kind_lands) {
     CHECK_EQ(message(gate.callTool(tool, args, refusing->actor)), std::string(tool) + ": " + sentence);
   }
   installWriteSink({});
-  CHECK_EQ(outcomes, std::vector<std::string>(5, "kind-hue-mismatch"));
+  CHECK_EQ(outcomes, std::vector<std::string>(4, "kind-hue-mismatch"));
   CHECK_EQ(filed(*refusing), parse(R"([{"id":"a","color":"olive"},{"id":"b","color":"olive"},
     {"id":"c","color":"sky","kind":"apps"}])"));
 }
 
 // A progress row says when its mark changed nothing — the status sent is the one held and the outOfOrder word is the
-// same — with `unchanged: true`, on set_progress single and bulk and on an import's progress rows; a bulk set_progress
-// whose every row is unchanged says so as a whole, as a patch batch does. A changed word is a change.
+// same — with `unchanged: true`, on update_nodes and on an import's progress rows; an update_nodes call whose every
+// row is unchanged says so as a whole. A changed word is a change.
 TEST(mcp_a_progress_mark_already_held_says_so_on_its_row) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
     "prerequisites":["a"]}]})")).isError);
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})"))),
-           parse(R"({"nodeId":"a","status":"complete","prerequisitesMet":true})"));
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})"))),
-           parse(R"({"nodeId":"a","status":"complete","prerequisitesMet":true,"unchanged":true})"));
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"b","status":"complete","outOfOrder":true})"))),
-           parse(R"({"nodeId":"b","status":"complete","prerequisitesMet":true,"acknowledged":true})"));
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"b","status":"complete"})"))),
-           parse(R"({"nodeId":"b","status":"complete","prerequisitesMet":true})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","status":"complete"})")))),
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete"}],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["a"]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","status":"complete"})")))),
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete","unchanged":true}],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["a"]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"b","status":"complete","outOfOrder":true})")))),
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"acknowledged":true,"nodeId":"b","prerequisitesMet":true,"status":"complete"}],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["b"]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"b","status":"complete"})")))),
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"b","prerequisitesMet":true,"status":"complete"}],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["b"]})"));
 
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+  CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
     {"nodeId":"b","status":"none"}]})"))),
-           parse(R"({"results":[{"nodeId":"a","status":"complete","prerequisitesMet":true,"unchanged":true},
-             {"nodeId":"b","status":"none","prerequisitesMet":true}]})"));
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete","unchanged":true},{"nodeId":"b","prerequisitesMet":true,"status":"none"}],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["a","b"]})"));
+  CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
     {"nodeId":"b","status":"none"}]})"))),
-           parse(R"({"results":[{"nodeId":"a","status":"complete","prerequisitesMet":true,"unchanged":true},
-             {"nodeId":"b","status":"none","prerequisitesMet":true,"unchanged":true}],"unchanged":true})"));
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete","unchanged":true},{"nodeId":"b","prerequisitesMet":true,"status":"none","unchanged":true}],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["a","b"]})"));
   CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}],"progress":[
     {"nodeId":"a","status":"complete"},{"nodeId":"b","status":"complete"}]})")))["progress"],
            parse(R"([{"nodeId":"a","status":"complete","prerequisitesMet":true,"unchanged":true},
              {"nodeId":"b","status":"complete","prerequisitesMet":true}])"));
 }
 
-// Each row of a batch is judged against the overlay as the rows before it in the same call leave it, so a row's word
+// Each progress row of an import is judged against the overlay as the rows before it in the same call leave it, so a row's word
 // is true at its turn: a node completed and then cleared in one call changes twice, and a repeat of the row before it
 // changes nothing. A call whose net effect is nothing — complete then clear on a node never marked — still wrote twice,
 // so neither row nor the call says unchanged. A row that changes nothing is still stamped, and open pages receive it.
@@ -6123,33 +6039,35 @@ TEST(mcp_a_bulk_progress_row_is_judged_at_its_turn_in_the_batch) {
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"n0","label":"N0"},{"id":"n3","label":"N3"},
     {"id":"n","label":"N"},{"id":"c","label":"C"}]})")).isError);
 
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"n0","status":"complete","outOfOrder":true},
-    {"nodeId":"n3","status":"complete"},{"nodeId":"n0","status":"none"}]})"))),
-           parse(R"({"results":[{"nodeId":"n0","status":"complete","prerequisitesMet":true,"acknowledged":true},
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"n0","status":"complete","outOfOrder":true},
+    {"nodeId":"n3","status":"complete"},{"nodeId":"n0","status":"none"}]})")))["progress"],
+           parse(R"([{"nodeId":"n0","status":"complete","prerequisitesMet":true,"acknowledged":true},
              {"nodeId":"n3","status":"complete","prerequisitesMet":true},
-             {"nodeId":"n0","status":"none","prerequisitesMet":true}]})"));
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"n","status":"complete"},
-    {"nodeId":"n","status":"complete"}]})"))),
-           parse(R"({"results":[{"nodeId":"n","status":"complete","prerequisitesMet":true},
-             {"nodeId":"n","status":"complete","prerequisitesMet":true,"unchanged":true}]})"));
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"c","status":"complete"},
-    {"nodeId":"c","status":"none"}]})"))),
-           parse(R"({"results":[{"nodeId":"c","status":"complete","prerequisitesMet":true},
-             {"nodeId":"c","status":"none","prerequisitesMet":true}]})"));
+             {"nodeId":"n0","status":"none","prerequisitesMet":true}])"));
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"n","status":"complete"},
+    {"nodeId":"n","status":"complete"}]})")))["progress"],
+           parse(R"([{"nodeId":"n","status":"complete","prerequisitesMet":true},
+             {"nodeId":"n","status":"complete","prerequisitesMet":true,"unchanged":true}])"));
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"c","status":"complete"},
+    {"nodeId":"c","status":"none"}]})")))["progress"],
+           parse(R"([{"nodeId":"c","status":"complete","prerequisitesMet":true},
+             {"nodeId":"c","status":"none","prerequisitesMet":true}])"));
 
   const std::size_t frames = h.bus.progressBroadcasts.size();
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"n","status":"complete"})")))["unchanged"], Json::Value(true));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"n","status":"complete"})"))))["progress"][0]["unchanged"],
+           Json::Value(true));
   REQUIRE_EQ(h.bus.progressBroadcasts.size(), frames + 1);
   CHECK_EQ(h.bus.progressBroadcasts.back().marks.completed, (std::set<NodeId>{NodeId{"n"}}));
 }
 
-// A mark on such a node told its maker it did something; the door says what completes the node, and names no tree.
-TEST(mcp_set_progress_on_a_node_that_opens_a_tree_is_refused_in_one_sentence_and_writes_nothing) {
+// A mark on such a node told its maker it did something; the door says what completes the node, names no tree, and
+// writes nothing, a clear as much as a completion. A call of such marks alone is no error and completes as opens-a-tree.
+TEST(mcp_an_update_nodes_mark_on_a_node_that_opens_a_tree_writes_nothing_complete_or_none) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"idea","label":"Idea"})")).isError);
-  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"idea","status":"complete"})")).isError);
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"idea","opens":"t_sub"})")).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(mark("idea", "complete"))).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"idea","opens":"t_sub"})"))).isError);
   const std::map<std::string, FakeProgressRepository::Entry> stored = h.progressRepo.byKey;
   const std::size_t broadcasts = h.bus.progressBroadcasts.size();
   CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
@@ -6157,11 +6075,14 @@ TEST(mcp_set_progress_on_a_node_that_opens_a_tree_is_refused_in_one_sentence_and
   installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
 
   for (const std::string status : {"complete", "none"}) {
-    const ToolResult refused =
-        gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","nodeId":"idea","status":")" + status + R"("})"), h.actor);
-    CHECK(refused.isError);
-    CHECK_EQ(message(refused), std::string("set_progress: \"idea\" opens a tree: it is complete when that tree is and takes "
-                                           "no mark of its own — mark the steps of the tree it opens"));
+    const ToolResult refused = gate.callTool(
+        "roadmap_update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"idea","status":")" + status + R"("}]})"),
+        h.actor);
+    CHECK_FALSE(refused.isError);
+    CHECK_EQ(body(refused), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
+      "introducedDiagnostics":[],"progress":[{"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}],
+      "progressApplied":false,"progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.",
+      "progressRefused":["idea"],"seq":2,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea"]})"));
   }
   installWriteSink({});
 
@@ -6170,10 +6091,10 @@ TEST(mcp_set_progress_on_a_node_that_opens_a_tree_is_refused_in_one_sentence_and
   CHECK_EQ(h.bus.progressBroadcasts.size(), broadcasts);
   std::vector<std::string> observed;
   for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
-  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_set_progress opens-a-tree", "mcp.roadmap_set_progress opens-a-tree"}));
+  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_update_nodes opens-a-tree", "mcp.roadmap_update_nodes opens-a-tree"}));
 }
 
-// Each row answers for its own node in the batch's order; the call's outcome says whether any mark was recorded.
+// Each row answers for its own node in the call's order; the call's outcome says whether any mark was recorded.
 TEST(mcp_a_batch_records_its_ordinary_marks_and_answers_a_refused_row_for_each_node_that_opens_a_tree) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
@@ -6184,23 +6105,29 @@ TEST(mcp_a_batch_records_its_ordinary_marks_and_answers_a_refused_row_for_each_n
   std::vector<WriteCompletion> completions;
   installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
 
-  const ToolResult mixed = gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","updates":[
+  const ToolResult mixed = gate.callTool("roadmap_update_nodes", parse(R"({"treeId":"t","updates":[
       {"nodeId":"idea","status":"complete"},{"nodeId":"a","status":"complete"},
       {"nodeId":"deeper","status":"none"},{"nodeId":"b","status":"complete"}]})"), h.actor);
-  const ToolResult everyRowRefused = gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","updates":[
+  const ToolResult everyRowRefused = gate.callTool("roadmap_update_nodes", parse(R"({"treeId":"t","updates":[
       {"nodeId":"deeper","status":"complete"},{"nodeId":"idea","status":"complete"}]})"), h.actor);
   installWriteSink({});
 
   CHECK_FALSE(mixed.isError);
-  CHECK_EQ(body(mixed), parse(R"({"results":[
+  CHECK_EQ(body(mixed), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
+      "introducedDiagnostics":[],"progress":[
       {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
       {"nodeId":"a","status":"complete","prerequisitesMet":true},
       {"nodeId":"deeper","refused":"\"deeper\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
-      {"nodeId":"b","status":"complete","prerequisitesMet":true}]})"));
+      {"nodeId":"b","status":"complete","prerequisitesMet":true}],
+      "progressApplied":false,"progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.",
+      "progressRefused":["idea","deeper"],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea","a","deeper","b"]})"));
   CHECK_FALSE(everyRowRefused.isError);
-  CHECK_EQ(body(everyRowRefused), parse(R"({"results":[
+  CHECK_EQ(body(everyRowRefused), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
+      "introducedDiagnostics":[],"progress":[
       {"nodeId":"deeper","refused":"\"deeper\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
-      {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}]})"));
+      {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}],
+      "progressApplied":false,"progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.",
+      "progressRefused":["deeper","idea"],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["deeper","idea"]})"));
   CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["a","b"],"outOfOrder":[]})"));
   CHECK_EQ(h.progressRepo.byKey.size(), 2u);
   REQUIRE_EQ(h.bus.progressBroadcasts.size(), 1u);
@@ -6208,7 +6135,7 @@ TEST(mcp_a_batch_records_its_ordinary_marks_and_answers_a_refused_row_for_each_n
   CHECK_EQ(h.bus.progressBroadcasts[0].marks.marks.size(), 2u);
   std::vector<std::string> observed;
   for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
-  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_set_progress ok", "mcp.roadmap_set_progress opens-a-tree"}));
+  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_update_nodes ok", "mcp.roadmap_update_nodes opens-a-tree"}));
 }
 
 // The marks ride after the graft, so a pointer the same import sets already refuses the mark sent with it.
@@ -6268,14 +6195,18 @@ TEST(mcp_a_node_whose_pointer_is_not_valid_is_marked_as_any_node) {
     h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
   }
 
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"gone","status":"complete"},{"nodeId":"theirs","status":"complete"},
+  CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"gone","status":"complete"},{"nodeId":"theirs","status":"complete"},
                                                              {"nodeId":"absent","status":"complete"},{"nodeId":"plain","status":"complete"}]})"))),
-           parse(R"({"results":[{"nodeId":"gone","status":"complete","prerequisitesMet":true},
-                                {"nodeId":"theirs","status":"complete","prerequisitesMet":true},
-                                {"nodeId":"absent","status":"complete","prerequisitesMet":true},
-                                {"nodeId":"plain","status":"complete","prerequisitesMet":true}]})"));
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"gone","status":"none"})"))),
-           parse(R"({"nodeId":"gone","status":"none","prerequisitesMet":true})"));
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],
+                     "progress":[{"nodeId":"gone","status":"complete","prerequisitesMet":true},
+                                 {"nodeId":"theirs","status":"complete","prerequisitesMet":true},
+                                 {"nodeId":"absent","status":"complete","prerequisitesMet":true},
+                                 {"nodeId":"plain","status":"complete","prerequisitesMet":true}],
+                     "seq":3,"treeId":"t","unchanged":true,"unchangedNodeIds":["gone","theirs","absent","plain"]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"gone","status":"none"})")))),
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],
+                     "progress":[{"nodeId":"gone","status":"none","prerequisitesMet":true}],
+                     "seq":3,"treeId":"t","unchanged":true,"unchangedNodeIds":["gone"]})"));
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","status","state"]})")))["tree"]["nodes"],
            parse(R"([{"id":"absent","status":"complete","state":"complete"},{"id":"gone","status":"none","state":"available"},
                      {"id":"plain","status":"complete","state":"complete"},{"id":"theirs","status":"complete","state":"complete"}])"));
@@ -6294,24 +6225,29 @@ TEST(mcp_a_caller_who_cannot_write_the_tree_marks_a_node_that_opens_a_tree_exact
   const std::size_t readsForTheOwner = h.trees.openedReads.size();
 
   const std::vector<std::pair<const char*, const char*>> marks = {
-      {R"({"nodeId":"next","status":"complete"})", R"({"nodeId":"next","status":"complete","prerequisitesMet":false})"},
-      {R"({"nodeId":"idea","status":"complete"})", R"({"nodeId":"idea","status":"complete","prerequisitesMet":true})"},
-      {R"({"nodeId":"idea","status":"none"})", R"({"nodeId":"idea","status":"none","prerequisitesMet":true})"},
-      {R"({"updates":[{"nodeId":"idea","status":"complete"},{"nodeId":"next","status":"complete"}]})",
-       R"({"results":[{"nodeId":"idea","status":"complete","prerequisitesMet":true},
-                      {"nodeId":"next","status":"complete","prerequisitesMet":true,"unchanged":true}]})"}};
+      {R"([{"nodeId":"next","status":"complete"}])", R"([{"nodeId":"next","status":"complete","prerequisitesMet":false}])"},
+      {R"([{"nodeId":"idea","status":"complete"}])", R"([{"nodeId":"idea","status":"complete","prerequisitesMet":true}])"},
+      {R"([{"nodeId":"idea","status":"none"}])", R"([{"nodeId":"idea","status":"none","prerequisitesMet":true}])"},
+      {R"([{"nodeId":"idea","status":"complete"},{"nodeId":"next","status":"complete"}])",
+       R"([{"nodeId":"idea","status":"complete","prerequisitesMet":true},
+           {"nodeId":"next","status":"complete","prerequisitesMet":true,"unchanged":true}])"}};
   for (const UserId& reader : {uid("stranger"), UserId{}}) {
     const ToolCaller caller{reader, ToolScope::everything()};
-    for (const auto& [arguments, expected] : marks) {
-      Json::Value onTheTree = parse(arguments);
+    for (const auto& [updates, rows] : marks) {
+      Json::Value onTheTree(Json::objectValue);
       onTheTree["treeId"] = "t";
-      Json::Value onTheTwin = parse(arguments);
+      onTheTree["updates"] = parse(updates);
+      Json::Value onTheTwin = onTheTree;
       onTheTwin["treeId"] = "t_twin";
-      const ToolResult marked = h.tools.callTool("set_progress", onTheTree, caller);
-      const ToolResult twin = h.tools.callTool("set_progress", onTheTwin, caller);
+      const ToolResult marked = h.tools.callTool("update_nodes", onTheTree, caller);
+      const ToolResult twin = h.tools.callTool("update_nodes", onTheTwin, caller);
       CHECK_FALSE(marked.isError);
-      CHECK_EQ(message(marked), message(twin));
-      CHECK_EQ(body(marked), parse(expected));
+      Json::Value receipt = body(marked);
+      Json::Value twinReceipt = body(twin);
+      receipt.removeMember("treeId");
+      twinReceipt.removeMember("treeId");
+      CHECK_EQ(receipt, twinReceipt);
+      CHECK_EQ(receipt["progress"], parse(rows));
     }
     CHECK(h.progressRepo.load(TreeId{"t"}, reader).completed == (std::set<NodeId>{nid("idea"), nid("next")}));
   }
@@ -6326,34 +6262,43 @@ TEST(mcp_prerequisites_met_follows_the_tree_a_prerequisite_opens_whatever_mark_t
   h.trees.byId["t_done"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Done", {}}, 0, h.caller};
   CHECK_FALSE(h.tools.callTool("create_node", parse(R"({"treeId":"t_open","id":"s","label":"S"})"), h.actor).isError);
   CHECK_FALSE(h.tools.callTool("create_node", parse(R"({"treeId":"t_done","id":"d","label":"D"})"), h.actor).isError);
-  CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t_done","nodeId":"d","status":"complete"})"), h.actor).isError);
+  CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t_done","updates":[{"nodeId":"d","status":"complete"}]})"), h.actor).isError);
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"marked","label":"Marked"},{"id":"unmarked","label":"Unmarked","opens":"t_done"},
                                                             {"id":"behind-marked","label":"Behind marked","prerequisites":["marked"]},
                                                             {"id":"behind-unmarked","label":"Behind unmarked","prerequisites":["unmarked"]}],
                                                    "progress":[{"nodeId":"marked","status":"complete"}]})")).isError);
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"marked","opens":"t_open"})")).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"marked","opens":"t_open"})"))).isError);
+  // The receipt of a call of marks alone on `t`: no tree op, so the head it stands at and every row's node unchanged.
+  const auto receipt = [](const char* progress, const char* nodes) {
+    return parse(std::string(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,)"
+                             R"("introducedDiagnostics":[],"progress":)") + progress +
+                 R"(,"seq":2,"treeId":"t","unchanged":true,"unchangedNodeIds":)" + nodes + "}");
+  };
 
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"updates":[{"nodeId":"behind-marked","status":"complete","outOfOrder":true},
+  CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"behind-marked","status":"complete","outOfOrder":true},
                                                              {"nodeId":"behind-unmarked","status":"complete"}]})"))),
-           parse(R"({"results":[{"nodeId":"behind-marked","status":"complete","prerequisitesMet":false,"acknowledged":true},
-                                {"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":true}]})"));
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"behind-marked","status":"complete"})"))),
-           parse(R"({"nodeId":"behind-marked","status":"complete","prerequisitesMet":false})"));
+           receipt(R"([{"nodeId":"behind-marked","status":"complete","prerequisitesMet":false,"acknowledged":true},
+                       {"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":true}])",
+                   R"(["behind-marked","behind-unmarked"])"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"behind-marked","status":"complete"})")))),
+           receipt(R"([{"nodeId":"behind-marked","status":"complete","prerequisitesMet":false}])", R"(["behind-marked"])"));
 
-  CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t_open","nodeId":"s","status":"complete"})"), h.actor).isError);
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"behind-marked","status":"complete"})"))),
-           parse(R"({"nodeId":"behind-marked","status":"complete","prerequisitesMet":true,"unchanged":true})"));
+  CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t_open","updates":[{"nodeId":"s","status":"complete"}]})"), h.actor).isError);
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"behind-marked","status":"complete"})")))),
+           receipt(R"([{"nodeId":"behind-marked","status":"complete","prerequisitesMet":true,"unchanged":true}])",
+                   R"(["behind-marked"])"));
 
   const ToolCaller stranger{uid("stranger"), ToolScope::everything()};
-  CHECK_EQ(body(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"behind-unmarked","status":"complete"})"), stranger)),
-           parse(R"({"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":false})"));
-  CHECK_EQ(body(h.tools.callTool("set_progress", parse(R"({"treeId":"t","updates":[{"nodeId":"unmarked","status":"complete"},
+  CHECK_EQ(body(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"behind-unmarked","status":"complete"}]})"), stranger)),
+           receipt(R"([{"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":false}])", R"(["behind-unmarked"])"));
+  CHECK_EQ(body(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"unmarked","status":"complete"},
                                                                                     {"nodeId":"behind-unmarked","status":"complete"}]})"), stranger)),
-           parse(R"({"results":[{"nodeId":"unmarked","status":"complete","prerequisitesMet":true},
-                                {"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":true,"unchanged":true}]})"));
+           receipt(R"([{"nodeId":"unmarked","status":"complete","prerequisitesMet":true},
+                       {"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":true,"unchanged":true}])",
+                   R"(["unmarked","behind-unmarked"])"));
 }
 
-// Nothing is read for a tree with no pointer, for a caller who cannot write it, or for a call refused before it is judged.
+// Nothing is read for a tree with no pointer, for a caller who cannot write the tree, or for a call refused before it is judged.
 TEST(mcp_a_mark_follows_pointers_in_one_read_for_the_trees_writer_and_reads_nothing_where_no_pointer_is_followed) {
   Harness h;
   h.trees.byId["t"].visibility = Visibility::public_;
@@ -6361,24 +6306,24 @@ TEST(mcp_a_mark_follows_pointers_in_one_read_for_the_trees_writer_and_reads_noth
   h.trees.byId["t_other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Side quest", {}}, 0, h.caller};
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},{"id":"c","label":"C"}],
                                                    "progress":[{"nodeId":"c","status":"complete"}]})")).isError);
-  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})")).isError);
-  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"none"},{"nodeId":"b","status":"complete"}]})")).isError);
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"}]})")).isError);
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"none"},{"nodeId":"b","status":"complete"}]})")).isError);
   CHECK(h.trees.openedReads.empty());
 
-  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t_sub"},{"nodeId":"b","opens":"t_other"}]})")).isError);
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t_sub"},{"nodeId":"b","opens":"t_other"}]})")).isError);
   h.trees.openedReads.clear();  // the edit followed the pointers it set, for its own receipt
-  CHECK(h.call("set_progress", parse(R"({"updates":[{"nodeId":"ghost","status":"complete"},{"nodeId":"c","status":"none"}]})")).isError);
+  CHECK(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"ghost","status":"complete"},{"nodeId":"c","status":"none"}]})")).isError);
   for (const UserId& reader : {uid("stranger"), UserId{}}) {
     const ToolCaller caller{reader, ToolScope::everything()};
-    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"a","status":"complete"})"), caller).isError);
-    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","updates":[{"nodeId":"b","status":"complete"},{"nodeId":"c","status":"complete"}]})"), caller).isError);
+    CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"), caller).isError);
+    CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"b","status":"complete"},{"nodeId":"c","status":"complete"}]})"), caller).isError);
   }
   CHECK(h.trees.openedReads.empty());
 
   const std::set<TreeId> opened{TreeId{"t_other"}, TreeId{"t_sub"}};
-  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"c","status":"none"})")).isError);
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"c","status":"none"}]})")).isError);
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened}));
-  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},{"nodeId":"b","status":"complete"},{"nodeId":"c","status":"complete"}]})")).isError);
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"},{"nodeId":"b","status":"complete"},{"nodeId":"c","status":"complete"}]})")).isError);
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened}));
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"a","status":"complete"},{"nodeId":"c","status":"none"}]})")).isError);
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened, opened}));
@@ -6409,8 +6354,8 @@ TEST(mcp_a_mark_reads_and_writes_the_repositories_after_it_has_let_go_of_the_tre
   h.progressRepo.duringBatchWrite = during("write");
 
   const std::vector<std::pair<const char*, const char*>> marking = {
-      {"set_progress", R"({"nodeId":"a","status":"complete"})"},
-      {"set_progress", R"({"updates":[{"nodeId":"idea","status":"complete"},{"nodeId":"a","status":"none"}]})"},
+      {"update_nodes", R"({"updates":[{"nodeId":"a","status":"complete"}]})"},
+      {"update_nodes", R"({"updates":[{"nodeId":"idea","status":"complete"},{"nodeId":"a","status":"none"}]})"},
       {"import_subgraph", R"({"nodes":[],"progress":[{"nodeId":"a","status":"complete"}]})"}};
   for (const auto& [tool, arguments] : marking) {
     statementsUnderAFreeStrand.clear();
@@ -6421,7 +6366,8 @@ TEST(mcp_a_mark_reads_and_writes_the_repositories_after_it_has_let_go_of_the_tre
   }
 }
 
-// Following is part of the call: its failure is the tool's server failure, before any mark is written, and only where it is made.
+// Following is part of the marks: when they are the call its failure is the call's server failure, before any mark is
+// written; beside a tree op that landed it is the marks' own, told in the receipt; and it is made only where it is due.
 TEST(mcp_a_mark_whose_pointers_cannot_be_followed_fails_as_the_call_and_records_nothing) {
   Harness h;
   h.trees.byId["t"].visibility = Visibility::public_;
@@ -6432,16 +6378,21 @@ TEST(mcp_a_mark_whose_pointers_cannot_be_followed_fails_as_the_call_and_records_
   std::vector<WriteCompletion> completions;
   installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
 
-  for (const char* arguments : {R"({"treeId":"t","nodeId":"a","status":"complete"})",
-                                R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"}) {
-    const ToolResult failed = gate.callTool("roadmap_set_progress", parse(arguments), h.actor);
-    CHECK(failed.isError);
-    CHECK_EQ(message(failed), std::string("set_progress: that call failed inside the server. The outcome may be uncertain; "
-                                          "read the affected records before retrying. The detail is in the server log."));
-  }
+  const ToolResult failed =
+      gate.callTool("roadmap_update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"), h.actor);
+  const ToolResult edited = gate.callTool("roadmap_update_nodes", parse(R"({"treeId":"t","updates":[
+      {"nodeId":"idea","label":"Idea 2"},{"nodeId":"a","status":"complete"}]})"), h.actor);
   const ToolResult imported = gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t","nodes":[],"progress":[{"nodeId":"a","status":"complete"}]})"), h.actor);
   installWriteSink({});
 
+  CHECK(failed.isError);
+  CHECK_EQ(message(failed), std::string("update_nodes: that call failed inside the server. The outcome may be uncertain; "
+                                        "read the affected records before retrying. The detail is in the server log."));
+  CHECK_FALSE(edited.isError);
+  CHECK_EQ(body(edited), parse(R"({"applied":true,"changedNodeIds":["idea"],"diagnosticsClean":true,"dryRun":false,
+    "introducedDiagnostics":[],"progressApplied":false,
+    "progressError":"The marks' outcome is uncertain. Read get_progress before retrying progress changes.",
+    "seq":2,"treeId":"t","unchangedNodeIds":["a"]})"));
   CHECK_FALSE(imported.isError);
   CHECK(body(imported)["graphApplied"].asBool());
   CHECK_FALSE(body(imported)["progressApplied"].asBool());
@@ -6451,11 +6402,11 @@ TEST(mcp_a_mark_whose_pointers_cannot_be_followed_fails_as_the_call_and_records_
   CHECK(h.bus.progressBroadcasts.empty());
   std::vector<std::string> observed;
   for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
-  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_set_progress failed", "mcp.roadmap_set_progress failed",
-                                               "mcp.roadmap_import_subgraph failed"}));
-  CHECK_EQ(body(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"a","status":"complete"})"),
-                                 ToolCaller{uid("stranger"), ToolScope::everything()})),
-           parse(R"({"nodeId":"a","status":"complete","prerequisitesMet":true})"));
+  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_update_nodes failed", "roadmap.update_nodes.marks failed",
+                                               "mcp.roadmap_update_nodes ok", "mcp.roadmap_import_subgraph failed"}));
+  CHECK_EQ(body(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"),
+                                 ToolCaller{uid("stranger"), ToolScope::everything()}))["progress"],
+           parse(R"([{"nodeId":"a","status":"complete","prerequisitesMet":true}])"));
 }
 
 // A mark is judged against the nodes that open a tree and nothing else of the room, so no caller's mark copies the tree out.
@@ -6471,14 +6422,14 @@ TEST(mcp_a_mark_copies_the_whole_tree_out_of_its_room_for_no_caller) {
   const std::size_t copies = room.snapshots();
   const std::size_t plainCopies = plain.snapshots();
 
-  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})")).isError);
-  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"idea","status":"complete"},{"nodeId":"b","status":"complete"}]})")).isError);
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"}]})")).isError);
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"idea","status":"complete"},{"nodeId":"b","status":"complete"}]})")).isError);
   for (const UserId& reader : {uid("stranger"), UserId{}}) {
     const ToolCaller caller{reader, ToolScope::everything()};
-    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"idea","status":"complete"})"), caller).isError);
-    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"), caller).isError);
+    CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"idea","status":"complete"}]})"), caller).isError);
+    CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"), caller).isError);
   }
-  CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t_plain","nodeId":"a","status":"complete"})"), h.actor).isError);
+  CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t_plain","updates":[{"nodeId":"a","status":"complete"}]})"), h.actor).isError);
   CHECK_EQ(room.snapshots(), copies);
   CHECK_EQ(plain.snapshots(), plainCopies);
 
@@ -6488,8 +6439,8 @@ TEST(mcp_a_mark_copies_the_whole_tree_out_of_its_room_for_no_caller) {
   CHECK_EQ(room.snapshots() - copies, 2 * aGraftsOwnCopies);
 }
 
-// The write line says what the call came to: nothing recorded and a mark refused completes as opens-a-tree, and a mark
-// recorded beside a refusal is an ok, the clear of a mark the caller's phone stamped ahead of the server among them,
+// The write line says what a call of marks came to: nothing recorded and a mark refused completes as opens-a-tree, and a
+// mark recorded beside a refusal is an ok, the clear of a mark the caller's phone stamped ahead of the server among them,
 // which lands just after that stamp. Each mark is answered once, refused or landed.
 TEST(mcp_a_call_that_recorded_no_mark_and_was_refused_one_completes_as_opens_a_tree) {
   Harness h;
@@ -6500,32 +6451,31 @@ TEST(mcp_a_call_that_recorded_no_mark_and_was_refused_one_completes_as_opens_a_t
   std::vector<WriteCompletion> completions;
   installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
 
-  const ToolResult refused = gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","updates":[
+  const ToolResult refused = gate.callTool("roadmap_update_nodes", parse(R"({"treeId":"t","updates":[
       {"nodeId":"idea","status":"complete"}]})"), h.actor);
-  const ToolResult refusedAndAhead = gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","updates":[
+  const ToolResult refusedAndAhead = gate.callTool("roadmap_update_nodes", parse(R"({"treeId":"t","updates":[
       {"nodeId":"idea","status":"complete"},{"nodeId":"a","status":"none"}]})"), h.actor);
-  const ToolResult refusedAndRecorded = gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","updates":[
+  const ToolResult refusedAndRecorded = gate.callTool("roadmap_update_nodes", parse(R"({"treeId":"t","updates":[
       {"nodeId":"idea","status":"none"},{"nodeId":"b","status":"complete"}]})"), h.actor);
   installWriteSink({});
 
-  const Json::Value refusedRow = parse(R"({"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"})");
-  Json::Value alone(Json::objectValue);
-  alone["results"].append(refusedRow);
-  CHECK_EQ(body(refused), alone);
-  Json::Value ahead = alone;
-  ahead["results"].append(parse(R"({"nodeId":"a","status":"none","prerequisitesMet":true})"));
-  CHECK_EQ(body(refusedAndAhead), ahead);
+  // The receipt of a call of marks alone that refused the mark on `idea` beside `others`, and what those answered.
+  const auto receipt = [](const char* others, const char* nodes) {
+    return parse(std::string(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,)"
+                             R"("introducedDiagnostics":[],"progress":[{"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"})") +
+                 others + R"(],"progressApplied":false,"progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.",)"
+                          R"("progressRefused":["idea"],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":)" + nodes + "}");
+  };
+  CHECK_EQ(body(refused), receipt("", R"(["idea"])"));
+  CHECK_EQ(body(refusedAndAhead), receipt(R"(,{"nodeId":"a","status":"none","prerequisitesMet":true})", R"(["idea","a"])"));
   CHECK_EQ(h.progressRepo.byKey.at(fake::FakeProgressRepository::key(TreeId{"t"}, h.caller, nid("a"))).at,
            (Hlc{9'000'000, 1, std::string{TreeRoom::kServerActor}}));
-  Json::Value recorded(Json::objectValue);
-  recorded["results"].append(parse(R"({"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"})"));
-  recorded["results"].append(parse(R"({"nodeId":"b","status":"complete","prerequisitesMet":true})"));
-  CHECK_EQ(body(refusedAndRecorded), recorded);
+  CHECK_EQ(body(refusedAndRecorded), receipt(R"(,{"nodeId":"b","status":"complete","prerequisitesMet":true})", R"(["idea","b"])"));
   CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["b"],"outOfOrder":[]})"));
   std::vector<std::string> observed;
   for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
-  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_set_progress opens-a-tree", "mcp.roadmap_set_progress ok",
-                                               "mcp.roadmap_set_progress ok"}));
+  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_update_nodes opens-a-tree", "mcp.roadmap_update_nodes ok",
+                                               "mcp.roadmap_update_nodes ok"}));
 }
 
 // With no mark to judge there is nothing the opened trees could decide, so they are not read.
@@ -6600,7 +6550,7 @@ TEST(mcp_a_hue_no_kind_wears_is_a_smell) {
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"plum"}],
     "nodes":[{"id":"b","label":"B","icon":"i","color":"sky"}]})")).isError);
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","label":"C"}]})")).isError);
-  const Json::Value recolored = body(h.call("set_node_color", parse(R"({"nodeId":"e","color":"olive"})")));
+  const Json::Value recolored = body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"e","color":"olive"})"))));
   CHECK_EQ(recolored["diagnosticsClean"], Json::Value(true));
   CHECK_EQ(recolored["introducedDiagnostics"], parse("[]"));
 
@@ -6725,10 +6675,10 @@ TEST(mcp_ten_thousand_nodes_without_an_icon_answer_one_short_smell_line) {
   CHECK(dump(smells).size() < 300);
 }
 
-// An import's progress rows are set_progress's bulk rows: the same schema, the same checks and the same receipt, so a
+// An import's progress rows are update_nodes marks: the same schema, the same checks and the same receipt, so a
 // completion made before its prerequisites keeps its outOfOrder word through an import, a repeat says unchanged, and
 // the marks get_progress answers go back through an import leaving the overlay as it was.
-TEST(mcp_import_progress_rows_carry_out_of_order_as_set_progress_rows_do) {
+TEST(mcp_import_progress_rows_carry_out_of_order_as_update_nodes_marks_do) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
     "prerequisites":["a"]},{"id":"c","label":"C"}]})")).isError);
@@ -6749,18 +6699,19 @@ TEST(mcp_import_progress_rows_carry_out_of_order_as_set_progress_rows_do) {
   };
   CHECK_EQ(message(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"c","status":"none",
     "outOfOrder":true}]})"))), "import_subgraph: " + refused("progress[0]"));
-  CHECK_EQ(message(h.call("set_progress", parse(R"({"updates":[{"nodeId":"c","status":"none","outOfOrder":true}]})"))),
-           "set_progress: " + refused("updates[0]"));
+  CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"c","status":"none","outOfOrder":true}]})"))),
+           std::string("update_nodes: argument \"updates[0].outOfOrder\" acknowledges completing a node before its prerequisites, so it rides status \"complete\" only, got \"none\""));
 
   Json::Value updates, rows;
   for (const Json::Value& tool : h.tools.listTools(h.actor)) {
-    if (tool["name"].asString() == "set_progress") updates = tool["inputSchema"]["properties"]["updates"]["items"];
+    if (tool["name"].asString() == "update_nodes") updates = tool["inputSchema"]["properties"]["updates"]["items"];
     if (tool["name"].asString() == "import_subgraph") rows = tool["inputSchema"]["properties"]["progress"]["items"];
   }
   REQUIRE(updates.isObject());
-  CHECK_EQ(rows, updates);
+  for (const char* field : {"status", "outOfOrder"})
+    CHECK_EQ(rows["properties"][field], updates["properties"][field]);
 
-  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
     {"nodeId":"c","status":"none"}]})")).isError);
   const Json::Value everyMark = parse(R"({"fields":["completed","cleared","outOfOrder"]})");
   const Json::Value held = body(h.call("get_progress", everyMark));
@@ -6795,13 +6746,13 @@ TEST(mcp_delete_node_clears_the_callers_marks_on_the_nodes_it_deletes) {
     h.trees.byId["t"].visibility = Visibility::public_;
     CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},
       {"id":"c","label":"C"}]})")).isError);
-    CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+    CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
       {"nodeId":"b","status":"complete"}]})")).isError);
     const ToolCaller stranger{uid("stranger"), ToolScope::everything()};
     const auto progressOf = [&](const ToolCaller& who) {
       return body(h.tools.callTool("get_progress", parse(R"({"treeId":"t","fields":["completed","cleared"]})"), who));
     };
-    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"a","status":"complete"})"), stranger)
+    CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"), stranger)
                     .isError);
 
     CHECK_EQ(body(h.call("delete_node", parse(arguments)))["pruned"]["progress"].asInt(), cleared);
@@ -6820,12 +6771,11 @@ TEST(mcp_delete_node_clears_the_mark_a_step_that_opens_a_tree_kept) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea"},{"id":"b","label":"B"}]})")).isError);
-  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"idea","status":"complete"},
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"idea","status":"complete"},
     {"nodeId":"b","status":"complete"}]})")).isError);
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"idea","opens":"t_sub"})")).isError);
-  CHECK_EQ(message(h.call("set_progress", parse(R"({"nodeId":"idea","status":"none"})"))),
-           std::string("set_progress: \"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — "
-                       "mark the steps of the tree it opens"));
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"idea","opens":"t_sub"})"))).isError);
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"idea","status":"none"})"))))["progress"],
+           parse(R"([{"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}])"));
   const auto marks = [&] {
     return body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})")));
   };
@@ -6843,7 +6793,7 @@ TEST(mcp_delete_node_with_the_progress_store_down_deletes_nothing_and_a_retry_co
   for (const bool readsDown : {true, false}) {
     Harness h;
     CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
-    CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})")).isError);
+    CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","status":"complete"})"))).isError);
     const std::size_t saves = h.trees.savedNodeCounts.size();
     const std::size_t rows = h.ops.byTree["t"].size();
     (readsDown ? h.progressRepo.loadsFail : h.progressRepo.writesFail) = true;
@@ -6863,8 +6813,8 @@ TEST(mcp_delete_node_with_the_progress_store_down_deletes_nothing_and_a_retry_co
 }
 
 // A server's progress write comes after the stamp the caller's mark holds, so it lands over a mark a replica stamped
-// ahead of the server: a delete clears one, counted from what landed, a revive brings none back, and a set_progress
-// none clears one too.
+// ahead of the server: a delete clears one, counted from what landed, a revive brings none back, and an update_nodes
+// mark of none clears one too.
 TEST(mcp_a_server_progress_write_lands_over_a_mark_stamped_ahead_of_the_server) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
@@ -6875,20 +6825,20 @@ TEST(mcp_a_server_progress_write_lands_over_a_mark_stamped_ahead_of_the_server) 
                                        h.clock.ms).front());
 
   CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"a"})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
-  CHECK_EQ(body(h.call("set_progress", parse(R"({"nodeId":"b","status":"none"})"))),
-           parse(R"({"nodeId":"b","status":"none","prerequisitesMet":true})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"b","status":"none"})")))),
+           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"b","prerequisitesMet":true,"status":"none"}],"seq":2,"treeId":"t","unchanged":true,"unchangedNodeIds":["b"]})"));
   const Json::Value cleared = parse(R"({"completed":[],"cleared":["a","b"]})");
   CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})"))), cleared);
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
   CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})"))), cleared);
 }
 
-// A clear reaches the caller's open sessions as set_progress does: one progress frame for the marks it cleared, from a
+// A clear reaches the caller's open sessions as a mark does: one progress frame for the marks it cleared, from a
 // delete and from an import's tombstone alike.
-TEST(mcp_a_clear_sends_the_progress_frame_set_progress_sends) {
+TEST(mcp_a_clear_sends_the_progress_frame_a_mark_sends) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
-  CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
     {"nodeId":"b","status":"complete"}]})")).isError);
   const std::size_t frames = h.bus.progressBroadcasts.size();
 
@@ -6923,7 +6873,7 @@ TEST(mcp_an_imports_failed_clear_is_reported_under_its_own_name) {
   } reporter;
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
-  CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"a","status":"complete"})")).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","status":"complete"})"))).isError);
   CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
   std::vector<std::string> lines;
   installWriteSink([&](const WriteCompletion& line) { lines.push_back(line.operation + " " + line.outcome); });
@@ -6961,21 +6911,21 @@ TEST(mcp_a_mark_stamped_ahead_carries_no_other_write_ahead) {
     const auto lastFrame = [&] { return h.bus.subgraphBroadcasts.back().subgraph.frameId; };
     const std::string server{TreeRoom::kServerActor};
 
-    CHECK_FALSE(h.call("set_progress", parse(R"({"updates":[{"nodeId":"a","status":"none"},
+    CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"a","status":"none"},
       {"nodeId":"a","status":"complete"}]})")).isError);
     if (ahead) CHECK_EQ(stampOf("a"), (Hlc{held.physicalMs, 2, server}));
     CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"a"})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
     if (ahead) CHECK_EQ(stampOf("a"), (Hlc{held.physicalMs, 3, server}));
 
-    CHECK_FALSE(h.call("set_progress", parse(R"({"nodeId":"b","status":"complete"})")).isError);
-    CHECK_FALSE(h.call("rename_node", parse(R"({"nodeId":"c","label":"C1"})")).isError);
+    CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"b","status":"complete"})"))).isError);
+    CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"c","label":"C1"})"))).isError);
     std::vector<std::string> stamps{toString(stampOf("b")), lastFrame()};
 
     RoomRegistry restarted{h.trees, h.ops, h.bus};
     ProgressService restartedProgress{h.progressRepo, h.trees};
     TreeRegistry restartedTrees{h.trees, h.progressRepo, h.tokens, Hlc{1, 0, "genesis"}, restarted, h.clock};
     RoadmapTools tools{restarted, restartedProgress, h.clock, restartedTrees, h.bus, "https://app.example"};
-    CHECK_FALSE(tools.callTool("rename_node", parse(R"({"treeId":"t","nodeId":"c","label":"C2"})"), h.actor).isError);
+    CHECK_FALSE(tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"c","label":"C2"}]})"), h.actor).isError);
     stamps.push_back(lastFrame());
 
     CHECK(stampOf("b").physicalMs < h.clock.ms);
@@ -6999,11 +6949,11 @@ TEST(mcp_a_readers_mark_stamped_ahead_moves_nothing_of_the_owners) {
     CHECK(h.progressRepo.setStatuses(TreeId{"t"}, stranger, {{NodeId{"a"}, ProgressStatus::complete, false, held}},
                                        h.clock.ms).front());
 
-    CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"a","status":"none"})"),
+    CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"none"}]})"),
                                  ToolCaller{stranger, ToolScope::everything()}).isError);
     const Hlc cleared = h.progressRepo.byKey.at(fake::FakeProgressRepository::key(TreeId{"t"}, stranger, NodeId{"a"})).at;
     if (ahead) CHECK_EQ(cleared, (Hlc{held.physicalMs + 1, 0, std::string{TreeRoom::kServerActor}}));
-    CHECK_FALSE(h.call("rename_node", parse(R"({"nodeId":"a","label":"A1"})")).isError);
+    CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","label":"A1"})"))).isError);
 
     const std::string frame = h.bus.subgraphBroadcasts.back().subgraph.frameId;
     CHECK(parseHlc(frame.substr(std::string("srv-").size())).value().physicalMs < h.clock.ms);
@@ -7199,7 +7149,7 @@ TEST(mcp_update_nodes_edits_a_node_and_marks_it_in_one_call) {
 }
 
 // A mark is the caller's own overlay: a call whose rows carry only marks works on a tree the caller can read and does
-// not own, writing no op, as set_progress does; a call carrying any tree field there is refused whole, and no mark lands.
+// not own, writing no op; a call carrying any tree field there is refused whole, and no mark lands.
 TEST(mcp_update_nodes_marks_a_tree_the_caller_reads_and_refuses_a_tree_field_there_whole) {
   auto h = nodeTree();
   h->registry.setVisibility(TreeId{"t"}, Visibility::public_);
@@ -7229,36 +7179,69 @@ TEST(mcp_update_nodes_marks_a_tree_the_caller_reads_and_refuses_a_tree_field_the
   CHECK(h->trees.byId["t"] == stored);
 }
 
-// Each field alone, through update_nodes, lands what its earlier tool lands: on twin trees the stored tree, the op rows
-// and the progress overlay come out equal.
-TEST(mcp_update_nodes_with_one_field_equals_its_earlier_tool) {
-  for (const auto& [earlier, arguments, updates] : std::vector<std::tuple<const char*, const char*, const char*>>{
-           {"rename_node", R"({"nodeId":"a","label":"Alpha"})", R"([{"nodeId":"a","label":"Alpha"}])"},
-           {"set_node_color", R"({"nodeId":"a","color":"sky"})", R"([{"nodeId":"a","color":"sky"}])"},
-           {"set_node_color", R"({"nodeId":"a","kind":"owner"})", R"([{"nodeId":"a","kind":"owner"}])"},
-           {"annotate_node", R"({"nodeId":"a","description":"New."})", R"([{"nodeId":"a","description":"New."}])"},
-           {"annotate_node", R"({"nodeId":"a","appendDescription":"More."})",
-            R"([{"nodeId":"a","appendDescription":"More."}])"},
-           {"annotate_node", R"({"nodeId":"a","icon":"star"})", R"([{"nodeId":"a","icon":"star"}])"},
-           {"annotate_node", R"({"nodeId":"a","links":[{"url":"https://c.example/"}]})",
-            R"([{"nodeId":"a","links":[{"url":"https://c.example/"}]}])"},
-           {"annotate_node", R"({"nodeId":"a","addLinks":[{"url":"https://c.example/","label":"C"}]})",
-            R"([{"nodeId":"a","addLinks":[{"url":"https://c.example/","label":"C"}]}])"},
-           {"annotate_node", R"({"nodeId":"a","opens":"t_sub"})", R"([{"nodeId":"a","opens":"t_sub"}])"},
-           {"set_progress", R"({"nodeId":"a","status":"complete"})", R"([{"nodeId":"a","status":"complete"}])"},
-           {"set_progress", R"({"updates":[{"nodeId":"b","status":"complete","outOfOrder":true},
-              {"nodeId":"a","status":"none"}]})",
-            R"([{"nodeId":"b","status":"complete","outOfOrder":true},{"nodeId":"a","status":"none"}])"}}) {
-    auto before = nodeTree();
-    auto after = nodeTree();
-    CHECK_FALSE(before->call(earlier, parse(arguments)).isError);
+// One row with one field lands as the lone command that field is — RenameNode, SetNodeColor (a `kind` as the hue it
+// wears), or AnnotateNode carrying that register alone, `addLinks` as the links the node then holds — as one op row
+// under one seq. A label or a colour is a line of the Activity feed and an annotation is none. A mark lands on the
+// caller's overlay and writes no op row.
+TEST(mcp_update_nodes_lands_one_field_as_its_own_command) {
+  Json::StreamWriterBuilder compact;
+  compact["indentation"] = "";
+  const char* node = R"("description":"Old.","icon":"","id":"a","label":"A","links":[{"url":"https://a.example/"}])";
+  for (const auto& [updates, row, stored, feed] : std::vector<std::tuple<const char*, std::string, std::string, const char*>>{
+           {R"([{"nodeId":"a","label":"Alpha"}])", R"(RenameNode {"id":"a","label":"Alpha"})",
+            R"([{"color":"terracotta","description":"Old.","icon":"","id":"a","label":"Alpha","links":[{"url":"https://a.example/"}],"status":"none"}])",
+            "3 renamed to Alpha"},
+           {R"([{"nodeId":"a","color":"sky"}])", R"(SetNodeColor {"color":"sky","id":"a"})",
+            std::string(R"([{"color":"sky",)") + node + R"(,"status":"none"}])", "3 recolored A sky"},
+           {R"([{"nodeId":"a","kind":"owner"}])", R"(SetNodeColor {"color":"gold","id":"a"})",
+            R"([{"color":"gold","description":"Old.","icon":"","id":"a","kind":"owner","label":"A","links":[{"url":"https://a.example/"}],"status":"none"}])",
+            "3 recolored A gold"},
+           {R"([{"nodeId":"a","description":"New."}])", R"(AnnotateNode {"description":"New.","id":"a"})",
+            R"([{"color":"terracotta","description":"New.","icon":"","id":"a","label":"A","links":[{"url":"https://a.example/"}],"status":"none"}])",
+            "2 added A"},
+           {R"([{"nodeId":"a","appendDescription":"More."}])", R"(AnnotateNode {"appendDescription":"More.","id":"a"})",
+            R"([{"color":"terracotta","description":"Old.\n\nMore.","icon":"","id":"a","label":"A","links":[{"url":"https://a.example/"}],"status":"none"}])",
+            "2 added A"},
+           {R"([{"nodeId":"a","icon":"star"}])", R"(AnnotateNode {"icon":"star","id":"a"})",
+            R"([{"color":"terracotta","description":"Old.","icon":"star","id":"a","label":"A","links":[{"url":"https://a.example/"}],"status":"none"}])",
+            "2 added A"},
+           {R"([{"nodeId":"a","links":[{"url":"https://c.example/"}]}])", R"(AnnotateNode {"id":"a","links":[{"url":"https://c.example/"}]})",
+            R"([{"color":"terracotta","description":"Old.","icon":"","id":"a","label":"A","links":[{"url":"https://c.example/"}],"status":"none"}])",
+            "2 added A"},
+           {R"([{"nodeId":"a","addLinks":[{"url":"https://c.example/","label":"C"}]}])",
+            R"(AnnotateNode {"id":"a","links":[{"url":"https://a.example/"},{"label":"C","url":"https://c.example/"}]})",
+            R"([{"color":"terracotta","description":"Old.","icon":"","id":"a","label":"A","links":[{"url":"https://a.example/"},{"label":"C","url":"https://c.example/"}],"status":"none"}])",
+            "2 added A"},
+           {R"([{"nodeId":"a","opens":"t_sub"}])", R"(AnnotateNode {"id":"a","opens":"t_sub"})",
+            std::string(R"([{"color":"terracotta",)") + node +
+                R"(,"opens":{"state":"open","title":"Tree t_sub","treeId":"t_sub"},"status":"none"}])",
+            "2 added A"}}) {
+    auto h = nodeTree();
+    const std::size_t rows = h->ops.byTree["t"].size();
     Json::Value call(Json::objectValue);
     call["updates"] = parse(updates);
-    CHECK_FALSE(after->call("update_nodes", call).isError);
-    CHECK(before->trees.byId["t"] == after->trees.byId["t"]);
-    CHECK_EQ(opRows(*before), opRows(*after));
-    CHECK_EQ(overlayRows(*before), overlayRows(*after));
+    CHECK_EQ(body(h->call("update_nodes", call)),
+             parse(R"({"treeId":"t","changedNodeIds":["a"],"unchangedNodeIds":[],"dryRun":false,"applied":true,"seq":3,
+               "diagnosticsClean":true,"introducedDiagnostics":[]})"));
+    REQUIRE_EQ(h->ops.byTree["t"].size(), rows + 1);
+    const AppliedOp& op = h->ops.byTree["t"].back();
+    CHECK_EQ(commandKind(op.command) + " " + Json::writeString(compact, commandPayload(op.command)), row);
+    CHECK_EQ(op.seq, Seq{3});
+    CHECK_EQ(Json::writeString(compact, body(h->call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","label",
+      "color","kind","description","icon","links","opens","status"]})")))["nodes"]),
+             stored);
+    const ActivityEvent newest = activityFeed(h->registry.open(TreeId{"t"})->snapshot(), h->ops.byTree["t"], 1).back();
+    CHECK_EQ(std::to_string(newest.seq) + " " + newest.summary, std::string(feed));
   }
+
+  auto h = nodeTree();
+  const std::size_t rows = h->ops.byTree["t"].size();
+  CHECK_EQ(body(h->call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"}]})"))),
+           parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],"dryRun":false,"applied":true,"seq":2,
+             "unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[],
+             "progress":[{"nodeId":"a","status":"complete","prerequisitesMet":true}]})"));
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
+  CHECK_EQ(body(h->call("get_progress", kNoArgs))["completed"], parse(R"(["a"])"));
 }
 
 // A field sent as the node holds it is left out, an addLinks url the node holds included, so a row that changes nothing
@@ -7276,8 +7259,8 @@ TEST(mcp_update_nodes_leaves_out_what_the_node_holds) {
   CHECK_EQ(h->ops.byTree["t"].size(), rows);
 }
 
-// A stale expectedSeq refuses the whole call, marks included; a dry run applies nothing, previews the tree batch as
-// patch_nodes does and answers no mark rows; a row's either/or pairs and an empty row are refused naming the row.
+// A stale expectedSeq refuses the whole call, marks included; a dry run applies nothing, previews the tree batch and
+// answers no mark rows; a row's either/or pairs and an empty row are refused naming the row.
 TEST(mcp_update_nodes_refuses_stale_calls_whole_and_previews_without_marking) {
   auto h = nodeTree();
   const std::size_t rows = h->ops.byTree["t"].size();
@@ -7317,7 +7300,7 @@ TEST(mcp_update_nodes_refuses_stale_calls_whole_and_previews_without_marking) {
     CHECK_EQ(message(h->call("update_nodes", call)), "update_nodes: " + refusal);
   }
   const Json::Value nullOpens = parse(R"({"updates":[{"nodeId":"a","opens":null}]})");
-  const std::string patched = message(h->call("patch_nodes", nullOpens));
+  const std::string patched = message(h->call("update_nodes", nullOpens));
   CHECK(h->call("update_nodes", nullOpens).isError);
   CHECK_EQ(message(h->call("update_nodes", nullOpens)), "update_nodes" + patched.substr(patched.find(": ")));
   CHECK_EQ(h->ops.byTree["t"].size(), rows);
@@ -7370,9 +7353,9 @@ TEST(mcp_update_nodes_whose_marks_fail_after_a_tree_op_landed_says_so_and_report
 }
 
 // When no tree op lands in the call — it sends no tree field, or only fields the node holds — its marks are the call,
-// so a progress store that fails fails it as it fails set_progress: an error reply in set_progress's words, the call's
-// own line `failed`, its report under the call's name, and no line of the marks' own.
-TEST(mcp_update_nodes_whose_marks_are_the_call_fails_with_them_as_set_progress_does) {
+// so a progress store that fails fails the call: an error reply in the server's words, the call's own line `failed`,
+// its report under the call's name, and no line of the marks' own.
+TEST(mcp_update_nodes_whose_marks_are_the_call_fails_with_them) {
   struct Failures : FailureReporter {
     std::vector<std::string> reports;
     void report(const std::string&, const std::string&, const std::string&) override {}
@@ -7406,12 +7389,6 @@ TEST(mcp_update_nodes_whose_marks_are_the_call_fails_with_them_as_set_progress_d
     return said;
   };
   const std::string type = typeid(std::runtime_error).name();
-  const std::vector<std::string> setProgress =
-      failing("roadmap_set_progress", R"({"treeId":"t","nodeId":"a","status":"complete"})");
-  CHECK_EQ(setProgress, (std::vector<std::string>{
-                            "set_progress: that call failed inside the server. The outcome may be uncertain; read the "
-                            "affected records before retrying. The detail is in the server log.",
-                            "mcp.roadmap_set_progress failed", "mcp.roadmap_set_progress roadmap mcp failed " + type}));
   for (const char* updates : {R"([{"nodeId":"a","status":"complete"}])",
                               R"([{"nodeId":"a","label":"A","description":"Old.","status":"complete"}])"}) {
     const std::string arguments = std::string(R"({"treeId":"t","updates":)") + updates + "}";
@@ -7423,10 +7400,10 @@ TEST(mcp_update_nodes_whose_marks_are_the_call_fails_with_them_as_set_progress_d
   }
 }
 
-// A mark on a node that opens a tree is refused in update_nodes as in set_progress's batch, row by row, in a sentence that
-// names no tree. When the marks are the call and each was refused, nothing was written: the reply is no error, and the
-// call completes as opens-a-tree, as set_progress's batch does then. Beside a mark that lands, or a tree op, it is ok.
-TEST(mcp_update_nodes_refuses_a_mark_on_a_node_that_opens_a_tree_as_set_progress_does) {
+// A mark on a node that opens a tree is refused in update_nodes row by row, in a sentence that names no tree, and listed in
+// progressRefused. When the marks are the call and each was refused, nothing was written: the reply is no error, and the
+// call completes as opens-a-tree. Beside a mark that lands, or a tree op, it is ok.
+TEST(mcp_update_nodes_refuses_a_mark_on_a_node_that_opens_a_tree_row_by_row) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},{"id":"a","label":"A"}]})")).isError);
@@ -7440,33 +7417,29 @@ TEST(mcp_update_nodes_refuses_a_mark_on_a_node_that_opens_a_tree_as_set_progress
   const ToolResult refused = updateNodes(R"([{"nodeId":"idea","status":"complete"}])");
   const ToolResult beside = updateNodes(R"([{"nodeId":"idea","status":"none"},{"nodeId":"a","status":"complete"}])");
   const ToolResult edited = updateNodes(R"([{"nodeId":"a","label":"A2"},{"nodeId":"idea","status":"complete"}])");
-  const ToolResult batch = gate.callTool("roadmap_set_progress", parse(R"({"treeId":"t","updates":[
-      {"nodeId":"idea","status":"complete"}]})"), h.actor);
   installWriteSink({});
 
-  const Json::Value refusedRow = parse(R"({"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"})");
-  const std::string refusedSentence = "Some requested progress marks nodes that open a tree, which take no mark of their own — "
-                                      "each is complete when the tree it opens is; those ids are listed in progressRefused.";
-  Json::Value onlyRefused(Json::arrayValue);
-  onlyRefused.append(refusedRow);
-  Json::Value refusedAndLanded = onlyRefused;
-  refusedAndLanded.append(parse(R"({"nodeId":"a","status":"complete","prerequisitesMet":true})"));
-  for (const auto& [result, rows] : {std::pair{&refused, onlyRefused}, std::pair{&beside, refusedAndLanded},
-                                     std::pair{&edited, onlyRefused}}) {
-    CHECK_FALSE(result->isError);
-    CHECK_EQ(body(*result)["progress"], rows);
-    CHECK_EQ(body(*result)["progressRefused"], parse(R"(["idea"])"));
-    CHECK_EQ(body(*result)["progressApplied"], Json::Value(false));
-    CHECK_EQ(body(*result)["progressError"].asString(), refusedSentence);
-  }
-  CHECK_EQ(body(refused)["progress"], body(batch)["results"]);
-  CHECK_EQ(body(edited)["changedNodeIds"], parse(R"(["a"])"));
+  const std::string refusedRow = R"({"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"})";
+  const std::string refusedSentence = R"("progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.")";
+  CHECK_FALSE(refused.isError);
+  CHECK_EQ(body(refused), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
+    "introducedDiagnostics":[],"progress":[)" + refusedRow + R"(],"progressApplied":false,)" + refusedSentence +
+                                R"(,"progressRefused":["idea"],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea"]})"));
+  CHECK_FALSE(beside.isError);
+  CHECK_EQ(body(beside), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
+    "introducedDiagnostics":[],"progress":[)" + refusedRow + R"(,{"nodeId":"a","status":"complete","prerequisitesMet":true}],
+    "progressApplied":false,)" + refusedSentence +
+                               R"(,"progressRefused":["idea"],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea","a"]})"));
+  CHECK_FALSE(edited.isError);
+  CHECK_EQ(body(edited), parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,
+    "introducedDiagnostics":[],"progress":[)" + refusedRow + R"(],"progressApplied":false,)" + refusedSentence +
+                               R"(,"progressRefused":["idea"],"seq":2,"treeId":"t","unchangedNodeIds":["idea"]})"));
   CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["a"],"outOfOrder":[]})"));
   CHECK_EQ(lines, (std::vector<std::string>{"mcp.roadmap_update_nodes opens-a-tree", "mcp.roadmap_update_nodes ok",
-                                            "mcp.roadmap_update_nodes ok", "mcp.roadmap_set_progress opens-a-tree"}));
+                                            "mcp.roadmap_update_nodes ok"}));
 }
 
-// A `kind` that is not a string is no kind sent, as for patch_nodes, so beside a mark it leaves the row a mark alone: on
+// A `kind` that is not a string is no kind sent, so beside a mark it leaves the row a mark alone: on
 // the caller's tree, and on another account's public tree, where a tree field would be refused.
 TEST(mcp_update_nodes_takes_a_null_kind_beside_a_mark_as_no_tree_field) {
   auto h = nodeTree();
@@ -7809,4 +7782,78 @@ TEST(mcp_the_retired_kind_tools_are_refused_as_unknown_tools) {
   }
   CHECK(h->trees.byId["t"] == stored);
   CHECK_EQ(h->ops.byTree["t"].size(), rows);
+}
+
+// rename_node, set_node_color, annotate_node, patch_nodes, move_node and set_progress are retired, update_nodes being
+// the one tool that edits or marks nodes: no declaration carries them, and a call to one is refused as a tool the
+// server does not have, in the gate's own words, with nothing written and no mark landed.
+TEST(mcp_the_retired_node_and_progress_tools_are_refused_as_unknown_tools) {
+  auto h = nodeTree();
+  const StoredTree stored = h->trees.byId["t"];
+  const std::size_t rows = h->ops.byTree["t"].size();
+  CompositeToolHost gate(std::vector<ToolModule>{{h->tools, ""}});
+  for (const std::string name : {"rename_node", "set_node_color", "annotate_node", "patch_nodes", "move_node",
+                                 "set_progress"}) {
+    for (const Json::Value& tool : h->tools.listTools(h->actor)) CHECK(tool["name"].asString() != name);
+    const ToolResult refused = gate.callTool(name, parse(R"({"treeId":"t","nodeId":"a","label":"Alpha","color":"plum",
+      "description":"New.","x":3,"y":4,"status":"complete","updates":[{"nodeId":"a","label":"Alpha","status":"complete"}]})"),
+      h->actor);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), name + ": no such tool on this server — call tools/list for the whole surface.");
+  }
+  CHECK(h->trees.byId["t"] == stored);
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
+  CHECK_EQ(body(h->call("get_progress", kNoArgs)), parse(R"({"completed":[],"outOfOrder":[]})"));
+}
+
+// A node's position is off the MCP surface: create_node takes no x or y, an import's node and an update_nodes row no
+// position, and no read answers one. Each is refused at the gate in its own words, with nothing written.
+TEST(mcp_a_node_position_is_refused_wherever_the_surface_took_or_answered_it) {
+  auto h = nodeTree();
+  const StoredTree stored = h->trees.byId["t"];
+  const std::size_t rows = h->ops.byTree["t"].size();
+  CompositeToolHost gate(std::vector<ToolModule>{{h->tools, ""}});
+  const auto refusal = [&](const char* tool, const char* arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = "t";
+    const ToolResult result = gate.callTool(tool, args, h->actor);
+    CHECK(result.isError);
+    return message(result);
+  };
+
+  CHECK_EQ(refusal("create_node", R"({"id":"n","label":"N","x":3,"y":4})"),
+           std::string("create_node: unknown argument \"x\". This tool takes: color, description, icon, id, kind, "
+                       "label, links, opens, parentId, prerequisites, treeId."));
+  CHECK_EQ(refusal("import_subgraph", R"({"nodes":[{"id":"n","label":"N","position":{"x":3,"y":4}}]})"),
+           std::string("import_subgraph: unknown argument \"nodes[0].position\". nodes[0] takes: color, description, "
+                       "icon, id, kind, label, links, opens, order, prerequisites, seedStatus."));
+  CHECK_EQ(refusal("update_nodes", R"({"updates":[{"nodeId":"a","position":{"x":3,"y":4}}]})"),
+           std::string("update_nodes: unknown argument \"updates[0].position\". updates[0] takes: addLinks, "
+                       "appendDescription, color, description, icon, kind, label, links, nodeId, opens, outOfOrder, "
+                       "status."));
+  const std::string readable = " \"position\" is not one of {id, label, icon, color, kind, order, prerequisites, "
+                               "status, seedStatus, state, summary, description, links, opens, url}";
+  CHECK_EQ(refusal("get_tree", R"({"fields":["id","position"]})"), "get_tree: fields[1]" + readable);
+  CHECK_EQ(refusal("get_nodes", R"({"nodeIds":["a"],"fields":["id","position"]})"), "get_nodes: fields[1]" + readable);
+  CHECK_EQ(refusal("find_nodes", R"({"query":"A","fields":["id","position"]})"), "find_nodes: fields[1]" + readable);
+  CHECK(h->trees.byId["t"] == stored);
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
+}
+
+// A node's position stays the domain's: a client's frame sets it, and no MCP write moves or clears it — an import that
+// re-sends the node and an update_nodes row carry none.
+TEST(mcp_a_position_a_client_set_survives_every_mcp_write_to_its_node) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
+  h.registry.open(TreeId{"t"})->applyCommand(RepositionNode{NodeId{"a"}, Vec2{120, 60}}, h.clock.nowMs(), h.caller);
+  const auto positionOfA = [&] {
+    for (const NodeSpec& node : h.registry.open(TreeId{"t"})->snapshot().nodes)
+      if (node.id == NodeId{"a"}) return node.position;
+    return std::optional<Vec2>{};
+  };
+  REQUIRE((positionOfA() == std::optional<Vec2>(Vec2{120, 60})));
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A2","icon":"star"}]})")).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","label":"A3","color":"plum"})"))).isError);
+  CHECK((positionOfA() == std::optional<Vec2>(Vec2{120, 60})));
 }

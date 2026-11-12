@@ -68,6 +68,14 @@ inline Json::Value body(const ToolResult& result) { return parse(result.content[
 
 inline std::string message(const ToolResult& result) { return result.content[0]["text"].asString(); }
 
+// The update_nodes call that carries this one row.
+inline Json::Value asUpdate(const Json::Value& row) {
+  Json::Value call(Json::objectValue);
+  call["updates"] = Json::Value(Json::arrayValue);
+  call["updates"].append(row);
+  return call;
+}
+
 inline std::vector<std::string> keys(const Json::Value& value) { return value.getMemberNames(); }
 
 inline Json::Value with(const char* key, const char* value) {

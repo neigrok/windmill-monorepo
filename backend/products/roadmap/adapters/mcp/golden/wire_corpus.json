@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 24,
+  "schemaVersion" : 25,
   "steps" : 
   [
     {
@@ -207,20 +207,42 @@
             "text" : 
             {
               "applied" : true,
+              "changedNodeIds" : 
+              [
+                "sync",
+                "render",
+                "root"
+              ],
               "diagnosticsClean" : true,
-              "id" : "sync",
+              "dryRun" : false,
               "introducedDiagnostics" : [],
-              "kind" : "infra",
-              "seq" : 7
+              "seq" : 7,
+              "treeId" : "t",
+              "unchangedNodeIds" : []
             },
             "type" : "text"
           }
         ],
         "isError" : false,
-        "structuredContent" : null
+        "structuredContent" : 
+        {
+          "applied" : true,
+          "changedNodeIds" : 
+          [
+            "sync",
+            "render",
+            "root"
+          ],
+          "diagnosticsClean" : true,
+          "dryRun" : false,
+          "introducedDiagnostics" : [],
+          "seq" : 7,
+          "treeId" : "t",
+          "unchangedNodeIds" : []
+        }
       },
       "step" : 7,
-      "tool" : "set_node_color"
+      "tool" : "update_nodes"
     },
     {
       "result" : 
@@ -231,19 +253,38 @@
             "text" : 
             {
               "applied" : true,
+              "changedNodeIds" : 
+              [
+                "root"
+              ],
               "diagnosticsClean" : true,
-              "id" : "render",
+              "dryRun" : false,
               "introducedDiagnostics" : [],
-              "seq" : 8
+              "seq" : 8,
+              "treeId" : "t",
+              "unchangedNodeIds" : []
             },
             "type" : "text"
           }
         ],
         "isError" : false,
-        "structuredContent" : null
+        "structuredContent" : 
+        {
+          "applied" : true,
+          "changedNodeIds" : 
+          [
+            "root"
+          ],
+          "diagnosticsClean" : true,
+          "dryRun" : false,
+          "introducedDiagnostics" : [],
+          "seq" : 8,
+          "treeId" : "t",
+          "unchangedNodeIds" : []
+        }
       },
       "step" : 8,
-      "tool" : "rename_node"
+      "tool" : "update_nodes"
     },
     {
       "result" : 
@@ -254,97 +295,17 @@
             "text" : 
             {
               "applied" : true,
+              "changedNodeIds" : [],
               "diagnosticsClean" : true,
-              "id" : "root",
+              "dryRun" : false,
               "introducedDiagnostics" : [],
-              "seq" : 9
-            },
-            "type" : "text"
-          }
-        ],
-        "isError" : false,
-        "structuredContent" : null
-      },
-      "step" : 9,
-      "tool" : "move_node"
-    },
-    {
-      "result" : 
-      {
-        "content" : 
-        [
-          {
-            "text" : 
-            {
-              "applied" : true,
-              "diagnosticsClean" : true,
-              "id" : "root",
-              "introducedDiagnostics" : [],
-              "seq" : 10
-            },
-            "type" : "text"
-          }
-        ],
-        "isError" : false,
-        "structuredContent" : null
-      },
-      "step" : 10,
-      "tool" : "annotate_node"
-    },
-    {
-      "result" : 
-      {
-        "content" : 
-        [
-          {
-            "text" : 
-            {
-              "applied" : true,
-              "diagnosticsClean" : true,
-              "id" : "root",
-              "introducedDiagnostics" : [],
-              "seq" : 11
-            },
-            "type" : "text"
-          }
-        ],
-        "isError" : false,
-        "structuredContent" : null
-      },
-      "step" : 11,
-      "tool" : "annotate_node"
-    },
-    {
-      "result" : 
-      {
-        "content" : 
-        [
-          {
-            "text" : 
-            {
-              "nodeId" : "root",
-              "prerequisitesMet" : true,
-              "status" : "complete"
-            },
-            "type" : "text"
-          }
-        ],
-        "isError" : false,
-        "structuredContent" : null
-      },
-      "step" : 12,
-      "tool" : "set_progress"
-    },
-    {
-      "result" : 
-      {
-        "content" : 
-        [
-          {
-            "text" : 
-            {
-              "results" : 
+              "progress" : 
               [
+                {
+                  "nodeId" : "root",
+                  "prerequisitesMet" : true,
+                  "status" : "complete"
+                },
                 {
                   "nodeId" : "render",
                   "prerequisitesMet" : true,
@@ -356,16 +317,60 @@
                   "prerequisitesMet" : true,
                   "status" : "complete"
                 }
+              ],
+              "seq" : 8,
+              "treeId" : "t",
+              "unchanged" : true,
+              "unchangedNodeIds" : 
+              [
+                "root",
+                "render",
+                "sync"
               ]
             },
             "type" : "text"
           }
         ],
         "isError" : false,
-        "structuredContent" : null
+        "structuredContent" : 
+        {
+          "applied" : true,
+          "changedNodeIds" : [],
+          "diagnosticsClean" : true,
+          "dryRun" : false,
+          "introducedDiagnostics" : [],
+          "progress" : 
+          [
+            {
+              "nodeId" : "root",
+              "prerequisitesMet" : true,
+              "status" : "complete"
+            },
+            {
+              "nodeId" : "render",
+              "prerequisitesMet" : true,
+              "status" : "none",
+              "unchanged" : true
+            },
+            {
+              "nodeId" : "sync",
+              "prerequisitesMet" : true,
+              "status" : "complete"
+            }
+          ],
+          "seq" : 8,
+          "treeId" : "t",
+          "unchanged" : true,
+          "unchangedNodeIds" : 
+          [
+            "root",
+            "render",
+            "sync"
+          ]
+        }
       },
-      "step" : 13,
-      "tool" : "set_progress"
+      "step" : 9,
+      "tool" : "update_nodes"
     },
     {
       "result" : 
@@ -390,7 +395,7 @@
               "nodes" : 2,
               "prerequisiteMode" : "merge",
               "progressApplied" : true,
-              "seq" : 12,
+              "seq" : 9,
               "tombstoned" : 
               {
                 "edges" : 0,
@@ -403,7 +408,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 14,
+      "step" : 10,
       "tool" : "import_subgraph"
     },
     {
@@ -441,7 +446,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 15,
+      "step" : 11,
       "tool" : "import_subgraph"
     },
     {
@@ -481,7 +486,7 @@
               [
                 "ghost"
               ],
-              "seq" : 12,
+              "seq" : 9,
               "tombstoned" : 
               {
                 "edges" : 0,
@@ -495,7 +500,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 16,
+      "step" : 12,
       "tool" : "import_subgraph"
     },
     {
@@ -507,22 +512,44 @@
             "text" : 
             {
               "applied" : true,
+              "changedNodeIds" : 
+              [
+                "docs"
+              ],
               "diagnosticsClean" : true,
-              "id" : "docs",
+              "dryRun" : false,
               "introducedDiagnostics" : 
               [
                 "loop of trees from \"docs\" through \"t\""
               ],
-              "seq" : 13
+              "seq" : 10,
+              "treeId" : "t",
+              "unchangedNodeIds" : []
             },
             "type" : "text"
           }
         ],
         "isError" : false,
-        "structuredContent" : null
+        "structuredContent" : 
+        {
+          "applied" : true,
+          "changedNodeIds" : 
+          [
+            "docs"
+          ],
+          "diagnosticsClean" : true,
+          "dryRun" : false,
+          "introducedDiagnostics" : 
+          [
+            "loop of trees from \"docs\" through \"t\""
+          ],
+          "seq" : 10,
+          "treeId" : "t",
+          "unchangedNodeIds" : []
+        }
       },
-      "step" : 17,
-      "tool" : "annotate_node"
+      "step" : 13,
+      "tool" : "update_nodes"
     },
     {
       "result" : 
@@ -553,7 +580,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 18,
+      "step" : 14,
       "tool" : "find_nodes"
     },
     {
@@ -585,7 +612,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 19,
+      "step" : 15,
       "tool" : "find_nodes"
     },
     {
@@ -597,7 +624,7 @@
             "text" : 
             {
               "count" : 5,
-              "seq" : 13,
+              "seq" : 10,
               "tree" : 
               {
                 "guide" : 
@@ -681,11 +708,6 @@
                         "url" : "https://windmill.works"
                       }
                     ],
-                    "position" : 
-                    {
-                      "x" : 120.0,
-                      "y" : 60.0
-                    },
                     "prerequisites" : [],
                     "state" : "complete",
                     "status" : "complete",
@@ -714,7 +736,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 20,
+      "step" : 16,
       "tool" : "get_tree"
     },
     {
@@ -800,7 +822,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 21,
+      "step" : 17,
       "tool" : "get_diagnostics"
     },
     {
@@ -824,7 +846,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 22,
+      "step" : 18,
       "tool" : "get_progress"
     },
     {
@@ -849,7 +871,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 23,
+      "step" : 19,
       "tool" : "get_health"
     },
     {
@@ -860,7 +882,12 @@
           {
             "text" : 
             {
-              "results" : 
+              "applied" : true,
+              "changedNodeIds" : [],
+              "diagnosticsClean" : true,
+              "dryRun" : false,
+              "introducedDiagnostics" : [],
+              "progress" : 
               [
                 {
                   "nodeId" : "docs",
@@ -877,16 +904,71 @@
                   "prerequisitesMet" : true,
                   "status" : "complete"
                 }
+              ],
+              "progressApplied" : false,
+              "progressError" : "Some requested progress marks nodes that open a tree, which take no mark of their own \u2014 each is complete when the tree it opens is; those ids are listed in progressRefused.",
+              "progressRefused" : 
+              [
+                "docs"
+              ],
+              "seq" : 10,
+              "treeId" : "t",
+              "unchanged" : true,
+              "unchangedNodeIds" : 
+              [
+                "docs",
+                "launch",
+                "render"
               ]
             },
             "type" : "text"
           }
         ],
         "isError" : false,
-        "structuredContent" : null
+        "structuredContent" : 
+        {
+          "applied" : true,
+          "changedNodeIds" : [],
+          "diagnosticsClean" : true,
+          "dryRun" : false,
+          "introducedDiagnostics" : [],
+          "progress" : 
+          [
+            {
+              "nodeId" : "docs",
+              "refused" : "\"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens"
+            },
+            {
+              "acknowledged" : true,
+              "nodeId" : "launch",
+              "prerequisitesMet" : false,
+              "status" : "complete"
+            },
+            {
+              "nodeId" : "render",
+              "prerequisitesMet" : true,
+              "status" : "complete"
+            }
+          ],
+          "progressApplied" : false,
+          "progressError" : "Some requested progress marks nodes that open a tree, which take no mark of their own \u2014 each is complete when the tree it opens is; those ids are listed in progressRefused.",
+          "progressRefused" : 
+          [
+            "docs"
+          ],
+          "seq" : 10,
+          "treeId" : "t",
+          "unchanged" : true,
+          "unchangedNodeIds" : 
+          [
+            "docs",
+            "launch",
+            "render"
+          ]
+        }
       },
-      "step" : 24,
-      "tool" : "set_progress"
+      "step" : 20,
+      "tool" : "update_nodes"
     },
     {
       "result" : 
@@ -935,7 +1017,7 @@
               [
                 "docs"
               ],
-              "seq" : 13,
+              "seq" : 10,
               "tombstoned" : 
               {
                 "edges" : 0,
@@ -949,7 +1031,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 25,
+      "step" : 21,
       "tool" : "import_subgraph"
     },
     {
@@ -986,7 +1068,7 @@
               [
                 "docs"
               ],
-              "seq" : 14,
+              "seq" : 11,
               "treeId" : "t",
               "unchangedNodeIds" : 
               [
@@ -1026,7 +1108,7 @@
           [
             "docs"
           ],
-          "seq" : 14,
+          "seq" : 11,
           "treeId" : "t",
           "unchangedNodeIds" : 
           [
@@ -1035,7 +1117,7 @@
           ]
         }
       },
-      "step" : 26,
+      "step" : 22,
       "tool" : "update_nodes"
     },
     {
@@ -1044,15 +1126,69 @@
         "content" : 
         [
           {
-            "text" : "set_progress: \"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens",
+            "text" : 
+            {
+              "applied" : true,
+              "changedNodeIds" : [],
+              "diagnosticsClean" : true,
+              "dryRun" : false,
+              "introducedDiagnostics" : [],
+              "progress" : 
+              [
+                {
+                  "nodeId" : "docs",
+                  "refused" : "\"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens"
+                }
+              ],
+              "progressApplied" : false,
+              "progressError" : "Some requested progress marks nodes that open a tree, which take no mark of their own \u2014 each is complete when the tree it opens is; those ids are listed in progressRefused.",
+              "progressRefused" : 
+              [
+                "docs"
+              ],
+              "seq" : 11,
+              "treeId" : "t",
+              "unchanged" : true,
+              "unchangedNodeIds" : 
+              [
+                "docs"
+              ]
+            },
             "type" : "text"
           }
         ],
-        "isError" : true,
-        "structuredContent" : null
+        "isError" : false,
+        "structuredContent" : 
+        {
+          "applied" : true,
+          "changedNodeIds" : [],
+          "diagnosticsClean" : true,
+          "dryRun" : false,
+          "introducedDiagnostics" : [],
+          "progress" : 
+          [
+            {
+              "nodeId" : "docs",
+              "refused" : "\"docs\" opens a tree: it is complete when that tree is and takes no mark of its own \u2014 mark the steps of the tree it opens"
+            }
+          ],
+          "progressApplied" : false,
+          "progressError" : "Some requested progress marks nodes that open a tree, which take no mark of their own \u2014 each is complete when the tree it opens is; those ids are listed in progressRefused.",
+          "progressRefused" : 
+          [
+            "docs"
+          ],
+          "seq" : 11,
+          "treeId" : "t",
+          "unchanged" : true,
+          "unchangedNodeIds" : 
+          [
+            "docs"
+          ]
+        }
       },
-      "step" : 27,
-      "tool" : "set_progress"
+      "step" : 23,
+      "tool" : "update_nodes"
     },
     {
       "result" : 
@@ -1060,15 +1196,15 @@
         "content" : 
         [
           {
-            "text" : "set_progress: no node in this tree is named no-such-node. Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.",
+            "text" : "update_nodes: no node in this tree is named \"no-such-node\". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.",
             "type" : "text"
           }
         ],
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 28,
-      "tool" : "set_progress"
+      "step" : 24,
+      "tool" : "update_nodes"
     },
     {
       "result" : 
@@ -1076,15 +1212,15 @@
         "content" : 
         [
           {
-            "text" : "annotate_node: nothing to set \u2014 pass at least one of \"description\", \"appendDescription\", \"icon\", \"links\", \"addLinks\", \"opens\".",
+            "text" : "update_nodes: updates[0] sets nothing \u2014 pass at least one of label, color, kind, description, appendDescription, icon, links, addLinks, opens, status.",
             "type" : "text"
           }
         ],
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 29,
-      "tool" : "annotate_node"
+      "step" : 25,
+      "tool" : "update_nodes"
     },
     {
       "result" : 
@@ -1099,7 +1235,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 30,
+      "step" : 26,
       "tool" : "create_node"
     }
   ]
