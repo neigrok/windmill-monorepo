@@ -9,6 +9,18 @@
 
 namespace wm {
 
+namespace {
+
+// Whether a register the batch carries lands: it changes what the tree holds, an empty value included, or the tree
+// holds nothing there yet. A carried register equal to the held one is an echo, not the batch's word. graftState and
+// graftLegend land registers by this, and a re-hue leaves a node to the batch only when its colour lands by it.
+template <typename Entry, typename Value>
+bool landsOver(const std::optional<Entry>& held, Value Entry::*field, const Value& sent) {
+  return !held || (*held).*field != sent;
+}
+
+}  // namespace
+
 std::variant<Graft, KindRefusal> resolveKinds(const Legend& legend, Graft graft) {
   if (graft.nodeKinds.empty()) return graft;
   std::vector<Kind> landed = legend.kinds();
@@ -53,7 +65,7 @@ LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at
     // A register lands at the graft's stamp when the batch carried it and it changes what the legend
     // holds, an empty value included; one left out, or sent as the legend already holds it, stays unset.
     const auto land = [&](bool inBatch, auto Entry::*field, Hlc Entry::*stamp, const auto& sent) {
-      if (!inBatch || (held && (*held).*field == sent)) return;
+      if (!inBatch || !landsOver(held, field, sent)) return;
       entry.*field = sent;
       entry.*stamp = at;
     };
@@ -74,8 +86,9 @@ Repaint repaintOf(const LooseGraph& graph, const Legend& legend, const Graft& gr
   std::set<NodeId> leftToTheBatch(graft.tombstones.begin(), graft.tombstones.end());
   for (const NodeSpec& node : graft.document.nodes) {
     const auto omitted = graft.omittedNodeRegisters.find(node.id);
-    if (omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color))
-      leftToTheBatch.insert(node.id);  // the batch's own colour for it, sent or filed by kind, wins
+    const bool carried = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
+    // The batch's own colour for it, sent or filed by kind, wins when it lands: one sent as held is an echo.
+    if (carried && landsOver(graph.exportNode(node.id), &NodeStateEntry::color, node.color)) leftToTheBatch.insert(node.id);
   }
   Repaint repaint;
   for (const Kind& kind : graft.document.kinds) {
@@ -140,7 +153,7 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
     // A register lands at the graft's stamp when the batch carried it and it changes what the graph
     // holds, an empty value included; one left out, or sent as the graph already holds it, stays unset.
     const auto land = [&](bool inBatch, auto Entry::*field, Hlc Entry::*stamp, const auto& sent) {
-      if (!inBatch || (held && (*held).*field == sent)) return;
+      if (!inBatch || !landsOver(held, field, sent)) return;
       entry.*field = sent;
       entry.*stamp = at;
     };

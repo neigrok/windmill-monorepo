@@ -554,7 +554,9 @@ and none overrides another.
   with a new hue repaints every present node wearing its old hue, in the same frame and at the
   graft's stamp, by `recolor_kind`'s rule (`wearersOf`, used by `repaintOf`), judged against the
   legend and nodes as they stood before the batch, so two kinds can swap hues; a node the batch
-  sends its own `color` or `kind` for, or tombstones, lands what the batch says. The receipt counts
+  tombstones, or sends a `color` or `kind` for that lands a colour that differs from the one the node
+  holds, lands what the batch says, while one sent with the colour it holds — a `get_tree` round trip
+  — is repainted like any wearer (`landsOver`, the comparison the graft lands every register by). The receipt counts
   the repainted nodes as `repaintedNodes`, present when a kind's hue changed and previewed by the
   dry run, and a batch whose only change is a re-hue writes the row `recolor_kind` writes,
   `RecolorKind`. The import is at most one op row — a batch that changes nothing

@@ -79,8 +79,8 @@ LegendState graftLegend(const Legend& legend, const Graft& graft, const Hlc& at)
 
 // What a graft's re-hued kinds repaint, judged against the legend and graph as they stood before the batch by
 // recolor_kind's rule (wearersOf), so a swap swaps: each node wearing a re-hued kind's old hue takes its new hue, but
-// for a node the batch tombstones or sends its own colour or kind for. `rehued` lists the held kinds whose hue the
-// document changes.
+// for a node the batch tombstones or lands its own colour for — a colour, sent or filed by kind, that differs from the
+// one the node holds. `rehued` lists the held kinds whose hue the document changes.
 struct Repaint {
   std::vector<KindId> rehued;
   std::map<NodeId, NodeColor> nodes;

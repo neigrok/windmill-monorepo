@@ -5849,3 +5849,41 @@ TEST(mcp_an_import_repaints_against_the_legend_before_the_batch_and_yields_to_it
   for (const NodeStateEntry& node : h.registry.open(TreeId{"t"})->exportState().nodes)
     if (node.id == NodeId{"gone"} || node.id == NodeId{"cut"}) CHECK(node.color == NodeColor::sky);
 }
+
+// A node is the batch's word only when the colour the batch lands for it differs from the one it holds: a get_tree
+// round trip that re-hues a kind repaints every wearer, a colour sent as held is repainted, a third hue stays the
+// batch's, and the new hue sent as a colour or by the re-hued kind ends on the new hue either way.
+TEST(mcp_an_import_round_trip_that_rehues_a_kind_repaints_every_wearer) {
+  const auto seeded = [] {
+    auto h = std::make_unique<Harness>();
+    CHECK_FALSE(h->call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
+    CHECK_FALSE(h->call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","color":"sky"},
+      {"id":"b","label":"B","color":"sky"},{"id":"c","label":"C","color":"sky"},{"id":"d","label":"D","color":"sky"},
+      {"id":"e","label":"E","color":"gold"}]})")).isError);
+    return h;
+  };
+  const auto colours = [](Harness& h) {
+    return body(h.call("get_nodes", parse(R"({"nodeIds":["a","b","c","d","e"],"fields":["id","color"]})")))["nodes"];
+  };
+
+  auto round = seeded();
+  Json::Value batch = body(round->call("get_tree", parse(R"({"includeGuides":false})")))["tree"];
+  batch.removeMember("guide");
+  batch.removeMember("id");
+  batch.removeMember("title");
+  batch.removeMember("url");
+  for (Json::Value& kind : batch["kinds"]) kind["hue"] = "plum";
+  Json::Value preview = batch;
+  preview["dryRun"] = true;
+  CHECK_EQ(body(round->call("import_subgraph", preview))["repaintedNodes"].asUInt64(), 4u);
+  CHECK_EQ(body(round->call("import_subgraph", batch))["repaintedNodes"].asUInt64(), 4u);
+  CHECK_EQ(colours(*round), parse(R"([{"id":"a","color":"plum"},{"id":"b","color":"plum"},{"id":"c","color":"plum"},
+    {"id":"d","color":"plum"},{"id":"e","color":"gold"}])"));
+
+  auto sent = seeded();
+  const Json::Value receipt = body(sent->call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"plum"}],
+    "nodes":[{"id":"a","color":"sky"},{"id":"b","color":"olive"},{"id":"c","color":"plum"},{"id":"d","kind":"k"}]})")));
+  CHECK_EQ(receipt["repaintedNodes"].asUInt64(), 1u);
+  CHECK_EQ(colours(*sent), parse(R"([{"id":"a","color":"plum"},{"id":"b","color":"olive"},{"id":"c","color":"plum"},
+    {"id":"d","color":"plum"},{"id":"e","color":"gold"}])"));
+}
