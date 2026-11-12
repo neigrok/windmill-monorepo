@@ -121,6 +121,16 @@ Json::Value boundedInt(const char* description, int smallest, int largest, int f
   return property;
 }
 
+// The tree revision a batch is written against, as get_tree and get_nodes answer it.
+Json::Value expectedSeq() {
+  Json::Value property(Json::objectValue);
+  property["type"] = "integer";
+  property["minimum"] = 0;
+  property["description"] =
+      "Optional tree revision precondition from get_tree or get_nodes; stale revisions reject the entire batch.";
+  return property;
+}
+
 Json::Value position(const char* description) {
   Json::Value fields(Json::objectValue);
   fields["x"] = num("Canvas x.");
@@ -240,9 +250,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     const bool patches = std::string_view(name) == "patch_nodes";
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    p["expectedSeq"]["type"] = "integer";
-    p["expectedSeq"]["minimum"] = 0;
-    p["expectedSeq"]["description"] = "Optional tree revision precondition from get_tree or get_nodes; stale revisions reject the entire batch.";
+    p["expectedSeq"] = expectedSeq();
     p["dryRun"] = boolean("Validate and report the planned changes without applying them.");
     Json::Value edgeProperties(Json::objectValue);
     edgeProperties["from"] = cappedStr("Prerequisite node id.", kMaxIdLength);
@@ -885,6 +893,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "call is refused, naming each offending id, and nothing is applied. At most 500 per call.",
         kMaxIdLength);
     p["tombstone"]["maxItems"] = static_cast<Json::UInt64>(kMaxTombstones);
+    p["expectedSeq"] = expectedSeq();
     p["dryRun"] = boolean(
         "If true, report collisions, keptEdges, what would be tombstoned (and any progressSkipped) "
         "and change nothing.");
@@ -916,7 +925,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "register sent as held, no new edge, no removal — writes nothing and answers `unchanged: true` "
         "with the tree's current `seq`; `unchanged` speaks for the graft only, and a carried progress[] "
         "is still applied and reported by its own keys. Pass dryRun to preview all of that, "
-        "`unchanged` included, and change nothing. "
+        "`unchanged` included, and change nothing. Pass `expectedSeq` from get_tree or get_nodes and a "
+        "tree that has moved since refuses the whole call, carried progress[] included, before "
+        "anything lands. "
         "One call carries at most 6 MB of description text across nodes[] (each description is still "
         "capped at 16000 characters on its own); past that the call is refused naming the size, so "
         "split a bigger import. This collapses hundreds of create/connect/delete calls into one.",

@@ -143,6 +143,20 @@ constexpr std::pair<const char*, KindRegister> kImportedKindRegisters[] = {
     {"description", KindRegister::description},
     {"crossBranchExempt", KindRegister::crossBranchExempt}};
 
+// `expectedSeq`, when a batch tool is sent one: a non-negative integer, the revision read from get_tree or get_nodes.
+std::optional<std::string> checkExpectedSeq(const Json::Value& args) {
+  if (args.isMember("expectedSeq") && (!args["expectedSeq"].isInt64() || args["expectedSeq"].asInt64() < 0))
+    return "expectedSeq must be a non-negative integer from get_tree or get_nodes";
+  return std::nullopt;
+}
+
+// A batch written against a revision the tree has moved past is refused whole, before anything is applied.
+std::optional<std::string> staleExpectedSeq(const Json::Value& args, const TreeRoom& room) {
+  if (!args.isMember("expectedSeq") || args["expectedSeq"].asInt64() == room.head()) return std::nullopt;
+  return "expectedSeq conflict: requested " + args["expectedSeq"].asString() + ", current seq is " +
+         std::to_string(room.head()) + ". Nothing changed; read get_nodes or get_tree and retry with the current seq.";
+}
+
 std::optional<std::string> checkImportedNode(const Json::Value& node, const std::string& path) {
   if (!node.isObject()) return path + " must be an object, got " + typeName(node);
   if (std::optional<std::string> bad = requireString(node["id"], path + ".id", Empty::rejected, kMaxIdLength))
@@ -768,8 +782,7 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
 ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& tree, const std::string& name,
                           const Json::Value& args, Clock& clock, const UserId& actor) {
   if (std::optional<std::string> bad = optionalBool(args["dryRun"], "dryRun")) return ToolResult::failure(*bad);
-  if (args.isMember("expectedSeq") && (!args["expectedSeq"].isInt64() || args["expectedSeq"].asInt64() < 0))
-    return ToolResult::failure("expectedSeq must be a non-negative integer from get_tree or get_nodes");
+  if (std::optional<std::string> bad = checkExpectedSeq(args)) return ToolResult::failure(*bad);
 
   std::vector<NodePatch> patches;
   std::vector<OpenedTree> opened;
@@ -839,9 +852,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
-    if (args.isMember("expectedSeq") && args["expectedSeq"].asInt64() != room.head())
-      return ToolResult::failure("expectedSeq conflict: requested " + args["expectedSeq"].asString() +
-          ", current seq is " + std::to_string(room.head()) + ". Nothing changed; read get_nodes or get_tree and retry with the current seq.");
+    if (std::optional<std::string> stale = staleExpectedSeq(args, room)) return ToolResult::failure(*stale);
 
     Batch batch;
     Json::Value out(Json::objectValue);
@@ -1154,6 +1165,7 @@ std::optional<std::string> checkMergedLegend(const std::vector<Kind>& current,
 ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressService& progress, PresenceBus& bus,
                           const TreeId& tree, const Json::Value& args, Clock& clock, const ToolCaller& caller) {
   if (std::optional<std::string> bad = checkImport(args)) return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = checkExpectedSeq(args)) return ToolResult::failure(*bad);
   // The tool is write-level, but a tombstone is what delete_node does, and `delete` is never implied
   // by `write`: refused before the tree is read, in the composite's own words.
   if (args["tombstone"].size() > 0 && !caller.scope.allows(kRoadmapProduct, Access::del))
@@ -1199,6 +1211,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
+    if (std::optional<std::string> stale = staleExpectedSeq(args, room)) return ToolResult::failure(*stale);
 
     // A tombstone must name a node that is there: every miss is named, and nothing is applied.
     std::vector<std::string> missing;

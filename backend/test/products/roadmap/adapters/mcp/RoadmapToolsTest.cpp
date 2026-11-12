@@ -2472,7 +2472,7 @@ TEST(mcp_import_subgraph_takes_no_title_and_never_touches_the_trees) {
   CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
   const Json::Value titled = parse(R"({"treeId":"t","title":"Renamed","nodes":[{"id":"a","label":"A"}]})");
   CHECK_EQ(message(gate.callTool("import_subgraph", titled, h.actor)),
-           std::string("import_subgraph: unknown argument \"title\". This tool takes: dryRun, kinds, nodes, "
+           std::string("import_subgraph: unknown argument \"title\". This tool takes: dryRun, expectedSeq, kinds, nodes, "
                        "prerequisiteMode, progress, tombstone, treeId."));
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);
 
@@ -5581,4 +5581,49 @@ TEST(mcp_import_subgraph_under_replace_keeps_the_edges_of_a_node_sent_without_pr
   CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"c"})")).isError);
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"prerequisiteMode":"replace","nodes":[{"id":"c","label":"C3"}]})")).isError);
   CHECK_EQ(prerequisitesOfC(), parse(R"({"label":"C3","prerequisites":["a"]})"));
+}
+
+// import_subgraph takes `expectedSeq` as patch_nodes and change_edges do: a stale one refuses the whole call before
+// anything lands — graft, tombstones and carried progress — in their words and outcome, a dry run included; the
+// current one lands; the schema is theirs.
+TEST(mcp_import_subgraph_takes_expected_seq_like_the_other_batch_tools) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+  CHECK_FALSE(h.call("rename_node", parse(R"({"nodeId":"a","label":"Named by a person"})")).isError);
+  const StoredTree stored = h.trees.byId["t"];
+  const std::size_t rows = h.ops.byTree["t"].size();
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  const auto call = [&](const char* arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = "t";
+    return gate.callTool("roadmap_import_subgraph", args, h.actor);
+  };
+
+  const std::string stale = "import_subgraph: expectedSeq conflict: requested 1, current seq is 2. Nothing changed; "
+                            "read get_nodes or get_tree and retry with the current seq.";
+  CHECK_EQ(message(call(R"({"expectedSeq":1,"nodes":[{"id":"a","label":"Agent"}],"tombstone":["b"],
+    "progress":[{"nodeId":"a","status":"complete"}]})")), stale);
+  CHECK_EQ(message(call(R"({"expectedSeq":1,"dryRun":true,"nodes":[{"id":"a","label":"Agent"}]})")), stale);
+  CHECK_EQ(message(call(R"({"expectedSeq":-1,"nodes":[{"id":"a","label":"Agent"}]})")),
+           std::string("import_subgraph: expectedSeq must be a non-negative integer from get_tree or get_nodes"));
+  CHECK(h.trees.byId["t"] == stored);
+  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+  CHECK_EQ(body(h.call("get_progress", Json::Value(Json::objectValue))), parse(R"({"completed":[],"outOfOrder":[]})"));
+
+  CHECK_EQ(body(call(R"({"expectedSeq":2,"nodes":[{"id":"a","label":"Agent"}]})"))["seq"].asInt(), 3);
+  installWriteSink({});
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions) observed.push_back(completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{"refused", "refused", "refused", "ok"}));
+
+  const Json::Value catalog = h.tools.listTools(h.actor);
+  std::map<std::string, Json::Value> expectedSeqOf;
+  for (const Json::Value& tool : catalog)
+    if (tool["inputSchema"]["properties"].isMember("expectedSeq"))
+      expectedSeqOf[tool["name"].asString()] = tool["inputSchema"]["properties"]["expectedSeq"];
+  REQUIRE_EQ(expectedSeqOf.size(), 3u);
+  CHECK_EQ(expectedSeqOf.at("import_subgraph"), expectedSeqOf.at("patch_nodes"));
+  CHECK_EQ(expectedSeqOf.at("import_subgraph"), expectedSeqOf.at("change_edges"));
 }
