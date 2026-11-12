@@ -2835,10 +2835,10 @@ TEST(mcp_annotate_node_adds_links_beside_the_other_annotation_fields_in_one_writ
   CHECK_EQ(commandPayload(h.ops.byTree["t"].back().command),
            parse(R"({"id":"a","description":"Rewritten","links":[{"url":"https://a.example/1","label":"One"},
     {"url":"https://github.example/pr/7","label":"PR"},{"url":"https://figma.example/f","label":"Flow"}]})"));
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","icon":"pin","addLinks":null})")).isError);
-  CHECK_EQ(commandPayload(h.ops.byTree["t"].back().command), parse(R"({"id":"a","icon":"pin"})"));
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","icon":"flag","addLinks":null})")).isError);
+  CHECK_EQ(commandPayload(h.ops.byTree["t"].back().command), parse(R"({"id":"a","icon":"flag"})"));
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","icon","description","links","opens"]})"))),
-           parse(R"({"treeId":"t","seq":4,"nodes":[{"id":"a","icon":"pin","description":"Rewritten",
+           parse(R"({"treeId":"t","seq":4,"nodes":[{"id":"a","icon":"flag","description":"Rewritten",
     "links":[{"url":"https://a.example/1","label":"One"},{"url":"https://github.example/pr/7","label":"PR"},
     {"url":"https://figma.example/f","label":"Flow"}],"opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}}],
     "missingNodeIds":[]})"));
@@ -4269,7 +4269,8 @@ TEST(mcp_set_node_color_takes_a_kind_and_answers_the_kind_the_node_wears) {
   CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"ship","kind":"owner"})"))),
            parse(R"({"applied":true,"seq":3,"id":"ship","kind":"owner","diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"ship","kind":"owner","color":"gold"})"))),
-           parse(R"({"applied":true,"seq":4,"id":"ship","kind":"owner","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+           parse(R"({"applied":true,"seq":3,"id":"ship","kind":"owner","unchanged":true,"diagnosticsClean":true,
+             "introducedDiagnostics":[]})"));
   CHECK_EQ(message(h.call("set_node_color", parse(R"({"nodeId":"ship","kind":"owner","color":"plum"})"))),
            std::string("set_node_color: kind \"owner\" wears gold, but color is \"plum\" — send one of the two, or "
                        "both when they agree"));
@@ -4279,9 +4280,9 @@ TEST(mcp_set_node_color_takes_a_kind_and_answers_the_kind_the_node_wears) {
            std::string("set_node_color: missing required argument \"color\" or \"kind\" — the hue the node takes, or "
                        "the legend kind whose hue it takes"));
   CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"ship","color":"sky"})"))),
-           parse(R"({"applied":true,"seq":5,"id":"ship","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+           parse(R"({"applied":true,"seq":4,"id":"ship","diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["ship"],"fields":["id","color","kind"]})"))),
-           parse(R"({"treeId":"t","seq":5,"nodes":[{"id":"ship","color":"sky"}],"missingNodeIds":[]})"));
+           parse(R"({"treeId":"t","seq":4,"nodes":[{"id":"ship","color":"sky"}],"missingNodeIds":[]})"));
 }
 
 // A client frame can land a second kind on a hue a kind already wears. A write that names its kind is
@@ -4303,9 +4304,11 @@ TEST(mcp_a_node_write_that_names_a_kind_answers_that_kind_when_two_kinds_share_i
   CHECK_EQ(body(h.call("create_node", parse(R"({"label":"N","kind":"backend"})"))),
            parse(R"({"applied":true,"seq":3,"id":"n","kind":"backend","diagnosticsClean":true,"introducedDiagnostics":[]})"));
   CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"n","kind":"backend"})"))),
-           parse(R"({"applied":true,"seq":4,"id":"n","kind":"backend","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+           parse(R"({"applied":true,"seq":3,"id":"n","kind":"backend","unchanged":true,"diagnosticsClean":true,
+             "introducedDiagnostics":[]})"));
   CHECK_EQ(body(h.call("set_node_color", parse(R"({"nodeId":"n","color":"sky"})"))),
-           parse(R"({"applied":true,"seq":5,"id":"n","kind":"zinfra","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+           parse(R"({"applied":true,"seq":3,"id":"n","kind":"zinfra","unchanged":true,"diagnosticsClean":true,
+             "introducedDiagnostics":[]})"));
 }
 
 TEST(mcp_patch_nodes_takes_a_kind_per_row_and_one_bad_row_writes_nothing) {
@@ -4780,4 +4783,78 @@ TEST(mcp_a_tree_and_its_steps_answer_where_they_open_on_the_web) {
       CHECK_EQ(writeCompletionJson(completion).find(address), std::string::npos);
   }
   CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_create_tree ok"}));
+}
+
+
+// A single-node edit sent what the node already holds changes nothing, so it writes nothing: no seq, no op row, no
+// frame and no save. It answers today's reply with `unchanged: true` and the tree's head, and still logs one `ok`.
+TEST(mcp_a_single_node_edit_that_changes_nothing_writes_nothing_and_says_so) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"pilot","hue":"gold"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","color":"gold","x":10,"y":20,"description":"Notes",
+    "icon":"pin","links":[{"url":"https://a.example/1","label":"One"},{"url":"https://a.example/2","label":"Two"}],
+    "opens":"t_sub"})")).isError);
+  const StoredTree stored = h.trees.byId["t"];
+  const std::size_t rows = h.ops.byTree["t"].size();
+  const std::size_t frames = h.bus.subgraphBroadcasts.size();
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  const std::string unchanged = R"("applied":true,"seq":2,"id":"a","unchanged":true,"diagnosticsClean":true,
+    "introducedDiagnostics":[])";
+  for (const auto& [tool, arguments, reply] : std::vector<std::tuple<std::string, const char*, std::string>>{
+           {"rename_node", R"({"nodeId":"a","label":"A"})", "{" + unchanged + "}"},
+           {"set_node_color", R"({"nodeId":"a","color":"gold"})", "{" + unchanged + R"(,"kind":"pilot"})"},
+           {"set_node_color", R"({"nodeId":"a","kind":"pilot"})", "{" + unchanged + R"(,"kind":"pilot"})"},
+           {"move_node", R"({"nodeId":"a","x":10,"y":20})", "{" + unchanged + "}"},
+           {"annotate_node", R"({"nodeId":"a","description":"Notes"})", "{" + unchanged + "}"},
+           {"annotate_node", R"({"nodeId":"a","icon":"pin"})", "{" + unchanged + "}"},
+           {"annotate_node", R"({"nodeId":"a","links":[{"url":"https://a.example/1","label":"One"},
+              {"url":"https://a.example/2","label":"Two"}]})", "{" + unchanged + "}"},
+           {"annotate_node", R"({"nodeId":"a","opens":"t_sub"})", "{" + unchanged + "}"},
+           {"annotate_node", R"({"nodeId":"a","addLinks":[{"url":"https://a.example/2","label":"Two"}]})",
+            "{" + unchanged + "}"},
+           {"annotate_node", R"({"nodeId":"a","description":"Notes","icon":"pin","opens":"t_sub"})",
+            "{" + unchanged + "}"}}) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = "t";
+    CHECK_EQ(body(gate.callTool("roadmap_" + tool, args, h.actor)), parse(reply));
+  }
+  installWriteSink({});
+
+  CHECK_EQ(h.registry.open(TreeId{"t"})->head(), static_cast<Seq>(2));
+  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames);
+  CHECK(h.trees.byId["t"] == stored);
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{
+                         "mcp.roadmap_rename_node ok", "mcp.roadmap_set_node_color ok", "mcp.roadmap_set_node_color ok",
+                         "mcp.roadmap_move_node ok", "mcp.roadmap_annotate_node ok", "mcp.roadmap_annotate_node ok",
+                         "mcp.roadmap_annotate_node ok", "mcp.roadmap_annotate_node ok", "mcp.roadmap_annotate_node ok",
+                         "mcp.roadmap_annotate_node ok"}));
+}
+
+// A single-node edit that changes any field it names lands as it always has: a seq, an op row, and no `unchanged`.
+TEST(mcp_a_single_node_edit_that_changes_one_field_it_names_lands_whole) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","description":"Notes","icon":"pin",
+    "links":[{"url":"https://a.example/1","label":"One"}]})")).isError);
+
+  for (const auto& [tool, arguments, seq] : std::vector<std::tuple<const char*, const char*, int>>{
+           {"annotate_node", R"({"nodeId":"a","description":"Notes","icon":"flag"})", 2},
+           {"annotate_node", R"({"nodeId":"a","addLinks":[{"url":"https://a.example/1","label":"Spec"}]})", 3},
+           {"annotate_node", R"({"nodeId":"a","appendDescription":"More"})", 4},
+           {"rename_node", R"({"nodeId":"a","label":"B"})", 5},
+           {"move_node", R"({"nodeId":"a","x":1,"y":2})", 6}}) {
+    Json::Value expected = parse(R"({"applied":true,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})");
+    expected["seq"] = seq;
+    CHECK_EQ(body(h.call(tool, parse(arguments))), expected);
+    CHECK_EQ(h.ops.byTree["t"].size(), static_cast<std::size_t>(seq));
+  }
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["label","icon","description","links","position"]})")))["nodes"],
+           parse(R"([{"label":"B","icon":"flag","description":"Notes\n\nMore","links":[{"url":"https://a.example/1","label":"Spec"}],
+             "position":{"x":1.0,"y":2.0}}])"));
 }

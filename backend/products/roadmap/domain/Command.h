@@ -134,6 +134,10 @@ struct EdgeChangePlan {
   std::vector<Edge> removed;
 };
 
+// Whether a single-node edit would change the node it names: a field the command names holds another value there.
+// A patch row and a single-node verb that change nothing write nothing, by this one rule; any other command changes.
+bool changesNode(const NodeSpec& node, const Command& command);
+
 // A refusal is its sentence, or the KindRefusal of the row whose `kind` refused the batch.
 std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates);
