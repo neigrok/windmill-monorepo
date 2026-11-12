@@ -218,8 +218,8 @@ Json::Value toolResultBlock(const std::string& toolUseId, const ToolResult& resu
 }
 
 bool mutatesTree(const std::string& toolName) {
-  // Read-only prefixes are get_/list_/find_ — NOT describe_, since describe_kind writes. Every
-  // unrecognised name counts as a mutation.
+  // Read-only prefixes are get_/list_/find_; every other name, an unrecognised one included, counts as a
+  // mutation.
   static const std::array<std::string_view, 3> readOnly = {"get_", "list_", "find_"};
   for (const std::string_view prefix : readOnly) {
     if (toolName.rfind(prefix, 0) == 0) return false;

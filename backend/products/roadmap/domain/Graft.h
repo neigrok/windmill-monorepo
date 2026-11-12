@@ -85,7 +85,7 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
 LegendState graftLegend(const Legend& legend, const Graft& graft, const Hlc& at);
 
 // What a graft's re-hued kinds repaint, judged against the legend and graph as they stood before the batch by
-// recolor_kind's rule (wearersOf), so a swap swaps: each node wearing a re-hued kind's old hue takes its new hue, but
+// RecolorKind's rule (wearersOf), so a swap swaps: each node wearing a re-hued kind's old hue takes its new hue, but
 // for a node the batch tombstones, files by kind (`nodeKinds`), or sends a colour that differs from the one it holds.
 // `rehued` lists the held kinds whose hue the document changes.
 struct Repaint {

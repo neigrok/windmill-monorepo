@@ -9,7 +9,7 @@
 
 using namespace wm;
 
-TEST(describe_kind_payload_carries_only_the_registers_it_sets) {
+TEST(a_kind_description_payload_carries_only_the_registers_it_sets) {
   Command flagOnly = *commandFromJson("DescribeKind", parse("{\"id\": \"build\", \"crossBranchExempt\": true}"));
   const DescribeKind& flag = std::get<DescribeKind>(flagOnly);
   CHECK_EQ(flag.id, KindId{"build"});
@@ -130,4 +130,27 @@ TEST(a_stored_create_or_annotate_row_without_opens_still_decodes_and_touches_no_
   merge(graph, legend, *created, Hlc{4, 0, "srv"});
   CHECK_EQ(graph.nodeView(NodeId{"a"})->opens, TreeId{"t_sub"});
   CHECK_EQ(graph.exportNode(NodeId{"a"})->opensAt, (Hlc{2, 0, "srv"}));
+}
+
+// No write sends a ReorderKinds any more, but the log holds the rows it wrote: one decodes, alone or inside a Batch, and
+// replays the order it set, so neither the row nor the Batch around it is skipped.
+TEST(a_stored_legend_reorder_row_still_decodes_and_replays_the_order_it_set) {
+  const std::optional<Command> row = commandFromJson("ReorderKinds", parse("{\"order\":[\"learn\",\"build\"]}"));
+  REQUIRE(row.has_value());
+  CHECK_EQ(std::get<ReorderKinds>(*row).order, (std::vector<KindId>{KindId{"learn"}, KindId{"build"}}));
+  CHECK_EQ(dump(commandPayload(*row)), std::string("{\"order\":[\"learn\",\"build\"]}"));
+
+  const std::optional<Command> batch = commandFromJson(
+      "Batch", parse("{\"commands\":[{\"kind\":\"ReorderKinds\",\"payload\":{\"order\":[\"learn\",\"build\"]}},"
+                     "{\"kind\":\"RenameKind\",\"payload\":{\"id\":\"build\",\"label\":\"Make\"}}]}"));
+  REQUIRE(batch.has_value());
+  CHECK_EQ(std::get<Batch>(*batch).commands.size(), 2u);
+
+  LooseGraph graph;
+  Legend legend({{KindId{"build"}, NodeColor::terracotta, "Build", ""}, {KindId{"learn"}, NodeColor::olive, "Learn", ""}},
+                Hlc{1, 0, "seed"});
+  merge(graph, legend, *batch, Hlc{2, 0, "seed"});
+  std::vector<std::string> order;
+  for (const Kind& kind : legend.kinds()) order.push_back(kind.id.str() + " " + kind.label);
+  CHECK_EQ(order, (std::vector<std::string>{"learn Learn", "build Make"}));
 }

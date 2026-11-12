@@ -131,6 +131,20 @@ TEST(activity_tells_a_batch_of_kind_commands_in_each_members_own_sentence) {
                  }));
 }
 
+// No write reorders a legend any more, but the log holds the rows that did: the feed still tells one, alone and as a
+// part of a Batch.
+TEST(activity_still_tells_a_past_reorder_of_the_legend) {
+  std::vector<AppliedOp> ops = {
+      op(20, ReorderKinds{{KindId{"learn"}, KindId{"build"}}}, "dev", 20000),
+      op(21, Batch{{ReorderKinds{{KindId{"build"}, KindId{"learn"}}}, RenameKind{KindId{"build"}, "Make"}}}, "u5", 21000),
+  };
+  std::vector<std::string> rows;
+  for (const ActivityEvent& event : activityFeed(currentTree(), ops, 100))
+    rows.push_back(std::to_string(event.seq) + " " + event.actor + " | " + event.verb + " | " + event.summary);
+  CHECK_EQ(rows, (std::vector<std::string>{"20 You | reordered-kinds | reordered the legend",
+                                           "21 Guest 5 | reordered-kinds | reordered the legend and renamed a kind to Make"}));
+}
+
 // The feed goes to every reader of a tree, so it never says which tree a node opens.
 TEST(activity_names_no_tree_a_node_opens) {
   CreateNode created{nid("renderer"), "WebGL2 renderer", "zap", NodeColor::sky, {}, std::nullopt};

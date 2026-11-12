@@ -227,8 +227,8 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. The caller's own marks on the deleted nodes are cleared in the same call, before the delete lands, by the path an import's `tombstone` and `prune` take (`clearMarksOn`, through `landMarks`, the core every server-stamped mark takes: stamped after the mark it replaces, one batch, one progress frame to the caller's open sessions), so a progress store that fails fails the call with nothing deleted, and a revive brings no cleared mark back; anyone else's marks stay. `prune: true` also drops every edge touching a deleted node, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}`, `progress` the caller's marks cleared, with or without prune |
 | edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
 | edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant; optional `expectedSeq` and `dryRun`; a graft that changes nothing writes nothing and answers `unchanged: true` (see An edit that changes nothing) |
-| legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
-| legend | `update_kind` | a kind's `label`, `description` and/or `hue` as one op under one seq (`planKindUpdate`): one command, or a `Batch` of them, so a replay lands what the call landed; each field is validated and refused as `rename_kind`, `describe_kind` and `recolor_kind` refuse it, a field sent as the kind holds it is left out, and a call that changes nothing writes nothing and answers `unchanged: true` with the head; a new hue repaints the kind's nodes as `recolor_kind` does and the receipt counts them in `repaintedNodes`; no `crossBranchExempt` and no `kindId` alias |
+| legend | `add_kind` (inline label+description+crossBranchExempt) · `remove_kind` | the legend. A kind's `crossBranchExempt` is set when it is created — `add_kind`, `create_tree` — and changed on an existing kind only by an import's `kinds`. A legend's order is the order its kinds were created or imported in: no tool reorders it, and a `ReorderKinds` row the log already holds still decodes, replays and shows in the Activity feed |
+| legend | `update_kind` | a kind's `label`, `description` and/or `hue` as one op under one seq (`planKindUpdate`): one command, or a `Batch` of them, so a replay lands what the call landed; each field is validated and refused as its own command is — `RenameKind`, `DescribeKind`, `RecolorKind` — a field sent as the kind holds it is left out, and a call that changes nothing writes nothing and answers `unchanged: true` with the head; a new hue repaints every node wearing the kind's old hue (`wearersOf`) and the receipt counts them in `repaintedNodes`; no `crossBranchExempt` and no `kindId` alias |
 | write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true`; a mark the caller already holds answers `unchanged: true` on its row; the owner's mark on a node that opens a tree is refused (see `opens`) |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
@@ -374,10 +374,10 @@ it lists.
 `create_node`, `set_node_color`, each `patch_nodes` or `update_nodes` row and each `import_subgraph` node name the
 node's hue as a `color`, as a legend `kind` id, or as both when they agree. A `kind` lands as the
 hue that kind wears in the node's `color` register: the node stores no kind of its own, so a
-`recolor_kind` repaints it with the rest of the kind. The kind is read off the room's own legend
+re-hue of the kind repaints it with the rest of the kind. The kind is read off the room's own legend
 under the strand the write then takes — `TreeRoom::resolveHue` for `create_node` and
 `set_node_color`, `planNodePatches` for a patch, `TreeRoom::resolveKinds` for an import, all over
-`resolveHue` in `domain/Legend` — so it is never read off a legend a concurrent `recolor_kind`
+`resolveHue` in `domain/Legend` — so it is never read off a legend a concurrent re-hue
 could change before the write lands. An import reads the legend its batch leaves (the tree's,
 with the batch's own `kinds[]` upserted), so one batch can add a kind and file nodes under it,
 and a node that names a kind carries its colour register. A kind the legend does not hold refuses
@@ -558,7 +558,7 @@ and none overrides another.
 - **Branches derive from colour.** `TrunkTree` elects each node's trunk parent (same-hue parents
   win) and a node's branch is the run of same-hue trunk parents above it, so an edge joining two
   hues is `crossBranch` in `get_health`, 60% of the score. A legend kind marked
-  `crossBranchExempt` (on `add_kind` or `describe_kind`, read through `kindFields`) takes every
+  `crossBranchExempt` (set by `add_kind`, `create_tree` or an import's `kinds`, read through `kindFields`) takes every
   edge touching one of its nodes out of that count; `get_health` reports those as
   `crossBranchExempt` beside `crossBranch`, and they weigh nothing: the score's fractions are over
   `edgeCount − crossBranchExempt`, while `edgeCount` stays every live edge. The flag is a kind register
@@ -615,15 +615,15 @@ and none overrides another.
   that carries the legend back changes nothing in it. Rank is never on the wire, so a colliding
   kind keeps its place and a new kind lands after the last one, in batch order. A re-sent kind
   with a new hue repaints every present node wearing its old hue, in the same frame and at the
-  graft's stamp, by `recolor_kind`'s rule (`wearersOf`, used by `repaintOf`), judged against the
+  graft's stamp, by `RecolorKind`'s rule (`wearersOf`, used by `repaintOf`), judged against the
   legend and nodes as they stood before the batch, so two kinds can swap hues. A node the batch
   tombstones lands what the batch says, and so does one it files by `kind`: it takes the hue that kind
   wears after the batch, whatever it wore before. A node sent a `color` that differs from the one it
   holds keeps that colour, while one sent the colour it holds — a `get_tree` round trip — is repainted
   like any wearer (`landsOver`, the comparison the graft lands every register by). The receipt counts
   the nodes the repaint moved as `repaintedNodes`, present when a kind's hue changed and previewed by
-  the dry run. A batch whose only change is re-hueing one kind writes the row `recolor_kind` writes,
-  `RecolorKind`; a batch that re-hues several kinds writes one `RecolorKind` row too, for the first of
+  the dry run. A batch whose only change is re-hueing one kind writes a `RecolorKind` row, as
+  `update_kind` does; a batch that re-hues several kinds writes one `RecolorKind` row too, for the first of
   them in id order, so its row does not say what the batch did. The import is at most one op row — a batch that changes nothing
   writes none — and that row names only the batch's most salient change, in `headline()`'s order
   (a created node, a removed node, a legend change, a node's label, colour or annotation, an

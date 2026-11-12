@@ -160,11 +160,6 @@ TEST(mutates_tree_treats_the_get_list_find_family_as_read_only) {
   CHECK_FALSE(mutatesTree("find_nodes"));
 }
 
-TEST(mutates_tree_counts_describe_kind_which_writes_despite_its_name) {
-  // "Set a legend kind's description" reads like an inspector but mutates.
-  CHECK(mutatesTree("describe_kind"));
-}
-
 TEST(mutates_tree_treats_everything_else_including_the_unknown_as_a_change) {
   CHECK(mutatesTree("create_node"));
   CHECK(mutatesTree("change_edges"));
@@ -382,6 +377,42 @@ TEST(drive_agent_links_and_unlinks_through_change_edges_and_counts_what_changed)
   shape["fields"] = test::list({"id", "prerequisites"});
   CHECK_EQ(test::body(h.call("get_tree", shape))["tree"]["nodes"],
            parse(R"([{"id":"a","prerequisites":[]},{"id":"b","prerequisites":[]},{"id":"c","prerequisites":["a","b"]}])"));
+}
+
+// A tend renames, rebriefs and re-hues a kind through update_kind: each call that changes the kind is one edit of the
+// run, one that sends what the kind holds is none, and each writes its line as roadmap.update_kind, door Coach.
+TEST(drive_agent_changes_a_kind_through_update_kind_and_counts_what_changed) {
+  test::Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"sky","label":"K","description":"Brief."})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","kind":"k"}]})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
+  });
+  const auto editsOf = [&](const char* input) {
+    Json::Value call = toolUseReply("update_kind", "toolu_1");
+    call["content"][0]["input"] = parse(input);
+    FakeModel model;
+    model.replies.push_back(call);
+    model.replies.push_back(textReply("end_turn", "Done"));
+    Recorder rec;
+    return driveAgent("tend it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report()).edits;
+  };
+
+  CHECK_EQ(editsOf(R"({"id":"k","label":"Kay"})"), 1);
+  CHECK_EQ(editsOf(R"({"id":"k","description":"New brief."})"), 1);
+  CHECK_EQ(editsOf(R"({"id":"k","hue":"plum"})"), 1);
+  CHECK_EQ(editsOf(R"({"id":"k","label":"Kay","description":"New brief.","hue":"plum"})"), 0);
+  installWriteSink({});
+
+  CHECK_EQ(lines, (std::vector<std::string>(4, "roadmap.update_kind roadmap Coach ok")));
+  Json::Value shape(Json::objectValue);
+  shape["fields"] = test::list({"id", "color", "kind"});
+  shape["kindFields"] = test::list({"id", "hue", "label", "description"});
+  const Json::Value tree = test::body(h.call("get_tree", shape))["tree"];
+  CHECK_EQ(tree["kinds"], parse(R"([{"id":"k","hue":"plum","label":"Kay","description":"New brief."}])"));
+  CHECK_EQ(tree["nodes"], parse(R"([{"id":"a","color":"plum","kind":"k"}])"));
 }
 
 // Through a tend's scoped host over the real tools, every write that changes nothing answers `unchanged` and is no edit
