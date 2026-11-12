@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -150,13 +151,28 @@ struct EdgeChangePlan {
 // changes, as an import does.
 std::optional<Command> changedPart(const NodeSpec& node, const Command& command);
 
-// A refusal is its sentence, or the KindRefusal of the row whose `kind` refused the batch.
+// A refusal is its sentence, or the KindRefusal of the row whose `kind` refused the batch. A row's links are judged
+// against the ones its node holds (shownLinks).
 std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates);
 std::variant<EdgeChangePlan, std::string> planEdgeChanges(
     const LooseGraph& graph, const EdgeChanges& changes);
 
-// `held` with `added` joined on in the order sent; a held url keeps its place and takes a sent label.
+// A link url a person can open, as a node holds it: surrounding ASCII whitespace trimmed, then starting with http:,
+// https: or mailto: in any case — the schemes the web shows (packages/api-contract/roadmap-link-urls.json). Nothing
+// when the url is not one.
+std::optional<std::string> shownLinkUrl(std::string_view url);
+
+// The links a write sends to a node that holds `held`, as the node would hold them. A url the node holds byte for byte
+// is kept as it is, unjudged and untrimmed: what is sent as held is not the write's word. Every other is trimmed and
+// must be one a person can open, or the write is refused naming it under `path` (`links`, `nodes[0].links`) by its
+// index and saying which schemes are taken, never echoing the url.
+std::variant<std::vector<Link>, std::string> shownLinks(const std::vector<Link>& held, std::vector<Link> sent,
+                                                        const std::string& path);
+
+// `held` with `added` joined on in the order sent, each judged as shownLinks judges it. A link's identity is its url
+// trimmed, so an added url names the held link that trims to it, which keeps its place, takes a sent label and holds
+// the trimmed url from then on; a held url the rule refuses is named only byte for byte.
 std::variant<std::vector<Link>, std::string> withLinksAdded(const std::vector<Link>& held,
                                                             const std::vector<Link>& added, const std::string& path);
 

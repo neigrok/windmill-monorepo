@@ -185,6 +185,7 @@ std::optional<KindStateEntry> Legend::exportKind(const KindId& id) const {
 }
 
 std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const std::vector<Kind>& kinds, const HueChoice& choice,
+                                                               const std::optional<NodeStateEntry>& held,
                                                                const std::string& path) {
   using Reason = KindRefusal::Reason;
   if (!choice.kind) return choice.color;
@@ -194,11 +195,13 @@ std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const std::vector
     if (kinds.empty())
       return KindRefusal{Reason::unknownKind, named + " is not a kind of this tree, whose legend holds none — add one "
                                                       "with roadmap_add_kind first"};
-    std::string held;
-    for (const Kind& kind : kinds) held += (held.empty() ? "\"" : ", \"") + kind.id.str() + "\"";
-    return KindRefusal{Reason::unknownKind, named + " is not a kind of this tree; its legend holds " + held};
+    std::string ids;
+    for (const Kind& kind : kinds) ids += (ids.empty() ? "\"" : ", \"") + kind.id.str() + "\"";
+    return KindRefusal{Reason::unknownKind, named + " is not a kind of this tree; its legend holds " + ids};
   }
-  if (choice.color && *choice.color != worn->hue)
+  // A colour the node already holds does not land: it is an echo beside the kind, which is the write's word.
+  const bool disagrees = choice.color && *choice.color != worn->hue;
+  if (disagrees && landsOver(held, &NodeStateEntry::color, *choice.color))
     return KindRefusal{Reason::hueMismatch, named + " wears " + std::string(toString(worn->hue)) + ", but " + path +
                                                 "color is \"" + std::string(toString(*choice.color)) +
                                                 "\" — send one of the two, or both when they agree"};

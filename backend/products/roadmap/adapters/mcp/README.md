@@ -221,7 +221,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `patch_nodes` | 1–200 existing nodes, replacement fields (`opens` among them, and a hue as `color` or legend `kind`) with omission preservation, full-batch validation, optional `expectedSeq` and `dryRun` |
 | edit | `change_edges` | 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, optional `expectedSeq` and `dryRun` |
 | edit | `create_node` | add a node — its hue as `color` or legend `kind`, `prerequisites[]`, `description`, `links`, `opens` all optional; answers `id` and the `kind` it wears |
-| edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed), its `links` — or `addLinks`, which joins links after the ones held, in the order sent (a held url keeps its place and takes the label sent with it; a url sent twice is refused; the 32-link cap held against the result); one of the two — and/or the tree it `opens` (`""` clears it); when no field it names would change it writes nothing (see below) |
+| edit | `annotate_node` | set a node's `description` — or `appendDescription`, which joins onto the existing body after a blank line, the cap held against the result; one of the two — its `icon` (`""` clears it, which is how an `empty-icon` smell is fixed), its `links` — or `addLinks`, which joins links after the ones held, in the order sent (a held url, whitespace around it aside, keeps its place and takes the label sent with it; a url sent twice is refused; the 32-link cap held against the result); one of the two — and/or the tree it `opens` (`""` clears it); when no field it names would change it writes nothing (see below) |
 | edit | `rename_node` · `set_node_color` · `move_node` | content edits; `set_node_color` takes `color` or legend `kind` and answers the `kind` the node wears; sent what the node already holds, each writes nothing (see below) |
 | edit | `connect` · `reconnect` | prerequisite-edge edits |
 | edit | `disconnect` | remove edges: one `from`+`to` or `edges: [{from,to}]` (1..500), exactly one form; one op, one seq, all or nothing; `removed` counts the edges that were present |
@@ -229,7 +229,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
 | edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant; optional `expectedSeq` and `dryRun`; a graft that changes nothing writes nothing and answers `unchanged: true` (see An edit that changes nothing) |
 | legend | `add_kind` (inline label+description+crossBranchExempt) · `rename_kind` · `describe_kind` (description and/or crossBranchExempt) · `remove_kind` · `reorder_kinds` · `recolor_kind` | the legend |
-| write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true` |
+| write | `set_progress` | per-user overlay: single `nodeId`+`status`, or a bulk `updates[]` (order-safe); `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true`; a mark the caller already holds answers `unchanged: true` on its row |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
 Every tree-scoped tool takes `treeId`. Applied structural edits return
@@ -283,7 +283,8 @@ value on the node, so an edit lands the fields that differ and none that repeat 
 `patch_nodes` row that changes nothing is listed under `unchangedNodeIds` by the same rule, and a
 `patch_nodes` batch whose every row is unchanged answers `unchanged: true` too, as does a
 `change_edges` batch that adds only held edges and removes only absent ones: each plan says whether
-it `landsNothing` (`NodePatchPlan`, `EdgeChangePlan`), on the dry run and for real. An
+it `landsNothing` (`NodePatchPlan`, `EdgeChangePlan`), on the dry run and for real, and such a batch
+writes nothing either — no seq, no op row, no frame and no save. An
 `annotate_node` or a `patch_nodes` row naming several fields lands only those that differ — the op row
 names them and nothing else — so a field it repeats is not stamped again and a client's concurrent edit
 to it stamped earlier still wins, as it does against an import; an `appendDescription` with text always
@@ -295,9 +296,11 @@ the tree holds it, no new edge, no tombstone, no edge a replace drops, no new or
 `seq` the tree's head. `graftFrame` in `domain/Graft` builds the frame and says whether it
 `landsNothing`; the dry run builds the same frame on a copy of the room clock and previews
 `unchanged` with it. `unchanged` speaks for the graft only: a carried `progress[]` is applied and
-reported by its own keys either way.
+reported by its own rows either way, each answering `unchanged: true` when its mark is one the caller
+already holds (see `set_progress`).
 
-A tend does not count such a write as an edit, unless the reply carries `progress` marks it set.
+A tend counts a write as an edit unless its reply answers `unchanged` and so does every progress row
+it lists.
 
 ## `status`, `seedStatus`, `state`, `summary`
 
@@ -341,6 +344,30 @@ A tend does not count such a write as an edit, unless the reply carries `progres
   `fields` value never in a default. A tend is offered it. The reminder mail's tree link and the
   share page's canonical and `og:url` are built by the same functions.
 
+## A link's url
+
+- **What is taken.** A link a write brings to a node is one a person can open: `create_node`,
+  `annotate_node` (`links` and `addLinks`), a `patch_nodes` row and an `import_subgraph` node trim
+  each url's surrounding ASCII whitespace and refuse one that does not then start with `http:`,
+  `https:` or `mailto:`, in any case — the schemes the web shows a link with (`SAFE_URL`) — naming
+  the link by its path (`links[1].url`, `nodes[0].links[2].url`) and the schemes taken, never the
+  url, with nothing applied. `shownLinkUrl`, `shownLinks` and `withLinksAdded` in `domain/Command`
+  are the rule; `packages/api-contract/roadmap-link-urls.json` holds its cases, read by the domain
+  tests and by the web's `NodeWorkspace` test.
+- **What is sent as held.** A url the node already holds, byte for byte, is not the write's word: it
+  is kept exactly as held, unjudged, so a tree holding a url the rule refuses reads and sends back
+  `unchanged` at every door, and a write that adds one more url is refused at that url alone. Each
+  write is judged against the links the node's record holds, read under the strand the write then
+  takes (`TreeRoom::shownLinks` and `withLinksAdded`, `planNodePatches` for a patch row,
+  `resolveLinks` for an import). A new node holds nothing, so the same links sent to a new node or
+  into a new tree are refused.
+- **A link's identity.** `addLinks` names a link by its url trimmed: a url sent with spaces around it
+  is the link the node already holds, and a url sent trimmed is the held link stored with spaces
+  around it, which keeps its place, takes the sent label and holds the trimmed url from then on. A
+  held url the rule refuses is named only byte for byte.
+- **What is not.** No write judges a link the node already holds, and the REST and socket doors do
+  not take this rule.
+
 ## A node's hue: `color` or `kind`
 
 `create_node`, `set_node_color`, each `patch_nodes` row and each `import_subgraph` node name the
@@ -355,7 +382,10 @@ with the batch's own `kinds[]` upserted), so one batch can add a kind and file n
 and a node that names a kind carries its colour register. A kind the legend does not hold refuses
 the whole call, naming the argument path, the id and every kind id the legend holds (or that it
 holds none, and `roadmap_add_kind`); a `color` beside a `kind` that wears another hue refuses it
-naming both. Their write lines carry the outcomes `kind-unknown` and `kind-hue-mismatch`, never the
+naming both, unless the node already holds that colour — what a read carrying both sends back after
+the kind's hue moved — when the colour is an echo (`landsOver` over the node's held entry, which
+`resolveHue` takes) and the node lands the kind's hue as a node filed by kind, never repainted by an
+import's re-hue; a node being created holds no colour to echo. Their write lines carry the outcomes `kind-unknown` and `kind-hue-mismatch`, never the
 kind. A node that names neither keeps its colour, and a new one is terracotta.
 
 ## `opens`
@@ -603,7 +633,15 @@ and none overrides another.
   `acknowledged: true` beside `prerequisitesMet`, `get_progress` lists those ids under
   `outOfOrder`, and the `status` field of `get_tree`/`find_nodes` shows `outOfOrder: true` on the
   node. `prerequisitesMet: false` without `acknowledged` is therefore always an inversion nobody
-  acknowledged.
+  acknowledged. A row whose mark equals the one the caller holds at that row's turn — as the call
+  found the overlay, after the rows before it in the same call — the same status and the same
+  `outOfOrder` word, a node never marked holding `none` (`Progress::holds`), answers `unchanged:
+  true`, on both forms and on an import's `progress` rows, and a bulk call whose every row does
+  answers `unchanged: true` as a whole; a call that completes a node and clears it again changed it
+  twice, and says neither. Such a row is still stamped: it takes the new stamp and the server's
+  receipt time, so the tree's last-marked time moves and open pages receive a progress frame,
+  because `ProgressService` lands a socket replica's marks too, and a replica's newer stamp must
+  land for every replica to converge.
 - **`prune`** drops dangling/self edges in one op and clears the caller's progress rows for nodes
   no longer in the tree.
 - **`find_nodes`** searches without pulling the whole tree. `color` and `kind` are one filter (a

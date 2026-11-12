@@ -1,6 +1,7 @@
 #include "products/roadmap/domain/Command.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -428,17 +429,23 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
       return "node " + quoted(patch.nodeId.str()) + ": opens cannot contain a NUL character";
     const std::optional<NodeSpec> node = graph.nodeView(patch.nodeId);
     if (!node) return "no node in this tree is named " + quoted(patch.nodeId.str());
-    const auto hue = resolveHue(kinds, patch.hue, "updates[" + std::to_string(row) + "].");
+    const auto hue =
+        resolveHue(kinds, patch.hue, graph.exportNode(patch.nodeId), "updates[" + std::to_string(row) + "].");
     if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return *refusal;
     const std::optional<NodeColor> color = std::get<std::optional<NodeColor>>(hue);
+    std::optional<std::vector<Link>> links;
+    if (patch.links) {
+      auto shown = shownLinks(node->links, *patch.links, "updates[" + std::to_string(row) + "].links");
+      if (const auto* refusal = std::get_if<std::string>(&shown)) return *refusal;
+      links = std::get<std::vector<Link>>(std::move(shown));
+    }
 
     std::vector<Command> candidates;
     if (patch.label) candidates.push_back(RenameNode{patch.nodeId, *patch.label});
     if (color) candidates.push_back(SetNodeColor{patch.nodeId, *color});
     if (patch.position) candidates.push_back(RepositionNode{patch.nodeId, *patch.position});
-    if (patch.description || patch.icon || patch.links || patch.opens)
-      candidates.push_back(
-          AnnotateNode{patch.nodeId, patch.description, patch.links, patch.icon, std::nullopt, patch.opens});
+    if (patch.description || patch.icon || links || patch.opens)
+      candidates.push_back(AnnotateNode{patch.nodeId, patch.description, links, patch.icon, std::nullopt, patch.opens});
 
     const std::size_t before = plan.batch.commands.size();
     for (const Command& command : candidates) {
@@ -450,19 +457,60 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
   return plan;
 }
 
+std::optional<std::string> shownLinkUrl(std::string_view url) {
+  constexpr std::string_view kAsciiWhitespace = " \t\n\f\r";
+  const std::size_t first = url.find_first_not_of(kAsciiWhitespace);
+  if (first == std::string_view::npos) return std::nullopt;
+  const std::string_view trimmed = url.substr(first, url.find_last_not_of(kAsciiWhitespace) - first + 1);
+  const auto startsWith = [&](std::string_view scheme) {
+    return trimmed.size() >= scheme.size() &&
+           std::equal(scheme.begin(), scheme.end(), trimmed.begin(),
+                      [](char lower, char sent) { return lower == std::tolower(static_cast<unsigned char>(sent)); });
+  };
+  if (!startsWith("http:") && !startsWith("https:") && !startsWith("mailto:")) return std::nullopt;
+  return std::string(trimmed);
+}
+
+std::variant<std::vector<Link>, std::string> shownLinks(const std::vector<Link>& held, std::vector<Link> sent,
+                                                        const std::string& path) {
+  for (std::size_t i = 0; i < sent.size(); ++i) {
+    const auto heldAsSent = [&](const Link& kept) { return kept.url == sent[i].url; };
+    if (std::any_of(held.begin(), held.end(), heldAsSent)) continue;
+    std::optional<std::string> url = shownLinkUrl(sent[i].url);
+    if (!url)
+      return path + "[" + std::to_string(i) + "].url must start with http:, https: or mailto:, the links a person "
+                    "can open";
+    sent[i].url = std::move(*url);
+  }
+  return sent;
+}
+
 std::variant<std::vector<Link>, std::string> withLinksAdded(const std::vector<Link>& held,
                                                             const std::vector<Link>& added, const std::string& path) {
+  const auto shown = shownLinks(held, added, path);
+  if (const auto* refusal = std::get_if<std::string>(&shown)) return *refusal;
+  // A url the rule takes is named by its trimmed form; one it refuses, only as it stands.
+  const auto identity = [](const std::string& url) { return shownLinkUrl(url).value_or(url); };
+  const std::vector<Link>& links = std::get<std::vector<Link>>(shown);
   std::vector<Link> joined = held;
   std::map<std::string, std::size_t> sentAt;
-  for (std::size_t i = 0; i < added.size(); ++i) {
-    const Link& link = added[i];
-    const auto [first, fresh] = sentAt.emplace(link.url, i);
+  for (std::size_t i = 0; i < links.size(); ++i) {
+    const Link& link = links[i];
+    const auto [first, fresh] = sentAt.emplace(identity(link.url), i);
     if (!fresh)
       return path + "[" + std::to_string(i) + "].url repeats " + path + "[" + std::to_string(first->second) +
              "].url — send each link once";
+    // A url sent as held names that link; any other names the held link that trims to it.
     auto same = std::find_if(joined.begin(), joined.end(), [&](const Link& kept) { return kept.url == link.url; });
-    if (same == joined.end()) joined.push_back(link);
-    else if (!link.label.empty()) same->label = link.label;
+    if (same == joined.end())
+      same = std::find_if(joined.begin(), joined.end(),
+                          [&](const Link& kept) { return identity(kept.url) == identity(link.url); });
+    if (same == joined.end()) {
+      joined.push_back(link);
+      continue;
+    }
+    same->url = link.url;
+    if (!link.label.empty()) same->label = link.label;
   }
   if (joined.size() > kMaxNodeLinks)
     return "links would hold " + std::to_string(joined.size()) + " links, " +
