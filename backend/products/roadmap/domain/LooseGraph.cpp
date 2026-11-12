@@ -1,7 +1,6 @@
 #include "products/roadmap/domain/LooseGraph.h"
 
 #include <algorithm>
-#include <deque>
 #include <set>
 #include <tuple>
 
@@ -261,15 +260,6 @@ std::vector<Edge> LooseGraph::liveEdges() const {
   return live;
 }
 
-std::vector<Edge> LooseGraph::danglingEdges() const {
-  std::vector<Edge> dangling;
-  for (const auto& [edge, element] : edges_) {
-    if (!element.present()) continue;
-    if (edge.from == edge.to || !hasNode(edge.from) || !hasNode(edge.to)) dangling.push_back(edge);
-  }
-  return dangling;
-}
-
 std::vector<Edge> LooseGraph::edgesTouching(const std::vector<NodeId>& nodes) const {
   const std::set<NodeId> touched(nodes.begin(), nodes.end());
   std::vector<Edge> touching;
@@ -278,49 +268,6 @@ std::vector<Edge> LooseGraph::edgesTouching(const std::vector<NodeId>& nodes) co
     if (touched.count(edge.from) || touched.count(edge.to)) touching.push_back(edge);
   }
   return touching;
-}
-
-bool withinReachabilityBudget(std::size_t nodes, std::size_t edges) {
-  constexpr std::size_t kBudgetNodes = 1500;
-  constexpr std::size_t kBudgetEdges = 6000;
-  constexpr std::size_t kBudgetWork = 3000000;  // nodes x edges — the shape of the closure's cost
-  return nodes <= kBudgetNodes && edges <= kBudgetEdges && nodes * edges <= kBudgetWork;
-}
-
-std::vector<Edge> LooseGraph::redundantEdges() const {
-  const std::vector<Edge> live = liveEdges();
-  if (!withinReachabilityBudget(presentNodeCount(), live.size())) return {};
-
-  std::map<NodeId, std::vector<NodeId>> parents;
-  for (const auto& edge : live) parents[edge.to].push_back(edge.from);
-
-  std::map<NodeId, std::set<NodeId>> memo;
-  auto ancestorsOf = [&](const NodeId& start) -> const std::set<NodeId>& {
-    auto cached = memo.find(start);
-    if (cached != memo.end()) return cached->second;
-    std::set<NodeId> ancestors;
-    std::deque<NodeId> queue(parents[start].begin(), parents[start].end());
-    while (!queue.empty()) {
-      NodeId current = queue.front();
-      queue.pop_front();
-      if (!ancestors.insert(current).second) continue;
-      for (const auto& parent : parents[current]) queue.push_back(parent);
-    }
-    return memo.emplace(start, std::move(ancestors)).first->second;
-  };
-
-  std::vector<Edge> redundant;
-  for (const auto& [child, directParents] : parents) {
-    for (const auto& from : directParents) {
-      for (const auto& other : directParents) {
-        if (other != from && ancestorsOf(other).count(from)) {
-          redundant.push_back(Edge{from, child});
-          break;
-        }
-      }
-    }
-  }
-  return redundant;
 }
 
 TreeData LooseGraph::toTreeData(const TreeId& id, const std::string& title) const {

@@ -427,7 +427,7 @@ TEST(room_import_loses_a_re_sent_kind_to_a_remove_stamped_before_it_that_arrives
 
   Graft graft;
   graft.document.kinds = {{KindId{"backend"}, NodeColor::sky, "Backend services"}};
-  graft.omittedKindRegisters[KindId{"backend"}] = {KindRegister::description, KindRegister::crossBranchExempt};
+  graft.omittedKindRegisters[KindId{"backend"}] = {KindRegister::description};
   room.importTree(graft, 100, uid());
   Subgraph remove;
   remove.treeId = tid();
@@ -489,7 +489,7 @@ TEST(room_replays_a_round_trip_rehue_to_the_room_it_left) {
 
   Graft graft;
   graft.document.kinds = {{KindId{"k"}, NodeColor::plum, "K"}};
-  graft.omittedKindRegisters[KindId{"k"}] = {KindRegister::description, KindRegister::crossBranchExempt};
+  graft.omittedKindRegisters[KindId{"k"}] = {KindRegister::description};
   NodeSpec a;
   a.id = nid("a");
   a.label = "A";

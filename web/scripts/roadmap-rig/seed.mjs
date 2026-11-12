@@ -37,7 +37,7 @@ function documentOf(tree) {
     return node;
   });
   const kinds = (tree.kinds ?? []).map((k) => ({
-    id: k.id, hue: k.hue, label: k.label ?? '', description: k.description ?? '', crossBranchExempt: !!k.crossBranchExempt,
+    id: k.id, hue: k.hue, label: k.label ?? '', description: k.description ?? '',
   }));
   return { id: treeId, title: tree.title, nodes, kinds };
 }

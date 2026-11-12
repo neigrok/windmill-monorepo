@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 25;
+constexpr int kWireCorpusVersion = 26;
 
 struct Step {
   const char* tool;
@@ -109,7 +109,6 @@ std::vector<Step> plan() {
                                             "description", "links", "opens"})}})},
       {"get_diagnostics", kNoArgs},
       {"get_progress", kNoArgs},
-      {"get_health", kNoArgs},
       // `docs` opens a tree, so it takes no mark: a call of marks answers its row refused beside the marks it records, an
       // out-of-order completion of `launch` (behind `docs`, which never completes) acknowledged among them, and an import
       // lists it in progressRefused beside its rows, `launch` sent back as get_progress answers it.
