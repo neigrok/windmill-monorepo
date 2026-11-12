@@ -109,6 +109,13 @@ std::optional<std::string> optionalNumber(const Json::Value& value, const std::s
   return std::nullopt;
 }
 
+std::optional<std::string> requirePosition(const Json::Value& value, const std::string& path) {
+  if (!value.isObject()) return path + ".position must be an object with x and y";
+  for (const char* axis : {"x", "y"})
+    if (std::optional<std::string> bad = requireNumber(value[axis], path + ".position." + axis)) return bad;
+  return std::nullopt;
+}
+
 std::optional<std::string> optionalBool(const Json::Value& value, const std::string& path) {
   if (value.isNull()) return std::nullopt;
   if (!value.isBool()) return wrongType(path, "a boolean", value);
