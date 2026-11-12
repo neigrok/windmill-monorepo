@@ -6041,3 +6041,28 @@ TEST(mcp_add_links_names_a_held_link_by_its_trimmed_url) {
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","links"]})")))["nodes"],
            parse(R"([{"id":"a","links":[{"url":"https://a.example/","label":"A"},{"url":"https://b.example/"}]}])"));
 }
+
+// A batch edit that lands nothing takes no save, as a single-node edit and an import that land nothing take none, and
+// answers as it always has; one that lands takes one save.
+TEST(mcp_a_batch_edit_that_lands_nothing_takes_no_save) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
+  const Json::Value created = body(h.call("create_node", parse(R"({"id":"b","label":"B","prerequisites":["a"]})")));
+  const std::size_t saved = h.trees.savedNodeCounts.size();
+
+  Json::Value patched = parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],"dryRun":false,
+    "applied":true,"unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[]})");
+  patched["seq"] = created["seq"];
+  CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A"}]})"))), patched);
+  Json::Value edged = parse(R"({"treeId":"t","addedEdges":[],"removedEdges":[],"unchangedEdges":2,"dryRun":false,
+    "applied":true,"unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[]})");
+  edged["seq"] = created["seq"];
+  CHECK_EQ(body(h.call("change_edges", parse(R"({"add":[{"from":"a","to":"b"}],"remove":[{"from":"b","to":"a"}]})"))),
+           edged);
+  CHECK_EQ(h.trees.savedNodeCounts.size(), saved);
+
+  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A2"}]})")).isError);
+  CHECK_EQ(h.trees.savedNodeCounts.size(), saved + 1);
+  CHECK_FALSE(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"b"}]})")).isError);
+  CHECK_EQ(h.trees.savedNodeCounts.size(), saved + 2);
+}

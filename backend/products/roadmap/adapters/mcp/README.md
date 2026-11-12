@@ -283,7 +283,8 @@ value on the node, so an edit lands the fields that differ and none that repeat 
 `patch_nodes` row that changes nothing is listed under `unchangedNodeIds` by the same rule, and a
 `patch_nodes` batch whose every row is unchanged answers `unchanged: true` too, as does a
 `change_edges` batch that adds only held edges and removes only absent ones: each plan says whether
-it `landsNothing` (`NodePatchPlan`, `EdgeChangePlan`), on the dry run and for real. An
+it `landsNothing` (`NodePatchPlan`, `EdgeChangePlan`), on the dry run and for real, and such a batch
+writes nothing either — no seq, no op row, no frame and no save. An
 `annotate_node` or a `patch_nodes` row naming several fields lands only those that differ — the op row
 names them and nothing else — so a field it repeats is not stamped again and a client's concurrent edit
 to it stamped earlier still wins, as it does against an import; an `appendDescription` with text always

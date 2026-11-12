@@ -899,11 +899,14 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
     out["seq"] = static_cast<Json::Int64>(room.head());
     if (landsNothing) out["unchanged"] = true;
     if (!dryRun) {
+      // A batch that lands nothing writes nothing — no seq, no op row, no frame, no save — as a single-node edit does.
       std::optional<std::map<NodeId, TreeId>> pointersBefore;
-      if (opensATree(opened)) pointersBefore = room.pointers();
+      if (!landsNothing && opensATree(opened)) pointersBefore = room.pointers();
       const TreeDiagnostics before = room.diagnose();
-      out["seq"] = static_cast<Json::Int64>(room.applyCommands(batch.commands, clock.nowMs(), actor));
-      registry.persist(tree);
+      if (!landsNothing) {
+        out["seq"] = static_cast<Json::Int64>(room.applyCommands(batch.commands, clock.nowMs(), actor));
+        registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
+      }
       const TreeDiagnostics after = room.diagnose();
       if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
       answerDiagnostics(before, after, out);
