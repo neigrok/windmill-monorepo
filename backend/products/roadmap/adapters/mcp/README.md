@@ -380,7 +380,10 @@ with the batch's own `kinds[]` upserted), so one batch can add a kind and file n
 and a node that names a kind carries its colour register. A kind the legend does not hold refuses
 the whole call, naming the argument path, the id and every kind id the legend holds (or that it
 holds none, and `roadmap_add_kind`); a `color` beside a `kind` that wears another hue refuses it
-naming both. Their write lines carry the outcomes `kind-unknown` and `kind-hue-mismatch`, never the
+naming both, unless the node already holds that colour — what a read carrying both sends back after
+the kind's hue moved — when the colour is an echo (`landsOver` over the node's held entry, which
+`resolveHue` takes) and the node lands the kind's hue as a node filed by kind, never repainted by an
+import's re-hue; a node being created holds no colour to echo. Their write lines carry the outcomes `kind-unknown` and `kind-hue-mismatch`, never the
 kind. A node that names neither keeps its colour, and a new one is terracotta.
 
 ## `opens`

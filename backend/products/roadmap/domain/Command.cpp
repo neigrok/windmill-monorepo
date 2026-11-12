@@ -429,7 +429,8 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
       return "node " + quoted(patch.nodeId.str()) + ": opens cannot contain a NUL character";
     const std::optional<NodeSpec> node = graph.nodeView(patch.nodeId);
     if (!node) return "no node in this tree is named " + quoted(patch.nodeId.str());
-    const auto hue = resolveHue(kinds, patch.hue, "updates[" + std::to_string(row) + "].");
+    const auto hue =
+        resolveHue(kinds, patch.hue, graph.exportNode(patch.nodeId), "updates[" + std::to_string(row) + "].");
     if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return *refusal;
     const std::optional<NodeColor> color = std::get<std::optional<NodeColor>>(hue);
     std::optional<std::vector<Link>> links;

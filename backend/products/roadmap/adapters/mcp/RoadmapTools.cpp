@@ -730,7 +730,10 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     const bool setsHue = tool == "create_node" || tool == "set_node_color";
     if (setsHue && payload.isMember("kind")) {
       HueChoice choice{parseColor(payload.get("color", "").asString()), KindId{payload["kind"].asString()}};
-      const auto hue = room.resolveHue(choice, "");
+      // A node being created holds no colour that could be an echo beside its kind.
+      const std::optional<NodeId> node =
+          tool == "set_node_color" ? std::optional(NodeId{payload["id"].asString()}) : std::nullopt;
+      const auto hue = room.resolveHue(choice, node, "");
       if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return kindRefused(*refusal);
       payload["color"] = std::string(toString(*std::get<std::optional<NodeColor>>(hue)));
     }

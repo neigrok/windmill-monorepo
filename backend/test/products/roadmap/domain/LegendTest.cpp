@@ -164,17 +164,34 @@ TEST(a_kind_resolves_to_the_hue_it_wears_and_a_colour_beside_it_must_agree) {
   using Resolved = std::variant<std::optional<NodeColor>, KindRefusal>;
   using Reason = KindRefusal::Reason;
 
-  CHECK(resolveHue(roles, HueChoice{std::nullopt, kid("owner")}, "") == Resolved{NodeColor::gold});
-  CHECK(resolveHue(roles, HueChoice{NodeColor::gold, kid("owner")}, "") == Resolved{NodeColor::gold});
-  CHECK(resolveHue(roles, HueChoice{NodeColor::sky, std::nullopt}, "") == Resolved{NodeColor::sky});
-  CHECK(resolveHue(roles, HueChoice{}, "") == Resolved{std::optional<NodeColor>{}});
-  CHECK((resolveHue(roles, HueChoice{NodeColor::sky, kid("owner")}, "updates[0].") ==
+  CHECK(resolveHue(roles, HueChoice{std::nullopt, kid("owner")}, std::nullopt, "") == Resolved{NodeColor::gold});
+  CHECK(resolveHue(roles, HueChoice{NodeColor::gold, kid("owner")}, std::nullopt, "") == Resolved{NodeColor::gold});
+  CHECK(resolveHue(roles, HueChoice{NodeColor::sky, std::nullopt}, std::nullopt, "") == Resolved{NodeColor::sky});
+  CHECK(resolveHue(roles, HueChoice{}, std::nullopt, "") == Resolved{std::optional<NodeColor>{}});
+  CHECK((resolveHue(roles, HueChoice{NodeColor::sky, kid("owner")}, std::nullopt, "updates[0].") ==
          Resolved{KindRefusal{Reason::hueMismatch, "updates[0].kind \"owner\" wears gold, but updates[0].color is "
                                                    "\"sky\" — send one of the two, or both when they agree"}}));
-  CHECK((resolveHue(roles, HueChoice{std::nullopt, kid("ownr")}, "nodes[2].") ==
+  CHECK((resolveHue(roles, HueChoice{std::nullopt, kid("ownr")}, std::nullopt, "nodes[2].") ==
          Resolved{KindRefusal{Reason::unknownKind, "nodes[2].kind \"ownr\" is not a kind of this tree; its legend "
                                                    "holds \"developer\", \"designer\", \"owner\""}}));
-  CHECK((resolveHue({}, HueChoice{std::nullopt, kid("owner")}, "") ==
+  CHECK((resolveHue({}, HueChoice{std::nullopt, kid("owner")}, std::nullopt, "") ==
          Resolved{KindRefusal{Reason::unknownKind, "kind \"owner\" is not a kind of this tree, whose legend holds "
                                                    "none — add one with roadmap_add_kind first"}}));
+}
+
+// A colour sent beside a kind is an echo when the node already holds it: the kind is the write's word and the node
+// lands its hue. A colour the node does not hold, or any colour on a node the tree does not hold, must still agree.
+TEST(a_colour_the_node_holds_beside_a_kind_is_an_echo_and_the_kind_lands) {
+  const std::vector<Kind> roles = {{kid("developer"), NodeColor::terracotta}, {kid("owner"), NodeColor::gold}};
+  using Resolved = std::variant<std::optional<NodeColor>, KindRefusal>;
+  const std::optional<NodeStateEntry> held = NodeStateEntry{.id = NodeId{"a"}, .color = NodeColor::sky};
+
+  CHECK(resolveHue(roles, HueChoice{NodeColor::sky, kid("owner")}, held, "") == Resolved{NodeColor::gold});
+  CHECK((resolveHue(roles, HueChoice{NodeColor::olive, kid("owner")}, held, "updates[0].") ==
+         Resolved{KindRefusal{KindRefusal::Reason::hueMismatch, "updates[0].kind \"owner\" wears gold, but "
+                                                                "updates[0].color is \"olive\" — send one of the "
+                                                                "two, or both when they agree"}}));
+  CHECK((resolveHue(roles, HueChoice{NodeColor::sky, kid("owner")}, std::nullopt, "") ==
+         Resolved{KindRefusal{KindRefusal::Reason::hueMismatch, "kind \"owner\" wears gold, but color is \"sky\" — "
+                                                                "send one of the two, or both when they agree"}}));
 }
