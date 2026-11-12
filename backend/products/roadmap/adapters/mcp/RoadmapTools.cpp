@@ -1694,7 +1694,7 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
   std::optional<UserId> reader = caller.empty() ? std::nullopt : std::optional<UserId>(caller);
 
   if (name == "delete_tree")     return removeTree(treeRegistry_, tree, caller);
-  if (name == "describe_tree")   return describeTree(treeRegistry_, tree, arguments, caller);
+  if (name == "update_tree" || name == "describe_tree") return describeTree(treeRegistry_, tree, arguments, caller);
   if (name == "get_tree")        return readTree(registry_, treeRegistry_, progress_, appOrigin_, tree, arguments, reader);
   if (name == "get_nodes")       return readNodes(registry_, treeRegistry_, progress_, appOrigin_, tree, arguments, reader);
   if (name == "get_diagnostics") return readDiagnostics(registry_, treeRegistry_, tree, arguments, reader);
