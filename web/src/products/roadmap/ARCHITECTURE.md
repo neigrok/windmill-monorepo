@@ -147,8 +147,10 @@ Activity from 744px when its destination is available; on phones it does nothing
 Board's keys and their shared typing and covered-layer refusal: a step open over either view, a dialog or the
 composer prevents them acting. C completes a focused Up next card; Backspace and Delete start a nine-second
 held delete on a deletable owner card, with no confirm. Graph selection shortcuts do not act on the Board. The
-host refuses paste, global Undo and Redo and shortcut help while a layer covers it, the composer's picker
-included; in a text field ⌘Z and ⇧⌘Z belong to the field.
+host (`useRoadmapKeys`) lets no key reach the room while a layer covers it, the composer's picker and the guide's
+note being written included: paste, Undo and Redo, shortcut help, and the Graph's select all, delete and camera keys
+wait wherever focus stands in the cover, and ⌘K with them, while Escape still closes Ask AI. In a text field ⌘Z and
+⇧⌘Z belong to the field.
 
 **Focus.** Each surface restores its own opener: Dialog and the Ask AI and Fork sheets share `useDialogFocus`;
 the composer uses `useComposerFocus`. `design-system/feedback/dialogFocus.js` owns focusable elements and Tab

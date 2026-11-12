@@ -112,6 +112,74 @@ hostTest('Chromium: on a phone a guide the session receives mid-edit is said in 
   } finally { await page.close(); }
 });
 
+hostTest('Chromium: while the guide\'s note is being written the room\'s keys wait beneath it: with focus on Cancel, Backspace and Delete delete no selected step, ⌘A selects nothing more, and F and 0 leave the camera', async () => {
+  const { page, errors } = await openHost({ width: 1440, height: 960 });
+  try {
+    await page.evaluate(() => window.session.setGuide('One step a week.'));
+    await page.getByRole('button', { name: 'Guide: One step a week.' }).waitFor();
+    await page.evaluate(() => window.scene.options.onMarqueeSelect(['wind', 'dock'], false));
+    await page.locator('.st-selection-bar').waitFor();
+    const room = () => page.evaluate(() => ({
+      steps: window.session.lattice.toTreeData().nodes.map((node) => node.id).sort(),
+      selection: document.querySelector('.st-selection-bar')?.textContent ?? null,
+      camera: window.cameraCalls.length,
+    }));
+    const before = await room();
+    await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+    await page.getByRole('button', { name: 'Edit guide' }).click();
+    await page.keyboard.type(' Written');
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Cancel');
+    for (const key of ['Backspace', 'Delete', 'Meta+a', 'f', '0']) await page.keyboard.press(key);
+    assert.deepEqual({ room: await room(), draft: await page.locator('.st-guide-field').inputValue(), note: await page.getByRole('dialog', { name: 'Edit guide' }).count() },
+      { room: before, draft: 'One step a week. Written', note: 1 });
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: in a room whose session cannot take the guide, a save made with the browser offline says so and reports nothing, and Try again once back online saves', async () => {
+  const { page } = await openHost({ width: 390, height: 844 });
+  page.removeAllListeners('console');
+  const complaints = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error' && !message.text().startsWith('Failed to load resource')) complaints.push(message.text());
+  });
+  try {
+    await page.evaluate(() => window.session.setGuide('One step a week.'));
+    await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+    await page.getByRole('button', { name: 'Edit guide' }).click();
+    await page.keyboard.type(' Written');
+    await page.evaluate(() => { window.session.setGuide = () => false; });
+    const sent = [];
+    let offline = true;
+    await page.route('**/v1/trees/t_sail', (route) => {
+      if (route.request().method() !== 'PATCH') return route.fallback();
+      sent.push(JSON.parse(route.request().postData()).guide);
+      return offline ? route.abort('internetdisconnected') : route.fallback();
+    });
+    await page.context().setOffline(true);
+    await page.getByRole('button', { name: 'Save' }).click();
+    const line = page.getByRole('alert');
+    await line.waitFor();
+    assert.deepEqual({ online: await page.evaluate(() => navigator.onLine), footer: await page.locator('.st-guide-footer').textContent(), issues: await page.evaluate(() => window.issues) },
+      { online: false, footer: 'You’re offline. Try again when you’re back online.CancelTry again', issues: [] });
+    offline = false;
+    await page.context().setOffline(false);
+    await page.getByRole('button', { name: 'Try again' }).click();
+    await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
+    assert.deepEqual({ sent, events: (await guideEvents(page)).slice(2), issues: await page.evaluate(() => window.issues) }, {
+      sent: ['One step a week. Written', 'One step a week. Written'],
+      events: [
+        { step: 'save', outcome: 'failed', length: '1-500', reason: 'offline' },
+        { step: 'retry', reason: 'offline' },
+        { step: 'save', outcome: 'saved', length: '1-500' },
+      ],
+      issues: [],
+    });
+    assert.deepEqual(complaints, []);
+  } finally { await page.close(); }
+});
+
 hostTest('Chromium: a reader on the app route sees the author\'s note on the tree, and the share route shows no guide', async () => {
   const reader = await openHost({ width: 390, height: 844, role: 'reader', appUrl: true });
   try {
