@@ -29,6 +29,15 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   tend neither reads nor sets the pointer: it runs as the owner on labels that may be someone else's
   words, so `ScopedToolHost` offers it no `opens` argument and no `opens` field, and refuses a call
   that names either; the `state` it reads is the owner's.
+  What is wrong with a tree's pointers follows the same line. `treeLoops` and `danglingPointers`
+  (`SPEC.md`, Model, `PointerDiagnostics`) carry tree ids, titles and the stored pointer text, so
+  MCP `get_diagnostics` and `GET …/diagnostics` answer them only to a caller `canWrite` admits,
+  from a read made after the tree's strand is released. Every other reader is answered the graph's
+  diagnostics alone, in the bytes a tree without pointers answers, with no read of another tree:
+  no key, id, title or timing says the tree holds a pointer. An MCP receipt names a loop of trees
+  only to the owner who just set the pointer that closed it. A tend is answered neither key and
+  follows no pointer: `ScopedToolHost` withholds `includePointers` from its catalog and sends it
+  as `false` on every call, and it has no `opens` argument to set.
   `guides` (`SPEC.md`, Model) follows the same line. The trees above a tree are the caller's own:
   they are read only for a caller `canWrite` admits, after the tree's strand is released, and each
   must stand and belong to that caller, so someone else's tree that points at this one — the socket

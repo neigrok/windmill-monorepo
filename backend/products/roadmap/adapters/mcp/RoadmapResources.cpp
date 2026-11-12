@@ -34,6 +34,16 @@ Cycles and detached nodes are accepted and reported by `roadmap_get_diagnostics`
 `diagnosticsClean` describes the whole graph; `introducedDiagnostics` identifies problems added by
 that edit. Existing problems do not mean the edit caused them.
 
+On a tree you own, `roadmap_get_diagnostics` also reports what is wrong with the trees its nodes
+open. `treeLoops` lists each node whose pointer leads back to the tree, with a shortest `path` of
+`{treeId, title}` from the tree it opens back to this one: a tree on such a loop never completes.
+`danglingPointers` lists each node whose pointer names no tree of yours that stands, as
+`{node, treeId}`: such a node is an ordinary node. Neither changes `diagnosticsClean`, which is
+about the graph alone. An edit that sets `opens` and closes a loop of trees names it in
+`introducedDiagnostics`. Repair either by re-pointing the node's `opens` or clearing it with `""`.
+`pointerDiagnosticsUnavailable: true` says the opened trees could not be read just now;
+`includePointers: false` leaves both lists out.
+
 ## Progress
 
 Structure is shared; progress is private to the caller. `roadmap_set_progress` accepts completion

@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 14,
+  "schemaVersion" : 15,
   "steps" : 
   [
     {
@@ -477,7 +477,10 @@
               "applied" : true,
               "diagnosticsClean" : true,
               "id" : "docs",
-              "introducedDiagnostics" : [],
+              "introducedDiagnostics" : 
+              [
+                "loop of trees from \"docs\" through \"t\""
+              ],
               "seq" : 14
             },
             "type" : "text"
@@ -691,6 +694,7 @@
             {
               "cycles" : [],
               "dangling" : [],
+              "danglingPointers" : [],
               "maskedWork" : [],
               "selfEdges" : [],
               "smells" : 
@@ -710,6 +714,19 @@
                 {
                   "kind" : "empty-icon",
                   "node" : "sync"
+                }
+              ],
+              "treeLoops" : 
+              [
+                {
+                  "node" : "docs",
+                  "path" : 
+                  [
+                    {
+                      "title" : "Test Roadmap",
+                      "treeId" : "t"
+                    }
+                  ]
                 }
               ]
             },

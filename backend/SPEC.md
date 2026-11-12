@@ -50,6 +50,14 @@ rejected for structure. Validity is a read model, not a gate.
   reader); `leadingBackTo` names the trees whose pointers lead to a tree, at any distance. A node
   whose pointer is not valid is an ordinary node, and so is every node for a reader who cannot write
   the tree: their state follows their own mark, and nothing they receive says a node opens a tree.
+  `diagnose` says what is wrong with a tree's pointers (`PointerDiagnostics`), each list in node id
+  order. `treeLoops` holds one entry per node whose pointer leads back to the node's own tree, with
+  a shortest way back: each tree on it with its title, the tree the node opens first and the node's
+  own tree last — one entry, that tree, for a node that opens the tree it is in — and the smaller
+  tree id wherever two ways are as short, so the way does not depend on the order the trees are
+  visited in. `danglingPointers` holds one entry per node whose pointer is not empty and not valid,
+  with the pointer as it is stored. A loop among other trees that does not lead back to the tree
+  is not that tree's: it is reported when one of those trees is read.
   The raw mark (`status`, `get_progress`, `GET …/progress`) stays the raw mark, `set_progress`
   records a mark on such a node and judges `prerequisitesMet` on marks alone, and the gallery counts
   the owner's stored marks.
@@ -63,13 +71,25 @@ rejected for structure. Validity is a read model, not a gate.
   `tree_nodes_pkey` and `node_progress_pkey`, so the cost follows the trees reached and not the
   size of the tables. It is made once per reply, after the tree's strand is released, and not
   at all for a caller who cannot write the tree, for fields that ask for neither `state` nor
-  `opens`, or for a tree that holds no pointer. Where every tree of an owner is already loaded with
+  `opens`, or for a tree that holds no pointer. The tree's diagnostics (`get_diagnostics`,
+  `GET /v1/trees/{id}/diagnostics`) make the same read for `OpenedTrees::diagnose`: once per reply,
+  after the strand is released, for a caller who can write the tree and a tree that holds a
+  pointer, and not for an MCP call that sends `includePointers: false`. An MCP edit that makes a
+  node open a tree (`create_node`, `annotate_node`, `patch_nodes` or `import_subgraph` carrying a
+  non-empty `opens`) makes it once more, after the edit is saved and the strand is released, from
+  the trees the tree opened before the edit and opens after it: its receipt names in
+  `introducedDiagnostics` each loop of trees the tree holds now and did not hold before, after the
+  graph's errors. No other edit makes that read, a dry run and an edit that only clears a pointer
+  among them. Where every tree of an owner is already loaded with
   its marks (`TreeRegistry::list`, `PgReminderRepository::readinessFor`), `openedAmong`
   (`domain/TreeSummary.h`) judges the account once in memory with no further read.
 - `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
   true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
-  (> 256 bytes), `empty-icon`, `high-in-degree` (> 4).
+  (> 256 bytes), `empty-icon`, `high-in-degree` (> 4). It reads one graph and no pointer: a loop of
+  trees and a dangling pointer (`PointerDiagnostics`) are reported beside it, as smells are, and
+  change neither `clean()` nor what it gates — the `SkillTree` projection, `get_health` and a
+  receipt's `diagnosticsClean`.
 - `SkillTree` — the validated projection, constructible only from a clean graph; it throws
   `InvalidTree` on a duplicate id, a dangling prerequisite or a cycle. Indexes the DAG, the topo
   order, ancestry and the render model.
@@ -366,6 +386,16 @@ trees above cannot be read they are answered `503 guides-unavailable`. Any other
 read the tree is answered its own guide alone when it has one, `yours: false`, and nothing is read
 for them. An absent tree and one the caller may not read answer the `404` the tree route gives.
 The tree route carries no guides and never makes that read.
+
+`GET /v1/trees/{id}/diagnostics` answers the graph's diagnostics, `{cycles, dangling, selfEdges,
+smells, maskedWork}` (`TreeDiagnostics`, Model), to every caller who can read the tree. A caller who
+can write it is also answered `treeLoops`, an array of `{node, path: [{treeId, title}]}`, and
+`danglingPointers`, an array of `{node, treeId}` (`PointerDiagnostics`, Model), read off the stored
+rows after the tree's strand is released; both are `[]`, with nothing read, for a tree that holds no
+pointer. When the pointers cannot be followed the owner is still answered `200` with the graph's
+diagnostics, without those two keys and with `pointerDiagnosticsUnavailable: true`, a key that is
+otherwise absent. Any other caller is answered the graph's diagnostics alone, the same bytes a tree
+without pointers answers, and nothing is read for them.
 
 `PATCH /v1/trees/{id}` sets one register per call — `{visibility}`, `{guide}` or `{title}` — each the
 owner's alone. A body naming more than one is refused `400`, and a body that is not one JSON object

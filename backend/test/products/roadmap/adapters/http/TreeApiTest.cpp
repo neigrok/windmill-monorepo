@@ -683,6 +683,132 @@ TEST(get_diagnostics_unlisted_is_readable_by_anyone) {
   CHECK_EQ(sendGetDiagnostics(h.api, "", "t_shared")->getStatusCode(), drogon::k200OK);
 }
 
+// Only the tree's writer is told what is wrong with its pointers: every loop of trees through the tree with a
+// shortest way back, and every pointer that names no standing tree of theirs. A reader of the same tree is answered,
+// byte for byte, what a twin without pointers answers, and nothing is read for them.
+TEST(get_diagnostics_tells_the_owner_its_loops_of_trees_and_dangling_pointers_and_a_reader_what_a_twin_without_pointers_answers) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  const UserId stranger = h.signIn("s-stranger", "stranger@example.com");
+  const auto plant = [&](const char* id, const char* title, const UserId& planter, std::vector<std::pair<const char*, const char*>> nodes) {
+    TreeData data;
+    data.id = TreeId{id};
+    data.title = title;
+    for (const auto& [node, opens] : nodes) {
+      NodeSpec spec;
+      spec.id = NodeId{node};
+      spec.label = node;
+      spec.icon = "i";
+      spec.opens = TreeId{opens};
+      data.nodes.push_back(spec);
+    }
+    h.trees->byId[id] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(), LegendState{}, {title, {}}, 0, planter,
+                                   Visibility::public_};
+  };
+  plant("t_main", "Main", owner, {{"round", "t_far"}, {"near", "t_near"}, {"self", "t_main"}, {"elsewhere", "t_x"},
+                                  {"gone", "t_gone"}, {"theirs", "t_theirs"}, {"text", "said \"so\""}, {"plain", ""}});
+  plant("t_twin", "Main", owner, {{"round", ""}, {"near", ""}, {"self", ""}, {"elsewhere", ""}, {"gone", ""}, {"theirs", ""},
+                                  {"text", ""}, {"plain", ""}});
+  plant("t_far", "Far", owner, {{"on", "t_near"}});
+  plant("t_near", "Near", owner, {{"back", "t_main"}});
+  plant("t_x", "X", owner, {{"to-y", "t_y"}});
+  plant("t_y", "Y", owner, {{"to-x", "t_x"}});
+  plant("t_gone", "Gone", owner, {{"g", ""}});
+  plant("t_theirs", "Theirs", stranger, {{"x", ""}});
+  plant("t_plain", "Plain", owner, {{"p", ""}});
+  h.trees->softDelete(TreeId{"t_gone"});
+
+  CHECK_EQ(bodyOf(sendGetDiagnostics(h.api, "s-owner", "t_main")), parse(R"({
+      "cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+      "treeLoops":[
+        {"node":"near","path":[{"treeId":"t_near","title":"Near"},{"treeId":"t_main","title":"Main"}]},
+        {"node":"round","path":[{"treeId":"t_far","title":"Far"},{"treeId":"t_near","title":"Near"},{"treeId":"t_main","title":"Main"}]},
+        {"node":"self","path":[{"treeId":"t_main","title":"Main"}]}],
+      "danglingPointers":[{"node":"gone","treeId":"t_gone"},{"node":"text","treeId":"said \"so\""},
+                          {"node":"theirs","treeId":"t_theirs"}]})"));
+  CHECK_EQ(h.trees->openedReads,
+           (std::vector<std::set<TreeId>>{{TreeId{"said \"so\""}, TreeId{"t_far"}, TreeId{"t_gone"}, TreeId{"t_main"},
+                                           TreeId{"t_near"}, TreeId{"t_theirs"}, TreeId{"t_x"}}}));
+  CHECK_EQ(bodyOf(sendGetDiagnostics(h.api, "s-owner", "t_plain")),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
+  CHECK_EQ(h.trees->openedReads.size(), 1u);
+
+  h.trees->openedReadsFail = true;
+  for (const char* reader : {"s-stranger", ""}) {
+    const std::string pointed = dump(bodyOf(sendGetDiagnostics(h.api, reader, "t_main")));
+    CHECK_EQ(pointed, std::string(R"({"cycles":[],"dangling":[],"maskedWork":[],"selfEdges":[],"smells":[]})"));
+    CHECK_EQ(pointed, dump(bodyOf(sendGetDiagnostics(h.api, reader, "t_twin"))));
+  }
+  CHECK_EQ(h.trees->openedReads.size(), 1u);
+}
+
+// The graph's diagnostics do not depend on the other trees: a follow that fails leaves them whole under a 200, says the
+// pointers were not followed, and is reported once under its own name.
+TEST(get_diagnostics_whose_pointers_cannot_be_followed_answers_the_graphs_diagnostics_and_says_so_and_files_one_issue) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  const UserId me = h.signIn("s-me");
+  h.seed("t_sub", "Deep dive", me, Visibility::private_);
+  h.seed("t_mine", "Learn to sail", me, Visibility::public_);
+  h.trees->byId["t_mine"].state.nodes[0].opens = TreeId{"t_sub"};
+  h.trees->byId["t_mine"].state.nodes[0].opensAt = Hlc{2, 0, "seed"};
+
+  h.trees->openedReadsFail = true;
+  const drogon::HttpResponsePtr degraded = sendGetDiagnostics(h.api, "s-me", "t_mine");
+
+  REQUIRE_EQ(degraded->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(degraded), parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"node":"root","kind":"empty-icon"}],
+      "maskedWork":[],"pointerDiagnosticsUnavailable":true})"));
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{std::string("roadmap.diagnostics.follow roadmap rest failed ") + typeid(std::runtime_error).name()}));
+  CHECK_EQ(bodyOf(sendGetDiagnostics(h.api, "", "t_mine")),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"node":"root","kind":"empty-icon"}],"maskedWork":[]})"));
+  CHECK_EQ(bodyOf(sendGetDiagnostics(h.api, "s-me", "t_sub")),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"node":"root","kind":"empty-icon"}],"maskedWork":[],
+               "treeLoops":[],"danglingPointers":[]})"));
+  CHECK_EQ(reporter.failures->reports.size(), 1u);
+}
+
+// A stranger's read must not wait on the owner's statement: that wait would say the tree holds a pointer.
+TEST(get_diagnostics_follows_pointers_after_it_has_let_go_of_the_trees_strand) {
+  Harness h;
+  const UserId me = h.signIn("s-me");
+  h.seed("t_sub", "Deep dive", me, Visibility::private_);
+  h.seed("t_mine", "Learn to sail", me, Visibility::public_);
+  h.trees->byId["t_mine"].state.nodes[0].opens = TreeId{"t_sub"};
+  h.trees->byId["t_mine"].state.nodes[0].opensAt = Hlc{2, 0, "seed"};
+  bool strandWasFree = false;
+  drogon::HttpStatusCode readMeanwhile = drogon::kUnknown;
+  h.trees->duringOpenedRead = [&] {
+    std::thread other([&] {
+      std::mutex& strand = h.rooms->strandFor(TreeId{"t_mine"});
+      if (!strand.try_lock()) return;
+      strand.unlock();
+      strandWasFree = true;
+      readMeanwhile = sendGetDiagnostics(h.api, "", "t_mine")->getStatusCode();
+    });
+    other.join();
+  };
+
+  CHECK_EQ(sendGetDiagnostics(h.api, "s-me", "t_mine")->getStatusCode(), drogon::k200OK);
+
+  CHECK_EQ(h.trees->openedReads, (std::vector<std::set<TreeId>>{{TreeId{"t_sub"}}}));
+  CHECK(strandWasFree);
+  CHECK_EQ(readMeanwhile, drogon::k200OK);
+}
+
 TEST(get_activity_private_denial_is_404_byte_identical_to_absent) {
   Harness h;
   UserId me = h.signIn("s-me");

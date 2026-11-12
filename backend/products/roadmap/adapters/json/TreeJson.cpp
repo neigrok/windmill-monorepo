@@ -205,6 +205,37 @@ Json::Value toJson(const TreeDiagnostics& diagnostics) {
   return root;
 }
 
+Json::Value toJson(const TreeDiagnostics& diagnostics, const PointerDiagnostics& pointers) {
+  Json::Value root = toJson(diagnostics);
+
+  Json::Value treeLoops(Json::arrayValue);
+  for (const TreeLoop& loop : pointers.treeLoops) {
+    Json::Value path(Json::arrayValue);
+    for (const TreeOnLoop& on : loop.path) {
+      Json::Value tree(Json::objectValue);
+      tree["treeId"] = on.tree.str();
+      tree["title"] = on.title;
+      path.append(tree);
+    }
+    Json::Value entry(Json::objectValue);
+    entry["node"] = loop.node.str();
+    entry["path"] = path;
+    treeLoops.append(entry);
+  }
+  root["treeLoops"] = treeLoops;
+
+  Json::Value danglingPointers(Json::arrayValue);
+  for (const DanglingPointer& pointer : pointers.danglingPointers) {
+    Json::Value entry(Json::objectValue);
+    entry["node"] = pointer.node.str();
+    entry["treeId"] = pointer.tree.str();
+    danglingPointers.append(entry);
+  }
+  root["danglingPointers"] = danglingPointers;
+
+  return root;
+}
+
 std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) {
   // An absent or null field takes its default; a field of the wrong type refuses the document.
   auto text = [](const Json::Value& value, std::string& out) {

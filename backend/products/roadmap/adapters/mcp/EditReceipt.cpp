@@ -1,5 +1,6 @@
 #include "products/roadmap/adapters/mcp/EditReceipt.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <set>
 #include <string>
@@ -11,7 +12,8 @@ namespace {
 
 constexpr std::size_t kMostNamed = 5;
 
-std::string quoted(const NodeId& node) { return "\"" + node.str() + "\""; }
+template <typename Tag>
+std::string quoted(const Id<Tag>& id) { return "\"" + id.str() + "\""; }
 
 std::string named(const Cycle& cycle) {
   std::string members;
@@ -22,9 +24,19 @@ std::string named(const Cycle& cycle) {
   return "cycle among " + members;
 }
 
+std::string named(const TreeLoop& loop) {
+  std::string way;
+  for (const TreeOnLoop& on : loop.path) {
+    if (!way.empty()) way += " -> ";
+    way += quoted(on.tree);
+  }
+  return "loop of trees from " + quoted(loop.node) + " through " + way;
+}
+
 }  // namespace
 
-void answerDiagnostics(const TreeDiagnostics& before, const TreeDiagnostics& after, Json::Value& receipt) {
+void answerDiagnostics(const TreeDiagnostics& before, const TreeDiagnostics& after, Json::Value& receipt,
+                       const PointerDiagnostics& pointersBefore, const PointerDiagnostics& pointersAfter) {
   std::set<std::vector<NodeId>> knownCycles;
   for (const Cycle& cycle : before.cycles) knownCycles.insert(cycle.members);
   const std::set<Edge> knownDangling(before.dangling.begin(), before.dangling.end());
@@ -38,6 +50,9 @@ void answerDiagnostics(const TreeDiagnostics& before, const TreeDiagnostics& aft
       introduced.push_back("dangling edge " + quoted(edge.from) + " -> " + quoted(edge.to));
   for (const Edge& edge : after.selfEdges)
     if (!knownSelfEdges.count(edge)) introduced.push_back("self-edge on " + quoted(edge.from));
+  const std::vector<TreeLoop>& knownLoops = pointersBefore.treeLoops;
+  for (const TreeLoop& loop : pointersAfter.treeLoops)
+    if (std::find(knownLoops.begin(), knownLoops.end(), loop) == knownLoops.end()) introduced.push_back(named(loop));
 
   Json::Value list(Json::arrayValue);
   for (std::size_t i = 0; i < introduced.size() && i < kMostNamed; ++i) list.append(introduced[i]);

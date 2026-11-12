@@ -189,7 +189,10 @@ creates opens none. The `state` it reads is the owner's: a node that opens a tre
 that tree is. Its `get_tree` reply carries `tree.guide`, the tended tree's own, and no `guides`: the
 guides of the trees above are other trees' ids, titles and words, so a run is not offered
 `includeGuides`, every `get_tree` it makes is sent with it `false`, and no tree above the tended
-one is read; the two reads `TendingService` makes of the tree's `seq` send it `false` too. One
+one is read; the two reads `TendingService` makes of the tree's `seq` send it `false` too. Its
+`get_diagnostics` reply carries the graph's diagnostics and neither `treeLoops` nor
+`danglingPointers`, which name other trees: a run is not offered `includePointers`, every
+`get_diagnostics` it makes is sent with it `false`, and no pointer is followed. One
 table in `ScopedToolHost.cpp` names what a run is not offered: tools by name, and words wherever a
 schema carries them, each with the value it is sent as when the tool needs one. A withheld name a
 run calls anyway is refused before any write is observed; a withheld argument or field is refused
@@ -210,7 +213,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | registry | `describe_tree` | set the tree's guide — a plain-text note on what the tree is and how to work it, at most 5000 characters; `""` or only whitespace clears it; owner only, answers `{applied, seq}` and leaves no op row |
 | read | `get_tree` | title + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + `guides` on the first page (see `guides`) + nodes (label, icon, color, `kind`, position, description, links, `opens`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
-| read | `get_diagnostics` | cycles / dangling / self-edges / smells |
+| read | `get_diagnostics` | cycles / dangling / self-edges / smells; on a tree the caller owns also `treeLoops` and `danglingPointers` (see `opens`) |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
 | read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose set_progress carried `outOfOrder: true` |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
@@ -232,9 +235,12 @@ Every tree-scoped tool takes `treeId`. Applied structural edits return
 `{applied, seq, diagnosticsClean, introducedDiagnostics}`. Cycles and detached nodes are accepted;
 arguments, permissions, revision preconditions, limits and required node existence are validated.
 Dry runs and unchanged patch/edge retries do not produce a new structural op. The diagnostics keys
-answer different questions: `diagnosticsClean` is the whole tree's state, and
+answer different questions: `diagnosticsClean` is the whole graph's state, and
 `introducedDiagnostics` names the cycles, dangling and self-edges present after this edit that the
-tree did not hold before it. An innocent edit on a dirty tree answers `[]`.
+tree did not hold before it. An innocent edit on a dirty tree answers `[]`. An edit that makes a
+node open a tree also names there, after those, each loop of trees it closed, as
+`loop of trees from "<nodeId>" through "<treeId>" -> … -> "<this tree>"` (see `opens`); a loop of
+trees does not change `diagnosticsClean`.
 
 ### The descriptor
 
@@ -352,6 +358,38 @@ A node may point at another tree: `opens` holds that tree's id.
   strand and read the repositories after letting it go, so no other read of the tree waits on that
   statement. `list_trees` makes no such read: it already holds every tree of the caller's. Every
   write door saves before it answers, so the stored rows are the live ones unless a save failed.
+- **What can be wrong with a pointer.** `get_diagnostics` answers two more keys to a caller who
+  can write the tree (`OpenedTrees::diagnose`), each in node id order. `treeLoops` holds one
+  `{node, path}` per node whose pointer leads back to the tree being read — a tree on such a loop
+  is never complete. `path` is a shortest way back, `[{treeId, title}]`: the tree the node opens
+  first, this tree last, so a node that opens the tree it is in has a path of this tree alone;
+  where two ways are as short the smaller tree id is taken, ids compared as bytes. A loop among
+  other trees that does not lead back to this one is not listed: it is reported when one of those
+  trees is read. `danglingPointers` holds one `{node, treeId}` per node whose pointer is not valid
+  — the tree was removed, is someone else's, or the text names none — with the pointer as it is
+  stored; this door refuses to set such a pointer, and the socket and `PUT` do not. Neither makes
+  a tree unclean: `diagnosticsClean`, the gate of `get_health` and `TreeDiagnostics::clean()` stay
+  a statement about the graph. Both are repaired by re-pointing or clearing the node's `opens`.
+  A reader who cannot write the tree is answered the graph's diagnostics alone, in the bytes a
+  tree without pointers answers, and nothing is read for them.
+- **`includePointers`.** A boolean argument of `get_diagnostics`, default `true`. `false` leaves
+  both keys out and reads no other tree. The read is the one following makes
+  (`TreeRegistry::openedFrom`), once per reply, after the tree's strand is released, and only when
+  the tree holds a pointer: a tree that holds none answers both keys as `[]`.
+- **A follow that fails does not fail the call.** The reply then carries the graph's diagnostics
+  without the two keys and `pointerDiagnosticsUnavailable: true`, a key that is otherwise absent.
+  The failure is reported once as `roadmap.diagnostics.follow`, door `mcp`.
+- **An edit that closes a loop says so.** `create_node`, `annotate_node`, `patch_nodes` and
+  `import_subgraph` follow the tree's pointers once when the call makes a node open a tree, after
+  the edit is saved and the strand is released, from the trees the tree opened before the edit
+  and opens after it. Each loop of trees the tree holds now and did not hold before is named in
+  the receipt's `introducedDiagnostics`. A pointer left as it was is not named again, and an edit
+  that clears or re-points a pointer says nothing of the loop it removed, as no receipt names a
+  removed diagnostic. Every other edit — one that only clears a pointer and a dry run among them —
+  follows nothing and answers the receipt it always did. When that follow fails the edit has
+  landed: its receipt carries the graph's diagnostics and `pointerDiagnosticsUnavailable: true`,
+  and the failure is reported as `roadmap.diagnostics.follow`, door `mcp`.
+- **A tend** is answered neither key and follows no pointer (`ScopedToolHost.cpp`).
 - `import_subgraph` takes the id as a string, where `get_tree` answers the object: a copied slice
   sends `opens.treeId`.
 

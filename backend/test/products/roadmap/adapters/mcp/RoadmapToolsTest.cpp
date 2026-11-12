@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <tuple>
 #include <typeinfo>
 
 using namespace wm;
@@ -3685,6 +3686,7 @@ TEST(mcp_no_read_answers_the_tree_a_node_opens_to_a_caller_who_cannot_write_the_
       StoredTree{LooseGraph().exportState(), LegendState{}, {"Secret plans", {}}, 0, h.caller, Visibility::unlisted};
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_secret_sub"})")).isError);
   const std::size_t readsAfterTheWrite = h.trees.titleReads.size();
+  const std::vector<std::set<TreeId>> followedByTheWrite = h.trees.openedReads;
 
   for (const UserId& reader : {uid("stranger"), UserId{}}) {
     const ToolCaller caller{reader, ToolScope::everything()};
@@ -3701,7 +3703,7 @@ TEST(mcp_no_read_answers_the_tree_a_node_opens_to_a_caller_who_cannot_write_the_
     }
   }
   CHECK_EQ(h.trees.titleReads.size(), readsAfterTheWrite);
-  CHECK(h.trees.openedReads.empty());
+  CHECK_EQ(h.trees.openedReads, followedByTheWrite);
 
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
            parse(R"([{"id":"a","opens":{"treeId":"t_secret_sub","title":"Secret plans","state":"open"}}])"));
@@ -3732,7 +3734,8 @@ TEST(mcp_a_pointer_at_a_tree_the_owner_does_not_own_or_that_was_deleted_reads_ba
            parse(R"({"count":2,"nodes":[{"id":"a"},{"id":"b"}]})"));
 }
 
-// A write asks after the trees it opens once for the whole call; a reply follows them only when asked for the field.
+// A write asks after the trees it opens once for the whole call, and one that makes a node open a tree follows the
+// tree's pointers once for its receipt; a reply follows them only when asked for the field.
 TEST(mcp_the_trees_a_call_opens_are_read_once_and_a_reply_follows_them_only_when_asked_for_opens) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
@@ -3742,8 +3745,11 @@ TEST(mcp_the_trees_a_call_opens_are_read_once_and_a_reply_follows_them_only_when
                      parse(R"({"nodes":[{"id":"a","opens":"t_sub"},{"id":"b","opens":"t_other"},{"id":"c","opens":"t_sub"},{"id":"d"}]})"))
                   .isError);
   CHECK_EQ(h.trees.titleReads, (std::vector<std::set<TreeId>>{{TreeId{"t_other"}, TreeId{"t_sub"}}}));
+  const std::set<TreeId> opened{TreeId{"t_other"}, TreeId{"t_sub"}};
+  CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened}));
   CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t_other"},{"nodeId":"d","opens":"t_sub"},{"nodeId":"b","label":"B"}]})")).isError);
   CHECK_EQ(h.trees.titleReads.size(), 2u);
+  CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened}));
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"e","label":"E"})")).isError);
   CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"e","opens":""})")).isError);
   CHECK_EQ(h.trees.titleReads.size(), 2u);
@@ -3752,10 +3758,10 @@ TEST(mcp_the_trees_a_call_opens_are_read_once_and_a_reply_follows_them_only_when
   CHECK_FALSE(h.call("find_nodes", kNoArgs).isError);
   CHECK_FALSE(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","label","description"]})")).isError);
   CHECK_EQ(h.trees.titleReads.size(), 2u);
-  CHECK(h.trees.openedReads.empty());
+  CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened}));
   CHECK_FALSE(h.call("get_tree", parse(R"({"fields":["id","opens"]})")).isError);
   CHECK_EQ(h.trees.titleReads.size(), 2u);
-  CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{{TreeId{"t_other"}, TreeId{"t_sub"}}}));
+  CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened, opened}));
 }
 
 // A title is read off the stored row: a rename that reached the row is what the read answers.
@@ -3979,6 +3985,7 @@ TEST(mcp_a_reader_who_cannot_write_the_tree_reads_an_ordinary_node_that_follows_
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},
                                                             {"id":"next","label":"Next","prerequisites":["idea"]}]})")).isError);
   CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t","nodeId":"idea","status":"complete"})"), stranger).isError);
+  const std::size_t readsForTheWrite = h.trees.openedReads.size();
 
   const char* everything = R"({"fields":["id","status","state","opens"]})";
   const Json::Value marked = parse(R"([{"id":"idea","status":"complete","state":"complete"},{"id":"next","status":"none","state":"available"}])");
@@ -3988,7 +3995,7 @@ TEST(mcp_a_reader_who_cannot_write_the_tree_reads_an_ordinary_node_that_follows_
   CHECK_EQ(read(stranger, "find_nodes", R"({"state":"complete","fields":["id","opens"]})"), parse(R"({"count":1,"nodes":[{"id":"idea"}]})"));
   CHECK_EQ(read(signedOut, "get_tree", everything)["tree"]["nodes"], unmarked);
   CHECK_EQ(read(signedOut, "find_nodes", R"({"state":"available","fields":["id","opens"]})"), parse(R"({"count":1,"nodes":[{"id":"idea"}]})"));
-  CHECK(h.trees.openedReads.empty());
+  CHECK_EQ(h.trees.openedReads.size(), readsForTheWrite);
   CHECK_EQ(read(h.actor, "get_tree", everything)["tree"]["nodes"],
            parse(R"([{"id":"idea","status":"none","state":"available","opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}},
                      {"id":"next","status":"none","state":"locked"}])"));
@@ -4028,6 +4035,8 @@ TEST(mcp_a_reply_follows_pointers_in_one_read_and_reads_nothing_where_following_
   CHECK(h.trees.openedReads.empty());
 
   CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t_sub"},{"nodeId":"b","opens":"t_other"},{"nodeId":"c","opens":"t_sub"}]})")).isError);
+  CHECK_EQ(h.trees.openedReads.size(), 1u);
+  h.trees.openedReads.clear();
   CHECK_FALSE(h.call("get_tree", kNoArgs).isError);
   CHECK_FALSE(h.call("get_tree", parse(R"({"fields":["id","status","summary","kind"]})")).isError);
   CHECK_FALSE(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","label","status"]})")).isError);
@@ -4108,7 +4117,361 @@ TEST(mcp_a_read_follows_pointers_after_it_has_let_go_of_the_trees_strand) {
     CHECK(strandWasFree);
     CHECK_EQ(readMeanwhile, parse(R"([{"id":"a","state":"available"}])"));
   }
+  CHECK_EQ(h.trees.openedReads.size(), 4u);
+}
+
+// Two things can be wrong with a pointer, and only the tree's writer is told either: a loop of trees through this
+// tree, with a shortest way back, and a pointer that names no standing tree of theirs.
+TEST(mcp_get_diagnostics_tells_the_owner_each_loop_of_trees_through_the_tree_and_each_pointer_that_leads_nowhere) {
+  Harness h;
+  h.plant("t_b", h.caller, "", {"t"});
+  h.plant("t_c", h.caller, "", {"t_b"});
+  h.plant("t_x", h.caller, "", {"t_y"});
+  h.plant("t_y", h.caller, "", {"t_x"});
+  h.plant("t_gone", h.caller, "", {});
+  h.plant("t_theirs", uid("someone-else"), "", {});
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[
+      {"id":"near","label":"Near","icon":"n","opens":"t_b"},{"id":"far","label":"Far","icon":"f","opens":"t_c"},
+      {"id":"again","label":"Again","icon":"a","opens":"t"},{"id":"elsewhere","label":"Elsewhere","icon":"e","opens":"t_x"},
+      {"id":"gone","label":"Gone","icon":"g","opens":"t_gone"},{"id":"theirs","label":"Theirs","icon":"t"},
+      {"id":"text","label":"Text","icon":"x"},{"id":"plain","label":"Plain","icon":"p"}]})")).isError);
+  h.trees.softDelete(TreeId{"t_gone"});
+  for (const auto& [node, pointer] : {std::pair{"theirs", "t_theirs"}, std::pair{"text", "said \"so\""}}) {
+    AnnotateNode planted{NodeId{node}};
+    planted.opens = TreeId{pointer};
+    h.registry.open(TreeId{"t"})->applyCommand(planted, h.clock.nowMs(), h.caller);
+  }
+  h.trees.openedReads.clear();
+
+  const ToolResult told = h.call("get_diagnostics", kNoArgs);
+
+  CHECK_EQ(body(told), parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+      "treeLoops":[
+        {"node":"again","path":[{"treeId":"t","title":"Test Roadmap"}]},
+        {"node":"far","path":[{"treeId":"t_c","title":"Tree t_c"},{"treeId":"t_b","title":"Tree t_b"},
+                              {"treeId":"t","title":"Test Roadmap"}]},
+        {"node":"near","path":[{"treeId":"t_b","title":"Tree t_b"},{"treeId":"t","title":"Test Roadmap"}]}],
+      "danglingPointers":[{"node":"gone","treeId":"t_gone"},{"node":"text","treeId":"said \"so\""},
+                          {"node":"theirs","treeId":"t_theirs"}]})"));
+  CHECK(message(told).find(R"({"node":"text","treeId":"said \"so\""})") != std::string::npos);
+  CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{{TreeId{"said \"so\""}, TreeId{"t"}, TreeId{"t_b"}, TreeId{"t_c"},
+                                                                 TreeId{"t_gone"}, TreeId{"t_theirs"}, TreeId{"t_x"}}}));
+
+  CHECK_EQ(body(h.tools.callTool("get_diagnostics", with("treeId", "t_b"), h.actor)),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"node":"to-t","kind":"empty-icon"}],"maskedWork":[],
+               "treeLoops":[{"node":"to-t","path":[{"treeId":"t","title":"Test Roadmap"},{"treeId":"t_b","title":"Tree t_b"}]}],
+               "danglingPointers":[]})"));
+  CHECK_EQ(body(h.tools.callTool("get_diagnostics", with("treeId", "t_x"), h.actor)),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"node":"to-t_y","kind":"empty-icon"}],"maskedWork":[],
+               "treeLoops":[{"node":"to-t_y","path":[{"treeId":"t_y","title":"Tree t_y"},{"treeId":"t_x","title":"Tree t_x"}]}],
+               "danglingPointers":[]})"));
   CHECK_EQ(h.trees.openedReads.size(), 3u);
+}
+
+// A reader's reply must not say the tree holds a pointer: for a tree on a loop with a dangling pointer it is, byte
+// for byte, the reply for a twin without pointers, with nothing read for it, whatever the reader asks for.
+TEST(mcp_get_diagnostics_answers_a_reader_who_cannot_write_the_tree_what_a_twin_without_pointers_answers_and_reads_nothing) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.trees.byId["t_twin"] =
+      StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, h.caller, Visibility::public_};
+  h.plant("t_b", h.caller, "", {"t"});
+  h.plant("t_gone", h.caller, "", {});
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"loop","label":"Loop","opens":"t_b"},
+      {"id":"gone","label":"Gone","opens":"t_gone"},{"id":"plain","label":"Plain","prerequisites":["ghost"]}]})")).isError);
+  CHECK_FALSE(h.tools.callTool("import_subgraph", parse(R"({"treeId":"t_twin","nodes":[{"id":"loop","label":"Loop"},
+      {"id":"gone","label":"Gone"},{"id":"plain","label":"Plain","prerequisites":["ghost"]}]})"), h.actor).isError);
+  h.trees.softDelete(TreeId{"t_gone"});
+  const std::size_t titleReads = h.trees.titleReads.size();
+  h.trees.openedReads.clear();
+  h.trees.openedReadsFail = true;
+
+  const std::string graphAlone =
+      R"({"cycles":[],"dangling":[{"from":"ghost","to":"plain"}],"maskedWork":[],"selfEdges":[],)"
+      R"("smells":[{"kind":"empty-icon","node":"gone"},{"kind":"empty-icon","node":"loop"},{"kind":"empty-icon","node":"plain"}]})";
+  for (const UserId& reader : {uid("stranger"), UserId{}}) {
+    const ToolCaller caller{reader, ToolScope::everything()};
+    for (const char* asked : {R"({})", R"({"includePointers":true})", R"({"includePointers":false})"}) {
+      Json::Value args = parse(asked);
+      args["treeId"] = "t";
+      const ToolResult pointed = h.tools.callTool("get_diagnostics", args, caller);
+      args["treeId"] = "t_twin";
+      const ToolResult twin = h.tools.callTool("get_diagnostics", args, caller);
+      CHECK_FALSE(pointed.isError);
+      CHECK_EQ(message(pointed), graphAlone);
+      CHECK_EQ(message(pointed), message(twin));
+    }
+  }
+  CHECK(h.trees.openedReads.empty());
+  CHECK_EQ(h.trees.titleReads.size(), titleReads);
+}
+
+// Following costs one read, and only where it can say something: none for a tree that holds no pointer, where
+// both lists are empty, and none for a call that asks for the graph alone, which is answered no key.
+TEST(mcp_get_diagnostics_reads_no_other_tree_for_a_tree_without_pointers_or_a_call_that_asks_for_none) {
+  Harness h;
+  h.plant("t_b", h.caller, "", {"t"});
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","icon":"a"})")).isError);
+  h.trees.openedReadsFail = true;
+
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs)),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
+  CHECK(h.trees.openedReads.empty());
+
+  h.trees.openedReadsFail = false;
+  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"a","opens":"t_b"})")).isError);
+  h.trees.openedReads.clear();
+  h.trees.openedReadsFail = true;
+  CHECK_EQ(body(h.call("get_diagnostics", parse(R"({"includePointers":false})"))),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[]})"));
+  CHECK(h.trees.openedReads.empty());
+  CHECK_EQ(message(h.call("get_diagnostics", parse(R"({"includePointers":"no"})"))),
+           std::string("get_diagnostics: argument \"includePointers\" must be a boolean, got string"));
+
+  h.trees.openedReadsFail = false;
+  CHECK_EQ(body(h.call("get_diagnostics", parse(R"({"includePointers":true})"))),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+               "treeLoops":[{"node":"a","path":[{"treeId":"t_b","title":"Tree t_b"},{"treeId":"t","title":"Test Roadmap"}]}],
+               "danglingPointers":[]})"));
+  CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{{TreeId{"t_b"}}}));
+}
+
+// A stranger's read must not wait on the owner's statement: that wait would say the tree holds a pointer.
+TEST(mcp_get_diagnostics_follows_pointers_after_it_has_let_go_of_the_trees_strand) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.plant("t_b", h.caller, "", {"t"});
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","icon":"a","opens":"t_b"})")).isError);
+  h.trees.openedReads.clear();
+  bool strandWasFree = false;
+  Json::Value readMeanwhile;
+  h.trees.duringOpenedRead = [&] {
+    std::thread other([&] {
+      std::mutex& strand = h.registry.strandFor(TreeId{"t"});
+      if (!strand.try_lock()) return;
+      strand.unlock();
+      strandWasFree = true;
+      readMeanwhile = body(h.tools.callTool("get_diagnostics", with("treeId", "t"),
+                                            ToolCaller{uid("stranger"), ToolScope::everything()}));
+    });
+    other.join();
+  };
+
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["treeLoops"],
+           parse(R"([{"node":"a","path":[{"treeId":"t_b","title":"Tree t_b"},{"treeId":"t","title":"Test Roadmap"}]}])"));
+
+  CHECK(strandWasFree);
+  CHECK_EQ(readMeanwhile, parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[]})"));
+  CHECK_EQ(h.trees.openedReads.size(), 1u);
+}
+
+// The graph's diagnostics do not depend on the other trees: a follow that fails leaves them whole, says the pointers
+// were not followed, and is reported once under its own name with the exception's type alone.
+TEST(mcp_get_diagnostics_whose_pointers_cannot_be_followed_answers_the_graphs_diagnostics_and_says_so_and_files_one_issue) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.plant("t_b", h.caller, "", {"t"});
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","opens":"t_b","prerequisites":["ghost"]}]})")).isError);
+
+  h.trees.openedReadsFail = true;
+  const ToolResult degraded = h.call("get_diagnostics", kNoArgs);
+
+  CHECK_FALSE(degraded.isError);
+  CHECK_EQ(body(degraded), parse(R"({"cycles":[],"dangling":[{"from":"ghost","to":"a"}],"selfEdges":[],
+      "smells":[{"node":"a","kind":"empty-icon"}],"maskedWork":[],"pointerDiagnosticsUnavailable":true})"));
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{std::string("roadmap.diagnostics.follow roadmap mcp failed ") + typeid(std::runtime_error).name()}));
+
+  const Json::Value graphAlone = parse(R"({"cycles":[],"dangling":[{"from":"ghost","to":"a"}],"selfEdges":[],
+      "smells":[{"node":"a","kind":"empty-icon"}],"maskedWork":[]})");
+  CHECK_EQ(body(h.call("get_diagnostics", parse(R"({"includePointers":false})"))), graphAlone);
+  CHECK_EQ(body(h.tools.callTool("get_diagnostics", with("treeId", "t"), ToolCaller{uid("stranger"), ToolScope::everything()})),
+           graphAlone);
+  CHECK_EQ(reporter.failures->reports.size(), 1u);
+}
+
+// An edit that makes a node open a tree follows the pointers once, after it has landed, and names each loop of
+// trees it closed beside the graph's errors. A pointer it left as it was, or took off a loop, is not named, and
+// `diagnosticsClean` stays the graph's.
+TEST(mcp_an_edit_that_closes_a_loop_of_trees_says_so_in_its_receipt_through_each_write_tool) {
+  Harness h;
+  h.plant("t_b", h.caller, "", {"t"});
+  h.plant("t_c", h.caller, "", {"t_b"});
+  h.plant("t_sub", h.caller, "", {});
+
+  CHECK_EQ(body(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_b"})"))),
+           parse(R"({"applied":true,"seq":1,"id":"a","diagnosticsClean":true,
+               "introducedDiagnostics":["loop of trees from \"a\" through \"t_b\" -> \"t\""]})"));
+  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":"t_b"})"))),
+           parse(R"({"applied":true,"seq":2,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":"t_c"})"))),
+           parse(R"({"applied":true,"seq":3,"id":"a","diagnosticsClean":true,
+               "introducedDiagnostics":["loop of trees from \"a\" through \"t_c\" -> \"t_b\" -> \"t\""]})"));
+  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":"t_sub"})"))),
+           parse(R"({"applied":true,"seq":4,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+
+  const ToolResult patched = h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t"}]})"));
+  CHECK_EQ(body(patched), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":5,"changedNodeIds":["a"],"unchangedNodeIds":[],
+      "diagnosticsClean":true,"introducedDiagnostics":["loop of trees from \"a\" through \"t\""]})"));
+  CHECK_EQ(patched.structured, body(patched));
+
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"b","label":"B","opens":"t_b","prerequisites":["ghost"]},
+                                                              {"id":"c","label":"C"}]})"))),
+           parse(R"({"nodes":2,"edges":1,"kinds":0,"nodeCollisions":[],"kindCollisions":[],"newNodes":2,"newKinds":0,
+               "prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,"tombstoned":{"nodes":0,"edges":0},
+               "graphApplied":true,"progressApplied":true,"imported":true,"seq":6,"diagnosticsClean":false,
+               "introducedDiagnostics":["dangling edge \"ghost\" -> \"b\"","loop of trees from \"b\" through \"t_b\" -> \"t\""]})"));
+
+  CHECK_EQ(h.trees.openedReads,
+           (std::vector<std::set<TreeId>>{{TreeId{"t_b"}},
+                                          {TreeId{"t_b"}},
+                                          {TreeId{"t_b"}, TreeId{"t_c"}},
+                                          {TreeId{"t_c"}, TreeId{"t_sub"}},
+                                          {TreeId{"t"}, TreeId{"t_sub"}},
+                                          {TreeId{"t"}, TreeId{"t_b"}}}));
+}
+
+TEST(mcp_a_receipt_names_five_of_the_loops_an_edit_closed_and_counts_the_rest) {
+  Harness h;
+  h.plant("t_b", h.caller, "", {"t"});
+
+  const Json::Value receipt = body(h.call("import_subgraph", parse(R"({"nodes":[
+      {"id":"n1","opens":"t_b"},{"id":"n2","opens":"t_b"},{"id":"n3","opens":"t_b"},{"id":"n4","opens":"t_b"},
+      {"id":"n5","opens":"t_b"},{"id":"n6","opens":"t_b"},{"id":"n7","opens":"t_b"}]})")));
+
+  CHECK_EQ(introduced(receipt),
+           (std::vector<std::string>{"loop of trees from \"n1\" through \"t_b\" -> \"t\"", "loop of trees from \"n2\" through \"t_b\" -> \"t\"",
+                                     "loop of trees from \"n3\" through \"t_b\" -> \"t\"", "loop of trees from \"n4\" through \"t_b\" -> \"t\"",
+                                     "loop of trees from \"n5\" through \"t_b\" -> \"t\"",
+                                     "and 2 more — call get_diagnostics for the whole list"}));
+  CHECK(receipt["diagnosticsClean"].asBool());
+}
+
+// Only an edit that makes a node open a tree pays for the follow: on a tree that already sits on a loop, every
+// other edit — one that clears a pointer and a dry run among them — reads no other tree and answers what it did.
+TEST(mcp_an_edit_that_makes_no_node_open_a_tree_follows_nothing_and_its_receipt_is_unchanged) {
+  Harness h;
+  h.plant("t_b", h.caller, "", {"t"});
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","opens":"t_b"},{"id":"b","label":"B","opens":"t_b"}]})")).isError);
+  h.trees.openedReads.clear();
+  h.trees.openedReadsFail = true;
+
+  CHECK_EQ(body(h.call("rename_node", parse(R"({"nodeId":"a","label":"A renamed"})"))),
+           parse(R"({"applied":true,"seq":2,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("create_node", parse(R"({"id":"c","label":"C"})"))),
+           parse(R"({"applied":true,"seq":3,"id":"c","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","description":"a note"})"))),
+           parse(R"({"applied":true,"seq":4,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("annotate_node", parse(R"({"nodeId":"a","opens":""})"))),
+           parse(R"({"applied":true,"seq":5,"id":"a","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("connect", parse(R"({"from":"a","to":"c"})"))),
+           parse(R"({"applied":true,"seq":6,"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  const ToolResult patched = h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"b","opens":""},{"nodeId":"c","label":"C renamed"}]})"));
+  CHECK_EQ(body(patched), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":7,"changedNodeIds":["b","c"],"unchangedNodeIds":[],
+      "diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(patched.structured, body(patched));
+  const ToolResult previewed = h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"c","opens":"t_b"}],"dryRun":true})"));
+  CHECK_EQ(body(previewed), parse(R"({"treeId":"t","applied":false,"dryRun":true,"seq":7,"changedNodeIds":["c"],"unchangedNodeIds":[]})"));
+  CHECK_EQ(previewed.structured, body(previewed));
+  CHECK_EQ(body(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"c"}]})"))),
+           parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":8,"addedEdges":[],"removedEdges":[{"from":"a","to":"c"}],
+               "unchangedEdges":0,"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A again"},{"id":"d","label":"D","opens":""}]})"))),
+           parse(R"({"nodes":2,"edges":0,"kinds":0,"nodeCollisions":["a"],"kindCollisions":[],"newNodes":1,"newKinds":0,
+               "prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,"tombstoned":{"nodes":0,"edges":0},
+               "graphApplied":true,"progressApplied":true,"imported":true,"seq":9,"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"e","label":"E","opens":"t_b"}],"dryRun":true})")))["dryRun"],
+           Json::Value(true));
+  CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"d"})"))),
+           parse(R"({"applied":true,"seq":10,"id":"d","ids":["d"],"pruned":{"edges":0,"progress":0},"diagnosticsClean":true,
+               "introducedDiagnostics":[]})"));
+
+  CHECK(h.trees.openedReads.empty());
+}
+
+// The edit has landed and saved by the time its pointers are followed, and the strand is free: no other caller of
+// the tree waits on that read.
+TEST(mcp_an_edit_follows_pointers_for_its_receipt_after_it_has_let_go_of_the_trees_strand) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.plant("t_b", h.caller, "", {"t"});
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},{"id":"c","label":"C"}]})")).isError);
+  bool strandWasFree = false;
+  Json::Value readMeanwhile;
+  h.trees.duringOpenedRead = [&] {
+    std::thread other([&] {
+      std::mutex& strand = h.registry.strandFor(TreeId{"t"});
+      if (!strand.try_lock()) return;
+      strand.unlock();
+      strandWasFree = true;
+      readMeanwhile = body(h.tools.callTool("get_tree", parse(R"({"treeId":"t","fields":["id"]})"),
+                                            ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["nodes"];
+    });
+    other.join();
+  };
+
+  const std::vector<std::tuple<const char*, const char*, const char*>> edits = {
+      {"annotate_node", R"({"nodeId":"a","opens":"t_b"})", R"([{"id":"a"},{"id":"b"},{"id":"c"}])"},
+      {"patch_nodes", R"({"updates":[{"nodeId":"b","opens":"t_b"}]})", R"([{"id":"a"},{"id":"b"},{"id":"c"}])"},
+      {"import_subgraph", R"({"nodes":[{"id":"c","opens":"t_b"}]})", R"([{"id":"a"},{"id":"b"},{"id":"c"}])"},
+      {"create_node", R"({"id":"d","label":"D","opens":"t_b"})", R"([{"id":"a"},{"id":"b"},{"id":"c"},{"id":"d"}])"}};
+  for (const auto& [tool, arguments, landed] : edits) {
+    strandWasFree = false;
+    readMeanwhile = Json::Value();
+    CHECK_EQ(introduced(body(h.call(tool, parse(arguments)))).size(), 1u);
+    CHECK(strandWasFree);
+    CHECK_EQ(readMeanwhile, parse(landed));
+  }
+  CHECK_EQ(h.trees.openedReads.size(), 4u);
+}
+
+// The edit is durable before its pointers are followed, so a follow that fails cannot fail it: the receipt answers
+// the graph's diagnostics, says the pointers were not followed, and the failure is reported once under its own name.
+TEST(mcp_an_edit_whose_pointers_cannot_be_followed_still_lands_and_says_so_and_each_files_one_issue) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  h.plant("t_b", h.caller, "", {"t"});
+  h.trees.openedReadsFail = true;
+
+  CHECK_EQ(body(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_b","prerequisites":["ghost"]})"))),
+           parse(R"({"applied":true,"seq":1,"id":"a","diagnosticsClean":false,
+               "introducedDiagnostics":["dangling edge \"ghost\" -> \"a\""],"pointerDiagnosticsUnavailable":true})"));
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{std::string("roadmap.diagnostics.follow roadmap mcp failed ") + typeid(std::runtime_error).name()}));
+  const ToolResult patched = h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t"}]})"));
+  CHECK_EQ(body(patched), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":2,"changedNodeIds":["a"],"unchangedNodeIds":[],
+      "diagnosticsClean":false,"introducedDiagnostics":[],"pointerDiagnosticsUnavailable":true})"));
+  CHECK_EQ(patched.structured, body(patched));
+
+  h.trees.openedReadsFail = false;
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","opens":{"treeId":"t","title":"Test Roadmap","state":"open"}}])"));
+  CHECK_EQ(reporter.failures->reports.size(), 2u);
 }
 
 TEST(mcp_create_node_files_the_node_under_the_kind_it_names_and_says_so) {

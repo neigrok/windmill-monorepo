@@ -532,6 +532,72 @@ TEST(pg_a_node_follows_the_tree_it_opens_and_the_registry_list_counts_it) {
   registry.stop();
 }
 
+// The whole path over the real repositories: the edit that closes a loop of trees says so, each tree on the loop is
+// told its own way back, a pointer no tree answers dangles, a removed tree turns the loop into a dangling pointer,
+// and a reader of the public tree is answered the graph alone.
+TEST(pg_get_diagnostics_tells_the_owner_a_loop_of_trees_and_a_dangling_pointer_and_the_edit_that_closes_the_loop_says_so) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTreeRepository trees{pgTestPool()};
+  PgProgressRepository progressRepo{pgTestPool()};
+  PgOpLog log{pgTestPool()};
+  FakeBus bus;
+  FakeTokens tokens;
+  test::StepClock clock;
+  ProgressService progress{progressRepo};
+  RoomRegistry registry(trees, log, bus);
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
+  trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
+  const auto call = [&](const TreeId& tree, const UserId& user, const char* tool, const std::string& arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = tree.str();
+    return tools.callTool(tool, args, ToolCaller{user, ToolScope::everything()});
+  };
+  const auto onTheWay = [](const TreeId& tree, const char* title) {
+    Json::Value on(Json::objectValue);
+    on["treeId"] = tree.str();
+    on["title"] = title;
+    return on;
+  };
+
+  CHECK_EQ(test::body(call(kFork, kSam, "create_node", R"({"id":"back","label":"Back","icon":"b","opens":")" + kTree.str() + R"("})")),
+           parse(R"({"applied":true,"seq":1,"id":"back","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  const Json::Value closed = test::body(call(
+      kTree, kSam, "import_subgraph",
+      R"({"nodes":[{"id":"down","label":"Down","icon":"d","opens":")" + kFork.str() + R"("},{"id":"gone","label":"Gone","icon":"g"}]})"));
+  CHECK_EQ(closed["introducedDiagnostics"],
+           parse(R"(["loop of trees from \"down\" through \")" + kFork.str() + R"(\" -> \")" + kTree.str() + R"(\""])"));
+  CHECK(closed["diagnosticsClean"].asBool());
+  AnnotateNode planted{NodeId{"gone"}};
+  planted.opens = TreeId{"t_pgtest_never_planted"};
+  registry.open(kTree)->applyCommand(planted, clock.nowMs(), kSam);
+  CHECK(registry.persist(kTree));
+
+  Json::Value main = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+      "treeLoops":[{"node":"down","path":[]}],"danglingPointers":[{"node":"gone","treeId":"t_pgtest_never_planted"}]})");
+  main["treeLoops"][0]["path"].append(onTheWay(kFork, "Deep dive"));
+  main["treeLoops"][0]["path"].append(onTheWay(kTree, "Main"));
+  CHECK_EQ(test::body(call(kTree, kSam, "get_diagnostics", "{}")), main);
+  Json::Value sub = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+      "treeLoops":[{"node":"back","path":[]}],"danglingPointers":[]})");
+  sub["treeLoops"][0]["path"].append(onTheWay(kTree, "Main"));
+  sub["treeLoops"][0]["path"].append(onTheWay(kFork, "Deep dive"));
+  CHECK_EQ(test::body(call(kFork, kSam, "get_diagnostics", "{}")), sub);
+
+  registry.setVisibility(kTree, Visibility::public_);
+  CHECK_EQ(test::message(call(kTree, kEve, "get_diagnostics", "{}")),
+           std::string(R"({"cycles":[],"dangling":[],"maskedWork":[],"selfEdges":[],"smells":[]})"));
+
+  CHECK(treeRegistry.remove(kFork, kSam) == TreeRegistry::Removal::deleted);
+  Json::Value orphaned = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],
+      "danglingPointers":[{"node":"down"},{"node":"gone","treeId":"t_pgtest_never_planted"}]})");
+  orphaned["danglingPointers"][0]["treeId"] = kFork.str();
+  CHECK_EQ(test::body(call(kTree, kSam, "get_diagnostics", "{}")), orphaned);
+  registry.stop();
+}
+
 // The statement behind `guides`: of the owner's standing trees whose present pointers lead down to a tree, each at
 // its shortest distance, within eight pointers and never the tree itself, the nearest eight that carry a guide.
 TEST(pg_guided_trees_above_answers_the_nearest_eight_guided_trees_of_the_owners_that_lead_down_to_a_tree_within_eight_pointers) {
