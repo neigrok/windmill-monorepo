@@ -15,6 +15,18 @@
 
 A locally successful action can teach us about usability even when it cannot be credited to the account-backed activation gate. Show the observed, self-reported and unknown counts. If enough outcomes are missing to change the decision, hold the decision and improve observation before repeating the test. An immature cohort is pending. Avoid forcing sign-in to improve measurement.
 
+## Public iOS launch
+
+Day 0 is the first verified public install date for the announced storefront. Open a new cohort for the first seven days of the App Store release. Keep the November web builders and beta lifters in their original cohorts. If One goes on sale on a different day or through a different channel, start its purchase window there.
+
+| Question | Readout |
+|---|---|
+| Did people find and install Windmill? | At day 7 record App Store product-page views and first-time downloads for the same dates and storefront, with source where available. Keep store totals and in-app totals in their own columns. |
+| Did the iPhone Roadmap give them a reason to return? | Among observable first-time native Roadmap starters, count distinct people who complete a step within 48 hours of starting and whose progress persists. For the same starters count returns to their tree on days 7 through 13 after starting. Report observed starters, mature windows and unknowns beside each count. Until a native cohort query is verified, use opt-in observations and label that sample. |
+| Did anyone buy One and get what they paid for? | From the actual sale date, count distinct genuine paying accounts, refunds, successful entitlement and funded-period delivery for the announced channel. Exclude sandbox, owner-funded access and team verification purchases. Calculate offer-to-purchase conversion only for a measured group that saw the offer. [One launch checks](reports/04-gym-demo-and-checkout.md) |
+
+At the first weekly review, pick one issue from the stage with the strongest observed loss. Close the native return read only once the last starter has had 14 days. Use the billing period to date the first renewal read. Store downloads, signed-in activations and settled buyers each have a different denominator.
+
 ## A Monday review that takes 30 minutes
 
 1. **Five minutes on access.** Can a stranger open the link and start? Did the right canonical get indexed? Record each engine's last inspection date and reason for an exclusion. Search impressions, AI citations and a human click have different meanings.

@@ -534,7 +534,8 @@ and none overrides another.
   not name. A sent node register lands at
   the graft's stamp when it changes what the node holds, `""` and `[]` included, which is how a
   text or list field is cleared (`position` and `seedStatus` have no empty value: `null` counts as
-  left out); one sent as the node already holds it, like a prerequisite edge the tree already
+  left out, and a sent `position` carries both `x` and `y`, refused naming the one it lacks as
+  `patch_nodes` refuses a row's); one sent as the node already holds it, like a prerequisite edge the tree already
   holds, is not stamped again. A new id's omitted register lands as its default. A re-sent kind
   follows the same rule: a kind the legend holds keeps its creation, so a remove stamped before the
   import that arrives after it still removes it, and a hue, label, description or
