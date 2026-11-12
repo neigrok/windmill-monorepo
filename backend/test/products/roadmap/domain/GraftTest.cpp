@@ -153,6 +153,60 @@ TEST(graft_replace_revives_a_node_sent_without_prerequisites_with_its_edges) {
   CHECK_EQ(g.nodeView(nid("n"))->prerequisites, (std::vector<NodeId>{nid("a"), nid("c")}));
 }
 
+// A graft that re-hues a held kind repaints the present nodes wearing its old hue, judged against the legend and graph
+// as they stood before the batch, so a swap swaps; a node the document colours itself, or tombstones, is left to it.
+TEST(graft_frame_repaints_the_nodes_a_rehued_kind_wore) {
+  LooseGraph g;
+  for (const auto& [id, color] : std::vector<std::pair<const char*, NodeColor>>{
+           {"a", NodeColor::sky}, {"b", NodeColor::plum}, {"c", NodeColor::sky}, {"d", NodeColor::sky}})
+    g.createNode(nid(id), id, "", color, std::nullopt, at(1));
+  const Legend legend({{KindId{"apps"}, NodeColor::sky, "Apps"}, {KindId{"infra"}, NodeColor::plum, "Infra"}}, at(1));
+  Graft graft;
+  graft.document.kinds = {{KindId{"apps"}, NodeColor::plum}, {KindId{"infra"}, NodeColor::sky}};
+  for (const char* kind : {"apps", "infra"})
+    graft.omittedKindRegisters[KindId{kind}] = {KindRegister::label, KindRegister::description,
+                                                KindRegister::crossBranchExempt};
+  graft.document.nodes = {spec("c", {})};
+  graft.document.nodes[0].color = NodeColor::gold;
+  graft.omittedNodeRegisters[nid("c")] = omittedAllBut({NodeRegister::color});
+  graft.tombstones = {nid("d")};
+
+  g.join(graftFrame(g, legend, graft, at(2)).graph);
+  CHECK(g.nodeView(nid("a"))->color == NodeColor::plum);
+  CHECK(g.nodeView(nid("b"))->color == NodeColor::sky);
+  CHECK(g.nodeView(nid("c"))->color == NodeColor::gold);
+  CHECK_FALSE(g.hasNode(nid("d")));
+  CHECK(g.exportNode(nid("d"))->color == NodeColor::sky);
+}
+
+// A node the batch files by kind is the batch's word, even when the hue that kind wears after the batch is the one the
+// node holds: a swap leaves it on that hue under the other kind and repaints only the other wearers.
+TEST(graft_frame_leaves_a_node_filed_by_kind_to_the_batch_beside_a_swap) {
+  LooseGraph g;
+  for (const auto& [id, color] : std::vector<std::pair<const char*, NodeColor>>{
+           {"a", NodeColor::sky}, {"b", NodeColor::sky}, {"c", NodeColor::plum}})
+    g.createNode(nid(id), id, "", color, std::nullopt, at(1));
+  const Legend legend({{KindId{"apps"}, NodeColor::sky, "Apps"}, {KindId{"infra"}, NodeColor::plum, "Infra"}}, at(1));
+  Graft graft;
+  graft.document.kinds = {{KindId{"apps"}, NodeColor::plum}, {KindId{"infra"}, NodeColor::sky}};
+  for (const char* kind : {"apps", "infra"})
+    graft.omittedKindRegisters[KindId{kind}] = {KindRegister::label, KindRegister::description,
+                                                KindRegister::crossBranchExempt};
+  graft.document.nodes = {spec("a", {})};
+  graft.omittedNodeRegisters[nid("a")] = omittedAllBut({});
+  graft.nodeKinds = {{nid("a"), KindId{"infra"}}};
+
+  const std::variant<Graft, KindRefusal> filed = resolveKinds(legend, graft);
+  REQUIRE(std::holds_alternative<Graft>(filed));
+  const Repaint repaint = repaintOf(g, legend, std::get<Graft>(filed));
+  CHECK((repaint.rehued == std::vector<KindId>{KindId{"apps"}, KindId{"infra"}}));
+  CHECK((repaint.nodes == std::map<NodeId, NodeColor>{{nid("b"), NodeColor::plum}, {nid("c"), NodeColor::sky}}));
+  g.join(graftFrame(g, legend, std::get<Graft>(filed), at(2)).graph);
+  CHECK(g.nodeView(nid("a"))->color == NodeColor::sky);
+  CHECK(g.nodeView(nid("b"))->color == NodeColor::plum);
+  CHECK(g.nodeView(nid("c"))->color == NodeColor::sky);
+}
+
 TEST(graft_replace_leaves_new_nodes_and_nodes_not_in_the_batch_alone) {
   LooseGraph g = seeded();
   Graft graft;
@@ -583,7 +637,7 @@ TEST(resolve_kinds_files_nodes_under_the_legend_the_batch_leaves) {
   CHECK_EQ(landed.document.nodes[1].color, NodeColor::sky);
   CHECK(landed.omittedNodeRegisters.at(nid("a")) == omittedAllBut({NodeRegister::color}));
   CHECK(landed.omittedNodeRegisters.at(nid("b")) == omittedAllBut({NodeRegister::color}));
-  CHECK(landed.nodeKinds.empty());
+  CHECK(landed.nodeKinds == graft.nodeKinds);
 
   graft.nodeKinds[nid("b")] = KindId{"ghost"};
   const std::variant<Graft, KindRefusal> refused = resolveKinds(legend, graft);

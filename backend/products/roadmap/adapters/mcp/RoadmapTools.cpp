@@ -743,17 +743,18 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
       opened.emplace_back("opens", *annotated->opens);
     if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
 
-    // A single-node edit that changes nothing writes nothing: no seq, no op row, no frame, no save. It answers the
-    // head the tree stands at, and says so.
-    const bool changes = !namesAnExistingNode(tool) || room.changesNode(NodeId{payload["id"].asString()}, *command);
+    // A single-node edit lands only the fields that differ from what the node holds; one that changes nothing writes
+    // nothing — no seq, no op row, no frame, no save — and answers the head the tree stands at, and says so.
+    const std::optional<Command> landed =
+        namesAnExistingNode(tool) ? room.changedPart(NodeId{payload["id"].asString()}, *command) : command;
 
     // Bracketed under the strand, so whatever the tree gains between these reads, this gained.
     std::optional<std::map<NodeId, TreeId>> pointersBefore;
-    if (changes && opensATree(opened)) pointersBefore = room.pointers();
+    if (landed && opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.head();
-    if (changes) {
-      seq = room.applyCommand(*command, clock.nowMs(), actor);
+    if (landed) {
+      seq = room.applyCommand(*landed, clock.nowMs(), actor);
       registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
     }
     const TreeDiagnostics after = room.diagnose();
@@ -762,7 +763,7 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
-    if (!changes) out["unchanged"] = true;
+    if (!landed) out["unchanged"] = true;
     answerDiagnostics(before, after, out);
     if (payload.isMember("id")) out["id"] = payload["id"];
     // A write that named its kind wears it, as resolveHue just said; one that named none is answered
@@ -855,6 +856,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
     if (std::optional<std::string> stale = staleExpectedSeq(args, room)) return ToolResult::failure(*stale);
 
     Batch batch;
+    bool landsNothing = false;
     Json::Value out(Json::objectValue);
     out["treeId"] = tree.str();
     if (name == "patch_nodes") {
@@ -864,6 +866,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
       if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
       const NodePatchPlan& plan = std::get<NodePatchPlan>(result);
       batch = plan.batch;
+      landsNothing = plan.landsNothing();
       out["changedNodeIds"] = Json::Value(Json::arrayValue);
       out["unchangedNodeIds"] = Json::Value(Json::arrayValue);
       const std::set<NodeId> changed(plan.changedNodeIds.begin(), plan.changedNodeIds.end());
@@ -874,6 +877,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
       if (const auto* error = std::get_if<std::string>(&result)) return ToolResult::failure(*error);
       const EdgeChangePlan& plan = std::get<EdgeChangePlan>(result);
       batch = plan.batch;
+      landsNothing = plan.landsNothing();
       out["addedEdges"] = Json::Value(Json::arrayValue);
       out["removedEdges"] = Json::Value(Json::arrayValue);
       for (const auto& [field, values] : {std::pair{"addedEdges", &plan.added}, {"removedEdges", &plan.removed}}) {
@@ -890,6 +894,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, const Tre
     out["dryRun"] = dryRun;
     out["applied"] = !dryRun;
     out["seq"] = static_cast<Json::Int64>(room.head());
+    if (landsNothing) out["unchanged"] = true;
     if (!dryRun) {
       std::optional<std::map<NodeId, TreeId>> pointersBefore;
       if (opensATree(opened)) pointersBefore = room.pointers();
@@ -1268,6 +1273,9 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     tombstoned["nodes"] = static_cast<Json::UInt64>(footprint.tombstonedNodes.size());
     tombstoned["edges"] = static_cast<Json::UInt64>(footprint.tombstonedEdges.size());
     out["tombstoned"] = tombstoned;
+    // A held kind the batch re-hues carries its nodes, as recolor_kind does; the receipt counts them.
+    if (const Repaint repaint = room.repaintOf(graft); !repaint.rehued.empty())
+      out["repaintedNodes"] = static_cast<Json::UInt64>(repaint.nodes.size());
     if (dryRun) {
       out["dryRun"] = true;
       if (room.graftLandsNothing(graft, clock.nowMs())) out["unchanged"] = true;
@@ -1609,26 +1617,37 @@ ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& 
 
 // The guide is user content: a refusal names its bound and its type, never its text.
 ToolResult describeTree(TreeRegistry& registry, const TreeId& tree, const Json::Value& args, const UserId& caller) {
+  const Json::Value& title = args["title"];
   const Json::Value& guide = args["guide"];
-  if (!guide.isString())
+  if (title.isNull() && guide.isNull())
+    return ToolResult::failure("nothing to set — pass at least one of \"title\", \"guide\".");
+  // A title is judged by rename's own rule (TreeRegistry::titleFrom), so the tool checks only that one is a string.
+  if (!title.isNull() && !title.isString()) return ToolResult::failure(*requireString(title, "title"));
+  if (!guide.isNull() && !guide.isString())
     return ToolResult::failure(*requireString(guide, "guide") + ". A guide is plain text of at most " +
                                std::to_string(kMaxGuideChars) + " characters; \"\" clears it.");
   if (std::optional<std::string> bad = optionalString(guide, "guide", kMaxGuideChars))
     return ToolResult::failure(*bad);
 
-  const std::variant<Seq, TreeRegistry::GuideRefusal, Admission> outcome =
-      registry.setGuide(tree, caller, guide.asString());
+  TreeRegistry::Description sent;
+  if (title.isString()) sent.title = title.asString();
+  if (guide.isString()) sent.guide = guide.asString();
+  const std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission> outcome =
+      registry.describe(tree, caller, sent);
   if (const Admission* refusal = std::get_if<Admission>(&outcome)) return ToolResult::failure(refusal->reason);
-  if (const TreeRegistry::GuideRefusal* refusal = std::get_if<TreeRegistry::GuideRefusal>(&outcome)) {
-    if (*refusal == TreeRegistry::GuideRefusal::notYours)
+  if (const TreeRegistry::Renaming* refusal = std::get_if<TreeRegistry::Renaming>(&outcome)) {
+    if (*refusal == TreeRegistry::Renaming::notYours)
       return ToolResult::failure(writeRefusalSentence(WriteRefusal::notYours));
-    if (*refusal == TreeRegistry::GuideRefusal::nobodysTree)
+    if (*refusal == TreeRegistry::Renaming::nobodysTree)
       return ToolResult::failure(writeRefusalSentence(WriteRefusal::nobodysTree));
-    return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    if (*refusal == TreeRegistry::Renaming::notFound) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    return ToolResult::failure(TreeRegistry::sentenceOf(*refusal));
   }
+  const TreeRegistry::Described& described = std::get<TreeRegistry::Described>(outcome);
   Json::Value out(Json::objectValue);
   out["applied"] = true;
-  out["seq"] = static_cast<Json::Int64>(std::get<Seq>(outcome));
+  out["seq"] = static_cast<Json::Int64>(described.seq);
+  if (described.unchanged) out["unchanged"] = true;
   return ToolResult::json(out);
 }
 

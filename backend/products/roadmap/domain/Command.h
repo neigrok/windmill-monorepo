@@ -93,6 +93,10 @@ struct RemoveKind { KindId id; };
 struct ReorderKinds { std::vector<KindId> order; };
 struct RecolorKind { KindId id; NodeColor hue; };
 
+// The nodes a recolor of `kind` repaints: every present node wearing the hue the legend holds for it. RecolorKind and
+// an import that re-hues a held kind repaint by this one rule.
+std::vector<NodeId> wearersOf(const LooseGraph& graph, const Legend& legend, const KindId& kind);
+
 // Several commands that landed as ONE frame under one seq, logged whole so a replay of the op row
 // reproduces the frame and not just its first deed. Every member folds at the batch's own stamp.
 struct Batch;
@@ -118,9 +122,12 @@ struct NodePatch {
   std::optional<TreeId> opens;  // an empty id clears the tree the node opens
 };
 
+// A plan lands nothing when no row changes what its node holds: the batch is empty, so it takes no seq.
 struct NodePatchPlan {
   Batch batch;
   std::vector<NodeId> changedNodeIds;
+
+  bool landsNothing() const { return batch.commands.empty(); }
 };
 
 struct EdgeChanges {
@@ -128,15 +135,20 @@ struct EdgeChanges {
   std::vector<Edge> remove;
 };
 
+// A plan lands nothing when every edge it adds is held and every edge it removes is absent.
 struct EdgeChangePlan {
   Batch batch;
   std::vector<Edge> added;
   std::vector<Edge> removed;
+
+  bool landsNothing() const { return batch.commands.empty(); }
 };
 
-// Whether a single-node edit would change the node it names: a field the command names holds another value there.
-// A patch row and a single-node verb that change nothing write nothing, by this one rule; any other command changes.
-bool changesNode(const NodeSpec& node, const Command& command);
+// The part of a single-node edit that lands on the node it names: the command with only the fields that hold
+// another value there, or nothing when none does. An appended description always lands, and any other command lands
+// whole. A patch row and a single-node verb land by this one rule, so an annotation stamps only the registers it
+// changes, as an import does.
+std::optional<Command> changedPart(const NodeSpec& node, const Command& command);
 
 // A refusal is its sentence, or the KindRefusal of the row whose `kind` refused the batch.
 std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(

@@ -172,16 +172,9 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
 
   const std::string title = json ? json->get("title", "").asString() : "";
   TreeRegistry::Renaming outcome = registry_->rename(TreeId{treeId}, *caller, title);
-  if (outcome == TreeRegistry::Renaming::blankTitle) {
-    callback(error(drogon::k400BadRequest, "a tree always has a name"));
-    return;
-  }
-  if (outcome == TreeRegistry::Renaming::malformedTitle) {
-    callback(error(drogon::k400BadRequest, "the title is not valid UTF-8"));
-    return;
-  }
-  if (outcome == TreeRegistry::Renaming::nulInTitle) {
-    callback(error(drogon::k400BadRequest, "the title contains a NUL character"));
+  if (outcome == TreeRegistry::Renaming::blankTitle || outcome == TreeRegistry::Renaming::malformedTitle ||
+      outcome == TreeRegistry::Renaming::nulInTitle) {
+    callback(error(drogon::k400BadRequest, TreeRegistry::sentenceOf(outcome)));
     return;
   }
   if (outcome == TreeRegistry::Renaming::notFound) {

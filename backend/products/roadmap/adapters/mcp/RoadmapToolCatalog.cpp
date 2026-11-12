@@ -282,11 +282,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     }
     ToolDeclaration declaration = tool(name, Access::write,
         patches ? "Patch fields on 1..200 existing nodes atomically. Omitted fields survive; empty strings and links clear their field. "
-                  "All items are validated before one operation, seq and broadcast. Exact retries skip unchanged nodes. "
+                  "All items are validated before one operation, seq and broadcast. Exact retries skip unchanged nodes, and "
+                  "a batch whose every row is unchanged writes nothing and answers `unchanged: true`. "
                   "expectedSeq prevents overwriting intervening edits; dryRun previews changedNodeIds and unchangedNodeIds."
                 : "Add and remove 1..500 prerequisite edges atomically in one operation, seq and broadcast. "
                   "Added endpoints must exist; removing an absent edge is a no-op. Duplicates and add/remove overlap reject the entire batch. "
-                  "Cycles remain allowed and are reported through diagnostics. Exact retries do not mint a new seq; expectedSeq and dryRun are supported.",
+                  "Cycles remain allowed and are reported through diagnostics. A batch that adds only held edges and removes "
+                  "only absent ones writes nothing and answers `unchanged: true`; expectedSeq and dryRun are supported.",
         p, patches ? std::vector<const char*>{"treeId", "updates"} : std::vector<const char*>{"treeId"});
     Json::Value output(Json::objectValue);
     output["type"] = "object";
@@ -296,6 +298,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     properties["seq"]["type"] = "integer";
     properties["applied"] = boolean("True after the batch has been accepted, including a no-op retry.");
     properties["dryRun"] = boolean("True when the listed changes are a preview.");
+    properties["unchanged"] = boolean("True when the batch changes nothing, so it takes no seq. Absent otherwise.");
     properties["diagnosticsClean"] = boolean("Whether the graph after an applied batch has no structural errors.");
     properties["introducedDiagnostics"] = strArray(
         patches ? "New structural errors after an applied batch, then each loop of trees a pointer it set closed: "
@@ -420,13 +423,21 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    p["guide"] = cappedStr("The whole guide, replacing the one the tree has; \"\" clears it.", kMaxGuideChars);
+    p["title"] = cappedStr("The roadmap's new name: trimmed, cut to 200 characters, never blank. Omit to keep it.",
+                           kMaxTitleChars);
+    p["guide"] = cappedStr("The whole guide, replacing the one the tree has; \"\" clears it. Omit to keep it.",
+                           kMaxGuideChars);
     tools.push_back(tool("describe_tree", Access::write,
-        "Set a roadmap's guide: one plain-text note on what the tree is and how to work it, at most 5000 "
-        "characters counted as Unicode code points. It replaces the guide the tree has, and \"\" "
-        "clears it. get_tree carries it on every page to everyone who reads the tree, and to you "
-        "among the `guides` of your trees below this one. Only the owner may set it.",
-        p, {"treeId", "guide"}));
+        "Rename a roadmap with `title`, set its guide with `guide`, or both: send at least one; each is set "
+        "only when sent, and the two together land in one step or not at all. The title is trimmed and "
+        "cut to 200 characters; a blank one is refused, and one equal to the name the tree has is not "
+        "written and answers `unchanged: true`. A guide is written whenever it is sent, even as the tree "
+        "holds it, which is how a fork's owner makes an inherited guide theirs. The guide is one plain-text "
+        "note on what the tree is and "
+        "how to work it, at most 5000 characters counted as Unicode code points; it replaces the guide the "
+        "tree has, and \"\" clears it. get_tree carries it on every page to everyone who reads the tree, "
+        "and to you among the `guides` of your trees below this one. Only the owner may set either.",
+        p, {"treeId"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -598,7 +609,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "after birth, so it is how an `empty-icon` smell from get_diagnostics is fixed. Every length "
         "cap counts Unicode code points, and a refusal names each field over its cap and by how much. "
         "When no field it names would change, it writes nothing and answers `unchanged: true` with the "
-        "tree's current `seq`; when any would, the whole edit lands.",
+        "tree's current `seq`; when any would, the fields that change land and a field sent as the node "
+        "already holds it is left as it is.",
         p, {"treeId", "nodeId"}));
   }
   {
@@ -913,7 +925,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "added; the tree's title is not touched. Every other field you leave off a node or kind keeps "
         "the value the tree holds (a new id gets the default), and every field you send replaces it — "
         "an explicit \"\" or [] clears it. A node deleted earlier and re-sent comes back with the fields "
-        "it had, but for the tree it opened: it opens the tree this batch names for it, or none. The "
+        "it had, but for the tree it opened: it opens the tree this batch names for it, or none. A kind "
+        "you re-send with a new hue repaints the nodes wearing its old hue, as recolor_kind does, judged "
+        "against the legend before the batch (so two kinds can swap hues); a node you file by `kind` takes "
+        "the hue that kind wears after the batch, a node you send a `color` that differs from the one it "
+        "holds keeps that colour, and the receipt's repaintedNodes counts the rest. The "
         "only removals are the ones you ask for: `tombstone` ids (which need the roadmap:delete grant), "
         "and under \"replace\" the edges into a node that the prerequisites list you send for it does not name. `position` is optional — the web canvas lays "
         "the tree out from its structure — and, when sent, carries both `x` and `y`. The receipt counts what the batch carried — `nodes`, "

@@ -211,7 +211,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | | Tool | Effect |
 | --- | --- | --- |
 | registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own; `create_tree` plants the legend sent in `kinds` (1–6 of `import_subgraph`'s kind items, each id and hue once, replacing the default Build/Learn/Milestone whole and in order; `[]`, a repeated id or hue, or seven refuse the call and plant nothing) and answers `{treeId, url, kinds: [{id, hue, label}]}`, the legend planted; each `list_trees` row carries the tree's `url` too (see `url`); a node later written with neither `color` nor `kind` is terracotta, so a legend with no terracotta kind leaves such a node under no kind |
-| registry | `describe_tree` | set the tree's guide — a plain-text note on what the tree is and how to work it, at most 5000 characters; `""` or only whitespace clears it; owner only, answers `{applied, seq}` and leaves no op row |
+| registry | `describe_tree` | rename the tree with `title`, set its guide with `guide`, or both — at least one, each set only when sent, both landing as one frame at one seq or neither (`TreeRegistry::describe`). The title follows `rename`'s rule (`TreeRegistry::titleFrom`: trimmed, cut to 200 characters, a blank refused as "a tree always has a name"), and one equal to the name the tree has is not written and answers `unchanged: true` with the head; a guide is written whenever it is sent, even as the tree holds it, which is also how a fork's owner makes an inherited guide theirs; the guide is a plain-text note on what the tree is and how to work it, at most 5000 characters, and `""` or only whitespace clears it. Owner only; answers `{applied, seq}`, `seq` the head after the call, and leaves no op row; an open page receives the frame with the new title or guide |
 | read | `get_tree` | title + `url` (see `url`) + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + `guides` on the first page (see `guides`) + nodes (label, icon, color, `kind`, position, description, links, `opens`, `url`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells; on a tree the caller owns also `treeLoops` and `danglingPointers` (see `opens`) |
@@ -278,10 +278,16 @@ Apply action for routine proposals; annotations describe each tool's effects.
 `rename_node`, `set_node_color`, `move_node` and `annotate_node` sent what the node already holds
 write nothing: no seq, no op row, no frame and no save. The reply is the usual one with
 `unchanged: true` added and `seq` the head the tree stands at, and the write line is `ok`. One rule
-decides it, `changesNode` in `domain/Command`: a field the edit names holds another value. A
-`patch_nodes` row that changes nothing is listed under `unchangedNodeIds` by the same rule. An
-`annotate_node` naming several fields lands whole when any of them would change, and an
-`appendDescription` with text always does.
+decides it, `changedPart` in `domain/Command`: a field the edit names lands only when it holds another
+value on the node, so an edit lands the fields that differ and none that repeat what the node holds. A
+`patch_nodes` row that changes nothing is listed under `unchangedNodeIds` by the same rule, and a
+`patch_nodes` batch whose every row is unchanged answers `unchanged: true` too, as does a
+`change_edges` batch that adds only held edges and removes only absent ones: each plan says whether
+it `landsNothing` (`NodePatchPlan`, `EdgeChangePlan`), on the dry run and for real. An
+`annotate_node` or a `patch_nodes` row naming several fields lands only those that differ — the op row
+names them and nothing else — so a field it repeats is not stamped again and a client's concurrent edit
+to it stamped earlier still wins, as it does against an import; an `appendDescription` with text always
+lands.
 
 `import_subgraph` follows the same word. A graft whose frame lands nothing — every register sent as
 the tree holds it, no new edge, no tombstone, no edge a replace drops, no new or revived node or kind
@@ -443,7 +449,7 @@ A node may point at another tree: `opens` holds that tree's id.
   receipt names the graph's errors alone. The two rules agree on the pointer: an `annotate_node`
   that names only the tree the node already opens writes nothing and answers `unchanged: true`
   (An edit that changes nothing), and one that changes the pointer is a change there and is
-  followed here (`changesNode`, `pointersSetSince`).
+  followed here (`changedPart`, `pointersSetSince`).
 - **The receipt's follow is short.** The edit is durable before it, and the reply waits on that
   read alone, so the read is given 750 ms of its own (`kReceiptFollowBudget`; a statement limit
   for that one transaction, `TreeRepository::openedFrom`), not the pool's 5 s. Past it the receipt
@@ -545,8 +551,17 @@ and none overrides another.
   `crossBranchExempt` sent as the legend holds it is not stamped again, so a `get_tree` round trip
   that carries the legend back changes nothing in it. Rank is never on the wire, so a colliding
   kind keeps its place and a new kind lands after the last one, in batch order. A re-sent kind
-  with a new hue changes the kind alone: the nodes wearing the old hue keep it, where
-  `recolor_kind` repaints them. The import is at most one op row — a batch that changes nothing
+  with a new hue repaints every present node wearing its old hue, in the same frame and at the
+  graft's stamp, by `recolor_kind`'s rule (`wearersOf`, used by `repaintOf`), judged against the
+  legend and nodes as they stood before the batch, so two kinds can swap hues. A node the batch
+  tombstones lands what the batch says, and so does one it files by `kind`: it takes the hue that kind
+  wears after the batch, whatever it wore before. A node sent a `color` that differs from the one it
+  holds keeps that colour, while one sent the colour it holds — a `get_tree` round trip — is repainted
+  like any wearer (`landsOver`, the comparison the graft lands every register by). The receipt counts
+  the nodes the repaint moved as `repaintedNodes`, present when a kind's hue changed and previewed by
+  the dry run. A batch whose only change is re-hueing one kind writes the row `recolor_kind` writes,
+  `RecolorKind`; a batch that re-hues several kinds writes one `RecolorKind` row too, for the first of
+  them in id order, so its row does not say what the batch did. The import is at most one op row — a batch that changes nothing
   writes none — and that row names only the batch's most salient change, in `headline()`'s order
   (a created node, a removed node, a legend change, a node's label, colour or annotation, an
   edge): an added edge beside a rename reads `renamed to N2`, two new edges read as the first of

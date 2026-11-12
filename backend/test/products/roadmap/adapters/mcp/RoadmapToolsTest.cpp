@@ -3302,7 +3302,7 @@ TEST(mcp_patch_nodes_is_one_edit_preserves_omissions_and_retries_as_noop) {
   CHECK(conflict.isError);
   CHECK_EQ(message(conflict), std::string("patch_nodes: expectedSeq conflict: requested 2, current seq is 3. Nothing changed; read get_nodes or get_tree and retry with the current seq."));
   args.removeMember("expectedSeq");
-  CHECK_EQ(body(h.call("patch_nodes", args)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":3,"changedNodeIds":[],"unchangedNodeIds":["a","b"],"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("patch_nodes", args)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":3,"changedNodeIds":[],"unchangedNodeIds":["a","b"],"diagnosticsClean":true,"introducedDiagnostics":[],"unchanged":true})"));
   CHECK_EQ(h.bus.subgraphBroadcasts.size(), 3u);
   CHECK_EQ(h.ops.byTree["t"].size(), 3u);
 }
@@ -3328,7 +3328,8 @@ TEST(mcp_patch_nodes_refuses_the_whole_batch_and_dry_run_changes_nothing) {
   CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"b","opens":null}]})"))),
            std::string("patch_nodes: missing required argument \"updates[0].opens\""));
   CHECK_EQ(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","description":""}],"dryRun":true,"expectedSeq":2})"))),
-           parse(R"({"treeId":"t","applied":false,"dryRun":true,"seq":2,"changedNodeIds":[],"unchangedNodeIds":["a"]})"));
+           parse(R"({"treeId":"t","applied":false,"dryRun":true,"seq":2,"changedNodeIds":[],"unchangedNodeIds":["a"],
+             "unchanged":true})"));
   CHECK_EQ(body(h.call("get_tree", kNoArgs)), before);
   CHECK_EQ(h.bus.subgraphBroadcasts.size(), 2u);
 }
@@ -3342,7 +3343,7 @@ TEST(mcp_change_edges_is_atomic_and_reports_cycles_and_noop_retries) {
   CHECK_EQ(body(h.call("change_edges", args)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":4,"addedEdges":[{"from":"b","to":"a"}],"removedEdges":[],"unchangedEdges":1,"diagnosticsClean":false,"introducedDiagnostics":["cycle among \"a\", \"b\""]})"));
   Json::Value retry = args;
   retry.removeMember("expectedSeq");
-  CHECK_EQ(body(h.call("change_edges", retry)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":4,"addedEdges":[],"removedEdges":[],"unchangedEdges":2,"diagnosticsClean":false,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(h.call("change_edges", retry)), parse(R"({"treeId":"t","applied":true,"dryRun":false,"seq":4,"addedEdges":[],"removedEdges":[],"unchangedEdges":2,"diagnosticsClean":false,"introducedDiagnostics":[],"unchanged":true})"));
   const Json::Value before = body(h.call("get_tree", kNoArgs));
   for (const char* json : {
       R"({"remove":[{"from":"a","to":"b"}],"add":[{"from":"missing","to":"a"}]})",
@@ -3500,8 +3501,7 @@ TEST(mcp_describe_tree_holds_5000_code_points_of_any_width_and_names_the_bound_w
            std::string("describe_tree: argument \"guide\" must be a string, got number. A guide is plain "
                        "text of at most 5000 characters; \"\" clears it."));
   CHECK_EQ(message(h.call("describe_tree", kNoArgs)),
-           std::string("describe_tree: missing required argument \"guide\". A guide is plain text of at "
-                       "most 5000 characters; \"\" clears it."));
+           std::string("describe_tree: nothing to set — pass at least one of \"title\", \"guide\"."));
   CHECK_EQ(message(h.call("describe_tree", with("guide", "\xE5\xAD"))),
            std::string("describe_tree: guide is not valid UTF-8"));
   CHECK_EQ(h.trees.byId["t"].guide.value, wide);
@@ -3514,7 +3514,9 @@ TEST(mcp_describe_tree_holds_5000_code_points_of_any_width_and_names_the_bound_w
   const Json::Value& schema = (*declared)["inputSchema"];
   CHECK_EQ(schema["properties"]["guide"]["type"].asString(), std::string("string"));
   CHECK_EQ(schema["properties"]["guide"]["maxLength"].asUInt64(), static_cast<Json::UInt64>(5000));
-  CHECK_EQ(schema["required"], list({"treeId", "guide"}));
+  CHECK_EQ(schema["properties"]["title"]["type"].asString(), std::string("string"));
+  CHECK_EQ(schema["properties"]["title"]["maxLength"].asUInt64(), static_cast<Json::UInt64>(200));
+  CHECK_EQ(schema["required"], list({"treeId"}));
 }
 
 TEST(mcp_a_tree_with_no_guide_answers_an_empty_text_and_says_whose_it_is) {
@@ -3650,7 +3652,8 @@ TEST(mcp_describe_tree_names_the_guide_a_plain_text_note) {
   Harness h;
   for (const Json::Value& tool : h.tools.listTools(h.actor))
     if (tool["name"].asString() == "describe_tree")
-      CHECK(tool["description"].asString().rfind("Set a roadmap's guide: one plain-text note on what the tree is", 0) == 0);
+      CHECK(tool["description"].asString().find("The guide is one plain-text note on what the tree is") !=
+            std::string::npos);
 }
 
 // Forking your own tree copies your own words, so the copy stays yours; forking someone else's tree, or
@@ -5392,8 +5395,8 @@ TEST(mcp_a_single_node_edit_that_changes_nothing_writes_nothing_and_says_so) {
                          "mcp.roadmap_annotate_node ok"}));
 }
 
-// A single-node edit that changes any field it names lands as it always has: a seq, an op row, and no `unchanged`.
-TEST(mcp_a_single_node_edit_that_changes_one_field_it_names_lands_whole) {
+// A single-node edit that changes any field it names lands: a seq, an op row, and no `unchanged`.
+TEST(mcp_a_single_node_edit_that_changes_one_field_it_names_lands_with_a_seq_and_a_row) {
   Harness h;
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","description":"Notes","icon":"pin",
     "links":[{"url":"https://a.example/1","label":"One"}]})")).isError);
@@ -5626,4 +5629,304 @@ TEST(mcp_import_subgraph_takes_expected_seq_like_the_other_batch_tools) {
   REQUIRE_EQ(expectedSeqOf.size(), 3u);
   CHECK_EQ(expectedSeqOf.at("import_subgraph"), expectedSeqOf.at("patch_nodes"));
   CHECK_EQ(expectedSeqOf.at("import_subgraph"), expectedSeqOf.at("change_edges"));
+}
+
+// A patch_nodes whose rows change nothing, and a change_edges that adds only held edges and removes only absent ones,
+// answer `unchanged: true` beside their usual keys, on the dry run and for real; a batch that changes anything does not.
+TEST(mcp_a_batch_that_changes_nothing_says_unchanged) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
+    "prerequisites":["a"]}]})")).isError);
+
+  for (const char* dryRun : {"true", "false"}) {
+    const std::string tail = std::string(R"("dryRun":)") + dryRun + R"(,"applied":)" +
+                             (std::string(dryRun) == "true" ? "false" : "true") + R"(,"seq":1)" +
+                             (std::string(dryRun) == "true" ? "" : R"(,"diagnosticsClean":true,"introducedDiagnostics":[])") +
+                             R"(,"unchanged":true})";
+    CHECK_EQ(body(h.call("patch_nodes", parse(std::string(R"({"dryRun":)") + dryRun +
+                                                 R"(,"updates":[{"nodeId":"a","label":"A"}]})"))),
+             parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],)" + tail));
+    CHECK_EQ(body(h.call("change_edges", parse(std::string(R"({"dryRun":)") + dryRun +
+                                                  R"(,"add":[{"from":"a","to":"b"}],"remove":[{"from":"b","to":"a"}]})"))),
+             parse(R"({"treeId":"t","addedEdges":[],"removedEdges":[],"unchangedEdges":2,)" + tail));
+  }
+  CHECK_EQ(h.ops.byTree["t"].size(), 1u);
+
+  CHECK_FALSE(body(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A2"}]})"))).isMember("unchanged"));
+  CHECK_FALSE(body(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"b"}]})"))).isMember("unchanged"));
+  CHECK_EQ(h.ops.byTree["t"].size(), 3u);
+
+  const Json::Value catalog = h.tools.listTools(h.actor);
+  for (const Json::Value& tool : catalog)
+    if (tool["name"].asString() == "patch_nodes" || tool["name"].asString() == "change_edges")
+      CHECK_EQ(tool["outputSchema"]["properties"]["unchanged"]["type"].asString(), std::string("boolean"));
+}
+
+// describe_tree takes a `title` beside its `guide`: each lands only when sent, both together land as one frame or not at
+// all, by rename's own title rule, and an open page sees the new title in the frame the tree broadcasts.
+TEST(mcp_describe_tree_renames_the_tree_and_sets_its_guide_in_one_step) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("a", "A")).isError);
+  const std::size_t rows = h.ops.byTree["t"].size();
+  const auto title = [&] { return body(h.call("get_tree", parse(R"({"includeGuides":false})")))["tree"]["title"]; };
+
+  CHECK_EQ(body(h.call("describe_tree", with("title", "  Autumn plans  "))), parse(R"({"applied":true,"seq":2})"));
+  CHECK_EQ(title(), Json::Value("Autumn plans"));
+  CHECK_EQ(body(h.call("list_trees", Json::Value(Json::objectValue)))["trees"][0]["title"], Json::Value("Autumn plans"));
+  REQUIRE(h.bus.subgraphBroadcasts.back().subgraph.title.has_value());
+  CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.title->value, std::string("Autumn plans"));
+  CHECK_FALSE(h.bus.subgraphBroadcasts.back().subgraph.guide.has_value());
+
+  const std::size_t frames = h.bus.subgraphBroadcasts.size();
+  CHECK_EQ(body(h.call("describe_tree", with("title", "Autumn plans"))), parse(R"({"applied":true,"seq":2,"unchanged":true})"));
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames);
+
+  CHECK_EQ(body(h.call("describe_tree", parse(R"({"title":"Winter plans","guide":"Rig first."})"))),
+           parse(R"({"applied":true,"seq":3})"));
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames + 1);
+  CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.title->value, std::string("Winter plans"));
+  CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.guide->value, std::string("Rig first."));
+  CHECK_EQ(body(h.call("describe_tree", with("guide", "Rig first."))), parse(R"({"applied":true,"seq":4})"));
+  CHECK_EQ(body(h.call("describe_tree", with("title", std::string(201, 'x').c_str()))), parse(R"({"applied":true,"seq":5})"));
+  CHECK_EQ(title(), Json::Value(std::string(200, 'x')));
+  CHECK_EQ(body(h.call("describe_tree", with("title", "Winter plans"))), parse(R"({"applied":true,"seq":6})"));
+  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+
+  const StoredTree stored = h.trees.byId["t"];
+  Json::Value number(Json::objectValue);
+  number["title"] = 7;
+  Json::Value overGuide = parse(R"({"title":"Spring plans"})");
+  overGuide["guide"] = std::string(5001, 'g');
+  for (const auto& [arguments, refusal] : std::vector<std::pair<Json::Value, std::string>>{
+           {with("title", ""), "describe_tree: a tree always has a name"},
+           {with("title", "  \t\n "), "describe_tree: a tree always has a name"},
+           {number, "describe_tree: argument \"title\" must be a string, got number"},
+           {Json::Value(Json::objectValue), "describe_tree: nothing to set — pass at least one of \"title\", \"guide\"."},
+           {overGuide, "describe_tree: guide is 5001 characters, 1 over the 5000 cap"}})
+    CHECK_EQ(message(h.call("describe_tree", arguments)), refusal);
+  CHECK(h.trees.byId["t"] == stored);
+
+  h.trees.byId["t_theirs"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Their plans", {}}, 0,
+                                        uid("someone-else"), Visibility::public_};
+  Json::Value theirs = with("title", "Mine now");
+  theirs["treeId"] = "t_theirs";
+  CHECK_EQ(message(h.tools.callTool("describe_tree", theirs, h.actor)),
+           std::string("describe_tree: this tree belongs to another account. Call list_trees to see the roadmaps you "
+                       "own."));
+  CHECK_EQ(h.trees.byId["t_theirs"].title.value, std::string("Their plans"));
+
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<WriteCompletion> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line); });
+  Json::Value secret = with("title", "Private compass title");
+  secret["treeId"] = "t";
+  CHECK_FALSE(gate.callTool("roadmap_describe_tree", secret, h.actor).isError);
+  installWriteSink({});
+  REQUIRE_EQ(lines.size(), 1u);
+  CHECK_EQ(lines[0].outcome, std::string("ok"));
+  CHECK_EQ(writeCompletionJson(lines[0]).find("compass"), std::string::npos);
+}
+
+// Every title refusal is worded once, in TreeRegistry::sentenceOf, on both doors.
+TEST(mcp_describe_tree_refuses_a_title_in_the_words_rest_uses) {
+  Harness h;
+  CHECK_EQ(message(h.call("describe_tree", with("title", "cut \xE2\x82"))),
+           "describe_tree: " + std::string(TreeRegistry::sentenceOf(TreeRegistry::Renaming::malformedTitle)));
+  CHECK_EQ(message(h.call("describe_tree", with("title", " "))),
+           "describe_tree: " + std::string(TreeRegistry::sentenceOf(TreeRegistry::Renaming::blankTitle)));
+}
+
+// A guide is written whenever it is sent, even as the tree holds it: that is how a fork's owner makes an inherited
+// guide theirs. A title equal to the one the tree has is not written.
+TEST(mcp_describe_tree_writes_a_guide_sent_as_held_so_a_forks_owner_makes_it_theirs) {
+  Harness h;
+  ForkService forks{h.registry, h.trees, h.tokens, h.clock};
+  h.trees.byId["t"].visibility = Visibility::public_;
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Rig first, then sail.")).isError);
+  const UserId stranger = uid("stranger");
+  REQUIRE(forks.fork(TreeId{"t"}, "t_theirs", "", stranger).outcome == ForkService::Outcome::forked);
+  const auto call = [&](const char* tool, Json::Value args) {
+    args["treeId"] = "t_theirs";
+    return body(h.tools.callTool(tool, args, ToolCaller{stranger, ToolScope::everything()}));
+  };
+  const Json::Value before = call("get_tree", parse(R"({"includeGuides":false})"));
+  CHECK_EQ(before["tree"]["guide"], parse(R"({"text":"Rig first, then sail.","yours":false})"));
+  const int seq = before["seq"].asInt();
+
+  CHECK_EQ(call("describe_tree", with("guide", "Rig first, then sail.")),
+           parse("{\"applied\":true,\"seq\":" + std::to_string(seq + 1) + "}"));
+  CHECK_EQ(call("get_tree", parse(R"({"includeGuides":false})"))["tree"]["guide"],
+           parse(R"({"text":"Rig first, then sail.","yours":true})"));
+  const std::string title = before["tree"]["title"].asString();
+  CHECK_EQ(call("describe_tree", with("title", title.c_str())),
+           parse("{\"applied\":true,\"seq\":" + std::to_string(seq + 1) + ",\"unchanged\":true}"));
+}
+
+// An annotation write lands only the fields that differ from what the node holds, through every door: the frame and
+// the op row carry the description alone, and a client's icon stamped before the write and joined after it wins.
+TEST(mcp_an_annotation_lands_only_the_fields_that_differ_through_every_door) {
+  for (const auto& [tool, arguments] : std::vector<std::pair<const char*, const char*>>{
+           {"annotate_node", R"({"nodeId":"a","icon":"star","description":"new"})"},
+           {"patch_nodes", R"({"updates":[{"nodeId":"a","icon":"star","description":"new"}]})"},
+           {"import_subgraph", R"({"nodes":[{"id":"a","icon":"star","description":"new"}]})"}}) {
+    Harness h;
+    CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","icon":"star","description":"old"})")).isError);
+    TreeRoom& room = *h.registry.open(TreeId{"t"});
+    Hlc held;
+    for (const NodeStateEntry& node : room.exportState().nodes)
+      if (node.id == NodeId{"a"}) held = node.iconAt;
+
+    CHECK_FALSE(h.call(tool, parse(arguments)).isError);
+    const GraphState& frame = h.bus.subgraphBroadcasts.back().subgraph.graph;
+    REQUIRE_EQ(frame.nodes.size(), 1u);
+    CHECK(frame.nodes[0].descriptionAt.isSet());
+    CHECK_FALSE(frame.nodes[0].iconAt.isSet());
+    CHECK_EQ(commandPayload(h.ops.byTree["t"].back().command), parse(R"({"id":"a","description":"new"})"));
+
+    Subgraph client;
+    client.treeId = TreeId{"t"};
+    client.frameId = std::string("client-icon-") + tool;
+    client.actor = "r_client";
+    client.intent = SubgraphIntent::live;
+    client.graph.nodes.push_back(
+        NodeStateEntry{.id = NodeId{"a"}, .icon = "anchor", .iconAt = Hlc{held.physicalMs, held.counter + 1, "r_client"}});
+    REQUIRE(room.joinSubgraph(client, h.caller).has_value());
+    CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["icon","description"]})")))["nodes"],
+             parse(R"([{"icon":"anchor","description":"new"}])"));
+  }
+}
+
+// An import that changes a held kind's hue repaints every node wearing the old hue, as recolor_kind does, in the
+// graft's frame: the receipt counts them and the dry run previews the count.
+TEST(mcp_an_import_that_rehues_a_kind_repaints_the_nodes_that_wore_its_hue) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"backend","hue":"sky"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","color":"sky"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"old","label":"Old","kind":"backend"})")).isError);
+  const auto nodesOf = [&](const char* ids) {
+    return body(h.call("get_nodes", parse(std::string(R"({"fields":["id","color","kind"],"nodeIds":)") + ids + "}")))["nodes"];
+  };
+
+  const Json::Value preview =
+      body(h.call("import_subgraph", parse(R"({"dryRun":true,"kinds":[{"id":"backend","hue":"plum"}],"nodes":[]})")));
+  CHECK_EQ(preview["repaintedNodes"].asUInt64(), 2u);
+  CHECK_EQ(nodesOf(R"(["a","old"])"), parse(R"([{"id":"a","color":"sky","kind":"backend"},
+    {"id":"old","color":"sky","kind":"backend"}])"));
+
+  const Json::Value landed = body(h.call("import_subgraph", parse(R"({"kinds":[{"id":"backend","hue":"plum"}],
+    "nodes":[{"id":"fresh","label":"Fresh","kind":"backend"}]})")));
+  CHECK_EQ(landed["repaintedNodes"].asUInt64(), 2u);
+  CHECK_EQ(nodesOf(R"(["a","old","fresh"])"), parse(R"([{"id":"a","color":"plum","kind":"backend"},
+    {"id":"old","color":"plum","kind":"backend"},{"id":"fresh","color":"plum","kind":"backend"}])"));
+
+  CHECK_FALSE(body(h.call("import_subgraph", parse(R"({"kinds":[{"id":"backend","hue":"plum"}],"nodes":[]})")))
+                  .isMember("repaintedNodes"));
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"kinds":[{"id":"backend","hue":"olive"}],"nodes":[]})")).isError);
+  CHECK_EQ(commandKind(h.ops.byTree["t"].back().command), std::string("RecolorKind"));
+  CHECK_EQ(commandPayload(h.ops.byTree["t"].back().command), parse(R"({"id":"backend","hue":"olive"})"));
+  CHECK_EQ(nodesOf(R"(["a","old","fresh"])"), parse(R"([{"id":"a","color":"olive","kind":"backend"},
+    {"id":"old","color":"olive","kind":"backend"},{"id":"fresh","color":"olive","kind":"backend"}])"));
+}
+
+// The repaint reads the legend and the nodes as they stood before the batch, so a swap swaps; a node the batch gives
+// its own colour or kind lands what the batch says, and a deleted node or one the batch tombstones is left alone.
+TEST(mcp_an_import_repaints_against_the_legend_before_the_batch_and_yields_to_its_word) {
+  Harness h;
+  for (const char* kind : {R"({"id":"apps","hue":"sky"})", R"({"id":"infra","hue":"plum"})", R"({"id":"ops","hue":"gold"})"})
+    CHECK_FALSE(h.call("add_kind", parse(kind)).isError);
+  for (const char* node : {R"({"id":"s1","label":"S1","color":"sky"})", R"({"id":"s2","label":"S2","color":"sky"})",
+                           R"({"id":"s3","label":"S3","color":"sky"})", R"({"id":"p1","label":"P1","color":"plum"})",
+                           R"({"id":"gone","label":"Gone","color":"sky"})", R"({"id":"cut","label":"Cut","color":"sky"})"})
+    CHECK_FALSE(h.call("create_node", parse(node)).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"gone"})")).isError);
+
+  const Json::Value receipt = body(h.call("import_subgraph", parse(R"({"kinds":[{"id":"apps","hue":"plum"},
+    {"id":"infra","hue":"sky"}],"nodes":[{"id":"s2","color":"gold"},{"id":"s3","kind":"ops"}],"tombstone":["cut"]})")));
+  CHECK_EQ(receipt["repaintedNodes"].asUInt64(), 2u);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["s1","s2","s3","p1"],"fields":["id","color","kind"]})")))["nodes"],
+           parse(R"([{"id":"s1","color":"plum","kind":"apps"},{"id":"s2","color":"gold","kind":"ops"},
+             {"id":"s3","color":"gold","kind":"ops"},{"id":"p1","color":"sky","kind":"infra"}])"));
+  for (const NodeStateEntry& node : h.registry.open(TreeId{"t"})->exportState().nodes)
+    if (node.id == NodeId{"gone"} || node.id == NodeId{"cut"}) CHECK(node.color == NodeColor::sky);
+}
+
+// A node is the batch's word only when the colour the batch lands for it differs from the one it holds: a get_tree
+// round trip that re-hues a kind repaints every wearer, a colour sent as held is repainted, a third hue stays the
+// batch's, and the new hue sent as a colour or by the re-hued kind ends on the new hue either way.
+TEST(mcp_an_import_round_trip_that_rehues_a_kind_repaints_every_wearer) {
+  const auto seeded = [] {
+    auto h = std::make_unique<Harness>();
+    CHECK_FALSE(h->call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
+    CHECK_FALSE(h->call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","color":"sky"},
+      {"id":"b","label":"B","color":"sky"},{"id":"c","label":"C","color":"sky"},{"id":"d","label":"D","color":"sky"},
+      {"id":"e","label":"E","color":"gold"}]})")).isError);
+    return h;
+  };
+  const auto colours = [](Harness& h) {
+    return body(h.call("get_nodes", parse(R"({"nodeIds":["a","b","c","d","e"],"fields":["id","color"]})")))["nodes"];
+  };
+
+  auto round = seeded();
+  Json::Value batch = body(round->call("get_tree", parse(R"({"includeGuides":false})")))["tree"];
+  batch.removeMember("guide");
+  batch.removeMember("id");
+  batch.removeMember("title");
+  batch.removeMember("url");
+  for (Json::Value& kind : batch["kinds"]) kind["hue"] = "plum";
+  Json::Value preview = batch;
+  preview["dryRun"] = true;
+  CHECK_EQ(body(round->call("import_subgraph", preview))["repaintedNodes"].asUInt64(), 4u);
+  CHECK_EQ(body(round->call("import_subgraph", batch))["repaintedNodes"].asUInt64(), 4u);
+  CHECK_EQ(colours(*round), parse(R"([{"id":"a","color":"plum"},{"id":"b","color":"plum"},{"id":"c","color":"plum"},
+    {"id":"d","color":"plum"},{"id":"e","color":"gold"}])"));
+
+  auto sent = seeded();
+  const Json::Value receipt = body(sent->call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"plum"}],
+    "nodes":[{"id":"a","color":"sky"},{"id":"b","color":"olive"},{"id":"c","color":"plum"},{"id":"d","kind":"k"}]})")));
+  CHECK_EQ(receipt["repaintedNodes"].asUInt64(), 1u);
+  CHECK_EQ(colours(*sent), parse(R"([{"id":"a","color":"plum"},{"id":"b","color":"olive"},{"id":"c","color":"plum"},
+    {"id":"d","color":"plum"},{"id":"e","color":"gold"}])"));
+}
+
+// A node the batch files by `kind` is the batch's word whatever it wore: it lands the hue that kind wears after the
+// batch and is never repainted, even when that hue is the one it holds — a swap, or a new kind on the hue a re-hue
+// frees. repaintedNodes counts only the nodes the repaint moved, and a round trip read with `kind` lands every wearer
+// on the new hue by the batch's own word.
+TEST(mcp_an_import_that_files_a_node_by_kind_beside_a_rehue_lands_the_kind_it_names) {
+  const auto seeded = [] {
+    auto h = std::make_unique<Harness>();
+    CHECK_FALSE(h->call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
+    CHECK_FALSE(h->call("add_kind", parse(R"({"id":"j","hue":"plum"})")).isError);
+    CHECK_FALSE(h->call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","color":"sky"},
+      {"id":"b","label":"B","color":"sky"},{"id":"c","label":"C","color":"plum"}]})")).isError);
+    return h;
+  };
+  const auto filed = [](Harness& h) {
+    return body(h.call("get_nodes", parse(R"({"nodeIds":["a","b","c"],"fields":["id","color","kind"]})")))["nodes"];
+  };
+
+  auto swap = seeded();
+  CHECK_EQ(body(swap->call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"plum"},{"id":"j","hue":"sky"}],
+    "nodes":[{"id":"a","kind":"j"}]})")))["repaintedNodes"].asUInt64(), 2u);
+  CHECK_EQ(filed(*swap), parse(R"([{"id":"a","color":"sky","kind":"j"},{"id":"b","color":"plum","kind":"k"},
+    {"id":"c","color":"sky","kind":"j"}])"));
+
+  auto freed = seeded();
+  CHECK_EQ(body(freed->call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"olive"},{"id":"m","hue":"sky"}],
+    "nodes":[{"id":"a","kind":"m"}]})")))["repaintedNodes"].asUInt64(), 1u);
+  CHECK_EQ(filed(*freed), parse(R"([{"id":"a","color":"sky","kind":"m"},{"id":"b","color":"olive","kind":"k"},
+    {"id":"c","color":"plum","kind":"j"}])"));
+
+  auto round = seeded();
+  Json::Value batch =
+      body(round->call("get_tree", parse(R"({"includeGuides":false,"fields":["id","label","kind"]})")))["tree"];
+  batch.removeMember("guide");
+  batch.removeMember("id");
+  batch.removeMember("title");
+  batch.removeMember("url");
+  for (Json::Value& kind : batch["kinds"])
+    if (kind["id"] == "k") kind["hue"] = "olive";
+  CHECK_EQ(body(round->call("import_subgraph", batch))["repaintedNodes"].asUInt64(), 0u);
+  CHECK_EQ(filed(*round), parse(R"([{"id":"a","color":"olive","kind":"k"},{"id":"b","color":"olive","kind":"k"},
+    {"id":"c","color":"plum","kind":"j"}])"));
 }

@@ -32,7 +32,8 @@ enum class KindRegister { label, description, crossBranchExempt };
 // node the graft brings back from a delete: left out, it is cleared, so a revived node opens only the
 // tree the document names. An id absent from its map
 // carried every register, and an empty value is carried like any other. `nodeKinds` names the legend
-// kind the document files a node under, until resolveKinds turns it into the node's colour.
+// kind the document files a node under; resolveKinds turns it into the node's colour and keeps it, so a
+// re-hue never repaints a node the batch filed (repaintOf).
 // `omittedPrerequisites` names the nodes the document sent without a prerequisites list.
 struct Graft {
   TreeData document;
@@ -77,8 +78,20 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
 // only where the document changes what the legend holds, and a kind it changes nothing on is left out.
 LegendState graftLegend(const Legend& legend, const Graft& graft, const Hlc& at);
 
-// The whole frame a graft joins: graftState and graftLegend at one stamp `at`. It lands nothing when the
-// document changes no register the tree holds, adds no edge and removes nothing — a frame with no entry.
+// What a graft's re-hued kinds repaint, judged against the legend and graph as they stood before the batch by
+// recolor_kind's rule (wearersOf), so a swap swaps: each node wearing a re-hued kind's old hue takes its new hue, but
+// for a node the batch tombstones, files by kind (`nodeKinds`), or sends a colour that differs from the one it holds.
+// `rehued` lists the held kinds whose hue the document changes.
+struct Repaint {
+  std::vector<KindId> rehued;
+  std::map<NodeId, NodeColor> nodes;
+};
+
+Repaint repaintOf(const LooseGraph& graph, const Legend& legend, const Graft& graft);
+
+// The whole frame a graft joins: graftState and graftLegend at one stamp `at`, with the colours its re-hued kinds
+// repaint (repaintOf) at that stamp too. It lands nothing when the document changes no register the tree holds, adds
+// no edge and removes nothing — a frame with no entry.
 struct GraftFrame {
   GraphState graph;
   LegendState legend;

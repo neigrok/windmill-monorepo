@@ -47,6 +47,8 @@ public:
   // What importTree(incoming) would do beyond the upsert — the edges it keeps, replaces or
   // tombstones — read off this room's live state, changing nothing.
   GraftFootprint footprintOf(const Graft& incoming) const { return wm::footprintOf(graph_, incoming); }
+  // The nodes importTree(incoming) would repaint for the kinds it re-hues, read off this room's live state.
+  Repaint repaintOf(const Graft& incoming) const { return wm::repaintOf(graph_, legend_, incoming); }
   // Whether importTree(incoming) at `nowMs` would land nothing, read off a copy of the room clock so
   // nothing moves: the preview a dry run answers.
   bool graftLandsNothing(const Graft& incoming, std::uint64_t nowMs) const {
@@ -68,10 +70,12 @@ public:
     return wm::withLinksAdded(held ? held->links : std::vector<Link>{}, added, path);
   }
 
-  // Each is stamped from the room clock and joined as one frame setting that register alone, so it
-  // broadcasts and LWW-merges like any other field write, and leaves no op row.
-  Seq rename(const std::string& title, std::uint64_t nowMs);
-  Seq setGuide(const std::string& guide, std::uint64_t nowMs);
+  // The title and the guide, each set only when sent, stamped from the room clock and joined as one frame, so a
+  // call that sets both lands both at one seq; it broadcasts and LWW-merges like any other field write, and leaves
+  // no op row. rename and setGuide set one each.
+  Seq describe(const std::optional<std::string>& title, const std::optional<std::string>& guide, std::uint64_t nowMs);
+  Seq rename(const std::string& title, std::uint64_t nowMs) { return describe(title, std::nullopt, nowMs); }
+  Seq setGuide(const std::string& guide, std::uint64_t nowMs) { return describe(std::nullopt, guide, nowMs); }
 
   // Server-origin edit: stamped from the room clock, applied, queued for the op log, broadcast as
   // one subgraph. The frameId is minted from the (unique) stamp.
@@ -94,10 +98,11 @@ public:
   // present node, or a legend rule. Server-driven undo/redo bypasses it.
   std::optional<std::string> validate(const Command& command) const;
 
-  // wm::changesNode over the node as this room holds it; a node it does not hold is changed by any edit.
-  bool changesNode(const NodeId& node, const Command& command) const {
+  // wm::changedPart over the node as this room holds it; on a node it does not hold, the edit lands whole.
+  std::optional<Command> changedPart(const NodeId& node, const Command& command) const {
     const std::optional<NodeSpec> held = graph_.nodeView(node);
-    return !held || wm::changesNode(*held, command);
+    if (!held) return command;
+    return wm::changedPart(*held, command);
   }
   std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(const std::vector<NodePatch>& updates) const {
     return wm::planNodePatches(graph_, legend_, updates);
