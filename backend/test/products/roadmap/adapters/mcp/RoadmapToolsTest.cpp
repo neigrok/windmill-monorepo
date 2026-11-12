@@ -3,7 +3,9 @@
 #include "platform/adapters/mcp/CompositeToolHost.h"
 #include "platform/application/WriteObservation.h"
 #include "products/roadmap/adapters/mcp/ReadShape.h"
+#include "products/roadmap/adapters/json/CommandJson.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
+#include "products/roadmap/application/ActivityFeed.h"
 #include "products/roadmap/application/ForkService.h"
 #include "test/testing.h"
 
@@ -1964,6 +1966,146 @@ TEST(mcp_import_subgraph_dry_run_of_a_field_less_node_previews_the_collision_and
      "links":[{"url":"https://windmill.works/review","label":"guide"}]}],"missingNodeIds":[]})"));
 }
 
+// Re-sending a node the tree holds to add an edge edits it the way connect would: its creation stamp,
+// which orders it among its siblings, stays; the op row is the edge, and the feed says it was linked.
+TEST(mcp_import_subgraph_re_sending_a_held_node_keeps_its_creation_and_the_feed_says_what_changed) {
+  Harness h;
+  for (const char* id : {"root", "x"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
+  for (const char* id : {"a", "b"}) {
+    Json::Value child = node(id, id);
+    child["parentId"] = "root";
+    CHECK_FALSE(h.call("create_node", child).isError);
+  }
+  const auto stateOf = [&](const char* id) {
+    for (const NodeStateEntry& entry : h.registry.open(TreeId{"t"})->exportState().nodes)
+      if (entry.id == NodeId{id}) return entry;
+    return NodeStateEntry{};
+  };
+  const NodeStateEntry held = stateOf("a");
+  const Json::Value resend = parse(R"({"nodes":[{"id":"a","label":"a","prerequisites":["root","x"]}]})");
+
+  Json::Value preview = resend;
+  preview["dryRun"] = true;
+  CHECK_EQ(body(h.call("import_subgraph", preview)), parse(R"({"nodes":1,"edges":2,"kinds":0,"nodeCollisions":["a"],
+    "kindCollisions":[],"newNodes":0,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
+    "tombstoned":{"nodes":0,"edges":0},"dryRun":true,"tombstone":[]})"));
+  CHECK(stateOf("a") == held);
+
+  CHECK_EQ(body(h.call("import_subgraph", resend)), parse(R"({"nodes":1,"edges":2,"kinds":0,"nodeCollisions":["a"],
+    "kindCollisions":[],"newNodes":0,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
+    "tombstoned":{"nodes":0,"edges":0},"graphApplied":true,"progressApplied":true,"imported":true,"seq":5,
+    "diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK(stateOf("a") == held);
+  CHECK_EQ(strings((*nodeNamed(body(h.call("get_tree", kNoArgs)), "a"))["prerequisites"]),
+           (std::vector<std::string>{"root", "x"}));
+
+  REQUIRE_EQ(h.ops.byTree["t"].size(), 5u);
+  const Command& row = h.ops.byTree["t"].back().command;
+  CHECK_EQ(commandKind(row), std::string("AddEdge"));
+  CHECK_EQ(commandPayload(row), parse(R"({"from":"x","to":"a"})"));
+  const std::vector<ActivityEvent> feed =
+      activityFeed(h.registry.open(TreeId{"t"})->snapshot(), h.ops.byTree["t"], 50);
+  REQUIRE_EQ(feed.size(), 5u);
+  const ActivityEvent& linked = feed.back();
+  CHECK_EQ((std::vector<std::string>{std::to_string(linked.seq), std::to_string(linked.at), linked.actor, linked.verb,
+                                     linked.node.str(), linked.label, linked.kind, linked.summary}),
+           (std::vector<std::string>{"5", "0", "", "linked", "a", "a", "terracotta",
+                                     "linked x → a · cross-branch"}));
+}
+
+// A get_tree round trip carries the legend back. A kind sent as the legend holds it changes nothing, so
+// re-sending a node to add an edge with the kinds carried still leaves the edge as the op row.
+TEST(mcp_import_subgraph_with_the_legend_carried_back_names_the_edge_it_added) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI"},
+    {"id":"review","label":"Backend review","color":"sky"}],"kinds":[{"id":"backend","hue":"sky","label":"Backend"}]})"))
+                  .isError);
+  const LegendState legend = h.registry.open(TreeId{"t"})->exportLegend();
+
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"review","prerequisites":["ask"]}],
+    "kinds":[{"id":"backend","hue":"sky","label":"Backend"}]})"))),
+           parse(R"({"nodes":1,"edges":1,"kinds":1,"nodeCollisions":["review"],"kindCollisions":["backend"],
+    "newNodes":0,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
+    "tombstoned":{"nodes":0,"edges":0},"graphApplied":true,"progressApplied":true,"imported":true,"seq":2,
+    "diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK(h.registry.open(TreeId{"t"})->exportLegend() == legend);
+
+  REQUIRE_EQ(h.ops.byTree["t"].size(), 2u);
+  const Command& row = h.ops.byTree["t"].back().command;
+  CHECK_EQ(commandKind(row), std::string("AddEdge"));
+  CHECK_EQ(commandPayload(row), parse(R"({"from":"ask","to":"review"})"));
+  const std::vector<ActivityEvent> feed =
+      activityFeed(h.registry.open(TreeId{"t"})->snapshot(), h.ops.byTree["t"], 1);
+  REQUIRE_EQ(feed.size(), 1u);
+  CHECK_EQ((std::vector<std::string>{std::to_string(feed[0].seq), feed[0].verb, feed[0].node.str(), feed[0].label,
+                                     feed[0].kind, feed[0].summary}),
+           (std::vector<std::string>{"2", "linked", "review", "Backend review", "sky",
+                                     "linked Ask AI → Backend review"}));
+}
+
+// An import is one op row, and the row names the batch's most salient change, the same with the legend
+// carried back as the tree holds it or not: an added edge beside a rename reads as the rename, two new
+// edges as the first of them, a new node beside a renamed one as the new node.
+TEST(mcp_import_subgraph_names_the_most_salient_change_of_its_batch_in_its_one_row) {
+  struct Case {
+    const char* batch;
+    const char* row;
+    const char* summary;
+  };
+  for (const Case& c : {Case{R"([{"id":"n","label":"N2","prerequisites":["p"]}])",
+                             R"({"kind":"RenameNode","payload":{"id":"n","label":"N2"}})", "renamed to N2"},
+                        Case{R"([{"id":"n","prerequisites":["p","q"]}])",
+                             R"({"kind":"AddEdge","payload":{"from":"p","to":"n"}})", "linked P → N"},
+                        Case{R"([{"id":"zeta","label":"Zeta"},{"id":"n","label":"N2"}])",
+                             R"({"kind":"CreateNode","payload":{"id":"zeta","label":"Zeta","icon":"","color":"terracotta"}})",
+                             "added Zeta"}}) {
+    for (const bool legendCarried : {false, true}) {
+      Harness h;
+      CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"p","label":"P"},{"id":"q","label":"Q"},
+        {"id":"n","label":"N"}],"kinds":[{"id":"build","hue":"terracotta","label":"Build"}]})")).isError);
+      Json::Value args(Json::objectValue);
+      args["nodes"] = parse(c.batch);
+      if (legendCarried) args["kinds"] = parse(R"([{"id":"build","hue":"terracotta","label":"Build"}])");
+      CHECK_FALSE(h.call("import_subgraph", args).isError);
+
+      REQUIRE_EQ(h.ops.byTree["t"].size(), 2u);
+      const Command& row = h.ops.byTree["t"].back().command;
+      Json::Value written(Json::objectValue);
+      written["kind"] = commandKind(row);
+      written["payload"] = commandPayload(row);
+      CHECK_EQ(written, parse(c.row));
+      const std::vector<ActivityEvent> feed =
+          activityFeed(h.registry.open(TreeId{"t"})->snapshot(), h.ops.byTree["t"], 1);
+      REQUIRE_EQ(feed.size(), 1u);
+      CHECK_EQ(feed[0].summary, std::string(c.summary));
+    }
+  }
+}
+
+// An import that re-sends the tree a node opens as the node holds it writes nothing; one that changes
+// only that register sends a frame carrying it alone.
+TEST(mcp_import_subgraph_writes_the_tree_a_node_opens_only_when_the_batch_changes_it) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  h.trees.byId["t_two"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Second look", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","opens":"t_sub"}]})")).isError);
+  const std::size_t rows = h.ops.byTree["t"].size();
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":"t_sub"}]})")).isError);
+  CHECK(h.bus.subgraphBroadcasts.back().subgraph.graph == GraphState{});
+  CHECK_EQ(h.ops.byTree["t"].size(), rows);
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":"t_two"}]})")).isError);
+  const GraphState& moved = h.bus.subgraphBroadcasts.back().subgraph.graph;
+  REQUIRE_EQ(moved.nodes.size(), 1u);
+  CHECK(moved.nodes[0].opensAt.isSet());
+  CHECK(moved == (GraphState{{NodeStateEntry{.id = NodeId{"a"}, .opens = TreeId{"t_two"},
+                                             .opensAt = moved.nodes[0].opensAt}},
+                             {}}));
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"A","opens":{"treeId":"t_two","title":"Second look","state":"open"}}])"));
+}
+
 TEST(mcp_import_subgraph_tombstone_needs_the_delete_grant_the_way_delete_node_does) {
   Harness h;
   seedFan(h);
@@ -2690,8 +2832,9 @@ TEST(mcp_set_progress_refuses_out_of_order_off_a_completion_and_records_nothing)
 }
 
 // A re-sent kind changes only in the fields the batch sends; a new kind without them gets the defaults.
-// Rank is never on the wire, so a re-sent kind keeps its place and the frame every replica joins
-// stamps its rank unset; new kinds land after the last one, in batch order rather than id order.
+// Rank is never on the wire, so a re-sent kind keeps its place: the frame every replica joins carries
+// only the label it changed, with its creation, hue and rank unset. New kinds land after the last one,
+// in batch order rather than id order.
 TEST(mcp_import_subgraph_keeps_the_legend_order_on_a_colliding_kind_and_appends_a_new_one) {
   Harness h;
   CHECK_FALSE(h.call("add_kind", kindArgs("a", "gold")).isError);
@@ -2700,6 +2843,7 @@ TEST(mcp_import_subgraph_keeps_the_legend_order_on_a_colliding_kind_and_appends_
 
   Json::Value kinds(Json::arrayValue);
   kinds.append(kindArgs("c", "plum"));
+  kinds[0]["label"] = "Craft";
   Json::Value args(Json::objectValue);
   args["nodes"] = Json::Value(Json::arrayValue);
   args["kinds"] = kinds;
@@ -2713,9 +2857,9 @@ TEST(mcp_import_subgraph_keeps_the_legend_order_on_a_colliding_kind_and_appends_
 
   const Subgraph& frame = h.bus.subgraphBroadcasts.back().subgraph;
   REQUIRE_EQ(frame.legend.kinds.size(), 1u);
-  CHECK_EQ(frame.legend.kinds[0].id, KindId{"c"});
-  CHECK(frame.legend.kinds[0].hueAt.isSet());
-  CHECK_FALSE(frame.legend.kinds[0].rankAt.isSet());
+  CHECK(frame.legend.kinds[0].labelAt.isSet());
+  CHECK(frame.legend ==
+        (LegendState{{KindStateEntry{.id = KindId{"c"}, .label = "Craft", .labelAt = frame.legend.kinds[0].labelAt}}}));
 
   Json::Value more(Json::arrayValue);
   more.append(kindArgs("b", "sky"));

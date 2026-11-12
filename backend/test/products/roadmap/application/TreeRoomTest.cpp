@@ -416,6 +416,38 @@ TEST(room_import_tree_lands_the_upsert_the_replacements_and_the_tombstones_at_on
   CHECK_EQ(room.prerequisitesOf(nid("n")), (std::vector<NodeId>{nid("a"), nid("c")}));
 }
 
+// A client removed the kind while offline, before the import, and its frame lands after it. The remove
+// wins as it would over a rename: the legend loses the kind, the label the import changed waits on its
+// record, and the node wearing its hue keeps that hue with no kind claiming it.
+TEST(room_import_loses_a_re_sent_kind_to_a_remove_stamped_before_it_that_arrives_after_it) {
+  FakeBus bus;
+  TreeRoom room = makeRoom(bus);
+  apply(room, AddKind{KindId{"backend"}, NodeColor::sky, "Backend"}, 10);
+  apply(room, CreateNode{nid("review"), "Review", "", NodeColor::sky, {}, std::nullopt}, 20);
+
+  Graft graft;
+  graft.document.kinds = {{KindId{"backend"}, NodeColor::sky, "Backend services"}};
+  graft.omittedKindRegisters[KindId{"backend"}] = {KindRegister::description, KindRegister::crossBranchExempt};
+  room.importTree(graft, 100, uid());
+  Subgraph remove;
+  remove.treeId = tid();
+  remove.frameId = "offline-remove";
+  remove.actor = "u1";
+  remove.legend = LegendState{{KindStateEntry{.id = KindId{"backend"}, .deletedAt = Hlc{50, 0, "u1"}}}};
+  REQUIRE(room.joinSubgraph(remove, uid()).has_value());
+
+  const TreeData tree = room.snapshot();
+  CHECK(tree.kinds.empty());
+  REQUIRE_EQ(tree.nodes.size(), 1u);
+  CHECK_EQ(tree.nodes[0].id, nid("review"));
+  CHECK_EQ(tree.nodes[0].color, NodeColor::sky);
+  CHECK(room.exportLegend() ==
+        (LegendState{{KindStateEntry{.id = KindId{"backend"}, .createdAt = Hlc{10, 0, "srv"},
+                                     .deletedAt = Hlc{50, 0, "u1"}, .hue = NodeColor::sky,
+                                     .hueAt = Hlc{10, 0, "srv"}, .label = "Backend services",
+                                     .labelAt = Hlc{100, 0, "srv"}, .rank = 0, .rankAt = Hlc{10, 0, "srv"}}}}));
+}
+
 // A row past the stored head — what the log holds for a tree saved before rows were made to land
 // after the lattice — replays whole: a room reopened from the N-1 document lands the entire batch,
 // not its first member.

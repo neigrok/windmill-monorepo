@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HlcClock, TreeLattice } from '../../../../src/products/roadmap/sync/lattice.js';
+import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
+import { Board } from '../../../../src/products/roadmap/board/Board.js';
 
 test('legacy authored progress aliases become none through projection, persistence, and replay', () => {
   const lattice = new TreeLattice('t_1');
@@ -77,6 +79,44 @@ test('two replicas that trade frames in opposite orders read the same createdMs,
   assert.deepEqual(created(a), expected);
   assert.deepEqual(created(b), expected);
   assert.deepEqual(created(fresh), expected);
+});
+
+test('an import that re-sends a step the tree holds keeps its creation, so the canvas and the Board keep their order', () => {
+  // The server's broadcasts for create_node root and x, then a and b under root, then import_subgraph
+  // {nodes: [{id: 'a', label: 'A', prerequisites: ['root', 'x']}]}, the last one verbatim.
+  const planted = [
+    { nodes: [{ id: 'root', createdAt: '1000:0:srv', label: 'root', labelAt: '1000:0:srv', icon: '', iconAt: '1000:0:srv', color: 'terracotta', colorAt: '1000:0:srv' }] },
+    { nodes: [{ id: 'x', createdAt: '1001:0:srv', label: 'x', labelAt: '1001:0:srv', icon: '', iconAt: '1001:0:srv', color: 'terracotta', colorAt: '1001:0:srv' }] },
+    { nodes: [{ id: 'a', createdAt: '1002:0:srv', label: 'a', labelAt: '1002:0:srv', icon: '', iconAt: '1002:0:srv', color: 'terracotta', colorAt: '1002:0:srv' }],
+      edges: [{ from: 'root', to: 'a', addedAt: '1002:0:srv', removedAt: '0:0:' }] },
+    { nodes: [{ id: 'b', createdAt: '1003:0:srv', label: 'b', labelAt: '1003:0:srv', icon: '', iconAt: '1003:0:srv', color: 'terracotta', colorAt: '1003:0:srv' }],
+      edges: [{ from: 'root', to: 'b', addedAt: '1003:0:srv', removedAt: '0:0:' }] },
+  ];
+  const imported = {
+    nodes: [{ id: 'a', createdAt: '0:0:', deletedAt: '0:0:', label: 'A', labelAt: '1004:0:srv', icon: '', iconAt: '0:0:',
+      color: 'terracotta', colorAt: '0:0:', order: '', orderAt: '0:0:', positionAt: '0:0:', statusAt: '0:0:',
+      description: '', descriptionAt: '0:0:', links: [], linksAt: '0:0:' }],
+    edges: [{ from: 'x', to: 'a', addedAt: '1004:0:srv', removedAt: '0:0:' }],
+  };
+
+  const read = (frames) => {
+    const lattice = new TreeLattice('t');
+    for (const frame of frames) lattice.join(frame);
+    const tree = new SkillTree(lattice.toTreeData());
+    const board = new Board(tree, { completed: new Set(), completedAt: {} }, { sort: 'newest' });
+    const a = tree.nodesById.get('a');
+    return {
+      canvas: tree.trunk.trunkChildrenOf('root'),
+      boardNewestFirst: board.locked.cards.map((card) => card.id),
+      a: { label: a.label, createdMs: a.createdMs, prerequisites: a.prerequisites },
+    };
+  };
+  assert.deepEqual(read(planted), {
+    canvas: ['a', 'b'], boardNewestFirst: ['b', 'a'], a: { label: 'a', createdMs: 1002, prerequisites: ['root'] },
+  });
+  assert.deepEqual(read([...planted, imported]), {
+    canvas: ['a', 'b'], boardNewestFirst: ['b', 'a'], a: { label: 'A', createdMs: 1002, prerequisites: ['root', 'x'] },
+  });
 });
 
 test('presentEdges includes masked endpoints and self-edges while liveEdges keeps its projection and order', () => {
