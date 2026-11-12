@@ -1,52 +1,35 @@
-# 01 · Store access and release readiness
+# 01 · From a November tester invitation to a December App Store install
 
-Kind: build · Stage: 0 · Window: Nov 2 to Dec 20, 2026 · Cash: $0 to $150 · CEO hours / agent days: 4h / 4d
+**November 12–18.** The founder checks the invitation before recruiting ten lifters. Today’s iOS
+TestFlight app carries Gym and Journal. The signed Android APK carries Gym. The 20-builder Ship v1
+pilot uses Roadmap on the web. Keep both pilots running while preparing the public iPhone release.
+[Product roles](../../PRODUCT_LOG.md) · [Gym cohort](08-gym-demand-cohort.md) · [Ship v1 pilot](11-roadmap-seed-trees.md)
 
-## Idea
-Put Windmill on the App Store and Google Play. Today iOS ships through TestFlight only and Android by
-sideload only, so no creator, listing or search action has anywhere to send a person. The
-deliverables are two production listings, installable by anyone, with store badges on the web.
+1. Follow the TestFlight invitation on a supported iPhone as an external tester. Install the build offered
+   to that group, open Gym, log a set and find it in history. [TestFlight](https://developer.apple.com/testflight/)
+2. Follow the signed APK link on a supported Android phone, verify the published digest and repeat the
+   first-set check. Tell participants it is a sideload before they accept. [Android releases](../../../apps/android/README.md#ci-and-releases)
+3. Record date, platform, build, destination and the outcome. Recruit on each route once it passes. Exclude
+   internal checks from both pilot counts. If installation fails, fix access before interpreting demand.
 
-## Pros
-- Removes the one blocker every other action shares.
-- Creator links, custom product pages and attribution need a store page to point at.
-- Production installs feed the store conversion and activation views in report 02.
-- Both listings exist before Q5, when Health & Fitness demand peaks.
+## Public iPhone release in early December 2026
 
-## Cons
-- App Review timing is outside our control and a rejection costs a cycle.
-- A personal Google Play account must run a closed test with 12 testers for 14 consecutive days before it can apply for production access.
-- Store screenshots and listing copy need approved Figma designs first.
-- Fees for developer accounts may apply if either account is not already in place.
+December 1–5 is an internal working window. The founder owns the public listing and records these steps
+separately, so an invite or announcement can always point to something the reader can use.
 
-## Estimates
-| Item | Estimate |
+| When | What to prepare or verify |
 |---|---|
-| Cash | $0 to $150 in account and listing fees (assumption: accounts already exist) |
-| Effort | 4 CEO hours for account checks and submissions; 4 agent days for assets, metadata and release builds |
-| Outcome | both stores live by Dec 1, 2026, with Dec 20 as the last acceptable date |
+| November 12–18 | Choose intended storefronts. Outline the Roadmap story and collect support and privacy links, reviewer instructions and sign-in details where required. Record who can submit the build and who will check the live listing. [Listing brief](05-aso-and-featuring.md) · [App submission](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-app/) |
+| Before submission | On the candidate iPhone build, mark a Roadmap step complete, close the app, reopen the tree and verify that the same step is still marked complete. Check the Journal and Gym actions named in the listing. Capture the build number and screenshots with founder-owned example data. Coordinate any subscription submission with the owner’s chosen sales channel. [Windmill One readiness](04-gym-demo-and-checkout.md) |
+| At review | The release workflow uploads the archive to App Store Connect and checks TestFlight availability. Select the candidate for public App Review, submit the matching materials, track the review decision and record the release option for that version. [Release workflow](../../../.github/workflows/ios-release.yml) · [Apple release options](https://developer.apple.com/help/app-store-connect/manage-your-apps-availability/select-an-app-store-version-release-option/) |
+| On public availability | Open the public product page in each storefront named in the announcement. Download the app on a supported iPhone without TestFlight, verify the version, then repeat the completion and reopen check before announcing native Roadmap. Record storefront, URL, date, version and result. Publish each store link after its download passes. |
 
-## Success metric
-Both native stores are live and installable by the public by Dec 20, 2026.
+If the public listing is pending, invite builders to try Ship v1 on the web and send beta testers the
+tested TestFlight invitation. If the native Roadmap check fails, take the result to the owner for the
+release decision. Describe only the rooms demonstrated on any build the owner releases. If payment
+verification is pending, keep the message on the free actions available in that build.
 
-## Failure metric
-Either store is unavailable on Dec 20, 2026. The creator campaign in report 09 then sends traffic only
-to the platform that is live, and the missing platform's share of the Q5 budget is held back.
-
-## Justification
-The agreed calendar points every launch-shaped action at Dec 26 to Jan 15, when US Health & Fitness
-downloads run more than 20% above the yearly average (Sensor Tower, 2025). A 34-app study found no
-launch boost on the App Store in 2026, so there is no reason to wait for a bigger moment, and every
-reason to have stable listings well before the campaign. A listing per existing binary with a
-Gym-led default keeps evidence from fragmenting across pages. The alternative, driving traffic to
-TestFlight and sideloads, throws away most installs and all store attribution.
-
-## Dependencies
-- CEO verifies the Google Play account type and the Apple developer account state on Nov 2, 2026, and starts the closed test immediately if the account is personal.
-- Store screenshots and listing copy approved in Figma before an agent implements them (report 05 owns the assets).
-- Release builds through `ios-release.yml` and the Android release pipeline.
-
-## Decision log
-
-| Date | Decision | Numbers |
-|---|---|---|
+Android’s distribution target remains the signed Gym APK. For a future Play release, check the account
+type first. Personal accounts created after November 13, 2023 need a closed test with at least 12 testers
+opted in continuously for 14 days before applying for production access.
+[Google Play testing requirements](https://support.google.com/googleplay/android-developer/answer/14151465?hl=en-419)

@@ -31,6 +31,7 @@ public:
   void putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
+  void getGuides(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
 

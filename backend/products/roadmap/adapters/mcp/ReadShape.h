@@ -2,6 +2,7 @@
 
 #include "products/roadmap/domain/OpenedTrees.h"
 #include "products/roadmap/domain/Tree.h"
+#include "products/roadmap/domain/WebAddress.h"
 
 #include <json/json.h>
 
@@ -24,9 +25,10 @@ namespace wm {
 // cut. `kind` is the legend kind whose hue the node wears, omitted when no kind wears it. `opens` is
 // the tree the node opens, as {treeId, title, state}: answered only to a caller who can write the tree
 // being read, and only while the opened tree stands and is theirs — a tree id is the read capability
-// of an unlisted tree, and a title is its owner's words.
+// of an unlisted tree, and a title is its owner's words. `url` is where the node's step opens on the web
+// for the caller (domain/WebAddress.h).
 enum class NodeField { id, label, icon, color, kind, order, prerequisites, position, status, seedStatus,
-                       state, summary, description, links, opens };
+                       state, summary, description, links, opens, url };
 constexpr std::size_t kSummaryChars = 200;
 // The most live edges one get_tree reply lists whole under `includeEdges`; past it the reply
 // answers `edgesOmitted` with the count instead. Listing is linear, so only the edge count gates.
@@ -114,12 +116,13 @@ const Vocabulary<ProgressField>& progressVocabulary();
 // The states are derived over EVERY node the tree holds, since a prerequisite may sit off the page;
 // `kindByHue` is the legend's hue -> kind id join, one entry per kind; `openings` holds what each
 // node's pointer comes to (domain/OpenedTrees.h), and stays empty for a caller who cannot write the
-// tree.
+// tree; `web` is the tree as the caller opens it, which each node's `url` is built on.
 struct NodeReadContext {
   Progress marks;
   std::map<NodeId, NodeState> states;
   std::map<NodeColor, KindId> kindByHue;
   std::map<NodeId, Opening> openings;
+  std::optional<WebTree> web;
 };
 
 // Field semantics are TreeJson's: empty and absent values are omitted as the document omits

@@ -323,9 +323,10 @@ TEST(scoped_tool_host_offers_a_tend_no_argument_and_no_field_for_the_tree_a_node
   CHECK_EQ(tended.at("import_subgraph"), import);
   for (const char* read : {"get_tree", "get_nodes", "find_nodes"}) {
     Json::Value schema = plain.at(read);
+    schema["properties"].removeMember("includeGuides");
     schema["properties"]["fields"]["items"]["enum"] =
         test::list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position", "status",
-                    "seedStatus", "state", "summary", "description", "links"});
+                    "seedStatus", "state", "summary", "description", "links", "url"});
     CHECK_EQ(tended.at(read), schema);
   }
   CHECK_EQ(tended.at("rename_node"), plain.at("rename_node"));
@@ -374,6 +375,123 @@ TEST(scoped_tool_host_refuses_the_tree_a_node_opens_wherever_a_tend_names_it_and
                          "roadmap.create_node Coach refused", "roadmap.create_node Coach refused",
                          "roadmap.annotate_node Coach refused", "roadmap.patch_nodes Coach refused",
                          "roadmap.import_subgraph Coach refused", "roadmap.import_subgraph Coach refused"}));
+}
+
+// A tend's refused kind completes under its own code on the Coach line, and the run reads it as any other
+// refusal: an error result that created nothing.
+TEST(scoped_tool_host_logs_a_refused_kind_under_its_code_and_answers_it_as_any_refusal) {
+  test::Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"pilot","hue":"gold"})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  CHECK(scoped.callTool("create_node", parse(R"({"label":"B","kind":"pilt"})"), h.actor).isError);
+  CHECK(scoped.callTool("create_node", parse(R"({"label":"B","kind":"pilot","color":"sky"})"), h.actor).isError);
+  CHECK(scoped.createdNodeIds().empty());
+  CHECK_FALSE(scoped.callTool("create_node", parse(R"({"label":"B","kind":"pilot"})"), h.actor).isError);
+  installWriteSink({});
+
+  CHECK_EQ(scoped.createdNodeIds(), (std::vector<std::string>{"b"}));
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions)
+    observed.push_back(completion.operation + " " + completion.door + " " + completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{"roadmap.create_node Coach kind-unknown",
+                                               "roadmap.create_node Coach kind-hue-mismatch",
+                                               "roadmap.create_node Coach ok"}));
+}
+
+// The guides above are other trees' words and ids, and a tend is pinned to one tree: it is not offered the
+// argument that asks for them, every read it makes is sent as asking for none, and no tree above is read.
+TEST(scoped_tool_host_sends_every_get_tree_of_a_tend_as_asking_for_no_guides_so_no_tree_above_is_read) {
+  test::Harness h;
+  h.plant("t_root", h.caller, "The method of every tree under this one.", {"t"});
+  CHECK_FALSE(h.call("describe_tree", test::with("guide", "Rig first, then sail.")).isError);
+  CHECK_FALSE(h.call("create_node", test::node("a", "A")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  for (const ToolDeclaration& tool : h.tools.declareTools())
+    if (tool.name() == "get_tree") CHECK(tool.descriptor["inputSchema"]["properties"].isMember("includeGuides"));
+  for (const ToolDeclaration& tool : scoped.declareTools())
+    CHECK_EQ(dump(tool.descriptor["inputSchema"]).find("\"includeGuides\""), std::string::npos);
+
+  const ToolResult tended = scoped.callTool("get_tree", Json::Value(Json::objectValue), h.actor);
+  CHECK_EQ(test::body(tended),
+           parse(R"({"count":1,"seq":2,"tree":{"guide":{"text":"Rig first, then sail.","yours":true},"id":"t","kinds":[],
+             "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap",
+             "url":"https://app.example/#/app/t"}})"));
+  for (const char* asked : {R"({"includeGuides":true})", R"({"includeGuides":false})"}) {
+    const ToolResult refused = scoped.callTool("get_tree", parse(asked), h.actor);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused),
+             std::string("tending edits a single tree — the guides of the trees above it are out of its reach"));
+  }
+  CHECK(h.trees.aboveReads.empty());
+
+  CHECK_EQ(test::body(h.call("get_tree", test::kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"The method of every tree under this one.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Rig first, then sail.","yours":true}])"));
+  CHECK_EQ(h.trees.aboveReads, (std::vector<TreeId>{TreeId{"t"}}));
+}
+
+// What is wrong with a tree's pointers names other trees, and a tend is pinned to one: it is not offered the argument
+// that asks for it, its catalog names neither answer, every `get_diagnostics` it makes is sent as asking for none,
+// and no other tree is read.
+TEST(scoped_tool_host_sends_every_get_diagnostics_of_a_tend_as_asking_for_no_pointers_so_no_other_tree_is_read) {
+  test::Harness h;
+  h.plant("t_b", h.caller, "", {"t"});
+  h.plant("t_gone", h.caller, "", {});
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"loop","label":"Loop","icon":"l","opens":"t_b"},
+                                                            {"id":"gone","label":"Gone","icon":"g","opens":"t_gone"}]})")).isError);
+  h.trees.softDelete(TreeId{"t_gone"});
+  h.trees.openedReads.clear();
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  for (const ToolDeclaration& tool : h.tools.declareTools())
+    if (tool.name() == "get_diagnostics") CHECK(tool.descriptor["inputSchema"]["properties"].isMember("includePointers"));
+  for (const ToolDeclaration& tool : scoped.declareTools()) {
+    CHECK_EQ(dump(tool.descriptor["inputSchema"]).find("\"includePointers\""), std::string::npos);
+    if (tool.name() != "get_diagnostics") continue;
+    for (const char* answer : {"treeLoops", "danglingPointers", "pointerDiagnosticsUnavailable"})
+      CHECK_EQ(dump(tool.descriptor).find(answer), std::string::npos);
+  }
+
+  h.trees.openedReadsFail = true;
+  CHECK_EQ(test::body(scoped.callTool("get_diagnostics", Json::Value(Json::objectValue), h.actor)),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[]})"));
+  for (const char* asked : {R"({"includePointers":true})", R"({"includePointers":false})"}) {
+    const ToolResult refused = scoped.callTool("get_diagnostics", parse(asked), h.actor);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), std::string("tending edits a single tree — the trees its nodes open are out of its reach"));
+  }
+  CHECK_FALSE(scoped.callTool("create_node", parse(R"({"id":"planted","label":"Planted","icon":"p"})"), h.actor).isError);
+  CHECK(h.trees.openedReads.empty());
+
+  h.trees.openedReadsFail = false;
+  CHECK_EQ(test::body(h.call("get_diagnostics", test::kNoArgs)),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+               "treeLoops":[{"node":"loop","path":[{"treeId":"t_b","title":"Tree t_b"},{"treeId":"t","title":"Test Roadmap"}]}],
+               "danglingPointers":[{"node":"gone","treeId":"t_gone"}]})"));
+  CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{{TreeId{"t_b"}, TreeId{"t_gone"}}}));
+}
+
+// A tend has no `opens` to send, so nothing it imports may bring a pointer back: a node it revives opens nothing, the
+// tree stays off the loop its removed node was on, and no other tree is read.
+TEST(scoped_tool_host_a_tends_import_brings_a_removed_node_back_opening_nothing) {
+  test::Harness h;
+  h.plant("t_b", h.caller, "", {"t"});
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","icon":"i","opens":"t_b"})")).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"a"})")).isError);
+  h.trees.openedReads.clear();
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  CHECK_FALSE(scoped.callTool("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A back"}]})"), h.actor).isError);
+
+  CHECK(h.trees.openedReads.empty());
+  CHECK_EQ(test::body(h.call("get_tree", parse(R"({"fields":["id","label","icon","opens"]})")))["tree"]["nodes"],
+           parse(R"([{"id":"a","label":"A back","icon":"i"}])"));
+  CHECK_EQ(test::body(h.call("get_diagnostics", test::kNoArgs)),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],"danglingPointers":[]})"));
 }
 
 // A tend runs as the owner, so the state it reads is the node's true one, and still no pointer.
@@ -468,10 +586,10 @@ TEST(scoped_tool_host_names_no_withheld_word_among_the_keys_an_unknown_argument_
   ScopedToolHost scoped(h.tools, TreeId{"t"});
 
   CHECK_EQ(message(scoped.callTool("create_node", parse(R"({"label":"B","open":"t_sub"})"), h.actor)),
-           std::string("create_node: unknown argument \"open\". This tool takes: color, description, icon, id, label, "
-                       "links, parentId, prerequisites, treeId, x, y."));
+           std::string("create_node: unknown argument \"open\". This tool takes: color, description, icon, id, kind, "
+                       "label, links, parentId, prerequisites, treeId, x, y."));
   CHECK_EQ(message(scoped.callTool("import_subgraph", parse(R"({"nodes":[{"id":"n","open":"t_sub"}]})"), h.actor)),
            std::string("import_subgraph: unknown argument \"nodes[0].open\". nodes[0] takes: color, description, icon, "
-                       "id, label, links, order, position, prerequisites, seedStatus."));
+                       "id, kind, label, links, order, position, prerequisites, seedStatus."));
   CHECK_EQ(test::body(h.call("get_tree", test::kNoArgs))["count"].asUInt64(), 0u);
 }

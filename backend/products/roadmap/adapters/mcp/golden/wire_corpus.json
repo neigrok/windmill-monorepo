@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 13,
+  "schemaVersion" : 19,
   "steps" : 
   [
     {
@@ -19,10 +19,12 @@
                   "text" : "",
                   "yours" : true
                 },
+                "guides" : [],
                 "id" : "t",
                 "kinds" : [],
                 "nodes" : [],
-                "title" : "Test Roadmap"
+                "title" : "Test Roadmap",
+                "url" : "https://app.example/#/app/t"
               }
             },
             "type" : "text"
@@ -180,6 +182,7 @@
               "diagnosticsClean" : true,
               "id" : "sync",
               "introducedDiagnostics" : [],
+              "kind" : "infra",
               "seq" : 7
             },
             "type" : "text"
@@ -448,12 +451,13 @@
               [
                 "ghost"
               ],
-              "seq" : 13,
+              "seq" : 12,
               "tombstoned" : 
               {
                 "edges" : 0,
                 "nodes" : 0
-              }
+              },
+              "unchanged" : true
             },
             "type" : "text"
           }
@@ -475,8 +479,11 @@
               "applied" : true,
               "diagnosticsClean" : true,
               "id" : "docs",
-              "introducedDiagnostics" : [],
-              "seq" : 14
+              "introducedDiagnostics" : 
+              [
+                "loop of trees from \"docs\" through \"t\""
+              ],
+              "seq" : 13
             },
             "type" : "text"
           }
@@ -560,7 +567,7 @@
             "text" : 
             {
               "count" : 5,
-              "seq" : 14,
+              "seq" : 13,
               "tree" : 
               {
                 "guide" : 
@@ -568,6 +575,15 @@
                   "text" : "Ship the root first; render and sync follow it.",
                   "yours" : true
                 },
+                "guides" : 
+                [
+                  {
+                    "text" : "Ship the root first; render and sync follow it.",
+                    "title" : "Test Roadmap",
+                    "treeId" : "t",
+                    "yours" : true
+                  }
+                ],
                 "id" : "t",
                 "kinds" : 
                 [
@@ -658,7 +674,8 @@
                     "status" : "complete"
                   }
                 ],
-                "title" : "Test Roadmap"
+                "title" : "Test Roadmap",
+                "url" : "https://app.example/#/app/t"
               }
             },
             "type" : "text"
@@ -680,6 +697,7 @@
             {
               "cycles" : [],
               "dangling" : [],
+              "danglingPointers" : [],
               "maskedWork" : [],
               "selfEdges" : [],
               "smells" : 
@@ -699,6 +717,19 @@
                 {
                   "kind" : "empty-icon",
                   "node" : "sync"
+                }
+              ],
+              "treeLoops" : 
+              [
+                {
+                  "node" : "docs",
+                  "path" : 
+                  [
+                    {
+                      "title" : "Test Roadmap",
+                      "treeId" : "t"
+                    }
+                  ]
                 }
               ]
             },
@@ -825,12 +856,13 @@
               [
                 "docs"
               ],
-              "seq" : 15,
+              "seq" : 13,
               "tombstoned" : 
               {
                 "edges" : 0,
                 "nodes" : 0
-              }
+              },
+              "unchanged" : true
             },
             "type" : "text"
           }
@@ -879,7 +911,7 @@
         "content" : 
         [
           {
-            "text" : "annotate_node: nothing to set \u2014 pass at least one of \"description\", \"appendDescription\", \"icon\", \"links\", \"opens\".",
+            "text" : "annotate_node: nothing to set \u2014 pass at least one of \"description\", \"appendDescription\", \"icon\", \"links\", \"addLinks\", \"opens\".",
             "type" : "text"
           }
         ],

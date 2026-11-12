@@ -122,6 +122,19 @@ Json::Value toJson(const std::map<NodeId, Opening>& openings, const std::set<Tre
   return opens;
 }
 
+Json::Value toJson(const std::vector<Guide>& guides) {
+  Json::Value list(Json::arrayValue);
+  for (const Guide& guide : guides) {
+    Json::Value entry(Json::objectValue);
+    entry["treeId"] = guide.tree.str();
+    entry["title"] = guide.title;
+    entry["text"] = guide.text;
+    entry["yours"] = guide.yours;
+    list.append(entry);
+  }
+  return list;
+}
+
 Json::Value toJson(const GalleryEntry& entry) {
   Json::Value row(Json::objectValue);
   row["id"] = entry.id.str();
@@ -188,6 +201,41 @@ Json::Value toJson(const TreeDiagnostics& diagnostics) {
   Json::Value maskedWork(Json::arrayValue);
   for (const NodeId& node : diagnostics.maskedWork) maskedWork.append(node.str());
   root["maskedWork"] = maskedWork;
+
+  return root;
+}
+
+Json::Value toJson(const TreeDiagnostics& diagnostics, const PointerDiagnostics& pointers) {
+  Json::Value root = toJson(diagnostics);
+
+  Json::Value treeLoops(Json::arrayValue);
+  for (const TreeLoop& loop : pointers.treeLoops) {
+    Json::Value path(Json::arrayValue);
+    for (const TreeOnLoop& on : loop.path) {
+      Json::Value tree(Json::objectValue);
+      tree["treeId"] = on.tree.str();
+      tree["title"] = on.title;
+      path.append(tree);
+    }
+    Json::Value entry(Json::objectValue);
+    entry["node"] = loop.node.str();
+    entry["path"] = path;
+    if (loop.pathOmitted > 0) entry["pathOmitted"] = static_cast<Json::UInt64>(loop.pathOmitted);
+    treeLoops.append(entry);
+  }
+  root["treeLoops"] = treeLoops;
+  if (pointers.treeLoopsOmitted > 0) root["treeLoopsOmitted"] = static_cast<Json::UInt64>(pointers.treeLoopsOmitted);
+
+  Json::Value danglingPointers(Json::arrayValue);
+  for (const DanglingPointer& pointer : pointers.danglingPointers) {
+    Json::Value entry(Json::objectValue);
+    entry["node"] = pointer.node.str();
+    entry["treeId"] = pointer.tree.str();
+    danglingPointers.append(entry);
+  }
+  root["danglingPointers"] = danglingPointers;
+  if (pointers.danglingPointersOmitted > 0)
+    root["danglingPointersOmitted"] = static_cast<Json::UInt64>(pointers.danglingPointersOmitted);
 
   return root;
 }

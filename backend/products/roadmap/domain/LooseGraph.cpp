@@ -168,6 +168,13 @@ std::string LooseGraph::descriptionOf(const NodeId& id) const {
   return record->second.description.value;
 }
 
+std::map<NodeId, TreeId> LooseGraph::pointers() const {
+  std::map<NodeId, TreeId> held;
+  for (const auto& [id, record] : nodes_)
+    if (record.life.present() && !record.opens.value.empty()) held.emplace(id, record.opens.value);
+  return held;
+}
+
 std::optional<NodeSpec> LooseGraph::nodeView(const NodeId& id) const {
   if (!hasNode(id)) return std::nullopt;
   const NodeRecord& record = nodes_.at(id);
@@ -209,13 +216,6 @@ std::vector<NodeId> LooseGraph::presentNodeIds() const {
     if (record.life.present()) ids.push_back(id);
   }
   return ids;
-}
-
-NodePointers LooseGraph::pointers() const {
-  NodePointers pointers;
-  for (const auto& [id, record] : nodes_)
-    if (record.life.present() && !record.opens.value.empty()) pointers.emplace(id, record.opens.value);
-  return pointers;
 }
 
 std::vector<Edge> LooseGraph::presentEdges() const {

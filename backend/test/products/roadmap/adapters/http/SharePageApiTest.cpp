@@ -54,7 +54,7 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
 
-  SharePageApi make(const std::string& webRoot) { return SharePageApi{rooms, trees, auth, videos, webRoot}; }
+  SharePageApi make(const std::string& webRoot) { return SharePageApi{rooms, trees, auth, videos, webRoot, "https://share.example"}; }
 
   void seedFork(const char* forkId, const char* sourceId) { trees->forkedFrom[forkId] = sourceId; }
 
@@ -101,15 +101,15 @@ bool has(std::string_view body, std::string_view needle) {
 // ---- renderShell: the pure templating boundary -------------------------------------------
 
 TEST(render_shell_injects_the_trees_own_meta_and_keeps_the_sentinels) {
-  std::string html = SharePageApi::renderShell(SHELL, "My Tree", 3, Visibility::unlisted, "t_abc", ForkLineage{}, false);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "My Tree", 3, Visibility::unlisted, "t_abc", ForkLineage{}, false);
 
   CHECK(has(html, "<!-- meta:unfurl:start -->"));
   CHECK(has(html, "<!-- meta:unfurl:end -->"));
   CHECK(has(html, "<title>My Tree \xE2\x80\x94 Windmill</title>"));
   CHECK(has(html, "content=\"My Tree\""));  // og:title + twitter:title
   CHECK(has(html, "A Windmill skill tree \xE2\x80\x94 3 steps."));
-  CHECK(has(html, "href=\"https://windmill.works/t/t_abc\""));
-  CHECK(has(html, "content=\"https://windmill.works/og/t_abc.png\""));  // per-tree og:image + twitter:image
+  CHECK(has(html, "href=\"https://share.example/t/t_abc\""));
+  CHECK(has(html, "content=\"https://share.example/og/t_abc.png\""));  // per-tree og:image + twitter:image
   CHECK_FALSE(has(html, "og-image.png"));
   CHECK_FALSE(has(html, "og:video"));                       // no uploaded loop → no video tag, only the poster
   CHECK(has(html, "content=\"noindex\""));                  // unlisted is not indexable
@@ -120,18 +120,51 @@ TEST(render_shell_injects_the_trees_own_meta_and_keeps_the_sentinels) {
 }
 
 TEST(render_shell_emits_the_video_tags_alongside_the_poster_when_a_loop_exists) {
-  std::string html = SharePageApi::renderShell(SHELL, "My Tree", 3, Visibility::unlisted, "t_abc", ForkLineage{}, true);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "My Tree", 3, Visibility::unlisted, "t_abc", ForkLineage{}, true);
 
-  CHECK(has(html, "content=\"https://windmill.works/og/t_abc.png\""));
-  CHECK(has(html, "<meta property=\"og:video\" content=\"https://windmill.works/v1/trees/t_abc/og-video\" />"));
-  CHECK(has(html, "<meta property=\"og:video:secure_url\" content=\"https://windmill.works/v1/trees/t_abc/og-video\" />"));
+  CHECK(has(html, "content=\"https://share.example/og/t_abc.png\""));
+  CHECK(has(html, "<meta property=\"og:video\" content=\"https://share.example/v1/trees/t_abc/og-video\" />"));
+  CHECK(has(html, "<meta property=\"og:video:secure_url\" content=\"https://share.example/v1/trees/t_abc/og-video\" />"));
   CHECK(has(html, "<meta property=\"og:video:type\" content=\"video/mp4\" />"));
   CHECK(has(html, "<meta property=\"og:video:width\" content=\"1080\" />"));
   CHECK(has(html, "<meta property=\"og:video:height\" content=\"1080\" />"));
 }
 
+// The page's own address and its pictures are all built on the origin: one ending in '/' does not double it, and an
+// origin holding markup characters lands escaped in every tag that carries it.
+TEST(render_shell_builds_every_address_on_the_origin_without_doubling_or_unescaping_it) {
+  const auto tagsOf = [](const std::string& origin) {
+    const std::string html = SharePageApi::renderShell(SHELL, origin, "T", 1, Visibility::public_, "t_9362d9bc883e0a1e",
+                                                       ForkLineage{}, true);
+    std::vector<std::string> tags;
+    for (const char* key : {"rel=\"canonical\"", "\"og:url\"", "\"og:image\"", "\"og:video\"",
+                            "\"og:video:secure_url\"", "\"twitter:image\""}) {
+      const std::size_t start = html.rfind('<', html.find(key));
+      tags.push_back(html.substr(start, html.find('\n', start) - start));
+    }
+    return tags;
+  };
+
+  CHECK_EQ(tagsOf("https://share.example/"),
+           (std::vector<std::string>{
+               "<link rel=\"canonical\" href=\"https://share.example/t/t_9362d9bc883e0a1e\" />",
+               "<meta property=\"og:url\" content=\"https://share.example/t/t_9362d9bc883e0a1e\" />",
+               "<meta property=\"og:image\" content=\"https://share.example/og/t_9362d9bc883e0a1e.png\" />",
+               "<meta property=\"og:video\" content=\"https://share.example/v1/trees/t_9362d9bc883e0a1e/og-video\" />",
+               "<meta property=\"og:video:secure_url\" content=\"https://share.example/v1/trees/t_9362d9bc883e0a1e/og-video\" />",
+               "<meta name=\"twitter:image\" content=\"https://share.example/og/t_9362d9bc883e0a1e.png\" />"}));
+  CHECK_EQ(tagsOf("https://x.example/a\"b<c>"),
+           (std::vector<std::string>{
+               "<link rel=\"canonical\" href=\"https://x.example/a&quot;b&lt;c&gt;/t/t_9362d9bc883e0a1e\" />",
+               "<meta property=\"og:url\" content=\"https://x.example/a&quot;b&lt;c&gt;/t/t_9362d9bc883e0a1e\" />",
+               "<meta property=\"og:image\" content=\"https://x.example/a&quot;b&lt;c&gt;/og/t_9362d9bc883e0a1e.png\" />",
+               "<meta property=\"og:video\" content=\"https://x.example/a&quot;b&lt;c&gt;/v1/trees/t_9362d9bc883e0a1e/og-video\" />",
+               "<meta property=\"og:video:secure_url\" content=\"https://x.example/a&quot;b&lt;c&gt;/v1/trees/t_9362d9bc883e0a1e/og-video\" />",
+               "<meta name=\"twitter:image\" content=\"https://x.example/a&quot;b&lt;c&gt;/og/t_9362d9bc883e0a1e.png\" />"}));
+}
+
 TEST(render_shell_uses_singular_step_and_makes_a_public_tree_indexable) {
-  std::string html = SharePageApi::renderShell(SHELL, "Solo", 1, Visibility::public_, "t_x", ForkLineage{}, false);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "Solo", 1, Visibility::public_, "t_x", ForkLineage{}, false);
   CHECK(has(html, "A Windmill skill tree \xE2\x80\x94 1 step."));
   CHECK(has(html, "content=\"index, follow, max-image-preview:large\""));
 }
@@ -141,7 +174,7 @@ TEST(render_shell_names_a_public_source_and_counts_forks) {
   lineage.isFork = true;
   lineage.sourceTitle = "Learn to sail";
   lineage.forkCount = 12;
-  std::string html = SharePageApi::renderShell(SHELL, "My voyage", 5, Visibility::unlisted, "t_x", lineage, false);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "My voyage", 5, Visibility::unlisted, "t_x", lineage, false);
   CHECK(has(html, "A fork of \xE2\x80\x9CLearn to sail\xE2\x80\x9D \xE2\x80\x94 5 steps. Forked 12 times."));
 }
 
@@ -149,7 +182,7 @@ TEST(render_shell_keeps_an_unnamed_source_anonymous_and_singularizes_one_fork) {
   ForkLineage lineage;
   lineage.isFork = true;  // sourceTitle empty — the source was unlisted/private, never revealed
   lineage.forkCount = 1;
-  std::string html = SharePageApi::renderShell(SHELL, "Mine", 3, Visibility::unlisted, "t_x", lineage, false);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "Mine", 3, Visibility::unlisted, "t_x", lineage, false);
   CHECK(has(html, "A forked Windmill skill tree \xE2\x80\x94 3 steps. Forked 1 time."));
   CHECK_FALSE(has(html, "A fork of"));  // no source named
 }
@@ -158,23 +191,23 @@ TEST(render_shell_escapes_a_forked_source_title) {
   ForkLineage lineage;
   lineage.isFork = true;
   lineage.sourceTitle = "<b>x</b>";
-  std::string html = SharePageApi::renderShell(SHELL, "Mine", 2, Visibility::unlisted, "t_x", lineage, false);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "Mine", 2, Visibility::unlisted, "t_x", lineage, false);
   CHECK(has(html, "&lt;b&gt;x&lt;/b&gt;"));
   CHECK_FALSE(has(html, "<b>x</b>"));
 }
 
 TEST(render_shell_html_escapes_the_title) {
-  std::string html = SharePageApi::renderShell(SHELL, "<script>alert(1)</script>&\"x", 2, Visibility::unlisted, "t_x", ForkLineage{}, false);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "<script>alert(1)</script>&\"x", 2, Visibility::unlisted, "t_x", ForkLineage{}, false);
   CHECK_FALSE(has(html, "<script>alert(1)"));
   CHECK(has(html, "&lt;script&gt;alert(1)&lt;/script&gt;&amp;&quot;x"));
 }
 
 TEST(render_shell_falls_back_to_untitled_and_returns_a_fenceless_shell_unchanged) {
-  std::string named = SharePageApi::renderShell(SHELL, "", 2, Visibility::unlisted, "t_x", ForkLineage{}, false);
+  std::string named = SharePageApi::renderShell(SHELL, "https://share.example", "", 2, Visibility::unlisted, "t_x", ForkLineage{}, false);
   CHECK(has(named, "<title>Untitled tree \xE2\x80\x94 Windmill</title>"));
 
   const std::string fenceless = "<html><head><title>No fence</title></head></html>";
-  CHECK_EQ(SharePageApi::renderShell(fenceless, "T", 2, Visibility::public_, "t_x", ForkLineage{}, false), fenceless);
+  CHECK_EQ(SharePageApi::renderShell(fenceless, "https://share.example", "T", 2, Visibility::public_, "t_x", ForkLineage{}, false), fenceless);
 }
 
 // ---- page(): read gating + response shape ------------------------------------------------
@@ -191,7 +224,7 @@ TEST(page_serves_an_unlisted_tree_with_its_meta_and_cache_headers) {
   CHECK_EQ(resp->contentType(), drogon::CT_TEXT_HTML);
   CHECK(has(resp->getBody(), "content=\"Shared plan\""));
   CHECK(has(resp->getBody(), "A Windmill skill tree \xE2\x80\x94 2 steps."));
-  CHECK(has(resp->getBody(), "href=\"https://windmill.works/t/t_shared\""));
+  CHECK(has(resp->getBody(), "href=\"https://share.example/t/t_shared\""));
 }
 
 TEST(page_of_a_fork_names_its_public_source_and_counts_its_own_forks) {
@@ -260,10 +293,10 @@ TEST(page_advertises_og_video_only_when_the_tree_carries_an_uploaded_loop) {
   std::string withVideo{sendPage(api, "", "t_withvideo")->getBody()};
   std::string noVideo{sendPage(api, "", "t_novideo")->getBody()};
 
-  CHECK(has(withVideo, "<meta property=\"og:video\" content=\"https://windmill.works/v1/trees/t_withvideo/og-video\" />"));
-  CHECK(has(withVideo, "content=\"https://windmill.works/og/t_withvideo.png\""));
+  CHECK(has(withVideo, "<meta property=\"og:video\" content=\"https://share.example/v1/trees/t_withvideo/og-video\" />"));
+  CHECK(has(withVideo, "content=\"https://share.example/og/t_withvideo.png\""));
   CHECK_FALSE(has(noVideo, "og:video"));
-  CHECK(has(noVideo, "content=\"https://windmill.works/og/t_novideo.png\""));
+  CHECK(has(noVideo, "content=\"https://share.example/og/t_novideo.png\""));
 }
 
 TEST(page_falls_back_to_a_hash_redirect_when_the_web_root_is_missing) {

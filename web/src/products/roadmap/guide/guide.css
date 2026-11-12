@@ -1,363 +1,703 @@
-/* The guide (17): its chip in the identity row and the modal from 744px; on phones the reader's line and note, the
-   owner's row and page in the roadmap sheet, and the full-screen editor. */
+/* The guide (17.18–17.39): a note on the tree. At rest it is a card on the canvas from 744px and a row under the head on
+   phones; open, it is the note in place from 744px and a bottom sheet on phones, reading or writing in one frame. A save
+   no door took leaves one line with its act where the footer says who reads the guide. */
 
-/* ---- The chip: the first line in the row's free space, never narrower than its book, giving way before any verb. ---- */
-.st-roadmap-chip.st-guide-chip {
-  flex: 0 1 auto;
-  justify-content: flex-start;
-  min-width: 44px;
-  max-width: 320px;
-  padding: 0 12px 0 10px;
-  border: 0;
-  background: transparent;
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-.st-roadmap-chip.st-guide-chip:hover,
-.st-roadmap-chip.st-guide-chip[aria-expanded="true"] {
-  background: var(--color-brand-soft);
-  color: var(--text-primary);
-}
-.st-roadmap-chip.st-guide-chip > svg {
-  flex-shrink: 0;
-}
-.st-guide-chip-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.st-roadmap-chip.st-guide-chip--add {
-  flex: none;
-  padding: 0 14px 0 12px;
-  border: 1.5px dashed var(--border-strong);
-}
-.st-roadmap-chip.st-guide-chip--add > svg {
-  color: var(--text-tertiary);
-}
-.st-roadmap-chip.st-guide-chip--icon {
-  flex: none;
-  justify-content: center;
-  width: 44px;
-  padding: 0;
-}
-@media (max-width: 1279px) {
-  .st-roadmap-chip.st-guide-chip {
-    max-width: 200px;
-  }
-}
-
-/* ---- The modal: the step modal without its 760 × 800 cap, the text at one 560px measure at every width. ---- */
-.st-board-step-layer.st-guide-layer {
-  position: fixed;
-}
-.st-guide-layer .st-board-step-scrim {
-  animation: st-guide-scrim var(--duration-base) var(--ease-soft);
-}
-.st-board-step-modal.st-guide-modal {
-  width: 100%;
-  height: 100%;
-  animation: wm-pop-in var(--duration-base) var(--ease-soft);
-}
-@keyframes st-guide-scrim {
-  from { background-color: transparent; }
-}
-.st-guide-modal-header {
+/* ---- At rest from 744px: the card. ---- */
+.st-guide-card {
   display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 12px;
-  min-height: 44px;
-}
-.st-guide-modal-header > svg {
-  flex-shrink: 0;
-  color: var(--text-secondary);
-}
-.st-guide-modal-heading {
-  flex: 1;
-  min-width: 0;
-}
-.st-guide-modal-heading h2 {
-  margin: 0;
-  font: 700 20px/28px var(--font-display);
-  color: var(--text-primary);
-}
-.st-guide-modal-heading p {
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: 600 12px/16px var(--font-body);
-  color: var(--text-secondary);
-}
-.st-guide-modal-body {
-  display: flex;
-  flex: 1;
   flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  min-height: 0;
-  padding-top: 24px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  gap: 18px;
+  box-sizing: border-box;
+  width: 414px;
+  max-width: 100%;
+  padding: 24px 26px;
+  border: 1px solid var(--border-default);
+  border-radius: 18px;
+  background: var(--surface-card);
+  box-shadow: var(--shadow-md);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
 }
-.st-guide-modal-body--writing {
-  overflow: hidden;
+.st-guide-card,
+.st-guide-row {
+  transition: background-color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
 }
-.st-guide-modal-body:focus-visible {
+.st-guide-card:hover {
+  background: var(--surface-hover);
+}
+.st-guide-row:hover {
+  background: var(--color-brand-soft);
+}
+.st-guide-card:active,
+.st-guide-row:active {
+  transform: scale(0.97);
+}
+.st-guide-card:focus-visible,
+.st-guide-row:focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: -2px;
 }
-
-/* The text keeps its place from reading to writing: the same box, its edge transparent until it takes the focus edge. */
-.st-guide-text {
-  flex: none;
-  box-sizing: border-box;
-  width: min(592px, 100%);
-  margin: 0;
-  padding: 12px 16px;
-  border: 1.5px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-primary);
-  font: 400 18px/27px var(--font-body);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  resize: none;
-  outline: none;
-  transition: border-color 120ms var(--ease-standard), background-color 120ms var(--ease-standard);
+.st-guide-card.is-open {
+  visibility: hidden;
 }
-.st-guide-text::placeholder {
-  color: var(--text-tertiary);
-}
-.st-guide-text--reading {
-  overflow: hidden;
-  cursor: text;
-}
-.st-guide-text--reading:hover {
-  background: var(--surface-sunken);
-}
-.st-guide-text--reading:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: 2px;
-}
-.st-guide-text--writing {
-  flex: 1 1 0;
-  min-height: 0;
-  overflow-y: auto;
-  border-color: var(--field-focus-edge);
-  background: var(--surface-card);
-}
-.st-guide-text--over {
-  border-color: var(--color-danger);
-}
-.st-guide-text--note {
-  cursor: default;
-}
-.st-guide-strip {
+.st-guide-card-heading {
   display: flex;
-  flex: none;
   align-items: center;
-  gap: 8px;
-  box-sizing: border-box;
-  width: min(592px, 100%);
-  min-height: 44px;
-  padding: 4px 4px 4px 16px;
+  gap: 14px;
+}
+.st-guide-tab {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
   border-radius: var(--radius-md);
   background: var(--surface-sunken);
-  color: var(--text-primary);
-  font: 600 14px/20px var(--font-body);
+  color: var(--text-secondary);
 }
-.st-guide-strip > span {
+.st-guide-card-title {
   flex: 1;
   min-width: 0;
+  font: 700 28px/34px var(--font-display);
 }
-.st-guide-modal-footer {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 12px;
-  box-sizing: border-box;
-  min-height: 68px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-default);
-  animation: st-guide-crossfade var(--duration-fast) var(--ease-soft);
-}
-@keyframes st-guide-crossfade {
-  from { opacity: 0; }
-}
-.st-guide-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  font: 400 14px/20px var(--font-body);
-  color: var(--text-secondary);
-}
-.st-guide-hint > svg {
-  flex-shrink: 0;
-}
-.st-guide-disclosure {
-  flex: 1;
-  min-width: 0;
-  font: 400 14px/20px var(--font-body);
-  color: var(--text-secondary);
-}
-.st-guide-counter {
-  flex-shrink: 0;
-  font: 700 14px/20px var(--font-body);
-  color: var(--text-secondary);
-}
-.st-guide-counter--over {
-  color: var(--color-danger);
-}
-
-/* ---- Phones: the reader's line in the device line's slot, and the note's sheet. ---- */
-.board-device-line.st-guide-line {
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-.board-device-line.st-guide-line > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.board-device-line.st-guide-line.st-switcher-flash {
-  border-radius: var(--radius-md);
-}
-.st-guide-sheet-text {
-  margin: 0;
-  font: 400 15px/22px var(--font-body);
-  color: var(--text-primary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-/* ---- The owner's row and page in the roadmap sheet; the sheet grows by the row, and the page keeps its height. ---- */
-.st-roadmap-sheet-link.st-guide-row {
-  align-items: flex-start;
-  padding-top: 12px;
-  padding-bottom: 12px;
-}
-.st-roadmap-sheet-link .st-guide-row-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.st-guide-row-text > span {
-  flex: none;
-}
-.st-guide-row-label {
-  font: 700 15px/21px var(--font-body);
-  color: var(--text-primary);
-}
-.st-guide-row-excerpt {
+.st-guide-card-excerpt {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
-  font: 400 13px/18px var(--font-body);
-  color: var(--text-secondary);
+  font: 400 23px/32px var(--font-body);
   overflow-wrap: anywhere;
 }
-.st-board-sheet.st-roadmap-sheet--guide-written {
-  --st-roadmap-sheet-guide: 95px;
-}
-.st-board-sheet.st-roadmap-sheet--guide-empty {
-  --st-roadmap-sheet-guide: 60px;
-}
-.st-guide-page {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 0;
-}
-.st-guide-page-text {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  touch-action: pan-y;
-  cursor: text;
-}
-.st-guide-page-text:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: 2px;
-}
-.st-guide-hint.st-guide-reach {
-  display: flex;
+.st-guide-rule {
   flex-shrink: 0;
-  justify-content: center;
-  min-height: 55px;
+  height: 1px;
+  background: var(--border-default);
+  opacity: 0.65;
+}
+.st-guide-card-read {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-link);
+  font: 700 16px/22px var(--font-body);
+}
+.st-guide-card-arrow {
+  color: var(--text-link);
+  font: 700 22px/26px var(--font-body);
 }
 
-/* ---- The full-screen editor: the note editor's shell, a plain field, and a bar that rides the keyboard. ---- */
-.st-guide-editor-text {
-  flex: 1;
-  min-height: 0;
-  box-sizing: border-box;
-  width: 100%;
-  margin: 0;
-  padding: 16px;
-  border: 0;
-  background: transparent;
-  color: var(--text-primary);
-  font: 400 16px/24px var(--font-body);
-  overflow-wrap: anywhere;
-  resize: none;
-}
-.st-board-composer-layer .st-guide-editor-text:focus-visible {
-  outline: none;
-}
-.st-guide-editor-text::placeholder {
-  color: var(--text-tertiary);
-}
-.st-guide-editor-bar {
+/* ---- At rest on phones: the row. ---- */
+.st-guide-row {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   gap: 12px;
   box-sizing: border-box;
-  min-height: 60px;
-  padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid var(--border-default);
-  background: var(--surface-card);
-}
-.st-guide-editor-bar > span {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  line-height: 16px;
-}
-.st-guide-editor-bar > .st-guide-disclosure {
-  color: var(--text-tertiary);
-}
-.st-guide-editor-bar .st-board-note-save {
-  flex-shrink: 0;
-  min-height: 36px;
-  padding: 8px 14px;
+  width: 100%;
+  min-height: 52px;
+  padding: 9.5px 12px 9.5px 14px;
   border: 0;
-  border-radius: var(--radius-md);
-  background: var(--color-brand);
-  color: var(--text-on-accent);
-  box-shadow: var(--shadow-sm);
-  font: 700 14px/20px var(--font-body);
+  border-radius: 14px;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  text-align: left;
   cursor: pointer;
 }
-.st-guide-editor-bar .st-board-note-save[aria-disabled="true"] {
+.st-guide-row > svg {
+  flex-shrink: 0;
+}
+.st-guide-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  color: var(--text-primary);
+}
+.st-guide-row-title {
+  font: 700 15px/20px var(--font-body);
+}
+.st-guide-row-excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  font: 400 15px/20px var(--font-body);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Where the entry sits: over the Graph's canvas from 744px and in the Board's flow; on phones under the head,
+   flush beneath the device line when the tree carries one. ---- */
+.st-graph-guide {
+  position: absolute;
+  left: 28px;
+  margin-top: 38px;
+  pointer-events: auto;
+}
+.st-board--columns > .st-guide-card {
+  flex-shrink: 0;
+}
+.st-roadmap-device-nudge > .st-guide-row {
+  width: calc(100% - var(--space-8));
+  margin: 2px var(--space-4) 0;
+}
+.st-board--phone > .st-guide-row {
+  margin-top: 2px;
+}
+.st-roadmap-device-nudge > .board-device-line + .st-guide-row {
+  margin-top: 0;
+}
+.st-board--phone > .board-device-line + .st-guide-row {
+  margin-top: calc(-1 * var(--space-3));
+}
+
+/* ---- Open: the layer that holds the window while writing and under the phone's sheet, and the note's seat. ---- */
+.st-guide-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 46;
+}
+.st-guide-backdrop {
+  position: absolute;
+  inset: 0;
+}
+.st-guide-layer--phone {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.st-guide-layer--phone > .st-guide-backdrop {
+  background: var(--surface-overlay);
+  opacity: 0.55;
+}
+.st-guide-seat {
+  position: absolute;
+  top: 138px;
+  left: 24px;
+  z-index: 26;
+  width: 642px;
+  max-width: calc(100% - 48px);
+}
+.st-guide-seat--phone {
+  display: contents;
+}
+
+/* ---- The note from 744px. ---- */
+.st-guide-paper {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  box-sizing: border-box;
+  padding: 28px 32px;
+  border: 1px solid var(--border-default);
+  border-radius: 20px;
+  background: var(--surface-card);
+  box-shadow: var(--shadow-md);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  outline: none;
+}
+.st-guide-heading {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 14px;
+}
+.st-guide-identity {
+  flex: 1;
+  min-width: 0;
+}
+.st-guide-identity > p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-secondary);
+  font: 700 13px/19px var(--font-body);
+}
+.st-guide-identity > p > svg {
+  flex-shrink: 0;
+}
+.st-guide-identity > p > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-guide-identity > h2 {
+  margin: 0;
+  font: 700 34px/39px var(--font-display);
+}
+.st-guide-pencil,
+.st-guide-close {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-left: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.st-guide-pencil:hover,
+.st-guide-close:hover {
+  background: var(--surface-hover);
+}
+.st-guide-paper :is(button, textarea):focus-visible,
+.st-guide-prose.is-ringed:focus,
+.st-guide-save.is-ringed:focus {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+.st-guide-prose {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 525px;
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font: 400 22px/32px var(--font-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+.st-guide-prose--owner {
+  cursor: text;
+}
+.st-guide-field {
+  flex: 0 1 auto;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 64px;
+  max-height: 510px;
+  margin: 0;
+  padding: 16px 18px;
+  border: 1.5px solid var(--color-brand);
+  border-radius: 10px;
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+  caret-color: var(--color-brand);
+  font: 400 20px/30px var(--font-body);
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  resize: none;
+}
+.st-guide-paper .st-guide-field:focus-visible {
+  outline: none;
+}
+.st-guide-field::placeholder {
+  color: var(--text-secondary);
+}
+.st-guide-field--over {
+  border-color: var(--color-danger);
+}
+/* While a recovery line stands, the field rests on the plain edge until it is focused again: the edge's colour alone
+   changes, so its box and its text stay where they were. */
+.st-guide-field--resting:not(:focus) {
+  border-color: var(--border-default);
+}
+.st-guide-footer {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.st-guide-status {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 4px 4px 4px 16px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  font: 600 14px/20px var(--font-body);
+}
+.st-guide-status > span {
+  flex: 1;
+  min-width: 0;
+}
+.st-guide-audience {
+  flex: 0 1 275px;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font: 400 14px/20px var(--font-body);
+}
+.st-guide-count {
+  flex-shrink: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font: 400 14px/20px var(--font-body);
+}
+.st-guide-count:empty {
+  display: none;
+}
+.st-guide-count--over {
+  color: var(--color-danger);
+  font-weight: 700;
+}
+.st-guide-actions {
+  display: flex;
+  flex: 1;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* ---- A failed save's line, and a copied draft's: from 744px one block holds the line and the actions. ---- */
+.st-guide-closing {
+  display: contents;
+}
+.st-guide-footer--failed > .st-guide-closing,
+.st-guide-footer--copied > .st-guide-closing {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  gap: 9px;
+  box-sizing: border-box;
+  padding: 14px;
+  border-radius: var(--radius-md);
+}
+.st-guide-footer--failed > .st-guide-closing {
+  background: var(--color-danger-bg);
+}
+.st-guide-footer--copied > .st-guide-closing {
+  background: var(--surface-sunken);
+}
+.st-guide-line {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+}
+.st-guide-line > svg {
+  flex-shrink: 0;
+  color: var(--color-danger);
+}
+.st-guide-footer--copied .st-guide-line > svg {
+  color: var(--color-brand);
+}
+.st-guide-line-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.st-guide-line-words > strong {
+  font: 700 16px/22px var(--font-body);
+}
+.st-guide-line-words > span {
+  max-width: 230px;
+  color: var(--text-secondary);
+  font: 400 14px/20px var(--font-body);
+}
+.st-guide-line + .st-guide-actions {
+  flex: none;
+  gap: 9px;
+}
+
+/* ---- The note on phones: a sheet as tall as its text, the footer riding the keyboard while writing. Where the sheet is
+   too short for what it holds, the field gives up its height first and then the sheet scrolls under Cancel and the
+   footer's button, which stay at its foot. ---- */
+.st-guide-paper--phone {
+  position: relative;
+  gap: 0;
+  max-height: min(100% - 16px, max(76%, 320px));
+  padding: 8px 0 calc(24px + env(safe-area-inset-bottom, 0px));
+  border: 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: none;
+}
+.st-guide-paper--phone.st-guide-paper--writing {
+  padding-bottom: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.st-guide-grabber {
+  flex-shrink: 0;
+  align-self: center;
+  width: 36px;
+  height: 4px;
+  margin: 4px 0;
+  border-radius: 2px;
+  background: var(--border-default);
+}
+.st-guide-paper--phone > .st-guide-heading {
+  gap: 0;
+  min-height: 72px;
+  padding: 0 14px 0 22px;
+}
+.st-guide-paper--phone .st-guide-identity > p {
+  font: 600 13px/18px var(--font-body);
+}
+.st-guide-paper--phone .st-guide-identity > h2 {
+  font-size: 26px;
+  line-height: 32px;
+}
+.st-guide-paper--phone .st-guide-pencil,
+.st-guide-paper--phone .st-guide-close {
+  margin-left: 0;
+  border-radius: var(--radius-full);
+}
+.st-guide-paper--phone .st-guide-pencil {
+  background: var(--surface-sunken);
+}
+.st-guide-paper--phone > .st-guide-prose {
+  max-height: none;
+  margin: 6px 18px 0;
+  padding: 0 4px;
+  border-radius: 5px;
+  font-size: 17px;
+  line-height: 25px;
+}
+.st-guide-paper--phone > .st-guide-prose.is-ringed:focus {
+  outline-offset: -2px;
+}
+.st-guide-paper--phone > .st-guide-field {
+  min-height: 41px;
+  max-height: none;
+  padding: 6px 22px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 16px;
+  line-height: 23px;
+}
+.st-guide-paper--phone > .st-guide-footer {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 3px;
+  padding: 8px 16px 0;
+  border-top: 1px solid var(--border-default);
+}
+/* On phones a recovery line is a block of its own above the actions, under no rule. */
+.st-guide-paper--phone > .st-guide-footer--failed,
+.st-guide-paper--phone > .st-guide-footer--copied {
+  border-top-color: transparent;
+}
+.st-guide-paper--phone .st-guide-footer > .st-guide-closing {
+  display: contents;
+}
+.st-guide-paper--phone .st-guide-line {
+  flex: none;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 5px;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+}
+.st-guide-paper--phone .st-guide-footer--failed .st-guide-line {
+  background: var(--color-danger-bg);
+}
+.st-guide-paper--phone .st-guide-footer--copied .st-guide-line {
+  background: var(--surface-sunken);
+}
+.st-guide-paper--phone .st-guide-line-words {
+  gap: 0;
+}
+.st-guide-paper--phone .st-guide-line-words > strong {
+  font-size: 14px;
+  line-height: 20px;
+}
+.st-guide-paper--phone .st-guide-line-words > span {
+  max-width: none;
+}
+.st-guide-paper--phone .st-guide-status {
+  flex: none;
+  min-height: 0;
+  padding: 6px 6px 6px 12px;
+}
+.st-guide-paper--phone .st-guide-status > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.st-guide-paper--phone .st-guide-status strong {
+  font: 700 14px/20px var(--font-body);
+}
+.st-guide-paper--phone .st-guide-status strong + span {
+  font: 500 12px/16px var(--font-body);
+}
+.st-guide-paper--phone .st-guide-audience {
+  flex: none;
+  font: 600 13px/18px var(--font-body);
+}
+.st-guide-paper--phone .st-guide-count {
+  font: 600 13px/18px var(--font-body);
+}
+.st-guide-paper--phone .st-guide-count--over {
+  font-weight: 700;
+}
+.st-guide-paper--phone .st-guide-actions {
+  position: sticky;
+  bottom: 0;
+  flex: none;
+  justify-content: space-between;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface-card);
+}
+.st-guide-paper--phone .st-guide-line + .st-guide-actions {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.st-guide-cancel,
+.st-guide-save,
+.st-guide-load {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: 700 15px/20px var(--font-body);
+  cursor: pointer;
+}
+.st-guide-save {
+  min-width: 70px;
+  padding: 0 18px;
+  background: var(--color-brand);
+  color: var(--text-on-accent);
+}
+.st-guide-save[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
 }
+.st-guide-footer--failed .st-guide-save,
+.st-guide-footer--copied .st-guide-save {
+  min-width: 104px;
+  padding: 0 10px;
+}
+.st-guide-load {
+  flex-shrink: 0;
+  min-width: 100px;
+  background: var(--surface-card);
+}
 
+/* ---- Discard draft?: a card over the note from 744px, a sheet at the foot of the phone. ---- */
+.st-guide-discard {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.st-guide-discard-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--surface-overlay);
+  opacity: 0.38;
+}
+.st-guide-discard > section {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  width: 470px;
+  max-width: 100%;
+  padding: 26px 28px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+  color: var(--text-primary);
+  outline: none;
+}
+.st-guide-discard h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font: 700 27px/34px var(--font-display);
+}
+.st-guide-discard h2 > svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.st-guide-discard p {
+  margin: 0;
+  color: var(--text-secondary);
+  font: 400 17px/25px var(--font-body);
+}
+.st-guide-discard section > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.st-guide-seat--phone > .st-guide-discard {
+  align-items: flex-end;
+}
+.st-guide-seat--phone .st-guide-discard-scrim {
+  position: absolute;
+  opacity: 1;
+}
+.st-guide-seat--phone > .st-guide-discard > section {
+  gap: 8px;
+  width: 100%;
+  padding: 24px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  border: 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: none;
+  text-align: center;
+}
+.st-guide-seat--phone .st-guide-discard h2 {
+  justify-content: center;
+  font-size: 22px;
+  line-height: 35px;
+}
+.st-guide-seat--phone .st-guide-discard p {
+  font-size: 14px;
+  line-height: 19px;
+}
+.st-guide-seat--phone .st-guide-discard section > div {
+  gap: 8px;
+  margin-top: 16px;
+}
+.st-guide-seat--phone .st-guide-discard section > div > button {
+  flex: 1;
+  white-space: nowrap;
+}
+
+/* ---- Motion: the note dissolves in and its faces dissolve into one another; Discard draft? is quicker. ---- */
+@keyframes st-guide-dissolve {
+  from { opacity: 0; }
+}
+.st-guide-paper.is-entering,
+.st-guide-layer.is-entering > .st-guide-backdrop,
+.st-guide-prose,
+.st-guide-field,
+.st-guide-footer {
+  animation: st-guide-dissolve 160ms ease-out;
+}
+.st-guide-discard {
+  animation: st-guide-dissolve 120ms ease-out;
+}
 @media (prefers-reduced-motion: reduce) {
-  .st-guide-layer .st-board-step-scrim,
-  .st-board-step-modal.st-guide-modal,
-  .st-guide-modal-footer {
+  .st-guide-paper.is-entering,
+  .st-guide-layer.is-entering > .st-guide-backdrop,
+  .st-guide-prose,
+  .st-guide-field,
+  .st-guide-footer,
+  .st-guide-discard {
     animation: none;
   }
-  .st-guide-text {
+  .st-guide-card,
+  .st-guide-row {
     transition: none;
   }
 }

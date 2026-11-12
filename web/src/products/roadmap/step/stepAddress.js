@@ -16,7 +16,7 @@ export function hashWithStep(hash, id) {
 }
 
 // The roadmap a view stands on: the path and the hash's route; a hash holding only a query names none.
-function routeOf() {
+export function routeOf() {
   const hashRoute = window.location.hash.split('?')[0];
   return `${window.location.pathname}${hashRoute === '#' ? '' : hashRoute}`;
 }
@@ -41,9 +41,10 @@ export function stepIsStale({ loading, tree, treeId, stepId }) {
   return !loading && tree !== null && tree.treeId === treeId && stepId !== null && !tree.nodesById.has(stepId);
 }
 
-export function useStepAddress() {
+// `arrivedBy` is how the room reached a step its URL already holds: by a link, or by going back to its entry.
+export function useStepAddress(arrivedBy = 'link') {
   const [route] = useState(routeOf);
-  const [address, setAddress] = useState(() => readAddress('link', route));
+  const [address, setAddress] = useState(() => readAddress(arrivedBy, route));
   const closing = useRef(false);
 
   const dropStep = () => {

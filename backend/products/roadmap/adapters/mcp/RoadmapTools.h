@@ -11,11 +11,12 @@
 namespace wm {
 
 // The roadmap surface exposed over MCP. An edit routes through the tree's room, and its HLC
-// stamp comes from the room's own clock — the same stamp domain a socket edit uses.
+// stamp comes from the room's own clock — the same stamp domain a socket edit uses. `appOrigin` is
+// the app's public origin, where the `url` a reply answers points.
 class RoadmapTools : public ToolHost {
 public:
   RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock, TreeRegistry& treeRegistry,
-               PresenceBus& bus);
+               PresenceBus& bus, std::string appOrigin);
 
   std::vector<ToolDeclaration> declareTools() const override;
   ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller& caller) override;
@@ -26,12 +27,12 @@ private:
   // tool's own (import_subgraph's tombstone). callTool wraps it so every failure names its tool.
   ToolResult dispatch(const std::string& name, const Json::Value& arguments, const ToolCaller& caller);
 
-
   RoomRegistry& registry_;
   ProgressService& progress_;
   Clock& clock_;
   TreeRegistry& treeRegistry_;
   PresenceBus& bus_;
+  std::string appOrigin_;
 };
 
 }

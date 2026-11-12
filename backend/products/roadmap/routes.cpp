@@ -37,7 +37,8 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
   auto ogImageApi = std::make_shared<OgImageApi>(deps.ogImages, deps.trees, deps.authService);
   auto ogVideoApi = std::make_shared<OgVideoApi>(deps.ogVideos, deps.trees, deps.authService);
   auto sharePageApi =
-      std::make_shared<SharePageApi>(deps.registry, deps.trees, deps.authService, deps.ogVideos, deps.webRoot);
+      std::make_shared<SharePageApi>(deps.registry, deps.trees, deps.authService, deps.ogVideos, deps.webRoot,
+                                     deps.appBaseUrl);
   auto galleryApi = std::make_shared<GalleryApi>(deps.trees, deps.progress, deps.authService, deps.webRoot);
   auto registryApi = std::make_shared<TreeRegistryApi>(deps.treeRegistry, deps.authService);
   auto tendingApi = std::make_shared<TendingApi>(deps.tendingService, deps.authService);
@@ -122,6 +123,12 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
       "/v1/trees/{id}/og-video",
       [ogVideoApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         ogVideoApi->getVideo(req, std::move(cb), id);
+      },
+      {drogon::Get});
+  routes.registerHandler(
+      "/v1/trees/{id}/guides",
+      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
+        api->getGuides(req, std::move(cb), id);
       },
       {drogon::Get});
   routes.registerHandler(

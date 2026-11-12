@@ -1,4 +1,5 @@
 #include "platform/adapters/clock/SystemClock.h"
+#include "platform/infra/AppOrigin.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/http/WriteRoutes.h"
@@ -68,7 +69,8 @@ static int runMcpHttp(wm::ObservabilityLifetime& lifetime) {
   const Hlc genesis{1, 0, "genesis"};
   auto clock = std::make_shared<SystemClock>();
   auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progressRepo, *registryTokens, genesis, *registry, *clock);
-  auto tools = std::make_shared<RoadmapTools>(*registry, *progress, *clock, *treeRegistry, *bus);
+  auto tools = std::make_shared<RoadmapTools>(*registry, *progress, *clock, *treeRegistry, *bus,
+                                              appOriginFromEnvironment());
 
   // Per-user OAuth access tokens are issued by the API host; the shared token, if set, is a
   // fallback that acts as the configured user.

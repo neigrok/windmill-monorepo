@@ -17,6 +17,7 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -370,7 +371,7 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
   {
     RoomRegistry registry(trees, log, bus);
     TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
-    RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+    RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
     Json::Value pointed = created;
     pointed["opens"] = kFork.str();
     CHECK_FALSE(tools.callTool("create_node", pointed, sam).isError);
@@ -383,7 +384,7 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
 
   RoomRegistry restarted(trees, log, bus);
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, restarted, clock};
-  RoadmapTools tools{restarted, progress, clock, treeRegistry, bus};
+  RoadmapTools tools{restarted, progress, clock, treeRegistry, bus, "https://app.example"};
   CHECK_FALSE(tools.callTool("create_node", created, sam).isError);
   Json::Value read = parse(R"({"fields":["id","opens"]})");
   read["treeId"] = kTree.str();
@@ -490,7 +491,7 @@ TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_re
   ProgressService progress{progressRepo, trees};
   RoomRegistry registry(trees, log, bus);
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
   trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
   trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
   const auto call = [&](const TreeId& tree, const UserId& user, const char* tool, const std::string& arguments) {
@@ -542,4 +543,273 @@ TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_re
   CHECK_EQ(test::body(call(kTree, kEve, "get_tree", R"({"fields":["id","status","state","opens"]})"))["tree"]["nodes"],
            parse(R"([{"id":"idea","status":"complete","state":"complete"},{"id":"next","status":"none","state":"available"}])"));
   registry.stop();
+}
+
+// The follow an edit makes for its receipt is given a budget of its own. A statement that runs past it is abandoned
+// at the budget, not at the pool's limit, and the connection it borrowed goes back under the pool's own limit.
+TEST(pg_opened_from_given_a_budget_gives_up_at_it_and_returns_the_connection_under_the_pools_limit) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTreeRepository trees{pgTestPool()};
+  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
+  OpenedTree main;
+  main.title = "Main";
+  const std::map<TreeId, OpenedTree> read{{kTree, main}};
+  CHECK(trees.openedFrom(kSam, {kTree}, std::chrono::milliseconds{750}) == read);
+
+  bool timedOut = false;
+  const auto asked = std::chrono::steady_clock::now();
+  {
+    PgLease blocker{*pgTestPool()};
+    pqxx::work held{*blocker};
+    held.exec("LOCK TABLE tree_nodes IN ACCESS EXCLUSIVE MODE");
+    try {
+      trees.openedFrom(kSam, {kTree}, std::chrono::milliseconds{100});
+    } catch (const FollowTimedOut&) {
+      timedOut = true;
+    }
+  }
+  CHECK(timedOut);
+  CHECK(std::chrono::steady_clock::now() - asked < std::chrono::seconds{3});
+
+  CHECK(trees.openedFrom(kSam, {kTree}) == read);
+  PgLease first{*pgTestPool()};
+  PgLease second{*pgTestPool()};
+  for (PgLease* lease : {&first, &second}) {
+    pqxx::work txn{**lease};
+    CHECK_EQ(txn.exec("SHOW statement_timeout")[0][0].as<std::string>(), std::string("5s"));
+  }
+}
+
+// The whole path over the real repositories: the edit that closes a loop of trees says so, each tree on the loop is
+// told its own way back, a pointer no tree answers dangles, a removed tree turns the loop into a dangling pointer,
+// and a reader of the public tree is answered the graph alone.
+TEST(pg_get_diagnostics_tells_the_owner_a_loop_of_trees_and_a_dangling_pointer_and_the_edit_that_closes_the_loop_says_so) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTreeRepository trees{pgTestPool()};
+  PgProgressRepository progressRepo{pgTestPool()};
+  PgOpLog log{pgTestPool()};
+  FakeBus bus;
+  FakeTokens tokens;
+  test::StepClock clock;
+  ProgressService progress{progressRepo, trees};
+  RoomRegistry registry(trees, log, bus);
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
+  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
+  trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
+  const auto call = [&](const TreeId& tree, const UserId& user, const char* tool, const std::string& arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = tree.str();
+    return tools.callTool(tool, args, ToolCaller{user, ToolScope::everything()});
+  };
+  const auto onTheWay = [](const TreeId& tree, const char* title) {
+    Json::Value on(Json::objectValue);
+    on["treeId"] = tree.str();
+    on["title"] = title;
+    return on;
+  };
+
+  CHECK_EQ(test::body(call(kFork, kSam, "create_node", R"({"id":"back","label":"Back","icon":"b","opens":")" + kTree.str() + R"("})")),
+           parse(R"({"applied":true,"seq":1,"id":"back","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  const Json::Value closed = test::body(call(
+      kTree, kSam, "import_subgraph",
+      R"({"nodes":[{"id":"down","label":"Down","icon":"d","opens":")" + kFork.str() + R"("},{"id":"gone","label":"Gone","icon":"g"}]})"));
+  CHECK_EQ(closed["introducedDiagnostics"],
+           parse(R"(["loop of trees from \"down\" through \")" + kFork.str() + R"(\" -> \")" + kTree.str() + R"(\""])"));
+  CHECK(closed["diagnosticsClean"].asBool());
+  AnnotateNode planted{NodeId{"gone"}};
+  planted.opens = TreeId{"t_pgtest_never_planted"};
+  registry.open(kTree)->applyCommand(planted, clock.nowMs(), kSam);
+  CHECK(registry.persist(kTree));
+
+  Json::Value main = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+      "treeLoops":[{"node":"down","path":[]}],"danglingPointers":[{"node":"gone","treeId":"t_pgtest_never_planted"}]})");
+  main["treeLoops"][0]["path"].append(onTheWay(kFork, "Deep dive"));
+  main["treeLoops"][0]["path"].append(onTheWay(kTree, "Main"));
+  CHECK_EQ(test::body(call(kTree, kSam, "get_diagnostics", "{}")), main);
+  Json::Value sub = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],
+      "treeLoops":[{"node":"back","path":[]}],"danglingPointers":[]})");
+  sub["treeLoops"][0]["path"].append(onTheWay(kTree, "Main"));
+  sub["treeLoops"][0]["path"].append(onTheWay(kFork, "Deep dive"));
+  CHECK_EQ(test::body(call(kFork, kSam, "get_diagnostics", "{}")), sub);
+
+  registry.setVisibility(kTree, Visibility::public_);
+  CHECK_EQ(test::message(call(kTree, kEve, "get_diagnostics", "{}")),
+           std::string(R"({"cycles":[],"dangling":[],"maskedWork":[],"selfEdges":[],"smells":[]})"));
+
+  CHECK(treeRegistry.remove(kFork, kSam) == TreeRegistry::Removal::deleted);
+  Json::Value orphaned = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],
+      "danglingPointers":[{"node":"down"},{"node":"gone","treeId":"t_pgtest_never_planted"}]})");
+  orphaned["danglingPointers"][0]["treeId"] = kFork.str();
+  CHECK_EQ(test::body(call(kTree, kSam, "get_diagnostics", "{}")), orphaned);
+  registry.stop();
+}
+
+// The statement behind `guides`: of the owner's standing trees whose present pointers lead down to a tree, each at
+// its shortest distance, within eight pointers and never the tree itself, the nearest eight that carry a guide.
+TEST(pg_guided_trees_above_answers_the_nearest_eight_guided_trees_of_the_owners_that_lead_down_to_a_tree_within_eight_pointers) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const auto id = [](const std::string& name) { return TreeId{"t_pgtest_above_" + name}; };
+  const auto clear = [] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    for (const char* table : {"tree_nodes", "tree_edges", "tree_kinds"})
+      txn.exec(std::string("DELETE FROM ") + table + " WHERE tree_id LIKE 't\\_pgtest\\_above\\_%'");
+    txn.exec("DELETE FROM trees WHERE id LIKE 't\\_pgtest\\_above\\_%'");
+    txn.commit();
+  };
+  clear();
+  PgTreeRepository trees{pgTestPool()};
+  const auto plant = [&](const std::string& name, const UserId& owner, const std::string& guide,
+                         const std::vector<std::string>& opens, bool guideInherited = false) {
+    TreeData data;
+    data.id = id(name);
+    for (const std::string& opened : opens) {
+      NodeSpec pointer;
+      pointer.id = NodeId{"to-" + opened};
+      pointer.label = opened;
+      pointer.opens = id(opened);
+      data.nodes.push_back(pointer);
+    }
+    trees.create(id(name), LooseGraph(data, Hlc{1'700'000'000'000, 0, "r_a"}).exportState(), LegendState{}, "Tree " + name,
+                 owner);
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("UPDATE trees SET guide = $2, guide_inherited = $3 WHERE id = $1", id(name).str(), guide, guideInherited);
+    txn.commit();
+  };
+  plant("leaf", kSam, "Leaf.", {"top", "leaf"});
+  plant("mid", kSam, "Mid.", {"leaf"});
+  plant("both", kSam, "Both ways.", {"leaf", "mid"});
+  plant("top", kSam, "Top.", {"both", "mid"});
+  plant("inherited", kSam, "Its author's.", {"leaf"}, true);
+  plant("silent", kSam, "", {"leaf"});
+  plant("removed", kSam, "Removed.", {"leaf"});
+  trees.softDelete(id("removed"));
+  plant("beyond", kSam, "Reached only through the removed tree.", {"removed"});
+  plant("theirs", kEve, "Eve's.", {"leaf"});
+  plant("tombstoned", kSam, "Its pointer was deleted.", {"leaf"});
+  {
+    const std::optional<StoredTree> stored = trees.load(id("tombstoned"));
+    REQUIRE(stored.has_value());
+    LooseGraph graph(stored->state);
+    graph.deleteNode(NodeId{"to-leaf"}, Hlc{1'700'000'000'001, 0, "r_a"});
+    REQUIRE(trees.save(id("tombstoned"), graph.exportState(), LegendState{}, stored->title, stored->guide, stored->head));
+  }
+  plant("up1", kSam, "", {"leaf"});
+  for (int level = 2; level <= 9; ++level)
+    plant("up" + std::to_string(level), kSam, level >= 8 ? "Up " + std::to_string(level) + "." : "",
+          {"up" + std::to_string(level - 1)});
+
+  CHECK(trees.guidedTreesAbove(kSam, id("leaf")) ==
+        (std::map<TreeId, TreeAbove>{{id("mid"), {1, "Tree mid", "Mid.", false}},
+                                     {id("both"), {1, "Tree both", "Both ways.", false}},
+                                     {id("top"), {2, "Tree top", "Top.", false}},
+                                     {id("inherited"), {1, "Tree inherited", "Its author's.", true}},
+                                     {id("up8"), {8, "Tree up8", "Up 8.", false}}}));
+  CHECK(trees.guidedTreesAbove(kSam, id("top")) ==
+        (std::map<TreeId, TreeAbove>{{id("leaf"), {1, "Tree leaf", "Leaf.", false}},
+                                     {id("mid"), {2, "Tree mid", "Mid.", false}},
+                                     {id("both"), {2, "Tree both", "Both ways.", false}},
+                                     {id("inherited"), {2, "Tree inherited", "Its author's.", true}}}));
+
+  // Ten trees open the hub: one carries no guide, and of the nine that do the cap keeps the eight smaller ids as
+  // bytes order them, an upper-case letter before every lower-case one whatever the database's collation.
+  plant("hub", kSam, "", {});
+  plant("cap_0silent", kSam, "", {"hub"});
+  for (const char* name : {"cap_Z", "cap_a", "cap_b", "cap_c", "cap_d", "cap_e", "cap_f", "cap_g", "cap_h"})
+    plant(name, kSam, "Guide.", {"hub"});
+  plant("cap_far", kSam, "Guide.", {"cap_Z"});
+  std::map<TreeId, TreeAbove> aboveHub;
+  for (const char* name : {"cap_Z", "cap_a", "cap_b", "cap_c", "cap_d", "cap_e", "cap_f", "cap_g"})
+    aboveHub.emplace(id(name), TreeAbove{1, std::string("Tree ") + name, "Guide.", false});
+  CHECK(trees.guidedTreesAbove(kSam, id("hub")) == aboveHub);
+
+  CHECK(trees.guidedTreesAbove(kEve, id("leaf")) == (std::map<TreeId, TreeAbove>{}));
+  CHECK(trees.guidedTreesAbove(kEve, id("theirs")) == (std::map<TreeId, TreeAbove>{}));
+  CHECK(trees.guidedTreesAbove(kSam, id("removed")) == (std::map<TreeId, TreeAbove>{}));
+  CHECK(trees.guidedTreesAbove(kSam, id("absent")) == (std::map<TreeId, TreeAbove>{}));
+  clear();
+}
+
+// The socket and PUT admit any pointer text, so anyone who knows a tree's id can point at it: the walk is keyed on
+// the owner's own trees, so what another account plants is neither answered nor makes the statement read more.
+TEST(pg_a_strangers_flood_of_pointers_at_a_tree_changes_no_answer_and_the_walk_still_reads_no_more_than_the_owners_rows) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const auto clear = [] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("DELETE FROM tree_nodes WHERE tree_id LIKE 't\\_pgtest\\_flood\\_%'");
+    txn.exec("DELETE FROM trees WHERE id LIKE 't\\_pgtest\\_flood\\_%'");
+    txn.commit();
+  };
+  clear();
+  PgTreeRepository trees{pgTestPool()};
+  const TreeId leaf{std::string("t_pgtest_flood_leaf")};
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO trees (id, title, owner_id, head_seq, guide) VALUES "
+                    "('t_pgtest_flood_leaf', 'Leaf', $1::uuid, 0, 'Leaf.'), ('t_pgtest_flood_mid', 'Mid', $1::uuid, 0, 'Mid.'), "
+                    "('t_pgtest_flood_top', 'Top', $1::uuid, 0, 'Top.')",
+                    kSam.str());
+    txn.exec("INSERT INTO tree_nodes (tree_id, node_id, created_hlc, opens, opens_hlc, present) "
+             "SELECT t.id, 'n' || n, '1:0:r_a', CASE WHEN n = 1 THEN t.opens ELSE '' END, '1:0:r_a', true "
+             "FROM (VALUES ('t_pgtest_flood_leaf', ''), ('t_pgtest_flood_mid', 't_pgtest_flood_leaf'), "
+             "             ('t_pgtest_flood_top', 't_pgtest_flood_mid')) AS t(id, opens), generate_series(1, 20) n");
+    txn.commit();
+  }
+  // What each table gave the statement, filtered rows included, with sequential scans off: a table of a few pages
+  // is rightly read whole, which would count every row in it.
+  const auto rowsRead = [&] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("SET LOCAL enable_seqscan = off");
+    const pqxx::result explained =
+        txn.exec_params(std::string("EXPLAIN (ANALYZE, TIMING OFF, FORMAT JSON) ") + PgTreeRepository::guidedTreesAboveStatement(),
+                        kSam.str(), leaf.str(), kMaxLevelsAbove, static_cast<int>(kMaxGuides));
+    std::map<std::string, double> read;
+    std::vector<Json::Value> nodes{parse(explained[0][0].as<std::string>())[0]["Plan"]};
+    while (!nodes.empty()) {
+      const Json::Value node = nodes.back();
+      nodes.pop_back();
+      for (const Json::Value& child : node["Plans"]) nodes.push_back(child);
+      if (!node.isMember("Relation Name")) continue;
+      read[node["Relation Name"].asString()] +=
+          node["Actual Loops"].asDouble() * (node["Actual Rows"].asDouble() + node["Rows Removed by Filter"].asDouble() +
+                                             node["Rows Removed by Index Recheck"].asDouble());
+    }
+    return read;
+  };
+  const std::map<TreeId, TreeAbove> above{{TreeId{std::string("t_pgtest_flood_mid")}, {1, "Mid", "Mid.", false}},
+                                          {TreeId{std::string("t_pgtest_flood_top")}, {2, "Top", "Top.", false}}};
+  // Whichever index the planner takes, the statement reads no more than Sam's own rows: his three trees and the two
+  // above again for their guides, and at most the sixty nodes they hold.
+  const auto withinTheOwnersRows = [&] {
+    const std::map<std::string, double> read = rowsRead();
+    return read.size() == 2 && read.count("trees") && read.count("tree_nodes") && read.at("trees") <= 5 &&
+           read.at("tree_nodes") <= 60;
+  };
+  CHECK(trees.guidedTreesAbove(kSam, leaf) == above);
+  CHECK(withinTheOwnersRows());
+
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO trees (id, title, owner_id, head_seq, guide) "
+                    "SELECT 't_pgtest_flood_eve' || g, 'Flood', $1::uuid, 0, 'Not above.' FROM generate_series(1, 4) g",
+                    kEve.str());
+    txn.exec("INSERT INTO tree_nodes (tree_id, node_id, created_hlc, opens, opens_hlc, present) "
+             "SELECT 't_pgtest_flood_eve' || g, 'n' || n, '1:0:r_e', 't_pgtest_flood_leaf', '1:0:r_e', true "
+             "FROM generate_series(1, 4) g, generate_series(1, 500) n");
+    txn.commit();
+  }
+
+  CHECK(trees.guidedTreesAbove(kSam, leaf) == above);
+  CHECK(withinTheOwnersRows());
+  clear();
 }

@@ -423,19 +423,6 @@ TEST(a_document_seed_plants_opens_and_every_projection_carries_it) {
   CHECK_EQ(projected.nodes[1].opens, TreeId{});
 }
 
-TEST(a_graphs_pointers_are_its_present_nodes_that_open_a_tree_each_by_that_tree) {
-  LooseGraph graph;
-  for (const char* id : {"idea", "cleared", "deleted", "plain"})
-    graph.createNode(NodeId{id}, id, "", NodeColor::sky, std::nullopt, Hlc{1, 0, "a"});
-  graph.setOpens(NodeId{"idea"}, TreeId{"t_sub"}, Hlc{2, 0, "a"});
-  graph.setOpens(NodeId{"cleared"}, TreeId{"t_sub"}, Hlc{2, 0, "a"});
-  graph.setOpens(NodeId{"cleared"}, TreeId{}, Hlc{3, 0, "a"});
-  graph.setOpens(NodeId{"deleted"}, TreeId{"t_other"}, Hlc{2, 0, "a"});
-  graph.deleteNode(NodeId{"deleted"}, Hlc{3, 0, "a"});
-
-  CHECK(graph.pointers() == (NodePointers{{NodeId{"idea"}, TreeId{"t_sub"}}}));
-}
-
 TEST(a_fork_keeps_every_opens_as_it_stands_or_clears_them_all) {
   LooseGraph g;
   for (const char* id : {"gone", "missing", "plain", "standing"})
@@ -456,4 +443,16 @@ TEST(a_fork_keeps_every_opens_as_it_stands_or_clears_them_all) {
     node.opensAt = Hlc{};
   }
   CHECK(g.forkState(Hlc{100, 0, "srv"}, ForkOpens::cleared) == planted);
+}
+
+TEST(the_pointers_of_a_graph_are_the_trees_its_present_nodes_open_and_no_others) {
+  LooseGraph g;
+  for (const char* id : {"opens", "cleared", "deleted", "plain"}) g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+  g.setOpens(nid("opens"), TreeId{"t_sailing"}, at(2));
+  g.setOpens(nid("cleared"), TreeId{"t_rowing"}, at(2));
+  g.setOpens(nid("cleared"), TreeId{}, at(3));
+  g.setOpens(nid("deleted"), TreeId{"t_rowing"}, at(2));
+  g.deleteNode(nid("deleted"), at(3));
+
+  CHECK(g.pointers() == (std::map<NodeId, TreeId>{{nid("opens"), TreeId{"t_sailing"}}}));
 }

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { bulkKindChoice, isGrouped, markDoneTargets, sharedKind } from '../../../../src/products/roadmap/model/bulkSelection.js';
+import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { NODE_COLOR_NAMES } from '../../../../src/products/roadmap/theme.js';
 
@@ -15,29 +16,30 @@ test('isGrouped — two or more is grouped (the quiet bark treatment)', () => {
   assert.equal(isGrouped(5), true);
 });
 
+const steps = (...extra) => new SkillTree({ id: 'abc', title: 'ABC', nodes: [
+  { id: 'a', label: 'A', prerequisites: [] }, { id: 'b', label: 'B', prerequisites: [] }, { id: 'c', label: 'C', prerequisites: [] }, ...extra,
+] });
+
 test('markDoneTargets — an empty selection completes nothing', () => {
-  assert.deepEqual(markDoneTargets(new Set(), new Set()), []);
+  assert.deepEqual(markDoneTargets(steps(), new Set(), new Set()), []);
 });
 
 test('markDoneTargets — a set with none complete marks every member', () => {
-  assert.deepEqual(
-    markDoneTargets(new Set(['a', 'b', 'c']), new Set()),
-    ['a', 'b', 'c'],
-  );
+  assert.deepEqual(markDoneTargets(steps(), new Set(['a', 'b', 'c']), new Set()), ['a', 'b', 'c']);
 });
 
 test('markDoneTargets — already-complete members are skipped (no completion replays)', () => {
-  assert.deepEqual(
-    markDoneTargets(new Set(['a', 'b', 'c']), new Set(['b'])),
-    ['a', 'c'],
-  );
+  assert.deepEqual(markDoneTargets(steps(), new Set(['a', 'b', 'c']), new Set(['b'])), ['a', 'c']);
 });
 
 test('markDoneTargets — a fully-complete set marks nothing', () => {
-  assert.deepEqual(
-    markDoneTargets(new Set(['a', 'b']), new Set(['a', 'b', 'z'])),
-    [],
-  );
+  assert.deepEqual(markDoneTargets(steps(), new Set(['a', 'b']), new Set(['a', 'b', 'z'])), []);
+});
+
+test('markDoneTargets — a step that opens a tree is left out, and a step the roadmap dropped is marked as before', () => {
+  const tree = steps({ id: 'sail', label: 'Learn to sail', prerequisites: [], opens: 't_sail', opening: Opening.unread('t_sail') });
+
+  assert.deepEqual(markDoneTargets(tree, new Set(['a', 'sail', 'gone']), new Set()), ['a', 'gone']);
 });
 
 const tree = new SkillTree({ id: 'sail', title: 'Sail', nodes: [

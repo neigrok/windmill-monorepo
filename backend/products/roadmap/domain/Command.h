@@ -112,15 +112,18 @@ struct NodePatch {
   std::optional<std::string> label;
   std::optional<std::string> icon;
   std::optional<std::string> description;
-  std::optional<NodeColor> color;
+  HueChoice hue;
   std::optional<Vec2> position;
   std::optional<std::vector<Link>> links;
   std::optional<TreeId> opens;  // an empty id clears the tree the node opens
 };
 
+// A plan lands nothing when no row changes what its node holds: the batch is empty, so it takes no seq.
 struct NodePatchPlan {
   Batch batch;
   std::vector<NodeId> changedNodeIds;
+
+  bool landsNothing() const { return batch.commands.empty(); }
 };
 
 struct EdgeChanges {
@@ -128,16 +131,30 @@ struct EdgeChanges {
   std::vector<Edge> remove;
 };
 
+// A plan lands nothing when every edge it adds is held and every edge it removes is absent.
 struct EdgeChangePlan {
   Batch batch;
   std::vector<Edge> added;
   std::vector<Edge> removed;
+
+  bool landsNothing() const { return batch.commands.empty(); }
 };
 
-std::variant<NodePatchPlan, std::string> planNodePatches(
+// The part of a single-node edit that lands on the node it names: the command with only the fields that hold
+// another value there, or nothing when none does. An appended description always lands, and any other command lands
+// whole. A patch row and a single-node verb land by this one rule, so an annotation stamps only the registers it
+// changes, as an import does.
+std::optional<Command> changedPart(const NodeSpec& node, const Command& command);
+
+// A refusal is its sentence, or the KindRefusal of the row whose `kind` refused the batch.
+std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates);
 std::variant<EdgeChangePlan, std::string> planEdgeChanges(
     const LooseGraph& graph, const EdgeChanges& changes);
+
+// `held` with `added` joined on in the order sent; a held url keeps its place and takes a sent label.
+std::variant<std::vector<Link>, std::string> withLinksAdded(const std::vector<Link>& held,
+                                                            const std::vector<Link>& added, const std::string& path);
 
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at);
 

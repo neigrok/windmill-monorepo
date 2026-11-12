@@ -51,14 +51,11 @@ export const ROADMAP_SHEET = {
   findRoadmap: t('roadmap.sheet.findRoadmap'),
 };
 
-// The guide's words the row, the roadmap sheet, the modal and the phone editor all say.
+// The guide's words its control on the tree and its open note both say.
 export const GUIDE = {
   title: t('roadmap.guide.title'),
   add: t('roadmap.guide.add'),
   authorsNote: t('roadmap.guide.authorsNote'),
-  placeholder: t('roadmap.guide.placeholder'),
-  disclosure: t('roadmap.guide.disclosure'),
-  deviceDisclosure: t('roadmap.guide.deviceDisclosure'),
 };
 export const guideLabel = ({ owner, excerpt }) => (owner ? t('roadmap.guide.label', { excerpt }) : t('roadmap.guide.noteLabel', { excerpt }));
 export const guideCounter = (draft) => (draft.over > 0
@@ -437,6 +434,69 @@ export const STEP_DETAIL = {
   subtaskOffer: { body: t('roadmap.step.subtaskOfferBody'), action: t('roadmap.step.subtaskOfferAction') },
   unnamed: t('roadmap.step.unnamed'),
 };
+
+// The tree a step opens, as its surfaces say it: by what that tree has come to (Opening.face).
+export const TREE = { heading: t('roadmap.tree.heading'), open: t('roadmap.tree.open'), openShort: t('roadmap.tree.openShort') };
+
+// The card's pill and the phone Graph's bar: done of total, or the one thing in the way, after a lead where there is
+// one to say: the tree's title on a pill, the step's column on the bar. Null where nothing was read of the tree.
+export function treeLine(opening, lead = null) {
+  const done = formatCount(opening.done);
+  const total = formatCount(opening.total);
+  const count = () => (lead ? t('roadmap.tree.line.countLed', { lead, done, total }) : t('roadmap.tree.line.count', { done, total }));
+  const lines = {
+    open: count,
+    complete: count,
+    empty: () => (lead ? t('roadmap.tree.line.emptyLed', { lead }) : t('roadmap.tree.line.empty')),
+    loop: () => (lead ? t('roadmap.tree.line.loopLed', { lead }) : t('roadmap.tree.line.loop')),
+    missing: () => (lead ? t('roadmap.tree.line.missingLed', { lead }) : t('roadmap.tree.line.missing')),
+    unread: () => null,
+  };
+  return lines[opening.face]();
+}
+
+// The step's Tree row and the Graph's dock: how far the tree is, in full. `roadmap` is the title of the one being read.
+export function treeState(opening, roadmap) {
+  const done = formatCount(opening.done);
+  const total = formatCount(opening.total);
+  const states = {
+    open: () => t('roadmap.tree.state.done', { done, total }),
+    complete: () => t('roadmap.tree.state.done', { done, total }),
+    empty: () => t('roadmap.tree.line.empty'),
+    loop: () => t('roadmap.tree.state.loop', { done, total, roadmap }),
+    missing: () => t('roadmap.tree.state.missing'),
+    unread: () => null,
+  };
+  return states[opening.face]();
+}
+
+// The Tree row's name where it is the way in: what the press does, then what the row shows.
+export function openTreeStated(opening, roadmap) {
+  return t('roadmap.tree.openStated', { tree: opening.title, state: treeState(opening, roadmap) });
+}
+
+export function treeTitle(opening) {
+  return opening.dangling ? t('roadmap.tree.state.missingTitle') : opening.title;
+}
+
+// What stands where Complete sat, and on the toast a C on the card raises: null where nothing was read of the tree, and
+// for a step its own mark has already completed.
+export function treeBand(opening, { column, toGo = 0 }) {
+  const workable = () => (column === 'locked' ? t('roadmap.tree.band.toGo', { toGo: formatCount(toGo) }) : t('roadmap.tree.band.completes'));
+  const words = {
+    open: workable,
+    empty: workable,
+    complete: () => t('roadmap.tree.band.completed'),
+    loop: () => t('roadmap.tree.band.loop'),
+    missing: () => (column === 'done' ? null : t('roadmap.tree.band.missing')),
+    unread: () => null,
+  };
+  return words[opening.face]();
+}
+
+export function openTreeAction({ step }) {
+  return t('roadmap.tree.openAction', { step });
+}
 
 export function prerequisitesTally({ done, total }) {
   return `${formatCount(done)} / ${formatCount(total)}`;

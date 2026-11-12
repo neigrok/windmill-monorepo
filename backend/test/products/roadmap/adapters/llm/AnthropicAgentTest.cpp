@@ -1,5 +1,7 @@
 #include "products/roadmap/adapters/llm/AnthropicAgent.h"
 
+#include "products/roadmap/application/ScopedToolHost.h"
+#include "test/products/roadmap/adapters/mcp/ToolsHarness.h"
 #include "test/testing.h"
 
 #include <optional>
@@ -266,6 +268,106 @@ TEST(drive_agent_counts_only_successful_mutations_as_edits) {
   CHECK(rec.steps[0].failed);
   CHECK_FALSE(rec.steps[0].changedTree);
   CHECK_EQ(rec.steps[0].note, std::string("delete_node failed: node carries progress"));
+}
+
+// A write that answers `unchanged` changed nothing: a step of the run that neither failed nor counts as an edit.
+// Through a tend's scoped host over the real tools: an import that re-sends what the tree holds is no edit of the run,
+// and one carrying a mark beside it is, since `unchanged` speaks for the graft and not for the marks it carried.
+TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_carries_progress) {
+  test::Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  const auto editsOf = [&](const char* input) {
+    Json::Value call = toolUseReply("import_subgraph", "toolu_1");
+    call["content"][0]["input"] = parse(input);
+    FakeModel model;
+    model.replies.push_back(call);
+    model.replies.push_back(textReply("end_turn", "Done"));
+    Recorder rec;
+    return driveAgent("tend it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report()).edits;
+  };
+
+  CHECK_EQ(editsOf(R"({"nodes":[{"id":"a","label":"A"}]})"), 0);
+  CHECK_EQ(editsOf(R"({"nodes":[{"id":"a","label":"A"}],"progress":[{"nodeId":"a","status":"complete"}]})"), 1);
+  CHECK_EQ(editsOf(R"({"nodes":[{"id":"a","label":"B"}]})"), 1);
+}
+
+// Through a tend's scoped host over the real tools, every write that changes nothing answers `unchanged` and is no edit
+// of the run: an echoed rename, a patch and an edge batch that change nothing and an echoed import, beside one real move.
+TEST(drive_agent_counts_one_edit_among_writes_that_changed_nothing) {
+  test::Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
+    "prerequisites":["a"]}]})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  FakeModel model;
+  int id = 0;
+  for (const auto& [tool, input] : std::vector<std::pair<const char*, const char*>>{
+           {"rename_node", R"({"nodeId":"a","label":"A"})"},
+           {"patch_nodes", R"({"updates":[{"nodeId":"b","label":"B"}]})"},
+           {"change_edges", R"({"add":[{"from":"a","to":"b"}]})"},
+           {"import_subgraph", R"({"nodes":[{"id":"a","label":"A"}]})"},
+           {"move_node", R"({"nodeId":"a","x":3,"y":4})"}}) {
+    Json::Value call = toolUseReply(tool, ("toolu_" + std::to_string(++id)).c_str());
+    call["content"][0]["input"] = parse(input);
+    model.replies.push_back(call);
+  }
+  model.replies.push_back(textReply("end_turn", "Moved 1 step"));
+
+  Recorder rec;
+  const AgentOutcome outcome =
+      driveAgent("tidy it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report());
+  CHECK_EQ(outcome.edits, 1);
+  std::vector<bool> changed;
+  for (const AgentStep& step : rec.steps) changed.push_back(step.changedTree);
+  CHECK_EQ(changed, (std::vector<bool>{false, false, false, false, true}));
+}
+
+TEST(drive_agent_counts_no_edit_for_a_write_that_changed_nothing) {
+  FakeToolHost host;
+  host.responder = [](const std::string& name, const Json::Value&) -> ToolResult {
+    Json::Value reply(Json::objectValue);
+    reply["applied"] = true;
+    reply["seq"] = 3;
+    if (name == "set_node_color") reply["unchanged"] = true;
+    return ToolResult::json(reply);
+  };
+
+  FakeModel model;
+  model.replies.push_back(toolUseReply("set_node_color", "toolu_1"));
+  model.replies.push_back(toolUseReply("rename_node", "toolu_2"));
+  model.replies.push_back(textReply("end_turn", "Renamed 1 step"));
+
+  Recorder rec;
+  const AgentOutcome outcome =
+      driveAgent("tidy the names", kTree, kCaller, host, model.asCall(), rec.onStep(), rec.report());
+
+  CHECK(outcome.ok);
+  CHECK_EQ(outcome.edits, 1);
+  REQUIRE_EQ(rec.steps.size(), 2u);
+  CHECK_EQ(std::vector<bool>({rec.steps[0].failed, rec.steps[0].changedTree, rec.steps[1].failed, rec.steps[1].changedTree}),
+           std::vector<bool>({false, false, false, true}));
+}
+
+TEST(drive_agent_counts_an_edit_for_a_write_whose_answer_is_no_object) {
+  FakeToolHost host;
+  host.responder = [](const std::string&, const Json::Value&) -> ToolResult {
+    Json::Value reply(Json::arrayValue);
+    reply.append(1);
+    return ToolResult::json(reply);
+  };
+
+  FakeModel model;
+  model.replies.push_back(toolUseReply("rename_node", "toolu_1"));
+  model.replies.push_back(textReply("end_turn", "Renamed 1 step"));
+
+  Recorder rec;
+  const AgentOutcome outcome =
+      driveAgent("tidy the names", kTree, kCaller, host, model.asCall(), rec.onStep(), rec.report());
+
+  CHECK(outcome.ok);
+  CHECK_EQ(outcome.edits, 1);
+  REQUIRE_EQ(rec.steps.size(), 1u);
+  CHECK_EQ(std::vector<bool>({rec.steps[0].failed, rec.steps[0].changedTree}), std::vector<bool>({false, true}));
 }
 
 TEST(drive_agent_treats_the_iteration_cap_as_a_failure) {

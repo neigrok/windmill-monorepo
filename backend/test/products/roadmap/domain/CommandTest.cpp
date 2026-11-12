@@ -1007,6 +1007,62 @@ TEST(node_patch_plan_rejects_invalid_last_row_duplicates_and_empty_patches) {
   CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, last})));
 }
 
+// The row whose kind refuses the batch hands back its KindRefusal, the reason beside the sentence.
+// What a node edit lands on the node it names: only the fields that differ, or nothing at all.
+TEST(the_part_of_a_node_edit_that_lands_is_the_fields_that_differ) {
+  NodeSpec node;
+  node.id = nid("a");
+  node.label = "A";
+  node.icon = "star";
+  node.description = "old";
+  const auto annotate = [](std::optional<std::string> description, std::optional<std::string> icon,
+                           std::optional<std::string> append = std::nullopt) {
+    return AnnotateNode{nid("a"), std::move(description), std::nullopt, std::move(icon), std::move(append), std::nullopt};
+  };
+
+  const std::optional<Command> described = changedPart(node, annotate("new", "star"));
+  REQUIRE(described.has_value());
+  const AnnotateNode& onlyDescription = std::get<AnnotateNode>(*described);
+  CHECK(onlyDescription.description == std::optional<std::string>("new"));
+  CHECK_FALSE(onlyDescription.icon.has_value());
+
+  const std::optional<Command> appended = changedPart(node, annotate(std::nullopt, "star", "more"));
+  REQUIRE(appended.has_value());
+  CHECK(std::get<AnnotateNode>(*appended).appendDescription == std::optional<std::string>("more"));
+  CHECK_FALSE(std::get<AnnotateNode>(*appended).icon.has_value());
+
+  CHECK_FALSE(changedPart(node, annotate("old", "star")).has_value());
+  CHECK_FALSE(changedPart(node, RenameNode{nid("a"), "A"}).has_value());
+  CHECK_FALSE(changedPart(node, SetNodeColor{nid("a"), NodeColor::terracotta}).has_value());
+  const std::optional<Command> renamed = changedPart(node, RenameNode{nid("a"), "B"});
+  REQUIRE(renamed.has_value());
+  CHECK_EQ(std::get<RenameNode>(*renamed).label, std::string("B"));
+}
+
+TEST(node_patch_plan_hands_back_the_kind_refusal_of_the_row_that_named_the_kind) {
+  const LooseGraph graph = seeded();
+  const Legend legend({{kid("owner"), NodeColor::gold, "Owner", ""}}, at(1));
+  NodePatch first;
+  first.nodeId = nid("a");
+  first.label = "New A";
+  NodePatch named;
+  named.nodeId = nid("b");
+  named.hue = HueChoice{std::nullopt, kid("ownr")};
+
+  const auto unknown = planNodePatches(graph, legend, {first, named});
+  REQUIRE(std::holds_alternative<KindRefusal>(unknown));
+  CHECK((std::get<KindRefusal>(unknown) ==
+         KindRefusal{KindRefusal::Reason::unknownKind,
+                     "updates[1].kind \"ownr\" is not a kind of this tree; its legend holds \"owner\""}));
+
+  named.hue = HueChoice{NodeColor::sky, kid("owner")};
+  const auto mismatch = planNodePatches(graph, legend, {first, named});
+  REQUIRE(std::holds_alternative<KindRefusal>(mismatch));
+  CHECK((std::get<KindRefusal>(mismatch) ==
+         KindRefusal{KindRefusal::Reason::hueMismatch, "updates[1].kind \"owner\" wears gold, but updates[1].color is "
+                                                       "\"sky\" — send one of the two, or both when they agree"}));
+}
+
 TEST(edge_change_plan_validates_net_capacity_and_all_endpoints_before_apply) {
   LooseGraph graph = seeded();
   Legend legend;

@@ -588,11 +588,31 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Roadmap
 
-- **Guide · save and conflict recovery (17).** The shipped desktop and phone editors retain a draft when saving fails.
-  `roadmap-guide-save` reports the failure, but neither editor tells the owner. The approved design offers *Try again*
-  for offline and server failures and *Copy draft* for a refused save. [Three save failures](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=858-75016).
-  The shipped phone editor can overwrite a guide changed elsewhere without warning. The approved phone editor keeps
-  the draft and offers *Load latest*. [Changed elsewhere](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69852).
+- **Guide · boards against tokens and undrawn desktop states (17).** The [desktop boards](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69888)
+  type `#884321` on Save, the field edge, the Read guide link, focus rings and the caret, and no token holds it. Web
+  builds Save, the field edge, rings and the caret on `--color-brand` and the link on `--text-link`; Save's white label
+  is 3.92:1 where the board's is 7.31:1. Four desktop states are built and not drawn: the card's place on the Board
+  (first in its flow, above the filter strip), the reader's card with *Read note*, the compact *Add guide* card, and
+  the device tree's footer line. 17.36 draws Save solid on an empty draft while 17.22 *Before typing* draws it off; web
+  keeps it off, as it does after *Load latest*, where 17.33 draws Save solid on a draft equal to the guide. 17.38 and
+  17.39 omit the device line that 17.29 draws; web shows it above the row. 17.32 draws a 513 px sheet over the
+  keyboard where 17.23 draws 451; web keeps 17.23's cap, so the field gives up the notice's height.
+  The recovery boards ([three save failures](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=858-75016),
+  [17.31–17.32](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69845)) type three tints no token holds:
+  `#fcf0e8` under the desktop failure line, `#fbf3eb` under the phone's and `#f7f3e6` under the phone's *Guide changed
+  elsewhere*. Web builds both failure lines on `--color-danger-bg` and the notice on `--surface-sunken`, the
+  *Draft copied* tick on `--color-brand`, and the notice's text, typed `#312617`, on `--text-primary`. The
+  design-system Button differs from the boards' buttons: 46 px tall where they draw 44, so the desktop failure block is
+  74 px where the board's is 72; radius 16 and side padding 20 where they draw 12 and 18; and a ring on every focus
+  where they draw none. The resting field keeps its 1.5 px edge in `--border-default` where the failure boards draw
+  1 px. The `🧩 Board / Guide save failed` component (781:43205) still describes Save staying and a 12 px phone line,
+  and its variants carry older copy (*Couldn’t save — you’re offline.*, *Copy your text to keep it.*); the boards it is
+  placed on draw the line's act in Save's place, the phone line at 14 px and their own copy, and web follows the
+  boards. Built and not drawn: a guide changed elsewhere from 744 px (one line, *Changed elsewhere. Saving replaces
+  that version.*, with *Load latest*); *Draft copied* on phones (the phone's line on `--surface-sunken`, with Cancel
+  and Done); a failed save's line under a *changed elsewhere* line when both stand; a clipboard that refuses, which
+  leaves *Copy draft* standing and says nothing; the recovery states in the dark theme; and a save by someone who is no
+  longer the owner, which shows the refused line though no request was sent.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a
@@ -602,6 +622,53 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   `🧩 28 · Parts` frame (Step card · tree, Tree pill, Step / Tree row, Back chip, loop and chevron-left icons). The
   Figma Skill Node has no form variant though `scene/NodeBatch.js` has, so the tree node is a composed frame. Move
   the parts into Components.
+- **Section 28 · drawn on surfaces the web does not have (28.05, 28.09, 28.10, 28.24–28.28, 28.36–28.42).** The boards
+  stand a step that opens a tree on the step editor of 19, the selected-step popover of 18.03 and the phone step card of
+  27.08. The web has the step modal and page, the Graph's dock and tablet panel and the phone Graph's bar, so the parts
+  sit in their equivalents there: the Tree section after Prerequisites and Unlocks, what completes the step and Open
+  tree beside Edit step where Complete sat, done of total and Open tree in the dock and the panel, and the tree's mark,
+  *Up next · 3 of 8* and Open tree in the bar. The swipe reveals Open and stops there, as it does for Complete; 28.10's
+  full swipe that opens the tree is not built.
+- **Section 28 · states with no board.** A tree whose facts the load did not read (the device's own copy, a `503` on the
+  pointers, a pointer set while the roadmap is open until it is read again) shows the tree's mark on the node and Open
+  tree, and no pill, row or words; its step stands by its prerequisites and is never done. A step whose pointer leads nowhere and whose own mark
+  already completed it shows *Done* with the *Tree not found* row and no words where Complete sat. A locked step whose
+  tree loops back or has no steps keeps the loop's or the empty tree's line. The tablet band and C on a card whose tree
+  loops back (*Won’t complete by itself*) or is not found (*Can’t complete yet*) follow the desktop boards. 28.38, a
+  tree removed since the roadmap loaded, cannot be told from what the server answers and is not built.
+- **Section 28 · two sentences wait for their actions.** 28.36 and 28.41 end the loop's line with *Detach one side.*
+  and 28.39 and 28.42 end the missing tree's with *Choose another, or detach it.* The web has neither detach nor the
+  picker, so the lines stop at the fact (*A loop with … : this never completes.*, *This tree can’t be found.*). Both
+  sentences return with the landing that builds detach and the picker; until then a step whose tree loops back or is
+  not found cannot be completed on the web.
+- **Section 28 · gaps ruled to stand.** The card's pill is not a control of its own: a pointer press goes in, and the
+  keyboard's way is the step and its Open tree. Focus after going into a tree lands on the body. An opened tree
+  deleted since the load shows the generic load error, with no way back but the browser's. During an outage
+  `roadmap-opens-load` reports once per page load. The row's Export writes the raw marks, so a step done by its tree
+  exports unchecked (filed with the export).
+- **Section 28 · no door without an account.** A lapsed session, a device's copy with nobody signed in and a page
+  that started with no connection (until the server answers for the account) show the tree's mark on such a step and
+  no Open tree, pill press, swipe Open or way back; no board draws this state.
+- **Section 28 · a step that opens the tree it stands in.** No board draws it. It keeps the loop's mark and words
+  (*Loops back*, *Won’t complete by itself*) and has no door: no chevron on the pill, no Tree row to press, no Open
+  tree.
+- **Section 28 · read-me and fixtures.** The read-me 28.00 still lists the tree switcher's delete confirmation
+  under "Not drawn"; it is drawn as 28.50–28.52. Coast trip reads "0 of 5" on 28.00 and 28.02 and "No steps" on
+  28.14 and 28.44. The picker on 28.14 leaves out My life, though its NOTE says the rows are the switcher's list
+  minus the current tree. 28.38 (the tree was removed between loads) has no phone twin.
+- **Section 28 · making it is drawn twice (28.13–28.23, 28.44, 28.46 and 28.54–28.67).** Journey 3 stands attach, fork
+  first, change and detach on the step editor of 19, which the web does not have. Journey 10 restates it on the step modal
+  and page: a Tree section with *None* and a +, the picker as a page in the modal, Change tree and Detach tree under the
+  section's own ⋯, so a step with a tree shows two ⋯ of different scope. Its picker takes the phone's context line
+  (*For Learn to sail · 5 trees*) where 28.14 has a caption, lists My life and reads Coast trip as *0 of 5 done*.
+  Journey 10 adds one toast Journey 3 does not draw, *Tree detached*, for a step that held no mark. Its four parts
+  (Tree picker row, Tree heading, Tree menu, Tree sheet) sit in the journey's parts frame, not in Components.
+- **Phone step page · 20.01 against the build.** 🚀 20.01 (397:28208) draws the counts and chevrons short of the right
+  edge, a two-colour identity rail and no Shell row; the build runs them to the edge under the Shell row.
+- **Tree switcher · delete row.** The shipped confirmation is one line with an ellipsis (`confirmCopy` in
+  `identity/TreeSwitcher.jsx`), while 🚀 03.03 draws it wrapping; 28.50 needs it to wrap. Rename and delete show
+  on hover only, so a touch tablet from 744 px has no clear way to them. The open trigger has no left padding.
+  Below 744 px no surface removes a tree.
 - **Flow index · step editor.** The [flow index](../index.md#roadmap--web) has no rows for the step editor sections
   (18–22, 27) on Board · Web.
 - **Web reconciliation evidence.** All 25 current Roadmap screen/state families are mapped in the

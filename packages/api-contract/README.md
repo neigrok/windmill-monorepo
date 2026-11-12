@@ -92,6 +92,15 @@ A locally-born tree's first sync converges with the server's empty tree only whi
 byte-equal to the backend's (`Legend::seededDefaults` + `Hlc{1,0,"genesis"}`). Read by
 `web/vite.config.js`, which fails the build on drift; pinned backend-side by `TreeRegistryTest`.
 
+## `roadmap-addresses.json`
+
+Where a roadmap and its steps open on the web, as what follows the app's origin: `/#/app/<treeId>` and
+`/#/app/<treeId>?step=<id>` for a tree the reader owns, `/t/<treeId>` and `/t/<treeId>#?step=<id>` for
+one they can only read. A tree id is always `t_` plus 16 hex and is written as it is; a step id is
+encoded as `encodeURIComponent` does. The backend builds every case (`domain/WebAddress`, tested by
+`WebAddressTest`, which reads the file at run time; the image copies it in `backend/Dockerfile`), and
+`web/test/products/roadmap/addresses.test.js` proves the router opens each one.
+
 ## `gym-ladder.json`
 
 - The step pair is chosen by the **magnitude** of the weight, never its sign: under 20 kg ±1 / ±2.5,

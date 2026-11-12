@@ -8,6 +8,7 @@
 #include "products/roadmap/application/ActivityFeed.h"
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Access.h"
+#include "products/roadmap/domain/Guides.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/OpenedTrees.h"
@@ -96,11 +97,68 @@ void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   callback(jsonResponse(body));
 }
 
-void TreeApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
-  Json::Value body;
-  if (!readRoom(treeId, callerOf(req), [&](TreeRoom& room) { body = toJson(room.diagnose()); })) {
+void TreeApi::getGuides(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+  const std::optional<UserId> caller = callerOf(req);
+  Guide own;
+  bool mine = false;
+  if (!readRoom(treeId, caller, [&](TreeRoom& room) {
+        mine = canWrite(caller, room.owner());
+        // A guide is the caller's own only on a tree they can write, and not when a fork copied it from someone else's.
+        own = Guide{TreeId{treeId}, room.title().value, room.guide().value, mine && !room.guideInherited()};
+      })) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
+  }
+  Json::Value body(Json::objectValue);
+  if (!mine) {
+    body["guides"] = toJson(guidesFor({}, own));
+    callback(jsonResponse(body));
+    return;
+  }
+  // The trees above are read for the tree's writer alone and OUTSIDE the room strand, as getProgress loads.
+  WriteObservation observation{"roadmap.tree.guides", "roadmap", "rest"};
+  try {
+    body["guides"] = toJson(guidesFor(trees_->guidedTreesAbove(*caller, TreeId{treeId}), own));
+    observation.skip();
+  } catch (const std::exception& failure) {
+    // Not an absent tree: a 5xx is what a client reports and retries.
+    observation.fail(failure);
+    callback(error(drogon::k503ServiceUnavailable, "the guides of the trees above this one could not be read — try again",
+                   "guides-unavailable"));
+    return;
+  }
+  callback(jsonResponse(body));
+}
+
+void TreeApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+  const std::optional<UserId> caller = callerOf(req);
+  TreeDiagnostics graph;
+  std::optional<std::map<NodeId, TreeId>> pointers;
+  if (!readRoom(treeId, caller, [&](TreeRoom& room) {
+        graph = room.diagnose();
+        if (canWrite(caller, room.owner())) pointers = room.pointers();
+      })) {
+    callback(error(drogon::k404NotFound, "no such tree"));
+    return;
+  }
+  if (!pointers) {
+    callback(jsonResponse(toJson(graph)));
+    return;
+  }
+  // The pointers are followed for the tree's writer alone and OUTSIDE the room strand, as getProgress loads. A follow
+  // that fails leaves the graph's diagnostics and a flag: the graph is still told.
+  Json::Value body;
+  WriteObservation observation{"roadmap.diagnostics.follow", "roadmap", "rest"};
+  try {
+    const OpenedTrees opened(trees_->openedFrom(*caller, treesOpenedBy(*pointers)));
+    body = toJson(graph, opened.diagnose(TreeId{treeId}, *pointers));
+    observation.skip();
+  } catch (const std::bad_alloc&) {
+    throw;
+  } catch (const std::exception& failure) {
+    observation.fail(failure);
+    body = toJson(graph);
+    body["pointerDiagnosticsUnavailable"] = true;
   }
   callback(jsonResponse(body));
 }

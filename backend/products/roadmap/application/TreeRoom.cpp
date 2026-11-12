@@ -52,25 +52,16 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   return head_;
 }
 
-Seq TreeRoom::rename(const std::string& title, std::uint64_t nowMs) {
+Seq TreeRoom::describe(const std::optional<std::string>& title, const std::optional<std::string>& guide,
+                       std::uint64_t nowMs) {
   Hlc stamp = clock_.tick(nowMs);
   Subgraph frame;
   frame.treeId = id_;
-  frame.frameId = "srv-rename-" + toString(stamp);
+  frame.frameId = "srv-describe-" + toString(stamp);
   frame.actor = stamp.actor;
   frame.intent = SubgraphIntent::live;
-  frame.title = Lww<std::string>{title, stamp};
-  return joinSubgraph(frame, UserId{stamp.actor}).value_or(head_);
-}
-
-Seq TreeRoom::setGuide(const std::string& guide, std::uint64_t nowMs) {
-  Hlc stamp = clock_.tick(nowMs);
-  Subgraph frame;
-  frame.treeId = id_;
-  frame.frameId = "srv-guide-" + toString(stamp);
-  frame.actor = stamp.actor;
-  frame.intent = SubgraphIntent::live;
-  frame.guide = Lww<std::string>{guide, stamp};
+  if (title) frame.title = Lww<std::string>{*title, stamp};
+  if (guide) frame.guide = Lww<std::string>{*guide, stamp};
   return joinSubgraph(frame, UserId{stamp.actor}).value_or(head_);
 }
 
@@ -101,15 +92,17 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
   return head_;
 }
 
-Seq TreeRoom::importTree(const Graft& incoming, std::uint64_t nowMs, const UserId& actor) {
+std::optional<Seq> TreeRoom::importTree(const Graft& incoming, std::uint64_t nowMs, const UserId& actor) {
   Hlc at = clock_.tick(nowMs);  // one dominating stamp for the whole graft: the upsert and every removal
+  GraftFrame landed = graftFrame(graph_, legend_, incoming, at);
+  if (landed.landsNothing()) return std::nullopt;
   Subgraph frame;
   frame.treeId = id_;
   frame.frameId = "srv-import-" + toString(at);
   frame.actor = at.actor;
   frame.intent = SubgraphIntent::graft;
-  frame.graph = graftState(graph_, incoming, at);
-  frame.legend = graftLegend(legend_, incoming, at);
+  frame.graph = std::move(landed.graph);
+  frame.legend = std::move(landed.legend);
   return joinSubgraph(frame, actor).value_or(head_);
 }
 

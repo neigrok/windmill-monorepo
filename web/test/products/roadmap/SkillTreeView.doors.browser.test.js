@@ -11,7 +11,7 @@ for (const [role, demo] of [['owner', false], ['reader', false], ['reader', true
       await page.getByRole('button', { name: 'Board', exact: true }).click();
       await page.getByRole('button', { name: 'Graph', exact: true }).click();
       assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_view_open')), [
-        { name: 'roadmap_view_open', props: { view: 'graph', band: 'desktop', role: demo ? 'demo' : role, door: role === 'reader' && !demo ? 'default' : 'saved' } },
+        { name: 'roadmap_view_open', props: { view: 'graph', band: 'desktop', role: demo ? 'demo' : role, door: role === 'reader' && !demo ? 'default' : 'saved', ...(role === 'owner' ? { trees: 'none' } : {}) } },
       ]);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }

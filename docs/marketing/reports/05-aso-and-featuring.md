@@ -1,58 +1,24 @@
-# 05 · ASO, custom product pages and featuring
+# 05 · Show the first Roadmap step on iPhone
 
-Kind: build · Stage: 0 · Window: Nov 9 to Dec 20, 2026 · Cash: $0 to $100 · CEO hours / agent days: 3h / 4d
+**Prepare the iPhone listing during November for the early-December 2026 release.** Start with the
+builder’s job. Try “Pick up your project where you left off” as the headline. Mark a step complete in a
+sample project, reopen the tree and show that the same step is still marked complete. Use the actual
+native screens and verbs once the candidate supports the sequence. [Public release checks](01-store-readiness.md)
 
-## Idea
-Make the storefronts capture the intent that already exists. Deliverables: one listing per binary
-with a Gym-led default and "Workout Log" in the Gym title; three custom product pages at first, one
-per product, each the destination for its attribution links; a rating prompt that appears only after
-a finished workout, a saved page or a completed node; in-app events tied to real moments; and a
-featuring nomination filed in App Store Connect by Nov 9, 2026.
-
-## Pros
-- Improves conversion on every visitor, whatever channel sent them.
-- Custom product page ids give attribution from the first install.
-- Most apps run no custom product pages at all, so the lever is cheap and under-used.
-- Featuring costs only a time-capped nomination.
-
-## Cons
-- Custom product page keywords draw from the app's approved keyword set, not a new pool.
-- Nine pages would fragment scarce evidence; three is the limit until traffic justifies more.
-- Featuring is a selection, not a probability; it gets zero forecast installs.
-- There is no launch boost to ride, and ranks drift in the first eight weeks.
-
-## Estimates
-| Item | Estimate |
-|---|---|
-| Cash | $0 to $100 for screenshot production tooling (assumption) |
-| Effort | 3 CEO hours on nomination and copy approval; 4 agent days for metadata, pages, events and prompt timing |
-| Lift | benchmark: custom product pages raise conversion 5.9% on average and up to 8.6% (AppTweak, 2025 data); 61% of apps run none |
-| Organic | assumption: 200 to 400 organic installs over eight weeks after both stores are live |
-
-## Success metric
-Approved assets and working attribution links on every page by Dec 20, 2026, then at least 2%
-install-to-paid at day 35 across the first 300 organic installs.
-
-## Failure metric
-A broken destination at launch, or under 1% install-to-paid after 300 organic installs by Feb 19,
-2027. Positioning is revised once before any spend is added.
-
-## Justification
-A 34-app study in 2026 found no launch boost, with 19% to 30% of new apps losing ten or more places
-in weeks one to eight, so steady metadata and a title match on the job matter more than a launch
-moment. Among featured App Store apps, 95% are rated 4.0 or higher and 65% at 4.6 or higher
-(AppTweak, 2025 data), which is why the rating prompt waits for a success moment and never filters by
-satisfaction, as both stores require. App of the Day lifted downloads 685% week over week in the
-only public study (Sensor Tower, 2018), and 29% of featured apps came from publishers under 10,000
-downloads; the hand-rolled WebGL tree and the honesty rules are the craft story the nomination tells.
-Community answering was ranked below this in round two because storefronts touch every visitor.
-
-## Dependencies
-- Report 01's listings and store accounts.
-- Store screenshots, custom product page art and the in-app event cards approved in Figma before an agent implements them.
-- Report 02's attribution join to read the page ids.
-
-## Decision log
-
-| Date | Decision | Numbers |
+| Asset | What goes in it | Check before use |
 |---|---|---|
+| Default iPhone listing | First screenshots show the sample project and its completed step. A later screenshot shows Journal and Gym as two other rooms in the same app, with one real action per room. | Capture founder-owned data on the candidate. Compare screenshots, subtitle, description and review notes with that version. |
+| Launch clip and store link | Show the completion mark after an app restart. End with one invitation to download Windmill on iPhone. | Before distributing the clip, follow the intended storefront link without TestFlight, install the public version and repeat the action. |
+| Optional Windmill One copy | Describe one verified paid benefit and the actual billing terms where the offer is available. Keep the primary invitation focused on the free Roadmap action. | Use purchase wording only after the approved channel delivers both One access and funding. [Offer verification](04-gym-demo-and-checkout.md) |
+| Audience-specific page, if warranted | For example, use a real routine, set and history for a group of lifters referred directly to Gym. | Verify the approved page’s unique URL. Record page-level results where available. [Apple custom product pages](https://developer.apple.com/app-store/custom-product-pages/) |
+| Editorial nomination, if warranted | Show how a builder finishes one step and picks up their project on the next visit. Give Apple working review access and indicate the intended release window. | Save the nomination status. Count placements only when observed. [Featuring nominations](https://developer.apple.com/help/app-store-connect/manage-featuring-nominations/nominate-your-app-for-featuring) |
+
+If public review runs long, use “Try Ship v1 on the web” for builders. If the owner releases a build
+before native Roadmap is ready, lead its listing with an action someone can take in that version. If
+One is pending, omit the offer. Android Gym keeps its signed APK route.
+
+**First week after release.** Record product-page views and first-time downloads by storefront, source
+and reporting window where available. Read those alongside first Roadmap actions and later returns.
+Keep unattributed activity visible and the November pilot counts separate. At low volume, investigate
+broken routes or misleading screenshots before scheduling a split test. New in-app prompts need an
+approved design and an available experiment slot. [Funnel definitions](../funnels.md)

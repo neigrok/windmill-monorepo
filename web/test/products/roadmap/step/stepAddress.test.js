@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { stepOf, hashWithStep } from '../../../../src/products/roadmap/step/stepAddress.js';
+import { renderHook } from '../../gym/harness.mjs';
+import { stepOf, hashWithStep, useStepAddress } from '../../../../src/products/roadmap/step/stepAddress.js';
 
 test('stepOf — reads the step from the hash query, and nothing from a hash without one', () => {
   assert.deepEqual(
@@ -41,4 +42,25 @@ test('stepIsStale — only once this view’s own roadmap has loaded without the
     stepIsStale({ ...asked, stepId: 'wind' }),
     stepIsStale({ ...asked, stepId: null }),
   ], [true, false, false, false, false, false]);
+});
+
+test('useStepAddress — a step the URL already holds is reached by a link, or by going back where the room says so', (t) => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const window = new EventTarget();
+  window.location = { pathname: '/', search: '', hash: '#/app/t_year?step=sail' };
+  window.history = { state: null };
+  Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: window });
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, 'window', previous);
+    else delete globalThis.window;
+  });
+  const reached = (address) => ({ id: address.id, trail: address.trail, door: address.door });
+
+  const linked = renderHook(t, () => useStepAddress());
+  const returned = renderHook(t, () => useStepAddress('back'));
+
+  assert.deepEqual(reached(linked.tree), { id: 'sail', trail: ['sail'], door: 'link' });
+  assert.deepEqual(reached(returned.tree), { id: 'sail', trail: ['sail'], door: 'back' });
+  linked.unmount();
+  returned.unmount();
 });

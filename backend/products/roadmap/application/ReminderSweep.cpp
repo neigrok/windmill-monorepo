@@ -1,5 +1,7 @@
 #include "products/roadmap/application/ReminderSweep.h"
 
+#include "products/roadmap/domain/WebAddress.h"
+
 #include <trantor/utils/Logger.h>
 
 #include <exception>
@@ -98,8 +100,8 @@ void ReminderSweep::send(const DueUser& due, const ReminderDecision& decision,
   const ReminderContent& content = decision.content;
   ReminderMail mail;
   mail.treeName = content.treeTitle;  // the sender sheds markup, exactly as it does for a fork link
-  // The OWNER's own tree at #/app/:id — NOT the public /t/:id share page.
-  mail.treeUrl = appBaseUrl_ + "/#/app/" + content.treeId.str();
+  // The owner's own tree in the app, not its share page.
+  mail.treeUrl = treeAddress(WebTree{appBaseUrl_, content.treeId, Opener::owner});
   mail.settingsUrl = appBaseUrl_ + "/#/settings";  // the app is hash-routed; a bare /settings is a 404
   // The token rides in the FRAGMENT: the secret stays out of our logs, and a bare GET (link
   // scanners, mail prefetch) must never pause anyone — the page pauses only on a button press.

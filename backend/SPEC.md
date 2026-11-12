@@ -50,6 +50,22 @@ rejected for structure. Validity is a read model, not a gate.
   reader); `leadingBackTo` names the trees whose pointers lead to a tree, at any distance. A node
   whose pointer is not valid is an ordinary node, and so is every node for a reader who cannot write
   the tree: their state follows their own mark, and nothing they receive says a node opens a tree.
+  `diagnose` says what is wrong with a tree's pointers (`PointerDiagnostics`), each list in node id
+  order. `treeLoops` holds one entry per node whose pointer leads back to the node's own tree, with
+  a shortest way back: each tree on it with its title, the tree the node opens first and the node's
+  own tree last — one entry, that tree, for a node that opens the tree it is in — and the smaller
+  tree id wherever two ways are as short, so the way does not depend on the order the trees are
+  visited in. `danglingPointers` holds one entry per node whose pointer is not empty and not valid,
+  with the pointer as it is stored. A loop among other trees that does not lead back to the tree
+  is not that tree's: it is reported when one of those trees is read. The answer is bounded where
+  it is made: each list holds its first 50 nodes (`kMaxTreeLoops`, `kMaxDanglingPointers`) and
+  counts the rest in `treeLoopsOmitted` and `danglingPointersOmitted`, and a way of more than 8
+  trees (`kMaxLoopPath`) is cut to its first 8, so it does not end with the node's own tree, with
+  `pathOmitted` counting the trees left off, that tree the last of them. What is past a cap is
+  counted and never built. `waysBackTo` is the walk under it and under `leadingBackTo`: from the
+  tree up its openers a level at a time, it reads each pointer between two standing trees at most
+  once and leaves every tree that leads back its fewest pointers and the tree it steps to first,
+  so `diagnose` costs the account's pointers plus the capped lists, whatever the tree holds.
   The raw mark (`status`, `get_progress`, `GET …/progress`) stays the raw mark, and the gallery
   counts the owner's stored marks.
 - A node with a valid pointer takes no mark from a caller who can write the tree. The room hands
@@ -63,7 +79,7 @@ rejected for structure. Validity is a read model, not a gate.
   complete, whatever mark the node holds. A mark such a node already held stays stored. From a
   caller who cannot write the tree the same mark is an ordinary one: recorded, answered exactly as
   on a node that opens nothing, and judged on their own marks.
-- The domain is fed two ways. A read of one tree (`get_tree`, `get_nodes`, `find_nodes`,
+- The domain is fed two ways. A read of one tree (`get_tree`, `get_nodes`, `find_nodes`, 
   `GET /v1/trees/{id}`) takes the tree from its live room, a progress write (`set_progress`, the
   `progress[]` of an `import_subgraph`, a socket `progress` frame) only its nodes that open a tree,
   and each asks `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and
@@ -74,14 +90,28 @@ rejected for structure. Validity is a read model, not a gate.
   `tree_nodes_pkey` and `node_progress_pkey`, so the cost follows the trees reached and not the size
   of the tables. It is made once per reply, call or frame, after the tree's strand is released, and
   not at all for a caller who cannot write the tree, for a read whose fields ask for neither `state`
-  nor `opens`, for a write with no mark to judge, or for a tree that holds no pointer. Where every
-  tree of an owner is already loaded with its marks (`TreeRegistry::list`,
-  `PgReminderRepository::readinessFor`), `openedAmong` (`domain/TreeSummary.h`) judges the account
-  once in memory with no further read.
+  nor `opens`, for a write with no mark to judge, or for a tree that holds no pointer. The tree's
+  diagnostics (`get_diagnostics`, `GET /v1/trees/{id}/diagnostics`) make the same read for
+  `OpenedTrees::diagnose`: once per reply, after the strand is released, for a caller who can write
+  the tree and a tree that holds a pointer, and not for an MCP call that sends `includePointers:
+  false`; under the strand they take the tree's pointers alone (`LooseGraph::pointers`). An MCP edit
+  that changes the tree a node opens to a tree (`create_node`, `annotate_node`, `patch_nodes` or
+  `import_subgraph`) makes it once more, after the edit is saved and the strand is released,
+  starting from the trees those nodes now open (`pointersSetSince`) and under a budget of its own,
+  750 ms, in place of the pool's statement limit: its receipt names in `introducedDiagnostics`,
+  after the graph's errors and within that list's five lines, each of those nodes whose tree leads
+  back, and a read that runs past the budget leaves the receipt `pointerDiagnosticsUnavailable:
+  true`. No other edit makes that read: a dry run, an edit that only clears a pointer and one that
+  re-sends the tree a node already opens among them. Where every tree of an owner is already loaded
+  with its marks (`TreeRegistry::list`, `PgReminderRepository::readinessFor`), `openedAmong`
+  (`domain/TreeSummary.h`) judges the account once in memory with no further read.
 - `TreeDiagnostics::assess` — a pure report over a loose graph: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
   true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
-  (> 256 bytes), `empty-icon`, `high-in-degree` (> 4).
+  (> 256 bytes), `empty-icon`, `high-in-degree` (> 4). It reads one graph and no pointer: a loop of
+  trees and a dangling pointer (`PointerDiagnostics`) are reported beside it, as smells are, and
+  change neither `clean()` nor what it gates — the `SkillTree` projection, `get_health` and a
+  receipt's `diagnosticsClean`.
 - `SkillTree` — the validated projection, constructible only from a clean graph; it throws
   `InvalidTree` on a duplicate id, a dangling prerequisite or a cycle. Indexes the DAG, the topo
   order, ancestry and the render model.
@@ -93,6 +123,28 @@ rejected for structure. Validity is a read model, not a gate.
   work it, for agents and for people; an empty guide, or one of only whitespace, is no guide, and a
   guide a fork copied from someone else's tree stays its author's words until the owner writes one.
   Nodes carry no part of it.
+- `guides` (`domain/Guides.h`) — guides add: one tree holds the method, each tree worked under it
+  adds what is particular to it, and none overrides another. A tree P is directly above a tree T
+  when a present node of P holds a pointer at T and both stand and belong to one owner. Above is
+  that relation followed upward within 8 pointers, each tree at its shortest distance, and a tree is
+  never above itself, whatever loops exist. Only the reader's own trees count: for a caller who
+  cannot write the tree being read, nothing is above it. `guidesFor` answers what a reading of a
+  tree carries as `guides`, each entry `{treeId, title, text, yours}`: the guides of the trees
+  above, farthest first and by tree id within one distance, then the tree's own guide last. A tree
+  whose guide is empty is left out, the tree's own included; each tree appears once; and past 8
+  entries the farthest are dropped, so the nearest trees and the tree's own guide keep their
+  places. Where that cut falls inside one distance the smaller tree ids are kept, ids compared as
+  bytes. `yours` says the reader owns that tree and wrote its current guide. The trees above come
+  from `TreeRepository::guidedTreesAbove(owner, tree)`, which answers the 8 nearest that carry a
+  guide by that same rule (`nearestGuided`), so a reply never loads a guide it cannot keep. It is
+  one statement keyed on the owner's own standing trees: it reads the trees each of them opens
+  through `tree_nodes_pointers_idx`, keeps the pointers at another of the owner's standing trees,
+  walks those upward from the tree, a tree once per distance and no further than 8 levels, and
+  reads the title and guide of the trees it keeps through `trees_pkey`. Its cost follows the
+  owner's own trees and the pointers among them, whichever tree is read, and does not grow with
+  the pointers other accounts plant at a tree. It is made once per reply that answers the guides
+  above, after the tree's strand is released, and not at all for a caller who cannot write the
+  tree, who is answered the tree's own guide alone.
 
 Derived read models:
 
@@ -182,7 +234,10 @@ log, undo and broadcast machinery, and `TreeRoom::applyCommand` emits its writes
 `CreateNode` and `AnnotateNode` carry the tree a node `opens` as an optional: unset leaves the
 pointer, set writes it, and `""` clears it. MCP `create_node` always sets it, `""` when the call
 names no tree, so a created node opens the tree its call names and no other, on an id a deleted node
-held too; a stored `CreateNode` row without the field replays as unset. The activity feed projects
+held too; a stored `CreateNode` row without the field replays as unset. An `import_subgraph` graft
+(`graftState`) holds a node it brings back from a delete to the same rule: `opens` left out of the
+batch is cleared there, where every other register left out keeps what the node held, and on a node
+the tree holds a left-out `opens` stays as it stands. The activity feed projects
 neither the pointer nor `AnnotateNode`.
 `TreeRoom::applyCommands` lands several as one frame under one seq and queues them as one `Batch`
 op, so replaying the log tail reproduces the whole edit; an empty list mints nothing.
@@ -316,6 +371,7 @@ Registered in `products/roadmap/routes.cpp`.
 | GET · PUT · PATCH · DELETE | `/v1/trees/{id}` |
 | POST | `/v1/trees/{id}/fork` |
 | GET | `/v1/trees/{id}/progress` |
+| GET | `/v1/trees/{id}/guides` |
 | GET | `/v1/trees/{id}/diagnostics` |
 | GET | `/v1/trees/{id}/activity` |
 | PUT | `/v1/trees/{id}/og-image` |
@@ -340,14 +396,35 @@ and edge it carries with the genesis stamp: those steps take the document's fiel
 and read as unknown creation time. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
 
 `GET /v1/trees/{id}` answers `{seq, data, state, createdAt, visibility, mine}`. When the caller can
-write the tree the body also carries `opens`, an object keyed by node id with one entry per node that
-holds a pointer: `{treeId, title, state, done, total, loop}` for a valid one, `state` being
+write the tree the body also carries `opens`, an object keyed by node id with one entry per node
+that holds a pointer: `{treeId, title, state, done, total, loop}` for a valid one, `state` being
 `"complete"` or `"open"` and `loop` true when the opened tree leads back to the tree being read, and
 `{treeId, missing: true}` for one that is not valid (`OpenedTrees`, Model). It is computed on the
 read, off the stored rows and after the tree's strand is released, and nothing pushes it; for any
 other caller the key is absent. When the pointers cannot be followed the owner is answered
-`503 opens-unavailable`, not the `404` of an absent tree; every other reader, and a tree that holds
-no pointer, is answered as before.
+`503 opens-unavailable`, not the `404` of an absent tree. No other reader's answer depends on that
+read, and for a tree that holds no pointer it is not made: `opens` is `{}`.
+
+`GET /v1/trees/{id}/guides` answers `{guides}` (Model), an array of `{treeId, title, text, yours}`.
+A caller who can write the tree is answered the guides of their trees above it, farthest first,
+and the tree's own last, read off the stored rows after the tree's strand is released; when the
+trees above cannot be read they are answered `503 guides-unavailable`. Any other caller who can
+read the tree is answered its own guide alone when it has one, `yours: false`, and nothing is read
+for them. An absent tree and one the caller may not read answer the `404` the tree route gives.
+The tree route carries no guides and never makes that read.
+
+`GET /v1/trees/{id}/diagnostics` answers the graph's diagnostics, `{cycles, dangling, selfEdges,
+smells, maskedWork}` (`TreeDiagnostics`, Model), to every caller who can read the tree. A caller who
+can write it is also answered `treeLoops`, an array of `{node, path: [{treeId, title}]}`, and
+`danglingPointers`, an array of `{node, treeId}` (`PointerDiagnostics`, Model), read off the stored
+rows after the tree's strand is released; both are `[]`, with nothing read, for a tree that holds no
+pointer. When the pointers cannot be followed the owner is still answered `200` with the graph's
+diagnostics, without those two keys and with `pointerDiagnosticsUnavailable: true`, a key that is
+otherwise absent. Each list holds its first 50 nodes and a `path` its first 8 trees;
+`treeLoopsOmitted`, `danglingPointersOmitted` and a loop's `pathOmitted` count what is left off and
+are absent when that is nothing, and a path that is cut does not end with the tree being read
+(`PointerDiagnostics`, Model). Any other caller is answered the graph's diagnostics alone, the same
+bytes a tree without pointers answers, and nothing is read for them.
 
 `PATCH /v1/trees/{id}` sets one register per call — `{visibility}`, `{guide}` or `{title}` — each the
 owner's alone. A body naming more than one is refused `400`, and a body that is not one JSON object
@@ -360,7 +437,12 @@ NUL is refused `400` too. The guide's writes are this, the socket's `subgraph` f
 `tree.guide: {text, yours}` on every page and no other MCP read at all, `yours` true when the caller
 owns the tree and wrote its current guide. A fork copies it, marked inherited when it is someone
 else's words (Runtime). The share page
-and the gallery do not show it.
+and the gallery do not show it. `guides` (Model) is answered by `GET /v1/trees/{id}/guides` and by
+MCP `get_tree` as `tree.guides` on the first page alone (a call without `cursor`), unless the call
+sends `includeGuides: false`, which leaves the key out and makes no read. When the trees above
+cannot be read, `get_tree` still answers: `tree.guides` holds the tree's own guide alone and
+`tree.guidesAboveUnavailable` is `true`, a key that is otherwise absent. A tend's `get_tree`
+carries `tree.guide` and no `guides`, and reads no tree above the tended one.
 
 `POST /v1/trees/{id}/tend` runs only on a tree its caller can write, since the run writes as its
 caller. A tree it cannot is a persisted refused run, answered `200` like every tend refusal and started
@@ -441,7 +523,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | Table | Holds |
 | --- | --- |
 | `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
-| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree |
+| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
 | `tree_kinds` | one row per legend kind: hue, label, description, cross_branch_exempt, rank, each with its stamp |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |

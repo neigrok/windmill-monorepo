@@ -24,6 +24,10 @@ class PgTreeRepository : public TreeRepository {
 public:
   explicit PgTreeRepository(std::shared_ptr<PgPool> pool);
 
+  // What guidedTreesAbove runs, over (owner, tree, levels, guides kept): named so its Postgres test can ask the plan
+  // what it reads.
+  static const char* guidedTreesAboveStatement();
+
   std::optional<StoredTree> load(const TreeId& tree) override;
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override;
   std::optional<UserId> retiredOwner(const TreeId& tree) override;
@@ -36,7 +40,9 @@ public:
   std::vector<ListedTree> listPublic() override;
   std::set<TreeId> listForkedSources(const UserId& owner) override;
   std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) override;
-  std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened) override;
+  std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened,
+                                          std::optional<std::chrono::milliseconds> budget = std::nullopt) override;
+  std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree) override;
   void softDelete(const TreeId& tree) override;
   void rename(const TreeId& tree, const Lww<std::string>& title) override;
   void setVisibility(const TreeId& tree, Visibility visibility) override;

@@ -13,8 +13,8 @@ import { BoardQuery } from './board/Board.js';
 import { BoardToast } from './board/BoardToast.jsx';
 import BoardView from './board/BoardView.jsx';
 import { RoadmapIdentity, RoadmapIdentityFallback } from './identity/RoadmapIdentity.jsx';
-import { GuideEditor, GuideNote } from './guide/GuidePhone.jsx';
-import { GuideModal } from './guide/GuideWide.jsx';
+import { GuideEntry } from './guide/GuideEntry.jsx';
+import { GuideNote } from './guide/GuideNote.jsx';
 import { useRoomGuide } from './guide/useGuide.js';
 import { StepComposer } from './step/StepComposer.jsx';
 import { StepDetail } from './step/StepDetail.jsx';
@@ -43,6 +43,7 @@ import { useRoomScene } from './room/useRoomScene.js';
 import { useRoomView } from './room/useRoomView.js';
 import { useRowVerbs } from './room/useRowVerbs.js';
 import { useStepPage } from './room/useStepPage.js';
+import { TreeDoor, readTreeVisit, useTreeVisit } from './room/useTreeVisit.js';
 import { bulkKindChoice } from './model/bulkSelection.js';
 import { useGraphSelection } from './graph/useGraphSelection.js';
 import { ForkDoor } from './share/ForkDoor.jsx';
@@ -70,7 +71,7 @@ import { frontierTarget } from './graph/viewport.js';
 
 const handle = () => ({ current: null });
 // What the seams reach for after render: the live objects, the chrome's DOM, and what the camera has been asked to frame.
-const roomHandles = () => ({ sceneRef: handle(), sessionRef: handle(), projectionRef: handle(), treeRef: handle(), standingTreeRef: handle(), seedRef: handle(), peersRef: { current: new Map() } });
+const roomHandles = () => ({ sceneRef: handle(), sessionRef: handle(), projectionRef: handle(), treeRef: handle(), standingTreeRef: handle(), viewRef: handle(), seedRef: handle(), peersRef: { current: new Map() } });
 const chromeAnchors = () => ({ canvasRef: handle(), rootRef: handle(), identityRef: handle(), boardLayerRef: handle(), legendDockRef: handle() });
 const cameraFraming = () => ({ insetsRef: handle(), firstFrameRef: handle(), graphRevealRef: handle() });
 
@@ -79,7 +80,7 @@ const leavesWithItsView = (toast) => toast.surface === 'board' || toast.surface 
 export function SkillTreeView({ treeId, demo = false }) {
   const openSignInDoor = useSignInDoor();
   const { breakpoint, shared } = useViewMode();
-  const { status, refresh, account, lapsed: sessionLapsed } = useAuth();
+  const { status, refresh, account, confirmed: accountConfirmed, lapsed: sessionLapsed } = useAuth();
   const [room] = useState(roomHandles);
   const [anchors] = useState(chromeAnchors);
   const [framing] = useState(cameraFraming);
@@ -103,7 +104,9 @@ export function SkillTreeView({ treeId, demo = false }) {
   const activity = useActivity({ sceneRef, selectedId });
   const { emit, ticker, feedVisible, feedSummonedRef, closeActivity } = activity;
   const { coachAllowed, demoCompletions, ctaEcho, noteCompletion } = useDemoCoach({ demo, status });
-  const stepAddress = useStepAddress();
+  // What the history entry said of a tree visit as the room opened: a return to it is a step reached by going back.
+  const [arrival] = useState(readTreeVisit);
+  const stepAddress = useStepAddress(arrival.through === null ? 'link' : 'back');
   const [shareOpen, setShareOpen] = useState(false);
   const [forkOpen, setForkOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -165,8 +168,13 @@ export function SkillTreeView({ treeId, demo = false }) {
     stopEditing();
     collapse();
   }, [closeComposer, stopEditing, collapse]);
-  const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
+  // The account that holds this room as its owner, once the server has answered for it in this document: a lapsed
+  // session, a device's copy with nobody signed in and a start with no connection have none.
+  const holder = owner && accountConfirmed && !lapsed ? account.id : null;
+  const treeVisit = useTreeVisit({ room, arrival, holder, band: breakpoint });
+  const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, carried: treeVisit, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
   const { decidedView, boardActive, canvasView, shownView, boardFacts, boardAwaitsRoadmap, switchView, onSwitchView } = view;
+  room.viewRef.current = shownView;
 
   const graphMulti = canvasView && (selection.multiMode || selectedIds.size + selectedEdges.size > 1);
   const graphMultiRef = useRef(false);
@@ -198,7 +206,12 @@ export function SkillTreeView({ treeId, demo = false }) {
   useEffect(() => { setBoardComposer(null); setBoardOverall(null); setBoardReveal(null); setBoardSelect(null); }, [treeId, load.reloadKey]);
   const { syncSnapshot, deviceLine, refusal } = useRoomSyncNotices({ treeId, syncSession, owner, status, lapsed: sessionLapsed || lapsed, phone, openSignInDoor, setBoardQuiet });
   const guide = useRoomGuide({ treeId, tree, who, deviceLine, sessionRef });
-  const guideLine = phone && guide && !guide.owner ? guide : null;
+  const guideView = boardActive ? 'board' : 'graph';
+  const guideEntry = guide && !boardAwaitsRoadmap ? (
+    <ErrorBoundary fallback={null} onCrash={(error) => reportRoadmapFailure('roadmap-guide', error)}>
+      <GuideEntry guide={guide} band={breakpoint} view={guideView} />
+    </ErrorBoundary>
+  ) : null;
   const revealOnGraph = useCallback((id) => {
     if (selectedIdRef.current !== id) framing.graphRevealRef.current = id;
     else sceneRef.current?.revealNode(id);
@@ -217,8 +230,18 @@ export function SkillTreeView({ treeId, demo = false }) {
     onGraphReveal: revealOnGraph, graphFocusTarget: boardComposer?.opener,
     onReveal: (id) => setBoardReveal((current) => ({ id, key: (current?.key ?? 0) + 1 })),
     onQuiet: () => setBoardQuiet((current) => current + 1),
+    openTree: treeVisit.open,
     track, emit, report: reportRoadmapFailure,
   });
+  // Coming back from a step's tree lands on that step once the roadmap and its view stand: selected and in view on either one.
+  const landedRef = useRef(false);
+  useEffect(() => {
+    if (landedRef.current || decidedView === null || !tree) return;
+    landedRef.current = true;
+    if (!tree.nodesById.has(treeVisit.through)) return;
+    if (decidedView === 'board') setBoardReveal((current) => ({ id: treeVisit.through, key: (current?.key ?? 0) + 1 }));
+    else revealOnGraph(treeVisit.through);
+  }, [decidedView, tree]);
   const explainGraphUnavailable = useCallback(() => {
     track('roadmap_graph_unavailable', { band: breakpoint });
     if (phone && !boardHeld) showToast(GRAPH_UNAVAILABLE);
@@ -351,6 +374,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     <ActivityPanel top={geometry.activityPanelTop} groups={activity.activityGroups} nodesById={nodesById} onClose={verbs.closeRowActivity} onOpenStep={verbs.openActivityStep} />
   ) : null;
   return (
+    <TreeDoor.Provider value={treeVisit.open}>
     <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef} onFocusCapture={rememberGraphFocus}>
       <canvas
         ref={canvasRef}
@@ -374,6 +398,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             view={boardActive ? 'board' : 'tree'}
             role={who.role}
             title={boardAwaitsRoadmap ? undefined : tree?.title}
+            back={treeVisit.from === null ? null : { title: treeVisit.from.title, onBack: treeVisit.back }}
             switcher={owner && !phone && !boardAwaitsRoadmap ? <TreeSwitcher {...verbs.switcher} /> : null}
             progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
             onSwitchView={onSwitchView}
@@ -391,7 +416,6 @@ export function SkillTreeView({ treeId, demo = false }) {
             activityOpen={activityOpen}
             onFork={!owner && forkPresent ? openFork : null}
             sheet={phone && owner && boardFacts.loaded ? verbs.identitySheet : null}
-            guide={boardAwaitsRoadmap ? null : guide}
             onBottom={setTopbarBottom}
           />
         </ErrorBoundary>
@@ -411,7 +435,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               onAnchor={setSelectedId}
               refusal={refusal}
               deviceLine={phone ? deviceLine : null}
-              guideLine={guideLine}
+              guide={boardActive ? guideEntry : null}
               onFork={phone && forkPresent ? openFork : null}
               breakpoint={breakpoint}
               topInset={topbarBottom}
@@ -426,6 +450,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               quiet={boardQuiet}
               onDisplayedOverall={setBoardOverall}
               reveal={boardReveal}
+              wake={treeVisit.view === 'board' ? treeVisit.through : null}
               selectionOpen={boardSelectionOpen}
               selectRequest={stepAddress.id === null ? boardSelect : null}
               onSelectRequestTaken={selectRequestTaken}
@@ -477,17 +502,6 @@ export function SkillTreeView({ treeId, demo = false }) {
         </ErrorBoundary>
       )}
 
-      {guide?.surface && (
-        <ErrorBoundary fallback={null} onCrash={(error) => {
-          reportRoadmapFailure('roadmap-guide', error);
-          guide.close();
-        }}>
-          {guide.surface.kind === 'modal' && !phone && <GuideModal guide={guide} />}
-          {guide.surface.kind === 'note' && phone && <GuideNote guide={guide} />}
-          {guide.surface.kind === 'editor' && phone && guide.owner && <GuideEditor guide={guide} />}
-        </ErrorBoundary>
-      )}
-
       {shownComposer !== null && (
         <ErrorBoundary fallback={null} onCrash={(error) => {
           reportRoadmapFailure('roadmap-board-composer', error);
@@ -514,7 +528,10 @@ export function SkillTreeView({ treeId, demo = false }) {
         onOpenStep={stepPage.openFromGraph}
         onBarBottom={geometry.setGraphBarBottom}
         deviceLine={phone ? deviceLine : null}
-        guideLine={guideLine}
+        guide={canvasView ? guideEntry : null}
+        guideTop={geometry.guideTop}
+        guideRight={insets.right}
+        onGuideBox={geometry.publishGuideCard}
         cameraRight={phone || !canvasView ? undefined : insets.blocks.at(-1)?.right}
         cameraBottom={phone || !canvasView ? undefined : insets.blocks.at(-1)?.bottom}
         onZoomIn={() => sceneRef.current?.zoomBy(1.2)}
@@ -522,6 +539,16 @@ export function SkillTreeView({ treeId, demo = false }) {
         onFocus={focusCamera}
         onShowAll={showAllSteps}
         onFork={forkPresent && phoneGraph ? openGraphFork : undefined} />
+
+      {/* After the Graph's chrome, so the entry the note opens over is already in place when it measures it. */}
+      {guide?.opened && (
+        <ErrorBoundary fallback={null} onCrash={(error) => {
+          reportRoadmapFailure('roadmap-guide', error);
+          guide.close();
+        }}>
+          <GuideNote guide={guide} band={breakpoint} view={guideView} onSeat={canvasView ? geometry.publishGuideNote : undefined} />
+        </ErrorBoundary>
+      )}
 
       {canTend && tendOpen && (
         <TendBar
@@ -709,5 +736,6 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
     </div>
+    </TreeDoor.Provider>
   );
 }

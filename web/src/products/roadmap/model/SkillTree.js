@@ -1,6 +1,6 @@
 // Validates the DAG at construction; answers graph questions from the indices built there.
 
-import { NODE_SIZE, DEFAULT_NODE_COLOR, nodeForm } from '../theme.js';
+import { NODE_SIZE, DEFAULT_NODE_COLOR, TREE_GLYPHS, nodeForm } from '../theme.js';
 import { TrunkTree } from './TrunkTree.js';
 
 function hashToUnit(id) {
@@ -133,7 +133,7 @@ export class SkillTree {
       return {
         id: node.id,
         label: node.label,
-        icon: node.icon,
+        icon: node.opening ? TREE_GLYPHS[node.opening.face] : node.icon,
         color: node.color ?? DEFAULT_NODE_COLOR,
         x: position.x,
         y: position.y,

@@ -4,7 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
 import { outboxWrites } from '../../../../src/products/roadmap/sync/pendingWrites.js';
-import { TreeLattice } from '../../../../src/products/roadmap/sync/lattice.js';
+import { TreeLattice, VersionVector } from '../../../../src/products/roadmap/sync/lattice.js';
 
 const baseline = { nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }], edges: [], kinds: [] };
 const progress = { marks: [{ node: 'root', status: 'none', at: '2:0:server', markedAt: 2 }] };
@@ -756,4 +756,216 @@ test('an IndexedDB merge keeps valid progress from both records when each has an
   assert.deepEqual((await store.load('tree')).progress, { marks: [oldMark, newMark] });
   assert.deepEqual(reports.map(({ operation, error, tags }) => ({ operation, message: error.message, stack: !!error.stack, tags })),
     Array.from({ length: 2 }, () => ({ operation: 'roadmap-sync-progress-mark', message: 'Roadmap progress mark invalid', stack: true, tags: { lane: 'progress' } })));
+});
+
+test('a pointer the owner’s graft carried stays on this device: a graft that says nothing of it clears nothing, pends nothing and sends nothing', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const pointing = { nodes: [{ ...baseline.nodes[0], opens: 't_sail', opensAt: '5:0:srv' }], edges: [], kinds: [] };
+  const hidden = { nodes: [{ ...baseline.nodes[0], opens: '', opensAt: '0:0:' }], edges: [], kinds: [] };
+  const session = await env.session(store);
+  session.ws.open();
+  session.receiveState({ ...pointing, seq: 1 });
+  await settle([store]);
+  assert.deepEqual((await store.load('tree')).frame, pointing);
+
+  session.ackedServerVector = new VersionVector();
+  session.connect();
+  session.ws.open();
+  session.receiveState({ ...hidden, seq: 1 });
+  await settle([store]);
+
+  assert.deepEqual(session.ws.frames.filter((frame) => frame.t === 'subgraph'), []);
+  assert.deepEqual({ pending: session.pendingStructureCount(), gestures: session.pendingEditCount() }, { pending: 0, gestures: 0 });
+  assert.deepEqual((await store.load('tree')).frame, pointing);
+  const reloaded = await env.session(env.store());
+  assert.deepEqual(reloaded.lattice.toTreeData().nodes.map(({ id, opens }) => ({ id, opens })), [{ id: 'root', opens: 't_sail' }]);
+});
+
+// A live session over four ordinary steps whose socket then drops, so the marks that follow are queued. `sockets` is
+// every socket the session has held, and `subscribed` answers a (re)connect with the server's structure and marks.
+async function sessionWithQueuedMarks(env, store, marks) {
+  const steps = { nodes: ['a', 'b', 'k', 'z'].map((id) => ({ id, createdAt: '100:0:srv', label: id, labelAt: '100:0:srv' })), edges: [], kinds: [] };
+  const session = await env.session(store);
+  const sockets = [session.ws];
+  const subscribed = (structure = {}, seq = 1, serverMarks = []) => {
+    if (session.ws.readyState === 3) { session.connect(); sockets.push(session.ws); }
+    session.ws.open();
+    session.receive({ t: 'subgraph', intent: 'delta', nodes: [], edges: [], kinds: [], ...structure, seq });
+    session.receive({ t: 'progress', intent: 'graft', marks: serverMarks });
+    return settle([store]);
+  };
+  await subscribed(steps);
+  session.ws.close();
+  for (const [node, status] of marks) session.markProgress([node], status);
+  await settle([store]);
+  return { session, sockets, subscribed };
+}
+const marksIn = (sockets) => sockets.flatMap((socket) => socket.frames).filter((frame) => frame.t === 'progress')
+  .map((frame) => frame.marks.map(({ node, status }) => `${node}:${status}`).join(','));
+const storedMarks = async (store) => (await store.load('tree')).progress.marks.map(({ node, status }) => `${node}:${status}`);
+const owed = (session) => {
+  const { progressPending, progressGestures, refused, phase } = session.statusSnapshot();
+  return { pending: session.pendingProgressCount(), progressPending, progressGestures, refused: refused?.lane ?? null, phase, ready: session.ready };
+};
+const POINTER = { nodes: [{ id: 'k', opens: 't_other', opensAt: '200:0:srv' }] };
+const live = (nodes, seq) => ({ t: 'subgraph', v: 1, treeId: 'tree', frameId: `srv-${seq}`, actor: 'srv', intent: 'live', nodes, edges: [], kinds: [], seq });
+
+test('a mark queued before its step’s pointer arrived is set aside: it stays on the device, is never in a frame and is not counted, and the marks beside it go once and in order', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const { session, sockets, subscribed } = await sessionWithQueuedMarks(env, store, [['a', 'complete'], ['k', 'complete'], ['b', 'complete'], ['z', 'none']]);
+  assert.equal(session.pendingProgressCount(), 4);
+
+  await subscribed(POINTER, 2);
+
+  assert.deepEqual(marksIn(sockets), ['a:complete,b:complete,z:none']);
+  assert.deepEqual(owed(session), { pending: 3, progressPending: 3, progressGestures: 3, refused: null, phase: 'live', ready: true });
+  session.receive({ t: 'progressAck', treeId: 'tree', frameId: session.ws.frames.find((frame) => frame.t === 'progress').frameId });
+  await settle([store]);
+  assert.deepEqual(owed(session), { pending: 0, progressPending: 0, progressGestures: 0, refused: null, phase: 'live', ready: true });
+  assert.deepEqual([...session.progress.overlay().completed].sort(), ['a', 'b', 'k']);
+  assert.deepEqual(await storedMarks(store), ['a:complete', 'b:complete', 'k:complete', 'z:none']);
+  assert.deepEqual((await store.load('tree')).epochs, { structure: 0, progress: 0 });
+  assert.equal(sockets.length, 2, 'setting a mark aside costs no reconnect');
+  assert.equal(JSON.stringify(sockets.flatMap((socket) => socket.frames)).includes('opens'), false);
+});
+
+test('a mark made on a step whose pointer already stands, and one found again after a reload, are set aside the same way', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const { session, sockets, subscribed } = await sessionWithQueuedMarks(env, store, []);
+  await subscribed(POINTER, 2);
+
+  session.markProgress(['k'], 'complete');
+  session.markProgress(['a'], 'complete');
+  await settle([store]);
+  assert.deepEqual(marksIn(sockets), ['a:complete']);
+  assert.deepEqual([...session.progress.overlay().completed].sort(), ['a', 'k']);
+  assert.equal(owed(session).pending, 1);
+  session.close();
+
+  const reopened = await env.session(env.store());
+  assert.deepEqual({ ...owed(reopened), held: [...reopened.progress.overlay().completed].sort() },
+    { pending: 1, progressPending: 1, progressGestures: 1, refused: null, phase: 'offline', ready: true, held: ['a', 'k'] });
+  reopened.ws.open();
+  reopened.receive({ t: 'subgraph', intent: 'delta', nodes: [], edges: [], kinds: [], seq: 2 });
+  reopened.receive({ t: 'progress', intent: 'graft', marks: [] });
+  await settle([store]);
+  assert.deepEqual(marksIn([reopened.ws]), ['a:complete']);
+});
+
+test('marks and edits made as the socket comes back beside a mark set aside all land: nothing waits, nothing is dropped and Undo keeps its entries', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const { session, sockets, subscribed } = await sessionWithQueuedMarks(env, store, [['k', 'complete']]);
+  session.dispatch({ kind: 'RenameNode', id: 'b', label: 'Renamed offline' });
+  await settle([store]);
+
+  session.connect();
+  sockets.push(session.ws);
+  session.ws.open();
+  session.receive({ t: 'subgraph', intent: 'delta', ...POINTER, edges: [], kinds: [], seq: 2 });
+  session.receive({ t: 'progress', intent: 'graft', marks: [] });
+  const marked = [...session.markProgress(['a'], 'complete').completed].sort();
+  const edited = session.dispatch({ kind: 'RenameNode', id: 'z', label: 'Typed at once' });
+  await settle([store]);
+  session.markProgress(['z'], 'complete');
+  await settle([store]);
+
+  assert.deepEqual(marked, ['a', 'k']);
+  assert.notEqual(edited, null);
+  assert.deepEqual({ ready: session.ready, phase: session.phase, undo: session.undoStack.length, sockets: sockets.length }, { ready: true, phase: 'live', undo: 2, sockets: 2 });
+  assert.deepEqual(marksIn(sockets), ['a:complete', 'z:complete']);
+  assert.deepEqual([...session.progress.overlay().completed].sort(), ['a', 'k', 'z']);
+  assert.deepEqual(session.lattice.toTreeData().nodes.map(({ id, label }) => `${id}=${label}`).sort(), ['a=a', 'b=Renamed offline', 'k=k', 'z=Typed at once']);
+  assert.equal(session.ws.frames.filter((frame) => frame.t === 'subgraph').length, 2);
+});
+
+test('a refusal standing on the progress lane clears once the server holds every mark it is owed, with a mark set aside beside them', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const { session, sockets, subscribed } = await sessionWithQueuedMarks(env, store, [['a', 'complete'], ['k', 'complete']]);
+  await subscribed();
+  const refused = session.ws.frames.find((frame) => frame.t === 'progress');
+  assert.deepEqual(refused.marks.map((mark) => mark.node), ['a', 'k'], 'no pointer yet: both go');
+  session.receive({ t: 'reject', treeId: 'tree', frameId: refused.frameId, code: 'server-error', reason: 'no' });
+  session.receive(live(POINTER.nodes, 2));
+  await settle([store]);
+  assert.deepEqual(owed(session), { pending: 1, progressPending: 1, progressGestures: 1, refused: 'progress', phase: 'live', ready: true });
+
+  session.retry();
+  await subscribed({}, 2);
+  const resent = session.ws.frames.find((frame) => frame.t === 'progress');
+  assert.deepEqual(resent.marks.map((mark) => mark.node), ['a']);
+  session.receive({ t: 'progressAck', treeId: 'tree', frameId: resent.frameId });
+  await settle([store]);
+
+  assert.deepEqual(owed(session), { pending: 0, progressPending: 0, progressGestures: 0, refused: null, phase: 'live', ready: true });
+  assert.deepEqual(marksIn(sockets), ['a:complete,k:complete', 'a:complete']);
+});
+
+test('a Discard takes the marks the lane owes and leaves the one set aside on the device', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const { session, sockets, subscribed } = await sessionWithQueuedMarks(env, store, [['k', 'complete']]);
+  await subscribed(POINTER, 2);
+  session.markProgress(['a'], 'complete');
+  await settle([store]);
+  session.receive({ t: 'reject', treeId: 'tree', frameId: session.ws.frames.find((frame) => frame.t === 'progress').frameId, code: 'server-error', reason: 'no' });
+
+  assert.equal(await session.discard(), true);
+  await settle([store]);
+  await subscribed({}, 2);
+
+  assert.deepEqual(await storedMarks(store), ['k:complete']);
+  assert.deepEqual([...session.progress.overlay().completed], ['k']);
+  assert.deepEqual(owed(session), { pending: 0, progressPending: 0, progressGestures: 0, refused: null, phase: 'live', ready: true });
+  assert.deepEqual(marksIn(sockets), ['a:complete']);
+});
+
+for (const cleared of ['a live frame', 'the next subscribe']) {
+  test(`a pointer taken away by ${cleared} releases the mark set aside there: it is counted again and goes exactly once`, async (t) => {
+    const env = environment(t);
+    const store = env.store();
+    const { session, sockets, subscribed } = await sessionWithQueuedMarks(env, store, [['k', 'complete']]);
+    await subscribed(POINTER, 2);
+    assert.deepEqual({ ...owed(session), sent: marksIn(sockets) }, { pending: 0, progressPending: 0, progressGestures: 0, refused: null, phase: 'live', ready: true, sent: [] });
+
+    const gone = [{ id: 'k', opens: '', opensAt: '300:0:srv' }];
+    if (cleared === 'a live frame') {
+      session.receive(live(gone, 3));
+      await settle([store]);
+    } else {
+      session.ws.close();
+      await subscribed({ nodes: gone }, 3);
+    }
+    assert.deepEqual({ ...owed(session), sent: marksIn(sockets) }, { pending: 1, progressPending: 1, progressGestures: 1, refused: null, phase: 'live', ready: true, sent: ['k:complete'] });
+
+    session.receive(live([{ id: 'a', label: 'Renamed elsewhere', labelAt: '400:0:srv' }], 4));
+    session.receive({ t: 'progressAck', treeId: 'tree', frameId: session.ws.frames.find((frame) => frame.t === 'progress').frameId });
+    await settle([store]);
+    assert.deepEqual({ ...owed(session), sent: marksIn(sockets) }, { pending: 0, progressPending: 0, progressGestures: 0, refused: null, phase: 'live', ready: true, sent: ['k:complete'] });
+  });
+}
+
+test('two tabs hold a mark set aside: neither sends it, neither counts it, and the mark beside it goes once from the tab that made it', async (t) => {
+  const env = environment(t);
+  const first = await sessionWithQueuedMarks(env, env.store(), [['k', 'complete'], ['b', 'complete']]);
+  const storeB = env.store();
+  const second = await env.session(storeB);
+  assert.equal(second.pendingProgressCount(), 2, 'the second tab loads the first tab’s unsent marks');
+  const pointed = { nodes: [{ id: 'k', opens: 't_other', opensAt: '200:0:srv' }], edges: [], kinds: [], seq: 2 };
+  second.ws.open();
+  second.receive({ t: 'subgraph', intent: 'delta', ...pointed });
+  second.receive({ t: 'progress', intent: 'graft', marks: [] });
+  await first.subscribed(POINTER, 2);
+  await settle([storeB]);
+
+  const sent = marksIn([...first.sockets, second.ws]);
+  assert.equal(sent.some((marks) => marks.includes('k:')), false);
+  assert.deepEqual(sent.filter((marks) => marks.includes('b:complete')).length >= 1, true);
+  assert.deepEqual([owed(first.session).pending, owed(second).pending].every((pending) => pending <= 1), true);
+  assert.deepEqual(await storedMarks(storeB), ['b:complete', 'k:complete']);
+  assert.deepEqual((await storeB.load('tree')).epochs, { structure: 0, progress: 0 });
 });

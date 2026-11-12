@@ -48,11 +48,33 @@ public:
   // What importTree(incoming) would do beyond the upsert — the edges it keeps, replaces or
   // tombstones — read off this room's live state, changing nothing.
   GraftFootprint footprintOf(const Graft& incoming) const { return wm::footprintOf(graph_, incoming); }
+  // Whether importTree(incoming) at `nowMs` would land nothing, read off a copy of the room clock so
+  // nothing moves: the preview a dry run answers.
+  bool graftLandsNothing(const Graft& incoming, std::uint64_t nowMs) const {
+    return graftFrame(graph_, legend_, incoming, HlcClock(clock_).tick(nowMs)).landsNothing();
+  }
 
-  // Each is stamped from the room clock and joined as one frame setting that register alone, so it
-  // broadcasts and LWW-merges like any other field write, and leaves no op row.
-  Seq rename(const std::string& title, std::uint64_t nowMs);
-  Seq setGuide(const std::string& guide, std::uint64_t nowMs);
+  // A node write's kind read off this room's own legend, under the strand the write then takes, so a
+  // kind always lands as the hue it wears in the legend the write is applied to.
+  std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const HueChoice& choice, const std::string& path) const {
+    return wm::resolveHue(legend_.kinds(), choice, path);
+  }
+  std::variant<Graft, KindRefusal> resolveKinds(Graft incoming) const {
+    return wm::resolveKinds(legend_, std::move(incoming));
+  }
+  // Reads the held links under the strand the write then takes, so nothing lands between read and write.
+  std::variant<std::vector<Link>, std::string> linksWith(const NodeId& node, const std::vector<Link>& added,
+                                                         const std::string& path) const {
+    const std::optional<NodeSpec> held = graph_.nodeView(node);
+    return wm::withLinksAdded(held ? held->links : std::vector<Link>{}, added, path);
+  }
+
+  // The title and the guide, each set only when sent, stamped from the room clock and joined as one frame, so a
+  // call that sets both lands both at one seq; it broadcasts and LWW-merges like any other field write, and leaves
+  // no op row. rename and setGuide set one each.
+  Seq describe(const std::optional<std::string>& title, const std::optional<std::string>& guide, std::uint64_t nowMs);
+  Seq rename(const std::string& title, std::uint64_t nowMs) { return describe(title, std::nullopt, nowMs); }
+  Seq setGuide(const std::string& guide, std::uint64_t nowMs) { return describe(std::nullopt, guide, nowMs); }
 
   // Server-origin edit: stamped from the room clock, applied, queued for the op log, broadcast as
   // one subgraph. The frameId is minted from the (unique) stamp.
@@ -64,8 +86,9 @@ public:
 
   // Stamped from the room clock, so a by-id collision is an upsert; the graft's tombstones and
   // replaced edges are removed at that same stamp, in the same frame. An empty `kinds` leaves the
-  // legend untouched.
-  Seq importTree(const Graft& incoming, std::uint64_t nowMs, const UserId& actor);
+  // legend untouched. A graft that lands nothing is not joined: no seq, no op, no frame, nothing to
+  // save, and the answer is nullopt.
+  std::optional<Seq> importTree(const Graft& incoming, std::uint64_t nowMs, const UserId& actor);
 
   // One clock per tree, so no two writes collide on a stamp. `nowMs` is wall time from the Clock port.
   Hlc nextStamp(std::uint64_t nowMs);
@@ -74,7 +97,13 @@ public:
   // present node, or a legend rule. Server-driven undo/redo bypasses it.
   std::optional<std::string> validate(const Command& command) const;
 
-  std::variant<NodePatchPlan, std::string> planNodePatches(const std::vector<NodePatch>& updates) const {
+  // wm::changedPart over the node as this room holds it; on a node it does not hold, the edit lands whole.
+  std::optional<Command> changedPart(const NodeId& node, const Command& command) const {
+    const std::optional<NodeSpec> held = graph_.nodeView(node);
+    if (!held) return command;
+    return wm::changedPart(*held, command);
+  }
+  std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(const std::vector<NodePatch>& updates) const {
     return wm::planNodePatches(graph_, legend_, updates);
   }
   std::variant<EdgeChangePlan, std::string> planEdgeChanges(const EdgeChanges& changes) const {
@@ -97,9 +126,12 @@ public:
   ~TreeRoom();
 
   TreeDiagnostics diagnose() const;
+  // The tree each present node opens (LooseGraph::pointers), without the copy of every node snapshot() makes.
+  std::map<NodeId, TreeId> pointers() const { return graph_.pointers(); }
   TreeData snapshot() const;
   // How many times snapshot() copied the whole tree out of this room: what a cost test reads.
   std::size_t snapshots() const { return snapshots_; }
+  std::vector<Kind> kinds() const { return legend_.kinds(); }  // the snapshot's legend, without its nodes
   GraphState exportState() const;
   LegendState exportLegend() const;
   // What a peer at `since` is missing — graph, legend, title and guide — covering the room's whole

@@ -3,11 +3,13 @@
 #include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Crdt.h"
 #include "products/roadmap/domain/GraphState.h"
+#include "products/roadmap/domain/Guides.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/OpenedTrees.h"
 #include "products/roadmap/domain/Tree.h"
 
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <map>
@@ -21,6 +23,11 @@ namespace wm {
 // A soft-deleted row keeps its id, so it collides here too.
 struct DuplicateTree : std::exception {
   const char* what() const noexcept override { return "a tree with that id already exists"; }
+};
+
+// A read that was given a budget ran past it.
+struct FollowTimedOut : std::exception {
+  const char* what() const noexcept override { return "the trees a tree opens were not read within the budget"; }
 };
 
 // An unset title or guide stamp means the create-time baseline, never written since; an empty
@@ -94,7 +101,14 @@ struct TreeRepository {
   // someone else's, nobody's and an id no row holds are left out alike.
   virtual std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) = 0;
   // Each of `opened` that stands and is `owner`'s, and every such tree their pointers lead to, under `owner`'s marks.
-  virtual std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened) = 0;
+  // With a `budget` the read is given that long and no longer: past it the read is abandoned, holding nothing, and
+  // throws FollowTimedOut.
+  virtual std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened,
+                                                  std::optional<std::chrono::milliseconds> budget = std::nullopt) = 0;
+  // The kMaxGuides nearest trees above `tree` that carry a guide (SPEC.md, Model, `guides`; nearestGuided cuts them):
+  // above are `owner`'s standing trees whose present pointers lead down to it within kMaxLevelsAbove, never `tree`
+  // itself. Nothing when `tree` does not stand or is not `owner`'s.
+  virtual std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree) = 0;
   // Retire a tree by stamping deleted_at; every read filters it out afterwards.
   virtual void softDelete(const TreeId& tree) = 0;
   // The closed-room seam only — a live room's title reaches the column through save(). Lands only

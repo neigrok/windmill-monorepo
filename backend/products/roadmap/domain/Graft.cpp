@@ -1,10 +1,35 @@
 #include "products/roadmap/domain/Graft.h"
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <set>
 
 namespace wm {
+
+std::variant<Graft, KindRefusal> resolveKinds(const Legend& legend, Graft graft) {
+  if (graft.nodeKinds.empty()) return graft;
+  std::vector<Kind> landed = legend.kinds();
+  for (const Kind& kind : graft.document.kinds) {
+    const auto held = std::find_if(landed.begin(), landed.end(), [&](const Kind& k) { return k.id == kind.id; });
+    if (held == landed.end()) landed.push_back(kind);
+    else held->hue = kind.hue;
+  }
+  for (std::size_t i = 0; i < graft.document.nodes.size(); ++i) {
+    NodeSpec& node = graft.document.nodes[i];
+    const auto named = graft.nodeKinds.find(node.id);
+    if (named == graft.nodeKinds.end()) continue;
+    const auto omitted = graft.omittedNodeRegisters.find(node.id);
+    const bool colorSent = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
+    const auto hue = resolveHue(landed, HueChoice{colorSent ? std::optional(node.color) : std::nullopt, named->second},
+                                "nodes[" + std::to_string(i) + "].");
+    if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return *refusal;
+    node.color = *std::get<std::optional<NodeColor>>(hue);
+    if (omitted != graft.omittedNodeRegisters.end()) omitted->second.erase(NodeRegister::color);
+  }
+  graft.nodeKinds.clear();
+  return graft;
+}
 
 LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at) {
   using Entry = KindStateEntry;
@@ -43,6 +68,10 @@ LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at
   return legend;
 }
 
+GraftFrame graftFrame(const LooseGraph& graph, const Legend& legend, const Graft& graft, const Hlc& at) {
+  return GraftFrame{graftState(graph, graft, at), graftLegend(legend, graft, at)};
+}
+
 GraftFootprint footprintOf(const LooseGraph& graph, const Graft& graft) {
   const std::set<NodeId> tombstoned(graft.tombstones.begin(), graft.tombstones.end());
   std::map<NodeId, std::set<NodeId>> named;  // each re-sent node -> the prerequisites the document names
@@ -55,7 +84,8 @@ GraftFootprint footprintOf(const LooseGraph& graph, const Graft& graft) {
     if (tombstoned.count(edge.from) || tombstoned.count(edge.to)) continue;  // counted below, once
     auto resent = named.find(edge.to);
     if (resent == named.end() || resent->second.count(edge.from)) continue;
-    if (graft.prerequisites == PrerequisiteMode::merge) footprint.keptEdges.push_back(edge);
+    if (graft.prerequisites == PrerequisiteMode::merge || graft.omittedPrerequisites.count(edge.to))
+      footprint.keptEdges.push_back(edge);
     else footprint.replacedEdges.push_back(edge);
   }
   for (const NodeId& id : tombstoned)
@@ -94,7 +124,10 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
     land(carried(NodeRegister::status), &Entry::status, &Entry::statusAt, normalizeSeedStatus(node.status));
     land(carried(NodeRegister::description), &Entry::description, &Entry::descriptionAt, node.description);
     land(carried(NodeRegister::links), &Entry::links, &Entry::linksAt, node.links);
-    land(carried(NodeRegister::opens), &Entry::opens, &Entry::opensAt, node.opens);
+    // A node the graft brings back opens the tree the batch names and no other, as a node created on a deleted id
+    // does: left out, the pointer the delete left is cleared.
+    const bool broughtBack = held && !graph.hasNode(node.id);
+    land(carried(NodeRegister::opens) || broughtBack, &Entry::opens, &Entry::opensAt, node.opens);
     if (entry != Entry{.id = node.id}) upserted.emplace(node.id, std::move(entry));  // it lands something
     for (const NodeId& prereq : node.prerequisites) {
       const Edge edge{prereq, node.id};

@@ -106,6 +106,53 @@ TEST(graft_treats_a_tombstoned_id_as_re_sent_so_the_edges_a_delete_left_behind_a
   CHECK(g.edgePresent(nid("n"), nid("d")));  // an outgoing edge revives with the node either way
 }
 
+// Under replace, a node the document sends without prerequisites keeps every edge into it, and one re-sent as the
+// tree holds it lands nothing; an empty list is a list, and clears them.
+TEST(graft_replace_keeps_the_edges_of_a_node_sent_without_prerequisites) {
+  LooseGraph g = seeded();
+  Graft unsent;
+  unsent.document.nodes = {spec("n", {})};
+  unsent.omittedNodeRegisters[nid("n")] = omittedAllBut({NodeRegister::label});
+  unsent.omittedPrerequisites = {nid("n")};
+  unsent.prerequisites = PrerequisiteMode::replace;
+
+  const GraftFootprint kept = footprintOf(g, unsent);
+  CHECK_EQ(kept.keptEdges, (std::vector<Edge>{{nid("a"), nid("n")}, {nid("c"), nid("n")}}));
+  CHECK(kept.replacedEdges.empty());
+  CHECK(graftFrame(g, Legend{}, unsent, at(2)).landsNothing());
+
+  unsent.document.nodes[0].label = "renamed";
+  g.join(graftState(g, unsent, at(2)));
+  CHECK_EQ(g.nodeView(nid("n"))->label, std::string("renamed"));
+  CHECK_EQ(g.nodeView(nid("n"))->prerequisites, (std::vector<NodeId>{nid("a"), nid("c")}));
+
+  Graft cleared = unsent;
+  cleared.omittedPrerequisites.clear();
+  const GraftFootprint dropped = footprintOf(g, cleared);
+  CHECK(dropped.keptEdges.empty());
+  CHECK_EQ(dropped.replacedEdges, (std::vector<Edge>{{nid("a"), nid("n")}, {nid("c"), nid("n")}}));
+  g.join(graftState(g, cleared, at(3)));
+  CHECK(g.nodeView(nid("n"))->prerequisites.empty());
+}
+
+// A deleted node re-sent under replace without prerequisites comes back with the edges it had, as under merge.
+TEST(graft_replace_revives_a_node_sent_without_prerequisites_with_its_edges) {
+  LooseGraph g = seeded();
+  g.deleteNode(nid("n"), at(2));
+  Graft revive;
+  revive.document.nodes = {spec("n", {})};
+  revive.omittedNodeRegisters[nid("n")] = omittedAllBut({});
+  revive.omittedPrerequisites = {nid("n")};
+  revive.prerequisites = PrerequisiteMode::replace;
+
+  const GraftFootprint footprint = footprintOf(g, revive);
+  CHECK_EQ(footprint.keptEdges, (std::vector<Edge>{{nid("a"), nid("n")}, {nid("c"), nid("n")}}));
+  CHECK(footprint.replacedEdges.empty());
+  g.join(graftState(g, revive, at(3)));
+  CHECK(g.hasNode(nid("n")));
+  CHECK_EQ(g.nodeView(nid("n"))->prerequisites, (std::vector<NodeId>{nid("a"), nid("c")}));
+}
+
 TEST(graft_replace_leaves_new_nodes_and_nodes_not_in_the_batch_alone) {
   LooseGraph g = seeded();
   Graft graft;
@@ -357,6 +404,51 @@ TEST(graft_state_sets_clears_and_leaves_the_tree_a_node_opens) {
   CHECK_EQ(g.exportNode(nid("n"))->opensAt, at(4));
 }
 
+// A node a delete left keeps its registers, the tree it opened among them. A graft that brings it back and names no
+// tree clears that pointer, as create_node does on a reused id, so no batch restores a pointer it does not name; its
+// description and links come back as they were, and a present node's omitted pointer stays.
+TEST(graft_state_brings_a_deleted_node_back_opening_nothing_unless_the_document_names_a_tree) {
+  LooseGraph g;
+  for (const char* id : {"gone", "here"}) {
+    g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+    g.setDescription(nid(id), "Read it", at(1));
+    g.setLinks(nid(id), {Link{"home", "https://windmill.works"}}, at(1));
+    g.setOpens(nid(id), TreeId{"t_sub"}, at(1));
+  }
+  g.deleteNode(nid("gone"), at(2));
+
+  Graft unnamed;
+  unnamed.document.nodes = {spec("gone", {}), spec("here", {})};
+  unnamed.omittedNodeRegisters[nid("gone")] = omittedAllBut({});
+  unnamed.omittedNodeRegisters[nid("here")] = omittedAllBut({});
+  const GraphState frame = graftState(g, unnamed, at(3));
+  CHECK(frame == (GraphState{{NodeStateEntry{.id = nid("gone"), .createdAt = at(3), .opensAt = at(3)}}, {}}));
+  LooseGraph revived = g;
+  revived.join(frame);
+  NodeStateEntry back = *g.exportNode(nid("gone"));
+  back.createdAt = at(3);
+  back.opens = TreeId{};
+  back.opensAt = at(3);
+  CHECK(*revived.exportNode(nid("gone")) == back);
+  CHECK(revived.hasNode(nid("gone")));
+  CHECK(revived.pointers() == (std::map<NodeId, TreeId>{{nid("here"), TreeId{"t_sub"}}}));
+
+  NodeSpec named = spec("gone", {});
+  named.opens = TreeId{"t_two"};
+  Graft names;
+  names.document.nodes = {named};
+  names.omittedNodeRegisters[nid("gone")] = omittedAllBut({NodeRegister::opens});
+  CHECK(graftState(g, names, at(3)) ==
+        (GraphState{{NodeStateEntry{.id = nid("gone"), .createdAt = at(3), .opens = TreeId{"t_two"}, .opensAt = at(3)}}, {}}));
+
+  NodeSpec same = spec("gone", {});
+  same.opens = TreeId{"t_sub"};
+  Graft resends;
+  resends.document.nodes = {same};
+  resends.omittedNodeRegisters[nid("gone")] = omittedAllBut({NodeRegister::opens});
+  CHECK(graftState(g, resends, at(3)) == (GraphState{{NodeStateEntry{.id = nid("gone"), .createdAt = at(3)}}, {}}));
+}
+
 // A register the document leaves off a kind is stamped unset, so the join keeps what the legend
 // holds; a new kind's omitted register lands as its default. Hue always lands.
 TEST(graft_legend_leaves_an_omitted_kind_register_alone_and_defaults_it_on_a_new_kind) {
@@ -470,4 +562,33 @@ TEST(graft_legend_leaves_out_a_kind_sent_as_held_so_a_concurrent_rename_stands) 
 
 TEST(graft_legend_is_empty_when_the_document_carries_no_kinds) {
   CHECK(graftLegend(Legend{}, Graft{}, at(1)) == LegendState{});
+}
+
+// One batch can add a kind and file nodes under it: a node's kind lands as the hue it wears in the legend
+// the batch leaves, and the node carries its colour register as if it had sent the hue.
+TEST(resolve_kinds_files_nodes_under_the_legend_the_batch_leaves) {
+  const Legend legend({{KindId{"build"}, NodeColor::terracotta, "Build"}}, at(1));
+  Graft graft;
+  graft.document.kinds = {{KindId{"owner"}, NodeColor::gold}, {KindId{"build"}, NodeColor::sky}};
+  graft.document.nodes = {spec("a", {}), spec("b", {})};
+  graft.omittedNodeRegisters[nid("a")] = omittedAllBut({});
+  graft.omittedNodeRegisters[nid("b")] = omittedAllBut({NodeRegister::color});
+  graft.document.nodes[1].color = NodeColor::sky;
+  graft.nodeKinds = {{nid("a"), KindId{"owner"}}, {nid("b"), KindId{"build"}}};
+
+  const std::variant<Graft, KindRefusal> filed = resolveKinds(legend, graft);
+  REQUIRE(std::holds_alternative<Graft>(filed));
+  const Graft& landed = std::get<Graft>(filed);
+  CHECK_EQ(landed.document.nodes[0].color, NodeColor::gold);
+  CHECK_EQ(landed.document.nodes[1].color, NodeColor::sky);
+  CHECK(landed.omittedNodeRegisters.at(nid("a")) == omittedAllBut({NodeRegister::color}));
+  CHECK(landed.omittedNodeRegisters.at(nid("b")) == omittedAllBut({NodeRegister::color}));
+  CHECK(landed.nodeKinds.empty());
+
+  graft.nodeKinds[nid("b")] = KindId{"ghost"};
+  const std::variant<Graft, KindRefusal> refused = resolveKinds(legend, graft);
+  REQUIRE(std::holds_alternative<KindRefusal>(refused));
+  CHECK((std::get<KindRefusal>(refused) ==
+         KindRefusal{KindRefusal::Reason::unknownKind,
+                     "nodes[1].kind \"ghost\" is not a kind of this tree; its legend holds \"build\", \"owner\""}));
 }

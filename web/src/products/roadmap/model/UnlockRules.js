@@ -5,20 +5,38 @@
 export const COLUMN_OF_STATE = { locked: 'locked', available: 'upNext', complete: 'done' };
 
 export class UnlockRules {
+  // The completed set every state derives from: a step that opens a tree is complete exactly when that tree is,
+  // whatever its mark and its prerequisites; every other step, one whose pointer dangles included, follows its mark.
+  static completed(tree, progress) {
+    const completed = new Set();
+    for (const node of tree.nodes) {
+      const done = node.opening && !node.opening.dangling ? node.opening.complete : progress.completed.has(node.id);
+      if (done) completed.add(node.id);
+    }
+    return completed;
+  }
+
   static derive(tree, progress) {
+    const completed = UnlockRules.completed(tree, progress);
     const states = new Map();
 
     for (const node of tree.nodes) {
-      if (progress.completed.has(node.id)) {
+      if (completed.has(node.id)) {
         states.set(node.id, 'complete');
         continue;
       }
-      const unlocked = node.prerequisites.every((prereqId) => progress.completed.has(prereqId));
+      const unlocked = node.prerequisites.every((prereqId) => completed.has(prereqId));
       states.set(node.id, unlocked ? 'available' : 'locked');
     }
 
     return states;
   }
+}
+
+// A step that opens a tree is never marked by hand: no door offers its completion and no mark is sent for it. A step
+// the roadmap no longer holds opens nothing.
+export function takesMark(step) {
+  return !step?.opening;
 }
 
 // Authored order; a prerequisite listed twice still gates once.

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GUIDE_BOUND, GuideDraft, admitsGuide, guideExcerpt, guideLengthBucket, hasGuide } from '../../../../src/products/roadmap/guide/GuideDraft.js';
+import { GUIDE_BOUND, GuideDraft, InadmissibleGuide, admitsGuide, guideExcerpt, guideLengthBucket, hasGuide, saveFailureReason } from '../../../../src/products/roadmap/guide/GuideDraft.js';
 
 const reading = (draft) => ({ length: draft.length, fits: draft.fits, counted: draft.counted, left: draft.left, over: draft.over });
 
@@ -47,6 +47,30 @@ test('a saved length leaves as one of five bounded labels', () => {
     ['0', '1-500', '1-500', '501-2000', '501-2000', '2001-4500', '2001-4500', '4501-5000', '4501-5000']);
 });
 
+test('a failed save is offline only when the request never arrived and the browser reports no connection, refused on a 4xx that trying again cannot change or on inadmissible text, and else the fault of the door that failed', () => {
+  const answered = (status) => Object.assign(new Error('private server sentence'), { status });
+  const online = true;
+  assert.deepEqual([
+    saveFailureReason(answered(0), 'server', false),
+    saveFailureReason(answered(0), 'server', online),
+    saveFailureReason(answered(400), 'server', online),
+    saveFailureReason(answered(401), 'server', online),
+    saveFailureReason(answered(403), 'server', false),
+    saveFailureReason(answered(404), 'server', online),
+    saveFailureReason(answered(499), 'server', online),
+    saveFailureReason(answered(408), 'server', online),
+    saveFailureReason(answered(429), 'server', online),
+    saveFailureReason(new InadmissibleGuide(), 'session', online),
+    saveFailureReason(new InadmissibleGuide(), 'device', false),
+    saveFailureReason(answered(500), 'server', online),
+    saveFailureReason(answered(503), 'server', false),
+    saveFailureReason(new TypeError('private'), 'server', online),
+    saveFailureReason(new Error('local tree changed during a write'), 'device', online),
+    saveFailureReason(new Error('private'), 'session', false),
+    saveFailureReason(undefined, 'device', online),
+  ], ['offline', 'server', 'refused', 'refused', 'refused', 'refused', 'refused', 'server', 'server', 'refused', 'refused', 'server', 'server', 'server', 'device', 'device', 'device']);
+});
+
 test('a paste carrying a NUL or a lone surrogate saves what the person sees: no NUL, the lone half as its replacement glyph', () => {
   const pasted = new GuideDraft('', 'One\u0000 step \uD83C a week \uDE00.');
   assert.deepEqual({ saved: pasted.saved, wellFormed: pasted.saved.isWellFormed(), length: pasted.length, admitted: admitsGuide(pasted.saved) },
@@ -60,4 +84,19 @@ test('a guide is admitted as the server admits one: well-formed, no NUL, words o
   const cases = { '': true, 'One step.': true, ' \n ': false, 'One\u0000': false, 'One \uD83C': false, [`${'🌊'.repeat(GUIDE_BOUND)}`]: true, [`${'a'.repeat(GUIDE_BOUND + 1)}`]: false };
   assert.deepEqual(Object.fromEntries(Object.keys(cases).map((text) => [text, admitsGuide(text)])), cases);
   assert.equal(admitsGuide(7), false);
+});
+
+test('a draft reads its guide with one line feed per line ending, so a stored CRLF is neither a change nor a late caret', () => {
+  const stored = 'One step a week.\r\nKinds: Learn, Build.\rAgents: ask first.';
+  const draft = new GuideDraft(stored);
+  assert.deepEqual({ base: draft.base, changed: draft.changed, outdated: draft.outdatedBy(stored), retyped: draft.writing(`${draft.base}x`).writing(draft.base).changed },
+    { base: 'One step a week.\nKinds: Learn, Build.\nAgents: ask first.', changed: false, outdated: false, retyped: false });
+  assert.equal(draft.outdatedBy('Two steps a week.'), true);
+});
+
+test('blank against no guide is no change, while blank against a guide clears it', () => {
+  assert.equal(new GuideDraft('', '  \n ').changed, false);
+  assert.equal(new GuideDraft(' ', '').changed, false);
+  assert.equal(new GuideDraft('One step a week.', '  ').changed, true);
+  assert.equal(new GuideDraft('', 'One step a week.').changed, true);
 });

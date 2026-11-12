@@ -8,6 +8,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace wm {
@@ -48,7 +49,10 @@ public:
   // Fold a partial legend state in, under the same element-set + LWW discipline as LooseGraph::join.
   void join(const LegendState& state);
 
-  // The three kinds a new tree is born with, in that order.
+  // The kinds a tree is born with: those it is sent, in their order, or the three defaults when it is
+  // sent none. TreeRegistry plants them and create_tree answers them, so the two cannot disagree.
+  static std::vector<Kind> bornWith(const std::vector<Kind>& sent);
+  // The three default kinds, stamped `at`: bornWith({}).
   static Legend seededDefaults(const Hlc& at);
 
   void addKind(const KindId& id, NodeColor hue, const Hlc& at);
@@ -87,5 +91,27 @@ private:
 
   std::map<KindId, KindRecord> kinds_;
 };
+
+// A node's hue as a write names it: by a colour, by a legend kind, or by both when they agree.
+struct HueChoice {
+  std::optional<NodeColor> color;
+  std::optional<KindId> kind;
+};
+
+// A node write's `kind` refused: the legend holds no kind of that id, or the colour sent beside it is
+// another hue than that kind wears. The sentence is what the caller reads.
+struct KindRefusal {
+  enum class Reason { unknownKind, hueMismatch };
+  Reason reason;
+  std::string sentence;
+
+  bool operator==(const KindRefusal&) const = default;
+};
+
+// The hue a node write lands among `kinds`, the legend the write applies to: the hue its kind wears,
+// which a colour sent beside it must equal, else its colour, else nullopt when it names neither. A
+// refusal's sentence names the arguments under `path` ("", "updates[0].").
+std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const std::vector<Kind>& kinds, const HueChoice& choice,
+                                                               const std::string& path);
 
 }

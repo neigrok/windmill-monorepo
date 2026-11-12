@@ -37,9 +37,8 @@ TreeRegistry::Creation TreeRegistry::create(const UserId& owner, const TreeId& i
   // one a device-born tree seeds, so a claim converges.
   const Hlc plantedAt{clock_.nowMs(), 0, std::string{TreeRoom::kServerActor}};
   GraphState state = LooseGraph(initial, plantedAt).exportState();
-  // Honour a posted legend; otherwise a blank tree is born with the three defaults.
-  LegendState legend = initial.kinds.empty() ? Legend::seededDefaults(genesis_).exportState()
-                                             : Legend(initial.kinds, genesis_).exportState();
+  // A posted legend, or the three defaults when none is posted.
+  LegendState legend = Legend(Legend::bornWith(initial.kinds), genesis_).exportState();
   try {
     trees_.create(id, state, legend, initial.title, owner);
   } catch (const DuplicateTree&) {
@@ -79,8 +78,13 @@ std::map<TreeId, std::string> TreeRegistry::titlesOwnedBy(const UserId& owner, c
   return trees_.titlesOwnedBy(owner, trees);
 }
 
-std::map<TreeId, OpenedTree> TreeRegistry::openedFrom(const UserId& owner, const std::set<TreeId>& opened) {
-  return trees_.openedFrom(owner, opened);
+std::map<TreeId, OpenedTree> TreeRegistry::openedFrom(const UserId& owner, const std::set<TreeId>& opened,
+                                                      std::optional<std::chrono::milliseconds> budget) {
+  return trees_.openedFrom(owner, opened, budget);
+}
+
+std::map<TreeId, TreeAbove> TreeRegistry::guidedTreesAbove(const UserId& owner, const TreeId& tree) {
+  return trees_.guidedTreesAbove(owner, tree);
 }
 
 TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& caller) {
@@ -101,8 +105,16 @@ TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& cal
   return Removal::deleted;
 }
 
-TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& caller,
-                                            const std::string& title) {
+const char* TreeRegistry::sentenceOf(Renaming refusal) {
+  switch (refusal) {
+    case Renaming::blankTitle: return "a tree always has a name";
+    case Renaming::malformedTitle: return "the title is not valid UTF-8";
+    case Renaming::nulInTitle: return "the title contains a NUL character";
+    default: return "no such tree";
+  }
+}
+
+std::variant<std::string, TreeRegistry::Renaming> TreeRegistry::titleFrom(const std::string& title) {
   const std::size_t start = title.find_first_not_of(" \t\r\n");
   if (start == std::string::npos) return Renaming::blankTitle;
   std::string trimmed = title.substr(start, title.find_last_not_of(" \t\r\n") - start + 1);
@@ -114,6 +126,14 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   // code-point reading every cap shares, so the cut can never split a sequence.
   const std::size_t cut = byteOffsetOfCodePoint(trimmed, kMaxTitleChars);
   if (cut != std::string::npos) trimmed.resize(cut);
+  return trimmed;
+}
+
+TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& caller,
+                                            const std::string& title) {
+  std::variant<std::string, Renaming> landed = titleFrom(title);
+  if (const Renaming* refusal = std::get_if<Renaming>(&landed)) return *refusal;
+  const std::string& trimmed = std::get<std::string>(landed);
 
   // The strand serializes the rename against the tree's socket frames, so the owner check, the title
   // op and the persist form one uninterrupted step.
@@ -126,26 +146,49 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   return Renaming::renamed;
 }
 
-std::variant<Seq, TreeRegistry::GuideRefusal, Admission> TreeRegistry::setGuide(const TreeId& tree,
-                                                                              const UserId& caller,
-                                                                              const std::string& guide) {
-  if (std::optional<Admission> refusal = admitGuide(guide)) return *refusal;
-  const std::string kept = isBlankGuide(guide) ? std::string() : guide;
+std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission> TreeRegistry::describe(
+    const TreeId& tree, const UserId& caller, const Description& sent) {
+  // Both halves are judged whole before either lands, so a call that sets both lands both or neither.
+  std::optional<std::string> title;
+  if (sent.title) {
+    std::variant<std::string, Renaming> landed = titleFrom(*sent.title);
+    if (const Renaming* refusal = std::get_if<Renaming>(&landed)) return *refusal;
+    title = std::get<std::string>(std::move(landed));
+  }
+  std::optional<std::string> guide;
+  if (sent.guide) {
+    if (std::optional<Admission> refusal = admitGuide(*sent.guide)) return *refusal;
+    guide = isBlankGuide(*sent.guide) ? std::string() : *sent.guide;
+  }
 
-  // The strand serializes the guide against the tree's socket frames, so the gates, the write and
-  // the persist form one uninterrupted step. Both gates read the stored access row before a room is
+  // The strand serializes both against the tree's socket frames, so the gates, the one frame and the
+  // persist form one uninterrupted step. Both gates read the stored access row before a room is
   // materialized.
   std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
   const std::optional<TreeAccess> access = rooms_.accessOf(tree);
-  if (!access || !canRead(caller, access->owner, access->visibility)) return GuideRefusal::notFound;
+  if (!access || !canRead(caller, access->owner, access->visibility)) return Renaming::notFound;
   if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))
-    return *refusal == WriteRefusal::nobodysTree ? GuideRefusal::nobodysTree : GuideRefusal::notYours;
+    return *refusal == WriteRefusal::nobodysTree ? Renaming::nobodysTree : Renaming::notYours;
   TreeRoom* room = rooms_.open(tree);
-  if (!room) return GuideRefusal::notFound;
-  const Seq seq = room->setGuide(kept, clock_.nowMs());
-  if (rooms_.persist(tree)) return seq;
-  // The row went away under its live room: the room goes too, so no reader is served the guide.
+  if (!room) return Renaming::notFound;
+  if (title && *title == room->title().value) title.reset();  // the name it already has is no rename
+  if (!title && !guide) return Described{room->head(), true};
+  const Seq seq = room->describe(title, guide, clock_.nowMs());
+  if (rooms_.persist(tree)) return Described{seq, false};
+  // The row went away under its live room: the room goes too, so no reader is served what it set.
   rooms_.retire(tree);
+  return Renaming::notFound;
+}
+
+std::variant<Seq, TreeRegistry::GuideRefusal, Admission> TreeRegistry::setGuide(const TreeId& tree,
+                                                                              const UserId& caller,
+                                                                              const std::string& guide) {
+  const auto described = describe(tree, caller, Description{std::nullopt, guide});
+  if (const Described* landed = std::get_if<Described>(&described)) return landed->seq;
+  if (const Admission* refusal = std::get_if<Admission>(&described)) return *refusal;
+  const Renaming refusal = std::get<Renaming>(described);
+  if (refusal == Renaming::notYours) return GuideRefusal::notYours;
+  if (refusal == Renaming::nobodysTree) return GuideRefusal::nobodysTree;
   return GuideRefusal::notFound;
 }
 

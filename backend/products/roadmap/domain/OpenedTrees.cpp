@@ -1,5 +1,6 @@
 #include "products/roadmap/domain/OpenedTrees.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace wm {
@@ -23,6 +24,21 @@ std::set<TreeId> treesOpenedBy(const TreeData& tree) {
   for (const NodeSpec& node : tree.nodes)
     if (!node.opens.empty()) opened.insert(node.opens);
   return opened;
+}
+
+std::set<TreeId> treesOpenedBy(const std::map<NodeId, TreeId>& pointers) {
+  std::set<TreeId> opened;
+  for (const auto& [node, tree] : pointers) opened.insert(tree);
+  return opened;
+}
+
+std::map<NodeId, TreeId> pointersSetSince(const std::map<NodeId, TreeId>& before, const std::map<NodeId, TreeId>& after) {
+  std::map<NodeId, TreeId> set;
+  for (const auto& [node, tree] : after) {
+    const auto held = before.find(node);
+    if (held == before.end() || held->second != tree) set.emplace(node, tree);
+  }
+  return set;
 }
 
 OpenedTrees::OpenedTrees(std::map<TreeId, OpenedTree> standing) : standing_(std::move(standing)) {
@@ -96,19 +112,60 @@ std::map<NodeId, Opening> OpenedTrees::openings(const TreeData& tree) const {
   return openings;
 }
 
+WaysBack OpenedTrees::waysBackTo(const TreeId& tree) const {
+  WaysBack back;
+  std::vector<TreeId> level;
+  if (standing_.count(tree)) {
+    back.ways.emplace(tree, WaysBack::Way{});
+    level.push_back(tree);
+  }
+  // A level of openers at a time, so each tree is met first at its fewest pointers, and every tree it opens that is
+  // one pointer nearer is met in that same round: the smallest of them is where it steps.
+  for (int distance = 1; !level.empty(); ++distance) {
+    std::vector<TreeId> above;
+    for (const TreeId& below : level) {
+      const auto openers = openers_.find(below);
+      if (openers == openers_.end()) continue;
+      for (const TreeId& opener : openers->second) {
+        ++back.walked;
+        const auto [way, fresh] = back.ways.emplace(opener, WaysBack::Way{distance, below});
+        if (fresh) above.push_back(opener);
+        if (way->second.pointers == distance && below < way->second.next) way->second.next = below;
+      }
+    }
+    level = std::move(above);
+  }
+  return back;
+}
+
 std::set<TreeId> OpenedTrees::leadingBackTo(const TreeId& tree) const {
   std::set<TreeId> leading;
-  if (!standing_.count(tree)) return leading;
-  std::vector<TreeId> reached{tree};
-  while (!reached.empty()) {
-    const TreeId led = reached.back();
-    reached.pop_back();
-    if (!leading.insert(led).second) continue;
-    const auto openers = openers_.find(led);
-    if (openers == openers_.end()) continue;
-    reached.insert(reached.end(), openers->second.begin(), openers->second.end());
-  }
+  for (const auto& [led, way] : waysBackTo(tree).ways) leading.insert(led);
   return leading;
+}
+
+PointerDiagnostics OpenedTrees::diagnose(const TreeId& tree, const std::map<NodeId, TreeId>& pointers) const {
+  const WaysBack back = waysBackTo(tree);
+  PointerDiagnostics diagnostics;
+  for (const auto& [node, opened] : pointers) {
+    if (!standing_.count(opened)) {
+      if (diagnostics.danglingPointers.size() == kMaxDanglingPointers) ++diagnostics.danglingPointersOmitted;
+      else diagnostics.danglingPointers.push_back({node, opened});
+      continue;
+    }
+    const auto way = back.ways.find(opened);
+    if (way == back.ways.end()) continue;
+    if (diagnostics.treeLoops.size() == kMaxTreeLoops) {
+      ++diagnostics.treeLoopsOmitted;
+      continue;
+    }
+    const std::size_t trees = static_cast<std::size_t>(way->second.pointers) + 1;
+    TreeLoop loop{node, {}, trees - std::min(trees, kMaxLoopPath)};
+    for (TreeId on = opened; loop.path.size() < trees - loop.pathOmitted; on = back.ways.at(on).next)
+      loop.path.push_back({on, standing_.at(on).title});
+    diagnostics.treeLoops.push_back(std::move(loop));
+  }
+  return diagnostics;
 }
 
 }

@@ -1,5 +1,6 @@
 #include "products/roadmap/domain/Command.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -363,18 +364,52 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
   }, command);
 }
 
-std::variant<NodePatchPlan, std::string> planNodePatches(
+std::optional<Command> changedPart(const NodeSpec& node, const Command& command) {
+  // A field the edit names lands when it holds another value on the node.
+  const auto differs = [](const auto& sent, const auto& held) { return sent && *sent != held; };
+  return std::visit(overloaded{
+    [&](const RenameNode& c) -> std::optional<Command> {
+      if (node.label == c.label) return std::nullopt;
+      return c;
+    },
+    [&](const SetNodeColor& c) -> std::optional<Command> {
+      if (node.color == c.color) return std::nullopt;
+      return c;
+    },
+    [&](const RepositionNode& c) -> std::optional<Command> {
+      if (node.position == std::optional<Vec2>(c.position)) return std::nullopt;
+      return c;
+    },
+    [&](const AnnotateNode& c) -> std::optional<Command> {
+      AnnotateNode landed{c.id};
+      if (differs(c.description, node.description)) landed.description = c.description;
+      if (c.appendDescription && appendedTo(node.description, *c.appendDescription) != node.description)
+        landed.appendDescription = c.appendDescription;
+      if (differs(c.icon, node.icon)) landed.icon = c.icon;
+      if (differs(c.links, node.links)) landed.links = c.links;
+      if (differs(c.opens, node.opens)) landed.opens = c.opens;
+      if (!landed.description && !landed.appendDescription && !landed.icon && !landed.links && !landed.opens)
+        return std::nullopt;
+      return landed;
+    },
+    [&](const auto&) -> std::optional<Command> { return command; },
+  }, command);
+}
+
+std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
     const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates) {
   if (updates.empty() || updates.size() > kMaxPatchNodes)
     return "updates must contain 1 to " + std::to_string(kMaxPatchNodes) + " node patches";
 
+  const std::vector<Kind> kinds = legend.kinds();
   NodePatchPlan plan;
   std::set<NodeId> seen;
-  for (const NodePatch& patch : updates) {
+  for (std::size_t row = 0; row < updates.size(); ++row) {
+    const NodePatch& patch = updates[row];
     if (!seen.insert(patch.nodeId).second)
       return "updates repeats nodeId " + quoted(patch.nodeId.str());
-    if (!patch.label && !patch.icon && !patch.description && !patch.color && !patch.position && !patch.links &&
-        !patch.opens)
+    if (!patch.label && !patch.icon && !patch.description && !patch.hue.color && !patch.hue.kind && !patch.position &&
+        !patch.links && !patch.opens)
       return "node " + quoted(patch.nodeId.str()) + ": pass at least one field to patch";
     for (const auto& [field, value] : {std::pair{"label", &patch.label}, {"icon", &patch.icon}, {"description", &patch.description}})
       if (*value && (*value)->find('\0') != std::string::npos)
@@ -387,31 +422,46 @@ std::variant<NodePatchPlan, std::string> planNodePatches(
       return "node " + quoted(patch.nodeId.str()) + ": opens cannot contain a NUL character";
     const std::optional<NodeSpec> node = graph.nodeView(patch.nodeId);
     if (!node) return "no node in this tree is named " + quoted(patch.nodeId.str());
+    const auto hue = resolveHue(kinds, patch.hue, "updates[" + std::to_string(row) + "].");
+    if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return *refusal;
+    const std::optional<NodeColor> color = std::get<std::optional<NodeColor>>(hue);
 
-    std::vector<std::pair<Command, bool>> candidates;
-    if (patch.label)
-      candidates.push_back({RenameNode{patch.nodeId, *patch.label}, node->label != *patch.label});
-    if (patch.color)
-      candidates.push_back({SetNodeColor{patch.nodeId, *patch.color}, node->color != *patch.color});
-    if (patch.position)
-      candidates.push_back({RepositionNode{patch.nodeId, *patch.position}, node->position != patch.position});
-    if (patch.description || patch.icon || patch.links || patch.opens) {
-      const bool changed = (patch.description && node->description != *patch.description) ||
-                           (patch.icon && node->icon != *patch.icon) ||
-                           (patch.links && node->links != *patch.links) ||
-                           (patch.opens && node->opens != *patch.opens);
+    std::vector<Command> candidates;
+    if (patch.label) candidates.push_back(RenameNode{patch.nodeId, *patch.label});
+    if (color) candidates.push_back(SetNodeColor{patch.nodeId, *color});
+    if (patch.position) candidates.push_back(RepositionNode{patch.nodeId, *patch.position});
+    if (patch.description || patch.icon || patch.links || patch.opens)
       candidates.push_back(
-          {AnnotateNode{patch.nodeId, patch.description, patch.links, patch.icon, std::nullopt, patch.opens}, changed});
-    }
+          AnnotateNode{patch.nodeId, patch.description, patch.links, patch.icon, std::nullopt, patch.opens});
 
     const std::size_t before = plan.batch.commands.size();
-    for (const auto& [command, changed] : candidates) {
+    for (const Command& command : candidates) {
       if (std::optional<std::string> reason = validate(graph, legend, command)) return *reason;
-      if (changed) plan.batch.commands.push_back(command);
+      if (std::optional<Command> landed = changedPart(*node, command)) plan.batch.commands.push_back(*landed);
     }
     if (plan.batch.commands.size() != before) plan.changedNodeIds.push_back(patch.nodeId);
   }
   return plan;
+}
+
+std::variant<std::vector<Link>, std::string> withLinksAdded(const std::vector<Link>& held,
+                                                            const std::vector<Link>& added, const std::string& path) {
+  std::vector<Link> joined = held;
+  std::map<std::string, std::size_t> sentAt;
+  for (std::size_t i = 0; i < added.size(); ++i) {
+    const Link& link = added[i];
+    const auto [first, fresh] = sentAt.emplace(link.url, i);
+    if (!fresh)
+      return path + "[" + std::to_string(i) + "].url repeats " + path + "[" + std::to_string(first->second) +
+             "].url — send each link once";
+    auto same = std::find_if(joined.begin(), joined.end(), [&](const Link& kept) { return kept.url == link.url; });
+    if (same == joined.end()) joined.push_back(link);
+    else if (!link.label.empty()) same->label = link.label;
+  }
+  if (joined.size() > kMaxNodeLinks)
+    return "links would hold " + std::to_string(joined.size()) + " links, " +
+           std::to_string(joined.size() - kMaxNodeLinks) + " over the " + std::to_string(kMaxNodeLinks) + " cap";
+  return joined;
 }
 
 std::variant<EdgeChangePlan, std::string> planEdgeChanges(

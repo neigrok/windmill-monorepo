@@ -313,7 +313,11 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
       AgentStep step;
       step.tool = name;
       step.failed = result.isError;
-      step.changedTree = mutatesTree(name) && !result.isError;
+      // A write that answers `unchanged` changed nothing, so it is no edit of the run's, unless it set progress
+      // marks beside it: an import's `unchanged` speaks for its graft, not for the marks it carried.
+      const bool unchanged = result.payload.isObject() && result.payload.get("unchanged", false).asBool() &&
+                             result.payload.get("progress", Json::Value(Json::arrayValue)).empty();
+      step.changedTree = mutatesTree(name) && !result.isError && !unchanged;
       step.note = stepNote(name, result);
       if (step.changedTree) ++edits;
       onStep(step);

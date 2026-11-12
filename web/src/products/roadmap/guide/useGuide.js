@@ -1,23 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { track } from '../../../telemetry/beacon.js';
 import { t } from '../i18n/index.js';
 import { LocalTreeRegistry } from '../persistence/LocalTreeRegistry.js';
 import { setGuide } from '../persistence/TreeRegistry.js';
 import { reportUnexpectedFailure } from '../reportFailure.js';
 import { setLocalGuide } from '../sync/localTrees.js';
-import { InadmissibleGuide, guideLengthBucket, hasGuide } from './GuideDraft.js';
+import { guideLengthBucket, hasGuide, saveFailureReason } from './GuideDraft.js';
 
-// The room's guide: whether this person sees one, the surface open on it, the door a save takes and the beat a guide
-// set elsewhere earns. Null where no guide shows: the shared reader's route and the demo, and a reader's tree without one.
-// A surface is { kind: 'modal' | 'note' | 'editor', writing: null | { via, offset } }.
+// The room's guide: whether this person sees one, whether its note stands open, the door a save takes and the beat a
+// guide set elsewhere earns. Null where no guide shows: the shared reader's route and the demo, and a reader's tree
+// without one. `opened` is null while the guide rests on the tree, else { writing: null | { offset }, keyboard }: a note
+// opened to read, or to write from that offset, and whether a key opened it. `entry` holds the guide's control on the
+// tree, which the note opens from and hands focus back to.
 export function useRoomGuide({ treeId, tree, who, deviceLine, sessionRef }) {
   const text = tree?.guide ?? '';
-  const [surface, setSurface] = useState(null);
+  const { owner } = who;
+  const [opened, setOpened] = useState(null);
   const [arrival, setArrival] = useState(0);
+  const entry = useRef(null);
   const seen = useRef(null);
   const ownWrite = useRef(null);
-
-  useEffect(() => setSurface(null), [treeId, who.phone]);
 
   // A guide set in another tab or by an agent earns one beat; the first read and this room's own save earn none.
   useEffect(() => {
@@ -34,13 +36,18 @@ export function useRoomGuide({ treeId, tree, who, deviceLine, sessionRef }) {
 
   // The session's stamped register when it can take the write, as a rename; before its lattice loads, the device blob
   // for a tree that lives only here and the server's PATCH for the rest. A save over a guide that changed since writing
-  // began, last writer winning, leaves a conflict beside it.
+  // began, last writer winning, leaves a conflict beside it. It answers null once a door took the guide or nothing
+  // changed, else why none did: the reason its event carries and the note's line says.
   const save = useCallback(async (draft) => {
     const next = draft.saved;
     const length = guideLengthBucket(next ? draft.length : 0);
+    if (!owner) {
+      track('roadmap_guide', { step: 'save', outcome: 'failed', length, reason: 'refused' });
+      return 'refused';
+    }
     if (next === text) {
       track('roadmap_guide', { step: 'save', outcome: 'unchanged', length });
-      return true;
+      return null;
     }
     ownWrite.current = next;
     let door = 'session';
@@ -53,28 +60,40 @@ export function useRoomGuide({ treeId, tree, who, deviceLine, sessionRef }) {
     } catch (error) {
       ownWrite.current = null;
       reportUnexpectedFailure('roadmap-guide-save', error);
-      const refused = error instanceof InadmissibleGuide || (error?.status >= 400 && error.status < 500);
-      track('roadmap_guide', { step: 'save', outcome: 'failed', length,
-        reason: error?.status === 0 ? 'offline' : refused ? 'refused' : door === 'server' ? 'server' : 'device' });
-      return false;
+      const reason = saveFailureReason(error, door, navigator.onLine !== false);
+      track('roadmap_guide', { step: 'save', outcome: 'failed', length, reason });
+      return reason;
     }
     track('roadmap_guide', { step: 'save', outcome: next ? 'saved' : 'cleared', length });
     if (draft.outdatedBy(text)) track('roadmap_guide', { step: 'conflict' });
-    return true;
-  }, [treeId, text, sessionRef]);
+    return null;
+  }, [treeId, text, owner, sessionRef]);
 
   const shown = Boolean(tree) && !who.shared && !who.demo && (who.owner || (who.reader && hasGuide(text)));
   const roadmapTitle = tree?.title?.trim() || t('roadmap.common.untitled');
+  // The note closes when the tree changes or the guide stops being shown, so it never stands open without an open.
+  useEffect(() => setOpened(null), [treeId, shown]);
   return useMemo(() => (shown ? {
     text,
     owner: who.owner,
     deviceOnly: Boolean(deviceLine),
     roadmapTitle,
     arrival,
-    surface,
-    open: (kind) => setSurface({ kind, writing: null }),
-    write: (kind, writing) => setSurface({ kind, writing }),
-    close: () => setSurface(null),
+    entry,
+    opened,
+    open: (writing = null, keyboard = false) => setOpened({ writing, keyboard }),
+    close: () => setOpened(null),
     save,
-  } : null), [shown, text, who.owner, deviceLine, roadmapTitle, arrival, surface, save]);
+  } : null), [shown, text, who.owner, deviceLine, roadmapTitle, arrival, opened, save]);
+}
+
+// The one crossfade a guide set elsewhere earns where it is read: none on a first showing, none under reduced motion.
+export function useArrivalFade(shown, arrival) {
+  const seen = useRef(arrival);
+  useLayoutEffect(() => {
+    if (arrival === seen.current) return;
+    seen.current = arrival;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    shown.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 150, easing: 'ease-out' });
+  }, [arrival]);
 }

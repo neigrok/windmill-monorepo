@@ -40,6 +40,54 @@
   flex-shrink: 1;
 }
 
+/* The way back to the tree this one was gone into from: a chip in the first slot, or the phone's chevron and eyebrow. */
+.st-roadmap-back {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.st-roadmap-back--wide {
+  gap: 2px;
+  max-width: 200px;
+  height: 32px;
+  padding: 0 12px 0 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  font: 700 13px/18px var(--font-body);
+}
+.st-roadmap-back--wide > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-roadmap-back--phone {
+  justify-content: center;
+  width: 36px;
+  height: 44px;
+  margin: 0 -4px 0 -10px;
+  padding: 0;
+  color: var(--text-primary);
+}
+.st-roadmap-eyebrow {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 800 10px/13px var(--font-body);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.st-roadmap-title.st-roadmap-title--from {
+  box-sizing: border-box;
+  padding: 3px 0;
+  line-height: 25px;
+}
+
 .st-roadmap-title {
   margin: 0;
   overflow: hidden;
@@ -403,17 +451,16 @@
   padding-bottom: 12px;
 }
 
-/* The roadmap page and a page it opens (Activity, the guide) share one footprint, which the guide's row grows. */
-.st-board-sheet.st-roadmap-sheet--page-entry,
-.st-board-sheet.st-roadmap-sheet--page {
-  height: calc(611px + var(--st-roadmap-sheet-guide, 0px));
+.st-board-sheet.st-roadmap-sheet--activity-entry,
+.st-board-sheet.st-roadmap-sheet--activity {
+  height: 611px;
 }
 
-.st-board-sheet.st-roadmap-sheet--page {
+.st-board-sheet.st-roadmap-sheet--activity {
   overflow: hidden;
 }
 
-.st-roadmap-sheet--page > .st-board-sheet-heading {
+.st-roadmap-sheet--activity > .st-board-sheet-heading {
   flex-shrink: 0;
   gap: 4px;
 }

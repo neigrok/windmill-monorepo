@@ -1,56 +1,54 @@
-# 04 · Gym demonstration and real checkout
+# 04 · Demonstrate Gym in November and prepare Windmill One for December
 
-Kind: build · Stage: 0 · Window: Nov 23 to Dec 7, 2026 · Cash: $0 to $100 · CEO hours / agent days: 3h / 4d
+**Free pilot preparation.** On each build admitted by [the access check](01-store-readiness.md), prepare
+one short demonstration using a founder-owned example program. Show where to find a routine, start the
+workout, record a set, finish and find it in history. On the next session show the previous record or
+prefill where supported. This demonstrates the job the ten lifters are being asked to repeat.
 
-## Idea
-Give marketing a purchasable product and one concrete job to show. Two deliverables: Windmill One
-on sale through a controlled web pilot by Nov 23, 2026, with native purchases working at the store
-releases; and a Gym landing whose live hero vignette plays the real job, a program screenshot
-becoming a proposed routine the lifter applies, with every manual alternative preserved.
+If the tested build supports Coach and capacity is available, demonstrate one real change to an existing
+routine. Let the lifter inspect and apply the proposal. A requested new routine can be created directly.
+Manual setup and logging remain available. On the web, show the signed-in mirror, planning, history or
+Coach. Use a phone for workout entry. Verify every screen on the version offered to participants before
+using its recording. Use only example data in assets. [Gym product contract](../../PRODUCT_LOG.md#gym) ·
+[Phone Coach](../../foundation/mobile/gym_coach.md)
 
-## Pros
-- Visitors see saved work, not a feature list.
-- Checkout on real money is what reports 02 and 08 need to measure.
-- Web checkout through Paddle keeps more of the $12 than a store purchase.
-- One job per landing keeps the other products discoverable without asking a visitor to understand all three.
+**Invitation copy**
 
-## Cons
-- A setup-only demonstration can attract one-time buyers who leave after the routine exists.
-- Native purchase, restore and cross-platform entitlement each have their own failure modes.
-- The landing hero is new visual work and waits on an approved Figma design.
-- Twenty observed users is direction, not proof.
+> I’m building Windmill Gym for lifters who repeat a program. Would you try logging two workouts you already
+> plan to do on your phone? It’s a free beta. At the end I’d like to hear where it saved time or got in your
+> way.
 
-## Estimates
-| Item | Estimate |
-|---|---|
-| Cash | $0 to $100 of AI spend across the observed sessions (assumption) |
-| Effort | 3 CEO hours observing users; 4 agent days for checkout, entitlement and the vignette |
-| Checkout | `paidPlansOpen()` in `web/src/shell/billing/checkout.js` returns true for the pilot, and the server has a configured Paddle price id |
-| Outcome | 20 observed people, each handed a real program and asked to set it up without help |
+Give the invitation before showing the demo. Observe unaided use first and record whether help was needed.
+The demonstration is available on request. Ask what the lifter would use again and what they already use or
+pay for. Label answers as interview evidence. [Gym cohort](08-gym-demand-cohort.md)
 
-## Success metric
-At least 80% of 20 observed users complete their first valid Coach task unaided by Dec 7, 2026.
+## Windmill One for the early-December launch
 
-## Failure metric
-Fewer than 60% complete it unaided. The demonstration is fixed before any creator traffic is sent
-(report 09 stays in preflight).
+One is the optional paid entitlement shared by Roadmap, Journal and Gym. The ordinary editor, journal
+and training log are free. Checkout is currently closed. The founder prepares an offer for the owner
+to approve with its actual channel, storefronts, benefits, price, billing period, renewal terms and
+cancellation route. Keep price and purchase wording out of public creative until those details are
+confirmed. [Product principles](../../PRODUCT_LOG.md#shared-principles) · [Web checkout](../../../web/src/shell/billing/checkout.js)
 
-## Justification
-The negotiation chose Gym Coach as the first paid-demand test because a lifter with a program has a
-job worth paying for and a reason to return; comparable coach apps charge $12.99 to $15.99 a month
-while log-only apps charge $2.99 to $4.99 (App Store pricing, 2026). Demand cannot be read without a
-checkout, and the brand's landing rule requires a live vignette rather than a screenshot. Productivity
-and fitness apps see more than 60% of conversions in week one and about half on day zero (RevenueCat,
-2026), so the first session must carry the whole argument. The alternative, marketing a product that
-cannot be bought, was rejected in round one.
+1. If the owner chooses an iOS in-app subscription, prepare its App Store Connect record and review
+   materials alongside the app. Apple requires the first subscription of its type, its subscription group
+   and a new app version in the same submission. If the owner chooses a web offer, prepare that checkout
+   and verify where the intended storefront permits it to be promoted before placing a purchase link.
+   [Apple subscription submission](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-in-app-purchase/) · [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/)
+2. Rehearse purchase and subsequent account access in the chosen test environment. Confirm both the shared
+   entitlement and a funded allowance for the correct account and billing period. Check renewal,
+   cancellation, refund and revocation, including adjustments to funding. The accounting review identifies
+   open gaps in refunds and customer billing management. [Billing and funding](../../AI_USAGE_REVIEW.md)
+3. After the owner authorizes opening sales, verify an approved real transaction through the advertised
+   channel, effective One access and funding for that period. Keep the verification purchase outside demand
+   counts. Point a public offer only to that working channel, with its actual terms. If this check is
+   pending, the launch copy can still invite people to the available free actions.
 
-## Dependencies
-- Report 02's billing scenarios reconciled before the pilot opens to anyone outside the team.
-- The landing vignette and any checkout surface approved in Figma before an agent implements them.
-- Apple Small Business Program enrollment confirmed by the CEO.
-- Report 01's store listings for native purchases.
+## Later paid-demand experiment
 
-## Decision log
-
-| Date | Decision | Numbers |
-|---|---|---|
+Invite 50 qualified lifters to the working offer as a separate cohort. Five genuine non-refunded buyers
+and a second useful Coach task in a later week for at least half those buyers are the proposed learning
+thresholds. Report eligible renewals when observed. November’s ten free testers and general launch sales
+have their own denominators. The $12/month figure is a hypothesis for the experiment. Use the price the
+owner actually approves and keep incremental campaign spend at $0 under this plan.
+[Demand and economics](../strategy.md) · [Cohort definitions](../funnels.md)

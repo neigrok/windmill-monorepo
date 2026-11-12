@@ -1,18 +1,23 @@
-// One step on the Board: the kind rail, the title, the reason line and a two-line excerpt; the whole card opens its step.
+// One step on the Board: the kind rail, the title, the reason line and a two-line excerpt; the whole card opens its
+// step. A step that opens a tree wears the tree's pill between the reason and the excerpt, and the pill opens the tree.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { SwipeGesture, SWIPE_REVEAL } from './gestures.js';
 import { HoldGesture, HOLD_MS } from '../input/HoldGesture.js';
 import { hueOf } from '../theme.js';
-import { completeStepAction, STEP_DETAIL, reasonLine } from '../copy.js';
+import { OpeningBar, OpeningGlyph } from '../OpeningMarks.jsx';
+import { completeStepAction, openTreeAction, STEP_DETAIL, TREE, reasonLine, treeLine } from '../copy.js';
 
 const SWIPE_ACTION_GAP = 8;
 const SWIPE_HAPTIC_MS = 8;
 
-export const StepCard = React.memo(function StepCard({ card, selected = false, arrived = false, tabIndex = 0, onSelect, swipe = false, open = false, onSwipe, onComplete, leaving = false, dimmed = false, selecting = false, checked = false, onHold }) {
+export const StepCard = React.memo(function StepCard({ card, selected = false, arrived = false, tabIndex = 0, onSelect, swipe = false, open = false, onSwipe, onComplete, onOpenTree: openTree = null, leaving = false, dimmed = false, selecting = false, checked = false, onHold }) {
   const reason = reasonLine(card);
   const description = card.step.description?.trim() ?? '';
   const kind = hueOf(card.step.color);
+  const pill = card.opening && treeLine(card.opening, card.opening.titleBeside(card.step));
+  const leads = Boolean(pill && openTree) && card.opening.leads;
   const cardButton = (
     <button
       type="button"
@@ -22,21 +27,39 @@ export const StepCard = React.memo(function StepCard({ card, selected = false, a
       tabIndex={tabIndex}
       aria-current={selected ? 'true' : undefined}
       aria-pressed={selecting ? checked : undefined}
-      onClick={() => onSelect(card.id)}
+      onClick={(event) => {
+        if (leads && !selecting && event.target.closest('.st-board-tree-pill')) openTree(card.id, 'pill');
+        else onSelect(card.id);
+      }}
     >
       <span className="st-board-card-rail" aria-hidden />
       <span className="st-board-card-content">
         <span className="st-board-card-title">{card.step.label}</span>
         {reason && <span className="st-board-card-reason">{reason}</span>}
+        {pill && (
+          <span className={`st-board-tree-pill st-board-tree-pill--${card.opening.face}${leads ? ' st-board-tree-pill--leads' : ''}`}>
+            <span className="st-board-tree-pill-glyph"><OpeningGlyph face={card.opening.face} size={14} check /></span>
+            <span className="st-board-tree-pill-label">{pill}</span>
+            {card.opening.face === 'open' && <OpeningBar opening={card.opening} />}
+            {leads && <span className="st-board-tree-pill-chevron"><ChevronRight size={12} strokeWidth={1.66667} absoluteStrokeWidth aria-hidden /></span>}
+          </span>
+        )}
         {description && <span className="st-board-card-excerpt">{description}</span>}
       </span>
     </button>
   );
+  // An Up next card's swipe reveals what the card is for: Complete, or Open where its completion is its tree's.
+  const reveal = card.opening
+    ? card.opening.leads && openTree && { label: TREE.openShort, name: openTreeAction({ step: card.step.label }), glyph: <OpeningGlyph face="open" size={24} />, run: () => openTree(card.id, 'swipe') }
+    : onComplete && {
+      label: STEP_DETAIL.complete, name: completeStepAction({ step: card.step.label }), run: () => onComplete(card.id, 'swipe'),
+      glyph: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="m5 12 4 4 10-10" /></svg>,
+    };
   return <InteractiveCard card={card} onHold={onHold} selecting={selecting}
-    swipe={swipe && card.column === 'upNext'} open={open} onSwipe={onSwipe} onComplete={onComplete} tabIndex={tabIndex}>{cardButton}</InteractiveCard>;
+    reveal={swipe && card.column === 'upNext' ? reveal : null} open={open} onSwipe={onSwipe} tabIndex={tabIndex}>{cardButton}</InteractiveCard>;
 });
 
-function InteractiveCard({ card, onHold, selecting, swipe, open, onSwipe, onComplete, tabIndex, children }) {
+function InteractiveCard({ card, onHold, selecting, reveal, open, onSwipe, tabIndex, children }) {
   const hold = useRef(null);
   const timer = useRef(null);
   const scroller = useRef(null);
@@ -87,11 +110,11 @@ function InteractiveCard({ card, onHold, selecting, swipe, open, onSwipe, onComp
       children.props.onClick(event);
     },
   });
-  if (!swipe) return button;
-  return <SwipeCard hold={hold} card={card} open={open} onSwipe={onSwipe} onComplete={onComplete} tabIndex={tabIndex}>{button}</SwipeCard>;
+  if (!reveal) return button;
+  return <SwipeCard hold={hold} card={card} open={open} onSwipe={onSwipe} reveal={reveal} tabIndex={tabIndex}>{button}</SwipeCard>;
 }
 
-function SwipeCard({ hold, card, open, onSwipe, onComplete, tabIndex, children }) {
+function SwipeCard({ hold, card, open, onSwipe, reveal, tabIndex, children }) {
   const gesture = useRef(null);
   const dragged = useRef(false);
   const [offset, setOffset] = useState(null);
@@ -135,13 +158,13 @@ function SwipeCard({ hold, card, open, onSwipe, onComplete, tabIndex, children }
         event.currentTarget.querySelector('.st-board-card').focus();
       }}>
       {children}
-      <button type="button" className="st-board-swipe-complete" tabIndex={tabIndex} aria-label={completeStepAction({ step: card.step.label })}
+      <button type="button" className="st-board-swipe-complete" tabIndex={tabIndex} aria-label={reveal.name}
         onFocus={() => onSwipe(card.id)} onClick={() => {
           onSwipe(null);
-          onComplete(card.id, 'swipe');
+          reveal.run();
         }}>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="m5 12 4 4 10-10" /></svg>
-        <span>{STEP_DETAIL.complete}</span>
+        {reveal.glyph}
+        <span>{reveal.label}</span>
       </button>
     </div>
   );

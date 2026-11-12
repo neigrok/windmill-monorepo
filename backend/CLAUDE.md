@@ -132,6 +132,10 @@ pqxx::work txn{*conn};     // declared second so it destructs FIRST and can stil
 That order and that ceiling are both load-bearing: a closed loopback connection holds one of macOS's
 16,384 TCP ephemeral ports for 30 seconds, and the whole machine shares that pool.
 
+- Every pooled connection runs under a 5 s `statement_timeout` and with `jit` off. Statements here are
+  short and planned on each call; production's Postgres 16 otherwise compiles any plan the planner prices
+  past its JIT threshold, and a recursive walk is priced there whatever the tables hold, which costs
+  about a second per call. The local Homebrew Postgres has no JIT, so only production shows it.
 - Tests borrow from `test/PgTestPool.h`, one pool per binary — never a connection per case.
 - Local `DATABASE_URL` is the unix socket (`postgresql:///windmill?host=/tmp`), which costs no
   ephemeral port. Production keeps TCP.

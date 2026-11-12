@@ -44,12 +44,14 @@ void Legend::join(const LegendState& state) {
   }
 }
 
-Legend Legend::seededDefaults(const Hlc& at) {
-  return Legend({{KindId{"build"}, NodeColor::terracotta, "Build", "Things you make"},
-                 {KindId{"learn"}, NodeColor::olive, "Learn", "Things you figure out"},
-                 {KindId{"milestone"}, NodeColor::gold, "Milestone", "Moments that matter"}},
-                at);
+std::vector<Kind> Legend::bornWith(const std::vector<Kind>& sent) {
+  if (!sent.empty()) return sent;
+  return {{KindId{"build"}, NodeColor::terracotta, "Build", "Things you make"},
+          {KindId{"learn"}, NodeColor::olive, "Learn", "Things you figure out"},
+          {KindId{"milestone"}, NodeColor::gold, "Milestone", "Moments that matter"}};
 }
+
+Legend Legend::seededDefaults(const Hlc& at) { return Legend(bornWith({}), at); }
 
 double Legend::nextRank() const {
   double max = -1;
@@ -180,6 +182,27 @@ std::optional<KindStateEntry> Legend::exportKind(const KindId& id) const {
   entry.rank = record.rank.value;
   entry.rankAt = record.rank.stamp;
   return entry;
+}
+
+std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const std::vector<Kind>& kinds, const HueChoice& choice,
+                                                               const std::string& path) {
+  using Reason = KindRefusal::Reason;
+  if (!choice.kind) return choice.color;
+  const std::string named = path + "kind \"" + choice.kind->str() + "\"";
+  const auto worn = std::find_if(kinds.begin(), kinds.end(), [&](const Kind& kind) { return kind.id == *choice.kind; });
+  if (worn == kinds.end()) {
+    if (kinds.empty())
+      return KindRefusal{Reason::unknownKind, named + " is not a kind of this tree, whose legend holds none — add one "
+                                                      "with roadmap_add_kind first"};
+    std::string held;
+    for (const Kind& kind : kinds) held += (held.empty() ? "\"" : ", \"") + kind.id.str() + "\"";
+    return KindRefusal{Reason::unknownKind, named + " is not a kind of this tree; its legend holds " + held};
+  }
+  if (choice.color && *choice.color != worn->hue)
+    return KindRefusal{Reason::hueMismatch, named + " wears " + std::string(toString(worn->hue)) + ", but " + path +
+                                                "color is \"" + std::string(toString(*choice.color)) +
+                                                "\" — send one of the two, or both when they agree"};
+  return worn->hue;
 }
 
 }

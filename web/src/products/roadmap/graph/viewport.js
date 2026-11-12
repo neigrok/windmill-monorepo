@@ -23,29 +23,45 @@ const MINIMAP = { width: 186, height: 146 };
 // .st-legend-dock: --space-6 from the left on every breakpoint, clear of the minimap's seat below it.
 const LEGEND_CORNER = { left: 24, bottom: 24 + 196 };
 const CAMERA_GUTTER = 24;
+// The guide's card or its open note holds the canvas's top-left corner: the camera frames the tree to its right while
+// at least this much of the canvas stays, and a caption never sits under it.
+const GUIDE = { gutter: 24, stage: 320 };
 
-export function viewportInsets({ breakpoint, dockOpen = false, barBottom = 0, legendBox = null, rowBottom = null, cameraBlock = null }) {
+// `guideBox` is the guide's measured { left, top, width, height } on the canvas, `width` the canvas's own.
+export function viewportInsets({ breakpoint, dockOpen = false, barBottom = 0, legendBox = null, rowBottom = null, cameraBlock = null, guideBox = null, width = null }) {
   if (breakpoint === 'desktop') {
     const right = dockOpen ? DESKTOP.dock : DESKTOP.margin;
-    const blocks = [{ left: DESKTOP.margin, bottom: DESKTOP.margin, ...MINIMAP }, ...legendBlocks(legendBox)];
+    const blocks = [{ left: DESKTOP.margin, bottom: DESKTOP.margin, ...MINIMAP }, ...legendBlocks(legendBox), ...guideBlocks(guideBox)];
     if (cameraBlock) blocks.push({ right, bottom: DESKTOP.margin, ...cameraBlock });
     return {
-      top: rowBottom ?? DESKTOP.top, right, bottom: DESKTOP.margin, left: DESKTOP.margin,
+      top: rowBottom ?? DESKTOP.top, right, bottom: DESKTOP.margin, left: leftOfGuide(guideBox, { width, right, margin: DESKTOP.margin }),
       blocks,
     };
   }
   if (breakpoint === 'tablet') {
     const right = dockOpen ? TABLET.panel : TABLET.margin;
     const bottom = TABLET.gutter;
-    const blocks = legendBlocks(legendBox);
+    const blocks = [...legendBlocks(legendBox), ...guideBlocks(guideBox)];
     if (cameraBlock) blocks.push({ right: Math.max(CAMERA_GUTTER, right), bottom: Math.max(CAMERA_GUTTER, bottom), ...cameraBlock });
     return {
-      top: rowBottom ?? TABLET.top, right, bottom, left: TABLET.margin,
+      top: rowBottom ?? TABLET.top, right, bottom, left: leftOfGuide(guideBox, { width, right, margin: TABLET.margin }),
       blocks,
     };
   }
   const bottom = barBottom > 0 ? barBottom + PHONE.barGutter : PHONE.gutter;
   return { top: rowBottom ?? PHONE.top, right: PHONE.margin, bottom, left: PHONE.margin, blocks: [] };
+}
+
+function guideBlocks(guideBox) {
+  if (!guideBox || guideBox.width <= 0 || guideBox.height <= 0) return [];
+  return [{ left: guideBox.left, top: guideBox.top, width: guideBox.width, height: guideBox.height }];
+}
+
+// The left inset past the guide, or the plain margin where the canvas is too narrow to give the guide a side of its own.
+function leftOfGuide(guideBox, { width, right, margin }) {
+  if (!guideBox || guideBox.width <= 0 || width === null) return margin;
+  const left = guideBox.left + guideBox.width + GUIDE.gutter;
+  return width - left - right >= GUIDE.stage ? left : margin;
 }
 
 // The legend dock publishes its own measured box, since its height is its rows'; the phone hides it altogether.
