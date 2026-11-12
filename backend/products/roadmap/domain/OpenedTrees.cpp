@@ -98,4 +98,49 @@ std::set<TreeId> OpenedTrees::leadingBackTo(const TreeId& tree) const {
   return leading;
 }
 
+PointerDiagnostics OpenedTrees::diagnose(const TreeData& tree) const {
+  // The fewest pointers from each standing tree back to `tree`, counted a level of openers at a time.
+  std::map<TreeId, int> pointersBack;
+  std::vector<TreeId> level;
+  if (standing_.count(tree.id)) level.push_back(tree.id);
+  for (int distance = 0; !level.empty(); ++distance) {
+    std::vector<TreeId> above;
+    for (const TreeId& below : level) {
+      if (!pointersBack.emplace(below, distance).second) continue;
+      const auto openers = openers_.find(below);
+      if (openers != openers_.end()) above.insert(above.end(), openers->second.begin(), openers->second.end());
+    }
+    level = std::move(above);
+  }
+
+  std::map<NodeId, TreeId> pointers;
+  for (const NodeSpec& node : tree.nodes)
+    if (!node.opens.empty()) pointers.emplace(node.id, node.opens);
+
+  PointerDiagnostics diagnostics;
+  for (const auto& [node, opened] : pointers) {
+    if (!standing_.count(opened)) {
+      diagnostics.danglingPointers.push_back({node, opened});
+      continue;
+    }
+    const auto back = pointersBack.find(opened);
+    if (back == pointersBack.end()) continue;
+    TreeLoop loop{node, {}};
+    TreeId onTheWay = opened;
+    for (int left = back->second; left > 0; --left) {
+      loop.path.push_back({onTheWay, standing_.at(onTheWay).title});
+      // A tree's pointers are held by target id, so the first one a pointer nearer is the smallest.
+      for (const auto& [target, held] : standing_.at(onTheWay).pointers) {
+        const auto nearer = pointersBack.find(target);
+        if (nearer == pointersBack.end() || nearer->second != left - 1) continue;
+        onTheWay = target;
+        break;
+      }
+    }
+    loop.path.push_back({tree.id, standing_.at(tree.id).title});
+    diagnostics.treeLoops.push_back(std::move(loop));
+  }
+  return diagnostics;
+}
+
 }

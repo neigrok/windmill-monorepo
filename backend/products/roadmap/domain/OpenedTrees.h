@@ -41,6 +41,35 @@ struct Opening {
   bool operator==(const Opening&) const = default;
 };
 
+// One tree on the way from the tree a node opens back to the node's own tree.
+struct TreeOnLoop {
+  TreeId tree;
+  std::string title;
+  bool operator==(const TreeOnLoop&) const = default;
+};
+
+// A node whose pointer leads back to its own tree, which is why that tree never completes. `path` is a shortest way
+// back: the tree the node opens first, the node's own tree last, the smaller tree id taken wherever two are as short.
+struct TreeLoop {
+  NodeId node;
+  std::vector<TreeOnLoop> path;
+  bool operator==(const TreeLoop&) const = default;
+};
+
+// A node whose pointer is not valid, with the pointer as it is stored: such a node is an ordinary node.
+struct DanglingPointer {
+  NodeId node;
+  TreeId tree;
+  bool operator==(const DanglingPointer&) const = default;
+};
+
+// How one tree's pointers depart from the rule in SPEC.md (Model, `OpenedTrees`), each list in node id order.
+struct PointerDiagnostics {
+  std::vector<TreeLoop> treeLoops;
+  std::vector<DanglingPointer> danglingPointers;
+  bool operator==(const PointerDiagnostics&) const = default;
+};
+
 std::set<TreeId> treesOpenedBy(const TreeData& tree);
 
 // One owner's standing trees under the owner's marks, judged once by the rule in SPEC.md (Model, `OpenedTrees`).
@@ -55,6 +84,9 @@ public:
   std::map<NodeId, Opening> openings(const TreeData& tree) const;
   // The standing trees whose pointers lead to `tree`, itself among them when it stands.
   std::set<TreeId> leadingBackTo(const TreeId& tree) const;
+  // The loops of trees through `tree` and the pointers of `tree` that are not valid. A loop among other trees that
+  // does not lead back to `tree` is theirs.
+  PointerDiagnostics diagnose(const TreeData& tree) const;
   // The pointers the completeness pass walked: at most one per tree and target.
   std::size_t walked() const { return walked_; }
 
