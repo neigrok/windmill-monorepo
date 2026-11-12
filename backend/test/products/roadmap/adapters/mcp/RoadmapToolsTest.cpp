@@ -7,10 +7,13 @@
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 #include "products/roadmap/application/ActivityFeed.h"
 #include "products/roadmap/application/ForkService.h"
+#include "platform/ports/FailureReporter.h"
 #include "test/testing.h"
 
+#include <memory>
 #include <mutex>
 #include <thread>
+#include <typeinfo>
 
 using namespace wm;
 using namespace wm::fake;
@@ -38,6 +41,20 @@ std::vector<std::string> introduced(const Json::Value& receipt) {
 struct FailingTreeRepository : FakeTreeRepository {
   std::optional<StoredTree> load(const TreeId&) override {
     throw std::runtime_error("connect host=db.internal port=5432 user=windmill password=hunter2: FATAL");
+  }
+};
+
+// A store whose reads fail from the moment a tree has been inserted.
+struct LoadsFailAfterCreate : FakeTreeRepository {
+  bool inserted = false;
+  void create(const TreeId& tree, const GraphState& state, const LegendState& legend, const std::string& title,
+              const UserId& owner) override {
+    FakeTreeRepository::create(tree, state, legend, title, owner);
+    inserted = true;
+  }
+  std::optional<StoredTree> load(const TreeId& tree) override {
+    if (inserted) throw std::runtime_error("connection reset mid-read");
+    return FakeTreeRepository::load(tree);
   }
 };
 
@@ -232,6 +249,94 @@ TEST(mcp_create_tree_plants_an_owned_roadmap_and_lists_it) {
   for (const Json::Value& row : listed["trees"])
     if (row["id"].asString() == newId) { found = true; CHECK_EQ(row["title"].asString(), std::string("Sailing")); }
   CHECK(found);
+}
+
+TEST(mcp_create_tree_plants_the_legend_it_is_sent_and_answers_it) {
+  Harness h;
+  const ToolResult created = h.tools.callTool("create_tree", parse(R"({"title":"Crew board","kinds":[
+    {"id":"developer","hue":"sky","label":"Developer"},
+    {"id":"designer","hue":"plum","label":"Designer","description":"Draws the flows"},
+    {"id":"owner","hue":"gold","label":"Owner","crossBranchExempt":true}]})"), h.actor);
+  CHECK_FALSE(created.isError);
+  const std::string tree = body(created)["treeId"].asString();
+  CHECK_EQ(body(created), parse(R"({"treeId":")" + tree + R"(","kinds":[{"id":"developer","hue":"sky","label":"Developer"},
+    {"id":"designer","hue":"plum","label":"Designer"},{"id":"owner","hue":"gold","label":"Owner"}]})"));
+
+  Json::Value read = parse(R"({"kindFields":["id","hue","label","description","crossBranchExempt"]})");
+  read["treeId"] = tree;
+  CHECK_EQ(body(h.tools.callTool("get_tree", read, h.actor))["tree"]["kinds"],
+           parse(R"([{"id":"developer","hue":"sky","label":"Developer","description":"","crossBranchExempt":false},
+    {"id":"designer","hue":"plum","label":"Designer","description":"Draws the flows","crossBranchExempt":false},
+    {"id":"owner","hue":"gold","label":"Owner","description":"","crossBranchExempt":true}])"));
+
+  Json::Value filed = parse(R"({"label":"Fix the crash","kind":"developer"})");
+  filed["treeId"] = tree;
+  CHECK_EQ(body(h.tools.callTool("create_node", filed, h.actor)),
+           parse(R"({"applied":true,"seq":1,"id":"fix-the-crash","kind":"developer","diagnosticsClean":true,
+    "introducedDiagnostics":[]})"));
+}
+
+// The reply answers the legend from what the call planted, with no read after the insert: a read that
+// fails once the tree exists cannot turn a planted tree into a refusal that invites a second one.
+TEST(mcp_create_tree_answers_the_legend_it_planted_without_reading_the_tree_back) {
+  FakeProgressRepository progressRepo;
+  LoadsFailAfterCreate trees;
+  FakeOpLog ops;
+  FakeBus bus;
+  StepClock clock;
+  FakeTokens tokens;
+  RoomRegistry registry{trees, ops, bus};
+  ProgressService progress{progressRepo};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, bus};
+  CompositeToolHost gate(std::vector<ToolModule>{{tools, ""}});
+
+  const ToolResult created =
+      gate.callTool("create_tree", parse(R"({"title":"Crew board","kinds":[{"id":"owner","hue":"gold","label":"Owner"}]})"),
+                    ToolCaller{uid("agent"), ToolScope::everything()});
+  CHECK_FALSE(created.isError);
+  REQUIRE_EQ(trees.byId.size(), 1u);
+  CHECK_EQ(body(created), parse(R"({"treeId":")" + trees.byId.begin()->first +
+                                R"(","kinds":[{"id":"owner","hue":"gold","label":"Owner"}]})"));
+}
+
+TEST(mcp_create_tree_without_kinds_plants_the_default_legend_and_answers_it) {
+  Harness h;
+  const Json::Value created = body(h.tools.callTool("create_tree", with("title", "Sailing"), h.actor));
+  CHECK_EQ(created, parse(R"({"treeId":")" + created["treeId"].asString() + R"(","kinds":[
+    {"id":"build","hue":"terracotta","label":"Build"},{"id":"learn","hue":"olive","label":"Learn"},
+    {"id":"milestone","hue":"gold","label":"Milestone"}]})"));
+}
+
+TEST(mcp_create_tree_refuses_a_legend_it_cannot_plant_and_plants_no_tree) {
+  Harness h;
+  const auto trees = [&] { return body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.actor)); };
+  const Json::Value before = trees();
+  const std::size_t rows = h.trees.byId.size();
+  std::string seven = R"({"kinds":[)";
+  for (const char* hue : {"terracotta", "olive", "gold", "brick", "sky", "plum", "sky"})
+    seven += std::string(seven.back() == '[' ? "" : ",") + R"({"id":"k)" + std::to_string(seven.size()) +
+             R"(","hue":")" + hue + R"("})";
+  seven += "]}";
+
+  for (const auto& [arguments, refusal] : std::vector<std::pair<std::string, std::string>>{
+           {R"({"kinds":[]})",
+            "create_tree: kinds, when sent, names at least one kind — leave it out for the default legend"},
+           {R"({"kinds":[{"id":"dev","hue":"sky"},{"id":"dev","hue":"plum"}]})",
+            "create_tree: kinds[1].id \"dev\" is already used by kinds[0] — an id names one kind per batch"},
+           {R"({"kinds":[{"id":"dev","hue":"sky"},{"id":"ops","hue":"sky"}]})",
+            "create_tree: kinds[1].hue \"sky\" already belongs to kind \"dev\" — a hue names one kind, so pick a "
+            "free one"},
+           {seven, "create_tree: kinds has 7 items, max 6"},
+           {R"({"kinds":"owner"})", "create_tree: argument \"kinds\" must be an array of objects, got string"},
+           {R"({"kinds":[{"id":"dev","hue":"chartreuse"}]})",
+            "create_tree: kinds[0].hue \"chartreuse\" is not one of {terracotta, olive, gold, brick, sky, plum}"}}) {
+    const ToolResult refused = h.tools.callTool("create_tree", parse(arguments), h.actor);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), refusal);
+  }
+  CHECK_EQ(trees(), before);
+  CHECK_EQ(h.trees.byId.size(), rows);
 }
 
 TEST(mcp_list_trees_returns_the_callers_owned_rows) {
@@ -846,7 +951,7 @@ TEST(mcp_find_nodes_answers_an_index_and_get_tree_the_shape) {
 
   const Json::Value got = body(h.call("get_tree", kNoArgs));
   CHECK_EQ(keys(got), (std::vector<std::string>{"count", "seq", "tree"}));
-  CHECK_EQ(keys(got["tree"]), (std::vector<std::string>{"guide", "id", "kinds", "nodes", "title"}));
+  CHECK_EQ(keys(got["tree"]), (std::vector<std::string>{"guide", "guides", "id", "kinds", "nodes", "title"}));
   CHECK_EQ(keys(got["tree"]["nodes"][0]),
            (std::vector<std::string>{"color", "id", "label", "prerequisites"}));
   CHECK_EQ(keys(got["tree"]["kinds"][0]), (std::vector<std::string>{"hue", "id", "label"}));
@@ -2365,7 +2470,7 @@ TEST(mcp_import_subgraph_takes_no_title_and_never_touches_the_trees) {
 
   CHECK_FALSE(h.call("import_subgraph", titled).isError);
   CHECK_EQ(body(h.call("get_tree", kNoArgs)),
-           parse(R"({"count":1,"seq":1,"tree":{"guide":{"text":"","yours":true},"id":"t","kinds":[],
+           parse(R"({"count":1,"seq":1,"tree":{"guide":{"text":"","yours":true},"guides":[],"id":"t","kinds":[],
              "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap"}})"));
 }
 
@@ -4189,4 +4294,276 @@ TEST(mcp_a_node_write_may_name_its_kind_and_the_tree_it_opens_together) {
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","color","kind","opens"]})")))["tree"]["nodes"],
            parse(R"([{"id":"a","color":"sky","kind":"crew"},
     {"id":"b","color":"gold","kind":"owner","opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}}])"));
+}
+
+// Guides add: the method a tree above holds comes with the tree worked under it, farthest first and the tree's own last.
+TEST(mcp_get_tree_answers_the_guides_of_the_callers_trees_above_farthest_first_then_its_own_on_the_first_page_alone) {
+  Harness h;
+  h.plant("t_root", h.caller, "Write the outcome first.", {"t_middle"});
+  h.plant("t_middle", h.caller, "Ship weekly.", {"t"});
+  h.plant("t_beside", h.caller, "Keep it small.", {"t"});
+  h.plant("t_silent", h.caller, "", {"t"});
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Tests before code.")).isError);
+  for (const char* id : {"a", "b", "c"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
+
+  const Json::Value first = body(h.call("get_tree", parse(R"({"limit":2})")));
+  CHECK_EQ(keys(first["tree"]), (std::vector<std::string>{"guide", "guides", "id", "kinds", "nodes", "title"}));
+  CHECK_EQ(first["tree"]["guide"], parse(R"({"text":"Tests before code.","yours":true})"));
+  CHECK_EQ(first["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"Write the outcome first.","yours":true},
+                     {"treeId":"t_beside","title":"Tree t_beside","text":"Keep it small.","yours":true},
+                     {"treeId":"t_middle","title":"Tree t_middle","text":"Ship weekly.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Tests before code.","yours":true}])"));
+
+  Json::Value next(Json::objectValue);
+  next["limit"] = 2;
+  next["cursor"] = first["nextCursor"];
+  const Json::Value second = body(h.call("get_tree", next));
+  CHECK_EQ(ids(second["tree"]["nodes"]), (std::vector<std::string>{"c"}));
+  CHECK_EQ(keys(second["tree"]), (std::vector<std::string>{"guide", "id", "kinds", "nodes", "title"}));
+  CHECK_EQ(second["tree"]["guide"], parse(R"({"text":"Tests before code.","yours":true})"));
+
+  CHECK_FALSE(h.call("describe_tree", with("guide", "")).isError);
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"Write the outcome first.","yours":true},
+                     {"treeId":"t_beside","title":"Tree t_beside","text":"Keep it small.","yours":true},
+                     {"treeId":"t_middle","title":"Tree t_middle","text":"Ship weekly.","yours":true}])"));
+}
+
+TEST(mcp_guides_are_yours_where_the_caller_wrote_them_and_not_where_a_fork_copied_them) {
+  Harness h;
+  h.plant("t_written", h.caller, "My method.", {"t"});
+  h.plant("t_forked", h.caller, "Its author's method.", {"t"});
+  h.trees.byId["t_forked"].guideInherited = true;
+  h.trees.byId["t"].guide = Lww<std::string>{"Copied with the fork.", Hlc{2, 0, "seed"}};
+  h.trees.byId["t"].guideInherited = true;
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_forked","title":"Tree t_forked","text":"Its author's method.","yours":false},
+                     {"treeId":"t_written","title":"Tree t_written","text":"My method.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Copied with the fork.","yours":false}])"));
+
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Mine now.")).isError);
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"][2],
+           parse(R"({"treeId":"t","title":"Test Roadmap","text":"Mine now.","yours":true})"));
+}
+
+// Only the caller's own trees are above a tree, so a reader of someone else's is answered that tree's guide and no walk is made.
+TEST(mcp_a_caller_who_cannot_write_the_tree_receives_its_own_guide_alone_and_no_tree_above_is_read) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.plant("t_root", h.caller, "The owner's private method.", {"t"});
+  h.plant("t_theirs", uid("stranger"), "The stranger's own method.", {"t"});
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Rig first, then sail.")).isError);
+
+  for (const UserId& reader : {uid("stranger"), UserId{}}) {
+    const ToolResult read = h.tools.callTool("get_tree", with("treeId", "t"), ToolCaller{reader, ToolScope::everything()});
+    CHECK_EQ(body(read)["tree"]["guides"],
+             parse(R"([{"treeId":"t","title":"Test Roadmap","text":"Rig first, then sail.","yours":false}])"));
+    CHECK_EQ(message(read).find("t_root"), std::string::npos);
+    CHECK_EQ(message(read).find("private method"), std::string::npos);
+    CHECK_EQ(message(read).find("stranger's own"), std::string::npos);
+  }
+  CHECK_FALSE(h.call("describe_tree", with("guide", "")).isError);
+  for (const UserId& reader : {uid("stranger"), UserId{}}) {
+    const ToolResult read = h.tools.callTool("get_tree", with("treeId", "t"), ToolCaller{reader, ToolScope::everything()});
+    CHECK_EQ(body(read)["tree"]["guides"], parse("[]"));
+  }
+  CHECK(h.trees.aboveReads.empty());
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"The owner's private method.","yours":true}])"));
+  CHECK_EQ(h.trees.aboveReads, (std::vector<TreeId>{TreeId{"t"}}));
+}
+
+// The room, the socket and PUT admit any pointer text, so a pointer at a tree proves nothing about who planted it.
+TEST(mcp_a_removed_tree_someone_elses_tree_and_a_tombstoned_pointer_are_not_above_a_tree) {
+  Harness h;
+  h.plant("t_removed", h.caller, "Removed.", {"t"});
+  h.trees.softDelete(TreeId{"t_removed"});
+  h.plant("t_beyond", h.caller, "Reached only through the removed tree.", {"t_removed"});
+  h.plant("t_theirs", uid("someone-else"), "Someone else's.", {"t"});
+  h.plant("t_tombstoned", h.caller, "Its pointer was deleted.", {"t"});
+  LooseGraph tombstoned(h.trees.byId["t_tombstoned"].state);
+  tombstoned.deleteNode(NodeId{"to-t"}, Hlc{3, 0, "seed"});
+  h.trees.byId["t_tombstoned"].state = tombstoned.exportState();
+  h.plant("t_standing", h.caller, "Standing.", {"t"});
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_standing","title":"Tree t_standing","text":"Standing.","yours":true}])"));
+}
+
+TEST(mcp_a_tree_reached_a_short_and_a_long_way_sits_at_its_shortest_distance_and_a_loop_never_puts_the_tree_above_itself) {
+  Harness h;
+  h.plant("t_a_mid", h.caller, "Mid.", {"t"});
+  h.plant("t_z_both", h.caller, "Both ways.", {"t", "t_a_mid"});
+  h.plant("t_top", h.caller, "Top.", {"t_z_both"});
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Own.")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"back","label":"Back","opens":"t_top"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"self","label":"Self","opens":"t"})")).isError);
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_top","title":"Tree t_top","text":"Top.","yours":true},
+                     {"treeId":"t_a_mid","title":"Tree t_a_mid","text":"Mid.","yours":true},
+                     {"treeId":"t_z_both","title":"Tree t_z_both","text":"Both ways.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Own.","yours":true}])"));
+}
+
+TEST(mcp_a_tree_eight_pointers_up_is_above_and_one_nine_up_is_not) {
+  Harness h;
+  h.plant("t_up1", h.caller, "", {"t"});
+  for (int level = 2; level <= 9; ++level) {
+    const std::string below = "t_up" + std::to_string(level - 1);
+    const std::string guide = level == 8 ? "Eight up." : level == 9 ? "Nine up." : "";
+    h.plant(("t_up" + std::to_string(level)).c_str(), h.caller, guide.c_str(), {below.c_str()});
+  }
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_up8","title":"Tree t_up8","text":"Eight up.","yours":true}])"));
+}
+
+TEST(mcp_more_guided_trees_above_than_the_cap_holds_keeps_the_nearest_and_the_trees_own_guide) {
+  Harness h;
+  h.plant("t_up1", h.caller, "Guide 1.", {"t"});
+  for (int level = 2; level <= 8; ++level)
+    h.plant(("t_up" + std::to_string(level)).c_str(), h.caller, ("Guide " + std::to_string(level) + ".").c_str(),
+            {("t_up" + std::to_string(level - 1)).c_str()});
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Own.")).isError);
+
+  const Json::Value guides = body(h.call("get_tree", kNoArgs))["tree"]["guides"];
+
+  Json::Value nearest(Json::arrayValue);
+  for (int level = 7; level >= 1; --level) {
+    Json::Value guide(Json::objectValue);
+    guide["treeId"] = "t_up" + std::to_string(level);
+    guide["title"] = "Tree t_up" + std::to_string(level);
+    guide["text"] = "Guide " + std::to_string(level) + ".";
+    guide["yours"] = true;
+    nearest.append(guide);
+  }
+  nearest.append(parse(R"({"treeId":"t","title":"Test Roadmap","text":"Own.","yours":true})"));
+  CHECK_EQ(guides, nearest);
+}
+
+// One walk per first page of get_tree, for its writer; nothing else a caller sends reads the trees above.
+TEST(mcp_the_trees_above_are_read_once_per_first_page_of_get_tree_and_by_no_other_reply) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.plant("t_root", h.caller, "The method.", {"t"});
+  for (const char* id : {"a", "b", "c"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Own.")).isError);
+  CHECK(h.trees.aboveReads.empty());
+
+  CHECK_FALSE(h.call("get_tree", kNoArgs).isError);
+  CHECK_FALSE(h.call("get_tree", parse(R"({"fields":["id","state","opens"],"includeEdges":true,"limit":1})")).isError);
+  CHECK_EQ(h.trees.aboveReads, (std::vector<TreeId>{TreeId{"t"}, TreeId{"t"}}));
+
+  CHECK_FALSE(h.call("get_tree", parse(R"({"limit":1,"cursor":"a"})")).isError);
+  CHECK_FALSE(h.call("get_tree", parse(R"({"cursor":"c"})")).isError);
+  CHECK_FALSE(h.call("get_tree", parse(R"({"includeGuides":false})")).isError);
+  CHECK(h.call("get_tree", parse(R"({"limit":0})")).isError);
+  CHECK(h.call("get_tree", parse(R"({"fields":["nope"]})")).isError);
+  CHECK(h.call("get_tree", parse(R"({"cursor":"ghost"})")).isError);
+  CHECK_FALSE(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","state","opens"]})")).isError);
+  CHECK_FALSE(h.call("find_nodes", parse(R"({"state":"available"})")).isError);
+  CHECK_FALSE(h.call("get_progress", kNoArgs).isError);
+  CHECK_FALSE(h.call("get_diagnostics", kNoArgs).isError);
+  CHECK_FALSE(h.call("get_health", kNoArgs).isError);
+  CHECK_FALSE(h.tools.callTool("list_trees", kNoArgs, h.actor).isError);
+  for (const UserId& reader : {uid("stranger"), UserId{}})
+    CHECK_FALSE(h.tools.callTool("get_tree", with("treeId", "t"), ToolCaller{reader, ToolScope::everything()}).isError);
+  CHECK_EQ(h.trees.aboveReads.size(), 2u);
+}
+
+// A walk that cannot be made does not fail the read: the first page answers the tree's own guide alone and says the
+// trees above could not be read, nothing else of the reply changes, and one issue is filed under the walk's own name.
+TEST(mcp_a_first_page_whose_trees_above_cannot_be_read_answers_the_trees_own_guide_and_says_so_and_files_one_issue) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.plant("t_root", h.caller, "The method.", {"t"});
+  for (const char* id : {"a", "b"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Own.")).isError);
+  const Json::Value everything = parse(R"({"fields":["id","label","state"],"includeEdges":true,"limit":1})");
+  Json::Value read = body(h.call("get_tree", everything));
+  CHECK_EQ(read["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"The method.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Own.","yours":true}])"));
+  CHECK_FALSE(read["tree"].isMember("guidesAboveUnavailable"));
+
+  h.trees.aboveReadsFail = true;
+  const ToolResult degraded = h.call("get_tree", everything);
+
+  CHECK_FALSE(degraded.isError);
+  read["tree"]["guides"] = parse(R"([{"treeId":"t","title":"Test Roadmap","text":"Own.","yours":true}])");
+  read["tree"]["guidesAboveUnavailable"] = true;
+  CHECK_EQ(body(degraded), read);
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{std::string("roadmap.tree.guides roadmap mcp failed ") + typeid(std::runtime_error).name()}));
+
+  for (const char* unwalked : {R"({"cursor":"a"})", R"({"includeGuides":false})"})
+    CHECK_FALSE(body(h.call("get_tree", parse(unwalked)))["tree"].isMember("guidesAboveUnavailable"));
+  CHECK_EQ(body(h.tools.callTool("get_tree", with("treeId", "t"), ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["guides"],
+           parse(R"([{"treeId":"t","title":"Test Roadmap","text":"Own.","yours":false}])"));
+  CHECK_EQ(reporter.failures->reports.size(), 1u);
+}
+
+// A call that only needs the nodes or the seq says so: no `guides` key, and no tree above is read.
+TEST(mcp_get_tree_asked_for_no_guides_carries_none_and_reads_no_tree_above) {
+  Harness h;
+  h.plant("t_root", h.caller, "The method.", {"t"});
+  CHECK_FALSE(h.call("describe_tree", with("guide", "Own.")).isError);
+  h.trees.aboveReadsFail = true;
+
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"includeGuides":false})"))),
+           parse(R"({"count":0,"seq":1,"tree":{"guide":{"text":"Own.","yours":true},"id":"t","kinds":[],"nodes":[],
+                     "title":"Test Roadmap"}})"));
+  CHECK(h.trees.aboveReads.empty());
+  CHECK_EQ(message(h.call("get_tree", parse(R"({"includeGuides":"no"})"))),
+           std::string("get_tree: argument \"includeGuides\" must be a boolean, got string"));
+
+  h.trees.aboveReadsFail = false;
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"includeGuides":true})")))["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"The method.","yours":true},
+                     {"treeId":"t","title":"Test Roadmap","text":"Own.","yours":true}])"));
+  CHECK_EQ(h.trees.aboveReads, (std::vector<TreeId>{TreeId{"t"}}));
+}
+
+// A stranger's read must not wait on the owner's statement: that wait would say a tree of the owner's opens this one.
+TEST(mcp_get_tree_reads_the_trees_above_after_it_has_let_go_of_the_trees_strand) {
+  Harness h;
+  h.trees.byId["t"].visibility = Visibility::public_;
+  h.plant("t_root", h.caller, "The method.", {"t"});
+  bool strandWasFree = false;
+  Json::Value readMeanwhile;
+  h.trees.duringAboveRead = [&] {
+    std::thread other([&] {
+      std::mutex& strand = h.registry.strandFor(TreeId{"t"});
+      if (!strand.try_lock()) return;
+      strand.unlock();
+      strandWasFree = true;
+      readMeanwhile = body(h.tools.callTool("get_tree", with("treeId", "t"),
+                                            ToolCaller{uid("stranger"), ToolScope::everything()}))["tree"]["guides"];
+    });
+    other.join();
+  };
+
+  CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guides"],
+           parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"The method.","yours":true}])"));
+
+  CHECK(strandWasFree);
+  CHECK_EQ(readMeanwhile, parse("[]"));
+  CHECK_EQ(h.trees.aboveReads, (std::vector<TreeId>{TreeId{"t"}}));
 }

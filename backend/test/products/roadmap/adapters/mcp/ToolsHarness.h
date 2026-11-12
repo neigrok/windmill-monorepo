@@ -40,6 +40,22 @@ struct Harness {
         StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, caller};
   }
 
+  // A stored tree of `owner`'s titled `Tree <id>` that carries `guide` and holds one node per tree of `opens`, `to-<tree>`.
+  void plant(const char* id, const UserId& owner, const char* guide, const std::vector<const char*>& opens) {
+    TreeData data;
+    data.id = TreeId{id};
+    for (const char* opened : opens) {
+      NodeSpec pointer;
+      pointer.id = NodeId{std::string("to-") + opened};
+      pointer.label = opened;
+      pointer.opens = TreeId{opened};
+      data.nodes.push_back(pointer);
+    }
+    StoredTree stored{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(), LegendState{}, {std::string("Tree ") + id, {}}, 0, owner};
+    stored.guide = Lww<std::string>{guide, Hlc{2, 0, "seed"}};
+    trees.byId[id] = stored;
+  }
+
   // These cases drive RoadmapTools directly, below the grant gate: the caller holds everything, so what is under test is the tool's own ownership and argument behaviour.
   ToolResult call(const char* name, Json::Value args) {
     args["treeId"] = "t";

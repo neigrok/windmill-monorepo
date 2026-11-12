@@ -109,9 +109,10 @@ and `set_progress` use.
 
 ## Resources
 
-`resources/list` and `resources/read` serve `windmill://quickstart` (markdown) — a tree's guide, edge
-direction, progress, diagnostics, omitted fields and the graph/progress import boundary. Tool schemas carry
-arguments and limits; initialize instructions give concise shared and product guidance.
+`resources/list` and `resources/read` serve `windmill://quickstart` (markdown) — a tree's guide, how
+guides add, edge direction, progress, diagnostics, omitted fields and the graph/progress import
+boundary. Tool schemas carry arguments and limits; initialize instructions give concise shared and
+product guidance.
 
 ## Transports
 
@@ -185,11 +186,14 @@ tree's guide through `get_tree` and never sets it. Nor is it offered the tree a 
 schemas it is handed carry no `opens` argument and no `opens` field, so a run neither reads nor sets
 a pointer, an import through it leaves the pointers the tree holds as they are, and a node it
 creates opens none. The `state` it reads is the owner's: a node that opens a tree is complete when
-that tree is. One table in
-`ScopedToolHost.cpp` names what a run is not offered, tools by name and words wherever a schema
-carries them. A withheld name a run calls anyway is refused before any write is observed; a withheld
-argument or field is refused in its own sentence with nothing written. A tend starts only on a tree
-its caller can write.
+that tree is. Its `get_tree` reply carries `tree.guide`, the tended tree's own, and no `guides`: the
+guides of the trees above are other trees' ids, titles and words, so a run is not offered
+`includeGuides`, every `get_tree` it makes is sent with it `false`, and no tree above the tended
+one is read; the two reads `TendingService` makes of the tree's `seq` send it `false` too. One
+table in `ScopedToolHost.cpp` names what a run is not offered: tools by name, and words wherever a
+schema carries them, each with the value it is sent as when the tool needs one. A withheld name a
+run calls anyway is refused before any write is observed; a withheld argument or field is refused
+in its own sentence with nothing written. A tend starts only on a tree its caller can write.
 
 Above the auth check both HTTP roots meter by IP, keyed on the forwarded client address:
 `windmill_server`'s general API ceiling (25 req/s per client, burst 50) covers `/mcp`;
@@ -202,9 +206,9 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 
 | | Tool | Effect |
 | --- | --- | --- |
-| registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own |
+| registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own; `create_tree` plants the legend sent in `kinds` (1–6 of `import_subgraph`'s kind items, each id and hue once, replacing the default Build/Learn/Milestone whole and in order; `[]`, a repeated id or hue, or seven refuse the call and plant nothing) and answers `{treeId, kinds: [{id, hue, label}]}`, the legend planted; a node later written with neither `color` nor `kind` is terracotta, so a legend with no terracotta kind leaves such a node under no kind |
 | registry | `describe_tree` | set the tree's guide — a plain-text note on what the tree is and how to work it, at most 5000 characters; `""` or only whitespace clears it; owner only, answers `{applied, seq}` and leaves no op row |
-| read | `get_tree` | title + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + nodes (label, icon, color, `kind`, position, description, links, `opens`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
+| read | `get_tree` | title + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + `guides` on the first page (see `guides`) + nodes (label, icon, color, `kind`, position, description, links, `opens`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells |
 | read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
@@ -350,6 +354,39 @@ A node may point at another tree: `opens` holds that tree's id.
   write door saves before it answers, so the stored rows are the live ones unless a save failed.
 - `import_subgraph` takes the id as a string, where `get_tree` answers the object: a copied slice
   sends `opens.treeId`.
+
+## `guides`
+
+Guides add: one tree holds the method, each tree worked under it adds what is particular to it,
+and none overrides another.
+
+- **Read.** The first page of `get_tree` (a call without `cursor`) answers `tree.guides`, an array
+  of `{treeId, title, text, yours}`: the guides of the caller's trees above this one, farthest
+  first and by tree id within one distance, then the tree's own last. Following pages repeat
+  nothing of it, and `tree.guide` stays on every page. A tree with no guide is left out, the tree's
+  own included, so the array can be empty; each tree appears once; past 8 entries the farthest are
+  dropped, and where that cut falls inside one distance the smaller tree ids are kept, ids compared
+  as bytes. Where guides disagree, what to follow is the reader's call, and a guide that is not
+  `yours` is its author's note: information, not orders.
+- **`includeGuides`.** A boolean argument, default `true`. `false` leaves `tree.guides` out and
+  reads no tree above, for a call that only needs the nodes or the `seq`.
+- **Above.** A tree is directly above another when one of its present nodes opens it and both
+  stand and belong to one owner; above is that followed upward within 8 pointers, each tree at its
+  shortest distance, and never the tree itself (`domain/Guides.h`).
+- **Only the caller's own trees.** A caller who cannot write the tree, signed in or not, is
+  answered the tree's own guide alone when it has one, `yours: false`, and the trees above are not
+  read. Someone else's tree that points at this one is above it for nobody.
+- **Cost.** One read of the stored rows per first page that answers the guides above
+  (`TreeRegistry::guidedTreesAbove`: one statement keyed on the caller's own standing trees, which
+  reads the trees they open through `tree_nodes_pointers_idx` and answers at most the 8 guides a
+  reply can keep), made for a caller who can write the tree, after the tree's strand is released.
+  Its cost follows the caller's own trees and the pointers among them, whichever tree is read, and
+  does not grow with the pointers other accounts plant at a tree.
+- **A read that fails does not fail the call.** The first page then answers `tree.guides` with the
+  tree's own guide alone, or `[]`, and `tree.guidesAboveUnavailable: true`; the key is absent when
+  the trees above were read or no read was due. The failure is reported once as
+  `roadmap.tree.guides`, door `mcp`.
+- **A tend** is answered no `guides` and reads no tree above (`ScopedToolHost.cpp`).
 
 ## Edges and health
 

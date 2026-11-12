@@ -49,7 +49,10 @@ public:
   // Fold a partial legend state in, under the same element-set + LWW discipline as LooseGraph::join.
   void join(const LegendState& state);
 
-  // The three kinds a new tree is born with, in that order.
+  // The kinds a tree is born with: those it is sent, in their order, or the three defaults when it is
+  // sent none. TreeRegistry plants them and create_tree answers them, so the two cannot disagree.
+  static std::vector<Kind> bornWith(const std::vector<Kind>& sent);
+  // The three default kinds, stamped `at`: bornWith({}).
   static Legend seededDefaults(const Hlc& at);
 
   void addKind(const KindId& id, NodeColor hue, const Hlc& at);

@@ -118,6 +118,9 @@ alter table tree_nodes add column if not exists ord_hlc text not null default ''
 alter table tree_nodes add column if not exists opens text not null default '';
 alter table tree_nodes add column if not exists opens_hlc text not null default '';
 create index if not exists tree_nodes_opens_idx on tree_nodes (opens) where present and opens <> '';
+-- The trees a tree's present nodes open, read without its other nodes: the walk to the trees above a tree asks this
+-- of each tree its reader owns, so its cost follows that account's pointers and not the ones other accounts plant.
+create index if not exists tree_nodes_pointers_idx on tree_nodes (tree_id, opens) where present and opens <> '';
 
 create table if not exists tree_edges (
   tree_id     text not null,
