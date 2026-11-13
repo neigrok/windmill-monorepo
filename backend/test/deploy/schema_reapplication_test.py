@@ -239,6 +239,65 @@ select count(*) from (
 ) retired;
 """]))
 
+    def test_retired_tree_columns_are_dropped_and_the_rest_of_their_rows_is_unchanged(self):
+        self.apply_schema()
+        query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
+        columns = """
+select table_name||'.'||column_name||' '||data_type||' '||is_nullable||' '||coalesce(column_default,'-')
+from information_schema.columns where table_schema='public' and table_name in ('tree_nodes','tree_kinds')
+order by table_name, ordinal_position;
+"""
+        fresh_columns = command([*query, columns])
+        self.assertNotRegex(fresh_columns, r"pos_|cross_branch")
+        command([*query, """
+alter table tree_nodes add column pos_x double precision, add column pos_y double precision,
+  add column pos_hlc text not null default '';
+alter table tree_kinds add column cross_branch_exempt boolean not null default false,
+  add column cross_branch_exempt_hlc text not null default '';
+insert into trees(id,title,title_hlc,visibility,head_seq) values('t_00000000000000d1','Retired columns','1:0:old','unlisted',7);
+insert into tree_nodes(tree_id,node_id,created_hlc,deleted_hlc,label,label_hlc,icon,icon_hlc,color,color_hlc,ord,ord_hlc,
+  pos_x,pos_y,pos_hlc,status,status_hlc,description,description_hlc,links,links_hlc,opens,opens_hlc,present) values
+  ('t_00000000000000d1','hull','1:0:old','','Hull','2:0:old','anchor','1:0:old','sky','1:0:old','a0','3:0:old',
+   3.5,-4,'5:0:old','complete','4:0:old','Keel first','6:0:old','[{"url":"https://example.invalid","label":"Plan"}]','7:0:old','t_00000000000000d2','8:0:old',true),
+  ('t_00000000000000d1','mast','1:0:old','9:0:old','Mast','1:0:old','','','terracotta','1:0:old','','',
+   null,null,'',null,'','','','[]','','','',false);
+insert into tree_kinds(tree_id,kind_id,created_hlc,deleted_hlc,hue,hue_hlc,label,label_hlc,description,description_hlc,
+  cross_branch_exempt,cross_branch_exempt_hlc,rank,rank_hlc) values
+  ('t_00000000000000d1','drill','1:0:old','','gold','1:0:old','Drill','2:0:old','Reps','3:0:old',true,'4:0:old',1.5,'5:0:old'),
+  ('t_00000000000000d1','read','1:0:old','','olive','1:0:old','Read','1:0:old','','',false,'',0,'1:0:old');
+"""])
+        retired = """
+select table_name||'.'||column_name from information_schema.columns where table_schema='public'
+  and ((table_name='tree_nodes' and column_name in ('pos_x','pos_y','pos_hlc'))
+    or (table_name='tree_kinds' and column_name in ('cross_branch_exempt','cross_branch_exempt_hlc')))
+order by 1;
+"""
+        self.assertEqual("tree_kinds.cross_branch_exempt\ntree_kinds.cross_branch_exempt_hlc\n"
+                         "tree_nodes.pos_hlc\ntree_nodes.pos_x\ntree_nodes.pos_y\n", command([*query, retired]))
+        self.assertEqual("3.5|-4|5:0:old|t|4:0:old\n", command([*query, """
+select n.pos_x, n.pos_y, n.pos_hlc, k.cross_branch_exempt, k.cross_branch_exempt_hlc
+from tree_nodes n join tree_kinds k on k.tree_id=n.tree_id where n.node_id='hull' and k.kind_id='drill';
+"""]))
+        kept_rows = """
+select 'tree '||to_jsonb(t)::text from trees t where id='t_00000000000000d1'
+union all select 'node '||(to_jsonb(t)-array['pos_x','pos_y','pos_hlc'])::text from tree_nodes t
+  where tree_id='t_00000000000000d1'
+union all select 'kind '||(to_jsonb(t)-array['cross_branch_exempt','cross_branch_exempt_hlc'])::text from tree_kinds t
+  where tree_id='t_00000000000000d1'
+order by 1;
+"""
+        before = command([*query, kept_rows])
+        self.assertEqual(5, len(before.splitlines()))
+        migrated = None
+        for attempt in (1, 2):
+            with self.subTest(attempt=attempt):
+                self.apply_schema()
+                self.assertEqual("", command([*query, retired]))
+                self.assertEqual(before, command([*query, kept_rows]))
+                self.assertEqual(fresh_columns, command([*query, columns]))
+                migrated = migrated or self.snapshot()
+                self.assertEqual(migrated, self.snapshot())
+
     def test_ai_output_offer_upgrade_preserves_legacy_rows_and_constraint_identity(self):
         self.apply_schema()
         query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]

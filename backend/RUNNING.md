@@ -300,8 +300,8 @@ and runs `test/e2e/deployment_conformance.mjs` against it, and serves `windmill_
 database holding `db/schema.sql` alone, where `WM_E2E_CATALOG=products` runs the same direct and edge
 suite over the gym + journal catalog (schema 8, minimum 4) and both product scopes. On the runner
 itself, `test/deploy/schema_reapplication_test.py` checks that re-applying `db/schema.sql`, as every
-deploy does, changes nothing, and that repeated application removes retired cutover storage while
-preserving live rows.
+deploy does, changes nothing, and that repeated application removes retired cutover storage and the
+retired tree columns while preserving live rows.
 
 The domain suite's pattern fuzz matches the sync registry's `Pattern` against the JS reference
 (`packages/api-contract/sync/reference/core/registry.js`) on patterns and values the reference

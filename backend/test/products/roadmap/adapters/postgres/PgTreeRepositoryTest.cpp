@@ -1118,144 +1118,9 @@ TEST(pg_removing_a_tree_takes_the_step_that_opens_it_with_its_edge_and_mark_and_
   restarted.stop();
 }
 
-// A kind has no cross-branch flag, but tree_kinds keeps its two columns for an earlier image to run on. A row an earlier
-// image wrote with them set loads and saves through this one, which leaves them as they are; a kind this one adds
-// takes their defaults.
-TEST(pg_a_kind_row_holding_the_cross_branch_columns_loads_and_saves_and_they_are_left_alone) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgTreeRepository trees{pgTestPool()};
-  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Sam's tree", kSam);
-  {
-    PgLease conn{*pgTestPool()};
-    pqxx::work txn{*conn};
-    txn.exec_params("INSERT INTO tree_kinds (tree_id, kind_id, created_hlc, deleted_hlc, hue, hue_hlc, label, label_hlc, "
-                    "description, description_hlc, cross_branch_exempt, cross_branch_exempt_hlc, rank, rank_hlc) "
-                    "VALUES ($1, 'drill', '1:0:srv', '', 'gold', '1:0:srv', 'Drill', '1:0:srv', '', '1:0:srv', true, "
-                    "'2:0:srv', 0, '1:0:srv')",
-                    kTree.str());
-    txn.commit();
-  }
-
-  const std::optional<StoredTree> loaded = trees.load(kTree);
-  REQUIRE(loaded.has_value());
-  CHECK(loaded->legend == (LegendState{{KindStateEntry{.id = KindId{"drill"}, .createdAt = Hlc{1, 0, "srv"},
-                                                       .hue = NodeColor::gold, .hueAt = Hlc{1, 0, "srv"},
-                                                       .label = "Drill", .labelAt = Hlc{1, 0, "srv"},
-                                                       .descriptionAt = Hlc{1, 0, "srv"}, .rank = 0,
-                                                       .rankAt = Hlc{1, 0, "srv"}}}}));
-
-  KindStateEntry described = loaded->legend.kinds[0];
-  described.description = "Reps";
-  described.descriptionAt = Hlc{3, 0, "srv"};
-  const KindStateEntry added{.id = KindId{"read"}, .createdAt = Hlc{3, 0, "srv"}, .hue = NodeColor::sky,
-                             .hueAt = Hlc{3, 0, "srv"}, .rank = 1, .rankAt = Hlc{3, 0, "srv"}};
-  CHECK(trees.save(kTree, GraphState{}, LegendState{{described, added}}, loaded->title, loaded->guide, loaded->head));
-  CHECK(trees.load(kTree)->legend == (LegendState{{described, added}}));
-
-  PgLease conn{*pgTestPool()};
-  pqxx::work txn{*conn};
-  std::vector<std::string> rows;
-  for (const auto& row : txn.exec_params("SELECT kind_id, description, cross_branch_exempt, cross_branch_exempt_hlc "
-                                         "FROM tree_kinds WHERE tree_id = $1 ORDER BY kind_id",
-                                         kTree.str()))
-    rows.push_back(row[0].as<std::string>() + " " + row[1].as<std::string>() + " " + row[2].as<std::string>() + " " +
-                   row[3].as<std::string>());
-  CHECK_EQ(rows, (std::vector<std::string>{"drill Reps t 2:0:srv", "read  f "}));
-}
-
-// A node has no position, but tree_nodes keeps pos_x, pos_y and pos_hlc for an earlier image to run on. A row an
-// earlier image wrote with them set loads and saves through this one, which leaves them as they are; a node this one
-// adds takes their defaults.
-TEST(pg_a_node_row_holding_a_position_loads_and_saves_and_its_columns_are_left_alone) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgTreeRepository trees{pgTestPool()};
-  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Sam's tree", kSam);
-  {
-    PgLease conn{*pgTestPool()};
-    pqxx::work txn{*conn};
-    txn.exec_params("INSERT INTO tree_nodes (tree_id, node_id, created_hlc, deleted_hlc, label, label_hlc, icon, "
-                    "icon_hlc, color, color_hlc, pos_x, pos_y, pos_hlc, status, status_hlc, description, "
-                    "description_hlc, links, links_hlc, present) VALUES ($1, 'hull', '1:0:srv', '', 'Hull', "
-                    "'1:0:srv', '', '', 'sky', '1:0:srv', 3, 4, '2:0:srv', NULL, '', '', '', '[]', '', true)",
-                    kTree.str());
-    txn.commit();
-  }
-
-  const std::optional<StoredTree> loaded = trees.load(kTree);
-  REQUIRE(loaded.has_value());
-  CHECK(loaded->state == (GraphState{{NodeStateEntry{.id = NodeId{"hull"}, .createdAt = Hlc{1, 0, "srv"},
-                                                     .label = "Hull", .labelAt = Hlc{1, 0, "srv"},
-                                                     .color = NodeColor::sky, .colorAt = Hlc{1, 0, "srv"}}},
-                                     {}}));
-
-  NodeStateEntry renamed = loaded->state.nodes[0];
-  renamed.label = "Hull and keel";
-  renamed.labelAt = Hlc{3, 0, "srv"};
-  const NodeStateEntry added{.id = NodeId{"mast"}, .createdAt = Hlc{3, 0, "srv"}, .label = "Mast",
-                             .labelAt = Hlc{3, 0, "srv"}};
-  CHECK(trees.save(kTree, GraphState{{renamed, added}, {}}, LegendState{}, loaded->title, loaded->guide, loaded->head));
-  GraphState reloaded = trees.load(kTree)->state;
-  std::sort(reloaded.nodes.begin(), reloaded.nodes.end(),
-            [](const NodeStateEntry& a, const NodeStateEntry& b) { return a.id < b.id; });
-  CHECK(reloaded == (GraphState{{renamed, added}, {}}));
-
-  PgLease conn{*pgTestPool()};
-  pqxx::work txn{*conn};
-  std::vector<std::string> rows;
-  for (const auto& row : txn.exec_params("SELECT node_id, label, coalesce(pos_x::text, '-'), "
-                                         "coalesce(pos_y::text, '-'), pos_hlc FROM tree_nodes WHERE tree_id = $1 "
-                                         "ORDER BY node_id",
-                                         kTree.str()))
-    rows.push_back(row[0].as<std::string>() + " " + row[1].as<std::string>() + " " + row[2].as<std::string>() + " " +
-                   row[3].as<std::string>() + " " + row[4].as<std::string>());
-  CHECK_EQ(rows, (std::vector<std::string>{"hull Hull and keel 3 4 2:0:srv", "mast Mast - - "}));
-}
-
-// A fork copies what its source's room holds, and a room holds no position: the copy of a node whose source row an
-// earlier image wrote with a position takes the position columns' defaults, and the source's row keeps its own.
-TEST(pg_a_fork_of_a_tree_whose_node_row_holds_a_position_plants_a_row_that_holds_none) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgTreeRepository trees{pgTestPool()};
-  PgOpLog log{pgTestPool()};
-  FakeBus bus;
-  RoomRegistry registry(trees, log, bus);
-  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Sam's tree", kSam);
-  registry.setVisibility(kTree, Visibility::unlisted);
-  {
-    PgLease conn{*pgTestPool()};
-    pqxx::work txn{*conn};
-    txn.exec_params("INSERT INTO tree_nodes (tree_id, node_id, created_hlc, deleted_hlc, label, label_hlc, icon, "
-                    "icon_hlc, color, color_hlc, pos_x, pos_y, pos_hlc, status, status_hlc, description, "
-                    "description_hlc, links, links_hlc, present) VALUES ($1, 'hull', '1:0:srv', '', 'Hull', "
-                    "'1:0:srv', '', '', 'sky', '1:0:srv', 3, 4, '2:0:srv', NULL, '', '', '', '[]', '', true)",
-                    kTree.str());
-    txn.commit();
-  }
-  FakeTokens tokens;
-  FakeClock clock;
-  ForkService forks{registry, trees, tokens, clock};
-
-  REQUIRE(forks.fork(kTree, kFork.str(), "", kEve).outcome == ForkService::Outcome::forked);
-
-  PgLease conn{*pgTestPool()};
-  pqxx::work txn{*conn};
-  std::vector<std::string> rows;
-  for (const auto& row : txn.exec_params("SELECT tree_id, node_id, label, coalesce(pos_x::text, '-'), "
-                                         "coalesce(pos_y::text, '-'), pos_hlc FROM tree_nodes "
-                                         "WHERE tree_id IN ($1, $2) ORDER BY tree_id",
-                                         kTree.str(), kFork.str()))
-    rows.push_back(row[0].as<std::string>() + " " + row[1].as<std::string>() + " " + row[2].as<std::string>() + " " +
-                   row[3].as<std::string>() + " " + row[4].as<std::string>() + " " + row[5].as<std::string>());
-  CHECK_EQ(rows, (std::vector<std::string>{"t_pgtest_erased_room hull Hull 3 4 2:0:srv",
-                                           "t_pgtest_guide_fork hull Hull - - "}));
-}
-
 // A tree whose lattice lives only in its document blob, written while nodes still stored a position, loads without one
-// and backfills its rows with the position columns at their defaults.
-TEST(pg_a_document_blob_holding_a_position_loads_without_it_and_backfills_no_position) {
+// and backfills its row.
+TEST(pg_a_document_blob_holding_a_position_loads_without_it_and_backfills_its_row) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgTreeRepository trees{pgTestPool()};
@@ -1278,10 +1143,9 @@ TEST(pg_a_document_blob_holding_a_position_loads_without_it_and_backfills_no_pos
   PgLease conn{*pgTestPool()};
   pqxx::work txn{*conn};
   std::vector<std::string> rows;
-  for (const auto& row : txn.exec_params("SELECT node_id, coalesce(pos_x::text, '-'), coalesce(pos_y::text, '-'), "
-                                         "pos_hlc FROM tree_nodes WHERE tree_id = $1",
+  for (const auto& row : txn.exec_params("SELECT node_id, label, created_hlc, present FROM tree_nodes WHERE tree_id = $1",
                                          kTree.str()))
     rows.push_back(row[0].as<std::string>() + " " + row[1].as<std::string>() + " " + row[2].as<std::string>() + " " +
                    row[3].as<std::string>());
-  CHECK_EQ(rows, (std::vector<std::string>{"hull - - "}));
+  CHECK_EQ(rows, (std::vector<std::string>{"hull Hull 1:0:srv t"}));
 }
