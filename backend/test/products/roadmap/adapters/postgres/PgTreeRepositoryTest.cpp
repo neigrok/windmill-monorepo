@@ -1494,6 +1494,38 @@ TEST(pg_a_subtree_takes_its_place_from_its_parents_row_and_a_retry_after_a_resta
   CHECK(restarted.bus.subtreeBroadcasts.empty());
 }
 
+// A subtree create writes no op row: it moves the parent's stored head in the transaction that stores the child. So a
+// room that opens from its snapshot alone holds it whole. After a restart the parent stands at the create's seq, with no
+// row of the log past its snapshot and none at that seq, and its next write takes the seq after and lands its row there.
+TEST(pg_a_parent_reopened_from_its_snapshot_stands_at_its_subtree_creates_seq_and_writes_at_the_next) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  {
+    Forest forest;
+    forest.plant(kParent, kAda, {{"rig", nullptr}});
+    CHECK(forest.create(kParent, "rig", kChild) ==
+          (SubtreeAnswer{SubtreeCreation{true, Subtree{kChild, kParent, OwningStep{kParent, nid("rig")}, 1, 0}, 2}}));
+  }
+  PgOpLog log{pgTestPool()};
+  CHECK_EQ(storedHead(kParent), Seq{2});
+  CHECK(log.past(kParent, storedHead(kParent)) == LogPast{});
+  std::vector<Seq> rows;
+  for (const AppliedOp& op : log.since(kParent, 0)) rows.push_back(op.seq);
+  CHECK_EQ(rows, (std::vector<Seq>{1}));
+
+  Forest restarted;
+  {
+    std::lock_guard<std::mutex> strand(restarted.rooms.strandFor(kParent));
+    CHECK_EQ(restarted.rooms.open(kParent)->head(), Seq{2});
+  }
+  restarted.edit(kParent, kAda, {{"mast", nullptr}});
+  CHECK_EQ(storedHead(kParent), Seq{3});
+  rows.clear();
+  for (const AppliedOp& op : log.since(kParent, 0)) rows.push_back(op.seq);
+  CHECK_EQ(rows, (std::vector<Seq>{1, 3}));
+  CHECK_EQ(childrenOf(kParent), 1L);
+}
+
 TEST(pg_a_subtree_is_born_with_the_kinds_it_is_sent_in_the_creates_transaction) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   resetSubtrees();
