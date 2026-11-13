@@ -7,6 +7,8 @@
 #include "products/roadmap/domain/LooseGraph.h"
 
 #include <pqxx/pqxx>
+
+#include <algorithm>
 #include <stdexcept>
 
 namespace wm {
@@ -570,14 +572,23 @@ void PgTreeRepository::rename(const TreeId& tree, const Lww<std::string>& title)
   txn.commit();
 }
 
-void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) {
+std::vector<TreeId> PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   // Does NOT touch updated_at: the gallery folds that column into last-active, so a bump here
-  // would let a visibility flip vault a long-dead tree up the wall.
-  txn.exec_params("UPDATE trees SET visibility = $2 WHERE id = $1 AND deleted_at IS NULL",
-                  tree.str(), toString(visibility));
+  // would let a visibility flip vault a long-dead tree up the wall. Only a root is any row's
+  // root_tree, so a subtree's id sets nothing.
+  pqxx::result rows = txn.exec_params(
+      "UPDATE trees SET visibility = $2 WHERE root_tree = $1 "
+      "AND EXISTS (SELECT 1 FROM trees root WHERE root.id = $1 AND root.deleted_at IS NULL) RETURNING id",
+      tree.str(), toString(visibility));
   txn.commit();
+
+  std::vector<TreeId> set;
+  set.reserve(rows.size());
+  for (const auto& row : rows) set.emplace_back(text(row, "id"));
+  std::sort(set.begin(), set.end());
+  return set;
 }
 
 void PgTreeRepository::fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
@@ -601,6 +612,59 @@ void PgTreeRepository::fork(const TreeId& newTree, const TreeId& source, const G
   }
   upsertSlice(txn, newTree, state, legend);
   txn.commit();
+}
+
+std::optional<SubtreeSite> PgTreeRepository::subtreeSite(const TreeId& parent, const NodeId& step,
+                                                         const std::optional<TreeId>& opened,
+                                                         const std::optional<TreeId>& proposed) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  // The step's subtree through trees_parent_step, the pointer's tree and the proposed id each through trees_pkey.
+  pqxx::result rows = txn.exec_params(
+      "SELECT p.root_tree, p.depth, c.id AS owned, c.root_tree AS owned_root, c.depth AS owned_depth, "
+      "c.head_seq AS owned_seq, "
+      "EXISTS (SELECT 1 FROM trees o WHERE o.id = $3 AND o.deleted_at IS NULL AND o.owner_id = p.owner_id) "
+      "AS opens_a_tree, "
+      "EXISTS (SELECT 1 FROM trees t WHERE t.id = $4) AS proposed_taken "
+      "FROM trees p LEFT JOIN trees c ON c.parent_tree = p.id AND c.parent_step = $2 "
+      "WHERE p.id = $1 AND p.deleted_at IS NULL",
+      parent.str(), step.str(), opened ? std::optional<std::string>{opened->str()} : std::nullopt,
+      proposed ? std::optional<std::string>{proposed->str()} : std::nullopt);
+  if (rows.empty()) return std::nullopt;
+
+  const auto& row = rows[0];
+  SubtreeSite site{TreeId{text(row, "root_tree")}, row["depth"].as<int>()};
+  if (!row["owned"].is_null())
+    site.owned = Subtree{TreeId{text(row, "owned")}, TreeId{text(row, "owned_root")}, OwningStep{parent, step},
+                         row["owned_depth"].as<int>(), static_cast<Seq>(row["owned_seq"].as<long long>())};
+  site.opensATree = row["opens_a_tree"].as<bool>();
+  site.proposedTaken = row["proposed_taken"].as<bool>();
+  return site;
+}
+
+std::optional<Subtree> PgTreeRepository::createSubtree(const TreeId& child, const OwningStep& parent, Seq parentSeq) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::result inserted;
+  try {
+    inserted = txn.exec_params(
+        "INSERT INTO trees (id, owner_id, visibility, head_seq, parent_tree, parent_step, root_tree, depth) "
+        "SELECT $1, p.owner_id, p.visibility, 0, p.id, $3, p.root_tree, p.depth + 1 "
+        "FROM trees p WHERE p.id = $2 AND p.deleted_at IS NULL RETURNING root_tree, depth",
+        child.str(), parent.tree.str(), parent.step.str());
+  } catch (const pqxx::unique_violation&) {
+    throw DuplicateTree{};  // trees_pkey or trees_parent_step: the id is taken, or the step owns a subtree
+  }
+  if (inserted.empty()) return std::nullopt;
+  // The parent's head goes after the child, so a parent removed or erased meanwhile leaves neither written.
+  if (txn.exec_params("UPDATE trees SET head_seq = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL "
+                      "RETURNING id",
+                      parent.tree.str(), static_cast<long long>(parentSeq))
+          .empty())
+    return std::nullopt;
+  txn.commit();
+  markCurrentWrite();
+  return Subtree{child, TreeId{text(inserted[0], "root_tree")}, parent, inserted[0]["depth"].as<int>(), 0};
 }
 
 }

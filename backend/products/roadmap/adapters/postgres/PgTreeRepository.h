@@ -50,10 +50,13 @@ public:
   std::vector<TreeId> treesOpening(const UserId& owner, const TreeId& tree) override;
   void softDelete(const TreeId& tree) override;
   void rename(const TreeId& tree, const Lww<std::string>& title) override;
-  void setVisibility(const TreeId& tree, Visibility visibility) override;
+  std::vector<TreeId> setVisibility(const TreeId& tree, Visibility visibility) override;
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
             const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
             bool guideInherited, const UserId& owner) override;
+  std::optional<SubtreeSite> subtreeSite(const TreeId& parent, const NodeId& step, const std::optional<TreeId>& opened,
+                                         const std::optional<TreeId>& proposed) override;
+  std::optional<Subtree> createSubtree(const TreeId& child, const OwningStep& parent, Seq parentSeq) override;
 
 private:
   // The projection both list queries need: each present node's id, colour and pointer, each pointer with the stamp it

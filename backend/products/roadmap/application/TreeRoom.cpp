@@ -122,6 +122,11 @@ std::optional<std::string> TreeRoom::validate(const Command& command) const {
   return wm::validate(graph_, legend_, command);
 }
 
+void TreeRoom::appendSubtree(const NodeId& step, const Subtree& subtree) {
+  ++head_;
+  bus_.broadcastSubtree(id_, head_, step, subtree);
+}
+
 void TreeRoom::replay(const AppliedOp& op) {
   appliedOpIds_.insert(op.opId);
   clock_.observe(op.hlc);  // the op-log tail advances the clock past every stamp it replays

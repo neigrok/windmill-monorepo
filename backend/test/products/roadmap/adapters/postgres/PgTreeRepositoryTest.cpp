@@ -7,6 +7,7 @@
 #include "products/roadmap/application/NodeEdits.h"
 #include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/application/RoomRegistry.h"
+#include "products/roadmap/application/TreeRegistry.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "test/PgTestPool.h"
@@ -20,9 +21,13 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <future>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
+#include <utility>
+#include <variant>
 #include <vector>
 
 // A tree whose row is gone stays gone, whatever its live room still holds: opt-in, runs only when WM_PG_TEST is set.
@@ -1202,4 +1207,301 @@ TEST(pg_a_document_blob_holding_a_position_loads_without_it_and_backfills_its_ro
     rows.push_back(row[0].as<std::string>() + " " + row[1].as<std::string>() + " " + row[2].as<std::string>() + " " +
                    row[3].as<std::string>());
   CHECK_EQ(rows, (std::vector<std::string>{"hull Hull 1:0:srv t"}));
+}
+
+namespace {
+
+using SubtreeAnswer = std::variant<SubtreeCreation, SubtreeRefusal>;
+
+const TreeId kParent{std::string("t_5ab0000000000001")};
+const TreeId kOther{std::string("t_5ab0000000000002")};
+const TreeId kEves{std::string("t_5ab0000000000003")};
+const TreeId kGone{std::string("t_5ab0000000000004")};
+const TreeId kChild{std::string("t_5ab00000000000c1")};
+const TreeId kGrandchild{std::string("t_5ab00000000000c2")};
+
+// Every row the subtree cases write, minted children included, which sit under kParent; and the faults they plant.
+void resetSubtrees() {
+  reset();
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  txn.exec("DROP TRIGGER IF EXISTS pgtest_subtree_fault ON trees");
+  txn.exec("DROP FUNCTION IF EXISTS pgtest_subtree_fault()");
+  const std::string ours = "(SELECT id FROM trees WHERE id LIKE 't\\_5ab%' OR root_tree LIKE 't\\_5ab%')";
+  for (const char* table : {"tree_ops", "tree_nodes", "tree_edges", "tree_kinds", "node_progress"})
+    txn.exec(std::string("DELETE FROM ") + table + " WHERE tree_id IN " + ours);
+  txn.exec("DELETE FROM trees WHERE id IN " + ours);
+  txn.commit();
+}
+
+// The server's roadmap write path over Postgres, as main.cpp composes it, minting ids no other case mints.
+struct Forest {
+  PgTreeRepository trees{pgTestPool()};
+  PgProgressRepository progressRepo{pgTestPool()};
+  PgOpLog log{pgTestPool()};
+  FakeBus bus;
+  FakeTokens tokens;
+  test::StepClock clock;
+  ProgressService progress{progressRepo, trees};
+  RoomRegistry rooms{trees, log, bus};
+  NodeEdits edits{rooms, progress, bus, clock};
+  TreeRegistry registry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, rooms, edits, clock};
+  Forest() { tokens.counter = 9000; }
+
+  // A tree of `owner`'s holding `steps`, each opening the tree paired with it when one is named, saved.
+  void plant(const TreeId& tree, const UserId& owner, const std::vector<std::pair<const char*, const char*>>& steps) {
+    trees.create(tree, LooseGraph().exportState(), LegendState{}, "Planted", owner);
+    std::vector<Command> commands;
+    for (const auto& [step, opens] : steps)
+      commands.push_back(CreateNode{nid(step), step, "icon", NodeColor::sky, {}, {}, {},
+                                    opens ? std::optional<TreeId>(TreeId{std::string(opens)}) : std::nullopt});
+    std::lock_guard<std::mutex> strand(rooms.strandFor(tree));
+    rooms.open(tree)->applyCommands(commands, clock.nowMs(), owner);
+    REQUIRE(rooms.persist(tree));
+  }
+};
+
+std::string placeOf(const TreeId& tree) {
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  const pqxx::result rows = txn.exec_params(
+      "SELECT coalesce(parent_tree, '-') || ' ' || coalesce(parent_step, '-') || ' ' || root_tree || ' ' || depth || ' ' "
+      "|| coalesce(owner_id::text, '-') || ' ' || visibility || ' [' || title || '] ' || head_seq FROM trees WHERE id = $1",
+      tree.str());
+  return rows.empty() ? "" : rows[0][0].as<std::string>();
+}
+
+long childrenOf(const TreeId& parent) {
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  return txn.exec_params("SELECT count(*) FROM trees WHERE parent_tree = $1", parent.str())[0][0].as<long>();
+}
+
+Seq storedHead(const TreeId& tree) {
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  return static_cast<Seq>(txn.exec_params("SELECT head_seq FROM trees WHERE id = $1", tree.str())[0][0].as<long long>());
+}
+
+void runSql(const std::string& statement) {
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  txn.exec(statement);
+  txn.commit();
+}
+
+}
+
+TEST(pg_a_subtree_takes_its_place_from_its_parents_row_and_a_retry_after_a_restart_writes_nothing_more) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kSam, {{"rig", nullptr}});
+  forest.registry.setVisibility(kParent, kSam, Visibility::unlisted);
+  const Subtree child{kChild, kParent, OwningStep{kParent, nid("rig")}, 1, 0};
+
+  CHECK(forest.registry.createSubtree(kParent, nid("rig"), kSam, kChild) == (SubtreeAnswer{SubtreeCreation{true, child, 2}}));
+  CHECK_EQ(placeOf(kChild), kParent.str() + " rig " + kParent.str() + " 1 " + kSam.str() + " unlisted [] 0");
+  CHECK_EQ(placeOf(kParent), "- - " + kParent.str() + " 0 " + kSam.str() + " unlisted [Planted] 2");
+  CHECK(forest.bus.subtreeBroadcasts == (std::vector<FakeBus::SubtreeBroadcast>{{kParent.str(), 2, nid("rig"), child}}));
+
+  // A grandchild sits under the same root, one deeper.
+  {
+    std::lock_guard<std::mutex> strand(forest.rooms.strandFor(kChild));
+    forest.rooms.open(kChild)->applyCommand(createNode("knot"), forest.clock.nowMs(), kSam);
+    REQUIRE(forest.rooms.persist(kChild));
+  }
+  CHECK(forest.registry.createSubtree(kChild, nid("knot"), kSam, kGrandchild) ==
+        (SubtreeAnswer{SubtreeCreation{true, Subtree{kGrandchild, kParent, OwningStep{kChild, nid("knot")}, 2, 0}, 2}}));
+  CHECK_EQ(placeOf(kGrandchild), kChild.str() + " knot " + kParent.str() + " 2 " + kSam.str() + " unlisted [] 0");
+
+  // The reply was lost and the server restarted: the same call answers the child the row holds, its own head with it.
+  Forest restarted;
+  CHECK(restarted.registry.createSubtree(kParent, nid("rig"), kSam, kChild) ==
+        (SubtreeAnswer{SubtreeCreation{false, Subtree{kChild, kParent, OwningStep{kParent, nid("rig")}, 1, 2}, 2}}));
+  CHECK_EQ(childrenOf(kParent), 1L);
+  CHECK_EQ(storedHead(kParent), Seq{2});
+  CHECK(restarted.bus.subtreeBroadcasts.empty());
+}
+
+TEST(pg_two_creates_on_one_step_at_once_store_one_row_and_tell_one_event) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  for (int round = 0; round < 10; ++round) {
+    resetSubtrees();
+    Forest forest;
+    forest.plant(kParent, kSam, {{"rig", nullptr}});
+    std::promise<void> start;
+    const std::shared_future<void> go = start.get_future().share();
+    const auto create = [&forest, go] {
+      go.wait();
+      return forest.registry.createSubtree(kParent, nid("rig"), kSam);
+    };
+    std::future<SubtreeAnswer> first = std::async(std::launch::async, create);
+    std::future<SubtreeAnswer> second = std::async(std::launch::async, create);
+    start.set_value();
+    const SubtreeAnswer a = first.get();
+    const SubtreeAnswer b = second.get();
+
+    REQUIRE(std::holds_alternative<SubtreeCreation>(a) && std::holds_alternative<SubtreeCreation>(b));
+    CHECK(std::get<SubtreeCreation>(a).created != std::get<SubtreeCreation>(b).created);
+    CHECK(std::get<SubtreeCreation>(a).subtree == std::get<SubtreeCreation>(b).subtree);
+    CHECK_EQ(childrenOf(kParent), 1L);
+    CHECK_EQ(forest.bus.subtreeBroadcasts.size(), 1u);
+  }
+}
+
+TEST(pg_a_proposed_id_another_accounts_tree_or_a_deleted_tree_holds_is_replaced_by_a_minted_one) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kSam, {{"rig", nullptr}, {"sail", nullptr}});
+  forest.plant(kEves, kEve, {});
+  forest.plant(kGone, kSam, {});
+  forest.trees.softDelete(kGone);
+
+  const auto idOf = [&forest](const char* step, const TreeId& proposed) {
+    return std::get<SubtreeCreation>(forest.registry.createSubtree(kParent, nid(step), kSam, proposed)).subtree.id.str();
+  };
+  CHECK_EQ(idOf("rig", kEves), std::string("t_d9001"));
+  CHECK_EQ(idOf("sail", kGone), std::string("t_d9002"));
+  CHECK_EQ(placeOf(kEves), "- - " + kEves.str() + " 0 " + kEve.str() + " private [Planted] 0");
+}
+
+// The pointer is judged in the same read as the rest of the site: valid only at a standing tree of the parent's owner.
+TEST(pg_a_step_whose_pointer_opens_a_standing_tree_of_its_owner_is_refused_and_one_whose_pointer_leads_nowhere_is_not) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kOther, kSam, {});
+  forest.plant(kEves, kEve, {});
+  forest.plant(kGone, kSam, {});
+  forest.trees.softDelete(kGone);
+  forest.plant(kParent, kSam, {{"valid", "t_5ab0000000000002"}, {"foreign", "t_5ab0000000000003"},
+                               {"deleted", "t_5ab0000000000004"}, {"absent", "t_5ab0000000000009"}});
+
+  CHECK(forest.registry.createSubtree(kParent, nid("valid"), kSam) == SubtreeAnswer{SubtreeRefusal::stepOpensATree});
+  for (const char* step : {"foreign", "deleted", "absent"})
+    CHECK(std::get<SubtreeCreation>(forest.registry.createSubtree(kParent, nid(step), kSam)).created);
+  CHECK_EQ(childrenOf(kParent), 3L);
+}
+
+TEST(pg_a_trees_parent_step_root_and_depth_refuse_every_update_and_its_other_columns_do_not) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kSam, {{"rig", nullptr}});
+  forest.plant(kOther, kSam, {});
+  forest.registry.createSubtree(kParent, nid("rig"), kSam, kChild);
+  const std::string before = placeOf(kChild);
+
+  for (const std::string& assignment : {std::string("parent_tree = '") + kOther.str() + "'", std::string("parent_tree = NULL"),
+                                        std::string("parent_step = 'sail'"), std::string("root_tree = '") + kOther.str() + "'",
+                                        std::string("depth = 0")}) {
+    bool refused = false;
+    try {
+      runSql("UPDATE trees SET " + assignment + " WHERE id = '" + kChild.str() + "'");
+    } catch (const pqxx::integrity_constraint_violation&) {
+      refused = true;
+    }
+    CHECK(refused);
+  }
+  bool rootRefused = false;
+  try {
+    runSql("UPDATE trees SET root_tree = '" + kChild.str() + "' WHERE id = '" + kParent.str() + "'");
+  } catch (const pqxx::integrity_constraint_violation&) {
+    rootRefused = true;
+  }
+  CHECK(rootRefused);
+  CHECK_EQ(placeOf(kChild), before);
+
+  runSql("UPDATE trees SET title = 'Rigging', depth = depth WHERE id = '" + kChild.str() + "'");
+  CHECK_EQ(placeOf(kChild), kParent.str() + " rig " + kParent.str() + " 1 " + kSam.str() + " private [Rigging] 0");
+}
+
+TEST(pg_one_subtree_per_step_holds_under_a_direct_insert_that_bypasses_the_room) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kSam, {{"rig", nullptr}});
+  forest.registry.createSubtree(kParent, nid("rig"), kSam, kChild);
+
+  bool refused = false;
+  try {
+    runSql("INSERT INTO trees (id, owner_id, parent_tree, parent_step, root_tree, depth) VALUES ('" + kGrandchild.str() +
+           "', '" + kSam.str() + "', '" + kParent.str() + "', 'rig', '" + kParent.str() + "', 1)");
+  } catch (const pqxx::unique_violation&) {
+    refused = true;
+  }
+  CHECK(refused);
+  CHECK_EQ(childrenOf(kParent), 1L);
+  CHECK_EQ(placeOf(kGrandchild), std::string(""));
+}
+
+// The child and the parent's seq are one transaction: a fault after the child's insert, at the parent's head, takes the
+// child back with it, and a fault on the insert writes nothing. Neither tells anyone, and a retry then creates it.
+TEST(pg_a_create_that_fails_after_the_insert_or_on_it_leaves_no_row_no_seq_and_no_event) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kSam, {{"rig", nullptr}});
+  runSql("CREATE FUNCTION pgtest_subtree_fault() RETURNS trigger LANGUAGE plpgsql AS $$ "
+         "BEGIN RAISE EXCEPTION 'a planted fault'; END $$");
+  const std::vector<std::string> faults{
+      "CREATE TRIGGER pgtest_subtree_fault BEFORE UPDATE OF head_seq ON trees FOR EACH ROW WHEN (new.id = '" +
+          kParent.str() + "') EXECUTE FUNCTION pgtest_subtree_fault()",
+      "CREATE TRIGGER pgtest_subtree_fault BEFORE INSERT ON trees FOR EACH ROW WHEN (new.parent_tree = '" +
+          kParent.str() + "') EXECUTE FUNCTION pgtest_subtree_fault()"};
+  for (const std::string& fault : faults) {
+    runSql(fault);
+    bool threw = false;
+    try {
+      forest.registry.createSubtree(kParent, nid("rig"), kSam, kChild);
+    } catch (const pqxx::sql_error&) {
+      threw = true;
+    }
+    runSql("DROP TRIGGER pgtest_subtree_fault ON trees");
+    CHECK(threw);
+    CHECK_EQ(placeOf(kChild), std::string(""));
+    CHECK_EQ(storedHead(kParent), Seq{1});
+    CHECK_EQ(forest.rooms.open(kParent)->head(), Seq{1});
+    CHECK(forest.bus.subtreeBroadcasts.empty());
+  }
+  runSql("DROP FUNCTION pgtest_subtree_fault()");
+
+  CHECK(forest.registry.createSubtree(kParent, nid("rig"), kSam, kChild) ==
+        (SubtreeAnswer{SubtreeCreation{true, Subtree{kChild, kParent, OwningStep{kParent, nid("rig")}, 1, 0}, 2}}));
+}
+
+// A subtree's visibility is its root's: a root's change reaches every row under it, a deleted one too, and its subtrees'
+// live rooms, and a change aimed at a subtree alone sets nothing.
+TEST(pg_a_roots_visibility_reaches_every_tree_under_it_and_a_subtrees_own_change_sets_nothing) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kSam, {{"rig", nullptr}, {"sail", nullptr}});
+  forest.registry.createSubtree(kParent, nid("rig"), kSam, kChild);
+  forest.registry.createSubtree(kParent, nid("sail"), kSam, kGrandchild);
+  forest.trees.softDelete(kGrandchild);
+  TreeRoom* child = forest.rooms.open(kChild);
+
+  CHECK(forest.registry.setVisibility(kParent, kSam, Visibility::public_) == TreeRegistry::VisibilityChange::changed);
+  for (const TreeId& tree : {kParent, kChild, kGrandchild})
+    CHECK(placeOf(tree).find(" public [") != std::string::npos);
+  CHECK(child->visibility() == Visibility::public_);
+
+  CHECK(forest.trees.setVisibility(kChild, Visibility::private_).empty());
+  for (const TreeId& tree : {kParent, kChild, kGrandchild})
+    CHECK(placeOf(tree).find(" public [") != std::string::npos);
+}
+
+// An older image inserts a tree naming none of the place's columns; the row is a root all the same.
+TEST(pg_a_row_inserted_without_a_parent_is_its_own_root_at_depth_zero) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  runSql("INSERT INTO trees (id, title, head_seq, owner_id) VALUES ('" + kOther.str() + "', 'Older image', 0, '" +
+         kSam.str() + "')");
+  runSql("INSERT INTO trees (id, owner_id, root_tree, depth) VALUES ('" + kGone.str() + "', '" + kSam.str() + "', '" +
+         kParent.str() + "', 3)");
+  CHECK_EQ(placeOf(kOther), "- - " + kOther.str() + " 0 " + kSam.str() + " private [Older image] 0");
+  CHECK_EQ(placeOf(kGone), "- - " + kGone.str() + " 0 " + kSam.str() + " private [] 0");
 }

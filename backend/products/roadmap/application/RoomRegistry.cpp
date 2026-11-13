@@ -183,16 +183,19 @@ bool RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint6
 }
 
 void RoomRegistry::setVisibility(const TreeId& id, Visibility visibility) {
-  repo_.setVisibility(id, visibility);  // durable
+  const std::vector<TreeId> set = repo_.setVisibility(id, visibility);  // durable: the tree and every tree under it
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = rooms_.find(id);
-    // The live room's read gate flips immediately, so a freshly-shared tree stops 404-ing at once.
-    if (it != rooms_.end()) it->second.room->setVisibility(visibility);
+    // Each live room's read gate flips immediately, so a freshly-shared tree stops 404-ing at once.
+    for (const TreeId& tree : set) {
+      auto it = rooms_.find(tree);
+      if (it != rooms_.end()) it->second.room->setVisibility(visibility);
+    }
   }
   // Announced outside the lock: whoever listens re-decides an access question and may go back to the
   // repository to do it.
-  if (accessChanged_) accessChanged_(id);
+  if (accessChanged_)
+    for (const TreeId& tree : set) accessChanged_(tree);
 }
 
 void RoomRegistry::whenAccessChanges(std::function<void(const TreeId&)> hook) {

@@ -81,6 +81,40 @@ create index if not exists trees_public on trees (visibility) where visibility =
 -- Retired trees included: an account's erasure takes every tree it ever owned.
 create index if not exists trees_owner_any on trees (owner_id);
 
+-- A tree's place among trees. A root has no parent, is its own root_tree and sits at depth 0. A subtree is owned by
+-- the step parent_step of the tree parent_tree, and is inserted with its parent's root_tree, owner and visibility, one
+-- deeper. The four are written once, at insert, and never updated. Every row inserted without a parent is a root,
+-- whoever inserts it, and every row that predates them became one.
+alter table trees add column if not exists parent_tree text;
+alter table trees add column if not exists parent_step text;
+alter table trees add column if not exists root_tree text;
+alter table trees add column if not exists depth integer not null default 0;
+create or replace function trees_place_root() returns trigger language plpgsql as $$
+begin
+  if new.parent_tree is null then
+    new.root_tree := new.id;
+    new.depth := 0;
+  end if;
+  return new;
+end $$;
+create or replace trigger trees_place_root before insert on trees
+  for each row execute function trees_place_root();
+update trees set root_tree = id where root_tree is null;
+alter table trees alter column root_tree set not null;
+create or replace function trees_place_fixed() returns trigger language plpgsql as $$
+begin
+  raise exception 'a tree''s parent, root and depth are written once, when it is created'
+    using errcode = 'integrity_constraint_violation';
+end $$;
+create or replace trigger trees_place_fixed before update of parent_tree, parent_step, root_tree, depth on trees
+  for each row when (old.parent_tree is distinct from new.parent_tree or old.parent_step is distinct from new.parent_step
+    or old.root_tree is distinct from new.root_tree or old.depth is distinct from new.depth)
+  execute function trees_place_fixed();
+-- One subtree per step, whatever writes it.
+create unique index if not exists trees_parent_step on trees (parent_tree, parent_step) where parent_tree is not null;
+-- A root's visibility is set with every tree under it.
+create index if not exists trees_root on trees (root_tree);
+
 -- Grow-only: a delete is a tombstone stamp, so saves are pure upserts and rows are never deleted.
 -- Stamps are HLC text ("physicalMs:counter:actor", '' = unset), never compared in SQL; `present` is
 -- the writer's projection of them.

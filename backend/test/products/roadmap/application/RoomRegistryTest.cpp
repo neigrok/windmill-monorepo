@@ -310,6 +310,36 @@ TEST(registry_set_visibility_announces_the_change) {
   CHECK_EQ(announced.front(), std::string("t"));
 }
 
+// A subtree's visibility is its root's: a root's change reaches every tree under it, its live room and its readers, and a
+// change aimed at a subtree alone sets nothing.
+TEST(registry_set_visibility_of_a_root_reaches_its_subtrees_and_of_a_subtree_alone_sets_nothing) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  repo.byId["c"] = oneNodeTree();
+  repo.byId["g"] = oneNodeTree();
+  repo.byId["other"] = oneNodeTree();
+  repo.subtrees["c"] = Subtree{tid("c"), tid("t"), OwningStep{tid("t"), nid("seed")}, 1, 0};
+  repo.subtrees["g"] = Subtree{tid("g"), tid("t"), OwningStep{tid("c"), nid("seed")}, 2, 0};
+  RoomRegistry registry(repo, log, bus);
+  TreeRoom& subtree = *registry.open(tid("c"));
+  std::vector<std::string> announced;
+  registry.whenAccessChanges([&](const TreeId& id) { announced.push_back(id.str()); });
+
+  registry.setVisibility(tid("t"), Visibility::unlisted);
+  CHECK(subtree.visibility() == Visibility::unlisted);
+  for (const char* tree : {"t", "c", "g"}) CHECK(repo.byId[tree].visibility == Visibility::unlisted);
+  CHECK(repo.byId["other"].visibility == Visibility::private_);
+  CHECK(announced == (std::vector<std::string>{"c", "g", "t"}));
+
+  announced.clear();
+  registry.setVisibility(tid("c"), Visibility::public_);
+  CHECK(subtree.visibility() == Visibility::unlisted);
+  for (const char* tree : {"t", "c", "g"}) CHECK(repo.byId[tree].visibility == Visibility::unlisted);
+  CHECK(announced.empty());
+}
+
 // A retirement drops the room WITHOUT persisting it, and announces so readers are re-decided.
 TEST(registry_retire_drops_the_room_unsaved_and_announces_it) {
   FakeTreeRepository repo;

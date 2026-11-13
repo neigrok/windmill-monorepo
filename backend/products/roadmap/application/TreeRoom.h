@@ -7,11 +7,13 @@
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/Subgraph.h"
+#include "products/roadmap/domain/Subtree.h"
 #include "products/roadmap/domain/Tree.h"
 #include "products/roadmap/domain/TreeDiagnostics.h"
 #include "products/roadmap/ports/OpLog.h"
 #include "products/roadmap/ports/PresenceBus.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -110,6 +112,12 @@ public:
     return wm::planKindUpdate(graph_, legend_, update);
   }
 
+  // The seq the next event on this tree's stream takes.
+  Seq nextSeq() const { return head_ + 1; }
+  // A subtree created under `step` and stored with this tree's head at nextSeq(): the stream takes that seq and every
+  // subscriber is told. It changes no register, dirties nothing and queues no op row.
+  void appendSubtree(const NodeId& step, const Subtree& subtree);
+
   // Advances head + dedup set; does not re-persist or re-broadcast.
   void replay(const AppliedOp& op);
 
@@ -163,10 +171,11 @@ public:
   // epoch ms; immutable.
   std::uint64_t createdAt() const { return createdAt_; }
 
-  // Empty only on a legacy row nobody owns. Writes require the owner; reads are gated by visibility().
+  // Empty only on a legacy row nobody owns. Writes require the owner; reads are gated by visibility(), which a
+  // root's change of visibility sets on its subtrees' rooms without their strands.
   const std::optional<UserId>& owner() const { return owner_; }
-  Visibility visibility() const { return visibility_; }
-  void setVisibility(Visibility visibility) { visibility_ = visibility; }
+  Visibility visibility() const { return visibility_.load(); }
+  void setVisibility(Visibility visibility) { visibility_.store(visibility); }
 
 private:
   void markDirty(const GraphState& graph, const LegendState& legend);
@@ -179,7 +188,7 @@ private:
   Legend legend_;
   Seq head_;
   std::optional<UserId> owner_;
-  Visibility visibility_;
+  std::atomic<Visibility> visibility_;
   std::uint64_t createdAt_;
   std::set<std::string> appliedOpIds_;
   std::vector<AppliedOp> pendingOps_;

@@ -7,6 +7,7 @@
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/OpenedTrees.h"
+#include "products/roadmap/domain/Subtree.h"
 #include "products/roadmap/domain/Tree.h"
 
 #include <chrono>
@@ -69,6 +70,18 @@ struct TreeAccess {
   Visibility visibility = Visibility::private_;
 };
 
+// What creating a subtree under one step of a standing tree reads off the stored rows: that tree's root and depth, the
+// subtree the step already owns, standing or deleted, whether the tree the step's pointer names stands and is the same
+// owner's, and whether a proposed id names any row, anyone's, standing or deleted.
+struct SubtreeSite {
+  TreeId root;
+  int depth = 0;
+  std::optional<Subtree> owned;
+  bool opensATree = false;
+  bool proposedTaken = false;
+  bool operator==(const SubtreeSite&) const = default;
+};
+
 struct ForkLineage {
   bool isFork = false;
   std::string sourceTitle;  // empty unless the source exists and is public
@@ -119,14 +132,26 @@ struct TreeRepository {
   // The closed-room seam only — a live room's title reaches the column through save(). Lands only
   // under a stamp dominating the stored one.
   virtual void rename(const TreeId& tree, const Lww<std::string>& title) = 0;
-  // The owner check is the caller's, not this write's; a soft-deleted tree is left alone.
-  virtual void setVisibility(const TreeId& tree, Visibility visibility) = 0;
+  // The owner check is the caller's, not this write's. A subtree's visibility is its root's, so a root's is set with every
+  // tree under it, deleted or not, and a subtree's alone is never set; a soft-deleted root is left alone. Answers the
+  // trees it set.
+  virtual std::vector<TreeId> setVisibility(const TreeId& tree, Visibility visibility) = 0;
   // Verbatim copy of `source`'s document; the copy starts a fresh op log at head 0, its title and
   // guide under the stamps given and the guide marked `guideInherited` as the caller rules. Throws
   // DuplicateTree on an id collision.
   virtual void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
                     const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
                     bool guideInherited, const UserId& owner) = 0;
+  // Where a subtree under `step` of `parent` would sit (SubtreeSite), `opened` the tree the step's pointer names and
+  // `proposed` the id the caller asks for. nullopt when `parent` does not stand.
+  virtual std::optional<SubtreeSite> subtreeSite(const TreeId& parent, const NodeId& step,
+                                                 const std::optional<TreeId>& opened,
+                                                 const std::optional<TreeId>& proposed) = 0;
+  // `child` stored as the subtree `parent` owns and the parent tree's head moved to `parentSeq`, in one transaction. The
+  // child takes the parent's owner, visibility and root from its row in the same statement, one deeper, with an empty
+  // title, at seq 0. When the parent no longer stands nothing is written and nullopt answered; when `child` names a row
+  // or the step already owns a subtree, nothing is written and DuplicateTree thrown.
+  virtual std::optional<Subtree> createSubtree(const TreeId& child, const OwningStep& parent, Seq parentSeq) = 0;
 };
 
 }

@@ -40,6 +40,8 @@ public:
   std::vector<drogon::WebSocketConnectionPtr> connections() const;
 
   void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) override;
+  // `{t: "subtree", treeId, seq, step, subtree: {id, depth}}`, the same bytes to every subscriber.
+  void broadcastSubtree(const TreeId& tree, Seq seq, const NodeId& step, const Subtree& subtree) override;
   void broadcastProgress(const TreeId& tree, const UserId& user, const Progress& marks) override;
 
 private:

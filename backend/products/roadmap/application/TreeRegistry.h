@@ -4,6 +4,7 @@
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/Ids.h"
+#include "products/roadmap/domain/Subtree.h"
 #include "products/roadmap/domain/TreeSummary.h"
 #include "platform/ports/Clock.h"
 #include "products/roadmap/ports/ProgressRepository.h"
@@ -35,6 +36,18 @@ public:
   // else's.
   enum class Creation { created, existedYours, retired, taken };
   Creation create(const UserId& owner, const TreeId& id, const TreeData& initial);
+
+  // A subtree under `step` of `parent` (SPEC.md, Model, Subtrees), keyed by the pair, so a retry or a lost race answers
+  // the subtree the step already owns, `created` false, and writes nothing. Under the parent's strand, so it is
+  // serialised with every other write to the parent, a step's deletion among them: read gate → write gate → the step
+  // stands → the stored site → the subtree the step owns → depth → the step's legacy pointer → the child stored with
+  // the parent's next seq in one transaction → that seq's `subtree` event told to the parent's subscribers. A free,
+  // well-formed `proposedId` is kept and any other replaced by a minted id. A call that fails leaves no row, no seq
+  // and no event. One `roadmap.subtree.create` line per call, at the door the call came through (`internal` outside
+  // one). No door calls it yet.
+  std::variant<SubtreeCreation, SubtreeRefusal> createSubtree(const TreeId& parent, const NodeId& step,
+                                                              const UserId& caller,
+                                                              const std::optional<TreeId>& proposedId = std::nullopt);
 
   std::vector<TreeSummary> list(const UserId& owner);
 

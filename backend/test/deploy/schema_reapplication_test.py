@@ -298,6 +298,45 @@ order by 1;
                 migrated = migrated or self.snapshot()
                 self.assertEqual(migrated, self.snapshot())
 
+    def test_trees_stored_before_subtrees_become_roots_once_and_keep_every_other_column(self):
+        self.apply_schema()
+        query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
+        command([*query, """
+drop trigger trees_place_root on trees;
+drop trigger trees_place_fixed on trees;
+drop function trees_place_root();
+drop function trees_place_fixed();
+drop index trees_parent_step;
+drop index trees_root;
+alter table trees drop column parent_tree, drop column parent_step, drop column root_tree, drop column depth;
+insert into trees(id,owner_id,title,title_hlc,visibility,head_seq) values
+  ('t_00000000000000a1','00000000-0000-4000-8000-000000000044','Standing','1:0:old','unlisted',3),
+  ('t_00000000000000a2',null,'Nobody''s','','public',0);
+insert into trees(id,owner_id,title,deleted_at) values
+  ('t_00000000000000a3','00000000-0000-4000-8000-000000000044','Deleted',now());
+"""])
+        kept = """
+select (to_jsonb(t)-array['parent_tree','parent_step','root_tree','depth'])::text from trees t order by id;
+"""
+        places = """
+select id||' '||coalesce(parent_tree,'-')||' '||coalesce(parent_step,'-')||' '||root_tree||' '||depth from trees order by id;
+"""
+        before = command([*query, kept])
+        self.assertEqual(4, len(before.splitlines()))
+        migrated = None
+        for attempt in (1, 2):
+            with self.subTest(attempt=attempt):
+                self.apply_schema()
+                self.assertEqual(before, command([*query, kept]))
+                self.assertEqual("t_00000000000000a1 - - t_00000000000000a1 0\n"
+                                 "t_00000000000000a2 - - t_00000000000000a2 0\n"
+                                 "t_00000000000000a3 - - t_00000000000000a3 0\n"
+                                 "t_9e407a96b5330ebe - - t_9e407a96b5330ebe 0\n", command([*query, places]))
+                migrated = migrated or self.snapshot()
+                self.assertEqual(migrated, self.snapshot())
+        with self.assertRaisesRegex(RuntimeError, "written once"):
+            command([*query, "update trees set depth = 1 where id = 't_00000000000000a1'"])
+
     def test_ai_output_offer_upgrade_preserves_legacy_rows_and_constraint_identity(self):
         self.apply_schema()
         query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]

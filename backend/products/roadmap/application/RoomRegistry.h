@@ -56,7 +56,9 @@ public:
   // names it where it is reported). Answers true when the rows fail to land: the save is what a
   // caller's reply attests, and the rows retry on the next persist. Throws only when the save itself failed.
   bool persist(const TreeId& id);
-  void setVisibility(const TreeId& id, Visibility visibility);  // share seam, durable + in-room
+  // The share seam: durable, then in each live room. A root's visibility is set with every tree under it, and a
+  // subtree's alone is never set (TreeRepository::setVisibility).
+  void setVisibility(const TreeId& id, Visibility visibility);
   bool isOpen(const TreeId& id) const;
   std::size_t openRooms() const;
 
