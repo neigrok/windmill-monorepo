@@ -251,8 +251,10 @@ struct FakeTreeRepository : TreeRepository {
       if (const auto subtree = owned.find(node.id); subtree != owned.end()) node.opens = subtree->second;
     return data;
   }
+  bool placeReadsFail = false;  // placeOf throws, the way a dropped connection does
   // The real statement's walk: up the parents of a standing tree, each named as every read names it.
   std::optional<Place> placeOf(const TreeId& tree) override {
+    if (placeReadsFail) throw std::runtime_error("connection reset mid-read");
     const std::optional<StoredTree> stored = placed(tree);
     if (!stored) return std::nullopt;
     const Lww<std::string> name = nameOf(tree);

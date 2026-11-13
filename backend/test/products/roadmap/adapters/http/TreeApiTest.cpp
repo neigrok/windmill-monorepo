@@ -1865,3 +1865,32 @@ TEST(get_tree_tells_every_reader_what_a_step_owning_a_subtree_comes_to_for_the_o
   CHECK_EQ(nodesOf("")["sail"]["subtree"], parse(R"({"id":"t_s"})"));
   CHECK_EQ(sendGetTree(h.api, "s-owner", "t_a")->getStatusCode(), drogon::k503ServiceUnavailable);
 }
+
+// A subtree's name and place are read once its strand is released: a read that fails answers as an absent tree does,
+// under one Issue named for the tree read, and a root, whose place is its own, makes no such read.
+TEST(get_tree_of_a_subtree_whose_place_cannot_be_read_answers_404_under_one_issue) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+  installWriteReporter(failures);
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedForest(owner, Visibility::unlisted);
+  h.trees->placeReadsFail = true;
+
+  const drogon::HttpResponsePtr subtree = sendGetTree(h.api, "", "t_s");
+  const drogon::HttpResponsePtr root = sendGetTree(h.api, "", "t_a");
+  installWriteReporter(nullptr);
+
+  CHECK_EQ(subtree->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(std::string(subtree->getBody()), std::string(sendGetTree(h.api, "", "t_absent")->getBody()));
+  CHECK_EQ(root->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(failures->reports,
+           (std::vector<std::string>{"roadmap.tree.read roadmap rest failed " + std::string(typeid(std::runtime_error).name())}));
+}

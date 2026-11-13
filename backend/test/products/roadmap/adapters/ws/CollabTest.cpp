@@ -2568,4 +2568,10 @@ TEST(ws_the_subscribe_answer_lists_the_subtrees_steps_own_and_names_a_subtree_by
   CHECK_EQ(child["title"], parse(R"({"v":"Plain","at":"101:0:r_seed"})"));
   CHECK_FALSE(child.isMember("subtrees"));
   CHECK_FALSE(child["coverage"].isMember("r_seed"));
+
+  // A name that cannot be read leaves the answer without it, and the client with the name it holds.
+  h.trees.placeReadsFail = true;
+  const Json::Value unnamed = subscribed("", "t_00000000000000c1");
+  CHECK(unnamed["title"].isNull());
+  CHECK_EQ(unnamed["seq"], child["seq"]);
 }
