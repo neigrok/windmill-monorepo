@@ -84,7 +84,7 @@ create index if not exists trees_owner_any on trees (owner_id);
 -- A tree's place among trees. A root has no parent, is its own root_tree and sits at depth 0. A subtree is owned by
 -- the step parent_step of the tree parent_tree, and is inserted with its parent's root_tree, owner and visibility, one
 -- deeper. The four are written once, at insert, and never updated. Every row inserted without a parent is a root,
--- whoever inserts it, and every row that predates them became one.
+-- whoever inserts it, and so is every row that holds no root_tree.
 alter table trees add column if not exists parent_tree text;
 alter table trees add column if not exists parent_step text;
 alter table trees add column if not exists root_tree text;

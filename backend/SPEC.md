@@ -213,10 +213,10 @@ rejected for structure. Validity is a read model, not a gate.
   deleted or private-denied tree alike) and write it (`not-writer`), and that the step is present
   (`step-gone`); then reads the stored site (`TreeRepository::subtreeSite`). A step that already
   owns a subtree answers it, `created: false`, and writes nothing, so a retry after a lost reply and
-  a create that lost a race both find the one child. Otherwise the child would sit deeper than the
-  cap (`depth-limit`), or the step's pointer is valid as `OpenedTrees` judges one — at a standing
-  tree of the same owner, the parent itself included (`step-opens-a-tree`); a pointer that leads
-  nowhere does not stop it. A `proposedId` that is a well-formed tree id and names no row, standing
+  a create that lost a race both find the one child. Otherwise it is refused when the child would
+  sit deeper than the cap (`depth-limit`) and when the step's pointer is valid as `OpenedTrees`
+  judges one, at a standing tree of the same owner, the parent itself included
+  (`step-opens-a-tree`); a pointer that leads nowhere does not stop it. A `proposedId` that is a well-formed tree id and names no row, standing
   or deleted, anyone's, is kept, and any other is replaced by a minted id. The child is stored and
   the parent's head moved to its next seq in one transaction (`TreeRepository::createSubtree`):
   an empty tree with an empty title, at seq 0, its own room. That seq is then the parent's
@@ -714,7 +714,7 @@ Rules:
   `root_tree`, `depth`, `owner_id` and `visibility` from its parent's standing row in the same
   statement. `trees_place_root` makes any row inserted without a parent a root, `root_tree` its own
   id and `depth` 0, whoever inserts it, so a binary that knows nothing of subtrees still writes
-  roots; every row stored before the place existed became a root when `db/schema.sql` added it.
+  roots, and `db/schema.sql` makes a root of every row that has no `root_tree`.
   `trees_place_fixed` refuses an `UPDATE` that changes any of the four. `trees_parent_step` is unique
   on (`parent_tree`, `parent_step`) for rows with a parent, so a step owns one subtree whatever
   writes it, and `trees_root` finds a root's trees when its visibility is set.

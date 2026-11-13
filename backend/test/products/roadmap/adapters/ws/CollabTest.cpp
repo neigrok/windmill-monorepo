@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <mutex>
@@ -2380,4 +2381,9 @@ TEST(ws_every_subscriber_of_the_parent_receives_one_subtree_frame_at_the_seq_it_
   h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner);
   CHECK_EQ(countOfType(*writer, "subtree"), 1u);
   CHECK_EQ(countOfType(*reader, "subtree"), 1u);
+
+  // A connection lost before the event comes back to a subscribe answer whose seq already holds it.
+  const auto returning = subscribed("", "t_p");
+  CHECK_EQ(lastFrameOfType(*returning, "subgraph")["seq"].asUInt64(), std::uint64_t{1});
+  CHECK_EQ(countOfType(*returning, "subtree"), 0u);
 }

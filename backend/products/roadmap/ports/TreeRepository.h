@@ -79,7 +79,6 @@ struct SubtreeSite {
   std::optional<Subtree> owned;
   bool opensATree = false;
   bool proposedTaken = false;
-  bool operator==(const SubtreeSite&) const = default;
 };
 
 struct ForkLineage {
