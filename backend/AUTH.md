@@ -490,10 +490,10 @@ its session secret; an insert failure rolls back the binding and revival.
 | `RESEND_API_KEY` | Resend key; without it, sends are refused → `502` | — |
 | `RESEND_FROM` | Verified sender, on a domain verified in Resend. Never Resend's shared `onboarding@resend.dev` outside a scratch box: Resend accepts it only for the account owner and rejects every other recipient `422`, so sign-up breaks for everyone except the person testing it. The deploy guards it | — |
 | `RESEND_BASE_URL` | Provider origin override for isolated integration fixtures; use a local origin and dummy key, never hosted credentials | `https://api.resend.com` |
-| `WINDMILL_APP_URL` | Base for the magic-link URL; always a trusted CORS origin | `http://localhost:5183` (compose: `https://${DOMAIN_APP}`) |
+| `WINDMILL_APP_URL` | The app's public origin: the base of the magic-link URL and of every other link the server hands out (reminders, a tree's `url` over MCP); always a trusted CORS origin | `http://localhost:5173`, the port the web dev server is pinned to (compose: `https://${DOMAIN_APP}`) |
 | `WINDMILL_COOKIE_DOMAIN` | Cookie `Domain`; empty = host-only. Every sign-in and sign-out also expires the cookie in each other scope: host-only, and each retired `Domain`. A `Domain` the server refuses (Frontend integration) stops it at startup | compose: `${DOMAIN_APP}` |
 | `WINDMILL_COOKIE_RETIRED_DOMAINS` | Every `Domain` the deployment set the session cookie in before the current one, comma-separated. Add the old one here whenever `WINDMILL_COOKIE_DOMAIN` changes | compose: `${WINDMILL_COOKIE_RETIRED_DOMAINS:-}`, from the GitHub variable of the same name; empty |
-| `WINDMILL_ALLOWED_ORIGINS` | Extra credentialed-CORS origins, comma-separated | — |
+| `WINDMILL_ALLOWED_ORIGINS` | Extra credentialed-CORS origins beside the app's own, comma-separated | — |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in; unset → the routes bounce to the app | — |
 | `APPLE_CLIENT_ID` | The bundle identifier Sign in with Apple is issued for | — |
 | `APPLE_NATIVE_ENABLED` | Mount the native Apple identity-token door when exactly `1` and `APPLE_CLIENT_ID` is configured | off |
