@@ -322,6 +322,25 @@ TEST(patch_visibility_owner_flip_returns_204_and_reshares) {
   CHECK(h.trees.byId["t"].visibility == Visibility::unlisted);
 }
 
+// A subtree is shared as its root is: aimed at a subtree, the change is refused 409 `not-a-root`, naming the step it hangs
+// from and its root, and nothing is written.
+TEST(patch_visibility_of_a_subtree_is_refused_409_not_a_root_naming_where_it_hangs) {
+  Harness h;
+  UserId me = h.signIn("s-live", "sam@example.com");
+  h.trees.byId["t_root"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};
+  h.trees.byId["t_sub"] = StoredTree{GraphState{}, LegendState{}, {"", {}}, 0, me};
+  h.trees.subtrees["t_sub"] = Subtree{tid("t_sub"), tid("t_root"), OwningStep{tid("t_root"), nid("rig")}, 1, 0};
+
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t_sub");
+
+  CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(bodyOf(response), parse(R"({"code":"not-a-root","error":"this tree hangs from step \"rig\" of t_root and is )"
+                                   R"(shared as its root t_root is: set the root's visibility",)"
+                                   R"("parent":{"tree":"t_root","step":"rig"},"root":"t_root"})"));
+  CHECK(h.trees.byId["t_root"].visibility == Visibility::private_);
+  CHECK(h.trees.byId["t_sub"].visibility == Visibility::private_);
+}
+
 TEST(patch_visibility_rejects_an_unknown_value_with_400) {
   Harness h;
   UserId me = h.signIn("s-live", "sam@example.com");

@@ -7,13 +7,17 @@
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/Subgraph.h"
+#include "products/roadmap/domain/Subtree.h"
 #include "products/roadmap/domain/Tree.h"
 #include "products/roadmap/domain/TreeDiagnostics.h"
 #include "products/roadmap/ports/OpLog.h"
 #include "products/roadmap/ports/PresenceBus.h"
 
+#include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -23,6 +27,25 @@
 
 namespace wm {
 
+// What every tree under one root is read by: the root's owner, its visibility, and whether it stands. A subtree has no
+// access of its own (SPEC.md, Authorization), so each live room of the root's trees shares this one, which RoomRegistry
+// keeps beside the root and changes, under the root's lock, as the root's row changes. It is read without a strand.
+class RootAccess {
+public:
+  RootAccess(std::optional<UserId> owner, Visibility visibility)
+      : owner_(std::move(owner)), visibility_(visibility) {}
+  const std::optional<UserId>& owner() const { return owner_; }
+  Visibility visibility() const { return visibility_.load(); }
+  bool stands() const { return stands_.load(); }
+  void setVisibility(Visibility visibility) { visibility_.store(visibility); }
+  void setStanding(bool stands) { stands_.store(stands); }
+
+private:
+  const std::optional<UserId> owner_;
+  std::atomic<Visibility> visibility_;
+  std::atomic<bool> stands_{true};
+};
+
 // The authority for one tree, on a single strand: one thread mutates its state at a time. It joins
 // every subgraph — never rejects. Validity is a separate read model (diagnose()).
 class TreeRoom {
@@ -30,8 +53,9 @@ public:
   // The HLC actor stamped on every server-minted write; authorship itself lives in AppliedOp.actor.
   static constexpr std::string_view kServerActor{"srv"};
 
+  // `access` is the root's, shared by every live room of its trees; `root` names it, and is `id` for a root.
   TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bool guideInherited, LooseGraph graph,
-           Legend legend, Seq head, std::optional<UserId> owner, Visibility visibility, std::uint64_t createdAt,
+           Legend legend, Seq head, TreeId root, std::shared_ptr<RootAccess> access, std::uint64_t createdAt,
            PresenceBus& bus);
 
   // Dedupe on the frame's id, fold its stamps into the clock, join graph + legend + title + guide,
@@ -111,6 +135,15 @@ public:
     return wm::planKindUpdate(graph_, legend_, update);
   }
 
+  // The seq the next event on this tree's stream takes.
+  Seq nextSeq() const { return head_ + 1; }
+  // A write whose commit's answer was lost may have stored a later head than this room holds: the room takes it, so its
+  // next seq is past every seq stored.
+  void catchUp(Seq storedHead) { head_ = std::max(head_, storedHead); }
+  // A subtree created under `step` and stored with this tree's head at nextSeq(): the stream takes that seq and every
+  // subscriber is told. It changes no register, dirties nothing and queues no op row.
+  void appendSubtree(const NodeId& step, const Subtree& subtree);
+
   // Advances head + dedup set; does not re-persist or re-broadcast.
   void replay(const AppliedOp& op);
 
@@ -164,10 +197,15 @@ public:
   // epoch ms; immutable.
   std::uint64_t createdAt() const { return createdAt_; }
 
-  // Empty only on a legacy row nobody owns. Writes require the owner; reads are gated by visibility().
-  const std::optional<UserId>& owner() const { return owner_; }
-  Visibility visibility() const { return visibility_; }
-  void setVisibility(Visibility visibility) { visibility_ = visibility; }
+  // The root's, for a tree of any depth. The owner is empty only on a legacy row nobody owns; writes require it.
+  const std::optional<UserId>& owner() const { return access_->owner(); }
+  Visibility visibility() const { return access_->visibility(); }
+  const TreeId& root() const { return root_; }
+  const std::shared_ptr<RootAccess>& rootAccess() const { return access_; }
+  // The read gate a door asks of a live room: the root stands and `caller` may read it.
+  bool readableBy(const std::optional<UserId>& caller) const {
+    return access_->stands() && canRead(caller, access_->owner(), access_->visibility());
+  }
 
 private:
   void markDirty(const GraphState& graph, const LegendState& legend);
@@ -179,8 +217,8 @@ private:
   LooseGraph graph_;
   Legend legend_;
   Seq head_;
-  std::optional<UserId> owner_;
-  Visibility visibility_;
+  TreeId root_;
+  std::shared_ptr<RootAccess> access_;
   std::uint64_t createdAt_;
   std::set<std::string> appliedOpIds_;
   std::vector<AppliedOp> pendingOps_;

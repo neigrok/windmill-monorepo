@@ -54,10 +54,23 @@ struct FakeBus : PresenceBus {
     Seq seq;
     Subgraph subgraph;
   };
+  struct SubtreeBroadcast {
+    std::string tree;
+    Seq seq;
+    NodeId step;
+    Subtree subtree;
+    bool operator==(const SubtreeBroadcast&) const = default;
+  };
   std::vector<ProgressBroadcast> progressBroadcasts;
   std::vector<SubgraphBroadcast> subgraphBroadcasts;
+  std::vector<SubtreeBroadcast> subtreeBroadcasts;
+  bool subtreeBroadcastsFail = false;  // broadcastSubtree throws before it tells anyone, the way a broken fan-out does
   void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) override {
     subgraphBroadcasts.push_back({tree.str(), seq, subgraph});
+  }
+  void broadcastSubtree(const TreeId& tree, Seq seq, const NodeId& step, const Subtree& subtree) override {
+    if (subtreeBroadcastsFail) throw std::runtime_error("the fan-out broke");
+    subtreeBroadcasts.push_back({tree.str(), seq, step, subtree});
   }
   // The real bus's rule: where no register was recorded there is nothing to fan out.
   void broadcastProgress(const TreeId& tree, const UserId& user, const Progress& marks) override {
@@ -182,7 +195,7 @@ struct FakeTreeRepository : TreeRepository {
   std::function<void(const TreeId&)> duringSave;
   std::optional<StoredTree> load(const TreeId& tree) override {
     if (latticeLoadsFail || latticeLoadsFailFor.count(tree.str())) throw std::runtime_error("connection reset mid-read");
-    return row(tree);
+    return placed(tree);
   }
   std::optional<StoredTree> row(const TreeId& tree) const {
     if (deletedIds.count(tree.str())) return std::nullopt;
@@ -190,11 +203,26 @@ struct FakeTreeRepository : TreeRepository {
     if (it == byId.end()) return std::nullopt;
     return it->second;
   }
-  // The same two facts the real repository reads with a two-column select, projected off the stored tree.
+  // The same facts the real repository reads off the root's row, projected off the stored trees.
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override {
-    const std::optional<StoredTree> stored = row(tree);
+    const std::optional<StoredTree> stored = placed(tree);
     if (!stored) return std::nullopt;
-    return TreeAccess{stored->owner, stored->visibility};
+    return TreeAccess{stored->owner, stored->visibility, stored->root};
+  }
+  // The row as the real repository answers it: with its place, a subtree read by its root's owner and visibility, and
+  // nothing while it or its root does not stand.
+  std::optional<StoredTree> placed(const TreeId& tree) const {
+    std::optional<StoredTree> stored = row(tree);
+    if (!stored) return std::nullopt;
+    stored->root = rootOf(tree);
+    const auto subtree = subtrees.find(tree.str());
+    if (subtree == subtrees.end()) return stored;
+    const std::optional<StoredTree> root = row(stored->root);
+    if (!root) return std::nullopt;
+    stored->owner = root->owner;
+    stored->visibility = root->visibility;
+    stored->parent = subtree->second.parent;
+    return stored;
   }
   // Projected off the row the delete left behind: only a deleted id answers, and only when it had an owner.
   std::optional<UserId> retiredOwner(const TreeId& tree) override {
@@ -387,10 +415,13 @@ struct FakeTreeRepository : TreeRepository {
     if (it == byId.end() || deletedIds.count(tree.str())) return;
     if (title.stamp > it->second.title.stamp) it->second.title = title;  // the same LWW guard as save
   }
+  // Runs inside setVisibility before the row changes, the way a slow or refused statement holds its caller; it may throw.
+  std::function<void()> duringVisibilitySet;
+  // The real statement's rule: a standing root's row alone.
   void setVisibility(const TreeId& tree, Visibility visibility) override {
-    auto it = byId.find(tree.str());
-    if (it == byId.end() || deletedIds.count(tree.str())) return;  // guarded like the real column write
-    it->second.visibility = visibility;
+    if (duringVisibilitySet) duringVisibilitySet();
+    if (!row(tree) || subtrees.count(tree.str())) return;
+    byId[tree.str()].visibility = visibility;
   }
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
             const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
@@ -399,6 +430,52 @@ struct FakeTreeRepository : TreeRepository {
     // A fork is born private, like every fresh tree.
     byId[newTree.str()] = StoredTree{state, legend, title, 0, owner, Visibility::private_, 0, guide, guideInherited};
     forkedFrom[newTree.str()] = source.str();
+  }
+
+  // Each subtree by its id; a tree absent here is a root.
+  std::map<std::string, Subtree> subtrees;
+  // Runs inside createSubtree before anything lands, the way a refused or dropped statement holds its caller; it may throw.
+  std::function<void()> duringSubtreeCreate;
+  TreeId rootOf(const TreeId& tree) const {
+    const auto subtree = subtrees.find(tree.str());
+    return subtree == subtrees.end() ? tree : subtree->second.root;
+  }
+  int depthOf(const TreeId& tree) const {
+    const auto subtree = subtrees.find(tree.str());
+    return subtree == subtrees.end() ? 0 : subtree->second.depth;
+  }
+  // The real statement's rules: the subtree the pair holds standing or deleted, a pointer valid only at a standing tree of
+  // the parent's owner, and a proposed id taken by any row.
+  std::optional<SubtreeSite> subtreeSite(const TreeId& parent, const NodeId& step, const std::optional<TreeId>& opened,
+                                         const std::optional<TreeId>& proposed) override {
+    const std::optional<StoredTree> stored = row(parent);
+    if (!stored) return std::nullopt;
+    SubtreeSite site{rootOf(parent), depthOf(parent), stored->head};
+    for (const auto& [id, subtree] : subtrees)
+      if (subtree.parent == OwningStep{parent, step}) {
+        site.owned = subtree;
+        site.owned->seq = byId.at(id).head;
+      }
+    const std::optional<StoredTree> target = opened ? row(*opened) : std::nullopt;
+    site.opensATree = target && target->owner && target->owner == stored->owner;
+    site.proposedTaken = proposed && byId.count(proposed->str()) > 0;
+    return site;
+  }
+  // The real transaction's rules: nothing lands on a conflict, and the child takes its place and owner from its parent,
+  // its own visibility column 'private'.
+  std::variant<Subtree, SubtreeConflict> createSubtree(const TreeId& child, const OwningStep& parent,
+                                                       const LegendState& legend, Seq parentSeq) override {
+    if (duringSubtreeCreate) duringSubtreeCreate();
+    const std::optional<StoredTree> stored = row(parent.tree);
+    if (!stored) return SubtreeConflict::parentGone;
+    for (const auto& [id, subtree] : subtrees)
+      if (subtree.parent == parent) return SubtreeConflict::stepOwned;
+    if (byId.count(child.str())) return SubtreeConflict::idTaken;
+    const Subtree created{child, rootOf(parent.tree), parent, depthOf(parent.tree) + 1, 0};
+    byId[child.str()] = StoredTree{GraphState{}, legend, {}, 0, stored->owner, Visibility::private_};
+    subtrees[child.str()] = created;
+    byId[parent.tree.str()].head = parentSeq;
+    return created;
   }
 
 private:

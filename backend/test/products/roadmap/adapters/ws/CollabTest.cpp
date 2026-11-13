@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <future>
 #include <memory>
@@ -34,6 +35,7 @@
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace wm;
@@ -2357,6 +2359,45 @@ TEST(ws_a_progress_frame_that_recorded_no_mark_and_was_refused_one_completes_as_
   CHECK_EQ(parse(conn->sent[0]), parse(R"({"t":"progressAck","treeId":"t_main","frameId":"f1","refused":[{"node":"idea","code":"opens-a-tree"}]})"));
   CHECK_EQ(parse(conn->sent[1]), parse(R"({"t":"progressAck","treeId":"t_main","frameId":"f2"})"));
   CHECK(h.progressRepo.load(TreeId{"t_main"}, owner).completed == std::set<NodeId>{NodeId{"plain"}});
+}
+
+// A subtree created under a step is one frame on its parent's stream at the seq it took, the same to the tree's writer
+// and its readers; a retry tells nobody again, and a subscriber of another tree hears nothing of it.
+TEST(ws_every_subscriber_of_the_parent_receives_one_subtree_frame_at_the_seq_it_took) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  h.seed("t_other", owner, Visibility::unlisted);
+  const auto subscribed = [&h](const std::string& session, const std::string& tree) {
+    auto conn = std::make_shared<FakeSocket>();
+    h.collab.onOpen(h.upgrade(session), conn);
+    h.collab.onMessage(conn, subscribeFrame(tree));
+    return conn;
+  };
+  const auto writer = subscribed("s-owner", "t_p");
+  const auto reader = subscribed("", "t_p");
+  const auto elsewhere = subscribed("s-owner", "t_other");
+
+  const auto answer =
+      h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {TreeId{"t_00000000000000c1"}, std::nullopt});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(answer));
+  CHECK_EQ(std::get<SubtreeCreation>(answer).parentSeq, Seq{1});
+  const Json::Value told = parse(R"({"t":"subtree","treeId":"t_p","seq":1,"step":"plain",)"
+                                 R"("subtree":{"id":"t_00000000000000c1","depth":1}})");
+  for (const auto& conn : {writer, reader}) {
+    CHECK_EQ(countOfType(*conn, "subtree"), 1u);
+    CHECK(lastFrameOfType(*conn, "subtree") == told);
+  }
+  CHECK_EQ(countOfType(*elsewhere, "subtree"), 0u);
+
+  h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner);
+  CHECK_EQ(countOfType(*writer, "subtree"), 1u);
+  CHECK_EQ(countOfType(*reader, "subtree"), 1u);
+
+  // A connection lost before the event comes back to a subscribe answer whose seq already holds it.
+  const auto returning = subscribed("", "t_p");
+  CHECK_EQ(lastFrameOfType(*returning, "subgraph")["seq"].asUInt64(), std::uint64_t{1});
+  CHECK_EQ(countOfType(*returning, "subtree"), 0u);
 }
 
 // A subscriber is sent a tree's broadcasts in the order the tree made them, the one of its own write included.

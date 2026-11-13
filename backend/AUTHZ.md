@@ -85,7 +85,8 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
 - **Document writes** (`PUT`, WS `subgraph`, structural MCP tools) require
   a session (anonymous → `401`) and gate on `canWrite`, which is ownership and nothing else. **A tree
   is born owned** — the owner is written by the same insert that creates the row (create, fork, `PUT`
-  of an absent id) — so there is no instant at which a row exists without one. **An unowned tree is
+  of an absent id, and a subtree's create, whose owner the store takes from its parent's row) — so
+  there is no instant at which a row exists without one. **An unowned tree is
   nobody's to write**: the seeded demo tree (`t_9e407a96b5330ebe`, `owner_id NULL`, `public`) is
   world-readable and editable by no one. Every write path runs `canRead` first, so a refusal never
   confirms that a private id names something; a readable tree the caller does not own answers `403`.
@@ -100,10 +101,19 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   (`SPEC.md`, Model). A tend marks as the owner and is refused the same way, in a sentence that
   names the node and no tree.
 
-`owner_id` is written by exactly two statements, the `INSERT` in `create` and the `INSERT` in `fork`
-(`products/roadmap/adapters/postgres/PgTreeRepository.cpp`). There is no `UPDATE` of that column
-anywhere, so a row with `owner_id IS NULL` is unwritable through every surface and can be repaired
-only by hand in SQL.
+`owner_id` is written by exactly three statements, the `INSERT` in `create`, the `INSERT` in `fork`
+and the `INSERT` in `createSubtree` (`products/roadmap/adapters/postgres/PgTreeRepository.cpp`),
+where `trees_place` (`db/schema.sql`) writes the parent's owner whatever the statement names. There
+is no `UPDATE` of that column anywhere, so a row with `owner_id IS NULL` is unwritable through every
+surface and can be repaired only by hand in SQL.
+
+**A subtree's access is its root's** (`SPEC.md`, Model, Subtrees): every gate above answers a tree
+with a parent from its root's row — the root's owner and visibility, and absent while the root is
+deleted — or, for a live room, from the access every live room of the root's trees shares, which
+narrows before the root's row and widens after it. A subtree's own `visibility` column is not read.
+So whoever may read a tree may read every subtree under it, which is why the `subtree` frame goes
+to a tree's readers with the subtree's id, and why a visibility change aimed at a subtree is refused
+`not-a-root`.
 
 ## Per surface
 

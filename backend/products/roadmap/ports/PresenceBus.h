@@ -2,6 +2,7 @@
 
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Subgraph.h"
+#include "products/roadmap/domain/Subtree.h"
 #include "products/roadmap/domain/Tree.h"
 
 namespace wm {
@@ -16,6 +17,10 @@ struct PresenceBus {
   // subscriber its `readerView`. `seq` is the tree's broadcast order, stamped by the room.
   virtual void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) = 0;
 
+  // A subtree created under `step` of `tree`, at the tree's `seq`: its id and depth go to every subscriber of the tree,
+  // reader or writer, since every reader of the tree may open the subtree.
+  virtual void broadcastSubtree(const TreeId& tree, Seq seq, const NodeId& step, const Subtree& subtree) = 0;
+
   // Private to one user: fans out only to that user's own live sessions on the tree, never to
   // collaborators, carrying the registers just recorded with stamps and receipt instants intact. A
   // no-op where there are no sockets (stdio/HTTP MCP).
@@ -26,6 +31,7 @@ struct PresenceBus {
 // Postgres with nobody subscribed. Durability is the database.
 struct NullPresenceBus : PresenceBus {
   void broadcastSubgraph(const TreeId&, Seq, const Subgraph&) override {}
+  void broadcastSubtree(const TreeId&, Seq, const NodeId&, const Subtree&) override {}
   void broadcastProgress(const TreeId&, const UserId&, const Progress&) override {}
 };
 

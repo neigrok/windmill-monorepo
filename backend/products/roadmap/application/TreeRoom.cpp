@@ -10,11 +10,11 @@ TreeRoom::~TreeRoom() {
 }
 
 TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bool guideInherited, LooseGraph graph,
-                   Legend legend, Seq head, std::optional<UserId> owner, Visibility visibility,
+                   Legend legend, Seq head, TreeId root, std::shared_ptr<RootAccess> access,
                    std::uint64_t createdAt, PresenceBus& bus)
     : id_(std::move(id)), title_(std::move(title)), guide_(std::move(guide)), guideInherited_(guideInherited),
-      graph_(std::move(graph)), legend_(std::move(legend)), head_(head), owner_(std::move(owner)),
-      visibility_(visibility), createdAt_(createdAt), bus_(bus), clock_(std::string{kServerActor}) {
+      graph_(std::move(graph)), legend_(std::move(legend)), head_(head), root_(std::move(root)),
+      access_(std::move(access)), createdAt_(createdAt), bus_(bus), clock_(std::string{kServerActor}) {
   // Fold every stamp the loaded document already carries — the graph frontier and the title and guide
   // registers — so a fresh mint after restart is always ahead of anything persisted.
   for (const auto& [actor, mark] : frontier(graph_.exportState(), legend_.exportState()).marks) {
@@ -127,6 +127,11 @@ std::optional<std::string> TreeRoom::validate(const Command& command) const {
   return wm::validate(graph_, legend_, command);
 }
 
+void TreeRoom::appendSubtree(const NodeId& step, const Subtree& subtree) {
+  ++head_;
+  bus_.broadcastSubtree(id_, head_, step, subtree);
+}
+
 void TreeRoom::replay(const AppliedOp& op) {
   appliedOpIds_.insert(op.opId);
   clock_.observe(op.hlc);  // the op-log tail advances the clock past every stamp it replays
@@ -191,7 +196,7 @@ Subgraph TreeRoom::deltaSince(const VersionVector& since) const {
 }
 
 std::map<NodeId, TreeId> TreeRoom::pointersFor(const std::optional<UserId>& caller) const {
-  if (!canWrite(caller, owner_)) return {};
+  if (!canWrite(caller, owner())) return {};
   return pointers();
 }
 

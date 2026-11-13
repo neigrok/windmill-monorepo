@@ -64,6 +64,10 @@ public:
   void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
             const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
             bool guideInherited, const UserId& owner) override;
+  std::optional<SubtreeSite> subtreeSite(const TreeId& parent, const NodeId& step, const std::optional<TreeId>& opened,
+                                         const std::optional<TreeId>& proposed) override;
+  std::variant<Subtree, SubtreeConflict> createSubtree(const TreeId& child, const OwningStep& parent,
+                                                       const LegendState& legend, Seq parentSeq) override;
 
 private:
   // The projection both list queries need: each present node's id, colour and pointer, each pointer with the stamp it

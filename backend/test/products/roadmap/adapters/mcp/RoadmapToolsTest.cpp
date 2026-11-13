@@ -3182,7 +3182,7 @@ TEST(mcp_get_nodes_is_bounded_and_private_and_uses_exact_ids) {
   CHECK_EQ(light.structured, body(light));
   args["nodeIds"].append("n0");
   CHECK_EQ(message(h.call("get_nodes", args)), std::string("get_nodes: nodeIds repeats \"n0\""));
-  h.registry.open(TreeId{"t"})->setVisibility(Visibility::private_);
+  h.registry.open(TreeId{"t"})->rootAccess()->setVisibility(Visibility::private_);
   h.caller = uid("other");
   CHECK_EQ(message(h.call("get_nodes", parse(R"({"nodeIds":["n0"]})"))), std::string("get_nodes: no such tree \"t\""));
   CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"n0","label":"No"}]})"))), std::string("update_nodes: no such tree \"t\""));
@@ -3347,7 +3347,7 @@ TEST(mcp_a_tree_with_no_guide_answers_an_empty_text_and_says_whose_it_is) {
   Harness h;
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"], parse(R"({"text":"","yours":true})"));
 
-  h.registry.open(TreeId{"t"})->setVisibility(Visibility::public_);
+  h.registry.open(TreeId{"t"})->rootAccess()->setVisibility(Visibility::public_);
   h.caller = UserId{""};
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["guide"], parse(R"({"text":"","yours":false})"));
 }

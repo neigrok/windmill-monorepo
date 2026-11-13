@@ -10,7 +10,11 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include <algorithm>
+#include <future>
 #include <memory>
+#include <mutex>
+#include <stdexcept>
 #include <string>
 #include <typeinfo>
 #include <variant>
@@ -20,6 +24,7 @@ using namespace wm;
 using namespace wm::fake;
 
 using Removal = std::variant<Cascade, TreeRegistry::RemovalRefusal>;
+using VisibilityAnswer = std::variant<TreeRegistry::VisibilityChange, NotARoot>;
 
 struct Setup {
   FakeTreeRepository trees;
@@ -415,11 +420,11 @@ TEST(set_visibility_reshares_an_owned_tree_and_the_column_reflects_it) {
   CHECK(s.trees.byId["t"].visibility == Visibility::private_);
 
   CHECK(s.registry.setVisibility(tid("t"), me, Visibility::unlisted) ==
-        TreeRegistry::VisibilityChange::changed);
+        VisibilityAnswer{TreeRegistry::VisibilityChange::changed});
   CHECK(s.trees.byId["t"].visibility == Visibility::unlisted);
 
   CHECK(s.registry.setVisibility(tid("t"), me, Visibility::private_) ==
-        TreeRegistry::VisibilityChange::changed);
+        VisibilityAnswer{TreeRegistry::VisibilityChange::changed});
   CHECK(s.trees.byId["t"].visibility == Visibility::private_);
 }
 
@@ -428,12 +433,12 @@ TEST(set_visibility_refuses_a_non_owner_and_an_unknown_tree) {
   seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});
 
   CHECK(s.registry.setVisibility(tid("t"), uid("intruder"), Visibility::public_) ==
-        TreeRegistry::VisibilityChange::notYours);
+        VisibilityAnswer{TreeRegistry::VisibilityChange::notYours});
   CHECK(s.registry.setVisibility(tid("ghost"), uid("owner"), Visibility::public_) ==
-        TreeRegistry::VisibilityChange::notFound);
+        VisibilityAnswer{TreeRegistry::VisibilityChange::notFound});
   s.trees.byId["t"].owner = std::nullopt;
   CHECK(s.registry.setVisibility(tid("t"), uid("intruder"), Visibility::public_) ==
-        TreeRegistry::VisibilityChange::nobodysTree);
+        VisibilityAnswer{TreeRegistry::VisibilityChange::nobodysTree});
   CHECK(s.trees.byId["t"].visibility == Visibility::private_);
 }
 
@@ -445,7 +450,7 @@ TEST(set_visibility_flips_a_live_rooms_cache_at_once) {
   CHECK(room.visibility() == Visibility::private_);
 
   CHECK(s.registry.setVisibility(tid("t"), me, Visibility::unlisted) ==
-        TreeRegistry::VisibilityChange::changed);
+        VisibilityAnswer{TreeRegistry::VisibilityChange::changed});
   CHECK(room.visibility() == Visibility::unlisted);
   CHECK(s.trees.byId["t"].visibility == Visibility::unlisted);
 }
@@ -1004,4 +1009,451 @@ TEST(remove_refused_to_a_non_owner_edits_nothing_of_the_trees_that_open_it) {
   CHECK(s.trees.byId["t_a"].state == opener);
   CHECK(s.trees.byId["t_mine"].state == intrudersOwn);
   CHECK(s.bus.subgraphBroadcasts.empty());
+}
+
+using SubtreeAnswer = std::variant<SubtreeCreation, SubtreeRefusal, Admission>;
+
+// A tree of two steps, `rig` and `sail`, for subtrees to hang from.
+static void seedParent(Setup& s, const char* id, const UserId& owner, std::vector<NodeSpec> steps = {}) {
+  if (steps.empty()) steps = {spec("rig", NodeColor::sky), spec("sail", NodeColor::sky)};
+  seed(s.trees, id, owner, 100, std::move(steps));
+}
+
+static TreeRegistry::SubtreeRequest proposing(const char* id) { return {TreeId{std::string(id)}, std::nullopt}; }
+
+// The legend a tree is born with when it is sent `kinds`, at genesis, as create plants it.
+static LegendState bornLegend(const std::vector<Kind>& kinds = {}) {
+  return Legend(Legend::bornWith(kinds), Hlc{1, 0, "genesis"}).exportState();
+}
+
+TEST(create_subtree_stores_an_empty_child_under_the_step_and_a_retry_answers_it_with_nothing_written) {
+  Setup s;
+  AtTheDoor door;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  s.trees.byId["t_p"].visibility = Visibility::unlisted;
+  const Subtree child{TreeId{"t_00000000000000c1"}, tid("t_p"), OwningStep{tid("t_p"), nid("rig")}, 1, 0};
+
+  CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1")) ==
+        (SubtreeAnswer{SubtreeCreation{true, child, 1}}));
+  CHECK(s.trees.byId["t_00000000000000c1"] ==
+        (StoredTree{GraphState{}, bornLegend(), {}, 0, me, Visibility::private_}));
+  CHECK(s.trees.subtrees == (std::map<std::string, Subtree>{{"t_00000000000000c1", child}}));
+  CHECK_EQ(s.trees.byId["t_p"].head, Seq{1});
+  CHECK_EQ(s.rooms.open(tid("t_p"))->head(), Seq{1});
+  CHECK(s.bus.subtreeBroadcasts == (std::vector<FakeBus::SubtreeBroadcast>{{"t_p", 1, nid("rig"), child}}));
+  CHECK(s.bus.subgraphBroadcasts.empty());
+  CHECK(s.rooms.open(tid("t_p"))->pendingOps().empty());
+  // Its own visibility column holds private, and it is read by its root's.
+  CHECK(s.rooms.accessOf(child.id) == (std::optional<TreeAccess>(TreeAccess{me, Visibility::unlisted, tid("t_p")})));
+
+  // The reply was lost: the same call, with the same proposed id or none, answers the same child and writes nothing.
+  CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1")) ==
+        (SubtreeAnswer{SubtreeCreation{false, child, 1}}));
+  CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me) == (SubtreeAnswer{SubtreeCreation{false, child, 1}}));
+  CHECK_EQ(s.trees.subtrees.size(), 1u);
+  CHECK_EQ(s.trees.byId["t_p"].head, Seq{1});
+  CHECK_EQ(s.bus.subtreeBroadcasts.size(), 1u);
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create roadmap internal ok",
+                                                "roadmap.subtree.create roadmap internal unchanged",
+                                                "roadmap.subtree.create roadmap internal unchanged"}));
+  CHECK(door.failures->reports.empty());
+}
+
+// The second call meets the first's child under the parent's strand, whichever comes first, so the step owns one.
+TEST(two_creates_on_one_step_at_once_make_one_child_one_row_and_one_event) {
+  for (int round = 0; round < 50; ++round) {
+    Setup s;
+    const UserId me = uid("me");
+    seedParent(s, "t_p", me);
+    std::promise<void> start;
+    const std::shared_future<void> go = start.get_future().share();
+    const auto create = [&s, &me, go] {
+      go.wait();
+      return s.registry.createSubtree(tid("t_p"), nid("rig"), me);
+    };
+    std::future<SubtreeAnswer> first = std::async(std::launch::async, create);
+    std::future<SubtreeAnswer> second = std::async(std::launch::async, create);
+    start.set_value();
+    const SubtreeAnswer a = first.get();
+    const SubtreeAnswer b = second.get();
+
+    REQUIRE(std::holds_alternative<SubtreeCreation>(a) && std::holds_alternative<SubtreeCreation>(b));
+    const SubtreeCreation& made = std::get<SubtreeCreation>(a).created ? std::get<SubtreeCreation>(a) : std::get<SubtreeCreation>(b);
+    const SubtreeCreation& found = std::get<SubtreeCreation>(a).created ? std::get<SubtreeCreation>(b) : std::get<SubtreeCreation>(a);
+    CHECK(made == (SubtreeCreation{true, Subtree{tid("t_d1"), tid("t_p"), OwningStep{tid("t_p"), nid("rig")}, 1, 0}, 1}));
+    CHECK(found == (SubtreeCreation{false, made.subtree, 1}));
+    CHECK_EQ(s.trees.subtrees.size(), 1u);
+    CHECK_EQ(s.bus.subtreeBroadcasts.size(), 1u);
+  }
+}
+
+TEST(a_free_proposed_id_is_kept_and_one_any_row_holds_or_that_is_malformed_is_replaced_by_a_minted_one) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me, {spec("a", NodeColor::sky), spec("b", NodeColor::sky), spec("c", NodeColor::sky),
+                            spec("d", NodeColor::sky)});
+  seed(s.trees, "t_00000000000000e1", uid("eve"), 100, {});
+  seed(s.trees, "t_00000000000000d1", me, 100, {});
+  s.trees.deletedIds.insert("t_00000000000000d1");
+
+  const auto idOf = [&s, &me](const char* step, const char* proposed) {
+    const SubtreeAnswer answer = s.registry.createSubtree(tid("t_p"), nid(step), me, proposing(proposed));
+    return std::get<SubtreeCreation>(answer).subtree.id.str();
+  };
+  CHECK_EQ(idOf("a", "t_00000000000000c1"), std::string("t_00000000000000c1"));
+  CHECK_EQ(idOf("b", "t_00000000000000e1"), std::string("t_d1"));
+  CHECK_EQ(idOf("c", "t_00000000000000d1"), std::string("t_d2"));
+  CHECK_EQ(idOf("d", "not-a-tree-id"), std::string("t_d3"));
+  CHECK(s.trees.byId["t_00000000000000e1"].owner == std::optional<UserId>(uid("eve")));
+  CHECK(s.trees.deletedIds.count("t_00000000000000d1"));
+}
+
+// Another writer fills the step, or takes the proposed id, between the site and the store, as a second server process
+// can: the step's child is answered, or a minted id taken, and neither is a failure.
+TEST(create_subtree_that_loses_its_step_or_its_id_to_another_writer_answers_without_a_failure) {
+  Setup s;
+  AtTheDoor door;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  const Subtree theirs{tid("t_0000000000000ee1"), tid("t_p"), OwningStep{tid("t_p"), nid("rig")}, 1, 0};
+  s.trees.duringSubtreeCreate = [&s, &theirs] {
+    s.trees.byId[theirs.id.str()] = StoredTree{};
+    s.trees.subtrees[theirs.id.str()] = theirs;
+    s.trees.duringSubtreeCreate = nullptr;
+  };
+  CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me) == (SubtreeAnswer{SubtreeCreation{false, theirs, 0}}));
+
+  s.trees.duringSubtreeCreate = [&s] {
+    s.trees.byId["t_00000000000000c1"] = StoredTree{};
+    s.trees.duringSubtreeCreate = nullptr;
+  };
+  CHECK(s.registry.createSubtree(tid("t_p"), nid("sail"), me, proposing("t_00000000000000c1")) ==
+        (SubtreeAnswer{SubtreeCreation{true, Subtree{tid("t_d2"), tid("t_p"), OwningStep{tid("t_p"), nid("sail")}, 1, 0}, 1}}));
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create roadmap internal unchanged",
+                                                "roadmap.subtree.create roadmap internal ok"}));
+  CHECK(door.failures->reports.empty());
+}
+
+// Each refusal writes nothing: no row, no seq, no event, and one line under its code.
+static void checkRefusedWithNothingWritten(Setup& s, AtTheDoor& door, const TreeId& parent, const NodeId& step,
+                                           const UserId& caller, SubtreeRefusal refusal) {
+  const Seq head = s.trees.byId.count(parent.str()) ? s.trees.byId[parent.str()].head : 0;
+  CHECK(s.registry.createSubtree(parent, step, caller, proposing("t_00000000000000c1")) == SubtreeAnswer{refusal});
+  CHECK(std::none_of(s.trees.subtrees.begin(), s.trees.subtrees.end(),
+                     [&parent](const auto& entry) { return entry.second.parent.tree == parent; }));
+  CHECK_FALSE(s.trees.byId.count("t_00000000000000c1"));
+  if (s.trees.byId.count(parent.str())) CHECK_EQ(s.trees.byId[parent.str()].head, head);
+  CHECK(s.bus.subtreeBroadcasts.empty());
+  CHECK(door.lines == (std::vector<std::string>{std::string("roadmap.subtree.create roadmap internal ") + codeOf(refusal)}));
+  CHECK(door.failures->reports.empty());
+}
+
+TEST(create_subtree_under_a_deleted_step_is_refused_step_gone) {
+  Setup s;
+  AtTheDoor door;
+  seedParent(s, "t_p", uid("me"));
+  for (NodeStateEntry& node : s.trees.byId["t_p"].state.nodes)
+    if (node.id == nid("rig")) node.deletedAt = Hlc{2, 0, "seed"};
+  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), uid("me"), SubtreeRefusal::stepGone);
+}
+
+TEST(create_subtree_under_a_step_no_node_ever_held_is_refused_step_gone) {
+  Setup s;
+  AtTheDoor door;
+  seedParent(s, "t_p", uid("me"));
+  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("never"), uid("me"), SubtreeRefusal::stepGone);
+}
+
+TEST(create_subtree_in_a_deleted_tree_is_refused_no_such_tree) {
+  Setup s;
+  AtTheDoor door;
+  seedParent(s, "t_p", uid("me"));
+  s.trees.deletedIds.insert("t_p");
+  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), uid("me"), SubtreeRefusal::noSuchTree);
+}
+
+TEST(create_subtree_in_a_tree_the_caller_reads_but_cannot_write_is_refused_not_writer) {
+  Setup s;
+  AtTheDoor door;
+  seedParent(s, "t_p", uid("owner"));
+  s.trees.byId["t_p"].visibility = Visibility::public_;
+  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), uid("intruder"), SubtreeRefusal::notWriter);
+}
+
+TEST(create_subtree_in_an_absent_tree_or_a_private_one_of_someone_else_is_refused_no_such_tree) {
+  Setup s;
+  AtTheDoor door;
+  checkRefusedWithNothingWritten(s, door, tid("t_ghost"), nid("rig"), uid("me"), SubtreeRefusal::noSuchTree);
+  door.lines.clear();
+  seedParent(s, "t_p", uid("owner"));
+  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), uid("intruder"), SubtreeRefusal::noSuchTree);
+}
+
+TEST(create_subtree_that_would_sit_at_depth_nine_is_refused_and_one_at_depth_eight_is_created) {
+  Setup s;
+  AtTheDoor door;
+  const UserId me = uid("me");
+  seedParent(s, "t_root", me, {spec("x", NodeColor::sky)});
+  seedParent(s, "t_p", me);
+  s.trees.subtrees["t_p"] = Subtree{tid("t_p"), tid("t_root"), OwningStep{tid("t_up"), nid("x")}, kMaxTreeDepth, 0};
+  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), me, SubtreeRefusal::depthLimit);
+  s.trees.subtrees.clear();
+
+  seedParent(s, "t_q", me);
+  s.trees.subtrees["t_q"] = Subtree{tid("t_q"), tid("t_root"), OwningStep{tid("t_up"), nid("x")}, kMaxTreeDepth - 1, 0};
+  const SubtreeAnswer answer = s.registry.createSubtree(tid("t_q"), nid("rig"), me);
+  REQUIRE(std::holds_alternative<SubtreeCreation>(answer));
+  CHECK(std::get<SubtreeCreation>(answer).subtree ==
+        (Subtree{tid("t_d1"), tid("t_root"), OwningStep{tid("t_q"), nid("rig")}, kMaxTreeDepth, 0}));
+}
+
+TEST(create_subtree_under_a_step_whose_pointer_opens_a_standing_tree_of_the_owner_is_refused_step_opens_a_tree) {
+  Setup s;
+  AtTheDoor door;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me, {opening("rig", "t_other"), spec("sail", NodeColor::sky)});
+  seed(s.trees, "t_other", me, 100, {});
+  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), me, SubtreeRefusal::stepOpensATree);
+}
+
+// A pointer at a deleted tree, at someone else's, or at no tree at all leads nowhere, so the step may own a subtree.
+TEST(create_subtree_under_a_step_whose_pointer_leads_nowhere_creates_it) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me, {opening("deleted", "t_gone"), opening("foreign", "t_eves"), opening("absent", "t_never")});
+  seed(s.trees, "t_gone", me, 100, {});
+  s.trees.deletedIds.insert("t_gone");
+  seed(s.trees, "t_eves", uid("eve"), 100, {});
+
+  for (const char* step : {"deleted", "foreign", "absent"}) {
+    const SubtreeAnswer answer = s.registry.createSubtree(tid("t_p"), nid(step), me);
+    REQUIRE(std::holds_alternative<SubtreeCreation>(answer));
+    CHECK(std::get<SubtreeCreation>(answer).created);
+  }
+  CHECK_EQ(s.trees.subtrees.size(), 3u);
+  CHECK_EQ(s.bus.subtreeBroadcasts.size(), 3u);
+}
+
+// Both run under the parent's strand, so one of two orders holds: the child is made and then its step deleted, or the
+// step is deleted and the create refused. Never a child made under a step already gone.
+TEST(create_subtree_racing_the_deletion_of_its_step_lands_in_one_order_or_the_other) {
+  for (int round = 0; round < 100; ++round) {
+    Setup s;
+    const UserId me = uid("me");
+    seedParent(s, "t_p", me);
+    std::promise<void> start;
+    const std::shared_future<void> go = start.get_future().share();
+    std::future<SubtreeAnswer> creating = std::async(std::launch::async, [&s, &me, go] {
+      go.wait();
+      return s.registry.createSubtree(tid("t_p"), nid("rig"), me);
+    });
+    std::future<void> deleting = std::async(std::launch::async, [&s, &me, go] {
+      go.wait();
+      std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+      s.edits.deleteNodes(*s.rooms.open(tid("t_p")), tid("t_p"), {nid("rig")}, DanglingEdges::removed, me);
+    });
+    start.set_value();
+    const SubtreeAnswer answer = creating.get();
+    deleting.get();
+
+    REQUIRE_EQ(s.bus.subgraphBroadcasts.size(), 1u);
+    const Seq deletedAt = s.bus.subgraphBroadcasts[0].seq;
+    if (answer == SubtreeAnswer{SubtreeRefusal::stepGone}) {
+      CHECK_EQ(deletedAt, Seq{1});
+      CHECK(s.trees.subtrees.empty());
+      CHECK(s.bus.subtreeBroadcasts.empty());
+      continue;
+    }
+    REQUIRE(std::holds_alternative<SubtreeCreation>(answer));
+    CHECK_EQ(std::get<SubtreeCreation>(answer).parentSeq, Seq{1});
+    CHECK_EQ(deletedAt, Seq{2});
+    CHECK_EQ(s.trees.subtrees.size(), 1u);
+    CHECK_EQ(s.bus.subtreeBroadcasts.size(), 1u);
+  }
+}
+
+// The child and the parent's seq are stored together, and the event fails after: the line says `unannounced` and files
+// one Issue, the seq stays taken, so the stream is consistent with the row, and a retry answers that child.
+TEST(create_subtree_whose_event_fails_after_the_child_is_stored_is_unannounced_and_a_retry_answers_the_child) {
+  Setup s;
+  AtTheDoor door;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  s.bus.subtreeBroadcastsFail = true;
+
+  bool threw = false;
+  try {
+    s.registry.createSubtree(tid("t_p"), nid("rig"), me);
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+  CHECK(threw);
+  const Subtree child{tid("t_d1"), tid("t_p"), OwningStep{tid("t_p"), nid("rig")}, 1, 0};
+  CHECK(s.trees.subtrees == (std::map<std::string, Subtree>{{"t_d1", child}}));
+  CHECK_EQ(s.trees.byId["t_p"].head, Seq{1});
+  CHECK_EQ(s.rooms.open(tid("t_p"))->head(), Seq{1});
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create roadmap internal unannounced"}));
+  CHECK(door.failures->reports ==
+        (std::vector<std::string>{std::string("roadmap.subtree.create roadmap internal unannounced ") +
+                                  typeid(std::runtime_error).name()}));
+
+  s.bus.subtreeBroadcastsFail = false;
+  CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me) == (SubtreeAnswer{SubtreeCreation{false, child, 1}}));
+  CHECK_EQ(s.trees.subtrees.size(), 1u);
+  CHECK(s.bus.subtreeBroadcasts.empty());
+}
+
+TEST(create_subtree_whose_store_fails_leaves_no_row_no_seq_and_no_event) {
+  Setup s;
+  AtTheDoor door;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  s.trees.duringSubtreeCreate = [] { throw std::runtime_error("connection reset mid-write"); };
+
+  bool threw = false;
+  try {
+    s.registry.createSubtree(tid("t_p"), nid("rig"), me);
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+  CHECK(threw);
+  CHECK(s.trees.subtrees.empty());
+  CHECK_EQ(s.trees.byId["t_p"].head, Seq{0});
+  CHECK_EQ(s.rooms.open(tid("t_p"))->head(), Seq{0});
+  CHECK(s.bus.subtreeBroadcasts.empty());
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create roadmap internal failed"}));
+  CHECK(door.failures->reports ==
+        (std::vector<std::string>{std::string("roadmap.subtree.create roadmap internal failed ") +
+                                  typeid(std::runtime_error).name()}));
+
+  s.trees.duringSubtreeCreate = nullptr;
+  const SubtreeAnswer retried = s.registry.createSubtree(tid("t_p"), nid("rig"), me);
+  REQUIRE(std::holds_alternative<SubtreeCreation>(retried));
+  CHECK(std::get<SubtreeCreation>(retried).created);
+  CHECK_EQ(std::get<SubtreeCreation>(retried).parentSeq, Seq{1});
+}
+
+// A commit whose answer was lost stored the child and a head this room never took: the retry answers a seq at or past
+// the child's, and the parent's next write takes the seq after it.
+TEST(a_retry_after_a_lost_commit_answer_answers_a_seq_past_the_childs_and_the_next_write_takes_the_one_after) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  s.rooms.open(tid("t_p"));
+  const Subtree child{tid("t_00000000000000c1"), tid("t_p"), OwningStep{tid("t_p"), nid("rig")}, 1, 0};
+  s.trees.byId[child.id.str()] = StoredTree{GraphState{}, bornLegend(), {}, 0, me, Visibility::private_};
+  s.trees.subtrees[child.id.str()] = child;
+  s.trees.byId["t_p"].head = 1;  // what the lost commit stored, the room still at 0
+
+  CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1")) ==
+        (SubtreeAnswer{SubtreeCreation{false, child, 1}}));
+  std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+  CHECK_EQ(s.rooms.open(tid("t_p"))->applyCommand(createNode("after"), 10, me), Seq{2});
+}
+
+// The legend is the client's to send, as create_tree's is: without one the child is born with the default legend, with
+// one it is born with those kinds, kinds create_tree would refuse are refused in its words with nothing written, and a
+// retry never rewrites the legend the child was born with.
+TEST(create_subtree_is_born_with_the_kinds_it_is_sent_or_the_default_legend_and_a_retry_keeps_the_first) {
+  Setup s;
+  AtTheDoor door;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  const std::vector<Kind> theirs{Kind{KindId{"drill"}, NodeColor::gold, "Drill", "Reps until it is reflex"},
+                                 Kind{KindId{"read"}, NodeColor::sky, "Read", ""}};
+
+  REQUIRE(std::holds_alternative<SubtreeCreation>(s.registry.createSubtree(tid("t_p"), nid("rig"), me)));
+  CHECK(s.trees.byId["t_d1"].legend == bornLegend());
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      s.registry.createSubtree(tid("t_p"), nid("sail"), me, {std::nullopt, theirs})));
+  CHECK(s.trees.byId["t_d2"].legend == bornLegend(theirs));
+
+  CHECK(s.registry.createSubtree(tid("t_p"), nid("sail"), me, {std::nullopt, std::vector<Kind>{theirs[0]}}) ==
+        (SubtreeAnswer{SubtreeCreation{false, s.trees.subtrees.at("t_d2"), 2}}));
+  CHECK(s.trees.byId["t_d2"].legend == bornLegend(theirs));
+
+  const std::vector<std::pair<std::vector<Kind>, std::string>> refused{
+      {{}, "kinds, when sent, names at least one kind — leave it out for the default legend"},
+      {{Kind{KindId{"a"}, NodeColor::gold, "", ""}, Kind{KindId{"b"}, NodeColor::gold, "", ""}},
+       "kinds[1].hue \"gold\" already belongs to kind \"a\" — a hue names one kind, so pick a free one"},
+      {{Kind{KindId{""}, NodeColor::gold, "", ""}}, "argument \"kinds[0].id\" must be a non-empty string, got \"\""},
+      {{Kind{KindId{"a"}, NodeColor::gold, std::string(30, 'x'), ""}},
+       "kinds[0].label is 30 characters, 6 over the 24 cap"},
+  };
+  door.lines.clear();
+  for (const auto& [kinds, sentence] : refused) {
+    const SubtreeAnswer answer = s.registry.createSubtree(tid("t_p"), nid("rig"), me, {std::nullopt, kinds});
+    REQUIRE(std::holds_alternative<Admission>(answer));
+    CHECK_EQ(std::get<Admission>(answer).reason, sentence);
+  }
+  CHECK_EQ(s.trees.subtrees.size(), 2u);
+  CHECK_EQ(s.bus.subtreeBroadcasts.size(), 2u);
+  CHECK(door.lines == std::vector<std::string>(refused.size(), "roadmap.subtree.create roadmap internal kinds-refused"));
+}
+
+// A subtree is shared as its root is: a change aimed at it is refused, naming where it hangs and its root, and nothing
+// is written.
+TEST(set_visibility_of_a_subtree_is_refused_not_a_root_and_changes_nothing) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  REQUIRE(std::holds_alternative<SubtreeCreation>(s.registry.createSubtree(tid("t_p"), nid("rig"), me)));
+
+  CHECK(s.registry.setVisibility(tid("t_d1"), me, Visibility::public_) ==
+        (VisibilityAnswer{NotARoot{OwningStep{tid("t_p"), nid("rig")}, tid("t_p")}}));
+  CHECK(s.trees.byId["t_p"].visibility == Visibility::private_);
+  CHECK(s.trees.byId["t_d1"].visibility == Visibility::private_);
+  CHECK(s.rooms.accessOf(tid("t_d1"))->visibility == Visibility::private_);
+  CHECK(s.registry.setVisibility(tid("t_d1"), uid("intruder"), Visibility::public_) ==
+        VisibilityAnswer{TreeRegistry::VisibilityChange::notYours});
+}
+
+// A subtree is read by its root, live or closed: what the root's visibility admits, and nothing once the root is
+// removed, whatever its own row holds.
+TEST(a_subtree_admits_whom_its_root_admits_and_no_one_once_its_root_is_removed) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  for (const char* step : {"rig", "sail"})
+    REQUIRE(std::holds_alternative<SubtreeCreation>(s.registry.createSubtree(tid("t_p"), nid(step), me)));
+  TreeRoom& live = *s.rooms.open(tid("t_d1"));
+  const auto readable = [&s](const char* tree, const std::optional<UserId>& reader) {
+    const std::optional<TreeAccess> access = s.rooms.accessOf(tid(tree));
+    return access && canRead(reader, access->owner, access->visibility);
+  };
+  CHECK_FALSE(readable("t_d1", uid("stranger")));
+  CHECK_FALSE(readable("t_d2", uid("stranger")));
+
+  REQUIRE(s.registry.setVisibility(tid("t_p"), me, Visibility::unlisted) ==
+          VisibilityAnswer{TreeRegistry::VisibilityChange::changed});
+  CHECK(readable("t_d1", uid("stranger")));
+  CHECK(readable("t_d2", uid("stranger")));
+  CHECK(live.readableBy(uid("stranger")));
+  CHECK(s.trees.byId["t_d2"].visibility == Visibility::private_);  // the column a subtree's access never reads
+
+  REQUIRE(s.registry.setVisibility(tid("t_p"), me, Visibility::private_) ==
+          VisibilityAnswer{TreeRegistry::VisibilityChange::changed});
+  CHECK_FALSE(readable("t_d1", uid("stranger")));
+  CHECK_FALSE(live.readableBy(uid("stranger")));
+  CHECK(readable("t_d1", me));
+
+  CHECK(s.registry.remove(tid("t_p"), me) == Removal{Cascade{}});
+  CHECK_FALSE(readable("t_d1", me));
+  CHECK_FALSE(readable("t_d2", me));
+  CHECK_FALSE(live.readableBy(me));
+  CHECK(s.registry.createSubtree(tid("t_d1"), nid("x"), me) == SubtreeAnswer{SubtreeRefusal::noSuchTree});
+}
+
+// A door's own observation names the door the line is written at.
+TEST(create_subtree_writes_its_line_at_the_door_it_came_through) {
+  Setup s;
+  AtTheDoor door;
+  seedParent(s, "t_p", uid("me"));
+  WriteObservation route{"mcp.roadmap_create_subtree", "roadmap", "mcp"};
+  WriteContext context{route};
+  s.registry.createSubtree(tid("t_p"), nid("rig"), uid("me"));
+  route.finish();
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create roadmap mcp ok",
+                                                "mcp.roadmap_create_subtree roadmap mcp ok"}));
 }

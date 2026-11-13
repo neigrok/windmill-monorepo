@@ -19,13 +19,22 @@
 
 namespace wm {
 
+namespace {
+
+// Server-minted, unguessable, URL-safe.
+TreeId mintedTreeId(TokenGenerator& tokens) {
+  return TreeId{"t_" + tokens.mint().digest.substr(0, 16)};
+}
+
+}
+
 TreeRegistry::TreeRegistry(TreeRepository& trees, ProgressRepository& progress, TokenGenerator& tokens,
                            Hlc genesis, RoomRegistry& rooms, NodeEdits& edits, Clock& clock)
     : trees_(trees), progress_(progress), tokens_(tokens), genesis_(std::move(genesis)),
       rooms_(rooms), edits_(edits), clock_(clock) {}
 
 TreeId TreeRegistry::create(const UserId& owner, const TreeData& initial) {
-  TreeId id{"t_" + tokens_.mint().digest.substr(0, 16)};  // server-minted, unguessable, URL-safe
+  TreeId id = mintedTreeId(tokens_);
   if (create(owner, id, initial) != Creation::created) throw DuplicateTree{};  // a fresh mint colliding means the RNG is broken
   return id;
 }
@@ -56,6 +65,84 @@ TreeRegistry::Creation TreeRegistry::create(const UserId& owner, const TreeId& i
     return Creation::taken;
   }
   return Creation::created;
+}
+
+std::variant<SubtreeCreation, SubtreeRefusal, Admission> TreeRegistry::createSubtree(const TreeId& parent,
+                                                                                    const NodeId& step,
+                                                                                    const UserId& caller,
+                                                                                    const SubtreeRequest& request) {
+  const std::string door = currentWriteDoor();
+  WriteObservation observation{"roadmap.subtree.create", "roadmap", door.empty() ? "internal" : door};
+  const auto refuse = [&observation](SubtreeRefusal refusal) {
+    observation.finish(codeOf(refusal));
+    return refusal;
+  };
+  if (request.kinds)
+    if (std::optional<Admission> refusal = admitBornKinds(*request.kinds)) {
+      observation.finish("kinds-refused");
+      return *refusal;
+    }
+  // The default legend is the one a new tree is born with; a client that wants its parent's sends it.
+  const LegendState legend =
+      Legend(Legend::bornWith(request.kinds.value_or(std::vector<Kind>{})), genesis_).exportState();
+
+  bool committed = false;
+  try {
+    std::lock_guard<std::mutex> strand(rooms_.strandFor(parent));
+    // Both gates read the root's access before a room is materialized; absent and private-denied answer alike.
+    const std::optional<TreeAccess> access = rooms_.accessOf(parent);
+    if (!access || !canRead(caller, access->owner, access->visibility)) return refuse(SubtreeRefusal::noSuchTree);
+    if (!canWrite(caller, access->owner)) return refuse(SubtreeRefusal::notWriter);
+    TreeRoom* room = rooms_.open(parent);
+    if (!room) return refuse(SubtreeRefusal::noSuchTree);
+    if (!room->hasNode(step)) return refuse(SubtreeRefusal::stepGone);
+
+    const std::map<NodeId, TreeId> pointers = room->pointers();
+    const auto pointer = pointers.find(step);
+    const std::optional<TreeId> opened =
+        pointer == pointers.end() ? std::nullopt : std::optional<TreeId>(pointer->second);
+    // Another writer may fill the step, or take the id, between the site and the store: the second attempt then reads
+    // the step's subtree again, or mints the id. A conflict on it too is a fault.
+    std::optional<TreeId> proposed = request.proposedId;
+    for (int attempt = 1; attempt <= 2; ++attempt) {
+      const std::optional<SubtreeSite> site = trees_.subtreeSite(parent, step, opened, proposed);
+      if (!site) {
+        rooms_.retire(parent);  // the row went away under its live room, so the room goes too
+        return refuse(SubtreeRefusal::noSuchTree);
+      }
+      // A create whose commit's answer was lost stored a head this room may not hold.
+      room->catchUp(site->head);
+      if (site->owned) {
+        observation.finish("unchanged");
+        return SubtreeCreation{false, *site->owned, room->head()};
+      }
+      if (site->depth >= kMaxTreeDepth) return refuse(SubtreeRefusal::depthLimit);
+      if (site->opensATree) return refuse(SubtreeRefusal::stepOpensATree);
+
+      const bool keepsProposed = proposed && wellFormedTreeId(proposed->str()) && !site->proposedTaken;
+      const TreeId id = keepsProposed ? *proposed : mintedTreeId(tokens_);
+      const Seq seq = room->nextSeq();
+      const std::variant<Subtree, SubtreeConflict> stored =
+          trees_.createSubtree(id, OwningStep{parent, step}, legend, seq);
+      if (const Subtree* created = std::get_if<Subtree>(&stored)) {
+        committed = true;
+        room->appendSubtree(step, *created);
+        observation.finish();
+        return SubtreeCreation{true, *created, seq};
+      }
+      const SubtreeConflict conflict = std::get<SubtreeConflict>(stored);
+      if (conflict == SubtreeConflict::parentGone) {
+        rooms_.retire(parent);
+        return refuse(SubtreeRefusal::noSuchTree);
+      }
+      if (conflict == SubtreeConflict::idTaken) proposed.reset();
+    }
+    throw DuplicateTree{};
+  } catch (const std::exception& error) {
+    // After the commit the child and its seq are stored, and the parent's subscribers were not told.
+    observation.fail(error, committed ? "unannounced" : "failed");
+    throw;
+  }
 }
 
 std::vector<TreeSummary> TreeRegistry::list(const UserId& owner) {
@@ -124,10 +211,9 @@ std::variant<Cascade, TreeRegistry::RemovalRefusal> TreeRegistry::remove(const T
     if (!canRead(caller, stored->owner, stored->visibility)) return RemovalRefusal::notFound;
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
       return *refusal == WriteRefusal::nobodysTree ? RemovalRefusal::nobodysTree : RemovalRefusal::notYours;
-    // The row first, then the live room: retire announces the change and whoever listens re-decides
+    // The row and the live room together: the room's retirement announces the change, and whoever listens re-decides
     // the access question against the repository.
-    trees_.softDelete(tree);
-    rooms_.retire(tree);
+    rooms_.remove(tree);
   }
   if (opening.empty()) return Cascade{};
 
@@ -278,14 +364,16 @@ std::variant<Seq, TreeRegistry::GuideRefusal, Admission> TreeRegistry::setGuide(
   return GuideRefusal::notFound;
 }
 
-TreeRegistry::VisibilityChange TreeRegistry::setVisibility(const TreeId& tree, const UserId& caller,
-                                                           Visibility visibility) {
+std::variant<TreeRegistry::VisibilityChange, NotARoot> TreeRegistry::setVisibility(const TreeId& tree,
+                                                                                    const UserId& caller,
+                                                                                    Visibility visibility) {
   // The strand serializes the reshare against the tree's socket frames.
   std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
   std::optional<StoredTree> stored = trees_.load(tree);
   if (!stored) return VisibilityChange::notFound;
   if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
     return *refusal == WriteRefusal::nobodysTree ? VisibilityChange::nobodysTree : VisibilityChange::notYours;
+  if (stored->parent) return NotARoot{*stored->parent, stored->root};
   rooms_.setVisibility(tree, visibility);
   return VisibilityChange::changed;
 }

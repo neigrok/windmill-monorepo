@@ -4,6 +4,7 @@
 #include "test/testing.h"
 
 #include <algorithm>
+#include <memory>
 #include <stdexcept>
 
 using namespace wm;
@@ -12,8 +13,8 @@ using namespace wm::fake;
 namespace {
 
 TreeRoom makeRoom(FakeBus& bus) {
-  return TreeRoom(tid(), {"Title", {}}, {}, false, LooseGraph{}, Legend{}, 0, std::nullopt,
-                  Visibility::private_, 0, bus);
+  return TreeRoom(tid(), {"Title", {}}, {}, false, LooseGraph{}, Legend{}, 0, tid(),
+                  std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, bus);
 }
 
 Seq apply(TreeRoom& room, Command command, std::uint64_t ms) {
@@ -61,8 +62,8 @@ TEST(room_next_stamp_dominates_the_loaded_document_state) {
   Hlc old{8000, 2, "old"};
   loaded.createNode(nid("seed"), "S", "i", NodeColor::sky, old);
   FakeBus bus;
-  TreeRoom room(tid(), {"T", {}}, {}, false, std::move(loaded), Legend{}, 0, std::nullopt,
-                Visibility::private_, 0, bus);
+  TreeRoom room(tid(), {"T", {}}, {}, false, std::move(loaded), Legend{}, 0, tid(),
+                std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, bus);
 
   Hlc next = room.nextStamp(10);  // wall clock behind the persisted stamp
   CHECK(next > old);              // the constructor folded the loaded document's frontier
@@ -667,8 +668,8 @@ TEST(room_replays_a_batch_op_past_the_stored_head_whole) {
   live.landPendingOps(log);
 
   FakeBus quiet;
-  TreeRoom reopened(tid(), {"Title", {}}, {}, false, persisted, persistedLegend, 3, std::nullopt,
-                    Visibility::private_, 0, quiet);
+  TreeRoom reopened(tid(), {"Title", {}}, {}, false, persisted, persistedLegend, 3, tid(),
+                    std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, quiet);
   CHECK(reopened.hasNode(nid("b")));
   for (const AppliedOp& op : log.since(tid(), 3)) reopened.replay(op);
   CHECK_EQ(reopened.head(), static_cast<Seq>(4));
@@ -704,8 +705,8 @@ TEST(room_replays_a_round_trip_rehue_to_the_room_it_left) {
   CHECK(live.snapshot().nodes[0].color == NodeColor::plum);
 
   FakeBus quiet;
-  TreeRoom reopened(tid(), {"Title", {}}, {}, false, persisted, persistedLegend, 2, std::nullopt,
-                    Visibility::private_, 0, quiet);
+  TreeRoom reopened(tid(), {"Title", {}}, {}, false, persisted, persistedLegend, 2, tid(),
+                    std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, quiet);
   for (const AppliedOp& op : log.since(tid(), 2)) reopened.replay(op);
   CHECK(reopened.snapshot().nodes[0].color == NodeColor::plum);
   CHECK(reopened.exportLegend() == live.exportLegend());
@@ -730,8 +731,10 @@ TEST(room_hands_its_pointers_to_a_caller_who_can_write_the_tree_and_to_nobody_el
   graph.createNode(nid("idea"), "Idea", "", NodeColor::sky, at(1));
   graph.createNode(nid("plain"), "Plain", "", NodeColor::sky, at(2));
   graph.setOpens(nid("idea"), tid("t_sub"), at(3));
-  const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, uid("owner"), Visibility::public_, 0, bus);
-  const TreeRoom nobodys(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, std::nullopt, Visibility::public_, 0, bus);
+  const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(),
+                       std::make_shared<RootAccess>(uid("owner"), Visibility::public_), 0, bus);
+  const TreeRoom nobodys(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(),
+                         std::make_shared<RootAccess>(std::nullopt, Visibility::public_), 0, bus);
 
   CHECK(owned.pointersFor(uid("owner")) == (std::map<NodeId, TreeId>{{nid("idea"), tid("t_sub")}}));
   CHECK(owned.pointersFor(uid("stranger")) == (std::map<NodeId, TreeId>{}));

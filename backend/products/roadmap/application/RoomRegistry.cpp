@@ -32,11 +32,18 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
   std::optional<StoredTree> stored = repo_.load(id);
   if (!stored) return nullptr;  // no such tree — a benign absence the caller answers, never a throw
 
+  std::shared_ptr<RootAccess> access;
+  {
+    std::lock_guard<std::mutex> rootLock(rootLockFor(stored->root));
+    access = shareRootAccess(stored->root);
+  }
+  if (!access) return nullptr;  // the root went away since the row was read
+
   LooseGraph graph(stored->state);  // full CRDT state — lossless
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
   auto room = std::make_unique<TreeRoom>(id, stored->title, stored->guide, stored->guideInherited,
-                                         std::move(graph), std::move(legend), stored->head, stored->owner,
-                                         stored->visibility, stored->createdAt, bus_);
+                                         std::move(graph), std::move(legend), stored->head, stored->root,
+                                         std::move(access), stored->createdAt, bus_);
   // The document is a snapshot at stored->head. A row past that head is what an older ordering
   // could leave behind; replaying it reaches the true state and head, so new ops never collide on
   // seq. Under the current ordering (save, then land) the tail is empty.
@@ -54,11 +61,20 @@ std::optional<TreeAccess> RoomRegistry::accessOf(const TreeId& id) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = rooms_.find(id);
-    // The live room first: setVisibility flips it and the row together, and a room that was never
-    // saved after a flip would otherwise answer from a stale column.
-    if (it != rooms_.end()) return TreeAccess{it->second.room->owner(), it->second.room->visibility()};
+    if (it != rooms_.end()) {
+      const TreeRoom& room = *it->second.room;
+      if (!room.rootAccess()->stands()) return std::nullopt;
+      return TreeAccess{room.owner(), room.visibility(), room.root()};
+    }
   }
-  return repo_.loadAccess(id);  // one row, no lattice — absence answers nullopt, exactly like load
+  const std::optional<TreeAccess> stored = repo_.loadAccess(id);  // the root's row, no lattice
+  if (!stored) return std::nullopt;
+  // A live room of the same root answers for it: its access changes before its row narrows and after it widens.
+  std::lock_guard<std::mutex> lock(mutex_);
+  const std::shared_ptr<RootAccess> live = liveRootAccess(stored->root);
+  if (!live) return stored;
+  if (!live->stands()) return std::nullopt;
+  return TreeAccess{live->owner(), live->visibility(), stored->root};
 }
 
 void RoomRegistry::evict(const TreeId& id) {
@@ -104,6 +120,10 @@ void RoomRegistry::retire(const TreeId& id) {
 void RoomRegistry::retireErased(const std::vector<std::string>& trees) {
   for (const std::string& tree : trees) {
     const TreeId id{tree};
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (const std::shared_ptr<RootAccess> live = liveRootAccess(id)) live->setStanding(false);
+    }
     std::lock_guard<std::mutex> strand(strandFor(id));
     retire(id);
   }
@@ -182,17 +202,88 @@ bool RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint6
   return false;
 }
 
-void RoomRegistry::setVisibility(const TreeId& id, Visibility visibility) {
-  repo_.setVisibility(id, visibility);  // durable
+void RoomRegistry::setVisibility(const TreeId& root, Visibility visibility) {
+  {
+    std::lock_guard<std::mutex> rootLock(rootLockFor(root));
+    std::shared_ptr<RootAccess> live;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      live = liveRootAccess(root);
+    }
+    const Visibility was = live ? live->visibility() : visibility;
+    if (live && visibility == Visibility::private_) live->setVisibility(visibility);
+    try {
+      repo_.setVisibility(root, visibility);
+    } catch (...) {
+      if (live) live->setVisibility(was);
+      throw;
+    }
+    // A freshly-shared tree stops 404-ing at once.
+    if (live) live->setVisibility(visibility);
+  }
+  // Announced outside the locks: whoever listens re-decides an access question and may go back to the
+  // repository to do it.
+  if (!accessChanged_) return;
+  accessChanged_(root);
+  for (const TreeId& tree : roomsUnder(root))
+    if (tree != root) accessChanged_(tree);
+}
+
+void RoomRegistry::remove(const TreeId& id) {
+  {
+    std::lock_guard<std::mutex> rootLock(rootLockFor(id));
+    std::shared_ptr<RootAccess> live;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      live = liveRootAccess(id);  // none for a subtree's id: only a root keys one
+    }
+    if (live) live->setStanding(false);
+    try {
+      repo_.softDelete(id);
+    } catch (...) {
+      if (live) live->setStanding(true);
+      throw;
+    }
+  }
+  const std::vector<TreeId> fallen = roomsUnder(id);
+  retire(id);
+  if (accessChanged_)
+    for (const TreeId& tree : fallen)
+      if (tree != id) accessChanged_(tree);
+}
+
+std::shared_ptr<RootAccess> RoomRegistry::shareRootAccess(const TreeId& root) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = rooms_.find(id);
-    // The live room's read gate flips immediately, so a freshly-shared tree stops 404-ing at once.
-    if (it != rooms_.end()) it->second.room->setVisibility(visibility);
+    if (std::shared_ptr<RootAccess> live = liveRootAccess(root)) return live;
   }
-  // Announced outside the lock: whoever listens re-decides an access question and may go back to the
-  // repository to do it.
-  if (accessChanged_) accessChanged_(id);
+  // Read under the root's lock, which every change to the root's access holds, so it cannot be stale.
+  const std::optional<TreeAccess> stored = repo_.loadAccess(root);
+  if (!stored) return nullptr;
+  auto access = std::make_shared<RootAccess>(stored->owner, stored->visibility);
+  std::lock_guard<std::mutex> lock(mutex_);
+  roots_[root] = access;
+  return access;
+}
+
+std::shared_ptr<RootAccess> RoomRegistry::liveRootAccess(const TreeId& root) {
+  auto it = roots_.find(root);
+  if (it == roots_.end()) return nullptr;
+  std::shared_ptr<RootAccess> live = it->second.lock();
+  if (!live) roots_.erase(it);  // every room that shared it has closed
+  return live;
+}
+
+std::vector<TreeId> RoomRegistry::roomsUnder(const TreeId& root) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  std::vector<TreeId> under;
+  for (const auto& [id, live] : rooms_)
+    if (live.room->root() == root) under.push_back(id);
+  return under;
+}
+
+std::mutex& RoomRegistry::rootLockFor(const TreeId& root) {
+  return rootLocks_[std::hash<std::string>{}(root.str()) % kStrandStripes];
 }
 
 void RoomRegistry::whenAccessChanges(std::function<void(const TreeId&)> hook) {

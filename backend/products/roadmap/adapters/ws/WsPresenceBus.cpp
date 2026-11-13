@@ -106,6 +106,19 @@ void WsPresenceBus::broadcastSubgraph(const TreeId& tree, Seq seq, const Subgrap
   }
 }
 
+void WsPresenceBus::broadcastSubtree(const TreeId& tree, Seq seq, const NodeId& step, const Subtree& subtree) {
+  Json::Value frame(Json::objectValue);
+  frame["t"] = "subtree";
+  frame["treeId"] = tree.str();
+  frame["seq"] = static_cast<Json::Int64>(seq);
+  frame["step"] = step.str();
+  frame["subtree"]["id"] = subtree.id.str();
+  frame["subtree"]["depth"] = subtree.depth;
+  const auto text = std::make_shared<const std::string>(dump(frame));
+  for (const Admitted& one : admitted(tree))
+    if (one.conn->connected()) sendInOrder(one.loop, one.conn, text);
+}
+
 void WsPresenceBus::broadcastProgress(const TreeId& tree, const UserId& user, const Progress& marks) {
   if (user.empty()) return;  // anonymous progress has no owner to notify
   if (marks.marks.empty()) return;
