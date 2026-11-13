@@ -203,6 +203,52 @@ TEST(room_a_frame_is_broadcast_as_the_part_of_each_entry_and_tree_register_that_
   CHECK(bus.subgraphBroadcasts.back().subgraph.graph == echoedTitle.graph);
 }
 
+// A deed that brings a node or a kind into being is logged under the name, icon and hue the room holds for it after
+// the join, whatever of them the frame echoed. A revive that lands a creation stamp alone is broadcast as that stamp
+// and logged as CreateNode with the label, icon and hue the node kept, so the feed reads "added Bee" while the node
+// stands and after it is deleted again; a kind revived the same way is AddKind with the hue and label it kept.
+TEST(room_a_frame_that_revives_a_node_or_a_kind_is_logged_under_the_name_icon_and_hue_the_room_holds) {
+  FakeBus bus;
+  TreeRoom room = makeRoom(bus);
+  apply(room, AddKind{KindId{"k"}, NodeColor::plum, "Kay"}, 1);
+  apply(room, CreateNode{nid("bee"), "Bee", "hive", NodeColor::plum}, 2);
+  apply(room, DeleteNode{nid("bee")}, 3);
+  apply(room, RemoveKind{KindId{"k"}}, 4);
+  const Hlc fresh{50, 0, "phone"};
+
+  Subgraph revivedNode;
+  revivedNode.treeId = tid();
+  revivedNode.frameId = "revive-node";
+  revivedNode.actor = "phone";
+  revivedNode.graph.nodes = room.exportState().nodes;
+  revivedNode.graph.nodes.front().createdAt = fresh;
+  REQUIRE(room.joinSubgraph(revivedNode, uid()).has_value());
+  CHECK((bus.subgraphBroadcasts.back().subgraph.graph == GraphState{{NodeStateEntry{.id = nid("bee"), .createdAt = fresh}}, {}}));
+  REQUIRE(std::holds_alternative<CreateNode>(room.pendingOps().back().command));
+  const CreateNode logged = std::get<CreateNode>(room.pendingOps().back().command);
+  CHECK_EQ(logged.label, std::string("Bee"));
+  CHECK_EQ(logged.icon, std::string("hive"));
+  CHECK(logged.color == NodeColor::plum);
+  CHECK_EQ(activityFeed(room.snapshot(), room.pendingOps(), 1).front().summary, std::string("added Bee"));
+  apply(room, DeleteNode{nid("bee")}, 60);
+  CHECK_EQ(activityFeed(room.snapshot(), room.pendingOps(), 2).front().summary, std::string("added Bee"));
+
+  Subgraph revivedKind;
+  revivedKind.treeId = tid();
+  revivedKind.frameId = "revive-kind";
+  revivedKind.actor = "phone";
+  revivedKind.legend.kinds = room.exportLegend().kinds;
+  revivedKind.legend.kinds.front().createdAt = Hlc{70, 0, "phone"};
+  REQUIRE(room.joinSubgraph(revivedKind, uid()).has_value());
+  CHECK((bus.subgraphBroadcasts.back().subgraph.legend ==
+         LegendState{{KindStateEntry{.id = KindId{"k"}, .createdAt = Hlc{70, 0, "phone"}}}}));
+  REQUIRE(std::holds_alternative<AddKind>(room.pendingOps().back().command));
+  const AddKind added = std::get<AddKind>(room.pendingOps().back().command);
+  CHECK(added.hue == NodeColor::plum);
+  CHECK_EQ(added.label, std::string("Kay"));
+  CHECK_EQ(activityFeed(room.snapshot(), room.pendingOps(), 1).front().summary, std::string("added a plum kind"));
+}
+
 TEST(room_join_subgraph_queues_its_headline_for_the_feed) {
   FakeBus bus;
   TreeRoom room = makeRoom(bus);

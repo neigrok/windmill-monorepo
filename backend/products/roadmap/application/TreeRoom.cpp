@@ -53,7 +53,7 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   ++head_;
   // One op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
   // double-counts. A frame with no feed-worthy deed (headline) queues nothing.
-  if (std::optional<Command> deed = headline(landed.graph, landed.legend))
+  if (std::optional<Command> deed = headline(landed.graph, landed.legend, graph_, legend_))
     pendingOps_.push_back(AppliedOp{head_, incoming.frameId, *deed, stamp, actor});
   bus_.broadcastSubgraph(id_, head_, landed);
   return head_;

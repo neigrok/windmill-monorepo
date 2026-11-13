@@ -708,33 +708,40 @@ std::optional<Admission> admit(const Legend& legend, const LegendState& incoming
   return std::nullopt;
 }
 
-std::optional<Command> headline(const GraphState& graph, const LegendState& legend) {
-  for (const NodeStateEntry& n : graph.nodes)
-    if (n.createdAt.isSet()) return CreateNode{n.id, n.label, n.icon, n.color, {}, n.description, n.links};
-  for (const NodeStateEntry& n : graph.nodes)
+std::optional<Command> headline(const GraphState& landed, const LegendState& landedLegend, const LooseGraph& graph,
+                                const Legend& legend) {
+  for (const NodeStateEntry& n : landed.nodes)
+    if (n.createdAt.isSet()) {
+      const NodeStateEntry held = graph.exportNode(n.id).value();
+      return CreateNode{n.id, held.label, held.icon, held.color, {}, n.description, n.links};
+    }
+  for (const NodeStateEntry& n : landed.nodes)
     if (n.deletedAt.isSet()) return DeleteNode{n.id};
-  for (const KindStateEntry& k : legend.kinds)
-    if (k.createdAt.isSet()) return AddKind{k.id, k.hue};
-  for (const KindStateEntry& k : legend.kinds)
+  for (const KindStateEntry& k : landedLegend.kinds)
+    if (k.createdAt.isSet()) {
+      const KindStateEntry held = legend.exportKind(k.id).value();
+      return AddKind{k.id, held.hue, held.label};
+    }
+  for (const KindStateEntry& k : landedLegend.kinds)
     if (k.hueAt.isSet()) return RecolorKind{k.id, k.hue};
-  for (const KindStateEntry& k : legend.kinds)
+  for (const KindStateEntry& k : landedLegend.kinds)
     if (k.labelAt.isSet()) return RenameKind{k.id, k.label};
-  for (const KindStateEntry& k : legend.kinds)
+  for (const KindStateEntry& k : landedLegend.kinds)
     if (k.descriptionAt.isSet()) return DescribeKind{k.id, k.description};
-  for (const KindStateEntry& k : legend.kinds)
+  for (const KindStateEntry& k : landedLegend.kinds)
     if (k.rankAt.isSet()) return ReorderKinds{};
-  for (const NodeStateEntry& n : graph.nodes)
+  for (const NodeStateEntry& n : landed.nodes)
     if (n.labelAt.isSet()) return RenameNode{n.id, n.label};
-  for (const NodeStateEntry& n : graph.nodes)
+  for (const NodeStateEntry& n : landed.nodes)
     if (n.colorAt.isSet()) return SetNodeColor{n.id, n.color};
-  for (const NodeStateEntry& n : graph.nodes)
+  for (const NodeStateEntry& n : landed.nodes)
     if (n.descriptionAt.isSet() || n.linksAt.isSet())
       return AnnotateNode{n.id,
                           n.descriptionAt.isSet() ? std::optional<std::string>(n.description) : std::nullopt,
                           n.linksAt.isSet() ? std::optional<std::vector<Link>>(n.links) : std::nullopt};
-  for (const EdgeStateEntry& e : graph.edges)
+  for (const EdgeStateEntry& e : landed.edges)
     if (e.addedAt.isSet()) return AddEdge{e.edge.from, e.edge.to};
-  for (const EdgeStateEntry& e : graph.edges)
+  for (const EdgeStateEntry& e : landed.edges)
     if (e.removedAt.isSet()) return RemoveEdge{e.edge.from, e.edge.to};
   return std::nullopt;
 }

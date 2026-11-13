@@ -277,7 +277,11 @@ and broadcasts to subscribers. The deed, the rows marked to save and the broadca
 what landed — each entry cut to the registers whose stamps took (`LooseGraph::join` and
 `Legend::join` answer it), the title and guide only where they took — never off the frame as sent,
 so a frame that echoes one node whole and recolours another is logged, told in the feed and sent on
-as that recolour; a frame whose every register lands reads as it was sent. The sender's ack is
+as that recolour; a frame whose every register lands reads as it was sent. One deed states more
+than landed: the one that brings a node or a kind into being — its creation stamp landed, a create
+or a revive — is logged under the name, icon and hue the room holds for it after the join, whatever
+of them the frame echoed (`headline`), so the feed still names a revived node once it is deleted
+again. The broadcast and the rows marked to save stay what landed. The sender's ack is
 unchanged: it names the `frameId` and the `seq`. A frame that sets only the title or the guide has no
 headline deed, so it leaves no `tree_ops` row and no activity entry. A frame that lands nothing — a
 duplicate `frameId`, one whose every stamp the room already holds, or one that carries no stamp, as
