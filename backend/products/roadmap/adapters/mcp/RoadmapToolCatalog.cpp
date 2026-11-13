@@ -689,8 +689,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     nodeFields["color"] = enumStr("Optional hue. A new node with neither `color` nor `kind` is terracotta and wears "
                                   "the terracotta kind of the legend this batch leaves; where that legend has kinds "
                                   "and none is terracotta, the whole batch is refused, naming such nodes, the first "
-                                  "ten of them, and listing that legend's kinds. A node the tree already holds, or "
-                                  "held before a delete, keeps its colour.", kHues);
+                                  "ten of them, and listing that legend's kinds. A node the tree holds keeps its "
+                                  "colour. One brought back from a delete comes back with the colour it was given "
+                                  "by a `color`, a `kind` or a repaint; if it never was given one it counts as new "
+                                  "here and must name a `kind` or `color`.", kHues);
     nodeFields["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears in the legend "
                                    "this batch leaves, so one batch can add a kind and file nodes under it. Sent "
                                    "with `color`, the two must agree, but for a `color` the node already holds — "
@@ -774,7 +776,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "added; the tree's title is not touched. Every other field you leave off a node or kind keeps "
         "the value the tree holds (a new id gets the default), and every field you send replaces it — "
         "an explicit \"\" or [] clears it. A node deleted earlier and re-sent comes back with the fields "
-        "it had, but for the tree it opened: it opens the tree this batch names for it, or none. A kind "
+        "it had, but for the tree it opened: it opens the tree this batch names for it, or none; and one "
+        "that was never given a colour names its `kind` or `color` like a new node (see nodes[].color). A kind "
         "you re-send with a new hue repaints the nodes wearing its old hue, judged "
         "against the legend before the batch (so two kinds can swap hues); a node you file by `kind` takes "
         "the hue that kind wears after the batch, a node you send a `color` that differs from the one it "
