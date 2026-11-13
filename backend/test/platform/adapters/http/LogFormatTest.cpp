@@ -37,6 +37,9 @@ TEST(log_privacy_keeps_audited_write_vendor_and_database_completion_lines) {
   CHECK_EQ(privacySafeLogBody(follows, "GalleryApi.cpp:54"), follows);
   const std::string recovered = "roadmap_progress_follow_recovered door=rest degraded_replies=7";
   CHECK_EQ(privacySafeLogBody(recovered, "OwnerProgress.cpp:114"), recovered);
+  const std::string cascade = "roadmap_tree_remove_cascade door=rest trees=4 steps=3 edges=1 marks=1 removed=2 unsaved=1 "
+      "incomplete=1 duration_ms=1203 request_id=0123456789abcdef0123456789abcdef";
+  CHECK_EQ(privacySafeLogBody(cascade, "TreeRegistry.cpp:161"), cascade);
 }
 
 TEST(log_privacy_redacts_capabilities_and_secret_query_strings_in_full) {

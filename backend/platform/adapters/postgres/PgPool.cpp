@@ -1,5 +1,8 @@
 #include "platform/adapters/postgres/PgPool.h"
 
+#include "platform/application/StatementLimits.h"
+
+#include <algorithm>
 #include <stdexcept>
 #include <utility>
 
@@ -14,7 +17,7 @@ PgPool::PgPool(std::string connString, std::size_t maxConnections,
   idle_.reserve(maxConnections_);
 }
 
-std::unique_ptr<pqxx::connection> PgPool::acquire() {
+std::unique_ptr<pqxx::connection> PgPool::acquire(std::optional<std::chrono::milliseconds> wait) {
   std::unique_lock<std::mutex> lock{mutex_};
   for (;;) {
     while (!idle_.empty()) {
@@ -24,7 +27,7 @@ std::unique_ptr<pqxx::connection> PgPool::acquire() {
       --open_;  // it died while it sat here, so the slot it held is free again
     }
     if (open_ < maxConnections_) break;
-    if (!returned_.wait_for(lock, acquireTimeout_,
+    if (!returned_.wait_for(lock, wait.value_or(acquireTimeout_),
                             [this] { return !idle_.empty() || open_ < maxConnections_; }))
       throw PgPoolExhausted("postgres pool exhausted: all " + std::to_string(maxConnections_) +
                                " connections have been borrowed for longer than a transaction "
@@ -38,7 +41,7 @@ std::unique_ptr<pqxx::connection> PgPool::acquire() {
   try {
     auto opened = std::make_unique<pqxx::connection>(connString_);
     pqxx::work txn{*opened};
-    txn.exec("SET statement_timeout = '5s'");  // a runaway query can't pin its borrower forever
+    txn.exec("SET statement_timeout = '" + std::to_string(kStatementTimeout.count()) + "ms'");
     // Every statement here is a short one, planned on each call: compiling its plan costs more than running it.
     txn.exec("SET jit = off");
     txn.commit();
@@ -61,6 +64,42 @@ void PgPool::release(std::unique_ptr<pqxx::connection> conn) noexcept {
   }
   // A broken connection is destroyed here, outside the lock; the freed slot is what the waiter this wakes uses.
   returned_.notify_one();
+}
+
+PgLease::PgLease(PgPool& pool) : pool_(pool) {
+  const StatementLimits* limits = StatementLimits::current();
+  if (!limits) {
+    conn_ = pool.acquire();
+    return;
+  }
+  const std::chrono::milliseconds remaining = limits->remaining();
+  if (remaining.count() <= 0) throw StatementDeadlinePassed{};
+  conn_ = pool.acquire(remaining);
+  try {
+    pqxx::nontransaction session{*conn_};
+    session.exec("SET lock_timeout = '" + std::to_string(limits->lockWait().count()) + "ms'; SET statement_timeout = '" +
+                 std::to_string(std::min(remaining, PgPool::kStatementTimeout).count()) + "ms'");
+  } catch (...) {
+    // Half the limits may have been set: the connection is never lent again.
+    try { conn_->close(); } catch (...) {}
+    pool_.release(std::move(conn_));
+    throw;
+  }
+  limited_ = true;
+}
+
+PgLease::~PgLease() {
+  if (limited_) {
+    try {
+      pqxx::nontransaction session{*conn_};
+      session.exec("SET lock_timeout = 0; SET statement_timeout = '" + std::to_string(PgPool::kStatementTimeout.count()) +
+                   "ms'");
+    } catch (...) {
+      // A connection that may still carry the limits is never lent again.
+      try { conn_->close(); } catch (...) {}
+    }
+  }
+  pool_.release(std::move(conn_));
 }
 
 std::size_t PgPool::openConnections() const {

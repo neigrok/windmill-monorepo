@@ -164,6 +164,16 @@ std::set<TreeId> OpenedTrees::leadingBackTo(const TreeId& tree) const {
   return leading;
 }
 
+std::vector<OpeningSteps> OpenedTrees::openersOf(const TreeId& tree) const {
+  std::vector<OpeningSteps> openers;
+  const auto opened = openers_.find(tree);
+  if (opened == openers_.end()) return openers;
+  // `openers_` lists each opener once, in the id order `standing_` is walked in.
+  for (const TreeId& opener : opened->second)
+    if (opener != tree) openers.push_back({opener, standing_.at(opener).pointers.at(tree).nodes});
+  return openers;
+}
+
 PointerDiagnostics OpenedTrees::diagnose(const TreeId& tree, const std::map<NodeId, TreeId>& pointers) const {
   const WaysBack back = waysBackTo(tree);
   PointerDiagnostics diagnostics;

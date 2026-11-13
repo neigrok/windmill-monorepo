@@ -527,6 +527,29 @@ std::map<TreeId, TreeAbove> PgTreeRepository::guidedTreesAbove(const UserId& own
   return above;
 }
 
+const char* PgTreeRepository::treesOpeningStatement() {
+  // Keyed on the owner's own trees. The LATERAL runs once per standing one and stops at its first node that opens $2, so
+  // each tree's pointers are read by its key on tree_nodes_pointers_idx, which serves only a scan that states its
+  // predicate, and never through tree_nodes_opens_idx, where other accounts' pointers at $2 sit too.
+  return "SELECT t.id FROM trees t "
+         "CROSS JOIN LATERAL (SELECT 1 FROM tree_nodes n "
+         "                    WHERE n.tree_id = t.id AND n.present AND n.opens <> '' AND n.opens = $2 LIMIT 1) o "
+         "WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND t.id <> $2 "
+         "  AND EXISTS (SELECT 1 FROM trees opened WHERE opened.id = $2 AND opened.owner_id = $1::uuid) "
+         "ORDER BY t.id COLLATE \"C\"";
+}
+
+std::vector<TreeId> PgTreeRepository::treesOpening(const UserId& owner, const TreeId& tree) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  pqxx::result rows = txn.exec_params(treesOpeningStatement(), owner.str(), tree.str());
+
+  std::vector<TreeId> opening;
+  opening.reserve(rows.size());
+  for (const auto& row : rows) opening.emplace_back(row["id"].as<std::string>());
+  return opening;
+}
+
 void PgTreeRepository::softDelete(const TreeId& tree) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};

@@ -44,14 +44,18 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   with no edit to this tree, and several steps can share one time; while an owner's follow is
   degraded — the read failed or ran past its budget, the five minutes after either, or the gallery's
   cap cut it short — every step of theirs that holds a pointer reads unmarked, valid pointer or not,
-  where a marked step with no pointer keeps its row; and a reply for a tree that holds a pointer
-  waits on that read, which a reply for a tree without one does not make. Beyond these, no state,
-  count, key or refusal says a node opens a tree. A tend neither reads nor sets the pointer: it runs
-  as the owner on labels that may be someone else's words, so `ScopedToolHost` offers it no `opens`
-  argument and no `opens` field, and refuses a call
-  that names either; and no call it can make brings a pointer back, because a node an import
-  revives from a delete opens only the tree that batch names (`graftState`), and a run's batch
-  names none. The `state` it reads is the owner's.
+  where a marked step with no pointer keeps its row; a reply for a tree that holds a pointer
+  waits on that read, which a reply for a tree without one does not make; and a removal's deletes
+  reach readers as live frames: one who can read the removed tree, or two of the trees whose steps
+  opened it, sees those trees' delete frames, each stamped by the server, arrive within a
+  millisecond of the removal, and so can tell which steps opened it. Each such frame alone is the
+  frame an owner's own `delete_node` with `prune` sends. Beyond these, no state, count, key,
+  refusal or frame a reader is sent says a node opens a tree. A tend neither reads nor sets the
+  pointer: it runs as the owner on labels that may be someone else's words, so `ScopedToolHost`
+  offers it no `opens` argument and no `opens` field, and refuses a call that names either; and no
+  call it can make brings a pointer back, because a node an import revives from a delete opens only
+  the tree that batch names (`graftState`), and a run's batch names none. The `state` it reads is
+  the owner's.
   What is wrong with a tree's pointers follows the same line. `treeLoops` and `danglingPointers`
   (`SPEC.md`, Model, `PointerDiagnostics`) carry tree ids, titles and the stored pointer text, so
   MCP `get_diagnostics` and `GET …/diagnostics` answer them only to a caller `canWrite` admits,
@@ -71,6 +75,13 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   opens this one. A tend is answered no `guides` and reads no tree above the tended one:
   `ScopedToolHost` withholds `includeGuides` from its catalog and sends it as `false` on every call,
   so a run reads the tended tree's own guide and no other tree's id, title or words.
+  The registry list and a tree's removal follow the same line. A row's `openers` (`GET /v1/trees`,
+  `SPEC.md`) names only the caller's own standing trees, judged from the trees the list already
+  holds, so a pointer another account plants at the tree is never counted. A removal deletes the
+  steps that open the tree from the owner's own trees alone: its read is keyed on the caller's own
+  trees and answers none for a tree that is not theirs, so a refused delete edits nothing, and only
+  the owner's reply names trees, theirs alone. Someone else's step that points at the tree stays
+  theirs, leading nowhere.
 - **Document writes** (`PUT`, WS `subgraph`, structural MCP tools) require
   a session (anonymous → `401`) and gate on `canWrite`, which is ownership and nothing else. **A tree
   is born owned** — the owner is written by the same insert that creates the row (create, fork, `PUT`

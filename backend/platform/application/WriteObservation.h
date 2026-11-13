@@ -70,6 +70,9 @@ public:
   // Whether this observation failed, or its request reported a failure through any observation.
   bool reportedFailure() const;
   void fail(const std::exception& error);
+  // fail() under an outcome of its own in place of `failed`, still at ERROR and still the request's Issue: a failure
+  // whose consequence has a name the line should carry.
+  void fail(const std::exception& error, std::string outcome);
   void reportFailure(const std::exception& error);
   void reportUnknownFailure();
   void failUnknown();
@@ -85,6 +88,7 @@ private:
   std::uint64_t serial_;
   std::atomic<bool> finished_{false};
   std::atomic<bool> failed_{false};
+  std::string failedOutcome_ = "failed";
 };
 
 template<class Run>

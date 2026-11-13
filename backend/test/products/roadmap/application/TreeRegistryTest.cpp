@@ -1,18 +1,25 @@
 #include "products/roadmap/application/TreeRegistry.h"
 
+#include "platform/application/StatementLimits.h"
+#include "platform/application/WriteObservation.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/Subgraph.h"
+#include "products/roadmap/domain/UnlockRules.h"
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include <memory>
 #include <string>
+#include <typeinfo>
 #include <variant>
 #include <vector>
 
 using namespace wm;
 using namespace wm::fake;
+
+using Removal = std::variant<Cascade, TreeRegistry::RemovalRefusal>;
 
 struct Setup {
   FakeTreeRepository trees;
@@ -22,7 +29,9 @@ struct Setup {
   FakeBus bus;
   FakeClock clock;
   RoomRegistry rooms{trees, ops, bus};
-  TreeRegistry registry{trees, progress, tokens, Hlc{1, 0, "genesis"}, rooms, clock};
+  ProgressService marks{progress, trees};
+  NodeEdits edits{rooms, marks, bus, clock};
+  TreeRegistry registry{trees, progress, tokens, Hlc{1, 0, "genesis"}, rooms, edits, clock};
 };
 
 static NodeSpec spec(const char* id, NodeColor color, std::vector<NodeId> prereqs = {}) {
@@ -175,7 +184,7 @@ TEST(create_with_your_own_soft_deleted_id_is_retired_not_taken) {
   UserId me = uid("me");
   CHECK(s.registry.create(me, TreeId{"t_00c0ffee00c0ffee"}, treeData("Gone soon", {})) ==
         TreeRegistry::Creation::created);
-  CHECK(s.registry.remove(TreeId{"t_00c0ffee00c0ffee"}, me) == TreeRegistry::Removal::deleted);
+  CHECK(s.registry.remove(TreeId{"t_00c0ffee00c0ffee"}, me) == Removal{Cascade{}});
 
   // load can't see the deleted row, so the insert runs and the unique index refuses it; the retired row's owner is the only fact that tells the caller's own delete from a stranger's id.
   CHECK(s.registry.create(me, TreeId{"t_00c0ffee00c0ffee"}, treeData("Again", {})) ==
@@ -189,7 +198,7 @@ TEST(create_with_another_accounts_soft_deleted_id_is_still_taken) {
   UserId intruder = uid("intruder");
   CHECK(s.registry.create(owner, TreeId{"t_00c0ffee00c0ffee"}, treeData("Theirs", {})) ==
         TreeRegistry::Creation::created);
-  CHECK(s.registry.remove(TreeId{"t_00c0ffee00c0ffee"}, owner) == TreeRegistry::Removal::deleted);
+  CHECK(s.registry.remove(TreeId{"t_00c0ffee00c0ffee"}, owner) == Removal{Cascade{}});
 
   CHECK(s.registry.create(intruder, TreeId{"t_00c0ffee00c0ffee"}, treeData("Mine now", {})) ==
         TreeRegistry::Creation::taken);
@@ -252,7 +261,7 @@ TEST(remove_soft_deletes_an_owned_tree_and_it_leaves_the_list) {
   seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
 
   CHECK_EQ(s.registry.list(me).size(), 1u);
-  CHECK(s.registry.remove(tid("t"), me) == TreeRegistry::Removal::deleted);
+  CHECK(s.registry.remove(tid("t"), me) == Removal{Cascade{}});
   CHECK_EQ(s.registry.list(me).size(), 0u);
 }
 
@@ -260,16 +269,16 @@ TEST(remove_refuses_a_non_owner_and_an_unknown_tree) {
   Setup s;
   seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});  // private by default
 
-  CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::notFound);
-  CHECK(s.registry.remove(tid("ghost"), uid("owner")) == TreeRegistry::Removal::notFound);
+  CHECK(s.registry.remove(tid("t"), uid("intruder")) == Removal{TreeRegistry::RemovalRefusal::notFound});
+  CHECK(s.registry.remove(tid("ghost"), uid("owner")) == Removal{TreeRegistry::RemovalRefusal::notFound});
   CHECK_EQ(s.registry.list(uid("owner")).size(), 1u);
 
   s.trees.byId["t"].visibility = Visibility::unlisted;
-  CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::notYours);
+  CHECK(s.registry.remove(tid("t"), uid("intruder")) == Removal{TreeRegistry::RemovalRefusal::notYours});
   CHECK_EQ(s.registry.list(uid("owner")).size(), 1u);
 
   s.trees.byId["t"].owner = std::nullopt;
-  CHECK(s.registry.remove(tid("t"), uid("intruder")) == TreeRegistry::Removal::nobodysTree);
+  CHECK(s.registry.remove(tid("t"), uid("intruder")) == Removal{TreeRegistry::RemovalRefusal::nobodysTree});
   CHECK(s.trees.byId.count("t") == 1u);
 }
 
@@ -467,7 +476,7 @@ TEST(registry_remove_retires_the_live_room_and_announces_the_change) {
   s.rooms.open(tid());
   REQUIRE(s.rooms.isOpen(tid()));
 
-  CHECK(s.registry.remove(tid(), uid("alice")) == TreeRegistry::Removal::deleted);
+  CHECK(s.registry.remove(tid(), uid("alice")) == Removal{Cascade{}});
   CHECK_FALSE(s.rooms.isOpen(tid()));
   CHECK_EQ(announced.size(), 1u);
   CHECK_EQ(announced.front(), std::string("t"));
@@ -481,7 +490,7 @@ TEST(registry_remove_refused_leaves_the_live_room_standing) {
   s.rooms.whenAccessChanges([&](const TreeId& id) { announced.push_back(id.str()); });
 
   s.rooms.open(tid());
-  CHECK(s.registry.remove(tid(), uid("mallory")) == TreeRegistry::Removal::notFound);
+  CHECK(s.registry.remove(tid(), uid("mallory")) == Removal{TreeRegistry::RemovalRefusal::notFound});
   CHECK(s.rooms.isOpen(tid()));
   CHECK(announced.empty());
 }
@@ -660,4 +669,339 @@ TEST(two_rooms_joining_concurrent_guide_frames_in_opposite_orders_converge_on_on
   second.rooms.persist(tid("t"));
   CHECK(first.trees.byId["t"].guide == winner);
   CHECK(second.trees.byId["t"].guide == winner);
+}
+
+static NodeSpec opening(const char* id, const char* tree, std::vector<NodeId> prereqs = {}) {
+  NodeSpec node = spec(id, NodeColor::sky, std::move(prereqs));
+  node.opens = TreeId{std::string(tree)};
+  return node;
+}
+
+// Each failure the cascade reports, as its operation, door, outcome and exception type.
+struct Failures : FailureReporter {
+  std::vector<std::string> reports;
+  void report(const std::string&, const std::string&, const std::string&) override {}
+  void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                   const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+    reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+  }
+};
+
+// A removal run the way the REST door runs it: inside the route's own write observation, finished `ok` or `refused`, with
+// the lines it writes and the Issues it files captured.
+struct AtTheDoor {
+  std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+  std::vector<std::string> lines;
+  AtTheDoor() {
+    installWriteReporter(failures);
+    installWriteSink([this](const WriteCompletion& line) {
+      lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
+    });
+  }
+  ~AtTheDoor() {
+    installWriteSink({});
+    installWriteReporter(nullptr);
+  }
+  Removal remove(TreeRegistry& registry, const TreeId& tree, const UserId& caller) {
+    WriteObservation route{"roadmap.DELETE.v1.trees.id", "roadmap", "rest"};
+    WriteContext context{route};
+    const Removal removed = registry.remove(tree, caller);
+    route.finish(std::holds_alternative<Cascade>(removed) ? "ok" : "refused");
+    return removed;
+  }
+};
+
+// Openers come from the trees the list already holds: only the owner's standing trees count, a tree's pointers at
+// itself go with it, and no read is made past the list's own, however many trees there are.
+TEST(list_names_for_each_tree_the_owners_other_trees_whose_steps_open_it_and_reads_nothing_more) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t_target", me, 100, {spec("t1", NodeColor::sky), opening("self", "t_target")});
+  seed(s.trees, "t_a", me, 90, {opening("a1", "t_target"), spec("a2", NodeColor::sky)});
+  seed(s.trees, "t_b", me, 80, {opening("b1", "t_target"), opening("b2", "t_target"), opening("b3", "t_eves")});
+  seed(s.trees, "t_lonely", me, 70, {spec("l1", NodeColor::sky)});
+  seed(s.trees, "t_gone", me, 60, {opening("g1", "t_target")});
+  s.trees.deletedIds.insert("t_gone");
+  seed(s.trees, "t_eves", uid("eve"), 50, {opening("e1", "t_target"), opening("e2", "t_lonely")});
+
+  std::map<std::string, std::vector<OpeningSteps>> openers;
+  for (const TreeSummary& row : s.registry.list(me)) openers[row.id.str()] = row.openers;
+
+  CHECK(openers == (std::map<std::string, std::vector<OpeningSteps>>{
+                       {"t_target", {{tid("t_a"), 1}, {tid("t_b"), 2}}}, {"t_a", {}}, {"t_b", {}}, {"t_lonely", {}}}));
+  CHECK(s.trees.openedReads.empty());
+  CHECK(s.trees.titleReads.empty());
+  CHECK(s.trees.aboveReads.empty());
+  CHECK(s.trees.openingReads.empty());
+}
+
+// The removed tree's steps go from every tree of the owner's that opened it, live room or closed, each as one op that
+// takes the edges they dangled and the owner's marks on them; a step behind one is free; the reply names what went,
+// and each tree edited writes its line at the removal's door.
+TEST(remove_takes_the_steps_that_open_the_tree_from_each_of_the_owners_trees_with_their_edges_and_marks) {
+  Setup s;
+  AtTheDoor door;
+  UserId me = uid("me");
+  seed(s.trees, "t_target", me, 100, {spec("t1", NodeColor::sky)});
+  seed(s.trees, "t_open", me, 90,
+       {opening("o1", "t_target"), spec("o2", NodeColor::sky, {nid("o1")}), spec("o3", NodeColor::sky)});
+  seed(s.trees, "t_closed", me, 80,
+       {opening("c1", "t_target"), opening("c2", "t_target"), spec("c3", NodeColor::sky, {nid("c1"), nid("c2")})});
+  seed(s.trees, "t_other", me, 70, {spec("x1", NodeColor::sky)});
+  // A mark held before the pointer was set, the one way a step that opens a tree holds its owner's mark, and one beside it.
+  s.progress.byKey[FakeProgressRepository::key(tid("t_open"), me, nid("o1"))] = {ProgressStatus::complete, at(5, "me")};
+  s.progress.byKey[FakeProgressRepository::key(tid("t_open"), me, nid("o3"))] = {ProgressStatus::complete, at(5, "me")};
+  s.rooms.open(tid("t_open"));
+
+  Cascade went;
+  went.removed[tid("t_closed")] = {nid("c1"), nid("c2")};
+  went.removed[tid("t_open")] = {nid("o1")};
+  CHECK(door.remove(s.registry, tid("t_target"), me) == Removal{went});
+
+  const auto held = [&](const char* tree) {
+    const LooseGraph graph(s.trees.byId[tree].state);
+    std::map<std::string, std::vector<NodeId>> nodes;
+    for (const NodeSpec& node : graph.toTreeData(tid(tree), "").nodes) nodes[node.id.str()] = node.prerequisites;
+    return nodes;
+  };
+  CHECK(held("t_open") == (std::map<std::string, std::vector<NodeId>>{{"o2", {}}, {"o3", {}}}));
+  CHECK(held("t_closed") == (std::map<std::string, std::vector<NodeId>>{{"c3", {}}}));
+  CHECK(held("t_other") == (std::map<std::string, std::vector<NodeId>>{{"x1", {}}}));
+  const LooseGraph closed(s.trees.byId["t_closed"].state);
+  CHECK_FALSE(closed.edgePresent(nid("c1"), nid("c3")));
+  CHECK_FALSE(closed.edgePresent(nid("c2"), nid("c3")));
+  const LooseGraph open(s.trees.byId["t_open"].state);
+  CHECK_FALSE(open.edgePresent(nid("o1"), nid("o2")));
+  CHECK(UnlockRules::derive(open.toTreeData(tid("t_open"), "").nodes, s.progress.load(tid("t_open"), me)).at(nid("o2")) ==
+        NodeState::available);
+
+  CHECK(s.progress.byKey.at(FakeProgressRepository::key(tid("t_open"), me, nid("o1"))).status == ProgressStatus::none);
+  CHECK(s.progress.byKey.at(FakeProgressRepository::key(tid("t_open"), me, nid("o3"))).status == ProgressStatus::complete);
+  REQUIRE_EQ(s.bus.progressBroadcasts.size(), 1u);
+  CHECK_EQ(s.bus.progressBroadcasts[0].tree, std::string("t_open"));
+  CHECK_EQ(s.bus.progressBroadcasts[0].user, std::string("me"));
+
+  // One live frame per tree edited, the closed one opened for it, each a delete of its steps alone.
+  std::map<std::string, std::vector<std::string>> deletedInFrame;
+  for (const FakeBus::SubgraphBroadcast& frame : s.bus.subgraphBroadcasts)
+    for (const NodeStateEntry& node : frame.subgraph.graph.nodes)
+      if (node.deletedAt.isSet()) deletedInFrame[frame.tree].push_back(node.id.str());
+  CHECK(deletedInFrame == (std::map<std::string, std::vector<std::string>>{{"t_closed", {"c1", "c2"}}, {"t_open", {"o1"}}}));
+  CHECK_EQ(s.bus.subgraphBroadcasts.size(), 2u);
+  CHECK(s.rooms.isOpen(tid("t_open")));
+  CHECK(s.trees.openingReads == std::vector<TreeId>{tid("t_target")});
+
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.tree.remove.cascade roadmap rest ok",
+                                                "roadmap.tree.remove.cascade roadmap rest ok",
+                                                "roadmap.DELETE.v1.trees.id roadmap rest ok"}));
+  CHECK(door.failures->reports.empty());
+}
+
+// Two trees that open each other: removing one takes the step of the other that opened it, and nothing else.
+TEST(remove_of_one_of_two_trees_that_open_each_other_takes_the_others_opening_step_alone) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t_a", me, 100, {opening("a1", "t_b"), spec("a2", NodeColor::sky, {nid("a1")})});
+  seed(s.trees, "t_b", me, 90, {opening("b1", "t_a"), spec("b2", NodeColor::sky, {nid("b1")}), opening("b3", "t_b")});
+  const GraphState removedWhole = s.trees.byId["t_a"].state;
+
+  Cascade went;
+  went.removed[tid("t_b")] = {nid("b1")};
+  CHECK(s.registry.remove(tid("t_a"), me) == Removal{went});
+
+  std::vector<std::string> standing;
+  for (const NodeSpec& node : LooseGraph(s.trees.byId["t_b"].state).toTreeData(tid("t_b"), "").nodes)
+    standing.push_back(node.id.str());
+  CHECK(standing == (std::vector<std::string>{"b2", "b3"}));
+  CHECK(s.trees.byId["t_a"].state == removedWhole);
+  CHECK_EQ(s.bus.subgraphBroadcasts.size(), 1u);
+}
+
+// A tree that cannot be edited part-way through keeps its steps and is named in `incomplete`; the trees edited before
+// and after it stay edited, its line is `failed`, and the removal files one Issue under the cascade's name.
+// Each tree is answered as what became of it. A save that fails once the delete applied leaves the steps gone from the
+// room, unsaved, and the room's next save keeps them gone; a tree whose room cannot be opened keeps its steps,
+// incomplete. Each writes its line, and the removal files one Issue, the first failure's.
+TEST(remove_answers_each_tree_removed_unsaved_or_incomplete_as_it_is_and_files_one_issue) {
+  Setup s;
+  AtTheDoor door;
+  UserId me = uid("me");
+  seed(s.trees, "t_target", me, 100, {spec("t1", NodeColor::sky)});
+  seed(s.trees, "t_a", me, 90, {opening("a1", "t_target")});
+  seed(s.trees, "t_b", me, 80, {opening("b1", "t_target"), spec("b2", NodeColor::sky, {nid("b1")})});
+  seed(s.trees, "t_c", me, 70, {opening("c1", "t_target")});
+  seed(s.trees, "t_d", me, 60, {opening("d1", "t_target")});
+  bool savesOfBFail = true;
+  s.trees.duringSave = [&](const TreeId& tree) {
+    if (savesOfBFail && tree == tid("t_b")) throw std::runtime_error("the write was refused");
+  };
+  s.trees.latticeLoadsFailFor.insert("t_c");
+  const GraphState storedB = s.trees.byId["t_b"].state;
+  const GraphState storedC = s.trees.byId["t_c"].state;
+
+  Cascade went;
+  went.removed[tid("t_a")] = {nid("a1")};
+  went.removed[tid("t_d")] = {nid("d1")};
+  went.unsaved = {tid("t_b")};
+  went.incomplete = {tid("t_c")};
+  CHECK(door.remove(s.registry, tid("t_target"), me) == Removal{went});
+
+  CHECK(s.trees.byId["t_b"].state == storedB);
+  REQUIRE(s.rooms.isOpen(tid("t_b")));
+  CHECK_FALSE(s.rooms.open(tid("t_b"))->hasNode(nid("b1")));
+  CHECK(s.trees.byId["t_c"].state == storedC);
+  CHECK_FALSE(s.rooms.isOpen(tid("t_c")));
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.tree.remove.cascade roadmap rest ok",
+                                                "roadmap.tree.remove.cascade roadmap rest unsaved",
+                                                "roadmap.tree.remove.cascade roadmap rest failed",
+                                                "roadmap.tree.remove.cascade roadmap rest ok",
+                                                "roadmap.DELETE.v1.trees.id roadmap rest ok"}));
+  CHECK(door.failures->reports ==
+        (std::vector<std::string>{std::string("roadmap.tree.remove.cascade roadmap rest unsaved ") +
+                                  typeid(std::runtime_error).name()}));
+
+  savesOfBFail = false;
+  CHECK(s.rooms.persist(tid("t_b")));
+  std::vector<std::string> standing;
+  for (const NodeSpec& node : LooseGraph(s.trees.byId["t_b"].state).toTreeData(tid("t_b"), "").nodes)
+    standing.push_back(node.id.str() + "<" + std::to_string(node.prerequisites.size()));
+  CHECK(standing == std::vector<std::string>{"b2<0"});
+}
+
+// An erasure racing the removal takes a tree's row between the room's open and its save: the delete applied in the
+// room, which goes with the row, and the tree is answered unsaved under the one Issue.
+TEST(remove_answers_a_tree_whose_row_went_away_under_its_room_as_unsaved) {
+  Setup s;
+  AtTheDoor door;
+  UserId me = uid("me");
+  seed(s.trees, "t_target", me, 100, {spec("t1", NodeColor::sky)});
+  seed(s.trees, "t_a", me, 90, {opening("a1", "t_target")});
+  s.progress.byKey[FakeProgressRepository::key(tid("t_a"), me, nid("a1"))] = {ProgressStatus::complete, at(5, "me")};
+  s.progress.duringBatchWrite = [&] { s.trees.deletedIds.insert("t_a"); };
+
+  Cascade went;
+  went.unsaved = {tid("t_a")};
+  CHECK(door.remove(s.registry, tid("t_target"), me) == Removal{went});
+
+  CHECK_FALSE(s.rooms.isOpen(tid("t_a")));
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.tree.remove.cascade roadmap rest unsaved",
+                                                "roadmap.DELETE.v1.trees.id roadmap rest ok"}));
+  CHECK(door.failures->reports ==
+        (std::vector<std::string>{std::string("roadmap.tree.remove.cascade roadmap rest unsaved ") +
+                                  typeid(TreeRowGone).name()}));
+}
+
+// A tree whose steps that opened the removed one are gone from its room since the read — deleted there, not yet saved —
+// has nothing taken: no op, no seq, no frame and no line, and the reply does not name it.
+TEST(remove_takes_nothing_from_a_tree_whose_opening_steps_are_already_gone_and_does_not_name_it) {
+  Setup s;
+  AtTheDoor door;
+  UserId me = uid("me");
+  seed(s.trees, "t_target", me, 100, {spec("t1", NodeColor::sky)});
+  seed(s.trees, "t_a", me, 90, {opening("a1", "t_target"), spec("a2", NodeColor::sky)});
+  seed(s.trees, "t_b", me, 80, {opening("b1", "t_target")});
+  TreeRoom* gone = s.rooms.open(tid("t_a"));
+  REQUIRE(gone != nullptr);
+  gone->applyCommand(DeleteNode{nid("a1")}, s.clock.now, me);
+  const Seq head = gone->head();
+  s.bus.subgraphBroadcasts.clear();
+
+  Cascade went;
+  went.removed[tid("t_b")] = {nid("b1")};
+  CHECK(door.remove(s.registry, tid("t_target"), me) == Removal{went});
+
+  CHECK_EQ(s.rooms.open(tid("t_a"))->head(), head);
+  REQUIRE_EQ(s.bus.subgraphBroadcasts.size(), 1u);
+  CHECK_EQ(s.bus.subgraphBroadcasts[0].tree, std::string("t_b"));
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.tree.remove.cascade roadmap rest ok",
+                                                "roadmap.DELETE.v1.trees.id roadmap rest ok"}));
+}
+
+// The read and every tree's statements run under the cascade's limits, a lock waited for at most a second, and the
+// cascade ends eight seconds after the read began: a tree it has not reached by then keeps its steps, incomplete, and
+// writes no line of its own.
+TEST(remove_stops_at_its_deadline_and_answers_the_trees_it_did_not_reach_as_incomplete) {
+  Setup s;
+  AtTheDoor door;
+  UserId me = uid("me");
+  seed(s.trees, "t_target", me, 100, {spec("t1", NodeColor::sky)});
+  seed(s.trees, "t_a", me, 90, {opening("a1", "t_target")});
+  seed(s.trees, "t_b", me, 80, {opening("b1", "t_target")});
+  seed(s.trees, "t_c", me, 70, {opening("c1", "t_target")});
+  const std::uint64_t began = s.clock.now;
+  std::vector<std::string> limits;
+  s.trees.duringSave = [&](const TreeId& tree) {
+    const StatementLimits* open = StatementLimits::current();
+    limits.push_back(tree.str() + (open ? " " + std::to_string(open->lockWait().count()) + "ms wait, " +
+                                              std::to_string(open->remaining().count()) + "ms left"
+                                        : " none"));
+    s.clock.now += 5'000;
+  };
+  const GraphState storedC = s.trees.byId["t_c"].state;
+
+  Cascade went;
+  went.removed[tid("t_a")] = {nid("a1")};
+  went.removed[tid("t_b")] = {nid("b1")};
+  went.incomplete = {tid("t_c")};
+  CHECK(door.remove(s.registry, tid("t_target"), me) == Removal{went});
+
+  CHECK(limits == (std::vector<std::string>{"t_a 1000ms wait, 8000ms left", "t_b 1000ms wait, 3000ms left"}));
+  CHECK(StatementLimits::current() == nullptr);
+  CHECK_EQ(s.clock.now - began, 10'000u);
+  CHECK(s.trees.byId["t_c"].state == storedC);
+  CHECK_FALSE(s.rooms.isOpen(tid("t_c")));
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.tree.remove.cascade roadmap rest ok",
+                                                "roadmap.tree.remove.cascade roadmap rest ok",
+                                                "roadmap.DELETE.v1.trees.id roadmap rest ok"}));
+}
+
+// When the steps that open it cannot be read, nothing is removed: the removal is refused, the tree stands, and the read
+// files the one Issue. Tried again once the read answers, it removes the tree and those steps.
+TEST(remove_whose_openers_cannot_be_read_removes_nothing_and_is_refused_until_they_can_be) {
+  Setup s;
+  AtTheDoor door;
+  UserId me = uid("me");
+  seed(s.trees, "t_target", me, 100, {spec("t1", NodeColor::sky)});
+  seed(s.trees, "t_a", me, 90, {opening("a1", "t_target")});
+  const GraphState untouched = s.trees.byId["t_a"].state;
+  s.trees.openingReadsFail = true;
+
+  CHECK(door.remove(s.registry, tid("t_target"), me) == Removal{TreeRegistry::RemovalRefusal::cascadeUnavailable});
+
+  CHECK_FALSE(s.trees.deletedIds.count("t_target"));
+  CHECK(s.trees.byId["t_a"].state == untouched);
+  CHECK(s.bus.subgraphBroadcasts.empty());
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.tree.remove.cascade roadmap rest failed",
+                                                "roadmap.DELETE.v1.trees.id roadmap rest refused"}));
+  CHECK(door.failures->reports ==
+        (std::vector<std::string>{std::string("roadmap.tree.remove.cascade roadmap rest failed ") +
+                                  typeid(std::runtime_error).name()}));
+
+  s.trees.openingReadsFail = false;
+  Cascade went;
+  went.removed[tid("t_a")] = {nid("a1")};
+  CHECK(s.registry.remove(tid("t_target"), me) == Removal{went});
+  CHECK(s.trees.deletedIds.count("t_target"));
+}
+
+// A delete refused is refused as ever and edits nothing. The read made first is keyed on the caller's own trees and
+// answers nothing for a tree that is not theirs, so even their own step that points at it is left alone.
+TEST(remove_refused_to_a_non_owner_edits_nothing_of_the_trees_that_open_it) {
+  Setup s;
+  UserId owner = uid("owner");
+  seed(s.trees, "t_target", owner, 100, {spec("t1", NodeColor::sky)});
+  seed(s.trees, "t_a", owner, 90, {opening("a1", "t_target")});
+  seed(s.trees, "t_mine", uid("intruder"), 80, {opening("m1", "t_target")});
+  const GraphState opener = s.trees.byId["t_a"].state;
+  const GraphState intrudersOwn = s.trees.byId["t_mine"].state;
+
+  CHECK(s.registry.remove(tid("t_target"), uid("intruder")) == Removal{TreeRegistry::RemovalRefusal::notFound});
+  s.trees.byId["t_target"].visibility = Visibility::unlisted;
+  CHECK(s.registry.remove(tid("t_target"), uid("intruder")) == Removal{TreeRegistry::RemovalRefusal::notYours});
+
+  CHECK_FALSE(s.trees.deletedIds.count("t_target"));
+  CHECK(s.trees.openingReads == (std::vector<TreeId>{tid("t_target"), tid("t_target")}));
+  CHECK(s.trees.byId["t_a"].state == opener);
+  CHECK(s.trees.byId["t_mine"].state == intrudersOwn);
+  CHECK(s.bus.subgraphBroadcasts.empty());
 }

@@ -31,10 +31,11 @@ struct Harness {
   fake::FakeTokens tokens;
   RoomRegistry registry{trees, ops, bus};
   ProgressService progress{progressRepo, trees};
-  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+  NodeEdits edits{registry, progress, bus, clock};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
   UserId caller = fake::uid("agent");
   ToolCaller actor{caller, ToolScope::everything()};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
 
   Harness() {
     trees.byId["t"] =

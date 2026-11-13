@@ -155,6 +155,7 @@ struct FakeTreeRepository : TreeRepository {
   // One entry per openedFrom read: the trees it started from.
   std::vector<std::set<TreeId>> openedReads;
   bool latticeLoadsFail = false;  // load throws, the way a dropped connection does; loadAccess still answers
+  std::set<std::string> latticeLoadsFailFor;  // load throws for these trees alone, the others still answer
   // One entry per openedFrom read: the budget it was given.
   std::vector<std::optional<std::chrono::milliseconds>> openedBudgets;
   bool openedReadsFail = false;  // openedFrom throws, the way a dropped connection does
@@ -167,10 +168,15 @@ struct FakeTreeRepository : TreeRepository {
   // One entry per guidedTreesAbove read: the tree it walked up from.
   std::vector<TreeId> aboveReads;
   bool aboveReadsFail = false;  // guidedTreesAbove throws, the way a dropped connection does
+  // One entry per treesOpening read: the tree it asked after.
+  std::vector<TreeId> openingReads;
+  bool openingReadsFail = false;  // treesOpening throws, the way a dropped connection does
   std::function<void()> duringAboveRead;  // runs inside guidedTreesAbove, the way a slow statement holds its caller
   bool savesFail = false;  // save throws, the way a write Postgres refuses does
+  // Runs inside save before anything lands, the way a slow or refused statement holds its caller; it may throw.
+  std::function<void(const TreeId&)> duringSave;
   std::optional<StoredTree> load(const TreeId& tree) override {
-    if (latticeLoadsFail) throw std::runtime_error("connection reset mid-read");
+    if (latticeLoadsFail || latticeLoadsFailFor.count(tree.str())) throw std::runtime_error("connection reset mid-read");
     return row(tree);
   }
   std::optional<StoredTree> row(const TreeId& tree) const {
@@ -209,6 +215,7 @@ struct FakeTreeRepository : TreeRepository {
   bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) override {
     if (savesFail) throw std::runtime_error("the write was refused");
+    if (duringSave) duringSave(tree);
     savedNodeCounts.push_back(state.nodes.size());
     if (!row(tree)) return false;  // a tree whose row is gone or retired is left as it is
     StoredTree& stored = byId[tree.str()];  // merge the slice, keep the rest
@@ -354,6 +361,20 @@ struct FakeTreeRepository : TreeRepository {
       level = std::move(next);
     }
     return nearestGuided(above, kMaxGuides);
+  }
+  // The real statement's rules: this owner's standing trees other than `tree`, each once, in id order, and only for a
+  // `tree` of this owner's, whether or not it stands.
+  std::vector<TreeId> treesOpening(const UserId& owner, const TreeId& tree) override {
+    openingReads.push_back(tree);
+    if (openingReadsFail) throw std::runtime_error("connection reset mid-read");
+    std::vector<TreeId> opening;
+    const auto opened = byId.find(tree.str());
+    if (opened == byId.end() || opened->second.owner != std::optional<UserId>(owner)) return opening;
+    for (const auto& [id, stored] : byId) {
+      if (id == tree.str() || deletedIds.count(id) || stored.owner != std::optional<UserId>(owner)) continue;
+      if (treesOpenedBy(LooseGraph(stored.state).pointers()).count(tree)) opening.emplace_back(id);
+    }
+    return opening;
   }
   void softDelete(const TreeId& tree) override { deletedIds.insert(tree.str()); }
   void rename(const TreeId& tree, const Lww<std::string>& title) override {

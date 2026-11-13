@@ -10,6 +10,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <exception>
 #include <functional>
 #include <map>
 #include <memory>
@@ -19,6 +20,11 @@
 #include <vector>
 
 namespace wm {
+
+// A live room's save found its tree's row gone — an erasure or a removal took it — and wrote nothing back.
+struct TreeRowGone : std::exception {
+  const char* what() const noexcept override { return "the tree's row went away under its live room"; }
+};
 
 // Owns the live TreeRooms, one per tree being viewed or edited. Idle ones are persisted and closed
 // on its own heartbeat — a room is a cache of the row, not a residence.
@@ -46,9 +52,9 @@ public:
   // registry — the trees of an erased account.
   void retireErased(const std::vector<std::string>& trees);
   // Save a live room's dirty slice without evicting, then land its queued op rows. False when the
-  // tree's row is gone or retired, so the room's writes hold nothing a caller may attest. Answers
-  // true when the rows fail to land: the save is what a caller's reply attests, and the rows retry on
-  // the next persist. Throws only when the save itself failed.
+  // tree's row is gone or retired, so the room's writes hold nothing a caller may attest (TreeRowGone
+  // names it where it is reported). Answers true when the rows fail to land: the save is what a
+  // caller's reply attests, and the rows retry on the next persist. Throws only when the save itself failed.
   bool persist(const TreeId& id);
   void setVisibility(const TreeId& id, Visibility visibility);  // share seam, durable + in-room
   bool isOpen(const TreeId& id) const;

@@ -398,7 +398,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     tools.push_back(tool("delete_tree", Access::del,
         "Delete a roadmap you own — a soft-delete: it stops appearing in list_trees and can no longer "
-        "be read. Only the owner may delete; someone else's tree is refused.",
+        "be read. Only the owner may delete; someone else's tree is refused. Deleting a tree also deletes "
+        "the steps in your other trees that open it, with their edges and your marks on them, and the "
+        "reply says what became of them per tree. `removed`, one {treeId, nodeIds} per tree: deleted and "
+        "saved. `unsaved`, tree ids: deleted, but not yet saved — gone now and kept gone by that tree's "
+        "next save, back without your marks should the server restart first. `incomplete`, tree ids: "
+        "nothing deleted there; each such step now points nowhere, so clear its `opens` or delete it. "
+        "The last two appear only when they name a tree. If the steps that open it cannot be read, "
+        "nothing is deleted and the call says so; try again.",
         p, {"treeId"}));
   }
   {

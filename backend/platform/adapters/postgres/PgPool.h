@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -34,13 +35,18 @@ public:
   static constexpr std::size_t kReservedConnections = 8;
 
   // How long a borrower waits for the pool before giving up; a connection is held for one
-  // transaction under a 5s statement_timeout, so waiting this long means a borrower leaked one.
+  // transaction under kStatementTimeout, so waiting this long means a borrower leaked one.
   static constexpr std::chrono::milliseconds kDefaultAcquireTimeout{30'000};
+
+  // How long any statement may run, set on every connection the pool opens: a runaway query can't pin its borrower
+  // forever.
+  static constexpr std::chrono::milliseconds kStatementTimeout{5'000};
 
   explicit PgPool(std::string connString, std::size_t maxConnections = kMaxConnections,
                   std::chrono::milliseconds acquireTimeout = kDefaultAcquireTimeout);
 
-  std::unique_ptr<pqxx::connection> acquire();
+  // Waits for a connection at most `wait`, or the pool's acquire timeout when none is given.
+  std::unique_ptr<pqxx::connection> acquire(std::optional<std::chrono::milliseconds> wait = std::nullopt);
   void release(std::unique_ptr<pqxx::connection> conn) noexcept;
 
   const std::string& connString() const { return connString_; }
@@ -61,10 +67,15 @@ private:
 
 // Declare the PgLease before the pqxx::work so the transaction is destroyed first, letting an
 // uncommitted `pqxx::work` roll itself back on a connection that is still borrowed.
+//
+// A lease borrowed while StatementLimits are open on the thread carries them: its connection waits for a lock at most
+// their lockWait and runs no statement past their deadline, the wait for a free connection included, and a borrow past
+// the deadline throws StatementDeadlinePassed with nothing sent. The connection goes back to the pool under the pool's
+// own settings, or closed when they cannot be put back, so no other borrower inherits the limits.
 class PgLease {
 public:
-  explicit PgLease(PgPool& pool) : pool_(pool), conn_(pool.acquire()) {}
-  ~PgLease() { pool_.release(std::move(conn_)); }
+  explicit PgLease(PgPool& pool);
+  ~PgLease();
 
   PgLease(const PgLease&) = delete;
   PgLease& operator=(const PgLease&) = delete;
@@ -75,6 +86,7 @@ public:
 private:
   PgPool& pool_;
   std::unique_ptr<pqxx::connection> conn_;
+  bool limited_ = false;
 };
 
 // Strip any `user:password@` credentials before a connection string reaches a log line.

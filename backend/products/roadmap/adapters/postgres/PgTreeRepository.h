@@ -29,6 +29,8 @@ public:
   static const char* guidedTreesAboveStatement();
   // The statement behind openedFrom, with the owner as $1 and the trees it starts from as $2, a JSON array of ids.
   static const char* openedFromStatement();
+  // The statement behind treesOpening, with the owner as $1 and the opened tree as $2.
+  static const char* treesOpeningStatement();
 
   std::optional<StoredTree> load(const TreeId& tree) override;
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override;
@@ -45,6 +47,7 @@ public:
   std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened,
                                           std::optional<std::chrono::milliseconds> budget = std::nullopt) override;
   std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree) override;
+  std::vector<TreeId> treesOpening(const UserId& owner, const TreeId& tree) override;
   void softDelete(const TreeId& tree) override;
   void rename(const TreeId& tree, const Lww<std::string>& title) override;
   void setVisibility(const TreeId& tree, Visibility visibility) override;

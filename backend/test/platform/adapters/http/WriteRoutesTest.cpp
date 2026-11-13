@@ -184,6 +184,10 @@ TEST(write_http_expected_refusals_never_create_issues_and_unsafe_codes_are_disca
   CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "Windmill One checkout is closed.", "checkout_closed"),
                            "platform.POST.v1.billing.checkout"), std::string("checkout_closed"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k502BadGateway, "private"), "gym.write"), std::string("failed"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "cascade-unavailable"),
+                            "roadmap.DELETE.v1.trees.id"), std::string("cascade-unavailable"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "cascade-unavailable"), "gym.write"),
+           std::string("failed"));
 }
 
 TEST(write_http_coach_routine_confirmation_refusals_log_their_codes) {

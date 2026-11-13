@@ -31,7 +31,13 @@ Json::Value toJson(const TreeDiagnostics& diagnostics);
 // stored. `treeLoopsOmitted`, `danglingPointersOmitted` and a loop's `pathOmitted` count what the domain's caps left
 // off, and are absent when that is nothing.
 Json::Value toJson(const TreeDiagnostics& diagnostics, const PointerDiagnostics& pointers);
-Json::Value toJson(const TreeSummary& summary);   // one registry row (GET /v1/trees)
+Json::Value toJson(const TreeSummary& summary);   // one registry row, as GET /v1/trees and MCP list_trees answer it
+// `openers` of a GET /v1/trees row, in the order given: one {treeId, steps} each.
+Json::Value toJson(const std::vector<OpeningSteps>& openers);
+// What became of the steps that opened a removed tree (Cascade), as DELETE /v1/trees/{id} and MCP delete_tree answer it:
+// `removed`, one {treeId, nodeIds} per tree whose steps were deleted and saved, and the ids in `unsaved` and
+// `incomplete`, each present only when it holds a tree.
+Json::Value toJson(const Cascade& cascade);
 // `opens` of GET /v1/trees/{id}, by node id; `loop` marks an opening whose tree is among `leadingBack`.
 Json::Value toJson(const std::map<NodeId, Opening>& openings, const std::set<TreeId>& leadingBack);
 // `guides` of GET /v1/trees/{id}/guides and of MCP get_tree, in the order given: one {treeId, title, text, yours} each.

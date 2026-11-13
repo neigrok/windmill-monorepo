@@ -109,6 +109,11 @@ struct TreeRepository {
   // above are `owner`'s standing trees whose present pointers lead down to it within kMaxLevelsAbove, never `tree`
   // itself. Nothing when `tree` does not stand or is not `owner`'s.
   virtual std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree) = 0;
+  // `owner`'s standing trees other than `tree` that hold a present node whose pointer names `tree`, in id order, ids
+  // compared as bytes; nothing when `tree` is not `owner`'s. Whether `tree` stands does not matter: a removal asks once
+  // its tree is gone. The read is keyed on the owner's own trees, so it does not grow with the pointers other accounts
+  // plant at `tree`.
+  virtual std::vector<TreeId> treesOpening(const UserId& owner, const TreeId& tree) = 0;
   // Retire a tree by stamping deleted_at; every read filters it out afterwards.
   virtual void softDelete(const TreeId& tree) = 0;
   // The closed-room seam only — a live room's title reaches the column through save(). Lands only

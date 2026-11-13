@@ -270,8 +270,9 @@ TEST(mcp_create_tree_answers_the_legend_it_planted_without_reading_the_tree_back
   FakeTokens tokens;
   RoomRegistry registry{trees, ops, bus};
   ProgressService progress{progressRepo, trees};
-  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
+  NodeEdits edits{registry, progress, bus, clock};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
   CompositeToolHost gate(std::vector<ToolModule>{{tools, ""}});
 
   const ToolResult created =
@@ -355,10 +356,66 @@ TEST(mcp_delete_tree_soft_deletes_and_drops_it_from_the_list) {
   Harness h;
   ToolResult deleted = h.call("delete_tree", Json::Value(Json::objectValue));
   CHECK_FALSE(deleted.isError);
-  CHECK(body(deleted)["deleted"].asBool());
+  CHECK_EQ(body(deleted), parse(R"({"deleted":true,"id":"t","removed":[]})"));
 
   const Json::Value listed = body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.actor));
   CHECK_EQ(listed["trees"].size(), 0u);
+}
+
+// The steps of the caller's other trees that open the tree go with it and the reply names them; a tree it could not edit
+// keeps its step and is named in `incomplete`; someone else's step that points at it is not theirs to take.
+TEST(mcp_delete_tree_takes_the_steps_of_your_other_trees_that_open_it_and_names_them) {
+  Harness h;
+  h.plant("t_a", h.caller, "", {"t"});
+  h.plant("t_b", h.caller, "", {"t", "t_a"});
+  h.plant("t_c", h.caller, "", {"t"});
+  h.plant("t_eve", uid("eve"), "", {"t"});
+  h.trees.latticeLoadsFailFor.insert("t_c");
+
+  CHECK_EQ(body(h.call("delete_tree", kNoArgs)),
+           parse(R"({"deleted":true,"id":"t","removed":[{"treeId":"t_a","nodeIds":["to-t"]},{"treeId":"t_b","nodeIds":["to-t"]}],
+                     "incomplete":["t_c"]})"));
+
+  Json::Value read = parse(R"({"fields":["id"]})");
+  read["treeId"] = "t_b";
+  CHECK_EQ(body(h.tools.callTool("get_tree", read, h.actor))["tree"]["nodes"], parse(R"([{"id":"to-t_a"}])"));
+  CHECK(LooseGraph(h.trees.byId["t_eve"].state).hasNode(NodeId{"to-t"}));
+  // MCP list_trees answers no openers; that row field is the web's.
+  const Json::Value listed = body(h.tools.callTool("list_trees", kNoArgs, h.actor));
+  CHECK_EQ(listed["trees"].size(), 3u);
+  for (const Json::Value& row : listed["trees"]) CHECK_FALSE(row.isMember("openers"));
+}
+
+// A removal whose openers cannot be read removes nothing and says so, under its own outcome; one whose save of a tree
+// fails names that tree unsaved.
+TEST(mcp_delete_tree_names_an_unsaved_tree_and_refuses_with_nothing_removed_when_its_openers_cannot_be_read) {
+  Harness h;
+  h.plant("t_a", h.caller, "", {"t"});
+  h.trees.openingReadsFail = true;
+  const ToolResult refused = h.call("delete_tree", kNoArgs);
+  CHECK(refused.isError);
+  CHECK_EQ(refused.outcomeCode, std::string("cascade-unavailable"));
+  CHECK_EQ(message(refused), std::string("delete_tree: nothing was removed: the steps in your other trees that open this "
+                                         "tree could not be read. Try again."));
+  CHECK_FALSE(h.trees.deletedIds.count("t"));
+
+  h.trees.openingReadsFail = false;
+  h.trees.duringSave = [](const TreeId& tree) {
+    if (tree == TreeId{"t_a"}) throw std::runtime_error("the write was refused");
+  };
+  CHECK_EQ(body(h.call("delete_tree", kNoArgs)), parse(R"({"deleted":true,"id":"t","removed":[],"unsaved":["t_a"]})"));
+}
+
+// delete_node whose tree's row goes away under its room before the save answers as for an absent tree: the room went
+// with the row, and nothing claims the delete was kept.
+TEST(mcp_delete_node_whose_trees_row_went_away_before_its_save_answers_no_such_tree) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}],"progress":[{"nodeId":"a","status":"complete"}]})")).isError);
+  h.progressRepo.duringBatchWrite = [&] { h.trees.deletedIds.insert("t"); };
+  const ToolResult deleted = h.call("delete_node", parse(R"({"nodeId":"a"})"));
+  CHECK(deleted.isError);
+  CHECK_EQ(message(deleted), std::string("delete_node: no such tree \"t\""));
+  CHECK_FALSE(h.registry.isOpen(TreeId{"t"}));
 }
 
 TEST(mcp_delete_tree_refuses_a_tree_you_dont_own_and_an_unknown_one) {
@@ -769,9 +826,10 @@ TEST(mcp_an_infrastructure_failure_answers_generically_and_never_leaks_its_detai
   FakeTokens tokens;
   RoomRegistry registry{trees, ops, bus};
   ProgressService progress{progressRepo, trees};
-  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+  NodeEdits edits{registry, progress, bus, clock};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
   const UserId caller = uid("agent");
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
 
   Json::Value args(Json::objectValue);
   args["treeId"] = "t";
@@ -2149,9 +2207,10 @@ TEST(mcp_import_subgraph_answers_the_landed_graft_when_clearing_the_tombstoned_m
   FakeTokens tokens;
   RoomRegistry registry{trees, ops, bus};
   ProgressService progress{progressRepo, trees};
-  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+  NodeEdits edits{registry, progress, bus, clock};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
   const UserId caller = uid("agent");
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
   trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, caller};
   auto call = [&](const char* name, Json::Value args) {
     args["treeId"] = "t";
@@ -6395,9 +6454,10 @@ TEST(mcp_an_import_whose_clear_of_marks_on_removed_nodes_throws_reports_it_once_
   FakeTokens tokens;
   RoomRegistry registry{trees, ops, bus};
   ProgressService progress{progressRepo, trees};
-  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
+  NodeEdits edits{registry, progress, bus, clock};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
   const ToolCaller caller{uid("agent"), ToolScope::everything()};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
   trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, caller.user};
   CHECK_FALSE(tools.callTool("import_subgraph", parse(R"({"treeId":"t","nodes":[{"id":"n","label":"N"},{"id":"m","label":"M"}],
                                                           "progress":[{"nodeId":"n","status":"complete"},{"nodeId":"m","status":"complete"}]})"), caller).isError);
@@ -6812,8 +6872,9 @@ TEST(mcp_a_mark_stamped_ahead_carries_no_other_write_ahead) {
 
     RoomRegistry restarted{h.trees, h.ops, h.bus};
     ProgressService restartedProgress{h.progressRepo, h.trees};
-    TreeRegistry restartedTrees{h.trees, h.progressRepo, h.tokens, Hlc{1, 0, "genesis"}, restarted, h.clock};
-    RoadmapTools tools{restarted, restartedProgress, h.clock, restartedTrees, h.bus, "https://app.example"};
+    NodeEdits restartedEdits{restarted, restartedProgress, h.bus, h.clock};
+    TreeRegistry restartedTrees{h.trees, h.progressRepo, h.tokens, Hlc{1, 0, "genesis"}, restarted, restartedEdits, h.clock};
+    RoadmapTools tools{restarted, restartedProgress, h.clock, restartedTrees, restartedEdits, "https://app.example"};
     CHECK_FALSE(tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"c","label":"C2"}]})"), h.actor).isError);
     stamps.push_back(lastFrame());
 

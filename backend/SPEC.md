@@ -23,10 +23,12 @@ rejected for structure. Validity is a read model, not a gate.
   non-empty `opens` a `create_node`, `update_nodes` or `import_subgraph` call carries must name a
   tree that stands and is the caller's (`TreeRepository::titlesOwnedBy`, one read for
   the whole call), or the call is refused with nothing written, in one sentence for a tree that is
-  not there and for someone else's. A node may open the tree it is in. A tree id is the read
-  capability of an unlisted tree, so only a caller who can write the tree receives the pointer:
-  `readerView` (`domain/Subgraph.h`) is what every other reader gets from `GET /v1/trees/{id}`
-  (`data` and `state`), the subscribe delta and a live frame — a document node without `opens`, a
+  not there and for someone else's. That read is made before the tree's strand is taken, so an edit
+  racing the target's removal can still set a pointer at it, which then points nowhere. A node may
+  open the tree it is in. A tree id is the read capability of an unlisted tree, so only a caller who
+  can write the tree receives the pointer: `readerView` (`domain/Subgraph.h`) is what every other
+  reader gets from `GET /v1/trees/{id}` (`data` and `state`), the subscribe delta and a live frame —
+  a document node without `opens`, a
   lattice entry with `opens` empty and `opensAt` unset, and no entry for a node the frame then says
   nothing about. MCP `get_tree`, `get_nodes` and `find_nodes` answer it when `fields` names `opens`,
   as `opens: {treeId, title, state}`, to a caller who can write the tree and only while the opened
@@ -510,6 +512,46 @@ the genesis stamp, byte-equal to a device-born tree's. Retrying an owned existin
 returns `409 id-taken`; the caller's deleted ID returns `409 id-retired`. A client must not retry
 that deleted tree under a fresh ID.
 
+`GET /v1/trees` answers the caller's own standing trees, newest activity first, each row `{id, title,
+total, done, createdAt, updatedAt, dominantKind?, openers}`. `openers` names the caller's other
+standing trees with a present step whose pointer names the row's tree, `[{treeId, steps}]` in tree id
+order, `steps` counting those steps; the tree's own pointers at itself go with it and are not among
+them, and it is `[]` when nothing opens the tree. It is what a removal would take with the tree, and
+it is judged from the trees the list already holds (`OpenedTrees::openersOf`), with no further read.
+MCP `list_trees` answers the same rows without `openers`, each with its `url`.
+
+`DELETE /v1/trees/{id}` removes a tree and, with it, the steps that open it in the caller's other
+trees: an opened tree goes as a node does. First, with no strand held, the caller's standing trees
+other than this one that hold a present step opening it are read in one statement
+(`TreeRepository::treesOpening`, keyed on the caller's own trees and reading each one's steps through
+`tree_nodes_pointers_idx`, so pointers other accounts plant at the tree are never read; for a tree
+that is not the caller's it answers none). When that read fails nothing is removed and the delete is
+refused `503` with code `cascade-unavailable`, which the caller may retry. Then, under the tree's
+strand, the read gate, the owner check, the soft-delete and the room's retirement run in that order;
+a step pointed at the tree between the read and the soft-delete is not among those read, and points
+nowhere. Once that strand is released, each tree read, in tree id order and under its own strand
+alone, has its steps that open the tree deleted as MCP `delete_node` with `prune: true` deletes nodes
+(`NodeEdits::deleteNodes`): one op under one seq, broadcast to its open pages, the edges they dangle
+removed with them and the caller's marks on them cleared, a closed tree opened for it and saved before
+the next. The read and every tree's statements wait for a lock at most a second, and all of it ends
+eight seconds after the read began (`StatementLimits`, `TreeRegistry::kCascadeLockWait` and
+`kCascadeTime`), so a reply never waits on a stuck tree for longer. It answers `200` with what became of
+those steps, per tree in tree id order:
+
+- `removed: [{treeId, nodeIds}]`, always present: the steps were deleted and saved.
+- `unsaved: [treeId]`, present only when it names a tree: the steps were deleted in the tree's room
+  and sent to its open pages, and the save then failed. They are gone now, and the room's next save,
+  which the next edit of that tree or the room's idle close makes, keeps them gone; should the server
+  restart before it, they come back, without the caller's marks the delete cleared.
+- `incomplete: [treeId]`, present only when it names a tree: nothing was deleted there — its room
+  could not be opened, the marks not cleared, or the eight seconds ran out before it was reached — and
+  the steps stay. Each points nowhere: it reads as an ordinary step, `get_diagnostics` lists it in
+  `danglingPointers`, and the caller can clear its pointer or delete it by hand.
+
+MCP `delete_tree` answers `{deleted, id, removed}`, with `unsaved` and `incomplete` on the same rule,
+and refuses under `cascade-unavailable` with nothing removed as the REST door does. Each is answered to
+the tree's owner alone and names only their trees; a refused delete edits nothing.
+
 `GET /v1/trees/{id}/progress` answers the owner's overlay, `{marks: [{node, status, at, markedAt,
 outOfOrder?}]}`, to anyone who can read the tree: the stored marks to a caller who can write it, whose
 view derives completion again from the tree's `opens`, and `readerView` of them (Model) to every other
@@ -586,7 +628,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | Table | Holds |
 | --- | --- |
 | `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
-| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open; `pos_x`, `pos_y` and `pos_hlc` are neither read nor written, and stay so an earlier image can run on this database |
+| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open, and whether they open a given one; `pos_x`, `pos_y` and `pos_hlc` are neither read nor written, and stay so an earlier image can run on this database |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
 | `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp; `cross_branch_exempt` and `cross_branch_exempt_hlc` are neither read nor written, and stay so an earlier image can run on this database |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |
@@ -602,9 +644,10 @@ Rules:
   rows are not yet backfilled. Nothing new depends on it.
 - `tree_ops` scales with edits, not nodes. `ActivityFeed` projects it, and `open()` replays its
   tail past the stored head to bring a room up to date.
-- Tree deletion writes `deleted_at` and retires its room. Reads exclude deleted rows and save never
-  clears the tombstone. Recreating the caller's own deleted ID returns `Creation::retired`, so a
-  client can stop replaying it instead of reminting an ID.
+- Tree deletion writes `deleted_at` and retires its room, then tombstones the steps of the owner's
+  other trees that open it (HTTP surface, `DELETE /v1/trees/{id}`). Reads exclude deleted rows and
+  save never clears the tombstone. Recreating the caller's own deleted ID returns
+  `Creation::retired`, so a client can stop replaying it instead of reminting an ID.
 - An erased account's trees are deleted outright, with their rows, ops and everyone's progress on
   them (`backend/AUTH.md`), and their rooms are retired once that commits. A save lands only on a row
   that stands: a room whose tree row is gone saves nothing and lands no op rows.

@@ -144,12 +144,12 @@ void WriteObservation::skip() {
 
 void WriteObservation::finish(std::string outcome) {
   if (finished_.exchange(true)) return;
-  completion_.outcome = failed_ ? "failed" : std::move(outcome);
+  completion_.outcome = failed_ ? failedOutcome_ : std::move(outcome);
   const double elapsed = std::chrono::duration<double, std::milli>(
       std::chrono::steady_clock::now() - started_).count();
   completion_.durationMs = std::round(elapsed * 100) / 100;
   completion_.severity = WriteSeverity::warn;
-  if (completion_.outcome == "failed") completion_.severity = WriteSeverity::error;
+  if (failed_ || completion_.outcome == "failed") completion_.severity = WriteSeverity::error;
   else if (completion_.outcome == "ok" || completion_.outcome == "unchanged")
     completion_.severity = state_->infoOwner == serial_ && !state_->infoEmitted.exchange(true) ? WriteSeverity::info : WriteSeverity::debug;
   std::function<void(const WriteCompletion&)> sink;
@@ -179,7 +179,7 @@ void WriteObservation::failure(const std::string& exceptionType) {
     FailureReporter* target = reporter_ ? reporter_ : reporter.get();
     try {
       if (target) target->reportWrite(completion_.operation, completion_.product, completion_.door,
-                                     "failed", completion_.requestId, exceptionType);
+                                     failedOutcome_, completion_.requestId, exceptionType);
     } catch (...) {}
   }
 }
@@ -189,6 +189,11 @@ void WriteObservation::reportUnknownFailure() { failure("UnknownException"); }
 void WriteObservation::fail(const std::exception& error) {
   reportFailure(error);
   finish("failed");
+}
+void WriteObservation::fail(const std::exception& error, std::string outcome) {
+  if (!finished_) failedOutcome_ = std::move(outcome);
+  reportFailure(error);
+  finish(failedOutcome_);
 }
 void WriteObservation::failUnknown() {
   reportUnknownFailure();

@@ -32,6 +32,7 @@ struct TreeSummary {
   std::uint64_t createdAt = 0;  // epoch ms; the planting time
   std::uint64_t updatedAt = 0;  // epoch ms; lastActiveAt — a structural edit or a progress mark
   TreeStats stats;
+  std::vector<OpeningSteps> openers;  // the owner's other trees whose steps open this one (OpenedTrees::openersOf)
 };
 
 struct LoadedTree {
@@ -46,7 +47,7 @@ struct LoadedTree {
 OpenedTrees openedAmong(const std::vector<LoadedTree>& loaded);
 
 // Ordered newest-forward-change first, ties broken by id. Each row's updatedAt is the freshest of
-// its two timestamps.
+// its two timestamps. Its openers come from `loaded` alone, so every tree in them stands and is the owner's.
 std::vector<TreeSummary> registrySummaries(const std::vector<LoadedTree>& loaded);
 
 }

@@ -85,6 +85,7 @@ add_library(windmill_platform
   platform/application/OAuthService.cpp
   platform/application/McpKeyService.cpp
   platform/application/WriteObservation.cpp
+  platform/application/StatementLimits.cpp
   platform/application/WorkerPool.cpp
   platform/application/sync/SyncCatalog.cpp
   platform/application/sync/Admission.cpp
@@ -118,6 +119,7 @@ add_library(windmill_roadmap
   products/roadmap/application/RoomRegistry.cpp
   products/roadmap/application/OwnerProgress.cpp
   products/roadmap/application/ProgressService.cpp
+  products/roadmap/application/NodeEdits.cpp
   products/roadmap/application/ActivityFeed.cpp
   products/roadmap/application/ForkService.cpp
   products/roadmap/application/ScopedToolHost.cpp
