@@ -27,9 +27,11 @@ on:
       - 'web/emails/README.md'
   workflow_dispatch:
 
+# Only a run that can reach the VPS takes the deploy lock: a waiting run in a group is cancelled by
+# the next one to wait, so a pull request sharing it would hold a deploy back or cancel it.
 concurrency:
-  group: deploy-vps
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('web-pr-{0}', github.ref) || 'deploy-vps' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:

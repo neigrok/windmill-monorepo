@@ -11,6 +11,12 @@ binary. A missing manifest or unreadable live hello stops deployment before migr
 promotion or container replacement. Any change to the minimum accepted schema needs the manual
 acknowledgement described below; ordinary backend batches cannot make that cutoff.
 
+Deploys, Web Deploy on `main` and the production backup run one at a time under the `deploy-vps` lock;
+a pull request's runs never take it. GitHub keeps one waiting run per lock and cancels it when another
+arrives. A newer backend deploy replaces an older one safely, but a waiting Web Deploy cancelled by a
+backend deploy is not replaced: after merges that land close together, check the Web Deploy run of
+the last merge that touched the web and re-run it if it was cancelled.
+
 ```
  push to main ─▶ test (ctest in builder image)
                    └▶ build-and-push (slim runtime image ─▶ ghcr.io)

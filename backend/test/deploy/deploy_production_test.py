@@ -594,7 +594,9 @@ class WebCompatibilityTest(unittest.TestCase):
             self.assertIn(entry, retained)
         promotion = text.split("      - name: Rsync dist to the VPS\n", 1)[1]
         self.assertIn("if: github.event_name != 'pull_request'", promotion)
-        self.assertIn("group: deploy-vps\n  cancel-in-progress: false", text)
+        self.assertIn("concurrency:\n"
+                      "  group: ${{ github.event_name == 'pull_request' && format('web-pr-{0}', github.ref) || 'deploy-vps' }}\n"
+                      "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n", text)
 
     def test_inconsistent_composed_metadata_or_an_empty_dist_cannot_be_retained_for_promotion(self):
         contract = self.web.parent / "packages/api-contract/sync"
@@ -638,6 +640,16 @@ class WebCompatibilityTest(unittest.TestCase):
 
 
 class DeployWorkflowTest(unittest.TestCase):
+    def test_the_deploy_lock_is_taken_under_the_condition_the_job_runs_under(self):
+        text = (SCRIPT.parents[2] / ".github/workflows/deploy.yml").read_text()
+        condition = lambda block: " ".join(block.split())
+        job = condition(text.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0])
+        lock = condition(text.split("  group: >-\n", 1)[1].split("  cancel-in-progress: false\n", 1)[0])
+        self.assertEqual(lock, "${{ (" + job + ") && 'deploy-vps' || format('deploy-skipped-{0}', github.run_id) }}")
+        backup = (SCRIPT.parents[2] / ".github/workflows/gym-backup.yml").read_text()
+        self.assertIn("on:\n  workflow_dispatch:\n\npermissions:", backup)
+        self.assertIn("group: deploy-vps\n  cancel-in-progress: false", backup)
+
     def test_workflow_requires_an_image_commit_reachable_from_main_and_uses_its_sentry_release(self):
         workflow = SCRIPT.parents[2] / ".github/workflows/deploy.yml"
         text = workflow.read_text()
