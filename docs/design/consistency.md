@@ -705,9 +705,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   phones; an empty tree reads *No steps · on this device* as the signed-in picker says *No steps*, where 28.44 has *No
   steps yet*. Attach waits while the chosen row is the tree the step opens already, as in the signed-in picker; 28.60
   and 28.67 draw it ready. 28.60's row carries Ask AI, which a device with nobody signed in does not offer and 28.43
-  does not draw. The boards behind (28.43, 28.45) draw neither the guide's Add guide entry nor the welcome-back recap a
-  visit can raise, both of which stand there as on any owner's tree, and draw a Coach rail from 744px and a Coach field
-  on phones, which the roadmap room does not show.
+  does not draw. The boards behind (28.43, 28.45) do not draw the guide's Add guide entry, which stands there as on
+  any owner's tree, and draw a Coach rail from 744px and a Coach field on phones, which the roadmap room does not show.
 - **Section 28 · signed out on the trees of this device, states with no board.** A device with no other tree: *You
   have no other trees yet.* with the closing line. A pasted address of a tree not on this device, a server tree's
   included: *No roadmap you can read is at that address.*, with no blocked row and no Fork tree. A device read that

@@ -14,7 +14,7 @@ import { peekBorn, takePlantNote } from '../persistence/ViewPrefs.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { SyncSession } from '../sync/SyncSession.js';
 import { refusalReporter } from '../sync/refusals.js';
-import { loadDeviceTree, readDeviceTrees } from '../sync/localTrees.js';
+import { loadDeviceMarks, loadDeviceTree, readDeviceTrees } from '../sync/localTrees.js';
 import { frontierTarget, opensOnFrontier, viewportInsets } from '../graph/viewport.js';
 import { track } from '../../../telemetry/beacon.js';
 
@@ -32,17 +32,19 @@ function savedPlace(place, seed) {
   return { camera, selection };
 }
 
-// What the server or this device holds for the confirmed owner. A tree neither has is an expected answer.
+// What the server or this device holds for the confirmed owner, with the marks its room shows: the server's, or those of
+// the device's record its session restores. A tree neither has is an expected answer.
 async function readRoadmap({ treeId, demo, signal }) {
   const repo = new HttpTreeRepository({ treeId });
   let seed = null;
   try { seed = await repo.loadTree({ signal }); } catch { /* fall through to the blob */ }
   if (signal.aborted) return null;
-  if (!seed) seed = await loadDeviceTree(treeId, { ownerResolved: true });
+  const fromDevice = !seed;
+  if (fromDevice) seed = await loadDeviceTree(treeId, { ownerResolved: true });
   if (!seed) return { unknown: true };
   const overlay = demo
     ? { completed: new Set(DEMO_STAGED_COMPLETED), completedAt: {}, server: false }
-    : await repo.loadProgress(seed, { signal });
+    : await (fromDevice ? loadDeviceMarks(seed) : repo.loadProgress(seed, { signal }));
   const serverActivity = await repo.loadActivity({ limit: 200, signal });
   return { seed, overlay, serverActivity };
 }

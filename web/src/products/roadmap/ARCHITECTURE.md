@@ -106,8 +106,10 @@ by graph structure, effective engine and, for caption-aware engines, labels.
 The repository judges its own reads, and `BoundaryFailure` says so to any catch above it. A tree whose pointers the server
 could not follow (`503 opens-unavailable`) reports `roadmap-opens-load` and falls to the device's copy like any failed read. A server tree whose marks can't be
 read reports `roadmap-progress-load` and stops the load, so the room shows the load error and Try again rather than a false
-count. A failed activity read reports `roadmap-activity-load` and costs only the feed. A device tree's reads report nothing and
-it keeps its seeds: the tree's own read has already told what the server is doing.
+count. A failed activity read reports `roadmap-activity-load` and costs only the feed. A device copy's activity read reports
+nothing, as the tree's own read has already told what the server is doing, and its marks are those of the record its
+session restores (`loadDeviceMarks`: the private lane's where it holds any, else the steps' seeds), so the room opens on
+the marks it keeps and announces none of them as new.
 
 After load, `SyncSession` owns the durable lattice. Local gestures and remote frames both produce a projection
 through `graph/useGraphStructure.js` and `scene.applyModel`, and the room's `projectionRef` holds that

@@ -134,9 +134,25 @@ export async function loadDeviceTree(treeId, { ownerResolved = false } = {}) {
   return seed;
 }
 
+// What a device copy's room shows done as it opens: the marks of the record its session restores, before the session
+// has started. A record that cannot be read leaves the steps' seeds, and the session's own restore reports it.
+export async function loadDeviceMarks(seed) {
+  const saved = await new SyncStore().load(seed.id).catch(() => null);
+  return marksShown(saved, seed.nodes);
+}
+
+// The marks a device copy's room shows, as its session projects them: those of its private lane where the lane holds
+// any, and its steps' seeds otherwise.
+function marksShown(saved, nodes) {
+  const marks = new ProgressLattice();
+  marks.join(saved?.progress);
+  if (marks.marks.size > 0) return marks.overlay();
+  return { completed: new Set(nodes.filter((step) => step.status === 'complete').map((step) => step.id)), completedAt: {} };
+}
+
 // The trees that live only on this device, for the person who holds it, by id: each one's title, its steps and the marks
-// its room shows, those of its private lane where the lane holds any and its steps' seeds otherwise, as a load reads
-// them. A record this browser cannot read reports `roadmap-device-opens-read` and the read throws, judged.
+// its room shows (`marksShown`). A record this browser cannot read reports `roadmap-device-opens-read` and the read
+// throws, judged.
 export async function readDeviceTrees({ registry = new LocalTreeRegistry(), store = new SyncStore(), report = reportRoadmapFailure } = {}) {
   const trees = new Map();
   try {
@@ -145,11 +161,8 @@ export async function readDeviceTrees({ registry = new LocalTreeRegistry(), stor
       if (!saved) continue;
       const lattice = new TreeLattice(row.id, row.title);
       lattice.join(saved.frame);
-      const marks = new ProgressLattice();
-      marks.join(saved.progress);
       const { title, nodes } = lattice.toTreeData();
-      const seeded = nodes.filter((step) => step.status === 'complete').map((step) => step.id);
-      trees.set(row.id, { title, nodes, completed: marks.marks.size > 0 ? marks.overlay().completed : new Set(seeded) });
+      trees.set(row.id, { title, nodes, completed: marksShown(saved, nodes).completed });
     }
   } catch (error) {
     report('roadmap-device-opens-read', error);

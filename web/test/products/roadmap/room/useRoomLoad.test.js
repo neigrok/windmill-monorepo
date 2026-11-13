@@ -126,7 +126,7 @@ test('a lapsed cold room loads its owned replica and presents the existing signe
   accountId = 'A';
   view.redraw();
   await settle();
-  assert.equal(loads.mock.callCount(), 1, 'the returning account retains the open replica for reconnect');
+  assert.equal(loads.mock.callCount(), 2, 'the returning account retains the open replica for reconnect: its tree and its marks were read once');
   assert.deepEqual(globalThis.roomLoadIssues, []);
 });
 
@@ -418,7 +418,7 @@ test('a load that read nothing of the trees its steps open leaves the return led
   assert.deepEqual(JSON.parse(room.storage.getItem('windmill:return:t_year')).completed, ['plan', 'sail']);
 });
 
-test('a tree that lives only on this device has its facts worked out on the device as the room opens, and again once a pointer changes', async (t) => {
+test('a tree that lives only on this device opens on the marks its record holds, has its facts worked out on the device as the room opens, and again once a pointer changes', async (t) => {
   globalThis.roomLoadIssues = [];
   t.after(() => { delete globalThis.roomLoadIssues; });
   const disk = new Map([['windmill:device-trees', JSON.stringify({
@@ -438,7 +438,8 @@ test('a tree that lives only on this device has its facts worked out on the devi
   }
   const step = (id, opens) => ({ id, createdAt: '1:0:device', label: id, labelAt: '1:0:device', ...(opens ? { opens, opensAt: '1:0:device' } : {}) });
   const records = {
-    t_draft: { frame: { nodes: [step('plan'), step('sail', 't_sail'), step('again', 't_draft'), step('far', 't_kept')], edges: [], kinds: [] } },
+    t_draft: { frame: { nodes: [step('plan'), step('sail', 't_sail'), step('again', 't_draft'), step('far', 't_kept')], edges: [], kinds: [] },
+      progress: { marks: [{ node: 'plan', status: 'complete', at: '2:0:device', markedAt: 2 }] } },
     t_sail: { frame: { nodes: [step('rig'), step('wind')], edges: [], kinds: [] }, progress: { marks: [{ node: 'rig', status: 'complete', at: '2:0:device' }] } },
     t_book: { frame: { nodes: [], edges: [], kinds: [] } },
     t_kept: { frame: { nodes: [step('kept')], edges: [], kinds: [] } },
@@ -454,6 +455,8 @@ test('a tree that lives only on this device has its facts worked out on the devi
   t.mock.method(SyncSession.prototype, 'close', () => {});
   const shown = [];
   const props = roomProps('t_draft');
+  const adopted = [];
+  props.progressActs.adoptLoaded = (overlay) => adopted.push(overlay);
   props.structure.onTreeChanged = (projection) => shown.push(projection);
   props.structure.layoutPositions = (tree) => new Map(tree.nodes.map((node) => [node.id, { x: 0, y: 0 }]));
   const facts = (projection) => Object.fromEntries(projection.nodes.flatMap((node) => (node.opening
@@ -464,9 +467,10 @@ test('a tree that lives only on this device has its facts worked out on the devi
 
   assert.deepEqual(facts(props.room.projectionRef.current), {
     sail: { face: 'open', title: 'Learn to sail', done: 1, total: 2, own: false },
-    again: { face: 'loop', title: 'A draft', done: 0, total: 4, own: true },
+    again: { face: 'loop', title: 'A draft', done: 1, total: 4, own: true },
     far: { face: 'missing', title: '', done: 0, total: 0, own: false },
   });
+  assert.deepEqual(adopted, [{ completed: new Set(['plan']), completedAt: { plan: 2 } }], 'the room opens on the marks its session restores');
   const reads = stored.mock.callCount();
   sessions.at(-1).treeHandler({ id: 't_draft', title: 'A draft', nodes: [step('plan'), step('sail', 't_sail'), step('again', 't_draft'), step('far', 't_kept')]
     .map(({ id, opens }) => ({ id, label: id, prerequisites: [], ...(opens ? { opens } : {}) })) });
@@ -481,6 +485,7 @@ test('a tree that lives only on this device has its facts worked out on the devi
     plan: { face: 'empty', title: 'The book', done: 0, total: 0, own: false },
     sail: { face: 'open', title: 'Learn to sail', done: 1, total: 2, own: false },
   });
-  assert.equal(urls.filter((url) => url.startsWith('/v1/trees/')).length, 3, 'the load\'s own tree, marks and activity, and nothing after');
+  assert.deepEqual(urls.filter((url) => url.startsWith('/v1/trees/')), ['/v1/trees/t_draft', '/v1/trees/t_draft/activity?since=0&limit=200'],
+    'the load\'s own tree and activity, its marks from the device, and nothing after');
   assert.deepEqual(globalThis.roomLoadIssues, []);
 });
