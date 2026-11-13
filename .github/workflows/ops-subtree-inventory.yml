@@ -1,6 +1,8 @@
 # By hand only: counts how the roadmap's pointers between trees meet one owned subtree per step
-# (backend/SPEC.md, Subtree inventory). The tool runs inside the live server container, reads the database
-# that container already knows, never writes, and prints counts alone; no credential leaves the host.
+# (backend/SPEC.md, Subtree inventory). The tool runs inside the live server container, reads the database that
+# container already knows and never writes. Where few accounts hold pointers its counts are one person's private
+# structure, and this repository's logs are public, so the counts are sealed on the runner to the owner's certificate,
+# .github/ops/inventory-recipient.pem, before anything is printed. Opening them is in backend/deploy/README.md.
 name: Ops · subtree inventory
 
 on:
@@ -18,7 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Count the roadmap's pointers in the live database
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/ops
+          persist-credentials: false
+      - name: Count the roadmap's pointers in the live database, sealed to the owner
         env:
           SSH_KEY: ${{ secrets.SSH_KEY }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -27,11 +33,14 @@ jobs:
         run: |
           set -euo pipefail
           key=$(mktemp)
-          trap 'rm -f "$key"' EXIT
+          sealed=$(mktemp)
+          trap 'rm -f "$key" "$sealed"' EXIT
           printf '%s\n' "$SSH_KEY" > "$key"
           chmod 600 "$key"
-          ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
-            "$SSH_USER@$SSH_HOST" 'bash -seuo pipefail' <<'REMOTE'
+          # The live server's counts, on stdout.
+          count() {
+            ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+              "$SSH_USER@$SSH_HOST" 'bash -seuo pipefail' <<'REMOTE'
           # The whole script is read before it runs, and nothing it starts can read the rest of it from stdin.
           main() {
             cd ~/windmill
@@ -47,3 +56,8 @@ jobs:
           }
           main < /dev/null
           REMOTE
+          }
+          # The counts go from ssh straight into the seal, so no plaintext reaches a file or the log, and the sealed block is
+          # printed only once the whole pipe has succeeded.
+          count | openssl smime -encrypt -aes256 -binary -outform PEM -out "$sealed" .github/ops/inventory-recipient.pem
+          cat "$sealed"

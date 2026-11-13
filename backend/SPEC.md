@@ -678,8 +678,8 @@ the stored trees meet a model in which each step owns at most one subtree and ea
 owning step. It reads `DATABASE_URL`, prints one JSON object of counts on stdout and nothing else, and
 never writes. A failure prints one fixed sentence on stderr and exits 2 without `DATABASE_URL`, 1
 otherwise. Its completion is `roadmap.subtree.inventory` (`OBSERVABILITY.md`). On production it runs
-inside the live server container through the **Ops · subtree inventory** workflow
-(`deploy/README.md`).
+inside the live server container through the **Ops · subtree inventory** workflow, which seals the
+counts to the owner's certificate before the public job log sees them (`deploy/README.md`).
 
 The read is `PgTreeRepository::eachAccountsTrees`: one statement over `trees` and the present pointers
 in `tree_nodes`, read through `tree_nodes_pointers_idx`, in a `READ ONLY` transaction. A cursor fetches

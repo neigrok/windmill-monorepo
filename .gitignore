@@ -44,6 +44,8 @@ uploads/
 !.env.*.example
 *.local
 *.pem
+# The subtree inventory's recipient certificate is public by nature; its private key is never here.
+!.github/ops/inventory-recipient.pem
 *.p8
 *.p12
 *.jks

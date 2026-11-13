@@ -327,10 +327,22 @@ joined session, and checks successful callbacks, receipt replay and durable relo
 ## Count the roadmap's pointers between trees
 
 Dispatch **Ops · subtree inventory** (`ops-subtree-inventory.yml`). It runs `windmill_subtree_inventory`
-inside the live `server` container, which already holds `DATABASE_URL`, and the job log shows the
-tool's one JSON object of counts ([SPEC.md](../SPEC.md#subtree-inventory)) and its completion line,
-nothing else. The tool never writes, and no credential leaves the host. Against an image that does
-not carry the tool, the job stops with a sentence saying so. From `~/windmill` on the host:
+inside the live `server` container, which already holds `DATABASE_URL`; the tool never writes, and no
+credential leaves the host. Its one JSON object of counts ([SPEC.md](../SPEC.md#subtree-inventory)) is
+private: this repository's logs are public, and where few accounts hold pointers the counts are one
+person's structure. So the runner seals them to `.github/ops/inventory-recipient.pem` as they arrive,
+and the job log shows the sealed block and the tool's completion line, nothing else. The certificate is
+public; its private key is the owner's and is kept out of the repository. On any failure the job prints
+no block and fails; against an image that does not carry the tool, it says so.
+
+To read the counts, save the block, from `-----BEGIN PKCS7-----` to `-----END PKCS7-----`, as
+`counts.pem`, and open it with the private key that belongs to the certificate:
+
+```sh
+openssl smime -decrypt -inform PEM -inkey <key> -in counts.pem
+```
+
+From `~/windmill` on the host, the tool prints the counts in the clear:
 
 ```sh
 docker compose exec -T server windmill_subtree_inventory
