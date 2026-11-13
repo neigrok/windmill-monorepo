@@ -43,7 +43,8 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
   auto room = std::make_unique<TreeRoom>(id, stored->title, stored->guide, stored->guideInherited,
                                          std::move(graph), std::move(legend), stored->head, stored->root,
-                                         std::move(access), stored->createdAt, bus_);
+                                         stored->parent, stored->depth, stored->subtrees, std::move(access),
+                                         stored->createdAt, bus_);
   // The document is a snapshot at stored->head. A row past that head is what an older ordering
   // could leave behind; replaying it reaches the true state and head, so new ops never collide on
   // seq. Under the current ordering (save, then land) the tail is empty.
@@ -64,7 +65,7 @@ std::optional<TreeAccess> RoomRegistry::accessOf(const TreeId& id) {
     if (it != rooms_.end()) {
       const TreeRoom& room = *it->second.room;
       if (!room.rootAccess()->stands()) return std::nullopt;
-      return TreeAccess{room.owner(), room.visibility(), room.root()};
+      return TreeAccess{room.owner(), room.visibility(), room.root(), room.parent()};
     }
   }
   const std::optional<TreeAccess> stored = repo_.loadAccess(id);  // the root's row, no lattice
@@ -74,7 +75,7 @@ std::optional<TreeAccess> RoomRegistry::accessOf(const TreeId& id) {
   const std::shared_ptr<RootAccess> live = liveRootAccess(stored->root);
   if (!live) return stored;
   if (!live->stands()) return std::nullopt;
-  return TreeAccess{live->owner(), live->visibility(), stored->root};
+  return TreeAccess{live->owner(), live->visibility(), stored->root, stored->parent};
 }
 
 void RoomRegistry::evict(const TreeId& id) {

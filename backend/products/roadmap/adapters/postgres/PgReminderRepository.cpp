@@ -2,6 +2,7 @@
 #include "platform/application/WriteObservation.h"
 
 #include "platform/adapters/postgres/PgPool.h"
+#include "products/roadmap/adapters/postgres/PgTreeRepository.h"
 #include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/TreeSummary.h"
@@ -53,8 +54,12 @@ constexpr std::string_view kAdvanceNextSlot =
     "                   )::timestamp + make_interval(mins => r.slot_minute)) AT TIME ZONE r.iana_tz "
     "FROM served s WHERE r.user_id = s.user_id";
 
-constexpr std::string_view kReadinessNodeColumns =
-    "node_id, label, label_hlc, color, color_hlc, opens, opens_hlc, created_hlc, deleted_hlc";
+// A step that owns a standing subtree opens it, whatever its pointer holds (SPEC.md, Model, Subtrees).
+constexpr std::string_view kReadinessNodes =
+    "SELECT n.node_id, n.label, n.label_hlc, n.color, n.color_hlc, coalesce(owned.id, n.opens) AS opens, n.opens_hlc, "
+    "n.created_hlc, n.deleted_hlc FROM tree_nodes n "
+    "LEFT JOIN trees owned ON owned.parent_tree = n.tree_id AND owned.parent_step = n.node_id AND owned.deleted_at IS NULL "
+    "WHERE n.tree_id = $1 AND n.present ORDER BY n.node_id";
 
 template <typename Row>
 NodeStateEntry nodeFromRow(const Row& row) {
@@ -110,9 +115,13 @@ std::vector<DueUser> PgReminderRepository::dueNow(std::uint64_t nowMs, int limit
 std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  // Every standing tree of theirs, subtrees named as every read names them; a subtree stands while its root does.
   pqxx::result trees = txn.exec_params(
-      "SELECT id, title, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
-      "FROM trees WHERE owner_id = $1::uuid AND deleted_at IS NULL ORDER BY id",
+      "SELECT t.id, " + treeNameColumn("t") + " AS title, (extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms "
+      "FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL "
+      "AND CASE WHEN t.parent_tree IS NULL THEN true "
+      "    ELSE EXISTS (SELECT 1 FROM trees root WHERE root.id = t.root_tree AND root.deleted_at IS NULL) END "
+      "ORDER BY t.id",
       user.str());
 
   // Joined through their own trees so it rides the node_progress primary key rather than scanning by user.
@@ -140,10 +149,7 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
     const TreeId id{row["id"].as<std::string>()};
 
     GraphState state;
-    pqxx::result nodes = txn.exec_params(
-        "SELECT " + std::string(kReadinessNodeColumns) +
-            " FROM tree_nodes WHERE tree_id = $1 AND present ORDER BY node_id",
-        id.str());
+    pqxx::result nodes = txn.exec_params(std::string(kReadinessNodes), id.str());
     for (const auto& node : nodes) state.nodes.push_back(nodeFromRow(node));
     pqxx::result edges = txn.exec_params(
         "SELECT from_id, to_id, added_hlc, removed_hlc FROM tree_edges WHERE tree_id = $1", id.str());

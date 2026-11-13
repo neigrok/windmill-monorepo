@@ -84,7 +84,7 @@ struct Harness {
   PresenceHub presence;
   NodeEdits edits{rooms, progress, bus, clock};
   TreeRegistry trees_registry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, rooms, edits, clock};
-  Collab collab{rooms, ops, bus, progress, auth, presence, clock, {"https://windmill.works"}};
+  Collab collab{rooms, trees, ops, bus, progress, auth, presence, clock, {"https://windmill.works"}};
 
   UserId signIn(const std::string& secret, const std::string& emailAddr) {
     User user = authRepo.createUser(Email{emailAddr}, "sam");

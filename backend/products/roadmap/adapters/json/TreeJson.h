@@ -6,6 +6,7 @@
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/OpenedTrees.h"
+#include "products/roadmap/domain/Subtree.h"
 #include "products/roadmap/domain/Tree.h"
 #include "products/roadmap/domain/TreeDiagnostics.h"
 #include "products/roadmap/domain/TreeSummary.h"
@@ -24,6 +25,12 @@ namespace wm {
 
 Json::Value nodeToJson(const NodeSpec& node);
 Json::Value toJson(const TreeData& data);
+// The document as a node read answers it: each step among `subtrees` carries `subtree: {id, done, total, state}`, `state`
+// "complete" or "open", or `{id}` alone where the owner's trees were not followed; no other step carries one.
+Json::Value toJson(const TreeData& data, const std::map<NodeId, OwnedSubtree>& subtrees);
+// Where a tree sits as GET /v1/trees/{id} answers it: `root`, `parent` as {tree, step} or null, `path` as
+// [{tree, step, title}], root first, and `depth`. Its name is the document's title.
+Json::Value toJson(const Place& place);
 Json::Value toJson(const Progress& progress);
 Json::Value toJson(const TreeDiagnostics& diagnostics);
 // A tree's diagnostics as its writer is answered them: the graph's, and beside them `treeLoops` as

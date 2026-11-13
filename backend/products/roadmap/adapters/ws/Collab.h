@@ -29,8 +29,9 @@ namespace wm {
 class Collab {
 public:
   // `allowedOrigins` is the same set main.cpp composes for CORS, so the socket and the JSON API
-  // can never disagree about who may talk to this server from a browser.
-  Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus,
+  // can never disagree about who may talk to this server from a browser. `trees` names a subtree in its subscribe
+  // answer, read through its parent.
+  Collab(RoomRegistry& registry, TreeRepository& trees, OpLog& ops, WsPresenceBus& bus,
          ProgressService& progress, AuthService& auth, PresenceHub& presence, Clock& clock,
          std::set<std::string> allowedOrigins);
   ~Collab() { stop(); }
@@ -60,6 +61,7 @@ private:
   bool overRate(const drogon::WebSocketConnectionPtr& conn);
 
   RoomRegistry& registry_;
+  TreeRepository& trees_;
   OpLog& ops_;
   WsPresenceBus& bus_;
   ProgressService& progress_;

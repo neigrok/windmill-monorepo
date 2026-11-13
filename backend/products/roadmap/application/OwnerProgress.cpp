@@ -20,59 +20,67 @@ ShownToReaders OwnerProgress::shownToReaders(const std::vector<OwnersTrees>& own
                                              const std::string& door) {
   // The follows come first: each owner's standing trees, or nothing for an owner left unread.
   ShownToReaders shown;
-  std::map<UserId, std::optional<OpenedTrees>> followed;
+  std::map<UserId, std::optional<OpenedTrees>> byOwner;
   const std::uint64_t started = clock_.nowMs();
   for (const OwnersTrees& owner : owners) {
     std::set<TreeId> opened;
     for (const auto& [tree, pointers] : owner.trees)
       for (const auto& [node, pointer] : pointers) opened.insert(pointer.tree);
-    std::optional<OpenedTrees>& standing = followed[owner.owner];
+    std::optional<OpenedTrees>& standing = byOwner[owner.owner];
     if (opened.empty()) {
       // No pointer among this owner's trees: nothing is followed, and every row is the stored one.
       standing.emplace(std::map<TreeId, OpenedTree>{});
       continue;
     }
-    if (coolingOff(owner.owner)) {
-      ++shown.tally.coolingOff;
-      continue;
-    }
-    const std::uint64_t spent = clock_.nowMs() - started;
-    if (spent >= static_cast<std::uint64_t>(cap.count())) {
-      ++shown.tally.pastCap;
-      continue;
-    }
-    const std::chrono::milliseconds budget =
-        std::min(kReaderFollowBudget, cap - std::chrono::milliseconds{static_cast<std::int64_t>(spent)});
-    // Begun before the read borrows its connection, so its duration counts the wait for one.
-    WriteObservation observation{"roadmap.progress.follow", "roadmap", door};
-    try {
-      standing.emplace(trees_.openedFrom(owner.owner, opened, budget));
-      ++shown.tally.followed;
-      observation.skip();  // a follow that answers writes nothing, as the tree read's own does
-      endCoolOff(owner.owner, door);
-    } catch (const std::bad_alloc&) {
-      throw;
-    } catch (const FollowTimedOut&) {
-      // Cut short by the request's cap rather than its own budget, the owner is not to blame.
-      if (budget < kReaderFollowBudget) {
-        ++shown.tally.pastCap;
-        observation.skip();
-        continue;
-      }
-      ++shown.tally.timedOut;
-      if (enterCoolOff(owner.owner)) observation.finish("timeout");
-      else observation.skip();
-    } catch (const std::exception& failure) {
-      ++shown.tally.failed;
-      if (enterCoolOff(owner.owner)) observation.fail(failure);
-      else observation.skip();
-    }
+    const auto spent = std::chrono::milliseconds{static_cast<std::int64_t>(clock_.nowMs() - started)};
+    standing = followed(owner.owner, opened, std::max(cap - spent, std::chrono::milliseconds{0}), door, shown.tally);
   }
 
   for (const OwnersTrees& owner : owners)
     for (const auto& [tree, pointers] : owner.trees)
-      shown.progress.emplace(tree, readerView(marks_.load(tree, owner.owner), pointers, followed.at(owner.owner)));
+      shown.progress.emplace(tree, readerView(marks_.load(tree, owner.owner), pointers, byOwner.at(owner.owner)));
   return shown;
+}
+
+std::optional<OpenedTrees> OwnerProgress::followed(const UserId& owner, const std::set<TreeId>& opened,
+                                                   std::chrono::milliseconds budget, const std::string& door,
+                                                   FollowTally& tally) {
+  if (coolingOff(owner)) {
+    ++tally.coolingOff;
+    return std::nullopt;
+  }
+  // The request's time for follows ran out before this one.
+  if (budget.count() <= 0) {
+    ++tally.pastCap;
+    return std::nullopt;
+  }
+  budget = std::min(kReaderFollowBudget, budget);
+  // Begun before the read borrows its connection, so its duration counts the wait for one.
+  WriteObservation observation{"roadmap.progress.follow", "roadmap", door};
+  try {
+    OpenedTrees standing(trees_.openedFrom(owner, opened, budget));
+    ++tally.followed;
+    observation.skip();  // a follow that answers writes nothing, as the tree read's own does
+    endCoolOff(owner, door);
+    return standing;
+  } catch (const std::bad_alloc&) {
+    throw;
+  } catch (const FollowTimedOut&) {
+    // Cut short by the request's cap rather than its own budget, the owner is not to blame.
+    if (budget < kReaderFollowBudget) {
+      ++tally.pastCap;
+      observation.skip();
+      return std::nullopt;
+    }
+    ++tally.timedOut;
+    if (enterCoolOff(owner)) observation.finish("timeout");
+    else observation.skip();
+  } catch (const std::exception& failure) {
+    ++tally.failed;
+    if (enterCoolOff(owner)) observation.fail(failure);
+    else observation.skip();
+  }
+  return std::nullopt;
 }
 
 bool OwnerProgress::coolingOff(const UserId& owner) {

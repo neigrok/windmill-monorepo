@@ -12,6 +12,8 @@
 #include <cstdint>
 #include <map>
 #include <mutex>
+#include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -59,12 +61,20 @@ public:
   Progress stored(const TreeId& tree, const UserId& owner);
 
   // `owners` in the order their follows are tried. An owner whose trees hold a pointer is followed in one read within
-  // kReaderFollowBudget, and the follows of the request take `cap` in all: an owner the cap leaves unreached is shown
-  // unread for this request alone. An owner whose follow fails or runs past its whole budget enters a cool-off of
-  // kFollowCoolOff, written as one `roadmap.progress.follow` line at `door`, during which every door shows them unread
-  // at once; the next follow that answers ends it, with one line counting the replies it degraded.
+  // kReaderFollowBudget (followed), and the follows of the request take `cap` in all: an owner the cap leaves unreached
+  // is shown unread for this request alone.
   ShownToReaders shownToReaders(const std::vector<OwnersTrees>& owners, std::chrono::milliseconds cap,
                                 const std::string& door);
+
+  // `owner`'s standing trees that `opened` lead to, under their marks, as a caller who cannot write them is shown them:
+  // one read (TreeRepository::openedFrom) within `budget`, at most kReaderFollowBudget, counted in `tally`. Nothing —
+  // the owner shown unread — while the owner cools off, with no budget left, or when the read fails or runs past
+  // kReaderFollowBudget: that enters a cool-off of
+  // kFollowCoolOff, written as one `roadmap.progress.follow` line at `door`, during which every door shows them unread
+  // at once; the next follow that answers ends it, with one line counting the replies it degraded. A read cut short by
+  // a budget below kReaderFollowBudget is the request's to blame, not the owner's: counted past the cap, no cool-off.
+  std::optional<OpenedTrees> followed(const UserId& owner, const std::set<TreeId>& opened,
+                                      std::chrono::milliseconds budget, const std::string& door, FollowTally& tally);
 
 private:
   struct CoolOff {

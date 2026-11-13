@@ -1045,7 +1045,8 @@ TEST(create_subtree_stores_an_empty_child_under_the_step_and_a_retry_answers_it_
   CHECK(s.bus.subgraphBroadcasts.empty());
   CHECK(s.rooms.open(tid("t_p"))->pendingOps().empty());
   // Its own visibility column holds private, and it is read by its root's.
-  CHECK(s.rooms.accessOf(child.id) == (std::optional<TreeAccess>(TreeAccess{me, Visibility::unlisted, tid("t_p")})));
+  CHECK(s.rooms.accessOf(child.id) ==
+        (std::optional<TreeAccess>(TreeAccess{me, Visibility::unlisted, tid("t_p"), OwningStep{tid("t_p"), nid("rig")}})));
 
   // The reply was lost: the same call, with the same proposed id or none, answers the same child and writes nothing.
   CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1")) ==

@@ -49,6 +49,7 @@ std::vector<TreeSummary> registrySummaries(const std::vector<LoadedTree>& loaded
   std::vector<TreeSummary> summaries;
   summaries.reserve(loaded.size());
   for (const LoadedTree& tree : loaded) {
+    if (tree.parent) continue;
     TreeSummary summary;
     summary.id = tree.data.id;
     summary.title = tree.data.title;

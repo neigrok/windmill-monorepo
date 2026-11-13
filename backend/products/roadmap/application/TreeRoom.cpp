@@ -10,11 +10,13 @@ TreeRoom::~TreeRoom() {
 }
 
 TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bool guideInherited, LooseGraph graph,
-                   Legend legend, Seq head, TreeId root, std::shared_ptr<RootAccess> access,
-                   std::uint64_t createdAt, PresenceBus& bus)
+                   Legend legend, Seq head, TreeId root, std::optional<OwningStep> parent, int depth,
+                   std::map<NodeId, TreeId> subtrees, std::shared_ptr<RootAccess> access, std::uint64_t createdAt,
+                   PresenceBus& bus)
     : id_(std::move(id)), title_(std::move(title)), guide_(std::move(guide)), guideInherited_(guideInherited),
       graph_(std::move(graph)), legend_(std::move(legend)), head_(head), root_(std::move(root)),
-      access_(std::move(access)), createdAt_(createdAt), bus_(bus), clock_(std::string{kServerActor}) {
+      parent_(std::move(parent)), depth_(depth), subtrees_(std::move(subtrees)), access_(std::move(access)),
+      createdAt_(createdAt), bus_(bus), clock_(std::string{kServerActor}) {
   // Fold every stamp the loaded document already carries — the graph frontier and the title and guide
   // registers — so a fresh mint after restart is always ahead of anything persisted.
   for (const auto& [actor, mark] : frontier(graph_.exportState(), legend_.exportState()).marks) {
@@ -129,6 +131,7 @@ std::optional<std::string> TreeRoom::validate(const Command& command) const {
 
 void TreeRoom::appendSubtree(const NodeId& step, const Subtree& subtree) {
   ++head_;
+  subtrees_[step] = subtree.id;
   bus_.broadcastSubtree(id_, head_, step, subtree);
 }
 
@@ -177,11 +180,32 @@ TreeDiagnostics TreeRoom::diagnose() const {
   return TreeDiagnostics::assess(graph_, legend_);
 }
 
+std::map<NodeId, TreeId> TreeRoom::subtrees() const {
+  std::map<NodeId, TreeId> owned;
+  for (const auto& [step, subtree] : subtrees_)
+    if (graph_.hasNode(step)) owned.emplace(step, subtree);
+  return owned;
+}
+
+std::map<NodeId, TreeId> TreeRoom::pointers() const {
+  std::map<NodeId, TreeId> opened = graph_.pointers();
+  for (const auto& [step, subtree] : subtrees()) opened[step] = subtree;
+  return opened;
+}
+
+std::map<NodeId, StampedPointer> TreeRoom::stampedPointers() const {
+  std::map<NodeId, StampedPointer> opened = graph_.stampedPointers();
+  for (const auto& [step, subtree] : subtrees()) opened[step] = StampedPointer{subtree, Hlc{}};
+  return opened;
+}
+
 TreeData TreeRoom::snapshot() const {
   ++snapshots_;
   TreeData data = graph_.toTreeData(id_, title_.value);
   data.guide = guide_.value;
   data.kinds = legend_.kinds();
+  for (NodeSpec& node : data.nodes)
+    if (const auto owned = subtrees_.find(node.id); owned != subtrees_.end()) node.opens = owned->second;
   return data;
 }
 
@@ -207,6 +231,11 @@ std::vector<NodeId> TreeRoom::prerequisitesOf(const NodeId& node) const {
 
 bool TreeRoom::hasNode(const NodeId& node) const {
   return graph_.hasNode(node);
+}
+
+std::optional<std::string> TreeRoom::labelOf(const NodeId& node) const {
+  if (!graph_.hasNode(node)) return std::nullopt;
+  return graph_.exportNode(node)->label;
 }
 
 bool TreeRoom::hasEdge(const NodeId& from, const NodeId& to) const {

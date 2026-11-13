@@ -13,7 +13,7 @@ using namespace wm::fake;
 namespace {
 
 TreeRoom makeRoom(FakeBus& bus) {
-  return TreeRoom(tid(), {"Title", {}}, {}, false, LooseGraph{}, Legend{}, 0, tid(),
+  return TreeRoom(tid(), {"Title", {}}, {}, false, LooseGraph{}, Legend{}, 0, tid(), std::nullopt, 0, {},
                   std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, bus);
 }
 
@@ -62,7 +62,7 @@ TEST(room_next_stamp_dominates_the_loaded_document_state) {
   Hlc old{8000, 2, "old"};
   loaded.createNode(nid("seed"), "S", "i", NodeColor::sky, old);
   FakeBus bus;
-  TreeRoom room(tid(), {"T", {}}, {}, false, std::move(loaded), Legend{}, 0, tid(),
+  TreeRoom room(tid(), {"T", {}}, {}, false, std::move(loaded), Legend{}, 0, tid(), std::nullopt, 0, {},
                 std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, bus);
 
   Hlc next = room.nextStamp(10);  // wall clock behind the persisted stamp
@@ -668,7 +668,7 @@ TEST(room_replays_a_batch_op_past_the_stored_head_whole) {
   live.landPendingOps(log);
 
   FakeBus quiet;
-  TreeRoom reopened(tid(), {"Title", {}}, {}, false, persisted, persistedLegend, 3, tid(),
+  TreeRoom reopened(tid(), {"Title", {}}, {}, false, persisted, persistedLegend, 3, tid(), std::nullopt, 0, {},
                     std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, quiet);
   CHECK(reopened.hasNode(nid("b")));
   for (const AppliedOp& op : log.since(tid(), 3)) reopened.replay(op);
@@ -705,7 +705,7 @@ TEST(room_replays_a_round_trip_rehue_to_the_room_it_left) {
   CHECK(live.snapshot().nodes[0].color == NodeColor::plum);
 
   FakeBus quiet;
-  TreeRoom reopened(tid(), {"Title", {}}, {}, false, persisted, persistedLegend, 2, tid(),
+  TreeRoom reopened(tid(), {"Title", {}}, {}, false, persisted, persistedLegend, 2, tid(), std::nullopt, 0, {},
                     std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, quiet);
   for (const AppliedOp& op : log.since(tid(), 2)) reopened.replay(op);
   CHECK(reopened.snapshot().nodes[0].color == NodeColor::plum);
@@ -731,9 +731,9 @@ TEST(room_hands_its_pointers_to_a_caller_who_can_write_the_tree_and_to_nobody_el
   graph.createNode(nid("idea"), "Idea", "", NodeColor::sky, at(1));
   graph.createNode(nid("plain"), "Plain", "", NodeColor::sky, at(2));
   graph.setOpens(nid("idea"), tid("t_sub"), at(3));
-  const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(),
+  const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), std::nullopt, 0, {},
                        std::make_shared<RootAccess>(uid("owner"), Visibility::public_), 0, bus);
-  const TreeRoom nobodys(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(),
+  const TreeRoom nobodys(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), std::nullopt, 0, {},
                          std::make_shared<RootAccess>(std::nullopt, Visibility::public_), 0, bus);
 
   CHECK(owned.pointersFor(uid("owner")) == (std::map<NodeId, TreeId>{{nid("idea"), tid("t_sub")}}));
@@ -741,4 +741,35 @@ TEST(room_hands_its_pointers_to_a_caller_who_can_write_the_tree_and_to_nobody_el
   CHECK(owned.pointersFor(std::nullopt) == (std::map<NodeId, TreeId>{}));
   CHECK(nobodys.pointersFor(uid("owner")) == (std::map<NodeId, TreeId>{}));
   CHECK_EQ(owned.snapshots(), std::size_t{0});
+}
+
+// A step that owns a subtree opens it in every projection the room makes, whatever its pointer holds, and under no stamp;
+// a step deleted from the tree owns nothing the room tells, and a subtree created under a step is owned from its seq on.
+TEST(room_reads_the_subtree_a_step_owns_as_the_tree_it_opens_whatever_its_pointer_holds) {
+  FakeBus bus;
+  LooseGraph graph;
+  graph.createNode(nid("sail"), "Sail", "", NodeColor::sky, at(1));
+  graph.createNode(nid("rig"), "Rig", "", NodeColor::sky, at(2));
+  graph.createNode(nid("gone"), "Gone", "", NodeColor::sky, at(3));
+  graph.createNode(nid("idea"), "Idea", "", NodeColor::sky, at(4));
+  graph.setOpens(nid("sail"), tid("t_old"), at(5));
+  graph.setOpens(nid("idea"), tid("t_other"), at(6));
+  graph.deleteNode(nid("gone"), at(7));
+  TreeRoom room(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), std::nullopt, 0,
+                {{nid("sail"), tid("t_s")}, {nid("gone"), tid("t_g")}},
+                std::make_shared<RootAccess>(uid("owner"), Visibility::public_), 0, bus);
+
+  CHECK(room.subtrees() == (std::map<NodeId, TreeId>{{nid("sail"), tid("t_s")}}));
+  CHECK(room.pointers() == (std::map<NodeId, TreeId>{{nid("idea"), tid("t_other")}, {nid("sail"), tid("t_s")}}));
+  CHECK(room.stampedPointers() == (std::map<NodeId, StampedPointer>{{nid("idea"), {tid("t_other"), at(6)}},
+                                                                    {nid("sail"), {tid("t_s"), Hlc{}}}}));
+  CHECK(room.pointersFor(uid("owner")) == room.pointers());
+  std::map<NodeId, TreeId> opened;
+  for (const NodeSpec& node : room.snapshot().nodes) opened.emplace(node.id, node.opens);
+  CHECK(opened == (std::map<NodeId, TreeId>{{nid("idea"), tid("t_other")}, {nid("rig"), TreeId{}}, {nid("sail"), tid("t_s")}}));
+
+  room.appendSubtree(nid("rig"), Subtree{tid("t_r"), tid(), OwningStep{tid(), nid("rig")}, 1, 0});
+  CHECK_EQ(room.head(), Seq{1});
+  CHECK(room.subtrees() == (std::map<NodeId, TreeId>{{nid("rig"), tid("t_r")}, {nid("sail"), tid("t_s")}}));
+  CHECK(room.pointers().at(nid("rig")) == tid("t_r"));
 }

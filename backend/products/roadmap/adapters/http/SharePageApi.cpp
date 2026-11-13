@@ -81,6 +81,7 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
 
   const std::optional<UserId> caller = callerOf(req, *auth_);
   bool readable = false;
+  bool subtree = false;
   std::string title;
   std::size_t steps = 0;
   Visibility visibility = Visibility::private_;
@@ -94,6 +95,7 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
         TreeRoom* room = registry_->open(TreeId{id});
         if (room) {
           readable = true;
+          subtree = room->parent().has_value();
           title = room->title().value;
           steps = room->snapshot().nodes.size();
           visibility = room->visibility();
@@ -104,7 +106,17 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
     }
   }
 
-  // Taken OUTSIDE the room strand, and only for a readable tree.
+  // Taken OUTSIDE the room strand, and only for a readable tree. A subtree is named by its owning step's label, read
+  // through its parent; a tree that went away meanwhile, or a read that failed, leaves the shell verbatim.
+  if (readable && subtree) {
+    try {
+      const std::optional<Place> place = trees_->placeOf(TreeId{id});
+      readable = place.has_value();
+      if (place) title = place->title;
+    } catch (const std::exception&) {
+      readable = false;
+    }
+  }
   const ForkLineage lineage = readable ? trees_->loadForkLineage(TreeId{id}) : ForkLineage{};
   const bool hasVideo = readable && videos_->has(id);
   callback(htmlPage(readable ? renderShell(shell, appOrigin_, title, steps, visibility, id, lineage, hasVideo) : shell));

@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <string>
+#include <string_view>
 
 namespace wm {
 
@@ -18,6 +19,11 @@ namespace wm {
 // Only an owner writes a tree, so no op of the account's lives in a tree it does not own. The trees'
 // ids come back to `committed`, which the composition points at the live rooms.
 AccountErasure roadmapAccountErasure();
+
+// A tree's name as every statement reads it (SPEC.md, Model, Subtrees), for the `trees` row the alias `tree` names, or a
+// row carrying its title, parent_tree and parent_step: a root's own title, a subtree's owning step's label, which is read
+// off that step's row through tree_nodes_pkey.
+std::string treeNameColumn(std::string_view tree);
 
 // Stores a tree's lattice as per-entry rows (tree_nodes / tree_edges / tree_kinds), so a save
 // upserts only the slice it is given. Each call borrows a connection from the shared pool for
@@ -28,9 +34,9 @@ public:
 
   // What guidedTreesAbove runs, over (owner, tree, levels, guides kept): named so its Postgres test can ask the plan
   // what it reads.
-  static const char* guidedTreesAboveStatement();
+  static std::string guidedTreesAboveStatement();
   // The statement behind openedFrom, with the owner as $1 and the trees it starts from as $2, a JSON array of ids.
-  static const char* openedFromStatement();
+  static std::string openedFromStatement();
   // The statement behind treesOpening, with the owner as $1 and the opened tree as $2.
   static const char* treesOpeningStatement();
   // The statement behind eachAccountsTrees: every account's standing trees, each with the trees its present steps open
@@ -44,6 +50,7 @@ public:
 
   std::optional<StoredTree> load(const TreeId& tree) override;
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override;
+  std::optional<Place> placeOf(const TreeId& tree) override;
   std::optional<UserId> retiredOwner(const TreeId& tree) override;
   ForkLineage loadForkLineage(const TreeId& tree) override;
   bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,

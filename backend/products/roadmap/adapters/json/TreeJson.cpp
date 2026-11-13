@@ -85,6 +85,41 @@ Json::Value toJson(const TreeData& data) {
   return root;
 }
 
+Json::Value toJson(const TreeData& data, const std::map<NodeId, OwnedSubtree>& subtrees) {
+  Json::Value root = toJson(data);
+  for (Json::ArrayIndex i = 0; i < data.nodes.size(); ++i) {
+    const auto owned = subtrees.find(data.nodes[i].id);
+    if (owned == subtrees.end()) continue;
+    Json::Value& subtree = root["nodes"][i]["subtree"];
+    subtree["id"] = owned->second.id.str();
+    if (!owned->second.opening) continue;
+    subtree["done"] = owned->second.opening->done;
+    subtree["total"] = owned->second.opening->total;
+    subtree["state"] = owned->second.opening->complete ? "complete" : "open";
+  }
+  return root;
+}
+
+Json::Value toJson(const Place& place) {
+  Json::Value where(Json::objectValue);
+  where["root"] = place.root.str();
+  where["parent"] = Json::Value(Json::nullValue);
+  if (place.parent) {
+    where["parent"]["tree"] = place.parent->tree.str();
+    where["parent"]["step"] = place.parent->step.str();
+  }
+  where["path"] = Json::Value(Json::arrayValue);
+  for (const PathStep& step : place.path) {
+    Json::Value entry(Json::objectValue);
+    entry["tree"] = step.tree.str();
+    entry["step"] = step.step.str();
+    entry["title"] = step.title;
+    where["path"].append(entry);
+  }
+  where["depth"] = place.depth;
+  return where;
+}
+
 Json::Value toJson(const TreeSummary& summary) {
   Json::Value row(Json::objectValue);
   row["id"] = summary.id.str();

@@ -17,6 +17,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -53,9 +54,11 @@ public:
   // The HLC actor stamped on every server-minted write; authorship itself lives in AppliedOp.actor.
   static constexpr std::string_view kServerActor{"srv"};
 
-  // `access` is the root's, shared by every live room of its trees; `root` names it, and is `id` for a root.
+  // `access` is the root's, shared by every live room of its trees; `root` names it, and is `id` for a root. `parent` is
+  // the step a subtree hangs from, none for a root, and `subtrees` the standing subtree each step owns, by step.
   TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bool guideInherited, LooseGraph graph,
-           Legend legend, Seq head, TreeId root, std::shared_ptr<RootAccess> access, std::uint64_t createdAt,
+           Legend legend, Seq head, TreeId root, std::optional<OwningStep> parent, int depth,
+           std::map<NodeId, TreeId> subtrees, std::shared_ptr<RootAccess> access, std::uint64_t createdAt,
            PresenceBus& bus);
 
   // Dedupe on the frame's id, fold its stamps into the clock, join graph + legend + title + guide,
@@ -140,8 +143,8 @@ public:
   // A write whose commit's answer was lost may have stored a later head than this room holds: the room takes it, so its
   // next seq is past every seq stored.
   void catchUp(Seq storedHead) { head_ = std::max(head_, storedHead); }
-  // A subtree created under `step` and stored with this tree's head at nextSeq(): the stream takes that seq and every
-  // subscriber is told. It changes no register, dirties nothing and queues no op row.
+  // A subtree created under `step` and stored with this tree's head at nextSeq(): the stream takes that seq, the step owns
+  // it from here on and every subscriber is told. It changes no register, dirties nothing and queues no op row.
   void appendSubtree(const NodeId& step, const Subtree& subtree);
 
   // Advances head + dedup set; does not re-persist or re-broadcast.
@@ -160,9 +163,14 @@ public:
   ~TreeRoom();
 
   TreeDiagnostics diagnose() const;
-  // The tree each present node opens (LooseGraph::pointers), without the copy of every node snapshot() makes.
-  std::map<NodeId, TreeId> pointers() const { return graph_.pointers(); }
-  std::map<NodeId, StampedPointer> stampedPointers() const { return graph_.stampedPointers(); }
+  // The tree each present step opens, without the copy of every node snapshot() makes: the subtree it owns, whatever its
+  // pointer holds (SPEC.md, Model, Subtrees), else the tree its pointer names (LooseGraph::pointers).
+  std::map<NodeId, TreeId> pointers() const;
+  // The same, each with the stamp its pointer was set under; a subtree a step owns is opened under none.
+  std::map<NodeId, StampedPointer> stampedPointers() const;
+  // The subtree each present step owns, by step.
+  std::map<NodeId, TreeId> subtrees() const;
+  // The document: each present node opens the tree pointers() says it does.
   TreeData snapshot() const;
   // How many times snapshot() copied the whole tree out of this room: what a cost test reads.
   std::size_t snapshots() const { return snapshots_; }
@@ -178,12 +186,14 @@ public:
   std::pair<GraphState, LegendState> dirtyState() const;
   void markClean();
 
-  // The tree's pointers as `caller` may be told of them: all of them for a caller who can write the
-  // tree, none for anyone else, who is never told a node opens a tree.
+  // The tree each step opens (pointers()) as `caller` may be told of it: all of them for a caller who can write the
+  // tree, none for anyone else, whose marks are their own.
   std::map<NodeId, TreeId> pointersFor(const std::optional<UserId>& caller) const;
   // The node's live prerequisites (incoming DAG edges); empty if the node is absent.
   std::vector<NodeId> prerequisitesOf(const NodeId& node) const;
   bool hasNode(const NodeId& node) const;  // present: created, not tombstoned
+  // A present node's label; none for a node the tree does not hold.
+  std::optional<std::string> labelOf(const NodeId& node) const;
   bool hasEdge(const NodeId& from, const NodeId& to) const;
   // Present edges with either endpoint among `nodes`: what deleting them would leave dangling.
   std::vector<Edge> edgesTouching(const std::vector<NodeId>& nodes) const;
@@ -201,6 +211,9 @@ public:
   const std::optional<UserId>& owner() const { return access_->owner(); }
   Visibility visibility() const { return access_->visibility(); }
   const TreeId& root() const { return root_; }
+  // Where the tree hangs: the step that owns it, none for a root, and how deep it sits.
+  const std::optional<OwningStep>& parent() const { return parent_; }
+  int depth() const { return depth_; }
   const std::shared_ptr<RootAccess>& rootAccess() const { return access_; }
   // The read gate a door asks of a live room: the root stands and `caller` may read it.
   bool readableBy(const std::optional<UserId>& caller) const {
@@ -218,6 +231,9 @@ private:
   Legend legend_;
   Seq head_;
   TreeId root_;
+  std::optional<OwningStep> parent_;
+  int depth_;
+  std::map<NodeId, TreeId> subtrees_;
   std::shared_ptr<RootAccess> access_;
   std::uint64_t createdAt_;
   std::set<std::string> appliedOpIds_;

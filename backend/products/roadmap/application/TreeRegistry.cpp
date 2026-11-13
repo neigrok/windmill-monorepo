@@ -156,6 +156,7 @@ std::vector<TreeSummary> TreeRegistry::list(const UserId& owner) {
     row.createdAt = tree.createdAt;
     row.updatedAt = tree.updatedAt;
     row.data = std::move(tree.data);
+    row.parent = std::move(tree.parent);
     auto digest = overlays.find(row.data.id);
     if (digest != overlays.end()) {
       row.progress = std::move(digest->second.overlay);
@@ -307,6 +308,13 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   if (const Renaming* refusal = std::get_if<Renaming>(&landed)) return *refusal;
   const std::string& trimmed = std::get<std::string>(landed);
 
+  // Where a tree hangs never changes, so it is read before a strand is taken.
+  if (const std::optional<TreeAccess> hanging = rooms_.accessOf(tree); hanging && hanging->parent) {
+    const std::variant<Described, Renaming> relabelled = relabel(*hanging->parent, caller, trimmed);
+    if (const Renaming* refusal = std::get_if<Renaming>(&relabelled)) return *refusal;
+    return Renaming::renamed;
+  }
+
   // The strand serializes the rename against the tree's socket frames, so the owner check, the title
   // op and the persist form one uninterrupted step.
   std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
@@ -333,6 +341,16 @@ std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission> TreeReg
     guide = isBlankGuide(*sent.guide) ? std::string() : *sent.guide;
   }
 
+  // Where a tree hangs never changes, so it is read before a strand is taken: a subtree's title is its owning step's
+  // label, and lands in its parent before its guide lands here.
+  bool relabelled = false;
+  if (const std::optional<TreeAccess> hanging = title ? rooms_.accessOf(tree) : std::nullopt; hanging && hanging->parent) {
+    const std::variant<Described, Renaming> landed = relabel(*hanging->parent, caller, *title);
+    if (const Renaming* refusal = std::get_if<Renaming>(&landed)) return *refusal;
+    relabelled = !std::get<Described>(landed).unchanged;
+    title.reset();
+  }
+
   // The strand serializes both against the tree's socket frames, so the gates, the one frame and the
   // persist form one uninterrupted step. Both gates read the stored access row before a room is
   // materialized.
@@ -344,11 +362,32 @@ std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission> TreeReg
   TreeRoom* room = rooms_.open(tree);
   if (!room) return Renaming::notFound;
   if (title && *title == room->title().value) title.reset();  // the name it already has is no rename
-  if (!title && !guide) return Described{room->head(), true};
+  if (!title && !guide) return Described{room->head(), !relabelled};
   const Seq seq = room->describe(title, guide, clock_.nowMs());
   if (rooms_.persist(tree)) return Described{seq, false};
   // The row went away under its live room: the room goes too, so no reader is served what it set.
   rooms_.retire(tree);
+  return Renaming::notFound;
+}
+
+std::variant<TreeRegistry::Described, TreeRegistry::Renaming> TreeRegistry::relabel(const OwningStep& owning,
+                                                                                  const UserId& caller,
+                                                                                  const std::string& title) {
+  // A title is held to the cap a label is, so a name that lands as a title lands as a label too.
+  static_assert(kMaxTitleChars <= kMaxNodeLabelLength);
+  std::lock_guard<std::mutex> strand(rooms_.strandFor(owning.tree));
+  const std::optional<TreeAccess> access = rooms_.accessOf(owning.tree);
+  if (!access || !canRead(caller, access->owner, access->visibility)) return Renaming::notFound;
+  if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))
+    return *refusal == WriteRefusal::nobodysTree ? Renaming::nobodysTree : Renaming::notYours;
+  TreeRoom* room = rooms_.open(owning.tree);
+  if (!room) return Renaming::notFound;
+  const std::optional<std::string> label = room->labelOf(owning.step);
+  if (!label) return Renaming::notFound;
+  if (*label == title) return Described{room->head(), true};
+  const Seq seq = room->applyCommand(RenameNode{owning.step, title}, clock_.nowMs(), caller);
+  if (rooms_.persist(owning.tree)) return Described{seq, false};
+  rooms_.retire(owning.tree);
   return Renaming::notFound;
 }
 

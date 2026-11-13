@@ -77,10 +77,10 @@ void setCollab(std::shared_ptr<Collab> collab) { g_collab = std::move(collab); }
 void stopCollab() { if (g_collab) g_collab->stop(); }
 Collab* collab() { return g_collab.get(); }
 
-Collab::Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus,
+Collab::Collab(RoomRegistry& registry, TreeRepository& trees, OpLog& ops, WsPresenceBus& bus,
                ProgressService& progress, AuthService& auth, PresenceHub& presence, Clock& clock,
                std::set<std::string> allowedOrigins)
-    : registry_(registry), ops_(ops), bus_(bus), progress_(progress),
+    : registry_(registry), trees_(trees), ops_(ops), bus_(bus), progress_(progress),
       auth_(auth), presence_(presence), clock_(clock), allowedOrigins_(std::move(allowedOrigins)),
       reprove_("ws-readers") {
   // Read authorization can be revoked under an open socket, so the bus asks before every fan-out.
@@ -201,6 +201,9 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
   Subgraph delta;
   Seq head = 0;
   Reach reach = Reach::none;
+  bool subtree = false;
+  int depth = 0;
+  std::map<NodeId, TreeId> subtrees;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
@@ -222,6 +225,9 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       presence_.join(conn, TreeId{treeId});
       delta = room->deltaSince(clientVector);
       head = room->head();
+      subtree = room->parent().has_value();
+      depth = room->depth();
+      subtrees = room->subtrees();
     } catch (const std::exception& error) {
       // An infrastructure failure is never the socket's to relay.
       reportCurrentWriteFailure(error);
@@ -231,12 +237,34 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
     }
   }
   if (reach == Reach::reader) delta.graph = readerView(std::move(delta.graph));
+  // A subtree's name is its owning step's label, read through its parent OUTSIDE the strand and sent whatever the
+  // vector covers, never folded into the coverage: the stamp is the parent's. A read that fails sends the delta without
+  // it, and the client keeps the name it holds.
+  if (subtree) {
+    WriteObservation observation{"roadmap.tree.read", "roadmap", "websocket"};
+    try {
+      const std::optional<Place> place = trees_.placeOf(TreeId{treeId});
+      if (place && place->titleAt.isSet()) delta.title = Lww<std::string>{place->title, place->titleAt};
+      observation.skip();
+    } catch (const std::exception& failure) {
+      observation.fail(failure);
+    }
+  }
   delta.frameId = "delta-" + std::to_string(head);
   delta.actor = "srv";
   Json::Value frame = toJson(delta);
   frame["seq"] = static_cast<Json::Int64>(head);
   // The verdict that chose this delta's view, so an empty pointer reads as none or as withheld.
   frame["reach"] = reach == Reach::writer ? "writer" : "reader";
+  // The subtree each step owns, to readers and writers alike: what heals a `subtree` frame the client missed. It is
+  // told, never a register: no client writes it and no join reads it.
+  for (const auto& [step, id] : subtrees) {
+    Json::Value owned(Json::objectValue);
+    owned["step"] = step.str();
+    owned["id"] = id.str();
+    owned["depth"] = depth + 1;
+    frame["subtrees"].append(owned);
+  }
   first->delta.send(dump(frame));
 
   // Read OUTSIDE the strand — a room's lock is never held across a database call.

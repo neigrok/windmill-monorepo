@@ -26,6 +26,12 @@ AccountErasure roadmapAccountErasure() {
   }, {}};
 }
 
+std::string treeNameColumn(std::string_view tree) {
+  const std::string t{tree};
+  return "CASE WHEN " + t + ".parent_tree IS NULL THEN " + t + ".title ELSE coalesce((SELECT owning.label FROM tree_nodes owning "
+         "WHERE owning.tree_id = " + t + ".parent_tree AND owning.node_id = " + t + ".parent_step), '') END";
+}
+
 namespace {
 
 // Add-biased presence, computed by the writer so reads never compare HLC text in SQL.
@@ -174,7 +180,8 @@ std::optional<TreeAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT r.owner_id::text AS owner_id, r.visibility, r.id AS root FROM trees t JOIN trees r ON r.id = t.root_tree "
+      "SELECT r.owner_id::text AS owner_id, r.visibility, r.id AS root, t.parent_tree, t.parent_step "
+      "FROM trees t JOIN trees r ON r.id = t.root_tree "
       "WHERE t.id = $1 AND t.deleted_at IS NULL AND r.deleted_at IS NULL",
       tree.str());
   if (rows.empty()) return std::nullopt;
@@ -184,7 +191,43 @@ std::optional<TreeAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
   if (!row["owner_id"].is_null()) access.owner = UserId{row["owner_id"].as<std::string>()};
   access.visibility = parseVisibility(row["visibility"].as<std::string>());
   access.root = TreeId{text(row, "root")};
+  if (!row["parent_tree"].is_null())
+    access.parent = OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}};
   return access;
+}
+
+std::optional<Place> PgTreeRepository::placeOf(const TreeId& tree) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  // One walk up the parents through trees_pkey, at most kMaxTreeDepth rows, each named in the same snapshot.
+  pqxx::result rows = txn.exec_params(
+      "WITH RECURSIVE up(id, title, title_hlc, parent_tree, parent_step, depth, deleted) AS ("
+      "  SELECT t.id, t.title, t.title_hlc, t.parent_tree, t.parent_step, t.depth, t.deleted_at IS NOT NULL "
+      "  FROM trees t WHERE t.id = $1"
+      "  UNION ALL"
+      "  SELECT p.id, p.title, p.title_hlc, p.parent_tree, p.parent_step, p.depth, p.deleted_at IS NOT NULL "
+      "  FROM up u JOIN trees p ON p.id = u.parent_tree"
+      ") "
+      "SELECT u.id, " + treeNameColumn("u") + " AS name, "
+      "CASE WHEN u.parent_tree IS NULL THEN u.title_hlc ELSE coalesce((SELECT owning.label_hlc FROM tree_nodes owning "
+      "WHERE owning.tree_id = u.parent_tree AND owning.node_id = u.parent_step), '') END AS name_hlc, "
+      "u.parent_tree, u.parent_step, u.depth, u.deleted FROM up u ORDER BY u.depth",
+      tree.str());
+  // A tree stands while its own row and its root's do: the first row is the root, the last the tree.
+  if (rows.empty() || rows[0]["deleted"].as<bool>() || rows[rows.size() - 1]["deleted"].as<bool>()) return std::nullopt;
+
+  const auto& own = rows[rows.size() - 1];
+  Place place;
+  place.title = text(own, "name");
+  place.titleAt = stamp(own, "name_hlc");
+  place.root = TreeId{text(rows[0], "id")};
+  place.depth = own["depth"].as<int>();
+  if (!own["parent_tree"].is_null())
+    place.parent = OwningStep{TreeId{text(own, "parent_tree")}, NodeId{text(own, "parent_step")}};
+  for (pqxx::result::size_type i = 0; i + 1 < rows.size(); ++i)
+    place.path.push_back(PathStep{TreeId{text(rows[i], "id")}, NodeId{text(rows[i + 1], "parent_step")},
+                                  text(rows[i], "name")});
+  return place;
 }
 
 std::optional<UserId> PgTreeRepository::retiredOwner(const TreeId& tree) {
@@ -230,7 +273,7 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   // A subtree is read by its root's owner and visibility, and stands only while its root does.
   pqxx::result rows = txn.exec_params(
       "SELECT t.title, t.title_hlc, t.guide, t.guide_hlc, t.guide_inherited, t.head_seq, t.document::text, "
-      "r.owner_id::text AS owner_id, r.visibility, t.root_tree, t.parent_tree, t.parent_step, "
+      "r.owner_id::text AS owner_id, r.visibility, t.root_tree, t.parent_tree, t.parent_step, t.depth, "
       "(extract(epoch from t.created_at) * 1000)::bigint AS created_ms "
       "FROM trees t JOIN trees r ON r.id = t.root_tree "
       "WHERE t.id = $1 AND t.deleted_at IS NULL AND r.deleted_at IS NULL",
@@ -248,6 +291,11 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
     legend = legendStateFromJson(document["kinds"]);
     upsertSlice(txn, tree, state, legend);
   }
+  // Through trees_parent_step, which leads with the parent.
+  std::map<NodeId, TreeId> subtrees;
+  for (const auto& owned : txn.exec_params(
+           "SELECT parent_step, id FROM trees WHERE parent_tree = $1 AND deleted_at IS NULL", tree.str()))
+    subtrees.emplace(NodeId{text(owned, "parent_step")}, TreeId{text(owned, "id")});
   txn.commit();
 
   std::optional<UserId> owner;
@@ -260,7 +308,8 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
                     static_cast<Seq>(row["head_seq"].as<long long>()), std::move(owner),
                     parseVisibility(row["visibility"].as<std::string>()),
                     static_cast<std::uint64_t>(row["created_ms"].as<long long>()), std::move(guide),
-                    row["guide_inherited"].as<bool>(), TreeId{text(row, "root_tree")}, std::move(parent)};
+                    row["guide_inherited"].as<bool>(), TreeId{text(row, "root_tree")}, std::move(parent),
+                    row["depth"].as<int>(), std::move(subtrees)};
 }
 
 bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
@@ -314,7 +363,7 @@ std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT id, title, document::text, "
+      "SELECT id, title, document::text, parent_tree, parent_step, "
       "(extract(epoch from created_at) * 1000)::bigint AS created_ms, "
       "(extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
       "FROM trees WHERE owner_id = $1::uuid AND deleted_at IS NULL",
@@ -325,9 +374,11 @@ std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
   for (const auto& row : rows) {
     TreeData data = projectDocument(txn, TreeId{row["id"].as<std::string>()}, row["title"].as<std::string>(),
                                     row["document"].as<std::string>()).data;
-    owned.push_back(OwnedTree{std::move(data),
-                              static_cast<std::uint64_t>(row["created_ms"].as<long long>()),
-                              static_cast<std::uint64_t>(row["updated_ms"].as<long long>())});
+    std::optional<OwningStep> parent;
+    if (!row["parent_tree"].is_null())
+      parent = OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}};
+    owned.push_back(OwnedTree{std::move(data), static_cast<std::uint64_t>(row["created_ms"].as<long long>()),
+                              static_cast<std::uint64_t>(row["updated_ms"].as<long long>()), std::move(parent)});
   }
   return owned;
 }
@@ -335,8 +386,13 @@ std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
 PgTreeRepository::ProjectedDocument PgTreeRepository::projectDocument(pqxx::work& txn, const TreeId& tree,
                                                                      const std::string& title,
                                                                      const std::string& documentBlob) {
+  // A step that owns a standing subtree opens it, under no stamp, whatever its pointer holds.
   pqxx::result nodes = txn.exec_params(
-      "SELECT node_id, color, opens, opens_hlc FROM tree_nodes WHERE tree_id = $1 AND present", tree.str());
+      "SELECT n.node_id, n.color, coalesce(owned.id, n.opens) AS opens, "
+      "CASE WHEN owned.id IS NULL THEN n.opens_hlc ELSE '' END AS opens_hlc FROM tree_nodes n "
+      "LEFT JOIN trees owned ON owned.parent_tree = n.tree_id AND owned.parent_step = n.node_id AND owned.deleted_at IS NULL "
+      "WHERE n.tree_id = $1 AND n.present",
+      tree.str());
   ProjectedDocument projected;
   projected.data.id = tree;
   projected.data.title = title;
@@ -357,8 +413,8 @@ PgTreeRepository::ProjectedDocument PgTreeRepository::projectDocument(pqxx::work
 std::vector<ListedTree> PgTreeRepository::listPublic() {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // Every listed tree, unbounded: ordering and the wall's cap belong to the domain, and a LIMIT
-  // here would quietly change the ranking rule. The LEFT JOIN carries loadForkLineage's privacy
+  // Every listed root, unbounded: ordering and the wall's cap belong to the domain, and a LIMIT
+  // here would quietly change the ranking rule. A subtree is shared as its root is and never listed. The LEFT JOIN carries loadForkLineage's privacy
   // rule in its ON clause, so an unlisted, private or deleted source coalesces to ''. The owner's
   // marks are read after, as a reader is shown them.
   pqxx::result rows = txn.exec_params(
@@ -368,7 +424,7 @@ std::vector<ListedTree> PgTreeRepository::listPublic() {
       "coalesce(s.title, '') AS source_title "
       "FROM trees t "
       "LEFT JOIN trees s ON s.id = t.forked_from AND s.deleted_at IS NULL AND s.visibility = 'public' "
-      "WHERE t.visibility = 'public' AND t.deleted_at IS NULL AND t.owner_id IS NOT NULL");
+      "WHERE t.visibility = 'public' AND t.deleted_at IS NULL AND t.owner_id IS NOT NULL AND t.parent_tree IS NULL");
 
   std::vector<ListedTree> listed;
   listed.reserve(rows.size());
@@ -417,38 +473,50 @@ std::map<TreeId, std::string> PgTreeRepository::titlesOwnedBy(const UserId& owne
   return titles;
 }
 
-const char* PgTreeRepository::openedFromStatement() {
-  // One statement: the counts and the marks are one snapshot, and no node row leaves the database.
+std::string PgTreeRepository::openedFromStatement() {
+  // One statement: the counts and the marks are one snapshot, and no node row leaves the database. A step opens the
+  // subtree it owns, found through trees_parent_step, else the tree its pointer names; a tree stands while its own row
+  // and its root's do, the root read only for a subtree.
+  const std::string opens = "coalesce(owned.id, n.opens)";
+  const std::string owned =
+      "LEFT JOIN trees owned ON owned.parent_tree = n.tree_id AND owned.parent_step = n.node_id AND owned.deleted_at IS NULL ";
+  const std::string rootStands =
+      "CASE WHEN t.parent_tree IS NULL THEN true "
+      "ELSE EXISTS (SELECT 1 FROM trees root WHERE root.id = t.root_tree AND root.deleted_at IS NULL) END";
   return
-      "WITH RECURSIVE reached(id, title) AS ("
-      "  SELECT t.id, t.title FROM trees t "
+      "WITH RECURSIVE reached(id, title, parent_tree, parent_step) AS ("
+      "  SELECT t.id, t.title, t.parent_tree, t.parent_step FROM trees t "
       "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid "
-      "    AND t.id IN (SELECT jsonb_array_elements_text($2::jsonb)) "
+      "    AND t.id IN (SELECT jsonb_array_elements_text($2::jsonb)) AND " + rootStands + " "
       // UNION keeps each tree once, which is what ends the walk on a loop.
       "  UNION "
-      "  SELECT t.id, t.title FROM reached r "
+      "  SELECT t.id, t.title, t.parent_tree, t.parent_step FROM reached r "
       // Each LATERAL runs once per row before it, so each table is read by its key whatever the planner expects.
-      "  CROSS JOIN LATERAL (SELECT DISTINCT n.opens FROM tree_nodes n WHERE n.tree_id = r.id AND n.present) o "
-      "  CROSS JOIN LATERAL (SELECT s.id, s.title, s.owner_id, s.deleted_at FROM trees s WHERE s.id = o.opens LIMIT 1) t "
-      "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid"
+      "  CROSS JOIN LATERAL (SELECT DISTINCT " + opens + " AS opens FROM tree_nodes n " + owned +
+      "                      WHERE n.tree_id = r.id AND n.present) o "
+      "  CROSS JOIN LATERAL (SELECT s.id, s.title, s.owner_id, s.deleted_at, s.parent_tree, s.parent_step, s.root_tree "
+      "                      FROM trees s "
+      "                      WHERE s.id = o.opens LIMIT 1) t "
+      "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid AND " + rootStands +
       ") "
       // A row is a tree and one target: '' for its nodes that open none, NULL for a tree with no node. `latest` is
       // the stamp and receipt instant of the latest of the marks counted that carry a stamp, in the order the domain
       // compares stamps: a row written before marks were stamped counts, and is never the latest.
-      "SELECT r.id, r.title, c.opens, c.nodes, c.marked, c.latest[1][1] AS latest_hlc, c.latest[1][2] AS latest_ms "
+      "SELECT r.id, " + treeNameColumn("r") + " AS title, c.opens, c.nodes, c.marked, "
+      "c.latest[1][1] AS latest_hlc, c.latest[1][2] AS latest_ms "
       "FROM reached r LEFT JOIN LATERAL ("
-      "  SELECT n.opens, count(*) AS nodes, count(m.node_id) AS marked, "
+      "  SELECT " + opens + " AS opens, count(*) AS nodes, count(m.node_id) AS marked, "
       "         (array_agg(ARRAY[m.hlc, m.updated_ms::text] "
       "                    ORDER BY m.stamp_ms DESC, m.stamp_counter DESC, m.hlc COLLATE \"C\" DESC) "
       "            FILTER (WHERE m.node_id IS NOT NULL AND m.hlc NOT IN ('', '0:0:'))) AS latest "
-      "  FROM tree_nodes n LEFT JOIN ("
+      "  FROM tree_nodes n " + owned + "LEFT JOIN ("
       "    SELECT p.node_id, p.hlc, p.stamp_ms, p.stamp_counter, "
       "           (extract(epoch from p.updated_at) * 1000)::bigint AS updated_ms FROM node_progress p "
       // Both indexes on the reader's marks lead with the tree and the reader, in either order (node_progress_pkey and
       // node_progress_user_tree), so whichever the planner takes, it reads this reader's marks on this tree alone.
       "    WHERE p.tree_id = r.id AND p.user_id = $1::text AND p.status = 'complete'"
       "  ) m ON m.node_id = n.node_id "
-      "  WHERE n.tree_id = r.id AND n.present GROUP BY n.opens"
+      "  WHERE n.tree_id = r.id AND n.present GROUP BY " + opens +
       ") c ON true";
 }
 
@@ -461,7 +529,7 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
   pqxx::work txn{*conn};
   // The budget is this transaction's alone: the connection goes back to the pool under its own limit.
   if (budget) txn.exec("SET LOCAL statement_timeout = '" + std::to_string(budget->count()) + "ms'");
-  const char* statement = openedFromStatement();
+  const std::string statement = openedFromStatement();
   pqxx::result rows;
   try {
     rows = txn.exec_params(statement, owner.str(), dump(ids));
@@ -491,32 +559,41 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
   return trees;
 }
 
-const char* PgTreeRepository::guidedTreesAboveStatement() {
-  // Keyed on the owner's own standing trees, so its cost does not grow with the pointers other accounts plant at one.
-  return "WITH RECURSIVE owned(id, guided) AS MATERIALIZED ("
-         "  SELECT t.id, t.guide <> '' FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL"
+std::string PgTreeRepository::guidedTreesAboveStatement() {
+  // Keyed on the owner's own standing trees, so its cost does not grow with the pointers other accounts plant at one. A
+  // subtree stands while its root does, which is read for a subtree alone.
+  return "WITH RECURSIVE owned(id, guided, parent_tree) AS MATERIALIZED ("
+         "  SELECT t.id, t.guide <> '', t.parent_tree FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL "
+         "  AND CASE WHEN t.parent_tree IS NULL THEN true "
+         "      ELSE EXISTS (SELECT 1 FROM trees root WHERE root.id = t.root_tree AND root.deleted_at IS NULL) END"
          "), "
-         // The LATERAL runs once per owned tree, so each tree's pointers are read by its key whatever the planner
-         // expects; tree_nodes_pointers_idx serves only a scan that states its predicate. Only a pointer at
-         // another of the owner's standing trees can lead anywhere.
-         "pointers(tree, opens) AS MATERIALIZED ("
+         // What lies directly below each tree: the subtrees it owns, off the rows already read, and each root its steps
+         // point at. The LATERAL runs once per owned tree, so each tree's pointers are read by its key whatever the
+         // planner expects; tree_nodes_pointers_idx serves only a scan that states its predicate. A step that owns a
+         // subtree opens it and no other tree, and a pointer leads anywhere only at another of the owner's standing roots.
+         "below(tree, opens) AS MATERIALIZED ("
+         "  SELECT o.parent_tree, o.id FROM owned o WHERE o.parent_tree IN (SELECT parent.id FROM owned parent) "
+         "  UNION ALL "
          "  SELECT o.id, p.opens FROM owned o "
          "  CROSS JOIN LATERAL (SELECT DISTINCT n.opens FROM tree_nodes n "
-         "                      WHERE n.tree_id = o.id AND n.present AND n.opens <> '') p "
-         "  WHERE p.opens IN (SELECT target.id FROM owned target)"
+         "                      WHERE n.tree_id = o.id AND n.present AND n.opens <> '' "
+         "                        AND NOT EXISTS (SELECT 1 FROM trees owning WHERE owning.parent_tree = n.tree_id "
+         "                                        AND owning.parent_step = n.node_id AND owning.deleted_at IS NULL)) p "
+         "  WHERE p.opens IN (SELECT target.id FROM owned target WHERE target.parent_tree IS NULL)"
          "), "
          "reached(id, distance) AS ("
          "  SELECT o.id, 0 FROM owned o WHERE o.id = $2 "
          // UNION keeps a tree once per distance and the levels end the walk, so a loop costs no more than its trees.
          "  UNION "
-         "  SELECT p.tree, r.distance + 1 FROM reached r JOIN pointers p ON p.opens = r.id "
-         "  WHERE r.distance < $3 AND p.tree <> $2"
+         "  SELECT b.tree, r.distance + 1 FROM reached r JOIN below b ON b.opens = r.id "
+         "  WHERE r.distance < $3 AND b.tree <> $2"
          ") "
          // nearestGuided's cut, made here so only the rows a reading can keep are answered: the id ordered by its bytes.
-         "SELECT g.id, nearest.distance, g.title, g.guide, g.guide_inherited "
+         "SELECT g.id, nearest.distance, " + treeNameColumn("g") + " AS title, g.guide, g.guide_inherited "
          "FROM (SELECT r.id, min(r.distance) AS distance FROM reached r JOIN owned o ON o.id = r.id "
          "      WHERE r.distance > 0 AND o.guided GROUP BY r.id ORDER BY distance, r.id COLLATE \"C\" LIMIT $4) nearest "
-         "CROSS JOIN LATERAL (SELECT s.id, s.title, s.guide, s.guide_inherited FROM trees s WHERE s.id = nearest.id LIMIT 1) g";
+         "CROSS JOIN LATERAL (SELECT s.id, s.title, s.guide, s.guide_inherited, s.parent_tree, s.parent_step FROM trees s "
+         "                    WHERE s.id = nearest.id LIMIT 1) g";
 }
 
 std::map<TreeId, TreeAbove> PgTreeRepository::guidedTreesAbove(const UserId& owner, const TreeId& tree) {
