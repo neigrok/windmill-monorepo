@@ -20,13 +20,15 @@ std::variant<Graft, KindRefusal> resolveKinds(const LooseGraph& graph, const Leg
   left.join(graftLegend(legend, graft, kPastEveryStamp));
   const std::vector<Kind> landed = left.kinds();
 
+  // A node is judged by the colour it holds after the batch: one the batch's own repaint reaches has a hue.
+  const Repaint repaint = repaintOf(graph, legend, graft);
   std::vector<std::string> unnamed;
   for (std::size_t i = 0; i < graft.document.nodes.size(); ++i) {
     const NodeId& id = graft.document.nodes[i].id;
     const std::optional<NodeStateEntry> held = graph.exportNode(id);
     const bool created = !graph.hasNode(id);
-    const bool hasAHue =
-        graft.carries(id, NodeRegister::color) || graft.nodeKinds.count(id) || (held && held->colorAt.isSet());
+    const bool hasAHue = graft.carries(id, NodeRegister::color) || graft.nodeKinds.count(id) ||
+                         (held && held->colorAt.isSet()) || repaint.nodes.count(id);
     if (created && !hasAHue) unnamed.push_back("nodes[" + std::to_string(i) + "] \"" + id.str() + "\"");
   }
   const JudgedLegend judged = graft.document.kinds.empty() ? JudgedLegend::held : JudgedLegend::leftByTheBatch;
@@ -93,8 +95,9 @@ LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at
 }
 
 Repaint repaintOf(const LooseGraph& graph, const Legend& legend, const Graft& graft) {
-  std::set<NodeId> leftToTheBatch(graft.tombstones.begin(), graft.tombstones.end());
-  // A node the batch files by kind lands the hue that kind wears after the batch, whatever it wore.
+  // A node the batch files by kind lands the hue that kind wears after the batch, whatever it wore. One it tombstones
+  // is sent neither a kind nor a colour: it is a deleted wearer as any other, and moves with its kind.
+  std::set<NodeId> leftToTheBatch;
   for (const auto& [node, kind] : graft.nodeKinds) leftToTheBatch.insert(node);
   for (const NodeSpec& node : graft.document.nodes) {
     // A colour the batch sends wins when it lands: one sent as held is an echo.

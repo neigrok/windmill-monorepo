@@ -56,9 +56,10 @@ struct Graft {
 // and file nodes under it. Such a node carries its colour register. A kind that legend does not hold, or a colour
 // sent beside it that disagrees and is not the colour the node's record in `graph` holds, refuses the whole graft
 // with resolveHue's refusal, naming `nodes[i].kind`. So does a node the graft would create with no hue of its own
-// — the graph does not hold it present, the document carries neither a kind nor a colour for it, and no record of
-// it holds a colour anyone wrote, the reading graftState lands it by — where that legend has kinds and none wears
-// the hue such a node takes: unnamedHueRefusal, which speaks of the legend the batch would leave when the document
+// — the graph does not hold it present, the document carries neither a kind nor a colour for it, no record of it
+// holds a colour anyone wrote, the reading graftState lands it by, and the batch's own repaint does not reach it
+// (repaintOf: a deleted node nobody coloured whose kind the batch re-hues comes back in that kind's new hue) — where
+// that legend has kinds and none wears the hue such a node takes: unnamedHueRefusal, which speaks of the legend the batch would leave when the document
 // carries kinds.
 std::variant<Graft, KindRefusal> resolveKinds(const LooseGraph& graph, const Legend& legend, Graft graft);
 
@@ -96,9 +97,11 @@ LegendState graftLegend(const Legend& legend, const Graft& graft, const Hlc& at)
 
 // What a graft's re-hued kinds repaint, judged against the legend and graph as they stood before the batch by
 // RecolorKind's rule (holdersOf), so a swap swaps: each node holding a re-hued kind's old hue, present or deleted,
-// takes its new hue, but for a node the batch tombstones, files by kind (`nodeKinds`), or sends a colour that differs
-// from the one it holds. `rehued` lists the held kinds whose hue the document changes, and `present` counts the
-// repainted nodes the graph held present before the batch: the ones a receipt counts.
+// takes its new hue, but for a node the batch files by kind (`nodeKinds`) or sends a colour that differs from the one
+// it holds. A node the batch tombstones is sent neither, so it is repainted as the deleted wearer it becomes, its
+// frame entry carrying the tombstone and the colour together. `rehued` lists the held kinds whose hue the document
+// changes, and `present` counts the repainted nodes the graph held present before the batch, a tombstoned one among
+// them: the ones a receipt counts.
 struct Repaint {
   std::vector<KindId> rehued;
   std::map<NodeId, NodeColor> nodes;

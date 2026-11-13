@@ -5871,8 +5871,9 @@ TEST(mcp_an_import_that_rehues_a_kind_repaints_the_nodes_that_wore_its_hue) {
 }
 
 // The repaint reads the legend and the nodes as they stood before the batch, so a swap swaps; a node the batch gives
-// its own colour or kind lands what the batch says, and one the batch tombstones is left alone. A node deleted before
-// the batch moves with its kind, uncounted.
+// its own colour or kind lands what the batch says. A node deleted before the batch moves with its kind, uncounted,
+// and so does one the batch itself tombstones, counted because it was present before the call: brought back bare,
+// each is under the kind it was under.
 TEST(mcp_an_import_repaints_against_the_legend_before_the_batch_and_yields_to_its_word) {
   Harness h;
   for (const char* kind : {R"({"id":"apps","hue":"sky"})", R"({"id":"infra","hue":"plum"})", R"({"id":"ops","hue":"gold"})"})
@@ -5885,13 +5886,50 @@ TEST(mcp_an_import_repaints_against_the_legend_before_the_batch_and_yields_to_it
 
   const Json::Value receipt = body(h.call("import_subgraph", parse(R"({"kinds":[{"id":"apps","hue":"plum"},
     {"id":"infra","hue":"sky"}],"nodes":[{"id":"s2","color":"gold"},{"id":"s3","kind":"ops"}],"tombstone":["cut"]})")));
-  CHECK_EQ(receipt["repaintedNodes"].asUInt64(), 2u);
+  CHECK_EQ(receipt["repaintedNodes"].asUInt64(), 3u);
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["s1","s2","s3","p1"],"fields":["id","color","kind"]})")))["nodes"],
            parse(R"([{"id":"s1","color":"plum","kind":"apps"},{"id":"s2","color":"gold","kind":"ops"},
              {"id":"s3","color":"gold","kind":"ops"},{"id":"p1","color":"sky","kind":"infra"}])"));
   const LooseGraph left{h.registry.open(TreeId{"t"})->exportState()};
   CHECK(left.exportNode(NodeId{"gone"})->color == NodeColor::plum);
-  CHECK(left.exportNode(NodeId{"cut"})->color == NodeColor::sky);
+  CHECK(left.exportNode(NodeId{"cut"})->color == NodeColor::plum);
+  const Subgraph& frame = h.bus.subgraphBroadcasts.back().subgraph;
+  const auto cut = std::find_if(frame.graph.nodes.begin(), frame.graph.nodes.end(),
+                                [](const NodeStateEntry& node) { return node.id == NodeId{"cut"}; });
+  REQUIRE(cut != frame.graph.nodes.end());
+  CHECK((*cut == NodeStateEntry{.id = NodeId{"cut"}, .deletedAt = cut->deletedAt, .color = NodeColor::plum, .colorAt = cut->deletedAt}));
+  CHECK(cut->deletedAt.isSet());
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"gone"},{"id":"cut"}]})")).isError);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["gone","cut"],"fields":["id","color","kind"]})")))["nodes"],
+           parse(R"([{"id":"gone","color":"plum","kind":"apps"},{"id":"cut","color":"plum","kind":"apps"}])"));
+}
+
+// One import that re-hues a kind and brings back, bare, a deleted node nobody coloured that sat under it answers what
+// the two calls answer: the repaint reaches the node, so it is not one that names neither kind nor colour, and it
+// comes back under the kind in its new hue. The dry run answers the same.
+TEST(mcp_one_import_that_rehues_a_kind_and_bare_revives_its_uncoloured_wearer_lands_as_the_two_calls_do) {
+  Harness h;
+  const std::string tree = body(h.tools.callTool("create_tree", parse(R"({"title":"Defaults"})"), h.actor))["treeId"].asString();
+  const auto call = [&](const char* tool, const char* arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = tree;
+    ToolResult result = h.tools.callTool(tool, args, h.actor);
+    checkStructuredContent(h.tools, tool, result, __FILE__, __LINE__);
+    return result;
+  };
+  CHECK_FALSE(call("import_subgraph", R"({"nodes":[{"id":"live","label":"Live"},{"id":"x","label":"X"}]})").isError);
+  CHECK_FALSE(call("delete_node", R"({"nodeId":"x"})").isError);
+
+  const ToolResult rehearsed = call("import_subgraph", R"({"dryRun":true,"kinds":[{"id":"build","hue":"sky"}],"nodes":[{"id":"x"}]})");
+  REQUIRE(!rehearsed.isError);
+  CHECK_EQ(body(rehearsed)["repaintedNodes"], Json::Value(1));
+  const ToolResult landed = call("import_subgraph", R"({"kinds":[{"id":"build","hue":"sky"}],"nodes":[{"id":"x"}]})");
+  REQUIRE(!landed.isError);
+  CHECK_EQ(body(landed)["repaintedNodes"], Json::Value(1));
+  CHECK_EQ(body(landed)["newNodes"], Json::Value(1));
+  CHECK_EQ(body(call("get_tree", R"({"fields":["id","color","kind"]})"))["tree"]["nodes"],
+           parse(R"([{"id":"live","color":"sky","kind":"build"},{"id":"x","color":"sky","kind":"build"}])"));
 }
 
 // A kind that takes a new hue carries the deleted nodes that held its old one, through update_kind and through an

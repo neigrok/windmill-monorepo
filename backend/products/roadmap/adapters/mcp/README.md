@@ -397,7 +397,9 @@ leaves (`resolveKinds` joins what `graftLegend` would land): a batch that adds a
 terracotta, claims its bare new nodes, one that re-hues the terracotta kind away does not, and when the batch carries
 kinds the sentence says it speaks of the legend the batch would leave and lists that one, relabels and new kinds
 included. A node the import would create is one the tree does not hold present; it has a hue of its own when the
-batch names a kind or a colour for it or a record of it holds a colour someone wrote, the reading `graftState` lands
+batch names a kind or a colour for it, when the batch's own repaint reaches it — a deleted node nobody coloured
+whose kind the batch re-hues, so one import that re-hues the terracotta kind and bare-revives such a node lands what
+the two calls land — or when a record of it holds a colour someone wrote, the reading `graftState` lands
 it by. A dry run answers the same refusal. An empty legend has no kind to name, so the node lands terracotta there. Its write line carries the outcome `kind-unnamed`, never the node or a kind.
 
 ## `opens`
@@ -633,8 +635,10 @@ and none overrides another.
   legend and nodes as they stood before the batch, so two kinds can swap hues. A deleted node the
   batch leaves deleted takes the colour alone, so one brought back later is under its kind, and one
   the batch itself brings back follows the rule a present node does. A node the batch
-  tombstones lands what the batch says, and so does one it files by `kind`: it takes the hue that kind
-  wears after the batch, whatever it wore before. A node sent a `color` that differs from the one it
+  tombstones is sent neither a kind nor a colour, so it is a deleted wearer like any other and moves
+  with its kind, its frame entry carrying the tombstone and the new colour together; it was present
+  before the batch, so `repaintedNodes` counts it. A node the batch files by `kind` lands what the
+  batch says: it takes the hue that kind wears after the batch, whatever it wore before. A node sent a `color` that differs from the one it
   holds keeps that colour, while one sent the colour it holds — a `get_tree` round trip — is repainted
   like any wearer (`landsOver`, the comparison the graft lands every register by). The receipt counts
   the repainted nodes the tree held present before the batch as `repaintedNodes` (`Repaint::present`), a key

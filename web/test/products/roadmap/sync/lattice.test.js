@@ -346,3 +346,24 @@ test('a frame that carries only a colour for a deleted node moves that register 
   assert.deepEqual(lattice.toTreeData().nodes.map(({ id, label, color }) => ({ id, label, color })).sort((x, y) => (x.id < y.id ? -1 : 1)),
     [{ id: 'root', label: '', color: 'plum' }, { id: 'wind', label: 'Wind', color: 'plum' }]);
 });
+
+test('a frame entry that tombstones a node and gives it a colour deletes it and moves the colour, so it comes back in that colour', () => {
+  const lattice = new TreeLattice('sail');
+  lattice.join({ nodes: [
+    { id: 'root', createdAt: '100:0:seed', color: 'sky', colorAt: '100:0:seed' },
+    { id: 'cut', createdAt: '100:0:seed', label: 'Cut', labelAt: '100:0:seed', color: 'sky', colorAt: '100:0:seed' },
+  ] });
+
+  lattice.join({
+    nodes: [{ id: 'cut', deletedAt: '300:0:srv', color: 'plum', colorAt: '300:0:srv' }, { id: 'root', color: 'plum', colorAt: '300:0:srv' }],
+    kinds: [{ id: 'k', hue: 'plum', hueAt: '300:0:srv' }],
+  });
+
+  assert.equal(lattice.hasNode('cut'), false);
+  assert.deepEqual(lattice.toTreeData().nodes.map(({ id, color }) => ({ id, color })), [{ id: 'root', color: 'plum' }]);
+  assert.deepEqual(lattice.deletedNodesWithColor('plum'), ['cut']);
+
+  lattice.join({ nodes: [{ id: 'cut', createdAt: '400:0:srv' }] });
+  assert.deepEqual(lattice.toTreeData().nodes.map(({ id, label, color }) => ({ id, label, color })).sort((x, y) => (x.id < y.id ? -1 : 1)),
+    [{ id: 'cut', label: 'Cut', color: 'plum' }, { id: 'root', label: '', color: 'plum' }]);
+});
