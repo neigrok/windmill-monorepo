@@ -778,12 +778,17 @@ public:
   std::vector<GenerationRow> generations;
   struct ImageRow { UserId user; ThreadId thread; CoachImage image; };
   std::vector<ImageRow> images;
+  // Every method is one step on the rows under this lock, as each of the Postgres repository's is a transaction: the
+  // ask service calls them from its admission, worker and reader loops at once.
+  std::recursive_mutex rows;
   std::optional<CoachImage> image(const UserId& user, const ThreadId& thread, const std::string& id) override {
+    std::lock_guard lock(rows);
     for (const auto& row : images)
       if (row.user == user && row.thread == thread && row.image.attachment.id == id) return row.image;
     return std::nullopt;
   }
   ImageWriteError putImage(const UserId& user, const ThreadId& thread, const CoachImage& image) override {
+    std::lock_guard lock(rows);
     for (const auto& held : db.threadRows)
       if (held.id == thread && held.user != user) return ImageWriteError::notFound;
     for (const auto& row : images)
@@ -793,6 +798,7 @@ public:
     return ImageWriteError::none;
   }
   std::optional<AskGeneration> stopGeneration(const UserId& user, const ThreadId& thread, const std::string& requestId) override {
+    std::lock_guard lock(rows);
     for (auto& row : generations)
       if (row.user == user && row.thread == thread && row.generation.requestId == requestId && row.generation.status == "running")
         row.generation.stopRequested = true;
@@ -808,6 +814,7 @@ public:
     ~Lease() override { std::lock_guard lock(repository.mutex); repository.active.erase(id); }
   };
   bool threadAvailable(const UserId& user, const ThreadId& id) override {
+    std::lock_guard lock(rows);
     if (std::find(deletedThreads.begin(), deletedThreads.end(), id) != deletedThreads.end()) return false;
     for (const auto& row : db.threadRows) if (row.id == id && row.user != user) return false;
     return true;
@@ -825,6 +832,7 @@ public:
     }
   }
   std::vector<AskThread> threadPage(const UserId& user, const ThreadCursor& cursor) override {
+    std::lock_guard lock(rows);
     std::vector<AskThread> result;
     for (const auto& held : db.threadRows)
       if (held.user == user && (!cursor.beforeMs || std::pair(held.askedAtMs, held.id.str()) < std::pair(cursor.beforeMs, cursor.beforeId)))
@@ -836,6 +844,7 @@ public:
     return result;
   }
   std::optional<AskThread> messagePage(const UserId& user, const ThreadId& id, std::uint64_t before, int limit) override {
+    std::lock_guard lock(rows);
     auto result = thread(user, id);
     if (!result) return result;
     std::erase_if(result->turns, [&](const auto& turn) { return before && turn.position >= before; });
@@ -846,11 +855,13 @@ public:
     return result;
   }
   std::optional<AskGeneration> generation(const UserId& user, const ThreadId& thread, const std::string& requestId) override {
+    std::lock_guard lock(rows);
     for (const auto& row : generations)
       if (row.user == user && row.thread == thread && row.generation.requestId == requestId) return row.generation;
     return std::nullopt;
   }
   void saveGeneration(const UserId& user, const ThreadId& thread, AskGeneration& generation, bool settleDraft = false) override {
+    std::lock_guard lock(rows);
     auto prior = this->generation(user, thread, generation.requestId);
     if (prior && !settleDraft && (prior->status == "completed" || prior->status == "stopped")) { generation = *prior; return; }
     generation.revision = prior ? prior->revision + 1 : 1;
@@ -883,11 +894,13 @@ public:
       if (held.user == user && held.id == thread) { held.generation = generation; held.askedAtMs = generation.atMs; }
   }
   std::vector<CoachOperation> operations(const UserId& user, const ThreadId& thread, const std::string& generationId) override {
+    std::lock_guard lock(rows);
     for (const auto& row : generations)
       if (row.user == user && row.thread == thread && row.generation.id == generationId) return row.operations;
     return {};
   }
   void saveOperation(const UserId& user, const ThreadId& thread, const std::string& generationId, const CoachOperation& operation) override {
+    std::lock_guard lock(rows);
     for (auto& row : generations) {
       if (row.user != user || row.thread != thread || row.generation.id != generationId) continue;
       for (auto& stored : row.operations)
@@ -907,6 +920,7 @@ public:
 
   // The turns are stored on the row; `minted` is DERIVED on every read from the proposal ledger.
   std::vector<AskThread> threads(const UserId& user) override {
+    std::lock_guard lock(rows);
     std::vector<AskThread> out;
     for (const AskThread& held : db.threadRows)
       if (held.user == user) out.push_back(withMinted(held, false));
@@ -918,6 +932,7 @@ public:
   }
 
   std::optional<AskThread> thread(const UserId& user, const ThreadId& id) override {
+    std::lock_guard lock(rows);
     for (const AskThread& held : db.threadRows)
       if (held.id == id && held.user == user) return withMinted(held, true);
     return std::nullopt;   // absent and another account's are one answer
@@ -925,6 +940,7 @@ public:
 
   ThreadOpenOutcome openThread(const UserId& user, const ThreadId& id, const std::string& title,
                                std::uint64_t nowMs) override {
+    std::lock_guard lock(rows);
     // The store's race, made reachable: the loser's insert loses to ON CONFLICT DO NOTHING and reads back empty.
     if (db.loseThreadRace) return {std::nullopt, ThreadOpenError::none};
     if (std::find(deletedThreads.begin(), deletedThreads.end(), id) != deletedThreads.end()) return {std::nullopt, ThreadOpenError::idTaken};
@@ -940,6 +956,7 @@ public:
 
   void appendTurns(const UserId& user, const ThreadId& id,
                    const std::vector<ThreadTurn>& turns) override {
+    std::lock_guard lock(rows);
     for (AskThread& held : db.threadRows) {
       if (!(held.id == id) || !(held.user == user)) continue;
       for (ThreadTurn turn : turns) {
@@ -952,6 +969,7 @@ public:
   }
 
   void discardEmptyThread(const UserId& user, const ThreadId& id) override {
+    std::lock_guard lock(rows);
     std::erase_if(db.threadRows, [&](const AskThread& held) {
       return held.id == id && held.user == user && held.turns.empty() && !held.generation;
     });
@@ -963,6 +981,7 @@ public:
     auto lease = tryLease(user, id);
     if (!lease) throw ThreadBusy{};
     beforeDelete();
+    std::lock_guard lock(rows);
     const std::size_t before = db.threadRows.size();
     std::erase_if(db.threadRows,
                   [&](const AskThread& held) { return held.id == id && held.user == user; });
