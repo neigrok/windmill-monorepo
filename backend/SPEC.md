@@ -671,6 +671,78 @@ Indexes that exist because their query runs on every render: `trees_owner` (the 
 `trees_forked_from` (fork lineage, asked once per share page and once per gallery card),
 `trees_public` (the listed slice of a mostly-private table).
 
+## Subtree inventory
+
+`windmill_subtree_inventory` (`platform/infra/subtree_inventory.cpp`) counts how the pointers between
+the stored trees meet a model in which each step owns at most one subtree and each subtree has one
+owning step. It reads `DATABASE_URL`, prints one JSON object of counts on stdout and nothing else, and
+never writes. A failure prints one fixed sentence on stderr and exits 2 without `DATABASE_URL`, 1
+otherwise. Its completion is `roadmap.subtree.inventory` (`OBSERVABILITY.md`). On production it runs
+inside the live server container through the **Ops · subtree inventory** workflow
+(`deploy/README.md`).
+
+The read is `PgTreeRepository::eachAccountsTrees`: one statement over `trees` and the present pointers
+in `tree_nodes`, read through `tree_nodes_pointers_idx`, in a `READ ONLY` transaction. A cursor fetches
+it a thousand rows at a time, ordered by account, so the tool holds one account at a time. A step
+counts when it is present in a standing tree of an account. Deleted steps, every step of a deleted
+tree and every tree nobody owns are left out. `inventory` (`domain/SubtreeInventory.h`) judges each
+account alone by the validity rule `OpenedTrees` holds (Model), and the accounts' counts are summed:
+
+- `trees` — the standing trees, and the account's deleted trees a counted step still names.
+- `roots` — standing trees no valid pointer opens. Another account's step is never a valid pointer, so
+  a tree only someone else's step names is a root.
+- `owned` — standing trees on no loop that exactly one step opens, from another tree. They convert with
+  no choice.
+- `multiOpened` — standing trees on no loop that two or more steps open, with `sameTree` (two or more
+  of those steps in one tree), `acrossTrees` (those steps in two or more trees; a tree may count in
+  both) and `maxOpeners`, the most steps opening one of them, counted up to 100.
+- `cycles` — standing trees on a loop of valid pointers, with `selfPointers`, the steps opening the tree
+  they stand in, and `loops` by how many trees each holds: `1`, `2`, `3-8` and `9+`. A loop is a set of
+  trees each of which leads to every other (`OpenedTrees::loops`), so two loops through one tree count
+  as one.
+- `dangling` — steps whose pointer is not valid, by what it names: `missing` (no row, shaped as a tree
+  id), `deleted` (the account's own deleted tree), `foreign` (another account's tree or nobody's,
+  standing or deleted) and `notATreeId` (no row, and not shaped as a tree id).
+- `depth` — the trees a root reaches through owned trees alone, at `1`, `2`, `3` and `4+` pointers
+  down, and the `deepest`. An owned tree under a tree opened twice, or under a loop, has no depth.
+- `accounts` — `withPointers`, the accounts with any step that names a tree, and `needingChoice`, those
+  with a tree opened twice, a tree on a loop or a dangling step.
+
+Every standing tree is counted in exactly one of `roots`, `owned`, `multiOpened` and `cycles`. A tree
+on a loop is counted under `cycles` whatever else is true of it, since a loop has no owning step until
+one of its pointers goes. The other three are told apart by how many steps open the tree.
+
+The doors that set a pointer are `POST /v1/trees` and `PUT /v1/trees/{id}` (a posted document), the
+socket's `subgraph` frame, MCP `create_node`, `update_nodes` and `import_subgraph`, and a fork of the
+owner's own tree, which keeps its pointers. A tend cannot set one. `tree_ops` does not record which
+door set a pointer: a frame's row is its headline deed, which never carries `opens`, so a frame or an
+`import_subgraph` graft that sets only a pointer leaves no row (Convergence), and a command's row
+carries the pointer under the `srv-` op id that MCP, tending and a removal's cascade share. The
+inventory counts no door.
+
+What the inventory does not measure, because it is not in `trees` or `tree_nodes`:
+
+- **The on-device store.** The web keeps each tree it holds, and the whole of every tree born signed
+  out, in the browser's IndexedDB database `windmill-sync`, store `trees`: one record per tree with
+  the structure lattice (each node's `opens` and `opensAt`), the confirmed baseline, the progress lane
+  and the unsent gestures (`web/src/products/roadmap/sync/SyncStore.js`). The trees born signed out
+  are indexed in localStorage under `windmill:device-trees` (`persistence/LocalTreeRegistry.js`,
+  `sync/localTrees.js`) and reach the server only when claimed (`sync/claimLocalTrees.js`: `POST
+  /v1/trees`, then the lattice through the socket); `repointDeviceSteps` moves the device's steps to a
+  tree's new id when a claim mints one. Only web code running in that browser reaches this store, or
+  the server door its writes arrive at.
+- **Queued edits held in browsers.** A record's registers newer than its confirmed baseline are the
+  browser's outbox (`sync/pendingWrites.js`), a node's `opens` among them. They arrive as socket
+  `subgraph` frames, from whatever bundle the tab is running, and the room holds `opens` to its length
+  alone (Model). localStorage may also hold marks under `windmill:progress:<tree>`, which
+  `persistence/ProgressStore.js` drains into the progress lane; they are marks, never a pointer.
+- **Document-only records.** A browser that refuses IndexedDB keeps the same records in the tab's
+  memory alone (`DocumentRecords` in `SyncStore.js`); they reach the server only as that tab's frames
+  and are gone with it. On the server, `trees.document` holds the lattice of a tree whose rows were
+  never backfilled, and `load` backfills them on the tree's first open. Nothing has written the column
+  since rows replaced it, before `opens` existed, so it holds no pointer; the inventory does not read
+  it.
+
 ## Open items
 
 - A tombstoned node's edges are retained for resurrection and nothing compacts them, so the

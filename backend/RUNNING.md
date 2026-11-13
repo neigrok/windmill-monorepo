@@ -205,17 +205,21 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four C++ suites and five script checks
+ctest --test-dir build --output-on-failure       # four C++ suites and seven script checks
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
 `domain`, `mcp`, `sync` and `adapters` are the C++ suites. `deploy` checks that the production
 Caddyfile forwards every credential line as received, `deploy_production` runs
 `deploy/deploy-production.sh` against a modeled Docker host, `auth_differential` tests the
-authentication differential's comparator (`test/e2e/README.md`), and `log_lifecycle` drives
-`windmill_mcp`'s log shutdown at stdin EOF, on a fatal signal and with stalled stderr.
-`sync_epoch` checks the restore tool's refusals and bounded logging; under `WM_PG_TEST` it also
+authentication differential's comparator (`test/e2e/README.md`), `anonymous_coach` runs the unit
+tests of the Coach end-to-end helpers (`anonymous_coach_test.py`, `gym_http_test.py`), and
+`log_lifecycle` drives `windmill_mcp`'s log shutdown at stdin EOF, on a fatal signal and with stalled
+stderr. `sync_epoch` checks the restore tool's refusals and bounded logging; under `WM_PG_TEST` it also
 checks committed rotation, concurrent retries, rollback and lock timeouts using `psql`.
+`subtree_inventory` checks the subtree inventory tool's refusals; under `WM_PG_TEST` it builds a
+database of its own beside `DATABASE_URL`'s, which the role must be allowed to create, and checks the
+counts the tool prints, that they name no tree, account or title, and that the tool writes nothing.
 
 Each binary ends with one line — `N/M cases passed, X stopped before the end, Y skipped, Z
 assertion(s) failed`. *Stopped before the end* counts cases a failing `REQUIRE` cut short; *skipped*
@@ -237,7 +241,7 @@ psql -h /tmp -d wm_rest_test -v ON_ERROR_STOP=1 -f db/schema.sql
 psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" \
-  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch)$' -V
+  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory)$' -V
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product

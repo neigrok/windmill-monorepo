@@ -1,0 +1,49 @@
+# By hand only: counts how the roadmap's pointers between trees meet one owned subtree per step
+# (backend/SPEC.md, Subtree inventory). The tool runs inside the live server container, reads the database
+# that container already knows, never writes, and prints counts alone; no credential leaves the host.
+name: Ops · subtree inventory
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vps-ops
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Count the roadmap's pointers in the live database
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -euo pipefail
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          chmod 600 "$key"
+          ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            "$SSH_USER@$SSH_HOST" 'bash -seuo pipefail' <<'REMOTE'
+          # The whole script is read before it runs, and nothing it starts can read the rest of it from stdin.
+          main() {
+            cd ~/windmill
+            # 3 is the image without the tool; any other failure is Docker's own, which says why itself.
+            carried=0
+            docker compose exec -T server sh -c 'command -v windmill_subtree_inventory > /dev/null || exit 3' || carried=$?
+            if [ "$carried" -eq 3 ]; then
+              echo "The live server image does not carry windmill_subtree_inventory: deploy a commit that does, then run this again." >&2
+              exit 1
+            fi
+            if [ "$carried" -ne 0 ]; then exit "$carried"; fi
+            docker compose exec -T server windmill_subtree_inventory
+          }
+          main < /dev/null
+          REMOTE

@@ -39,6 +39,7 @@ acknowledgement described below; ordinary backend batches cannot make that cutof
 | VPS runtime topology | `deploy/docker-compose.yml` |
 | Promote the candidate files and prove Caddy loaded them (runs on the VPS) | `deploy/deploy-production.sh` |
 | Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
+| Count how the roadmap's pointers between trees meet one owned subtree per step (by hand; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
 | Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
 | TLS + reverse proxy | `deploy/Caddyfile` |
 | Env keys the deploy renders | `deploy/.env.example` |
@@ -322,6 +323,20 @@ production composition's test clock: two starts that joined the same session mus
 delete through one changed replay target, and applied removals must retain success with and without
 an older acknowledgement to replay. The proof advances the clock five hours before deleting the
 joined session, and checks successful callbacks, receipt replay and durable reload.
+
+## Count the roadmap's pointers between trees
+
+Dispatch **Ops · subtree inventory** (`ops-subtree-inventory.yml`). It runs `windmill_subtree_inventory`
+inside the live `server` container, which already holds `DATABASE_URL`, and the job log shows the
+tool's one JSON object of counts ([SPEC.md](../SPEC.md#subtree-inventory)) and its completion line,
+nothing else. The tool never writes, and no credential leaves the host. Against an image that does
+not carry the tool, the job stops with a sentence saying so. From `~/windmill` on the host:
+
+```sh
+docker compose exec -T server windmill_subtree_inventory
+```
+
+Exit 0 means the counts were printed, 2 means `DATABASE_URL` is unset, and 1 means the read failed.
 
 ## Frontend
 

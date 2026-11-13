@@ -179,6 +179,7 @@ listed separately because their only server writes are authentication refresh or
 | Path / boundary | Operation | Logged | Sentry Issues |
 | --- | --- | --- | --- |
 | Restore epoch tool (platform; tool) | `sync.epoch.rotate` | completion: `ok`, `already-applied`, argument/configuration refusal, `epoch-mismatch` or failure; no epochs | unexpected |
+| Subtree inventory tool (roadmap; tool; reads only) | `roadmap.subtree.inventory` | completion: `ok`, `configuration-unavailable` or failure; the counts go to stdout, never to a log line | unexpected |
 | `PATCH /v1/journal/nudge` (journal; rest) | `journal.PATCH.v1.journal.nudge` | completion; bounded refusal or result | unexpected |
 | `POST /v1/journal/nudge/pause` (journal; rest) | `journal.POST.v1.journal.nudge.pause` | completion; bounded refusal or result | unexpected |
 | `POST /v1/journal/nudge/unsubscribe` (journal; rest) | `journal.POST.v1.journal.nudge.unsubscribe` | completion; bounded refusal or result | unexpected |

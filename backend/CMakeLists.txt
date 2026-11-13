@@ -110,6 +110,7 @@ add_library(windmill_roadmap
   products/roadmap/domain/UnlockRules.cpp
   products/roadmap/domain/Guides.cpp
   products/roadmap/domain/OpenedTrees.cpp
+  products/roadmap/domain/SubtreeInventory.cpp
   products/roadmap/domain/WebAddress.cpp
   products/roadmap/domain/TreeSummary.cpp
   products/roadmap/domain/Gallery.cpp
@@ -282,6 +283,7 @@ add_executable(windmill_domain_tests
   test/products/roadmap/domain/UnlockRulesTest.cpp
   test/products/roadmap/domain/GuidesTest.cpp
   test/products/roadmap/domain/OpenedTreesTest.cpp
+  test/products/roadmap/domain/SubtreeInventoryTest.cpp
   test/products/roadmap/domain/TreeSummaryTest.cpp
   test/products/roadmap/domain/GalleryTest.cpp
   test/products/roadmap/domain/TendingTest.cpp
@@ -513,6 +515,10 @@ target_link_libraries(windmill_rotate_sync_epoch PRIVATE windmill_platform)
 add_executable(windmill_resum_sync_digests platform/infra/resum_sync_digests.cpp)
 target_link_libraries(windmill_resum_sync_digests PRIVATE windmill_product_sync)
 
+# Counts how the pointers between existing roadmap trees meet one owned subtree per step; it reads and never writes.
+add_executable(windmill_subtree_inventory platform/infra/subtree_inventory.cpp)
+target_link_libraries(windmill_subtree_inventory PRIVATE windmill_roadmap)
+
 # The real composition with a harness-controlled clock; never copied to the runtime image.
 add_executable(windmill_server_test_clock platform/infra/main.cpp)
 target_compile_definitions(windmill_server_test_clock PRIVATE WM_TEST_CLOCK=1)
@@ -522,6 +528,10 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(NAME sync_epoch COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/platform/infra/sync_epoch_test.py $<TARGET_FILE:windmill_rotate_sync_epoch>)
 set_tests_properties(sync_epoch PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
+add_test(NAME subtree_inventory COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/test/platform/infra/subtree_inventory_test.py $<TARGET_FILE:windmill_subtree_inventory>
+  ${CMAKE_SOURCE_DIR}/db/schema.sql)
+set_tests_properties(subtree_inventory PROPERTIES TIMEOUT 120)
 add_test(NAME auth_differential COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/e2e/auth_differential_test.py)
 add_test(NAME anonymous_coach COMMAND ${Python3_EXECUTABLE}

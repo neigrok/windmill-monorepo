@@ -683,6 +683,59 @@ TEST(random_accounts_are_told_the_way_back_that_an_enumeration_of_every_way_find
   CHECK(cut > 0);
 }
 
+// The loops enumerated: trees that lead to one another, each tree with every tree it leads to and that leads back, and a
+// tree that leads only to itself through its own pointer a loop of one; a loop at the end of a long chain is found too.
+TEST(random_accounts_are_told_the_loops_that_an_enumeration_of_who_leads_to_whom_finds) {
+  std::mt19937 random(20261114);
+  const auto below = [&](unsigned bound) { return static_cast<unsigned>(random() % bound); };
+  int disagreements = 0;
+  std::size_t loopsFound = 0;
+  for (int account = 0; account < 600; ++account) {
+    const unsigned count = 1 + below(12);
+    std::vector<std::string> ids;
+    for (unsigned t = 0; t < count; ++t) ids.push_back(std::string(1, static_cast<char>('a' + below(26))) + std::to_string(t));
+    std::vector<TreeData> trees;
+    std::vector<std::vector<bool>> leads(count, std::vector<bool>(count, false));
+    for (unsigned t = 0; t < count; ++t) {
+      std::vector<NodeSpec> nodes;
+      for (unsigned n = below(4); n > 0; --n) {
+        if (below(100) < 15) {
+          nodes.push_back(step("n" + std::to_string(n), "t_removed"));
+          continue;
+        }
+        const unsigned to = below(count);
+        leads[t][to] = true;
+        nodes.push_back(step("n" + std::to_string(n), ids[to]));
+      }
+      trees.push_back(tree(ids[t], nodes));
+    }
+    for (unsigned via = 0; via < count; ++via)
+      for (unsigned a = 0; a < count; ++a)
+        for (unsigned b = 0; b < count; ++b) leads[a][b] = leads[a][b] || (leads[a][via] && leads[via][b]);
+    std::set<std::set<TreeId>> expected;
+    for (unsigned t = 0; t < count; ++t) {
+      if (!leads[t][t]) continue;
+      std::set<TreeId> loop;
+      for (unsigned other = 0; other < count; ++other)
+        if (leads[t][other] && leads[other][t]) loop.insert(tid(ids[other]));
+      expected.insert(loop);
+    }
+    const std::vector<std::set<TreeId>> found = opened(trees).loops();
+    loopsFound += found.size();
+    if (std::set<std::set<TreeId>>(found.begin(), found.end()) != expected || found.size() != expected.size())
+      ++disagreements;
+  }
+  CHECK_EQ(disagreements, 0);
+  CHECK(loopsFound > 300);
+
+  std::vector<TreeData> chain;
+  for (int t = 0; t < 2000; ++t) chain.push_back(tree("c" + std::to_string(t), {step("next", "c" + std::to_string(t + 1))}));
+  chain.push_back(tree("c2000", {step("back", "c1999")}));
+  const std::vector<std::set<TreeId>> chainLoops = opened(chain).loops();
+  REQUIRE_EQ(chainLoops.size(), 1u);
+  CHECK(chainLoops.front() == (std::set<TreeId>{tid("c1999"), tid("c2000")}));
+}
+
 // What the owner's own reads derive for a step that opens a tree is what a reader is shown of it, and no more: a row
 // while the tree is complete, none while it is not, whatever mark the step holds. The row's time is the step's stored
 // complete mark when that has a stamp, else the later of when the tree completed and when the pointer was set.

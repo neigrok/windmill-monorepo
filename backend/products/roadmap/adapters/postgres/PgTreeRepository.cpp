@@ -550,6 +550,53 @@ std::vector<TreeId> PgTreeRepository::treesOpening(const UserId& owner, const Tr
   return opening;
 }
 
+const char* PgTreeRepository::accountsTreesStatement() {
+  // A row is a standing tree and one tree its present steps open, with how many do and where that tree stands for the
+  // tree's account; a tree that opens none has one row with the rest NULL. Each LATERAL runs once per row before it, so a
+  // tree's pointers are read by its key on tree_nodes_pointers_idx, which serves only a scan that states its predicate,
+  // and each tree they name by trees_pkey.
+  return "SELECT t.owner_id::text AS owner, t.id AS tree, p.opens AS target, p.steps, "
+         "       CASE WHEN p.opens IS NULL THEN NULL "
+         "            WHEN named.id IS NULL THEN 'absent' "
+         "            WHEN named.owner_id IS DISTINCT FROM t.owner_id THEN 'foreign' "
+         "            WHEN named.deleted_at IS NOT NULL THEN 'deleted' "
+         "            ELSE 'standing' END AS stands "
+         "FROM trees t "
+         "LEFT JOIN LATERAL (SELECT n.opens, count(*) AS steps FROM tree_nodes n "
+         "                   WHERE n.tree_id = t.id AND n.present AND n.opens <> '' GROUP BY n.opens) p ON true "
+         "LEFT JOIN LATERAL (SELECT s.id, s.owner_id, s.deleted_at FROM trees s WHERE s.id = p.opens LIMIT 1) named ON true "
+         "WHERE t.deleted_at IS NULL AND t.owner_id IS NOT NULL "
+         "ORDER BY t.owner_id";
+}
+
+void PgTreeRepository::eachAccountsTrees(const std::function<void(const UserId&, const AccountTrees&)>& visit) {
+  PgLease conn{*pool_};
+  pqxx::read_transaction txn{*conn};
+  // A cursor, so each page is one short statement under the pool's limit and the rows arrive account after account.
+  txn.exec(std::string("DECLARE accounts_trees NO SCROLL CURSOR FOR ") + accountsTreesStatement());
+  std::optional<UserId> owner;
+  AccountTrees account;
+  for (pqxx::result page = txn.exec("FETCH 1000 FROM accounts_trees"); !page.empty();
+       page = txn.exec("FETCH 1000 FROM accounts_trees")) {
+    for (const auto& row : page) {
+      UserId ownerOfRow{text(row, "owner")};
+      if (owner && *owner != ownerOfRow) {
+        visit(*owner, account);
+        account = AccountTrees{};
+      }
+      owner = std::move(ownerOfRow);
+      std::map<TreeId, int>& pointers = account.standing[TreeId{text(row, "tree")}];
+      if (row["target"].is_null()) continue;
+      const TreeId target{text(row, "target")};
+      pointers.emplace(target, row["steps"].as<int>());
+      const std::string stands = text(row, "stands");
+      if (stands == "deleted") account.deleted.insert(target);
+      if (stands == "foreign") account.foreign.insert(target);
+    }
+  }
+  if (owner) visit(*owner, account);
+}
+
 void PgTreeRepository::softDelete(const TreeId& tree) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};

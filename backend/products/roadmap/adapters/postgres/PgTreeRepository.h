@@ -2,11 +2,13 @@
 
 #include "platform/adapters/postgres/PgAuthRepository.h"
 #include "platform/adapters/postgres/PgPool.h"
+#include "products/roadmap/domain/SubtreeInventory.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
 #include <memory>
 #include <pqxx/pqxx>
 
+#include <functional>
 #include <string>
 
 namespace wm {
@@ -31,6 +33,14 @@ public:
   static const char* openedFromStatement();
   // The statement behind treesOpening, with the owner as $1 and the opened tree as $2.
   static const char* treesOpeningStatement();
+  // The statement behind eachAccountsTrees: every account's standing trees, each with the trees its present steps open
+  // and where each of those stands, account after account.
+  static const char* accountsTreesStatement();
+
+  // Every account's trees as the subtree inventory reads them (SPEC.md, Subtree inventory), handed to `visit` one account
+  // at a time: one statement in a read-only transaction, fetched in pages, so no more than one account is held at once.
+  // A tree of nobody's is no account's and is left out, and so is every step of a deleted tree.
+  void eachAccountsTrees(const std::function<void(const UserId&, const AccountTrees&)>& visit);
 
   std::optional<StoredTree> load(const TreeId& tree) override;
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override;
