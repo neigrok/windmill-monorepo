@@ -195,33 +195,31 @@ Json::Value toJson(const Progress& progress) {
 Json::Value toJson(const TreeDiagnostics& diagnostics) {
   Json::Value root(Json::objectValue);
 
-  Json::Value cycles(Json::arrayValue);
-  for (const Cycle& cycle : diagnostics.cycles) {
-    Json::Value members(Json::arrayValue);
-    for (const NodeId& id : cycle.members) members.append(id.str());
-    cycles.append(members);
-  }
-  root["cycles"] = cycles;
-
-  Json::Value dangling(Json::arrayValue);
-  for (const Edge& edge : diagnostics.dangling) dangling.append(edgeJson(edge));
-  root["dangling"] = dangling;
-
-  Json::Value selfEdges(Json::arrayValue);
-  for (const Edge& edge : diagnostics.selfEdges) selfEdges.append(edgeJson(edge));
-  root["selfEdges"] = selfEdges;
-
-  // One line per smell: the empty legend, each hue no kind wears, then each kind of per-node smell, every line but the
-  // first counting the nodes it covers and naming the first of them.
-  const auto counted = [](const std::string& kind, const CountedNodes& nodes) {
+  // Every node of a cycle or a smell counted, and the first of them named.
+  const auto counted = [](const CountedNodes& nodes) {
     Json::Value value(Json::objectValue);
-    value["kind"] = kind;
     value["count"] = static_cast<Json::UInt64>(nodes.count);
     Json::Value named(Json::arrayValue);
     for (const NodeId& node : nodes.named) named.append(node.str());
     value["nodes"] = named;
     return value;
   };
+  // A list of errors as the domain cuts it: its first entries under `key`, and the count of the rest beside it when
+  // there is one.
+  const auto listed = [&root](const std::string& key, const auto& errors, const auto& entryJson) {
+    const Listed cut(errors);
+    Json::Value list(Json::arrayValue);
+    for (const auto& entry : cut.first) list.append(entryJson(entry));
+    root[key] = list;
+    if (cut.omitted > 0) root[key + "Omitted"] = static_cast<Json::UInt64>(cut.omitted);
+  };
+  listed("cycles", diagnostics.cycles, [&](const Cycle& cycle) { return counted(cycle.counted()); });
+  listed("dangling", diagnostics.dangling, [](const Edge& edge) { return edgeJson(edge); });
+  listed("selfEdges", diagnostics.selfEdges, [](const Edge& edge) { return edgeJson(edge); });
+  listed("maskedWork", diagnostics.maskedWork, [](const NodeId& node) { return Json::Value(node.str()); });
+
+  // One line per smell: the empty legend, each hue no kind wears, then each kind of per-node smell, every line but the
+  // first counting the nodes it covers and naming the first of them.
   Json::Value smells(Json::arrayValue);
   if (diagnostics.legendEmpty) {
     Json::Value value(Json::objectValue);
@@ -229,16 +227,17 @@ Json::Value toJson(const TreeDiagnostics& diagnostics) {
     smells.append(value);
   }
   for (const UnclaimedHue& unclaimed : diagnostics.unclaimedHues) {
-    Json::Value value = counted("unclaimed-hue", unclaimed.nodes);
+    Json::Value value = counted(unclaimed.nodes);
+    value["kind"] = "unclaimed-hue";
     value["hue"] = std::string(toString(unclaimed.hue));
     smells.append(value);
   }
-  for (const Smell& smell : diagnostics.smells) smells.append(counted(smell.kind, smell.nodes));
+  for (const Smell& smell : diagnostics.smells) {
+    Json::Value value = counted(smell.nodes);
+    value["kind"] = smell.kind;
+    smells.append(value);
+  }
   root["smells"] = smells;
-
-  Json::Value maskedWork(Json::arrayValue);
-  for (const NodeId& node : diagnostics.maskedWork) maskedWork.append(node.str());
-  root["maskedWork"] = maskedWork;
 
   return root;
 }

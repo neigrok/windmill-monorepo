@@ -77,6 +77,10 @@ TreeDiagnostics TreeDiagnostics::assess(const LooseGraph& graph, const Legend& l
     }
   }
 
+  // The walk closes cycles in an order of its own; a reply states one. No node is in two, so the first members differ.
+  std::sort(report.cycles.begin(), report.cycles.end(),
+            [](const Cycle& left, const Cycle& right) { return left.members.front() < right.members.front(); });
+
   // Smells read one linear projection; nodeView per node would rescan every live edge (O(V*E)).
   const TreeData projection = graph.toTreeData(TreeId{}, {});
   // A hue no kind wears says nothing of what its nodes are, and is told once per hue. With no kind at all every hue is

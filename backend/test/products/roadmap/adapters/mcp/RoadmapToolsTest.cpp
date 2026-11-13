@@ -4334,7 +4334,7 @@ TEST(mcp_a_receipt_names_five_of_the_loops_an_edit_closed_and_counts_the_rest) {
            (std::vector<std::string>{"loop of trees from \"n1\" through \"t_b\" -> \"t\"", "loop of trees from \"n2\" through \"t_b\" -> \"t\"",
                                      "loop of trees from \"n3\" through \"t_b\" -> \"t\"", "loop of trees from \"n4\" through \"t_b\" -> \"t\"",
                                      "loop of trees from \"n5\" through \"t_b\" -> \"t\"",
-                                     "and 2 more — call get_diagnostics for the whole list"}));
+                                     "and 2 more — get_diagnostics lists the first of each kind and counts the rest"}));
   CHECK(receipt["diagnosticsClean"].asBool());
 }
 
@@ -4477,7 +4477,7 @@ TEST(mcp_get_diagnostics_lists_fifty_nodes_and_eight_trees_of_a_way_and_counts_t
            (std::vector<std::string>{"loop of trees from \"l01\" through " + way, "loop of trees from \"l02\" through " + way,
                                      "loop of trees from \"l03\" through " + way, "loop of trees from \"l04\" through " + way,
                                      "loop of trees from \"l05\" through " + way,
-                                     "and 55 more — call get_diagnostics for the whole list"}));
+                                     "and 55 more — get_diagnostics lists the first of each kind and counts the rest"}));
   for (int k = 1; k <= 60; ++k) {
     AnnotateNode planted{NodeId{numbered("g", k)}};
     planted.opens = TreeId{numbered("t_gone", k)};
@@ -6892,6 +6892,159 @@ TEST(mcp_ten_thousand_nodes_without_an_icon_answer_one_short_smell_line) {
   CHECK_EQ(smells, parse(R"([{"kind":"empty-icon","count":10000,
     "nodes":["n00000","n00001","n00002","n00003","n00004","n00005","n00006","n00007","n00008","n00009"]}])"));
   CHECK(dump(smells).size() < 300);
+}
+
+// Each list of structural errors answers its first fifty entries in a stated order — cycles by the first member of
+// each, dangling and self-edges by `from` and then `to`, masked work by node id — and counts the rest beside it; a
+// cycle answers the count of its members and the first ten of them, as a smell's nodes are.
+TEST(mcp_get_diagnostics_lists_fifty_of_each_error_and_ten_members_of_a_cycle_and_counts_the_rest) {
+  Harness h;
+  const auto numbered = [](const char* prefix, int k) { return std::string(prefix) + (k < 10 ? "0" : "") + std::to_string(k); };
+  const Hlc seed{1, 0, "seed"};
+  LooseGraph graph;
+  const auto put = [&](const std::string& id) { graph.createNode(NodeId{id}, "N", "i", NodeColor::terracotta, seed); };
+  const auto join = [&](const std::string& from, const std::string& to) { graph.addEdge(NodeId{from}, NodeId{to}, seed); };
+  for (int k = 1; k <= 12; ++k) put(numbered("c", k));
+  for (int k = 1; k <= 12; ++k) join(numbered("c", k), numbered("c", k % 12 + 1));
+  for (int k = 1; k <= 51; ++k) {
+    put(numbered("x", k) + "a");
+    put(numbered("x", k) + "b");
+    join(numbered("x", k) + "a", numbered("x", k) + "b");
+    join(numbered("x", k) + "b", numbered("x", k) + "a");
+    put(numbered("s", k));
+    join(numbered("s", k), numbered("s", k));
+    put(numbered("d", k));
+    join(numbered("gone", k), numbered("d", k));
+    put(numbered("p", k));
+    put(numbered("k", k));
+    join(numbered("p", k), numbered("k", k));
+  }
+  for (int k = 1; k <= 51; ++k) graph.deleteNode(NodeId{numbered("p", k)}, Hlc{2, 0, "seed"});
+  h.trees.byId["t"] = StoredTree{graph.exportState(), Legend({{KindId{"k"}, NodeColor::terracotta, "K"}}, seed).exportState(),
+                                 {"Broken", {}}, 0, h.caller};
+
+  Json::Value expected = parse(R"({"cycles":[{"count":12,"nodes":["c01","c02","c03","c04","c05","c06","c07","c08","c09","c10"]}],
+    "cyclesOmitted":2,"dangling":[],"danglingOmitted":52,"selfEdges":[],"selfEdgesOmitted":1,"smells":[],
+    "maskedWork":[],"maskedWorkOmitted":1,"treeLoops":[],"danglingPointers":[]})");
+  const auto edge = [](const std::string& from, const std::string& to) {
+    Json::Value value(Json::objectValue);
+    value["from"] = from;
+    value["to"] = to;
+    return value;
+  };
+  for (int k = 1; k <= 49; ++k) {
+    Json::Value pair(Json::objectValue);
+    pair["count"] = 2;
+    pair["nodes"].append(numbered("x", k) + "a");
+    pair["nodes"].append(numbered("x", k) + "b");
+    expected["cycles"].append(pair);
+  }
+  for (int k = 1; k <= 50; ++k) {
+    expected["dangling"].append(edge(numbered("gone", k), numbered("d", k)));
+    expected["selfEdges"].append(edge(numbered("s", k), numbered("s", k)));
+    expected["maskedWork"].append(numbered("p", k));
+  }
+  CHECK_EQ(body(h.call("get_diagnostics", kNoArgs)), expected);
+}
+
+// A tree broken at every node answers as shortly as one broken at fifty, and still says how many of each error it
+// holds: one cycle through ten thousand nodes, a self-edge on each of them, twenty thousand edges from nodes that never
+// were, and ten thousand deleted parents with a live child each.
+TEST(mcp_get_diagnostics_answers_a_tree_broken_at_every_node_within_a_fixed_budget_and_counts_each_error) {
+  const Hlc seed{1, 0, "seed"};
+  const auto numbered = [](char prefix, int i) {
+    const std::string digits = std::to_string(i);
+    return prefix + std::string(5 - digits.size(), '0') + digits;
+  };
+  const auto put = [&](LooseGraph& graph, char prefix) {
+    for (int i = 0; i < 10000; ++i) graph.createNode(NodeId{numbered(prefix, i)}, "N", "i", NodeColor::terracotta, seed);
+  };
+  const auto answered = [&](const LooseGraph& graph) {
+    Harness h;
+    h.trees.byId["t"] = StoredTree{graph.exportState(), Legend({{KindId{"k"}, NodeColor::terracotta, "K"}}, seed).exportState(),
+                                   {"Broken", {}}, 0, h.caller};
+    return body(h.call("get_diagnostics", kNoArgs));
+  };
+  const auto expecting = [&](const char* errors) {
+    Json::Value expected = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[],"maskedWork":[],"treeLoops":[],
+                                     "danglingPointers":[]})");
+    const Json::Value told = parse(errors);
+    for (const std::string& key : told.getMemberNames()) expected[key] = told[key];
+    return expected;
+  };
+  const auto fiftyEdges = [&](char from, char to) {
+    Json::Value edges(Json::arrayValue);
+    for (int i = 0; i < 50; ++i) {
+      Json::Value edge(Json::objectValue);
+      edge["from"] = numbered(from, i);
+      edge["to"] = numbered(to, i);
+      edges.append(edge);
+    }
+    return edges;
+  };
+  constexpr std::size_t budget = 4096;
+
+  LooseGraph ring;
+  put(ring, 'n');
+  for (int i = 0; i < 10000; ++i) ring.addEdge(NodeId{numbered('n', i)}, NodeId{numbered('n', (i + 1) % 10000)}, seed);
+  const Json::Value oneCycle = answered(ring);
+  CHECK_EQ(oneCycle, expecting(R"({"cycles":[{"count":10000,"nodes":["n00000","n00001","n00002","n00003","n00004",
+                                   "n00005","n00006","n00007","n00008","n00009"]}]})"));
+  CHECK(dump(oneCycle).size() < budget);
+
+  LooseGraph loops;
+  put(loops, 'n');
+  for (int i = 0; i < 10000; ++i) loops.addEdge(NodeId{numbered('n', i)}, NodeId{numbered('n', i)}, seed);
+  const Json::Value selfEdges = answered(loops);
+  Json::Value everyNodeItsOwn = expecting(R"({"selfEdgesOmitted":9950})");
+  everyNodeItsOwn["selfEdges"] = fiftyEdges('n', 'n');
+  CHECK_EQ(selfEdges, everyNodeItsOwn);
+  CHECK(dump(selfEdges).size() < budget);
+
+  LooseGraph orphans;
+  put(orphans, 'n');
+  for (int i = 0; i < 10000; ++i) {
+    orphans.addEdge(NodeId{numbered('a', i)}, NodeId{numbered('n', i)}, seed);
+    orphans.addEdge(NodeId{numbered('b', i)}, NodeId{numbered('n', i)}, seed);
+  }
+  const Json::Value dangling = answered(orphans);
+  Json::Value fromNowhere = expecting(R"({"danglingOmitted":19950})");
+  fromNowhere["dangling"] = fiftyEdges('a', 'n');
+  CHECK_EQ(dangling, fromNowhere);
+  CHECK(dump(dangling).size() < budget);
+
+  LooseGraph masked;
+  put(masked, 'p');
+  put(masked, 'c');
+  for (int i = 0; i < 10000; ++i) {
+    masked.addEdge(NodeId{numbered('p', i)}, NodeId{numbered('c', i)}, seed);
+    masked.deleteNode(NodeId{numbered('p', i)}, Hlc{2, 0, "seed"});
+  }
+  const Json::Value maskedWork = answered(masked);
+  Json::Value deletedParents = expecting(R"({"danglingOmitted":9950,"maskedWorkOmitted":9950})");
+  deletedParents["dangling"] = fiftyEdges('p', 'c');
+  for (int i = 0; i < 50; ++i) deletedParents["maskedWork"].append(numbered('p', i));
+  CHECK_EQ(maskedWork, deletedParents);
+  CHECK(dump(maskedWork).size() < budget);
+}
+
+// A receipt names a cycle an edit closed by its first ten members and counts the rest, as get_diagnostics does.
+TEST(mcp_a_receipt_names_ten_members_of_a_cycle_an_edit_closed_and_counts_the_rest) {
+  Harness h;
+  const auto numbered = [](int k) { return std::string(k < 10 ? "n0" : "n") + std::to_string(k); };
+  Json::Value chain = parse(R"({"nodes":[]})");
+  for (int k = 1; k <= 12; ++k) {
+    Json::Value link = node(numbered(k).c_str(), "N");
+    if (k > 1) link["prerequisites"].append(numbered(k - 1));
+    chain["nodes"].append(link);
+  }
+  CHECK_FALSE(h.call("import_subgraph", chain).isError);
+
+  Json::Value closing(Json::objectValue);
+  closing["from"] = "n12";
+  closing["to"] = "n01";
+  CHECK_EQ(introduced(body(h.call("change_edges", adding(closing)))),
+           (std::vector<std::string>{R"(cycle among "n01", "n02", "n03", "n04", "n05", "n06", "n07", "n08", "n09", "n10" and 2 more)"}));
 }
 
 // An import's progress rows are update_nodes marks: the same schema, the same checks and the same receipt, so a

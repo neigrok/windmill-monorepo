@@ -870,6 +870,43 @@ TEST(get_diagnostics_lists_fifty_nodes_and_eight_trees_of_a_way_and_counts_the_r
   CHECK_EQ(parse(dump(bodyOf(sendGetDiagnostics(h.api, "s-owner", "t_main")))), expected);
 }
 
+// The graph's errors are cut as the MCP door cuts them: fifty of a list, ten members of a cycle, and a count of what
+// is left off.
+TEST(get_diagnostics_lists_fifty_of_each_error_and_ten_members_of_a_cycle_and_counts_the_rest) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  const auto numbered = [](const char* prefix, int k) { return std::string(prefix) + (k < 10 ? "0" : "") + std::to_string(k); };
+  TreeData data;
+  data.id = TreeId{"t_main"};
+  for (int k = 1; k <= 11; ++k) {
+    NodeSpec spec;
+    spec.id = NodeId{numbered("c", k)};
+    spec.icon = "i";
+    spec.prerequisites = {NodeId{numbered("c", k == 1 ? 11 : k - 1)}};
+    data.nodes.push_back(spec);
+  }
+  for (int k = 1; k <= 51; ++k) {
+    NodeSpec spec;
+    spec.id = NodeId{numbered("s", k)};
+    spec.icon = "i";
+    spec.prerequisites = {spec.id};
+    data.nodes.push_back(spec);
+  }
+  h.trees->byId["t_main"] =
+      StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(), LegendState{}, {"Broken", {}}, 0, owner, Visibility::private_};
+
+  Json::Value expected = parse(R"({"cycles":[{"count":11,"nodes":["c01","c02","c03","c04","c05","c06","c07","c08","c09","c10"]}],
+      "dangling":[],"selfEdges":[],"selfEdgesOmitted":1,"smells":[{"kind":"empty-legend"}],"maskedWork":[],
+      "treeLoops":[],"danglingPointers":[]})");
+  for (int k = 1; k <= 50; ++k) {
+    Json::Value edge(Json::objectValue);
+    edge["from"] = numbered("s", k);
+    edge["to"] = numbered("s", k);
+    expected["selfEdges"].append(edge);
+  }
+  CHECK_EQ(parse(dump(bodyOf(sendGetDiagnostics(h.api, "s-owner", "t_main")))), expected);
+}
+
 // An exhausted process must die rather than answer that the pointers could not be followed.
 TEST(get_diagnostics_lets_an_exhausted_process_die_rather_than_answer) {
   Harness h;

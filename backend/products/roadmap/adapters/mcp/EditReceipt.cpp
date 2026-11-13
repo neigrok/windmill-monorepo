@@ -15,11 +15,14 @@ template <typename Tag>
 std::string quoted(const Id<Tag>& id) { return "\"" + id.str() + "\""; }
 
 std::string named(const Cycle& cycle) {
+  const CountedNodes counted = cycle.counted();
   std::string members;
-  for (const NodeId& node : cycle.members) {
+  for (const NodeId& node : counted.named) {
     if (!members.empty()) members += ", ";
     members += quoted(node);
   }
+  if (counted.count > counted.named.size())
+    members += " and " + std::to_string(counted.count - counted.named.size()) + " more";
   return "cycle among " + members;
 }
 
@@ -57,7 +60,7 @@ void answerDiagnostics(const TreeDiagnostics& before, const TreeDiagnostics& aft
   for (std::size_t i = 0; i < introduced.size() && i < kMostNamed; ++i) list.append(introduced[i]);
   if (all > kMostNamed)
     list.append("and " + std::to_string(all - kMostNamed) +
-                " more — call get_diagnostics for the whole list");
+                " more — get_diagnostics lists the first of each kind and counts the rest");
 
   receipt["diagnosticsClean"] = after.clean();
   receipt["introducedDiagnostics"] = list;

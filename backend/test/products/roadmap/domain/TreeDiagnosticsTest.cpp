@@ -97,6 +97,49 @@ TEST(two_node_cycle_detected) {
   CHECK_EQ(report.cycles[0].members.size(), 2u);
 }
 
+// Cycles are reported by the first member of each, whatever order the walk closes them in.
+TEST(cycles_are_reported_in_the_order_of_their_first_member) {
+  LooseGraph g;
+  for (const char* id : {"a", "b", "y", "z"}) put(g, id);
+  g.addEdge(nid("a"), nid("b"), at(2));
+  g.addEdge(nid("b"), nid("a"), at(2));
+  g.addEdge(nid("a"), nid("y"), at(2));
+  g.addEdge(nid("y"), nid("z"), at(2));
+  g.addEdge(nid("z"), nid("y"), at(2));
+
+  const TreeDiagnostics report = TreeDiagnostics::assess(g, Legend{});
+  REQUIRE_EQ(report.cycles.size(), 2u);
+  CHECK(report.cycles[0].members == (std::vector<NodeId>{nid("a"), nid("b")}));
+  CHECK(report.cycles[1].members == (std::vector<NodeId>{nid("y"), nid("z")}));
+}
+
+// The assessment holds every error; what a reply carries of a list is its first fifty and the count of the rest, and
+// of a cycle the count of its members and the first ten.
+TEST(a_reply_carries_fifty_errors_of_a_list_and_ten_members_of_a_cycle_and_counts_the_rest) {
+  LooseGraph g;
+  const auto numbered = [](int k) { return NodeId{std::string(k < 10 ? "n0" : "n") + std::to_string(k)}; };
+  for (int k = 0; k <= 50; ++k) {
+    g.createNode(numbered(k), "N", "icon", NodeColor::sky, at(1));
+    g.addEdge(numbered(k), numbered(k), at(2));
+  }
+  for (int k = 0; k < 12; ++k) g.addEdge(numbered(k), numbered((k + 1) % 12), at(2));
+
+  const TreeDiagnostics report = TreeDiagnostics::assess(g, Legend{});
+  CHECK_EQ(report.selfEdges.size(), 51u);
+  const Listed selfEdges(report.selfEdges);
+  CHECK_EQ(selfEdges.first.size(), 50u);
+  CHECK(selfEdges.first.front() == (Edge{numbered(0), numbered(0)}));
+  CHECK(selfEdges.first.back() == (Edge{numbered(49), numbered(49)}));
+  CHECK_EQ(selfEdges.omitted, 1u);
+  const Listed cycles(report.cycles);
+  REQUIRE_EQ(cycles.first.size(), 1u);
+  CHECK_EQ(cycles.omitted, 0u);
+  CHECK_EQ(cycles.first[0].members.size(), 12u);
+  CHECK((cycles.first[0].counted() ==
+         CountedNodes{12, {numbered(0), numbered(1), numbered(2), numbered(3), numbered(4), numbered(5), numbered(6),
+                           numbered(7), numbered(8), numbered(9)}}));
+}
+
 TEST(high_in_degree_smell) {
   LooseGraph g;
   put(g, "child");

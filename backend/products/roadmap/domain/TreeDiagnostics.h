@@ -5,15 +5,13 @@
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/Tree.h"
 
+#include <algorithm>
 #include <cstddef>
+#include <span>
 #include <string>
 #include <vector>
 
 namespace wm {
-
-struct Cycle {
-  std::vector<NodeId> members;
-};
 
 // The nodes a smell covers: every one counted, the first `cap` named in the order nodes are reported, so a smell stays
 // one short line whatever the tree's size.
@@ -29,6 +27,32 @@ struct CountedNodes {
   }
 
   bool operator==(const CountedNodes&) const = default;
+};
+
+// Nodes that each lead back to themselves through the others, in id order.
+struct Cycle {
+  std::vector<NodeId> members;
+
+  // The members a reply names: every one counted and the first ten named, as a smell's nodes are.
+  CountedNodes counted() const {
+    CountedNodes nodes;
+    for (const NodeId& member : members) nodes.add(member);
+    return nodes;
+  }
+};
+
+// What a reply carries of a list of errors: its first `cap` entries, in the list's order, and the count of the rest, as
+// PointerDiagnostics cuts the pointer lists. The assessment itself keeps every entry: an edit's receipt names the
+// errors it introduced by comparing the one before it with the one after.
+template <typename Entry>
+struct Listed {
+  static constexpr std::size_t cap = 50;
+
+  std::span<const Entry> first;
+  std::size_t omitted = 0;
+
+  explicit Listed(const std::vector<Entry>& all)
+      : first(all.data(), std::min(all.size(), cap)), omitted(all.size() - first.size()) {}
 };
 
 // One kind of per-node warning — `label-too-long`, `empty-icon`, `high-in-degree` — and the nodes it covers.
@@ -48,11 +72,13 @@ struct UnclaimedHue {
 };
 
 // How a LooseGraph departs from a valid tree, read beside its legend. Errors (cycles, dangling,
-// self-edges) block the SkillTree projection; smells are warnings, one line each however many nodes
-// they cover: `smells` one per kind some node has, in the order above, `unclaimedHues` one per hue no
-// kind wears, and `legendEmpty` in their place for a tree with nodes whose legend holds no kind, where
-// every hue would be one. `maskedWork` is nodes deleted while a subtree of live children hangs off
-// them — the delete stands, resurrecting the parent re-connects it.
+// self-edges) block the SkillTree projection, and every one is held, in an order a reply can state:
+// `cycles` by the first member of each, `dangling` and `selfEdges` by `from` and then `to`. Smells
+// are warnings, one line each however many nodes they cover: `smells` one per kind some node has, in
+// the order above, `unclaimedHues` one per hue no kind wears, and `legendEmpty` in their place for a
+// tree with nodes whose legend holds no kind, where every hue would be one. `maskedWork` is nodes
+// deleted while a subtree of live children hangs off them, in id order — the delete stands,
+// resurrecting the parent re-connects it.
 struct TreeDiagnostics {
   std::vector<Cycle> cycles;
   std::vector<Edge> dangling;
