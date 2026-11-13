@@ -78,7 +78,9 @@ subscribes again from an empty vector, because a reader's coverage counts pointe
 The server broadcasts admitted writes with `intent: live` and `seq`. A persisted write receives
 `subgraphAck {treeId, frameId, seq?}`. A frame that lands nothing — a duplicate, one whose every
 stamp the server holds already, or one that carries no stamp a register keeps — is acknowledged
-without a seq, so its sender's gestures are confirmed, and is not saved, logged or broadcast. The room
+without a seq, so its sender's gestures are confirmed, and is not saved, logged or broadcast. A frame
+that carries no stamp asks for no write: anyone who may read the tree is acknowledged so, a reader and
+a visitor without a session included, and only a frame that carries a stamp meets the write gate. The room
 tracks seen frame IDs, and the op log enforces `(tree_id, op_id)` uniqueness. The op log contains
 one coarse headline per frame, not the full envelope. A frame leaves a deed only when it creates or
 deletes a node, writes a node's label, color, description or links, adds or removes an edge, creates

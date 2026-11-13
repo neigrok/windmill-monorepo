@@ -270,7 +270,12 @@ headline deed, so it leaves no `tree_ops` row and no activity entry. A frame tha
 duplicate `frameId`, one whose every stamp the room already holds, or one that carries no stamp, as
 when its entries hold only keys no register keeps — takes no seq and leaves the room as it was, with
 no record of an id only it named: it is not saved, logged or broadcast. Its sender is still
-answered, by a `subgraphAck` that carries no `seq`. A broadcast carries the room's `seq` and always
+answered, by a `subgraphAck` that carries no `seq`. A frame that carries no stamp
+(`Subgraph::carriesNoStamp`) asks for no write, so it meets only the read gate: whoever may read the
+tree, a reader or a visitor without a session included, gets that ack, and no room is loaded for it;
+for a tree the sender may not read it is answered as any frame is, the same for a private tree as
+for an absent one. A frame that carries a stamp meets the write gate before the room, whatever the
+room already holds. A broadcast carries the room's `seq` and always
 states `intent: live`, whatever intent the frame arrived with — echoing a `flush` would make every
 subscriber treat it as a re-baselining graft.
 

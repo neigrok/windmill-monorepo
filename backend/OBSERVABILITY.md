@@ -18,7 +18,8 @@ Each write boundary emits one `write {…}` completion record with static `opera
 `product` and `door`, `outcome`, numeric `duration_ms` rounded to 0.01 ms, and an internally generated
 `request_id`. Exactly one successful outer door completion is INFO per request; nested successful
 admissions, commands, publication, server calls and MCP transport use DEBUG. MCP write tools own the
-INFO completion instead of their transport. Refusals use WARN and failures ERROR at every boundary.
+INFO completion instead of their transport. Refusals use WARN and failures ERROR at every boundary; a write
+that lands nothing completes `unchanged` at the level `ok` would take, and creates no Issue.
 `WINDMILL_LOG_LEVEL` controls emitted levels and `SENTRY_LOG_LEVEL` independently controls forwarding;
 both default to INFO. Use DEBUG for inner outcomes and timings. Background runs emit a completion only
 after a committed write or failure. Session refresh emits only for a matched UPDATE or failure; its
@@ -368,7 +369,7 @@ listed separately because their only server writes are authentication refresh or
 | Sign-in (link, code, Google, Apple, account link) meeting a close past its grace | `auth.account.erase` | DEBUG completion, door `server-origin`, nested in the sign-in route's INFO completion, before the new account is made; one INFO `auth: closed account erased` line with the door, the erased account's id and the route's `request_id` | unexpected |
 | `ForkSignup::plant` | `roadmap.signup.fork` | completion; `ok`, `source-missing-or-id-taken`, `failed` | unexpected |
 | `AmplitudeClient::forward` | `amplitude.forward` | completion after all retries; `ok`, `http_NNN`, `rate_limited`, `failed` | unexpected transport/5xx |
-| `Collab::onMessage` subgraph/progress | `roadmap.ws.subgraph`, `roadmap.ws.progress` | completion; exact reject/skew outcome, `bad-frame` for a frame that does not parse whole; `failed` for a subgraph frame whose save throws, its author answered `server-error`; `opens-a-tree` for a progress frame that recorded no mark and had at least one refused as the tree's writer's on a node that opens a tree; `failed` for a progress frame whose read or write throws, left unanswered | unexpected |
+| `Collab::onMessage` subgraph/progress | `roadmap.ws.subgraph`, `roadmap.ws.progress` | completion; for a subgraph frame `ok` when it landed and took a seq, and `unchanged`, at INFO like `ok`, when it was acknowledged without one because it landed nothing — a duplicate, an echo of stamps the room holds, or a frame carrying no stamp, which is what a tab on a bundle that kept node positions re-sends on load; exact reject/skew outcome, `bad-frame` for a frame that does not parse whole; `failed` for a subgraph frame whose save throws, its author answered `server-error`; `opens-a-tree` for a progress frame that recorded no mark and had at least one refused as the tree's writer's on a node that opens a tree; `failed` for a progress frame whose read or write throws, left unanswered | unexpected |
 | `Collab::onMessage` rate gate | `roadmap.ws.frame` | completion; `rate_limited` | log only |
 | `TreeApi::readRoom` (`GET /v1/trees/{id}` and its `/progress`, `/guides`, `/diagnostics`, `/activity`) | `roadmap.tree.read` | ERROR completion `failed` only, door `rest`; a read that does not fail leaves no line, and a failed one still answers the 404 an absent tree gets | unexpected, with the exception type |
 | `TreeApi::getTree` following the trees a tree opens, for its writer (`TreeRepository::openedFrom`) | `roadmap.tree.follow` | ERROR completion `failed` only, door `rest`; a follow that does not fail leaves no line, and a failed one answers `503 opens-unavailable` | unexpected, with the exception type |

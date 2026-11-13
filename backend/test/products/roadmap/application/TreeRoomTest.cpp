@@ -135,13 +135,14 @@ TEST(room_join_subgraph_a_frame_that_lands_nothing_takes_no_seq_is_told_to_no_on
   CHECK(room.joinSubgraph(created, uid()) == std::optional<Seq>(1));
   const GraphState landed = room.exportState();
   const LegendState legend = room.exportLegend();
+  room.markClean();
   CHECK(room.joinSubgraph(again, uid()) == std::nullopt);
   CHECK(room.joinSubgraph(bare, uid()) == std::nullopt);
   CHECK(room.joinSubgraph(empty, uid()) == std::nullopt);
   CHECK_EQ(room.head(), static_cast<Seq>(1));
   CHECK(room.exportState() == landed);
   CHECK(room.exportLegend() == legend);
-  CHECK(room.dirtyState() == (std::pair<GraphState, LegendState>{landed, LegendState{}}));
+  CHECK(room.dirtyState() == (std::pair<GraphState, LegendState>{}));
   CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
   CHECK_EQ(room.pendingOps().size(), 1u);
 }

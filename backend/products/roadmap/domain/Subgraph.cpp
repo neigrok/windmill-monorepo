@@ -98,6 +98,10 @@ VersionVector frontier(const Subgraph& frame) {
   return vector;
 }
 
+bool Subgraph::carriesNoStamp() const {
+  return frontier(*this).marks.empty();
+}
+
 Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const VersionVector& since) {
   Subgraph delta;
   delta.intent = SubgraphIntent::delta;

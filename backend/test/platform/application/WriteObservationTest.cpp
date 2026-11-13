@@ -66,6 +66,20 @@ TEST(WriteObservation_expected_refusals_never_create_issues) {
   CHECK(recording.reporter->issues.empty());
 }
 
+TEST(WriteObservation_a_write_that_lands_nothing_completes_unchanged_at_the_level_ok_takes_and_files_no_issue) {
+  Recording recording;
+  {
+    wm::WriteObservation observation("roadmap.ws.subgraph", "roadmap", "websocket");
+    wm::WriteContext context(observation);
+    wm::finishCurrentWriteUnchanged();
+    observation.finish();
+  }
+  REQUIRE(recording.lines.size() == 1);
+  CHECK(recording.lines[0].outcome == "unchanged");
+  CHECK(recording.lines[0].severity == wm::WriteSeverity::info);
+  CHECK(recording.reporter->issues.empty());
+}
+
 TEST(WriteObservation_nested_failure_reports_one_compiled_type_without_message) {
   Recording recording;
   wm::WriteObservation request("gym.write", "gym", "rest");

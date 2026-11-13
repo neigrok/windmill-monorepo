@@ -48,6 +48,35 @@ TEST(a_frames_frontier_folds_its_title_and_guide_beside_its_graph_and_legend) {
   CHECK(frontier(frame) == expected);
 }
 
+// A frame carries no stamp while no node, edge or kind entry of it and neither tree register holds a set one: an
+// entry's id and its unstamped values count for nothing. One set stamp anywhere is a write the frame asks for.
+TEST(a_frame_carries_no_stamp_until_one_entry_or_tree_register_holds_a_set_one) {
+  Subgraph bare;
+  bare.graph.nodes = {NodeStateEntry{.id = nid("a"), .label = "Unstamped"}};
+  bare.graph.edges = {EdgeStateEntry{Edge{nid("a"), nid("b")}, {}, {}}};
+  KindStateEntry kind;
+  kind.id = KindId{"k"};
+  bare.legend.kinds = {kind};
+  Subgraph ordered = bare;
+  ordered.graph.nodes[0].orderAt = at(1);
+  Subgraph unlinked = bare;
+  unlinked.graph.edges[0].removedAt = at(1);
+  Subgraph ranked = bare;
+  ranked.legend.kinds[0].rankAt = at(1);
+  Subgraph titled = bare;
+  titled.title = Lww<std::string>{"Title", at(1)};
+  Subgraph guided = bare;
+  guided.guide = Lww<std::string>{"Guide", at(1)};
+
+  CHECK(Subgraph{}.carriesNoStamp());
+  CHECK(bare.carriesNoStamp());
+  CHECK_FALSE(ordered.carriesNoStamp());
+  CHECK_FALSE(unlinked.carriesNoStamp());
+  CHECK_FALSE(ranked.carriesNoStamp());
+  CHECK_FALSE(titled.carriesNoStamp());
+  CHECK_FALSE(guided.carriesNoStamp());
+}
+
 TEST(delta_against_empty_reconstructs_the_whole_state) {
   LooseGraph source;
   source.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
