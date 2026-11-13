@@ -2542,3 +2542,30 @@ TEST(ws_a_subscribers_progress_graft_is_sent_before_the_echo_of_a_mark_made_afte
   }
   CHECK_EQ(progress, (std::vector<std::string>{"graft", "echo"}));
 }
+
+// The subscribe answer lists the subtree each step owns, to the tree's writer and its readers alike, and carries no
+// such key when the steps own none: what heals a `subtree` frame missed while away. A subtree's own answer names it by
+// its owning step's label, whatever the vector covers, and leaves that stamp out of its coverage.
+TEST(ws_the_subscribe_answer_lists_the_subtrees_steps_own_and_names_a_subtree_by_its_owning_step) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  const auto subscribed = [&h](const std::string& session, const std::string& tree) {
+    auto conn = std::make_shared<FakeSocket>();
+    h.collab.onOpen(h.upgrade(session), conn);
+    h.collab.onMessage(conn, subscribeFrame(tree));
+    return lastFrameOfType(*conn, "subgraph");
+  };
+  CHECK_FALSE(subscribed("s-owner", "t_p").isMember("subtrees"));
+
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {TreeId{"t_00000000000000c1"}, std::nullopt})));
+  const Json::Value listed = parse(R"([{"step":"plain","id":"t_00000000000000c1","depth":1}])");
+  CHECK_EQ(subscribed("s-owner", "t_p")["subtrees"], listed);
+  CHECK_EQ(subscribed("", "t_p")["subtrees"], listed);
+
+  const Json::Value child = subscribed("", "t_00000000000000c1");
+  CHECK_EQ(child["title"], parse(R"({"v":"Plain","at":"101:0:r_seed"})"));
+  CHECK_FALSE(child.isMember("subtrees"));
+  CHECK_FALSE(child["coverage"].isMember("r_seed"));
+}

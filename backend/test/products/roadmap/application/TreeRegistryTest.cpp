@@ -1458,3 +1458,55 @@ TEST(create_subtree_writes_its_line_at_the_door_it_came_through) {
   CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create roadmap mcp ok",
                                                 "mcp.roadmap_create_subtree roadmap mcp ok"}));
 }
+
+static std::string labelIn(FakeTreeRepository& trees, const char* tree, const char* step) {
+  for (const NodeStateEntry& node : trees.byId[tree].state.nodes)
+    if (node.id == nid(step)) return node.label;
+  return "";
+}
+
+// A subtree's title is its owning step's label: renaming it, through rename or describe, writes that label in the
+// parent's room, on the parent's stream, as an ordinary label write of the step, and never the subtree's own title
+// register; a guide sent beside it lands in the subtree's own room after it. A name the step already holds lands
+// nothing, and a stranger, or a step gone from its parent, is refused with nothing written.
+TEST(renaming_a_subtree_writes_its_owning_steps_label_in_the_parent_and_never_its_own_title) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  s.trees.byId["t_p"].visibility = Visibility::unlisted;
+  const TreeId child{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1"))));
+
+  CHECK(s.registry.rename(child, me, "  Rig the boat ") == TreeRegistry::Renaming::renamed);
+  CHECK_EQ(labelIn(s.trees, "t_p", "rig"), std::string("Rig the boat"));
+  CHECK_EQ(s.trees.byId[child.str()].title.value, std::string(""));
+  REQUIRE_EQ(s.bus.subgraphBroadcasts.size(), 1u);
+  CHECK_EQ(s.bus.subgraphBroadcasts[0].tree, std::string("t_p"));
+  CHECK_EQ(s.bus.subgraphBroadcasts[0].seq, Seq{2});
+  CHECK(s.rooms.open(tid("t_p"))->pendingOps().empty());  // persisted, and its op row landed with it
+
+  using Answer = std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission>;
+  const Answer both = s.registry.describe(child, me, {std::string("Rig it"), std::string("Knots first.")});
+  REQUIRE(std::holds_alternative<TreeRegistry::Described>(both));
+  CHECK_EQ(std::get<TreeRegistry::Described>(both).seq, Seq{1});
+  CHECK_FALSE(std::get<TreeRegistry::Described>(both).unchanged);
+  CHECK_EQ(labelIn(s.trees, "t_p", "rig"), std::string("Rig it"));
+  CHECK_EQ(s.trees.byId[child.str()].guide.value, std::string("Knots first."));
+  CHECK_EQ(s.trees.byId[child.str()].title.value, std::string(""));
+
+  const Answer again = s.registry.describe(child, me, {std::string("Rig it"), std::nullopt});
+  REQUIRE(std::holds_alternative<TreeRegistry::Described>(again));
+  CHECK_EQ(std::get<TreeRegistry::Described>(again).seq, Seq{1});
+  CHECK(std::get<TreeRegistry::Described>(again).unchanged);
+  CHECK_EQ(s.bus.subgraphBroadcasts.size(), 3u);
+
+  CHECK(s.registry.rename(child, uid("stranger"), "Mine now") == TreeRegistry::Renaming::notYours);
+  {
+    std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    s.rooms.open(tid("t_p"))->applyCommand(DeleteNode{nid("rig")}, s.clock.nowMs(), me);
+    REQUIRE(s.rooms.persist(tid("t_p")));
+  }
+  CHECK(s.registry.rename(child, me, "Rig again") == TreeRegistry::Renaming::notFound);
+  CHECK_EQ(labelIn(s.trees, "t_p", "rig"), std::string("Rig it"));
+}

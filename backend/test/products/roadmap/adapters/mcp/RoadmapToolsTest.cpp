@@ -20,6 +20,7 @@
 #include <thread>
 #include <tuple>
 #include <typeinfo>
+#include <variant>
 
 using namespace wm;
 using namespace wm::fake;
@@ -8645,4 +8646,28 @@ TEST(mcp_the_cross_branch_flag_is_refused_wherever_mcp_took_or_answered_it) {
            std::string("get_tree: kindFields[1] \"crossBranchExempt\" is not one of {id, hue, label, description}"));
   CHECK(h->trees.byId["t"] == stored);
   CHECK_EQ(h->trees.byId.size(), trees);
+}
+
+// A subtree's title is its owning step's label: update_tree renames that step in the parent and answers the subtree's
+// own stream, which no rename moves. The owning step follows its subtree and takes no hand mark, as a step that opens a
+// tree takes none.
+TEST(mcp_update_tree_renames_a_subtree_through_its_owning_step_which_takes_no_mark) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Sail")).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  Json::Value rename(Json::objectValue);
+  rename["treeId"] = sailing.str();
+  rename["title"] = "Learn to sail";
+
+  const ToolResult renamed = h.tools.callTool("update_tree", rename, h.actor);
+  CHECK_FALSE(renamed.isError);
+  CHECK_EQ(body(renamed), parse(R"({"applied":true,"seq":0})"));
+  CHECK_EQ(LooseGraph(h.trees.byId["t"].state).nodeView(NodeId{"sail"})->label, std::string("Learn to sail"));
+  CHECK_EQ(h.trees.byId[sailing.str()].title.value, std::string(""));
+
+  const Json::Value marked = body(h.call("update_nodes", asUpdate(mark("sail", "complete"))));
+  CHECK_EQ(marked["progressRefused"], parse(R"(["sail"])"));
+  CHECK(h.progressRepo.load(TreeId{"t"}, h.caller).marks.empty());
 }

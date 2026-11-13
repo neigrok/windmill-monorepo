@@ -7,8 +7,12 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include <map>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <variant>
+#include <vector>
 
 using namespace wm;
 using namespace wm::fake;
@@ -646,4 +650,57 @@ TEST(list_rows_carry_their_openers_and_delete_answers_the_steps_that_went_with_t
   CHECK_EQ(bodyOf(refused), parse(R"({"error":"nothing was removed: the steps that open this roadmap could not be read; try again",
                                      "code":"cascade-unavailable"})"));
   CHECK_FALSE(h.trees.deletedIds.count("t_four"));
+}
+
+// The list holds roots alone: a subtree is no row, and counts in its parent as the one step that owns it, done when the
+// subtree is. Renaming a subtree with PATCH {title} renames that step, which names the subtree.
+TEST(list_holds_roots_alone_and_patch_renames_a_subtree_through_its_owning_step) {
+  Harness h;
+  const UserId me = h.signIn("s-live", "sam@example.com");
+  const auto plant = [&](const char* id, const char* title, const std::vector<const char*>& steps) {
+    TreeData data;
+    data.id = TreeId{std::string(id)};
+    data.title = title;
+    for (const char* step : steps) {
+      NodeSpec node;
+      node.id = NodeId{std::string(step)};
+      node.label = step;
+      data.nodes.push_back(node);
+    }
+    h.trees.byId[id] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(), LegendState{}, {title, {}}, 0, me};
+  };
+  plant("t_a", "My year", {"sail", "coast"});
+  plant("t_b", "Work", {"ship"});
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.registry->createSubtree(TreeId{"t_a"}, NodeId{"sail"}, me, {sailing, std::nullopt})));
+  const auto rows = [&] {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Get);
+    request->addCookie("wm_session", "s-live");
+    drogon::HttpResponsePtr listed;
+    h.api.listTrees(request, [&](const drogon::HttpResponsePtr& response) { listed = response; });
+    const Json::Value body = bodyOf(listed);
+    std::map<std::string, std::string> doneOfTotal;
+    for (const Json::Value& row : body["trees"])
+      doneOfTotal[row["id"].asString()] = row["done"].asString() + "/" + row["total"].asString();
+    return doneOfTotal;
+  };
+
+  CHECK(rows() == (std::map<std::string, std::string>{{"t_a", "0/2"}, {"t_b", "0/1"}}));
+  {
+    std::lock_guard<std::mutex> strand(h.rooms.strandFor(sailing));
+    h.rooms.open(sailing)->applyCommand(CreateNode{NodeId{"knot"}, "Knot", "", NodeColor::sky}, h.clock.nowMs(), me);
+    REQUIRE(h.rooms.persist(sailing));
+  }
+  CHECK(rows() == (std::map<std::string, std::string>{{"t_a", "0/2"}, {"t_b", "0/1"}}));
+  h.progress.setStatuses(sailing, me, {{NodeId{"knot"}, ProgressStatus::complete, false, Hlc{5, 0, "r_a"}}},
+                         StampedBy::replica, 5);
+  CHECK(rows() == (std::map<std::string, std::string>{{"t_a", "1/2"}, {"t_b", "0/1"}}));
+
+  CHECK_EQ(sendPatch(h.api, patch(titled("Learn to sail"), "s-live"), sailing.str())->getStatusCode(),
+           drogon::k204NoContent);
+  std::lock_guard<std::mutex> strand(h.rooms.strandFor(TreeId{"t_a"}));
+  CHECK(h.rooms.open(TreeId{"t_a"})->labelOf(NodeId{"sail"}) == std::optional<std::string>("Learn to sail"));
+  CHECK_EQ(h.trees.byId[sailing.str()].title.value, std::string(""));
 }

@@ -5,6 +5,7 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -308,4 +309,24 @@ TEST(page_falls_back_to_a_hash_redirect_when_the_web_root_is_missing) {
 
   CHECK_EQ(resp->getStatusCode(), drogon::k200OK);
   CHECK(has(resp->getBody(), "url=/#/t/t_shared"));
+}
+
+// A subtree's own link opens it for anyone who may read its root, named by its owning step's label and indexed as its
+// root is: a private root keeps it from a stranger, whose page is the raw shell.
+TEST(page_of_a_subtree_names_it_by_its_owning_step_and_follows_its_roots_visibility) {
+  Harness h;
+  h.seed("t_root", "My year", UserId{"owner"}, Visibility::public_, 2);
+  h.seed("t_sail", "", UserId{"owner"}, Visibility::private_, 3);
+  h.trees->subtrees["t_sail"] =
+      Subtree{TreeId{"t_sail"}, TreeId{"t_root"}, OwningStep{TreeId{"t_root"}, NodeId{"n1"}}, 1, 0};
+  SharePageApi api = h.make(makeWebRoot(SHELL));
+
+  const drogon::HttpResponsePtr shared = sendPage(api, "", "t_sail");
+  CHECK(has(shared->getBody(), "<title>Step 1 \xE2\x80\x94 Windmill</title>"));
+  CHECK(has(shared->getBody(), "A Windmill skill tree \xE2\x80\x94 3 steps."));
+  CHECK(has(shared->getBody(), "content=\"index, follow, max-image-preview:large\""));
+
+  h.rooms->sweep(std::chrono::steady_clock::duration::zero());
+  h.trees->byId["t_root"].visibility = Visibility::private_;
+  CHECK_EQ(std::string(sendPage(api, "", "t_sail")->getBody()), SHELL);
 }
