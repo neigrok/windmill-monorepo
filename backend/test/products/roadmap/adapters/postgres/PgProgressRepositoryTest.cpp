@@ -194,6 +194,73 @@ TEST(pg_a_progress_write_waits_for_a_write_under_way_and_answers_the_row_it_left
   reset();
 }
 
+// A replica's mark that ties the held stamp on millisecond and counter does not land, whatever its actor: the
+// statement orders stamps by those two columns alone.
+TEST(pg_a_replicas_progress_write_that_ties_the_held_stamp_loses_whatever_its_actor) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgProgressRepository repo{pgTestPool()};
+  const NodeId node{"a"};
+  const ProgressMark held{ProgressStatus::complete, Hlc{5, 2, "m"}, 0, false};
+  REQUIRE(repo.setStatuses(kTree, kUser, {{node, ProgressStatus::complete, false, held.at}}, StampedBy::replica, kNow)
+              .front().landed.has_value());
+
+  for (const char* actor : {"a", "m", "z"})
+    CHECK((repo.setStatuses(kTree, kUser, {{node, ProgressStatus::none, false, Hlc{5, 2, actor}}}, StampedBy::replica, kNow) ==
+           std::vector<ProgressWritten>{{held, std::nullopt}}));
+  CHECK(repo.load(kTree, kUser).marks.at(node).at == held.at);
+  CHECK(repo.setStatuses(kTree, kUser, {{node, ProgressStatus::none, false, Hlc{5, 3, "a"}}}, StampedBy::replica, kNow)
+            .front().landed.has_value());
+  reset();
+}
+
+// Two calls that write the same nodes in opposite orders both land: each takes its rows in node order whatever order
+// it was handed them in, so neither waits on a row the other holds while holding one the other wants. Taken in the
+// order handed, the two deadlock and the store aborts one of them; the connections here give up a statement after
+// five seconds, so a wait that nothing breaks fails the case instead of hanging it.
+TEST(pg_progress_batches_that_name_the_same_nodes_in_opposite_orders_both_land) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const std::string url = pgTestPool()->connString();
+  const std::string bounded = url.rfind("postgres", 0) == 0
+                                  ? url + (url.find('?') == std::string::npos ? "?" : "&") + "options=-c%20statement_timeout%3D5000"
+                                  : url + " options='-c statement_timeout=5000'";
+  PgProgressRepository repo{std::make_shared<PgPool>(bounded, 2)};
+  std::vector<ProgressUpdate> forward;
+  for (int i = 0; i < 20; ++i)
+    forward.push_back({NodeId{std::string(i < 10 ? "n0" : "n") + std::to_string(i)}, ProgressStatus::complete, false, Hlc{7, 0, "srv"}});
+  const std::vector<ProgressUpdate> backward(forward.rbegin(), forward.rend());
+  REQUIRE_EQ(repo.setStatuses(kTree, kUser, forward, StampedBy::server, kNow).size(), 20u);
+
+  std::promise<void> start;
+  const std::shared_future<void> started = start.get_future().share();
+  const auto writes = [&](const std::vector<ProgressUpdate>& updates) {
+    return std::async(std::launch::async, [&repo, &updates, started] {
+      started.wait();
+      std::size_t landed = 0;
+      for (int round = 0; round < 40; ++round)
+        for (const ProgressWritten& did : repo.setStatuses(kTree, kUser, updates, StampedBy::server, kNow))
+          landed += did.landed.has_value();
+      return landed;
+    });
+  };
+  std::future<std::size_t> ascending = writes(forward);
+  std::future<std::size_t> descending = writes(backward);
+  start.set_value();
+  std::string failure;
+  std::size_t landed = 0;
+  for (std::future<std::size_t>* writer : {&ascending, &descending}) {
+    try {
+      landed += writer->get();
+    } catch (const std::exception& error) {
+      failure = error.what();
+    }
+  }
+  CHECK_EQ(failure, std::string());
+  CHECK_EQ(landed, 2u * 40u * 20u);
+  reset();
+}
+
 TEST(pg_legacy_progress_reads_as_cleared_and_preserves_completion_and_stamps) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   const TreeId tree{"pgtest-progress-legacy"};

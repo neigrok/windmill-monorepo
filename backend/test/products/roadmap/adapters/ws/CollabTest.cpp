@@ -19,6 +19,7 @@
 
 #include "platform/application/WriteObservation.h"
 
+#include <trantor/net/EventLoopThread.h>
 #include <trantor/net/InetAddress.h>
 #include <trantor/utils/Logger.h>
 
@@ -26,6 +27,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -112,6 +114,16 @@ struct Harness {
     if (!session.empty()) req->addCookie("wm_session", session);
     if (!origin.empty()) req->addHeader("Origin", origin);
     return req;
+  }
+};
+
+// A connection that sends as the framework's do: at once from its own loop, and through that loop's queue from any
+// other thread.
+struct LoopSocket : FakeSocket {
+  trantor::EventLoop* loop = nullptr;
+  void send(std::string_view msg, const drogon::WebSocketMessageType type) override {
+    if (loop->isInLoopThread()) return FakeSocket::send(msg, type);
+    loop->queueInLoop([this, text = std::string(msg), type] { FakeSocket::send(text, type); });
   }
 };
 
@@ -2386,4 +2398,147 @@ TEST(ws_every_subscriber_of_the_parent_receives_one_subtree_frame_at_the_seq_it_
   const auto returning = subscribed("", "t_p");
   CHECK_EQ(lastFrameOfType(*returning, "subgraph")["seq"].asUInt64(), std::uint64_t{1});
   CHECK_EQ(countOfType(*returning, "subtree"), 0u);
+}
+
+// A subscriber is sent a tree's broadcasts in the order the tree made them, the one of its own write included.
+// Another writer's frame is broadcast from that writer's loop while the subscriber's loop is still busy
+// with the subscriber's own write — as it is while its handler waits for the tree — and the broadcast of that write
+// must not go out ahead of the earlier one.
+TEST(a_subscriber_is_sent_a_trees_broadcasts_in_seq_order_its_own_writes_included) {
+  trantor::EventLoopThread own("subscriber");
+  trantor::EventLoopThread other("another-writer");
+  own.run();
+  other.run();
+  const auto conn = std::make_shared<LoopSocket>();
+  conn->loop = own.getLoop();
+  WsPresenceBus bus;
+  const TreeId tree{"t"};
+  std::promise<void> sent;
+  own.getLoop()->queueInLoop([&] {
+    bus.subscribe(tree, conn, UserId{"u"});
+    std::promise<void> broadcast;
+    other.getLoop()->queueInLoop([&] {
+      bus.broadcastSubgraph(tree, 5, Subgraph{});
+      broadcast.set_value();
+    });
+    broadcast.get_future().wait();
+    bus.broadcastSubgraph(tree, 6, Subgraph{});
+    own.getLoop()->queueInLoop([&] { sent.set_value(); });
+  });
+  REQUIRE(sent.get_future().wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+
+  std::vector<Json::Int64> seqs;
+  for (const std::string& text : conn->sent) seqs.push_back(parse(text)["seq"].asInt64());
+  CHECK_EQ(seqs, (std::vector<Json::Int64>{5, 6}));
+}
+
+// A new subscriber's first frames, the delta and then the progress graft, are sent before every broadcast and every
+// echo made after it joined, however long they take to write out: their places in the connection's send order are
+// taken with the join. Here another writer's frame and another tab's mark are handed over from another loop after the
+// join and before either first frame is written, as they are whenever a write lands in that gap.
+TEST(a_subscribers_delta_and_graft_are_sent_before_a_broadcast_and_an_echo_made_between_its_join_and_their_writing) {
+  trantor::EventLoopThread own("subscriber");
+  trantor::EventLoopThread other("a-writer");
+  own.run();
+  other.run();
+  const auto conn = std::make_shared<LoopSocket>();
+  conn->loop = own.getLoop();
+  WsPresenceBus bus;
+  const TreeId tree{"t"};
+  std::promise<void> sent;
+  own.getLoop()->queueInLoop([&] {
+    WsPresenceBus::FirstFrames first = bus.subscribe(tree, conn, UserId{"u"});
+    std::promise<void> handedOver;
+    other.getLoop()->queueInLoop([&] {
+      bus.broadcastSubgraph(tree, 6, Subgraph{});
+      Progress marked;
+      marked.record(NodeId{"a"}, ProgressMark{ProgressStatus::complete, Hlc{500, 0, "r_tab"}, 500, false});
+      bus.broadcastProgress(tree, UserId{"u"}, marked);
+      handedOver.set_value();
+    });
+    handedOver.get_future().wait();
+    first.delta.send(R"({"t":"subgraph","intent":"delta","seq":5})");
+    first.graft.send(R"({"t":"progress","intent":"graft"})");
+    own.getLoop()->queueInLoop([&] { sent.set_value(); });
+  });
+  REQUIRE(sent.get_future().wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+
+  std::vector<std::string> frames;
+  for (const std::string& text : conn->sent) {
+    const Json::Value frame = parse(text);
+    frames.push_back(frame["t"].asString() + " " + frame.get("intent", "echo").asString() + " " + frame["seq"].asString());
+  }
+  CHECK_EQ(frames, (std::vector<std::string>{"subgraph delta 5", "progress graft ", "subgraph live 6", "progress echo "}));
+}
+
+// A writer's ack follows the broadcast of its own frame: the room hands the broadcast to the connection's loop and the
+// handler hands the ack over after it, so a tab never confirms a frame it has not been sent.
+TEST(ws_a_writers_ack_is_sent_after_the_broadcast_of_its_frame) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  trantor::EventLoopThread own("writer");
+  own.run();
+  const auto conn = std::make_shared<LoopSocket>();
+  conn->loop = own.getLoop();
+  std::promise<void> sent;
+  own.getLoop()->queueInLoop([&] {
+    h.collab.onOpen(h.upgrade("s-owner"), conn);
+    h.collab.onMessage(conn, subscribeFrame("t_priv"));
+    h.collab.onMessage(conn, writeFrame("t_priv"));
+    own.getLoop()->queueInLoop([&] { sent.set_value(); });
+  });
+  REQUIRE(sent.get_future().wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+
+  std::vector<std::string> structure;
+  for (const std::string& text : conn->sent) {
+    const Json::Value frame = parse(text);
+    if (frame["t"] == "subgraph") structure.push_back("subgraph " + frame["intent"].asString());
+    if (frame["t"] == "subgraphAck") structure.push_back("subgraphAck");
+  }
+  CHECK_EQ(structure, (std::vector<std::string>{"subgraph delta", "subgraph live", "subgraphAck"}));
+}
+
+// A new subscriber's progress graft is sent before the echo of any mark made after its marks were read. Here another
+// tab's mark is echoed to the connection between that read and the graft's send, as it can be while the read is on
+// its way back. A tab takes a graft as the whole of its marks, so one that arrived after the echo would put the older
+// mark back.
+TEST(ws_a_subscribers_progress_graft_is_sent_before_the_echo_of_a_mark_made_after_its_marks_were_read) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedSteps("t_main", owner, Visibility::private_, "");
+  trantor::EventLoopThread own("subscriber");
+  trantor::EventLoopThread other("another-tab");
+  own.run();
+  other.run();
+  const auto conn = std::make_shared<LoopSocket>();
+  conn->loop = own.getLoop();
+  bool echoed = false;
+  h.progressRepo.afterRead = [&] {
+    if (echoed) return;
+    echoed = true;
+    std::promise<void> handedOver;
+    other.getLoop()->queueInLoop([&] {
+      Progress later;
+      later.record(NodeId{"plain"}, ProgressMark{ProgressStatus::complete, Hlc{500, 0, "r_tab"}, 500, false});
+      h.bus.broadcastProgress(TreeId{"t_main"}, owner, later);
+      handedOver.set_value();
+    });
+    handedOver.get_future().wait();
+  };
+  std::promise<void> sent;
+  own.getLoop()->queueInLoop([&] {
+    h.collab.onOpen(h.upgrade("s-owner"), conn);
+    h.collab.onMessage(conn, subscribeFrame("t_main"));
+    own.getLoop()->queueInLoop([&] { sent.set_value(); });
+  });
+  REQUIRE(sent.get_future().wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+
+  REQUIRE(echoed);
+  std::vector<std::string> progress;
+  for (const std::string& text : conn->sent) {
+    const Json::Value frame = parse(text);
+    if (frame["t"] == "progress") progress.push_back(frame.get("intent", "echo").asString());
+  }
+  CHECK_EQ(progress, (std::vector<std::string>{"graft", "echo"}));
 }

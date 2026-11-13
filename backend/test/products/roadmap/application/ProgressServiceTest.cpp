@@ -202,6 +202,27 @@ TEST(progress_a_mark_is_answered_by_its_own_write_whatever_another_door_wrote_un
          std::vector<ProgressOutcome>{{ProgressStatus::none, true, true, false, false}}));
 }
 
+// A replica's mark that ties the held stamp on millisecond and counter does not land, whatever its actor: the store
+// orders stamps by those two alone, and the fake follows it.
+TEST(progress_a_replicas_mark_that_ties_the_held_stamp_loses_whatever_its_actor) {
+  FakeProgressRepository repo;
+  FakeTreeRepository trees;
+  ProgressService service(repo, trees);
+  const auto marked = [&](ProgressStatus status, const Hlc& stamp) {
+    return service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), status, noPrereqs, stamp, false}}, StampedBy::replica, 9);
+  };
+  marked(ProgressStatus::complete, Hlc{5, 2, "m"});
+
+  for (const char* actor : {"a", "m", "z"}) {
+    const ProgressReceipt tied = marked(ProgressStatus::none, Hlc{5, 2, actor});
+    CHECK((tied.outcomes == std::vector<ProgressOutcome>{{ProgressStatus::none, true, false, false, false}}));
+    CHECK(tied.recorded.marks.empty());
+  }
+  CHECK((service.progressOf(tid(), uid()).marks ==
+         std::map<NodeId, ProgressMark>{{nid("a"), {ProgressStatus::complete, Hlc{5, 2, "m"}, 5, false}}}));
+  CHECK(marked(ProgressStatus::none, Hlc{5, 3, "a"}).outcomes.front().applied);
+}
+
 TEST(progress_batch_carries_the_out_of_order_word_per_write) {
   FakeProgressRepository repo;
   FakeTreeRepository trees;
