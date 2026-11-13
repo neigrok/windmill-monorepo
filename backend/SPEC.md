@@ -76,7 +76,10 @@ rejected for structure. Validity is a read model, not a gate.
   so `diagnose` costs the account's pointers plus the capped lists, whatever the tree holds.
   The raw mark (`status`, `get_progress`, and `GET …/progress` for a caller who can write the tree)
   stays the raw mark; every other reader of `GET …/progress`, and the gallery, are shown the
-  owner's marks through `readerView`.
+  owner's marks through `readerView`. `get_progress` answers the caller's own marks on the nodes the
+  tree holds alone (`Progress::restrictedTo`): a mark on a deleted node stays stored, shows again on
+  a revive, and still reaches the socket's overlay graft and, for a caller who can write the tree,
+  `GET …/progress`, which serve the stored marks.
 - `readerView` (`domain/OpenedTrees.h`) — an owner's stored marks on a tree as a caller who cannot
   write it is shown them: the owner's derived completion, and nothing of the trees its nodes open. A
   node with a valid pointer has a row only while the tree it opens is complete for the owner, by the
@@ -153,8 +156,8 @@ rejected for structure. Validity is a read model, not a gate.
   lines whatever the tree's size; and `empty-legend`, one line naming no node for a tree with nodes
   and no kind, in place of the hue lines. It reads one graph and its legend, and no pointer: a loop of
   trees and a dangling pointer (`PointerDiagnostics`) are reported beside it, as smells are, and
-  change neither `clean()` nor what it gates — the `SkillTree` projection, `get_health` and a
-  receipt's `diagnosticsClean`.
+  change neither `clean()` nor what it gates — the `SkillTree` projection and a receipt's
+  `diagnosticsClean`.
 - `SkillTree` — the validated projection, constructible only from a clean graph; it throws
   `InvalidTree` on a duplicate id, a dangling prerequisite or a cycle. Indexes the DAG, the topo
   order, ancestry and the render model.
@@ -199,9 +202,6 @@ Derived read models:
 - `TrunkTree` — elects one trunk parent per node (same-kind parents win, then shallowest, then
   smallest id) and derives branch root, trunk depth, leaf weight, and `EdgeKind ∈ {trunk,
   in_branch, cross_branch}`.
-- `TreeHealth::assess(SkillTree) → Health {nodeCount, edgeCount, crossBranch, crossBranchExempt,
-  redundant, avgInDegree, score}` — an edge touching a node of a `crossBranchExempt` legend kind is
-  counted in `crossBranchExempt`, not `crossBranch`.
 
 `NodeColor ∈ {terracotta, olive, gold, brick, sky, plum}`.
 
@@ -304,9 +304,12 @@ committed before its connection dropped lands once. Only a room closing — `evi
 - `DeleteNode` is a plain tombstone. The record and every field survive so the node can be
   resurrected; its edges stay in the document and are filtered from the derived DAG view. A child
   that loses its only live parent becomes a root — visible as `maskedWork`, never re-tethered.
-- `TransitiveReduction` drops transitively-implied edges; `PruneDangling` drops self-edges and
-  edges touching an absent node. Both are computed server-side against the current state and
-  applied as one op, one undo step.
+- `TransitiveReduction` and `PruneDangling` are written by nothing. A row of either that the log
+  holds decodes and replays as nothing: a row is logged only after the lattice holding its effect is
+  saved, so a replayed tail holds no such row. The Activity feed still tells a past
+  `TransitiveReduction`.
+- A `DescribeKind` without a description sets nothing: it replays as nothing and the feed skips it,
+  alone or inside a `Batch` whose other members it tells.
 - `RecolorKind` is atomic: it swaps a kind's hue and repaints every node wearing the old hue.
 - `validate(graph, legend, command)` runs at the edge. A graph command is refused only for a
   malformed or over-cap field, or — `RenameNode` · `SetNodeColor` · `RepositionNode` ·
@@ -345,11 +348,6 @@ and one `import_subgraph` call carries at most 6 MB of description text, under t
 document, an MCP graft, a client lattice frame. `admit` returns `Admission{verdict ∈ {tooLarge,
 malformed}, reason}`; an HTTP door answers 413 for `tooLarge` and 400 for `malformed`. Caps are
 asked against what the graph would **hold** once the arrival lands, joined not estimated.
-
-The redundant-edge pass (`redundantEdges`, and `TreeHealth`'s `redundant`) walks a transitive
-closure whose cost is a sum of squared degrees. `withinReachabilityBudget(nodes, edges)` allows
-1500 nodes, 6000 edges and a product of 3,000,000; over budget the pass is skipped and reports
-nothing — tidy finds no edge to drop, health reports 0 redundant.
 
 ## Runtime
 
@@ -620,7 +618,7 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
 | `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open, and whether they open a given one |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
-| `tree_kinds` | one row per legend kind: hue, label, description, cross_branch_exempt, rank, each with its stamp |
+| `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp; `cross_branch_exempt` and `cross_branch_exempt_hlc` are neither read nor written, and stay so an earlier image can run on this database |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |
 | `node_progress` | per-user private overlay — status, `out_of_order`, `hlc`, `stamp_ms`, `stamp_counter` |
 | `tree_og_images` / `tree_og_videos` | the share card PNG and loop, inline `bytea`, one row per tree |

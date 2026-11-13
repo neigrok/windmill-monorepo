@@ -33,7 +33,7 @@ constexpr std::size_t kSummaryChars = 200;
 // The most live edges one get_tree reply lists whole under `includeEdges`; past it the reply
 // answers `edgesOmitted` with the count instead. Listing is linear, so only the edge count gates.
 constexpr std::size_t kMaxListedEdges = 6000;
-enum class KindField { id, hue, label, description, crossBranchExempt };
+enum class KindField { id, hue, label, description };
 enum class ProgressField { completed, cleared, outOfOrder };
 
 using NodeFields = std::set<NodeField>;

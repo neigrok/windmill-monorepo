@@ -85,8 +85,7 @@ const Vocabulary<KindField>& kindVocabulary() {
   static const Vocabulary<KindField> vocabulary({{"id", KindField::id},
                                                  {"hue", KindField::hue},
                                                  {"label", KindField::label},
-                                                 {"description", KindField::description},
-                                                 {"crossBranchExempt", KindField::crossBranchExempt}});
+                                                 {"description", KindField::description}});
   return vocabulary;
 }
 
@@ -143,7 +142,6 @@ Json::Value projectKind(const Kind& kind, const KindFields& fields) {
   if (fields.count(KindField::hue)) k["hue"] = std::string(toString(kind.hue));
   if (fields.count(KindField::label)) k["label"] = kind.label;
   if (fields.count(KindField::description)) k["description"] = kind.description;
-  if (fields.count(KindField::crossBranchExempt)) k["crossBranchExempt"] = kind.crossBranchExempt;
   return k;
 }
 

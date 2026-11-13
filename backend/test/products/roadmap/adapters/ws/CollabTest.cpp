@@ -908,6 +908,33 @@ TEST(ws_a_frame_past_the_legend_ceiling_is_rejected_and_joins_nothing) {
   CHECK_EQ(h.rooms.open(TreeId{"t_priv"})->exportLegend().kinds.size(), std::size_t{0});
 }
 
+// A kind has no cross-branch flag: a frame whose kind entry still carries one, with its stamp, lands as one that does
+// not, and the legend the room then holds answers neither.
+TEST(ws_a_frame_whose_kind_still_carries_a_cross_branch_flag_lands_without_it) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  Json::Value frame(Json::objectValue);
+  frame["t"] = "subgraph";
+  frame["treeId"] = "t_priv";
+  frame["frameId"] = "f-flag";
+  frame["kinds"] = parse(R"([{"id":"drill","createdAt":"100:0:client","deletedAt":"","hue":"gold","hueAt":"100:0:client",
+    "label":"Drill","labelAt":"100:0:client","description":"","descriptionAt":"","crossBranchExempt":true,
+    "crossBranchExemptAt":"101:0:client","rank":1.0,"rankAt":"100:0:client"}])");
+
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(conn, dump(frame));
+
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(frameType(conn->sent[0]), std::string("subgraphAck"));
+  std::lock_guard<std::mutex> lock(h.rooms.strandFor(TreeId{"t_priv"}));
+  CHECK_EQ(toJson(h.rooms.open(TreeId{"t_priv"})->exportLegend()),
+           parse(R"([{"id":"drill","createdAt":"100:0:client","deletedAt":"0:0:","hue":"gold","hueAt":"100:0:client",
+             "label":"Drill","labelAt":"100:0:client","description":"","descriptionAt":"0:0:","rank":1.0,
+             "rankAt":"100:0:client"}])"));
+}
+
 TEST(ws_a_frame_with_an_oversized_title_is_rejected_and_joins_nothing) {
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");

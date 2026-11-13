@@ -179,41 +179,6 @@ TEST(recording_over_a_node_moves_it_between_the_projected_sets) {
   CHECK_EQ(progress.marks.at(nid("a")).status, ProgressStatus::complete);
 }
 
-TEST(the_document_codec_carries_a_kinds_exemption_and_omits_it_when_false) {
-  TreeData data;
-  data.id = TreeId{"t"};
-  data.kinds = {Kind{KindId{"build"}, NodeColor::sky, "Build", "", false},
-                Kind{KindId{"drill"}, NodeColor::gold, "Drill", "", true}};
-
-  Json::Value json = toJson(data);
-  CHECK_FALSE(json["kinds"][0].isMember("crossBranchExempt"));
-  CHECK_EQ(json["kinds"][1]["crossBranchExempt"].asBool(), true);
-
-  TreeData back = treeFromJson(parse(dump(json)), TreeId{"t"}).value();
-  REQUIRE_EQ(back.kinds.size(), 2u);
-  CHECK_FALSE(back.kinds[0].crossBranchExempt);
-  CHECK(back.kinds[1].crossBranchExempt);
-  CHECK_FALSE(treeFromJson(parse("{\"kinds\": [{\"id\": \"x\", \"crossBranchExempt\": \"yes\"}]}"), TreeId{"t"})
-                  .has_value());
-}
-
-TEST(legend_state_round_trips_the_exemption_with_its_stamp) {
-  Legend legend = Legend::seededDefaults(at(1));
-  legend.setCrossBranchExempt(KindId{"build"}, true, at(4));
-
-  Json::Value json = toJson(legend.exportState());
-  CHECK_EQ(json[0]["crossBranchExempt"].asBool(), true);
-  CHECK_EQ(json[0]["crossBranchExemptAt"].asString(), toString(at(4)));
-  CHECK(legendStateFromJson(parse(dump(json))) == legend.exportState());
-
-  json[0].removeMember("crossBranchExempt");  // a frame from a peer that never carried the register
-  json[0].removeMember("crossBranchExemptAt");
-  const KindStateEntry stale = legendStateFromJson(json).kinds[0];
-  CHECK_EQ(stale.id, KindId{"build"});
-  CHECK_FALSE(stale.crossBranchExempt);
-  CHECK_EQ(stale.crossBranchExemptAt, Hlc{});
-}
-
 // The marker's word rides the register only when it was given: a mark without it stays the shape
 // every client already reads.
 TEST(the_out_of_order_word_rides_a_progress_register_only_when_set) {

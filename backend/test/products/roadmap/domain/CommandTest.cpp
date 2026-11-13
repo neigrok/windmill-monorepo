@@ -27,7 +27,9 @@ static LooseGraph seeded() {
   return g;
 }
 
-TEST(transitive_reduction_drops_redundant_edge) {
+// Nothing writes a TransitiveReduction or a PruneDangling any more, and a row of either the log holds changes nothing
+// on replay: a row is logged only after the lattice holding its effect is saved, so a replay never needs one to act.
+TEST(a_stored_tidy_or_prune_row_replays_as_nothing) {
   LooseGraph g;
   Legend legend;
   g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
@@ -35,16 +37,15 @@ TEST(transitive_reduction_drops_redundant_edge) {
   g.createNode(nid("c"), "C", "x", NodeColor::sky, std::nullopt, at(1));
   g.addEdge(nid("a"), nid("b"), at(2));
   g.addEdge(nid("b"), nid("c"), at(2));
-  g.addEdge(nid("a"), nid("c"), at(2));  // redundant: a reaches c through b
-
-  auto redundant = g.redundantEdges();
-  REQUIRE_EQ(redundant.size(), 1u);
-  CHECK_EQ(redundant[0], (Edge{nid("a"), nid("c")}));
+  g.addEdge(nid("a"), nid("c"), at(2));      // a reaches c through b
+  g.addEdge(nid("a"), nid("a"), at(2));      // self
+  g.addEdge(nid("a"), nid("ghost"), at(2));  // missing endpoint
+  const GraphState before = g.exportState();
 
   merge(g, legend, Command{TransitiveReduction{}}, at(5));
-  CHECK_FALSE(g.edgePresent(nid("a"), nid("c")));
-  CHECK(g.edgePresent(nid("a"), nid("b")));
-  CHECK(g.edgePresent(nid("b"), nid("c")));
+  merge(g, legend, Command{PruneDangling{}}, at(6));
+  merge(g, legend, Command{Batch{{TransitiveReduction{}, PruneDangling{}}}}, at(7));
+  CHECK(g.exportState() == before);
 }
 
 TEST(recoloring_a_kind_swaps_hue_and_repaints_nodes) {
@@ -290,24 +291,6 @@ TEST(add_kind_seeds_label_and_description_inline) {
 
   CHECK_EQ(validate(g, legend, Command{AddKind{kid("x"), NodeColor::gold, std::string(25, 'x'), ""}}),
            std::optional<std::string>("label would be 25 characters, 1 over the 24 cap"));
-}
-
-TEST(prune_dangling_drops_self_and_missing_endpoint_edges_only) {
-  LooseGraph g;
-  Legend legend;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
-  g.addEdge(nid("a"), nid("b"), at(2));   // live
-  g.addEdge(nid("a"), nid("a"), at(2));   // self
-  g.addEdge(nid("a"), nid("ghost"), at(2));  // missing endpoint
-
-  std::vector<Edge> dangling = g.danglingEdges();
-  CHECK_EQ(dangling.size(), 2u);
-
-  merge(g, legend, Command{PruneDangling{}}, at(3));
-  CHECK(g.edgePresent(nid("a"), nid("b")));            // live edge kept
-  CHECK_FALSE(g.edgePresent(nid("a"), nid("a")));      // self dropped
-  CHECK_FALSE(g.edgePresent(nid("a"), nid("ghost")));  // dangling dropped
 }
 
 TEST(headline_reads_an_annotation_frame) {
@@ -598,37 +581,24 @@ TEST(admit_guide_holds_five_thousand_characters_whatever_their_bytes_and_refuses
   CHECK_EQ(cut->reason, std::string("the guide is not valid UTF-8"));
 }
 
-TEST(describing_a_kind_writes_only_the_registers_it_carries) {
+// A DescribeKind writes the description it carries; one that carries none, as a stored row that set only a register no
+// kind holds any more decodes, writes nothing.
+TEST(describing_a_kind_writes_its_description_and_one_that_carries_none_writes_nothing) {
   LooseGraph g;
   Legend legend = Legend::seededDefaults(at(1));
+  const LegendState seeded = legend.exportState();
 
-  merge(g, legend, Command{DescribeKind{kid("build"), std::nullopt, true}}, at(2));
-  Kind flagged = *legend.view(kid("build"));
-  CHECK(flagged.crossBranchExempt);
-  CHECK_EQ(flagged.description, std::string("Things you make"));
+  merge(g, legend, Command{DescribeKind{kid("build"), std::nullopt}}, at(2));
+  CHECK(legend.exportState() == seeded);
+  merge(g, legend, Command{DescribeKind{kid("build"), std::string("Made things")}}, at(3));
+  CHECK_EQ(legend.view(kid("build"))->description, std::string("Made things"));
+  CHECK_EQ(legend.exportKind(kid("build"))->descriptionAt, at(3));
 
-  merge(g, legend, Command{DescribeKind{kid("build"), std::string("Made things"), std::nullopt}}, at(3));
-  Kind described = *legend.view(kid("build"));
-  CHECK(described.crossBranchExempt);
-  CHECK_EQ(described.description, std::string("Made things"));
-  CHECK_EQ(legend.exportKind(kid("build"))->crossBranchExemptAt, at(2));
-
-  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("build"), std::nullopt, false}}), std::nullopt);
-  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("nope"), std::nullopt, true}}),
+  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("build"), std::nullopt}}), std::nullopt);
+  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("nope"), std::nullopt}}),
            std::optional<std::string>("no kind \"nope\" in this legend"));
-  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("build"), std::string(81, 'y'), true}}),
+  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("build"), std::string(81, 'y')}}),
            std::optional<std::string>("description would be 81 characters, 1 over the 80 cap"));
-}
-
-TEST(add_kind_seeds_the_exemption_inline) {
-  LooseGraph g;
-  Legend legend;
-  merge(g, legend, Command{AddKind{kid("drill"), NodeColor::gold, "Drill", "", true}}, at(1));
-  merge(g, legend, Command{AddKind{kid("build"), NodeColor::sky, "Build", ""}}, at(2));
-  CHECK(legend.view(kid("drill"))->crossBranchExempt);
-  CHECK_FALSE(legend.view(kid("build"))->crossBranchExempt);
-  CHECK_EQ(legend.exportKind(kid("drill"))->crossBranchExemptAt, at(1));
-  CHECK_EQ(legend.exportKind(kid("build"))->crossBranchExemptAt, Hlc{});  // false was never written
 }
 
 TEST(annotate_node_sets_and_clears_the_icon) {
@@ -892,7 +862,7 @@ TEST(a_nul_character_is_refused_in_every_capped_field_because_a_row_keeps_only_t
            std::optional<std::string>("label contains a NUL character; description contains a NUL character"));
   CHECK_EQ(validate(g, defaults, Command{RenameKind{kid("build"), nul}}),
            std::optional<std::string>("label contains a NUL character"));
-  CHECK_EQ(validate(g, defaults, Command{DescribeKind{kid("build"), nul, std::nullopt}}),
+  CHECK_EQ(validate(g, defaults, Command{DescribeKind{kid("build"), nul}}),
            std::optional<std::string>("description contains a NUL character"));
 
   // The HTTP save door: a posted document.
@@ -1312,8 +1282,7 @@ static std::string planned(const LooseGraph& graph, const Legend& legend, const 
     if (!text.empty()) text += "; ";
     if (const auto* c = std::get_if<RenameKind>(&command)) text += "RenameKind " + c->id.str() + " \"" + c->label + "\"";
     else if (const auto* c = std::get_if<DescribeKind>(&command))
-      text += "DescribeKind " + c->id.str() + " " + (c->description ? "\"" + *c->description + "\"" : "-") + " " +
-              (c->crossBranchExempt ? (*c->crossBranchExempt ? "exempt" : "not exempt") : "-");
+      text += "DescribeKind " + c->id.str() + " " + (c->description ? "\"" + *c->description + "\"" : "-");
     else if (const auto* c = std::get_if<RecolorKind>(&command))
       text += "RecolorKind " + c->id.str() + " " + std::string(toString(c->hue));
     else text += "another command";
@@ -1348,12 +1317,12 @@ TEST(kind_update_plan_lands_the_fields_the_kind_does_not_hold) {
 
   CHECK_EQ(planned(g, legend, update("Kay", std::nullopt, std::nullopt)), std::string("RenameKind k \"Kay\""));
   CHECK_EQ(planned(g, legend, update(std::nullopt, "New brief.", std::nullopt)),
-           std::string("DescribeKind k \"New brief.\" -"));
-  CHECK_EQ(planned(g, legend, update(std::nullopt, "", std::nullopt)), std::string("DescribeKind k \"\" -"));
+           std::string("DescribeKind k \"New brief.\""));
+  CHECK_EQ(planned(g, legend, update(std::nullopt, "", std::nullopt)), std::string("DescribeKind k \"\""));
   CHECK_EQ(planned(g, legend, update(std::nullopt, std::nullopt, NodeColor::plum)),
            std::string("RecolorKind k plum | repaints 2"));
   CHECK_EQ(planned(g, legend, update("Kay", "New brief.", NodeColor::plum)),
-           std::string("RenameKind k \"Kay\"; DescribeKind k \"New brief.\" -; RecolorKind k plum | repaints 2"));
+           std::string("RenameKind k \"Kay\"; DescribeKind k \"New brief.\"; RecolorKind k plum | repaints 2"));
 
   CHECK_EQ(planned(g, legend, update("K", std::nullopt, std::nullopt)), std::string("lands nothing"));
   CHECK_EQ(planned(g, legend, update(std::nullopt, "Brief.", std::nullopt)), std::string("lands nothing"));

@@ -147,14 +147,12 @@ struct NodeSpec {
 };
 
 // A node's `color` field *is* its kind, so there is no node→kind foreign key. The legend names and
-// orders the hues; order is generation priority. A kind marked `crossBranchExempt` keeps the edges
-// touching its nodes out of TreeHealth's cross-branch count.
+// orders the hues; order is generation priority.
 struct Kind {
   KindId id;
   NodeColor hue = NodeColor::terracotta;
   std::string label;
   std::string description;
-  bool crossBranchExempt = false;
 };
 
 // `guide` is a plain-text note on what the tree is and how to work it; empty is no guide.
@@ -201,6 +199,15 @@ struct Progress {
     return held->second.status == status && held->second.outOfOrder == outOfOrder;
   }
   bool operator==(const Progress&) const = default;
+
+  // The marks on `nodes` alone. A mark on a node the tree no longer holds stays stored, so it shows again when the
+  // node comes back.
+  Progress restrictedTo(const std::set<NodeId>& nodes) const {
+    Progress kept;
+    for (const auto& [node, mark] : marks)
+      if (nodes.count(node)) kept.record(node, mark);
+    return kept;
+  }
 };
 
 }

@@ -183,9 +183,6 @@ Json::Value legendKind() {
   fields["description"] = cappedStr("Optional sorting brief. Left out on a kind already in the legend, "
                                     "the brief it has stays; a new kind gets an empty one.",
                                     kMaxKindDescriptionLength);
-  fields["crossBranchExempt"] = boolean("Optional: get_health leaves this kind's edges out of its "
-                                        "cross-branch count. Left out on a kind already in the legend, "
-                                        "its setting stays; a new kind is not exempt.");
   return fields;
 }
 
@@ -193,10 +190,10 @@ Json::Value legendKind() {
 // the rest). A bulk edit overwrites or removes many entries in one call and is declared destructive
 // under a write grant. An idempotent write is one a resend with the same arguments leaves unchanged;
 // create_tree and create_node mint an id, so a resend plants a second one.
-const std::set<std::string> kBulkEdits = {"import_subgraph", "prune", "tidy", "update_nodes", "change_edges"};
+const std::set<std::string> kBulkEdits = {"import_subgraph", "update_nodes", "change_edges"};
 const std::set<std::string> kIdempotentWrites = {
-    "delete_tree",  "update_tree",   "delete_node",   "tidy",          "add_kind",
-    "remove_kind",  "update_kind",   "import_subgraph", "prune",       "change_edges"};
+    "delete_tree", "update_tree", "delete_node", "add_kind", "remove_kind", "update_kind", "import_subgraph",
+    "change_edges"};
 
 // `read` answers questions, `write` changes the document, and `delete` destroys something a
 // person authored. `delete` is never implied by `write`: a connection without that level does
@@ -434,8 +431,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "(<origin>/t/<treeId>#?step=<id>), the step id percent-encoded.",
         nodeVocabulary().names());
     p["kindFields"] = fieldArray(
-        "Which fields each legend kind carries. Default {id, hue, label}; `crossBranchExempt` is "
-        "whether get_health leaves the kind's edges out of its cross-branch count.",
+        "Which fields each legend kind carries. Default {id, hue, label}.",
         kindVocabulary().names());
     p["includeEdges"] = boolean(
         "Also answer a top-level `edges` array of EVERY live edge in the tree as {from, to}, "
@@ -504,7 +500,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "stands — a removed tree, someone else's, or any other text — the first 50 in node id order, and "
         "`danglingPointersOmitted` counts the rest: such a node is an ordinary node. Both lists are `[]` "
         "when there is none, the three counts are absent when nothing is left off, and neither list is "
-        "among the errors `diagnosticsClean` and get_health count. Repair either by re-pointing the "
+        "among the errors `diagnosticsClean` counts. Repair either by re-pointing the "
         "node's `opens` or clearing it with \"\". `pointerDiagnosticsUnavailable: true` says the opened "
         "trees could not be read just now and both lists are left out — read again later. On a tree you "
         "do not own neither list is answered. Default true; false leaves both out and reads no other tree.");
@@ -526,22 +522,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    tools.push_back(tool("get_health", Access::read,
-        "Tidiness metrics for a structurally-valid roadmap: node/edge counts, cross-branch "
-        "coupling, redundant (transitively implied) edges, average in-degree, and a 0–100 score "
-        "(100 × (1 − 0.6 × crossBranch/weighed − 0.4 × redundant/weighed), where weighed is "
-        "edgeCount − crossBranchExempt). Branches derive from "
-        "colour: a node's branch is the run of same-hue trunk parents above it, so an edge joining "
-        "two hues counts as `crossBranch` — unless either endpoint wears a kind marked "
-        "`crossBranchExempt` (set by add_kind, create_tree or an import's kinds), in which case it is counted in "
-        "`crossBranchExempt` instead and weighs nothing — out of the score's numerator and its "
-        "denominator both, while `edgeCount` stays every live edge. Fails if the tree currently has "
-        "cycles/dangling edges — fix those first.",
-        p, {"treeId"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
     p["fields"] = fieldArray(
         "Which id lists to return. Default {completed, outOfOrder} — `outOfOrder` is the "
         "subset of `completed` whose mark carried outOfOrder:true; `cleared` (the tombstones a "
@@ -550,7 +530,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     tools.push_back(tool("get_progress", Access::read,
         "The caller's private progress overlay for a roadmap: the node ids that are completed, "
         "and outOfOrder — the subset of completed whose mark carried outOfOrder:true, from "
-        "an update_nodes row's `status` or an import's progress row. Per-user, separate from the shared structure.",
+        "an update_nodes row's `status` or an import's progress row. Per-user, separate from the shared structure. "
+        "Only marks on nodes the tree holds are answered: a mark on a node someone deleted is kept and shows "
+        "again when the node comes back.",
         p, {"treeId"}));
   }
   {
@@ -658,27 +640,15 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    tools.push_back(tool("tidy", Access::write,
-        "Transitive reduction: drop edges already implied by a longer path, as one op. A "
-        "semantics-preserving cleanup that every collaborator converges on.",
-        p, {"treeId"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
     p["id"] = cappedStr("The kind id (stable, unique within the tree's legend).", kMaxIdLength);
     p["hue"] = enumStr("The kind's hue — unique per kind; at most 6 kinds per tree.", kHues);
     p["label"] = cappedStr("Optional label — set inline so the kind lands in one op.", kMaxKindLabelLength);
     p["description"] = cappedStr("Optional description — the generator's sorting brief.",
                                  kMaxKindDescriptionLength);
-    p["crossBranchExempt"] = boolean(
-        "Optional, default false: get_health leaves every edge touching a node of this kind out of "
-        "its cross-branch count — for a kind whose whole point is to interleave with the others.");
     tools.push_back(tool("add_kind", Access::write,
         "Add a legend kind: a named, described hue. The hue must be free (unique per kind) and the "
-        "legend must have fewer than 6 kinds. `label`, `description` and `crossBranchExempt` may be "
-        "set inline; update_kind changes the label, description and hue later, and an import's `kinds` the "
-        "flag.",
+        "legend must have fewer than 6 kinds. `label` and `description` may be set inline; update_kind "
+        "changes the label, description and hue later.",
         p, {"treeId", "id", "hue"}));
   }
   {
@@ -744,8 +714,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                           "fields. Pass [] to import only kinds or progress.",
                           nodeFields, {"id"});
     p["kinds"] = objArray("Optional legend kinds, upserted by id: an id already in the legend is reported "
-                          "in kindCollisions and only the fields you send on it change — label, "
-                          "description and crossBranchExempt you leave out keep their values, so a copy of "
+                          "in kindCollisions and only the fields you send on it change — a label or "
+                          "description you leave out keeps its value, so a copy of "
                           "get_tree's default kindFields sent back erases nothing. Omit to leave the legend "
                           "untouched.",
                           legendKind(), {"id", "hue"});
@@ -772,7 +742,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["tombstone"] = strArray(
         "Ids to delete in this same batch: each node goes at the same seq as the upserts, every "
         "edge touching it in either direction goes with it, and your own progress on it is cleared "
-        "after the graft, the way prune clears an orphan's. `tombstone` needs the roadmap:delete "
+        "after the graft, as delete_node clears yours. `tombstone` needs the roadmap:delete "
         "grant — the level delete_node needs — and a connection without it is refused before the "
         "tree is read. Every id must exist and must not also be in nodes[] — otherwise the whole "
         "call is refused, naming each offending id, and nothing is applied. At most 500 per call.",
@@ -820,15 +790,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "capped at 16000 characters on its own); past that the call is refused naming the size, so "
         "split a bigger import. This collapses hundreds of create_node, change_edges and delete_node calls into one.",
         p, {"treeId", "nodes"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    tools.push_back(tool("prune", Access::write,
-        "Garbage-collect the roadmap: drop dangling and self edges (edges no valid DAG keeps) in one "
-        "op, and clear the caller's progress rows for nodes no longer in the tree. Returns how many of "
-        "each it removed.",
-        p, {"treeId"}));
   }
 
   return tools;

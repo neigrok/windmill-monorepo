@@ -1116,3 +1116,49 @@ TEST(pg_removing_a_tree_takes_the_step_that_opens_it_with_its_edge_and_mark_and_
            parse(R"([{"id":"after","state":"available","prerequisites":[]}])"));
   restarted.stop();
 }
+
+// A kind has no cross-branch flag, but tree_kinds keeps its two columns for an earlier image to run on. A row an earlier
+// image wrote with them set loads and saves through this one, which leaves them as they are; a kind this one adds
+// takes their defaults.
+TEST(pg_a_kind_row_holding_the_cross_branch_columns_loads_and_saves_and_they_are_left_alone) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTreeRepository trees{pgTestPool()};
+  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Sam's tree", kSam);
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO tree_kinds (tree_id, kind_id, created_hlc, deleted_hlc, hue, hue_hlc, label, label_hlc, "
+                    "description, description_hlc, cross_branch_exempt, cross_branch_exempt_hlc, rank, rank_hlc) "
+                    "VALUES ($1, 'drill', '1:0:srv', '', 'gold', '1:0:srv', 'Drill', '1:0:srv', '', '1:0:srv', true, "
+                    "'2:0:srv', 0, '1:0:srv')",
+                    kTree.str());
+    txn.commit();
+  }
+
+  const std::optional<StoredTree> loaded = trees.load(kTree);
+  REQUIRE(loaded.has_value());
+  CHECK(loaded->legend == (LegendState{{KindStateEntry{.id = KindId{"drill"}, .createdAt = Hlc{1, 0, "srv"},
+                                                       .hue = NodeColor::gold, .hueAt = Hlc{1, 0, "srv"},
+                                                       .label = "Drill", .labelAt = Hlc{1, 0, "srv"},
+                                                       .descriptionAt = Hlc{1, 0, "srv"}, .rank = 0,
+                                                       .rankAt = Hlc{1, 0, "srv"}}}}));
+
+  KindStateEntry described = loaded->legend.kinds[0];
+  described.description = "Reps";
+  described.descriptionAt = Hlc{3, 0, "srv"};
+  const KindStateEntry added{.id = KindId{"read"}, .createdAt = Hlc{3, 0, "srv"}, .hue = NodeColor::sky,
+                             .hueAt = Hlc{3, 0, "srv"}, .rank = 1, .rankAt = Hlc{3, 0, "srv"}};
+  CHECK(trees.save(kTree, GraphState{}, LegendState{{described, added}}, loaded->title, loaded->guide, loaded->head));
+  CHECK(trees.load(kTree)->legend == (LegendState{{described, added}}));
+
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  std::vector<std::string> rows;
+  for (const auto& row : txn.exec_params("SELECT kind_id, description, cross_branch_exempt, cross_branch_exempt_hlc "
+                                         "FROM tree_kinds WHERE tree_id = $1 ORDER BY kind_id",
+                                         kTree.str()))
+    rows.push_back(row[0].as<std::string>() + " " + row[1].as<std::string>() + " " + row[2].as<std::string>() + " " +
+                   row[3].as<std::string>());
+  CHECK_EQ(rows, (std::vector<std::string>{"drill Reps t 2:0:srv", "read  f "}));
+}

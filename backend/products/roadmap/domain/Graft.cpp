@@ -69,8 +69,6 @@ LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at
     land(true, &Entry::hue, &Entry::hueAt, kind.hue);
     land(carried(KindRegister::label), &Entry::label, &Entry::labelAt, kind.label);
     land(carried(KindRegister::description), &Entry::description, &Entry::descriptionAt, kind.description);
-    land(carried(KindRegister::crossBranchExempt), &Entry::crossBranchExempt, &Entry::crossBranchExemptAt,
-         kind.crossBranchExempt);
     if (entry != Entry{.id = kind.id}) upserted.emplace(kind.id, std::move(entry));  // it lands something
   }
 

@@ -23,7 +23,7 @@ enum class PrerequisiteMode { merge, replace };
 // The registers a document may leave out of a node or a kind. A node's prerequisites are never one:
 // they meet the node's edges by PrerequisiteMode. A kind's `hue` is never one either.
 enum class NodeRegister { label, icon, color, order, position, status, description, links, opens };
-enum class KindRegister { label, description, crossBranchExempt };
+enum class KindRegister { label, description };
 
 // One bulk arrival: a document upserted by id, and the ids it deletes outright. A tombstoned node
 // loses every present edge touching it, in either direction. The two omitted maps name, per id, the

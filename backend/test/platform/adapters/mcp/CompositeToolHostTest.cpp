@@ -688,7 +688,7 @@ TEST(composite_observes_every_registered_product_write_tool_and_compatibility_al
     CHECK_FALSE(surface.callTool(local, Json::Value(Json::objectValue), granted("")).isError);
     CHECK_EQ(capture.lines.back().operation, "mcp." + tool.name());
   }
-  CHECK(writes >= 29);
+  CHECK(writes >= 27);
   CHECK(capture.issues.empty());
 }
 

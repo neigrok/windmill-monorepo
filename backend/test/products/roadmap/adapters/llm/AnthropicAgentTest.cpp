@@ -453,6 +453,33 @@ TEST(drive_agent_edits_and_marks_a_node_through_update_nodes_and_counts_what_cha
              "links":[{"url":"https://a.example"}],"status":"complete"}])"));
 }
 
+// A tend is offered no get_health, tidy or prune, which the server no longer has, and still reads the tree's diagnostics:
+// a read that changes nothing and is no edit of the run.
+TEST(drive_agent_is_offered_no_health_tidy_or_prune_and_still_reads_diagnostics) {
+  test::Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","prerequisites":["ghost"]}]})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  FakeModel model;
+  model.replies.push_back(toolUseReply("get_diagnostics", "toolu_1"));
+  model.replies.push_back(textReply("end_turn", "Read the tree"));
+
+  Recorder rec;
+  const AgentOutcome outcome =
+      driveAgent("check it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report());
+
+  std::vector<std::string> offered;
+  for (const Json::Value& tool : model.requests.at(0)["tools"]) offered.push_back(tool["name"].asString());
+  CHECK_EQ(offered, (std::vector<std::string>{"get_nodes", "update_nodes", "change_edges", "get_tree", "get_diagnostics",
+                                              "get_progress", "find_nodes", "create_node", "delete_node", "add_kind",
+                                              "remove_kind", "update_kind", "import_subgraph"}));
+  CHECK(outcome.ok);
+  CHECK_EQ(outcome.edits, 0);
+  REQUIRE_EQ(rec.steps.size(), 1u);
+  CHECK_EQ(std::vector<bool>({rec.steps[0].failed, rec.steps[0].changedTree}), std::vector<bool>({false, false}));
+  const Json::Value& lastTurn = model.requests.at(1)["messages"][model.requests.at(1)["messages"].size() - 1];
+  CHECK_EQ(parse(lastTurn["content"][0]["content"].asString())["dangling"], parse(R"([{"from":"ghost","to":"a"}])"));
+}
+
 // A dry run writes nothing, so it is no edit of the run, for every tool that takes `dryRun`, though its preview says the
 // tree would change; the same call sent for real is one edit.
 TEST(drive_agent_counts_no_edit_for_a_dry_run) {
@@ -912,9 +939,12 @@ TEST(drive_agent_deletes_a_marked_node_through_the_progress_store_or_not_at_all)
     const AgentOutcome outcome =
         driveAgent("remove A", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report());
     h.progressRepo.writesFail = false;
-    const auto progressOf = [&](const ToolCaller& who) {
-      return test::body(
-          h.tools.callTool("get_progress", parse(R"({"treeId":"t","fields":["completed","cleared"]})"), who));
+    const auto progressOf = [&](const ToolCaller& who) {  // as the store holds it: get_progress hides a deleted node's
+      const Progress stored = h.progress.progressOf(TreeId{"t"}, who.user);
+      Json::Value marks = parse(R"({"completed":[],"cleared":[]})");
+      for (const NodeId& node : stored.completed) marks["completed"].append(node.str());
+      for (const NodeId& node : stored.cleared) marks["cleared"].append(node.str());
+      return marks;
     };
     REQUIRE_EQ(rec.steps.size(), 1u);
     CHECK_EQ(outcome.edits, storeDown ? 0 : 1);

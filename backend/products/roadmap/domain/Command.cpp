@@ -121,7 +121,7 @@ std::optional<Admission> growthWithin(std::size_t nodesBefore, std::size_t nodes
   if (edgesAfter > kMaxEdges && edgesAfter > edgesBefore)
     return Admission{Admission::Verdict::tooLarge,
                      "this tree would hold " + std::to_string(edgesAfter) + " edges, max " +
-                         std::to_string(kMaxEdges) + " — call tidy to drop the edges a longer path already implies"};
+                         std::to_string(kMaxEdges) + " — remove edges with change_edges before adding more"};
   return std::nullopt;
 }
 }
@@ -200,22 +200,16 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
       graph.addEdge(c.newFrom, c.newTo, at);
     },
     [&](const DeleteNode& c) { graph.deleteNode(c.id, at); },
-    [&](const TransitiveReduction&) {
-      for (const auto& edge : graph.redundantEdges()) graph.removeEdge(edge.from, edge.to, at);
-    },
-    [&](const PruneDangling&) {
-      for (const auto& edge : graph.danglingEdges()) graph.removeEdge(edge.from, edge.to, at);
-    },
+    [&](const TransitiveReduction&) {},
+    [&](const PruneDangling&) {},
     [&](const RenameKind& c) { legend.setLabel(c.id, c.label, at); },
     [&](const DescribeKind& c) {
       if (c.description) legend.setDescription(c.id, *c.description, at);
-      if (c.crossBranchExempt) legend.setCrossBranchExempt(c.id, *c.crossBranchExempt, at);
     },
     [&](const AddKind& c) {
       legend.addKind(c.id, c.hue, at);
       if (!c.label.empty()) legend.setLabel(c.id, c.label, at);
       if (!c.description.empty()) legend.setDescription(c.id, c.description, at);
-      if (c.crossBranchExempt) legend.setCrossBranchExempt(c.id, true, at);
     },
     [&](const RemoveKind& c) { legend.removeKind(c.id, at); },
     [&](const ReorderKinds& c) { legend.reorder(c.order, at); },
@@ -298,11 +292,7 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
     [&](const DeleteNode& c) -> std::optional<std::string> { return idBounds(c.id); },
     [&](const AddEdge& c) -> std::optional<std::string> {
       if (auto bad = idBounds(c.from)) return bad;
-      if (auto bad = idBounds(c.to)) return bad;
-      if (!graph.edgePresent(c.from, c.to) && graph.presentEdgeCount() >= kMaxEdges)
-        return "tree is at edge capacity (" + std::to_string(kMaxEdges) +
-               " edges) — call tidy to drop the edges a longer path already implies";
-      return std::nullopt;
+      return idBounds(c.to);
     },
     [&](const RemoveEdge& c) -> std::optional<std::string> {
       if (auto bad = idBounds(c.from)) return bad;
@@ -528,7 +518,7 @@ std::variant<KindUpdatePlan, std::string> planKindUpdate(const LooseGraph& graph
                                                          const KindUpdate& update) {
   std::vector<Command> sent;
   if (update.label) sent.push_back(RenameKind{update.id, *update.label});
-  if (update.description) sent.push_back(DescribeKind{update.id, update.description, std::nullopt});
+  if (update.description) sent.push_back(DescribeKind{update.id, update.description});
   if (update.hue) sent.push_back(RecolorKind{update.id, *update.hue});
   if (sent.empty()) return "nothing to set — pass at least one of \"label\", \"description\", \"hue\".";
   for (const Command& command : sent)
@@ -538,7 +528,7 @@ std::variant<KindUpdatePlan, std::string> planKindUpdate(const LooseGraph& graph
   KindUpdatePlan plan;
   if (update.label && *update.label != held.label) plan.commands.push_back(RenameKind{update.id, *update.label});
   if (update.description && *update.description != held.description)
-    plan.commands.push_back(DescribeKind{update.id, update.description, std::nullopt});
+    plan.commands.push_back(DescribeKind{update.id, update.description});
   if (update.hue && *update.hue != held.hue) {
     plan.commands.push_back(RecolorKind{update.id, *update.hue});
     plan.repaintedNodes = wearersOf(graph, legend, update.id).size();
@@ -729,9 +719,7 @@ std::optional<Command> headline(const GraphState& graph, const LegendState& lege
   for (const KindStateEntry& k : legend.kinds)
     if (k.labelAt.isSet()) return RenameKind{k.id, k.label};
   for (const KindStateEntry& k : legend.kinds)
-    if (k.descriptionAt.isSet()) return DescribeKind{k.id, k.description, std::nullopt};
-  for (const KindStateEntry& k : legend.kinds)
-    if (k.crossBranchExemptAt.isSet()) return DescribeKind{k.id, std::nullopt, k.crossBranchExempt};
+    if (k.descriptionAt.isSet()) return DescribeKind{k.id, k.description};
   for (const KindStateEntry& k : legend.kinds)
     if (k.rankAt.isSet()) return ReorderKinds{};
   for (const NodeStateEntry& n : graph.nodes)

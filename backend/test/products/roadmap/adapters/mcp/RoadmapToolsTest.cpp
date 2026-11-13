@@ -44,6 +44,16 @@ std::vector<std::string> ids(const Json::Value& nodes) {
   return out;
 }
 
+// A user's marks on tree "t" as the progress store holds them, on nodes the tree holds or not — what get_progress
+// answers only for the nodes it holds.
+Json::Value storedMarks(ProgressService& progress, const UserId& user) {
+  const Progress overlay = progress.progressOf(TreeId{"t"}, user);
+  Json::Value marks = parse(R"({"completed":[],"cleared":[]})");
+  for (const NodeId& node : overlay.completed) marks["completed"].append(node.str());
+  for (const NodeId& node : overlay.cleared) marks["cleared"].append(node.str());
+  return marks;
+}
+
 std::vector<std::string> introduced(const Json::Value& receipt) {
   std::vector<std::string> out;
   for (const Json::Value& entry : receipt["introducedDiagnostics"]) out.push_back(entry.asString());
@@ -167,24 +177,6 @@ TEST(mcp_update_nodes_marks_and_flags_unmet_prerequisites) {
   CHECK(last.marks.marks.begin()->second.at.isSet());
 }
 
-TEST(mcp_get_health_needs_a_valid_dag) {
-  Harness h;
-  Json::Value a(Json::objectValue);
-  a["id"] = "a";
-  a["label"] = "A";
-  h.call("create_node", a);
-
-  ToolResult healthy = h.call("get_health", Json::Value(Json::objectValue));
-  CHECK_FALSE(healthy.isError);
-  CHECK_EQ(body(healthy)["nodeCount"].asInt(), 1);
-
-  Json::Value self(Json::objectValue);
-  self["from"] = "a";
-  self["to"] = "a";
-  h.call("change_edges", adding(self));
-  CHECK(h.call("get_health", Json::Value(Json::objectValue)).isError);
-}
-
 TEST(mcp_unknown_tool_and_missing_tree_id_are_errors) {
   Harness h;
   CHECK(h.call("frobnicate", Json::Value(Json::objectValue)).isError);
@@ -246,19 +238,19 @@ TEST(mcp_create_tree_plants_the_legend_it_is_sent_and_answers_it) {
   const ToolResult created = h.tools.callTool("create_tree", parse(R"({"title":"Crew board","kinds":[
     {"id":"developer","hue":"sky","label":"Developer"},
     {"id":"designer","hue":"plum","label":"Designer","description":"Draws the flows"},
-    {"id":"owner","hue":"gold","label":"Owner","crossBranchExempt":true}]})"), h.actor);
+    {"id":"owner","hue":"gold","label":"Owner"}]})"), h.actor);
   CHECK_FALSE(created.isError);
   const std::string tree = body(created)["treeId"].asString();
   CHECK_EQ(body(created), parse(R"({"treeId":")" + tree + R"(","url":"https://app.example/#/app/)" + tree +
                                 R"(","kinds":[{"id":"developer","hue":"sky","label":"Developer"},
     {"id":"designer","hue":"plum","label":"Designer"},{"id":"owner","hue":"gold","label":"Owner"}]})"));
 
-  Json::Value read = parse(R"({"kindFields":["id","hue","label","description","crossBranchExempt"]})");
+  Json::Value read = parse(R"({"kindFields":["id","hue","label","description"]})");
   read["treeId"] = tree;
   CHECK_EQ(body(h.tools.callTool("get_tree", read, h.actor))["tree"]["kinds"],
-           parse(R"([{"id":"developer","hue":"sky","label":"Developer","description":"","crossBranchExempt":false},
-    {"id":"designer","hue":"plum","label":"Designer","description":"Draws the flows","crossBranchExempt":false},
-    {"id":"owner","hue":"gold","label":"Owner","description":"","crossBranchExempt":true}])"));
+           parse(R"([{"id":"developer","hue":"sky","label":"Developer","description":""},
+    {"id":"designer","hue":"plum","label":"Designer","description":"Draws the flows"},
+    {"id":"owner","hue":"gold","label":"Owner","description":""}])"));
 
   Json::Value filed = parse(R"({"label":"Fix the crash","kind":"developer"})");
   filed["treeId"] = tree;
@@ -803,7 +795,7 @@ TEST(mcp_read_tools_deny_a_private_tree_you_dont_own) {
   h.trees.byId["priv"] =
       StoredTree{LooseGraph().exportState(), LegendState{}, {"Theirs", {}}, 0, uid("someone"), Visibility::private_};
 
-  const std::vector<const char*> reads = {"get_tree", "get_diagnostics", "get_health", "find_nodes"};
+  const std::vector<const char*> reads = {"get_tree", "get_diagnostics", "find_nodes"};
   for (const char* name : reads) {
     ToolResult denied = h.tools.callTool(name, with("treeId", "priv"), h.actor);
     ToolResult absent = h.tools.callTool(name, with("treeId", "nope"), h.actor);
@@ -880,16 +872,13 @@ TEST(mcp_write_tools_refuse_an_unowned_public_tree_and_never_take_it) {
   graft["nodes"].append(node("seized", "Seized"));
   Json::Value preview = graft;
   preview["dryRun"] = true;
-  Json::Value sweep(Json::objectValue);
-  sweep["treeId"] = "demo";
 
   Json::Value guide(Json::objectValue);
   guide["treeId"] = "demo";
   guide["guide"] = "Mine now";
 
   const std::vector<std::pair<const char*, Json::Value>> writes = {
-      {"create_node", edit}, {"import_subgraph", graft}, {"import_subgraph", preview}, {"prune", sweep},
-      {"update_tree", guide}};
+      {"create_node", edit}, {"import_subgraph", graft}, {"import_subgraph", preview}, {"update_tree", guide}};
   for (const auto& [tool, args] : writes) {
     ToolResult refused = h.tools.callTool(tool, args, h.actor);
     CHECK(refused.isError);
@@ -949,35 +938,6 @@ TEST(mcp_the_owner_still_writes_their_own_tree) {
   CHECK(body(created)["applied"].asBool());
   CHECK_EQ(body(created)["id"].asString(), std::string("keel"));
   CHECK(h.trees.byId["t"].owner == std::optional<UserId>(h.caller));
-}
-
-TEST(mcp_prune_clears_dangling_edges_and_orphan_progress) {
-  Harness h;
-  h.call("create_node", node("a", "A"));
-  h.call("create_node", node("b", "B"));
-  Json::Value edge(Json::objectValue);
-  edge["from"] = "a";
-  edge["to"] = "b";
-  h.call("change_edges", adding(edge));
-  // An edge to a node the tree never held, as a client's frame may land it.
-  h.registry.open(TreeId{"t"})->applyCommand(AddEdge{NodeId{"a"}, NodeId{"ghost"}}, h.clock.nowMs(), h.caller);
-
-  h.call("update_nodes", asUpdate(mark("a", "complete")));
-  h.call("update_nodes", asUpdate(mark("b", "complete")));
-  // Deleted by a client's frame, which clears no mark, so the orphan mark is prune's to clear.
-  h.registry.open(TreeId{"t"})->applyCommand(DeleteNode{NodeId{"b"}}, h.clock.nowMs(), h.caller);
-
-  ToolResult result = h.call("prune", kNoArgs);
-  CHECK_FALSE(result.isError);
-  const Json::Value pruned = body(result);
-  CHECK_EQ(pruned["prunedEdges"].asInt(), 2);
-  CHECK_EQ(pruned["prunedProgress"].asInt(), 1);
-  CHECK(pruned["diagnosticsClean"].asBool());
-
-  CHECK(body(h.call("get_diagnostics", kNoArgs))["dangling"].empty());
-  const Json::Value prog = body(h.call("get_progress", kNoArgs));
-  CHECK_EQ(prog["completed"].size(), 1u);
-  CHECK_FALSE(prog.isMember("inProgress"));
 }
 
 // --- The read projections (adapters/mcp/ReadShape.h) ---------------------------------------
@@ -1181,8 +1141,7 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   ToolResult wrongVocabulary = h.call("get_tree", kindArgs);
   CHECK(wrongVocabulary.isError);
   CHECK_EQ(message(wrongVocabulary),
-           std::string("get_tree: kindFields[0] \"color\" is not one of {id, hue, label, description, "
-                       "crossBranchExempt}"));
+           std::string("get_tree: kindFields[0] \"color\" is not one of {id, hue, label, description}"));
 
   Json::Value progressArgs(Json::objectValue);
   progressArgs["fields"] = list({"nodes"});
@@ -1501,9 +1460,9 @@ TEST(mcp_an_edit_says_whether_the_dirt_it_reports_is_its_own) {
   CHECK_FALSE(innocent["diagnosticsClean"].asBool());
   CHECK_EQ(introduced(innocent), std::vector<std::string>{});
 
-  const Json::Value pruned = body(h.call("prune", kNoArgs));
-  CHECK(pruned["diagnosticsClean"].asBool());
-  CHECK_EQ(introduced(pruned), std::vector<std::string>{});
+  const Json::Value cleaned = body(h.call("change_edges", parse(R"({"remove":[{"from":"ghost","to":"c"}]})")));
+  CHECK(cleaned["diagnosticsClean"].asBool());
+  CHECK_EQ(introduced(cleaned), std::vector<std::string>{});
 }
 
 TEST(mcp_an_edit_names_the_cycle_the_dangle_and_the_self_edge_it_introduced) {
@@ -1637,10 +1596,10 @@ TEST(mcp_delete_node_prune_drops_the_edges_it_dangles_and_the_callers_marks_in_o
   CHECK_EQ(progress["completed"], list({"a"}));
   CHECK_FALSE(progress.isMember("inProgress"));
 
-  // Nothing left to prune once the delete carried its own cleanup; the tree's old dirt is prune's.
-  const Json::Value swept = body(h.call("prune", kNoArgs));
-  CHECK_EQ(swept["prunedEdges"].asInt(), 1);
-  CHECK_EQ(swept["prunedProgress"].asInt(), 0);
+  // The tree's old dirt is the caller's to remove, by naming the edge.
+  const Json::Value swept = body(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"ghost"}]})")));
+  CHECK_EQ(swept["removedEdges"], parse(R"([{"from":"a","to":"ghost"}])"));
+  CHECK(swept["diagnosticsClean"].asBool());
 }
 
 TEST(mcp_delete_node_prune_on_a_clean_tree_leaves_it_clean) {
@@ -2274,7 +2233,7 @@ TEST(mcp_import_subgraph_answers_the_landed_graft_when_clearing_the_tombstoned_m
   CHECK_EQ(trees.savedNodeCounts.size(), saves + 1);
   CHECK_FALSE(registry.open(TreeId{"t"})->hasNode(NodeId{"n"}));
   // The mark on the deleted node did not clear; the graft stands, and a retry says so.
-  CHECK_EQ(strings(body(call("get_progress", kNoArgs))["completed"]), (std::vector<std::string>{"n"}));
+  CHECK_EQ(storedMarks(progress, caller), parse(R"({"completed":["n"],"cleared":[]})"));
   progressRepo.armed = false;
   const ToolResult again = call("import_subgraph", args);
   CHECK(again.isError);
@@ -2460,25 +2419,6 @@ Json::Value coloredNode(const char* id, const char* color, std::vector<const cha
   return n;
 }
 
-// a(sky) -> b(sky), a -> c(plum), c -> d(plum), b -> d: d's trunk parent is c, so b -> d joins two
-// colour-derived branches and is the one cross-branch edge.
-void plantTwoBranches(Harness& h) {
-  h.call("add_kind", kindArgs("build", "sky"));
-  Json::Value review = kindArgs("review", "plum");
-  review["description"] = "looking back";
-  h.call("add_kind", review);
-  h.call("create_node", coloredNode("a", "sky", {}));
-  h.call("create_node", coloredNode("b", "sky", {"a"}));
-  h.call("create_node", coloredNode("c", "plum", {"a"}));
-  h.call("create_node", coloredNode("d", "plum", {"c", "b"}));
-}
-
-Json::Value exemptions(Harness& h) {
-  Json::Value args(Json::objectValue);
-  args["kindFields"] = list({"id", "crossBranchExempt"});
-  return body(h.call("get_tree", args))["tree"]["kinds"];
-}
-
 }
 
 TEST(mcp_include_edges_lists_every_live_edge_and_none_of_the_tombstoned) {
@@ -2556,81 +2496,6 @@ TEST(mcp_kind_joins_a_nodes_color_to_the_legend_and_is_omitted_when_no_kind_wear
   const Json::Value claimed = body(h.call("find_nodes", args))["nodes"];
   REQUIRE_EQ(claimed.size(), 1u);
   CHECK_EQ(claimed[0]["kind"].asString(), std::string("frontend"));
-}
-
-TEST(mcp_an_imported_kind_flips_the_exemption_and_get_health_skips_those_edges) {
-  Harness h;
-  plantTwoBranches(h);
-
-  Json::Value coupled = body(h.call("get_health", kNoArgs));
-  CHECK_EQ(keys(coupled), (std::vector<std::string>{"avgInDegree", "crossBranch", "crossBranchExempt",
-                                                     "edgeCount", "nodeCount", "redundant", "score"}));
-  CHECK_EQ(coupled["edgeCount"].asInt(), 4);
-  CHECK_EQ(coupled["crossBranch"].asInt(), 1);
-  CHECK_EQ(coupled["crossBranchExempt"].asInt(), 0);
-  CHECK_EQ(coupled["score"].asInt(), 85);
-  Json::Value before = exemptions(h);
-  CHECK_EQ(dump(before), std::string("[{\"crossBranchExempt\":false,\"id\":\"build\"},"
-                                     "{\"crossBranchExempt\":false,\"id\":\"review\"}]"));
-
-  // An import's kind carries the flag onto a kind the legend holds; the registers it leaves out keep what they hold.
-  const auto flip = [&](const char* kind, const char* hue, bool exempt) {
-    Json::Value sent = parse(R"({"nodes":[],"kinds":[{}]})");
-    sent["kinds"][0]["id"] = kind;
-    sent["kinds"][0]["hue"] = hue;
-    sent["kinds"][0]["crossBranchExempt"] = exempt;
-    CHECK_FALSE(h.call("import_subgraph", sent).isError);
-  };
-  flip("review", "plum", true);
-  Json::Value exempt = body(h.call("get_health", kNoArgs));
-  CHECK_EQ(exempt["crossBranch"].asInt(), 0);
-  CHECK_EQ(exempt["crossBranchExempt"].asInt(), 1);
-  CHECK_EQ(exempt["score"].asInt(), 100);
-  CHECK_EQ(dump(exemptions(h)), std::string("[{\"crossBranchExempt\":false,\"id\":\"build\"},"
-                                            "{\"crossBranchExempt\":true,\"id\":\"review\"}]"));
-
-  Json::Value described(Json::objectValue);
-  described["kindFields"] = list({"id", "description"});
-  CHECK_EQ(body(h.call("get_tree", described))["tree"]["kinds"][1]["description"].asString(),
-           std::string("looking back"));  // the flag write left the description alone
-
-  // Either endpoint: the sky side of b -> d is enough once build is the exempt kind instead.
-  flip("review", "plum", false);
-  flip("build", "sky", true);
-  Json::Value otherSide = body(h.call("get_health", kNoArgs));
-  CHECK_EQ(otherSide["crossBranch"].asInt(), 0);
-  CHECK_EQ(otherSide["crossBranchExempt"].asInt(), 1);
-}
-
-TEST(mcp_add_kind_seeds_the_exemption_inline_and_import_subgraph_round_trips_it) {
-  Harness h;
-  Json::Value drill = kindArgs("drill", "gold");
-  drill["crossBranchExempt"] = true;
-  CHECK_FALSE(h.call("add_kind", drill).isError);
-  CHECK_EQ(dump(exemptions(h)), std::string("[{\"crossBranchExempt\":true,\"id\":\"drill\"}]"));
-
-  Json::Value wrong = kindArgs("x", "sky");
-  wrong["crossBranchExempt"] = "yes";
-  CHECK_EQ(message(h.call("add_kind", wrong)),
-           std::string("add_kind: argument \"crossBranchExempt\" must be a boolean, got string"));
-
-  Json::Value kinds(Json::arrayValue);
-  Json::Value drillAgain = kindArgs("drill", "gold");
-  drillAgain["crossBranchExempt"] = false;
-  kinds.append(drillAgain);
-  Json::Value review = kindArgs("review", "plum");
-  review["crossBranchExempt"] = true;
-  kinds.append(review);
-  Json::Value imported(Json::objectValue);
-  imported["nodes"] = Json::Value(Json::arrayValue);
-  imported["kinds"] = kinds;
-  CHECK_FALSE(h.call("import_subgraph", imported).isError);
-  CHECK_EQ(dump(exemptions(h)), std::string("[{\"crossBranchExempt\":false,\"id\":\"drill\"},"
-                                            "{\"crossBranchExempt\":true,\"id\":\"review\"}]"));
-
-  imported["kinds"][1]["crossBranchExempt"] = "yes";
-  CHECK_EQ(message(h.call("import_subgraph", imported)),
-           std::string("import_subgraph: argument \"kinds[1].crossBranchExempt\" must be a boolean, got string"));
 }
 
 namespace {
@@ -3055,7 +2920,8 @@ TEST(mcp_get_progress_describes_out_of_order_as_the_marks_that_carried_the_flag)
              std::string("The caller's private progress overlay for a roadmap: the node ids that are "
                          "completed, and outOfOrder — the subset of completed whose mark carried "
                          "outOfOrder:true, from an update_nodes row's `status` or an import's progress row. Per-user, "
-                         "separate from the shared structure."));
+                         "separate from the shared structure. Only marks on nodes the tree holds are answered: a mark "
+                         "on a node someone deleted is kept and shows again when the node comes back."));
     const std::string fields = tool.descriptor["inputSchema"]["properties"]["fields"]["description"].asString();
     CHECK(fields.find("the subset of `completed` whose mark carried outOfOrder:true") != std::string::npos);
     return;
@@ -3068,7 +2934,6 @@ TEST(mcp_import_subgraph_keeps_a_colliding_kinds_omitted_fields_and_defaults_a_n
   Json::Value drill = kindArgs("drill", "gold");
   drill["label"] = "Drill";
   drill["description"] = "Daily drills";
-  drill["crossBranchExempt"] = true;
   CHECK_FALSE(h.call("add_kind", drill).isError);
 
   Json::Value kinds(Json::arrayValue);
@@ -3086,7 +2951,7 @@ TEST(mcp_import_subgraph_keeps_a_colliding_kinds_omitted_fields_and_defaults_a_n
   CHECK_EQ(receipt["kindCollisions"][0].asString(), std::string("drill"));
 
   Json::Value read(Json::objectValue);
-  read["kindFields"] = list({"id", "hue", "label", "description", "crossBranchExempt"});
+  read["kindFields"] = list({"id", "hue", "label", "description"});
   Json::Value legend = body(h.call("get_tree", read))["tree"]["kinds"];
   REQUIRE_EQ(legend.size(), 2u);
   const Json::Value* kept = kindNamed(legend, "drill");
@@ -3094,19 +2959,16 @@ TEST(mcp_import_subgraph_keeps_a_colliding_kinds_omitted_fields_and_defaults_a_n
   CHECK_EQ((*kept)["hue"].asString(), std::string("gold"));
   CHECK_EQ((*kept)["label"].asString(), std::string("Drill"));
   CHECK_EQ((*kept)["description"].asString(), std::string("Daily drills"));
-  CHECK((*kept)["crossBranchExempt"].asBool());
   const Json::Value* fresh = kindNamed(legend, "read");
   REQUIRE(fresh != nullptr);
   CHECK_EQ((*fresh)["hue"].asString(), std::string("sky"));
   CHECK_EQ((*fresh)["label"].asString(), std::string(""));
   CHECK_EQ((*fresh)["description"].asString(), std::string(""));
-  CHECK_FALSE((*fresh)["crossBranchExempt"].asBool());
 
-  // Sent, a field replaces — an empty string and a false included.
+  // Sent, a field replaces — an empty string included.
   Json::Value spelled = kindArgs("drill", "gold");
   spelled["label"] = "Drills";
   spelled["description"] = "";
-  spelled["crossBranchExempt"] = false;
   Json::Value again(Json::arrayValue);
   again.append(spelled);
   args["kinds"] = again;
@@ -3116,7 +2978,6 @@ TEST(mcp_import_subgraph_keeps_a_colliding_kinds_omitted_fields_and_defaults_a_n
   REQUIRE(replaced != nullptr);
   CHECK_EQ((*replaced)["label"].asString(), std::string("Drills"));
   CHECK_EQ((*replaced)["description"].asString(), std::string(""));
-  CHECK_FALSE((*replaced)["crossBranchExempt"].asBool());
 }
 
 namespace {
@@ -3402,8 +3263,8 @@ TEST(mcp_no_read_but_get_tree_carries_the_guide) {
     CHECK_EQ(message(read).find("Rig first"), std::string::npos);
     CHECK_EQ(message(read).find("guide"), std::string::npos);
   }
-  CHECK_EQ(reads, (std::vector<std::string>{"get_nodes", "list_trees", "get_diagnostics", "get_health",
-                                            "get_progress", "find_nodes"}));
+  CHECK_EQ(reads, (std::vector<std::string>{"get_nodes", "list_trees", "get_diagnostics", "get_progress",
+                                            "find_nodes"}));
 
   Json::Value everything(Json::objectValue);
   everything["fields"] = everyNodeField();
@@ -5141,7 +5002,6 @@ TEST(mcp_the_trees_above_are_read_once_per_first_page_of_get_tree_and_by_no_othe
   CHECK_FALSE(h.call("find_nodes", parse(R"({"state":"available"})")).isError);
   CHECK_FALSE(h.call("get_progress", kNoArgs).isError);
   CHECK_FALSE(h.call("get_diagnostics", kNoArgs).isError);
-  CHECK_FALSE(h.call("get_health", kNoArgs).isError);
   CHECK_FALSE(h.tools.callTool("list_trees", kNoArgs, h.actor).isError);
   for (const UserId& reader : {uid("stranger"), UserId{}})
     CHECK_FALSE(h.tools.callTool("get_tree", with("treeId", "t"), ToolCaller{reader, ToolScope::everything()}).isError);
@@ -6824,9 +6684,9 @@ TEST(mcp_import_progress_rows_carry_out_of_order_as_update_nodes_marks_do) {
   CHECK_EQ(body(h.call("get_progress", everyMark)), held);
 }
 
-// A delete clears the caller's own mark on each node it deletes, in the same call, by either form and with or without
-// prune, counted in pruned.progress; a mark someone else holds on the node stays theirs, and a revive of the node later
-// brings no cleared mark back.
+// A delete clears the caller's own stored mark on each node it deletes, in the same call, by either form and with or
+// without prune, counted in pruned.progress; a mark someone else holds on the node stays theirs, and a revive of the
+// node later brings no cleared mark back.
 TEST(mcp_delete_node_clears_the_callers_marks_on_the_nodes_it_deletes) {
   for (const auto& [arguments, cleared, left] : std::vector<std::tuple<const char*, int, const char*>>{
            {R"({"nodeId":"a"})", 1, R"({"completed":["b"],"cleared":["a"]})"},
@@ -6840,24 +6700,22 @@ TEST(mcp_delete_node_clears_the_callers_marks_on_the_nodes_it_deletes) {
     CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
       {"nodeId":"b","status":"complete"}]})")).isError);
     const ToolCaller stranger{uid("stranger"), ToolScope::everything()};
-    const auto progressOf = [&](const ToolCaller& who) {
-      return body(h.tools.callTool("get_progress", parse(R"({"treeId":"t","fields":["completed","cleared"]})"), who));
-    };
     CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"), stranger)
                     .isError);
 
     CHECK_EQ(body(h.call("delete_node", parse(arguments)))["pruned"]["progress"].asInt(), cleared);
-    CHECK_EQ(progressOf(h.actor), parse(left));
-    CHECK_EQ(progressOf(stranger), parse(R"({"completed":["a"],"cleared":[]})"));
+    CHECK_EQ(storedMarks(h.progress, h.caller), parse(left));
+    CHECK_EQ(storedMarks(h.progress, stranger.user), parse(R"({"completed":["a"],"cleared":[]})"));
 
     CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
-    CHECK_EQ(progressOf(h.actor), parse(left));
-    CHECK_EQ(progressOf(stranger), parse(R"({"completed":["a"],"cleared":[]})"));
+    CHECK_EQ(storedMarks(h.progress, h.caller), parse(left));
+    CHECK_EQ(storedMarks(h.progress, stranger.user), parse(R"({"completed":["a"],"cleared":[]})"));
   }
 }
 
 // A step that opens a tree keeps the mark it held before its pointer was set, and that mark goes with the step as any
-// other does: a delete clears it, though a mark sent on the step is refused, and a step revived under its id holds none.
+// other does: a delete clears it, though a mark sent on the step is refused, get_progress answers nothing for the step
+// while it is gone, and a step revived under its id holds none.
 TEST(mcp_delete_node_clears_the_mark_a_step_that_opens_a_tree_kept) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
@@ -6873,7 +6731,8 @@ TEST(mcp_delete_node_clears_the_mark_a_step_that_opens_a_tree_kept) {
   CHECK_EQ(marks(), parse(R"({"completed":["b","idea"],"cleared":[]})"));
 
   CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"idea"})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
-  CHECK_EQ(marks(), parse(R"({"completed":["b"],"cleared":["idea"]})"));
+  CHECK_EQ(storedMarks(h.progress, h.caller), parse(R"({"completed":["b"],"cleared":["idea"]})"));
+  CHECK_EQ(marks(), parse(R"({"completed":["b"],"cleared":[]})"));
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"idea","label":"Idea"})")).isError);
   CHECK_EQ(marks(), parse(R"({"completed":["b"],"cleared":["idea"]})"));
 }
@@ -6898,8 +6757,7 @@ TEST(mcp_delete_node_with_the_progress_store_down_deletes_nothing_and_a_retry_co
     h.progressRepo.loadsFail = h.progressRepo.writesFail = false;
     CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"a"})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
     CHECK_FALSE(h.registry.open(TreeId{"t"})->hasNode(NodeId{"a"}));
-    CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})"))),
-             parse(R"({"completed":[],"cleared":["a"]})"));
+    CHECK_EQ(storedMarks(h.progress, h.caller), parse(R"({"completed":[],"cleared":["a"]})"));
   }
 }
 
@@ -6919,7 +6777,7 @@ TEST(mcp_a_server_progress_write_lands_over_a_mark_stamped_ahead_of_the_server) 
   CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"b","status":"none"})")))),
            parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"b","prerequisitesMet":true,"status":"none"}],"seq":2,"treeId":"t","unchanged":true,"unchangedNodeIds":["b"]})"));
   const Json::Value cleared = parse(R"({"completed":[],"cleared":["a","b"]})");
-  CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})"))), cleared);
+  CHECK_EQ(storedMarks(h.progress, h.caller), cleared);
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
   CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})"))), cleared);
 }
@@ -7741,8 +7599,8 @@ TEST(mcp_change_edges_removes_a_dangling_and_a_self_edge_by_name) {
   CHECK(body(h->call("get_diagnostics", kNoArgs))["dangling"].empty());
 }
 
-// A tree at its edge cap refuses one edge more, saying tidy drops the edges a longer path implies; removing one in
-// the same call makes room.
+// A tree at its edge cap refuses one edge more, saying change_edges removes edges; removing one in the same call makes
+// room.
 TEST(mcp_change_edges_refuses_an_edge_past_the_cap) {
   Harness h;
   LooseGraph graph;
@@ -7751,8 +7609,8 @@ TEST(mcp_change_edges_refuses_an_edge_past_the_cap) {
   for (std::size_t i = 0; i < kMaxEdges; ++i) graph.addEdge(NodeId{"a"}, NodeId{"m-" + std::to_string(i)}, Hlc{2, 0, "seed"});
   h.trees.byId["t"] = StoredTree{graph.exportState(), LegendState{}, {"Full", {}}, 0, h.caller};
   CHECK_EQ(message(h.call("change_edges", parse(R"({"add":[{"from":"a","to":"b"}]})"))),
-           std::string("change_edges: this tree would hold 20001 edges, max 20000 — call tidy to drop the edges a "
-                       "longer path already implies"));
+           std::string("change_edges: this tree would hold 20001 edges, max 20000 — remove edges with change_edges "
+                       "before adding more"));
   CHECK_EQ(body(h.call("change_edges", parse(R"({"remove":[{"from":"a","to":"m-0"}],
     "add":[{"from":"a","to":"b"}]})")))["addedEdges"], parse(R"([{"from":"a","to":"b"}])"));
 }
@@ -7957,4 +7815,82 @@ TEST(mcp_an_import_progress_row_takes_its_node_by_the_legacy_id) {
   CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"id":"a","status":"complete"}]})")))["progress"],
            parse(R"([{"nodeId":"a","prerequisitesMet":true,"status":"complete"}])"));
   CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["a"],"outOfOrder":[]})"));
+}
+
+// get_progress answers the caller's marks on the nodes the tree holds, in every list: a mark on a node someone else
+// deleted stays stored and is not answered, and shows again when the node comes back. On a tree the caller cannot read
+// it answers none.
+TEST(mcp_get_progress_answers_only_marks_on_nodes_the_tree_holds) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},
+    {"id":"c","label":"C"},{"id":"d","label":"D","prerequisites":["c"]}]})")).isError);
+  h.registry.setVisibility(TreeId{"t"}, Visibility::public_);
+  const ToolCaller stranger{uid("stranger"), ToolScope::everything()};
+  const auto progressOf = [&] {
+    return body(h.tools.callTool("get_progress", parse(R"({"treeId":"t","fields":["completed","cleared","outOfOrder"]})"),
+                                 stranger));
+  };
+  CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"},
+    {"nodeId":"b","status":"none"},{"nodeId":"d","status":"complete","outOfOrder":true}]})"), stranger).isError);
+  CHECK_EQ(progressOf(), parse(R"({"completed":["a","d"],"cleared":["b"],"outOfOrder":["d"]})"));
+
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeIds":["b","d"]})")).isError);
+  CHECK_EQ(progressOf(), parse(R"({"completed":["a"],"cleared":[],"outOfOrder":[]})"));
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"d","label":"D"}]})")).isError);
+  CHECK_EQ(progressOf(), parse(R"({"completed":["a","d"],"cleared":[],"outOfOrder":["d"]})"));
+
+  h.registry.setVisibility(TreeId{"t"}, Visibility::private_);
+  CHECK_EQ(progressOf(), parse(R"({"completed":[],"cleared":[],"outOfOrder":[]})"));
+  CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared","outOfOrder"]})"))),
+           parse(R"({"completed":[],"cleared":[],"outOfOrder":[]})"));
+}
+
+// get_health, tidy and prune are retired: no declaration carries them, and a call to one is refused as a tool the
+// server does not have, in the gate's own words, with nothing written and no mark cleared.
+TEST(mcp_the_retired_health_tidy_and_prune_tools_are_refused_as_unknown_tools) {
+  auto h = nodeTree();
+  CHECK_FALSE(h->call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"}]})")).isError);
+  const StoredTree stored = h->trees.byId["t"];
+  const std::size_t rows = h->ops.byTree["t"].size();
+  CompositeToolHost gate(std::vector<ToolModule>{{h->tools, ""}});
+  for (const std::string name : {"get_health", "tidy", "prune"}) {
+    for (const Json::Value& tool : h->tools.listTools(h->actor)) CHECK(tool["name"].asString() != name);
+    const ToolResult refused = gate.callTool(name, parse(R"({"treeId":"t"})"), h->actor);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused), name + ": no such tool on this server — call tools/list for the whole surface.");
+  }
+  CHECK(h->trees.byId["t"] == stored);
+  CHECK_EQ(h->ops.byTree["t"].size(), rows);
+  CHECK_EQ(body(h->call("get_progress", kNoArgs)), parse(R"({"completed":["a"],"outOfOrder":[]})"));
+}
+
+// The cross-branch flag is no field of a kind: add_kind, create_tree's kinds and an import's kinds refuse it as an
+// unknown argument, and get_tree's kindFields as a field a kind does not have, each in the gate's own words with
+// nothing written.
+TEST(mcp_the_cross_branch_flag_is_refused_wherever_mcp_took_or_answered_it) {
+  auto h = kindTree();
+  const StoredTree stored = h->trees.byId["t"];
+  const std::size_t trees = h->trees.byId.size();
+  CompositeToolHost gate(std::vector<ToolModule>{{h->tools, ""}});
+  const auto refusal = [&](const char* tool, const char* arguments) {
+    const ToolResult result = gate.callTool(tool, parse(arguments), h->actor);
+    CHECK(result.isError);
+    return message(result);
+  };
+
+  CHECK_EQ(refusal("add_kind", R"({"treeId":"t","id":"x","hue":"plum","crossBranchExempt":true})"),
+           std::string("add_kind: unknown argument \"crossBranchExempt\". This tool takes: description, hue, id, "
+                       "label, treeId."));
+  CHECK_EQ(refusal("create_tree", R"({"title":"T","kinds":[{"id":"x","hue":"plum","crossBranchExempt":true}]})"),
+           std::string("create_tree: unknown argument \"kinds[0].crossBranchExempt\". kinds[0] takes: description, "
+                       "hue, id, label."));
+  CHECK_EQ(refusal("import_subgraph", R"({"treeId":"t","kinds":[{"id":"k","hue":"sky","crossBranchExempt":true}],
+    "nodes":[]})"),
+           std::string("import_subgraph: unknown argument \"kinds[0].crossBranchExempt\". kinds[0] takes: "
+                       "description, hue, id, label."));
+  CHECK_EQ(refusal("get_tree", R"({"treeId":"t","kindFields":["id","crossBranchExempt"]})"),
+           std::string("get_tree: kindFields[1] \"crossBranchExempt\" is not one of {id, hue, label, description}"));
+  CHECK(h->trees.byId["t"] == stored);
+  CHECK_EQ(h->trees.byId.size(), trees);
 }

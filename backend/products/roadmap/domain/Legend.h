@@ -26,8 +26,6 @@ struct KindStateEntry {
   Hlc labelAt;
   std::string description;
   Hlc descriptionAt;
-  bool crossBranchExempt = false;
-  Hlc crossBranchExemptAt;
   double rank = 0;
   Hlc rankAt;
   bool operator==(const KindStateEntry&) const = default;
@@ -60,7 +58,6 @@ public:
   void removeKind(const KindId& id, const Hlc& at);
   void setLabel(const KindId& id, const std::string& label, const Hlc& at);
   void setDescription(const KindId& id, const std::string& description, const Hlc& at);
-  void setCrossBranchExempt(const KindId& id, bool exempt, const Hlc& at);
   void setHue(const KindId& id, NodeColor hue, const Hlc& at);
   void reorder(const std::vector<KindId>& order, const Hlc& at);
 
@@ -86,7 +83,6 @@ private:
     Lww<NodeColor> hue;
     Lww<std::string> label;
     Lww<std::string> description;
-    Lww<bool> crossBranchExempt;
     Lww<double> rank;
   };
 

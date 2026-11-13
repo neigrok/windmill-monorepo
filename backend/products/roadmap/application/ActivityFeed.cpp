@@ -69,10 +69,8 @@ public:
       event.verb = "renamed-kind"; event.label = c->label;
       event.summary = "renamed a kind to " + named(c->label);
     } else if (auto* c = std::get_if<DescribeKind>(&command)) {
-      event.verb = "described-kind";
-      if (c->description) event.summary = "described a kind";
-      else if (c->crossBranchExempt.value_or(false)) event.summary = "marked a kind cross-branch exempt";
-      else event.summary = "cleared a kind's cross-branch exemption";
+      if (!c->description) return std::nullopt;  // a stored row that sets nothing
+      event.verb = "described-kind"; event.summary = "described a kind";
     } else if (std::get_if<RemoveKind>(&command)) {
       event.verb = "removed-kind"; event.summary = "removed a kind";
     } else if (std::get_if<ReorderKinds>(&command)) {
@@ -83,7 +81,7 @@ public:
     } else if (auto* c = std::get_if<Batch>(&command)) {
       return batch(*c);
     } else {
-      return std::nullopt;  // RepositionNode: a nudge is not a feed-worthy deed
+      return std::nullopt;  // a nudge, an annotation or a past prune is no feed-worthy deed
     }
     return event;
   }
