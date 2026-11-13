@@ -135,8 +135,9 @@ until the lane drains.
 Resends pause while refused, offline, rebaselining or closed. A late acknowledgement for a settled
 frame is ignored. Socket closure and epoch adoption clear pending ping boundaries and delivery timers.
 
-A live frame joins only at `seq === lastSeq + 1`; already-seen seqs are ignored, and a gap or failed
-join forces reconnect. A subscribe delta is the recovery path. Own structure echoes suppress repeated
+The server sends each subscriber a tree's live frames in seq order, its own included, and a writer's
+ack after the broadcast of its frame. A live frame joins only at `seq === lastSeq + 1`; already-seen
+seqs are ignored, and a gap or failed join forces reconnect. A subscribe delta is the recovery path. Own structure echoes suppress repeated
 local animation and await their acknowledgement before confirming.
 
 Each send mints a new frame ID. Reconnection can therefore resend the same content under a new ID;

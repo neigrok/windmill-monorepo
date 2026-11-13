@@ -294,7 +294,11 @@ for a tree the sender may not read it is answered as any frame is, the same for 
 for an absent one. A frame that carries a stamp meets the write gate before the room, whatever the
 room already holds. A broadcast carries the room's `seq` and always
 states `intent: live`, whatever intent the frame arrived with — echoing a `flush` would make every
-subscriber treat it as a re-baselining graft.
+subscriber treat it as a re-baselining graft. Each subscriber is sent a tree's broadcasts in seq
+order, the writer of a frame included: every fan-out is queued on the loop the subscriber's
+connection lives on (`sendInOrder`, `adapters/ws/WsPresenceBus.h`), never sent straight from the
+writer's handler, where it would go out ahead of earlier frames still queued behind that handler.
+A reply is queued the same way, so a writer's ack follows the broadcast of its frame.
 
 ### Commands
 

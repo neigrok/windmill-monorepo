@@ -19,12 +19,14 @@
 
 #include "platform/application/WriteObservation.h"
 
+#include <trantor/net/EventLoopThread.h>
 #include <trantor/net/InetAddress.h>
 #include <trantor/utils/Logger.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -2346,3 +2348,44 @@ TEST(ws_a_progress_frame_that_recorded_no_mark_and_was_refused_one_completes_as_
   CHECK_EQ(parse(conn->sent[1]), parse(R"({"t":"progressAck","treeId":"t_main","frameId":"f2"})"));
   CHECK(h.progressRepo.load(TreeId{"t_main"}, owner).completed == std::set<NodeId>{NodeId{"plain"}});
 }
+
+// A subscriber is sent a tree's broadcasts in the order the tree made them, the one of its own write included. The
+// connection here sends as the framework's do: at once from its own loop, and through that loop's queue from any
+// other thread. Another writer's frame is broadcast from that writer's loop while the subscriber's loop is still busy
+// with the subscriber's own write — as it is while its handler waits for the tree — and the broadcast of that write
+// must not go out ahead of the earlier one.
+TEST(a_subscriber_is_sent_a_trees_broadcasts_in_seq_order_its_own_writes_included) {
+  struct LoopSocket : FakeSocket {
+    trantor::EventLoop* loop = nullptr;
+    void send(std::string_view msg, const drogon::WebSocketMessageType type) override {
+      if (loop->isInLoopThread()) return FakeSocket::send(msg, type);
+      loop->queueInLoop([this, text = std::string(msg), type] { FakeSocket::send(text, type); });
+    }
+  };
+  trantor::EventLoopThread own("subscriber");
+  trantor::EventLoopThread other("another-writer");
+  own.run();
+  other.run();
+  const auto conn = std::make_shared<LoopSocket>();
+  conn->loop = own.getLoop();
+  WsPresenceBus bus;
+  const TreeId tree{"t"};
+  std::promise<void> sent;
+  own.getLoop()->queueInLoop([&] {
+    bus.subscribe(tree, conn, UserId{"u"});
+    std::promise<void> broadcast;
+    other.getLoop()->queueInLoop([&] {
+      bus.broadcastSubgraph(tree, 5, Subgraph{});
+      broadcast.set_value();
+    });
+    broadcast.get_future().wait();
+    bus.broadcastSubgraph(tree, 6, Subgraph{});
+    own.getLoop()->queueInLoop([&] { sent.set_value(); });
+  });
+  REQUIRE(sent.get_future().wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+
+  std::vector<Json::Int64> seqs;
+  for (const std::string& text : conn->sent) seqs.push_back(parse(text)["seq"].asInt64());
+  CHECK_EQ(seqs, (std::vector<Json::Int64>{5, 6}));
+}
+

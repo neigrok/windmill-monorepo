@@ -42,9 +42,11 @@ UserId actorOf(const drogon::WebSocketConnectionPtr& conn) {
 }
 
 // A frame sent to a connection says nothing of the write in progress: while a write is served, frames go to other
-// connections too — a reject to a reader a fan-out drops, to a page open on a tree a removal retires.
+// connections too — a reject to a reader a fan-out drops, to a page open on a tree a removal retires. It is queued on
+// the loop that serves the frame, the connection's own for a reply, as a broadcast is (sendInOrder): the ack of a
+// write goes out after the broadcast of that write, which the handler queued before it.
 void send(const drogon::WebSocketConnectionPtr& conn, const Json::Value& frame) {
-  if (conn->connected()) conn->send(dump(frame));
+  sendInOrder(trantor::EventLoop::getEventLoopOfCurrentThread(), conn, std::make_shared<const std::string>(dump(frame)));
 }
 
 // The refusal of the frame being served, a `reject` or a `skew`: it finishes that frame's write under its code.
