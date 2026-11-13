@@ -23,7 +23,9 @@ rejected for structure. Validity is a read model, not a gate.
   non-empty `opens` a `create_node`, `update_nodes` or `import_subgraph` call carries must name a
   tree that stands and is the caller's (`TreeRepository::titlesOwnedBy`, one read for
   the whole call), or the call is refused with nothing written, in one sentence for a tree that is
-  not there and for someone else's. A node may open the tree it is in. A tree id is the read
+  not there and for someone else's. That read is made before the tree's strand is taken, so an edit
+  racing the target's removal can still set a pointer at it, which then points nowhere. A node may
+  open the tree it is in. A tree id is the read
   capability of an unlisted tree, so only a caller who can write the tree receives the pointer:
   `readerView` (`domain/Subgraph.h`) is what every other reader gets from `GET /v1/trees/{id}`
   (`data` and `state`), the subscribe delta and a live frame — a document node without `opens`, a

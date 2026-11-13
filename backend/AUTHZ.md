@@ -44,9 +44,13 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   with no edit to this tree, and several steps can share one time; while an owner's follow is
   degraded — the read failed or ran past its budget, the five minutes after either, or the gallery's
   cap cut it short — every step of theirs that holds a pointer reads unmarked, valid pointer or not,
-  where a marked step with no pointer keeps its row; and a reply for a tree that holds a pointer
-  waits on that read, which a reply for a tree without one does not make. Beyond these, no state,
-  count, key or refusal says a node opens a tree. A tend neither reads nor sets the pointer: it runs
+  where a marked step with no pointer keeps its row; a reply for a tree that holds a pointer
+  waits on that read, which a reply for a tree without one does not make; and a removal's deletes
+  reach readers as live frames: one who can read the removed tree, or two of the trees whose steps
+  opened it, sees those trees' delete frames, each stamped by the server, arrive within a
+  millisecond of the removal, and so can tell which steps opened it. Each such frame alone is the
+  frame an owner's own `delete_node` with `prune` sends. Beyond these, no state, count, key,
+  refusal or frame a reader is sent says a node opens a tree. A tend neither reads nor sets the pointer: it runs
   as the owner on labels that may be someone else's words, so `ScopedToolHost` offers it no `opens`
   argument and no `opens` field, and refuses a call
   that names either; and no call it can make brings a pointer back, because a node an import

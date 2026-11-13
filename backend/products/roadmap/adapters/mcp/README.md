@@ -400,7 +400,11 @@ A node may point at another tree: `opens` holds that tree's id.
   Otherwise the whole call is refused naming the argument path and the id — `opens`,
   `updates[3].opens`, `nodes[2].opens` — in one sentence for a tree that is not there, a deleted one
   and someone else's, so the refusal confirms no id. Its write line carries the outcome
-  `opens-not-yours`. A node may open the tree it is in.
+  `opens-not-yours`. A node may open the tree it is in. The read is made before the tree's strand is
+  taken, since no database read runs under it, so the door refuses a pointer at a tree that does not
+  stand *when it checks*: an edit racing that tree's removal can leave the step pointing at it after
+  the removal has taken the steps that opened it. Such a step points nowhere: it reads as an ordinary
+  step, and `get_diagnostics` lists it in `danglingPointers`.
 - **Read.** `opens` is a `fields` value on `get_tree`, `get_nodes` and `find_nodes`, never in a
   default. A node answers `opens: {treeId, title, state}` when the caller can write the tree being
   read, the pointer is set, and the opened tree stands and is theirs; the key is omitted otherwise,
