@@ -1,0 +1,5 @@
+{
+  "note": "The size of a message on the roadmap socket (/v1/socket), in bytes of its JSON text as UTF-8. The server takes an inbound message of at most maxInboundBytes and drops the connection of a larger one (backend/products/roadmap/adapters/ws/TreeSocket.h, set on the framework in backend/platform/infra/main.cpp). The web client sends no frame above maxFrameBytes (web/src/products/roadmap/sync/SyncSession.js packs every structure frame, live or flushed, to it); one entry too large to share a frame goes in a frame of its own, and the caps on a node's fields keep that one under maxInboundBytes.",
+  "maxInboundBytes": 1048576,
+  "maxFrameBytes": 262144
+}

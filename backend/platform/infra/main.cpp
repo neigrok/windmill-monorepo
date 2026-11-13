@@ -1233,6 +1233,9 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // which engine.md §9.1 allows a transport: it sits above PUSH_MAX_BYTES and PULL_MAX_BYTES.
   app.setClientMaxBodySize(8 * 1024 * 1024);
   app.setClientMaxMemoryBodySize(2 * 1024 * 1024);
+  // The framework holds one inbound limit for every socket and drops the connection of a larger message with no word
+  // to the handler. The tree socket's frames set it; the sync live channel's messages are far smaller.
+  app.setClientMaxWebSocketMessageSize(kMaxSocketMessageBytes);
   app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
   const char* listenHostEnv = std::getenv("WINDMILL_HOST");
   const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";

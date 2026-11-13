@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { TreeLattice, VersionVector, parseHlc } from '../../../../src/products/roadmap/sync/lattice.js';
 import { frameWrites } from '../../../../src/products/roadmap/sync/pendingWrites.js';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
+import { MAX_FRAME_BYTES, UNSENDABLE_FROM_BYTES } from '../../../../src/products/roadmap/sync/frames.js';
 
 function sessionWith({ notify = () => {}, registry = null, save = () => Promise.resolve(), reportFailure = () => {}, Session = SyncSession } = {}) {
   const session = new Session({ treeId: 'tree', registry, store: { save }, reportFailure });
@@ -1136,6 +1138,13 @@ const progressFrames = (socket) => socket.frames.filter((frame) => frame.t === '
 const flushFrame = (writes, actor) => ({ t: 'subgraph', v: 1, treeId: 'tree', actor, intent: 'flush', ...writes });
 const writesOf = ({ nodes = [], edges = [], kinds = [], title }) => ({ nodes, edges, kinds, ...(title ? { title } : {}) });
 
+const isStampField = (key) => /At$/.test(key) || key === 'at';
+const stampsIn = (value) => {
+  const found = [];
+  JSON.stringify(value, (key, field) => { if (isStampField(key)) found.push(field); return field; });
+  return found;
+};
+
 function reconnectWith(session, frame, coverage) {
   session.retry();
   session.connect();
@@ -1172,6 +1181,7 @@ test('S1 retry resends an older refused field after a newer field is acknowledge
   assert.deepEqual(structureFrames(socket).map(withoutFrameId), [flushFrame(writesOf(first), session.actor)]);
   session.receiveAck({ frameId: structureFrames(socket)[0].frameId });
   assert.equal(session.pendingStructureCount(), 0);
+  assert.equal(session.statusSnapshot().structureGestures, 0);
   assert.equal(drained, 1);
 });
 
@@ -1212,7 +1222,239 @@ test('S1 reload resends an older refused field under its original actor', async 
   assert.deepEqual(structureFrames(restored.ws).map(withoutFrameId), [flushFrame(writesOf(first), restored.actor)]);
 });
 
-test('S2 retry resends exactly the rejected chunk of a shared-stamp import', (t) => {
+const SOCKET = JSON.parse(readFileSync(new URL('../../../../../packages/api-contract/roadmap-socket.json', import.meta.url), 'utf8'));
+const bytesOf = (frame) => new TextEncoder().encode(JSON.stringify(frame)).length;
+
+test('the largest frame the client sends is the one the shared contract names, under what the server takes', () => {
+  assert.equal(MAX_FRAME_BYTES, SOCKET.maxFrameBytes);
+  assert.ok(SOCKET.maxFrameBytes < SOCKET.maxInboundBytes);
+  assert.ok(UNSENDABLE_FROM_BYTES < MAX_FRAME_BYTES);
+});
+
+// A tree whose kind `k` is worn by `count` steps, as the server sent it.
+function wornBy(session, count) {
+  const holders = Array.from({ length: count }, (_, i) => ({ id: `пункт-${String(i).padStart(5, '0')}`, createdAt: '2:0:server', color: 'sky', colorAt: '2:0:server' }));
+  session.receiveLive({ t: 'subgraph', seq: 2, frameId: 'seed', nodes: holders, edges: [],
+    kinds: [{ id: 'k', createdAt: '2:0:server', hue: 'sky', hueAt: '2:0:server' }] });
+  session.ws.frames.length = 0;
+}
+const stampsOfFrame = (frame) => [...new Set(stampsIn({ nodes: frame.nodes, edges: frame.edges, kinds: frame.kinds }))];
+const byId = (rows) => [...rows].sort((left, right) => (left.id < right.id ? -1 : 1));
+const carried = (frame) => ({ nodes: byId(frame.nodes), edges: frame.edges, kinds: frame.kinds });
+
+test('an act too large for one frame is stamped once per frame: consecutive stamps of one millisecond, the kind in the first, and still one act', (t) => {
+  const { session } = connectedSession(t);
+  wornBy(session, 5000);
+
+  session.dispatch({ kind: 'RecolorKind', id: 'k', hue: 'plum' });
+
+  const frames = structureFrames(session.ws);
+  assert.ok(frames.length > 1);
+  assert.deepEqual(frames.map((frame) => frame.intent), frames.map(() => 'live'));
+  for (const frame of frames) assert.ok(bytesOf(frame) <= MAX_FRAME_BYTES, `a frame of ${bytesOf(frame)} bytes`);
+  assert.ok(bytesOf(frames[0]) > MAX_FRAME_BYTES - 200, 'a frame is packed to the limit, not cut short of it');
+  const stamps = frames.map((frame) => stampsOfFrame(frame));
+  for (const ofFrame of stamps) assert.equal(ofFrame.length, 1, 'a frame holds one whole stamp');
+  const first = parseHlc(stamps[0][0]);
+  assert.deepEqual(stamps.map(([stamp]) => parseHlc(stamp)),
+    frames.map((frame, index) => ({ ms: first.ms, counter: first.counter + index, actor: session.actor })));
+  assert.deepEqual(frames.map((frame) => frame.kinds.map((kind) => kind.id)), [['k'], ...frames.slice(1).map(() => [])]);
+  assert.equal(frames.reduce((sum, frame) => sum + frame.nodes.length, 0), 5000);
+  assert.deepEqual([...new Set(session.lattice.toFrame().nodes.filter((node) => node.colorAt).map((node) => node.colorAt))].sort(), stamps.flat().sort(),
+    'the lattice holds each step under the stamp of the frame that carries it');
+  assert.equal(session.undoStack.length, 1);
+  assert.equal(session.statusSnapshot().structureGestures, 1);
+  assert.equal(session.pendingEditCount(), 1);
+  for (const frame of frames) session.receiveAck({ frameId: frame.frameId });
+  assert.equal(session.pendingStructureCount(), 0);
+  assert.equal(session.statusSnapshot().structureGestures, 0);
+});
+
+// A tab reloaded from what `session` last saved, with the server answering that it holds `coverage` and nothing new.
+async function reloaded(t, session, saves, coverage) {
+  await session.persistNow();
+  const record = structuredClone(saves.at(-1));
+  const confirmed = session.confirmedStructure.toFrame();
+  session.close();
+  const priorDocument = globalThis.document;
+  globalThis.document = new EventTarget();
+  t.after(() => { globalThis.document = priorDocument; });
+  const restored = new SyncSession({ treeId: 'tree', registry: null, store: {
+    load: async () => record, save: async () => {}, requestPersistent: async () => true,
+  } });
+  t.after(() => restored.close());
+  await restored.start();
+  restored.ws.open();
+  restored.receiveState({ ...confirmed, seq: 3, coverage });
+  return restored;
+}
+
+test('a write set is cut into the same frames before and after a reload, and a reload part-way resends exactly the frames still owed', async (t) => {
+  const whole = connectedSession(t);
+  wornBy(whole.session, 5000);
+  whole.session.dispatch({ kind: 'RecolorKind', id: 'k', hue: 'plum' });
+  const sent = structureFrames(whole.session.ws);
+  assert.ok(sent.length > 1);
+
+  const afterNone = await reloaded(t, whole.session, whole.saves, { server: '2:0:server' });
+  assert.deepEqual(structureFrames(afterNone.ws).map(carried), sent.map(carried));
+
+  const partWay = connectedSession(t);
+  wornBy(partWay.session, 5000);
+  partWay.session.dispatch({ kind: 'RecolorKind', id: 'k', hue: 'plum' });
+  const [landed, ...owed] = structureFrames(partWay.session.ws);
+  partWay.session.receiveAck({ frameId: landed.frameId });
+  const afterOne = await reloaded(t, partWay.session, partWay.saves, { server: '2:0:server', [partWay.session.actor]: stampsOfFrame(landed)[0] });
+  assert.deepEqual(structureFrames(afterOne.ws).map(carried), owed.map(carried));
+});
+
+// One reconnect that the server answers with nothing new and then loses: how many structure frames the tab sent on it.
+function sentThenDropped(session, between = () => {}) {
+  session.connect();
+  session.ws.open();
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 1, nodes: [], edges: [], kinds: [], coverage: { server: '1:0:server' } });
+  between();
+  const sent = structureFrames(session.ws);
+  session.ws.close();
+  return sent;
+}
+const heavyImport = { kind: 'ImportSubgraph', nodes: Array.from({ length: 600 }, (_, i) => ({ id: `heavy-${i}`, label: `A step ${i} ${'with a long name '.repeat(8)}` })), edges: [] };
+
+test('the lane’s first frame, past the size a healthy path carries, lost with five sockets running stands refused once and is held while later writes go', (t) => {
+  const reports = [];
+  const { session } = connectedSession(t, {}, { reportFailure: (...args) => reports.push(args) });
+  const refusals = [];
+  session.subscribeRefusals((refusal) => refusals.push(refusal));
+  session.phase = 'offline';
+  session.dispatch(heavyImport);
+  let edits = 0;
+  const editing = () => session.dispatch({ kind: 'RenameNode', id: 'root', label: `Edit ${edits += 1}` });
+
+  const sent = [0, 1, 2, 3].map(() => sentThenDropped(session, editing));
+  assert.equal(session.statusSnapshot().refused, null, 'four sockets lost are not yet five');
+  sent.push(sentThenDropped(session, editing));
+
+  assert.ok(bytesOf(sent[0][0]) > UNSENDABLE_FROM_BYTES && bytesOf(sent[0][0]) <= MAX_FRAME_BYTES);
+  assert.deepEqual(sent.map((frames) => frames[0].nodes.length), [600, 600, 600, 600, 600], 'the heavy frame leads each time and goes alone');
+  assert.deepEqual(sent.map((frames) => frames.length > 1), [true, true, true, true, true], 'with the edits queued behind it');
+  assert.equal(session.statusSnapshot().refused?.code, 'unsendable');
+  assert.equal(refusals.length, 1);
+  assert.deepEqual(reports.filter(([operation]) => operation === 'roadmap-sync-unlandable').map(([operation, error, tags]) => [operation, error.message, tags]),
+    [['roadmap-sync-unlandable', 'Roadmap frame dropped with its socket', { lane: 'structure', size: 'under-256k' }]]);
+
+  session.connect();
+  session.ws.open();
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 1, nodes: [], edges: [], kinds: [], coverage: { server: '1:0:server' } });
+  const later = structureFrames(session.ws);
+  assert.deepEqual(later.map((frame) => frame.nodes.map((node) => node.id)), [['root']], 'the held frame is not sent again by itself; the edits behind it go');
+  session.receiveAck({ frameId: later[0].frameId });
+  session.ws.close();
+  assert.equal(refusals.length, 1);
+  assert.equal(reports.filter(([operation]) => operation === 'roadmap-sync-unlandable').length, 1);
+
+  session.retry();
+  session.connect();
+  session.ws.open();
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 1, nodes: [], edges: [], kinds: [], coverage: { server: '1:0:server' } });
+  assert.deepEqual(structureFrames(session.ws).map(withoutFrameId), [flushFrame(writesOf(sent[0][0]), session.actor)],
+    'Retry sends the held frame again as it was stamped');
+});
+
+test('when one part of an act cut into frames is judged unsendable the act’s other parts are held with it, and Retry sends them all', (t) => {
+  const { session } = connectedSession(t);
+  wornBy(session, 5000);
+  session.phase = 'offline';
+  session.dispatch({ kind: 'RecolorKind', id: 'k', hue: 'plum' });
+  const reconnected = () => {
+    session.connect();
+    session.ws.open();
+    session.receiveState({ t: 'subgraph', intent: 'delta', seq: 2, nodes: [], edges: [], kinds: [], coverage: { server: '2:0:server' } });
+    return structureFrames(session.ws);
+  };
+
+  let parts = 0;
+  for (let lost = 0; lost < 5; lost += 1) {
+    parts = reconnected().length;
+    session.ws.close();
+  }
+  assert.ok(parts > 1);
+  assert.equal(session.statusSnapshot().refused?.code, 'unsendable');
+
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'A later edit' });
+  assert.deepEqual(reconnected().map((frame) => [frame.kinds.length, frame.nodes.map((node) => node.id)]), [[0, ['root']]],
+    'no part of the held act goes, the tail included; the later edit does');
+  session.ws.close();
+
+  session.retry();
+  const retried = reconnected();
+  assert.equal(retried.reduce((sum, frame) => sum + frame.nodes.filter((node) => node.color === 'plum').length, 0), 5000);
+  assert.deepEqual(retried.flatMap((frame) => frame.kinds.map((kind) => kind.id)), ['k']);
+});
+
+test('a frame under the size a healthy path carries is sent again with every socket, however many are lost with it unanswered', (t) => {
+  const reports = [];
+  const { session } = connectedSession(t, {}, { reportFailure: (...args) => reports.push(args) });
+  session.phase = 'offline';
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Slow to land' });
+
+  const sent = Array.from({ length: 8 }, () => sentThenDropped(session).length);
+
+  assert.deepEqual(sent, [1, 1, 1, 1, 1, 1, 1, 1]);
+  assert.equal(session.statusSnapshot().refused, null);
+  assert.deepEqual(reports.filter(([operation]) => operation === 'roadmap-sync-unlandable'), []);
+});
+
+test('a heavy frame that is acknowledged is counted afresh: four sockets lost before the ack and four after refuse nothing', (t) => {
+  const { session } = connectedSession(t);
+  session.phase = 'offline';
+  session.dispatch(heavyImport);
+  for (let lost = 0; lost < 4; lost += 1) sentThenDropped(session);
+  session.connect();
+  session.ws.open();
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 1, nodes: [], edges: [], kinds: [], coverage: { server: '1:0:server' } });
+  session.receiveAck({ frameId: structureFrames(session.ws)[0].frameId });
+  session.ws.close();
+  session.phase = 'offline';
+  session.dispatch({ kind: 'ImportSubgraph', nodes: heavyImport.nodes.map((node) => ({ ...node, id: `more-${node.id}` })), edges: [] });
+
+  for (let lost = 0; lost < 4; lost += 1) sentThenDropped(session);
+
+  assert.equal(session.statusSnapshot().refused, null);
+  assert.equal(sentThenDropped(session).length, 1);
+  assert.equal(session.statusSnapshot().refused?.code, 'unsendable');
+});
+
+// The record a bundle before per-frame stamps saved: one act of 300 steps under one stamp, far past one frame.
+test('a stored act larger than one frame under one stamp is cut across frames under that stamp, none past the limit, and lands whole', async (t) => {
+  connectedSession(t);
+  const priorDocument = globalThis.document;
+  globalThis.document = new EventTarget();
+  t.after(() => { globalThis.document = priorDocument; });
+  const pasted = '1700000000000:0:r_before';
+  const root = { id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' };
+  const steps = Array.from({ length: 300 }, (_, i) => ({ id: `p${String(i).padStart(3, '0')}`, createdAt: pasted, label: `Pasted ${i}`, labelAt: pasted,
+    description: 'd'.repeat(5000), descriptionAt: pasted }));
+  const confirmed = { nodes: [root], edges: [], kinds: [] };
+  const session = new SyncSession({ treeId: 'tree', registry: null, store: {
+    load: async () => ({ frame: { nodes: [root, ...steps], edges: [], kinds: [] }, progress: { marks: [] }, lastSeq: 1,
+      epochs: { structure: 0, progress: 0 }, confirmed: { structure: confirmed, progress: { marks: [] } } }),
+    save: async () => {}, requestPersistent: async () => true,
+  } });
+  t.after(() => session.close());
+  await session.start();
+  session.ws.open();
+  session.ws.message({ t: 'subgraph', intent: 'delta', ...confirmed, seq: 1, coverage: { server: '1:0:server' } });
+
+  const frames = structureFrames(session.ws);
+  assert.ok(frames.length > 4, `${frames.length} frames`);
+  for (const frame of frames) assert.ok(bytesOf(frame) <= MAX_FRAME_BYTES, `a frame of ${bytesOf(frame)} bytes`);
+  assert.deepEqual([...new Set(frames.flatMap((frame) => stampsOfFrame(frame)))], [pasted], 'no stored write is stamped again');
+  assert.deepEqual(frames.flatMap((frame) => frame.nodes.map((node) => node.id)).sort(), steps.map((step) => step.id));
+  for (const frame of frames) session.receiveAck({ frameId: frame.frameId });
+  assert.equal(session.pendingStructureCount(), 0);
+});
+
+test('S2 retry resends exactly the rejected part of an import cut into frames', (t) => {
   const { session } = connectedSession(t, {}, { chunkBytes: 300 });
   session.phase = 'offline';
   session.dispatch({ kind: 'ImportSubgraph', nodes: Array.from({ length: 8 }, (_, i) => ({ id: `import-${i}`, label: `Node ${i}` })), edges: [] });
@@ -1230,15 +1472,15 @@ test('S2 retry resends exactly the rejected chunk of a shared-stamp import', (t)
 });
 
 test('S3 a later chunk frontier cannot mask older registers in the rejected chunk', (t) => {
-  const { session } = connectedSession(t, {}, { chunkBytes: 230 });
+  const { session } = connectedSession(t, {}, { chunkBytes: 300 });
   const writes = { nodes: [{ id: 'root', label: 'Older', labelAt: '30:0:r_test', description: 'Newer', descriptionAt: '33:0:r_test' }],
     edges: [{ from: 'root', to: 'a', addedAt: '31:0:r_test' }, { from: 'root', to: 'b', addedAt: '32:0:r_test' }], kinds: [] };
   session.lattice.join(writes);
   session.flush();
   const chunks = structureFrames(session.ws);
-  assert.equal(chunks.length, 2);
+  assert.ok(chunks.length >= 2);
   session.receiveReject({ frameId: chunks[0].frameId, code: 'tree-too-large' });
-  session.receiveAck({ frameId: chunks[1].frameId });
+  for (const frame of chunks.slice(1)) session.receiveAck({ frameId: frame.frameId });
   const socket = reconnectWith(session, { nodes: [], edges: [], kinds: [] }, session.confirmedStructure.frontier().toJSON());
   assert.deepEqual(structureFrames(socket).map(withoutFrameId), [flushFrame(writesOf(chunks[0]), session.actor)]);
 });

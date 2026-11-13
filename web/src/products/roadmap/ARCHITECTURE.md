@@ -892,7 +892,7 @@ the subscription's actor coverage; transport excludes identical stamps already i
 replaces its confirmed baseline; a lower room sequence triggers an empty-vector resubscribe for that full state.
 Partial grafts join structure confirmation, and every complete progress graft replaces its confirmed overlay.
 Lost server writes then become pending and replay; write replies and heartbeat pongs settle unanswered frames.
-Each local gesture contributes one HLC stamp and its written register references. Pending gestures persist with each lane, survive retries and reload, and clear on confirmation of
+Each local gesture contributes one HLC stamp, or one per frame when it is too large for one (`sync/frames.js`), and its written register references under its first. Pending gestures persist with each lane, survive retries and reload, and clear on confirmation of
 their fields or discard. A partial acknowledgement or a newer unrelated write cannot confirm the rest of a
 gesture. Legacy records recover distinct surviving stamps; overwritten gestures cannot be reconstructed. A stored
 gesture's reference to a register its lane's lattice does not hold — a node position a stored record still names,
@@ -942,7 +942,7 @@ progress-lane replacement blocks progress editing, and the composer keeps its dr
 unsent held delete stays available.
 
 **Tree registers.** The title and the guide are the tree's own registers beside its graph and legend. A rename or a guide
-write stamps one register outside the undo journal and saves with the structure lane; a flush sends the steps first and
+write stamps one register outside the undo journal and saves with the structure lane; a flush sends its writes in stamp order,
 each register in a frame of its own, so a refused register strands no step edit; a device tree's stamped guide reaches the
 server through the claim's first flush, once the tree exists there, since a planted document never sets one.
 

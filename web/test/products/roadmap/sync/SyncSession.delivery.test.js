@@ -271,7 +271,7 @@ async function deliveryHarness(t, seed) {
         `${label()}: unaccounted ${lane} ${key}`);
       }
     }
-    assert.deepEqual(reports.filter(({ operation }) => !['roadmap-sync-dropped', 'roadmap-sync-refused'].includes(operation)), [], label());
+    assert.deepEqual(reports.filter(({ operation }) => !['roadmap-sync-dropped', 'roadmap-sync-refused', 'roadmap-sync-unlandable'].includes(operation)), [], label());
   };
   const converge = () => {
     server.acceptAll = true;

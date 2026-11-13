@@ -112,6 +112,16 @@ around it, and whether the web shows it — `http:`, `https:` or `mailto:`, in a
 at run time; the image copies it in `backend/Dockerfile`) takes exactly the shown ones, and
 `web/test/products/roadmap/graph/tree/NodeWorkspace.test.js` proves `SAFE_URL` shows exactly those.
 
+## `roadmap-socket.json`
+
+The size of a message on the roadmap socket, in bytes of its JSON text as UTF-8. `maxInboundBytes` is
+the most the server takes: `kMaxSocketMessageBytes` (`backend/products/roadmap/domain/Command.h`, held
+to the file by `CommandTest`, which reads it at run time; the image copies it in `backend/Dockerfile`),
+set on the framework in `backend/platform/infra/main.cpp`, which drops the connection of a larger
+message; `WriteRoutesTest` holds that line. `maxFrameBytes` is the most the web client sends in one
+structure frame, but for a single entry that alone is larger: `MAX_FRAME_BYTES` (`web/src/products/roadmap/sync/frames.js`, held to the file and
+under `maxInboundBytes` by `web/test/products/roadmap/sync/SyncSession.test.js`).
+
 ## `gym-ladder.json`
 
 - The step pair is chosen by the **magnitude** of the weight, never its sign: under 20 kg ±1 / ±2.5,
