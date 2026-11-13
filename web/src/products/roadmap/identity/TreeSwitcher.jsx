@@ -418,8 +418,9 @@ function Ring({ done = 0, total, kind, onFirstLine = false }) {
   );
 }
 
+// As wide as its longest row would stand on one line, within the bounds: a confirming row's words wrap at the widest.
 const menu = {
-  position: 'absolute', top: 'calc(100% + 8px)', left: 0, minWidth: 244, maxWidth: 300,
+  position: 'absolute', top: 'calc(100% + 8px)', left: 0, width: 'max-content', minWidth: 244, maxWidth: 300,
   padding: 6, background: 'var(--surface-card)', border: '1px solid var(--border-subtle)',
   borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', zIndex: 40,
   fontFamily: 'var(--font-body)', animation: 'wm-fade-in-up var(--duration-fast) var(--ease-soft)',

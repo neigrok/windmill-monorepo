@@ -72,7 +72,7 @@ async function confirmDeleting(page, title) {
 }
 
 // The confirming row as a person meets it: the question, the line, what Delete is described by, the titles in bold, where
-// the ring sits against the question's first line, and whether any of its text is cut.
+// the ring sits against the question's first line, whether any of its text is cut, and how wide the menu stands.
 const confirmingRow = (page) => page.getByRole('button', { name: 'Delete', exact: true }).evaluate((del) => {
   const row = del.closest('[role="menuitem"]');
   const question = row.querySelector('span > span');
@@ -88,6 +88,7 @@ const confirmingRow = (page) => page.getByRole('button', { name: 'Delete', exact
     describedBy: del.getAttribute('aria-describedby') && document.getElementById(del.getAttribute('aria-describedby')).textContent,
     ring: Math.round(ring.top - first.top) === 2 ? 'first line' : Math.round(ring.top + ring.height / 2 - (row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2)) === 0 ? 'centred' : 'elsewhere',
     cut,
+    menu: Math.round(row.closest('[role="menu"]').getBoundingClientRect().width),
   };
 });
 
@@ -132,7 +133,7 @@ test('Chromium: the confirmation names the steps in the person’s other trees t
       seen.push(await confirmingRow(page));
       await page.getByRole('button', { name: 'Keep' }).click();
     }
-    const formed = (title, line, bold) => ({ question: `Delete ${title}? This can’t be undone`, line, bold, describedBy: line, ring: 'first line', cut: false });
+    const formed = (title, line, bold) => ({ question: `Delete ${title}? This can’t be undone`, line, bold, describedBy: line, ring: 'first line', cut: false, menu: 300 });
     assert.deepEqual(seen, [
       formed('Reading list', 'Also removes the step that opens it in My year', ['My year']),
       formed('Spanish basics', 'Also removes 2 steps that open it in Summer plans', ['Summer plans']),
@@ -158,8 +159,8 @@ test('Chromium: a tree nothing opens, and any tree from a server that sends no o
       await page.getByRole('button', { name: 'Keep' }).click();
     }
     assert.deepEqual(seen, [
-      { question: 'Delete Summer plans? This can’t be undone', line: null, bold: [], describedBy: null, ring: 'centred', cut: false },
-      { question: 'Delete A tree the server says nothing about? This can’t be undone', line: null, bold: [], describedBy: null, ring: 'centred', cut: false },
+      { question: 'Delete Summer plans? This can’t be undone', line: null, bold: [], describedBy: null, ring: 'centred', cut: false, menu: 300 },
+      { question: 'Delete A tree the server says nothing about? This can’t be undone', line: null, bold: [], describedBy: null, ring: 'centred', cut: false, menu: 300 },
     ]);
   });
 });
