@@ -671,8 +671,8 @@ that can, `reader` for any other) ·
 `subtree` says a subtree was created under `step` (Model, Subtrees). It takes the tree's next seq and
 goes to every subscriber, reader and writer alike, carrying the same bytes: whoever may read the tree
 may read its subtrees, whose access is its root's. No door creates a subtree yet, so no connection is
-sent one. The web client skips a frame type it does not know, so the next frame's seq reads as a gap
-to it: it reconnects, then subscribes again.
+sent one. The web client takes its seq as it takes a live frame's (`docs/GRAPH_SYNC_DESIGN.md`) and
+changes nothing else.
 
 `progressAck.refused` is present only when the frame carried a mark that was refused: an array of
 `{node, code}`, one per refused mark in the frame's order. The one code is `opens-a-tree` — the node
