@@ -72,10 +72,13 @@ struct OpeningSteps {
   bool operator==(const OpeningSteps&) const = default;
 };
 
-// What went with a removed tree from the owner's other trees: per tree whose steps opened it, in id order, those steps,
-// deleted; and the trees whose steps could not be deleted, which keep them.
+// What became of the steps of the owner's other trees that opened a removed tree, per tree, each in id order. `removed`:
+// the steps, deleted and saved. `unsaved`: deleted in the tree's room and sent to its open pages, and the save failed —
+// gone now, kept gone by the room's next save, back without the owner's mark should the server restart before it.
+// `incomplete`: nothing deleted, the steps kept, each pointing at a tree that no longer stands.
 struct Cascade {
   std::map<TreeId, std::vector<NodeId>> removed;
+  std::vector<TreeId> unsaved;
   std::vector<TreeId> incomplete;
   bool operator==(const Cascade&) const = default;
 };

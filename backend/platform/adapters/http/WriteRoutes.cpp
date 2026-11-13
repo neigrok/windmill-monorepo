@@ -43,7 +43,7 @@ const std::set<std::string> refusalCodes{
     "ask-daily-limit", "ask-generation-active", "ask-image-busy", "ask-image-limit",
     "ask-not-configured", "ask-out-of-budget", "ask-request-conflict", "ask-request-malformed",
     "ask-session-open", "ask-thread-taken", "bad-id", "bad_request", "client-update-required",
-    "checkout_closed", "clock-ahead", "coach-bad-request", "coach-busy", "coach-draft-invalid", "coach-draft-not-found",
+    "cascade-unavailable", "checkout_closed", "clock-ahead", "coach-bad-request", "coach-busy", "coach-draft-invalid", "coach-draft-not-found",
     "coach-rate-limited", "coach-turn-conflict", "coach-turn-order", "coach-turn-stopped", "coach-turn-unknown", "coach-update-required",
     "compose-unavailable",
     "concurrency_exhausted", "debt_outstanding",
@@ -186,6 +186,7 @@ std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std:
       operation == "roadmap.POST.v1.compose" || operation == "journal.POST.v1.journal.transcribe";
   if (aiRequest && aiAllowanceRefusalCodes.count(code)) return code;
   if (operation == "roadmap.POST.v1.compose" && code == "compose-unavailable") return code;
+  if (operation == "roadmap.DELETE.v1.trees.id" && code == "cascade-unavailable") return code;
   if (operation == "journal.POST.v1.journal.transcribe" &&
       (code == "voice_busy" || code == "voice_unavailable")) return code;
   if (operation == "platform.POST.v1.billing.checkout" && code == "checkout_closed") return code;

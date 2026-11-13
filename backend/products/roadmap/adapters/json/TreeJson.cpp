@@ -125,9 +125,11 @@ Json::Value toJson(const Cascade& cascade) {
     for (const NodeId& node : nodes) row["nodeIds"].append(node.str());
     body["removed"].append(row);
   }
-  if (cascade.incomplete.empty()) return body;
-  body["incomplete"] = Json::Value(Json::arrayValue);
-  for (const TreeId& tree : cascade.incomplete) body["incomplete"].append(tree.str());
+  for (const auto& [key, trees] : {std::pair{"unsaved", &cascade.unsaved}, std::pair{"incomplete", &cascade.incomplete}}) {
+    if (trees->empty()) continue;
+    body[key] = Json::Value(Json::arrayValue);
+    for (const TreeId& tree : *trees) body[key].append(tree.str());
+  }
   return body;
 }
 

@@ -53,13 +53,18 @@ public:
 
   // Each refusal names both write refusals of Access.h (an enum cannot hold another), because an
   // unowned tree is nobody's, not somebody else's.
-  enum class RemovalRefusal { notFound, notYours, nobodysTree };
-  // owner check → soft-delete → retire the room, under the tree's strand. Then, with that strand released, the steps
-  // that open the tree go with it: the caller's standing trees that hold such steps are read once, and each, in id
-  // order and under its own strand alone, has them deleted as delete_node with prune deletes nodes (NodeEdits),
-  // the caller's marks on them cleared. Each such tree writes one `roadmap.tree.remove.cascade` line; one it cannot edit
-  // keeps its steps and is answered in `incomplete`.
+  // `cascadeUnavailable`: the trees whose steps open the tree could not be read, so nothing was removed.
+  enum class RemovalRefusal { notFound, notYours, nobodysTree, cascadeUnavailable };
+  // The read of the caller's trees whose steps open the tree, with no strand held, refused whole when it fails → owner
+  // check → soft-delete → retire the room, under the tree's strand. Then, with that strand released, those steps go with
+  // the tree: each tree, in id order and under its own strand alone, has them deleted as delete_node with prune deletes
+  // nodes (NodeEdits), the caller's marks on them cleared, and is answered removed, unsaved or incomplete (Cascade).
+  // The read and every tree's statements wait for a lock at most kCascadeLockWait, and all of it ends kCascadeTime after
+  // the read began: a tree not reached by then is incomplete. Each tree edited writes one `roadmap.tree.remove.cascade`
+  // line, and the removal one `roadmap_tree_remove_cascade` line of counts.
   std::variant<Cascade, RemovalRefusal> remove(const TreeId& tree, const UserId& caller);
+  static constexpr std::chrono::milliseconds kCascadeLockWait{1'000};
+  static constexpr std::chrono::milliseconds kCascadeTime{8'000};
 
   // trim → refuse a blank, text that is not valid UTF-8 and a NUL → owner check → apply through
   // RoomRegistry. A tree whose row went away under its live room answers notFound.

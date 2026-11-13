@@ -1469,6 +1469,8 @@ ToolResult deleteNodes(RoomRegistry& registry, NodeEdits& edits, const TreeId& t
     const std::variant<DeletedNodes, std::string> deleted = edits.deleteNodes(room, tree, targets, dangling, actor);
     if (const std::string* refusal = std::get_if<std::string>(&deleted)) return ToolResult::failure(*refusal);
     const DeletedNodes& landed = std::get<DeletedNodes>(deleted);
+    // The tree's row went away under its room, which went with it: the tree is answered as absent.
+    if (!landed.saved) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
 
     Json::Value ids(Json::arrayValue);
     for (const NodeId& node : targets) ids.append(node.str());
@@ -1531,6 +1533,9 @@ ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& 
       return ToolResult::failure(writeRefusalSentence(WriteRefusal::notYours));
     if (*refusal == TreeRegistry::RemovalRefusal::nobodysTree)
       return ToolResult::failure(writeRefusalSentence(WriteRefusal::nobodysTree));
+    if (*refusal == TreeRegistry::RemovalRefusal::cascadeUnavailable)
+      return ToolResult::failure("nothing was removed: the steps in your other trees that open this tree could not be "
+                                 "read. Try again.", "cascade-unavailable");
     return ToolResult::failure("no such tree \"" + tree.str() + "\"");
   }
   Json::Value out = toJson(std::get<Cascade>(removed));

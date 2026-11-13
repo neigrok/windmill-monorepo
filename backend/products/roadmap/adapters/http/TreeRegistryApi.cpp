@@ -215,10 +215,16 @@ void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback
       callback(forbidden(WriteRefusal::nobodysTree));
       return;
     }
+    if (*refusal == TreeRegistry::RemovalRefusal::cascadeUnavailable) {
+      callback(error(drogon::k503ServiceUnavailable,
+                     "nothing was removed: the steps that open this roadmap could not be read; try again",
+                     "cascade-unavailable"));
+      return;
+    }
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
-  // The steps that went with the tree from the caller's other trees, and those it could not take.
+  // What became of the steps of the caller's other trees that opened it.
   callback(jsonResponse(toJson(std::get<Cascade>(removed))));
 }
 

@@ -85,6 +85,7 @@ add_library(windmill_platform
   platform/application/OAuthService.cpp
   platform/application/McpKeyService.cpp
   platform/application/WriteObservation.cpp
+  platform/application/StatementLimits.cpp
   platform/application/WorkerPool.cpp
   platform/application/sync/SyncCatalog.cpp
   platform/application/sync/Admission.cpp

@@ -88,6 +88,30 @@ TEST(WriteObservation_nested_failure_reports_one_compiled_type_without_message) 
   CHECK(recording.lines[1].severity == wm::WriteSeverity::error);
 }
 
+// A failure with a name of its own is still a failure: its line is ERROR under that name, the request's one Issue
+// carries the name, and a later failure in the same request files nothing more.
+TEST(WriteObservation_a_named_failure_finishes_at_error_under_its_name_and_is_the_requests_one_issue) {
+  Recording recording;
+  wm::WriteObservation request("roadmap.DELETE.v1.trees.id", "roadmap", "rest");
+  wm::WriteContext context(request);
+  const std::runtime_error error("SECRET_TREE_TITLE");
+  wm::WriteObservation unsaved("roadmap.tree.remove.cascade", "roadmap", "rest");
+  unsaved.fail(error, "unsaved");
+  wm::WriteObservation failed("roadmap.tree.remove.cascade", "roadmap", "rest");
+  failed.fail(error);
+  request.finish();
+  REQUIRE(recording.lines.size() == 3);
+  CHECK(recording.lines[0].outcome == "unsaved");
+  CHECK(recording.lines[0].severity == wm::WriteSeverity::error);
+  CHECK(recording.lines[1].outcome == "failed");
+  CHECK(recording.lines[1].severity == wm::WriteSeverity::error);
+  CHECK(recording.lines[2].outcome == "ok");
+  REQUIRE(recording.reporter->issues.size() == 1);
+  CHECK(recording.reporter->issues[0]["tags"]["outcome"] == "unsaved");
+  CHECK(recording.reporter->issues[0]["transaction"] == "roadmap.tree.remove.cascade");
+  CHECK(recording.reporter->issues[0].toStyledString().find(error.what()) == std::string::npos);
+}
+
 TEST(WriteObservation_nested_engine_successes_emit_one_info_for_the_outer_request) {
   Recording recording;
   wm::WriteObservation request("gym.save", "gym", "rest");

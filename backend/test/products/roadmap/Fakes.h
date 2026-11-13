@@ -173,6 +173,8 @@ struct FakeTreeRepository : TreeRepository {
   bool openingReadsFail = false;  // treesOpening throws, the way a dropped connection does
   std::function<void()> duringAboveRead;  // runs inside guidedTreesAbove, the way a slow statement holds its caller
   bool savesFail = false;  // save throws, the way a write Postgres refuses does
+  // Runs inside save before anything lands, the way a slow or refused statement holds its caller; it may throw.
+  std::function<void(const TreeId&)> duringSave;
   std::optional<StoredTree> load(const TreeId& tree) override {
     if (latticeLoadsFail || latticeLoadsFailFor.count(tree.str())) throw std::runtime_error("connection reset mid-read");
     return row(tree);
@@ -213,6 +215,7 @@ struct FakeTreeRepository : TreeRepository {
   bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) override {
     if (savesFail) throw std::runtime_error("the write was refused");
+    if (duringSave) duringSave(tree);
     savedNodeCounts.push_back(state.nodes.size());
     if (!row(tree)) return false;  // a tree whose row is gone or retired is left as it is
     StoredTree& stored = byId[tree.str()];  // merge the slice, keep the rest

@@ -3,8 +3,10 @@
 #include "platform/adapters/postgres/PgOAuthRepository.h"
 #include "platform/adapters/postgres/PgRetentionStore.h"
 #include "platform/adapters/postgres/PgSweepMutex.h"
+#include "platform/application/StatementLimits.h"
 
 #include "test/PgTestPool.h"
+#include "test/platform/Fakes.h"
 #include "test/testing.h"
 
 #include <pqxx/pqxx>
@@ -67,6 +69,57 @@ TEST(pg_pool_hands_out_connections_that_stop_a_statement_at_five_seconds_and_com
   pqxx::work txn{*lease};
   CHECK_EQ(txn.exec("SHOW statement_timeout")[0][0].as<std::string>(), std::string("5s"));
   CHECK_EQ(txn.exec("SHOW jit")[0][0].as<std::string>(), std::string("off"));
+}
+
+// A connection lent while statement limits are open carries them: a lock it waits on past their wait refuses at once,
+// and no statement runs past their deadline. It goes back to the pool under the pool's own settings, and a borrow
+// once the deadline has passed is refused with nothing sent.
+TEST(pg_pool_lends_a_connection_the_open_statement_limits_and_takes_it_back_under_its_own) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  PgPool pool{testConnString(), 1};
+  fake::FakeClock clock;
+  const std::string key = testSweepKey();
+  PgLease holder{*pgTestPool()};
+  {
+    pqxx::nontransaction session{*holder};
+    session.exec("SELECT pg_advisory_lock(" + key + ")");
+  }
+
+  {
+    const StatementLimits limits{std::chrono::milliseconds{200}, clock, clock.now + 3'000};
+    PgLease lease{pool};
+    pqxx::work txn{*lease};
+    CHECK_EQ(txn.exec("SHOW lock_timeout")[0][0].as<std::string>(), std::string("200ms"));
+    CHECK_EQ(txn.exec("SHOW statement_timeout")[0][0].as<std::string>(), std::string("3s"));
+    const auto started = std::chrono::steady_clock::now();
+    std::string refused;
+    try {
+      txn.exec("SELECT pg_advisory_lock(" + key + ")");
+    } catch (const pqxx::sql_error& error) {
+      refused = error.sqlstate();
+    }
+    CHECK_EQ(refused, std::string("55P03"));
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds{2});
+  }
+  {
+    PgLease lease{pool};
+    pqxx::work txn{*lease};
+    CHECK_EQ(txn.exec("SHOW lock_timeout")[0][0].as<std::string>(), std::string("0"));
+    CHECK_EQ(txn.exec("SHOW statement_timeout")[0][0].as<std::string>(), std::string("5s"));
+  }
+  {
+    const StatementLimits limits{std::chrono::milliseconds{200}, clock, clock.now};
+    bool refused = false;
+    try {
+      PgLease lease{pool};
+    } catch (const StatementDeadlinePassed&) {
+      refused = true;
+    }
+    CHECK(refused);
+  }
+  CHECK_EQ(pool.openConnections(), static_cast<std::size_t>(1));
+  pqxx::nontransaction session{*holder};
+  session.exec("SELECT pg_advisory_unlock(" + key + ")");
 }
 
 TEST(pg_pool_never_opens_more_than_its_ceiling_under_concurrent_borrowers) {

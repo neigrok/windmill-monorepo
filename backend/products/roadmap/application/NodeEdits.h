@@ -18,12 +18,14 @@ namespace wm {
 // Whether a deletion takes the edges it leaves dangling with it.
 enum class DanglingEdges { kept, removed };
 
-// What a deletion came to: the seq it took, the dangling edges that went with the nodes, and the caller's marks on the
-// nodes that were cleared.
+// What a deletion came to: the seq it took, the dangling edges that went with the nodes, the caller's marks on the nodes
+// that were cleared, and whether the room's save kept it. Unsaved, the tree's row was gone when the room saved — an
+// erasure or a removal racing it — so the room was retired, as every write retires a room whose row went away.
 struct DeletedNodes {
   Seq seq = 0;
   std::size_t edges = 0;
   std::size_t marks = 0;
+  bool saved = true;
 };
 
 // The edits a server door makes to a tree's nodes for its caller beside the commands the room joins: the marks it sets
@@ -53,7 +55,8 @@ public:
   // is never seen between them: each command checked first, a refusal answered with nothing written; then the actor's
   // marks on the nodes cleared, before the delete lands, so a progress store that fails fails the deletion with nothing
   // deleted and a retry does the whole of it; then the op applied, broadcast to the tree's open pages, and saved. Called
-  // under the tree's strand with its room open.
+  // under the tree's strand with its room open. Answered unsaved, the room is retired and the caller holds none. A save
+  // that throws does so after the op applied: the room's head has moved, and the room's next save lands the delete.
   std::variant<DeletedNodes, std::string> deleteNodes(TreeRoom& room, const TreeId& tree,
                                                       const std::vector<NodeId>& nodes, DanglingEdges edges,
                                                       const UserId& actor);

@@ -1,5 +1,6 @@
 #include "products/roadmap/application/TreeRegistry.h"
 
+#include "platform/application/StatementLimits.h"
 #include "platform/application/WriteObservation.h"
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Command.h"
@@ -92,6 +93,26 @@ std::map<TreeId, TreeAbove> TreeRegistry::guidedTreesAbove(const UserId& owner, 
 }
 
 std::variant<Cascade, TreeRegistry::RemovalRefusal> TreeRegistry::remove(const TreeId& tree, const UserId& caller) {
+  // The steps that open the tree are read first, with no strand held: a removal that cannot read them removes nothing,
+  // so the person can try again. Its lines are written at the removal's door, and its first failure is the request's
+  // one Issue.
+  constexpr const char* kCascade = "roadmap.tree.remove.cascade";
+  const std::string door = currentWriteDoor();
+  const std::uint64_t startedMs = clock_.nowMs();
+  const std::uint64_t deadlineMs = startedMs + static_cast<std::uint64_t>(kCascadeTime.count());
+  std::vector<TreeId> opening;
+  {
+    WriteObservation reading{kCascade, "roadmap", door};
+    try {
+      const StatementLimits limits{kCascadeLockWait, clock_, deadlineMs};
+      opening = trees_.treesOpening(caller, tree);
+    } catch (const std::exception& error) {
+      reading.fail(error);
+      return RemovalRefusal::cascadeUnavailable;
+    }
+    reading.skip();
+  }
+
   {
     // The strand serializes the retirement against the tree's socket frames, so no concurrent open()
     // can reload the tree between the delete and the drop.
@@ -108,60 +129,66 @@ std::variant<Cascade, TreeRegistry::RemovalRefusal> TreeRegistry::remove(const T
     trees_.softDelete(tree);
     rooms_.retire(tree);
   }
-
-  // The tree is gone whatever becomes of the steps that open it: a step the cascade cannot take stays, its pointer
-  // leading nowhere. Its lines are written at the removal's door, and its first failure is the request's one Issue.
-  constexpr const char* kCascade = "roadmap.tree.remove.cascade";
-  const std::string door = currentWriteDoor();
-  std::vector<TreeId> opening;
-  {
-    WriteObservation reading{kCascade, "roadmap", door};
-    try {
-      opening = trees_.treesOpening(caller, tree);
-    } catch (const std::exception& error) {
-      reading.fail(error);
-      return Cascade{};
-    }
-    reading.skip();
-  }
   if (opening.empty()) return Cascade{};
 
+  // The tree is gone whatever becomes of the steps that open it.
   Cascade cascade;
   std::size_t steps = 0;
   std::size_t edges = 0;
   std::size_t marks = 0;
-  for (const TreeId& parent : opening) {
-    WriteObservation editing{kCascade, "roadmap", door};
-    try {
-      std::lock_guard<std::mutex> strand(rooms_.strandFor(parent));
-      TreeRoom* room = rooms_.open(parent);
-      std::vector<NodeId> nodes;
-      if (room && canWrite(caller, room->owner()))
-        for (const auto& [node, opened] : room->pointers())
-          if (opened == tree) nodes.push_back(node);
-      // The tree, or its steps that opened the removed one, went away since the read: nothing is left to take.
-      if (nodes.empty()) {
-        editing.skip();
+  {
+    const StatementLimits limits{kCascadeLockWait, clock_, deadlineMs};
+    for (const TreeId& parent : opening) {
+      if (clock_.nowMs() >= deadlineMs) {
+        cascade.incomplete.push_back(parent);
         continue;
       }
-      const std::variant<DeletedNodes, std::string> deleted =
-          edits_.deleteNodes(*room, parent, nodes, DanglingEdges::removed, caller);
-      // Nodes the room holds pass every check a deletion makes, so a refusal here is a fault.
-      if (std::holds_alternative<std::string>(deleted)) throw std::logic_error("a room refused to delete nodes it holds");
-      const DeletedNodes& landed = std::get<DeletedNodes>(deleted);
-      steps += nodes.size();
-      edges += landed.edges;
-      marks += landed.marks;
-      cascade.removed.emplace(parent, std::move(nodes));
-      editing.finish();
-    } catch (const std::exception& error) {
-      editing.fail(error);
-      cascade.incomplete.push_back(parent);
+      WriteObservation editing{kCascade, "roadmap", door};
+      // Held through the catch, so the room a failure is judged by stays the one the delete was applied to.
+      std::lock_guard<std::mutex> strand(rooms_.strandFor(parent));
+      TreeRoom* room = nullptr;
+      Seq head = 0;
+      try {
+        room = rooms_.open(parent);
+        std::vector<NodeId> nodes;
+        if (room && canWrite(caller, room->owner()))
+          for (const auto& [node, opened] : room->pointers())
+            if (opened == tree) nodes.push_back(node);
+        // The tree, or its steps that opened the removed one, went away since the read: nothing is left to take.
+        if (nodes.empty()) {
+          editing.skip();
+          continue;
+        }
+        head = room->head();
+        const std::variant<DeletedNodes, std::string> deleted =
+            edits_.deleteNodes(*room, parent, nodes, DanglingEdges::removed, caller);
+        // Nodes the room holds pass every check a deletion makes, so a refusal here is a fault.
+        if (std::holds_alternative<std::string>(deleted)) throw std::logic_error("a room refused to delete nodes it holds");
+        const DeletedNodes& landed = std::get<DeletedNodes>(deleted);
+        if (!landed.saved) {
+          room = nullptr;  // retired with the row
+          editing.fail(TreeRowGone{}, "unsaved");
+          cascade.unsaved.push_back(parent);
+          continue;
+        }
+        steps += nodes.size();
+        edges += landed.edges;
+        marks += landed.marks;
+        cascade.removed.emplace(parent, std::move(nodes));
+        editing.finish();
+      } catch (const std::exception& error) {
+        // The room's head moves when its delete applies, so a failure after that is its save's: the steps are gone
+        // from the room, unsaved. Before it, nothing was applied and the steps stay.
+        const bool applied = room && room->head() != head;
+        editing.fail(error, applied ? "unsaved" : "failed");
+        (applied ? cascade.unsaved : cascade.incomplete).push_back(parent);
+      }
     }
   }
-  LOG_INFO << "roadmap_tree_remove_cascade door=" << door << " trees=" << cascade.removed.size() << " steps=" << steps
-           << " edges=" << edges << " marks=" << marks << " incomplete=" << cascade.incomplete.size()
-           << " request_id=" << currentWriteRequestId();
+  LOG_INFO << "roadmap_tree_remove_cascade door=" << door << " trees=" << opening.size() << " steps=" << steps
+           << " edges=" << edges << " marks=" << marks << " removed=" << cascade.removed.size()
+           << " unsaved=" << cascade.unsaved.size() << " incomplete=" << cascade.incomplete.size()
+           << " duration_ms=" << clock_.nowMs() - startedMs << " request_id=" << currentWriteRequestId();
   return cascade;
 }
 

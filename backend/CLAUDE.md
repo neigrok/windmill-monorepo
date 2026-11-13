@@ -136,6 +136,10 @@ That order and that ceiling are both load-bearing: a closed loopback connection 
   short and planned on each call; production's Postgres 16 otherwise compiles any plan the planner prices
   past its JIT threshold, and a recursive walk is priced there whatever the tables hold, which costs
   about a second per call. The local Homebrew Postgres has no JIT, so only production shows it.
+- Work that must answer in bounded time opens `StatementLimits` (`platform/application/StatementLimits.h`)
+  around its statements: every lease borrowed on that thread meanwhile waits for a lock at most their
+  wait and runs nothing past their deadline, and goes back to the pool under its own settings. A tree
+  removal's cascade is the one user.
 - Tests borrow from `test/PgTestPool.h`, one pool per binary — never a connection per case.
 - Local `DATABASE_URL` is the unix socket (`postgresql:///windmill?host=/tmp`), which costs no
   ephemeral port. Production keeps TCP.

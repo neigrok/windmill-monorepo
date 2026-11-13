@@ -537,7 +537,8 @@ TEST(patch_with_a_body_that_does_not_parse_as_json_is_400_and_an_empty_one_still
 // ---- openers and what a removal takes ---------------------------------------------------
 
 // Every row of the list carries `openers`, [] when nothing opens the tree, which is how a client knows a removal takes
-// the steps that open it; the delete answers 200 with those steps, and `incomplete` only when a tree kept its steps.
+// the steps that open it; the delete answers 200 with what became of those steps, `unsaved` and `incomplete` only when
+// a tree is one, and 503 with nothing removed when they cannot be read.
 TEST(list_rows_carry_their_openers_and_delete_answers_the_steps_that_went_with_the_tree) {
   Harness h;
   UserId me = h.signIn("s-live", "sam@example.com");
@@ -587,4 +588,20 @@ TEST(list_rows_carry_their_openers_and_delete_answers_the_steps_that_went_with_t
   const drogon::HttpResponsePtr kept = remove("t_two");
   CHECK_EQ(kept->getStatusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(kept), parse(R"({"removed":[],"incomplete":["t_c"]})"));
+
+  plant("t_three", {{"x1", ""}});
+  plant("t_d", {{"d1", "t_three"}});
+  h.trees.duringSave = [](const TreeId&) { throw std::runtime_error("the write was refused"); };
+  const drogon::HttpResponsePtr unsaved = remove("t_three");
+  CHECK_EQ(unsaved->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(unsaved), parse(R"({"removed":[],"unsaved":["t_d"]})"));
+  h.trees.duringSave = nullptr;
+
+  plant("t_four", {{"y1", ""}});
+  h.trees.openingReadsFail = true;
+  const drogon::HttpResponsePtr refused = remove("t_four");
+  CHECK_EQ(refused->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK_EQ(bodyOf(refused), parse(R"({"error":"nothing was removed: the steps that open this roadmap could not be read; try again",
+                                     "code":"cascade-unavailable"})"));
+  CHECK_FALSE(h.trees.deletedIds.count("t_four"));
 }

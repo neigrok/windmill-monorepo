@@ -394,6 +394,38 @@ TEST(mcp_delete_tree_takes_the_steps_of_your_other_trees_that_open_it_and_names_
   for (const Json::Value& row : listed["trees"]) CHECK_FALSE(row.isMember("openers"));
 }
 
+// A removal whose openers cannot be read removes nothing and says so, under its own outcome; one whose save of a tree
+// fails names that tree unsaved.
+TEST(mcp_delete_tree_names_an_unsaved_tree_and_refuses_with_nothing_removed_when_its_openers_cannot_be_read) {
+  Harness h;
+  h.plant("t_a", h.caller, "", {"t"});
+  h.trees.openingReadsFail = true;
+  const ToolResult refused = h.call("delete_tree", kNoArgs);
+  CHECK(refused.isError);
+  CHECK_EQ(refused.outcomeCode, std::string("cascade-unavailable"));
+  CHECK_EQ(message(refused), std::string("delete_tree: nothing was removed: the steps in your other trees that open this "
+                                         "tree could not be read. Try again."));
+  CHECK_FALSE(h.trees.deletedIds.count("t"));
+
+  h.trees.openingReadsFail = false;
+  h.trees.duringSave = [](const TreeId& tree) {
+    if (tree == TreeId{"t_a"}) throw std::runtime_error("the write was refused");
+  };
+  CHECK_EQ(body(h.call("delete_tree", kNoArgs)), parse(R"({"deleted":true,"id":"t","removed":[],"unsaved":["t_a"]})"));
+}
+
+// delete_node whose tree's row goes away under its room before the save answers as for an absent tree: the room went
+// with the row, and nothing claims the delete was kept.
+TEST(mcp_delete_node_whose_trees_row_went_away_before_its_save_answers_no_such_tree) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}],"progress":[{"nodeId":"a","status":"complete"}]})")).isError);
+  h.progressRepo.duringBatchWrite = [&] { h.trees.deletedIds.insert("t"); };
+  const ToolResult deleted = h.call("delete_node", parse(R"({"nodeId":"a"})"));
+  CHECK(deleted.isError);
+  CHECK_EQ(message(deleted), std::string("delete_node: no such tree \"t\""));
+  CHECK_FALSE(h.registry.isOpen(TreeId{"t"}));
+}
+
 TEST(mcp_delete_tree_refuses_a_tree_you_dont_own_and_an_unknown_one) {
   Harness h;
   h.trees.byId["other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Other", {}}, 0, uid("someone")};

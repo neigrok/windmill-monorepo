@@ -509,22 +509,36 @@ it is judged from the trees the list already holds (`OpenedTrees::openersOf`), w
 MCP `list_trees` answers the same rows without `openers`, each with its `url`.
 
 `DELETE /v1/trees/{id}` removes a tree and, with it, the steps that open it in the caller's other
-trees: an opened tree goes as a node does. Under the tree's strand the read gate, the owner check, the
-soft-delete and the room's retirement run in that order. Once that strand is released, the caller's
-standing trees other than this one that hold a present step opening it are read in one statement
+trees: an opened tree goes as a node does. First, with no strand held, the caller's standing trees
+other than this one that hold a present step opening it are read in one statement
 (`TreeRepository::treesOpening`, keyed on the caller's own trees and reading each one's steps through
-`tree_nodes_pointers_idx`, so pointers other accounts plant at the tree are never read), and each, in
-tree id order and under its own strand alone, has those steps deleted as MCP `delete_node` with
-`prune: true` deletes nodes (`NodeEdits::deleteNodes`): one op under one seq, broadcast to its open
-pages, the edges they dangle removed with them and the caller's marks on them cleared, a closed tree
-opened for it and saved before the next. It answers `200` with `{removed: [{treeId, nodeIds}]}`, one
-entry per tree edited, in tree id order, and `incomplete: [treeId]` only when a tree could not be
-edited; such a tree keeps its steps, each pointer then leading nowhere (`danglingPointers`), unless
-the delete had applied before its save failed, when its room's next save lands it. When the trees
-that open it cannot be read, the tree is removed all the same, nothing more is, and `removed` is
-`[]`. MCP `delete_tree` answers `{deleted, id, removed}`, with `incomplete` on the same rule. Each is
-answered to the tree's owner alone and names only their trees; a refused delete reads and edits
-nothing more than it did before.
+`tree_nodes_pointers_idx`, so pointers other accounts plant at the tree are never read; for a tree
+that is not the caller's it answers none). When that read fails nothing is removed and the delete is
+refused `503` with code `cascade-unavailable`, which the caller may retry. Then, under the tree's
+strand, the read gate, the owner check, the soft-delete and the room's retirement run in that order;
+a step pointed at the tree between the read and the soft-delete is not among those read, and points
+nowhere. Once that strand is released, each tree read, in tree id order and under its own strand
+alone, has its steps that open the tree deleted as MCP `delete_node` with `prune: true` deletes nodes
+(`NodeEdits::deleteNodes`): one op under one seq, broadcast to its open pages, the edges they dangle
+removed with them and the caller's marks on them cleared, a closed tree opened for it and saved before
+the next. The read and every tree's statements wait for a lock at most a second, and all of it ends
+eight seconds after the read began (`StatementLimits`, `TreeRegistry::kCascadeLockWait` and
+`kCascadeTime`), so a reply never waits on a stuck tree for longer. It answers `200` with what became of
+those steps, per tree in tree id order:
+
+- `removed: [{treeId, nodeIds}]`, always present: the steps were deleted and saved.
+- `unsaved: [treeId]`, present only when it names a tree: the steps were deleted in the tree's room
+  and sent to its open pages, and the save then failed. They are gone now, and the room's next save,
+  which the next edit of that tree or the room's idle close makes, keeps them gone; should the server
+  restart before it, they come back, without the caller's marks the delete cleared.
+- `incomplete: [treeId]`, present only when it names a tree: nothing was deleted there — its room
+  could not be opened, the marks not cleared, or the eight seconds ran out before it was reached — and
+  the steps stay. Each points nowhere: it reads as an ordinary step, `get_diagnostics` lists it in
+  `danglingPointers`, and the caller can clear its pointer or delete it by hand.
+
+MCP `delete_tree` answers `{deleted, id, removed}`, with `unsaved` and `incomplete` on the same rule,
+and refuses under `cascade-unavailable` with nothing removed as the REST door does. Each is answered to
+the tree's owner alone and names only their trees; a refused delete edits nothing.
 
 `GET /v1/trees/{id}/progress` answers the owner's overlay, `{marks: [{node, status, at, markedAt,
 outOfOrder?}]}`, to anyone who can read the tree: the stored marks to a caller who can write it, whose
