@@ -1,0 +1,88 @@
+# By hand only, and never during a deploy: counts how the roadmap's pointers between trees meet one owned subtree
+# per step (backend/SPEC.md, Subtree inventory). The tool runs inside the live server container, reads the database
+# that container already knows and never writes. Where few accounts hold pointers its counts are one person's private
+# structure, and this repository's logs are public, so the counts are sealed on the runner to the owner's certificate,
+# .github/ops/inventory-recipient.pem, before anything is printed. Opening them is in backend/deploy/README.md.
+name: Ops · subtree inventory
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vps-ops
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - name: Refuse while a deploy runs or waits to run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A deploy's migration alters `trees`; it would wait behind the inventory's read, and the roadmap's reads
+          # behind it. A deploy is a run of a workflow whose concurrency can take the deploy-vps lock, read from the
+          # workflows themselves; a pull request's run takes no lock and reaches no server, so it is not one.
+          deploys=$(awk '/^concurrency:/ { inside = 1; next } /^[^ ]/ { inside = 0 } inside && /deploy-vps/ { print FILENAME }' \
+            .github/workflows/*.yml | sort -u)
+          if ! printf '%s\n' "$deploys" | grep -qx '.github/workflows/deploy.yml'; then
+            echo "Deploy to VPS no longer names the deploy-vps lock where this looks, so a deploy cannot be told apart: refusing to run." >&2
+            exit 1
+          fi
+          for workflow in $deploys; do
+            for status in queued in_progress waiting requested pending; do
+              runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$(basename "$workflow")" --status "$status" \
+                --json event --jq '[.[] | select(.event != "pull_request")] | length')
+              if [ "$runs" -ne 0 ]; then
+                echo "Not during a deploy: $(basename "$workflow") has a run $status. Dispatch the inventory again once it has finished." >&2
+                exit 1
+              fi
+            done
+          done
+      - name: Count the roadmap's pointers in the live database, sealed to the owner
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -euo pipefail
+          key=$(mktemp)
+          sealed=$(mktemp)
+          trap 'rm -f "$key" "$sealed"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          chmod 600 "$key"
+          # The live server's counts, on stdout.
+          count() {
+            ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+              "$SSH_USER@$SSH_HOST" 'bash -seuo pipefail' <<'REMOTE'
+          # The whole script is read before it runs, and nothing it starts can read the rest of it from stdin.
+          main() {
+            cd ~/windmill
+            # 3 is the image without the tool; any other failure is Docker's own, which says why itself.
+            carried=0
+            docker compose exec -T server sh -c 'command -v windmill_subtree_inventory > /dev/null || exit 3' || carried=$?
+            if [ "$carried" -eq 3 ]; then
+              echo "The live server image does not carry windmill_subtree_inventory: deploy a commit that does, then run this again." >&2
+              exit 1
+            fi
+            if [ "$carried" -ne 0 ]; then exit "$carried"; fi
+            docker compose exec -T server windmill_subtree_inventory
+          }
+          main < /dev/null
+          REMOTE
+          }
+          # The counts go from ssh straight into the seal, so no plaintext reaches a file or the log, and the sealed
+          # block is printed only once the whole pipe has succeeded.
+          count | openssl smime -encrypt -aes256 -binary -outform PEM -out "$sealed" .github/ops/inventory-recipient.pem
+          cat "$sealed"

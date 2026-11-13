@@ -45,6 +45,7 @@ the last merge that touched the web and re-run it if it was cancelled.
 | VPS runtime topology | `deploy/docker-compose.yml` |
 | Promote the candidate files and prove Caddy loaded them (runs on the VPS) | `deploy/deploy-production.sh` |
 | Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
+| Count how the roadmap's pointers between trees meet one owned subtree per step (by hand, never during a deploy; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
 | Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
 | TLS + reverse proxy | `deploy/Caddyfile` |
 | Env keys the deploy renders | `deploy/.env.example` |
@@ -328,6 +329,37 @@ production composition's test clock: two starts that joined the same session mus
 delete through one changed replay target, and applied removals must retain success with and without
 an older acknowledgement to replay. The proof advances the clock five hours before deleting the
 joined session, and checks successful callbacks, receipt replay and durable reload.
+
+## Count the roadmap's pointers between trees
+
+Dispatch **Ops · subtree inventory** (`ops-subtree-inventory.yml`), never during a deploy: a deploy's
+migration alters `trees`, would wait behind the inventory's read, and would hold every roadmap read
+behind it. Its first step refuses to start while any workflow whose concurrency can take the
+`deploy-vps` lock (Deploy to VPS, Web Deploy, the production backup, the digest resum) has a run queued
+or running, a pull request's run aside, since it takes no lock and reaches no server. It then runs
+`windmill_subtree_inventory` inside the live `server` container, which already holds `DATABASE_URL`;
+the tool never writes, and no credential leaves the host. Its one JSON object of counts ([SPEC.md](../SPEC.md#subtree-inventory)) is
+private: this repository's logs are public, and where few accounts hold pointers the counts are one
+person's structure. So the runner seals them to `.github/ops/inventory-recipient.pem` as they arrive,
+and the job log shows the sealed block and the tool's completion line, nothing else. The certificate is
+public; its private key is the owner's and is kept out of the repository. On any failure the job prints
+no block and fails; against an image that does not carry the tool, it says so.
+
+To read the counts, save the block, from `-----BEGIN PKCS7-----` to `-----END PKCS7-----`, as
+`counts.pem`, and open it with the private key that belongs to the certificate:
+
+```sh
+openssl smime -decrypt -inform PEM -inkey <key> -in counts.pem
+```
+
+From `~/windmill` on the host, the tool prints the counts in the clear:
+
+```sh
+docker compose exec -T server windmill_subtree_inventory
+```
+
+Exit 0 means the counts were printed, 2 means `DATABASE_URL` is unset, and 1 means the read failed or
+stdout did not take the counts.
 
 ## Frontend
 
