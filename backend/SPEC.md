@@ -32,10 +32,14 @@ rejected for structure. Validity is a read model, not a gate.
   lattice entry with `opens` empty and `opensAt` unset, and no entry for a node the frame then says
   nothing about. MCP `get_tree`, `get_nodes` and `find_nodes` answer it when `fields` names `opens`,
   as `opens: {treeId, title, state}`, to a caller who can write the tree and only while the opened
-  tree stands and is theirs; the key is omitted otherwise.
+  tree stands and is theirs; the key is omitted otherwise. A step that owns a subtree opens that
+  subtree in every read, whatever this register holds (Subtrees).
 - `OpenedTrees` (`domain/OpenedTrees.h`) — an owner's standing trees under the owner's marks, judged
   once. A pointer is valid when its target stands and belongs to the owner of the tree the node is
-  in. For a caller who can write the tree, a node with a valid pointer is complete exactly when the
+  in. A step that owns a subtree opens it, whatever its pointer holds, in every projection a read
+  makes of a document — the room's (`TreeRoom::snapshot`, `pointers`), the stored rows'
+  (`TreeRepository` lists, `openedFrom`'s walk) and reminder readiness — and that subtree is valid
+  while its root stands, so completion carries forward through ownership by this one rule. For a caller who can write the tree, a node with a valid pointer is complete exactly when the
   opened tree is complete for them, whatever its own prerequisites, as a mark made out of order is;
   until then it is locked or available by its prerequisites, and a mark stored on it is kept and
   ignored. A tree is complete for a reader when it holds at least one node and every node is
@@ -57,7 +61,8 @@ rejected for structure. Validity is a read model, not a gate.
   title, whether it is complete and `done` of `total` (its present nodes, those complete for the
   reader); `leadingBackTo` names the trees whose pointers lead to a tree, at any distance. A node
   whose pointer is not valid is an ordinary node, and so is every node for a reader who cannot write
-  the tree: their state follows their own mark, and nothing they receive says a node opens a tree.
+  the tree: their state follows their own mark, and nothing they receive says a node opens a tree
+  but the subtree a step owns, which every reader is told (Subtrees).
   `diagnose` says what is wrong with a tree's pointers (`PointerDiagnostics`), each list in node id
   order. `treeLoops` holds one entry per node whose pointer leads back to the node's own tree, with
   a shortest way back: each tree on it with its title, the tree the node opens first and the node's
@@ -122,7 +127,9 @@ rejected for structure. Validity is a read model, not a gate.
   `GET /v1/trees/{id}`) takes the tree from its live room, a progress write (`update_nodes`, the
   `progress[]` of an `import_subgraph`, a socket `progress` frame) only its nodes that open a tree,
   and each asks `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and
-  is the owner's and every such tree their pointers lead to: one statement over `trees`,
+  is the owner's and every such tree their steps open — the subtree a step owns, found through
+  `trees_parent_step`, else the tree its pointer names, a subtree standing while its root does, its
+  root read for a subtree alone: one statement over `trees`,
   `tree_nodes` and the owner's `node_progress` that reaches each tree once and answers, per tree and
   tree it opens, how many present nodes open it, how many of those the owner marked and the latest
   of those marks, beside the tree's title and its nodes that open none. Each reached tree's nodes
@@ -132,12 +139,13 @@ rejected for structure. Validity is a read model, not a gate.
   size of the tables or other accounts' marks on the same trees. It is made once per reply, call or
   frame, after the tree's strand is released, and not at all for a read whose fields ask for neither
   `state` nor `opens`, for a write with no mark to judge, or for a tree that holds no pointer. On
-  these doors a caller who cannot write the tree causes no such read; the two doors that show such a
-  caller the owner's marks make it as `readerView` says. The tree's diagnostics (`get_diagnostics`,
+  these doors a caller who cannot write the tree causes no such read, but for `GET /v1/trees/{id}` of
+  a tree whose steps own subtrees, which follows those subtrees for them (HTTP surface); the two
+  doors that show such a caller the owner's marks make it as `readerView` says. The tree's diagnostics (`get_diagnostics`,
   `GET /v1/trees/{id}/diagnostics`) make the same read for `OpenedTrees::diagnose`: once per reply,
   after the strand is released, for a caller who can write the tree and a tree that holds a pointer,
   and not for an MCP call that sends `includePointers: false`; under the strand they take the tree's
-  pointers alone (`LooseGraph::pointers`). An MCP edit that changes the tree a node opens to a tree
+  pointers alone (`TreeRoom::pointers`). An MCP edit that changes the tree a node opens to a tree
   (`create_node`, `update_nodes` or `import_subgraph`) makes it once
   more, after the edit is saved and the strand is released, starting from the trees those nodes now
   open (`pointersSetSince`) and under a budget of its own, 750 ms, in place of the pool's statement
@@ -176,10 +184,12 @@ rejected for structure. Validity is a read model, not a gate.
   guide a fork copied from someone else's tree stays its author's words until the owner writes one.
   Nodes carry no part of it.
 - `guides` (`domain/Guides.h`) — guides add: one tree holds the method, each tree worked under it
-  adds what is particular to it, and none overrides another. A tree P is directly above a tree T
-  when a present node of P holds a pointer at T and both stand and belong to one owner. Above is
-  that relation followed upward within 8 pointers, each tree at its shortest distance, and a tree is
-  never above itself, whatever loops exist. Only the reader's own trees count: for a caller who
+  adds what is particular to it, and none overrides another. A tree P is directly above a tree T,
+  both standing and one owner's, when T is a subtree whose parent is P (Subtrees), or when T is a
+  root and a present step of P that owns no subtree points at T. So a subtree's trees above are its
+  ancestors, read up its parents, and the trees above its root; a pointer at a subtree makes nothing
+  above it. Above is that relation followed upward within 8 levels, each tree at its shortest
+  distance, and a tree is never above itself, whatever loops exist. Only the reader's own trees count: for a caller who
   cannot write the tree being read, nothing is above it. `guidesFor` answers what a reading of a
   tree carries as `guides`, each entry `{treeId, title, text, yours}`: the guides of the trees
   above, farthest first and by tree id within one distance, then the tree's own guide last. A tree
@@ -189,10 +199,11 @@ rejected for structure. Validity is a read model, not a gate.
   bytes. `yours` says the reader owns that tree and wrote its current guide. The trees above come
   from `TreeRepository::guidedTreesAbove(owner, tree)`, which answers the 8 nearest that carry a
   guide by that same rule (`nearestGuided`), so a reply never loads a guide it cannot keep. It is
-  one statement keyed on the owner's own standing trees: it reads the trees each of them opens
-  through `tree_nodes_pointers_idx`, keeps the pointers at another of the owner's standing trees,
-  walks those upward from the tree, a tree once per distance and no further than 8 levels, and
-  reads the title and guide of the trees it keeps through `trees_pkey`. Its cost follows the
+  one statement keyed on the owner's own standing trees: it takes each subtree's parent off the rows
+  it read, reads the roots each tree's steps point at through `tree_nodes_pointers_idx`, leaving out a
+  step that owns a subtree (`trees_parent_step`), walks those upward from the tree, a tree once per
+  distance and no further than 8 levels, and reads the title and guide of the trees it keeps through
+  `trees_pkey`, a subtree named by its owning step's label. Its cost follows the
   owner's own trees and the pointers among them, whichever tree is read, and does not grow with
   the pointers other accounts plant at a tree. It is made once per reply that answers the guides
   above, after the tree's strand is released, and not at all for a caller who cannot write the
@@ -204,8 +215,37 @@ rejected for structure. Validity is a read model, not a gate.
   while its root does (Authorization). The place is written once, when the tree is created, and
   never changed, and a subtree is always a new tree under a standing one: a subtree has one parent,
   never moves, never closes a loop and is never another account's. A step owns at most one subtree.
-  The store enforces all of it whatever writes it (Persistence). No door creates a subtree yet:
-  every stored tree is a root, and everything else this spec says of a tree holds for it as written.
+  The store enforces all of it whatever writes it (Persistence). No door creates a subtree yet.
+
+  A subtree reads as one step of its parent:
+
+  - **Name.** A subtree's name is its owning step's label, read through on every read that names
+    it — the tree read, a `path`, the share page and its metadata, the subscribe answer's title, a
+    pointer's `opens` title and the guides — off the stored rows (`TreeRepository::placeOf`, and
+    `treeNameColumn` in a statement). Renaming a subtree (`PATCH /v1/trees/{id} {title}`, MCP
+    `update_tree {title}`) writes that label in the parent's room, under the parent's strand, as an
+    ordinary label write of the step (`RenameNode`, one seq of the parent's stream, broadcast and
+    logged as any other); its own title register is never written. A rename the step's label already
+    holds lands nothing, and a step gone from its parent answers as an absent tree. MCP `update_tree`
+    sending a title and a guide lands the title in the parent and then the guide in the subtree's own
+    room, and answers the seq of the subtree's own stream, its head when only the title moved.
+  - **Place.** A tree read answers `root`, `parent: {tree, step} | null`, `path: [{tree, step,
+    title}]` — the trees above it, root first, each with its step the way passes through and its
+    name — and `depth`, to anyone who may read it; a root answers `parent: null`, `path: []` and
+    `depth: 0`.
+  - **The owning step's child.** A step that owns a subtree opens it, whatever its pointer holds
+    (`OpenedTrees`), so it takes no hand mark at any door (`opens-a-tree`), and its writer is
+    answered its subtree wherever a pointer is answered. Every node read of `GET /v1/trees/{id}`
+    carries `subtree: {id, done, total, state}` on such a step, to anyone who may read the tree:
+    `done` of `total` the subtree's present steps, those complete for the owner, and `state`
+    `complete` or `open`. A subtree is complete when it holds at least one step and every one is,
+    however deep, so an empty one is unfinished and a leaf reopened reopens every owning step above
+    it; nothing of it is stored. The subscribe answer lists the subtree each step owns (WebSocket
+    surface), which heals a `subtree` frame a client missed.
+  - **Lists show roots only.** A subtree is no row of `GET /v1/trees`, MCP `list_trees` or the gallery;
+    it counts in its parent as the one step that owns it.
+  - **Links.** `GET /v1/trees/{subtree}` and `/t/{subtree}` open a subtree by its own id for anyone who
+    may read its root, the share page indexed as its root is.
 
   `TreeRegistry::createSubtree(parent, step, caller, {proposedId?, kinds?})` is the one operation
   that creates one, for every door to call. It is keyed by the pair (`parent`, `step`). The kinds,
@@ -528,15 +568,23 @@ creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stor
 and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
 and read as unknown creation time. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
 
-`GET /v1/trees/{id}` answers `{seq, data, state, createdAt, visibility, mine}`. When the caller can
-write the tree the body also carries `opens`, an object keyed by node id with one entry per node
-that holds a pointer: `{treeId, title, state, done, total, loop}` for a valid one, `state` being
-`"complete"` or `"open"` and `loop` true when the opened tree leads back to the tree being read, and
-`{treeId, missing: true}` for one that is not valid (`OpenedTrees`, Model). It is computed on the
-read, off the stored rows and after the tree's strand is released, and nothing pushes it; for any
-other caller the key is absent. When the pointers cannot be followed the owner is answered
-`503 opens-unavailable`, not the `404` of an absent tree. No other reader's answer depends on that
-read, and for a tree that holds no pointer it is not made: `opens` is `{}`.
+`GET /v1/trees/{id}` answers `{seq, data, state, createdAt, visibility, mine, root, parent, path,
+depth}`, the last four where the tree sits and `data.title` its name (Model, Subtrees); a subtree's
+are read off the stored rows (`TreeRepository::placeOf`) after the tree's strand is released, and a
+read that fails answers the `404` an absent tree gets. Each node of `data` that owns a subtree carries
+`subtree: {id, done, total, state}`, and no other node carries one. When the caller can write the
+tree the body also carries `opens`, an object keyed by node id with one entry per node that holds a
+pointer, a step that owns a subtree among them: `{treeId, title, state, done, total, loop}` for a
+valid one, `state` being `"complete"` or `"open"` and `loop` true when the opened tree leads back to
+the tree being read, and `{treeId, missing: true}` for one that is not valid (`OpenedTrees`, Model).
+Both are computed on the read, off one follow of the stored rows made after the tree's strand is
+released, and nothing pushes them. For the tree's writer it follows every tree the steps open, and
+when it fails the writer is answered `503 opens-unavailable`, not the `404` of an absent tree; for a
+tree that holds no pointer it is not made, and `opens` is `{}`. Any other caller is never answered
+`opens`, and is followed only the subtrees the steps own, under the budget and cool-off every reader's
+follow of an owner shares (`OwnerProgress::followed`, Model, `readerView`): while the owner cannot be
+followed each such step carries `subtree: {id}` alone and the read still answers `200`, and a tree
+whose steps own none makes no follow for them.
 
 `GET /v1/trees/{id}/guides` answers `{guides}` (Model), an array of `{treeId, title, text, yours}`.
 A caller who can write the tree is answered the guides of their trees above it, farthest first,
@@ -567,7 +615,8 @@ owner's alone. A body naming more than one is refused `400`, and a body that is 
 `400 invalid json body`. A guide past 5000 characters, not valid UTF-8 or carrying a NUL is refused
 `400` with the admission's sentence, and an empty one clears it, as one of only spaces, tabs and line
 breaks does (stored as `""`); a real guide keeps its leading and trailing spaces. A title carrying a
-NUL is refused `400` too. The guide's writes are this, the socket's `subgraph` frame and MCP
+NUL is refused `400` too. A subtree's title is its owning step's label, so `{title}` aimed at a
+subtree renames that step in its parent (Model, Subtrees). The guide's writes are this, the socket's `subgraph` frame and MCP
 `update_tree`; a posted document (`POST`, `PUT`)
 never sets it, and a tend is not offered `update_tree`. `GET /v1/trees/{id}` carries it as `data.guide` beside `data.title`, MCP `get_tree` as
 `tree.guide: {text, yours}` on every page and no other MCP read at all, `yours` true when the caller
@@ -594,8 +643,9 @@ the genesis stamp, byte-equal to a device-born tree's. Retrying an owned existin
 returns `409 id-taken`; the caller's deleted ID returns `409 id-retired`. A client must not retry
 that deleted tree under a fresh ID.
 
-`GET /v1/trees` answers the caller's own standing trees, newest activity first, each row `{id, title,
-total, done, createdAt, updatedAt, dominantKind?, openers}`. `openers` names the caller's other
+`GET /v1/trees` answers the caller's own standing roots, newest activity first, each row `{id, title,
+total, done, createdAt, updatedAt, dominantKind?, openers}`: a subtree is no row, and counts in its
+parent as the one step that owns it, judged with every standing tree of theirs. `openers` names the caller's other
 standing trees with a present step whose pointer names the row's tree, `[{treeId, steps}]` in tree id
 order, `steps` counting those steps; the tree's own pointers at itself go with it and are not among
 them, and it is `[]` when nothing opens the tree. It is what a removal would take with the tree, and
@@ -640,7 +690,7 @@ view derives completion again from the tree's `opens`, and `readerView` of them 
 reader. It answers `200` whether or not the trees could be followed.
 
 `/v1/gallery` and `/gallery` are anonymous-allowed; a session only adds the two facts a row wears
-about its reader and never changes which trees are listed. A card's `done` counts the owner's marks
+about its reader and never changes which trees are listed, the public roots alone. A card's `done` counts the owner's marks
 as `readerView` shows them, in at most one follow per owner whose listed trees hold a pointer
 (Model, `readerView`), and its time (`updatedAt`) is the later of the tree's own last edit and the
 latest `markedAt` among those rows, so a card's time and place on the wall come from what a reader is
@@ -673,6 +723,15 @@ goes to every subscriber, reader and writer alike, carrying the same bytes: whoe
 may read its subtrees, whose access is its root's. No door creates a subtree yet, so no connection is
 sent one. The web client takes its seq as it takes a live frame's (`docs/GRAPH_SYNC_DESIGN.md`) and
 changes nothing else.
+
+The subscribe answer carries `subtrees: [{step, id, depth}]`, one per present step that owns a
+subtree, read under the strand with the delta, so a client that missed a `subtree` frame heals on its
+next subscribe; it goes to readers and writers alike and is absent when the steps own none. It is
+told, never a register: no client writes it and no join reads it. A subtree's own subscribe answer
+carries its name, its owning step's label under that label's stamp, as the `title` register whatever
+the vector covers; the name is read off the stored rows after the strand is released, its stamp is the
+parent's and is never folded into the answer's coverage, and a read that fails sends the answer
+without it.
 
 `progressAck.refused` is present only when the frame carried a mark that was refused: an array of
 `{node, code}`, one per refused mark in the frame's order. The one code is `opens-a-tree` — the node

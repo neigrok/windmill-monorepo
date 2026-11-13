@@ -111,9 +111,10 @@ surface and can be repaired only by hand in SQL.
 with a parent from its root's row — the root's owner and visibility, and absent while the root is
 deleted — or, for a live room, from the access every live room of the root's trees shares, which
 narrows before the root's row and widens after it. A subtree's own `visibility` column is not read.
-So whoever may read a tree may read every subtree under it, which is why the `subtree` frame goes
-to a tree's readers with the subtree's id, and why a visibility change aimed at a subtree is refused
-`not-a-root`.
+So whoever may read a tree may read every subtree under it and every tree above it, which is why the
+`subtree` frame, the subscribe answer's `subtrees` and a node read's `subtree` go to a tree's readers
+with the subtrees' ids, why a tree read answers its readers the `path` down from its root, and why a
+visibility change aimed at a subtree is refused `not-a-root`. Pointers stay the writer's alone.
 
 ## Per surface
 
