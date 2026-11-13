@@ -97,7 +97,8 @@ struct FakeProgressRepository : ProgressRepository {
   }
 
   // The real store's rules: a replica's mark lands when its stamp is later, a server's always, at its own stamp or
-  // just after the one it found (by millisecond and counter, as the statement compares them).
+  // just after the one it found. Later is by millisecond and counter alone, as the statement compares them: a stamp
+  // that ties on both does not land over the one held, whatever its actor.
   std::vector<ProgressWritten> setStatuses(const TreeId& tree, const UserId& user,
                                            const std::vector<ProgressUpdate>& updates, StampedBy stampedBy,
                                            std::uint64_t receivedAtMs) override {
@@ -112,15 +113,10 @@ struct FakeProgressRepository : ProgressRepository {
       did.held = current == next.end()
                      ? ProgressMark{}
                      : ProgressMark{current->second.status, current->second.at, 0, current->second.outOfOrder};
-      Hlc at = update.at;
-      bool lands = current == next.end() || update.at > current->second.at;
-      if (stampedBy == StampedBy::server && current != next.end()) {
-        lands = true;
-        if (std::pair(update.at.physicalMs, update.at.counter) <=
-            std::pair(current->second.at.physicalMs, current->second.at.counter))
-          at = current->second.at.successor(update.at.actor);
-      }
-      if (lands) {
+      const bool later = current == next.end() || std::pair(update.at.physicalMs, update.at.counter) >
+                                                      std::pair(current->second.at.physicalMs, current->second.at.counter);
+      const Hlc at = later ? update.at : current->second.at.successor(update.at.actor);
+      if (later || stampedBy == StampedBy::server) {
         next[nodeKey] = Entry{update.status, at, update.outOfOrder};
         did.landed = ProgressMark{update.status, at, receivedAtMs, update.outOfOrder};
       }
