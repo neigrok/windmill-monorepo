@@ -119,6 +119,7 @@ add_library(windmill_roadmap
   products/roadmap/application/RoomRegistry.cpp
   products/roadmap/application/OwnerProgress.cpp
   products/roadmap/application/ProgressService.cpp
+  products/roadmap/application/NodeEdits.cpp
   products/roadmap/application/ActivityFeed.cpp
   products/roadmap/application/ForkService.cpp
   products/roadmap/application/ScopedToolHost.cpp

@@ -88,7 +88,11 @@ void TreeRegistryApi::listTrees(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
   Json::Value trees(Json::arrayValue);
-  for (const TreeSummary& summary : registry_->list(*caller)) trees.append(toJson(summary));
+  for (const TreeSummary& summary : registry_->list(*caller)) {
+    Json::Value row = toJson(summary);
+    row["openers"] = toJson(summary.openers);
+    trees.append(row);
+  }
   Json::Value body(Json::objectValue);
   body["trees"] = trees;
   callback(jsonResponse(body));
@@ -201,22 +205,21 @@ void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k401Unauthorized, "sign in to delete a tree"));
     return;
   }
-  TreeRegistry::Removal outcome = registry_->remove(TreeId{treeId}, *caller);
-  if (outcome == TreeRegistry::Removal::notFound) {
+  const std::variant<Cascade, TreeRegistry::RemovalRefusal> removed = registry_->remove(TreeId{treeId}, *caller);
+  if (const TreeRegistry::RemovalRefusal* refusal = std::get_if<TreeRegistry::RemovalRefusal>(&removed)) {
+    if (*refusal == TreeRegistry::RemovalRefusal::notYours) {
+      callback(forbidden(WriteRefusal::notYours));
+      return;
+    }
+    if (*refusal == TreeRegistry::RemovalRefusal::nobodysTree) {
+      callback(forbidden(WriteRefusal::nobodysTree));
+      return;
+    }
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
-  if (outcome == TreeRegistry::Removal::notYours) {
-    callback(forbidden(WriteRefusal::notYours));
-    return;
-  }
-  if (outcome == TreeRegistry::Removal::nobodysTree) {
-    callback(forbidden(WriteRefusal::nobodysTree));
-    return;
-  }
-  auto response = drogon::HttpResponse::newHttpResponse();
-  response->setStatusCode(drogon::k204NoContent);
-  callback(response);
+  // The steps that went with the tree from the caller's other trees, and those it could not take.
+  callback(jsonResponse(toJson(std::get<Cascade>(removed))));
 }
 
 }

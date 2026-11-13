@@ -4,6 +4,7 @@
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
 #include "products/roadmap/application/ForkService.h"
+#include "products/roadmap/application/NodeEdits.h"
 #include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Command.h"
@@ -372,8 +373,9 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
   created["treeId"] = kTree.str();
   {
     RoomRegistry registry(trees, log, bus);
-    TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
-    RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
+    NodeEdits edits{registry, progress, bus, clock};
+    TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
+    RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
     Json::Value pointed = created;
     pointed["opens"] = kFork.str();
     CHECK_FALSE(tools.callTool("create_node", pointed, sam).isError);
@@ -385,8 +387,9 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
   CHECK_EQ(storedPointer(), std::vector<std::string>{"sail-trim:" + kFork.str() + ":false"});
 
   RoomRegistry restarted(trees, log, bus);
-  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, restarted, clock};
-  RoadmapTools tools{restarted, progress, clock, treeRegistry, bus, "https://app.example"};
+  NodeEdits edits{restarted, progress, bus, clock};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, restarted, edits, clock};
+  RoadmapTools tools{restarted, progress, clock, treeRegistry, edits, "https://app.example"};
   CHECK_FALSE(tools.callTool("create_node", created, sam).isError);
   Json::Value read = parse(R"({"fields":["id","opens"]})");
   read["treeId"] = kTree.str();
@@ -528,8 +531,9 @@ TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_re
   ProgressService progress{progressRepo, trees};
   OwnerProgress ownerProgress{progressRepo, trees, clock};
   RoomRegistry registry(trees, log, bus);
-  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
+  NodeEdits edits{registry, progress, bus, clock};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
   trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
   trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
   const auto shown = [&] {
@@ -712,8 +716,8 @@ TEST(pg_opened_from_given_a_budget_gives_up_at_it_and_returns_the_connection_und
 }
 
 // The whole path over the real repositories: the edit that closes a loop of trees says so, each tree on the loop is
-// told its own way back, a pointer no tree answers dangles, a removed tree turns the loop into a dangling pointer,
-// and a reader of the public tree is answered the graph alone.
+// told its own way back, a pointer no tree answers dangles, a reader of the public tree is answered the graph alone,
+// and removing a tree on the loop takes the step that opened it, so the loop goes and the dangling pointer stays.
 TEST(pg_get_diagnostics_tells_the_owner_a_loop_of_trees_and_a_dangling_pointer_and_the_edit_that_closes_the_loop_says_so) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -725,8 +729,9 @@ TEST(pg_get_diagnostics_tells_the_owner_a_loop_of_trees_and_a_dangling_pointer_a
   test::StepClock clock;
   ProgressService progress{progressRepo, trees};
   RoomRegistry registry(trees, log, bus);
-  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, clock};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, bus, "https://app.example"};
+  NodeEdits edits{registry, progress, bus, clock};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
   trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
   trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
   const auto call = [&](const TreeId& tree, const UserId& user, const char* tool, const std::string& arguments) {
@@ -769,11 +774,12 @@ TEST(pg_get_diagnostics_tells_the_owner_a_loop_of_trees_and_a_dangling_pointer_a
   CHECK_EQ(test::message(call(kTree, kEve, "get_diagnostics", "{}")),
            std::string(R"({"cycles":[],"dangling":[],"maskedWork":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}]})"));
 
-  CHECK(treeRegistry.remove(kFork, kSam) == TreeRegistry::Removal::deleted);
-  Json::Value orphaned = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],"treeLoops":[],
-      "danglingPointers":[{"node":"down"},{"node":"gone","treeId":"t_pgtest_never_planted"}]})");
-  orphaned["danglingPointers"][0]["treeId"] = kFork.str();
-  CHECK_EQ(test::body(call(kTree, kSam, "get_diagnostics", "{}")), orphaned);
+  Cascade tookDown;
+  tookDown.removed[kTree] = {NodeId{"down"}};
+  CHECK(treeRegistry.remove(kFork, kSam) == (std::variant<Cascade, TreeRegistry::RemovalRefusal>{tookDown}));
+  CHECK_EQ(test::body(call(kTree, kSam, "get_diagnostics", "{}")),
+           parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],"treeLoops":[],
+               "danglingPointers":[{"node":"gone","treeId":"t_pgtest_never_planted"}]})"));
   registry.stop();
 }
 
@@ -942,4 +948,172 @@ TEST(pg_a_strangers_flood_of_pointers_at_a_tree_changes_no_answer_and_the_walk_s
   CHECK(trees.guidedTreesAbove(kSam, leaf) == above);
   CHECK(withinTheOwnersRows());
   clear();
+}
+
+// The statement a removal asks: the owner's other standing trees with a present step that opens the tree, standing or
+// not, and nothing for a tree that is not theirs. It is keyed on the owner's trees, so the pointers another account
+// plants at the tree are neither answered nor read, and each tree's steps are read through tree_nodes_pointers_idx.
+TEST(pg_trees_opening_answers_the_owners_other_trees_whose_present_steps_open_a_tree_and_reads_no_one_elses_pointers) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const auto id = [](const std::string& name) { return TreeId{"t_pgtest_opening_" + name}; };
+  const auto clear = [] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("DELETE FROM tree_nodes WHERE tree_id LIKE 't\\_pgtest\\_opening\\_%'");
+    txn.exec("DELETE FROM trees WHERE id LIKE 't\\_pgtest\\_opening\\_%'");
+    txn.commit();
+  };
+  clear();
+  PgTreeRepository trees{pgTestPool()};
+  const auto plant = [&](const std::string& name, const UserId& owner, const std::vector<std::string>& opens) {
+    TreeData data;
+    data.id = id(name);
+    for (std::size_t i = 0; i < opens.size(); ++i) {
+      NodeSpec step;
+      step.id = NodeId{"s" + std::to_string(i)};
+      step.label = "Step";
+      if (!opens[i].empty()) step.opens = id(opens[i]);
+      data.nodes.push_back(step);
+    }
+    trees.create(id(name), LooseGraph(data, Hlc{1'700'000'000'000, 0, "r_a"}).exportState(), LegendState{},
+                 "Tree " + name, owner);
+  };
+  plant("target", kSam, {"target", ""});
+  plant("one", kSam, {"target"});
+  plant("two", kSam, {"", "target", "target"});
+  plant("plain", kSam, {"", "one"});
+  plant("removed", kSam, {"target"});
+  trees.softDelete(id("removed"));
+  plant("tombstoned", kSam, {"target"});
+  {
+    const std::optional<StoredTree> stored = trees.load(id("tombstoned"));
+    REQUIRE(stored.has_value());
+    LooseGraph graph(stored->state);
+    graph.deleteNode(NodeId{"s0"}, Hlc{1'700'000'000'001, 0, "r_a"});
+    REQUIRE(trees.save(id("tombstoned"), graph.exportState(), LegendState{}, stored->title, stored->guide, stored->head));
+  }
+  plant("theirs", kEve, {"target"});
+  plant("eves", kEve, {});
+
+  const std::vector<TreeId> openers{id("one"), id("two")};
+  CHECK(trees.treesOpening(kSam, id("target")) == openers);
+  CHECK(trees.treesOpening(kEve, id("target")) == std::vector<TreeId>{});
+  CHECK(trees.treesOpening(kSam, id("eves")) == std::vector<TreeId>{});
+  CHECK(trees.treesOpening(kSam, id("absent")) == std::vector<TreeId>{});
+  trees.softDelete(id("target"));
+  CHECK(trees.treesOpening(kSam, id("target")) == openers);
+
+  // What each table gave the statement, filtered rows included, with sequential scans off so a table of a few pages
+  // is not rightly read whole; and every index it read tree_nodes through.
+  struct Read {
+    std::map<std::string, double> rows;
+    std::set<std::string> nodeIndexes;
+  };
+  const auto explain = [&] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("SET LOCAL enable_seqscan = off");
+    const pqxx::result explained =
+        txn.exec_params(std::string("EXPLAIN (ANALYZE, TIMING OFF, FORMAT JSON) ") + PgTreeRepository::treesOpeningStatement(),
+                        kSam.str(), id("target").str());
+    Read read;
+    std::vector<Json::Value> nodes{parse(explained[0][0].as<std::string>())[0]["Plan"]};
+    while (!nodes.empty()) {
+      const Json::Value node = nodes.back();
+      nodes.pop_back();
+      for (const Json::Value& child : node["Plans"]) nodes.push_back(child);
+      if (!node.isMember("Relation Name")) continue;
+      read.rows[node["Relation Name"].asString()] +=
+          node["Actual Loops"].asDouble() * (node["Actual Rows"].asDouble() + node["Rows Removed by Filter"].asDouble() +
+                                             node["Rows Removed by Index Recheck"].asDouble());
+      if (node["Relation Name"].asString() == "tree_nodes") read.nodeIndexes.insert(node["Index Name"].asString());
+    }
+    return read;
+  };
+  const auto ownersTrees = [&] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    return txn.exec_params("SELECT count(*) FROM trees WHERE owner_id = $1::uuid", kSam.str())[0][0].as<double>();
+  };
+  // Sam's rows alone: at most one step of each of his trees, read through tree_nodes_pointers_idx.
+  const Read before = explain();
+  REQUIRE(before.rows.size() == 2 && before.rows.count("trees") && before.rows.count("tree_nodes"));
+  CHECK(before.rows.at("tree_nodes") <= ownersTrees());
+  CHECK(before.nodeIndexes == std::set<std::string>{"tree_nodes_pointers_idx"});
+
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO trees (id, title, owner_id, head_seq) "
+                    "SELECT 't_pgtest_opening_flood' || g, 'Flood', $1::uuid, 0 FROM generate_series(1, 4) g",
+                    kEve.str());
+    txn.exec("INSERT INTO tree_nodes (tree_id, node_id, created_hlc, opens, opens_hlc, present) "
+             "SELECT 't_pgtest_opening_flood' || g, 'n' || n, '1:0:r_e', 't_pgtest_opening_target', '1:0:r_e', true "
+             "FROM generate_series(1, 4) g, generate_series(1, 500) n");
+    txn.commit();
+  }
+  CHECK(trees.treesOpening(kSam, id("target")) == openers);
+  const Read after = explain();
+  CHECK(after.rows == before.rows);
+  CHECK(after.nodeIndexes == before.nodeIndexes);
+  clear();
+}
+
+// Removing a tree over the real repositories: the step of the owner's other tree that opened it is tombstoned with the
+// edge it dangled and the owner's mark it held, the step behind it is free, and the stored rows say so after a restart.
+TEST(pg_removing_a_tree_takes_the_step_that_opens_it_with_its_edge_and_mark_and_the_rows_keep_it_gone) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTreeRepository trees{pgTestPool()};
+  PgProgressRepository progressRepo{pgTestPool()};
+  PgOpLog log{pgTestPool()};
+  FakeBus bus;
+  FakeTokens tokens;
+  test::StepClock clock;
+  ProgressService progress{progressRepo, trees};
+  RoomRegistry registry(trees, log, bus);
+  NodeEdits edits{registry, progress, bus, clock};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
+  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
+  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
+  trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
+  const auto call = [&](const char* tool, const std::string& arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = kTree.str();
+    return tools.callTool(tool, args, ToolCaller{kSam, ToolScope::everything()});
+  };
+  // The mark lands before the pointer, which is the one way a step that opens a tree holds a mark of its owner's.
+  CHECK_FALSE(call("import_subgraph", R"({"nodes":[{"id":"go","label":"Go"},{"id":"after","label":"After","prerequisites":["go"]}],
+                                         "progress":[{"nodeId":"go","status":"complete"}]})").isError);
+  CHECK_FALSE(call("update_nodes", R"({"updates":[{"nodeId":"go","opens":")" + kFork.str() + R"("}]})").isError);
+
+  Cascade tookGo;
+  tookGo.removed[kTree] = {NodeId{"go"}};
+  CHECK(treeRegistry.remove(kFork, kSam) == (std::variant<Cascade, TreeRegistry::RemovalRefusal>{tookGo}));
+  registry.stop();
+
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  const auto column = [&](const std::string& sql) {
+    std::vector<std::string> held;
+    for (const auto& row : txn.exec_params(sql, kTree.str())) held.push_back(row[0].as<std::string>());
+    return held;
+  };
+  CHECK(column("SELECT node_id || ':' || present::text FROM tree_nodes WHERE tree_id = $1 ORDER BY node_id") ==
+        (std::vector<std::string>{"after:true", "go:false"}));
+  CHECK(column("SELECT from_id || '>' || to_id || ':' || (removed_hlc NOT IN ('', '0:0:'))::text FROM tree_edges WHERE tree_id = $1") ==
+        std::vector<std::string>{"go>after:true"});
+  CHECK(column("SELECT node_id || ':' || status FROM node_progress WHERE tree_id = $1") == std::vector<std::string>{"go:none"});
+  txn.commit();
+  RoomRegistry restarted(trees, log, bus);
+  ProgressService restartedProgress{progressRepo, trees};
+  NodeEdits restartedEdits{restarted, restartedProgress, bus, clock};
+  TreeRegistry restartedRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, restarted, restartedEdits, clock};
+  RoadmapTools restartedTools{restarted, restartedProgress, clock, restartedRegistry, restartedEdits, "https://app.example"};
+  Json::Value read = parse(R"({"fields":["id","state","prerequisites"]})");
+  read["treeId"] = kTree.str();
+  CHECK_EQ(test::body(restartedTools.callTool("get_tree", read, ToolCaller{kSam, ToolScope::everything()}))["tree"]["nodes"],
+           parse(R"([{"id":"after","state":"available","prerequisites":[]}])"));
+  restarted.stop();
 }

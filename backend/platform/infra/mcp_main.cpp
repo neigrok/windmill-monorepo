@@ -11,6 +11,7 @@
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
 #include "products/roadmap/adapters/postgres/PgTreeRepository.h"
+#include "products/roadmap/application/NodeEdits.h"
 #include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/application/TreeRegistry.h"
@@ -58,9 +59,10 @@ static int runMcp() {
   OpenSslTokenGenerator registryTokens;
   const Hlc genesis{1, 0, "genesis"};
   SystemClock clock;
-  TreeRegistry treeRegistry(trees, progressRepo, registryTokens, genesis, registry, clock);
+  NodeEdits edits(registry, progress, bus, clock);
+  TreeRegistry treeRegistry(trees, progressRepo, registryTokens, genesis, registry, edits, clock);
 
-  RoadmapTools tools(registry, progress, clock, treeRegistry, bus, appOriginFromEnvironment());
+  RoadmapTools tools(registry, progress, clock, treeRegistry, edits, appOriginFromEnvironment());
   const std::vector<ToolModule> modules{{tools, roadmapInstructions()}};
   CompositeToolHost surface(modules);
   McpServer server(surface, windmillServerInfo(surface), roadmapResources());

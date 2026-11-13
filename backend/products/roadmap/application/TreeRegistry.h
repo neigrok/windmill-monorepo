@@ -1,5 +1,6 @@
 #pragma once
 
+#include "products/roadmap/application/NodeEdits.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/Ids.h"
@@ -20,11 +21,11 @@ namespace wm {
 
 // The per-user tree registry. A repo-direct read model — it never opens a room, so the list is
 // save-consistent. Rename must stay coherent with a live room, so it hands the apply to
-// RoomRegistry under the tree's strand.
+// RoomRegistry under the tree's strand; a removal edits the owner's other trees through NodeEdits.
 class TreeRegistry {
 public:
   TreeRegistry(TreeRepository& trees, ProgressRepository& progress, TokenGenerator& tokens,
-               Hlc genesis, RoomRegistry& rooms, Clock& clock);
+               Hlc genesis, RoomRegistry& rooms, NodeEdits& edits, Clock& clock);
 
   // A blank tree (all-empty `initial`) is born with the default legend. Returns the minted id.
   TreeId create(const UserId& owner, const TreeData& initial);
@@ -50,10 +51,15 @@ public:
   // the stored rows.
   std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree);
 
-  // Each outcome names both write refusals of Access.h (an enum cannot hold another), because an
+  // Each refusal names both write refusals of Access.h (an enum cannot hold another), because an
   // unowned tree is nobody's, not somebody else's.
-  enum class Removal { deleted, notFound, notYours, nobodysTree };
-  Removal remove(const TreeId& tree, const UserId& caller);
+  enum class RemovalRefusal { notFound, notYours, nobodysTree };
+  // owner check → soft-delete → retire the room, under the tree's strand. Then, with that strand released, the steps
+  // that open the tree go with it: the caller's standing trees that hold such steps are read once, and each, in id
+  // order and under its own strand alone, has them deleted as delete_node with prune deletes nodes (NodeEdits),
+  // the caller's marks on them cleared. Each such tree writes one `roadmap.tree.remove.cascade` line; one it cannot edit
+  // keeps its steps and is answered in `incomplete`.
+  std::variant<Cascade, RemovalRefusal> remove(const TreeId& tree, const UserId& caller);
 
   // trim → refuse a blank, text that is not valid UTF-8 and a NUL → owner check → apply through
   // RoomRegistry. A tree whose row went away under its live room answers notFound.
@@ -97,6 +103,7 @@ private:
   TokenGenerator& tokens_;
   Hlc genesis_;
   RoomRegistry& rooms_;
+  NodeEdits& edits_;
   Clock& clock_;
 };
 

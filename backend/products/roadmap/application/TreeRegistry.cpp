@@ -1,5 +1,6 @@
 #include "products/roadmap/application/TreeRegistry.h"
 
+#include "platform/application/WriteObservation.h"
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/GraphState.h"
@@ -7,17 +8,20 @@
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/Access.h"
 
+#include <trantor/utils/Logger.h>
+
 #include <map>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 
 namespace wm {
 
 TreeRegistry::TreeRegistry(TreeRepository& trees, ProgressRepository& progress, TokenGenerator& tokens,
-                           Hlc genesis, RoomRegistry& rooms, Clock& clock)
+                           Hlc genesis, RoomRegistry& rooms, NodeEdits& edits, Clock& clock)
     : trees_(trees), progress_(progress), tokens_(tokens), genesis_(std::move(genesis)),
-      rooms_(rooms), clock_(clock) {}
+      rooms_(rooms), edits_(edits), clock_(clock) {}
 
 TreeId TreeRegistry::create(const UserId& owner, const TreeData& initial) {
   TreeId id{"t_" + tokens_.mint().digest.substr(0, 16)};  // server-minted, unguessable, URL-safe
@@ -87,22 +91,78 @@ std::map<TreeId, TreeAbove> TreeRegistry::guidedTreesAbove(const UserId& owner, 
   return trees_.guidedTreesAbove(owner, tree);
 }
 
-TreeRegistry::Removal TreeRegistry::remove(const TreeId& tree, const UserId& caller) {
-  // The strand serializes the retirement against the tree's socket frames, so no concurrent open()
-  // can reload the tree between the delete and the drop.
-  std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
-  std::optional<StoredTree> stored = trees_.load(tree);
-  if (!stored) return Removal::notFound;
-  // A tree the caller cannot even read is answered as absent, never as "someone else's": the
-  // second sentence would tell a stranger which private ids are real.
-  if (!canRead(caller, stored->owner, stored->visibility)) return Removal::notFound;
-  if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
-    return *refusal == WriteRefusal::nobodysTree ? Removal::nobodysTree : Removal::notYours;
-  // The row first, then the live room: retire announces the change and whoever listens re-decides
-  // the access question against the repository.
-  trees_.softDelete(tree);
-  rooms_.retire(tree);
-  return Removal::deleted;
+std::variant<Cascade, TreeRegistry::RemovalRefusal> TreeRegistry::remove(const TreeId& tree, const UserId& caller) {
+  {
+    // The strand serializes the retirement against the tree's socket frames, so no concurrent open()
+    // can reload the tree between the delete and the drop.
+    std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
+    std::optional<StoredTree> stored = trees_.load(tree);
+    if (!stored) return RemovalRefusal::notFound;
+    // A tree the caller cannot even read is answered as absent, never as "someone else's": the
+    // second sentence would tell a stranger which private ids are real.
+    if (!canRead(caller, stored->owner, stored->visibility)) return RemovalRefusal::notFound;
+    if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
+      return *refusal == WriteRefusal::nobodysTree ? RemovalRefusal::nobodysTree : RemovalRefusal::notYours;
+    // The row first, then the live room: retire announces the change and whoever listens re-decides
+    // the access question against the repository.
+    trees_.softDelete(tree);
+    rooms_.retire(tree);
+  }
+
+  // The tree is gone whatever becomes of the steps that open it: a step the cascade cannot take stays, its pointer
+  // leading nowhere. Its lines are written at the removal's door, and its first failure is the request's one Issue.
+  constexpr const char* kCascade = "roadmap.tree.remove.cascade";
+  const std::string door = currentWriteDoor();
+  std::vector<TreeId> opening;
+  {
+    WriteObservation reading{kCascade, "roadmap", door};
+    try {
+      opening = trees_.treesOpening(caller, tree);
+    } catch (const std::exception& error) {
+      reading.fail(error);
+      return Cascade{};
+    }
+    reading.skip();
+  }
+  if (opening.empty()) return Cascade{};
+
+  Cascade cascade;
+  std::size_t steps = 0;
+  std::size_t edges = 0;
+  std::size_t marks = 0;
+  for (const TreeId& parent : opening) {
+    WriteObservation editing{kCascade, "roadmap", door};
+    try {
+      std::lock_guard<std::mutex> strand(rooms_.strandFor(parent));
+      TreeRoom* room = rooms_.open(parent);
+      std::vector<NodeId> nodes;
+      if (room && canWrite(caller, room->owner()))
+        for (const auto& [node, opened] : room->pointers())
+          if (opened == tree) nodes.push_back(node);
+      // The tree, or its steps that opened the removed one, went away since the read: nothing is left to take.
+      if (nodes.empty()) {
+        editing.skip();
+        continue;
+      }
+      const std::variant<DeletedNodes, std::string> deleted =
+          edits_.deleteNodes(*room, parent, nodes, DanglingEdges::removed, caller);
+      // Nodes the room holds pass every check a deletion makes, so a refusal here is a fault.
+      if (std::holds_alternative<std::string>(deleted)) throw std::logic_error("a room refused to delete nodes it holds");
+      const DeletedNodes& landed = std::get<DeletedNodes>(deleted);
+      steps += nodes.size();
+      edges += landed.edges;
+      marks += landed.marks;
+      cascade.removed.emplace(parent, std::move(nodes));
+      editing.finish();
+    } catch (const std::exception& error) {
+      editing.fail(error);
+      cascade.incomplete.push_back(parent);
+    }
+  }
+  LOG_INFO << "roadmap_tree_remove_cascade door=" << door << " trees=" << cascade.removed.size() << " steps=" << steps
+           << " edges=" << edges << " marks=" << marks << " incomplete=" << cascade.incomplete.size()
+           << " request_id=" << currentWriteRequestId();
+  return cascade;
 }
 
 const char* TreeRegistry::sentenceOf(Renaming refusal) {

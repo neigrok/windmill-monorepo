@@ -31,8 +31,10 @@ struct Harness {
   FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
+  ProgressService marks{progress, trees};
+  NodeEdits edits{rooms, marks, bus, clock};
   std::shared_ptr<TreeRegistry> registry =
-      std::make_shared<TreeRegistry>(trees, progress, tokens, Hlc{1, 0, "genesis"}, rooms, clock);
+      std::make_shared<TreeRegistry>(trees, progress, tokens, Hlc{1, 0, "genesis"}, rooms, edits, clock);
   TreeRegistryApi api{registry, auth};
 
   UserId signIn(const std::string& sessionSecret, const std::string& address) {
@@ -64,7 +66,8 @@ void retire(TreeRegistryApi& api, const std::string& id, const std::string& sess
   request->addCookie("wm_session", session);
   drogon::HttpResponsePtr captured;
   api.deleteTree(request, [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
-  CHECK_EQ(captured->getStatusCode(), drogon::k204NoContent);
+  CHECK_EQ(captured->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(parse(std::string(captured->body())), parse(R"({"removed":[]})"));
 }
 
 Json::Value titled(const std::string& title) {
@@ -529,4 +532,59 @@ TEST(patch_with_a_body_that_does_not_parse_as_json_is_400_and_an_empty_one_still
   CHECK_EQ(dump(bodyOf(empty)), std::string(R"({"error":"a tree always has a name"})"));
   CHECK(h.trees.byId["t"].title == (Lww<std::string>{"Mine", {}}));
   CHECK(h.trees.byId["t"].guide == Lww<std::string>{});
+}
+
+// ---- openers and what a removal takes ---------------------------------------------------
+
+// Every row of the list carries `openers`, [] when nothing opens the tree, which is how a client knows a removal takes
+// the steps that open it; the delete answers 200 with those steps, and `incomplete` only when a tree kept its steps.
+TEST(list_rows_carry_their_openers_and_delete_answers_the_steps_that_went_with_the_tree) {
+  Harness h;
+  UserId me = h.signIn("s-live", "sam@example.com");
+  const auto plant = [&](const char* id, const std::vector<std::pair<const char*, const char*>>& steps) {
+    TreeData data;
+    data.id = TreeId{std::string(id)};
+    for (const auto& [step, opens] : steps) {
+      NodeSpec node;
+      node.id = NodeId{std::string(step)};
+      node.label = step;
+      node.opens = TreeId{std::string(opens)};
+      data.nodes.push_back(node);
+    }
+    h.trees.byId[id] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(), LegendState{}, {id, {}}, 0, me};
+  };
+  plant("t_target", {{"t1", ""}});
+  plant("t_a", {{"a1", "t_target"}, {"a2", ""}});
+  plant("t_b", {{"b1", "t_target"}, {"b2", "t_target"}});
+  plant("t_two", {{"w1", ""}});
+  plant("t_c", {{"c1", "t_two"}});
+  const auto request = [](drogon::HttpMethod method) {
+    auto made = drogon::HttpRequest::newHttpRequest();
+    made->setMethod(method);
+    made->addCookie("wm_session", "s-live");
+    return made;
+  };
+  const auto remove = [&](const std::string& id) {
+    drogon::HttpResponsePtr captured;
+    h.api.deleteTree(request(drogon::Delete), [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
+    return captured;
+  };
+
+  drogon::HttpResponsePtr listed;
+  h.api.listTrees(request(drogon::Get), [&](const drogon::HttpResponsePtr& response) { listed = response; });
+  CHECK_EQ(listed->getStatusCode(), drogon::k200OK);
+  const Json::Value rows = bodyOf(listed)["trees"];
+  Json::Value openers(Json::objectValue);
+  for (const Json::Value& row : rows) openers[row["id"].asString()] = row["openers"];
+  CHECK_EQ(openers, parse(R"({"t_target":[{"treeId":"t_a","steps":1},{"treeId":"t_b","steps":2}],
+                              "t_a":[],"t_b":[],"t_two":[{"treeId":"t_c","steps":1}],"t_c":[]})"));
+
+  const drogon::HttpResponsePtr removed = remove("t_target");
+  CHECK_EQ(removed->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(removed), parse(R"({"removed":[{"treeId":"t_a","nodeIds":["a1"]},{"treeId":"t_b","nodeIds":["b1","b2"]}]})"));
+
+  h.trees.latticeLoadsFailFor.insert("t_c");
+  const drogon::HttpResponsePtr kept = remove("t_two");
+  CHECK_EQ(kept->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(kept), parse(R"({"removed":[],"incomplete":["t_c"]})"));
 }

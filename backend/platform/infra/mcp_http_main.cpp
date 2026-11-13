@@ -17,6 +17,7 @@
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
 #include "products/roadmap/adapters/postgres/PgTreeRepository.h"
 #include "platform/application/OAuthService.h"
+#include "products/roadmap/application/NodeEdits.h"
 #include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/application/TreeRegistry.h"
@@ -68,8 +69,10 @@ static int runMcpHttp(wm::ObservabilityLifetime& lifetime) {
   auto registryTokens = std::make_shared<OpenSslTokenGenerator>();
   const Hlc genesis{1, 0, "genesis"};
   auto clock = std::make_shared<SystemClock>();
-  auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progressRepo, *registryTokens, genesis, *registry, *clock);
-  auto tools = std::make_shared<RoadmapTools>(*registry, *progress, *clock, *treeRegistry, *bus,
+  auto edits = std::make_shared<NodeEdits>(*registry, *progress, *bus, *clock);
+  auto treeRegistry =
+      std::make_shared<TreeRegistry>(*trees, *progressRepo, *registryTokens, genesis, *registry, *edits, *clock);
+  auto tools = std::make_shared<RoadmapTools>(*registry, *progress, *clock, *treeRegistry, *edits,
                                               appOriginFromEnvironment());
 
   // Per-user OAuth access tokens are issued by the API host; the shared token, if set, is a

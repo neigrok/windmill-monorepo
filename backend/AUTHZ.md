@@ -71,6 +71,12 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   opens this one. A tend is answered no `guides` and reads no tree above the tended one:
   `ScopedToolHost` withholds `includeGuides` from its catalog and sends it as `false` on every call,
   so a run reads the tended tree's own guide and no other tree's id, title or words.
+  The registry list and a tree's removal follow the same line. A row's `openers` (`GET /v1/trees`,
+  `SPEC.md`) names only the caller's own standing trees, judged from the trees the list already
+  holds, so a pointer another account plants at the tree is never counted. A removal, which only
+  the owner may make, deletes the steps that open the tree from the owner's own trees alone, read
+  keyed on those trees, and its reply names only them; someone else's step that points at the tree
+  stays theirs, leading nowhere.
 - **Document writes** (`PUT`, WS `subgraph`, structural MCP tools) require
   a session (anonymous → `401`) and gate on `canWrite`, which is ownership and nothing else. **A tree
   is born owned** — the owner is written by the same insert that creates the row (create, fork, `PUT`

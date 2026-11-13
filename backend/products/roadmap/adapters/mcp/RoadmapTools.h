@@ -1,12 +1,12 @@
 #pragma once
 
 #include "platform/adapters/mcp/McpServer.h"
+#include "products/roadmap/application/NodeEdits.h"
 #include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/application/TreeRegistry.h"
 #include "products/roadmap/domain/Ids.h"
 #include "platform/ports/Clock.h"
-#include "products/roadmap/ports/PresenceBus.h"
 
 namespace wm {
 
@@ -16,7 +16,7 @@ namespace wm {
 class RoadmapTools : public ToolHost {
 public:
   RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock, TreeRegistry& treeRegistry,
-               PresenceBus& bus, std::string appOrigin);
+               NodeEdits& edits, std::string appOrigin);
 
   std::vector<ToolDeclaration> declareTools() const override;
   ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller& caller) override;
@@ -31,7 +31,7 @@ private:
   ProgressService& progress_;
   Clock& clock_;
   TreeRegistry& treeRegistry_;
-  PresenceBus& bus_;
+  NodeEdits& edits_;
   std::string appOrigin_;
 };
 

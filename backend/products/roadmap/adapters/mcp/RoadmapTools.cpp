@@ -770,29 +770,6 @@ struct RequestedMark {
   bool outOfOrder = false;
 };
 
-// The caller's marks a server write sets, landed by the one path every such write takes: set_progress, an import's
-// progress rows, and the clears a delete, an import's tombstones and prune make. Each write comes stamped by the room's
-// clock; where the caller's mark on that node holds a later stamp — a replica stamped it ahead of the server — it takes
-// the stamp just after that one instead, so a later write always lands over it, and the room's clock does not learn it,
-// so it carries no other write of the tree ahead. A node named twice is stamped after its own row. The marks go through
-// ProgressService::mark with `pointers`, the nodes that open a tree as the room handed them to the caller: a mark on one
-// that follows its tree is refused. The batch is written in one go, and the marks that landed go to the caller's open
-// sessions in one progress frame.
-ProgressReceipt landMarks(ProgressService& progress, PresenceBus& bus, const TreeId& tree, const UserId& user,
-                          const std::map<NodeId, TreeId>& pointers, std::vector<ProgressWrite> writes, Clock& clock) {
-  std::map<NodeId, Hlc> holds;
-  for (const auto& [node, kept] : progress.progressOf(tree, user).marks) holds.emplace(node, kept.at);
-  for (ProgressWrite& write : writes) {
-    const auto held = holds.find(write.node);
-    if (held != holds.end()) write.at = std::max(write.at, held->second.successor(write.at.actor));
-    holds[write.node] = write.at;
-  }
-  const ProgressReceipt receipt = progress.mark(tree, pointers, user, writes, clock.nowMs());
-  // One echo for the whole batch, not one frame per node.
-  bus.broadcastProgress(tree, user, receipt.recorded);
-  return receipt;
-}
-
 // A way the marks a write carries beside its tree edit fell short, said in the receipt's `progressError` after any
 // said before it, the receipt answering progressApplied: false.
 void fellShort(Json::Value& receipt, const std::string& sentence) {
@@ -827,7 +804,7 @@ struct MarkedBatch {
 
 // The sentence is the refusal of a call that could not be applied at all.
 std::variant<MarkedBatch, std::string> applyProgressBatch(
-    RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
+    RoomRegistry& registry, NodeEdits& edits, const TreeId& tree,
     Clock& clock, const UserId& user, const std::vector<RequestedMark>& requested, bool rejectUnknown) {
   MarkedBatch batch;
   std::vector<ProgressWrite> marks;
@@ -855,7 +832,7 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
            ". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.";
   }
 
-  const ProgressReceipt receipt = landMarks(progress, bus, tree, user, pointers, marks, clock);
+  const ProgressReceipt receipt = edits.landMarks(tree, user, pointers, marks);
   batch.cameToARefusal = receipt.cameToARefusal();
   for (std::size_t i = 0; i < marks.size(); ++i) {
     const ProgressOutcome& outcome = receipt.outcomes[i];
@@ -923,25 +900,6 @@ ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Va
   });
 }
 
-// The caller's own completion marks on the nodes a write removes, cleared to none through landMarks — stamped after the
-// marks they clear, written in one batch, sent to the caller's open sessions — so a revive of the node brings none
-// back; anyone else's marks stay theirs. A node that opens a tree goes with its mark as any other does, so no pointer is
-// judged. Called under the tree's strand with its room open, as the write that removes the nodes is; answers how many
-// clears landed. A delete, an import's tombstones and prune clear by this.
-std::size_t clearMarksOn(ProgressService& progress, PresenceBus& bus, TreeRoom& room, const TreeId& tree,
-                         const UserId& actor, const std::vector<NodeId>& removed, Clock& clock) {
-  const Progress overlay = progress.progressOf(tree, actor);
-  std::vector<ProgressWrite> clears;
-  for (const NodeId& node : removed)
-    if (overlay.completed.count(node))
-      clears.push_back({node, ProgressStatus::none, room.prerequisitesOf(node), room.nextStamp(clock.nowMs()), false});
-  if (clears.empty()) return 0;
-  const ProgressReceipt receipt = landMarks(progress, bus, tree, actor, {}, clears, clock);
-  return static_cast<std::size_t>(std::count_if(receipt.outcomes.begin(), receipt.outcomes.end(),
-                                                [](const ProgressOutcome& outcome) { return outcome.applied; }));
-}
-
-
 // One progress row as a write sends it: `nodeId` (or the legacy `id`), `status`, and `outOfOrder`, a word about a
 // completion that rides only a `complete` status. set_progress, single or bulk, and an import's progress rows read a
 // row by this, so each takes the same checks; `path` names the row in a refusal ("" for set_progress's flat form).
@@ -964,9 +922,8 @@ std::variant<RequestedMark, std::string> readMark(const Json::Value& row, const 
 // all. update_nodes is patch_nodes grown: its rows also append to a description or to the links, and carry the caller's
 // own mark, which lands after the tree fields, as an import's progress lands after its graft, and asks only that the
 // caller can read the tree; it moves no node.
-ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, ProgressService& progress, PresenceBus& bus,
-                          const TreeId& tree, const std::string& name, const Json::Value& args, Clock& clock,
-                          const UserId& actor) {
+ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& edits, const TreeId& tree,
+                          const std::string& name, const Json::Value& args, Clock& clock, const UserId& actor) {
   if (std::optional<std::string> bad = optionalBool(args["dryRun"], "dryRun")) return ToolResult::failure(*bad);
   if (std::optional<std::string> bad = checkExpectedSeq(args)) return ToolResult::failure(*bad);
 
@@ -1161,7 +1118,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, ProgressS
   if (!edited.isError && !dryRun && !marks.empty()) {
     Json::Value receipt = edited.payload;
     bool cameToARefusal = false;
-    const auto applyMarks = [&] { return applyProgressBatch(registry, progress, bus, tree, clock, actor, marks, true); };
+    const auto applyMarks = [&] { return applyProgressBatch(registry, edits, tree, clock, actor, marks, true); };
     if (!treeLanded) {
       // No tree op landed, so the marks are the call: a refusal or a failure of theirs is the call's, as set_progress's
       // is, and a call that recorded no mark because each was refused on a node that opens a tree completes as
@@ -1196,8 +1153,8 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, ProgressS
   return edited;
 }
 
-ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus,
-                         const TreeId& tree, const Json::Value& args, Clock& clock, const UserId& user) {
+ToolResult writeProgress(RoomRegistry& registry, NodeEdits& edits, const TreeId& tree, const Json::Value& args,
+                         Clock& clock, const UserId& user) {
   const bool single = !args[kNodeHandle.published].isNull() || !args[kNodeHandle.alias].isNull();
   const bool bulk = !args["updates"].isNull();
   if (!single && !bulk)
@@ -1227,7 +1184,7 @@ ToolResult writeProgress(RoomRegistry& registry, ProgressService& progress, Pres
   }
 
   const std::variant<MarkedBatch, std::string> applied =
-      applyProgressBatch(registry, progress, bus, tree, clock, user, requested, true);
+      applyProgressBatch(registry, edits, tree, clock, user, requested, true);
   if (const std::string* error = std::get_if<std::string>(&applied)) return ToolResult::failure(*error);
   const MarkedBatch& batch = std::get<MarkedBatch>(applied);
   // A singular call answers its one mark flat, {nodeId, status, prerequisitesMet, acknowledged?, unchanged?}, or fails on
@@ -1356,8 +1313,8 @@ std::optional<std::string> checkMergedLegend(const std::vector<Kind>& current,
   return std::nullopt;
 }
 
-ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressService& progress, PresenceBus& bus,
-                          const TreeId& tree, const Json::Value& args, Clock& clock, const ToolCaller& caller) {
+ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& edits, const TreeId& tree,
+                          const Json::Value& args, Clock& clock, const ToolCaller& caller) {
   if (std::optional<std::string> bad = checkImport(args)) return ToolResult::failure(*bad);
   // The marks the import carries, read as set_progress reads its rows; they land after the graft, on the tree it leaves.
   std::vector<RequestedMark> carried;
@@ -1509,7 +1466,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
     // them: a clear that fails is told in the reply and reported under its own name, not as the call's failure.
     WriteObservation clearing{"roadmap.import.clear_marks", "roadmap", currentWriteDoor()};
     try {
-      clearMarksOn(progress, bus, room, tree, actor, footprint.tombstonedNodes, clock);
+      edits.clearMarksOn(room, tree, actor, footprint.tombstonedNodes);
       clearing.skip();
     } catch (const std::bad_alloc&) {
       throw;
@@ -1532,7 +1489,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
   bool wroteNothingForARefusal = false;
   try {
     const std::variant<MarkedBatch, std::string> applied =
-        applyProgressBatch(registry, progress, bus, tree, clock, actor, carried, false);
+        applyProgressBatch(registry, edits, tree, clock, actor, carried, false);
     if (const std::string* error = std::get_if<std::string>(&applied)) {
       fellShort(grafted.payload, "The graph committed, but the requested progress did not apply: " + *error);
       return ToolResult::json(grafted.payload);
@@ -1550,7 +1507,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
   return answered;
 }
 
-ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
+ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, NodeEdits& edits, const TreeId& tree,
                      Clock& clock, const UserId& actor) {
   ToolResult cleaned = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     if (!canRead(actor, room.owner(), room.visibility()))
@@ -1571,7 +1528,7 @@ ToolResult pruneTree(RoomRegistry& registry, ProgressService& progress, Presence
       seq = room.applyCommand(PruneDangling{}, clock.nowMs(), actor);
       registry.persist(tree);
     }
-    const std::size_t cleared = clearMarksOn(progress, bus, room, tree, actor, orphans, clock);
+    const std::size_t cleared = edits.clearMarksOn(room, tree, actor, orphans);
 
     Json::Value out(Json::objectValue);
     out["prunedEdges"] = prunedEdges;
@@ -1616,15 +1573,15 @@ std::optional<std::string> deleteTargets(const Json::Value& args, std::vector<No
   return std::nullopt;
 }
 
-// Every id is checked before any is applied, and the deletions — with the edges they dangle, when
-// asked — land as one frame under one seq: the tree is never seen between them.
-ToolResult deleteNodes(RoomRegistry& registry, ProgressService& progress, PresenceBus& bus, const TreeId& tree,
-                       const Json::Value& args, Clock& clock, const UserId& actor) {
+// Every id is checked before any is applied, and the deletions — with the edges they dangle, when asked — land through
+// NodeEdits as one frame under one seq: the tree is never seen between them.
+ToolResult deleteNodes(RoomRegistry& registry, NodeEdits& edits, const TreeId& tree, const Json::Value& args,
+                       const UserId& actor) {
   std::vector<NodeId> targets;
   if (std::optional<std::string> bad = deleteTargets(args, targets)) return ToolResult::failure(*bad);
   if (!args["prune"].isNull() && !args["prune"].isBool())
     return ToolResult::failure("argument \"prune\" must be a boolean, got " + typeName(args["prune"]));
-  const bool prune = args["prune"].asBool();
+  const DanglingEdges dangling = args["prune"].asBool() ? DanglingEdges::removed : DanglingEdges::kept;
   const bool single = args["nodeIds"].isNull();
 
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
@@ -1640,29 +1597,20 @@ ToolResult deleteNodes(RoomRegistry& registry, ProgressService& progress, Presen
       return ToolResult::failure("no node in this tree is named " + quotedList(missing) +
                                  " — nothing was deleted. " + kNodeHandle.hint);
 
-    std::vector<Command> commands;
-    for (const NodeId& node : targets) commands.push_back(DeleteNode{node});
-    const std::vector<Edge> dangled = prune ? room.edgesTouching(targets) : std::vector<Edge>{};
-    for (const Edge& edge : dangled) commands.push_back(RemoveEdge{edge.from, edge.to});
-    for (const Command& command : commands)
-      if (std::optional<std::string> reason = room.validate(command)) return ToolResult::failure(*reason);
-
-    // The caller's own marks on what is going, cleared with or without prune and before the delete lands: a progress
-    // store that fails then fails the call with nothing deleted, and a retry does the whole of it.
-    const std::size_t cleared = clearMarksOn(progress, bus, room, tree, actor, targets, clock);
     const TreeDiagnostics before = room.diagnose();
-    Seq seq = room.applyCommands(commands, clock.nowMs(), actor);
-    registry.persist(tree);
+    const std::variant<DeletedNodes, std::string> deleted = edits.deleteNodes(room, tree, targets, dangling, actor);
+    if (const std::string* refusal = std::get_if<std::string>(&deleted)) return ToolResult::failure(*refusal);
+    const DeletedNodes& landed = std::get<DeletedNodes>(deleted);
 
     Json::Value ids(Json::arrayValue);
     for (const NodeId& node : targets) ids.append(node.str());
     Json::Value pruned(Json::objectValue);
-    pruned["edges"] = static_cast<int>(dangled.size());
-    pruned["progress"] = static_cast<int>(cleared);
+    pruned["edges"] = static_cast<int>(landed.edges);
+    pruned["progress"] = static_cast<int>(landed.marks);
 
     Json::Value out(Json::objectValue);
     out["applied"] = true;
-    out["seq"] = static_cast<Json::Int64>(seq);
+    out["seq"] = static_cast<Json::Int64>(landed.seq);
     answerDiagnostics(before, room.diagnose(), out);
     if (single) out["id"] = targets.front().str();
     out["ids"] = ids;
@@ -1709,14 +1657,15 @@ ToolResult listRegistry(TreeRegistry& registry, const std::string& origin, const
 }
 
 ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& caller) {
-  TreeRegistry::Removal outcome = registry.remove(tree, caller);
-  if (outcome == TreeRegistry::Removal::notFound)
+  const std::variant<Cascade, TreeRegistry::RemovalRefusal> removed = registry.remove(tree, caller);
+  if (const TreeRegistry::RemovalRefusal* refusal = std::get_if<TreeRegistry::RemovalRefusal>(&removed)) {
+    if (*refusal == TreeRegistry::RemovalRefusal::notYours)
+      return ToolResult::failure(writeRefusalSentence(WriteRefusal::notYours));
+    if (*refusal == TreeRegistry::RemovalRefusal::nobodysTree)
+      return ToolResult::failure(writeRefusalSentence(WriteRefusal::nobodysTree));
     return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-  if (outcome == TreeRegistry::Removal::notYours)
-    return ToolResult::failure(writeRefusalSentence(WriteRefusal::notYours));
-  if (outcome == TreeRegistry::Removal::nobodysTree)
-    return ToolResult::failure(writeRefusalSentence(WriteRefusal::nobodysTree));
-  Json::Value out(Json::objectValue);
+  }
+  Json::Value out = toJson(std::get<Cascade>(removed));
   out["deleted"] = true;
   out["id"] = tree.str();
   return ToolResult::json(out);
@@ -1761,8 +1710,8 @@ ToolResult updateTree(TreeRegistry& registry, const TreeId& tree, const Json::Va
 }  // namespace
 
 RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock,
-                           TreeRegistry& treeRegistry, PresenceBus& bus, std::string appOrigin)
-    : registry_(registry), progress_(progress), clock_(clock), treeRegistry_(treeRegistry), bus_(bus),
+                           TreeRegistry& treeRegistry, NodeEdits& edits, std::string appOrigin)
+    : registry_(registry), progress_(progress), clock_(clock), treeRegistry_(treeRegistry), edits_(edits),
       appOrigin_(std::move(appOrigin)) {}
 
 std::vector<ToolDeclaration> RoadmapTools::declareTools() const { return roadmapToolCatalog(); }
@@ -1814,15 +1763,15 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
   if (name == "get_progress")    return readProgress(progress_, tree, arguments, caller);
   if (name == "find_nodes")      return findNodes(registry_, treeRegistry_, progress_, appOrigin_, tree, arguments, reader);
   if (name == "patch_nodes" || name == "update_nodes" || name == "change_edges")
-    return applyBatchEdit(registry_, treeRegistry_, progress_, bus_, tree, name, arguments, clock_, caller);
+    return applyBatchEdit(registry_, treeRegistry_, edits_, tree, name, arguments, clock_, caller);
   if (name == "set_progress")
-    return writeProgress(registry_, progress_, bus_, tree, arguments, clock_, caller);
+    return writeProgress(registry_, edits_, tree, arguments, clock_, caller);
   if (name == "import_subgraph")
-    return importSubgraph(registry_, treeRegistry_, progress_, bus_, tree, arguments, clock_, actor);
+    return importSubgraph(registry_, treeRegistry_, edits_, tree, arguments, clock_, actor);
   if (name == "prune")
-    return pruneTree(registry_, progress_, bus_, tree, clock_, caller);
+    return pruneTree(registry_, progress_, edits_, tree, clock_, caller);
   if (name == "delete_node")
-    return deleteNodes(registry_, progress_, bus_, tree, arguments, clock_, caller);
+    return deleteNodes(registry_, edits_, tree, arguments, caller);
   if (name == "update_kind")
     return updateKind(registry_, tree, arguments, clock_, caller);
 

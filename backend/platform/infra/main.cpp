@@ -71,6 +71,7 @@
 #include "platform/application/McpKeyService.h"
 #include "platform/application/OAuthService.h"
 #include "products/roadmap/application/OwnerProgress.h"
+#include "products/roadmap/application/NodeEdits.h"
 #include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/application/TendingService.h"
@@ -391,8 +392,11 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // verbatim, so the two stay indistinguishable.
   const char* webRootEnv = std::getenv("WINDMILL_WEB_ROOT");
 
-  // Rename goes through RoomRegistry so a live room's title stays coherent with the column.
-  auto treeRegistry = std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis, *registry, *systemClock);
+  // Rename goes through RoomRegistry so a live room's title stays coherent with the column. A removal takes the steps
+  // that open the tree from the owner's other trees through NodeEdits, the path MCP deletes nodes by.
+  auto nodeEdits = std::make_shared<NodeEdits>(*registry, *progressService, *bus, *systemClock);
+  auto treeRegistry =
+      std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis, *registry, *nodeEdits, *systemClock);
   auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(pool);
   // The spend ledger the ceilings read back; the Amplitude mirror below is only the eyes.
   auto aiUsageRepo = std::make_shared<PgAiUsageRepository>(pool);
@@ -600,7 +604,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* mcpOriginsEnv = std::getenv("WINDMILL_MCP_ALLOWED_ORIGINS");
   const std::set<std::string> mcpOrigins = parseOriginList(mcpOriginsEnv ? mcpOriginsEnv : "");
 
-  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *systemClock, *treeRegistry, *bus,
+  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *systemClock, *treeRegistry, *nodeEdits,
                                                  appBaseUrl);
 
   // Tending runs a server-side agent over the same tools MCP drives, on the same ANTHROPIC_API_KEY

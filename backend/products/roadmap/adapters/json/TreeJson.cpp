@@ -104,6 +104,33 @@ Json::Value toJson(const TreeSummary& summary) {
   return row;
 }
 
+Json::Value toJson(const std::vector<OpeningSteps>& openers) {
+  Json::Value rows(Json::arrayValue);
+  for (const OpeningSteps& opener : openers) {
+    Json::Value row(Json::objectValue);
+    row["treeId"] = opener.tree.str();
+    row["steps"] = opener.steps;
+    rows.append(row);
+  }
+  return rows;
+}
+
+Json::Value toJson(const Cascade& cascade) {
+  Json::Value body(Json::objectValue);
+  body["removed"] = Json::Value(Json::arrayValue);
+  for (const auto& [tree, nodes] : cascade.removed) {
+    Json::Value row(Json::objectValue);
+    row["treeId"] = tree.str();
+    row["nodeIds"] = Json::Value(Json::arrayValue);
+    for (const NodeId& node : nodes) row["nodeIds"].append(node.str());
+    body["removed"].append(row);
+  }
+  if (cascade.incomplete.empty()) return body;
+  body["incomplete"] = Json::Value(Json::arrayValue);
+  for (const TreeId& tree : cascade.incomplete) body["incomplete"].append(tree.str());
+  return body;
+}
+
 Json::Value toJson(const std::map<NodeId, Opening>& openings, const std::set<TreeId>& leadingBack) {
   Json::Value opens(Json::objectValue);
   for (const auto& [node, opening] : openings) {

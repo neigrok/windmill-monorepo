@@ -65,6 +65,21 @@ constexpr std::size_t kMaxTreeLoops = 50;
 constexpr std::size_t kMaxLoopPath = 8;
 constexpr std::size_t kMaxDanglingPointers = 50;
 
+// The steps of one of an owner's trees that open another of theirs: `steps` of them, in `tree`.
+struct OpeningSteps {
+  TreeId tree;
+  int steps = 0;
+  bool operator==(const OpeningSteps&) const = default;
+};
+
+// What went with a removed tree from the owner's other trees: per tree whose steps opened it, in id order, those steps,
+// deleted; and the trees whose steps could not be deleted, which keep them.
+struct Cascade {
+  std::map<TreeId, std::vector<NodeId>> removed;
+  std::vector<TreeId> incomplete;
+  bool operator==(const Cascade&) const = default;
+};
+
 // One tree on the way from the tree a node opens back to the node's own tree.
 struct TreeOnLoop {
   TreeId tree;
@@ -141,6 +156,9 @@ public:
   LatestMark completedAt(const TreeId& tree) const;
   // The standing trees whose pointers lead to `tree`, itself among them when it stands.
   std::set<TreeId> leadingBackTo(const TreeId& tree) const;
+  // The other standing trees whose nodes open `tree`, in id order, each with how many of its nodes do. The tree's own
+  // pointers at itself go with it and are not among them.
+  std::vector<OpeningSteps> openersOf(const TreeId& tree) const;
   // The way back to `tree` from every standing tree that leads to it; none when `tree` does not stand.
   WaysBack waysBackTo(const TreeId& tree) const;
   // What is wrong with `pointers`, the tree each node of `tree` opens: the loops of trees through `tree` and the
