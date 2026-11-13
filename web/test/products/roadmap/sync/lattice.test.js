@@ -94,7 +94,7 @@ test('an import that re-sends a step the tree holds keeps its creation, so the c
   ];
   const imported = {
     nodes: [{ id: 'a', createdAt: '0:0:', deletedAt: '0:0:', label: 'A', labelAt: '1004:0:srv', icon: '', iconAt: '0:0:',
-      color: 'terracotta', colorAt: '0:0:', order: '', orderAt: '0:0:', positionAt: '0:0:', statusAt: '0:0:',
+      color: 'terracotta', colorAt: '0:0:', order: '', orderAt: '0:0:', statusAt: '0:0:',
       description: '', descriptionAt: '0:0:', links: [], linksAt: '0:0:' }],
     edges: [{ from: 'x', to: 'a', addedAt: '1004:0:srv', removedAt: '0:0:' }],
   };

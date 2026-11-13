@@ -47,14 +47,12 @@ std::size_t byteOffsetOfCodePoint(const std::string& utf8, std::size_t index);
 
 struct RenameNode { NodeId id; std::string label; };
 struct SetNodeColor { NodeId id; NodeColor color; };
-struct RepositionNode { NodeId id; Vec2 position; };
 struct CreateNode {
   NodeId id;
   std::string label;
   std::string icon;
   NodeColor color = NodeColor::terracotta;
   std::vector<NodeId> prerequisites;
-  std::optional<Vec2> position;
   std::string description;
   std::vector<Link> links;
   // The tree the node opens. Set, it is written, and an empty id opens none: a create on an id a
@@ -78,18 +76,21 @@ struct AddEdge { NodeId from; NodeId to; };
 struct RemoveEdge { NodeId from; NodeId to; };
 struct ReconnectEdge { NodeId oldFrom; NodeId oldTo; NodeId newFrom; NodeId newTo; };
 struct DeleteNode { NodeId id; };
+// Written by nothing; a stored row of any of these decodes and replays as nothing. A row is logged only after the
+// lattice holding its effect is saved, so a replay never needs one to act. A node holds no position, so a
+// RepositionNode row has nothing to set.
+struct RepositionNode {};
 struct TransitiveReduction {};
-// Drop every edge no valid DAG keeps — self-edges and edges to/from an absent node — in one op.
 struct PruneDangling {};
 
 // Legend commands, on the same op log / undo / broadcast machinery as the node/edge commands.
 // RecolorKind is atomic: it swaps a kind's hue *and* repaints every node wearing the old hue.
 struct RenameKind { KindId id; std::string label; };
-// Each register DescribeKind carries is written; one it leaves unset keeps the kind's value.
-struct DescribeKind { KindId id; std::optional<std::string> description; std::optional<bool> crossBranchExempt; };
-// A kind's label, description and cross-branch exemption may be seeded inline at creation, so a
-// legend entry lands in one op.
-struct AddKind { KindId id; NodeColor hue; std::string label; std::string description; bool crossBranchExempt = false; };
+// A description it carries is written. A stored row that carried none sets nothing: it replays as nothing and the
+// feed skips it.
+struct DescribeKind { KindId id; std::optional<std::string> description; };
+// A kind's label and description may be seeded inline at creation, so a legend entry lands in one op.
+struct AddKind { KindId id; NodeColor hue; std::string label; std::string description; };
 struct RemoveKind { KindId id; };
 struct ReorderKinds { std::vector<KindId> order; };
 struct RecolorKind { KindId id; NodeColor hue; };
@@ -121,7 +122,6 @@ struct NodePatch {
   std::optional<std::string> description;
   std::optional<std::string> appendDescription;
   HueChoice hue;
-  std::optional<Vec2> position;
   std::optional<std::vector<Link>> links;
   std::optional<std::vector<Link>> addLinks;
   std::optional<TreeId> opens;  // an empty id clears the tree the node opens
@@ -242,8 +242,8 @@ bool isBlankGuide(const std::string& guide);
 std::optional<Admission> admitStampedGuide(const std::string& guide);
 
 // The single feed-worthy deed a subgraph delta represents, read off which lattice fields the frame
-// sets. Salience order: a node's own life, then legend deeds, then a node's fields, then edges. A
-// position-only or empty frame is nullopt.
+// sets. Salience order: a node's own life, then legend deeds, then a node's fields, then edges. A frame that sets
+// none of these is nullopt.
 std::optional<Command> headline(const GraphState& graph, const LegendState& legend);
 
 }

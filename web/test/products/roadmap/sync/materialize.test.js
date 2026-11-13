@@ -372,7 +372,7 @@ test('CreateNode prerequisites are deduplicated and stamped with the node in one
   const writes = materialize({ kind: 'CreateNode', id: 'new', label: 'New', description: 'Description', color: 'sky', prerequisites: ['a', 'b', 'a'] }, lattice, { tick: () => at });
   assert.deepEqual(writes, {
     nodes: [{ id: 'new', createdAt: stamp, label: 'New', labelAt: stamp, icon: '', iconAt: stamp,
-      color: 'sky', colorAt: stamp, order: 'a0', orderAt: stamp, position: null, positionAt: stamp,
+      color: 'sky', colorAt: stamp, order: 'a0', orderAt: stamp,
       description: 'Description', descriptionAt: stamp }],
     edges: [{ from: 'a', to: 'new', addedAt: stamp }, { from: 'b', to: 'new', addedAt: stamp }], kinds: [],
   });

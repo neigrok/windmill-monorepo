@@ -847,7 +847,9 @@ Partial grafts join structure confirmation, and every complete progress graft re
 Lost server writes then become pending and replay; write replies and heartbeat pongs settle unanswered frames.
 Each local gesture contributes one HLC stamp and its written register references. Pending gestures persist with each lane, survive retries and reload, and clear on confirmation of
 their fields or discard. A partial acknowledgement or a newer unrelated write cannot confirm the rest of a
-gesture. Legacy records recover distinct surviving stamps; overwritten gestures cannot be reconstructed.
+gesture. Legacy records recover distinct surviving stamps; overwritten gestures cannot be reconstructed. A stored
+gesture's reference to a register its lane's lattice does not hold — a node position a stored record still names,
+or a mark whose stamp no mark can carry — is dropped on load and save (`retainedGestures`), so it is never owed.
 
 The session keeps one refusal per lane; ownership and authentication refusals keep their existing host path.
 Reading the snapshot does not mutate those facts, and status emission does no work without subscribers. The

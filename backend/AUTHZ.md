@@ -80,7 +80,7 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   confirms that a private id names something; a readable tree the caller does not own answers `403`.
 - **Forks** require read access to the source and create a new tree owned by the recipient; they do
   not require write access to the source.
-- **Progress marks** (WS `progress`, MCP `set_progress`) are not document writes and are not
+- **Progress marks** (WS `progress`, an MCP `status` row) are not document writes and are not
   owner-gated. They gate on `canRead` alone, and each caller writes only their own per-user overlay
   (`node_progress` is keyed by `user_id`). Any signed-in reader may mark any tree they can read — the
   demo included — and nobody's marks are visible in anyone else's overlay. The `canRead` gate is

@@ -12,7 +12,6 @@ Legend::Legend(const LegendState& state) {
     record.hue = {kind.hue, kind.hueAt};
     record.label = {kind.label, kind.labelAt};
     record.description = {kind.description, kind.descriptionAt};
-    record.crossBranchExempt = {kind.crossBranchExempt, kind.crossBranchExemptAt};
     record.rank = {kind.rank, kind.rankAt};
     kinds_[kind.id] = std::move(record);
   }
@@ -26,22 +25,25 @@ Legend::Legend(const std::vector<Kind>& kinds, const Hlc& at) {
     record.hue.merge(kind.hue, at);
     record.label.merge(kind.label, at);
     record.description.merge(kind.description, at);
-    record.crossBranchExempt.merge(kind.crossBranchExempt, at);
     record.rank.merge(static_cast<double>(i), at);
   }
 }
 
-void Legend::join(const LegendState& state) {
+bool Legend::join(const LegendState& state) {
+  bool took = false;
   for (const KindStateEntry& kind : state.kinds) {
-    KindRecord& record = kinds_[kind.id];
-    record.life.add(kind.createdAt);
-    record.life.remove(kind.deletedAt);
-    record.hue.merge(kind.hue, kind.hueAt);
-    record.label.merge(kind.label, kind.labelAt);
-    record.description.merge(kind.description, kind.descriptionAt);
-    record.crossBranchExempt.merge(kind.crossBranchExempt, kind.crossBranchExemptAt);
-    record.rank.merge(kind.rank, kind.rankAt);
+    const auto [held, fresh] = kinds_.try_emplace(kind.id);
+    KindRecord& record = held->second;
+    bool kindTook = record.life.add(kind.createdAt);
+    kindTook |= record.life.remove(kind.deletedAt);
+    kindTook |= record.hue.merge(kind.hue, kind.hueAt);
+    kindTook |= record.label.merge(kind.label, kind.labelAt);
+    kindTook |= record.description.merge(kind.description, kind.descriptionAt);
+    kindTook |= record.rank.merge(kind.rank, kind.rankAt);
+    if (fresh && !kindTook) kinds_.erase(held);
+    took |= kindTook;
   }
+  return took;
 }
 
 std::vector<Kind> Legend::bornWith(const std::vector<Kind>& sent) {
@@ -79,10 +81,6 @@ void Legend::setLabel(const KindId& id, const std::string& label, const Hlc& at)
 
 void Legend::setDescription(const KindId& id, const std::string& description, const Hlc& at) {
   kinds_[id].description.merge(description, at);
-}
-
-void Legend::setCrossBranchExempt(const KindId& id, bool exempt, const Hlc& at) {
-  kinds_[id].crossBranchExempt.merge(exempt, at);
 }
 
 void Legend::setHue(const KindId& id, NodeColor hue, const Hlc& at) {
@@ -130,16 +128,14 @@ std::optional<Kind> Legend::view(const KindId& id) const {
   auto it = kinds_.find(id);
   if (it == kinds_.end() || !it->second.life.present()) return std::nullopt;
   const KindRecord& record = it->second;
-  return Kind{id, record.hue.value, record.label.value, record.description.value,
-              record.crossBranchExempt.value};
+  return Kind{id, record.hue.value, record.label.value, record.description.value};
 }
 
 std::vector<Kind> Legend::kinds() const {
   std::vector<std::pair<double, Kind>> ordered;
   for (const auto& [id, record] : kinds_) {
     if (record.life.present())
-      ordered.push_back({record.rank.value, Kind{id, record.hue.value, record.label.value,
-                                                  record.description.value, record.crossBranchExempt.value}});
+      ordered.push_back({record.rank.value, Kind{id, record.hue.value, record.label.value, record.description.value}});
   }
   std::sort(ordered.begin(), ordered.end(), [](const auto& a, const auto& b) {
     if (a.first != b.first) return a.first < b.first;
@@ -177,8 +173,6 @@ std::optional<KindStateEntry> Legend::exportKind(const KindId& id) const {
   entry.labelAt = record.label.stamp;
   entry.description = record.description.value;
   entry.descriptionAt = record.description.stamp;
-  entry.crossBranchExempt = record.crossBranchExempt.value;
-  entry.crossBranchExemptAt = record.crossBranchExempt.stamp;
   entry.rank = record.rank.value;
   entry.rankAt = record.rank.stamp;
   return entry;

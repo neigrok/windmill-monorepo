@@ -36,7 +36,7 @@ TEST(a_bare_url_string_parses_as_a_labelless_link) {
 
 TEST(graph_state_round_trips_description_and_links_with_stamps) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   g.setDescription(nid("a"), "body", at(2));
   g.setLinks(nid("a"), {Link{"PR", "https://p"}}, at(3));
 
@@ -46,7 +46,7 @@ TEST(graph_state_round_trips_description_and_links_with_stamps) {
 
 TEST(graph_state_round_trips_the_order_register_with_its_stamp) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   GraphState orderWrite;
   NodeStateEntry entry; entry.id = nid("a"); entry.order = "a3"; entry.orderAt = at(4);
   orderWrite.nodes.push_back(entry);
@@ -73,7 +73,7 @@ TEST(tree_document_round_trips_the_order_key) {
 
 TEST(graph_state_carries_opens_with_its_stamp_and_a_node_without_the_field_clears_nothing) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   g.setOpens(nid("a"), TreeId{"t_9362d9bc883e0a1e"}, at(4));
 
   const Json::Value json = toJson(g.exportState());
@@ -177,41 +177,6 @@ TEST(recording_over_a_node_moves_it_between_the_projected_sets) {
   CHECK_EQ(progress.cleared, (std::set<NodeId>{nid("b")}));
   CHECK_EQ(progress.marks.size(), 2u);
   CHECK_EQ(progress.marks.at(nid("a")).status, ProgressStatus::complete);
-}
-
-TEST(the_document_codec_carries_a_kinds_exemption_and_omits_it_when_false) {
-  TreeData data;
-  data.id = TreeId{"t"};
-  data.kinds = {Kind{KindId{"build"}, NodeColor::sky, "Build", "", false},
-                Kind{KindId{"drill"}, NodeColor::gold, "Drill", "", true}};
-
-  Json::Value json = toJson(data);
-  CHECK_FALSE(json["kinds"][0].isMember("crossBranchExempt"));
-  CHECK_EQ(json["kinds"][1]["crossBranchExempt"].asBool(), true);
-
-  TreeData back = treeFromJson(parse(dump(json)), TreeId{"t"}).value();
-  REQUIRE_EQ(back.kinds.size(), 2u);
-  CHECK_FALSE(back.kinds[0].crossBranchExempt);
-  CHECK(back.kinds[1].crossBranchExempt);
-  CHECK_FALSE(treeFromJson(parse("{\"kinds\": [{\"id\": \"x\", \"crossBranchExempt\": \"yes\"}]}"), TreeId{"t"})
-                  .has_value());
-}
-
-TEST(legend_state_round_trips_the_exemption_with_its_stamp) {
-  Legend legend = Legend::seededDefaults(at(1));
-  legend.setCrossBranchExempt(KindId{"build"}, true, at(4));
-
-  Json::Value json = toJson(legend.exportState());
-  CHECK_EQ(json[0]["crossBranchExempt"].asBool(), true);
-  CHECK_EQ(json[0]["crossBranchExemptAt"].asString(), toString(at(4)));
-  CHECK(legendStateFromJson(parse(dump(json))) == legend.exportState());
-
-  json[0].removeMember("crossBranchExempt");  // a frame from a peer that never carried the register
-  json[0].removeMember("crossBranchExemptAt");
-  const KindStateEntry stale = legendStateFromJson(json).kinds[0];
-  CHECK_EQ(stale.id, KindId{"build"});
-  CHECK_FALSE(stale.crossBranchExempt);
-  CHECK_EQ(stale.crossBranchExemptAt, Hlc{});
 }
 
 // The marker's word rides the register only when it was given: a mark without it stays the shape

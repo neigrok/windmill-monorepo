@@ -92,7 +92,7 @@ async function plant(site) {
     if ((body?.marks ?? []).length > 0) continue;
     const updates = fixture.nodes.filter((node) => node.status === 'complete').map((node) => ({ nodeId: node.id, status: 'complete' }));
     for (let start = 0; start < updates.length; start += PROGRESS_CHUNK) {
-      await callTool(site, session, 'roadmap_set_progress', { treeId: fixture.id, updates: updates.slice(start, start + PROGRESS_CHUNK) });
+      await callTool(site, session, 'roadmap_update_nodes', { treeId: fixture.id, updates: updates.slice(start, start + PROGRESS_CHUNK) });
     }
   }
   return planted;

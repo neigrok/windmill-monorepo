@@ -24,7 +24,7 @@ struct RecordingToolHost : ToolHost {
 
   std::vector<ToolDeclaration> declareTools() const override {
     std::vector<ToolDeclaration> tools;
-    for (const char* name : {"get_tree", "create_node", "rename_node", "import_subgraph", "delete_tree", "list_trees",
+    for (const char* name : {"get_tree", "create_node", "update_nodes", "import_subgraph", "delete_tree", "list_trees",
                              "create_tree"}) {
       Json::Value entry(Json::objectValue);
       entry["name"] = name;
@@ -37,8 +37,8 @@ struct RecordingToolHost : ToolHost {
     calls.push_back({name, arguments, caller.user.str()});
     Json::Value out(Json::objectValue);
     out["ok"] = true;
-    // Mirror applyEdit: EVERY single-node edit echoes the id it touched, so the recorder keys on the tool name.
-    if (name == "create_node" || name == "rename_node") out["id"] = arguments.get("id", "minted").asString();
+    // Mirror applyEdit: create_node echoes the id it lands, so the recorder keys on the tool name.
+    if (name == "create_node") out["id"] = arguments.get("id", "minted").asString();
     if (name == "import_subgraph") out["nodeCollisions"] = Json::Value(Json::arrayValue);  // nothing pre-existing
     return ToolResult::json(out);
   }
@@ -60,8 +60,8 @@ struct ClosedSchemaToolHost : RecordingToolHost {
     create["name"] = "create_node";
     create["inputSchema"] = closedObject({"treeId", "label"});
 
-    Json::Value item = closedObject({"id", "position"});
-    item["properties"]["position"] = closedObject({"x", "y"});
+    Json::Value item = closedObject({"id", "link"});
+    item["properties"]["link"] = closedObject({"label", "url"});
     Json::Value import(Json::objectValue);
     import["name"] = "import_subgraph";
     import["inputSchema"] = closedObject({"treeId", "nodes"});
@@ -172,7 +172,7 @@ TEST(scoped_tool_host_records_exactly_the_nodes_the_tend_planted) {
 
   Json::Value a(Json::objectValue); a["id"] = "n1"; scoped.callTool("create_node", a, u);
   Json::Value b(Json::objectValue); b["id"] = "n2"; scoped.callTool("create_node", b, u);
-  Json::Value renamed(Json::objectValue); renamed["id"] = "existing"; scoped.callTool("rename_node", renamed, u);
+  Json::Value renamed(Json::objectValue); renamed["nodeId"] = "existing"; scoped.callTool("update_nodes", test::asUpdate(renamed), u);
   Json::Value imp(Json::objectValue);
   Json::Value nodes(Json::arrayValue);
   Json::Value n3(Json::objectValue); n3["id"] = "n3"; nodes.append(n3);
@@ -212,16 +212,16 @@ TEST(scoped_tool_host_refuses_an_unknown_nested_argument_by_its_json_path) {
   const ToolResult refused = scoped.callTool("import_subgraph", args, tender("u1"));
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
-           std::string("import_subgraph: unknown argument \"nodes[1].deleted\". nodes[1] takes: id, position."));
+           std::string("import_subgraph: unknown argument \"nodes[1].deleted\". nodes[1] takes: id, link."));
   CHECK_EQ(inner.calls.size(), std::size_t{0});
 
   Json::Value deep(Json::objectValue);
-  Json::Value placed(Json::objectValue); placed["id"] = "a";
-  placed["position"]["x"] = "1";
-  placed["position"]["z"] = "2";
-  deep["nodes"].append(placed);
+  Json::Value linked(Json::objectValue); linked["id"] = "a";
+  linked["link"]["url"] = "https://windmill.works";
+  linked["link"]["title"] = "Home";
+  deep["nodes"].append(linked);
   CHECK_EQ(message(scoped.callTool("import_subgraph", deep, tender("u1"))),
-           std::string("import_subgraph: unknown argument \"nodes[0].position.z\". nodes[0].position takes: x, y."));
+           std::string("import_subgraph: unknown argument \"nodes[0].link.title\". nodes[0].link takes: label, url."));
   CHECK_EQ(inner.calls.size(), std::size_t{0});
 }
 
@@ -304,21 +304,16 @@ TEST(scoped_tool_host_offers_a_tend_no_argument_and_no_field_for_the_tree_a_node
   std::vector<std::string> plainlyNaming;
   for (const auto& [name, schema] : plain)
     if (dump(schema).find("\"opens\"") != std::string::npos) plainlyNaming.push_back(name);
-  CHECK_EQ(plainlyNaming, (std::vector<std::string>{"annotate_node", "create_node", "find_nodes", "get_nodes",
-                                                    "get_tree", "import_subgraph", "patch_nodes", "update_nodes"}));
+  CHECK_EQ(plainlyNaming, (std::vector<std::string>{"create_node", "find_nodes", "get_nodes", "get_tree",
+                                                    "import_subgraph", "update_nodes"}));
   for (const auto& [name, schema] : tended) CHECK_EQ(dump(schema).find("\"opens\""), std::string::npos);
 
   Json::Value create = plain.at("create_node");
   create["properties"].removeMember("opens");
   CHECK_EQ(tended.at("create_node"), create);
-  Json::Value annotate = plain.at("annotate_node");
-  annotate["properties"].removeMember("opens");
-  CHECK_EQ(tended.at("annotate_node"), annotate);
-  for (const char* batch : {"patch_nodes", "update_nodes"}) {
-    Json::Value patch = plain.at(batch);
-    patch["properties"]["updates"]["items"]["properties"].removeMember("opens");
-    CHECK_EQ(tended.at(batch), patch);
-  }
+  Json::Value update = plain.at("update_nodes");
+  update["properties"]["updates"]["items"]["properties"].removeMember("opens");
+  CHECK_EQ(tended.at("update_nodes"), update);
   Json::Value import = plain.at("import_subgraph");
   import["properties"]["nodes"]["items"]["properties"].removeMember("opens");
   CHECK_EQ(tended.at("import_subgraph"), import);
@@ -326,11 +321,11 @@ TEST(scoped_tool_host_offers_a_tend_no_argument_and_no_field_for_the_tree_a_node
     Json::Value schema = plain.at(read);
     schema["properties"].removeMember("includeGuides");
     schema["properties"]["fields"]["items"]["enum"] =
-        test::list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position", "status",
+        test::list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "status",
                     "seedStatus", "state", "summary", "description", "links", "url"});
     CHECK_EQ(tended.at(read), schema);
   }
-  CHECK_EQ(tended.at("rename_node"), plain.at("rename_node"));
+  CHECK_EQ(tended.at("change_edges"), plain.at("change_edges"));
 }
 
 // A run that names the pointer anyway is told why in one sentence, wherever it names it, and the
@@ -350,8 +345,8 @@ TEST(scoped_tool_host_refuses_the_tree_a_node_opens_wherever_a_tend_names_it_and
   const std::vector<std::pair<const char*, const char*>> calls = {
       {"create_node", R"({"label":"B","opens":"t_sub"})"},
       {"create_node", R"({"label":"B","opens":null})"},
-      {"annotate_node", R"({"nodeId":"a","opens":""})"},
-      {"patch_nodes", R"({"updates":[{"nodeId":"a","label":"Renamed","opens":"t_sub"}]})"},
+      {"update_nodes", R"({"updates":[{"nodeId":"a","opens":""}]})"},
+      {"update_nodes", R"({"updates":[{"nodeId":"a","label":"Renamed","opens":"t_sub"}]})"},
       {"import_subgraph", R"({"nodes":[{"id":"n","label":"N"},{"id":"a","opens":""}]})"},
       {"import_subgraph", R"({"nodes":[{"id":"a","opens":"t_sub"}],"dryRun":true})"},
       {"get_tree", R"({"fields":["id","opens"]})"},
@@ -374,7 +369,7 @@ TEST(scoped_tool_host_refuses_the_tree_a_node_opens_wherever_a_tend_names_it_and
     observed.push_back(completion.operation + " " + completion.door + " " + completion.outcome);
   CHECK_EQ(observed, (std::vector<std::string>{
                          "roadmap.create_node Coach refused", "roadmap.create_node Coach refused",
-                         "roadmap.annotate_node Coach refused", "roadmap.patch_nodes Coach refused",
+                         "roadmap.update_nodes Coach refused", "roadmap.update_nodes Coach refused",
                          "roadmap.import_subgraph Coach refused", "roadmap.import_subgraph Coach refused"}));
 }
 
@@ -506,15 +501,15 @@ TEST(scoped_tool_host_reads_the_state_of_a_node_that_follows_the_tree_it_opens) 
 
   CHECK_EQ(test::body(scoped.callTool("get_tree", parse(R"({"fields":["id","state"]})"), h.actor))["tree"]["nodes"],
            parse(R"([{"id":"idea","state":"available"},{"id":"next","state":"locked"}])"));
-  CHECK_FALSE(h.tools.callTool("set_progress", parse(R"({"treeId":"t_sub","nodeId":"s","status":"complete"})"), h.actor).isError);
+  CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t_sub","updates":[{"nodeId":"s","status":"complete"}]})"), h.actor).isError);
   CHECK_EQ(test::body(scoped.callTool("get_tree", parse(R"({"fields":["id","state"]})"), h.actor))["tree"]["nodes"],
            parse(R"([{"id":"idea","state":"complete"},{"id":"next","state":"available"}])"));
   CHECK_EQ(test::body(scoped.callTool("find_nodes", parse(R"({"state":"available","fields":["id"]})"), h.actor)),
            parse(R"({"count":1,"nodes":[{"id":"next"}]})"));
 }
 
-// A tend marks as the owner, so its mark on such a node is refused as the owner's is, through set_progress or update_nodes,
-// in a sentence that names no tree.
+// A tend marks as the owner, so its mark on such a node is refused as the owner's is, in a sentence that names no tree:
+// alone, its call writes nothing and completes as opens-a-tree; beside an edit, the edit lands.
 TEST(scoped_tool_host_refuses_a_tends_mark_on_a_node_that_opens_a_tree_in_a_sentence_that_names_no_tree) {
   test::Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
@@ -523,38 +518,36 @@ TEST(scoped_tool_host_refuses_a_tends_mark_on_a_node_that_opens_a_tree_in_a_sent
   std::vector<WriteCompletion> completions;
   installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
 
-  const ToolResult single = scoped.callTool("set_progress", parse(R"({"nodeId":"idea","status":"complete"})"), h.actor);
-  const ToolResult batch = scoped.callTool("set_progress", parse(R"({"updates":[{"nodeId":"idea","status":"complete"},{"nodeId":"a","status":"complete"}]})"), h.actor);
-  const ToolResult marksAlone = scoped.callTool("update_nodes", parse(R"({"updates":[{"nodeId":"idea","status":"complete"}]})"), h.actor);
+  const ToolResult marksAlone = scoped.callTool("update_nodes", parse(R"({"updates":[{"nodeId":"idea","status":"complete"},
+      {"nodeId":"a","status":"complete"}]})"), h.actor);
+  const ToolResult refusedAlone = scoped.callTool("update_nodes", parse(R"({"updates":[{"nodeId":"idea","status":"complete"}]})"), h.actor);
   const ToolResult besideAnEdit = scoped.callTool("update_nodes", parse(R"({"updates":[{"nodeId":"a","label":"A2"},
       {"nodeId":"idea","status":"none"}]})"), h.actor);
   installWriteSink({});
 
-  CHECK(single.isError);
-  CHECK_EQ(test::message(single), std::string("set_progress: \"idea\" opens a tree: it is complete when that tree is and takes "
-                                               "no mark of its own — mark the steps of the tree it opens"));
-  CHECK_FALSE(batch.isError);
-  CHECK_EQ(test::body(batch), parse(R"({"results":[
-      {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
-      {"nodeId":"a","status":"complete","prerequisitesMet":true}]})"));
-  for (const ToolResult* marked : {&marksAlone, &besideAnEdit}) {
+  const std::string refused = R"({"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"})";
+  const std::string fellShort = R"("progressApplied":false,"progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.","progressRefused":["idea"])";
+  for (const ToolResult* marked : {&marksAlone, &refusedAlone, &besideAnEdit}) {
     CHECK_FALSE(marked->isError);
-    const Json::Value receipt = test::body(*marked);
-    CHECK_EQ(receipt["progress"], parse(R"([
-        {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}])"));
-    CHECK_EQ(receipt["progressRefused"], parse(R"(["idea"])"));
-    CHECK_EQ(receipt["progressApplied"], Json::Value(false));
-    const std::string text = receipt.toStyledString();
+    const std::string text = test::body(*marked).toStyledString();
     CHECK(text.find("t_sub") == std::string::npos);
     CHECK(text.find("Deep dive") == std::string::npos);
   }
-  CHECK_EQ(test::body(besideAnEdit)["changedNodeIds"], parse(R"(["a"])"));
+  CHECK_EQ(test::body(marksAlone), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
+    "introducedDiagnostics":[],"progress":[)" + refused + R"(,{"nodeId":"a","status":"complete","prerequisitesMet":true}],)" +
+                                         fellShort + R"(,"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea","a"]})"));
+  CHECK_EQ(test::body(refusedAlone), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
+    "introducedDiagnostics":[],"progress":[)" + refused + "]," + fellShort +
+                                           R"(,"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea"]})"));
+  CHECK_EQ(test::body(besideAnEdit), parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,
+    "introducedDiagnostics":[],"progress":[)" + refused + "]," + fellShort +
+                                           R"(,"seq":2,"treeId":"t","unchangedNodeIds":["idea"]})"));
   CHECK_EQ(test::body(h.call("get_progress", test::kNoArgs)), parse(R"({"completed":["a"],"outOfOrder":[]})"));
   std::vector<std::string> observed;
   for (const WriteCompletion& completion : completions)
     observed.push_back(completion.operation + " " + completion.door + " " + completion.outcome);
-  CHECK_EQ(observed, (std::vector<std::string>{"roadmap.set_progress Coach opens-a-tree", "roadmap.set_progress Coach ok",
-                                               "roadmap.update_nodes Coach opens-a-tree", "roadmap.update_nodes Coach ok"}));
+  CHECK_EQ(observed, (std::vector<std::string>{"roadmap.update_nodes Coach ok", "roadmap.update_nodes Coach opens-a-tree",
+                                               "roadmap.update_nodes Coach ok"}));
 }
 
 // Only the argument and the field are withheld: the word as a node's id or label is a tend's to use,
@@ -566,15 +559,15 @@ TEST(scoped_tool_host_leaves_a_nodes_pointer_alone_and_a_plain_caller_still_read
   ScopedToolHost scoped(h.tools, TreeId{"t"});
 
   CHECK_FALSE(scoped.callTool("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"Renamed"}]})"), h.actor).isError);
-  CHECK_FALSE(scoped.callTool("annotate_node", parse(R"({"nodeId":"a","description":"a note"})"), h.actor).isError);
+  CHECK_FALSE(scoped.callTool("update_nodes", test::asUpdate(parse(R"({"nodeId":"a","description":"a note"})")), h.actor).isError);
   CHECK_FALSE(scoped.callTool("create_node", parse(R"({"id":"opens","label":"opens","prerequisites":["a"]})"), h.actor).isError);
   CHECK_EQ(parse(message(scoped.callTool("get_nodes", parse(R"({"nodeIds":["opens","a"],"fields":["id","label"]})"), h.actor))),
            parse(R"({"treeId":"t","seq":4,"nodes":[{"id":"opens","label":"opens"},{"id":"a","label":"Renamed"}],"missingNodeIds":[]})"));
 
   CHECK_EQ(test::body(h.call("get_tree", parse(R"({"fields":["id","label","opens"]})")))["tree"]["nodes"],
            parse(R"([{"id":"a","label":"Renamed","opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}},{"id":"opens","label":"opens"}])"));
-  CHECK_FALSE(h.call("annotate_node", parse(R"({"nodeId":"opens","opens":"t_sub"})")).isError);
-  CHECK_FALSE(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":""}]})")).isError);
+  CHECK_FALSE(h.call("update_nodes", test::asUpdate(parse(R"({"nodeId":"opens","opens":"t_sub"})"))).isError);
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","opens":""}]})")).isError);
   CHECK_EQ(test::body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
            parse(R"([{"id":"a"},{"id":"opens","opens":{"treeId":"t_sub","title":"Deep dive","state":"open"}}])"));
 }
@@ -604,10 +597,8 @@ TEST(scoped_tool_host_names_no_withheld_word_among_the_keys_an_unknown_argument_
   ScopedToolHost scoped(h.tools, TreeId{"t"});
 
   CHECK_EQ(message(scoped.callTool("create_node", parse(R"({"label":"B","open":"t_sub"})"), h.actor)),
-           std::string("create_node: unknown argument \"open\". This tool takes: color, description, icon, id, kind, "
-                       "label, links, parentId, prerequisites, treeId, x, y."));
+           std::string("create_node: unknown argument \"open\". This tool takes: color, description, icon, id, kind, label, links, parentId, prerequisites, treeId."));
   CHECK_EQ(message(scoped.callTool("import_subgraph", parse(R"({"nodes":[{"id":"n","open":"t_sub"}]})"), h.actor)),
-           std::string("import_subgraph: unknown argument \"nodes[0].open\". nodes[0] takes: color, description, icon, "
-                       "id, kind, label, links, order, position, prerequisites, seedStatus."));
+           std::string("import_subgraph: unknown argument \"nodes[0].open\". nodes[0] takes: color, description, icon, id, kind, label, links, order, prerequisites, seedStatus."));
   CHECK_EQ(test::body(h.call("get_tree", test::kNoArgs))["count"].asUInt64(), 0u);
 }

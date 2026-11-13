@@ -114,6 +114,17 @@ TEST(join_folds_a_partial_legend_and_is_commutative) {
   CHECK(renamedFirst.has(kid("infra")));
 }
 
+// A kind that carries no stamp is no information: the join takes nothing and keeps no record of the id it named.
+TEST(join_of_a_kind_that_carries_no_stamp_takes_nothing_and_leaves_the_legend_as_it_was) {
+  Legend legend = Legend::seededDefaults(at(1));
+  const LegendState before = legend.exportState();
+  KindStateEntry ghost;
+  ghost.id = kid("ghost");
+
+  CHECK_FALSE(legend.join(LegendState{{ghost}}));
+  CHECK(legend.exportState() == before);
+}
+
 TEST(join_keeps_more_a_concurrent_edit_survives_a_delete_and_a_re_add_resurrects_it) {
   Legend seeded = Legend::seededDefaults(at(1));
 
@@ -131,30 +142,6 @@ TEST(join_keeps_more_a_concurrent_edit_survives_a_delete_and_a_re_add_resurrects
   converged.addKind(kid("learn"), NodeColor::olive, at(6, "a"));  // a strictly-later re-add wins
   CHECK(converged.has(kid("learn")));
   CHECK_EQ(converged.view(kid("learn"))->label, std::string("Study"));  // the latent edit resurrects with it
-}
-
-TEST(cross_branch_exempt_is_a_register_of_its_own_under_lww) {
-  Legend legend = Legend::seededDefaults(at(1));
-  CHECK_FALSE(legend.view(kid("build"))->crossBranchExempt);
-  CHECK_EQ(legend.exportKind(kid("build"))->crossBranchExemptAt, at(1));
-
-  legend.setCrossBranchExempt(kid("build"), true, at(5));
-  CHECK(legend.view(kid("build"))->crossBranchExempt);
-  legend.setCrossBranchExempt(kid("build"), false, at(3));  // an older write loses
-  CHECK(legend.view(kid("build"))->crossBranchExempt);
-  CHECK(legend.kinds()[0].crossBranchExempt);
-
-  KindStateEntry entry = *legend.exportKind(kid("build"));
-  CHECK_EQ(entry.crossBranchExempt, true);
-  CHECK_EQ(entry.crossBranchExemptAt, at(5));
-  CHECK_EQ(entry.descriptionAt, at(1));  // its own stamp, not the description's
-
-  Legend reloaded(legend.exportState());
-  CHECK(reloaded.view(kid("build"))->crossBranchExempt);
-  Legend joined = Legend::seededDefaults(at(1));
-  joined.join(legend.exportState());
-  CHECK(joined.view(kid("build"))->crossBranchExempt);
-  CHECK(joined.exportState() == legend.exportState());
 }
 
 TEST(a_kind_resolves_to_the_hue_it_wears_and_a_colour_beside_it_must_agree) {

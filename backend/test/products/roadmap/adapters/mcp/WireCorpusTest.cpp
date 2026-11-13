@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 24;
+constexpr int kWireCorpusVersion = 26;
 
 struct Step {
   const char* tool;
@@ -47,23 +47,28 @@ std::vector<Step> plan() {
                            {"prerequisites", strings({"root"})}})},
       {"create_node", obj({{"id", "sync"}, {"label", "Sync"}, {"color", "brick"}})},
       {"change_edges", parse(R"({"add":[{"from":"root","to":"sync"}]})")},
-      {"set_node_color", obj({{"nodeId", "sync"}, {"color", "plum"}})},
-      {"rename_node", obj({{"nodeId", "render"}, {"label", "Renderer Core"}})},
-      {"move_node", obj({{"nodeId", "root"}, {"x", 120}, {"y", 60}})},
-      {"annotate_node", obj({{"nodeId", "root"}, {"description", "the crown of the tree"},
-                             {"links", [] {
-                                Json::Value link(Json::objectValue);
-                                link["url"] = "https://windmill.works";
-                                link["label"] = "home";
-                                Json::Value array(Json::arrayValue);
-                                array.append(link);
-                                return array;
-                              }()}})},
-      {"annotate_node", obj({{"nodeId", "root"}, {"icon", "crown"},
-                             {"appendDescription", "shipped when render and sync are done"}})},
-      {"set_progress", obj({{"nodeId", "root"}, {"status", "complete"}})},
-      {"set_progress", obj({{"updates", [] {
+      {"update_nodes", obj({{"updates", [] {
+                               Json::Value link(Json::objectValue);
+                               link["url"] = "https://windmill.works";
+                               link["label"] = "home";
+                               Json::Value links(Json::arrayValue);
+                               links.append(link);
                                Json::Value array(Json::arrayValue);
+                               array.append(obj({{"nodeId", "sync"}, {"color", "plum"}}));
+                               array.append(obj({{"nodeId", "render"}, {"label", "Renderer Core"}}));
+                               array.append(obj({{"nodeId", "root"}, {"description", "the crown of the tree"},
+                                                 {"links", links}}));
+                               return array;
+                             }()}})},
+      {"update_nodes", obj({{"updates", [] {
+                               Json::Value array(Json::arrayValue);
+                               array.append(obj({{"nodeId", "root"}, {"icon", "crown"},
+                                                 {"appendDescription", "shipped when render and sync are done"}}));
+                               return array;
+                             }()}})},
+      {"update_nodes", obj({{"updates", [] {
+                               Json::Value array(Json::arrayValue);
+                               array.append(mark("root", "complete"));
                                array.append(mark("render", "active"));
                                array.append(mark("sync", "complete"));
                                return array;
@@ -92,25 +97,28 @@ std::vector<Step> plan() {
                                   return array;
                                 }()}})},
       // The harness holds one tree, so the tree a node opens is the tree it is in: a loop of trees the receipt and get_diagnostics name.
-      {"annotate_node", obj({{"nodeId", "docs"}, {"opens", "t"}})},
+      {"update_nodes", obj({{"updates", [] {
+                               Json::Value array(Json::arrayValue);
+                               array.append(obj({{"nodeId", "docs"}, {"opens", "t"}}));
+                               return array;
+                             }()}})},
       {"find_nodes", with("query", "render")},
       {"find_nodes", with("state", "locked")},
       {"get_tree", obj({{"fields", strings({"id", "label", "icon", "color", "order", "prerequisites",
-                                            "position", "status", "seedStatus", "state", "summary",
+                                            "status", "seedStatus", "state", "summary",
                                             "description", "links", "opens"})}})},
       {"get_diagnostics", kNoArgs},
       {"get_progress", kNoArgs},
-      {"get_health", kNoArgs},
-      // `docs` opens a tree, so it takes no mark: a batch answers its row refused beside the marks it records, an
+      // `docs` opens a tree, so it takes no mark: a call of marks answers its row refused beside the marks it records, an
       // out-of-order completion of `launch` (behind `docs`, which never completes) acknowledged among them, and an import
       // lists it in progressRefused beside its rows, `launch` sent back as get_progress answers it.
-      {"set_progress", obj({{"updates", [] {
-                               Json::Value array(Json::arrayValue);
-                               array.append(mark("docs", "complete"));
-                               array.append(obj({{"nodeId", "launch"}, {"status", "complete"}, {"outOfOrder", true}}));
-                               array.append(mark("render", "complete"));
-                               return array;
-                             }()}})},
+      {"update_nodes", obj({{"updates", [] {
+                              Json::Value array(Json::arrayValue);
+                              array.append(mark("docs", "complete"));
+                              array.append(obj({{"nodeId", "launch"}, {"status", "complete"}, {"outOfOrder", true}}));
+                              array.append(mark("render", "complete"));
+                              return array;
+                            }()}})},
       {"import_subgraph", obj({{"nodes", Json::Value(Json::arrayValue)},
                                {"progress", [] {
                                   Json::Value array(Json::arrayValue);
@@ -119,8 +127,8 @@ std::vector<Step> plan() {
                                   array.append(mark("sync", "none"));
                                   return array;
                                 }()}})},
-      // update_nodes edits a node and marks two beside it: the mark on `docs` is refused there as set_progress refuses it,
-      // and the receipt lists it in progressRefused as an import does.
+      // update_nodes edits a node and marks two beside it: the mark on `docs` is refused there too, and the receipt lists
+      // it in progressRefused as an import does.
       {"update_nodes", obj({{"updates", [] {
                               Json::Value array(Json::arrayValue);
                               array.append(obj({{"nodeId", "render"}, {"label", "Renderer v2"}}));
@@ -128,10 +136,23 @@ std::vector<Step> plan() {
                               array.append(mark("sync", "complete"));
                               return array;
                             }()}})},
-      // Four deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end.
-      {"set_progress", obj({{"nodeId", "docs"}, {"status", "complete"}})},
-      {"set_progress", obj({{"nodeId", "no-such-node"}, {"status", "active"}})},
-      {"annotate_node", with("nodeId", "root")},
+      // A call whose every mark is refused writes nothing and is no error.
+      {"update_nodes", obj({{"updates", [] {
+                              Json::Value array(Json::arrayValue);
+                              array.append(mark("docs", "complete"));
+                              return array;
+                            }()}})},
+      // Three deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end.
+      {"update_nodes", obj({{"updates", [] {
+                               Json::Value array(Json::arrayValue);
+                               array.append(mark("no-such-node", "active"));
+                               return array;
+                             }()}})},
+      {"update_nodes", obj({{"updates", [] {
+                               Json::Value array(Json::arrayValue);
+                               array.append(with("nodeId", "root"));
+                               return array;
+                             }()}})},
       {"create_node", obj({{"label", "Elsewhere"}, {"opens", "t_0000000000000000"}})},
   };
 }

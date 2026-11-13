@@ -30,7 +30,6 @@ NodeStateEntry maskNode(const NodeStateEntry& node, const VersionVector& since) 
   if (!since.covers(node.iconAt))     { masked.icon = node.icon;         masked.iconAt = node.iconAt; }
   if (!since.covers(node.colorAt))    { masked.color = node.color;       masked.colorAt = node.colorAt; }
   if (!since.covers(node.orderAt))    { masked.order = node.order;       masked.orderAt = node.orderAt; }
-  if (!since.covers(node.positionAt)) { masked.position = node.position; masked.positionAt = node.positionAt; }
   if (!since.covers(node.statusAt))   { masked.status = node.status;     masked.statusAt = node.statusAt; }
   if (!since.covers(node.descriptionAt)) { masked.description = node.description; masked.descriptionAt = node.descriptionAt; }
   if (!since.covers(node.linksAt))       { masked.links = node.links;             masked.linksAt = node.linksAt; }
@@ -41,7 +40,7 @@ NodeStateEntry maskNode(const NodeStateEntry& node, const VersionVector& since) 
 bool nodeUncovered(const NodeStateEntry& node, const VersionVector& since) {
   return !since.covers(node.createdAt) || !since.covers(node.deletedAt) || !since.covers(node.labelAt)
       || !since.covers(node.iconAt) || !since.covers(node.colorAt) || !since.covers(node.orderAt)
-      || !since.covers(node.positionAt) || !since.covers(node.statusAt) || !since.covers(node.descriptionAt)
+      || !since.covers(node.statusAt) || !since.covers(node.descriptionAt)
       || !since.covers(node.linksAt) || !since.covers(node.opensAt);
 }
 
@@ -53,15 +52,13 @@ KindStateEntry maskKind(const KindStateEntry& kind, const VersionVector& since) 
   if (!since.covers(kind.hueAt))         { masked.hue = kind.hue;                 masked.hueAt = kind.hueAt; }
   if (!since.covers(kind.labelAt))       { masked.label = kind.label;             masked.labelAt = kind.labelAt; }
   if (!since.covers(kind.descriptionAt)) { masked.description = kind.description;  masked.descriptionAt = kind.descriptionAt; }
-  if (!since.covers(kind.crossBranchExemptAt)) { masked.crossBranchExempt = kind.crossBranchExempt; masked.crossBranchExemptAt = kind.crossBranchExemptAt; }
   if (!since.covers(kind.rankAt))        { masked.rank = kind.rank;               masked.rankAt = kind.rankAt; }
   return masked;
 }
 
 bool kindUncovered(const KindStateEntry& kind, const VersionVector& since) {
   return !since.covers(kind.createdAt) || !since.covers(kind.deletedAt) || !since.covers(kind.hueAt)
-      || !since.covers(kind.labelAt) || !since.covers(kind.descriptionAt)
-      || !since.covers(kind.crossBranchExemptAt) || !since.covers(kind.rankAt);
+      || !since.covers(kind.labelAt) || !since.covers(kind.descriptionAt) || !since.covers(kind.rankAt);
 }
 }
 
@@ -74,7 +71,6 @@ VersionVector frontier(const GraphState& graph, const LegendState& legend) {
     vector.observe(node.iconAt);
     vector.observe(node.colorAt);
     vector.observe(node.orderAt);
-    vector.observe(node.positionAt);
     vector.observe(node.statusAt);
     vector.observe(node.descriptionAt);
     vector.observe(node.linksAt);
@@ -90,7 +86,6 @@ VersionVector frontier(const GraphState& graph, const LegendState& legend) {
     vector.observe(kind.hueAt);
     vector.observe(kind.labelAt);
     vector.observe(kind.descriptionAt);
-    vector.observe(kind.crossBranchExemptAt);
     vector.observe(kind.rankAt);
   }
   return vector;
@@ -101,6 +96,10 @@ VersionVector frontier(const Subgraph& frame) {
   if (frame.title) vector.observe(frame.title->stamp);
   if (frame.guide) vector.observe(frame.guide->stamp);
   return vector;
+}
+
+bool Subgraph::carriesNoStamp() const {
+  return frontier(*this).marks.empty();
 }
 
 Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const VersionVector& since) {

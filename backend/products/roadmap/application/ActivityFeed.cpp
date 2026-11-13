@@ -21,7 +21,7 @@ std::string displayActor(const std::string& actor) {
   return {};  // genesis / seed / unknown → the tree itself
 }
 
-// One command to one event, with the tree's current labels for context; nullopt for a nudge.
+// One command to one event, with the tree's current labels for context; nullopt for one that tells no deed.
 class Projector {
 public:
   explicit Projector(const TreeData& current) {
@@ -69,10 +69,8 @@ public:
       event.verb = "renamed-kind"; event.label = c->label;
       event.summary = "renamed a kind to " + named(c->label);
     } else if (auto* c = std::get_if<DescribeKind>(&command)) {
-      event.verb = "described-kind";
-      if (c->description) event.summary = "described a kind";
-      else if (c->crossBranchExempt.value_or(false)) event.summary = "marked a kind cross-branch exempt";
-      else event.summary = "cleared a kind's cross-branch exemption";
+      if (!c->description) return std::nullopt;  // a stored row that sets nothing
+      event.verb = "described-kind"; event.summary = "described a kind";
     } else if (std::get_if<RemoveKind>(&command)) {
       event.verb = "removed-kind"; event.summary = "removed a kind";
     } else if (std::get_if<ReorderKinds>(&command)) {
@@ -83,7 +81,7 @@ public:
     } else if (auto* c = std::get_if<Batch>(&command)) {
       return batch(*c);
     } else {
-      return std::nullopt;  // RepositionNode: a nudge is not a feed-worthy deed
+      return std::nullopt;  // an annotation, a past prune or a stored RepositionNode is no feed-worthy deed
     }
     return event;
   }
@@ -91,7 +89,8 @@ public:
 private:
   // Summed by verb in first-appearance order, under the first member's verb and subject:
   // "removed 2 nodes and unlinked 3 links". A member about the legend is no count of anything and says, in its place,
-  // the sentence it says alone: "renamed a kind to Builder and described a kind". Nudges inside it count for nothing.
+  // the sentence it says alone: "renamed a kind to Builder and described a kind". A member that tells no deed counts
+  // for nothing.
   std::optional<ActivityEvent> batch(const Batch& batch) const {
     struct Part {
       std::string verb;

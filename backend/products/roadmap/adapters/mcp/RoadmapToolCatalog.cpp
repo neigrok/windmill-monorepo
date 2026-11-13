@@ -131,21 +131,6 @@ Json::Value expectedSeq() {
   return property;
 }
 
-Json::Value position(const char* description) {
-  Json::Value fields(Json::objectValue);
-  fields["x"] = num("Canvas x.");
-  fields["y"] = num("Canvas y.");
-  Json::Value property(Json::objectValue);
-  property["type"] = "object";
-  property["properties"] = fields;
-  property["additionalProperties"] = false;
-  property["required"] = Json::Value(Json::arrayValue);
-  property["required"].append("x");
-  property["required"].append("y");
-  property["description"] = description;
-  return property;
-}
-
 Json::Value linkArray(const char* description) {
   Json::Value link(Json::objectValue);
   link["type"] = "object";
@@ -169,13 +154,19 @@ Json::Value linkArray(const char* description) {
   return property;
 }
 
-// One progress mark as a call sends it: set_progress's flat form and its `updates` rows, and an import's `progress`
-// rows, which the same parse reads.
+// One progress mark as a call sends it: the `status` and `outOfOrder` of an update_nodes row and an import's `progress`
+// row, which the same parse reads.
 Json::Value progressRow() {
   Json::Value fields(Json::objectValue);
   fields["nodeId"] = nodeHandle();
   fields["id"] = legacyNodeHandle();
-  fields["status"] = enumStr("complete or none (clear).", kStatuses);
+  fields["status"] = enumStr(
+      "complete or none (clear). On a tree you own, a node that opens another tree of yours takes no mark: it is "
+      "complete when that tree is, so mark the steps of the tree it opens; a row marking one is not recorded and "
+      "answers {nodeId, refused} with the reason, and every other row is recorded. prerequisitesMet reads the same "
+      "completed set `state` does, so a prerequisite that opens a tree is met when that tree is complete, whatever "
+      "mark it holds.",
+      kStatuses);
   fields["outOfOrder"] = boolean(
       "With status complete only: this node is being completed before its prerequisites on purpose. "
       "Kept on the mark, echoed as acknowledged:true beside prerequisitesMet.");
@@ -192,9 +183,6 @@ Json::Value legendKind() {
   fields["description"] = cappedStr("Optional sorting brief. Left out on a kind already in the legend, "
                                     "the brief it has stays; a new kind gets an empty one.",
                                     kMaxKindDescriptionLength);
-  fields["crossBranchExempt"] = boolean("Optional: get_health leaves this kind's edges out of its "
-                                        "cross-branch count. Left out on a kind already in the legend, "
-                                        "its setting stays; a new kind is not exempt.");
   return fields;
 }
 
@@ -202,12 +190,9 @@ Json::Value legendKind() {
 // the rest). A bulk edit overwrites or removes many entries in one call and is declared destructive
 // under a write grant. An idempotent write is one a resend with the same arguments leaves unchanged;
 // create_tree and create_node mint an id, so a resend plants a second one.
-const std::set<std::string> kBulkEdits = {"import_subgraph", "prune", "tidy", "patch_nodes", "update_nodes",
-                                          "change_edges"};
+const std::set<std::string> kBulkEdits = {"import_subgraph", "update_nodes", "change_edges"};
 const std::set<std::string> kIdempotentWrites = {
-    "delete_tree",  "update_tree",   "rename_node",   "set_node_color", "move_node",
-    "delete_node",  "tidy",
-    "add_kind",     "remove_kind",   "update_kind",   "set_progress",  "import_subgraph", "prune", "patch_nodes",
+    "delete_tree", "update_tree", "delete_node", "add_kind", "remove_kind", "update_kind", "import_subgraph",
     "change_edges"};
 
 // `read` answers questions, `write` changes the document, and `delete` destroys something a
@@ -263,11 +248,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     declaration.descriptor["outputSchema"] = output;
     tools.push_back(std::move(declaration));
   }
-  // update_nodes is patch_nodes grown: its rows also append to a description or to the links, and carry the caller's
-  // own mark; it moves no node.
-  for (const char* name : {"patch_nodes", "update_nodes", "change_edges"}) {
-    const bool patches = std::string_view(name) != "change_edges";
-    const bool grown = std::string_view(name) == "update_nodes";
+  // The two batch tools: update_nodes edits and marks rows of existing nodes, change_edges the edges between nodes.
+  for (const char* name : {"update_nodes", "change_edges"}) {
+    const bool nodes = std::string_view(name) == "update_nodes";
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
     p["expectedSeq"] = expectedSeq();
@@ -275,7 +258,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     Json::Value edgeProperties(Json::objectValue);
     edgeProperties["from"] = cappedStr("Prerequisite node id.", kMaxIdLength);
     edgeProperties["to"] = cappedStr("Dependent node id.", kMaxIdLength);
-    if (patches) {
+    if (nodes) {
       Json::Value row(Json::objectValue);
       row["nodeId"] = cappedStr("Existing node id; each id occurs once in this batch.", kMaxIdLength);
       row["label"] = cappedStr("Replacement label; omitted fields stay unchanged.", kMaxNodeLabelLength);
@@ -285,25 +268,21 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       row["kind"] = cappedStr("Replacement hue, named by the legend kind that wears it. Sent with `color`, the "
                               "two must agree, but for a `color` the node already holds: that is an echo, and the "
                               "kind wins.", kMaxIdLength);
-      if (!grown) row["position"] = position("Replacement position; both coordinates are required.");
       row["links"] = linkArray("Replacement links; an empty list clears them.");
-      if (grown) {
-        row["appendDescription"] = cappedStr("Text joined onto the end of the description, after a blank line. Not "
-                                             "with `description`.", kMaxNodeDescriptionLength);
-        row["addLinks"] = linkArray("Links joined after the ones the node holds; a url it holds keeps its place "
-                                    "and takes the label sent with it. Not with `links`.");
-        row["addLinks"]["minItems"] = 1;
-        const Json::Value mark = progressRow();
-        row["status"] = mark["status"];
-        row["outOfOrder"] = mark["outOfOrder"];
-      }
-      row["opens"] = cappedStr("Id of a tree you own that this node opens; empty string clears it. One naming "
+      row["appendDescription"] = cappedStr("Text joined onto the end of the description, after a blank line. Not "
+                                           "with `description`.", kMaxNodeDescriptionLength);
+      row["addLinks"] = linkArray("Links joined after the ones the node holds; a url it holds keeps its place "
+                                  "and takes the label sent with it. Not with `links`.");
+      row["addLinks"]["minItems"] = 1;
+      const Json::Value mark = progressRow();
+      row["status"] = mark["status"];
+      row["outOfOrder"] = mark["outOfOrder"];
+      row["opens"] = cappedStr("Id of a tree you own that this node opens — the node is complete for you when that "
+                               "tree is; empty string clears it. One naming "
                                "a tree that is not yours refuses the whole batch. A tree that leads back to "
                                "this one lands, and `introducedDiagnostics` names the loop after the graph's "
                                "errors, within its five lines: a tree on a loop never completes.", kMaxIdLength);
-      p["updates"] = objArray(grown ? "1..200 distinct existing nodes, each with at least one field or a mark."
-                                    : "1..200 distinct existing nodes, each with at least one field to change.",
-                              row, {"nodeId"});
+      p["updates"] = objArray("1..200 distinct existing nodes, each with at least one field or a mark.", row, {"nodeId"});
       p["updates"]["minItems"] = 1;
       p["updates"]["maxItems"] = static_cast<Json::UInt64>(kMaxPatchNodes);
     } else {
@@ -314,7 +293,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       }
     }
     ToolDeclaration declaration = tool(name, Access::write,
-        grown ? "Edit 1..200 existing nodes in one call. A row names `nodeId` and any of: `label`; `color` and/or "
+        nodes ? "Edit 1..200 existing nodes in one call. A row names `nodeId` and any of: `label`; `color` and/or "
                 "`kind`; `description` or `appendDescription`; `icon`; `links` or `addLinks`; `opens`; and `status` "
                 "(with `outOfOrder` on a completion) — your own progress mark, which works on any tree you can read. "
                 "Every other field is the tree owner's alone, and a call carrying one on a tree that is not yours is "
@@ -322,18 +301,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                 "land after them, answered per row in `progress`. On a tree you own, a mark on a node that opens "
                 "another tree of yours is not recorded — that node is complete when its tree is — and is answered "
                 "`refused` and listed in progressRefused. `unchanged: true` speaks for the tree fields: they "
-                "landed nothing — and then the marks are the call, so a failure of theirs fails it, as set_progress's "
-                "does. expectedSeq refuses a stale call whole; dryRun applies nothing."
-        : patches ? "Patch fields on 1..200 existing nodes atomically. Omitted fields survive; empty strings and links clear their field. "
-                  "All items are validated before one operation, seq and broadcast. Exact retries skip unchanged nodes, and "
-                  "a batch whose every row is unchanged writes nothing and answers `unchanged: true`. "
-                  "expectedSeq prevents overwriting intervening edits; dryRun previews changedNodeIds and unchangedNodeIds."
+                "landed nothing — and then the marks are the call, so a failure of theirs fails it. expectedSeq "
+                "refuses a stale call whole; dryRun applies nothing."
                 : "Add and remove 1..500 prerequisite edges atomically in one operation, seq and broadcast. "
                   "Added endpoints must exist; removing an absent edge is a no-op. Duplicates and add/remove overlap reject the entire batch. "
                   "To move an edge, send the old one in `remove` and the new one in `add`: the two land as one step. "
                   "Cycles remain allowed and are reported through diagnostics. A batch that adds only held edges and removes "
                   "only absent ones writes nothing and answers `unchanged: true`; expectedSeq and dryRun are supported.",
-        p, patches ? std::vector<const char*>{"treeId", "updates"} : std::vector<const char*>{"treeId"});
+        p, nodes ? std::vector<const char*>{"treeId", "updates"} : std::vector<const char*>{"treeId"});
     Json::Value output(Json::objectValue);
     output["type"] = "object";
     output["additionalProperties"] = false;
@@ -345,13 +320,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     properties["unchanged"] = boolean("True when the batch changes nothing, so it takes no seq. Absent otherwise.");
     properties["diagnosticsClean"] = boolean("Whether the graph after an applied batch has no structural errors.");
     properties["introducedDiagnostics"] = strArray(
-        patches ? "New structural errors after an applied batch, then each loop of trees a pointer it set closed: "
+        nodes ? "New structural errors after an applied batch, then each loop of trees a pointer it set closed: "
                   "five lines in all, and a count of the rest."
                 : "New structural errors after an applied batch.", 0);
     properties["introducedDiagnostics"]["items"].removeMember("maxLength");
     output["required"] = Json::Value(Json::arrayValue);
     for (const char* field : {"treeId", "seq", "applied", "dryRun"}) output["required"].append(field);
-    if (patches) {
+    if (nodes) {
       properties["pointerDiagnosticsUnavailable"] = boolean(
           "True when the batch set a pointer and the trees it opens could not be read in time, so no loop of "
           "trees is named: read get_diagnostics. Absent otherwise.");
@@ -359,20 +334,27 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         properties[field] = strArray("Node ids in input order, partitioned by whether the patch changes them.", kMaxIdLength);
         output["required"].append(field);
       }
-      if (grown) {
-        Json::Value mark(Json::objectValue);
-        mark["nodeId"] = nodeHandle();
-        mark["status"] = enumStr("The mark the row set.", kStatuses);
-        mark["prerequisitesMet"] = boolean("Whether its prerequisites are complete as the whole call leaves them.");
-        mark["acknowledged"] = boolean("True when the row carried outOfOrder:true.");
-        mark["unchanged"] = boolean("True when you already held this mark at the row's turn.");
-        properties["progress"] = objArray("One row per mark, in input order, after the tree fields landed.", mark,
-                                          {"nodeId", "status", "prerequisitesMet"});
-        properties["progressApplied"] =
-            boolean("False when the tree fields landed and the marks did not; a call that landed no tree field fails "
-                    "with its marks instead.");
-        properties["progressError"] = str("Why the marks did not land, when progressApplied is false.");
-      }
+      // One object for both rows, a recorded mark and a refused one, rather than a oneOf that not every client reads.
+      Json::Value mark(Json::objectValue);
+      mark["nodeId"] = nodeHandle();
+      mark["status"] = enumStr("The mark the row recorded. Absent on a refused row.", kStatuses);
+      mark["prerequisitesMet"] = boolean("Whether its prerequisites are complete as the whole call leaves them. "
+                                         "Absent on a refused row.");
+      mark["acknowledged"] = boolean("True when the row carried outOfOrder:true.");
+      mark["unchanged"] = boolean("True when you already held this mark at the row's turn.");
+      mark["refused"] = str("Why the row recorded no mark: its node opens a tree, so it is complete when that tree "
+                            "is. A refused row carries this beside its nodeId and nothing else.");
+      properties["progress"] = objArray("One row per mark, in input order, after the tree fields landed: a recorded "
+                                        "mark, with status and prerequisitesMet, or a refused one, with refused.",
+                                        mark, {"nodeId"});
+      properties["progressRefused"] = strArray("The ids of the refused rows, in input order. Absent when no row was "
+                                               "refused.", kMaxIdLength);
+      properties["progressApplied"] =
+          boolean("False when a mark did not land: a row was refused (progressRefused), or the marks failed after "
+                  "the tree fields landed. When no tree field landed, a failure of the marks fails the call instead, "
+                  "and a refusal answers here as any other. Absent when every mark landed.");
+      properties["progressError"] = str("What fell short, when progressApplied is false: one sentence for the refused "
+                                        "rows, one for a failure of the marks.");
     } else {
       for (const char* field : {"addedEdges", "removedEdges"}) {
         properties[field] = objArray("Edges that change, in input order.", edgeProperties, {"from", "to"});
@@ -424,7 +406,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["fields"] = fieldArray(
         "Which fields each node carries. Default {id, label, color, prerequisites} — the shape of "
-        "the tree. Ask for description, links, position, order or icon when you need them; `kind` is "
+        "the tree. Ask for description, links, order or icon when you need them; `kind` is "
         "the legend kind id whose hue the node wears, omitted on a node no kind claims; `status` "
         "is your own mark on each node (complete/none, always answered), `seedStatus` the "
         "document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
@@ -442,8 +424,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "(<origin>/t/<treeId>#?step=<id>), the step id percent-encoded.",
         nodeVocabulary().names());
     p["kindFields"] = fieldArray(
-        "Which fields each legend kind carries. Default {id, hue, label}; `crossBranchExempt` is "
-        "whether get_health leaves the kind's edges out of its cross-branch count.",
+        "Which fields each legend kind carries. Default {id, hue, label}.",
         kindVocabulary().names());
     p["includeEdges"] = boolean(
         "Also answer a top-level `edges` array of EVERY live edge in the tree as {from, to}, "
@@ -512,7 +493,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "stands — a removed tree, someone else's, or any other text — the first 50 in node id order, and "
         "`danglingPointersOmitted` counts the rest: such a node is an ordinary node. Both lists are `[]` "
         "when there is none, the three counts are absent when nothing is left off, and neither list is "
-        "among the errors `diagnosticsClean` and get_health count. Repair either by re-pointing the "
+        "among the errors `diagnosticsClean` counts. Repair either by re-pointing the "
         "node's `opens` or clearing it with \"\". `pointerDiagnosticsUnavailable: true` says the opened "
         "trees could not be read just now and both lists are left out — read again later. On a tree you "
         "do not own neither list is answered. Default true; false leaves both out and reads no other tree.");
@@ -527,24 +508,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "ten: find_nodes with `color` lists every node on an unclaimed hue; find_nodes cannot filter on a "
         "missing icon, a long label or many prerequisites, so read get_tree with `fields` [\"id\",\"icon\"], "
         "[\"id\",\"label\"] or [\"id\",\"prerequisites\"] for those. An `empty-icon` smell clears "
-        "with `annotate_node {nodeId, icon}`; an `unclaimed-hue` one when its nodes take a kind's hue "
-        "(`set_node_color`) or a kind comes to wear the hue.",
-        p, {"treeId"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    tools.push_back(tool("get_health", Access::read,
-        "Tidiness metrics for a structurally-valid roadmap: node/edge counts, cross-branch "
-        "coupling, redundant (transitively implied) edges, average in-degree, and a 0–100 score "
-        "(100 × (1 − 0.6 × crossBranch/weighed − 0.4 × redundant/weighed), where weighed is "
-        "edgeCount − crossBranchExempt). Branches derive from "
-        "colour: a node's branch is the run of same-hue trunk parents above it, so an edge joining "
-        "two hues counts as `crossBranch` — unless either endpoint wears a kind marked "
-        "`crossBranchExempt` (set by add_kind, create_tree or an import's kinds), in which case it is counted in "
-        "`crossBranchExempt` instead and weighs nothing — out of the score's numerator and its "
-        "denominator both, while `edgeCount` stays every live edge. Fails if the tree currently has "
-        "cycles/dangling edges — fix those first.",
+        "with an update_nodes row's `icon`; an `unclaimed-hue` one when its nodes take a kind's hue "
+        "(an update_nodes row's `kind`) or a kind comes to wear the hue.",
         p, {"treeId"}));
   }
   {
@@ -558,7 +523,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     tools.push_back(tool("get_progress", Access::read,
         "The caller's private progress overlay for a roadmap: the node ids that are completed, "
         "and outOfOrder — the subset of completed whose mark carried outOfOrder:true, from "
-        "set_progress or an import's progress row. Per-user, separate from the shared structure.",
+        "an update_nodes row's `status` or an import's progress row. Per-user, separate from the shared structure. "
+        "Only marks on nodes the tree holds are answered: a mark on a node someone deleted is kept and shows "
+        "again when the node comes back.",
         p, {"treeId"}));
   }
   {
@@ -574,7 +541,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                          "trees its nodes open.", kNodeStates);
     p["fields"] = fieldArray(
         "Which fields each match carries. Default {id, label, color} — an index you pick edit targets "
-        "out of. Ask for description, links, prerequisites, position, order or icon when you need them; "
+        "out of. Ask for description, links, prerequisites, order or icon when you need them; "
         "`kind` is the legend kind id whose hue the node wears, omitted on a node no kind claims; "
         "`status` is your own mark on each node (complete/none, always answered), `seedStatus` "
         "the document's authored baseline. `state` is what the tree DERIVES for you from prerequisites "
@@ -618,8 +585,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                                   kMaxIdLength);
     p["parentId"] = cappedStr("Optional single prerequisite (a convenience alias folded into prerequisites).",
                               kMaxIdLength);
-    p["x"] = num("Optional canvas x.");
-    p["y"] = num("Optional canvas y.");
     p["description"] = cappedStr("Optional annotation body — notes about the node.",
                                  kMaxNodeDescriptionLength);
     p["links"] = linkArray("Optional external references (docs, PRs, designs).");
@@ -636,86 +601,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                         kMaxIdLength);
     tools.push_back(tool("create_node", Access::write,
         "Add a node to the roadmap. Only `label` is required; icon, its hue as a `color` or a legend "
-        "`kind`, position (x,y), a set of `prerequisites` (nodes that unlock this one), a `description`, "
+        "`kind`, a set of `prerequisites` (nodes that unlock this one), a `description`, "
         "and `links` are optional. Returns the node id and `kind`, the legend kind whose hue it wears "
         "(omitted when no kind claims that hue).",
         p, {"treeId", "label"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    p["nodeId"] = nodeHandle();
-    p["id"] = legacyNodeHandle();
-    p["description"] = cappedStr("The annotation body — replaces what the node has (omit to leave it unchanged).",
-                                 kMaxNodeDescriptionLength);
-    p["appendDescription"] = cappedStr(
-        "Text to add to the END of the existing body, after a blank line — a running log grows "
-        "without resending it. The cap is on the body the node would then hold. Not with `description`.",
-        kMaxNodeDescriptionLength);
-    p["icon"] = cappedStr("The node's icon name/emoji; \"\" clears it.", kMaxIconLength);
-    p["links"] = linkArray("The node's external references — replaces the existing set (omit to leave unchanged).");
-    p["addLinks"] = linkArray("References to add after the ones the node holds, in the order sent: a url the node "
-                              "already holds, whitespace around it aside, keeps its place and takes the label sent "
-                              "with it. The cap is on the set the node would then hold. Not with `links`.");
-    p["addLinks"]["minItems"] = 1;
-    p["opens"] = cappedStr("The id of a tree you own that this node opens: the node points at that tree, is "
-                           "complete for you when that tree is, and get_tree, get_nodes and find_nodes answer "
-                           "the tree's id, title and state under the `opens` field. A tree that is not yours "
-                           "is refused. A tree that leads back to this one lands, and the receipt's "
-                           "`introducedDiagnostics` names the loop after the graph's errors, within its five "
-                           "lines: a tree on a loop never completes. \"\" clears it; omit to leave it unchanged.",
-                           kMaxIdLength);
-    tools.push_back(tool("annotate_node", Access::write,
-        "Set a node's free annotation: its `description` (or `appendDescription`, which joins onto the "
-        "existing body instead of replacing it — send one of the two), its `icon`, its `links` (or "
-        "`addLinks`, which joins onto the set instead of replacing it — send one of the two), and/or "
-        "the tree it `opens`. "
-        "Each field is optional — an omitted field is left untouched; `links` replaces the whole set "
-        "when given — but at least one must be given. This is the verb that sets or clears an icon "
-        "after birth, so it is how an `empty-icon` smell from get_diagnostics is fixed. Every length "
-        "cap counts Unicode code points, and a refusal names each field over its cap and by how much. "
-        "When no field it names would change, it writes nothing and answers `unchanged: true` with the "
-        "tree's current `seq`; when any would, the fields that change land and a field sent as the node "
-        "already holds it is left as it is.",
-        p, {"treeId", "nodeId"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    p["nodeId"] = nodeHandle();
-    p["id"] = legacyNodeHandle();
-    p["label"] = cappedStr("The new label.", kMaxNodeLabelLength);
-    tools.push_back(tool("rename_node", Access::write,
-        "Change a node's label. The label it already has writes nothing and answers `unchanged: true` "
-        "with the tree's current `seq`.",
-        p, {"treeId", "nodeId", "label"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    p["nodeId"] = nodeHandle();
-    p["id"] = legacyNodeHandle();
-    p["color"] = enumStr("The new hue.", kHues);
-    p["kind"] = cappedStr("The legend kind id whose hue the node takes.", kMaxIdLength);
-    tools.push_back(tool("set_node_color", Access::write,
-        "Set a node's color (its branch/category tint): a hue as `color`, or the legend `kind` whose hue "
-        "it takes — one of the two, or both when they agree, but for a `color` the node already holds, "
-        "which is an echo the `kind` wins over. Returns `kind`, the legend kind whose hue "
-        "the node now wears (omitted when no kind claims that hue). A hue the node already wears writes "
-        "nothing and answers `unchanged: true` with the tree's current `seq`.",
-        p, {"treeId", "nodeId"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    p["nodeId"] = nodeHandle();
-    p["id"] = legacyNodeHandle();
-    p["x"] = num("Canvas x.");
-    p["y"] = num("Canvas y.");
-    tools.push_back(tool("move_node", Access::write,
-        "Set a node's canvas position (x, y). The position it already has writes nothing and answers "
-        "`unchanged: true` with the tree's current `seq`.",
-        p, {"treeId", "nodeId", "x", "y"}));
   }
   {
     Json::Value p(Json::objectValue);
@@ -744,27 +633,15 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
-    tools.push_back(tool("tidy", Access::write,
-        "Transitive reduction: drop edges already implied by a longer path, as one op. A "
-        "semantics-preserving cleanup that every collaborator converges on.",
-        p, {"treeId"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
     p["id"] = cappedStr("The kind id (stable, unique within the tree's legend).", kMaxIdLength);
     p["hue"] = enumStr("The kind's hue — unique per kind; at most 6 kinds per tree.", kHues);
     p["label"] = cappedStr("Optional label — set inline so the kind lands in one op.", kMaxKindLabelLength);
     p["description"] = cappedStr("Optional description — the generator's sorting brief.",
                                  kMaxKindDescriptionLength);
-    p["crossBranchExempt"] = boolean(
-        "Optional, default false: get_health leaves every edge touching a node of this kind out of "
-        "its cross-branch count — for a kind whose whole point is to interleave with the others.");
     tools.push_back(tool("add_kind", Access::write,
         "Add a legend kind: a named, described hue. The hue must be free (unique per kind) and the "
-        "legend must have fewer than 6 kinds. `label`, `description` and `crossBranchExempt` may be "
-        "set inline; update_kind changes the label, description and hue later, and an import's `kinds` the "
-        "flag.",
+        "legend must have fewer than 6 kinds. `label` and `description` may be set inline; update_kind "
+        "changes the label, description and hue later.",
         p, {"treeId", "id", "hue"}));
   }
   {
@@ -792,34 +669,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         p, {"treeId", "id"}));
   }
   {
-    Json::Value p = progressRow();  // the single form is one row, flat
-    p["treeId"] = treeHandle();
-    p["updates"] = objArray(
-        "Bulk form: a list of {nodeId, status, outOfOrder?}. Resolves order internally, so completing "
-        "a subtree out of dependency order no longer misreports prerequisitesMet. Pass this OR a "
-        "single nodeId+status, never both.",
-        progressRow(), {"nodeId", "status"});
-    p["updates"]["maxItems"] = static_cast<Json::UInt64>(kMaxProgressUpdates);
-    tools.push_back(tool("set_progress", Access::write,
-        "Set the caller's progress. Pass a single `nodeId`+`status`, or a bulk `updates` list. Unknown "
-        "node ids are rejected (no orphan rows). Advisory only — marking complete with unmet "
-        "prerequisites still records and reports prerequisitesMet:false, judged against the committed "
-        "batch (not each write's instant). A completion you mean to make before its prerequisites "
-        "carries outOfOrder:true: the word is kept on the mark (get_progress lists it under "
-        "outOfOrder, get_tree/find_nodes `status` shows outOfOrder:true beside it) and the receipt "
-        "answers acknowledged:true, so prerequisitesMet:false alone always means an inversion nobody "
-        "acknowledged. The next mark on that node, from any surface, replaces the word with its own. "
-        "A mark you already hold at its turn — the same status and the same outOfOrder word, after "
-        "the rows before it in the call — answers unchanged:true on its row, and a bulk call whose every "
-        "row does answers unchanged:true. "
-        "On a tree you own, a node that opens another tree of yours takes no mark: it is complete when "
-        "that tree is, so mark the steps of the tree it opens. A single mark on such a node is refused "
-        "and nothing is written; in `updates` its row answers {nodeId, refused} with the reason and "
-        "every other row is recorded. prerequisitesMet reads the same completed set `state` does, so a "
-        "prerequisite that opens a tree is met when that tree is complete, whatever mark it holds.",
-        p, {"treeId"}));
-  }
-  {
     Json::Value p(Json::objectValue);
     p["treeId"] = treeHandle();
     Json::Value nodeFields(Json::objectValue);
@@ -839,9 +688,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "Ids of the nodes that unlock this one. For a node already in the tree, `prerequisiteMode` "
         "says whether these are added to its existing prerequisites or become the whole list.",
         kMaxIdLength);
-    nodeFields["position"] = position(
-        "Optional canvas position {x, y}, both coordinates when sent. Optional because the web canvas lays "
-        "the tree out from its structure and never reads a stored position.");
     nodeFields["seedStatus"] = enumStr(
         "Optional authored baseline carried in the document — what every reader sees before their own "
         "marks. Your own progress is not this: pass it in `progress[]`.", kStatuses);
@@ -861,13 +707,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                           "fields. Pass [] to import only kinds or progress.",
                           nodeFields, {"id"});
     p["kinds"] = objArray("Optional legend kinds, upserted by id: an id already in the legend is reported "
-                          "in kindCollisions and only the fields you send on it change — label, "
-                          "description and crossBranchExempt you leave out keep their values, so a copy of "
+                          "in kindCollisions and only the fields you send on it change — a label or "
+                          "description you leave out keeps its value, so a copy of "
                           "get_tree's default kindFields sent back erases nothing. Omit to leave the legend "
                           "untouched.",
                           legendKind(), {"id", "hue"});
     p["progress"] = objArray("Optional carried progress, applied over the imported nodes, each row as "
-                             "set_progress's `updates` takes it: a completion made before its "
+                             "an update_nodes row takes its `status`: a completion made before its "
                              "prerequisites carries outOfOrder:true and is answered acknowledged:true, and "
                              "prerequisitesMet is judged against the tree the import leaves. `nodeId` here "
                              "names a node that exists once the import lands; a row naming none is "
@@ -889,7 +735,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["tombstone"] = strArray(
         "Ids to delete in this same batch: each node goes at the same seq as the upserts, every "
         "edge touching it in either direction goes with it, and your own progress on it is cleared "
-        "after the graft, the way prune clears an orphan's. `tombstone` needs the roadmap:delete "
+        "after the graft, as delete_node clears yours. `tombstone` needs the roadmap:delete "
         "grant — the level delete_node needs — and a connection without it is refused before the "
         "tree is read. Every id must exist and must not also be in nodes[] — otherwise the whole "
         "call is refused, naming each offending id, and nothing is applied. At most 500 per call.",
@@ -921,8 +767,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "the hue that kind wears after the batch, a node you send a `color` that differs from the one it "
         "holds keeps that colour, and the receipt's repaintedNodes counts the rest. The "
         "only removals are the ones you ask for: `tombstone` ids (which need the roadmap:delete grant), "
-        "and under \"replace\" the edges into a node that the prerequisites list you send for it does not name. `position` is optional — the web canvas lays "
-        "the tree out from its structure — and, when sent, carries both `x` and `y`. The receipt counts what the batch carried — `nodes`, "
+        "and under \"replace\" the edges into a node that the prerequisites list you send for it does not name. The receipt counts what the batch carried — `nodes`, "
         "`edges` (the prerequisites across them), `kinds` — so check `edges` against what you meant "
         "to send; keptEdges/keptEdgeCount name the pre-existing edges into re-sent nodes that "
         "survived — a merge, or a replace on a node sent without `prerequisites` — removedEdges counts "
@@ -938,15 +783,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "capped at 16000 characters on its own); past that the call is refused naming the size, so "
         "split a bigger import. This collapses hundreds of create_node, change_edges and delete_node calls into one.",
         p, {"treeId", "nodes"}));
-  }
-  {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = treeHandle();
-    tools.push_back(tool("prune", Access::write,
-        "Garbage-collect the roadmap: drop dangling and self edges (edges no valid DAG keeps) in one "
-        "op, and clear the caller's progress rows for nodes no longer in the tree. Returns how many of "
-        "each it removed.",
-        p, {"treeId"}));
   }
 
   return tools;

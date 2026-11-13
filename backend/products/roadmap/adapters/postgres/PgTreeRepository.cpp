@@ -34,20 +34,17 @@ bool entryPresent(const Hlc& added, const Hlc& removed) {
 }
 
 void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node) {
-  std::optional<double> posX, posY;
-  if (node.position) { posX = node.position->x; posY = node.position->y; }
   txn.exec_params(
       "INSERT INTO tree_nodes (tree_id, node_id, created_hlc, deleted_hlc, label, label_hlc, "
-      "icon, icon_hlc, color, color_hlc, pos_x, pos_y, pos_hlc, status, status_hlc, "
+      "icon, icon_hlc, color, color_hlc, status, status_hlc, "
       "description, description_hlc, links, links_hlc, present, ord, ord_hlc, opens, opens_hlc) "
-      "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, "
-      "$18::jsonb, $19, $20, $21, $22, $23, $24) "
+      "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, "
+      "$15::jsonb, $16, $17, $18, $19, $20, $21) "
       "ON CONFLICT (tree_id, node_id) DO UPDATE SET "
       "created_hlc = EXCLUDED.created_hlc, deleted_hlc = EXCLUDED.deleted_hlc, "
       "label = EXCLUDED.label, label_hlc = EXCLUDED.label_hlc, "
       "icon = EXCLUDED.icon, icon_hlc = EXCLUDED.icon_hlc, "
       "color = EXCLUDED.color, color_hlc = EXCLUDED.color_hlc, "
-      "pos_x = EXCLUDED.pos_x, pos_y = EXCLUDED.pos_y, pos_hlc = EXCLUDED.pos_hlc, "
       "status = EXCLUDED.status, status_hlc = EXCLUDED.status_hlc, "
       "description = EXCLUDED.description, description_hlc = EXCLUDED.description_hlc, "
       "links = EXCLUDED.links, links_hlc = EXCLUDED.links_hlc, present = EXCLUDED.present, "
@@ -56,7 +53,7 @@ void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node)
       tree.str(), node.id.str(), toString(node.createdAt), toString(node.deletedAt),
       node.label, toString(node.labelAt), node.icon, toString(node.iconAt),
       std::string(toString(node.color)), toString(node.colorAt),
-      posX, posY, toString(node.positionAt), normalizeSeedStatus(node.status), toString(node.statusAt),
+      normalizeSeedStatus(node.status), toString(node.statusAt),
       node.description, toString(node.descriptionAt),
       dump(linksToJson(node.links)), toString(node.linksAt),
       entryPresent(node.createdAt, node.deletedAt),
@@ -76,21 +73,17 @@ void upsertEdge(pqxx::work& txn, const TreeId& tree, const EdgeStateEntry& edge)
 void upsertKind(pqxx::work& txn, const TreeId& tree, const KindStateEntry& kind) {
   txn.exec_params(
       "INSERT INTO tree_kinds (tree_id, kind_id, created_hlc, deleted_hlc, hue, hue_hlc, "
-      "label, label_hlc, description, description_hlc, cross_branch_exempt, cross_branch_exempt_hlc, "
-      "rank, rank_hlc) "
-      "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) "
+      "label, label_hlc, description, description_hlc, rank, rank_hlc) "
+      "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) "
       "ON CONFLICT (tree_id, kind_id) DO UPDATE SET "
       "created_hlc = EXCLUDED.created_hlc, deleted_hlc = EXCLUDED.deleted_hlc, "
       "hue = EXCLUDED.hue, hue_hlc = EXCLUDED.hue_hlc, "
       "label = EXCLUDED.label, label_hlc = EXCLUDED.label_hlc, "
       "description = EXCLUDED.description, description_hlc = EXCLUDED.description_hlc, "
-      "cross_branch_exempt = EXCLUDED.cross_branch_exempt, "
-      "cross_branch_exempt_hlc = EXCLUDED.cross_branch_exempt_hlc, "
       "rank = EXCLUDED.rank, rank_hlc = EXCLUDED.rank_hlc",
       tree.str(), kind.id.str(), toString(kind.createdAt), toString(kind.deletedAt),
       std::string(toString(kind.hue)), toString(kind.hueAt), kind.label, toString(kind.labelAt),
-      kind.description, toString(kind.descriptionAt), kind.crossBranchExempt,
-      toString(kind.crossBranchExemptAt), kind.rank, toString(kind.rankAt));
+      kind.description, toString(kind.descriptionAt), kind.rank, toString(kind.rankAt));
 }
 
 void upsertSlice(pqxx::work& txn, const TreeId& tree, const GraphState& state, const LegendState& legend) {
@@ -117,9 +110,6 @@ NodeStateEntry nodeFromRow(const auto& row) {
   node.colorAt = stamp(row, "color_hlc");
   node.order = text(row, "ord");
   node.orderAt = stamp(row, "ord_hlc");
-  if (!row["pos_x"].is_null() && !row["pos_y"].is_null())
-    node.position = Vec2{row["pos_x"].template as<double>(), row["pos_y"].template as<double>()};
-  node.positionAt = stamp(row, "pos_hlc");
   if (!row["status"].is_null()) node.status = normalizeSeedStatus(text(row, "status"));
   node.statusAt = stamp(row, "status_hlc");
   node.description = text(row, "description");
@@ -135,7 +125,7 @@ GraphState graphRows(pqxx::work& txn, const TreeId& tree) {
   GraphState state;
   pqxx::result nodes = txn.exec_params(
       "SELECT node_id, created_hlc, deleted_hlc, label, label_hlc, icon, icon_hlc, color, "
-      "color_hlc, ord, ord_hlc, pos_x, pos_y, pos_hlc, status, status_hlc, description, "
+      "color_hlc, ord, ord_hlc, status, status_hlc, description, "
       "description_hlc, links::text AS links, links_hlc, opens, opens_hlc FROM tree_nodes WHERE tree_id = $1",
       tree.str());
   for (const auto& row : nodes) state.nodes.push_back(nodeFromRow(row));
@@ -154,7 +144,7 @@ LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
   LegendState legend;
   pqxx::result kinds = txn.exec_params(
       "SELECT kind_id, created_hlc, deleted_hlc, hue, hue_hlc, label, label_hlc, description, "
-      "description_hlc, cross_branch_exempt, cross_branch_exempt_hlc, rank, rank_hlc "
+      "description_hlc, rank, rank_hlc "
       "FROM tree_kinds WHERE tree_id = $1",
       tree.str());
   for (const auto& row : kinds) {
@@ -168,8 +158,6 @@ LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
     kind.labelAt = roadmapStamp(row["label_hlc"].as<std::string>());
     kind.description = row["description"].as<std::string>();
     kind.descriptionAt = roadmapStamp(row["description_hlc"].as<std::string>());
-    kind.crossBranchExempt = row["cross_branch_exempt"].as<bool>();
-    kind.crossBranchExemptAt = roadmapStamp(row["cross_branch_exempt_hlc"].as<std::string>());
     kind.rank = row["rank"].as<double>();
     kind.rankAt = roadmapStamp(row["rank_hlc"].as<std::string>());
     legend.kinds.push_back(std::move(kind));

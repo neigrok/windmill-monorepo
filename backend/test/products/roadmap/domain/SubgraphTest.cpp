@@ -23,7 +23,7 @@ TEST(version_vector_observe_and_cover) {
 
 TEST(frontier_folds_every_stamp_a_state_carries) {
   LooseGraph graph;
-  graph.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(4));
+  graph.createNode(nid("a"), "A", "x", NodeColor::sky, at(4));
   graph.addEdge(nid("a"), nid("a"), at(7, "b"));
   Legend legend = Legend::seededDefaults(at(2, "c"));
 
@@ -36,7 +36,7 @@ TEST(frontier_folds_every_stamp_a_state_carries) {
 
 TEST(a_frames_frontier_folds_its_title_and_guide_beside_its_graph_and_legend) {
   LooseGraph graph;
-  graph.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(4));
+  graph.createNode(nid("a"), "A", "x", NodeColor::sky, at(4));
   Subgraph frame;
   frame.graph = graph.exportState();
   frame.legend = Legend::seededDefaults(at(2, "c")).exportState();
@@ -48,10 +48,39 @@ TEST(a_frames_frontier_folds_its_title_and_guide_beside_its_graph_and_legend) {
   CHECK(frontier(frame) == expected);
 }
 
+// A frame carries no stamp while no node, edge or kind entry of it and neither tree register holds a set one: an
+// entry's id and its unstamped values count for nothing. One set stamp anywhere is a write the frame asks for.
+TEST(a_frame_carries_no_stamp_until_one_entry_or_tree_register_holds_a_set_one) {
+  Subgraph bare;
+  bare.graph.nodes = {NodeStateEntry{.id = nid("a"), .label = "Unstamped"}};
+  bare.graph.edges = {EdgeStateEntry{Edge{nid("a"), nid("b")}, {}, {}}};
+  KindStateEntry kind;
+  kind.id = KindId{"k"};
+  bare.legend.kinds = {kind};
+  Subgraph ordered = bare;
+  ordered.graph.nodes[0].orderAt = at(1);
+  Subgraph unlinked = bare;
+  unlinked.graph.edges[0].removedAt = at(1);
+  Subgraph ranked = bare;
+  ranked.legend.kinds[0].rankAt = at(1);
+  Subgraph titled = bare;
+  titled.title = Lww<std::string>{"Title", at(1)};
+  Subgraph guided = bare;
+  guided.guide = Lww<std::string>{"Guide", at(1)};
+
+  CHECK(Subgraph{}.carriesNoStamp());
+  CHECK(bare.carriesNoStamp());
+  CHECK_FALSE(ordered.carriesNoStamp());
+  CHECK_FALSE(unlinked.carriesNoStamp());
+  CHECK_FALSE(ranked.carriesNoStamp());
+  CHECK_FALSE(titled.carriesNoStamp());
+  CHECK_FALSE(guided.carriesNoStamp());
+}
+
 TEST(delta_against_empty_reconstructs_the_whole_state) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, Vec2{1, 2}, at(1));
-  source.createNode(nid("b"), "B", "y", NodeColor::gold, std::nullopt, at(2));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  source.createNode(nid("b"), "B", "y", NodeColor::gold, at(2));
   source.addEdge(nid("a"), nid("b"), at(3));
   Legend legend = Legend::seededDefaults(at(1));
 
@@ -69,7 +98,7 @@ TEST(delta_against_empty_reconstructs_the_whole_state) {
 
 TEST(delta_against_full_frontier_is_empty) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   Legend legend = Legend::seededDefaults(at(1));
   VersionVector full = frontier(source.exportState(), legend.exportState());
 
@@ -81,7 +110,7 @@ TEST(delta_against_full_frontier_is_empty) {
 
 TEST(delta_masks_fields_the_peer_already_covers) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   source.setColor(nid("a"), NodeColor::brick, at(5));  // a later field the peer has not seen
 
   VersionVector peer;
@@ -100,7 +129,7 @@ TEST(delta_masks_fields_the_peer_already_covers) {
 // The order register rides anti-entropy exactly like color: frontier observes orderAt, nodeUncovered detects it, maskNode carries it.
 TEST(delta_carries_an_order_write_the_peer_has_not_yet_seen) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   GraphState orderWrite;  // no domain command sets order — it arrives as a register join
   NodeStateEntry entry;
   entry.id = nid("a");
@@ -122,14 +151,14 @@ TEST(delta_carries_an_order_write_the_peer_has_not_yet_seen) {
   CHECK(delta.coverage->covers(at(5)));    // frontier folded the order stamp into coverage
 
   LooseGraph target;                        // a peer holding only the create reconciles in one join
-  target.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  target.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   target.join(delta.graph);
   CHECK_EQ(target.exportNode(nid("a"))->order, std::string("a5"));
 }
 
 TEST(delta_carries_opens_to_a_peer_that_has_not_seen_the_write_and_masks_it_once_covered) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   source.setOpens(nid("a"), TreeId{"t_sailing"}, at(5));
 
   VersionVector behind;
@@ -143,7 +172,7 @@ TEST(delta_carries_opens_to_a_peer_that_has_not_seen_the_write_and_masks_it_once
   CHECK(delta.coverage->covers(at(5)));  // the frontier folded the pointer's stamp into coverage
 
   LooseGraph target;  // a peer holding only the create reconciles in one join
-  target.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  target.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   target.join(delta.graph);
   CHECK(target.exportState() == source.exportState());
 
@@ -195,20 +224,20 @@ TEST(a_readers_view_says_which_tree_no_node_opens_and_drops_an_entry_left_with_n
 
 TEST(two_divergent_replicas_reconcile_to_the_full_join_in_one_exchange) {
   LooseGraph baseGraph;
-  baseGraph.createNode(nid("root"), "Root", "x", NodeColor::sky, std::nullopt, at(1));
+  baseGraph.createNode(nid("root"), "Root", "x", NodeColor::sky, at(1));
   GraphState base = baseGraph.exportState();
   Legend baseLegend = Legend::seededDefaults(at(1));
   LegendState baseLegendState = baseLegend.exportState();
 
   LooseGraph xGraph(base);
   xGraph.setLabel(nid("root"), "Root-X", at(30, "x"));
-  xGraph.createNode(nid("x1"), "X1", "x", NodeColor::gold, std::nullopt, at(31, "x"));
+  xGraph.createNode(nid("x1"), "X1", "x", NodeColor::gold, at(31, "x"));
   Legend xLegend(baseLegendState);
   xLegend.addKind(kid("infra"), NodeColor::sky, at(32, "x"));
 
   LooseGraph yGraph(base);
   yGraph.deleteNode(nid("root"), at(20, "y"));
-  yGraph.createNode(nid("y1"), "Y1", "x", NodeColor::plum, std::nullopt, at(21, "y"));
+  yGraph.createNode(nid("y1"), "Y1", "x", NodeColor::plum, at(21, "y"));
   yGraph.addEdge(nid("root"), nid("y1"), at(22, "y"));
   Legend yLegend(baseLegendState);
   yLegend.setLabel(kid("build"), "Build-Y", at(23, "y"));
@@ -240,7 +269,7 @@ TEST(two_divergent_replicas_reconcile_to_the_full_join_in_one_exchange) {
 
 TEST(joining_a_delta_advances_the_receiver_to_cover_it) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(5, "s"));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(5, "s"));
   Legend legend = Legend::seededDefaults(at(1, "s"));
 
   LooseGraph peer;
@@ -253,26 +282,4 @@ TEST(joining_a_delta_advances_the_receiver_to_cover_it) {
   VersionVector after = frontier(peer.exportState(), peerLegend.exportState());
   CHECK(after.covers(Hlc{5, 0, "s"}));                 // the receiver now covers the source's writes
   CHECK(delta.coverage->covers(Hlc{5, 0, "s"}));       // and the delta's stated coverage matches
-}
-
-TEST(delta_carries_an_exemption_write_the_peer_has_not_yet_seen) {
-  Legend source = Legend::seededDefaults(at(1));
-  source.setCrossBranchExempt(kid("build"), true, at(5));
-
-  VersionVector peer;
-  peer.observe(at(3));  // covers the seed (t=1), not the exemption write (t=5)
-
-  Subgraph delta = deltaBetween(LooseGraph{}.exportState(), source.exportState(), peer);
-  REQUIRE_EQ(delta.legend.kinds.size(), 1u);
-  const KindStateEntry& kind = delta.legend.kinds[0];
-  CHECK_EQ(kind.id, kid("build"));
-  CHECK_EQ(kind.descriptionAt, Hlc{});          // covered → masked
-  CHECK_EQ(kind.crossBranchExemptAt, at(5));    // uncovered → carried on the delta
-  CHECK(kind.crossBranchExempt);
-  CHECK(delta.coverage->covers(at(5)));
-
-  Legend target = Legend::seededDefaults(at(1));
-  target.join(delta.legend);
-  CHECK(target.view(kid("build"))->crossBranchExempt);
-  CHECK(target.exportState() == source.exportState());
 }

@@ -2650,9 +2650,9 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 | `tree` | self/roadmap | minted g `^t_[0-9a-f]{16}$`, governs `tree:<id>` | terminal, keep | — | — |
 | `track` | self/roadmap | keyed (tree id) | yes, keep | — | — |
 | `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `visibility` lww **server** ∈ {private, unlisted, public}, `opens` at {unlisted, public} (D-4); `visibilitySetBy` lww server; `forkedFrom` const server | — |
-| `node` | tree/T | derived ≤128 chars, fallback `step` | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color`, `ord` (D-25), `pos` ({x, y} or null), `status`, `description` ≤16 000 chars, `links` (`maxItems` 32 of {url ≤2048 chars, label ≤200 chars}) | 10 000 |
+| `node` | tree/T | derived ≤128 chars, fallback `step` | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color`, `ord` (D-25), `status`, `description` ≤16 000 chars, `links` (`maxItems` 32 of {url ≤2048 chars, label ≤200 chars}) | 10 000 |
 | `edge` | tree/T | keyed `[from, to]` (`ref<node>` each) | yes, keep | — | 20 000 |
-| `kind` | tree/T | derived ≤128 chars, fallback `kind`; genesis `build`, `learn`, `milestone` | revivable, keep | lww: `hue`, `label` ≤24 chars, `description` ≤80 chars, `crossBranchExempt`, `ord` (D-25) | 6 |
+| `kind` | tree/T | derived ≤128 chars, fallback `kind`; genesis `build`, `learn`, `milestone` | revivable, keep | lww: `hue`, `label` ≤24 chars, `description` ≤80 chars, `ord` (D-25) | 6 |
 | `progress` | self/overlay/T | keyed (`ref<node>` id) | none | `mark` lww `{status: complete\|none, outOfOrder: bool}` | — |
 
 **Gestures:**
@@ -2685,7 +2685,7 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 
 **Other bindings:**
 - **Projections:**
-  - `tree_ops`: one headline per `(tree, gestureId)`, skipping position-only gestures;
+  - `tree_ops`: one headline per `(tree, gestureId)`, skipping a gesture that leaves no deed;
   - the tree room: a read cache keyed by `(tree, seq)`.
 - **Server-origin writers:** MCP roadmap write tools, each advertising an optional `requestId`
   (§6.3), and tending.

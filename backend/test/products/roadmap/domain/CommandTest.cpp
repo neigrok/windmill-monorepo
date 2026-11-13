@@ -16,42 +16,43 @@ static TreeId tid(const char* s) { return TreeId{std::string(s)}; }
 static Hlc at(std::uint64_t ms, const char* actor = "a") { return Hlc{ms, 0, actor}; }
 
 static Command createNodeCommand(const char* id) {
-  return CreateNode{nid(id), id, "", NodeColor::sky, {}, std::nullopt};
+  return CreateNode{nid(id), id, "", NodeColor::sky};
 }
 
 static LooseGraph seeded() {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::gold, Vec2{3, 4}, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::gold, at(1));
   g.addEdge(nid("a"), nid("b"), at(2));
   return g;
 }
 
-TEST(transitive_reduction_drops_redundant_edge) {
+// Nothing writes a TransitiveReduction or a PruneDangling any more, and a row of either the log holds changes nothing
+// on replay: a row is logged only after the lattice holding its effect is saved, so a replay never needs one to act.
+TEST(a_stored_tidy_or_prune_row_replays_as_nothing) {
   LooseGraph g;
   Legend legend;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("c"), "C", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, at(1));
+  g.createNode(nid("c"), "C", "x", NodeColor::sky, at(1));
   g.addEdge(nid("a"), nid("b"), at(2));
   g.addEdge(nid("b"), nid("c"), at(2));
-  g.addEdge(nid("a"), nid("c"), at(2));  // redundant: a reaches c through b
-
-  auto redundant = g.redundantEdges();
-  REQUIRE_EQ(redundant.size(), 1u);
-  CHECK_EQ(redundant[0], (Edge{nid("a"), nid("c")}));
+  g.addEdge(nid("a"), nid("c"), at(2));      // a reaches c through b
+  g.addEdge(nid("a"), nid("a"), at(2));      // self
+  g.addEdge(nid("a"), nid("ghost"), at(2));  // missing endpoint
+  const GraphState before = g.exportState();
 
   merge(g, legend, Command{TransitiveReduction{}}, at(5));
-  CHECK_FALSE(g.edgePresent(nid("a"), nid("c")));
-  CHECK(g.edgePresent(nid("a"), nid("b")));
-  CHECK(g.edgePresent(nid("b"), nid("c")));
+  merge(g, legend, Command{PruneDangling{}}, at(6));
+  merge(g, legend, Command{Batch{{TransitiveReduction{}, PruneDangling{}}}}, at(7));
+  CHECK(g.exportState() == before);
 }
 
 TEST(recoloring_a_kind_swaps_hue_and_repaints_nodes) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::olive, std::nullopt, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::olive, std::nullopt, at(1));
-  g.createNode(nid("c"), "C", "x", NodeColor::gold, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::olive, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::olive, at(1));
+  g.createNode(nid("c"), "C", "x", NodeColor::gold, at(1));
   Legend legend({{kid("learn"), NodeColor::olive, "Learn", ""}}, at(1));
 
   merge(g, legend, Command{RecolorKind{kid("learn"), NodeColor::sky}}, at(5));
@@ -84,7 +85,7 @@ TEST(validate_add_kind_rejects_taken_hue_and_full_legend) {
 
 TEST(validate_remove_kind_rejects_while_in_use) {
   LooseGraph g;
-  g.createNode(nid("n"), "N", "x", NodeColor::olive, std::nullopt, at(1));
+  g.createNode(nid("n"), "N", "x", NodeColor::olive, at(1));
   Legend legend = Legend::seededDefaults(at(1));
   CHECK(validate(g, legend, Command{RemoveKind{kid("learn")}}).has_value());       // olive is worn
   CHECK_FALSE(validate(g, legend, Command{RemoveKind{kid("milestone")}}).has_value());  // gold is free
@@ -111,23 +112,11 @@ TEST(validate_rejects_over_long_node_label) {
   CHECK_FALSE(validate(g, legend, Command{RenameNode{nid("a"), std::string(kMaxNodeLabelLength, 'x')}}).has_value());
 }
 
-TEST(validate_rejects_non_finite_reposition) {
-  LooseGraph g = seeded();
-  Legend legend;
-  double inf = std::numeric_limits<double>::infinity();
-  double nan = std::numeric_limits<double>::quiet_NaN();
-  CHECK_EQ(validate(g, legend, Command{RepositionNode{nid("a"), Vec2{inf, 0}}}),
-           std::optional<std::string>("position is not finite"));
-  CHECK_EQ(validate(g, legend, Command{RepositionNode{nid("a"), Vec2{0, nan}}}),
-           std::optional<std::string>("position is not finite"));
-  CHECK_FALSE(validate(g, legend, Command{RepositionNode{nid("a"), Vec2{1.5, -2.5}}}).has_value());
-}
-
 TEST(validate_rejects_new_create_at_node_capacity) {
   LooseGraph g;
   Legend legend;
   for (std::size_t i = 0; i < kMaxNodes; ++i) {
-    g.createNode(nid(("n" + std::to_string(i)).c_str()), "L", "i", NodeColor::sky, std::nullopt, at(1));
+    g.createNode(nid(("n" + std::to_string(i)).c_str()), "L", "i", NodeColor::sky, at(1));
   }
   CHECK_EQ(g.presentNodeIds().size(), kMaxNodes);
   CHECK_EQ(validate(g, legend, Command{CreateNode{nid("overflow"), "L", "i"}}),
@@ -139,7 +128,7 @@ TEST(validate_rejects_new_create_at_node_capacity) {
 TEST(validate_admits_normal_create_and_add_edge) {
   LooseGraph g = seeded();
   Legend legend;
-  Command create = CreateNode{nid("c"), "C", "icon", NodeColor::sky, {}, Vec2{1.5, -2.5}};
+  Command create = CreateNode{nid("c"), "C", "icon", NodeColor::sky};
   CHECK_FALSE(validate(g, legend, create).has_value());
   CHECK_FALSE(validate(g, legend, Command{AddEdge{nid("a"), nid("b")}}).has_value());
 }
@@ -223,21 +212,21 @@ TEST(headline_reads_rename_relabel_and_edges) {
   CHECK(std::get_if<RemoveEdge>(&*unlinkDeed) != nullptr);
 }
 
-TEST(headline_is_empty_for_a_nudge_or_an_empty_frame) {
-  GraphState moved;
-  NodeStateEntry m = nodeWrite("a"); m.position = Vec2{1, 2}; m.positionAt = at(5);
-  moved.nodes.push_back(m);
-  CHECK_FALSE(headline(moved, LegendState{}).has_value());  // a reposition is not feed-worthy
+TEST(headline_is_empty_for_a_reorder_or_an_empty_frame) {
+  GraphState reordered;
+  NodeStateEntry m = nodeWrite("a"); m.order = "a1"; m.orderAt = at(5);
+  reordered.nodes.push_back(m);
+  CHECK_FALSE(headline(reordered, LegendState{}).has_value());  // a sibling reorder is not feed-worthy
   CHECK_FALSE(headline(GraphState{}, LegendState{}).has_value());
 }
 
 TEST(create_node_wires_every_prerequisite_and_seeds_annotation) {
   LooseGraph g;
   Legend legend;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
-  merge(g, legend, Command{CreateNode{nid("c"), "C", "x", NodeColor::sky, {nid("a"), nid("b")},
-                                      std::nullopt, "notes", {Link{"Doc", "https://d"}}}}, at(2));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, at(1));
+  merge(g, legend, Command{CreateNode{nid("c"), "C", "x", NodeColor::sky, {nid("a"), nid("b")}, "notes",
+                                      {Link{"Doc", "https://d"}}}}, at(2));
 
   CHECK(g.edgePresent(nid("a"), nid("c")));
   CHECK(g.edgePresent(nid("b"), nid("c")));
@@ -250,7 +239,7 @@ TEST(create_node_wires_every_prerequisite_and_seeds_annotation) {
 TEST(annotate_node_sets_only_the_fields_it_carries) {
   LooseGraph g;
   Legend legend;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   merge(g, legend, Command{AnnotateNode{nid("a"), std::string("body"), std::nullopt}}, at(2));
   merge(g, legend, Command{AnnotateNode{nid("a"), std::nullopt, std::vector<Link>{Link{"", "u"}}}}, at(3));
 
@@ -267,7 +256,7 @@ TEST(annotate_node_sets_only_the_fields_it_carries) {
 TEST(annotate_and_create_bounds_are_enforced) {
   LooseGraph g;
   Legend legend;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   std::vector<Link> tooMany(kMaxNodeLinks + 1, Link{"", "u"});
   CHECK_EQ(validate(g, legend, Command{AnnotateNode{nid("a"), std::nullopt, tooMany}}),
            std::optional<std::string>("links has 33 items, max 32"));
@@ -290,24 +279,6 @@ TEST(add_kind_seeds_label_and_description_inline) {
 
   CHECK_EQ(validate(g, legend, Command{AddKind{kid("x"), NodeColor::gold, std::string(25, 'x'), ""}}),
            std::optional<std::string>("label would be 25 characters, 1 over the 24 cap"));
-}
-
-TEST(prune_dangling_drops_self_and_missing_endpoint_edges_only) {
-  LooseGraph g;
-  Legend legend;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
-  g.addEdge(nid("a"), nid("b"), at(2));   // live
-  g.addEdge(nid("a"), nid("a"), at(2));   // self
-  g.addEdge(nid("a"), nid("ghost"), at(2));  // missing endpoint
-
-  std::vector<Edge> dangling = g.danglingEdges();
-  CHECK_EQ(dangling.size(), 2u);
-
-  merge(g, legend, Command{PruneDangling{}}, at(3));
-  CHECK(g.edgePresent(nid("a"), nid("b")));            // live edge kept
-  CHECK_FALSE(g.edgePresent(nid("a"), nid("a")));      // self dropped
-  CHECK_FALSE(g.edgePresent(nid("a"), nid("ghost")));  // dangling dropped
 }
 
 TEST(headline_reads_an_annotation_frame) {
@@ -372,7 +343,7 @@ TEST(admit_of_a_graft_counts_the_resulting_tree_not_the_batch) {
   LooseGraph graph;
   TreeData batch;
   for (std::size_t i = 0; i < kMaxNodes; ++i) {
-    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, std::nullopt, at(1));
+    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, at(1));
     NodeSpec node;
     node.id = nid(("n" + std::to_string(i)).c_str());
     batch.nodes.push_back(std::move(node));
@@ -393,7 +364,7 @@ TEST(admit_of_a_graft_counts_the_resulting_tree_not_the_batch) {
 TEST(admit_of_a_frame_lets_a_tombstone_pay_for_a_new_node) {
   LooseGraph graph;
   for (std::size_t i = 0; i < kMaxNodes; ++i)
-    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, std::nullopt, at(1));
+    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, at(1));
 
   GraphState frame;
   NodeStateEntry born;
@@ -442,7 +413,7 @@ TEST(admit_refuses_an_oversized_id_without_quoting_it_back) {
 TEST(admit_still_lets_an_over_cap_tree_be_edited_and_thinned) {
   LooseGraph graph;
   for (std::size_t i = 0; i <= kMaxNodes; ++i)  // 10001 present nodes: already past the ceiling
-    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, std::nullopt, at(1));
+    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, at(1));
 
   GraphState rename;
   NodeStateEntry renamed;
@@ -468,7 +439,7 @@ TEST(admit_still_lets_an_over_cap_tree_be_edited_and_thinned) {
 TEST(admit_does_not_let_a_losing_tombstone_buy_headroom) {
   LooseGraph graph;
   for (std::size_t i = 0; i < kMaxNodes; ++i)
-    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, std::nullopt,
+    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky,
                      Hlc{1, 0, "genesis"});
 
   GraphState frame;
@@ -494,7 +465,7 @@ TEST(admit_does_not_let_a_losing_tombstone_buy_headroom) {
 TEST(admit_counts_a_repeated_id_once_however_often_a_frame_names_it) {
   LooseGraph graph;
   for (std::size_t i = 0; i < kMaxNodes; ++i)
-    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, std::nullopt, at(1));
+    graph.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, at(1));
 
   GraphState frame;
   for (int repeat = 0; repeat < 500; ++repeat) {  // the same real deletion, 500 times over
@@ -598,43 +569,30 @@ TEST(admit_guide_holds_five_thousand_characters_whatever_their_bytes_and_refuses
   CHECK_EQ(cut->reason, std::string("the guide is not valid UTF-8"));
 }
 
-TEST(describing_a_kind_writes_only_the_registers_it_carries) {
+// A DescribeKind writes the description it carries; one that carries none, as a stored row that set only a register no
+// kind holds any more decodes, writes nothing.
+TEST(describing_a_kind_writes_its_description_and_one_that_carries_none_writes_nothing) {
   LooseGraph g;
   Legend legend = Legend::seededDefaults(at(1));
+  const LegendState seeded = legend.exportState();
 
-  merge(g, legend, Command{DescribeKind{kid("build"), std::nullopt, true}}, at(2));
-  Kind flagged = *legend.view(kid("build"));
-  CHECK(flagged.crossBranchExempt);
-  CHECK_EQ(flagged.description, std::string("Things you make"));
+  merge(g, legend, Command{DescribeKind{kid("build"), std::nullopt}}, at(2));
+  CHECK(legend.exportState() == seeded);
+  merge(g, legend, Command{DescribeKind{kid("build"), std::string("Made things")}}, at(3));
+  CHECK_EQ(legend.view(kid("build"))->description, std::string("Made things"));
+  CHECK_EQ(legend.exportKind(kid("build"))->descriptionAt, at(3));
 
-  merge(g, legend, Command{DescribeKind{kid("build"), std::string("Made things"), std::nullopt}}, at(3));
-  Kind described = *legend.view(kid("build"));
-  CHECK(described.crossBranchExempt);
-  CHECK_EQ(described.description, std::string("Made things"));
-  CHECK_EQ(legend.exportKind(kid("build"))->crossBranchExemptAt, at(2));
-
-  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("build"), std::nullopt, false}}), std::nullopt);
-  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("nope"), std::nullopt, true}}),
+  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("build"), std::nullopt}}), std::nullopt);
+  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("nope"), std::nullopt}}),
            std::optional<std::string>("no kind \"nope\" in this legend"));
-  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("build"), std::string(81, 'y'), true}}),
+  CHECK_EQ(validate(g, legend, Command{DescribeKind{kid("build"), std::string(81, 'y')}}),
            std::optional<std::string>("description would be 81 characters, 1 over the 80 cap"));
-}
-
-TEST(add_kind_seeds_the_exemption_inline) {
-  LooseGraph g;
-  Legend legend;
-  merge(g, legend, Command{AddKind{kid("drill"), NodeColor::gold, "Drill", "", true}}, at(1));
-  merge(g, legend, Command{AddKind{kid("build"), NodeColor::sky, "Build", ""}}, at(2));
-  CHECK(legend.view(kid("drill"))->crossBranchExempt);
-  CHECK_FALSE(legend.view(kid("build"))->crossBranchExempt);
-  CHECK_EQ(legend.exportKind(kid("drill"))->crossBranchExemptAt, at(1));
-  CHECK_EQ(legend.exportKind(kid("build"))->crossBranchExemptAt, Hlc{});  // false was never written
 }
 
 TEST(annotate_node_sets_and_clears_the_icon) {
   LooseGraph g;
   Legend legend;
-  g.createNode(nid("a"), "A", "", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "", NodeColor::sky, at(1));
   CHECK_EQ(g.nodeView(nid("a"))->icon, std::string(""));
 
   AnnotateNode setIcon{nid("a")};
@@ -659,7 +617,7 @@ TEST(annotate_node_sets_and_clears_the_icon) {
 TEST(annotate_node_appends_to_the_description_after_a_blank_line) {
   LooseGraph g;
   Legend legend;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
 
   AnnotateNode first{nid("a")};
   first.appendDescription = "first entry";
@@ -681,7 +639,7 @@ TEST(annotate_node_appends_to_the_description_after_a_blank_line) {
 TEST(annotate_node_refuses_description_and_append_together) {
   LooseGraph g;
   Legend legend;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   AnnotateNode both{nid("a")};
   both.description = "one";
   both.appendDescription = "two";
@@ -693,7 +651,7 @@ TEST(annotate_node_refuses_description_and_append_together) {
 TEST(annotate_node_holds_the_cap_against_the_appended_result) {
   LooseGraph g;
   Legend legend;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   g.setDescription(nid("a"), std::string(16000, 'x'), at(1));
 
   AnnotateNode tail{nid("a")};
@@ -826,7 +784,7 @@ TEST(malformed_utf8_is_refused_at_every_door_before_any_cap_is_counted) {
 
   // The socket door: a client lattice frame, whose edges name ids no node in the frame carries.
   LooseGraph client;
-  client.createNode(nid("hull"), "hull", "", NodeColor::sky, std::nullopt, at(100, "client"));
+  client.createNode(nid("hull"), "hull", "", NodeColor::sky, at(100, "client"));
   client.setDescription(nid("hull"), continuation, at(101, "client"));
   std::optional<Admission> frame = admit(g, client.exportState());
   REQUIRE(frame.has_value());
@@ -892,7 +850,7 @@ TEST(a_nul_character_is_refused_in_every_capped_field_because_a_row_keeps_only_t
            std::optional<std::string>("label contains a NUL character; description contains a NUL character"));
   CHECK_EQ(validate(g, defaults, Command{RenameKind{kid("build"), nul}}),
            std::optional<std::string>("label contains a NUL character"));
-  CHECK_EQ(validate(g, defaults, Command{DescribeKind{kid("build"), nul, std::nullopt}}),
+  CHECK_EQ(validate(g, defaults, Command{DescribeKind{kid("build"), nul}}),
            std::optional<std::string>("description contains a NUL character"));
 
   // The HTTP save door: a posted document.
@@ -920,7 +878,7 @@ TEST(a_nul_character_is_refused_in_every_capped_field_because_a_row_keeps_only_t
 
   // The socket door: a client lattice frame.
   LooseGraph client;
-  client.createNode(nid("hull"), "hull", "", NodeColor::sky, std::nullopt, at(100, "client"));
+  client.createNode(nid("hull"), "hull", "", NodeColor::sky, at(100, "client"));
   client.setDescription(nid("hull"), nul, at(101, "client"));
   const std::optional<Admission> frame = admit(g, client.exportState());
   REQUIRE(frame.has_value());
@@ -946,7 +904,6 @@ TEST(a_node_edit_naming_no_present_node_is_refused_before_it_can_plant_a_phantom
   CHECK_EQ(validate(g, legend, Command{annotate}), missing);
   CHECK_EQ(validate(g, legend, Command{RenameNode{nid("ghost"), "Ghost"}}), missing);
   CHECK_EQ(validate(g, legend, Command{SetNodeColor{nid("ghost"), NodeColor::gold}}), missing);
-  CHECK_EQ(validate(g, legend, Command{RepositionNode{nid("ghost"), Vec2{1, 2}}}), missing);
   CHECK_EQ(validate(g, legend, Command{Batch{{createNodeCommand("c"), Command{annotate}}}}), missing);
 
   // A tombstoned id is as absent as one never created.
@@ -983,7 +940,6 @@ TEST(node_patch_plan_preserves_omitted_fields_and_retries_without_commands) {
   merge(graph, legend, plan.batch, at(10));
   CHECK_EQ(graph.nodeView(nid("a"))->label, std::string("New A"));
   CHECK_EQ(graph.nodeView(nid("a"))->icon, std::string("x"));
-  CHECK_EQ(graph.nodeView(nid("b"))->position, (std::optional<Vec2>{Vec2{3, 4}}));
   CHECK_EQ(graph.nodeView(nid("b"))->prerequisites, (std::vector<NodeId>{nid("a")}));
   const auto retry = planNodePatches(graph, legend, {first, second});
   REQUIRE(std::holds_alternative<NodePatchPlan>(retry));
@@ -1187,7 +1143,7 @@ TEST(create_node_opens_the_tree_it_names_and_opens_none_without_one) {
 TEST(annotate_node_sets_leaves_and_clears_the_tree_a_node_opens) {
   LooseGraph g;
   Legend legend;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   AnnotateNode pointed{nid("a")};
   pointed.opens = tid("t_sub");
   CHECK_EQ(validate(g, legend, Command{pointed}), std::nullopt);
@@ -1283,7 +1239,7 @@ TEST(headline_is_empty_for_a_frame_that_sets_only_the_tree_a_node_opens) {
 TEST(create_node_on_a_deleted_id_clears_the_pointer_it_carries_empty_and_leaves_the_one_it_does_not_carry) {
   Legend legend;
   LooseGraph cleared;
-  cleared.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  cleared.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   cleared.setOpens(nid("a"), tid("t_sub"), at(2));
   cleared.deleteNode(nid("a"), at(3));
   LooseGraph left = cleared;
@@ -1312,8 +1268,7 @@ static std::string planned(const LooseGraph& graph, const Legend& legend, const 
     if (!text.empty()) text += "; ";
     if (const auto* c = std::get_if<RenameKind>(&command)) text += "RenameKind " + c->id.str() + " \"" + c->label + "\"";
     else if (const auto* c = std::get_if<DescribeKind>(&command))
-      text += "DescribeKind " + c->id.str() + " " + (c->description ? "\"" + *c->description + "\"" : "-") + " " +
-              (c->crossBranchExempt ? (*c->crossBranchExempt ? "exempt" : "not exempt") : "-");
+      text += "DescribeKind " + c->id.str() + " " + (c->description ? "\"" + *c->description + "\"" : "-");
     else if (const auto* c = std::get_if<RecolorKind>(&command))
       text += "RecolorKind " + c->id.str() + " " + std::string(toString(c->hue));
     else text += "another command";
@@ -1326,9 +1281,9 @@ static std::string planned(const LooseGraph& graph, const Legend& legend, const 
 // A kind k on sky, labelled and briefed, worn by a and b, beside a kind j on gold worn by c.
 static LooseGraph kindWearers() {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("c"), "C", "x", NodeColor::gold, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, at(1));
+  g.createNode(nid("c"), "C", "x", NodeColor::gold, at(1));
   return g;
 }
 static Legend kindLegend() {
@@ -1348,12 +1303,12 @@ TEST(kind_update_plan_lands_the_fields_the_kind_does_not_hold) {
 
   CHECK_EQ(planned(g, legend, update("Kay", std::nullopt, std::nullopt)), std::string("RenameKind k \"Kay\""));
   CHECK_EQ(planned(g, legend, update(std::nullopt, "New brief.", std::nullopt)),
-           std::string("DescribeKind k \"New brief.\" -"));
-  CHECK_EQ(planned(g, legend, update(std::nullopt, "", std::nullopt)), std::string("DescribeKind k \"\" -"));
+           std::string("DescribeKind k \"New brief.\""));
+  CHECK_EQ(planned(g, legend, update(std::nullopt, "", std::nullopt)), std::string("DescribeKind k \"\""));
   CHECK_EQ(planned(g, legend, update(std::nullopt, std::nullopt, NodeColor::plum)),
            std::string("RecolorKind k plum | repaints 2"));
   CHECK_EQ(planned(g, legend, update("Kay", "New brief.", NodeColor::plum)),
-           std::string("RenameKind k \"Kay\"; DescribeKind k \"New brief.\" -; RecolorKind k plum | repaints 2"));
+           std::string("RenameKind k \"Kay\"; DescribeKind k \"New brief.\"; RecolorKind k plum | repaints 2"));
 
   CHECK_EQ(planned(g, legend, update("K", std::nullopt, std::nullopt)), std::string("lands nothing"));
   CHECK_EQ(planned(g, legend, update(std::nullopt, "Brief.", std::nullopt)), std::string("lands nothing"));
@@ -1383,7 +1338,7 @@ TEST(kind_update_plan_refuses_nothing_sent_an_unknown_kind_and_a_taken_hue) {
 // is the one ReconnectEdge; any other removal beside an addition is the Batch of the two.
 TEST(edge_change_plan_lands_a_move_as_one_reconnect_edge) {
   LooseGraph graph = seeded();
-  graph.createNode(nid("c"), "C", "x", NodeColor::sky, std::nullopt, at(1));
+  graph.createNode(nid("c"), "C", "x", NodeColor::sky, at(1));
   const auto commandsOf = [&](const EdgeChanges& changes) {
     std::vector<std::string> kinds;
     const auto result = planEdgeChanges(graph, changes);

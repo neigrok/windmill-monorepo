@@ -30,7 +30,7 @@ Seed a dedicated test account with a “Ship v1” plan containing an available 
 | “Which roadmaps do I own?” | Roadmap read | List the fixture plan with `list_trees`. |
 | “What can I work on next in Ship v1?” | Roadmap read | Locate the tree, then use `find_nodes` for available steps. The dependent step is absent. |
 | “What does the first step unlock?” | Roadmap read | Use `get_tree` and explain the planted dependency. |
-| “I finished the first step. Mark it complete.” | Roadmap read and write | Resolve the node, call `set_progress` and verify the mark in the person's tree. |
+| “I finished the first step. Mark it complete.” | Roadmap read and write | Resolve the node, call `update_nodes` with its `status` and verify the mark in the person's tree. |
 | “What routines have I already saved?” | Gym read | Use `list_routines` and return the synthetic routine. |
 | “How do I deploy a workflow on windmill.dev?” | Any | No personal Roadmap or Gym tool call. |
 | “Summarize today's news.” | Any | No Windmill tool call. |

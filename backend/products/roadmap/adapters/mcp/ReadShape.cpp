@@ -70,7 +70,6 @@ const Vocabulary<NodeField>& nodeVocabulary() {
                                                  {"kind", NodeField::kind},
                                                  {"order", NodeField::order},
                                                  {"prerequisites", NodeField::prerequisites},
-                                                 {"position", NodeField::position},
                                                  {"status", NodeField::status},
                                                  {"seedStatus", NodeField::seedStatus},
                                                  {"state", NodeField::state},
@@ -86,8 +85,7 @@ const Vocabulary<KindField>& kindVocabulary() {
   static const Vocabulary<KindField> vocabulary({{"id", KindField::id},
                                                  {"hue", KindField::hue},
                                                  {"label", KindField::label},
-                                                 {"description", KindField::description},
-                                                 {"crossBranchExempt", KindField::crossBranchExempt}});
+                                                 {"description", KindField::description}});
   return vocabulary;
 }
 
@@ -113,12 +111,6 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const No
     Json::Value prerequisites(Json::arrayValue);
     for (const NodeId& prereq : node.prerequisites) prerequisites.append(prereq.str());
     n["prerequisites"] = prerequisites;
-  }
-  if (fields.count(NodeField::position) && node.position) {
-    Json::Value position(Json::objectValue);
-    position["x"] = node.position->x;
-    position["y"] = node.position->y;
-    n["position"] = position;
   }
   if (fields.count(NodeField::status)) {
     n["status"] = context.marks.completed.count(node.id) ? "complete" : "none";
@@ -150,7 +142,6 @@ Json::Value projectKind(const Kind& kind, const KindFields& fields) {
   if (fields.count(KindField::hue)) k["hue"] = std::string(toString(kind.hue));
   if (fields.count(KindField::label)) k["label"] = kind.label;
   if (fields.count(KindField::description)) k["description"] = kind.description;
-  if (fields.count(KindField::crossBranchExempt)) k["crossBranchExempt"] = kind.crossBranchExempt;
   return k;
 }
 

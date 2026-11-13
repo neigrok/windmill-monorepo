@@ -27,13 +27,13 @@ namespace wm {
 // being read, and only while the opened tree stands and is theirs — a tree id is the read capability
 // of an unlisted tree, and a title is its owner's words. `url` is where the node's step opens on the web
 // for the caller (domain/WebAddress.h).
-enum class NodeField { id, label, icon, color, kind, order, prerequisites, position, status, seedStatus,
+enum class NodeField { id, label, icon, color, kind, order, prerequisites, status, seedStatus,
                        state, summary, description, links, opens, url };
 constexpr std::size_t kSummaryChars = 200;
 // The most live edges one get_tree reply lists whole under `includeEdges`; past it the reply
 // answers `edgesOmitted` with the count instead. Listing is linear, so only the edge count gates.
 constexpr std::size_t kMaxListedEdges = 6000;
-enum class KindField { id, hue, label, description, crossBranchExempt };
+enum class KindField { id, hue, label, description };
 enum class ProgressField { completed, cleared, outOfOrder };
 
 using NodeFields = std::set<NodeField>;

@@ -36,8 +36,9 @@ public:
 
   // Dedupe on the frame's id, fold its stamps into the clock, join graph + legend + title + guide,
   // assign the next seq, queue its headline deed under `actor` for the op log, broadcast verbatim.
-  // nullopt means a duplicate frame. Admits nothing on its own — every door that can refuse asks
-  // admit() first.
+  // nullopt means the frame lands nothing — a duplicate, or one whose every stamp the room already
+  // holds — so it takes no seq, dirties nothing and is told to no one. Admits nothing on its own —
+  // every door that can refuse asks admit() first.
   std::optional<Seq> joinSubgraph(const Subgraph& incoming, const UserId& actor);
 
   // Why joining this arrival would breach the tree's caps, or nullopt. Asked against THIS room's
@@ -70,16 +71,6 @@ public:
   std::variant<Graft, std::string> resolveLinks(Graft incoming) const {
     return wm::resolveLinks(graph_, std::move(incoming));
   }
-  // A write's links judged against the ones the node's record holds, read under the strand the write then takes, so
-  // nothing lands between read and write.
-  std::variant<std::vector<Link>, std::string> shownLinks(const NodeId& node, std::vector<Link> sent,
-                                                          const std::string& path) const {
-    return wm::shownLinks(graph_.linksOf(node), std::move(sent), path);
-  }
-  std::variant<std::vector<Link>, std::string> withLinksAdded(const NodeId& node, const std::vector<Link>& added,
-                                                              const std::string& path) const {
-    return wm::withLinksAdded(graph_.linksOf(node), added, path);
-  }
 
   // The title and the guide, each set only when sent, stamped from the room clock and joined as one frame, so a
   // call that sets both lands both at one seq; it broadcasts and LWW-merges like any other field write, and leaves
@@ -109,12 +100,6 @@ public:
   // present node, or a legend rule. Server-driven undo/redo bypasses it.
   std::optional<std::string> validate(const Command& command) const;
 
-  // wm::changedPart over the node as this room holds it; on a node it does not hold, the edit lands whole.
-  std::optional<Command> changedPart(const NodeId& node, const Command& command) const {
-    const std::optional<NodeSpec> held = graph_.nodeView(node);
-    if (!held) return command;
-    return wm::changedPart(*held, command);
-  }
   std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(const std::vector<NodePatch>& updates) const {
     return wm::planNodePatches(graph_, legend_, updates);
   }

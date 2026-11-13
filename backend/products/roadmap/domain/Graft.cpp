@@ -69,8 +69,6 @@ LegendState graftLegend(const Legend& current, const Graft& graft, const Hlc& at
     land(true, &Entry::hue, &Entry::hueAt, kind.hue);
     land(carried(KindRegister::label), &Entry::label, &Entry::labelAt, kind.label);
     land(carried(KindRegister::description), &Entry::description, &Entry::descriptionAt, kind.description);
-    land(carried(KindRegister::crossBranchExempt), &Entry::crossBranchExempt, &Entry::crossBranchExemptAt,
-         kind.crossBranchExempt);
     if (entry != Entry{.id = kind.id}) upserted.emplace(kind.id, std::move(entry));  // it lands something
   }
 
@@ -160,7 +158,6 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
     land(carried(NodeRegister::icon), &Entry::icon, &Entry::iconAt, node.icon);
     land(carried(NodeRegister::color), &Entry::color, &Entry::colorAt, node.color);
     land(carried(NodeRegister::order), &Entry::order, &Entry::orderAt, node.order);
-    land(carried(NodeRegister::position), &Entry::position, &Entry::positionAt, node.position);
     land(carried(NodeRegister::status), &Entry::status, &Entry::statusAt, normalizeSeedStatus(node.status));
     land(carried(NodeRegister::description), &Entry::description, &Entry::descriptionAt, node.description);
     land(carried(NodeRegister::links), &Entry::links, &Entry::linksAt, node.links);

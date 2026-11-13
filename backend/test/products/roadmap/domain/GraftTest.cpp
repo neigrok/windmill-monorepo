@@ -1,5 +1,6 @@
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/Graft.h"
+#include "products/roadmap/domain/TreeDiagnostics.h"
 #include "test/testing.h"
 
 #include <set>
@@ -17,11 +18,19 @@ Hlc at(std::uint64_t ms) { return Hlc{ms, 0, "a"}; }
 LooseGraph seeded() {
   LooseGraph g;
   for (const char* id : {"a", "b", "c", "n", "d"})
-    g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+    g.createNode(nid(id), id, "", NodeColor::sky, at(1));
   g.addEdge(nid("a"), nid("n"), at(1));
   g.addEdge(nid("c"), nid("n"), at(1));
   g.addEdge(nid("n"), nid("d"), at(1));
   return g;
+}
+
+// The edges no valid tree keeps, as the tree's diagnostics report them: dangling ones, then self edges.
+std::vector<Edge> unkeptEdges(const LooseGraph& graph) {
+  const TreeDiagnostics diagnostics = TreeDiagnostics::assess(graph, Legend{});
+  std::vector<Edge> unkept = diagnostics.dangling;
+  unkept.insert(unkept.end(), diagnostics.selfEdges.begin(), diagnostics.selfEdges.end());
+  return unkept;
 }
 
 NodeSpec spec(const char* id, std::vector<const char*> prerequisites) {
@@ -36,8 +45,7 @@ NodeSpec spec(const char* id, std::vector<const char*> prerequisites) {
 std::set<NodeRegister> omittedAllBut(const std::set<NodeRegister>& sent) {
   std::set<NodeRegister> omitted;
   for (NodeRegister reg : {NodeRegister::label, NodeRegister::icon, NodeRegister::color, NodeRegister::order,
-                           NodeRegister::position, NodeRegister::status, NodeRegister::description,
-                           NodeRegister::links, NodeRegister::opens})
+                           NodeRegister::status, NodeRegister::description, NodeRegister::links, NodeRegister::opens})
     if (!sent.count(reg)) omitted.insert(reg);
   return omitted;
 }
@@ -159,13 +167,12 @@ TEST(graft_frame_repaints_the_nodes_a_rehued_kind_wore) {
   LooseGraph g;
   for (const auto& [id, color] : std::vector<std::pair<const char*, NodeColor>>{
            {"a", NodeColor::sky}, {"b", NodeColor::plum}, {"c", NodeColor::sky}, {"d", NodeColor::sky}})
-    g.createNode(nid(id), id, "", color, std::nullopt, at(1));
+    g.createNode(nid(id), id, "", color, at(1));
   const Legend legend({{KindId{"apps"}, NodeColor::sky, "Apps"}, {KindId{"infra"}, NodeColor::plum, "Infra"}}, at(1));
   Graft graft;
   graft.document.kinds = {{KindId{"apps"}, NodeColor::plum}, {KindId{"infra"}, NodeColor::sky}};
   for (const char* kind : {"apps", "infra"})
-    graft.omittedKindRegisters[KindId{kind}] = {KindRegister::label, KindRegister::description,
-                                                KindRegister::crossBranchExempt};
+    graft.omittedKindRegisters[KindId{kind}] = {KindRegister::label, KindRegister::description};
   graft.document.nodes = {spec("c", {})};
   graft.document.nodes[0].color = NodeColor::gold;
   graft.omittedNodeRegisters[nid("c")] = omittedAllBut({NodeRegister::color});
@@ -185,13 +192,12 @@ TEST(graft_frame_leaves_a_node_filed_by_kind_to_the_batch_beside_a_swap) {
   LooseGraph g;
   for (const auto& [id, color] : std::vector<std::pair<const char*, NodeColor>>{
            {"a", NodeColor::sky}, {"b", NodeColor::sky}, {"c", NodeColor::plum}})
-    g.createNode(nid(id), id, "", color, std::nullopt, at(1));
+    g.createNode(nid(id), id, "", color, at(1));
   const Legend legend({{KindId{"apps"}, NodeColor::sky, "Apps"}, {KindId{"infra"}, NodeColor::plum, "Infra"}}, at(1));
   Graft graft;
   graft.document.kinds = {{KindId{"apps"}, NodeColor::plum}, {KindId{"infra"}, NodeColor::sky}};
   for (const char* kind : {"apps", "infra"})
-    graft.omittedKindRegisters[KindId{kind}] = {KindRegister::label, KindRegister::description,
-                                                KindRegister::crossBranchExempt};
+    graft.omittedKindRegisters[KindId{kind}] = {KindRegister::label, KindRegister::description};
   graft.document.nodes = {spec("a", {})};
   graft.omittedNodeRegisters[nid("a")] = omittedAllBut({});
   graft.nodeKinds = {{nid("a"), KindId{"infra"}}};
@@ -247,7 +253,7 @@ TEST(graft_tombstone_removes_the_node_and_every_edge_touching_it_at_the_one_stam
   CHECK_FALSE(g.edgePresent(nid("n"), nid("d")));
   CHECK(g.edgePresent(nid("a"), nid("b")));
   CHECK(g.hasNode(nid("d")));
-  CHECK(g.danglingEdges().empty());
+  CHECK(unkeptEdges(g).empty());
 }
 
 TEST(graft_state_never_adds_an_edge_onto_a_node_it_tombstones) {
@@ -259,13 +265,13 @@ TEST(graft_state_never_adds_an_edge_onto_a_node_it_tombstones) {
   g.join(graftState(g, graft, at(2)));
   CHECK(g.hasNode(nid("x")));
   CHECK_FALSE(g.edgePresent(nid("n"), nid("x")));
-  CHECK(g.danglingEdges().empty());
+  CHECK(unkeptEdges(g).empty());
 }
 
 TEST(graft_admission_is_judged_on_what_the_graft_leaves_behind) {
   LooseGraph g;
   for (std::size_t i = 0; i < kMaxNodes; ++i)
-    g.createNode(NodeId{"n" + std::to_string(i)}, "N", "", NodeColor::sky, std::nullopt, at(1));
+    g.createNode(NodeId{"n" + std::to_string(i)}, "N", "", NodeColor::sky, at(1));
 
   Graft grows;
   grows.document.nodes = {spec("extra", {})};
@@ -284,10 +290,10 @@ TEST(graft_admission_is_judged_on_what_the_graft_leaves_behind) {
 // held edge add nothing, the new edge lands at the graft's stamp.
 TEST(graft_state_keeps_a_held_nodes_creation_stamp_and_carries_only_what_the_batch_changes) {
   LooseGraph g;
-  g.createNode(nid("root"), "Root", "", NodeColor::sky, std::nullopt, at(1000));
-  g.createNode(nid("x"), "X", "", NodeColor::sky, std::nullopt, at(1000));
-  g.createNode(nid("a"), "A", "", NodeColor::sky, std::nullopt, at(1001));
-  g.createNode(nid("b"), "B", "", NodeColor::sky, std::nullopt, at(1002));
+  g.createNode(nid("root"), "Root", "", NodeColor::sky, at(1000));
+  g.createNode(nid("x"), "X", "", NodeColor::sky, at(1000));
+  g.createNode(nid("a"), "A", "", NodeColor::sky, at(1001));
+  g.createNode(nid("b"), "B", "", NodeColor::sky, at(1002));
   g.addEdge(nid("root"), nid("a"), at(1001));
   g.addEdge(nid("root"), nid("b"), at(1002));
   const NodeStateEntry held = *g.exportNode(nid("a"));
@@ -311,7 +317,7 @@ TEST(graft_state_keeps_a_held_nodes_creation_stamp_and_carries_only_what_the_bat
 // delete leaves and the edge it added dangles, so a later revival brings both back.
 TEST(graft_state_loses_a_re_sent_node_to_a_delete_stamped_before_it_and_joined_after_it) {
   LooseGraph g;
-  for (const char* id : {"root", "x", "a"}) g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+  for (const char* id : {"root", "x", "a"}) g.createNode(nid(id), id, "", NodeColor::sky, at(1));
   g.addEdge(nid("root"), nid("a"), at(1));
 
   NodeSpec renamed = spec("a", {"x"});
@@ -326,7 +332,7 @@ TEST(graft_state_loses_a_re_sent_node_to_a_delete_stamped_before_it_and_joined_a
   CHECK(*g.exportNode(nid("a")) == (NodeStateEntry{.id = nid("a"), .createdAt = at(1), .deletedAt = at(2),
                                                   .label = "A2", .labelAt = at(3), .iconAt = at(1),
                                                   .color = NodeColor::sky, .colorAt = at(1)}));
-  CHECK_EQ(g.danglingEdges(), (std::vector<Edge>{{nid("root"), nid("a")}, {nid("x"), nid("a")}}));
+  CHECK_EQ(unkeptEdges(g), (std::vector<Edge>{{nid("root"), nid("a")}, {nid("x"), nid("a")}}));
 
   Graft revive;
   revive.document.nodes = {spec("a", {})};
@@ -336,7 +342,7 @@ TEST(graft_state_loses_a_re_sent_node_to_a_delete_stamped_before_it_and_joined_a
                                                   .label = "A2", .labelAt = at(3), .iconAt = at(1),
                                                   .color = NodeColor::sky, .colorAt = at(1)}));
   CHECK_EQ(g.nodeView(nid("a"))->prerequisites, (std::vector<NodeId>{nid("root"), nid("x")}));
-  CHECK(g.danglingEdges().empty());
+  CHECK(unkeptEdges(g).empty());
 }
 
 // One batch, three kinds of id: a new node is created at the graft's stamp with what it carries, a
@@ -345,7 +351,7 @@ TEST(graft_state_loses_a_re_sent_node_to_a_delete_stamped_before_it_and_joined_a
 // writes nothing; changed alone, the frame carries that register alone.
 TEST(graft_state_lands_the_tree_a_node_opens_only_where_the_batch_changes_it) {
   LooseGraph g;
-  g.createNode(nid("n"), "N", "", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("n"), "N", "", NodeColor::sky, at(1));
   g.setOpens(nid("n"), TreeId{"t_sub"}, at(1));
 
   NodeSpec resent = spec("n", {});
@@ -365,7 +371,7 @@ TEST(graft_state_lands_the_tree_a_node_opens_only_where_the_batch_changes_it) {
 
 TEST(graft_state_creates_a_new_node_revives_a_deleted_one_and_edits_a_present_one) {
   LooseGraph g;
-  for (const char* id : {"root", "gone"}) g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+  for (const char* id : {"root", "gone"}) g.createNode(nid(id), id, "", NodeColor::sky, at(1));
   g.deleteNode(nid("gone"), at(2));
 
   NodeSpec fresh = spec("fresh", {"root"});
@@ -389,7 +395,7 @@ TEST(graft_state_creates_a_new_node_revives_a_deleted_one_and_edits_a_present_on
 // a register it carries lands at the graft's stamp, an empty one included.
 TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_even_empty) {
   LooseGraph g;
-  g.createNode(nid("n"), "N", "star", NodeColor::sky, Vec2{1, 2}, at(1), "complete");
+  g.createNode(nid("n"), "N", "star", NodeColor::sky, at(1), "complete");
   g.setOrder(nid("n"), "a0", at(1));
   g.setDescription(nid("n"), "Read it", at(1));
   g.setLinks(nid("n"), {Link{"home", "https://windmill.works"}}, at(1));
@@ -412,7 +418,7 @@ TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_e
   CHECK(*g.exportNode(nid("n")) ==
         (NodeStateEntry{.id = nid("n"), .createdAt = at(1), .label = "N", .labelAt = at(1), .iconAt = at(2),
                         .color = NodeColor::plum, .colorAt = at(2), .order = "a0", .orderAt = at(1),
-                        .position = Vec2{1, 2}, .positionAt = at(1), .status = "complete", .statusAt = at(1),
+                        .status = "complete", .statusAt = at(1),
                         .descriptionAt = at(2), .links = {Link{"home", "https://windmill.works"}},
                         .linksAt = at(1), .opens = TreeId{"t_sub"}, .opensAt = at(1)}));
 }
@@ -421,10 +427,10 @@ TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_e
 // carries it empty clears it, and one that leaves it out keeps it.
 TEST(graft_state_sets_clears_and_leaves_the_tree_a_node_opens) {
   LooseGraph g;
-  g.createNode(nid("n"), "N", "", NodeColor::sky, std::nullopt, at(1));
-  const std::set<NodeRegister> allButOpens = {NodeRegister::label,    NodeRegister::icon,   NodeRegister::color,
-                                              NodeRegister::order,    NodeRegister::position, NodeRegister::status,
-                                              NodeRegister::description, NodeRegister::links};
+  g.createNode(nid("n"), "N", "", NodeColor::sky, at(1));
+  const std::set<NodeRegister> allButOpens = {NodeRegister::label,  NodeRegister::icon,  NodeRegister::color,
+                                              NodeRegister::order,  NodeRegister::status, NodeRegister::description,
+                                              NodeRegister::links};
   std::set<NodeRegister> everyRegister = allButOpens;
   everyRegister.insert(NodeRegister::opens);
 
@@ -464,7 +470,7 @@ TEST(graft_state_sets_clears_and_leaves_the_tree_a_node_opens) {
 TEST(graft_state_brings_a_deleted_node_back_opening_nothing_unless_the_document_names_a_tree) {
   LooseGraph g;
   for (const char* id : {"gone", "here"}) {
-    g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+    g.createNode(nid(id), id, "", NodeColor::sky, at(1));
     g.setDescription(nid(id), "Read it", at(1));
     g.setLinks(nid(id), {Link{"home", "https://windmill.works"}}, at(1));
     g.setOpens(nid(id), TreeId{"t_sub"}, at(1));
@@ -506,14 +512,12 @@ TEST(graft_state_brings_a_deleted_node_back_opening_nothing_unless_the_document_
 // A register the document leaves off a kind is stamped unset, so the join keeps what the legend
 // holds; a new kind's omitted register lands as its default. Hue always lands.
 TEST(graft_legend_leaves_an_omitted_kind_register_alone_and_defaults_it_on_a_new_kind) {
-  Legend legend({{KindId{"build"}, NodeColor::terracotta, "Build", "Things you make", true}}, at(1));
+  Legend legend({{KindId{"build"}, NodeColor::terracotta, "Build", "Things you make"}}, at(1));
 
   Graft graft;
   graft.document.kinds = {{KindId{"build"}, NodeColor::sky}, {KindId{"read"}, NodeColor::olive}};
-  graft.omittedKindRegisters[KindId{"build"}] = {KindRegister::label, KindRegister::description,
-                                                 KindRegister::crossBranchExempt};
-  graft.omittedKindRegisters[KindId{"read"}] = {KindRegister::label, KindRegister::description,
-                                                KindRegister::crossBranchExempt};
+  graft.omittedKindRegisters[KindId{"build"}] = {KindRegister::label, KindRegister::description};
+  graft.omittedKindRegisters[KindId{"read"}] = {KindRegister::label, KindRegister::description};
 
   const LegendState frame = graftLegend(legend, graft, at(5));
   REQUIRE_EQ(frame.kinds.size(), 2u);
@@ -521,7 +525,6 @@ TEST(graft_legend_leaves_an_omitted_kind_register_alone_and_defaults_it_on_a_new
     CHECK_EQ(kind.hueAt, at(5));
     CHECK_FALSE(kind.labelAt.isSet());
     CHECK_FALSE(kind.descriptionAt.isSet());
-    CHECK_FALSE(kind.crossBranchExemptAt.isSet());
   }
 
   legend.join(frame);
@@ -529,21 +532,18 @@ TEST(graft_legend_leaves_an_omitted_kind_register_alone_and_defaults_it_on_a_new
   CHECK_EQ(build.hue, NodeColor::sky);
   CHECK_EQ(build.label, std::string("Build"));
   CHECK_EQ(build.description, std::string("Things you make"));
-  CHECK(build.crossBranchExempt);
   const Kind read = *legend.view(KindId{"read"});
   CHECK_EQ(read.hue, NodeColor::olive);
   CHECK_EQ(read.label, std::string(""));
   CHECK_EQ(read.description, std::string(""));
-  CHECK_FALSE(read.crossBranchExempt);
 
   // A register the document does carry lands at the graft's stamp, an empty string included.
   Graft spelled;
-  spelled.document.kinds = {{KindId{"build"}, NodeColor::sky, "Builds", "", false}};
+  spelled.document.kinds = {{KindId{"build"}, NodeColor::sky, "Builds", ""}};
   legend.join(graftLegend(legend, spelled, at(6)));
   const Kind renamed = *legend.view(KindId{"build"});
   CHECK_EQ(renamed.label, std::string("Builds"));
   CHECK_EQ(renamed.description, std::string(""));
-  CHECK_FALSE(renamed.crossBranchExempt);
 }
 
 // Rank is never on the wire, so a colliding kind keeps its place, and one sent as the legend holds it
@@ -558,10 +558,10 @@ TEST(graft_legend_keeps_a_colliding_kinds_rank_and_appends_a_new_kind_after_the_
   const LegendState frame = graftLegend(legend, graft, at(5));
   CHECK(frame == (LegendState{{KindStateEntry{.id = KindId{"x"}, .createdAt = at(5), .hue = NodeColor::sky,
                                               .hueAt = at(5), .labelAt = at(5), .descriptionAt = at(5),
-                                              .crossBranchExemptAt = at(5), .rank = 4, .rankAt = at(5)},
+                                              .rank = 4, .rankAt = at(5)},
                                KindStateEntry{.id = KindId{"y"}, .createdAt = at(5), .hue = NodeColor::plum,
                                               .hueAt = at(5), .labelAt = at(5), .descriptionAt = at(5),
-                                              .crossBranchExemptAt = at(5), .rank = 3, .rankAt = at(5)}}}));
+                                              .rank = 3, .rankAt = at(5)}}}));
 
   legend.join(frame);
   CHECK_EQ(legend.orderedIds(),
@@ -582,7 +582,7 @@ TEST(graft_legend_loses_a_re_sent_kind_to_a_remove_stamped_before_it_and_joined_
   Legend legend({{KindId{"backend"}, NodeColor::sky, "Backend"}}, at(1));
   Graft graft;
   graft.document.kinds = {{KindId{"backend"}, NodeColor::sky, "Backend services"}};
-  graft.omittedKindRegisters[KindId{"backend"}] = {KindRegister::description, KindRegister::crossBranchExempt};
+  graft.omittedKindRegisters[KindId{"backend"}] = {KindRegister::description};
 
   legend.join(graftLegend(legend, graft, at(3)));
   legend.join(LegendState{{KindStateEntry{.id = KindId{"backend"}, .deletedAt = at(2)}}});
@@ -591,7 +591,7 @@ TEST(graft_legend_loses_a_re_sent_kind_to_a_remove_stamped_before_it_and_joined_
   CHECK(*legend.exportKind(KindId{"backend"}) ==
         (KindStateEntry{.id = KindId{"backend"}, .createdAt = at(1), .deletedAt = at(2), .hue = NodeColor::sky,
                         .hueAt = at(1), .label = "Backend services", .labelAt = at(3), .descriptionAt = at(1),
-                        .crossBranchExemptAt = at(1), .rank = 0, .rankAt = at(1)}));
+                        .rank = 0, .rankAt = at(1)}));
 }
 
 // A kind sent as the legend holds it, the way a get_tree round trip sends it, lands nothing: the frame
@@ -600,7 +600,7 @@ TEST(graft_legend_leaves_out_a_kind_sent_as_held_so_a_concurrent_rename_stands) 
   Legend legend({{KindId{"backend"}, NodeColor::sky, "Backend"}}, at(1));
   Graft graft;
   graft.document.kinds = {{KindId{"backend"}, NodeColor::sky, "Backend"}};
-  graft.omittedKindRegisters[KindId{"backend"}] = {KindRegister::description, KindRegister::crossBranchExempt};
+  graft.omittedKindRegisters[KindId{"backend"}] = {KindRegister::description};
 
   const LegendState frame = graftLegend(legend, graft, at(3));
   CHECK(frame == LegendState{});
@@ -610,8 +610,7 @@ TEST(graft_legend_leaves_out_a_kind_sent_as_held_so_a_concurrent_rename_stands) 
 
   CHECK(*legend.exportKind(KindId{"backend"}) ==
         (KindStateEntry{.id = KindId{"backend"}, .createdAt = at(1), .hue = NodeColor::plum, .hueAt = at(2),
-                        .label = "Services", .labelAt = at(2), .descriptionAt = at(1), .crossBranchExemptAt = at(1),
-                        .rank = 0, .rankAt = at(1)}));
+                        .label = "Services", .labelAt = at(2), .descriptionAt = at(1), .rank = 0, .rankAt = at(1)}));
 }
 
 TEST(graft_legend_is_empty_when_the_document_carries_no_kinds) {

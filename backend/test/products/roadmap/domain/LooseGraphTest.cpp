@@ -9,7 +9,7 @@ static Hlc at(std::uint64_t ms, const char* actor = "a") { return Hlc{ms, 0, act
 
 TEST(order_register_is_lww_and_survives_export_and_projection) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
 
   GraphState newer;
   NodeStateEntry e1; e1.id = nid("a"); e1.order = "a1"; e1.orderAt = at(4);
@@ -29,8 +29,8 @@ TEST(order_register_is_lww_and_survives_export_and_projection) {
 
 TEST(project_present_nodes_and_edges) {
   LooseGraph g;
-  g.createNode(nid("root"), "Root", "zap", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("child"), "Child", "image", NodeColor::gold, Vec2{1, 2}, at(2));
+  g.createNode(nid("root"), "Root", "zap", NodeColor::sky, at(1));
+  g.createNode(nid("child"), "Child", "image", NodeColor::gold, at(2));
   g.addEdge(nid("root"), nid("child"), at(3));
 
   auto data = g.toTreeData(TreeId{std::string("t")}, "Title");
@@ -40,14 +40,13 @@ TEST(project_present_nodes_and_edges) {
   REQUIRE(child.has_value());
   REQUIRE_EQ(child->prerequisites.size(), 1u);
   CHECK_EQ(child->prerequisites[0], nid("root"));
-  CHECK(child->position.has_value());
   CHECK_EQ(child->color, NodeColor::gold);
 }
 
 TEST(duplicate_add_edge_collapses) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, at(1));
   g.addEdge(nid("a"), nid("b"), at(2));
   g.addEdge(nid("a"), nid("b"), at(3));
   CHECK_EQ(g.liveEdges().size(), 1u);
@@ -55,8 +54,8 @@ TEST(duplicate_add_edge_collapses) {
 
 TEST(edge_add_wins_on_tie) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, at(1));
   Hlc tie{5, 0, "a"};
   g.addEdge(nid("a"), nid("b"), tie);
   g.removeEdge(nid("a"), nid("b"), tie);
@@ -65,8 +64,8 @@ TEST(edge_add_wins_on_tie) {
 
 TEST(edge_later_remove_then_later_add) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, at(1));
 
   g.addEdge(nid("a"), nid("b"), at(2));
   g.removeEdge(nid("a"), nid("b"), at(3));
@@ -78,7 +77,7 @@ TEST(edge_later_remove_then_later_add) {
 
 TEST(label_lww_highest_stamp_wins) {
   LooseGraph g;
-  g.createNode(nid("x"), "first", "i", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("x"), "first", "i", NodeColor::sky, at(1));
   g.setLabel(nid("x"), "second", at(3));
   g.setLabel(nid("x"), "stale", at(2));
   CHECK_EQ(g.nodeView(nid("x"))->label, std::string("second"));
@@ -86,8 +85,8 @@ TEST(label_lww_highest_stamp_wins) {
 
 TEST(delete_tombstones_then_resurrection_revives_edges) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, at(1));
   g.addEdge(nid("a"), nid("b"), at(2));
 
   g.deleteNode(nid("b"), at(3));
@@ -95,14 +94,14 @@ TEST(delete_tombstones_then_resurrection_revives_edges) {
   CHECK_EQ(g.liveEdges().size(), 0u);
   CHECK_EQ(g.presentEdges().size(), 1u);
 
-  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(4));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, at(4));
   CHECK(g.hasNode(nid("b")));
   CHECK_EQ(g.liveEdges().size(), 1u);
 }
 
 TEST(status_seed_round_trips_through_projection) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1), std::string("complete"));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1), std::string("complete"));
   auto view = g.nodeView(nid("a"));
   REQUIRE(view.has_value());
   REQUIRE(view->status.has_value());
@@ -124,7 +123,7 @@ TEST(order_seed_survives_the_document_seed_constructor) {
 
 TEST(description_and_links_round_trip_and_merge_by_lww) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   g.setDescription(nid("a"), "first", at(2));
   g.setLinks(nid("a"), {Link{"Doc", "https://d"}, Link{"", "https://e"}}, at(2));
 
@@ -142,21 +141,20 @@ TEST(description_and_links_round_trip_and_merge_by_lww) {
 
 TEST(export_import_round_trips_full_state) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, Vec2{1, 2}, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::gold, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::gold, at(1));
   g.addEdge(nid("a"), nid("b"), at(2));
 
   LooseGraph reloaded(g.exportState());
   CHECK(reloaded.presentNodeIds() == g.presentNodeIds());
   CHECK(reloaded.liveEdges() == g.liveEdges());
   CHECK_EQ(reloaded.nodeView(nid("a"))->color, NodeColor::sky);
-  CHECK(reloaded.nodeView(nid("a"))->position.has_value());
 }
 
 TEST(export_import_preserves_tombstones_and_inert_edges) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
-  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, at(1));
   g.addEdge(nid("a"), nid("b"), at(2));
   g.deleteNode(nid("b"), at(3));  // b tombstoned; edge a->b now inert
 
@@ -165,17 +163,17 @@ TEST(export_import_preserves_tombstones_and_inert_edges) {
   CHECK_EQ(reloaded.liveEdges().size(), 0u);
   CHECK_EQ(reloaded.presentEdges().size(), 1u);  // inert edge survived
 
-  reloaded.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(4));  // resurrect
+  reloaded.createNode(nid("b"), "B", "x", NodeColor::sky, at(4));  // resurrect
   CHECK(reloaded.hasNode(nid("b")));
   CHECK_EQ(reloaded.liveEdges().size(), 1u);  // edge revived — lossless
 }
 
 TEST(join_folds_a_partial_state_without_touching_others) {
   LooseGraph base;
-  base.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  base.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
 
   LooseGraph addition;
-  addition.createNode(nid("b"), "B", "x", NodeColor::gold, std::nullopt, at(2));
+  addition.createNode(nid("b"), "B", "x", NodeColor::gold, at(2));
   addition.addEdge(nid("a"), nid("b"), at(3));
 
   base.join(addition.exportState());
@@ -187,8 +185,8 @@ TEST(join_folds_a_partial_state_without_touching_others) {
 
 TEST(join_is_idempotent) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "x", NodeColor::sky, Vec2{1, 2}, at(1));
-  source.createNode(nid("b"), "B", "x", NodeColor::gold, std::nullopt, at(2));
+  source.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  source.createNode(nid("b"), "B", "x", NodeColor::gold, at(2));
   source.addEdge(nid("a"), nid("b"), at(3));
   source.deleteNode(nid("b"), at(4));
   GraphState state = source.exportState();
@@ -196,20 +194,31 @@ TEST(join_is_idempotent) {
   LooseGraph once;
   once.join(state);
   LooseGraph twice;
-  twice.join(state);
-  twice.join(state);
+  CHECK(twice.join(state));
+  CHECK_FALSE(twice.join(state));  // a join whose every stamp is held already takes nothing, and says so
   CHECK(once.exportState() == twice.exportState());
+}
+
+// An entry that carries no stamp is no information: the join takes nothing and keeps no record of the id it named.
+TEST(join_of_entries_that_carry_no_stamp_takes_nothing_and_leaves_the_graph_as_it_was) {
+  LooseGraph graph;
+  graph.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  const GraphState before = graph.exportState();
+
+  CHECK_FALSE(graph.join(GraphState{{NodeStateEntry{.id = nid("a")}, NodeStateEntry{.id = nid("ghost")}},
+                                    {EdgeStateEntry{Edge{nid("a"), nid("ghost")}, {}, {}}}}));
+  CHECK(graph.exportState() == before);
 }
 
 TEST(join_is_commutative_over_full_states) {
   LooseGraph left;
-  left.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  left.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   left.setLabel(nid("a"), "A-late", at(9));
 
   LooseGraph right;
-  right.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(2));
+  right.createNode(nid("a"), "A", "x", NodeColor::sky, at(2));
   right.setLabel(nid("a"), "A-early", at(5));
-  right.createNode(nid("b"), "B", "x", NodeColor::gold, std::nullopt, at(3));
+  right.createNode(nid("b"), "B", "x", NodeColor::gold, at(3));
 
   LooseGraph leftFirst;
   leftFirst.join(left.exportState());
@@ -225,8 +234,8 @@ TEST(join_is_commutative_over_full_states) {
 
 TEST(join_keeps_more_add_beats_concurrent_remove) {
   LooseGraph seed;
-  seed.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
-  seed.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(1));
+  seed.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  seed.createNode(nid("b"), "B", "x", NodeColor::sky, at(1));
   GraphState shared = seed.exportState();
 
   Hlc concurrent{5, 0, "a"};  // an identical stamp on both sides — the tie the add must win
@@ -243,14 +252,14 @@ TEST(join_keeps_more_add_beats_concurrent_remove) {
 
 TEST(join_lets_a_deleted_nodes_offline_children_survive) {
   LooseGraph shared;
-  shared.createNode(nid("parent"), "Parent", "x", NodeColor::sky, std::nullopt, at(1));
+  shared.createNode(nid("parent"), "Parent", "x", NodeColor::sky, at(1));
   GraphState base = shared.exportState();
 
   LooseGraph phone(base);      // the phone deletes the parent
   phone.deleteNode(nid("parent"), at(10));
 
   LooseGraph laptop(base);     // the laptop, offline, builds children under it
-  laptop.createNode(nid("child"), "Child", "x", NodeColor::gold, std::nullopt, at(20));
+  laptop.createNode(nid("child"), "Child", "x", NodeColor::gold, at(20));
   laptop.addEdge(nid("parent"), nid("child"), at(21));
 
   LooseGraph converged(base);
@@ -260,14 +269,14 @@ TEST(join_lets_a_deleted_nodes_offline_children_survive) {
   CHECK_FALSE(converged.hasNode(nid("parent")));       // the delete stands
   CHECK(converged.hasNode(nid("child")));              // but the child's work is not lost
   CHECK_EQ(converged.presentEdges().size(), 1u);       // the edge is latent, ready to resurrect
-  converged.createNode(nid("parent"), "Parent", "x", NodeColor::sky, std::nullopt, at(30));
+  converged.createNode(nid("parent"), "Parent", "x", NodeColor::sky, at(30));
   CHECK(converged.edgePresent(nid("parent"), nid("child")));  // one re-add brings the subtree back
 }
 
 TEST(merge_is_order_independent) {
   std::vector<std::pair<Command, Hlc>> ops = {
-    {CreateNode{nid("a"), "A", "x", NodeColor::sky, {}, std::nullopt}, at(1)},
-    {CreateNode{nid("b"), "B", "x", NodeColor::gold, {nid("a")}, std::nullopt}, at(2)},
+    {CreateNode{nid("a"), "A", "x", NodeColor::sky}, at(1)},
+    {CreateNode{nid("b"), "B", "x", NodeColor::gold, {nid("a")}}, at(2)},
     {RenameNode{nid("b"), "B2"}, at(4)},
     {RenameNode{nid("b"), "stale"}, at(3)},
     {AddEdge{nid("a"), nid("b")}, at(5)},
@@ -287,28 +296,9 @@ TEST(merge_is_order_independent) {
   CHECK_EQ(forward.nodeView(nid("b"))->label, std::string("B2"));
 }
 
-// The transitive-closure pass is bounded by the WORK, not by nodes. Over budget it reports nothing.
-TEST(redundant_edges_skips_a_tree_whose_edges_blow_the_work_budget) {
-  CHECK(withinReachabilityBudget(1500, 2000));
-  CHECK(withinReachabilityBudget(500, 6000));          // the shape tidy is slowest on: ~510ms
-  CHECK_FALSE(withinReachabilityBudget(1500, 2001));   // the product, not either count alone
-  CHECK_FALSE(withinReachabilityBudget(1500, 500000));  // the shape that cost 32 seconds
-  CHECK_FALSE(withinReachabilityBudget(1501, 1));       // the node ceiling still stands
-  CHECK_FALSE(withinReachabilityBudget(2, 6001));       // and so does the edge one
-
-  LooseGraph dense;
-  for (int i = 0; i < 200; ++i)
-    dense.createNode(nid(("n" + std::to_string(i)).c_str()), "N", "", NodeColor::sky, std::nullopt, at(1));
-  for (int from = 0; from < 200; ++from)
-    for (int to = from + 1; to < 200; ++to)  // 19900 edges over 200 nodes — past the edge ceiling
-      dense.addEdge(nid(("n" + std::to_string(from)).c_str()), nid(("n" + std::to_string(to)).c_str()), at(2));
-  CHECK_EQ(dense.liveEdges().size(), std::size_t{19900});
-  CHECK_EQ(dense.redundantEdges().size(), std::size_t{0});  // skipped, not computed
-}
-
 TEST(edges_touching_names_the_present_edges_on_either_side_of_the_nodes) {
   LooseGraph g;
-  for (const char* id : {"a", "b", "c", "d"}) g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+  for (const char* id : {"a", "b", "c", "d"}) g.createNode(nid(id), id, "", NodeColor::sky, at(1));
   g.addEdge(nid("a"), nid("b"), at(2));
   g.addEdge(nid("b"), nid("c"), at(2));
   g.addEdge(nid("c"), nid("d"), at(2));
@@ -325,10 +315,10 @@ TEST(edges_touching_names_the_present_edges_on_either_side_of_the_nodes) {
 
 TEST(a_fork_adds_every_present_node_afresh_in_creation_order_and_starts_unlit) {
   LooseGraph g;
-  g.createNode(nid("late"), "Late", "x", NodeColor::sky, std::nullopt, at(30), std::string("complete"));
-  g.createNode(nid("b"), "B", "x", NodeColor::sky, std::nullopt, at(10));
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(10));
-  g.createNode(nid("gone"), "Gone", "x", NodeColor::sky, std::nullopt, at(5));
+  g.createNode(nid("late"), "Late", "x", NodeColor::sky, at(30), std::string("complete"));
+  g.createNode(nid("b"), "B", "x", NodeColor::sky, at(10));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(10));
+  g.createNode(nid("gone"), "Gone", "x", NodeColor::sky, at(5));
   g.deleteNode(nid("gone"), at(20));
   g.addEdge(nid("a"), nid("late"), at(40));
 
@@ -351,7 +341,7 @@ TEST(a_fork_adds_every_present_node_afresh_in_creation_order_and_starts_unlit) {
 
 TEST(two_replicas_setting_opens_concurrently_converge_on_the_later_stamp_in_either_join_order) {
   LooseGraph base;
-  base.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  base.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   LooseGraph phone(base.exportState());
   phone.setOpens(nid("a"), TreeId{"t_sailing"}, at(5, "r_phone"));
   LooseGraph laptop(base.exportState());
@@ -373,7 +363,7 @@ TEST(two_replicas_setting_opens_concurrently_converge_on_the_later_stamp_in_eith
 
 TEST(a_join_entry_without_opens_leaves_the_pointer_and_only_a_later_stamp_clears_it) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   g.setOpens(nid("a"), TreeId{"t_sailing"}, at(5));
   NodeStateEntry expected = *g.exportNode(nid("a"));
 
@@ -426,7 +416,7 @@ TEST(a_document_seed_plants_opens_and_every_projection_carries_it) {
 TEST(a_fork_keeps_every_opens_as_it_stands_or_clears_them_all) {
   LooseGraph g;
   for (const char* id : {"gone", "missing", "plain", "standing"})
-    g.createNode(nid(id), id, "x", NodeColor::sky, std::nullopt, at(1));
+    g.createNode(nid(id), id, "x", NodeColor::sky, at(1));
   g.setOpens(nid("standing"), TreeId{"t_standing"}, at(2));
   g.setOpens(nid("missing"), TreeId{"t_missing"}, at(3));
   g.setOpens(nid("gone"), TreeId{"t_standing"}, at(4));
@@ -447,7 +437,7 @@ TEST(a_fork_keeps_every_opens_as_it_stands_or_clears_them_all) {
 
 TEST(the_pointers_of_a_graph_are_the_trees_its_present_nodes_open_and_no_others) {
   LooseGraph g;
-  for (const char* id : {"opens", "cleared", "deleted", "plain"}) g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+  for (const char* id : {"opens", "cleared", "deleted", "plain"}) g.createNode(nid(id), id, "", NodeColor::sky, at(1));
   g.setOpens(nid("opens"), TreeId{"t_sailing"}, at(2));
   g.setOpens(nid("cleared"), TreeId{"t_rowing"}, at(2));
   g.setOpens(nid("cleared"), TreeId{}, at(3));

@@ -9,33 +9,17 @@
 
 using namespace wm;
 
-TEST(a_kind_description_payload_carries_only_the_registers_it_sets) {
-  Command flagOnly = *commandFromJson("DescribeKind", parse("{\"id\": \"build\", \"crossBranchExempt\": true}"));
-  const DescribeKind& flag = std::get<DescribeKind>(flagOnly);
-  CHECK_EQ(flag.id, KindId{"build"});
-  CHECK_FALSE(flag.description.has_value());
-  CHECK_EQ(flag.crossBranchExempt, std::optional<bool>(true));
-  CHECK_EQ(dump(commandPayload(flagOnly)), std::string("{\"crossBranchExempt\":true,\"id\":\"build\"}"));
+TEST(a_kind_description_payload_carries_the_description_when_it_sets_one) {
+  Command described = *commandFromJson("DescribeKind", parse("{\"id\": \"build\", \"description\": \"Made things\"}"));
+  CHECK_EQ(std::get<DescribeKind>(described).description, std::optional<std::string>("Made things"));
+  CHECK_EQ(dump(commandPayload(described)), std::string("{\"description\":\"Made things\",\"id\":\"build\"}"));
 
-  Command textOnly = *commandFromJson("DescribeKind", parse("{\"id\": \"build\", \"description\": \"Made things\"}"));
-  const DescribeKind& text = std::get<DescribeKind>(textOnly);
-  CHECK_EQ(text.description, std::optional<std::string>("Made things"));
-  CHECK_FALSE(text.crossBranchExempt.has_value());
-  CHECK_EQ(dump(commandPayload(textOnly)), std::string("{\"description\":\"Made things\",\"id\":\"build\"}"));
-
-  Command both = *commandFromJson(
-      "DescribeKind", parse("{\"id\": \"build\", \"description\": \"\", \"crossBranchExempt\": false}"));
-  CHECK_EQ(dump(commandPayload(both)),
-           std::string("{\"crossBranchExempt\":false,\"description\":\"\",\"id\":\"build\"}"));
+  Command cleared = *commandFromJson("DescribeKind", parse("{\"id\": \"build\", \"description\": \"\"}"));
+  CHECK_EQ(dump(commandPayload(cleared)), std::string("{\"description\":\"\",\"id\":\"build\"}"));
 }
 
-TEST(add_kind_payload_carries_the_exemption_only_when_set) {
-  Command exempt = *commandFromJson("AddKind", parse("{\"id\": \"drill\", \"hue\": \"gold\", \"crossBranchExempt\": true}"));
-  CHECK(std::get<AddKind>(exempt).crossBranchExempt);
-  CHECK_EQ(dump(commandPayload(exempt)), std::string("{\"crossBranchExempt\":true,\"hue\":\"gold\",\"id\":\"drill\"}"));
-
+TEST(add_kind_payload_carries_the_label_and_description_it_sets) {
   Command plain = *commandFromJson("AddKind", parse("{\"id\": \"build\", \"hue\": \"sky\", \"label\": \"Build\"}"));
-  CHECK_FALSE(std::get<AddKind>(plain).crossBranchExempt);
   CHECK_EQ(dump(commandPayload(plain)), std::string("{\"hue\":\"sky\",\"id\":\"build\",\"label\":\"Build\"}"));
 }
 
@@ -124,7 +108,7 @@ TEST(a_stored_create_or_annotate_row_without_opens_still_decodes_and_touches_no_
 
   Legend legend;
   LooseGraph graph;
-  graph.createNode(NodeId{"a"}, "A", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "srv"});
+  graph.createNode(NodeId{"a"}, "A", "", NodeColor::sky, Hlc{1, 0, "srv"});
   graph.setOpens(NodeId{"a"}, TreeId{"t_sub"}, Hlc{2, 0, "srv"});
   merge(graph, legend, *annotated, Hlc{3, 0, "srv"});
   merge(graph, legend, *created, Hlc{4, 0, "srv"});
@@ -162,4 +146,109 @@ TEST(a_stored_legend_reorder_row_still_decodes_and_replays_the_order_it_set) {
   order.clear();
   for (const Kind& kind : legend.kinds()) order.push_back(kind.id.str() + " " + kind.label);
   CHECK_EQ(order, (std::vector<std::string>{"learn Learn", "build Make"}));
+}
+
+// Nothing writes a TransitiveReduction or a PruneDangling, but the log holds rows of both. Each decodes as itself, alone
+// and inside a Batch: a row the decoder could not read is skipped by the log, and a Batch holding one with it.
+TEST(a_stored_tidy_or_prune_row_decodes_as_itself_alone_and_inside_a_batch) {
+  const std::optional<Command> tidy = commandFromJson("TransitiveReduction", parse("{}"));
+  REQUIRE(tidy.has_value());
+  CHECK(std::holds_alternative<TransitiveReduction>(*tidy));
+  const std::optional<Command> prune = commandFromJson("PruneDangling", parse("{}"));
+  REQUIRE(prune.has_value());
+  CHECK(std::holds_alternative<PruneDangling>(*prune));
+
+  const std::optional<Command> batch = commandFromJson(
+      "Batch", parse(R"({"commands":[{"kind":"TransitiveReduction","payload":{}},{"kind":"PruneDangling","payload":{}},
+        {"kind":"RenameNode","payload":{"id":"a","label":"Alpha"}}]})"));
+  REQUIRE(batch.has_value());
+  CHECK_EQ(dump(commandPayload(*batch)),
+           std::string(R"({"commands":[{"kind":"TransitiveReduction","payload":{}},)"
+                       R"({"kind":"PruneDangling","payload":{}},)"
+                       R"({"kind":"RenameNode","payload":{"id":"a","label":"Alpha"}}]})"));
+}
+
+// A kind has no cross-branch flag, but the log holds rows that set one. Each still decodes, alone and inside a Batch,
+// with the flag dropped: an AddKind or DescribeKind replays the rest of what it set, and a DescribeKind that set only
+// the flag replays as nothing.
+TEST(a_stored_kind_row_that_carried_the_cross_branch_flag_decodes_without_it) {
+  const auto legendAfter = [](const std::vector<std::pair<const char*, const char*>>& rows) {
+    LooseGraph graph;
+    Legend legend;
+    std::uint64_t stamp = 1;
+    for (const auto& [kind, payload] : rows) {
+      const std::optional<Command> row = commandFromJson(kind, parse(payload));
+      CHECK(row.has_value());
+      if (row) merge(graph, legend, *row, Hlc{++stamp, 0, "seed"});
+    }
+    return legend.exportState();
+  };
+
+  const std::optional<Command> added =
+      commandFromJson("AddKind", parse(R"({"id":"drill","hue":"gold","label":"Drill","crossBranchExempt":true})"));
+  REQUIRE(added.has_value());
+  CHECK_EQ(dump(commandPayload(*added)), std::string(R"({"hue":"gold","id":"drill","label":"Drill"})"));
+  const std::optional<Command> described =
+      commandFromJson("DescribeKind", parse(R"({"id":"drill","description":"Reps","crossBranchExempt":false})"));
+  REQUIRE(described.has_value());
+  CHECK_EQ(dump(commandPayload(*described)), std::string(R"({"description":"Reps","id":"drill"})"));
+  const std::optional<Command> flagOnly = commandFromJson("DescribeKind", parse(R"({"id":"drill","crossBranchExempt":true})"));
+  REQUIRE(flagOnly.has_value());
+  CHECK_EQ(dump(commandPayload(*flagOnly)), std::string(R"({"id":"drill"})"));
+
+  CHECK(legendAfter({{"AddKind", R"({"id":"drill","hue":"gold","label":"Drill","crossBranchExempt":true})"},
+                     {"DescribeKind", R"({"id":"drill","description":"Reps","crossBranchExempt":false})"},
+                     {"DescribeKind", R"({"id":"drill","crossBranchExempt":true})"}}) ==
+        legendAfter({{"AddKind", R"({"id":"drill","hue":"gold","label":"Drill"})"},
+                     {"DescribeKind", R"({"id":"drill","description":"Reps"})"},
+                     {"DescribeKind", R"({"id":"drill"})"}}));
+
+  const std::optional<Command> batch = commandFromJson(
+      "Batch", parse(R"({"commands":[{"kind":"DescribeKind","payload":{"id":"drill","crossBranchExempt":true}},
+        {"kind":"RenameKind","payload":{"id":"drill","label":"Drills"}}]})"));
+  REQUIRE(batch.has_value());
+  CHECK_EQ(dump(commandPayload(*batch)),
+           std::string(R"({"commands":[{"kind":"DescribeKind","payload":{"id":"drill"}},)"
+                       R"({"kind":"RenameKind","payload":{"id":"drill","label":"Drills"}}]})"));
+}
+
+// A node has no position, but the log holds rows that set one. A RepositionNode still decodes, alone and inside a
+// Batch, and replays as nothing; a CreateNode that carried x and y decodes without them and replays the rest.
+TEST(a_stored_row_that_set_a_position_decodes_and_replays_without_it) {
+  const auto graphAfter = [](const std::vector<std::pair<const char*, const char*>>& rows) {
+    LooseGraph graph;
+    Legend legend;
+    std::uint64_t stamp = 1;
+    for (const auto& [kind, payload] : rows) {
+      const std::optional<Command> row = commandFromJson(kind, parse(payload));
+      CHECK(row.has_value());
+      if (row) merge(graph, legend, *row, Hlc{++stamp, 0, "seed"});
+    }
+    return graph.exportState();
+  };
+
+  const std::optional<Command> created =
+      commandFromJson("CreateNode", parse(R"({"id":"a","label":"A","color":"sky","x":3,"y":4})"));
+  REQUIRE(created.has_value());
+  const std::optional<Command> plain = commandFromJson("CreateNode", parse(R"({"id":"a","label":"A","color":"sky"})"));
+  REQUIRE(plain.has_value());
+  CHECK_EQ(dump(commandPayload(*created)), dump(commandPayload(*plain)));
+  const std::optional<Command> moved = commandFromJson("RepositionNode", parse(R"({"id":"a","x":3,"y":4})"));
+  REQUIRE(moved.has_value());
+  CHECK(std::holds_alternative<RepositionNode>(*moved));
+  const std::optional<Command> batch = commandFromJson(
+      "Batch", parse(R"({"commands":[{"kind":"RepositionNode","payload":{"id":"a","x":7,"y":8}},
+        {"kind":"RenameNode","payload":{"id":"a","label":"Alpha"}}]})"));
+  REQUIRE(batch.has_value());
+  CHECK_EQ(dump(commandPayload(*batch)),
+           std::string(R"({"commands":[{"kind":"RepositionNode","payload":{}},)"
+                       R"({"kind":"RenameNode","payload":{"id":"a","label":"Alpha"}}]})"));
+
+  CHECK(graphAfter({{"CreateNode", R"({"id":"a","label":"A","color":"sky","x":3,"y":4})"},
+                    {"RepositionNode", R"({"id":"a","x":5,"y":6})"},
+                    {"Batch", R"({"commands":[{"kind":"RepositionNode","payload":{"id":"a","x":7,"y":8}},
+                                              {"kind":"RenameNode","payload":{"id":"a","label":"Alpha"}}]})"}}) ==
+        graphAfter({{"CreateNode", R"({"id":"a","label":"A","color":"sky"})"},
+                    {"Batch", R"({"commands":[]})"},
+                    {"RenameNode", R"({"id":"a","label":"Alpha"})"}}));
 }

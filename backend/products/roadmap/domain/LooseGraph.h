@@ -19,16 +19,11 @@ struct NodeRecord {
   Lww<std::string> icon;
   Lww<NodeColor> color;
   Lww<std::string> order;  // fractional-index sort key, scoped to the parent; round-tripped, never interpreted
-  Lww<std::optional<Vec2>> position;
   Lww<std::optional<std::string>> status;  // opaque authoring seed, round-tripped
   Lww<std::string> description;            // free annotation body
   Lww<std::vector<Link>> links;            // external references, the list as one register
   Lww<TreeId> opens;                       // the tree this node opens; an empty id opens none
 };
-
-// The budget counts the redundant-edge pass's work: nodes, edges, and their product. Over budget the
-// pass is skipped and reports nothing — tidy finds no edge to drop, health reports 0 redundant.
-bool withinReachabilityBudget(std::size_t nodes, std::size_t edges);
 
 // Whether a fork's nodes open the trees its source's do: its source's owner keeps every pointer as it
 // stands, and anyone else starts with none, so no tree plants a pointer in a stranger's fork.
@@ -44,17 +39,16 @@ public:
 
   // Fold a partial state into this one, entry by entry, field by field. Absence at every granularity
   // — a missing entry, a missing field, the unset stamp — means "no information", so a join only ever
-  // adds. Commutative, associative, idempotent.
-  void join(const GraphState& state);
+  // adds. Commutative, associative, idempotent. Answers whether any stamp it carried took; an entry none of whose
+  // stamps took leaves the graph without a record it did not have.
+  bool join(const GraphState& state);
 
   void createNode(const NodeId& id, const std::string& label, const std::string& icon,
-                  NodeColor color, const std::optional<Vec2>& position, const Hlc& at,
-                  const std::optional<std::string>& status = std::nullopt);
+                  NodeColor color, const Hlc& at, const std::optional<std::string>& status = std::nullopt);
   void deleteNode(const NodeId& id, const Hlc& at);
   void setLabel(const NodeId& id, const std::string& label, const Hlc& at);
   void setIcon(const NodeId& id, const std::string& icon, const Hlc& at);
   void setColor(const NodeId& id, NodeColor color, const Hlc& at);
-  void setPosition(const NodeId& id, const Vec2& position, const Hlc& at);
   void setDescription(const NodeId& id, const std::string& description, const Hlc& at);
   void setLinks(const NodeId& id, const std::vector<Link>& links, const Hlc& at);
   void setOrder(const NodeId& id, const std::string& order, const Hlc& at);
@@ -89,10 +83,6 @@ public:
   std::size_t presentNodeCount() const;
   std::size_t presentEdgeCount() const;
   std::vector<Edge> liveEdges() const;
-  std::vector<Edge> redundantEdges() const;
-  // Present edges no valid DAG keeps: a self-edge, or one whose endpoint is absent (never
-  // created, or tombstoned). The prune set — removing them leaves the live graph unchanged.
-  std::vector<Edge> danglingEdges() const;
   // Present edges with either endpoint among `nodes` — what tombstoning those nodes would dangle.
   std::vector<Edge> edgesTouching(const std::vector<NodeId>& nodes) const;
 

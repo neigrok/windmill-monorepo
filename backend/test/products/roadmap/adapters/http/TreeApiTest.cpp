@@ -59,7 +59,7 @@ struct Harness {
                  const std::vector<std::pair<const char*, const char*>>& steps) {
     LooseGraph graph;
     for (const auto& [step, opens] : steps) {
-      graph.createNode(NodeId{step}, step, "", NodeColor::sky, std::nullopt, Hlc{1, 0, "seed"});
+      graph.createNode(NodeId{step}, step, "", NodeColor::sky, Hlc{1, 0, "seed"});
       if (std::string(opens) != "") graph.setOpens(NodeId{step}, TreeId{opens}, Hlc{2, 0, "seed"});
     }
     trees->byId[id] = StoredTree{graph.exportState(), LegendState{}, {id, {}}, 0, owner, visibility};
@@ -266,6 +266,30 @@ TEST(fork_without_an_id_still_mints_one) {
   CHECK_EQ(response->getStatusCode(), drogon::k201Created);
   CHECK_EQ(bodyOf(response)["data"]["id"].asString(), std::string("t_d1"));
   CHECK_EQ(h.trees->forkedFrom["t_d1"], std::string("t_src"));
+}
+
+// A source saved while nodes still stored a position forks exactly as its twin that never had one.
+TEST(fork_of_a_source_that_stored_a_position_carries_none) {
+  Harness h;
+  h.signIn("s-live");
+  const char* plain =
+      R"({"nodes":[{"id":"root","createdAt":"1:0:seed","label":"Root","labelAt":"1:0:seed"}],"edges":[]})";
+  const char* placed = R"({"nodes":[{"id":"root","createdAt":"1:0:seed","label":"Root","labelAt":"1:0:seed",
+                                     "position":{"x":3,"y":4},"positionAt":"2:0:seed"}],"edges":[]})";
+  h.trees->byId["t_placed"] = StoredTree{graphStateFromJson(parse(placed)), LegendState{}, {"Sail", {}}, 0,
+                                         UserId{"owner"}, Visibility::unlisted};
+  h.trees->byId["t_plain"] = StoredTree{graphStateFromJson(parse(plain)), LegendState{}, {"Sail", {}}, 0,
+                                        UserId{"owner"}, Visibility::unlisted};
+
+  Json::Value fromPlaced =
+      bodyOf(sendFork(h.api, forkRequest(withId("t_00000000000000a1"), "s-live"), "t_placed"));
+  Json::Value fromPlain = bodyOf(sendFork(h.api, forkRequest(withId("t_00000000000000a2"), "s-live"), "t_plain"));
+
+  fromPlaced["data"].removeMember("id");
+  fromPlain["data"].removeMember("id");
+  CHECK_EQ(fromPlaced, fromPlain);
+  CHECK_EQ(dump(toJson(h.trees->byId["t_00000000000000a1"].state)),
+           dump(toJson(h.trees->byId["t_00000000000000a2"].state)));
 }
 
 // ---- read enforcement (tree-visibility) --------------------------------------------------
@@ -1309,6 +1333,51 @@ TEST(put_to_an_absent_id_adds_its_steps_now_and_a_put_into_a_standing_tree_stays
   CHECK_EQ(mast->createdAt, genesis);
 }
 
+// A node has no stored position: a document that still sends one with a node, of any shape, lands exactly as its twin
+// without it, and no read answers one, in the document or in the lattice.
+TEST(put_takes_a_node_that_still_sends_a_position_and_no_read_answers_one) {
+  Harness h;
+  h.signIn("s-me");
+  Json::Value placed = document("Placed", "hull");
+  placed["nodes"][0]["position"] = parse(R"({"x":3,"y":4})");
+  Json::Value misplaced = document("Placed", "hull");
+  misplaced["nodes"][0]["position"] = "left of the mast";
+  const Json::Value plain = document("Placed", "hull");
+
+  drogon::HttpResponsePtr withPosition = sendPut(h.api, "s-me", "t_00000000000000f2", placed);
+  drogon::HttpResponsePtr without = sendPut(h.api, "s-me", "t_00000000000000f3", plain);
+
+  CHECK_EQ(withPosition->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(sendPut(h.api, "s-me", "t_00000000000000f4", misplaced)->getStatusCode(), drogon::k200OK);
+  Json::Value placedRead = bodyOf(sendGetTree(h.api, "s-me", "t_00000000000000f2"));
+  Json::Value plainRead = bodyOf(sendGetTree(h.api, "s-me", "t_00000000000000f3"));
+  for (Json::Value* read : {&placedRead, &plainRead}) {
+    read->removeMember("createdAt");
+    (*read)["data"].removeMember("id");
+    (*read)["state"].removeMember("treeId");
+  }
+  CHECK_EQ(placedRead, plainRead);
+  CHECK_EQ(bodyOf(withPosition)["data"]["nodes"], bodyOf(without)["data"]["nodes"]);
+}
+
+// A kind has no cross-branch flag: a document that still sends one, as a bool or as anything else, lands as one that
+// does not, and no read answers it.
+TEST(put_takes_a_kind_that_still_sends_a_cross_branch_flag_and_no_read_answers_one) {
+  Harness h;
+  h.signIn("s-me");
+  Json::Value sent = document("Flagged", "hull");
+  sent["kinds"] = parse(R"([{"id":"drill","hue":"gold","label":"Drill","description":"","crossBranchExempt":true},
+    {"id":"build","hue":"sky","label":"Build","description":"","crossBranchExempt":"yes"}])");
+  const Json::Value kinds = parse(R"([{"id":"drill","hue":"gold","label":"Drill","description":""},
+    {"id":"build","hue":"sky","label":"Build","description":""}])");
+
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000f1", sent);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(response)["data"]["kinds"], kinds);
+  CHECK_EQ(bodyOf(sendGetTree(h.api, "s-me", "t_00000000000000f1"))["data"]["kinds"], kinds);
+}
+
 TEST(put_by_the_owner_overwrites_the_document_and_keeps_the_owner) {
   Harness h;
   UserId me = h.signIn("s-me");
@@ -1411,8 +1480,8 @@ TEST(put_over_the_edge_ceiling_is_413_and_creates_nothing) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k413RequestEntityTooLarge);
   CHECK_EQ(bodyOf(response)["error"].asString(),
-           std::string("this tree would hold 20005 edges, max 20000 — call tidy to drop the edges "
-                       "a longer path already implies"));
+           std::string("this tree would hold 20005 edges, max 20000 — remove edges with change_edges before "
+                       "adding more"));
   CHECK_EQ(h.trees->byId.count("t_0000000000000b17"), std::size_t{0});
 }
 

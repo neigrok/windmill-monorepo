@@ -398,7 +398,7 @@ inline UserId uid(const char* s = "u") { return UserId{std::string(s)}; }
 inline Hlc at(std::uint64_t ms, const char* actor = "u") { return Hlc{ms, 0, actor}; }
 
 inline Command createNode(const char* id) {
-  return CreateNode{nid(id), id, "icon", NodeColor::sky, {}, std::nullopt};
+  return CreateNode{nid(id), id, "icon", NodeColor::sky};
 }
 
 }

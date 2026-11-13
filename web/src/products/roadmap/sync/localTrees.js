@@ -71,7 +71,7 @@ async function bear(title, plant) {
 export function bearLocalTree({ title }) {
   return bear(title, (session) => {
     const rootId = crypto.randomUUID?.() ?? `n-${Date.now()}`;
-    session.dispatch({ kind: 'CreateNode', id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, x: 0, y: 0 });
+    session.dispatch({ kind: 'CreateNode', id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue });
   });
 }
 

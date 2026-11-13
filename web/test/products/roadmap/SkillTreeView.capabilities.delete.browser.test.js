@@ -127,7 +127,7 @@ hostTest('§2.5 Delete: the desktop Graph keeps the sole root at every door and 
 hostTest('§2.5 Delete: under a hold the Graph refuses the last root standing, and the hold keeps its toast', async () => {
   const { page, errors } = await openHost({ width: 1440 });
   try {
-    await page.evaluate(() => window.session.dispatch({ kind: 'CreateNode', id: 'solo', label: 'Sail solo', icon: 'sparkles', color: 'gold', x: 0, y: 0 }));
+    await page.evaluate(() => window.session.dispatch({ kind: 'CreateNode', id: 'solo', label: 'Sail solo', icon: 'sparkles', color: 'gold' }));
     await page.evaluate(() => { window.location.hash = `${window.location.hash.split('?')[0]}?step=solo`; });
     const layer = page.locator('.st-board-step-layer');
     await layer.getByRole('button', { name: 'More', exact: true }).click();
@@ -189,7 +189,7 @@ hostTest('§2.5 Delete: the desktop dock offers Delete for a step the roadmap ca
 hostTest('§2.5 Delete: under a hold the tablet\'s bulk bar holding the last root standing does not offer Delete', async () => {
   const { page, errors } = await openHost({ width: 744 });
   try {
-    await page.evaluate(() => window.session.dispatch({ kind: 'CreateNode', id: 'solo', label: 'Sail solo', icon: 'sparkles', color: 'gold', x: 0, y: 0 }));
+    await page.evaluate(() => window.session.dispatch({ kind: 'CreateNode', id: 'solo', label: 'Sail solo', icon: 'sparkles', color: 'gold' }));
     await page.evaluate(() => { window.location.hash = `${window.location.hash.split('?')[0]}?step=solo`; });
     await page.locator('.st-board-step-layer').getByRole('button', { name: 'More', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Delete step' }).click();

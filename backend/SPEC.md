@@ -14,14 +14,14 @@ self-edges and edges to absent nodes. Every write merges into it; graph writes a
 rejected for structure. Validity is a read model, not a gate.
 
 - `LooseGraph` — the authoritative state. Nodes are `NodeRecord`s (an `ElementSet` life plus LWW
-  registers: label, icon, color, order, position, status, description, links, opens); edges are an
+  registers: label, icon, color, order, status, description, links, opens); edges are an
   `ElementSet` per `(from, to)`.
 - `opens` — a node's pointer at another tree: that tree's id, or empty for none. A document node
   carries it as `opens` and omits it when empty; a lattice entry carries `opens` and `opensAt`. The
   room, the socket and `PUT` hold a write to the id length and to nothing about its target, so a
   pointer may name a tree that is absent, deleted or someone else's. The MCP door is stricter: every
-  non-empty `opens` a `create_node`, `annotate_node`, `patch_nodes`, `update_nodes` or `import_subgraph` call carries
-  must name a tree that stands and is the caller's (`TreeRepository::titlesOwnedBy`, one read for
+  non-empty `opens` a `create_node`, `update_nodes` or `import_subgraph` call carries must name a
+  tree that stands and is the caller's (`TreeRepository::titlesOwnedBy`, one read for
   the whole call), or the call is refused with nothing written, in one sentence for a tree that is
   not there and for someone else's. A node may open the tree it is in. A tree id is the read
   capability of an unlisted tree, so only a caller who can write the tree receives the pointer:
@@ -74,7 +74,10 @@ rejected for structure. Validity is a read model, not a gate.
   so `diagnose` costs the account's pointers plus the capped lists, whatever the tree holds.
   The raw mark (`status`, `get_progress`, and `GET …/progress` for a caller who can write the tree)
   stays the raw mark; every other reader of `GET …/progress`, and the gallery, are shown the
-  owner's marks through `readerView`.
+  owner's marks through `readerView`. `get_progress` answers the caller's own marks on the nodes the
+  tree holds alone (`Progress::restrictedTo`): a mark on a deleted node stays stored, shows again on
+  a revive, and still reaches the socket's overlay graft and, for a caller who can write the tree,
+  `GET …/progress`, which serve the stored marks.
 - `readerView` (`domain/OpenedTrees.h`) — an owner's stored marks on a tree as a caller who cannot
   write it is shown them: the owner's derived completion, and nothing of the trees its nodes open. A
   node with a valid pointer has a row only while the tree it opens is complete for the owner, by the
@@ -104,7 +107,7 @@ rejected for structure. Validity is a read model, not a gate.
   that caller, and nobody else, the nodes that open a tree (`TreeRoom::pointersFor`); `following`
   names the ones whose pointer is valid, and `ProgressService::mark`, which both doors that write
   progress call, leaves a mark on one of them, `complete` or `none`, out of the write and answers it
-  refused under the code `opens-a-tree`: MCP `set_progress` and the `progress[]` of an
+  refused under the code `opens-a-tree`: MCP `update_nodes` and the `progress[]` of an
   `import_subgraph` say so (`adapters/mcp/README.md`), and a socket `progress` frame's ack lists it
   (WebSocket surface). The other marks of the call are recorded, and each `prerequisitesMet` is
   judged on the `followed` set, so a step behind such a node is met when the opened tree is
@@ -113,7 +116,7 @@ rejected for structure. Validity is a read model, not a gate.
   a caller who cannot write the tree the same mark is an ordinary one: recorded, answered exactly as
   on a node that opens nothing, and judged on their own marks.
 - The domain is fed two ways. A read of one tree (`get_tree`, `get_nodes`, `find_nodes`,
-  `GET /v1/trees/{id}`) takes the tree from its live room, a progress write (`set_progress`, the
+  `GET /v1/trees/{id}`) takes the tree from its live room, a progress write (`update_nodes`, the
   `progress[]` of an `import_subgraph`, a socket `progress` frame) only its nodes that open a tree,
   and each asks `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and
   is the owner's and every such tree their pointers lead to: one statement over `trees`,
@@ -132,7 +135,7 @@ rejected for structure. Validity is a read model, not a gate.
   after the strand is released, for a caller who can write the tree and a tree that holds a pointer,
   and not for an MCP call that sends `includePointers: false`; under the strand they take the tree's
   pointers alone (`LooseGraph::pointers`). An MCP edit that changes the tree a node opens to a tree
-  (`create_node`, `annotate_node`, `patch_nodes`, `update_nodes` or `import_subgraph`) makes it once
+  (`create_node`, `update_nodes` or `import_subgraph`) makes it once
   more, after the edit is saved and the strand is released, starting from the trees those nodes now
   open (`pointersSetSince`) and under a budget of its own, 750 ms, in place of the pool's statement
   limit: its receipt names in `introducedDiagnostics`, after the graph's errors and within that
@@ -151,8 +154,8 @@ rejected for structure. Validity is a read model, not a gate.
   lines whatever the tree's size; and `empty-legend`, one line naming no node for a tree with nodes
   and no kind, in place of the hue lines. It reads one graph and its legend, and no pointer: a loop of
   trees and a dangling pointer (`PointerDiagnostics`) are reported beside it, as smells are, and
-  change neither `clean()` nor what it gates — the `SkillTree` projection, `get_health` and a
-  receipt's `diagnosticsClean`.
+  change neither `clean()` nor what it gates — the `SkillTree` projection and a receipt's
+  `diagnosticsClean`.
 - `SkillTree` — the validated projection, constructible only from a clean graph; it throws
   `InvalidTree` on a duplicate id, a dangling prerequisite or a cycle. Indexes the DAG, the topo
   order, ancestry and the render model.
@@ -197,14 +200,12 @@ Derived read models:
 - `TrunkTree` — elects one trunk parent per node (same-kind parents win, then shallowest, then
   smallest id) and derives branch root, trunk depth, leaf weight, and `EdgeKind ∈ {trunk,
   in_branch, cross_branch}`.
-- `TreeHealth::assess(SkillTree) → Health {nodeCount, edgeCount, crossBranch, crossBranchExempt,
-  redundant, avgInDegree, score}` — an edge touching a node of a `crossBranchExempt` legend kind is
-  counted in `crossBranchExempt`, not `crossBranch`.
 
 `NodeColor ∈ {terracotta, olive, gold, brick, sky, plum}`.
 
-The server never computes layout and never renders. Positions are authored nudges it stores and
-serves; geometry is entirely client-side.
+The server never computes layout and never renders, and a node holds no position: every client lays
+the graph out itself. A document or a frame that still carries a node's `position` or `positionAt`
+is taken without them, key by key, and is never refused for them.
 
 ### Progress
 
@@ -223,8 +224,9 @@ advisory: the mark is recorded either way and the outcome reports `prerequisites
 can warn. It reads the completed set `UnlockRules::derive` is handed: the caller's marks, or for the
 tree's writer `OpenedTrees::followed`. `outOfOrder` is the marker's word that the inversion was
 meant; it is part of the status value under the same stamp, so a later mark on the node carries its
-own word or none. Only the MCP `set_progress` sets it today — a socket `progress` frame lands it
-false. Progress therefore never depends on the tree being a valid DAG.
+own word or none. Only an MCP mark sets it — an `update_nodes` row or an `import_subgraph` progress
+row; a socket `progress` frame lands it false. Progress therefore never depends on the tree being a
+valid DAG.
 
 ## Convergence
 
@@ -264,7 +266,16 @@ set stamp `at`; any other shape makes the frame `bad-frame`, so no value is coer
 `TreeRoom::joinSubgraph` dedupes on `frameId`, folds the frame's stamps into the room clock,
 joins graph + legend + title + guide, assigns the next `seq`, queues a headline deed for the op log,
 and broadcasts the frame to subscribers. A frame that sets only the title or the guide has no
-headline deed, so it leaves no `tree_ops` row and no activity entry. Duplicates return no seq. A broadcast carries the room's `seq` and always
+headline deed, so it leaves no `tree_ops` row and no activity entry. A frame that lands nothing — a
+duplicate `frameId`, one whose every stamp the room already holds, or one that carries no stamp, as
+when its entries hold only keys no register keeps — takes no seq and leaves the room as it was, with
+no record of an id only it named: it is not saved, logged or broadcast. Its sender is still
+answered, by a `subgraphAck` that carries no `seq`. A frame that carries no stamp
+(`Subgraph::carriesNoStamp`) asks for no write, so it meets only the read gate: whoever may read the
+tree, a reader or a visitor without a session included, gets that ack, and no room is loaded for it;
+for a tree the sender may not read it is answered as any frame is, the same for a private tree as
+for an absent one. A frame that carries a stamp meets the write gate before the room, whatever the
+room already holds. A broadcast carries the room's `seq` and always
 states `intent: live`, whatever intent the frame arrived with — echoing a `flush` would make every
 subscriber treat it as a re-baselining graft.
 
@@ -301,15 +312,20 @@ committed before its connection dropped lands once. Only a room closing — `evi
 - `DeleteNode` is a plain tombstone. The record and every field survive so the node can be
   resurrected; its edges stay in the document and are filtered from the derived DAG view. A child
   that loses its only live parent becomes a root — visible as `maskedWork`, never re-tethered.
-- `TransitiveReduction` drops transitively-implied edges; `PruneDangling` drops self-edges and
-  edges touching an absent node. Both are computed server-side against the current state and
-  applied as one op, one undo step.
+- `RepositionNode`, `TransitiveReduction` and `PruneDangling` are written by nothing. A row of any
+  of them that the log holds decodes and replays as nothing: a row is logged only after the lattice
+  holding its effect is saved, so a replayed tail holds no such row. A node holds no position, so the
+  feed skips a `RepositionNode`, alone or inside a `Batch` whose other members it tells, and a stored
+  `CreateNode` row's `x` and `y` are read past. The Activity feed still tells a past
+  `TransitiveReduction`.
+- A `DescribeKind` without a description sets nothing: it replays as nothing and the feed skips it,
+  alone or inside a `Batch` whose other members it tells.
 - `RecolorKind` is atomic: it swaps a kind's hue and repaints every node wearing the old hue.
 - `validate(graph, legend, command)` runs at the edge. A graph command is refused only for a
-  malformed or over-cap field, or — `RenameNode` · `SetNodeColor` · `RepositionNode` ·
-  `AnnotateNode` — an id no present node carries (`no node in this tree is named "x"`), so no
-  edit plants a phantom. Legend commands may be refused — hue uniqueness, ≤6 kinds, no in-use
-  removal, length caps are all locally decidable on the authoritative state.
+  malformed or over-cap field, or — `RenameNode` · `SetNodeColor` · `AnnotateNode` — an id no
+  present node carries (`no node in this tree is named "x"`), so no edit plants a phantom. Legend
+  commands may be refused — hue uniqueness, ≤6 kinds, no in-use removal, length caps are all locally
+  decidable on the authoritative state.
 
 ### Bounds
 
@@ -342,11 +358,6 @@ and one `import_subgraph` call carries at most 6 MB of description text, under t
 document, an MCP graft, a client lattice frame. `admit` returns `Admission{verdict ∈ {tooLarge,
 malformed}, reason}`; an HTTP door answers 413 for `tooLarge` and 400 for `malformed`. Caps are
 asked against what the graph would **hold** once the arrival lands, joined not estimated.
-
-The redundant-edge pass (`redundantEdges`, and `TreeHealth`'s `redundant`) walks a transitive
-closure whose cost is a sum of squared degrees. `withinReachabilityBudget(nodes, edges)` allows
-1500 nodes, 6000 edges and a product of 3,000,000; over budget the pass is skipped and reports
-nothing — tidy finds no edge to drop, health reports 0 redundant.
 
 ## Runtime
 
@@ -575,9 +586,9 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | Table | Holds |
 | --- | --- |
 | `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
-| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open |
+| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open; `pos_x`, `pos_y` and `pos_hlc` are neither read nor written, and stay so an earlier image can run on this database |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
-| `tree_kinds` | one row per legend kind: hue, label, description, cross_branch_exempt, rank, each with its stamp |
+| `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp; `cross_branch_exempt` and `cross_branch_exempt_hlc` are neither read nor written, and stay so an earlier image can run on this database |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |
 | `node_progress` | per-user private overlay — status, `out_of_order`, `hlc`, `stamp_ms`, `stamp_counter` |
 | `tree_og_images` / `tree_og_videos` | the share card PNG and loop, inline `bytea`, one row per tree |

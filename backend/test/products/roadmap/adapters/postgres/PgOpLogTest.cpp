@@ -1,5 +1,7 @@
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
 
+#include "platform/adapters/json/JsonText.h"
+#include "products/roadmap/adapters/json/CommandJson.h"
 #include "products/roadmap/adapters/postgres/PgTreeRepository.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/LooseGraph.h"
@@ -78,6 +80,45 @@ TEST(pg_op_log_absorbs_a_row_re_sent_after_a_commit_then_drop) {
   CHECK_EQ(rowCount(), 1L);
   REQUIRE_EQ(log.since(kTree, 0).size(), 1u);
   CHECK_EQ(log.since(kTree, 0)[0].opId, std::string("op-1"));
+}
+
+// A node has no position, but the log holds the rows an earlier image wrote: a create carrying x and y, a move, and a
+// Batch holding a move. The log reads every one — a row it could not decode would be skipped, and a Batch with it —
+// the create without its x and y, the move as a command that carries nothing.
+TEST(pg_op_log_reads_the_rows_an_earlier_image_wrote_that_set_a_position) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTreeRepository repo{pgTestPool()};
+  repo.create(kTree, LooseGraph().exportState(), LegendState{}, "Op log", kOwner);
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    const std::pair<const char*, const char*> rows[] = {
+        {"CreateNode", R"({"id":"a","label":"A","color":"sky","x":3,"y":4})"},
+        {"RepositionNode", R"({"id":"a","x":5,"y":6})"},
+        {"Batch", R"({"commands":[{"kind":"RepositionNode","payload":{"id":"a","x":7,"y":8}},
+                                  {"kind":"RenameNode","payload":{"id":"a","label":"Alpha"}}]})"},
+    };
+    long long seq = 0;
+    for (const auto& [kind, payload] : rows) {
+      ++seq;
+      txn.exec_params("INSERT INTO tree_ops (tree_id, seq, actor_id, op_id, kind, payload, hlc) "
+                      "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)",
+                      kTree.str(), seq, kOwner.str(), "op-" + std::to_string(seq), kind, payload,
+                      std::to_string(seq) + ":0:srv");
+    }
+    txn.commit();
+  }
+
+  PgOpLog log{pgTestPool()};
+  std::vector<std::string> read;
+  for (const AppliedOp& op : log.since(kTree, 0))
+    read.push_back(std::to_string(op.seq) + " " + commandKind(op.command) + " " + dump(commandPayload(op.command)));
+  CHECK_EQ(read, (std::vector<std::string>{
+                     R"(1 CreateNode {"color":"sky","icon":"","id":"a","label":"A"})",
+                     "2 RepositionNode {}",
+                     R"(3 Batch {"commands":[{"kind":"RepositionNode","payload":{}},)"
+                     R"({"kind":"RenameNode","payload":{"id":"a","label":"Alpha"}}]})"}));
 }
 
 // A persist whose row committed and whose connection then dropped answers normally, keeps the row
