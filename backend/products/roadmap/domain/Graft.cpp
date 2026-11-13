@@ -10,20 +10,30 @@
 namespace wm {
 
 std::variant<Graft, KindRefusal> resolveKinds(const LooseGraph& graph, const Legend& legend, Graft graft) {
-  if (graft.nodeKinds.empty()) return graft;
   std::vector<Kind> landed = legend.kinds();
   for (const Kind& kind : graft.document.kinds) {
     const auto held = std::find_if(landed.begin(), landed.end(), [&](const Kind& k) { return k.id == kind.id; });
     if (held == landed.end()) landed.push_back(kind);
     else held->hue = kind.hue;
   }
+  const auto colorSent = [&](const NodeId& id) {
+    const auto omitted = graft.omittedNodeRegisters.find(id);
+    return omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
+  };
+  std::vector<std::string> unnamed;
+  for (std::size_t i = 0; i < graft.document.nodes.size(); ++i) {
+    const NodeId& id = graft.document.nodes[i].id;
+    const bool held = graph.hasNode(id) || graph.isTombstoned(id);
+    if (!held && !colorSent(id) && !graft.nodeKinds.count(id))
+      unnamed.push_back("nodes[" + std::to_string(i) + "] \"" + id.str() + "\"");
+  }
+  if (std::optional<KindRefusal> refusal = unnamedHueRefusal(landed, unnamed)) return *refusal;
   for (std::size_t i = 0; i < graft.document.nodes.size(); ++i) {
     NodeSpec& node = graft.document.nodes[i];
     const auto named = graft.nodeKinds.find(node.id);
     if (named == graft.nodeKinds.end()) continue;
     const auto omitted = graft.omittedNodeRegisters.find(node.id);
-    const bool colorSent = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
-    const auto hue = resolveHue(landed, HueChoice{colorSent ? std::optional(node.color) : std::nullopt, named->second},
+    const auto hue = resolveHue(landed, HueChoice{colorSent(node.id) ? std::optional(node.color) : std::nullopt, named->second},
                                 graph.exportNode(node.id), "nodes[" + std::to_string(i) + "].");
     if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return *refusal;
     node.color = *std::get<std::optional<NodeColor>>(hue);

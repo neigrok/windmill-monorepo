@@ -380,7 +380,12 @@ naming both, unless the node already holds that colour — what a read carrying 
 the kind's hue moved — when the colour is an echo (`landsOver` over the node's held entry, which
 `resolveHue` takes) and the node lands the kind's hue as a node filed by kind, never repainted by an
 import's re-hue; a node being created holds no colour to echo. Their write lines carry the outcomes `kind-unknown` and `kind-hue-mismatch`, never the
-kind. A node that names neither keeps its colour, and a new one is terracotta.
+kind. A node that names neither keeps its colour, one an import brings back from a delete included. A new one is
+terracotta and wears the legend's terracotta kind; where the legend has kinds and none wears terracotta, the node
+would belong to no kind, so `create_node` and `import_subgraph` refuse the whole call (`unnamedHueRefusal`, beside
+`resolveHue`): the sentence names each such node, by `nodes[i]` and id in an import, and lists the legend's kinds in
+order, each as id and label. A dry run answers the same refusal. An empty legend has no kind to name, so the node
+lands terracotta there. Its write line carries the outcome `kind-unnamed`, never the node or a kind.
 
 ## `opens`
 

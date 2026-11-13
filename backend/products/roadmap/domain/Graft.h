@@ -49,7 +49,9 @@ struct Graft {
 // `legend` with the document's own kinds upserted, so one batch can add a kind and file nodes under it.
 // Such a node carries its colour register. A kind that legend does not hold, or a colour sent beside it
 // that disagrees and is not the colour the node's record in `graph` holds, refuses the whole graft with
-// resolveHue's refusal, naming `nodes[i].kind`.
+// resolveHue's refusal, naming `nodes[i].kind`. So does a node `graph` holds no record of, present or deleted,
+// that carries neither a kind nor its colour register, where that legend has kinds and none wears the hue such a
+// node takes: unnamedHueRefusal, naming every such node.
 std::variant<Graft, KindRefusal> resolveKinds(const LooseGraph& graph, const Legend& legend, Graft graft);
 
 // The graft with each node's links as that node would hold them: shownLinks against the links its record holds,

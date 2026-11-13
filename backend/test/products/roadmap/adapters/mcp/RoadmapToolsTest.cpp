@@ -2052,7 +2052,7 @@ TEST(mcp_import_subgraph_re_sending_a_held_node_keeps_its_creation_and_the_feed_
 // re-sending a node to add an edge with the kinds carried still leaves the edge as the op row.
 TEST(mcp_import_subgraph_with_the_legend_carried_back_names_the_edge_it_added) {
   Harness h;
-  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI"},
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ask","label":"Ask AI","color":"terracotta"},
     {"id":"review","label":"Backend review","color":"sky"}],"kinds":[{"id":"backend","hue":"sky","label":"Backend"}]})"))
                   .isError);
   const LegendState legend = h.registry.open(TreeId{"t"})->exportLegend();
@@ -4600,6 +4600,134 @@ TEST(mcp_an_exhausted_process_is_not_answered_as_pointers_that_could_not_be_foll
   }
 }
 
+// On a tree born with a legend of sky and plum no kind wears terracotta, the hue a node takes when it names neither
+// `kind` nor `color`. create_node refuses such a node in one sentence that names it and lists the legend, and writes
+// nothing; a node that names a kind lands, and so does one whose colour no kind wears, which is its caller's choice.
+TEST(mcp_create_node_naming_neither_kind_nor_color_is_refused_where_no_kind_wears_terracotta) {
+  Harness h;
+  const std::string tree = body(h.tools.callTool("create_tree", parse(R"({"title":"Crew","kinds":[
+    {"id":"read","hue":"sky","label":"Reading"},{"id":"ship","hue":"plum","label":"Shipping"}]})"), h.actor))["treeId"].asString();
+  const auto call = [&](const char* tool, const char* arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = tree;
+    ToolResult result = h.tools.callTool(tool, args, h.actor);
+    checkStructuredContent(h.tools, tool, result, __FILE__, __LINE__);
+    return result;
+  };
+  const StoredTree planted = h.trees.byId[tree];
+
+  const ToolResult unnamed = call("create_node", R"({"label":"Hull"})");
+  const ToolResult unnamedWithAnId = call("create_node", R"({"id":"hull","label":"Hull"})");
+
+  CHECK(unnamed.isError);
+  CHECK_EQ(message(unnamed),
+           std::string("create_node: the node names neither \"kind\" nor \"color\", and no kind of this tree wears "
+                       "terracotta, the hue a new node takes without them — name one of the legend's kinds: \"read\" "
+                       "(Reading), \"ship\" (Shipping)"));
+  CHECK_EQ(message(unnamedWithAnId),
+           std::string("create_node: node \"hull\" names neither \"kind\" nor \"color\", and no kind of this tree wears "
+                       "terracotta, the hue a new node takes without them — name one of the legend's kinds: \"read\" "
+                       "(Reading), \"ship\" (Shipping)"));
+  CHECK_EQ(unnamed.outcomeCode, std::string("kind-unnamed"));
+  CHECK(h.trees.byId[tree] == planted);
+  CHECK(h.ops.byTree[tree].empty());
+  CHECK_EQ(body(call("get_tree", R"({"fields":["id"]})"))["tree"]["nodes"], parse("[]"));
+
+  CHECK_EQ(body(call("create_node", R"({"id":"hull","label":"Hull","kind":"ship"})")),
+           parse(R"({"applied":true,"seq":1,"id":"hull","kind":"ship","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(call("create_node", R"({"id":"flag","label":"Flag","color":"gold"})")),
+           parse(R"({"applied":true,"seq":2,"id":"flag","diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(call("get_tree", R"({"fields":["id","color","kind"]})"))["tree"]["nodes"],
+           parse(R"([{"id":"flag","color":"gold"},{"id":"hull","color":"plum","kind":"ship"}])"));
+}
+
+// An import on that tree refuses the whole batch when a node it would create names neither: the sentence names every
+// such node by its place in `nodes` and its id, a node the tree holds re-sent bare is none of them, nothing is written,
+// and a dry run answers the same. The same batch with a kind on each new node lands.
+TEST(mcp_an_import_whose_new_nodes_name_neither_kind_nor_color_is_refused_naming_each_where_no_kind_wears_terracotta) {
+  Harness h;
+  const std::string tree = body(h.tools.callTool("create_tree", parse(R"({"title":"Crew","kinds":[
+    {"id":"read","hue":"sky","label":"Reading"},{"id":"ship","hue":"plum","label":"Shipping"}]})"), h.actor))["treeId"].asString();
+  const auto call = [&](const char* tool, const char* arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = tree;
+    ToolResult result = h.tools.callTool(tool, args, h.actor);
+    checkStructuredContent(h.tools, tool, result, __FILE__, __LINE__);
+    return result;
+  };
+  CHECK_FALSE(call("create_node", R"({"id":"keel","label":"Keel","kind":"read"})").isError);
+  const StoredTree before = h.trees.byId[tree];
+  const std::size_t rows = h.ops.byTree[tree].size();
+  const std::string refusal(
+      "import_subgraph: nodes[0] \"hull\", nodes[2] \"mast\" name neither \"kind\" nor \"color\", and no kind of this tree "
+      "wears terracotta, the hue a new node takes without them — name one of the legend's kinds for each: \"read\" "
+      "(Reading), \"ship\" (Shipping)");
+
+  const ToolResult refused = call("import_subgraph", R"({"nodes":[{"id":"hull","label":"Hull"},{"id":"keel"},
+    {"id":"mast","label":"Mast","prerequisites":["hull"]}]})");
+  const ToolResult rehearsed = call("import_subgraph", R"({"dryRun":true,"nodes":[{"id":"hull","label":"Hull"},
+    {"id":"keel"},{"id":"mast","label":"Mast","prerequisites":["hull"]}]})");
+
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused), refusal);
+  CHECK_EQ(message(rehearsed), refusal);
+  CHECK_EQ(refused.outcomeCode, std::string("kind-unnamed"));
+  CHECK_EQ(rehearsed.outcomeCode, std::string("kind-unnamed"));
+  CHECK(h.trees.byId[tree] == before);
+  CHECK_EQ(h.ops.byTree[tree].size(), rows);
+
+  CHECK_FALSE(call("import_subgraph", R"({"nodes":[{"id":"hull","label":"Hull","kind":"ship"},{"id":"keel"},
+    {"id":"mast","label":"Mast","kind":"read","prerequisites":["hull"]}]})").isError);
+  CHECK_EQ(body(call("get_tree", R"({"fields":["id","color","kind"]})"))["tree"]["nodes"],
+           parse(R"([{"id":"hull","color":"plum","kind":"ship"},{"id":"keel","color":"sky","kind":"read"},
+    {"id":"mast","color":"sky","kind":"read"}])"));
+}
+
+// A node an import brings back from a delete comes back with the hue it had, so re-sent bare it is not refused.
+TEST(mcp_an_import_that_revives_a_node_naming_neither_kind_nor_color_is_not_refused) {
+  Harness h;
+  const std::string tree = body(h.tools.callTool("create_tree", parse(R"({"title":"Crew","kinds":[
+    {"id":"read","hue":"sky","label":"Reading"},{"id":"ship","hue":"plum","label":"Shipping"}]})"), h.actor))["treeId"].asString();
+  const auto call = [&](const char* tool, const char* arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = tree;
+    ToolResult result = h.tools.callTool(tool, args, h.actor);
+    checkStructuredContent(h.tools, tool, result, __FILE__, __LINE__);
+    return result;
+  };
+  CHECK_FALSE(call("create_node", R"({"id":"keel","label":"Keel","kind":"ship"})").isError);
+  CHECK_FALSE(call("delete_node", R"({"nodeId":"keel"})").isError);
+
+  CHECK_FALSE(call("import_subgraph", R"({"nodes":[{"id":"keel"}]})").isError);
+
+  CHECK_EQ(body(call("get_tree", R"({"fields":["id","label","color","kind"]})"))["tree"]["nodes"],
+           parse(R"([{"id":"keel","label":"Keel","color":"plum","kind":"ship"}])"));
+}
+
+// Where a kind wears terracotta, as Build does in the default legend, a node that names neither is terracotta and
+// wears that kind; on an empty legend there is no kind to name and it lands terracotta under none. Both doors.
+TEST(mcp_a_new_node_naming_neither_lands_terracotta_under_the_terracotta_kind_and_on_an_empty_legend) {
+  Harness h;
+  const std::string defaults =
+      body(h.tools.callTool("create_tree", parse(R"({"title":"Defaults"})"), h.actor))["treeId"].asString();
+  const auto landed = [&](const std::string& tree) {
+    const auto call = [&](const char* tool, const char* arguments) {
+      Json::Value args = parse(arguments);
+      args["treeId"] = tree;
+      ToolResult result = h.tools.callTool(tool, args, h.actor);
+      checkStructuredContent(h.tools, tool, result, __FILE__, __LINE__);
+      return result;
+    };
+    CHECK_FALSE(call("create_node", R"({"id":"hull","label":"Hull"})").isError);
+    CHECK_FALSE(call("import_subgraph", R"({"nodes":[{"id":"mast","label":"Mast"}]})").isError);
+    return body(call("get_tree", R"({"fields":["id","color","kind"]})"))["tree"]["nodes"];
+  };
+
+  CHECK_EQ(landed(defaults), parse(R"([{"id":"hull","color":"terracotta","kind":"build"},
+    {"id":"mast","color":"terracotta","kind":"build"}])"));
+  CHECK_EQ(landed("t"), parse(R"([{"id":"hull","color":"terracotta"},{"id":"mast","color":"terracotta"}])"));
+}
+
 TEST(mcp_create_node_files_the_node_under_the_kind_it_names_and_says_so) {
   Harness h;
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"owner","hue":"gold","label":"Owner"})")).isError);
@@ -4644,7 +4772,7 @@ TEST(mcp_create_node_refuses_a_kind_the_legend_does_not_hold_or_a_colour_that_di
 TEST(mcp_an_update_nodes_row_takes_a_kind_or_a_colour_and_refuses_a_disagreeing_pair) {
   Harness h;
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"owner","hue":"gold"})")).isError);
-  CHECK_EQ(body(h.call("create_node", parse(R"({"label":"Ship"})"))),
+  CHECK_EQ(body(h.call("create_node", parse(R"({"label":"Ship","color":"terracotta"})"))),
            parse(R"({"applied":true,"seq":2,"id":"ship","diagnosticsClean":true,"introducedDiagnostics":[]})"));
 
   CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"ship","kind":"owner"})")))),
@@ -4691,8 +4819,8 @@ TEST(mcp_update_nodes_takes_a_kind_per_row_and_one_bad_row_writes_nothing) {
   Harness h;
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"owner","hue":"gold"})")).isError);
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"designer","hue":"olive"})")).isError);
-  CHECK_FALSE(h.call("create_node", node("a", "A")).isError);
-  CHECK_FALSE(h.call("create_node", node("b", "B")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","color":"terracotta"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","color":"terracotta"})")).isError);
   const Json::Value before = body(h.call("get_tree", kNoArgs));
 
   CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","kind":"owner"},{"nodeId":"b","kind":"ghost"}]})"))),
@@ -4747,9 +4875,10 @@ TEST(mcp_import_subgraph_refuses_a_kind_its_legend_does_not_hold_and_writes_noth
   CHECK_EQ(h.bus.subgraphBroadcasts.size(), 1u);
 }
 
-// The write line tells a kind the legend lacks, and a colour that disagrees with the kind sent beside
-// it, from every other refusal on the four tools that take a kind; no line carries the kind it named.
-TEST(mcp_a_refused_kind_completes_as_kind_unknown_or_kind_hue_mismatch) {
+// The write line tells a kind the legend lacks, a colour that disagrees with the kind sent beside it, and a new
+// node that names neither where no kind wears terracotta, from every other refusal on the tools that take a kind;
+// no line carries the kind or the node it named.
+TEST(mcp_a_refused_kind_completes_under_the_code_of_its_reason) {
   Harness h;
   CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
   const auto call = [&](const char* tool, const char* arguments) {
@@ -4762,17 +4891,20 @@ TEST(mcp_a_refused_kind_completes_as_kind_unknown_or_kind_hue_mismatch) {
 
   CHECK(call("roadmap_create_node", R"({"label":"Ship","kind":"pilot"})").isError);  // a legend that holds none
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"pilot","hue":"gold"})")).isError);
-  CHECK_FALSE(h.call("create_node", node("a", "A")).isError);
-  CHECK_FALSE(h.call("create_node", node("b", "B")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","color":"terracotta"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","color":"terracotta"})")).isError);
   for (const auto& [tool, arguments] : std::vector<std::pair<const char*, const char*>>{
            {"roadmap_create_node", R"({"label":"Ship","kind":"pilt"})"},
            {"roadmap_create_node", R"({"label":"Ship","kind":"pilot","color":"sky"})"},
            {"roadmap_update_nodes", R"({"updates":[{"nodeId":"a","label":"Renamed"},{"nodeId":"b","kind":"pilt"}]})"},
            {"roadmap_update_nodes", R"({"updates":[{"nodeId":"a","label":"Renamed"},
               {"nodeId":"b","kind":"pilot","color":"sky"}],"dryRun":true})"},
-           {"roadmap_import_subgraph", R"({"nodes":[{"id":"n","label":"New"},{"id":"m","label":"More","kind":"pilt"}],
-              "dryRun":true})"},
+           {"roadmap_import_subgraph", R"({"nodes":[{"id":"n","label":"New","color":"terracotta"},
+              {"id":"m","label":"More","kind":"pilt"}],"dryRun":true})"},
            {"roadmap_import_subgraph", R"({"nodes":[{"id":"n","label":"New","kind":"pilot","color":"sky"}]})"},
+           {"roadmap_create_node", R"({"label":"Ship"})"},
+           {"roadmap_import_subgraph", R"({"nodes":[{"id":"n","label":"New"},{"id":"a"}],"dryRun":true})"},
+           {"roadmap_import_subgraph", R"({"nodes":[{"id":"n","label":"New"}]})"},
            {"roadmap_create_node", R"({"label":"Ship","kind":7})"},
            {"roadmap_update_nodes", R"({"updates":[{"nodeId":"a"}]})"},
            {"roadmap_create_node", R"({"label":"Ship","knd":"pilot"})"}})
@@ -4792,9 +4924,10 @@ TEST(mcp_a_refused_kind_completes_as_kind_unknown_or_kind_hue_mismatch) {
                          "mcp.roadmap_create_node kind-unknown", "mcp.roadmap_create_node kind-unknown",
                          "mcp.roadmap_create_node kind-hue-mismatch", "mcp.roadmap_update_nodes kind-unknown",
                          "mcp.roadmap_update_nodes kind-hue-mismatch", "mcp.roadmap_import_subgraph kind-unknown",
-                         "mcp.roadmap_import_subgraph kind-hue-mismatch", "mcp.roadmap_create_node refused",
-                         "mcp.roadmap_update_nodes refused", "mcp.roadmap_create_node invalid-arguments",
-                         "mcp.roadmap_create_node ok"}));
+                         "mcp.roadmap_import_subgraph kind-hue-mismatch", "mcp.roadmap_create_node kind-unnamed",
+                         "mcp.roadmap_import_subgraph kind-unnamed", "mcp.roadmap_import_subgraph kind-unnamed",
+                         "mcp.roadmap_create_node refused", "mcp.roadmap_update_nodes refused",
+                         "mcp.roadmap_create_node invalid-arguments", "mcp.roadmap_create_node ok"}));
 }
 
 TEST(mcp_import_subgraph_re_files_a_node_by_kind_alone_and_keeps_its_other_fields) {
@@ -5226,7 +5359,8 @@ TEST(mcp_an_update_nodes_row_that_changes_one_field_it_names_lands_with_a_seq_an
 TEST(mcp_an_import_that_changes_nothing_keeps_the_seq_and_says_so) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"kinds":[{"id":"owner","hue":"gold","label":"Owner"}],
-    "nodes":[{"id":"a","label":"A","color":"gold"},{"id":"b","label":"B","prerequisites":["a"]}]})")).isError);
+    "nodes":[{"id":"a","label":"A","color":"gold"},{"id":"b","label":"B","color":"terracotta","prerequisites":["a"]}]})"))
+                  .isError);
   const StoredTree stored = h.trees.byId["t"];
   const std::size_t rows = h.ops.byTree["t"].size();
   const std::size_t frames = h.bus.subgraphBroadcasts.size();
@@ -5272,7 +5406,8 @@ TEST(mcp_an_import_that_changes_nothing_keeps_the_seq_and_says_so) {
 TEST(mcp_an_import_that_changes_anything_lands_with_a_seq_and_no_unchanged) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"kinds":[{"id":"owner","hue":"gold","label":"Owner"}],
-    "nodes":[{"id":"a","label":"A","color":"gold"},{"id":"b","label":"B","prerequisites":["a"]},{"id":"c","label":"C"}]})"))
+    "nodes":[{"id":"a","label":"A","color":"gold"},{"id":"b","label":"B","color":"terracotta","prerequisites":["a"]},
+    {"id":"c","label":"C","color":"terracotta"}]})"))
                   .isError);
 
   int seq = 1;
@@ -6494,7 +6629,7 @@ TEST(mcp_an_import_whose_clear_of_marks_on_removed_nodes_throws_reports_it_once_
 TEST(mcp_a_hue_no_kind_wears_is_a_smell) {
   Harness h;
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
-  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","icon":"i"},
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","icon":"i","color":"terracotta"},
     {"id":"c","label":"C","icon":"i","color":"sky"},{"id":"d","label":"D","icon":"i","kind":"k"},
     {"id":"e","label":"E","icon":"i","kind":"k"}]})")).isError);
   CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"c"})")).isError);
@@ -7060,8 +7195,9 @@ std::unique_ptr<Harness> nodeTree() {
   auto h = std::make_unique<Harness>();
   h->plant("t_sub", h->caller, "", {});
   CHECK_FALSE(h->call("add_kind", parse(R"({"id":"owner","hue":"gold"})")).isError);
-  CHECK_FALSE(h->call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","description":"Old.",
-    "links":[{"url":"https://a.example/"}]},{"id":"b","label":"B","prerequisites":["a"]}]})")).isError);
+  CHECK_FALSE(h->call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","color":"terracotta",
+    "description":"Old.","links":[{"url":"https://a.example/"}]},
+    {"id":"b","label":"B","color":"terracotta","prerequisites":["a"]}]})")).isError);
   return h;
 }
 

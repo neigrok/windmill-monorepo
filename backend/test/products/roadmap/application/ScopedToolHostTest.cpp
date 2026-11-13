@@ -384,6 +384,8 @@ TEST(scoped_tool_host_logs_a_refused_kind_under_its_code_and_answers_it_as_any_r
 
   CHECK(scoped.callTool("create_node", parse(R"({"label":"B","kind":"pilt"})"), h.actor).isError);
   CHECK(scoped.callTool("create_node", parse(R"({"label":"B","kind":"pilot","color":"sky"})"), h.actor).isError);
+  CHECK(scoped.callTool("create_node", parse(R"({"label":"B"})"), h.actor).isError);
+  CHECK(scoped.callTool("import_subgraph", parse(R"({"nodes":[{"id":"c","label":"C"}]})"), h.actor).isError);
   CHECK(scoped.createdNodeIds().empty());
   CHECK_FALSE(scoped.callTool("create_node", parse(R"({"label":"B","kind":"pilot"})"), h.actor).isError);
   installWriteSink({});
@@ -394,6 +396,8 @@ TEST(scoped_tool_host_logs_a_refused_kind_under_its_code_and_answers_it_as_any_r
     observed.push_back(completion.operation + " " + completion.door + " " + completion.outcome);
   CHECK_EQ(observed, (std::vector<std::string>{"roadmap.create_node Coach kind-unknown",
                                                "roadmap.create_node Coach kind-hue-mismatch",
+                                               "roadmap.create_node Coach kind-unnamed",
+                                               "roadmap.import_subgraph Coach kind-unnamed",
                                                "roadmap.create_node Coach ok"}));
 }
 

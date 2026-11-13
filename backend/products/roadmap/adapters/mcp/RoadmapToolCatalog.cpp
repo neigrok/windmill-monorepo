@@ -379,9 +379,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "Create a new empty roadmap that you own, with the legend you send in `kinds` or, without it, "
         "the default legend (Build/Learn/Milestone). Optionally name it with `title`. Returns the new "
         "treeId — pass it to the other tools to start authoring — its `url`, where it opens in the app, "
-        "and `kinds`, the legend it was born with, in order, each as {id, hue, label}. A node later "
-        "written with neither `color` nor `kind` is terracotta, so a legend with no terracotta kind "
-        "leaves such a node under no kind.",
+        "and `kinds`, the legend it was born with, in order, each as {id, hue, label}. A node created "
+        "later with neither `color` nor `kind` is terracotta and wears the legend's terracotta kind; in a "
+        "legend with no terracotta kind such a node is refused, so name a `kind` on every node you add.",
         p, {}));
   }
   {
@@ -585,7 +585,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["label"] = cappedStr("The node's display label.", kMaxNodeLabelLength);
     p["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
-    p["color"] = enumStr("Optional hue; a node with neither `color` nor `kind` is terracotta.", kHues);
+    p["color"] = enumStr("Optional hue. A node with neither `color` nor `kind` is terracotta and wears the legend's "
+                         "terracotta kind; where the legend has kinds and none is terracotta, the call is refused "
+                         "and lists the legend's kinds to name.", kHues);
     p["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears. Sent with `color`, "
                           "the two must agree.", kMaxIdLength);
     p["prerequisites"] = strArray("Optional ids of existing nodes that unlock this one — one edge per id.",
@@ -684,7 +686,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                                  "`prerequisiteMode`; a new one is added.", kMaxIdLength);
     nodeFields["label"] = cappedStr("The node's display label.", kMaxNodeLabelLength);
     nodeFields["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
-    nodeFields["color"] = enumStr("Optional hue; a new node with neither `color` nor `kind` is terracotta.", kHues);
+    nodeFields["color"] = enumStr("Optional hue. A new node with neither `color` nor `kind` is terracotta and wears "
+                                  "the terracotta kind of the legend this batch leaves; where that legend has kinds "
+                                  "and none is terracotta, the whole batch is refused, naming every such node and "
+                                  "listing the legend's kinds. A node the tree already holds, or held before a "
+                                  "delete, keeps its colour.", kHues);
     nodeFields["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears in the legend "
                                    "this batch leaves, so one batch can add a kind and file nodes under it. Sent "
                                    "with `color`, the two must agree, but for a `color` the node already holds — "

@@ -97,10 +97,11 @@ struct HueChoice {
   std::optional<KindId> kind;
 };
 
-// A node write's `kind` refused: the legend holds no kind of that id, or the colour sent beside it is
-// another hue than that kind wears. The sentence is what the caller reads.
+// A node write's hue refused: the legend holds no kind of the id it names, the colour sent beside it is another
+// hue than that kind wears, or it would create a node that names neither where no kind wears the hue such a node
+// takes. The sentence is what the caller reads.
 struct KindRefusal {
-  enum class Reason { unknownKind, hueMismatch };
+  enum class Reason { unknownKind, hueMismatch, unnamedHue };
   Reason reason;
   std::string sentence;
 
@@ -115,5 +116,16 @@ struct KindRefusal {
 std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const std::vector<Kind>& kinds, const HueChoice& choice,
                                                                const std::optional<NodeStateEntry>& held,
                                                                const std::string& path);
+
+// The hue a node takes when the write that creates it names neither a colour nor a kind.
+inline constexpr NodeColor kUnnamedNodeHue = NodeColor::terracotta;
+
+// Why a write may not create `unnamed` among `kinds`, the legend the write applies to. `unnamed` holds the nodes it
+// would create that name neither a colour nor a kind, each as the call names it: its path and, where the caller sent
+// one, its id. Such a node takes kUnnamedNodeHue and wears the kind of that hue; where the legend holds kinds and none
+// of them wears it, the node would belong to no kind, so the write is refused, its sentence naming every such node and
+// listing the legend in order, each kind by id and label. nullopt when `unnamed` is empty, when a kind wears the hue,
+// and when the legend is empty and so has no kind to name.
+std::optional<KindRefusal> unnamedHueRefusal(const std::vector<Kind>& kinds, const std::vector<std::string>& unnamed);
 
 }

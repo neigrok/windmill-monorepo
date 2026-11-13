@@ -202,4 +202,20 @@ std::variant<std::optional<NodeColor>, KindRefusal> resolveHue(const std::vector
   return worn->hue;
 }
 
+std::optional<KindRefusal> unnamedHueRefusal(const std::vector<Kind>& kinds, const std::vector<std::string>& unnamed) {
+  const bool worn =
+      std::any_of(kinds.begin(), kinds.end(), [](const Kind& kind) { return kind.hue == kUnnamedNodeHue; });
+  if (unnamed.empty() || kinds.empty() || worn) return std::nullopt;
+  std::string nodes;
+  for (const std::string& node : unnamed) nodes += (nodes.empty() ? "" : ", ") + node;
+  std::string legend;
+  for (const Kind& kind : kinds)
+    legend += (legend.empty() ? "\"" : ", \"") + kind.id.str() + "\"" + (kind.label.empty() ? "" : " (" + kind.label + ")");
+  const bool one = unnamed.size() == 1;
+  return KindRefusal{KindRefusal::Reason::unnamedHue,
+                     nodes + (one ? " names" : " name") + " neither \"kind\" nor \"color\", and no kind of this tree wears " +
+                         std::string(toString(kUnnamedNodeHue)) + ", the hue a new node takes without them — name one of the "
+                         "legend's kinds" + (one ? "" : " for each") + ": " + legend};
+}
+
 }

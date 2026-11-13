@@ -46,12 +46,14 @@ std::string writeRefusalSentence(WriteRefusal refusal) {
   return std::string(truthOf(refusal)) + ". Call list_trees to see the roadmaps you own.";
 }
 
-// A refused `kind` completes under the code of its reason, so a caller naming a kind the legend lacks
-// is told apart from a malformed call; the code never carries the kind it named.
+// A refused `kind` completes under the code of its reason, so a caller naming a kind the legend lacks, or
+// creating a node that names none where it must, is told apart from a malformed call; the code never carries
+// the kind or the node it named.
 ToolResult kindRefused(const KindRefusal& refusal) {
   switch (refusal.reason) {
     case KindRefusal::Reason::unknownKind: return ToolResult::failure(refusal.sentence, "kind-unknown");
     case KindRefusal::Reason::hueMismatch: return ToolResult::failure(refusal.sentence, "kind-hue-mismatch");
+    case KindRefusal::Reason::unnamedHue: return ToolResult::failure(refusal.sentence, "kind-unnamed");
   }
   return ToolResult::failure(refusal.sentence);
 }
@@ -593,7 +595,8 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
-    if (tool == "create_node" && payload.get("id", "").asString().empty()) {
+    const std::string sentId = payload.get("id", "").asString();
+    if (tool == "create_node" && sentId.empty()) {
       std::set<std::string> present;
       for (const NodeSpec& node : room.snapshot().nodes) present.insert(node.id.str());
       std::string base = slugify(payload.get("label", "").asString());
@@ -617,6 +620,10 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
       const auto hue = room.resolveHue(choice, std::nullopt, "");
       if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return kindRefused(*refusal);
       payload["color"] = std::string(toString(*std::get<std::optional<NodeColor>>(hue)));
+    }
+    if (setsHue && !payload.isMember("kind") && !payload.isMember("color")) {
+      const std::string named = sentId.empty() ? "the node" : "node \"" + sentId + "\"";
+      if (const std::optional<KindRefusal> refusal = unnamedHueRefusal(room.kinds(), {named})) return kindRefused(*refusal);
     }
 
     // Unreachable by construction: prepareEdit has already refused everything the decode can.
