@@ -53,13 +53,18 @@ export function useStepAddress(arrivedBy = 'link') {
   };
 
   // A visit that began at a link still shows its first step once the pushed entries are popped, so that step goes too.
+  // An event that leaves the open step open is no arrival, so the step keeps its door: the hashchange of the navigation
+  // that mounted this view can reach it after it mounts.
   useEffect(() => {
     const follow = () => {
       if (closing.current) {
         closing.current = false;
         if (stepOf(window.location.hash) !== null) dropStep();
       }
-      setAddress(readAddress('back', route));
+      setAddress((shown) => {
+        const next = readAddress('back', route);
+        return next.id === shown.id ? { ...next, door: shown.door } : next;
+      });
     };
     window.addEventListener('popstate', follow);
     window.addEventListener('hashchange', follow);

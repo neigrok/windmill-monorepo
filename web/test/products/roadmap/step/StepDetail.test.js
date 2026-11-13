@@ -517,6 +517,7 @@ test('Chromium: the modal draws a locked step\'s status on 24px and its unmet ne
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
     await card(page, 'Leave the dock').click();
+    await page.evaluate(() => document.fonts.ready);
     assert.deepEqual(await modalOverview(page), {
       order: ['st-board-step-description', 'st-board-step-status st-board-step-status--locked', 'st-board-step-relations', 'st-board-step-relations'],
       description: [0, 0, 720, 20], status: [0, 32, 720, 24], glyph: [0, 34, 20, 20], glyphInSecondary: true, label: [28, 32, 24],

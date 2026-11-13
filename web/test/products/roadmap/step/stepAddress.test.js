@@ -64,3 +64,28 @@ test('useStepAddress — a step the URL already holds is reached by a link, or b
   linked.unmount();
   returned.unmount();
 });
+
+test('useStepAddress — a URL event that leaves the open step open keeps its door; one that lands on another step is going back', (t) => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const window = new EventTarget();
+  window.location = { pathname: '/', search: '', hash: '#/app/t_year?step=sail' };
+  window.history = { state: null };
+  Object.defineProperty(globalThis, 'window', { configurable: true, writable: true, value: window });
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, 'window', previous);
+    else delete globalThis.window;
+  });
+  const reached = (address) => ({ id: address.id, trail: address.trail, door: address.door });
+
+  const linked = renderHook(t, () => useStepAddress());
+  window.dispatchEvent(new Event('hashchange'));
+  const afterItsOwnNavigation = reached(linked.tree);
+  window.location.hash = '#/app/t_year?step=dock';
+  window.dispatchEvent(new Event('popstate'));
+
+  assert.deepEqual([afterItsOwnNavigation, reached(linked.tree)], [
+    { id: 'sail', trail: ['sail'], door: 'link' },
+    { id: 'dock', trail: ['dock'], door: 'back' },
+  ]);
+  linked.unmount();
+});
