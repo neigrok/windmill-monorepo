@@ -35,7 +35,8 @@ public:
            PresenceBus& bus);
 
   // Dedupe on the frame's id, fold its stamps into the clock, join graph + legend + title + guide,
-  // assign the next seq, queue its headline deed under `actor` for the op log, broadcast verbatim.
+  // assign the next seq, and queue its headline deed under `actor` for the op log, mark the rows to save and
+  // broadcast — all three as what landed, each entry cut to the registers that took, not the frame as sent.
   // nullopt means the frame lands nothing — a duplicate, or one whose every stamp the room already
   // holds — so it takes no seq, dirties nothing and is told to no one. Admits nothing on its own —
   // every door that can refuse asks admit() first.

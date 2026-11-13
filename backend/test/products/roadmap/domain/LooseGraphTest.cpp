@@ -194,9 +194,26 @@ TEST(join_is_idempotent) {
   LooseGraph once;
   once.join(state);
   LooseGraph twice;
-  CHECK(twice.join(state));
-  CHECK_FALSE(twice.join(state));  // a join whose every stamp is held already takes nothing, and says so
+  CHECK(twice.join(state) == state);
+  CHECK(twice.join(state).empty());  // a join whose every stamp is held already takes nothing, and says so
   CHECK(once.exportState() == twice.exportState());
+}
+
+// The join answers each entry cut to the stamps of it that took: a node whose label is new and whose colour is the one
+// held answers the label alone, and an edge whose removal is new and whose addition is held answers the removal alone.
+TEST(join_answers_an_entry_as_the_part_of_it_that_landed) {
+  LooseGraph graph;
+  graph.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
+  graph.createNode(nid("b"), "B", "x", NodeColor::sky, at(1));
+  graph.addEdge(nid("a"), nid("b"), at(2));
+
+  const GraphState landed = graph.join(GraphState{
+      {NodeStateEntry{.id = nid("a"), .createdAt = at(1), .label = "A2", .labelAt = at(5), .icon = "x", .iconAt = at(1),
+                      .color = NodeColor::sky, .colorAt = at(1)}},
+      {EdgeStateEntry{Edge{nid("a"), nid("b")}, at(2), at(6)}}});
+
+  CHECK((landed == GraphState{{NodeStateEntry{.id = nid("a"), .label = "A2", .labelAt = at(5)}},
+                              {EdgeStateEntry{Edge{nid("a"), nid("b")}, {}, at(6)}}}));
 }
 
 // An entry that carries no stamp is no information: the join takes nothing and keeps no record of the id it named.
@@ -205,8 +222,8 @@ TEST(join_of_entries_that_carry_no_stamp_takes_nothing_and_leaves_the_graph_as_i
   graph.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   const GraphState before = graph.exportState();
 
-  CHECK_FALSE(graph.join(GraphState{{NodeStateEntry{.id = nid("a")}, NodeStateEntry{.id = nid("ghost")}},
-                                    {EdgeStateEntry{Edge{nid("a"), nid("ghost")}, {}, {}}}}));
+  CHECK(graph.join(GraphState{{NodeStateEntry{.id = nid("a")}, NodeStateEntry{.id = nid("ghost")}},
+                              {EdgeStateEntry{Edge{nid("a"), nid("ghost")}, {}, {}}}}).empty());
   CHECK(graph.exportState() == before);
 }
 

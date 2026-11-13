@@ -31,21 +31,25 @@ Legend::Legend(const std::vector<Kind>& kinds, const Hlc& at) {
   }
 }
 
-bool Legend::join(const LegendState& state) {
-  bool took = false;
+LegendState Legend::join(const LegendState& state) {
+  LegendState landed;
   for (const KindStateEntry& kind : state.kinds) {
     const auto [held, fresh] = kinds_.try_emplace(kind.id);
     KindRecord& record = held->second;
-    bool kindTook = record.life.add(kind.createdAt);
-    kindTook |= record.life.remove(kind.deletedAt);
-    kindTook |= record.hue.merge(kind.hue, kind.hueAt);
-    kindTook |= record.label.merge(kind.label, kind.labelAt);
-    kindTook |= record.description.merge(kind.description, kind.descriptionAt);
-    kindTook |= record.rank.merge(kind.rank, kind.rankAt);
-    if (fresh && !kindTook) kinds_.erase(held);
-    took |= kindTook;
+    KindStateEntry took{.id = kind.id};
+    if (record.life.add(kind.createdAt)) took.createdAt = kind.createdAt;
+    if (record.life.remove(kind.deletedAt)) took.deletedAt = kind.deletedAt;
+    if (record.hue.merge(kind.hue, kind.hueAt)) { took.hue = kind.hue; took.hueAt = kind.hueAt; }
+    if (record.label.merge(kind.label, kind.labelAt)) { took.label = kind.label; took.labelAt = kind.labelAt; }
+    if (record.description.merge(kind.description, kind.descriptionAt)) {
+      took.description = kind.description;
+      took.descriptionAt = kind.descriptionAt;
+    }
+    if (record.rank.merge(kind.rank, kind.rankAt)) { took.rank = kind.rank; took.rankAt = kind.rankAt; }
+    if (took != KindStateEntry{.id = kind.id}) landed.kinds.push_back(std::move(took));
+    else if (fresh) kinds_.erase(held);
   }
-  return took;
+  return landed;
 }
 
 std::vector<Kind> Legend::bornWith(const std::vector<Kind>& sent) {

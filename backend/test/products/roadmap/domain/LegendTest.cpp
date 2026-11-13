@@ -114,6 +114,18 @@ TEST(join_folds_a_partial_legend_and_is_commutative) {
   CHECK(renamedFirst.has(kid("infra")));
 }
 
+// The join answers a kind cut to the stamps of it that took: one whose label is new and whose hue is the one held
+// answers the label alone.
+TEST(join_answers_a_kind_as_the_part_of_it_that_landed) {
+  Legend legend({{kid("k"), NodeColor::sky, "K"}}, at(1));
+  const KindStateEntry held = legend.exportState().kinds.front();
+  KindStateEntry sent = held;
+  sent.label = "Kay";
+  sent.labelAt = at(5);
+
+  CHECK((legend.join(LegendState{{sent}}) == LegendState{{KindStateEntry{.id = kid("k"), .label = "Kay", .labelAt = at(5)}}}));
+}
+
 // A kind that carries no stamp is no information: the join takes nothing and keeps no record of the id it named.
 TEST(join_of_a_kind_that_carries_no_stamp_takes_nothing_and_leaves_the_legend_as_it_was) {
   Legend legend = Legend::seededDefaults(at(1));
@@ -121,7 +133,7 @@ TEST(join_of_a_kind_that_carries_no_stamp_takes_nothing_and_leaves_the_legend_as
   KindStateEntry ghost;
   ghost.id = kid("ghost");
 
-  CHECK_FALSE(legend.join(LegendState{{ghost}}));
+  CHECK(legend.join(LegendState{{ghost}}).empty());
   CHECK(legend.exportState() == before);
 }
 

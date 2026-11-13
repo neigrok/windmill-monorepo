@@ -197,7 +197,7 @@ TEST(headline_create_wins_over_the_parent_edge_it_drags_in) {
   EdgeStateEntry e; e.edge = Edge{nid("p"), nid("a")}; e.addedAt = at(1);
   g.edges.push_back(e);
 
-  std::optional<Command> deed = headline(g, LegendState{});
+  std::optional<Command> deed = headline(g, LegendState{}, LooseGraph(g), Legend{});
   const CreateNode* c = deed ? std::get_if<CreateNode>(&*deed) : nullptr;
   REQUIRE(c != nullptr);
   CHECK_EQ(c->id, nid("a"));
@@ -214,7 +214,7 @@ TEST(headline_delete_wins_over_the_spliced_edges) {
   g.edges.push_back(gone);
   g.edges.push_back(bypass);
 
-  std::optional<Command> deed = headline(g, LegendState{});
+  std::optional<Command> deed = headline(g, LegendState{}, LooseGraph{}, Legend{});
   const DeleteNode* c = deed ? std::get_if<DeleteNode>(&*deed) : nullptr;
   REQUIRE(c != nullptr);
   CHECK_EQ(c->id, nid("a"));
@@ -230,7 +230,7 @@ TEST(headline_a_kind_recolor_wins_over_the_node_colors_it_fans_out) {
   k.hue = NodeColor::sky; k.hueAt = at(3);
   legend.kinds.push_back(k);
 
-  std::optional<Command> deed = headline(g, legend);
+  std::optional<Command> deed = headline(g, legend, LooseGraph{}, Legend{});
   const RecolorKind* c = deed ? std::get_if<RecolorKind>(&*deed) : nullptr;
   REQUIRE(c != nullptr);
   CHECK_EQ(c->id, kid("learn"));
@@ -241,7 +241,7 @@ TEST(headline_reads_rename_relabel_and_edges) {
   GraphState rename;
   NodeStateEntry r = nodeWrite("a"); r.label = "New"; r.labelAt = at(4);
   rename.nodes.push_back(r);
-  std::optional<Command> renameDeed = headline(rename, LegendState{});
+  std::optional<Command> renameDeed = headline(rename, LegendState{}, LooseGraph{}, Legend{});
   const RenameNode* renamed = renameDeed ? std::get_if<RenameNode>(&*renameDeed) : nullptr;
   REQUIRE(renamed != nullptr);
   CHECK_EQ(renamed->label, std::string("New"));
@@ -249,7 +249,7 @@ TEST(headline_reads_rename_relabel_and_edges) {
   GraphState link;
   EdgeStateEntry added; added.edge = Edge{nid("a"), nid("b")}; added.addedAt = at(4);
   link.edges.push_back(added);
-  std::optional<Command> linkDeed = headline(link, LegendState{});
+  std::optional<Command> linkDeed = headline(link, LegendState{}, LooseGraph{}, Legend{});
   const AddEdge* linked = linkDeed ? std::get_if<AddEdge>(&*linkDeed) : nullptr;
   REQUIRE(linked != nullptr);
   CHECK_EQ(linked->from, nid("a"));
@@ -258,7 +258,7 @@ TEST(headline_reads_rename_relabel_and_edges) {
   GraphState unlink;
   EdgeStateEntry removed; removed.edge = Edge{nid("a"), nid("b")}; removed.removedAt = at(4);
   unlink.edges.push_back(removed);
-  std::optional<Command> unlinkDeed = headline(unlink, LegendState{});
+  std::optional<Command> unlinkDeed = headline(unlink, LegendState{}, LooseGraph{}, Legend{});
   REQUIRE(unlinkDeed.has_value());
   CHECK(std::get_if<RemoveEdge>(&*unlinkDeed) != nullptr);
 }
@@ -267,8 +267,8 @@ TEST(headline_is_empty_for_a_reorder_or_an_empty_frame) {
   GraphState reordered;
   NodeStateEntry m = nodeWrite("a"); m.order = "a1"; m.orderAt = at(5);
   reordered.nodes.push_back(m);
-  CHECK_FALSE(headline(reordered, LegendState{}).has_value());  // a sibling reorder is not feed-worthy
-  CHECK_FALSE(headline(GraphState{}, LegendState{}).has_value());
+  CHECK_FALSE(headline(reordered, LegendState{}, LooseGraph{}, Legend{}).has_value());  // a sibling reorder is not feed-worthy
+  CHECK_FALSE(headline(GraphState{}, LegendState{}, LooseGraph{}, Legend{}).has_value());
 }
 
 TEST(create_node_wires_every_prerequisite_and_seeds_annotation) {
@@ -338,7 +338,7 @@ TEST(headline_reads_an_annotation_frame) {
   n.description = "hello"; n.descriptionAt = at(4);
   g.nodes.push_back(n);
 
-  std::optional<Command> deed = headline(g, LegendState{});
+  std::optional<Command> deed = headline(g, LegendState{}, LooseGraph{}, Legend{});
   const AnnotateNode* c = deed ? std::get_if<AnnotateNode>(&*deed) : nullptr;
   REQUIRE(c != nullptr);
   REQUIRE(c->description.has_value());
@@ -1282,7 +1282,7 @@ TEST(headline_is_empty_for_a_frame_that_sets_only_the_tree_a_node_opens) {
   n.opens = tid("t_sub");
   n.opensAt = at(5);
   pointed.nodes.push_back(n);
-  CHECK_FALSE(headline(pointed, LegendState{}).has_value());
+  CHECK_FALSE(headline(pointed, LegendState{}, LooseGraph{}, Legend{}).has_value());
 }
 
 // A tombstoned record keeps its registers, so a create that names no tree writes the empty pointer

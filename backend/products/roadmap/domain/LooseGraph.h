@@ -39,9 +39,10 @@ public:
 
   // Fold a partial state into this one, entry by entry, field by field. Absence at every granularity
   // — a missing entry, a missing field, the unset stamp — means "no information", so a join only ever
-  // adds. Commutative, associative, idempotent. Answers whether any stamp it carried took; an entry none of whose
-  // stamps took leaves the graph without a record it did not have.
-  bool join(const GraphState& state);
+  // adds. Commutative, associative, idempotent. Answers what landed: each entry cut to the stamps of it that took,
+  // with the values they carried, and left out when none did — so a state whose every stamp is held answers empty, and
+  // an entry none of whose stamps took leaves the graph without a record it did not have.
+  GraphState join(const GraphState& state);
 
   void createNode(const NodeId& id, const std::string& label, const std::string& icon,
                   NodeColor color, const Hlc& at, const std::optional<std::string>& status = std::nullopt);
