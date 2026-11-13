@@ -150,7 +150,12 @@ rejected for structure. Validity is a read model, not a gate.
   once in memory with no further read.
 - `TreeDiagnostics::assess` — a pure report over a loose graph and its legend: `cycles`, `dangling`,
   `selfEdges`, `smells`, `maskedWork` (tombstoned parents with present children). `clean()` is
-  true when cycles, dangling and self-edges are all empty. Smell kinds: `label-too-long`
+  true when cycles, dangling and self-edges are all empty. The assessment holds every error, since
+  a receipt's `introducedDiagnostics` compares the one before an edit with the one after; a reply
+  carries the first 50 of each list and the count of the rest (`Listed`) — cycles by the first
+  member of each, dangling and self-edges by `from` and then `to`, masked work by node id — and of a
+  cycle the count of its members and the first ten (`Cycle::counted`), so a tree broken at every
+  node answers as shortly as one broken at fifty. Smell kinds: `label-too-long`
   (> 256 bytes), `empty-icon` and `high-in-degree` (> 4), one line each for every node they cover;
   `unclaimed-hue`, one line per hue present nodes wear that no kind does, with that `hue`; each line
   the `count` of its nodes and the first ten of them (`CountedNodes`), so the smells stay a few short
@@ -471,7 +476,10 @@ for them. An absent tree and one the caller may not read answer the `404` the tr
 The tree route carries no guides and never makes that read.
 
 `GET /v1/trees/{id}/diagnostics` answers the graph's diagnostics, `{cycles, dangling, selfEdges,
-smells, maskedWork}` (`TreeDiagnostics`, Model), to every caller who can read the tree. A caller who
+smells, maskedWork}` (`TreeDiagnostics`, Model), to every caller who can read the tree: `cycles` an
+array of `{count, nodes}`, `dangling` and `selfEdges` arrays of `{from, to}`, `maskedWork` an array
+of node ids, each list its first 50 with `cyclesOmitted`, `danglingOmitted`, `selfEdgesOmitted` or
+`maskedWorkOmitted` counting the rest, absent when that is nothing. A caller who
 can write it is also answered `treeLoops`, an array of `{node, path: [{treeId, title}]}`, and
 `danglingPointers`, an array of `{node, treeId}` (`PointerDiagnostics`, Model), read off the stored
 rows after the tree's strand is released; both are `[]`, with nothing read, for a tree that holds no
