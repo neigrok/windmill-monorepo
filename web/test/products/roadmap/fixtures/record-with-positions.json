@@ -1,0 +1,86 @@
+{
+  "frame": {
+    "nodes": [
+      {
+        "id": "root",
+        "createdAt": "1:0:server",
+        "label": "Renamed",
+        "labelAt": "1700000009000:0:r_79641cdf",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "positionAt": "1:0:server"
+      },
+      {
+        "id": "child",
+        "createdAt": "1700000008000:0:r_79641cdf",
+        "label": "Child",
+        "labelAt": "1700000008000:0:r_79641cdf",
+        "icon": "",
+        "iconAt": "1700000008000:0:r_79641cdf",
+        "color": "terracotta",
+        "colorAt": "1700000008000:0:r_79641cdf",
+        "order": "a0",
+        "orderAt": "1700000008000:0:r_79641cdf",
+        "position": null,
+        "positionAt": "1700000008000:0:r_79641cdf"
+      }
+    ],
+    "edges": [
+      {
+        "from": "root",
+        "to": "child",
+        "addedAt": "1700000008000:0:r_79641cdf"
+      }
+    ],
+    "kinds": []
+  },
+  "progress": {
+    "marks": []
+  },
+  "lastSeq": 1,
+  "epochs": {
+    "structure": 0,
+    "progress": 0
+  },
+  "confirmed": {
+    "structure": {
+      "nodes": [
+        {
+          "id": "root",
+          "createdAt": "1:0:server",
+          "label": "Root",
+          "labelAt": "1:0:server",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "positionAt": "1:0:server"
+        }
+      ],
+      "edges": [],
+      "kinds": []
+    },
+    "progress": {
+      "marks": []
+    }
+  },
+  "gestures": {
+    "structure": {
+      "1700000008000:0:r_79641cdf": {
+        "[\"nodes\",\"child\",\"createdAt\"]": "1700000008000:0:r_79641cdf",
+        "[\"nodes\",\"child\",\"labelAt\"]": "1700000008000:0:r_79641cdf",
+        "[\"nodes\",\"child\",\"iconAt\"]": "1700000008000:0:r_79641cdf",
+        "[\"nodes\",\"child\",\"colorAt\"]": "1700000008000:0:r_79641cdf",
+        "[\"nodes\",\"child\",\"orderAt\"]": "1700000008000:0:r_79641cdf",
+        "[\"nodes\",\"child\",\"positionAt\"]": "1700000008000:0:r_79641cdf",
+        "[\"edges\",[\"root\",\"child\"],\"addedAt\"]": "1700000008000:0:r_79641cdf"
+      },
+      "1700000009000:0:r_79641cdf": {
+        "[\"nodes\",\"root\",\"labelAt\"]": "1700000009000:0:r_79641cdf"
+      }
+    },
+    "progress": {}
+  }
+}

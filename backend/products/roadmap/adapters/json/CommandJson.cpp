@@ -22,8 +22,7 @@ std::optional<Command> commandFromJson(const std::string& kind, const Json::Valu
     if (!color) return std::nullopt;
     return SetNodeColor{id(payload, "id"), *color};
   }
-  if (kind == "RepositionNode")
-    return RepositionNode{id(payload, "id"), Vec2{payload["x"].asDouble(), payload["y"].asDouble()}};
+  if (kind == "RepositionNode") return RepositionNode{};
   if (kind == "CreateNode") {
     CreateNode command;
     command.id = id(payload, "id");
@@ -34,7 +33,6 @@ std::optional<Command> commandFromJson(const std::string& kind, const Json::Valu
       command.prerequisites.push_back(NodeId{payload["parentId"].asString()});
     for (const Json::Value& prereq : payload["prerequisites"])
       if (prereq.isString()) command.prerequisites.push_back(NodeId{prereq.asString()});
-    if (payload.isMember("x") && payload.isMember("y")) command.position = Vec2{payload["x"].asDouble(), payload["y"].asDouble()};
     command.description = payload.get("description", "").asString();
     if (payload.isMember("links")) command.links = linksFromJson(payload["links"]);
     if (payload.isMember("opens") && payload["opens"].isString()) command.opens = TreeId{payload["opens"].asString()};
@@ -124,7 +122,7 @@ Json::Value commandPayload(const Command& command) {
   std::visit(overloaded{
     [&](const RenameNode& c) { p["id"] = c.id.str(); p["label"] = c.label; },
     [&](const SetNodeColor& c) { p["id"] = c.id.str(); p["color"] = std::string(toString(c.color)); },
-    [&](const RepositionNode& c) { p["id"] = c.id.str(); p["x"] = c.position.x; p["y"] = c.position.y; },
+    [&](const RepositionNode&) {},
     [&](const CreateNode& c) {
       p["id"] = c.id.str();
       p["label"] = c.label;
@@ -135,7 +133,6 @@ Json::Value commandPayload(const Command& command) {
         for (const NodeId& prereq : c.prerequisites) prerequisites.append(prereq.str());
         p["prerequisites"] = prerequisites;
       }
-      if (c.position) { p["x"] = c.position->x; p["y"] = c.position->y; }
       if (!c.description.empty()) p["description"] = c.description;
       if (!c.links.empty()) p["links"] = linksToJson(c.links);
       if (c.opens) p["opens"] = c.opens->str();

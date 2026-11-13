@@ -21,7 +21,7 @@ std::string displayActor(const std::string& actor) {
   return {};  // genesis / seed / unknown → the tree itself
 }
 
-// One command to one event, with the tree's current labels for context; nullopt for a nudge.
+// One command to one event, with the tree's current labels for context; nullopt for one that tells no deed.
 class Projector {
 public:
   explicit Projector(const TreeData& current) {
@@ -81,7 +81,7 @@ public:
     } else if (auto* c = std::get_if<Batch>(&command)) {
       return batch(*c);
     } else {
-      return std::nullopt;  // a nudge, an annotation or a past prune is no feed-worthy deed
+      return std::nullopt;  // an annotation, a past prune or a stored RepositionNode is no feed-worthy deed
     }
     return event;
   }
@@ -89,7 +89,8 @@ public:
 private:
   // Summed by verb in first-appearance order, under the first member's verb and subject:
   // "removed 2 nodes and unlinked 3 links". A member about the legend is no count of anything and says, in its place,
-  // the sentence it says alone: "renamed a kind to Builder and described a kind". Nudges inside it count for nothing.
+  // the sentence it says alone: "renamed a kind to Builder and described a kind". A member that tells no deed counts
+  // for nothing.
   std::optional<ActivityEvent> batch(const Batch& batch) const {
     struct Part {
       std::string verb;

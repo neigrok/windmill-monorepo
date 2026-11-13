@@ -96,8 +96,8 @@ struct Harness {
   // A tree of `idea` and `plain`, `idea` opening `opens` when one is named.
   void seedSteps(const char* id, const UserId& owner, Visibility visibility, const char* opens) {
     LooseGraph graph;
-    graph.createNode(NodeId{"idea"}, "Idea", "", NodeColor::sky, std::nullopt, Hlc{100, 0, "r_seed"});
-    graph.createNode(NodeId{"plain"}, "Plain", "", NodeColor::sky, std::nullopt, Hlc{101, 0, "r_seed"});
+    graph.createNode(NodeId{"idea"}, "Idea", "", NodeColor::sky, Hlc{100, 0, "r_seed"});
+    graph.createNode(NodeId{"plain"}, "Plain", "", NodeColor::sky, Hlc{101, 0, "r_seed"});
     graph.setOpens(NodeId{"idea"}, TreeId{opens}, Hlc{102, 0, "r_seed"});
     trees.byId[id] = StoredTree{graph.exportState(), LegendState{}, {"Tree", {}}, 0, owner, visibility};
   }
@@ -117,11 +117,13 @@ std::string subscribeFrame(const std::string& treeId) {
   return dump(f);
 }
 
+// A frame that writes one node's label.
 std::string writeFrame(const std::string& treeId) {
   Json::Value f(Json::objectValue);
   f["t"] = "subgraph";
   f["treeId"] = treeId;
   f["frameId"] = "f1";
+  f["nodes"].append(parse(R"({"id":"hull","createdAt":"100:0:client","label":"Hull","labelAt":"100:0:client"})"));
   return dump(f);
 }
 
@@ -153,7 +155,7 @@ std::string progressFrame(const std::string& treeId, const std::string& frameId,
 // client sent them rather than as the JSON writer would rewrite them.
 std::string nodeFrame(const std::string& treeId, const char* frameId, const std::string& description) {
   LooseGraph g;
-  g.createNode(NodeId{"hull"}, "hull", "", NodeColor::sky, std::nullopt, Hlc{100, 0, "client"});
+  g.createNode(NodeId{"hull"}, "hull", "", NodeColor::sky, Hlc{100, 0, "client"});
   g.setDescription(NodeId{"hull"}, "RAW", Hlc{101, 0, "client"});
   Json::Value f(Json::objectValue);
   f["t"] = "subgraph";
@@ -932,6 +934,199 @@ TEST(ws_a_frame_whose_kind_still_carries_a_cross_branch_flag_lands_without_it) {
              "rankAt":"100:0:client"}])"));
 }
 
+// A node has no stored position: a frame whose node entry still carries one, with its stamp, as a tab on an earlier
+// bundle sends it, lands exactly as its twin without it.
+TEST(ws_a_frame_whose_node_still_carries_a_position_lands_as_its_twin_without_it) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_placed", owner, Visibility::private_);
+  h.seed("t_plain", owner, Visibility::private_);
+  const auto send = [&](const char* tree, const char* nodes) {
+    Json::Value frame(Json::objectValue);
+    frame["t"] = "subgraph";
+    frame["treeId"] = tree;
+    frame["frameId"] = std::string("f-") + tree;
+    frame["nodes"] = parse(nodes);
+    auto conn = std::make_shared<FakeSocket>();
+    h.collab.onOpen(h.upgrade("s-owner"), conn);
+    h.collab.onMessage(conn, dump(frame));
+    CHECK_EQ(conn->sent, (std::vector<std::string>{dump(parse(std::string(R"({"t":"subgraphAck","treeId":")") + tree +
+                                                                R"(","frameId":"f-)" + tree + R"(","seq":1})"))}));
+    std::lock_guard<std::mutex> lock(h.rooms.strandFor(TreeId{tree}));
+    return toJson(h.rooms.open(TreeId{tree})->exportState());
+  };
+
+  CHECK_EQ(send("t_placed", R"([{"id":"hull","createdAt":"100:0:client","label":"Hull","labelAt":"100:0:client",
+             "position":{"x":3,"y":4},"positionAt":"100:0:client"}])"),
+           send("t_plain", R"([{"id":"hull","createdAt":"100:0:client","label":"Hull","labelAt":"100:0:client"}])"));
+}
+
+// A frame that lands nothing — every stamp it carries the room holds already, it carries none the room keeps, as a tab
+// on an earlier bundle re-sends its nodes' positions, or it carries no entry at all — is acknowledged without a seq, so
+// its sender's gestures are confirmed, and is saved, logged and told to no one. The room is left as it was, a node the
+// frame named and the tree lacks unrecorded, and the next frame that lands takes the seq after the last one that did.
+TEST(ws_a_frame_that_lands_nothing_is_acked_without_a_seq_and_saved_logged_and_told_to_no_one) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto writer = std::make_shared<FakeSocket>();
+  auto watcher = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), writer);
+  h.collab.onOpen(h.upgrade("s-owner"), watcher);
+  h.collab.onMessage(watcher, subscribeFrame("t_priv"));
+  const std::size_t toldBefore = watcher->sent.size();
+  const char* hull = R"({"id":"hull","createdAt":"100:0:client","label":"Hull","labelAt":"100:0:client"})";
+  const auto roomState = [&] {
+    std::lock_guard<std::mutex> lock(h.rooms.strandFor(TreeId{"t_priv"}));
+    return toJson(h.rooms.open(TreeId{"t_priv"})->exportState());
+  };
+
+  Observed observed;
+  h.collab.onMessage(writer, registerFrame("t_priv", "f-hull", hull));
+  const Json::Value landed = roomState();
+  h.collab.onMessage(writer, registerFrame("t_priv", "f-hull-again", hull));
+  h.collab.onMessage(writer, registerFrame("t_priv", "f-placed",
+                                           R"({"id":"hull","position":{"x":3,"y":4},"positionAt":"200:0:client"})"));
+  h.collab.onMessage(writer, registerFrame("t_priv", "f-ghost",
+                                           R"({"id":"ghost","position":null,"positionAt":"201:0:client"})"));
+  h.collab.onMessage(writer, R"({"t":"subgraph","treeId":"t_priv","frameId":"f-empty","nodes":[],"edges":[],"kinds":[]})");
+  CHECK_EQ(roomState(), landed);
+  h.collab.onMessage(writer,
+                     registerFrame("t_priv", "f-keel", R"({"id":"hull","label":"Keel","labelAt":"300:0:client"})"));
+
+  std::vector<Json::Value> acks;
+  for (const std::string& text : writer->sent) acks.push_back(parse(text));
+  CHECK_EQ(acks, (std::vector<Json::Value>{
+                     parse(R"({"t":"subgraphAck","treeId":"t_priv","frameId":"f-hull","seq":1})"),
+                     parse(R"({"t":"subgraphAck","treeId":"t_priv","frameId":"f-hull-again"})"),
+                     parse(R"({"t":"subgraphAck","treeId":"t_priv","frameId":"f-placed"})"),
+                     parse(R"({"t":"subgraphAck","treeId":"t_priv","frameId":"f-ghost"})"),
+                     parse(R"({"t":"subgraphAck","treeId":"t_priv","frameId":"f-empty"})"),
+                     parse(R"({"t":"subgraphAck","treeId":"t_priv","frameId":"f-keel","seq":2})")}));
+  std::vector<std::string> told;
+  for (std::size_t i = toldBefore; i < watcher->sent.size(); ++i) {
+    const Json::Value frame = parse(watcher->sent[i]);
+    told.push_back(frame["t"].asString() + " " + frame["frameId"].asString() + " " + frame["seq"].asString());
+  }
+  CHECK_EQ(told, (std::vector<std::string>{"subgraph f-hull 1", "subgraph f-keel 2"}));
+  CHECK_EQ(h.trees.savedNodeCounts, (std::vector<std::size_t>{1, 1}));
+  CHECK_EQ(h.trees.byId["t_priv"].head, static_cast<Seq>(2));
+  CHECK_EQ(roomState(), toJson(h.trees.byId["t_priv"].state));
+  std::vector<std::string> logged;
+  for (const AppliedOp& op : h.ops.byTree["t_priv"]) logged.push_back(std::to_string(op.seq) + " " + op.opId);
+  CHECK_EQ(logged, (std::vector<std::string>{"1 f-hull", "2 f-keel"}));
+  std::vector<std::string> outcomes;
+  for (const WriteCompletion& completion : observed.completions) outcomes.push_back(completion.outcome);
+  CHECK_EQ(outcomes, (std::vector<std::string>{"ok", "unchanged", "unchanged", "unchanged", "unchanged", "ok"}));
+  CHECK(observed.issues.empty());
+}
+
+// A frame that carries no stamp asks for no write, so it needs neither write access nor a session: a reader of a
+// public tree and a visitor without a session, each sending their nodes' positions as a tab on an earlier bundle does,
+// are acknowledged without a seq and never refused. Nothing is saved, logged or told to anyone, no room is loaded, and
+// each completes `unchanged`.
+TEST(ws_a_frame_that_carries_no_stamp_is_acked_for_a_reader_and_a_visitor_of_a_public_tree) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-reader", "reader@example.com");
+  h.seedSteps("t_pub", owner, Visibility::public_, "");
+  const StoredTree before = h.trees.byId["t_pub"];
+  auto watcher = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), watcher);
+  h.collab.onMessage(watcher, subscribeFrame("t_pub"));
+  h.rooms.evict(TreeId{"t_pub"});
+  const std::size_t toldBefore = watcher->sent.size();
+  const std::size_t savedBefore = h.trees.savedNodeCounts.size();
+  auto reader = std::make_shared<FakeSocket>();
+  auto visitor = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-reader"), reader);
+  h.collab.onOpen(h.upgrade(""), visitor);
+  const char* positions = R"({"id":"idea","position":{"x":3,"y":4},"positionAt":"200:0:r_old"})";
+
+  Observed observed;
+  h.collab.onMessage(reader, registerFrame("t_pub", "f-reader", positions));
+  h.collab.onMessage(visitor, registerFrame("t_pub", "f-visitor", positions));
+
+  CHECK_EQ(reader->sent, (std::vector<std::string>{
+                             dump(parse(R"({"t":"subgraphAck","treeId":"t_pub","frameId":"f-reader"})"))}));
+  CHECK_EQ(visitor->sent, (std::vector<std::string>{
+                              dump(parse(R"({"t":"subgraphAck","treeId":"t_pub","frameId":"f-visitor"})"))}));
+  CHECK_EQ(watcher->sent.size(), toldBefore);
+  CHECK_EQ(h.trees.savedNodeCounts.size(), savedBefore);
+  CHECK(h.trees.byId["t_pub"] == before);
+  CHECK(h.ops.byTree["t_pub"].empty());
+  CHECK_FALSE(h.rooms.isOpen(TreeId{"t_pub"}));
+  std::vector<std::string> completed;
+  for (const WriteCompletion& completion : observed.completions)
+    completed.push_back(completion.operation + " " + completion.outcome);
+  CHECK_EQ(completed, (std::vector<std::string>{"roadmap.ws.subgraph unchanged", "roadmap.ws.subgraph unchanged"}));
+  CHECK(observed.issues.empty());
+}
+
+// The same two sending one stamped register beside the positions are refused as any write of theirs is: the reader
+// because the tree is another account's, the visitor for want of a session.
+TEST(ws_a_reader_and_a_visitor_of_a_public_tree_sending_a_stamped_register_are_still_refused) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-reader", "reader@example.com");
+  h.seedSteps("t_pub", owner, Visibility::public_, "");
+  const StoredTree before = h.trees.byId["t_pub"];
+  auto reader = std::make_shared<FakeSocket>();
+  auto visitor = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-reader"), reader);
+  h.collab.onOpen(h.upgrade(""), visitor);
+  const char* renamed =
+      R"({"id":"idea","position":{"x":3,"y":4},"positionAt":"200:0:r_old","label":"Mine","labelAt":"200:0:r_old"})";
+
+  Observed observed;
+  h.collab.onMessage(reader, registerFrame("t_pub", "f-reader", renamed));
+  h.collab.onMessage(visitor, registerFrame("t_pub", "f-visitor", renamed));
+
+  CHECK_EQ(reader->sent, (std::vector<std::string>{dump(parse(
+                             R"({"t":"reject","treeId":"t_pub","frameId":"f-reader","code":"not-yours",
+                                 "reason":"this tree belongs to another account"})"))}));
+  CHECK_EQ(visitor->sent, (std::vector<std::string>{dump(parse(
+                              R"({"t":"reject","treeId":"t_pub","frameId":"f-visitor","code":"sign-in-required",
+                                  "reason":"sign in to edit"})"))}));
+  CHECK(h.trees.byId["t_pub"] == before);
+  CHECK_FALSE(h.rooms.isOpen(TreeId{"t_pub"}));
+  std::vector<std::string> completed;
+  for (const WriteCompletion& completion : observed.completions)
+    completed.push_back(completion.operation + " " + completion.outcome);
+  CHECK_EQ(completed, (std::vector<std::string>{"roadmap.ws.subgraph not-yours", "roadmap.ws.subgraph sign-in-required"}));
+}
+
+// A frame that carries no stamp earns no ack that would say a private tree exists: an account that cannot read it is
+// answered "no such tree" and a visitor without a session the sign-in refusal, each exactly as for a tree that is
+// absent.
+TEST(ws_a_frame_that_carries_no_stamp_is_answered_for_a_private_tree_as_for_an_absent_one) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-stranger", "stranger@example.com");
+  h.seedSteps("t_priv", owner, Visibility::private_, "");
+  const char* positions = R"({"id":"idea","position":{"x":3,"y":4},"positionAt":"200:0:r_old"})";
+  const auto answered = [&](const char* session, const char* tree) {
+    auto conn = std::make_shared<FakeSocket>();
+    h.collab.onOpen(h.upgrade(session), conn);
+    h.collab.onMessage(conn, registerFrame(tree, "f-none", positions));
+    return conn->sent;
+  };
+
+  CHECK_EQ(answered("s-stranger", "t_priv"), (std::vector<std::string>{dump(parse(
+                                                 R"({"t":"reject","treeId":"t_priv","frameId":"f-none",
+                                                     "code":"no-such-tree","reason":"no such tree \"t_priv\""})"))}));
+  CHECK_EQ(answered("s-stranger", "t_gone"), (std::vector<std::string>{dump(parse(
+                                                 R"({"t":"reject","treeId":"t_gone","frameId":"f-none",
+                                                     "code":"no-such-tree","reason":"no such tree \"t_gone\""})"))}));
+  CHECK_EQ(answered("", "t_priv"), (std::vector<std::string>{dump(parse(
+                                       R"({"t":"reject","treeId":"t_priv","frameId":"f-none",
+                                           "code":"sign-in-required","reason":"sign in to edit"})"))}));
+  CHECK_EQ(answered("", "t_gone"), (std::vector<std::string>{dump(parse(
+                                       R"({"t":"reject","treeId":"t_gone","frameId":"f-none",
+                                           "code":"sign-in-required","reason":"sign in to edit"})"))}));
+  CHECK_FALSE(h.rooms.isOpen(TreeId{"t_priv"}));
+}
+
 TEST(ws_a_frame_with_an_oversized_title_is_rejected_and_joins_nothing) {
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");
@@ -1312,7 +1507,7 @@ TEST(ws_a_write_whose_op_row_fails_to_land_is_still_acked_and_the_row_lands_next
   CHECK_EQ(h.trees.byId["t_priv"].head, static_cast<Seq>(1));
   CHECK(h.ops.byTree["t_priv"].empty());
 
-  h.collab.onMessage(conn, nodeFrame("t_priv", "f2", "more"));
+  h.collab.onMessage(conn, registerFrame("t_priv", "f2", R"({"id":"hull","description":"more","descriptionAt":"102:0:client"})"));
   REQUIRE_EQ(conn->sent.size(), 2u);
   CHECK_EQ(frameType(conn->sent[1]), std::string("subgraphAck"));
   REQUIRE_EQ(h.ops.byTree["t_priv"].size(), 2u);
@@ -1698,9 +1893,11 @@ TEST(ws_concurrent_opens_frames_converge_on_the_later_stamp_and_a_frame_without_
   door.label = "Front door";
   door.labelAt = Hlc{3000, 0, "r_a"};
   CHECK(h.trees.byId["t_priv"].state == (GraphState{{door}, {}}));
-  std::vector<Seq> deeds;  // the create and the rename: a frame that only writes `opens` is no deed
+  // The create and the rename are the deeds: a frame that only writes `opens` is none, and the laptop's, which lost to
+  // the tablet's later stamp, lands nothing and takes no seq.
+  std::vector<Seq> deeds;
   for (const AppliedOp& op : h.ops.byTree["t_priv"]) deeds.push_back(op.seq);
-  CHECK_EQ(deeds, (std::vector<Seq>{1, 4}));
+  CHECK_EQ(deeds, (std::vector<Seq>{1, 3}));
 
   auto fresh = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-owner"), fresh);

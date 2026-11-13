@@ -51,6 +51,10 @@ struct Subgraph {
   std::vector<Gesture> gestures;
   std::optional<VersionVector> coverage;
   bool operator==(const Subgraph&) const = default;
+
+  // Whether no entry and no tree register of this frame carries a set stamp. Such a frame can land nothing in any
+  // room, whatever the room holds, so it asks for no write.
+  bool carriesNoStamp() const;
 };
 
 // Every stamp a full serialized state carries, folded together; a live room keeps this incrementally.

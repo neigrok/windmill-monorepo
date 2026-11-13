@@ -14,7 +14,6 @@ function node(id, at, fields) {
   if ('icon' in fields) { entry.icon = fields.icon; entry.iconAt = s; }
   if ('color' in fields) { entry.color = fields.color; entry.colorAt = s; }
   if ('order' in fields) { entry.order = fields.order; entry.orderAt = s; }
-  if ('position' in fields) { entry.position = fields.position; entry.positionAt = s; }
   if ('status' in fields) { entry.status = fields.status; entry.statusAt = s; }
   if ('description' in fields) { entry.description = fields.description; entry.descriptionAt = s; }
   if ('links' in fields) { entry.links = fields.links; entry.linksAt = s; }
@@ -57,7 +56,7 @@ export function materialize(gesture, lattice, clock) {
       let lastOrder = null;
       for (const sibling of siblings) if (sibling.order && (lastOrder === null || sibling.order > lastOrder)) lastOrder = sibling.order;
       const order = keyBetween(lastOrder, null);
-      nodes.push(node(g.id, at, { created: true, label: g.label ?? '', icon: g.icon ?? '', color: g.color ?? 'terracotta', order, position: g.x != null && g.y != null ? { x: g.x, y: g.y } : null, ...(g.description ? { description: g.description } : {}), ...(g.links?.length ? { links: g.links } : {}) }));
+      nodes.push(node(g.id, at, { created: true, label: g.label ?? '', icon: g.icon ?? '', color: g.color ?? 'terracotta', order, ...(g.description ? { description: g.description } : {}), ...(g.links?.length ? { links: g.links } : {}) }));
       for (const parent of prerequisites) edges.push(addEdge(parent, g.id, at));
       break;
     }
@@ -86,7 +85,6 @@ export function materialize(gesture, lattice, clock) {
           label: n.label ?? '',
           icon: n.icon ?? '',
           color: n.color ?? 'terracotta',
-          position: n.position ?? null,
           order: n.order ?? seeded.get(n.id) ?? '',
           ...(n.status ? { status: n.status } : {}),
           ...(n.description ? { description: n.description } : {}),

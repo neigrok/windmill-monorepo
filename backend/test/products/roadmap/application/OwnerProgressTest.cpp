@@ -38,12 +38,12 @@ struct Owners {
     const std::string sub = "t_sub_" + owner.str();
     const std::string main = "t_main_" + owner.str();
     LooseGraph subGraph;
-    subGraph.createNode(nid("d"), "D", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "seed"});
+    subGraph.createNode(nid("d"), "D", "", NodeColor::sky, Hlc{1, 0, "seed"});
     trees.byId[sub] = StoredTree{subGraph.exportState(), LegendState{}, {sub, {}}, 0, owner};
     LooseGraph mainGraph;
-    mainGraph.createNode(nid("done"), "Done", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "seed"});
+    mainGraph.createNode(nid("done"), "Done", "", NodeColor::sky, Hlc{1, 0, "seed"});
     mainGraph.setOpens(nid("done"), TreeId{sub}, Hlc{2, 0, "seed"});
-    mainGraph.createNode(nid("plain"), "Plain", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "seed"});
+    mainGraph.createNode(nid("plain"), "Plain", "", NodeColor::sky, Hlc{1, 0, "seed"});
     trees.byId[main] = StoredTree{mainGraph.exportState(), LegendState{}, {main, {}}, 0, owner, Visibility::public_};
     marks.setStatus(TreeId{sub}, owner, nid("d"), ProgressStatus::complete, false, Hlc{800, 0, "seed"}, 800);
     marks.setStatus(TreeId{main}, owner, nid("plain"), ProgressStatus::complete, false, Hlc{900, 0, "seed"}, 900);

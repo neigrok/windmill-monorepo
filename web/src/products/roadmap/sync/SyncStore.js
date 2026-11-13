@@ -5,7 +5,7 @@
 import { reportInvalidProgressMark, reportRoadmapFailure } from '../reportFailure.js';
 import { TreeLattice } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
-import { frameWrites, pendingGestures, retainedProgressGestures, unconfirmedStamps, writeStamps } from './pendingWrites.js';
+import { frameWrites, pendingGestures, retainedGestures, unconfirmedStamps, writeStamps } from './pendingWrites.js';
 
 const DB_NAME = 'windmill-sync';
 const STORE = 'trees';
@@ -295,8 +295,7 @@ function mergedRecord(record, value, onInvalidMark) {
     if (value.gestures?.[lane] || (lane === 'progress' && stored.gestures?.progress)) {
       merged.gestures ??= { structure: {}, progress: {} };
       const gestures = { ...stored.gestures?.[lane], ...value.gestures?.[lane] };
-      const retained = lane === 'progress' ? retainedProgressGestures(merged[field], gestures) : gestures;
-      merged.gestures[lane] = pendingGestures({}, merged.confirmed[lane], retained);
+      merged.gestures[lane] = pendingGestures({}, merged.confirmed[lane], retainedGestures(lane, merged[field], gestures));
     }
     if (lane === 'structure') merged.lastSeq = Math.max(stored.lastSeq, value.lastSeq ?? 0);
   }

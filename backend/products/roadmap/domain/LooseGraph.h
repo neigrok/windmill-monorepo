@@ -19,7 +19,6 @@ struct NodeRecord {
   Lww<std::string> icon;
   Lww<NodeColor> color;
   Lww<std::string> order;  // fractional-index sort key, scoped to the parent; round-tripped, never interpreted
-  Lww<std::optional<Vec2>> position;
   Lww<std::optional<std::string>> status;  // opaque authoring seed, round-tripped
   Lww<std::string> description;            // free annotation body
   Lww<std::vector<Link>> links;            // external references, the list as one register
@@ -40,17 +39,16 @@ public:
 
   // Fold a partial state into this one, entry by entry, field by field. Absence at every granularity
   // — a missing entry, a missing field, the unset stamp — means "no information", so a join only ever
-  // adds. Commutative, associative, idempotent.
-  void join(const GraphState& state);
+  // adds. Commutative, associative, idempotent. Answers whether any stamp it carried took; an entry none of whose
+  // stamps took leaves the graph without a record it did not have.
+  bool join(const GraphState& state);
 
   void createNode(const NodeId& id, const std::string& label, const std::string& icon,
-                  NodeColor color, const std::optional<Vec2>& position, const Hlc& at,
-                  const std::optional<std::string>& status = std::nullopt);
+                  NodeColor color, const Hlc& at, const std::optional<std::string>& status = std::nullopt);
   void deleteNode(const NodeId& id, const Hlc& at);
   void setLabel(const NodeId& id, const std::string& label, const Hlc& at);
   void setIcon(const NodeId& id, const std::string& icon, const Hlc& at);
   void setColor(const NodeId& id, NodeColor color, const Hlc& at);
-  void setPosition(const NodeId& id, const Vec2& position, const Hlc& at);
   void setDescription(const NodeId& id, const std::string& description, const Hlc& at);
   void setLinks(const NodeId& id, const std::vector<Link>& links, const Hlc& at);
   void setOrder(const NodeId& id, const std::string& order, const Hlc& at);

@@ -17,7 +17,7 @@ namespace {
 
 StoredTree oneNodeTree() {
   LooseGraph graph;
-  graph.createNode(nid("seed"), "Seed", "icon", NodeColor::sky, std::nullopt, at(1));
+  graph.createNode(nid("seed"), "Seed", "icon", NodeColor::sky, at(1));
   return StoredTree{graph.exportState(), LegendState{}, {"Seeded", {}}, 7};
 }
 

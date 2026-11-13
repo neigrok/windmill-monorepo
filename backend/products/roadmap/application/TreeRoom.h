@@ -36,8 +36,9 @@ public:
 
   // Dedupe on the frame's id, fold its stamps into the clock, join graph + legend + title + guide,
   // assign the next seq, queue its headline deed under `actor` for the op log, broadcast verbatim.
-  // nullopt means a duplicate frame. Admits nothing on its own — every door that can refuse asks
-  // admit() first.
+  // nullopt means the frame lands nothing — a duplicate, or one whose every stamp the room already
+  // holds — so it takes no seq, dirties nothing and is told to no one. Admits nothing on its own —
+  // every door that can refuse asks admit() first.
   std::optional<Seq> joinSubgraph(const Subgraph& incoming, const UserId& actor);
 
   // Why joining this arrival would breach the tree's caps, or nullopt. Asked against THIS room's

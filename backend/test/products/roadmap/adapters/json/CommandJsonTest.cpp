@@ -108,7 +108,7 @@ TEST(a_stored_create_or_annotate_row_without_opens_still_decodes_and_touches_no_
 
   Legend legend;
   LooseGraph graph;
-  graph.createNode(NodeId{"a"}, "A", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "srv"});
+  graph.createNode(NodeId{"a"}, "A", "", NodeColor::sky, Hlc{1, 0, "srv"});
   graph.setOpens(NodeId{"a"}, TreeId{"t_sub"}, Hlc{2, 0, "srv"});
   merge(graph, legend, *annotated, Hlc{3, 0, "srv"});
   merge(graph, legend, *created, Hlc{4, 0, "srv"});
@@ -210,4 +210,45 @@ TEST(a_stored_kind_row_that_carried_the_cross_branch_flag_decodes_without_it) {
   CHECK_EQ(dump(commandPayload(*batch)),
            std::string(R"({"commands":[{"kind":"DescribeKind","payload":{"id":"drill"}},)"
                        R"({"kind":"RenameKind","payload":{"id":"drill","label":"Drills"}}]})"));
+}
+
+// A node has no position, but the log holds rows that set one. A RepositionNode still decodes, alone and inside a
+// Batch, and replays as nothing; a CreateNode that carried x and y decodes without them and replays the rest.
+TEST(a_stored_row_that_set_a_position_decodes_and_replays_without_it) {
+  const auto graphAfter = [](const std::vector<std::pair<const char*, const char*>>& rows) {
+    LooseGraph graph;
+    Legend legend;
+    std::uint64_t stamp = 1;
+    for (const auto& [kind, payload] : rows) {
+      const std::optional<Command> row = commandFromJson(kind, parse(payload));
+      CHECK(row.has_value());
+      if (row) merge(graph, legend, *row, Hlc{++stamp, 0, "seed"});
+    }
+    return graph.exportState();
+  };
+
+  const std::optional<Command> created =
+      commandFromJson("CreateNode", parse(R"({"id":"a","label":"A","color":"sky","x":3,"y":4})"));
+  REQUIRE(created.has_value());
+  const std::optional<Command> plain = commandFromJson("CreateNode", parse(R"({"id":"a","label":"A","color":"sky"})"));
+  REQUIRE(plain.has_value());
+  CHECK_EQ(dump(commandPayload(*created)), dump(commandPayload(*plain)));
+  const std::optional<Command> moved = commandFromJson("RepositionNode", parse(R"({"id":"a","x":3,"y":4})"));
+  REQUIRE(moved.has_value());
+  CHECK(std::holds_alternative<RepositionNode>(*moved));
+  const std::optional<Command> batch = commandFromJson(
+      "Batch", parse(R"({"commands":[{"kind":"RepositionNode","payload":{"id":"a","x":7,"y":8}},
+        {"kind":"RenameNode","payload":{"id":"a","label":"Alpha"}}]})"));
+  REQUIRE(batch.has_value());
+  CHECK_EQ(dump(commandPayload(*batch)),
+           std::string(R"({"commands":[{"kind":"RepositionNode","payload":{}},)"
+                       R"({"kind":"RenameNode","payload":{"id":"a","label":"Alpha"}}]})"));
+
+  CHECK(graphAfter({{"CreateNode", R"({"id":"a","label":"A","color":"sky","x":3,"y":4})"},
+                    {"RepositionNode", R"({"id":"a","x":5,"y":6})"},
+                    {"Batch", R"({"commands":[{"kind":"RepositionNode","payload":{"id":"a","x":7,"y":8}},
+                                              {"kind":"RenameNode","payload":{"id":"a","label":"Alpha"}}]})"}}) ==
+        graphAfter({{"CreateNode", R"({"id":"a","label":"A","color":"sky"})"},
+                    {"Batch", R"({"commands":[]})"},
+                    {"RenameNode", R"({"id":"a","label":"Alpha"})"}}));
 }

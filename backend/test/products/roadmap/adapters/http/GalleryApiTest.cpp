@@ -97,7 +97,7 @@ struct Harness {
                  const std::vector<std::pair<const char*, const char*>>& steps) {
     LooseGraph graph;
     for (const auto& [step, opens] : steps) {
-      graph.createNode(NodeId{step}, step, "", NodeColor::sky, std::nullopt, Hlc{1, 0, "seed"});
+      graph.createNode(NodeId{step}, step, "", NodeColor::sky, Hlc{1, 0, "seed"});
       if (std::string(opens) != "") graph.setOpens(NodeId{step}, TreeId{opens}, Hlc{2, 0, "seed"});
     }
     trees->byId[id] = StoredTree{graph.exportState(), LegendState{}, {id, {}}, 0, owner, visibility};

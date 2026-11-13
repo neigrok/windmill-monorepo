@@ -55,12 +55,6 @@ Json::Value nodeToJson(const NodeSpec& node) {
   for (const NodeId& prereq : node.prerequisites) prerequisites.append(prereq.str());
   n["prerequisites"] = prerequisites;
 
-  if (node.position) {
-    Json::Value position(Json::objectValue);
-    position["x"] = node.position->x;
-    position["y"] = node.position->y;
-    n["position"] = position;
-  }
   if (node.status) n["status"] = *normalizeSeedStatus(node.status);
   if (!node.description.empty()) n["description"] = node.description;
   if (!node.links.empty()) n["links"] = linksToJson(node.links);
@@ -263,12 +257,6 @@ std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) 
     out = value.asString();
     return true;
   };
-  auto number = [](const Json::Value& value, double& out) {
-    if (value.isNull()) return true;
-    if (!value.isNumeric()) return false;
-    out = value.asDouble();
-    return true;
-  };
   auto list = [](const Json::Value& value) { return value.isNull() || value.isArray(); };
   // linksFromJson is lenient and must never throw, so the document path states the strictness.
   auto links = [](const Json::Value& value) {
@@ -305,13 +293,6 @@ std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) 
       std::string prereqId;
       if (!text(prereq, prereqId)) return std::nullopt;
       node.prerequisites.push_back(NodeId{prereqId});
-    }
-    if (n.isMember("position") && !n["position"].isNull()) {
-      if (!n["position"].isObject()) return std::nullopt;
-      Vec2 position;
-      if (!number(n["position"]["x"], position.x) || !number(n["position"]["y"], position.y))
-        return std::nullopt;
-      node.position = position;
     }
     if (n.isMember("status") && n["status"].isString()) node.status = normalizeSeedStatus(n["status"].asString());
     if (n.isMember("links") && !n["links"].isNull()) {
@@ -352,13 +333,6 @@ Json::Value toJson(const GraphState& state) {
     n["colorAt"] = hlcText(node.colorAt);
     n["order"] = node.order;
     n["orderAt"] = hlcText(node.orderAt);
-    if (node.position) {
-      Json::Value position(Json::objectValue);
-      position["x"] = node.position->x;
-      position["y"] = node.position->y;
-      n["position"] = position;
-    }
-    n["positionAt"] = hlcText(node.positionAt);
     if (node.status) n["status"] = *normalizeSeedStatus(node.status);
     n["statusAt"] = hlcText(node.statusAt);
     n["description"] = node.description;
@@ -397,13 +371,6 @@ GraphState graphStateFromJson(const Json::Value& root) {
     node.colorAt = roadmapStamp(n.get("colorAt", "").asString());
     node.order = n.get("order", "").asString();
     node.orderAt = roadmapStamp(n.get("orderAt", "").asString());
-    if (n.isMember("position") && n["position"].isObject()) {
-      Vec2 position;
-      position.x = n["position"].get("x", 0.0).asDouble();
-      position.y = n["position"].get("y", 0.0).asDouble();
-      node.position = position;
-    }
-    node.positionAt = roadmapStamp(n.get("positionAt", "").asString());
     if (n.isMember("status") && n["status"].isString()) node.status = normalizeSeedStatus(n["status"].asString());
     node.statusAt = roadmapStamp(n.get("statusAt", "").asString());
     node.description = n.get("description", "").asString();

@@ -1,0 +1,93 @@
+{
+  "frame": {
+    "nodes": [
+      {
+        "id": "root",
+        "createdAt": "1:0:server",
+        "label": "Root",
+        "labelAt": "1:0:server",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "positionAt": "1:0:server"
+      },
+      {
+        "id": "child",
+        "createdAt": "1700000008000:0:r_94991425",
+        "label": "Child",
+        "labelAt": "1700000008000:0:r_94991425",
+        "icon": "",
+        "iconAt": "1700000008000:0:r_94991425",
+        "color": "terracotta",
+        "colorAt": "1700000008000:0:r_94991425",
+        "order": "a0",
+        "orderAt": "1700000008000:0:r_94991425",
+        "position": null,
+        "positionAt": "1700000008000:0:r_94991425"
+      }
+    ],
+    "edges": [
+      {
+        "from": "root",
+        "to": "child",
+        "addedAt": "1700000008000:0:r_94991425"
+      }
+    ],
+    "kinds": []
+  },
+  "progress": {
+    "marks": []
+  },
+  "lastSeq": 2,
+  "epochs": {
+    "structure": 0,
+    "progress": 0
+  },
+  "confirmed": {
+    "structure": {
+      "nodes": [
+        {
+          "id": "root",
+          "createdAt": "1:0:server",
+          "label": "Root",
+          "labelAt": "1:0:server",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "positionAt": "1:0:server"
+        },
+        {
+          "id": "child",
+          "createdAt": "1700000008000:0:r_94991425",
+          "label": "Child",
+          "labelAt": "1700000008000:0:r_94991425",
+          "icon": "",
+          "iconAt": "1700000008000:0:r_94991425",
+          "color": "terracotta",
+          "colorAt": "1700000008000:0:r_94991425",
+          "order": "a0",
+          "orderAt": "1700000008000:0:r_94991425",
+          "position": null,
+          "positionAt": "1700000008000:0:r_94991425"
+        }
+      ],
+      "edges": [
+        {
+          "from": "root",
+          "to": "child",
+          "addedAt": "1700000008000:0:r_94991425"
+        }
+      ],
+      "kinds": []
+    },
+    "progress": {
+      "marks": []
+    }
+  },
+  "gestures": {
+    "structure": {},
+    "progress": {}
+  }
+}
