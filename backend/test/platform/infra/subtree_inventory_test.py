@@ -180,6 +180,14 @@ class InventoryTest(ToolTest):
                 self.assertNotIn(name.encode(), result.stderr)
         self.assertEqual(self.snapshot(), before)
 
+    def test_a_stdout_that_takes_nothing_fails_in_one_fixed_sentence(self):
+        result = subprocess.run([TOOL], capture_output=False, stdout=None, stderr=subprocess.PIPE,
+                                env={**self.env, "DATABASE_URL": self.url}, timeout=60,
+                                preexec_fn=lambda: os.close(1))
+        self.assertEqual(result.returncode, 1, result.stderr.decode())
+        self.assertIn(FAILED, result.stderr)
+        self.completion(result, "failed")
+
     def test_it_answers_the_same_where_every_transaction_is_read_only(self):
         env = {**self.env, "DATABASE_URL": self.url, "PGOPTIONS": "-c default_transaction_read_only=on"}
         result = self.invoke(env)

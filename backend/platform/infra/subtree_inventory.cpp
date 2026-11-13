@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <exception>
 #include <memory>
+#include <stdexcept>
 
 namespace {
 
@@ -69,7 +70,8 @@ int main() {
     PgTreeRepository trees{std::make_shared<PgPool>(url, 1)};
     SubtreeInventory counted;
     trees.eachAccountsTrees([&counted](const UserId&, const AccountTrees& account) { counted += inventory(account); });
-    std::printf("%s\n", dump(countsOf(counted)).c_str());
+    if (std::printf("%s\n", dump(countsOf(counted)).c_str()) < 0 || std::fflush(stdout) != 0)
+      throw std::runtime_error("stdout did not take the counts");
     observation.finish();
     return 0;
   } catch (const std::exception& error) {
