@@ -12,6 +12,7 @@ TOOL = sys.argv.pop(1)
 SCHEMA = sys.argv.pop(1)
 WRITE = re.compile(rb'write (\{[^\n]*\}) - ')
 FAILED = b"The subtree inventory could not be read.\n"
+NOT_TAKEN = b"The subtree inventory was counted, and stdout did not take the counts.\n"
 UNCONFIGURED = b"The subtree inventory needs DATABASE_URL.\n"
 
 MINE = "aaaaaaaa-0000-4000-8000-00000000000a"
@@ -94,6 +95,23 @@ def psql(url, *arguments, sql=None):
                           capture_output=True, check=True, timeout=120).stdout
 
 
+# The tool reads the whole database, so each class runs it on one of its own that holds `sql` alone.
+def own_database(test_class, name, sql):
+    maintenance = os.environ.get("DATABASE_URL")
+    if not maintenance:
+        raise unittest.SkipTest("WM_PG_TEST requires DATABASE_URL")
+    database = f"wm_subtree_inventory_{name}_{os.getpid()}"
+    psql(maintenance, "-c", f'DROP DATABASE IF EXISTS "{database}"')
+    psql(maintenance, "-c", f'CREATE DATABASE "{database}"')
+    test_class.addClassCleanup(psql, maintenance, "-c", f'DROP DATABASE IF EXISTS "{database}" WITH (FORCE)')
+    url = re.sub(r"^(postgres(?:ql)?://[^/?]*)/[^?]*", rf"\1/{database}", maintenance)
+    if url == maintenance:
+        raise AssertionError("DATABASE_URL names no database to replace")
+    psql(url, "-f", SCHEMA)
+    psql(url, sql=sql)
+    return url
+
+
 class ToolTest(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory(prefix="subtree-inventory-")
@@ -140,26 +158,14 @@ class FailureTest(ToolTest):
 
 @unittest.skipUnless(os.environ.get("WM_PG_TEST"), "SKIP: set WM_PG_TEST and DATABASE_URL for Postgres cases")
 class InventoryTest(ToolTest):
-    # The tool reads the whole database, so it runs on one of its own that holds the fixture alone.
     @classmethod
     def setUpClass(cls):
-        maintenance = os.environ.get("DATABASE_URL")
-        if not maintenance:
-            raise unittest.SkipTest("WM_PG_TEST requires DATABASE_URL")
-        database = f"wm_subtree_inventory_{os.getpid()}"
-        psql(maintenance, "-c", f'DROP DATABASE IF EXISTS "{database}"')
-        psql(maintenance, "-c", f'CREATE DATABASE "{database}"')
-        cls.addClassCleanup(psql, maintenance, "-c", f'DROP DATABASE IF EXISTS "{database}" WITH (FORCE)')
-        cls.url = re.sub(r"^(postgres(?:ql)?://[^/?]*)/[^?]*", rf"\1/{database}", maintenance)
-        if cls.url == maintenance:
-            raise AssertionError("DATABASE_URL names no database to replace")
-        psql(cls.url, "-f", SCHEMA)
         rows = [f"INSERT INTO trees (id, title, owner_id, deleted_at) VALUES ({literal(id)}, {literal(title)}, "
                 f"{literal(owner)}::uuid, {'now()' if deleted else 'NULL'});" for id, owner, deleted, title in TREES]
         rows += [f"INSERT INTO tree_nodes (tree_id, node_id, created_hlc, label, opens, opens_hlc, present) VALUES "
                  f"({literal(tree_id)}, {literal(node)}, '1:0:r_a', 'Step', {literal(opens)}, '1:0:r_a', "
                  f"{literal(present)});" for tree_id, node, opens, present in STEPS]
-        psql(cls.url, sql="\n".join(rows))
+        cls.url = own_database(cls, "fixture", "\n".join(rows))
 
     def snapshot(self):
         return psql(self.url, "-c", "SELECT md5(string_agg(t::text, ',' ORDER BY id)) FROM trees t",
@@ -183,12 +189,12 @@ class InventoryTest(ToolTest):
                 self.assertNotIn(name.encode(), result.stderr)
         self.assertEqual(self.snapshot(), before)
 
-    def test_a_stdout_that_takes_nothing_fails_in_one_fixed_sentence(self):
-        result = subprocess.run([TOOL], capture_output=False, stdout=None, stderr=subprocess.PIPE,
-                                env={**self.env, "DATABASE_URL": self.url}, timeout=60,
-                                preexec_fn=lambda: os.close(1))
+    def test_a_stdout_that_takes_nothing_fails_saying_so_and_not_that_the_read_failed(self):
+        result = subprocess.run([TOOL], stdout=None, stderr=subprocess.PIPE, env={**self.env, "DATABASE_URL": self.url},
+                                timeout=60, preexec_fn=lambda: os.close(1))
         self.assertEqual(result.returncode, 1, result.stderr.decode())
-        self.assertIn(FAILED, result.stderr)
+        self.assertIn(NOT_TAKEN, result.stderr)
+        self.assertNotIn(FAILED, result.stderr)
         self.completion(result, "failed")
 
     def test_it_answers_the_same_where_every_transaction_is_read_only(self):
@@ -196,6 +202,40 @@ class InventoryTest(ToolTest):
         result = self.invoke(env)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual(json.loads(result.stdout), EXPECTED)
+
+
+
+# A chain of 200,001 trees whose last two open each other. Each tree opens the one before it in id order, so the walk
+# for loops, which starts from the first id and climbs to each tree's openers, has the whole chain to climb at once.
+@unittest.skipUnless(os.environ.get("WM_PG_TEST"), "SKIP: set WM_PG_TEST and DATABASE_URL for Postgres cases")
+class LongChainTest(ToolTest):
+    @classmethod
+    def setUpClass(cls):
+        tree = "'t_' || lpad(to_hex(k), 16, '0')"
+        cls.url = own_database(cls, "chain", f"""
+            INSERT INTO trees (id, title, owner_id) SELECT {tree}, 'Chain', {literal(MINE)}::uuid
+            FROM generate_series(0, 200000) k;
+            INSERT INTO tree_nodes (tree_id, node_id, created_hlc, label, opens, opens_hlc, present)
+            SELECT {tree}, 'next', '1:0:r_a', 'Step',
+                   't_' || lpad(to_hex(CASE WHEN k = 0 THEN 1 ELSE k - 1 END), 16, '0'), '1:0:r_a', true
+            FROM generate_series(0, 200000) k;""")
+
+    def test_a_chain_of_two_hundred_thousand_trees_is_counted_to_its_end(self):
+        result = self.invoke({**self.env, "DATABASE_URL": self.url})
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(json.loads(result.stdout), {
+            "trees": 200001,
+            "roots": 1,
+            "owned": 199998,
+            "hanging": 0,
+            "multiOpened": {"trees": 0, "sameTree": 0, "acrossTrees": 0, "maxOpeners": 0},
+            "cycles": {"trees": 2, "selfPointers": 0, "alsoMultiOpened": 1, "loops": {"1": 0, "2": 1, "3-8": 0, "9+": 0},
+                       "byEntries": {"0": 0, "1": 1, "2+": 0}},
+            "dangling": {"missing": 0, "deleted": 0, "foreign": 0, "notATreeId": 0},
+            "depth": {"deepest": 199998, "1": 1, "2": 1, "3": 1, "4+": 199995},
+            "depthIfResolved": {"deepest": 200000, "1": 1, "2": 1, "3": 1, "4+": 199997},
+            "accounts": {"withPointers": 1, "needingChoice": 1},
+        })
 
 
 if __name__ == "__main__":

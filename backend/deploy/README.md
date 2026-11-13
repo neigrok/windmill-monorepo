@@ -336,7 +336,8 @@ not carry the tool, the job stops with a sentence saying so. From `~/windmill` o
 docker compose exec -T server windmill_subtree_inventory
 ```
 
-Exit 0 means the counts were printed, 2 means `DATABASE_URL` is unset, and 1 means the read failed.
+Exit 0 means the counts were printed, 2 means `DATABASE_URL` is unset, and 1 means the read failed or
+stdout did not take the counts.
 
 ## Frontend
 

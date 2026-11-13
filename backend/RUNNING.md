@@ -217,9 +217,10 @@ tests of the Coach end-to-end helpers (`anonymous_coach_test.py`, `gym_http_test
 `log_lifecycle` drives `windmill_mcp`'s log shutdown at stdin EOF, on a fatal signal and with stalled
 stderr. `sync_epoch` checks the restore tool's refusals and bounded logging; under `WM_PG_TEST` it also
 checks committed rotation, concurrent retries, rollback and lock timeouts using `psql`.
-`subtree_inventory` checks the subtree inventory tool's refusals; under `WM_PG_TEST` it builds a
-database of its own beside `DATABASE_URL`'s, which the role must be allowed to create, and checks the
-counts the tool prints, that they name no tree, account or title, and that the tool writes nothing.
+`subtree_inventory` checks the subtree inventory tool's refusals; under `WM_PG_TEST` it builds
+databases of its own beside `DATABASE_URL`'s, which the role must be allowed to create, and checks the
+counts the tool prints, that they name no tree, account or title, that the tool writes nothing, and that
+it counts a chain of 200,001 trees to its end.
 
 Each binary ends with one line — `N/M cases passed, X stopped before the end, Y skipped, Z
 assertion(s) failed`. *Stopped before the end* counts cases a failing `REQUIRE` cut short; *skipped*

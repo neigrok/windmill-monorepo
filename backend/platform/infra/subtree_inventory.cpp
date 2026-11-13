@@ -13,6 +13,7 @@
 namespace {
 
 constexpr const char* kFailed = "The subtree inventory could not be read.\n";
+constexpr const char* kNotTaken = "The subtree inventory was counted, and stdout did not take the counts.\n";
 
 // The inventory as the one JSON object the tool prints: counts, and nothing that names a tree or an account.
 Json::Value countsOf(const wm::SubtreeInventory& counted) {
@@ -63,7 +64,7 @@ Json::Value countsOf(const wm::SubtreeInventory& counted) {
 
 // Counts how the pointers between the roadmap's trees meet one owned subtree per step (SPEC.md, Subtree inventory) and
 // prints them as one JSON object on stdout, nothing else. It never writes. A failure prints one fixed sentence on stderr
-// and exits 2 without DATABASE_URL, 1 otherwise.
+// and exits 2 without DATABASE_URL, 1 when the read fails or stdout does not take the counts.
 int main() {
   using namespace wm;
   installToolObservability(true);
@@ -80,8 +81,11 @@ int main() {
     PgTreeRepository trees{std::make_shared<PgPool>(url, 1)};
     SubtreeInventory counted;
     trees.eachAccountsTrees([&counted](const UserId&, const AccountTrees& account) { counted += inventory(account); });
-    if (std::printf("%s\n", dump(countsOf(counted)).c_str()) < 0 || std::fflush(stdout) != 0)
-      throw std::runtime_error("stdout did not take the counts");
+    if (std::printf("%s\n", dump(countsOf(counted)).c_str()) < 0 || std::fflush(stdout) != 0) {
+      std::fputs(kNotTaken, stderr);
+      observation.fail(std::runtime_error("stdout did not take the counts"));
+      return 1;
+    }
     observation.finish();
     return 0;
   } catch (const std::exception& error) {
