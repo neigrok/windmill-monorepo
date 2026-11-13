@@ -634,8 +634,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   tree, and no pill, row or words; its step stands by its prerequisites and is never done. A step whose pointer leads nowhere and whose own mark
   already completed it shows *Done* with the *Tree not found* row and no words where Complete sat. A locked step whose
   tree loops back or has no steps keeps the loop's or the empty tree's line. The tablet band and C on a card whose tree
-  loops back (*Won’t complete by itself*) or is not found (*Can’t complete yet*) follow the desktop boards. 28.38, a
-  tree removed since the roadmap loaded, cannot be told from what the server answers and is not built. Under guides
+  loops back (*Won’t complete by itself*) or is not found (*Can’t complete yet*) follow the desktop boards. Under guides
   from above (28.29–28.33), an owner's tree with no guide of its own takes the written entry (*Guide*, no excerpt, the
   *With guides from…* line or the phone's count, *Read guide*), and its note lists the guides from above and then,
   under this tree's name, *Add guide*, which starts writing; that note has no pencil. One tree above reads *With a
@@ -699,12 +698,19 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   *Choose another, or detach it.*) show only to the person who has the ⋯; a lapsed session and a device's copy with
   nobody signed in keep the fact alone. Crossing 744px with the tree picker open starts it again: the list is read again and the choice is gone. 28.60 and 28.67, the
   picker on a device with nobody signed in, are not built.
+- **Section 28 · deleting a tree that steps open (28.50–28.52), against the boards.** The steps a deleted tree takes
+  from the person's other trees go through those trees' rooms, so a roadmap open in another window loses them live, as
+  it loses any step deleted elsewhere, and a step page open on one closes as it does for any such step; NOTE 28.50 says
+  such a tree does not move until it loads again. That leaves 28.38 (the tree was removed between loads) no moment to
+  show, and it is not built. Built and not drawn: an opener tree the menu does not hold is counted and never named, and
+  where fewer of the trees can be named than the line's form needs, the line counts them instead (*Also removes 4 steps
+  that open it in 2 of your other trees*); a tree deleted in the open menu leaves the other rows' lines, as its steps
+  went with it. The line's graph glyph is the Board / Icon component scaled to 14 px on the boards, a 1.17 px stroke;
+  web draws it as every tree glyph, at 1.67 px.
 - **Phone step page · 20.01 against the build.** 🚀 20.01 (397:28208) draws the counts and chevrons short of the right
   edge, a two-colour identity rail and no Shell row; the build runs them to the edge under the Shell row.
-- **Tree switcher · delete row.** The shipped confirmation is one line with an ellipsis (`confirmCopy` in
-  `identity/TreeSwitcher.jsx`), while 🚀 03.03 draws it wrapping; 28.50 needs it to wrap. Rename and delete show
-  on hover only, so a touch tablet from 744 px has no clear way to them. The open trigger has no left padding.
-  Below 744 px no surface removes a tree.
+- **Tree switcher · delete row.** Rename and delete show on hover only, so a touch tablet from 744 px has no clear way
+  to them. The open trigger has no left padding. Below 744 px no surface removes a tree.
 - **Flow index · step editor.** The [flow index](../index.md#roadmap--web) has no rows for the step editor sections
   (18–22, 27) on Board · Web.
 - **Web reconciliation evidence.** All 25 current Roadmap screen/state families are mapped in the

@@ -369,6 +369,18 @@ locked counts from the same unfiltered Board model as Next. At 1,000 or more tot
 roadmaps come from `listAllTrees`. Readers never receive the owner sheet. `TreeSwitcher` is the row's
 equivalent from 744px and owns rename and delete.
 
+**The switcher's delete.** A row's trash turns the row into its confirmation: the question (*Delete Learn to sail?
+This can’t be undone*), then Delete and Keep. A server that removes, with a tree, the steps in the person's other
+trees that open it sends `openers` on every row of `GET /v1/trees`: one `{ treeId, steps }` per such tree, `[]` where
+there are none. `listAllTrees` keeps it on a server row as sent; a device row never has it. Where the confirming row's
+`openers` holds an entry, one line stands between the question and the buttons and says what goes with the tree
+(`deleteCost` in `identity/deleteCost.js`): the steps summed, the first two of those trees by title in the menu's own
+order and how many more; an opener the menu does not hold counts among the trees and is never named. The row then
+aligns to its top, the ring on the question's first line, and Delete is described by the line. A row without the
+field, or with `[]`, asks the question alone, centred. Nothing in the row is cut: the question and the line wrap. The
+numbers are those the list read when the menu opened, and no request is made for the line; a delete in the open menu
+takes the tree's row and its place among the other rows' openers, as its steps went with it.
+
 **Export** builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`, with a
 `<!-- windmill:roadmap -->` marker: its title is metadata, its guide a quote between `<!-- windmill:guide -->` lines that a
 replant reads past, and every step, including each root, is a list item with its own completion mark. Kind changes are inline comments, keeping the nested list uninterrupted in

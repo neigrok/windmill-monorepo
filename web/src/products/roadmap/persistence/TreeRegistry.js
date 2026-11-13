@@ -20,6 +20,7 @@ export async function listTrees() {
 // The account's server trees united with this device's own, deduped by id with the server row
 // winning. Rows carry their origin: 'server' rows PATCH/DELETE the registry, 'device' rows only
 // touch local seams. Device rows use the holder confirmed by the server or restored bound replica.
+// A server row is what the server sent, `openers` included where it sends them; a device row has none.
 export async function listAllTrees() {
   const [owner, server] = await Promise.all([resolveDeviceOwner(), fetchServerList()]);
   const registry = new LocalTreeRegistry();
