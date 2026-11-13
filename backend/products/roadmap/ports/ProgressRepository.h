@@ -45,10 +45,6 @@ struct ProgressWritten {
 struct ProgressRepository {
   virtual ~ProgressRepository() = default;
   virtual Progress load(const TreeId& tree, const UserId& user) = 0;
-  // One replica's mark. Answers whether the write LANDED — false when a strictly-later stamp was already stored and
-  // this one lost.
-  virtual bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
-                         ProgressStatus status, bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) = 0;
   // The updates in one transaction, each answered in its place. A node named twice meets its own earlier row.
   virtual std::vector<ProgressWritten> setStatuses(const TreeId& tree, const UserId& user,
                                                    const std::vector<ProgressUpdate>& updates, StampedBy stampedBy,

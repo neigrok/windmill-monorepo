@@ -67,13 +67,11 @@ TEST(pg_readiness_follows_the_tree_a_node_opens) {
     return lines;
   };
 
-  progress.setStatus(main, owner, NodeId{"idea"}, ProgressStatus::complete, false, Hlc{1'700'000'000'001, 0, "r_a"},
-                     1'700'000'000'001);
+  progress.setStatuses(main, owner, {{NodeId{"idea"}, ProgressStatus::complete, false, Hlc{1'700'000'000'001, 0, "r_a"}}}, StampedBy::replica, 1'700'000'000'001);
   CHECK_EQ(summary(), (std::vector<std::string>{"t_pgtest_ready_main \"Ideas\" 0/2 ready idea:Idea:terracotta",
                                                 "t_pgtest_ready_sub \"Worked\" 0/1 ready s:Step:plum"}));
 
-  progress.setStatus(sub, owner, NodeId{"s"}, ProgressStatus::complete, false, Hlc{1'700'000'000'002, 0, "r_a"},
-                     1'700'000'000'002);
+  progress.setStatuses(sub, owner, {{NodeId{"s"}, ProgressStatus::complete, false, Hlc{1'700'000'000'002, 0, "r_a"}}}, StampedBy::replica, 1'700'000'000'002);
   CHECK_EQ(summary(), (std::vector<std::string>{"t_pgtest_ready_main \"Ideas\" 1/2 ready next:Next:olive",
                                                 "t_pgtest_ready_sub \"Worked\" 1/1 ready"}));
 }

@@ -404,7 +404,7 @@ TEST(get_tree_answers_the_owner_what_each_pointer_comes_to_and_no_other_reader_t
                                    Visibility::public_};
   };
   const auto mark = [&](const char* tree, const UserId& user, const char* node) {
-    h.progress->setStatus(TreeId{tree}, user, NodeId{node}, ProgressStatus::complete, false, Hlc{2, 0, "seed"}, 0);
+    h.progress->setStatuses(TreeId{tree}, user, {{NodeId{node}, ProgressStatus::complete, false, Hlc{2, 0, "seed"}}}, StampedBy::replica, 0);
   };
   plant("t_main", "Main", owner, {{"done-idea", "t_done"}, {"open-idea", "t_open"}, {"round", "t_round"}, {"self", "t_main"},
                                   {"gone", "t_gone"}, {"theirs", "t_theirs"}, {"plain", ""}});
@@ -981,7 +981,7 @@ TEST(get_activity_unlisted_is_readable_by_anyone) {
 TEST(get_progress_shows_the_owners_journey_to_an_anonymous_visitor) {
   Harness h;
   h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::unlisted);
-  h.progress->setStatus(TreeId{"t_shared"}, UserId{"owner"}, NodeId{"root"}, ProgressStatus::complete, false, Hlc{2, 0, "owner"}, 2);
+  h.progress->setStatuses(TreeId{"t_shared"}, UserId{"owner"}, {{NodeId{"root"}, ProgressStatus::complete, false, Hlc{2, 0, "owner"}}}, StampedBy::replica, 2);
 
   drogon::HttpResponsePtr anon = sendGetProgress(h.api, "", "t_shared");
   CHECK_EQ(anon->getStatusCode(), drogon::k200OK);
@@ -992,8 +992,8 @@ TEST(get_progress_shows_the_same_journey_to_owner_and_stranger) {
   Harness h;
   UserId me = h.signIn("s-me", "me@example.com");
   h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::public_);
-  h.progress->setStatus(TreeId{"t_shared"}, UserId{"owner"}, NodeId{"root"}, ProgressStatus::complete, false, Hlc{2, 0, "owner"}, 2);
-  h.progress->setStatus(TreeId{"t_shared"}, me, NodeId{"root"}, ProgressStatus::none, false, Hlc{2, 0, "me"}, 2);
+  h.progress->setStatuses(TreeId{"t_shared"}, UserId{"owner"}, {{NodeId{"root"}, ProgressStatus::complete, false, Hlc{2, 0, "owner"}}}, StampedBy::replica, 2);
+  h.progress->setStatuses(TreeId{"t_shared"}, me, {{NodeId{"root"}, ProgressStatus::none, false, Hlc{2, 0, "me"}}}, StampedBy::replica, 2);
 
   CHECK_EQ(soleCompleted(sendGetProgress(h.api, "s-me", "t_shared")), std::string("root"));
   CHECK_EQ(soleCompleted(sendGetProgress(h.api, "", "t_shared")), std::string("root"));
@@ -1004,7 +1004,7 @@ TEST(get_progress_of_a_private_tree_is_404_for_a_non_owner_and_200_for_its_owner
   UserId owner = h.signIn("s-owner", "owner-acct@example.com");
   h.signIn("s-other", "other@example.com");
   h.seed("t_priv", "Secret", owner, Visibility::private_);
-  h.progress->setStatus(TreeId{"t_priv"}, owner, NodeId{"root"}, ProgressStatus::complete, false, Hlc{2, 0, "o"}, 2);
+  h.progress->setStatuses(TreeId{"t_priv"}, owner, {{NodeId{"root"}, ProgressStatus::complete, false, Hlc{2, 0, "o"}}}, StampedBy::replica, 2);
 
   CHECK_EQ(sendGetProgress(h.api, "s-other", "t_priv")->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(sendGetProgress(h.api, "", "t_priv")->getStatusCode(), drogon::k404NotFound);
@@ -1025,13 +1025,13 @@ TEST(get_progress_shows_a_reader_the_owners_derived_completion_of_a_step_that_op
   h.seedSteps("t_main", owner, Visibility::public_,
               {{"done-cleared", "t_done"}, {"done-marked", "t_done"}, {"done-unmarked", "t_done"}, {"open", "t_open"},
                {"plain", ""}, {"removed", "t_removed"}, {"theirs", "t_theirs"}});
-  h.progress->setStatus(TreeId{"t_done"}, owner, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "owner"}, 800);
-  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"done-marked"}, ProgressStatus::complete, true, Hlc{900, 0, "owner"}, 900);
-  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"done-cleared"}, ProgressStatus::none, false, Hlc{901, 0, "owner"}, 901);
-  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"open"}, ProgressStatus::complete, false, Hlc{902, 0, "owner"}, 902);
-  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"removed"}, ProgressStatus::complete, false, Hlc{903, 0, "owner"}, 903);
-  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"theirs"}, ProgressStatus::none, false, Hlc{904, 0, "owner"}, 904);
-  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{905, 0, "owner"}, 905);
+  h.progress->setStatuses(TreeId{"t_done"}, owner, {{NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "owner"}}}, StampedBy::replica, 800);
+  h.progress->setStatuses(TreeId{"t_main"}, owner, {{NodeId{"done-marked"}, ProgressStatus::complete, true, Hlc{900, 0, "owner"}}}, StampedBy::replica, 900);
+  h.progress->setStatuses(TreeId{"t_main"}, owner, {{NodeId{"done-cleared"}, ProgressStatus::none, false, Hlc{901, 0, "owner"}}}, StampedBy::replica, 901);
+  h.progress->setStatuses(TreeId{"t_main"}, owner, {{NodeId{"open"}, ProgressStatus::complete, false, Hlc{902, 0, "owner"}}}, StampedBy::replica, 902);
+  h.progress->setStatuses(TreeId{"t_main"}, owner, {{NodeId{"removed"}, ProgressStatus::complete, false, Hlc{903, 0, "owner"}}}, StampedBy::replica, 903);
+  h.progress->setStatuses(TreeId{"t_main"}, owner, {{NodeId{"theirs"}, ProgressStatus::none, false, Hlc{904, 0, "owner"}}}, StampedBy::replica, 904);
+  h.progress->setStatuses(TreeId{"t_main"}, owner, {{NodeId{"plain"}, ProgressStatus::complete, false, Hlc{905, 0, "owner"}}}, StampedBy::replica, 905);
 
   const Json::Value shown = parse(R"({"marks":[
       {"node":"done-cleared","status":"complete","at":"800:0:owner","markedAt":800},
@@ -1073,11 +1073,11 @@ TEST(get_progress_answers_a_reader_of_a_tree_with_pointers_what_a_twin_marked_by
   h.seedSteps("t_removed", owner, Visibility::private_, {{"r", ""}});
   h.seedSteps("t_theirs", UserId{"someone-else"}, Visibility::public_, {{"x", ""}});
   h.trees->softDelete(TreeId{"t_removed"});
-  h.progress->setStatus(TreeId{"t_open"}, owner, NodeId{"o"}, ProgressStatus::complete, false, Hlc{800, 0, "owner"}, 800);
-  h.progress->setStatus(TreeId{"t_done"}, owner, NodeId{"d"}, ProgressStatus::complete, false, Hlc{700, 3, "phone"}, 700);
-  h.progress->setStatus(TreeId{"t_done"}, owner, NodeId{"e"}, ProgressStatus::complete, false, Hlc{700, 2, "tablet"}, 700);
-  h.progress->setStatus(TreeId{"t_mid"}, owner, NodeId{"m"}, ProgressStatus::complete, false, Hlc{600, 0, "phone"}, 600);
-  h.progress->setStatus(TreeId{"t_leaf"}, owner, NodeId{"l"}, ProgressStatus::complete, false, Hlc{850, 0, "phone"}, 850);
+  h.progress->setStatuses(TreeId{"t_open"}, owner, {{NodeId{"o"}, ProgressStatus::complete, false, Hlc{800, 0, "owner"}}}, StampedBy::replica, 800);
+  h.progress->setStatuses(TreeId{"t_done"}, owner, {{NodeId{"d"}, ProgressStatus::complete, false, Hlc{700, 3, "phone"}}}, StampedBy::replica, 700);
+  h.progress->setStatuses(TreeId{"t_done"}, owner, {{NodeId{"e"}, ProgressStatus::complete, false, Hlc{700, 2, "tablet"}}}, StampedBy::replica, 700);
+  h.progress->setStatuses(TreeId{"t_mid"}, owner, {{NodeId{"m"}, ProgressStatus::complete, false, Hlc{600, 0, "phone"}}}, StampedBy::replica, 600);
+  h.progress->setStatuses(TreeId{"t_leaf"}, owner, {{NodeId{"l"}, ProgressStatus::complete, false, Hlc{850, 0, "phone"}}}, StampedBy::replica, 850);
   h.seedSteps("t_main", owner, Visibility::public_,
               {{"chain", "t_mid"}, {"done", "t_done"}, {"done-marked", "t_done"}, {"marked", "t_open"}, {"unmarked", "t_open"},
                {"plain", ""}, {"removed", "t_removed"}, {"theirs", "t_theirs"}});
@@ -1085,15 +1085,15 @@ TEST(get_progress_answers_a_reader_of_a_tree_with_pointers_what_a_twin_marked_by
               {{"chain", ""}, {"done", ""}, {"done-marked", ""}, {"marked", ""}, {"unmarked", ""}, {"plain", ""}, {"removed", ""},
                {"theirs", ""}});
   for (const char* tree : {"t_main", "t_twin"}) {
-    h.progress->setStatus(TreeId{tree}, owner, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{900, 0, "owner"}, 900);
-    h.progress->setStatus(TreeId{tree}, owner, NodeId{"removed"}, ProgressStatus::complete, true, Hlc{901, 0, "owner"}, 901);
-    h.progress->setStatus(TreeId{tree}, owner, NodeId{"theirs"}, ProgressStatus::none, false, Hlc{902, 0, "owner"}, 902);
+    h.progress->setStatuses(TreeId{tree}, owner, {{NodeId{"plain"}, ProgressStatus::complete, false, Hlc{900, 0, "owner"}}}, StampedBy::replica, 900);
+    h.progress->setStatuses(TreeId{tree}, owner, {{NodeId{"removed"}, ProgressStatus::complete, true, Hlc{901, 0, "owner"}}}, StampedBy::replica, 901);
+    h.progress->setStatuses(TreeId{tree}, owner, {{NodeId{"theirs"}, ProgressStatus::none, false, Hlc{902, 0, "owner"}}}, StampedBy::replica, 902);
   }
-  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"marked"}, ProgressStatus::complete, false, Hlc{903, 0, "owner"}, 903);
-  h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{"done-marked"}, ProgressStatus::complete, true, Hlc{904, 0, "owner"}, 904);
-  h.progress->setStatus(TreeId{"t_twin"}, owner, NodeId{"done-marked"}, ProgressStatus::complete, false, Hlc{904, 0, "owner"}, 904);
-  h.progress->setStatus(TreeId{"t_twin"}, owner, NodeId{"done"}, ProgressStatus::complete, false, Hlc{700, 3, "phone"}, 700);
-  h.progress->setStatus(TreeId{"t_twin"}, owner, NodeId{"chain"}, ProgressStatus::complete, false, Hlc{850, 0, "phone"}, 850);
+  h.progress->setStatuses(TreeId{"t_main"}, owner, {{NodeId{"marked"}, ProgressStatus::complete, false, Hlc{903, 0, "owner"}}}, StampedBy::replica, 903);
+  h.progress->setStatuses(TreeId{"t_main"}, owner, {{NodeId{"done-marked"}, ProgressStatus::complete, true, Hlc{904, 0, "owner"}}}, StampedBy::replica, 904);
+  h.progress->setStatuses(TreeId{"t_twin"}, owner, {{NodeId{"done-marked"}, ProgressStatus::complete, false, Hlc{904, 0, "owner"}}}, StampedBy::replica, 904);
+  h.progress->setStatuses(TreeId{"t_twin"}, owner, {{NodeId{"done"}, ProgressStatus::complete, false, Hlc{700, 3, "phone"}}}, StampedBy::replica, 700);
+  h.progress->setStatuses(TreeId{"t_twin"}, owner, {{NodeId{"chain"}, ProgressStatus::complete, false, Hlc{850, 0, "phone"}}}, StampedBy::replica, 850);
 
   for (const char* session : {"", "s-other"}) {
     const drogon::HttpResponsePtr onTheTree = sendGetProgress(h.api, session, "t_main");
@@ -1131,9 +1131,9 @@ TEST(get_progress_whose_pointers_cannot_be_followed_in_time_answers_a_reader_wit
   const UserId owner = h.signIn("s-owner", "owner-acct@example.com");
   h.seedSteps("t_done", owner, Visibility::private_, {{"d", ""}});
   h.seedSteps("t_main", owner, Visibility::public_, {{"done", "t_done"}, {"gone", "t_gone"}, {"plain", ""}});
-  h.progress->setStatus(TreeId{"t_done"}, owner, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "owner"}, 800);
+  h.progress->setStatuses(TreeId{"t_done"}, owner, {{NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "owner"}}}, StampedBy::replica, 800);
   for (const char* step : {"done", "gone", "plain"})
-    h.progress->setStatus(TreeId{"t_main"}, owner, NodeId{step}, ProgressStatus::complete, false, Hlc{900, 0, "owner"}, 900);
+    h.progress->setStatuses(TreeId{"t_main"}, owner, {{NodeId{step}, ProgressStatus::complete, false, Hlc{900, 0, "owner"}}}, StampedBy::replica, 900);
   std::vector<std::string> lines;
   installWriteSink([&](const WriteCompletion& line) {
     if (line.product == "roadmap") lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);

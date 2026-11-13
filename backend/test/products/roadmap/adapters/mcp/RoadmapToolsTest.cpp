@@ -2185,11 +2185,6 @@ TEST(mcp_import_subgraph_tombstone_needs_the_delete_grant_the_way_delete_node_do
 namespace {
 struct ThrowingProgressRepository : FakeProgressRepository {
   bool armed = false;
-  bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node, ProgressStatus status,
-                 bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) override {
-    if (armed) throw std::runtime_error("connect host=db.internal user=windmill password=hunter2: FATAL");
-    return FakeProgressRepository::setStatus(tree, user, node, status, outOfOrder, at, receivedAtMs);
-  }
   std::vector<ProgressWritten> setStatuses(const TreeId& tree, const UserId& user,
                                            const std::vector<ProgressUpdate>& updates, StampedBy stampedBy,
                                            std::uint64_t receivedAtMs) override {
@@ -6791,7 +6786,7 @@ TEST(mcp_a_call_that_recorded_no_mark_and_was_refused_one_completes_as_opens_a_t
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
-  h.progressRepo.setStatus(TreeId{"t"}, h.caller, nid("a"), ProgressStatus::complete, false, Hlc{9'000'000, 0, "r_phone"}, 9'000'000);
+  h.progressRepo.setStatuses(TreeId{"t"}, h.caller, {{nid("a"), ProgressStatus::complete, false, Hlc{9'000'000, 0, "r_phone"}}}, StampedBy::replica, 9'000'000);
   CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
   std::vector<WriteCompletion> completions;
   installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
@@ -7317,8 +7312,7 @@ TEST(mcp_a_server_progress_write_lands_over_a_mark_stamped_ahead_of_the_server) 
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
   const std::uint64_t ahead = h.clock.ms + 120000;  // a phone two minutes ahead, inside the socket's five
   for (const char* node : {"a", "b"})
-    REQUIRE(h.progressRepo.setStatus(TreeId{"t"}, h.caller, NodeId{node}, ProgressStatus::complete, false,
-                                     Hlc{ahead, 0, "phone"}, h.clock.ms));
+    REQUIRE(h.progressRepo.setStatuses(TreeId{"t"}, h.caller, {{NodeId{node}, ProgressStatus::complete, false, Hlc{ahead, 0, "phone"}}}, StampedBy::replica, h.clock.ms).front().landed.has_value());
 
   CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"a"})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
   CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"b","status":"none"})")))),
@@ -7566,7 +7560,7 @@ TEST(mcp_a_mark_stamped_ahead_carries_no_other_write_ahead) {
     CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},
       {"id":"c","label":"C"}]})")).isError);
     const Hlc held{ahead ? h.clock.ms + 120000 : h.clock.ms - 1, 0, "phone"};
-    CHECK(h.progressRepo.setStatus(TreeId{"t"}, h.caller, NodeId{"a"}, ProgressStatus::complete, false, held, h.clock.ms));
+    CHECK(h.progressRepo.setStatuses(TreeId{"t"}, h.caller, {{NodeId{"a"}, ProgressStatus::complete, false, held}}, StampedBy::replica, h.clock.ms).front().landed.has_value());
     const auto stampOf = [&](const char* node) {
       return h.progressRepo.byKey.at(fake::FakeProgressRepository::key(TreeId{"t"}, h.caller, NodeId{node})).at;
     };
@@ -7609,7 +7603,7 @@ TEST(mcp_a_readers_mark_stamped_ahead_moves_nothing_of_the_owners) {
     CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
     const UserId stranger = fake::uid("stranger");
     const Hlc held{ahead ? h.clock.ms + 300000 : h.clock.ms - 1, std::numeric_limits<std::uint32_t>::max(), "phone"};
-    CHECK(h.progressRepo.setStatus(TreeId{"t"}, stranger, NodeId{"a"}, ProgressStatus::complete, false, held, h.clock.ms));
+    CHECK(h.progressRepo.setStatuses(TreeId{"t"}, stranger, {{NodeId{"a"}, ProgressStatus::complete, false, held}}, StampedBy::replica, h.clock.ms).front().landed.has_value());
 
     CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"none"}]})"),
                                  ToolCaller{stranger, ToolScope::everything()}).isError);
@@ -8588,7 +8582,7 @@ TEST(mcp_get_progress_refuses_a_tree_that_is_absent_or_private_to_another_in_get
   h.plant("t_public", uid("other"), "", {"t"});
   h.trees.byId["t_public"].visibility = Visibility::public_;
   for (const char* tree : {"t_theirs", "t_public"})
-    h.progressRepo.setStatus(TreeId{tree}, h.caller, NodeId{"to-t"}, ProgressStatus::complete, false, Hlc{5, 0, "x"}, 5);
+    h.progressRepo.setStatuses(TreeId{tree}, h.caller, {{NodeId{"to-t"}, ProgressStatus::complete, false, Hlc{5, 0, "x"}}}, StampedBy::replica, 5);
   const auto answered = [&](const char* tool, const char* tree) {
     Json::Value args(Json::objectValue);
     args["treeId"] = tree;

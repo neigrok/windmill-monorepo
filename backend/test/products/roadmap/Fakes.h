@@ -77,7 +77,7 @@ struct FakeProgressRepository : ProgressRepository {
   std::function<void()> duringBatchWrite;  // runs as setStatuses starts, before it reads a row: another door's write
                                            // made here is one the statement meets, and a slow one holds its caller
   bool loadsFail = false;   // load throws, the way a read Postgres refuses does
-  bool writesFail = false;  // setStatus and setStatuses throw before anything lands
+  bool writesFail = false;  // setStatuses throws before anything lands
 
   static std::string key(const TreeId& t, const UserId& u, const NodeId& n) {
     return t.str() + "\n" + u.str() + "\n" + n.str();
@@ -94,17 +94,6 @@ struct FakeProgressRepository : ProgressRepository {
                       ProgressMark{entry.status, entry.at, entry.at.physicalMs, entry.outOfOrder});
     }
     return progress;
-  }
-
-  bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
-                 ProgressStatus status, bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) override {
-    (void)receivedAtMs;
-    if (writesFail) throw std::runtime_error("the progress store refused the write");
-    std::string k = key(tree, user, node);
-    auto it = byKey.find(k);
-    if (it != byKey.end() && !(at > it->second.at)) return false;
-    byKey[k] = Entry{status, at, outOfOrder};
-    return true;
   }
 
   // The real store's rules: a replica's mark lands when its stamp is later, a server's always, at its own stamp or

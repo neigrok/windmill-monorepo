@@ -54,11 +54,6 @@ std::map<TreeId, ProgressDigest> PgProgressRepository::overlaysFor(const UserId&
   return overlays;
 }
 
-bool PgProgressRepository::setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
-                                     ProgressStatus status, bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) {
-  return setStatuses(tree, user, {{node, status, outOfOrder, at}}, StampedBy::replica, receivedAtMs).front().landed.has_value();
-}
-
 std::vector<ProgressWritten> PgProgressRepository::setStatuses(const TreeId& tree, const UserId& user,
                                                                const std::vector<ProgressUpdate>& updates,
                                                                StampedBy stampedBy, std::uint64_t receivedAtMs) {

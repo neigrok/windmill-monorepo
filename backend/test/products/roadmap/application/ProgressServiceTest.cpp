@@ -249,7 +249,7 @@ TEST(a_writers_mark_on_a_node_that_follows_its_tree_is_refused_and_the_other_mar
 
 TEST(marks_that_are_all_refused_leave_the_stored_marks_as_they_were) {
   Marking m;
-  m.repo.setStatus(tid("main"), m.owner, nid("idea"), ProgressStatus::complete, false, at(1), 1);
+  m.repo.setStatuses(tid("main"), m.owner, {{nid("idea"), ProgressStatus::complete, false, at(1)}}, StampedBy::replica, 1);
   const std::map<std::string, FakeProgressRepository::Entry> before = m.repo.byKey;
 
   const ProgressReceipt receipt = m.service.mark(
@@ -264,11 +264,11 @@ TEST(marks_that_are_all_refused_leave_the_stored_marks_as_they_were) {
 // A step behind such a node waits on the opened tree: a mark the node holds does not meet it, and the tree's completion does.
 TEST(an_advisory_for_the_trees_writer_reads_the_followed_completed_set) {
   Marking m;
-  m.repo.setStatus(tid("main"), m.owner, nid("idea"), ProgressStatus::complete, false, at(1), 1);
+  m.repo.setStatuses(tid("main"), m.owner, {{nid("idea"), ProgressStatus::complete, false, at(1)}}, StampedBy::replica, 1);
 
   const ProgressReceipt open = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("next", ProgressStatus::complete, 10)}, StampedBy::replica, 20);
-  m.repo.setStatus(tid("main"), m.owner, nid("idea"), ProgressStatus::none, false, at(11), 11);
-  m.repo.setStatus(tid("sub"), m.owner, nid("s"), ProgressStatus::complete, false, at(12), 12);
+  m.repo.setStatuses(tid("main"), m.owner, {{nid("idea"), ProgressStatus::none, false, at(11)}}, StampedBy::replica, 11);
+  m.repo.setStatuses(tid("sub"), m.owner, {{nid("s"), ProgressStatus::complete, false, at(12)}}, StampedBy::replica, 12);
   const ProgressReceipt complete = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("next", ProgressStatus::complete, 13)}, StampedBy::replica, 20);
 
   CHECK(open.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, false, true, false}}));
@@ -278,7 +278,7 @@ TEST(an_advisory_for_the_trees_writer_reads_the_followed_completed_set) {
 // A caller who cannot write the tree is handed no pointer, as is anyone marking a tree that holds none.
 TEST(marks_handed_no_pointer_are_all_ordinary_judged_on_the_callers_own_marks_and_nothing_is_read) {
   Marking m;
-  m.repo.setStatus(tid("sub"), m.owner, nid("s"), ProgressStatus::complete, false, at(1), 1);
+  m.repo.setStatuses(tid("sub"), m.owner, {{nid("s"), ProgressStatus::complete, false, at(1)}}, StampedBy::replica, 1);
   const UserId reader = uid("reader");
 
   const ProgressReceipt unmet = m.service.mark(tid("main"), {}, reader, {m.write("next", ProgressStatus::complete, 10)}, StampedBy::replica, 20);
@@ -310,7 +310,7 @@ TEST(a_call_with_no_mark_to_judge_reads_and_writes_nothing) {
 // What the write line says is read off what was recorded: a mark that lost to a later stamp recorded nothing either.
 TEST(a_receipt_comes_to_a_refusal_when_no_mark_was_recorded_and_one_was_refused) {
   Marking m;
-  m.repo.setStatus(tid("main"), m.owner, nid("plain"), ProgressStatus::complete, false, at(100), 100);
+  m.repo.setStatuses(tid("main"), m.owner, {{nid("plain"), ProgressStatus::complete, false, at(100)}}, StampedBy::replica, 100);
 
   const ProgressReceipt refusedAndLost = m.service.mark(
       tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::complete, 10), m.write("plain", ProgressStatus::none, 11)}, StampedBy::replica, 20);
