@@ -80,6 +80,8 @@ PgLease::PgLease(PgPool& pool) : pool_(pool) {
     session.exec("SET lock_timeout = '" + std::to_string(limits->lockWait().count()) + "ms'; SET statement_timeout = '" +
                  std::to_string(std::min(remaining, PgPool::kStatementTimeout).count()) + "ms'");
   } catch (...) {
+    // Half the limits may have been set: the connection is never lent again.
+    try { conn_->close(); } catch (...) {}
     pool_.release(std::move(conn_));
     throw;
   }
