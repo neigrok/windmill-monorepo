@@ -145,6 +145,64 @@ TEST(room_a_frame_is_logged_fed_and_broadcast_as_the_registers_that_landed) {
   CHECK(std::get<CreateNode>(room.pendingOps().back().command).id == nid("d"));
 }
 
+// An entry part of which lands is broadcast, saved and logged as that part, in the graph and the legend alike: a node
+// whose label is new beside its held colour, an edge removed beside its held addition, a kind renamed beside its held
+// hue. A title or a guide the frame carries rides the broadcast only where it took: sent beside a change with the
+// stamp the room already holds, it is left out.
+TEST(room_a_frame_is_broadcast_as_the_part_of_each_entry_and_tree_register_that_landed) {
+  FakeBus bus;
+  TreeRoom room = makeRoom(bus);
+  apply(room, AddKind{KindId{"k"}, NodeColor::sky, "K"}, 1);
+  apply(room, CreateNode{nid("a"), "A", "i", NodeColor::sky}, 2);
+  apply(room, CreateNode{nid("b"), "B", "i", NodeColor::sky}, 3);
+  apply(room, AddEdge{nid("a"), nid("b")}, 4);
+  room.describe(std::string("Sail"), std::string("Rig first."), 5);
+  room.markClean();
+  const GraphState held = room.exportState();
+  const LegendState heldLegend = room.exportLegend();
+  const Hlc fresh{50, 0, "phone"};
+
+  Subgraph partial;
+  partial.treeId = tid();
+  partial.frameId = "partial";
+  partial.actor = "phone";
+  partial.title = room.title();
+  partial.guide = Lww<std::string>{"Sail first.", fresh};
+  NodeStateEntry renamed = held.nodes.front();
+  renamed.label = "A2";
+  renamed.labelAt = fresh;
+  EdgeStateEntry cut = held.edges.front();
+  cut.removedAt = fresh;
+  KindStateEntry relabelled = heldLegend.kinds.front();
+  relabelled.label = "Kay";
+  relabelled.labelAt = fresh;
+  partial.graph = GraphState{{renamed}, {cut}};
+  partial.legend = LegendState{{relabelled}};
+  REQUIRE(room.joinSubgraph(partial, uid()).has_value());
+
+  Subgraph landed;
+  landed.treeId = tid();
+  landed.frameId = "partial";
+  landed.actor = "phone";
+  landed.guide = Lww<std::string>{"Sail first.", fresh};
+  landed.graph = GraphState{{NodeStateEntry{.id = renamed.id, .label = "A2", .labelAt = fresh}},
+                            {EdgeStateEntry{cut.edge, {}, fresh}}};
+  landed.legend = LegendState{{KindStateEntry{.id = KindId{"k"}, .label = "Kay", .labelAt = fresh}}};
+  CHECK(bus.subgraphBroadcasts.back().subgraph == landed);
+
+  Subgraph echoedTitle;
+  echoedTitle.treeId = tid();
+  echoedTitle.frameId = "echoed-title";
+  echoedTitle.actor = "phone";
+  echoedTitle.title = room.title();
+  echoedTitle.guide = room.guide();
+  echoedTitle.graph.nodes = {NodeStateEntry{.id = nid("b"), .label = "B2", .labelAt = Hlc{51, 0, "phone"}}};
+  REQUIRE(room.joinSubgraph(echoedTitle, uid()).has_value());
+  CHECK_FALSE(bus.subgraphBroadcasts.back().subgraph.title.has_value());
+  CHECK_FALSE(bus.subgraphBroadcasts.back().subgraph.guide.has_value());
+  CHECK(bus.subgraphBroadcasts.back().subgraph.graph == echoedTitle.graph);
+}
+
 TEST(room_join_subgraph_queues_its_headline_for_the_feed) {
   FakeBus bus;
   TreeRoom room = makeRoom(bus);
