@@ -77,6 +77,8 @@ struct FakeProgressRepository : ProgressRepository {
   std::function<void()> duringBatchWrite;  // runs as setStatuses starts, before it reads a row: another door's write
                                            // made here is one the statement meets, and a slow one holds its caller
   bool loadsFail = false;   // load throws, the way a read Postgres refuses does
+  std::function<void()> afterRead;  // runs once load has read its rows, before it answers: a mark made here is one
+                                    // the answer misses
   bool writesFail = false;  // setStatuses throws before anything lands
 
   static std::string key(const TreeId& t, const UserId& u, const NodeId& n) {
@@ -93,6 +95,7 @@ struct FakeProgressRepository : ProgressRepository {
       progress.record(NodeId{k.substr(prefix.size())},
                       ProgressMark{entry.status, entry.at, entry.at.physicalMs, entry.outOfOrder});
     }
+    if (afterRead) afterRead();
     return progress;
   }
 

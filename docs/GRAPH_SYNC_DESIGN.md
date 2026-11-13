@@ -136,7 +136,8 @@ Resends pause while refused, offline, rebaselining or closed. A late acknowledge
 frame is ignored. Socket closure and epoch adoption clear pending ping boundaries and delivery timers.
 
 The server sends each subscriber a tree's live frames in seq order, its own included, and a writer's
-ack after the broadcast of its frame. A live frame joins only at `seq === lastSeq + 1`; already-seen
+ack after the broadcast of its frame. A subscribe delta goes out before every live frame past the seq
+it reports, and a subscription's progress graft before every echo. A live frame joins only at `seq === lastSeq + 1`; already-seen
 seqs are ignored, and a gap or failed join forces reconnect. A subscribe delta is the recovery path. Own structure echoes suppress repeated
 local animation and await their acknowledgement before confirming.
 

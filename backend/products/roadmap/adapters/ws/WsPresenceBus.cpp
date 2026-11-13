@@ -10,10 +10,13 @@
 
 namespace wm {
 
-void WsPresenceBus::subscribe(const TreeId& tree, const drogon::WebSocketConnectionPtr& conn, const UserId& user) {
+WsPresenceBus::FirstFrames WsPresenceBus::subscribe(const TreeId& tree, const drogon::WebSocketConnectionPtr& conn,
+                                                    const UserId& user) {
+  trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
   std::lock_guard<std::mutex> lock(mutex_);
   subscribers_[tree.str()].insert(conn);
-  connections_[conn] = Subscriber{user.str(), trantor::EventLoop::getEventLoopOfCurrentThread()};
+  connections_[conn] = Subscriber{user.str(), loop};
+  return FirstFrames{PlaceInOrder{loop, conn}, PlaceInOrder{loop, conn}};
 }
 
 void WsPresenceBus::drop(const drogon::WebSocketConnectionPtr& conn) {

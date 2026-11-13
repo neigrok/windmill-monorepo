@@ -298,7 +298,12 @@ subscriber treat it as a re-baselining graft. Each subscriber is sent a tree's b
 order, the writer of a frame included: every fan-out is queued on the loop the subscriber's
 connection lives on (`sendInOrder`, `adapters/ws/WsPresenceBus.h`), never sent straight from the
 writer's handler, where it would go out ahead of earlier frames still queued behind that handler.
-A reply is queued the same way, so a writer's ack follows the broadcast of its frame.
+A reply is queued the same way, so a writer's ack follows the broadcast of its frame. A subscriber's
+first frames take their places in that queue with the join, under the tree's strand, before they
+are written out (`PlaceInOrder`, `WsPresenceBus::subscribe`): the delta's, so every broadcast made
+after the head it reports follows it, and then the progress graft's, so every echo follows the
+graft, whose marks are read after the join. No live frame goes out ahead of a subscription's first
+frame; an echo of a mark made before the graft's read repeats what the graft holds.
 
 ### Commands
 
