@@ -20,10 +20,18 @@ namespace wm {
 // ids come back to `committed`, which the composition points at the live rooms.
 AccountErasure roadmapAccountErasure();
 
-// A tree's name as every statement reads it (SPEC.md, Model, Subtrees), for the `trees` row the alias `tree` names, or a
-// row carrying its title, parent_tree and parent_step: a root's own title, a subtree's owning step's label, which is read
-// off that step's row through tree_nodes_pkey.
+// The rules of a subtree (SPEC.md, Model, Subtrees) as every statement reads them, each for the row an alias names.
+//
+// A tree's name, for a `trees` row or a row carrying its title, parent_tree and parent_step: a root's own title, a
+// subtree's owning step's label, read off that step's row through tree_nodes_pkey.
 std::string treeNameColumn(std::string_view tree);
+// That a `trees` row stands with its root: the root's row, read through trees_pkey for a subtree alone, is not deleted.
+// The row's own deleted_at is the statement's to test.
+std::string rootStandsCondition(std::string_view tree);
+// What a present `tree_nodes` row opens: the standing subtree its step owns, which ownedSubtreeJoin joins through
+// trees_parent_step as `owned`, else the tree its pointer names.
+std::string ownedSubtreeJoin(std::string_view step);
+std::string stepOpensColumn(std::string_view step);
 
 // Stores a tree's lattice as per-entry rows (tree_nodes / tree_edges / tree_kinds), so a save
 // upserts only the slice it is given. Each call borrows a connection from the shared pool for

@@ -54,12 +54,6 @@ constexpr std::string_view kAdvanceNextSlot =
     "                   )::timestamp + make_interval(mins => r.slot_minute)) AT TIME ZONE r.iana_tz "
     "FROM served s WHERE r.user_id = s.user_id";
 
-// A step that owns a standing subtree opens it, whatever its pointer holds (SPEC.md, Model, Subtrees).
-constexpr std::string_view kReadinessNodes =
-    "SELECT n.node_id, n.label, n.label_hlc, n.color, n.color_hlc, coalesce(owned.id, n.opens) AS opens, n.opens_hlc, "
-    "n.created_hlc, n.deleted_hlc FROM tree_nodes n "
-    "LEFT JOIN trees owned ON owned.parent_tree = n.tree_id AND owned.parent_step = n.node_id AND owned.deleted_at IS NULL "
-    "WHERE n.tree_id = $1 AND n.present ORDER BY n.node_id";
 
 template <typename Row>
 NodeStateEntry nodeFromRow(const Row& row) {
@@ -118,11 +112,13 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
   // Every standing tree of theirs, subtrees named as every read names them; a subtree stands while its root does.
   pqxx::result trees = txn.exec_params(
       "SELECT t.id, " + treeNameColumn("t") + " AS title, (extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms "
-      "FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL "
-      "AND CASE WHEN t.parent_tree IS NULL THEN true "
-      "    ELSE EXISTS (SELECT 1 FROM trees root WHERE root.id = t.root_tree AND root.deleted_at IS NULL) END "
-      "ORDER BY t.id",
+      "FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND " + rootStandsCondition("t") + " ORDER BY t.id",
       user.str());
+  // A step that owns a standing subtree opens it, whatever its pointer holds.
+  const std::string steps =
+      "SELECT n.node_id, n.label, n.label_hlc, n.color, n.color_hlc, " + stepOpensColumn("n") + " AS opens, n.opens_hlc, "
+      "n.created_hlc, n.deleted_hlc FROM tree_nodes n " + ownedSubtreeJoin("n") +
+      " WHERE n.tree_id = $1 AND n.present ORDER BY n.node_id";
 
   // Joined through their own trees so it rides the node_progress primary key rather than scanning by user.
   std::map<TreeId, Progress> overlays;
@@ -149,7 +145,7 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
     const TreeId id{row["id"].as<std::string>()};
 
     GraphState state;
-    pqxx::result nodes = txn.exec_params(std::string(kReadinessNodes), id.str());
+    pqxx::result nodes = txn.exec_params(steps, id.str());
     for (const auto& node : nodes) state.nodes.push_back(nodeFromRow(node));
     pqxx::result edges = txn.exec_params(
         "SELECT from_id, to_id, added_hlc, removed_hlc FROM tree_edges WHERE tree_id = $1", id.str());

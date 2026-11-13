@@ -2,6 +2,7 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/PageShell.h"
+#include "platform/application/WriteObservation.h"
 #include "platform/domain/Origin.h"
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Tree.h"
@@ -107,13 +108,17 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
   }
 
   // Taken OUTSIDE the room strand, and only for a readable tree. A subtree is named by its owning step's label, read
-  // through its parent; a tree that went away meanwhile, or a read that failed, leaves the shell verbatim.
+  // through its parent; a tree that went away meanwhile, or a read that failed, leaves the shell verbatim, the failure
+  // reported as the tree read's.
   if (readable && subtree) {
+    WriteObservation observation{"roadmap.tree.read", "roadmap", "rest"};
     try {
       const std::optional<Place> place = trees_->placeOf(TreeId{id});
       readable = place.has_value();
       if (place) title = place->title;
-    } catch (const std::exception&) {
+      observation.skip();
+    } catch (const std::exception& failure) {
+      observation.fail(failure);
       readable = false;
     }
   }

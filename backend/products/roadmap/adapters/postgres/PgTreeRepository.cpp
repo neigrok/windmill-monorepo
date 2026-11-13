@@ -32,6 +32,20 @@ std::string treeNameColumn(std::string_view tree) {
          "WHERE owning.tree_id = " + t + ".parent_tree AND owning.node_id = " + t + ".parent_step), '') END";
 }
 
+std::string rootStandsCondition(std::string_view tree) {
+  const std::string t{tree};
+  return "CASE WHEN " + t + ".parent_tree IS NULL THEN true "
+         "ELSE EXISTS (SELECT 1 FROM trees root WHERE root.id = " + t + ".root_tree AND root.deleted_at IS NULL) END";
+}
+
+std::string ownedSubtreeJoin(std::string_view step) {
+  const std::string n{step};
+  return "LEFT JOIN trees owned ON owned.parent_tree = " + n + ".tree_id AND owned.parent_step = " + n + ".node_id "
+         "AND owned.deleted_at IS NULL";
+}
+
+std::string stepOpensColumn(std::string_view step) { return "coalesce(owned.id, " + std::string{step} + ".opens)"; }
+
 namespace {
 
 // Add-biased presence, computed by the writer so reads never compare HLC text in SQL.
@@ -388,10 +402,9 @@ PgTreeRepository::ProjectedDocument PgTreeRepository::projectDocument(pqxx::work
                                                                      const std::string& documentBlob) {
   // A step that owns a standing subtree opens it, under no stamp, whatever its pointer holds.
   pqxx::result nodes = txn.exec_params(
-      "SELECT n.node_id, n.color, coalesce(owned.id, n.opens) AS opens, "
-      "CASE WHEN owned.id IS NULL THEN n.opens_hlc ELSE '' END AS opens_hlc FROM tree_nodes n "
-      "LEFT JOIN trees owned ON owned.parent_tree = n.tree_id AND owned.parent_step = n.node_id AND owned.deleted_at IS NULL "
-      "WHERE n.tree_id = $1 AND n.present",
+      "SELECT n.node_id, n.color, " + stepOpensColumn("n") + " AS opens, "
+      "CASE WHEN owned.id IS NULL THEN n.opens_hlc ELSE '' END AS opens_hlc FROM tree_nodes n " + ownedSubtreeJoin("n") +
+          " WHERE n.tree_id = $1 AND n.present",
       tree.str());
   ProjectedDocument projected;
   projected.data.id = tree;
@@ -477,12 +490,9 @@ std::string PgTreeRepository::openedFromStatement() {
   // One statement: the counts and the marks are one snapshot, and no node row leaves the database. A step opens the
   // subtree it owns, found through trees_parent_step, else the tree its pointer names; a tree stands while its own row
   // and its root's do, the root read only for a subtree.
-  const std::string opens = "coalesce(owned.id, n.opens)";
-  const std::string owned =
-      "LEFT JOIN trees owned ON owned.parent_tree = n.tree_id AND owned.parent_step = n.node_id AND owned.deleted_at IS NULL ";
-  const std::string rootStands =
-      "CASE WHEN t.parent_tree IS NULL THEN true "
-      "ELSE EXISTS (SELECT 1 FROM trees root WHERE root.id = t.root_tree AND root.deleted_at IS NULL) END";
+  const std::string opens = stepOpensColumn("n");
+  const std::string owned = ownedSubtreeJoin("n") + " ";
+  const std::string rootStands = rootStandsCondition("t");
   return
       "WITH RECURSIVE reached(id, title, parent_tree, parent_step) AS ("
       "  SELECT t.id, t.title, t.parent_tree, t.parent_step FROM trees t "
@@ -564,8 +574,7 @@ std::string PgTreeRepository::guidedTreesAboveStatement() {
   // subtree stands while its root does, which is read for a subtree alone.
   return "WITH RECURSIVE owned(id, guided, parent_tree) AS MATERIALIZED ("
          "  SELECT t.id, t.guide <> '', t.parent_tree FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL "
-         "  AND CASE WHEN t.parent_tree IS NULL THEN true "
-         "      ELSE EXISTS (SELECT 1 FROM trees root WHERE root.id = t.root_tree AND root.deleted_at IS NULL) END"
+         "  AND " + rootStandsCondition("t") +
          "), "
          // What lies directly below each tree: the subtrees it owns, off the rows already read, and each root its steps
          // point at. The LATERAL runs once per owned tree, so each tree's pointers are read by its key whatever the
