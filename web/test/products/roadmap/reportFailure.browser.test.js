@@ -187,7 +187,7 @@ for (const [verb, act] of [
           issues,
           events: [
             { name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } },
-            { name: 'roadmap_sheet', props: { step: verb, door: 'switcher', outcome: 'failed' } },
+            { name: 'roadmap_sheet', props: { step: verb, door: 'switcher', outcome: 'failed', ...(verb === 'delete' ? { place: 'account' } : {}) } },
           ],
         });
       });
