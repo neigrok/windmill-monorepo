@@ -596,9 +596,13 @@ and none overrides another.
   and change nothing. Receipts distinguish `graphApplied` and `progressApplied`, with
   `progressError` and `progressSkipped` or `progressRefused` when requested progress cannot all be
   applied; `progressError` says each way the progress fell short, one sentence after the other. A
-  committed graft is not undone by a later overlay failure: one in the requested `progress[]` is
-  reported and completes the write line as `failed`, and one in the clear of marks on removed nodes
-  is reported once as `roadmap.import.clear_marks`, the import completing as `ok`. It is **upsert
+  graft that landed is not undone by a later overlay failure, and the import completes as `ok`: one
+  in the requested `progress[]` is told in the receipt and reported once as `roadmap.import.marks`,
+  and one in the clear of marks on removed nodes as `roadmap.import.clear_marks` — a clear made
+  only when the batch tombstoned a node (`NodeEdits::clearMarksOn` reads no overlay for none). When the graft
+  landed nothing — no node or kind sent, or `unchanged: true` — the rows of `progress[]` are the
+  call, as an `update_nodes` that sends only marks: a failure of theirs is the call's own error and
+  its `failed` line. It is **upsert
   by id**: an incoming id already present is reported in
   `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
   the registers the batch sends: a node's `label`, `icon`, `color`, `order`, `seedStatus`,

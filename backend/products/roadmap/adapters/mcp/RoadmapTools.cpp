@@ -1341,22 +1341,38 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
   });
   grafted = withClosedLoops(trees, actor, tree, pointerEdit, grafted);
   if (grafted.isError || dryRun || carried.empty()) return grafted;
-  // A graft that landed nothing beside marks that came to a refusal wrote nothing, and the write line says why.
+  // The rows a call carries land by one path, and a refusal of theirs is told in the receipt either way: a graft that
+  // landed nothing beside marks that came to a refusal wrote nothing, and the write line says why.
+  const bool graftLanded = !grafted.payload.get("unchanged", false).asBool();
   bool wroteNothingForARefusal = false;
-  try {
+  const auto applyRows = [&] {
     const std::variant<MarkedBatch, std::string> applied =
         applyProgressBatch(registry, edits, tree, clock, actor, carried, false);
     if (const std::string* error = std::get_if<std::string>(&applied)) {
       fellShort(grafted.payload, "The graph committed, but the requested progress did not apply: " + *error);
-      return ToolResult::json(grafted.payload);
+      return;
     }
     const MarkedBatch& batch = std::get<MarkedBatch>(applied);
-    wroteNothingForARefusal = batch.cameToARefusal && grafted.payload.get("unchanged", false).asBool();
+    wroteNothingForARefusal = batch.cameToARefusal && !graftLanded;
     batch.answerOnto(grafted.payload);
-  } catch (const std::exception& error) {
-    reportCurrentWriteFailure(error);
-    fellShort(grafted.payload, "The graph committed, but the requested progress outcome is uncertain. Read get_progress "
-                               "before retrying progress changes.");
+  };
+  if (!graftLanded) {
+    // No graft landed, so the rows are the call: a failure of theirs is the call's.
+    applyRows();
+  } else {
+    // The graft has landed whatever becomes of the rows: a failure of theirs is told in the reply and reported under
+    // its own name, at the call's door, not as the call's failure.
+    WriteObservation marking{"roadmap.import.marks", "roadmap", currentWriteDoor()};
+    try {
+      applyRows();
+      marking.skip();
+    } catch (const std::bad_alloc&) {
+      throw;
+    } catch (const std::exception& error) {
+      marking.fail(error);
+      fellShort(grafted.payload, "The graph committed, but the requested progress outcome is uncertain. Read get_progress "
+                                 "before retrying progress changes.");
+    }
   }
   ToolResult answered = ToolResult::json(grafted.payload);
   if (wroteNothingForARefusal) answered.outcomeCode = kOpensATree;

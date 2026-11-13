@@ -27,6 +27,7 @@ ProgressReceipt NodeEdits::landMarks(const TreeId& tree, const UserId& user, con
 
 std::size_t NodeEdits::clearMarksOn(TreeRoom& room, const TreeId& tree, const UserId& actor,
                                     const std::vector<NodeId>& removed) {
+  if (removed.empty()) return 0;
   const Progress overlay = progress_.progressOf(tree, actor);
   std::vector<ProgressWrite> clears;
   for (const NodeId& node : removed)

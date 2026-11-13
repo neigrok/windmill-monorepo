@@ -298,7 +298,8 @@ TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_sets_a_new_mark) {
 }
 
 // Under a tend, update_nodes marks that are the whole call fail the step with them; marks that fail after a tree op
-// landed leave the step done and are told under their own name, at the tend's door — as are an import's cleared marks.
+// landed leave the step done and are told under their own name, at the tend's door — as are an import's cleared marks
+// and, by the same two branches, its progress rows.
 TEST(drive_agent_fails_a_step_whose_marks_are_the_call_and_reports_late_marks_at_its_door) {
   test::Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
@@ -325,6 +326,10 @@ TEST(drive_agent_fails_a_step_whose_marks_are_the_call_and_reports_late_marks_at
   CHECK_EQ(stepOf("update_nodes", R"({"updates":[{"nodeId":"a","label":"Alpha","status":"complete"}]})"),
            std::string("1 edits, failed 0"));
   CHECK_EQ(stepOf("import_subgraph", R"({"nodes":[],"tombstone":["b"]})"), std::string("1 edits, failed 0"));
+  CHECK_EQ(stepOf("import_subgraph", R"({"nodes":[{"id":"c","label":"C"}],"progress":[{"nodeId":"a","status":"complete"}]})"),
+           std::string("1 edits, failed 0"));
+  CHECK_EQ(stepOf("import_subgraph", R"({"nodes":[],"progress":[{"nodeId":"a","status":"complete"}]})"),
+           std::string("0 edits, failed 1"));
   h.progressRepo.writesFail = false;
   installWriteSink({});
 
@@ -334,6 +339,9 @@ TEST(drive_agent_fails_a_step_whose_marks_are_the_call_and_reports_late_marks_at
                       "roadmap.update_nodes roadmap Coach ok",
                       "roadmap.import.clear_marks roadmap Coach failed",
                       "roadmap.import_subgraph roadmap Coach ok",
+                      "roadmap.import.marks roadmap Coach failed",
+                      "roadmap.import_subgraph roadmap Coach ok",
+                      "roadmap.import_subgraph roadmap Coach failed",
                   }));
 }
 
