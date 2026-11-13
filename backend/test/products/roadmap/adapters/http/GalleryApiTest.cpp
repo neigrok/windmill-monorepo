@@ -293,7 +293,7 @@ TEST(the_json_index_ranks_a_tended_tree_above_a_newer_one_nobody_has_opened) {
   const UserId owner = h.signIn("s1", "owner@example.com");
   h.seed("t_abandoned", "Abandoned", owner, Visibility::public_, 5, 500);
   h.seed("t_tended", "Tended", owner, Visibility::public_, 5, 100);
-  h.progress->setStatus(TreeId{"t_tended"}, owner, NodeId{"n0"}, ProgressStatus::complete, false, Hlc{900, 0, "sam"}, 900);
+  h.progress->setStatuses(TreeId{"t_tended"}, owner, {{NodeId{"n0"}, ProgressStatus::complete, false, Hlc{900, 0, "sam"}}}, StampedBy::replica, 900);
 
   const Json::Value body = bodyOf(sendIndex(h.api, galleryReq()));
 
@@ -372,12 +372,12 @@ TEST(the_wall_counts_a_step_that_opens_a_tree_by_the_owners_derived_completion_i
   h.seedSteps("t_bo", bo, Visibility::public_, {{"a", ""}, {"b", ""}, {"c", ""}});
   h.seedSteps("t_cy_sub", cy, Visibility::public_, {{"x", ""}, {"y", ""}, {"z", ""}});
   h.seedSteps("t_cy", cy, Visibility::public_, {{"idea", "t_cy_sub"}, {"b", ""}, {"c", ""}});
-  h.progress->setStatus(TreeId{"t_ada_done"}, ada, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "ada"}, 800);
-  h.progress->setStatus(TreeId{"t_ada_one"}, ada, NodeId{"open"}, ProgressStatus::complete, false, Hlc{900, 0, "ada"}, 900);
-  h.progress->setStatus(TreeId{"t_ada_one"}, ada, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{901, 0, "ada"}, 901);
-  h.progress->setStatus(TreeId{"t_ada_two"}, ada, NodeId{"gone"}, ProgressStatus::complete, false, Hlc{902, 0, "ada"}, 902);
-  h.progress->setStatus(TreeId{"t_bo"}, bo, NodeId{"a"}, ProgressStatus::complete, false, Hlc{903, 0, "bo"}, 903);
-  h.progress->setStatus(TreeId{"t_cy"}, cy, NodeId{"idea"}, ProgressStatus::complete, false, Hlc{904, 0, "cy"}, 904);
+  h.progress->setStatuses(TreeId{"t_ada_done"}, ada, {{NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "ada"}}}, StampedBy::replica, 800);
+  h.progress->setStatuses(TreeId{"t_ada_one"}, ada, {{NodeId{"open"}, ProgressStatus::complete, false, Hlc{900, 0, "ada"}}}, StampedBy::replica, 900);
+  h.progress->setStatuses(TreeId{"t_ada_one"}, ada, {{NodeId{"plain"}, ProgressStatus::complete, false, Hlc{901, 0, "ada"}}}, StampedBy::replica, 901);
+  h.progress->setStatuses(TreeId{"t_ada_two"}, ada, {{NodeId{"gone"}, ProgressStatus::complete, false, Hlc{902, 0, "ada"}}}, StampedBy::replica, 902);
+  h.progress->setStatuses(TreeId{"t_bo"}, bo, {{NodeId{"a"}, ProgressStatus::complete, false, Hlc{903, 0, "bo"}}}, StampedBy::replica, 903);
+  h.progress->setStatuses(TreeId{"t_cy"}, cy, {{NodeId{"idea"}, ProgressStatus::complete, false, Hlc{904, 0, "cy"}}}, StampedBy::replica, 904);
 
   const Json::Value index = bodyOf(sendIndex(h.api, galleryReq()));
 
@@ -430,10 +430,10 @@ TEST(a_wall_whose_follow_of_one_owner_fails_or_times_out_counts_that_owner_alone
   h.seedSteps("t_dee_done", dee, Visibility::private_, {{"d", ""}});
   h.seedSteps("t_dee", dee, Visibility::public_, {{"done", "t_dee_done"}, {"b", ""}, {"c", ""}});
   for (const auto& [owner, tree] : {std::pair{ada, "t_ada_done"}, std::pair{cy, "t_cy_done"}, std::pair{dee, "t_dee_done"}})
-    h.progress->setStatus(TreeId{tree}, owner, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "seed"}, 800);
-  h.progress->setStatus(TreeId{"t_ada"}, ada, NodeId{"marked"}, ProgressStatus::complete, false, Hlc{900, 0, "ada"}, 900);
-  h.progress->setStatus(TreeId{"t_ada"}, ada, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{901, 0, "ada"}, 901);
-  h.progress->setStatus(TreeId{"t_bo"}, bo, NodeId{"a"}, ProgressStatus::complete, false, Hlc{902, 0, "bo"}, 902);
+    h.progress->setStatuses(TreeId{tree}, owner, {{NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "seed"}}}, StampedBy::replica, 800);
+  h.progress->setStatuses(TreeId{"t_ada"}, ada, {{NodeId{"marked"}, ProgressStatus::complete, false, Hlc{900, 0, "ada"}}}, StampedBy::replica, 900);
+  h.progress->setStatuses(TreeId{"t_ada"}, ada, {{NodeId{"plain"}, ProgressStatus::complete, false, Hlc{901, 0, "ada"}}}, StampedBy::replica, 901);
+  h.progress->setStatuses(TreeId{"t_bo"}, bo, {{NodeId{"a"}, ProgressStatus::complete, false, Hlc{902, 0, "bo"}}}, StampedBy::replica, 902);
   h.trees->duringOpenedRead = [&] {
     if (h.trees->openedOwners.back() == ada) throw std::runtime_error("connection reset mid-read");
     if (h.trees->openedOwners.back() == cy) throw FollowTimedOut{};
@@ -516,11 +516,11 @@ TEST(two_trees_shown_alike_to_readers_wear_the_same_time_and_place_on_both_walls
   h.seedSteps("t_a_twin", ada, Visibility::public_, {{"via", ""}, {"wait", ""}, {"plain", ""}});
   h.trees->byId["t_b_pointers"].title.value = "Same";
   h.trees->byId["t_a_twin"].title.value = "Same";
-  h.progress->setStatus(TreeId{"t_done"}, ada, NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "ada"}, 800);
-  h.progress->setStatus(TreeId{"t_b_pointers"}, ada, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{700, 0, "ada"}, 700);
-  h.progress->setStatus(TreeId{"t_b_pointers"}, ada, NodeId{"wait"}, ProgressStatus::complete, false, Hlc{990, 0, "ada"}, 990);
-  h.progress->setStatus(TreeId{"t_a_twin"}, ada, NodeId{"plain"}, ProgressStatus::complete, false, Hlc{700, 0, "ada"}, 700);
-  h.progress->setStatus(TreeId{"t_a_twin"}, ada, NodeId{"via"}, ProgressStatus::complete, false, Hlc{800, 0, "ada"}, 800);
+  h.progress->setStatuses(TreeId{"t_done"}, ada, {{NodeId{"d"}, ProgressStatus::complete, false, Hlc{800, 0, "ada"}}}, StampedBy::replica, 800);
+  h.progress->setStatuses(TreeId{"t_b_pointers"}, ada, {{NodeId{"plain"}, ProgressStatus::complete, false, Hlc{700, 0, "ada"}}}, StampedBy::replica, 700);
+  h.progress->setStatuses(TreeId{"t_b_pointers"}, ada, {{NodeId{"wait"}, ProgressStatus::complete, false, Hlc{990, 0, "ada"}}}, StampedBy::replica, 990);
+  h.progress->setStatuses(TreeId{"t_a_twin"}, ada, {{NodeId{"plain"}, ProgressStatus::complete, false, Hlc{700, 0, "ada"}}}, StampedBy::replica, 700);
+  h.progress->setStatuses(TreeId{"t_a_twin"}, ada, {{NodeId{"via"}, ProgressStatus::complete, false, Hlc{800, 0, "ada"}}}, StampedBy::replica, 800);
 
   Json::Value index = bodyOf(sendIndex(h.api, galleryReq()));
   drogon::HttpResponsePtr page;

@@ -624,7 +624,12 @@ Limits and rules:
   whole frame.
 - A progress frame is refused whole — a bad mark, a skewed stamp, a failed read gate — or applied
   per mark: each mark is its own last-writer-wins register, so the marks that landed are echoed and
-  the ack names the ones `refused`. It joins no op log and echoes only to the same account's
+  the ack names the ones `refused`. A replica's mark loses to a later stamp the row holds
+  (`StampedBy::replica`); a server door's mark — MCP `update_nodes`, an import's `progress[]`, the
+  clear a delete makes — always lands, at its own stamp or just after a later one it finds
+  (`StampedBy::server`). Either way one statement reads the row and writes it
+  (`ProgressRepository::setStatuses`), and what a mark did is that statement's answer
+  (`ProgressWritten`). It joins no op log and echoes only to the same account's
   sessions — never to collaborators. The room is consulted under the tree's strand and the
   repositories are read and written after it is released.
 - Presence is ephemeral, never persisted, flushed on a 50 ms timer (latest-wins per actor).

@@ -45,8 +45,8 @@ struct Owners {
     mainGraph.setOpens(nid("done"), TreeId{sub}, Hlc{2, 0, "seed"});
     mainGraph.createNode(nid("plain"), "Plain", "", NodeColor::sky, Hlc{1, 0, "seed"});
     trees.byId[main] = StoredTree{mainGraph.exportState(), LegendState{}, {main, {}}, 0, owner, Visibility::public_};
-    marks.setStatus(TreeId{sub}, owner, nid("d"), ProgressStatus::complete, false, Hlc{800, 0, "seed"}, 800);
-    marks.setStatus(TreeId{main}, owner, nid("plain"), ProgressStatus::complete, false, Hlc{900, 0, "seed"}, 900);
+    marks.setStatuses(TreeId{sub}, owner, {{nid("d"), ProgressStatus::complete, false, Hlc{800, 0, "seed"}}}, StampedBy::replica, 800);
+    marks.setStatuses(TreeId{main}, owner, {{nid("plain"), ProgressStatus::complete, false, Hlc{900, 0, "seed"}}}, StampedBy::replica, 900);
     return OwnersTrees{owner, {{TreeId{main}, mainGraph.stampedPointers()}}};
   }
 

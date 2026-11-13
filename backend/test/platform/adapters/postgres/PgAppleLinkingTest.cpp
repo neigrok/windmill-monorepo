@@ -446,7 +446,7 @@ TEST(pg_apple_takeover_blocks_a_late_progress_write_and_deletion_prevents_an_orp
     writer = std::async(std::launch::async, [&] {
       PgProgressRepository progress{pgTestPool()};
       try {
-        progress.setStatus(TreeId{"public-tree"}, f.other.id, NodeId{"node"}, ProgressStatus::complete, false, Hlc{1,0,"actor"}, 1);
+        progress.setStatuses(TreeId{"public-tree"}, f.other.id, {{NodeId{"node"}, ProgressStatus::complete, false, Hlc{1,0,"actor"}}}, StampedBy::replica, 1);
         return false;
       } catch (const std::runtime_error&) { return true; }
     });

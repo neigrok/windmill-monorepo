@@ -36,14 +36,15 @@ public:
   NodeEdits(RoomRegistry& rooms, ProgressService& progress, PresenceBus& bus, Clock& clock);
 
   // The caller's marks a server write sets, landed by the one path every such write takes, the clears below among them.
-  // Each write comes stamped by the room's clock; where the caller's mark on that node holds a later stamp — a replica
-  // stamped it ahead of the server — it takes the stamp just after that one instead, so a later write always lands over
-  // it, and the room's clock does not learn it, so it carries no other write of the tree ahead. A node named twice is
-  // stamped after its own row. The marks go through ProgressService::mark with `pointers`, the nodes that open a tree as
-  // the room handed them to the caller: a mark on one that follows its tree is refused. The batch is written in one go,
-  // and the marks that landed go to the caller's open sessions in one progress frame.
+  // Each write comes stamped by the room's clock and is written as a server's (StampedBy::server): where the caller's
+  // mark on that node holds a later stamp — a replica stamped it ahead of the server — the write itself takes the stamp
+  // just after that one, so it always lands over it, whatever another door wrote a moment before; the room's clock
+  // does not learn that stamp, so it carries no other write of the tree ahead. A node named twice is stamped after its
+  // own row. The marks go through ProgressService::mark with `pointers`, the nodes that open a tree as the room handed
+  // them to the caller: a mark on one that follows its tree is refused. The batch is written in one go, and the marks
+  // that landed go to the caller's open sessions in one progress frame, at the stamps they took.
   ProgressReceipt landMarks(const TreeId& tree, const UserId& user, const std::map<NodeId, TreeId>& pointers,
-                            std::vector<ProgressWrite> writes);
+                            const std::vector<ProgressWrite>& writes);
 
   // The caller's own completion marks on the nodes a write removes, cleared to none through landMarks, so a revive of the
   // node brings none back; anyone else's marks stay theirs. A node that opens a tree goes with its mark as any other
