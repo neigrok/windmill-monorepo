@@ -51,7 +51,10 @@ struct ScriptedModel : CoachModel {
 
   ModelCall open(const TurnPrincipal&, const std::string&, std::function<void(const std::string&)> text,
                  std::function<bool()> keepStreaming, std::function<void(const std::string&)> refused) override {
-    continueRun = std::move(keepStreaming);
+    {
+      std::lock_guard lock(mutex);  // every turn opens on its own worker
+      continueRun = std::move(keepStreaming);
+    }
     return [this, text, refused](const Json::Value& request) -> std::optional<Json::Value> {
       Json::Value reply;
       int number = 0;

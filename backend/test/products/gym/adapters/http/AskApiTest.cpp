@@ -68,6 +68,10 @@ struct AskHarness {
 
   explicit AskHarness(bool monthly = false) : entitlements{subs, usage, {}, {}, monthly ? budgets : nullptr} {}
 
+  // A stream still on one of the service's loops, or on the app's timer, co-owns the service: its loops are stopped
+  // here, as the server's lifetime stops them, while everything they read still stands.
+  ~AskHarness() { askService->stop(); }
+
   // The answer lands on a worker thread when the model runs and inline when the door refuses.
   drogon::HttpResponsePtr ask(const std::string& thread, const std::string& question,
                               const std::string& cookie = "s-live", const std::string& requestId = "",
