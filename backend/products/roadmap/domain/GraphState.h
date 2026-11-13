@@ -45,6 +45,7 @@ struct GraphState {
   std::vector<NodeStateEntry> nodes;
   std::vector<EdgeStateEntry> edges;
   bool operator==(const GraphState&) const = default;
+  bool empty() const { return nodes.empty() && edges.empty(); }
 };
 
 // Whether a register a write carries lands over the entry the tree holds: it changes what the tree holds, an empty

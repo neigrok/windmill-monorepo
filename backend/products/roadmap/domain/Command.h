@@ -253,9 +253,13 @@ std::optional<Admission> admitGuide(const std::string& guide);
 bool isBlankGuide(const std::string& guide);
 std::optional<Admission> admitStampedGuide(const std::string& guide);
 
-// The single feed-worthy deed a subgraph delta represents, read off which lattice fields the frame
-// sets. Salience order: a node's own life, then legend deeds, then a node's fields, then edges. A frame that sets
-// none of these is nullopt.
-std::optional<Command> headline(const GraphState& graph, const LegendState& legend);
+// The single feed-worthy deed a subgraph delta represents, read off which lattice fields it sets: a room hands it what
+// landed of a frame, so an echoed register names nothing. Salience order: a node's own life, then legend deeds, then a
+// node's fields, then edges. A frame that sets none of these is nullopt. A deed states the registers that landed, but
+// for the one that brings a node or a kind into being — its creation stamp landed, a create or a revive: that deed
+// carries the name, icon and hue `graph` and `legend`, which have joined the delta, hold for it, whatever of them the
+// frame echoed, since the feed reads a node that is gone again by the name its row kept.
+std::optional<Command> headline(const GraphState& landed, const LegendState& landedLegend, const LooseGraph& graph,
+                                const Legend& legend);
 
 }

@@ -34,6 +34,7 @@ struct KindStateEntry {
 struct LegendState {
   std::vector<KindStateEntry> kinds;
   bool operator==(const LegendState&) const = default;
+  bool empty() const { return kinds.empty(); }
 };
 
 // The ordered legend of one tree, under the same CRDT discipline as LooseGraph. Kinds sort by `rank`
@@ -46,9 +47,9 @@ public:
   Legend(const std::vector<Kind>& kinds, const Hlc& at);
 
   // Fold a partial legend state in, under the same element-set + LWW discipline as LooseGraph::join, and answer
-  // whether any stamp it carried took; a kind none of whose stamps took leaves the legend without a record it did
-  // not have.
-  bool join(const LegendState& state);
+  // what landed, as it does: each kind cut to the stamps of it that took, and left out when none did; a kind none of
+  // whose stamps took leaves the legend without a record it did not have.
+  LegendState join(const LegendState& state);
 
   // The kinds a tree is born with: those it is sent, in their order, or the three defaults when it is
   // sent none. TreeRegistry plants them and create_tree answers them, so the two cannot disagree.
