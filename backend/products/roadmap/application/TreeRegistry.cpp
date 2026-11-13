@@ -147,7 +147,7 @@ std::variant<Cascade, TreeRegistry::RemovalRefusal> TreeRegistry::remove(const T
       // Held through the catch, so the room a failure is judged by stays the one the delete was applied to.
       std::lock_guard<std::mutex> strand(rooms_.strandFor(parent));
       TreeRoom* room = nullptr;
-      Seq head = 0;
+      std::optional<Seq> headBefore;  // the room's head as the delete began
       try {
         room = rooms_.open(parent);
         std::vector<NodeId> nodes;
@@ -159,14 +159,13 @@ std::variant<Cascade, TreeRegistry::RemovalRefusal> TreeRegistry::remove(const T
           editing.skip();
           continue;
         }
-        head = room->head();
+        headBefore = room->head();
         const std::variant<DeletedNodes, std::string> deleted =
             edits_.deleteNodes(*room, parent, nodes, DanglingEdges::removed, caller);
         // Nodes the room holds pass every check a deletion makes, so a refusal here is a fault.
         if (std::holds_alternative<std::string>(deleted)) throw std::logic_error("a room refused to delete nodes it holds");
         const DeletedNodes& landed = std::get<DeletedNodes>(deleted);
         if (!landed.saved) {
-          room = nullptr;  // retired with the row
           editing.fail(TreeRowGone{}, "unsaved");
           cascade.unsaved.push_back(parent);
           continue;
@@ -179,7 +178,7 @@ std::variant<Cascade, TreeRegistry::RemovalRefusal> TreeRegistry::remove(const T
       } catch (const std::exception& error) {
         // The room's head moves when its delete applies, so a failure after that is its save's: the steps are gone
         // from the room, unsaved. Before it, nothing was applied and the steps stay.
-        const bool applied = room && room->head() != head;
+        const bool applied = headBefore && room->head() != *headBefore;
         editing.fail(error, applied ? "unsaved" : "failed");
         (applied ? cascade.unsaved : cascade.incomplete).push_back(parent);
       }

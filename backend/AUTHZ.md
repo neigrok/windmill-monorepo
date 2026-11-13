@@ -50,12 +50,12 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   opened it, sees those trees' delete frames, each stamped by the server, arrive within a
   millisecond of the removal, and so can tell which steps opened it. Each such frame alone is the
   frame an owner's own `delete_node` with `prune` sends. Beyond these, no state, count, key,
-  refusal or frame a reader is sent says a node opens a tree. A tend neither reads nor sets the pointer: it runs
-  as the owner on labels that may be someone else's words, so `ScopedToolHost` offers it no `opens`
-  argument and no `opens` field, and refuses a call
-  that names either; and no call it can make brings a pointer back, because a node an import
-  revives from a delete opens only the tree that batch names (`graftState`), and a run's batch
-  names none. The `state` it reads is the owner's.
+  refusal or frame a reader is sent says a node opens a tree. A tend neither reads nor sets the
+  pointer: it runs as the owner on labels that may be someone else's words, so `ScopedToolHost`
+  offers it no `opens` argument and no `opens` field, and refuses a call that names either; and no
+  call it can make brings a pointer back, because a node an import revives from a delete opens only
+  the tree that batch names (`graftState`), and a run's batch names none. The `state` it reads is
+  the owner's.
   What is wrong with a tree's pointers follows the same line. `treeLoops` and `danglingPointers`
   (`SPEC.md`, Model, `PointerDiagnostics`) carry tree ids, titles and the stored pointer text, so
   MCP `get_diagnostics` and `GET …/diagnostics` answer them only to a caller `canWrite` admits,
