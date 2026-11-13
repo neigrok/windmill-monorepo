@@ -11,15 +11,8 @@ NodeEdits::NodeEdits(RoomRegistry& rooms, ProgressService& progress, PresenceBus
     : rooms_(rooms), progress_(progress), bus_(bus), clock_(clock) {}
 
 ProgressReceipt NodeEdits::landMarks(const TreeId& tree, const UserId& user, const std::map<NodeId, TreeId>& pointers,
-                                     std::vector<ProgressWrite> writes) {
-  std::map<NodeId, Hlc> holds;
-  for (const auto& [node, kept] : progress_.progressOf(tree, user).marks) holds.emplace(node, kept.at);
-  for (ProgressWrite& write : writes) {
-    const auto held = holds.find(write.node);
-    if (held != holds.end()) write.at = std::max(write.at, held->second.successor(write.at.actor));
-    holds[write.node] = write.at;
-  }
-  const ProgressReceipt receipt = progress_.mark(tree, pointers, user, writes, clock_.nowMs());
+                                     const std::vector<ProgressWrite>& writes) {
+  const ProgressReceipt receipt = progress_.mark(tree, pointers, user, writes, StampedBy::server, clock_.nowMs());
   // One echo for the whole batch, not one frame per node.
   bus_.broadcastProgress(tree, user, receipt.recorded);
   return receipt;
@@ -35,8 +28,10 @@ std::size_t NodeEdits::clearMarksOn(TreeRoom& room, const TreeId& tree, const Us
       clears.push_back({node, ProgressStatus::none, room.prerequisitesOf(node), room.nextStamp(clock_.nowMs()), false});
   if (clears.empty()) return 0;
   const ProgressReceipt receipt = landMarks(tree, actor, {}, clears);
-  return static_cast<std::size_t>(std::count_if(receipt.outcomes.begin(), receipt.outcomes.end(),
-                                                [](const ProgressOutcome& outcome) { return outcome.applied; }));
+  // Counted off the writes: a completion another door cleared meanwhile was not this call's to clear.
+  return static_cast<std::size_t>(
+      std::count_if(receipt.outcomes.begin(), receipt.outcomes.end(),
+                    [](const ProgressOutcome& outcome) { return outcome.applied && !outcome.unchanged; }));
 }
 
 std::variant<DeletedNodes, std::string> NodeEdits::deleteNodes(TreeRoom& room, const TreeId& tree,

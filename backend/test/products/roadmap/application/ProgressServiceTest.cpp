@@ -43,7 +43,7 @@ TEST(progress_records_complete_but_flags_unmet_prerequisites) {
   FakeTreeRepository trees;
   ProgressService service(repo, trees);
 
-  ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(1), 1);
+  ProgressOutcome outcome = service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, aPrereqs, at(1), false}}, StampedBy::replica, 1).outcomes.front();
   CHECK_EQ(outcome.status, ProgressStatus::complete);
   CHECK_FALSE(outcome.prerequisitesMet);
 
@@ -56,8 +56,8 @@ TEST(progress_complete_with_met_prerequisites) {
   FakeTreeRepository trees;
   ProgressService service(repo, trees);
 
-  service.setStatus(noPrereqs, tid(), uid(), nid("r"), ProgressStatus::complete, false, at(1), 1);
-  ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(2), 2);
+  service.mark(tid(), {}, uid(), {ProgressWrite{nid("r"), ProgressStatus::complete, noPrereqs, at(1), false}}, StampedBy::replica, 1).outcomes.front();
+  ProgressOutcome outcome = service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, aPrereqs, at(2), false}}, StampedBy::replica, 2).outcomes.front();
   CHECK(outcome.prerequisitesMet);
 }
 
@@ -66,10 +66,10 @@ TEST(progress_none_clears_the_entry) {
   FakeTreeRepository trees;
   ProgressService service(repo, trees);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(1), 1);
+  service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, aPrereqs, at(1), false}}, StampedBy::replica, 1).outcomes.front();
   CHECK_EQ(service.progressOf(tid(), uid()).completed.count(nid("a")), 1u);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, false, at(2), 2);
+  service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::none, aPrereqs, at(2), false}}, StampedBy::replica, 2).outcomes.front();
   Progress progress = service.progressOf(tid(), uid());
   CHECK_EQ(progress.cleared.count(nid("a")), 1u);
   CHECK_EQ(progress.completed.count(nid("a")), 0u);
@@ -80,8 +80,8 @@ TEST(progress_clear_persists_as_a_tombstone_row) {
   FakeTreeRepository trees;
   ProgressService service(repo, trees);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(1), 1);
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, false, at(2), 2);
+  service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, aPrereqs, at(1), false}}, StampedBy::replica, 1).outcomes.front();
+  service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::none, aPrereqs, at(2), false}}, StampedBy::replica, 2).outcomes.front();
 
   auto entry = repo.byKey.find(FakeProgressRepository::key(tid(), uid(), nid("a")));
   CHECK(entry != repo.byKey.end());  // the clear is a stored LWW value, not a row delete
@@ -100,9 +100,9 @@ TEST(progress_stale_mark_cannot_resurrect_a_cleared_node) {
   FakeTreeRepository trees;
   ProgressService service(repo, trees);
 
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(1), 1);
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::none, false, at(3), 3);
-  service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(2), 2);  // stale replay
+  service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, aPrereqs, at(1), false}}, StampedBy::replica, 1).outcomes.front();
+  service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::none, aPrereqs, at(3), false}}, StampedBy::replica, 3).outcomes.front();
+  service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, aPrereqs, at(2), false}}, StampedBy::replica, 2).outcomes.front();  // stale replay
 
   Progress progress = service.progressOf(tid(), uid());
   CHECK_EQ(progress.completed.count(nid("a")), 0u);
@@ -116,18 +116,18 @@ TEST(progress_keeps_the_out_of_order_word_on_the_mark_until_the_next_mark_replac
   FakeTreeRepository trees;
   ProgressService service(repo, trees);
 
-  ProgressOutcome outcome = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, true, at(1), 1);
+  ProgressOutcome outcome = service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, aPrereqs, at(1), true}}, StampedBy::replica, 1).outcomes.front();
   CHECK_EQ(outcome.status, ProgressStatus::complete);
   CHECK_FALSE(outcome.prerequisitesMet);
   CHECK(outcome.applied);
   CHECK(outcome.outOfOrder);
   CHECK(service.progressOf(tid(), uid()).marks.at(nid("a")).outOfOrder);
 
-  ProgressOutcome stale = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(0), 0);
+  ProgressOutcome stale = service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, aPrereqs, at(0), false}}, StampedBy::replica, 0).outcomes.front();
   CHECK_FALSE(stale.applied);
   CHECK(service.progressOf(tid(), uid()).marks.at(nid("a")).outOfOrder);
 
-  ProgressOutcome again = service.setStatus(aPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(2), 2);
+  ProgressOutcome again = service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, aPrereqs, at(2), false}}, StampedBy::replica, 2).outcomes.front();
   CHECK(again.applied);
   CHECK_FALSE(again.outOfOrder);
   CHECK_FALSE(service.progressOf(tid(), uid()).marks.at(nid("a")).outOfOrder);
@@ -139,21 +139,67 @@ TEST(progress_a_mark_already_held_says_unchanged_and_still_lands_its_stamp) {
   FakeProgressRepository repo;
   FakeTreeRepository trees;
   ProgressService service(repo, trees);
-  service.setStatuses(tid(), uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, noPrereqs, at(1), false}}, 1);
+  service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, noPrereqs, at(1), false}}, StampedBy::replica, 1);
 
-  const std::vector<ProgressOutcome> outcomes = service.setStatuses(
-      tid(), uid(),
+  const std::vector<ProgressOutcome> outcomes = service.mark(
+      tid(), {}, uid(),
       {ProgressWrite{nid("a"), ProgressStatus::complete, noPrereqs, at(2), false},
        ProgressWrite{nid("r"), ProgressStatus::none, noPrereqs, at(2), false},
        ProgressWrite{nid("b"), ProgressStatus::complete, noPrereqs, at(2), false}},
-      2);
+      StampedBy::replica, 2).outcomes;
   std::vector<bool> unchanged;
   for (const ProgressOutcome& outcome : outcomes) unchanged.push_back(outcome.unchanged);
   CHECK_EQ(unchanged, (std::vector<bool>{true, true, false}));
   CHECK(service.progressOf(tid(), uid()).marks.at(nid("a")).at == at(2));
 
-  CHECK(service.setStatus(noPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, false, at(3), 3).unchanged);
-  CHECK_FALSE(service.setStatus(noPrereqs, tid(), uid(), nid("a"), ProgressStatus::complete, true, at(4), 4).unchanged);
+  CHECK(service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, noPrereqs, at(3), false}}, StampedBy::replica, 3).outcomes.front().unchanged);
+  CHECK_FALSE(service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::complete, noPrereqs, at(4), true}}, StampedBy::replica, 4).outcomes.front().unchanged);
+}
+
+// What a mark did is read off its own write, so a mark another door lands as the write is on its way is the one it
+// meets: a repeat of `complete` over a clear that slipped in is a change. A replica's mark that meets a later stamp
+// loses and records nothing; a server's lands just after that stamp and records the stamp it took. Where the write
+// cannot say what the row held, the mark is not called unchanged.
+TEST(progress_a_mark_is_answered_by_its_own_write_whatever_another_door_wrote_under_it) {
+  FakeProgressRepository repo;
+  FakeTreeRepository trees;
+  ProgressService service(repo, trees);
+  const std::string row = FakeProgressRepository::key(tid(), uid(), nid("a"));
+  const auto marked = [&](ProgressStatus status, const Hlc& stamp, StampedBy stampedBy) {
+    return service.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), status, noPrereqs, stamp, false}}, stampedBy, 9);
+  };
+  marked(ProgressStatus::complete, at(1), StampedBy::replica);
+
+  repo.duringBatchWrite = [&] { repo.byKey[row] = {ProgressStatus::none, at(2, "phone"), false}; };
+  const ProgressReceipt restored = marked(ProgressStatus::complete, at(3), StampedBy::replica);
+  CHECK((restored.outcomes == std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false, false}}));
+  CHECK((restored.recorded.marks == std::map<NodeId, ProgressMark>{{nid("a"), {ProgressStatus::complete, at(3), 9, false}}}));
+
+  repo.duringBatchWrite = [&] { repo.byKey[row] = {ProgressStatus::none, at(50, "phone"), false}; };
+  const ProgressReceipt lost = marked(ProgressStatus::complete, at(4), StampedBy::replica);
+  CHECK((lost.outcomes == std::vector<ProgressOutcome>{{ProgressStatus::complete, true, false, false, false}}));
+  CHECK(lost.recorded.marks.empty());
+  CHECK(service.progressOf(tid(), uid()).completed.empty());
+
+  repo.duringBatchWrite = [&] { repo.byKey[row] = {ProgressStatus::none, at(60, "phone"), false}; };
+  const ProgressReceipt landed = marked(ProgressStatus::complete, at(5, "srv"), StampedBy::server);
+  CHECK((landed.outcomes == std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false, false}}));
+  CHECK((landed.recorded.marks ==
+         std::map<NodeId, ProgressMark>{{nid("a"), {ProgressStatus::complete, Hlc{60, 1, "srv"}, 9, false}}}));
+  repo.duringBatchWrite = nullptr;
+
+  struct Unseen : FakeProgressRepository {
+    std::vector<ProgressWritten> setStatuses(const TreeId& tree, const UserId& user, const std::vector<ProgressUpdate>& updates,
+                                             StampedBy stampedBy, std::uint64_t receivedAtMs) override {
+      std::vector<ProgressWritten> written = FakeProgressRepository::setStatuses(tree, user, updates, stampedBy, receivedAtMs);
+      for (ProgressWritten& did : written) did.held.reset();
+      return written;
+    }
+  } unseen;
+  ProgressService blind(unseen, trees);
+  CHECK((blind.mark(tid(), {}, uid(), {ProgressWrite{nid("a"), ProgressStatus::none, noPrereqs, at(1), false}},
+                    StampedBy::server, 9).outcomes ==
+         std::vector<ProgressOutcome>{{ProgressStatus::none, true, true, false, false}}));
 }
 
 TEST(progress_batch_carries_the_out_of_order_word_per_write) {
@@ -161,11 +207,11 @@ TEST(progress_batch_carries_the_out_of_order_word_per_write) {
   FakeTreeRepository trees;
   ProgressService service(repo, trees);
 
-  std::vector<ProgressOutcome> outcomes = service.setStatuses(
-      tid(), uid(),
+  std::vector<ProgressOutcome> outcomes = service.mark(
+      tid(), {}, uid(),
       {ProgressWrite{nid("a"), ProgressStatus::complete, aPrereqs, at(1), true},
        ProgressWrite{nid("r"), ProgressStatus::none, noPrereqs, at(2), false}},
-      2);
+      StampedBy::replica, 2).outcomes;
   REQUIRE_EQ(outcomes.size(), 2u);
   CHECK_FALSE(outcomes[0].prerequisitesMet);
   CHECK(outcomes[0].outOfOrder);
@@ -185,7 +231,7 @@ TEST(a_writers_mark_on_a_node_that_follows_its_tree_is_refused_and_the_other_mar
       tid("main"), m.pointers, m.owner,
       {m.write("idea", ProgressStatus::complete, 10), m.write("plain", ProgressStatus::complete, 11),
        m.write("idea", ProgressStatus::none, 12), m.write("ghost", ProgressStatus::none, 13)},
-      20);
+      StampedBy::replica, 20);
 
   CHECK(receipt.outcomes ==
         (std::vector<ProgressOutcome>{{.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true},
@@ -207,7 +253,7 @@ TEST(marks_that_are_all_refused_leave_the_stored_marks_as_they_were) {
   const std::map<std::string, FakeProgressRepository::Entry> before = m.repo.byKey;
 
   const ProgressReceipt receipt = m.service.mark(
-      tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::none, 10), m.write("idea", ProgressStatus::complete, 11)}, 20);
+      tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::none, 10), m.write("idea", ProgressStatus::complete, 11)}, StampedBy::replica, 20);
 
   CHECK(receipt.outcomes == (std::vector<ProgressOutcome>{{.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true},
                                                           {.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true}}));
@@ -220,10 +266,10 @@ TEST(an_advisory_for_the_trees_writer_reads_the_followed_completed_set) {
   Marking m;
   m.repo.setStatus(tid("main"), m.owner, nid("idea"), ProgressStatus::complete, false, at(1), 1);
 
-  const ProgressReceipt open = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("next", ProgressStatus::complete, 10)}, 20);
+  const ProgressReceipt open = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("next", ProgressStatus::complete, 10)}, StampedBy::replica, 20);
   m.repo.setStatus(tid("main"), m.owner, nid("idea"), ProgressStatus::none, false, at(11), 11);
   m.repo.setStatus(tid("sub"), m.owner, nid("s"), ProgressStatus::complete, false, at(12), 12);
-  const ProgressReceipt complete = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("next", ProgressStatus::complete, 13)}, 20);
+  const ProgressReceipt complete = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("next", ProgressStatus::complete, 13)}, StampedBy::replica, 20);
 
   CHECK(open.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, false, true, false}}));
   CHECK(complete.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false, true}}));
@@ -235,10 +281,10 @@ TEST(marks_handed_no_pointer_are_all_ordinary_judged_on_the_callers_own_marks_an
   m.repo.setStatus(tid("sub"), m.owner, nid("s"), ProgressStatus::complete, false, at(1), 1);
   const UserId reader = uid("reader");
 
-  const ProgressReceipt unmet = m.service.mark(tid("main"), {}, reader, {m.write("next", ProgressStatus::complete, 10)}, 20);
+  const ProgressReceipt unmet = m.service.mark(tid("main"), {}, reader, {m.write("next", ProgressStatus::complete, 10)}, StampedBy::replica, 20);
   const ProgressReceipt met = m.service.mark(
-      tid("main"), {}, reader, {m.write("next", ProgressStatus::complete, 11), m.write("idea", ProgressStatus::complete, 12)}, 20);
-  const ProgressReceipt cleared = m.service.mark(tid("main"), {}, reader, {m.write("idea", ProgressStatus::none, 13)}, 20);
+      tid("main"), {}, reader, {m.write("next", ProgressStatus::complete, 11), m.write("idea", ProgressStatus::complete, 12)}, StampedBy::replica, 20);
+  const ProgressReceipt cleared = m.service.mark(tid("main"), {}, reader, {m.write("idea", ProgressStatus::none, 13)}, StampedBy::replica, 20);
 
   CHECK(unmet.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, false, true, false}}));
   CHECK(met.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false, true},
@@ -252,7 +298,7 @@ TEST(marks_handed_no_pointer_are_all_ordinary_judged_on_the_callers_own_marks_an
 TEST(a_call_with_no_mark_to_judge_reads_and_writes_nothing) {
   Marking m;
 
-  const ProgressReceipt receipt = m.service.mark(tid("main"), m.pointers, m.owner, {}, 20);
+  const ProgressReceipt receipt = m.service.mark(tid("main"), m.pointers, m.owner, {}, StampedBy::replica, 20);
 
   CHECK(receipt.outcomes.empty());
   CHECK(receipt.recorded.marks.empty());
@@ -267,10 +313,10 @@ TEST(a_receipt_comes_to_a_refusal_when_no_mark_was_recorded_and_one_was_refused)
   m.repo.setStatus(tid("main"), m.owner, nid("plain"), ProgressStatus::complete, false, at(100), 100);
 
   const ProgressReceipt refusedAndLost = m.service.mark(
-      tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::complete, 10), m.write("plain", ProgressStatus::none, 11)}, 20);
-  const ProgressReceipt lost = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("plain", ProgressStatus::none, 12)}, 20);
+      tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::complete, 10), m.write("plain", ProgressStatus::none, 11)}, StampedBy::replica, 20);
+  const ProgressReceipt lost = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("plain", ProgressStatus::none, 12)}, StampedBy::replica, 20);
   const ProgressReceipt refusedAndRecorded = m.service.mark(
-      tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::complete, 13), m.write("next", ProgressStatus::none, 14)}, 20);
+      tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::complete, 13), m.write("next", ProgressStatus::none, 14)}, StampedBy::replica, 20);
 
   CHECK(refusedAndLost.outcomes ==
         (std::vector<ProgressOutcome>{{.status = ProgressStatus::none, .prerequisitesMet = false, .applied = false, .refused = true}, {ProgressStatus::none, true, false, false}}));
@@ -285,9 +331,9 @@ TEST(a_mark_on_a_node_whose_pointer_is_not_valid_is_recorded_for_the_trees_write
   Marking m;
   m.trees.byId["gone"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Theirs", {}}, 0, uid("someone-else")};
 
-  const ProgressReceipt theirs = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("lost", ProgressStatus::complete, 10)}, 20);
+  const ProgressReceipt theirs = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("lost", ProgressStatus::complete, 10)}, StampedBy::replica, 20);
   m.trees.softDelete(tid("sub"));
-  const ProgressReceipt deleted = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::complete, 11)}, 20);
+  const ProgressReceipt deleted = m.service.mark(tid("main"), m.pointers, m.owner, {m.write("idea", ProgressStatus::complete, 11)}, StampedBy::replica, 20);
 
   CHECK(theirs.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false}}));
   CHECK(deleted.outcomes == (std::vector<ProgressOutcome>{{ProgressStatus::complete, true, true, false}}));
