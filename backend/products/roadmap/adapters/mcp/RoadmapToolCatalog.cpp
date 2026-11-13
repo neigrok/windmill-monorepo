@@ -337,18 +337,27 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         properties[field] = strArray("Node ids in input order, partitioned by whether the patch changes them.", kMaxIdLength);
         output["required"].append(field);
       }
+      // One object for both rows, a recorded mark and a refused one, rather than a oneOf that not every client reads.
       Json::Value mark(Json::objectValue);
       mark["nodeId"] = nodeHandle();
-      mark["status"] = enumStr("The mark the row set.", kStatuses);
-      mark["prerequisitesMet"] = boolean("Whether its prerequisites are complete as the whole call leaves them.");
+      mark["status"] = enumStr("The mark the row recorded. Absent on a refused row.", kStatuses);
+      mark["prerequisitesMet"] = boolean("Whether its prerequisites are complete as the whole call leaves them. "
+                                         "Absent on a refused row.");
       mark["acknowledged"] = boolean("True when the row carried outOfOrder:true.");
       mark["unchanged"] = boolean("True when you already held this mark at the row's turn.");
-      properties["progress"] = objArray("One row per mark, in input order, after the tree fields landed.", mark,
-                                        {"nodeId", "status", "prerequisitesMet"});
+      mark["refused"] = str("Why the row recorded no mark: its node opens a tree, so it is complete when that tree "
+                            "is. A refused row carries this beside its nodeId and nothing else.");
+      properties["progress"] = objArray("One row per mark, in input order, after the tree fields landed: a recorded "
+                                        "mark, with status and prerequisitesMet, or a refused one, with refused.",
+                                        mark, {"nodeId"});
+      properties["progressRefused"] = strArray("The ids of the refused rows, in input order. Absent when no row was "
+                                               "refused.", kMaxIdLength);
       properties["progressApplied"] =
-          boolean("False when the tree fields landed and the marks did not; a call that landed no tree field fails "
-                  "with its marks instead.");
-      properties["progressError"] = str("Why the marks did not land, when progressApplied is false.");
+          boolean("False when a mark did not land: a row was refused (progressRefused), or the marks failed after "
+                  "the tree fields landed. When no tree field landed, a failure of the marks fails the call instead, "
+                  "and a refusal answers here as any other. Absent when every mark landed.");
+      properties["progressError"] = str("What fell short, when progressApplied is false: one sentence for the refused "
+                                        "rows, one for a failure of the marks.");
     } else {
       for (const char* field : {"addedEdges", "removedEdges"}) {
         properties[field] = objArray("Edges that change, in input order.", edgeProperties, {"from", "to"});

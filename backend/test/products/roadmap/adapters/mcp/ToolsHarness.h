@@ -8,6 +8,7 @@
 #include "products/roadmap/domain/LooseGraph.h"
 #include "platform/ports/Clock.h"
 #include "test/platform/Fakes.h"
+#include "test/platform/adapters/mcp/OutputSchema.h"
 #include "test/products/roadmap/Fakes.h"
 
 #include <string>
@@ -57,13 +58,17 @@ struct Harness {
   }
 
   // These cases drive RoadmapTools directly, below the grant gate: the caller holds everything, so what is under test is the tool's own ownership and argument behaviour.
+  // Every result is held to its tool's published outputSchema, as a client that validates structuredContent holds it.
   ToolResult call(const char* name, Json::Value args) {
     args["treeId"] = "t";
-    return tools.callTool(name, args, ToolCaller{caller, ToolScope::everything()});
+    ToolResult result = tools.callTool(name, args, ToolCaller{caller, ToolScope::everything()});
+    checkStructuredContent(tools, name, result, __FILE__, __LINE__);
+    return result;
   }
 };
 
-// Every successful result speaks through content[0].text. structuredContent is not sent, since no tool declares an outputSchema.
+// Every successful result speaks through content[0].text, and a tool that declares an outputSchema says it again as
+// structuredContent.
 inline Json::Value body(const ToolResult& result) { return parse(result.content[0]["text"].asString()); }
 
 inline std::string message(const ToolResult& result) { return result.content[0]["text"].asString(); }

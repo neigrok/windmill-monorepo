@@ -244,8 +244,10 @@ leave it a line; a loop of trees does not change `diagnosticsClean`.
 ### The descriptor
 
 Every `tools/list` entry contains `{name, title, description, inputSchema, annotations, _meta}`.
-The seven batch tools also declare `outputSchema` and return matching `structuredContent` plus
-compatibility text generated from the same result object. The
+`get_nodes`, `update_nodes` and `change_edges` also declare `outputSchema` and return
+`structuredContent` it accepts — a recorded mark and a refused one are both an `update_nodes`
+`progress` row, every field but `nodeId` optional — plus compatibility text generated from the same
+result object; the tool tests hold every result to its schema (`test/platform/adapters/mcp/OutputSchema.h`). The
 catalog writes `name`, `description` and `inputSchema` and states two facts beside them — whether a
 write edits in bulk and whether a resend leaves it unchanged; `ToolDeclaration::wire()`
 (`platform/ports/ToolHost.h`) derives everything else from those facts and the grant level, so no

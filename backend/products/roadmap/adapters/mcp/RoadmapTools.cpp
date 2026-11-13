@@ -1406,7 +1406,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, ProgressS
       return ToolResult::json(grafted.payload);
     }
     const MarkedBatch& batch = std::get<MarkedBatch>(applied);
-    wroteNothingForARefusal = batch.cameToARefusal && grafted.payload["unchanged"].asBool();
+    wroteNothingForARefusal = batch.cameToARefusal && grafted.payload.get("unchanged", false).asBool();
     batch.answerOnto(grafted.payload);
   } catch (const std::exception& error) {
     reportCurrentWriteFailure(error);

@@ -6180,6 +6180,37 @@ TEST(mcp_an_imports_progress_reports_the_nodes_that_open_a_tree_and_still_grafts
   CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_import_subgraph ok", "mcp.roadmap_import_subgraph opens-a-tree"}));
 }
 
+// An import whose graft landed wrote, whatever its marks came to: one whose every mark was refused on a node that opens a
+// tree still completes ok, and only an import that landed nothing completes as opens-a-tree.
+TEST(mcp_an_import_whose_graft_landed_completes_ok_though_every_mark_was_refused) {
+  Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  CHECK_FALSE(gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t",
+      "nodes":[{"id":"idea","label":"Idea","opens":"t_sub"}]})"), h.actor).isError);
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+
+  const ToolResult landed = gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t",
+      "nodes":[{"id":"b","label":"B"}],"progress":[{"nodeId":"idea","status":"complete"}]})"), h.actor);
+  const ToolResult nothing = gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t",
+      "nodes":[],"progress":[{"nodeId":"idea","status":"complete"}]})"), h.actor);
+  installWriteSink({});
+
+  CHECK_EQ(body(landed), parse(R"({"nodes":1,"edges":0,"kinds":0,"nodeCollisions":[],"kindCollisions":[],
+      "newNodes":1,"newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,
+      "tombstoned":{"nodes":0,"edges":0},"graphApplied":true,"progressApplied":false,"imported":true,"seq":2,
+      "diagnosticsClean":true,"introducedDiagnostics":[],
+      "progress":[
+        {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}],
+      "progressRefused":["idea"],
+      "progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused."})"));
+  CHECK_FALSE(nothing.isError);
+  std::vector<std::string> observed;
+  for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
+  CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_import_subgraph ok", "mcp.roadmap_import_subgraph opens-a-tree"}));
+}
+
 // A pointer at a tree that is absent, deleted or someone else's follows nothing, so its node keeps its own mark.
 TEST(mcp_a_node_whose_pointer_is_not_valid_is_marked_as_any_node) {
   Harness h;
