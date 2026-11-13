@@ -53,12 +53,13 @@ COPY --from=contract gym /contract/gym
 COPY --from=contract roadmap-addresses.json /contract/roadmap-addresses.json
 COPY --from=contract roadmap-link-urls.json /contract/roadmap-link-urls.json
 
-# Configure once, then build the two service binaries, the probe server the sync conformance runs against, and every
-# test suite. Every suite ctest registers must be listed, or ctest fails on a missing executable, not a red test.
+# Configure once, then build the two service binaries, the probe server the sync conformance runs against, the offline
+# tools and every test suite. Every suite ctest registers must be listed, or ctest fails on a missing executable, not a
+# red test.
 RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWM_API_CONTRACT_DIR=/contract -DWM_DROGON_PREFIX=/opt/drogon \
  && cmake --build build -j"$(nproc)" \
       --target windmill_server windmill_server_test_clock windmill_mcp windmill_mcp_http windmill_server_probe \
-               windmill_rotate_sync_epoch windmill_resum_sync_digests \
+               windmill_rotate_sync_epoch windmill_resum_sync_digests windmill_subtree_inventory \
                windmill_domain_tests windmill_mcp_tests windmill_adapters_tests windmill_sync_tests
 
 # Tests are self-contained (in-memory fakes, no database) — run them in the build so a
@@ -98,6 +99,7 @@ COPY --from=build /src/build/windmill_server   /usr/local/bin/windmill_server
 COPY --from=build /src/build/windmill_mcp_http  /usr/local/bin/windmill_mcp_http
 COPY --from=build /src/build/windmill_rotate_sync_epoch /usr/local/bin/windmill_rotate_sync_epoch
 COPY --from=build /src/build/windmill_resum_sync_digests /usr/local/bin/windmill_resum_sync_digests
+COPY --from=build /src/build/windmill_subtree_inventory /usr/local/bin/windmill_subtree_inventory
 COPY --from=build /src/db/schema.sql            /app/db/schema.sql
 COPY --from=build /src/build/sync-compatibility.json /app/sync-compatibility.json
 

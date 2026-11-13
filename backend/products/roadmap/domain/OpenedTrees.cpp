@@ -152,6 +152,62 @@ WaysBack OpenedTrees::waysBackTo(const TreeId& tree) const {
   return back;
 }
 
+std::vector<std::set<TreeId>> OpenedTrees::loops() const {
+  // Tarjan's walk, kept on an explicit stack so a long chain of trees cannot exhaust the call stack. It steps from a tree
+  // to its openers: trees that lead to one another do so along the pointers read either way.
+  struct Visit {
+    TreeId tree;
+    std::size_t nextOpener = 0;
+  };
+  const std::vector<TreeId> noOpeners;
+  const auto openersOf = [&](const TreeId& tree) -> const std::vector<TreeId>& {
+    const auto openers = openers_.find(tree);
+    return openers == openers_.end() ? noOpeners : openers->second;
+  };
+  std::map<TreeId, std::size_t> reachedAt;
+  std::map<TreeId, std::size_t> earliest;  // the earliest tree still unsettled that a tree's walk leads to
+  std::vector<TreeId> unsettled;
+  std::set<TreeId> isUnsettled;
+  std::vector<std::set<TreeId>> loops;
+  const auto reach = [&](const TreeId& tree, std::vector<Visit>& walk) {
+    const std::size_t order = reachedAt.size();
+    reachedAt[tree] = order;
+    earliest[tree] = order;
+    unsettled.push_back(tree);
+    isUnsettled.insert(tree);
+    walk.push_back({tree});
+  };
+  for (const auto& [start, unused] : standing_) {
+    if (reachedAt.count(start)) continue;
+    std::vector<Visit> walk;
+    reach(start, walk);
+    while (!walk.empty()) {
+      const TreeId tree = walk.back().tree;
+      const std::vector<TreeId>& openers = openersOf(tree);
+      if (walk.back().nextOpener < openers.size()) {
+        const TreeId& opener = openers[walk.back().nextOpener++];
+        if (!reachedAt.count(opener)) reach(opener, walk);
+        else if (isUnsettled.count(opener)) earliest[tree] = std::min(earliest[tree], reachedAt[opener]);
+        continue;
+      }
+      walk.pop_back();
+      if (!walk.empty()) earliest[walk.back().tree] = std::min(earliest[walk.back().tree], earliest[tree]);
+      if (earliest[tree] != reachedAt[tree]) continue;
+      // The tree is the earliest of what its walk reached and left unsettled: it and everything above it settle as one.
+      std::set<TreeId> settled;
+      TreeId member;
+      do {
+        member = unsettled.back();
+        unsettled.pop_back();
+        isUnsettled.erase(member);
+        settled.insert(member);
+      } while (member != tree);
+      if (settled.size() > 1 || standing_.at(tree).pointers.count(tree)) loops.push_back(std::move(settled));
+    }
+  }
+  return loops;
+}
+
 LatestMark OpenedTrees::completedAt(const TreeId& tree) const {
   const auto complete = complete_.find(tree);
   if (complete == complete_.end()) return {};

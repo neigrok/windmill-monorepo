@@ -164,6 +164,9 @@ public:
   std::vector<OpeningSteps> openersOf(const TreeId& tree) const;
   // The way back to `tree` from every standing tree that leads to it; none when `tree` does not stand.
   WaysBack waysBackTo(const TreeId& tree) const;
+  // The loops among the standing trees: each set of trees every one of which leads to every other, a tree that opens
+  // itself alone a set of one. A tree on no loop is in none of them.
+  std::vector<std::set<TreeId>> loops() const;
   // What is wrong with `pointers`, the tree each node of `tree` opens: the loops of trees through `tree` and the
   // pointers that are not valid. A loop among other trees that does not lead back to `tree` is theirs. It reads the
   // ways back once and steps along each listed path, so its work follows the account and the caps, not their product.

@@ -11,6 +11,7 @@
 #include "products/roadmap/application/TreeRegistry.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/LooseGraph.h"
+#include "products/roadmap/domain/SubtreeInventory.h"
 #include "test/PgTestPool.h"
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
@@ -1863,4 +1864,128 @@ TEST(pg_a_row_inserted_without_a_parent_is_its_own_root_at_depth_zero) {
          kParent.str() + "', 3)");
   CHECK_EQ(placeOf(kOther), "- - " + kOther.str() + " 0 " + kAda.str() + " private [Older image] 0");
   CHECK_EQ(placeOf(kGone), "- - " + kGone.str() + " 0 " + kAda.str() + " private [] 0");
+}
+
+// The read the subtree inventory counts: every account's standing trees, each with how many of its present steps open
+// each tree and whether that tree is the account's deleted one or someone else's, account after account across pages.
+TEST(pg_each_accounts_trees_reads_every_accounts_standing_trees_with_their_present_steps_pointers_once_per_account) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  const UserId mine{std::string("1a1a0000-0000-4000-8000-00000000a11a")};
+  const UserId theirs{std::string("2b2b0000-0000-4000-8000-00000000b22b")};
+  const UserId many{std::string("3c3c0000-0000-4000-8000-00000000c33c")};
+  const std::string missing = "t_00000000000000e9";
+  const auto clear = [] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("DELETE FROM tree_nodes WHERE tree_id LIKE 't\\_pginv\\_%'");
+    txn.exec("DELETE FROM trees WHERE id LIKE 't\\_pginv\\_%'");
+    txn.commit();
+  };
+  clear();
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    REQUIRE(txn.exec_params("SELECT 1 FROM trees WHERE id = $1", missing).empty());
+    const auto plant = [&](const std::string& tree, const UserId& owner, bool deleted) {
+      txn.exec_params("INSERT INTO trees (id, title, owner_id, deleted_at) "
+                      "VALUES ($1, 'Tree ' || $1, $2::uuid, CASE WHEN $3 THEN now() END)",
+                      tree, owner.str(), deleted);
+    };
+    const auto step = [&](const std::string& tree, const std::string& node, const std::string& opens, bool present) {
+      txn.exec_params("INSERT INTO tree_nodes (tree_id, node_id, created_hlc, label, opens, opens_hlc, present) "
+                      "VALUES ($1, $2, '1:0:r_a', 'Step', $3, '1:0:r_a', $4)",
+                      tree, node, opens, present);
+    };
+    plant("t_pginv_root", mine, false);
+    plant("t_pginv_child", mine, false);
+    plant("t_pginv_bare", mine, false);
+    plant("t_pginv_gone", mine, true);
+    plant("t_pginv_theirs", theirs, false);
+    plant("t_pginv_theirs_gone", theirs, true);
+    step("t_pginv_root", "twice-1", "t_pginv_child", true);
+    step("t_pginv_root", "twice-2", "t_pginv_child", true);
+    step("t_pginv_root", "at-deleted", "t_pginv_gone", true);
+    step("t_pginv_root", "at-theirs", "t_pginv_theirs", true);
+    step("t_pginv_root", "at-their-deleted", "t_pginv_theirs_gone", true);
+    step("t_pginv_root", "free-text", "piano lessons", true);
+    step("t_pginv_root", "at-missing", missing, true);
+    step("t_pginv_root", "deleted-step", "t_pginv_bare", false);
+    step("t_pginv_root", "plain", "", true);
+    step("t_pginv_child", "itself", "t_pginv_child", true);
+    step("t_pginv_gone", "from-a-deleted-tree", "t_pginv_bare", true);
+    step("t_pginv_theirs", "at-mine", "t_pginv_root", true);
+    txn.exec("INSERT INTO trees (id, title, owner_id) VALUES ('t_pginv_nobody', 'Nobody''s tree', NULL)");
+    step("t_pginv_nobody", "at-mine", "t_pginv_root", true);
+    txn.exec_params("INSERT INTO trees (id, title, owner_id) "
+                    "SELECT 't_pginv_many_' || g, 'Many', $1::uuid FROM generate_series(1, 1500) g",
+                    many.str());
+    txn.commit();
+  }
+
+  PgTreeRepository trees{pgTestPool()};
+  std::map<UserId, AccountTrees> read;
+  std::vector<UserId> visited;
+  bool nobodysTreeRead = false;
+  trees.eachAccountsTrees([&](const UserId& owner, const AccountTrees& account) {
+    visited.push_back(owner);
+    if (account.standing.count(TreeId{"t_pginv_nobody"})) nobodysTreeRead = true;
+    if (owner == mine || owner == theirs || owner == many) read.emplace(owner, account);
+  });
+
+  const auto id = [](const std::string& tree) { return TreeId{tree}; };
+  const AccountTrees expectedMine{
+      .standing = {{id("t_pginv_root"),
+                    {{id("t_pginv_child"), 2},
+                     {id("t_pginv_gone"), 1},
+                     {id("t_pginv_theirs"), 1},
+                     {id("t_pginv_theirs_gone"), 1},
+                     {id("piano lessons"), 1},
+                     {id(missing), 1}}},
+                   {id("t_pginv_child"), {{id("t_pginv_child"), 1}}},
+                   {id("t_pginv_bare"), {}}},
+      .deleted = {id("t_pginv_gone")},
+      .foreign = {id("t_pginv_theirs"), id("t_pginv_theirs_gone")}};
+  const AccountTrees expectedTheirs{.standing = {{id("t_pginv_theirs"), {{id("t_pginv_root"), 1}}}},
+                                    .foreign = {id("t_pginv_root")}};
+  REQUIRE_EQ(read.size(), 3u);
+  CHECK(read.at(mine) == expectedMine);
+  CHECK(read.at(theirs) == expectedTheirs);
+  CHECK_EQ(read.at(many).standing.size(), 1500u);
+  CHECK(std::set<UserId>(visited.begin(), visited.end()).size() == visited.size());
+  CHECK_FALSE(nobodysTreeRead);
+
+  // The answer the fakes give: two roots, the tree opened twice and by itself on a loop of one that two steps enter, and
+  // a step per way a pointer can fail.
+  SubtreeInventory counted;
+  counted.trees = 4;
+  counted.roots = 2;
+  counted.cycles = {
+      .trees = 1, .selfPointers = 1, .alsoMultiOpened = 1, .loops = {.one = 1}, .byEntries = {.twoOrMore = 1}};
+  counted.depthIfResolved = {.deepest = 1, .one = 1};
+  counted.dangling = {.missing = 1, .deleted = 1, .foreign = 2, .notATreeId = 1};
+  counted.accounts = {.withPointers = 1, .needingChoice = 1};
+  CHECK(inventory(read.at(mine)) == counted);
+
+  // Each tree's pointers are read by its key on tree_nodes_pointers_idx, with sequential scans off so a table of a few
+  // pages is not rightly read whole. A scan names the index it reads, a bitmap heap scan the index scans under it.
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("SET LOCAL enable_seqscan = off");
+    const pqxx::result explained =
+        txn.exec(std::string("EXPLAIN (FORMAT JSON) ") + PgTreeRepository::accountsTreesStatement());
+    std::set<std::string> nodeReads;
+    std::vector<std::pair<Json::Value, bool>> nodes{{parse(explained[0][0].as<std::string>())[0]["Plan"], false}};
+    while (!nodes.empty()) {
+      const auto [node, underNodes] = nodes.back();
+      nodes.pop_back();
+      const bool readsNodes = node["Relation Name"].asString() == "tree_nodes";
+      if (readsNodes || underNodes) nodeReads.insert(node.get("Index Name", node["Node Type"]).asString());
+      for (const Json::Value& child : node["Plans"])
+        nodes.push_back({child, readsNodes && node["Node Type"].asString() == "Bitmap Heap Scan"});
+    }
+    nodeReads.erase("Bitmap Heap Scan");
+    CHECK(nodeReads == std::set<std::string>{"tree_nodes_pointers_idx"});
+  }
+  clear();
 }
