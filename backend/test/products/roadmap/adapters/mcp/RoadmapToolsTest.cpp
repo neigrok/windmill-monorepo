@@ -6578,6 +6578,8 @@ TEST(mcp_a_mark_reads_and_writes_the_repositories_after_it_has_let_go_of_the_tre
 
 // Following is part of the marks: when they are the call its failure is the call's server failure, before any mark is
 // written; beside a tree op that landed it is the marks' own, told in the receipt; and it is made only where it is due.
+// An import's progress rows follow the same rule: the call's failure when its graft landed nothing, their own beside a
+// graft that landed.
 TEST(mcp_a_mark_whose_pointers_cannot_be_followed_fails_as_the_call_and_records_nothing) {
   Harness h;
   h.trees.byId["t"].visibility = Visibility::public_;
@@ -6593,6 +6595,8 @@ TEST(mcp_a_mark_whose_pointers_cannot_be_followed_fails_as_the_call_and_records_
   const ToolResult edited = gate.callTool("roadmap_update_nodes", parse(R"({"treeId":"t","updates":[
       {"nodeId":"idea","label":"Idea 2"},{"nodeId":"a","status":"complete"}]})"), h.actor);
   const ToolResult imported = gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t","nodes":[],"progress":[{"nodeId":"a","status":"complete"}]})"), h.actor);
+  const ToolResult grafted = gate.callTool("roadmap_import_subgraph", parse(R"({"treeId":"t","nodes":[{"id":"b","label":"B"}],
+      "progress":[{"nodeId":"a","status":"complete"}]})"), h.actor);
   installWriteSink({});
 
   CHECK(failed.isError);
@@ -6603,17 +6607,21 @@ TEST(mcp_a_mark_whose_pointers_cannot_be_followed_fails_as_the_call_and_records_
     "introducedDiagnostics":[],"progressApplied":false,
     "progressError":"The marks' outcome is uncertain. Read get_progress before retrying progress changes.",
     "seq":2,"treeId":"t","unchangedNodeIds":["a"]})"));
-  CHECK_FALSE(imported.isError);
-  CHECK(body(imported)["graphApplied"].asBool());
-  CHECK_FALSE(body(imported)["progressApplied"].asBool());
-  CHECK_EQ(body(imported)["progressError"].asString(),
+  CHECK(imported.isError);
+  CHECK_EQ(message(imported), std::string("import_subgraph: that call failed inside the server. The outcome may be uncertain; "
+                                          "read the affected records before retrying. The detail is in the server log."));
+  CHECK_FALSE(grafted.isError);
+  CHECK(body(grafted)["graphApplied"].asBool());
+  CHECK_FALSE(body(grafted)["progressApplied"].asBool());
+  CHECK_EQ(body(grafted)["progressError"].asString(),
            std::string("The graph committed, but the requested progress outcome is uncertain. Read get_progress before retrying progress changes."));
   CHECK(h.progressRepo.byKey.empty());
   CHECK(h.bus.progressBroadcasts.empty());
   std::vector<std::string> observed;
   for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
   CHECK_EQ(observed, (std::vector<std::string>{"mcp.roadmap_update_nodes failed", "roadmap.update_nodes.marks failed",
-                                               "mcp.roadmap_update_nodes ok", "mcp.roadmap_import_subgraph failed"}));
+                                               "mcp.roadmap_update_nodes ok", "mcp.roadmap_import_subgraph failed",
+                                               "roadmap.import.marks failed", "mcp.roadmap_import_subgraph ok"}));
   CHECK_EQ(body(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"),
                                  ToolCaller{uid("stranger"), ToolScope::everything()}))["progress"],
            parse(R"([{"nodeId":"a","status":"complete","prerequisitesMet":true}])"));
@@ -7100,6 +7108,69 @@ TEST(mcp_an_imports_failed_clear_is_reported_under_its_own_name) {
                                      typeid(std::runtime_error).name()}));
   CHECK_EQ(lines, (std::vector<std::string>{"roadmap.import.clear_marks failed", "mcp.roadmap_import_subgraph ok"}));
   CHECK_FALSE(h.registry.open(TreeId{"t"})->hasNode(NodeId{"a"}));
+}
+
+// An import's progress rows follow update_nodes' rule. Beside a graft that landed, a progress store that fails does not
+// fail the call: the reply says progressApplied: false, the import's own line is ok, and the failure is reported under
+// its own name — one failed line and one report, with the exception's type and nothing of the rows. When the graft
+// landed nothing the rows are the call, and their failure is the call's: an error reply, the import's own line failed
+// and the report under the tool's name, with no line of their own. Rows that land leave no line of their own, and a row
+// refused on a node that opens a tree is a refusal, told in the reply and by its outcome code, not a failure.
+TEST(mcp_an_imports_failed_progress_rows_are_their_own_failure_beside_a_graft_that_landed_and_the_calls_without_one) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  h.plant("t_sub", h.caller, "", {});
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line.operation + " " + line.outcome); });
+  const auto imported = [&](const char* arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = "t";
+    return gate.callTool("roadmap_import_subgraph", args, h.actor);
+  };
+
+  h.progressRepo.writesFail = true;
+  const ToolResult besideAGraft = imported(R"({"nodes":[{"id":"a","label":"A"},{"id":"door","label":"Door","opens":"t_sub"}],
+    "progress":[{"nodeId":"a","status":"complete"}]})");
+  const ToolResult alone = imported(R"({"nodes":[{"id":"a"}],"progress":[{"nodeId":"a","status":"complete"}]})");
+  h.progressRepo.writesFail = false;
+  const ToolResult landed = imported(R"({"nodes":[{"id":"a"}],"progress":[{"nodeId":"a","status":"complete"}]})");
+  const ToolResult refused = imported(R"({"nodes":[{"id":"a"}],"progress":[{"nodeId":"door","status":"complete"}]})");
+  installWriteSink({});
+
+  CHECK_FALSE(besideAGraft.isError);
+  CHECK_EQ(body(besideAGraft)["graphApplied"], Json::Value(true));
+  CHECK_EQ(body(besideAGraft)["progressApplied"], Json::Value(false));
+  CHECK_EQ(body(besideAGraft)["progressError"],
+           Json::Value("The graph committed, but the requested progress outcome is uncertain. Read get_progress before "
+                       "retrying progress changes."));
+  CHECK(alone.isError);
+  CHECK_EQ(message(alone), std::string("import_subgraph: that call failed inside the server. The outcome may be uncertain; "
+                                       "read the affected records before retrying. The detail is in the server log."));
+  CHECK_EQ(body(landed)["progressApplied"], Json::Value(true));
+  CHECK_EQ(body(refused)["progressApplied"], Json::Value(false));
+  CHECK_EQ(body(refused)["progressRefused"], parse(R"(["door"])"));
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{
+               std::string("roadmap.import.marks roadmap mcp failed ") + typeid(std::runtime_error).name(),
+               std::string("mcp.roadmap_import_subgraph roadmap mcp failed ") + typeid(std::runtime_error).name()}));
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.import.marks failed", "mcp.roadmap_import_subgraph ok",
+                                            "mcp.roadmap_import_subgraph failed", "mcp.roadmap_import_subgraph ok",
+                                            "mcp.roadmap_import_subgraph opens-a-tree"}));
+  CHECK(h.registry.open(TreeId{"t"})->hasNode(NodeId{"a"}));
+  CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["a"],"outOfOrder":[]})"));
 }
 
 // A mark the caller's own replica stamped ahead of the server is overwritten and cleared just after its stamp — a node
