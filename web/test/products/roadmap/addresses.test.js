@@ -33,6 +33,13 @@ test('the shared vector holds every form for a roadmap you own and one you can o
   );
 });
 
+test('the dev server is pinned to the port of the origin a local backend hands addresses out on', () => {
+  const config = readFileSync(new URL('../../../vite.config.js', import.meta.url), 'utf8');
+  const pinned = config.match(/server:\s*\{\s*port:\s*(\d+)/);
+  assert.notEqual(pinned, null);
+  assert.equal(`http://localhost:${pinned[1]}`, VECTOR.localOrigin);
+});
+
 for (const one of VECTOR.cases) {
   test(`${one.why} — ${one.address}`, () => {
     const at = locationOf(one.address);

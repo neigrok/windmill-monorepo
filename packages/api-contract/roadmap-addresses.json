@@ -1,5 +1,6 @@
 {
-  "note": "Where a roadmap and its steps open on the web: each address is what follows the app's origin. The backend builds every case (backend/products/roadmap/domain/WebAddress), and the web proves its router opens each one (web/test/products/roadmap/addresses.test.js). A tree id is always t_ plus 16 lowercase hex, so it is written as it is; a step id is encoded as encodeURIComponent does. A case with no nodeId is the roadmap's own address.",
+  "note": "Where a roadmap and its steps open on the web: each address is what follows the app's origin. The backend builds every case (backend/products/roadmap/domain/WebAddress), and the web proves its router opens each one (web/test/products/roadmap/addresses.test.js). A tree id is always t_ plus 16 lowercase hex, so it is written as it is; a step id is encoded as encodeURIComponent does. A case with no nodeId is the roadmap's own address. localOrigin is the origin a local stack serves the app on: the backend hands out addresses on it when WINDMILL_APP_URL is unset (backend/platform/infra/AppOrigin.h), and the web's dev server is pinned to its port (web/vite.config.js).",
+  "localOrigin": "http://localhost:5173",
   "cases": [
     {"why": "your own roadmap opens in the app", "treeId": "t_9362d9bc883e0a1e", "yours": true, "address": "/#/app/t_9362d9bc883e0a1e"},
     {"why": "a roadmap you can only read opens on its share page", "treeId": "t_9362d9bc883e0a1e", "yours": false, "address": "/t/t_9362d9bc883e0a1e"},

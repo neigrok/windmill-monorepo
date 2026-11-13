@@ -7,12 +7,13 @@
 
 namespace wm {
 
-// The app's public origin, which every link a person opens starts with: WINDMILL_APP_URL, or the local web app, with
-// any '/' it ends with dropped. Each composition root reads it here, so the server and both MCP transports hand out
-// the same addresses, and no link built on it doubles a '/'.
+// The app's public origin, which every link a person opens starts with: WINDMILL_APP_URL, or the local web app — the
+// origin packages/api-contract/roadmap-addresses.json names, whose port web/vite.config.js pins its dev server to —
+// with any '/' it ends with dropped. Each composition root reads it
+// here, so the server and both MCP transports hand out the same addresses, and no link built on it doubles a '/'.
 inline std::string appOriginFromEnvironment() {
   const char* configured = std::getenv("WINDMILL_APP_URL");
-  return normalizedOrigin(configured ? configured : "http://localhost:5183");
+  return normalizedOrigin(configured ? configured : "http://localhost:5173");
 }
 
 }
