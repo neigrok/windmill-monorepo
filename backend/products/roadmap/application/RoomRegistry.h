@@ -96,7 +96,7 @@ private:
   std::shared_ptr<RootAccess> liveRootAccess(const TreeId& root);
   // The live rooms of `root`'s trees, the root's own among them.
   std::vector<TreeId> roomsUnder(const TreeId& root) const;
-  // A leaf lock per root: taken under a strand, never the other way round, and nothing is taken under it.
+  // One lock per root: taken under a strand, never the other way round, and only mutex_ is taken under it.
   std::mutex& rootLockFor(const TreeId& root);
 
   static constexpr std::size_t kStrandStripes = 64;
