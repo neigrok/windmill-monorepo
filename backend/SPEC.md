@@ -20,8 +20,8 @@ rejected for structure. Validity is a read model, not a gate.
   carries it as `opens` and omits it when empty; a lattice entry carries `opens` and `opensAt`. The
   room, the socket and `PUT` hold a write to the id length and to nothing about its target, so a
   pointer may name a tree that is absent, deleted or someone else's. The MCP door is stricter: every
-  non-empty `opens` a `create_node`, `annotate_node`, `patch_nodes`, `update_nodes` or `import_subgraph` call carries
-  must name a tree that stands and is the caller's (`TreeRepository::titlesOwnedBy`, one read for
+  non-empty `opens` a `create_node`, `update_nodes` or `import_subgraph` call carries must name a
+  tree that stands and is the caller's (`TreeRepository::titlesOwnedBy`, one read for
   the whole call), or the call is refused with nothing written, in one sentence for a tree that is
   not there and for someone else's. A node may open the tree it is in. A tree id is the read
   capability of an unlisted tree, so only a caller who can write the tree receives the pointer:
@@ -104,7 +104,7 @@ rejected for structure. Validity is a read model, not a gate.
   that caller, and nobody else, the nodes that open a tree (`TreeRoom::pointersFor`); `following`
   names the ones whose pointer is valid, and `ProgressService::mark`, which both doors that write
   progress call, leaves a mark on one of them, `complete` or `none`, out of the write and answers it
-  refused under the code `opens-a-tree`: MCP `set_progress` and the `progress[]` of an
+  refused under the code `opens-a-tree`: MCP `update_nodes` and the `progress[]` of an
   `import_subgraph` say so (`adapters/mcp/README.md`), and a socket `progress` frame's ack lists it
   (WebSocket surface). The other marks of the call are recorded, and each `prerequisitesMet` is
   judged on the `followed` set, so a step behind such a node is met when the opened tree is
@@ -113,7 +113,7 @@ rejected for structure. Validity is a read model, not a gate.
   a caller who cannot write the tree the same mark is an ordinary one: recorded, answered exactly as
   on a node that opens nothing, and judged on their own marks.
 - The domain is fed two ways. A read of one tree (`get_tree`, `get_nodes`, `find_nodes`,
-  `GET /v1/trees/{id}`) takes the tree from its live room, a progress write (`set_progress`, the
+  `GET /v1/trees/{id}`) takes the tree from its live room, a progress write (`update_nodes`, the
   `progress[]` of an `import_subgraph`, a socket `progress` frame) only its nodes that open a tree,
   and each asks `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and
   is the owner's and every such tree their pointers lead to: one statement over `trees`,
@@ -132,7 +132,7 @@ rejected for structure. Validity is a read model, not a gate.
   after the strand is released, for a caller who can write the tree and a tree that holds a pointer,
   and not for an MCP call that sends `includePointers: false`; under the strand they take the tree's
   pointers alone (`LooseGraph::pointers`). An MCP edit that changes the tree a node opens to a tree
-  (`create_node`, `annotate_node`, `patch_nodes`, `update_nodes` or `import_subgraph`) makes it once
+  (`create_node`, `update_nodes` or `import_subgraph`) makes it once
   more, after the edit is saved and the strand is released, starting from the trees those nodes now
   open (`pointersSetSince`) and under a budget of its own, 750 ms, in place of the pool's statement
   limit: its receipt names in `introducedDiagnostics`, after the graph's errors and within that
@@ -223,8 +223,9 @@ advisory: the mark is recorded either way and the outcome reports `prerequisites
 can warn. It reads the completed set `UnlockRules::derive` is handed: the caller's marks, or for the
 tree's writer `OpenedTrees::followed`. `outOfOrder` is the marker's word that the inversion was
 meant; it is part of the status value under the same stamp, so a later mark on the node carries its
-own word or none. Only the MCP `set_progress` sets it today — a socket `progress` frame lands it
-false. Progress therefore never depends on the tree being a valid DAG.
+own word or none. Only an MCP mark sets it — an `update_nodes` row or an `import_subgraph` progress
+row; a socket `progress` frame lands it false. Progress therefore never depends on the tree being a
+valid DAG.
 
 ## Convergence
 

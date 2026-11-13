@@ -81,19 +81,10 @@ std::string slugify(const std::string& label) {
 
 std::optional<std::string> commandKindFor(const std::string& tool) {
   if (tool == "create_node")    return "CreateNode";
-  if (tool == "annotate_node")  return "AnnotateNode";
-  if (tool == "rename_node")    return "RenameNode";
-  if (tool == "set_node_color") return "SetNodeColor";
-  if (tool == "move_node")      return "RepositionNode";
   if (tool == "tidy")           return "TransitiveReduction";
   if (tool == "add_kind")       return "AddKind";
   if (tool == "remove_kind")    return "RemoveKind";
   return std::nullopt;
-}
-
-bool namesAnExistingNode(const std::string& tool) {
-  return tool == "annotate_node" || tool == "rename_node" || tool == "set_node_color" ||
-         tool == "move_node";
 }
 
 bool namesAnExistingKind(const std::string& tool) {
@@ -124,13 +115,13 @@ Json::Value progressStatusArgument(const Json::Value& value) {
 }
 
 // Each register an imported node or kind may leave out, by its name on this surface: a node's
-// `seedStatus` is the document's `status`.
+// `seedStatus` is the document's `status`. A node's position is not on this surface, so every
+// imported node leaves it out and keeps the one it holds.
 constexpr std::pair<const char*, NodeRegister> kImportedNodeRegisters[] = {
-    {"label", NodeRegister::label},       {"icon", NodeRegister::icon},
-    {"color", NodeRegister::color},       {"order", NodeRegister::order},
-    {"position", NodeRegister::position}, {"seedStatus", NodeRegister::status},
-    {"description", NodeRegister::description}, {"links", NodeRegister::links},
-    {"opens", NodeRegister::opens}};
+    {"label", NodeRegister::label},             {"icon", NodeRegister::icon},
+    {"color", NodeRegister::color},             {"order", NodeRegister::order},
+    {"seedStatus", NodeRegister::status},       {"description", NodeRegister::description},
+    {"links", NodeRegister::links},             {"opens", NodeRegister::opens}};
 constexpr std::pair<const char*, KindRegister> kImportedKindRegisters[] = {
     {"label", KindRegister::label},
     {"description", KindRegister::description},
@@ -164,8 +155,6 @@ std::optional<std::string> checkImportedNode(const Json::Value& node, const std:
   if (std::optional<std::string> bad = optionalString(node["order"], path + ".order")) return bad;
   if (std::optional<std::string> bad = optionalStrings(node["prerequisites"], path + ".prerequisites", kMaxIdLength))
     return bad;
-  if (!node["position"].isNull())
-    if (std::optional<std::string> bad = requirePosition(node["position"], path)) return bad;
   if (std::optional<std::string> bad = optionalString(node["opens"], path + ".opens", kMaxIdLength)) return bad;
   return checkAnnotation(node, path + ".");
 }
@@ -252,11 +241,6 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
   // Read through the const overload: jsoncpp's mutable operator[] CREATES the member it probes.
   const Json::Value& args = payload;
 
-  if (namesAnExistingNode(tool)) {
-    std::string node;
-    if (std::optional<std::string> bad = requireHandle(args, kNodeHandle, "", node)) return bad;
-    payload["id"] = node;
-  }
   if (namesAnExistingKind(tool)) {
     std::string kind;
     if (std::optional<std::string> bad = requireHandle(args, kKindHandle, "", kind)) return bad;
@@ -276,47 +260,11 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
       return bad;
     if (std::optional<std::string> bad = optionalString(args["parentId"], "parentId", kMaxIdLength))
       return bad;
-    if (std::optional<std::string> bad = optionalNumber(args["x"], "x")) return bad;
-    if (std::optional<std::string> bad = optionalNumber(args["y"], "y")) return bad;
-    if (args["x"].isNull() != args["y"].isNull())
-      return "arguments \"x\" and \"y\" go together — a position needs both.";
     if (std::optional<std::string> bad = optionalString(args["opens"], "opens", kMaxIdLength)) return bad;
     // A created node opens the tree this call names and no other: the pointer is always written, so
     // an id a deleted node held brings none of that node's pointer back.
     if (args["opens"].isNull()) payload["opens"] = "";
     return checkAnnotation(args, "");
-  }
-  if (tool == "annotate_node") {
-    if (args["description"].isNull() && args["appendDescription"].isNull() && args["icon"].isNull() &&
-        args["links"].isNull() && args["addLinks"].isNull() && args["opens"].isNull())
-      return "nothing to set — pass at least one of \"description\", \"appendDescription\", \"icon\", "
-             "\"links\", \"addLinks\", \"opens\".";
-    if (!args["description"].isNull() && !args["appendDescription"].isNull())
-      return "\"description\" and \"appendDescription\" are both given — pass one: description "
-             "replaces the body, appendDescription joins onto it.";
-    if (!args["links"].isNull() && !args["addLinks"].isNull())
-      return "\"links\" and \"addLinks\" are both given — pass one: links replaces the set, addLinks "
-             "joins onto it.";
-    if (args["addLinks"].isArray() && args["addLinks"].empty())
-      return "addLinks, when sent, names at least one link — leave it out to keep the node's links as they are";
-    if (std::optional<std::string> bad = optionalLinks(args["addLinks"], "addLinks")) return bad;
-    if (std::optional<std::string> bad = optionalString(args["appendDescription"], "appendDescription"))
-      return bad;
-    if (std::optional<std::string> bad = optionalString(args["icon"], "icon")) return bad;
-    if (std::optional<std::string> bad = optionalString(args["opens"], "opens", kMaxIdLength)) return bad;
-    return checkAnnotation(args, "");
-  }
-  if (tool == "rename_node") return requireString(args["label"], "label", Empty::allowed);
-  if (tool == "set_node_color") {
-    if (args["color"].isNull() && args["kind"].isNull())
-      return "missing required argument \"color\" or \"kind\" — the hue the node takes, or the legend kind "
-             "whose hue it takes";
-    if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues)) return bad;
-    return optionalKind(args["kind"], "kind");
-  }
-  if (tool == "move_node") {
-    if (std::optional<std::string> bad = requireNumber(args["x"], "x")) return bad;
-    return requireNumber(args["y"], "y");
   }
   if (tool == "add_kind") {
     if (!args[kKindHandle.alias].isNull())
@@ -673,31 +621,19 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
       payload["id"] = id;
     }
 
-    // The domain refuses the same edit (validate's `present` gate); this is where the next move is
-    // added to the sentence, the way delete_node's refusal carries it.
-    if (namesAnExistingNode(tool) && !room.hasNode(NodeId{payload["id"].asString()}))
-      return ToolResult::failure("no node in this tree is named \"" + payload["id"].asString() + "\"" +
-                                 ". " + kNodeHandle.hint);
-
-    // The links this write sends, judged against the ones the node holds: only the urls it brings are its word. A
-    // node being created holds none, whatever a deleted node under its id held.
-    if (payload.isMember("links") || payload.isMember("addLinks")) {
-      const NodeId node{payload["id"].asString()};
-      const auto links = payload.isMember("addLinks")
-                             ? room.withLinksAdded(node, linksFromJson(payload["addLinks"]), "addLinks")
-                             : tool == "create_node" ? shownLinks({}, linksFromJson(payload["links"]), "links")
-                                                     : room.shownLinks(node, linksFromJson(payload["links"]), "links");
+    // The links a created node is sent are judged as a node holding none: whatever a deleted node under its id held is
+    // not its word.
+    if (payload.isMember("links")) {
+      const auto links = shownLinks({}, linksFromJson(payload["links"]), "links");
       if (const auto* refusal = std::get_if<std::string>(&links)) return ToolResult::failure(*refusal);
       payload["links"] = linksToJson(std::get<std::vector<Link>>(links));
     }
 
-    const bool setsHue = tool == "create_node" || tool == "set_node_color";
+    const bool setsHue = tool == "create_node";
     if (setsHue && payload.isMember("kind")) {
       HueChoice choice{parseColor(payload.get("color", "").asString()), KindId{payload["kind"].asString()}};
       // A node being created holds no colour that could be an echo beside its kind.
-      const std::optional<NodeId> node =
-          tool == "set_node_color" ? std::optional(NodeId{payload["id"].asString()}) : std::nullopt;
-      const auto hue = room.resolveHue(choice, node, "");
+      const auto hue = room.resolveHue(choice, std::nullopt, "");
       if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return kindRefused(*refusal);
       payload["color"] = std::string(toString(*std::get<std::optional<NodeColor>>(hue)));
     }
@@ -711,39 +647,28 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     std::vector<OpenedTree> opened;
     if (const CreateNode* created = std::get_if<CreateNode>(&*command); created && created->opens)
       opened.emplace_back("opens", *created->opens);
-    if (const AnnotateNode* annotated = std::get_if<AnnotateNode>(&*command); annotated && annotated->opens)
-      opened.emplace_back("opens", *annotated->opens);
     if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
 
-    // A single-node edit lands only the fields that differ from what the node holds; one that changes nothing writes
-    // nothing — no seq, no op row, no frame, no save — and answers the head the tree stands at, and says so.
-    const std::optional<Command> landed =
-        namesAnExistingNode(tool) ? room.changedPart(NodeId{payload["id"].asString()}, *command) : command;
-
-    // Bracketed under the strand, so whatever the tree gains between these reads, this gained.
+    // A create, a tidy and a kind's addition or removal land whole. Bracketed under the strand, so whatever the tree
+    // gains between these reads, this gained.
     std::optional<std::map<NodeId, TreeId>> pointersBefore;
-    if (landed && opensATree(opened)) pointersBefore = room.pointers();
+    if (opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
-    Seq seq = room.head();
-    if (landed) {
-      seq = room.applyCommand(*landed, clock.nowMs(), actor);
-      registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
-    }
+    const Seq seq = room.applyCommand(*command, clock.nowMs(), actor);
+    registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
     const TreeDiagnostics after = room.diagnose();
     if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
 
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
-    if (!landed) out["unchanged"] = true;
     answerDiagnostics(before, after, out);
     if (payload.isMember("id")) out["id"] = payload["id"];
     // A write that named its kind wears it, as resolveHue just said; one that named none is answered
     // from the hue join, for the hue its command landed.
     if (setsHue && payload.isMember("kind")) out["kind"] = payload["kind"];
     if (setsHue && !payload.isMember("kind")) {
-      const NodeColor hue = std::holds_alternative<CreateNode>(*command) ? std::get<CreateNode>(*command).color
-                                                                          : std::get<SetNodeColor>(*command).color;
+      const NodeColor hue = std::get<CreateNode>(*command).color;
       const std::map<NodeColor, KindId> worn = kindByHue(room.kinds());
       if (worn.count(hue)) out["kind"] = worn.at(hue).str();
     }
@@ -824,7 +749,7 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
     }
     pointers = room->pointersFor(user);
   }
-  // set_progress rejects an unknown id; an import skips it into `skipped`, its graft landed.
+  // update_nodes rejects an unknown id; an import skips it into `skipped`, its graft landed.
   if (rejectUnknown && !batch.skipped.empty()) {
     std::string names;
     for (const Json::Value& id : batch.skipped) { if (!names.empty()) names += ", "; names += id.asString(); }
@@ -901,10 +826,10 @@ ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Va
 }
 
 // One progress row as a write sends it: `nodeId` (or the legacy `id`), `status`, and `outOfOrder`, a word about a
-// completion that rides only a `complete` status. set_progress, single or bulk, and an import's progress rows read a
-// row by this, so each takes the same checks; `path` names the row in a refusal ("" for set_progress's flat form).
+// completion that rides only a `complete` status. An update_nodes row and an import's progress row are read by this,
+// so each takes the same checks; `path` names the row in a refusal.
 std::variant<RequestedMark, std::string> readMark(const Json::Value& row, const std::string& path) {
-  const std::string field = path.empty() ? "" : path + ".";
+  const std::string field = path + ".";
   std::string node;
   if (std::optional<std::string> bad = requireHandle(row, kNodeHandle, path, node)) return *bad;
   if (std::optional<std::string> bad = requireOneOf(progressStatusArgument(row["status"]), field + "status", kStatuses))
@@ -918,30 +843,25 @@ std::variant<RequestedMark, std::string> readMark(const Json::Value& row, const 
   return RequestedMark{NodeId{node}, status, outOfOrder};
 }
 
-// patch_nodes, update_nodes and change_edges: a batch of rows planned against the room and landed as ONE op, or not at
-// all. update_nodes is patch_nodes grown: its rows also append to a description or to the links, and carry the caller's
-// own mark, which lands after the tree fields, as an import's progress lands after its graft, and asks only that the
-// caller can read the tree; it moves no node.
+// update_nodes and change_edges: a batch of rows planned against the room and landed as ONE op, or not at all. An
+// update_nodes row edits an existing node and carries the caller's own mark, which lands after the tree fields, as an
+// import's progress lands after its graft, and asks only that the caller can read the tree.
 ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& edits, const TreeId& tree,
                           const std::string& name, const Json::Value& args, Clock& clock, const UserId& actor) {
   if (std::optional<std::string> bad = optionalBool(args["dryRun"], "dryRun")) return ToolResult::failure(*bad);
   if (std::optional<std::string> bad = checkExpectedSeq(args)) return ToolResult::failure(*bad);
 
-  const bool grown = name == "update_nodes";
+  const bool nodes = name == "update_nodes";
   std::vector<NodePatch> patches;
   std::vector<NodeId> rows;           // every row's node, in input order
   std::vector<RequestedMark> marks;   // update_nodes' marks, in input order
   std::vector<OpenedTree> opened;
   EdgeChanges edges;
-  if (name == "patch_nodes" || grown) {
+  if (nodes) {
     if (std::optional<std::string> bad = requireObjects(args["updates"], "updates", kMaxPatchNodes))
       return ToolResult::failure(*bad);
-    const std::vector<const char*> texts = grown ? std::vector<const char*>{"label", "icon", "description", "appendDescription"}
-                                                 : std::vector<const char*>{"label", "icon", "description"};
-    const std::vector<const char*> treeFields = grown
-        ? std::vector<const char*>{"label", "color", "kind", "description", "appendDescription", "icon", "links",
-                                   "addLinks", "opens"}
-        : std::vector<const char*>{"label", "color", "kind", "description", "icon", "position", "links", "opens"};
+    const std::vector<const char*> treeFields = {"label", "color", "kind", "description", "appendDescription", "icon",
+                                                 "links", "addLinks", "opens"};
     std::set<std::string> named;
     for (Json::ArrayIndex i = 0; i < args["updates"].size(); ++i) {
       const Json::Value& row = args["updates"][i];
@@ -949,31 +869,29 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       if (std::optional<std::string> bad = requireString(row["nodeId"], path + ".nodeId", Empty::rejected, kMaxIdLength))
         return ToolResult::failure(*bad);
       // A mark-only row is planned by no patch, so update_nodes refuses a repeated node here, as the plan words it.
-      if (grown && !named.insert(row["nodeId"].asString()).second)
+      if (!named.insert(row["nodeId"].asString()).second)
         return ToolResult::failure("updates repeats nodeId " + quotedList({row["nodeId"].asString()}));
-      for (const char* field : texts) {
+      for (const char* field : {"label", "icon", "description", "appendDescription"}) {
         if (!row.isMember(field)) continue;
         if (std::optional<std::string> bad = requireString(row[field], path + "." + field, Empty::allowed))
           return ToolResult::failure(*bad);
       }
-      if (grown && row.isMember("description") && row.isMember("appendDescription"))
+      if (row.isMember("description") && row.isMember("appendDescription"))
         return ToolResult::failure(path + ": \"description\" and \"appendDescription\" are both given — pass one: "
                                    "description replaces the body, appendDescription joins onto it.");
-      if (grown && row.isMember("links") && row.isMember("addLinks"))
+      if (row.isMember("links") && row.isMember("addLinks"))
         return ToolResult::failure(path + ": \"links\" and \"addLinks\" are both given — pass one: links replaces "
                                    "the set, addLinks joins onto it.");
       if (row.isMember("color"))
         if (std::optional<std::string> bad = requireOneOf(row["color"], path + ".color", kHues))
           return ToolResult::failure(*bad);
       if (std::optional<std::string> bad = optionalKind(row["kind"], path + ".kind")) return ToolResult::failure(*bad);
-      if (!grown && row.isMember("position"))
-        if (std::optional<std::string> bad = requirePosition(row["position"], path)) return ToolResult::failure(*bad);
       for (const char* field : {"links", "addLinks"}) {
-        if (!row.isMember(field) || (!grown && std::string_view(field) == "addLinks")) continue;
+        if (!row.isMember(field)) continue;
         if (!row[field].isArray()) return ToolResult::failure(path + "." + field + " must be an array");
         if (std::optional<std::string> bad = optionalLinks(row[field], path + "." + field)) return ToolResult::failure(*bad);
       }
-      if (grown && row["addLinks"].isArray() && row["addLinks"].empty())
+      if (row["addLinks"].isArray() && row["addLinks"].empty())
         return ToolResult::failure(path + ".addLinks, when sent, names at least one link — leave it out to keep the "
                                    "node's links as they are");
       if (row.isMember("opens"))
@@ -986,11 +904,9 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       if (row.isMember("description")) patch.description = row["description"].asString();
       if (row.isMember("color")) patch.hue.color = parseColor(row["color"].asString());
       if (row["kind"].isString()) patch.hue.kind = KindId{row["kind"].asString()};
-      if (!grown && row.isMember("position"))
-        patch.position = Vec2{row["position"]["x"].asDouble(), row["position"]["y"].asDouble()};
       if (row.isMember("links")) patch.links = linksFromJson(row["links"]);
-      if (grown && row.isMember("appendDescription")) patch.appendDescription = row["appendDescription"].asString();
-      if (grown && row.isMember("addLinks")) patch.addLinks = linksFromJson(row["addLinks"]);
+      if (row.isMember("appendDescription")) patch.appendDescription = row["appendDescription"].asString();
+      if (row.isMember("addLinks")) patch.addLinks = linksFromJson(row["addLinks"]);
       if (row.isMember("opens")) {
         patch.opens = TreeId{row["opens"].asString()};
         opened.emplace_back(path + ".opens", *patch.opens);
@@ -999,17 +915,17 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       // where it may be left out (`kind`, `outOfOrder`), as its read takes it.
       bool carriesTree = false;
       for (const char* field : treeFields) carriesTree = carriesTree || !row[field].isNull();
-      const bool carriesMark = grown && (!row["status"].isNull() || !row["outOfOrder"].isNull());
+      const bool carriesMark = !row["status"].isNull() || !row["outOfOrder"].isNull();
       if (carriesMark) {
         std::variant<RequestedMark, std::string> mark = readMark(row, path);
         if (const auto* bad = std::get_if<std::string>(&mark)) return ToolResult::failure(*bad);
         marks.push_back(std::get<RequestedMark>(std::move(mark)));
       }
-      if (grown && !carriesTree && !carriesMark)
+      if (!carriesTree && !carriesMark)
         return ToolResult::failure(path + " sets nothing — pass at least one of label, color, kind, description, "
                                    "appendDescription, icon, links, addLinks, opens, status.");
       rows.push_back(patch.nodeId);
-      if (!grown || carriesTree) patches.push_back(std::move(patch));
+      if (carriesTree) patches.push_back(std::move(patch));
     }
   } else {
     for (const char* field : {"add", "remove"}) {
@@ -1036,7 +952,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     if (!canRead(actor, room.owner(), room.visibility()))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     // Marks alone write the caller's own overlay, which reading the tree is enough for; every other field is the owner's.
-    if (!grown || !patches.empty())
+    if (!nodes || !patches.empty())
       if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
         return ToolResult::failure(writeRefusalSentence(*refusal));
     if (std::optional<std::string> stale = staleExpectedSeq(args, room)) return ToolResult::failure(*stale);
@@ -1046,6 +962,13 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     Json::Value out(Json::objectValue);
     out["treeId"] = tree.str();
     if (name != "change_edges") {
+      // Every row names a node the tree holds, whatever it carries; refused here, naming each, so a refused call lands
+      // nothing.
+      std::vector<std::string> missing;
+      for (const NodeId& node : rows)
+        if (!room.hasNode(node)) missing.push_back(node.str());
+      if (!missing.empty())
+        return ToolResult::failure("no node in this tree is named " + quotedList(missing) + ". " + kNodeHandle.hint);
       std::set<NodeId> changed;
       // Rows that carry only marks plan no patch; every other batch is planned, an empty one included, so the planner
       // refuses it in its own words.
@@ -1059,12 +982,6 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
         landsNothing = plan.landsNothing();
         changed.insert(plan.changedNodeIds.begin(), plan.changedNodeIds.end());
       }
-      // A mark names a node the tree holds, as set_progress's do; refused here, so a refused call lands nothing.
-      std::vector<std::string> missing;
-      for (const RequestedMark& mark : marks)
-        if (!room.hasNode(mark.node)) missing.push_back(mark.node.str());
-      if (!missing.empty())
-        return ToolResult::failure("no node in this tree is named " + quotedList(missing) + ". " + kNodeHandle.hint);
       out["changedNodeIds"] = Json::Value(Json::arrayValue);
       out["unchangedNodeIds"] = Json::Value(Json::arrayValue);
       for (const NodeId& node : rows) out[changed.count(node) ? "changedNodeIds" : "unchangedNodeIds"].append(node.str());
@@ -1114,15 +1031,14 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
   });
   edited = withClosedLoops(trees, actor, tree, pointerEdit, edited);
   // update_nodes' marks land after its tree fields, judged against the overlay as the whole call leaves it. A mark on a
-  // node that follows the tree it opens is refused there, as set_progress refuses it.
+  // node that follows the tree it opens is refused there, row by row.
   if (!edited.isError && !dryRun && !marks.empty()) {
     Json::Value receipt = edited.payload;
     bool cameToARefusal = false;
     const auto applyMarks = [&] { return applyProgressBatch(registry, edits, tree, clock, actor, marks, true); };
     if (!treeLanded) {
-      // No tree op landed, so the marks are the call: a refusal or a failure of theirs is the call's, as set_progress's
-      // is, and a call that recorded no mark because each was refused on a node that opens a tree completes as
-      // set_progress's batch does then.
+      // No tree op landed, so the marks are the call: a refusal or a failure of theirs is the call's, and a call that
+      // recorded no mark because each was refused on a node that opens a tree completes as opens-a-tree.
       const std::variant<MarkedBatch, std::string> applied = applyMarks();
       if (const std::string* error = std::get_if<std::string>(&applied)) return ToolResult::failure(*error);
       const MarkedBatch& batch = std::get<MarkedBatch>(applied);
@@ -1151,55 +1067,6 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
   }
   edited.structured = edited.payload;
   return edited;
-}
-
-ToolResult writeProgress(RoomRegistry& registry, NodeEdits& edits, const TreeId& tree, const Json::Value& args,
-                         Clock& clock, const UserId& user) {
-  const bool single = !args[kNodeHandle.published].isNull() || !args[kNodeHandle.alias].isNull();
-  const bool bulk = !args["updates"].isNull();
-  if (!single && !bulk)
-    return ToolResult::failure(
-        "missing required argument \"nodeId\" (or an \"updates\" batch of {nodeId, status}). "
-        "Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.");
-  if (single && bulk)
-    return ToolResult::failure(
-        "pass a single \"nodeId\"+\"status\" or an \"updates\" batch, not both — the single mark "
-        "would be dropped.");
-
-  std::vector<RequestedMark> requested;
-  if (bulk) {
-    if (std::optional<std::string> bad = requireObjects(args["updates"], "updates", kMaxProgressUpdates))
-      return ToolResult::failure(*bad);
-    for (Json::ArrayIndex i = 0; i < args["updates"].size(); ++i) {
-      std::variant<RequestedMark, std::string> mark = readMark(args["updates"][i], "updates[" + std::to_string(i) + "]");
-      if (const auto* bad = std::get_if<std::string>(&mark)) return ToolResult::failure(*bad);
-      requested.push_back(std::get<RequestedMark>(std::move(mark)));
-    }
-    if (requested.empty()) return ToolResult::failure("argument \"updates\" is an empty list — pass "
-                                                      "at least one {nodeId, status} to mark.");
-  } else {
-    std::variant<RequestedMark, std::string> mark = readMark(args, "");
-    if (const auto* bad = std::get_if<std::string>(&mark)) return ToolResult::failure(*bad);
-    requested.push_back(std::get<RequestedMark>(std::move(mark)));
-  }
-
-  const std::variant<MarkedBatch, std::string> applied =
-      applyProgressBatch(registry, edits, tree, clock, user, requested, true);
-  if (const std::string* error = std::get_if<std::string>(&applied)) return ToolResult::failure(*error);
-  const MarkedBatch& batch = std::get<MarkedBatch>(applied);
-  // A singular call answers its one mark flat, {nodeId, status, prerequisitesMet, acknowledged?, unchanged?}, or fails on
-  // its refusal.
-  if (!bulk && !batch.refused.empty()) return ToolResult::failure(batch.results[0]["refused"].asString(), kOpensATree);
-  if (!bulk) return ToolResult::json(batch.results[0]);
-  Json::Value out(Json::objectValue);
-  out["results"] = batch.results;
-  // A batch whose every mark the caller already held changed nothing, and says so as a patch batch does.
-  bool unchanged = true;
-  for (const Json::Value& row : batch.results) unchanged = unchanged && row.get("unchanged", false).asBool();
-  if (unchanged) out["unchanged"] = true;
-  ToolResult answered = ToolResult::json(out);
-  if (batch.cameToARefusal) answered.outcomeCode = kOpensATree;
-  return answered;
 }
 
 // A legend's kinds as a call sends them, checked item by item before treeFromJson reads them, an id once
@@ -1316,7 +1183,7 @@ std::optional<std::string> checkMergedLegend(const std::vector<Kind>& current,
 ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& edits, const TreeId& tree,
                           const Json::Value& args, Clock& clock, const ToolCaller& caller) {
   if (std::optional<std::string> bad = checkImport(args)) return ToolResult::failure(*bad);
-  // The marks the import carries, read as set_progress reads its rows; they land after the graft, on the tree it leaves.
+  // The marks the import carries, read as an update_nodes row's are; they land after the graft, on the tree it leaves.
   std::vector<RequestedMark> carried;
   for (Json::ArrayIndex i = 0; i < args["progress"].size(); ++i) {
     std::variant<RequestedMark, std::string> mark = readMark(args["progress"][i], "progress[" + std::to_string(i) + "]");
@@ -1347,6 +1214,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
   for (const Json::Value& node : args["nodes"]) {
     const NodeId id{node["id"].asString()};
     std::set<NodeRegister>& omitted = graft.omittedNodeRegisters[id];
+    omitted.insert(NodeRegister::position);
     for (const auto& [field, held] : kImportedNodeRegisters)
       if (node[field].isNull()) omitted.insert(held);
     if (node["prerequisites"].isNull()) graft.omittedPrerequisites.insert(id);
@@ -1495,7 +1363,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       return ToolResult::json(grafted.payload);
     }
     const MarkedBatch& batch = std::get<MarkedBatch>(applied);
-    wroteNothingForARefusal = batch.cameToARefusal && grafted.payload["unchanged"].asBool();
+    wroteNothingForARefusal = batch.cameToARefusal && grafted.payload.get("unchanged", false).asBool();
     batch.answerOnto(grafted.payload);
   } catch (const std::exception& error) {
     reportCurrentWriteFailure(error);
@@ -1762,10 +1630,8 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
   if (name == "get_health")      return readHealth(registry_, tree, reader);
   if (name == "get_progress")    return readProgress(progress_, tree, arguments, caller);
   if (name == "find_nodes")      return findNodes(registry_, treeRegistry_, progress_, appOrigin_, tree, arguments, reader);
-  if (name == "patch_nodes" || name == "update_nodes" || name == "change_edges")
+  if (name == "update_nodes" || name == "change_edges")
     return applyBatchEdit(registry_, treeRegistry_, edits_, tree, name, arguments, clock_, caller);
-  if (name == "set_progress")
-    return writeProgress(registry_, edits_, tree, arguments, clock_, caller);
   if (name == "import_subgraph")
     return importSubgraph(registry_, treeRegistry_, edits_, tree, arguments, clock_, actor);
   if (name == "prune")

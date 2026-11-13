@@ -24,7 +24,6 @@ struct Row {
 
 const std::vector<Row> kRoadmap = {
     {"get_nodes", "Roadmap · Get nodes", true, false, true},
-    {"patch_nodes", "Roadmap · Patch nodes", false, true, true},
     {"update_nodes", "Roadmap · Update nodes", false, true, false},
     {"change_edges", "Roadmap · Change edges", false, true, true},
     {"create_tree", "Roadmap · Create tree", false, false, false},
@@ -37,16 +36,11 @@ const std::vector<Row> kRoadmap = {
     {"get_progress", "Roadmap · Get progress", true, false, true},
     {"find_nodes", "Roadmap · Find nodes", true, false, true},
     {"create_node", "Roadmap · Create node", false, false, false},
-    {"annotate_node", "Roadmap · Annotate node", false, false, false},
-    {"rename_node", "Roadmap · Rename node", false, false, true},
-    {"set_node_color", "Roadmap · Set node color", false, false, true},
-    {"move_node", "Roadmap · Move node", false, false, true},
     {"delete_node", "Roadmap · Delete node", false, true, true},
     {"tidy", "Roadmap · Tidy", false, true, true},
     {"add_kind", "Roadmap · Add kind", false, false, true},
     {"remove_kind", "Roadmap · Remove kind", false, true, true},
     {"update_kind", "Roadmap · Update kind", false, false, true},
-    {"set_progress", "Roadmap · Set progress", false, false, true},
     {"import_subgraph", "Roadmap · Import subgraph", false, true, true},
     {"prune", "Roadmap · Prune", false, true, true},
 };
@@ -141,7 +135,7 @@ TEST(only_the_allowlisted_roadmap_writes_are_bulk_edits) {
   std::vector<std::string> bulk;
   for (const ToolDeclaration& tool : roadmapToolCatalog())
     if (tool.bulkEdit) bulk.push_back(tool.name());
-  CHECK_EQ(bulk, (std::vector<std::string>{"patch_nodes", "update_nodes", "change_edges", "tidy", "import_subgraph",
+  CHECK_EQ(bulk, (std::vector<std::string>{"update_nodes", "change_edges", "tidy", "import_subgraph",
                                             "prune"}));
   for (const ToolDeclaration& tool : gym::gymToolCatalog()) CHECK_FALSE(tool.bulkEdit);
 }

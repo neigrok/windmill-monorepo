@@ -70,7 +70,6 @@ const Vocabulary<NodeField>& nodeVocabulary() {
                                                  {"kind", NodeField::kind},
                                                  {"order", NodeField::order},
                                                  {"prerequisites", NodeField::prerequisites},
-                                                 {"position", NodeField::position},
                                                  {"status", NodeField::status},
                                                  {"seedStatus", NodeField::seedStatus},
                                                  {"state", NodeField::state},
@@ -113,12 +112,6 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const No
     Json::Value prerequisites(Json::arrayValue);
     for (const NodeId& prereq : node.prerequisites) prerequisites.append(prereq.str());
     n["prerequisites"] = prerequisites;
-  }
-  if (fields.count(NodeField::position) && node.position) {
-    Json::Value position(Json::objectValue);
-    position["x"] = node.position->x;
-    position["y"] = node.position->y;
-    n["position"] = position;
   }
   if (fields.count(NodeField::status)) {
     n["status"] = context.marks.completed.count(node.id) ? "complete" : "none";
