@@ -26,7 +26,7 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
     }
   }
 
-  // Load + replay outside the registry lock so one large tree's open can't freeze every other tree's
+  // Loaded outside the registry lock so one large tree's open can't freeze every other tree's
   // room operations. open(id) always runs under strandFor(id); the re-check below covers the general
   // case.
   std::optional<StoredTree> stored = repo_.load(id);
@@ -39,15 +39,15 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
   }
   if (!access) return nullptr;  // the root went away since the row was read
 
+  // The room is the stored snapshot and nothing else: the op log is the feed's history, and a row of it never states
+  // a frame faithfully enough to be merged back. A row past the snapshot's head — what a crash between the two
+  // stores could leave before rows were made to land after the save — changes nothing here; the head is taken past
+  // it, so the row of the room's next write collides with none.
   LooseGraph graph(stored->state);  // full CRDT state — lossless
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
   auto room = std::make_unique<TreeRoom>(id, stored->title, stored->guide, stored->guideInherited,
-                                         std::move(graph), std::move(legend), stored->head, stored->root,
-                                         std::move(access), stored->createdAt, bus_);
-  // The document is a snapshot at stored->head. A row past that head is what an older ordering
-  // could leave behind; replaying it reaches the true state and head, so new ops never collide on
-  // seq. Under the current ordering (save, then land) the tail is empty.
-  for (const AppliedOp& op : ops_.since(id, stored->head)) room->replay(op);
+                                         std::move(graph), std::move(legend), std::max(stored->head, ops_.lastSeq(id)),
+                                         stored->root, std::move(access), stored->createdAt, bus_);
 
   std::lock_guard<std::mutex> lock(mutex_);
   auto existing = rooms_.find(id);
@@ -174,8 +174,8 @@ bool RoomRegistry::persist(const TreeId& id) {
   }
   // I/O outside the map lock. The caller holds the tree's strand, so no write can slip in between
   // the export above and the markClean below. The lattice lands first and the op rows after, so a
-  // crash between the two leaves a lattice at `head` with no row at `head` — replay is a no-op and
-  // the feed misses one deed — never a row the lattice cannot back.
+  // crash between the two leaves a lattice at `head` with no row at `head` — the feed misses one
+  // deed — never a row the lattice cannot back.
   if (!repo_.save(id, state, legend, title, guide, head)) return false;  // the row is gone; so is what this room would add to it
   room->markClean();
   land(id, *room);

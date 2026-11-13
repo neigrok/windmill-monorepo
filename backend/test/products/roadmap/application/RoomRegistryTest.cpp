@@ -109,21 +109,41 @@ TEST(registry_open_propagates_a_repository_failure_rather_than_nulling_it) {
   CHECK(threw);
 }
 
-TEST(registry_replays_op_log_tail_on_open) {
+// A room opens as its stored snapshot and nothing else: the op log is the history the feed reads, never a second
+// source of a tree's state. Rows past the snapshot's head change nothing the room holds — here a row that would blank a
+// node's fields and one that would move a kind — and the room's head is the later of the snapshot's and the last
+// row's, so its next write takes a seq no row holds and lands in the log.
+TEST(registry_opens_a_room_as_its_snapshot_and_takes_its_next_seq_after_the_last_op_row) {
   FakeTreeRepository repo;
   FakeOpLog log;
   FakeBus bus;
-  repo.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Empty", {}}, 0};  // snapshot is empty at head 0
+  LooseGraph graph;
+  graph.createNode(nid("a"), "A", "icon", NodeColor::sky, at(1));
+  const Legend legend({{KindId{"k"}, NodeColor::sky, "K"}}, at(1));
+  repo.byId["t"] = StoredTree{graph.exportState(), legend.exportState(), {"Sail", {}}, 2};
   log.byTree["t"] = {
-    AppliedOp{1, "o1", createNode("a"), at(1), uid()},
-    AppliedOp{2, "o2", createNode("b"), at(2), uid()},
-    AppliedOp{3, "o3", AddEdge{nid("a"), nid("b")}, at(3), uid()},
+      AppliedOp{1, "o1", AddKind{KindId{"k"}, NodeColor::sky, "K"}, at(1), uid()},
+      AppliedOp{2, "o2", CreateNode{nid("a"), "A", "icon", NodeColor::sky}, at(1), uid()},
+      AppliedOp{3, "o3", CreateNode{nid("a"), "", "", NodeColor::terracotta}, at(5), uid()},
+      AppliedOp{4, "o4", RecolorKind{KindId{"k"}, NodeColor::plum}, at(6), uid()},
   };
+  const StoredTree snapshot = repo.byId["t"];
   RoomRegistry registry(repo, log, bus);
 
   TreeRoom& room = *registry.open(tid());
-  CHECK_EQ(room.head(), static_cast<Seq>(3));      // head advanced to the log tail
-  CHECK_EQ(room.snapshot().nodes.size(), 2u);      // state rebuilt from replay
+  CHECK(room.exportState() == snapshot.state);
+  CHECK(room.exportLegend() == snapshot.legend);
+  CHECK_EQ(room.head(), static_cast<Seq>(4));
+
+  CHECK_EQ(room.applyCommand(RenameNode{nid("a"), "A2"}, 10, uid()), static_cast<Seq>(5));
+  CHECK(registry.persist(tid()));
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(5));
+  REQUIRE_EQ(log.byTree["t"].size(), 5u);
+  CHECK_EQ(log.byTree["t"].back().seq, static_cast<Seq>(5));
+  CHECK(std::holds_alternative<RenameNode>(log.byTree["t"].back().command));
+
+  repo.byId["empty"] = StoredTree{GraphState{}, LegendState{}, {"Empty", {}}, 0};
+  CHECK_EQ(registry.open(tid("empty"))->head(), static_cast<Seq>(0));
 }
 
 TEST(registry_persist_snapshots_full_state_without_evicting) {
@@ -474,7 +494,7 @@ TEST(registry_evict_saves_the_lattice_before_it_lands_the_op_rows) {
 
 // The crash between the two stores, on the lossy side: the lattice landed, the row did not. A
 // process that reopens the tree finds the whole 200-node import in the lattice, the head it was
-// saved at, and nothing to replay — the feed misses one deed, and the tree misses nothing.
+// saved at, and no row past it — the feed misses one deed, and the tree misses nothing.
 TEST(registry_a_crash_after_the_save_and_before_the_row_reopens_the_whole_import) {
   std::vector<std::string> journal;
   RecordingTreeRepository repo(journal);
@@ -503,7 +523,7 @@ TEST(registry_a_crash_after_the_save_and_before_the_row_reopens_the_whole_import
   CHECK(room.hasNode(NodeId{"n0"}));
   CHECK(room.hasNode(NodeId{"n199"}));
   CHECK(room.pendingOps().empty());
-  CHECK(log.since(tid(), 7).empty());  // nothing to replay: the lattice already holds the frame
+  CHECK(log.since(tid(), 7).empty());  // no row past the saved head: the lattice already holds the frame
 }
 
 // The inverse cannot happen: a save that fails lands no row, because the rows are only offered to
@@ -590,7 +610,7 @@ TEST(registry_evict_closes_the_room_after_its_save_even_when_the_rows_fail_to_la
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
   CHECK(log.byTree["t"].empty());
 
-  // Reopened, the tree holds the write and has nothing to replay.
+  // Reopened, the tree holds the write, and the log holds no row past its head.
   TreeRoom& room = *registry.open(tid());
   CHECK_EQ(room.head(), static_cast<Seq>(8));
   CHECK(room.hasNode(NodeId{"added"}));

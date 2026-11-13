@@ -41,6 +41,12 @@ struct FakeOpLog : OpLog {
     }
     return out;
   }
+  Seq lastSeq(const TreeId& tree) const override {
+    Seq last = 0;
+    if (auto it = byTree.find(tree.str()); it != byTree.end())
+      for (const auto& op : it->second) last = std::max(last, op.seq);
+    return last;
+  }
 };
 
 struct FakeBus : PresenceBus {

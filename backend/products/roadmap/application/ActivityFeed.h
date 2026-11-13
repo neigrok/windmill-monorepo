@@ -13,7 +13,7 @@ namespace wm {
 
 // A human-facing feed entry, projected from one op in the log and denormalized with the tree's
 // current labels and (when the graph is clean) its TrunkTree branch context, so the feed renders
-// without replaying the log.
+// without reading the tree back out of the log.
 struct ActivityEvent {
   Seq seq = 0;
   std::uint64_t at = 0;   // epoch ms

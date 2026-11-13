@@ -47,23 +47,23 @@ TEST(batch_round_trips_every_member_and_refuses_a_member_it_cannot_decode) {
                   .has_value());
 }
 
-TEST(create_and_annotate_payloads_carry_the_tree_a_node_opens_and_a_replay_lands_what_the_write_did) {
+TEST(create_and_annotate_payloads_carry_the_tree_a_node_opens_and_decode_to_what_the_write_did) {
   CreateNode created{NodeId{"a"}, "A", "star"};
   created.opens = TreeId{"t_sub"};
   const std::string createWire = "{\"color\":\"terracotta\",\"icon\":\"star\",\"id\":\"a\",\"label\":\"A\",\"opens\":\"t_sub\"}";
   CHECK_EQ(dump(commandPayload(Command{created})), createWire);
-  const std::optional<Command> replayedCreate = commandFromJson("CreateNode", parse(createWire));
-  REQUIRE(replayedCreate.has_value());
-  CHECK_EQ(std::get<CreateNode>(*replayedCreate).opens, TreeId{"t_sub"});
-  CHECK_EQ(dump(commandPayload(*replayedCreate)), createWire);
+  const std::optional<Command> decodedCreate = commandFromJson("CreateNode", parse(createWire));
+  REQUIRE(decodedCreate.has_value());
+  CHECK_EQ(std::get<CreateNode>(*decodedCreate).opens, TreeId{"t_sub"});
+  CHECK_EQ(dump(commandPayload(*decodedCreate)), createWire);
 
   CreateNode openingNone{NodeId{"a"}, "A", "star"};
   openingNone.opens = TreeId{};
   const std::string noneWire = "{\"color\":\"terracotta\",\"icon\":\"star\",\"id\":\"a\",\"label\":\"A\",\"opens\":\"\"}";
   CHECK_EQ(dump(commandPayload(Command{openingNone})), noneWire);
-  const std::optional<Command> replayedNone = commandFromJson("CreateNode", parse(noneWire));
-  REQUIRE(replayedNone.has_value());
-  CHECK_EQ(std::get<CreateNode>(*replayedNone).opens, std::optional<TreeId>(TreeId{}));
+  const std::optional<Command> decodedNone = commandFromJson("CreateNode", parse(noneWire));
+  REQUIRE(decodedNone.has_value());
+  CHECK_EQ(std::get<CreateNode>(*decodedNone).opens, std::optional<TreeId>(TreeId{}));
 
   AnnotateNode pointed{NodeId{"b"}};
   pointed.opens = TreeId{"t_other"};
@@ -73,21 +73,21 @@ TEST(create_and_annotate_payloads_carry_the_tree_a_node_opens_and_a_replay_lands
   cleared.opens = TreeId{};
   const std::string clearWire = "{\"id\":\"a\",\"opens\":\"\"}";
   CHECK_EQ(dump(commandPayload(Command{cleared})), clearWire);
-  const std::optional<Command> replayedClear = commandFromJson("AnnotateNode", parse(clearWire));
-  REQUIRE(replayedClear.has_value());
-  CHECK_EQ(std::get<AnnotateNode>(*replayedClear).opens, std::optional<TreeId>(TreeId{}));
+  const std::optional<Command> decodedClear = commandFromJson("AnnotateNode", parse(clearWire));
+  REQUIRE(decodedClear.has_value());
+  CHECK_EQ(std::get<AnnotateNode>(*decodedClear).opens, std::optional<TreeId>(TreeId{}));
 
   const Command batch = Batch{{Command{created}, Command{CreateNode{NodeId{"b"}, "B", ""}}, Command{pointed}}};
-  const std::optional<Command> replayedBatch = commandFromJson("Batch", commandPayload(batch));
-  REQUIRE(replayedBatch.has_value());
+  const std::optional<Command> decodedBatch = commandFromJson("Batch", commandPayload(batch));
+  REQUIRE(decodedBatch.has_value());
   Legend legend;
   LooseGraph written;
   merge(written, legend, batch, Hlc{7, 0, "srv"});
   merge(written, legend, Command{cleared}, Hlc{8, 0, "srv"});
-  LooseGraph replayed;
-  merge(replayed, legend, *replayedBatch, Hlc{7, 0, "srv"});
-  merge(replayed, legend, *replayedClear, Hlc{8, 0, "srv"});
-  CHECK(replayed.exportState() == written.exportState());
+  LooseGraph decoded;
+  merge(decoded, legend, *decodedBatch, Hlc{7, 0, "srv"});
+  merge(decoded, legend, *decodedClear, Hlc{8, 0, "srv"});
+  CHECK(decoded.exportState() == written.exportState());
   CHECK_EQ(written.nodeView(NodeId{"a"})->opens, TreeId{});
   CHECK_EQ(written.exportNode(NodeId{"a"})->opensAt, (Hlc{8, 0, "srv"}));
   CHECK_EQ(written.nodeView(NodeId{"b"})->opens, TreeId{"t_other"});
@@ -117,9 +117,9 @@ TEST(a_stored_create_or_annotate_row_without_opens_still_decodes_and_touches_no_
 }
 
 // No tool sends a ReorderKinds any more, but the log holds the rows it wrote and a client's frame can still land one:
-// one decodes, alone or inside a Batch, and replays the order it set, so neither the row nor the Batch around it is
-// skipped. One with an empty order, as a frame that moved no kind leaves, replays as nothing.
-TEST(a_stored_legend_reorder_row_still_decodes_and_replays_the_order_it_set) {
+// one decodes, alone or inside a Batch, to the order it set, so neither the row nor the Batch around it is skipped.
+// One with an empty order, as a frame that moved no kind leaves, sets nothing.
+TEST(a_stored_legend_reorder_row_still_decodes_to_the_order_it_set) {
   const std::optional<Command> row = commandFromJson("ReorderKinds", parse("{\"order\":[\"learn\",\"build\"]}"));
   REQUIRE(row.has_value());
   CHECK_EQ(std::get<ReorderKinds>(*row).order, (std::vector<KindId>{KindId{"learn"}, KindId{"build"}}));
@@ -169,8 +169,8 @@ TEST(a_stored_tidy_or_prune_row_decodes_as_itself_alone_and_inside_a_batch) {
 }
 
 // A kind has no cross-branch flag, but the log holds rows that set one. Each still decodes, alone and inside a Batch,
-// with the flag dropped: an AddKind or DescribeKind replays the rest of what it set, and a DescribeKind that set only
-// the flag replays as nothing.
+// with the flag dropped: an AddKind or DescribeKind decodes to the rest of what it set, and a DescribeKind that set
+// only the flag sets nothing.
 TEST(a_stored_kind_row_that_carried_the_cross_branch_flag_decodes_without_it) {
   const auto legendAfter = [](const std::vector<std::pair<const char*, const char*>>& rows) {
     LooseGraph graph;
@@ -213,8 +213,8 @@ TEST(a_stored_kind_row_that_carried_the_cross_branch_flag_decodes_without_it) {
 }
 
 // A node has no position, but the log holds rows that set one. A RepositionNode still decodes, alone and inside a
-// Batch, and replays as nothing; a CreateNode that carried x and y decodes without them and replays the rest.
-TEST(a_stored_row_that_set_a_position_decodes_and_replays_without_it) {
+// Batch, and sets nothing; a CreateNode that carried x and y decodes without them, to the rest of what it set.
+TEST(a_stored_row_that_set_a_position_decodes_without_it) {
   const auto graphAfter = [](const std::vector<std::pair<const char*, const char*>>& rows) {
     LooseGraph graph;
     Legend legend;

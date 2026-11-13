@@ -4,6 +4,7 @@
 #include "platform/application/WriteObservation.h"
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
+#include "products/roadmap/application/ActivityFeed.h"
 #include "products/roadmap/application/ForkService.h"
 #include "products/roadmap/application/NodeEdits.h"
 #include "products/roadmap/application/OwnerProgress.h"
@@ -460,6 +461,82 @@ TEST(pg_a_deleted_node_repainted_with_its_kind_comes_back_under_the_kind_after_a
            parse(R"([{"id":"a","color":"plum","kind":"k"},{"id":"b","color":"plum","kind":"k"}])"));
   restarted.stop();
   CHECK_EQ(storedColours(), (std::vector<std::string>{"a:plum:true", "b:plum:true"}));
+}
+
+// A room opens as its stored snapshot whatever rows the log holds past it. Each case leaves the snapshot one row behind
+// a write — an import that brings a deleted node back bare, an import that swaps two kinds' hues, a web client's frame
+// that undoes a delete — by landing the write's row and dropping its room unsaved. The tree reopens holding exactly
+// what the snapshot holds, with no field blanked and no kind moved, takes its next seq after the last row, and the
+// feed still tells that row: a revive's by the name the node kept, though the snapshot holds it deleted.
+TEST(pg_a_room_opens_as_its_snapshot_whatever_rows_the_log_holds_past_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  const auto bareRevive = [](TreeRoom& room) {
+    Graft graft;
+    NodeSpec gone;
+    gone.id = NodeId{"gone"};
+    graft.document.nodes = {gone};
+    graft.omittedNodeRegisters[gone.id] = {NodeRegister::label, NodeRegister::icon, NodeRegister::color, NodeRegister::order,
+                                           NodeRegister::status, NodeRegister::description, NodeRegister::links,
+                                           NodeRegister::opens};
+    graft.omittedPrerequisites = {gone.id};
+    REQUIRE(room.importTree(graft, 12, kSam).has_value());
+  };
+  const auto hueSwap = [](TreeRoom& room) {
+    Graft graft;
+    graft.document.kinds = {{KindId{"apps"}, NodeColor::plum}, {KindId{"infra"}, NodeColor::sky}};
+    for (const char* kind : {"apps", "infra"})
+      graft.omittedKindRegisters[KindId{kind}] = {KindRegister::label, KindRegister::description};
+    REQUIRE(room.importTree(graft, 12, kSam).has_value());
+  };
+  const auto undoneDelete = [](TreeRoom& room) {
+    Subgraph frame;
+    frame.treeId = kTree;
+    frame.frameId = "undo-of-delete";
+    frame.actor = "r_tab";
+    frame.graph.nodes = {NodeStateEntry{.id = NodeId{"gone"}, .createdAt = Hlc{2'000'000'000'000, 0, "r_tab"}}};
+    REQUIRE(room.joinSubgraph(frame, kSam).has_value());
+  };
+  for (const auto& [write, told] : std::vector<std::pair<std::function<void(TreeRoom&)>, std::string>>{
+           {bareRevive, "added Gone"}, {hueSwap, "recolored a kind plum"}, {undoneDelete, "added Gone"}}) {
+    reset();
+    PgTreeRepository trees{pgTestPool()};
+    PgOpLog log{pgTestPool()};
+    FakeBus bus;
+    trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
+    Seq saved = 0;
+    {
+      RoomRegistry registry(trees, log, bus);
+      TreeRoom& room = *registry.open(kTree);
+      room.applyCommands({AddKind{KindId{"apps"}, NodeColor::sky, "Apps"}, AddKind{KindId{"infra"}, NodeColor::plum, "Infra"},
+                          CreateNode{NodeId{"a"}, "A", "i", NodeColor::sky}, CreateNode{NodeId{"b"}, "B", "i", NodeColor::plum},
+                          CreateNode{NodeId{"gone"}, "Gone", "i", NodeColor::sky}},
+                         10, kSam);
+      room.applyCommand(DeleteNode{NodeId{"gone"}}, 11, kSam);
+      REQUIRE(registry.persist(kTree));
+      saved = room.head();
+      write(room);
+      REQUIRE_EQ(room.pendingOps().size(), 1u);
+      log.append(kTree, room.pendingOps().front());
+      registry.retire(kTree);
+      registry.stop();
+    }
+    const StoredTree snapshot = *trees.load(kTree);
+    CHECK_EQ(snapshot.head, saved);
+
+    RoomRegistry reopened(trees, log, bus);
+    TreeRoom& room = *reopened.open(kTree);
+    CHECK(room.exportState() == snapshot.state);
+    CHECK(room.exportLegend() == snapshot.legend);
+    CHECK_EQ(room.head(), saved + 1);
+    CHECK_EQ(room.applyCommand(RenameNode{NodeId{"a"}, "A2"}, 20, kSam), saved + 2);
+    CHECK(reopened.persist(kTree));
+    std::vector<std::string> feed;
+    for (const ActivityEvent& event : activityFeed(room.snapshot(), log.since(kTree, saved), 10)) feed.push_back(event.summary);
+    CHECK_EQ(feed, (std::vector<std::string>{told, "renamed to A2"}));
+    CHECK_EQ(trees.load(kTree)->head, saved + 2);
+    reopened.stop();
+  }
+  reset();
 }
 
 // The statement behind OpenedTrees: a removed node's pointer leads nowhere, a loop ends, and only the owner's marks count.

@@ -10,7 +10,7 @@
 namespace wm {
 
 namespace {
-constexpr int kOpReadLimit = 10000;  // cap one replay read so a giant op log can't be slurped whole
+constexpr int kOpReadLimit = 10000;  // cap one read so a giant op log can't be slurped whole
 }
 
 PgOpLog::PgOpLog(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
@@ -51,6 +51,13 @@ std::vector<AppliedOp> PgOpLog::since(const TreeId& tree, Seq afterSeq) const {
     ops.push_back(std::move(op));
   }
   return ops;
+}
+
+Seq PgOpLog::lastSeq(const TreeId& tree) const {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const pqxx::result rows = txn.exec_params("SELECT coalesce(max(seq), 0) FROM tree_ops WHERE tree_id = $1", tree.str());
+  return static_cast<Seq>(rows[0][0].as<long long>());
 }
 
 }

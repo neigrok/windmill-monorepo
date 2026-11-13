@@ -108,7 +108,7 @@ public:
   // one subgraph. The frameId is minted from the (unique) stamp.
   Seq applyCommand(const Command& command, std::uint64_t nowMs, const UserId& actor);
   // Several commands as ONE edit: one stamp, one frame, one seq, one op row (a Batch, so the log
-  // replays the whole edit), so a reader never sees the tree between them. An empty list is a
+  // tells the whole edit), so a reader never sees the tree between them. An empty list is a
   // no-op answering the current head. Admits nothing on its own.
   Seq applyCommands(const std::vector<Command>& commands, std::uint64_t nowMs, const UserId& actor);
 
@@ -144,9 +144,6 @@ public:
   // subscriber is told. It changes no register, dirties nothing and queues no op row.
   void appendSubtree(const NodeId& step, const Subtree& subtree);
 
-  // Advances head + dedup set; does not re-persist or re-broadcast.
-  void replay(const AppliedOp& op);
-
   // The op rows this room's writes minted and no save has yet landed, in seq order. A row leaves
   // the queue only through landPendingOps, which RoomRegistry calls AFTER the lattice is saved at
   // the head those rows carry — so the log can never run ahead of the lattice. Each row is
@@ -173,8 +170,8 @@ public:
   // frontier.
   Subgraph deltaSince(const VersionVector& since) const;
 
-  // Exports only the entries dirtied since the last markClean(); replay() flips the room all-dirty.
-  // The caller holds the strand across export and clean.
+  // Exports only the entries dirtied since the last markClean(). The caller holds the strand across export and
+  // clean.
   std::pair<GraphState, LegendState> dirtyState() const;
   void markClean();
 
@@ -227,7 +224,6 @@ private:
   std::set<NodeId> dirtyNodes_;
   std::set<Edge> dirtyEdges_;
   std::set<KindId> dirtyKinds_;
-  bool allDirty_ = false;  // replayed op tail: footprint unknown, save everything once
   mutable std::size_t snapshots_ = 0;
 };
 

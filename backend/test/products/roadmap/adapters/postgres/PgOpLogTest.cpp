@@ -37,6 +37,7 @@ struct DroppingPgOpLog : OpLog {
     throw std::runtime_error("connection dropped after commit");
   }
   std::vector<AppliedOp> since(const TreeId& tree, Seq afterSeq) const override { return inner.since(tree, afterSeq); }
+  Seq lastSeq(const TreeId& tree) const override { return inner.lastSeq(tree); }
 };
 
 void reset() {
