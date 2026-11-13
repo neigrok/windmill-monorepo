@@ -408,6 +408,48 @@ TEST(drive_agent_changes_a_kind_through_update_kind_and_counts_what_changed) {
   CHECK_EQ(tree["nodes"], parse(R"([{"id":"a","color":"plum","kind":"k"}])"));
 }
 
+// A tend whose model adds a node without naming its kind, on a tree where no kind wears terracotta, is answered the
+// refusal as a failed step and has made no edit; the sentence it is handed lists the legend, so its next call can name one.
+TEST(drive_agent_fails_the_step_that_creates_a_node_naming_no_kind_where_no_kind_wears_terracotta) {
+  test::Harness h;
+  h.trees.byId["t"].legend =
+      Legend({{KindId{"read"}, NodeColor::sky, "Reading"}, {KindId{"ship"}, NodeColor::plum, "Shipping"}}, Hlc{1, 0, "seed"})
+          .exportState();
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.operation != "roadmap.get_tree") lines.push_back(line.operation + " " + line.door + " " + line.outcome);
+  });
+  const auto stepOf = [&](const char* tool, const char* input) {
+    Json::Value call = toolUseReply(tool, "toolu_1");
+    call["content"][0]["input"] = parse(input);
+    FakeModel model;
+    model.replies.push_back(call);
+    model.replies.push_back(textReply("end_turn", "Done"));
+    Recorder rec;
+    const AgentOutcome outcome =
+        driveAgent("tend it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report());
+    const Json::Value answered = model.requests.at(1)["messages"][model.requests.at(1)["messages"].size() - 1]["content"][0];
+    return std::to_string(outcome.edits) + " edits, changed " + std::to_string(rec.steps.at(0).changedTree) +
+           ", failed " + std::to_string(rec.steps.at(0).failed) + " | " + answered["content"].asString();
+  };
+
+  CHECK_EQ(stepOf("create_node", R"({"label":"Hull"})"),
+           std::string("0 edits, changed 0, failed 1 | create_node: the node names neither \"kind\" nor \"color\", and no "
+                       "kind of this tree wears terracotta, the hue a new node takes without them — name one of the "
+                       "legend's kinds: \"read\" (Reading), \"ship\" (Shipping)"));
+  CHECK_EQ(stepOf("import_subgraph", R"({"nodes":[{"id":"mast","label":"Mast"}]})"),
+           std::string("0 edits, changed 0, failed 1 | import_subgraph: nodes[0] \"mast\" names neither \"kind\" nor "
+                       "\"color\", and no kind of this tree wears terracotta, the hue a new node takes without them — "
+                       "name one of the legend's kinds: \"read\" (Reading), \"ship\" (Shipping)"));
+  CHECK(h.trees.byId["t"].state == GraphState{});
+  CHECK(stepOf("create_node", R"({"label":"Hull","kind":"ship"})").rfind("1 edits, changed 1, failed 0 | ", 0) == 0);
+  installWriteSink({});
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.create_node Coach kind-unnamed",
+                                            "roadmap.import_subgraph Coach kind-unnamed",
+                                            "roadmap.create_node Coach ok"}));
+}
+
 // A tend renames, recolours, annotates and marks a node through update_nodes, the one tool that edits or marks nodes,
 // and is not offered `opens`: each call that changes the node is one edit of the run, one that sends what the node
 // holds is none, and each writes its line as roadmap.update_nodes, door Coach.

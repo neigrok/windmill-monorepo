@@ -43,13 +43,23 @@ struct Graft {
   std::map<KindId, std::set<KindRegister>> omittedKindRegisters;
   std::set<NodeId> omittedPrerequisites;
   std::map<NodeId, KindId> nodeKinds;
+
+  // Whether the document spelled out `reg` for the node.
+  bool carries(const NodeId& node, NodeRegister reg) const {
+    const auto omitted = omittedNodeRegisters.find(node);
+    return omitted == omittedNodeRegisters.end() || !omitted->second.count(reg);
+  }
 };
 
 // The graft with every node's kind turned into the hue that kind wears in the legend the graft leaves:
-// `legend` with the document's own kinds upserted, so one batch can add a kind and file nodes under it.
-// Such a node carries its colour register. A kind that legend does not hold, or a colour sent beside it
-// that disagrees and is not the colour the node's record in `graph` holds, refuses the whole graft with
-// resolveHue's refusal, naming `nodes[i].kind`.
+// `legend` joined with what the document's own kinds would land in it (graftLegend), so one batch can add a kind
+// and file nodes under it. Such a node carries its colour register. A kind that legend does not hold, or a colour
+// sent beside it that disagrees and is not the colour the node's record in `graph` holds, refuses the whole graft
+// with resolveHue's refusal, naming `nodes[i].kind`. So does a node the graft would create with no hue of its own
+// — the graph does not hold it present, the document carries neither a kind nor a colour for it, and no record of
+// it holds a colour anyone wrote, the reading graftState lands it by — where that legend has kinds and none wears
+// the hue such a node takes: unnamedHueRefusal, which speaks of the legend the batch would leave when the document
+// carries kinds.
 std::variant<Graft, KindRefusal> resolveKinds(const LooseGraph& graph, const Legend& legend, Graft graft);
 
 // The graft with each node's links as that node would hold them: shownLinks against the links its record holds,

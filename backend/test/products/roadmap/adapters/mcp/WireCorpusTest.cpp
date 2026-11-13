@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 26;
+constexpr int kWireCorpusVersion = 27;
 
 struct Step {
   const char* tool;
@@ -78,7 +78,7 @@ std::vector<Step> plan() {
                                   array.append(obj({{"id", "docs"}, {"label", "Docs"},
                                                     {"color", "olive"},
                                                     {"prerequisites", strings({"render"})}}));
-                                  array.append(obj({{"id", "launch"}, {"label", "Launch"},
+                                  array.append(obj({{"id", "launch"}, {"label", "Launch"}, {"color", "terracotta"},
                                                     {"prerequisites", strings({"docs", "sync"})}}));
                                   return array;
                                 }()}})},
@@ -142,7 +142,8 @@ std::vector<Step> plan() {
                               array.append(mark("docs", "complete"));
                               return array;
                             }()}})},
-      // Three deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end.
+      // Four deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end. The
+      // last is a node that names neither kind nor colour in a legend whose one kind is plum.
       {"update_nodes", obj({{"updates", [] {
                                Json::Value array(Json::arrayValue);
                                array.append(mark("no-such-node", "active"));
@@ -153,7 +154,8 @@ std::vector<Step> plan() {
                                array.append(with("nodeId", "root"));
                                return array;
                              }()}})},
-      {"create_node", obj({{"label", "Elsewhere"}, {"opens", "t_0000000000000000"}})},
+      {"create_node", obj({{"label", "Elsewhere"}, {"color", "gold"}, {"opens", "t_0000000000000000"}})},
+      {"create_node", with("label", "Unfiled")},
   };
 }
 

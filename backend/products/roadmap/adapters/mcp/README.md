@@ -383,7 +383,19 @@ naming both, unless the node already holds that colour — what a read carrying 
 the kind's hue moved — when the colour is an echo (`landsOver` over the node's held entry, which
 `resolveHue` takes) and the node lands the kind's hue as a node filed by kind, never repainted by an
 import's re-hue; a node being created holds no colour to echo. Their write lines carry the outcomes `kind-unknown` and `kind-hue-mismatch`, never the
-kind. A node that names neither keeps its colour, and a new one is terracotta.
+kind. A node the tree holds that names neither keeps its colour. One an import brings back from a delete comes
+back with the colour someone wrote on it — a `color`, a `kind` or a repaint; a node first imported bare never had one
+written, and is judged as a new node is. A new one is
+terracotta and wears the legend's terracotta kind; where the legend has kinds and none wears terracotta, the node
+would belong to no kind, so `create_node` and `import_subgraph` refuse the whole call (`unnamedHueRefusal`, beside
+`resolveHue`): the sentence names such a node, by `nodes[i]` and id in an import, the first ten of them with a count
+of the rest, and lists the legend's kinds in order, each as id and label. An import is judged on the legend its batch
+leaves (`resolveKinds` joins what `graftLegend` would land): a batch that adds a terracotta kind, or re-hues one to
+terracotta, claims its bare new nodes, one that re-hues the terracotta kind away does not, and when the batch carries
+kinds the sentence says it speaks of the legend the batch would leave and lists that one, relabels and new kinds
+included. A node the import would create is one the tree does not hold present; it has a hue of its own when the
+batch names a kind or a colour for it or a record of it holds a colour someone wrote, the reading `graftState` lands
+it by. A dry run answers the same refusal. An empty legend has no kind to name, so the node lands terracotta there. Its write line carries the outcome `kind-unnamed`, never the node or a kind.
 
 ## `opens`
 

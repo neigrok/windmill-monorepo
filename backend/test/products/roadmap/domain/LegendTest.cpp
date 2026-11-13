@@ -166,6 +166,44 @@ TEST(a_kind_resolves_to_the_hue_it_wears_and_a_colour_beside_it_must_agree) {
                                                    "none — add one with roadmap_add_kind first"}}));
 }
 
+// A node created naming neither a colour nor a kind takes terracotta. Where the legend holds kinds and none of them
+// wears terracotta it would belong to no kind, so the write is refused: the sentence names every such node as the call
+// names it, the first ten of them and a count of the rest, and lists the legend in order, each kind by id and label.
+// Judged by the legend a batch would leave, it says so. A legend with a terracotta kind, an empty legend and a write
+// that creates no such node are not refused.
+TEST(a_new_node_that_names_no_hue_is_refused_where_the_legend_has_kinds_and_none_wears_terracotta) {
+  const std::vector<Kind> roles = {{kid("read"), NodeColor::sky, "Reading"}, {kid("ship"), NodeColor::plum},
+                                   {kid("rest"), NodeColor::gold, "Rest days"}};
+  using Reason = KindRefusal::Reason;
+
+  CHECK((unnamedHueRefusal(roles, {"the node"}, JudgedLegend::held) ==
+         std::optional(KindRefusal{Reason::unnamedHue,
+                                   "the node names neither \"kind\" nor \"color\", and no kind of this tree wears "
+                                   "terracotta, the hue a new node takes without them — name one of the legend's kinds: "
+                                   "\"read\" (Reading), \"ship\", \"rest\" (Rest days)"})));
+  CHECK((unnamedHueRefusal(roles, {"nodes[0] \"hull\"", "nodes[2] \"mast\""}, JudgedLegend::held) ==
+         std::optional(KindRefusal{Reason::unnamedHue,
+                                   "nodes[0] \"hull\", nodes[2] \"mast\" name neither \"kind\" nor \"color\", and no kind "
+                                   "of this tree wears terracotta, the hue a new node takes without them — name one of "
+                                   "the legend's kinds for each: \"read\" (Reading), \"ship\", \"rest\" (Rest days)"})));
+  CHECK((unnamedHueRefusal(roles, {"nodes[0] \"hull\""}, JudgedLegend::leftByTheBatch) ==
+         std::optional(KindRefusal{Reason::unnamedHue,
+                                   "nodes[0] \"hull\" names neither \"kind\" nor \"color\", and no kind of the legend this "
+                                   "batch would leave wears terracotta, the hue a new node takes without them — name one "
+                                   "of that legend's kinds: \"read\" (Reading), \"ship\", \"rest\" (Rest days)"})));
+  CHECK((unnamedHueRefusal(roles, {"n0", "n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10", "n11"},
+                           JudgedLegend::held) ==
+         std::optional(KindRefusal{Reason::unnamedHue,
+                                   "n0, n1, n2, n3, n4, n5, n6, n7, n8, n9 and 2 more name neither \"kind\" nor \"color\", "
+                                   "and no kind of this tree wears terracotta, the hue a new node takes without them — "
+                                   "name one of the legend's kinds for each: \"read\" (Reading), \"ship\", \"rest\" (Rest "
+                                   "days)"})));
+  CHECK(unnamedHueRefusal(roles, {}, JudgedLegend::held) == std::nullopt);
+  CHECK(unnamedHueRefusal({}, {"the node"}, JudgedLegend::held) == std::nullopt);
+  CHECK(unnamedHueRefusal({{kid("read"), NodeColor::sky}, {kid("build"), NodeColor::terracotta}}, {"the node"},
+                          JudgedLegend::held) == std::nullopt);
+}
+
 // A colour sent beside a kind is an echo when the node already holds it: the kind is the write's word and the node
 // lands its hue. A colour the node does not hold, or any colour on a node the tree does not hold, must still agree.
 TEST(a_colour_the_node_holds_beside_a_kind_is_an_echo_and_the_kind_lands) {
