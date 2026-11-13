@@ -492,6 +492,43 @@ TEST(drive_agent_counts_no_edit_for_a_dry_run) {
     {"id":"b","label":"B","prerequisites":["a"],"status":"complete"},{"id":"c","label":"C","prerequisites":[],"status":"none"}])"));
 }
 
+// A refused mark wrote nothing, so a write whose every mark was refused on a step that opens a tree, with no tree op
+// landed, is no edit of the run: a mark alone, a mark beside an echoed label, and an import that grafts nothing. Beside a
+// mark that lands, the same refusal is one edit.
+TEST(drive_agent_counts_no_edit_for_a_write_whose_every_mark_was_refused) {
+  test::Harness h;
+  h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},
+      {"id":"a","label":"A"}]})")).isError);
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+  const auto stepOf = [&](const char* tool, const char* input) {
+    Json::Value call = toolUseReply(tool, "toolu_1");
+    call["content"][0]["input"] = parse(input);
+    FakeModel model;
+    model.replies.push_back(call);
+    model.replies.push_back(textReply("end_turn", "Done"));
+    Recorder rec;
+    const AgentOutcome outcome =
+        driveAgent("tend it", TreeId{"t"}, h.caller, scoped, model.asCall(), rec.onStep(), rec.report());
+    return std::to_string(outcome.edits) + " edits, changed " + std::to_string(rec.steps.at(0).changedTree) +
+           ", failed " + std::to_string(rec.steps.at(0).failed);
+  };
+  const Seq head = h.trees.byId["t"].head;
+
+  CHECK_EQ(stepOf("update_nodes", R"({"updates":[{"nodeId":"idea","status":"complete"}]})"),
+           std::string("0 edits, changed 0, failed 0"));
+  CHECK_EQ(stepOf("update_nodes", R"({"updates":[{"nodeId":"idea","label":"Idea","status":"complete"}]})"),
+           std::string("0 edits, changed 0, failed 0"));
+  CHECK_EQ(stepOf("import_subgraph", R"({"nodes":[],"progress":[{"nodeId":"idea","status":"complete"}]})"),
+           std::string("0 edits, changed 0, failed 0"));
+  CHECK_EQ(h.trees.byId["t"].head, head);
+  CHECK(h.progressRepo.byKey.empty());
+
+  CHECK_EQ(stepOf("update_nodes", R"({"updates":[{"nodeId":"idea","status":"complete"},{"nodeId":"a","status":"complete"}]})"),
+           std::string("1 edits, changed 1, failed 0"));
+  CHECK_EQ(h.progressRepo.byKey.size(), 1u);
+}
+
 // Through a tend's scoped host over the real tools, every write that changes nothing answers `unchanged` and is no edit
 // of the run: an update_nodes and an edge batch that change nothing and an echoed import, beside one real rename.
 TEST(drive_agent_counts_one_edit_among_writes_that_changed_nothing) {

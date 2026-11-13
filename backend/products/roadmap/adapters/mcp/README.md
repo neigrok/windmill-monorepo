@@ -294,9 +294,9 @@ the tree holds it, no new edge, no tombstone, no edge a replace drops, no new or
 reported by its own rows either way, each answering `unchanged: true` when its mark is one the caller
 already holds (see `update_nodes`).
 
-A tend counts a write as an edit unless its reply says it wrote nothing: a dry run (`dryRun: true`,
-or `applied: false`), or a reply that answers `unchanged` with every progress row it lists unchanged
-too.
+A tend counts a write as an edit only when its reply says it wrote: its tree op landed (the reply
+does not answer `unchanged`), or a progress row recorded a mark the caller did not hold already. A
+refused row recorded no mark, and a dry run (`dryRun: true`, or `applied: false`) wrote nothing.
 
 ## `status`, `seedStatus`, `state`, `summary`
 
