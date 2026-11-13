@@ -41,16 +41,21 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
     guide_ = *incoming.guide;
     guideInherited_ = false;  // the guide that won is a write of this tree's, not its source's
   }
-  const bool graphTook = graph_.join(incoming.graph);
-  const bool legendTook = legend_.join(incoming.legend);
-  if (!titleTook && !guideTook && !graphTook && !legendTook) return std::nullopt;
-  markDirty(incoming.graph, incoming.legend);
+  // What the room took of the frame: the frame as sent, each entry cut to the registers that landed. A register the
+  // room already holds changed nothing, so it marks no row to save, names no deed and is not sent on.
+  Subgraph landed = incoming;
+  landed.graph = graph_.join(incoming.graph);
+  landed.legend = legend_.join(incoming.legend);
+  if (!titleTook) landed.title.reset();
+  if (!guideTook) landed.guide.reset();
+  if (!titleTook && !guideTook && landed.graph.empty() && landed.legend.empty()) return std::nullopt;
+  markDirty(landed.graph, landed.legend);
   ++head_;
   // One op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
   // double-counts. A frame with no feed-worthy deed (headline) queues nothing.
-  if (std::optional<Command> deed = headline(incoming.graph, incoming.legend))
+  if (std::optional<Command> deed = headline(landed.graph, landed.legend))
     pendingOps_.push_back(AppliedOp{head_, incoming.frameId, *deed, stamp, actor});
-  bus_.broadcastSubgraph(id_, head_, incoming);
+  bus_.broadcastSubgraph(id_, head_, landed);
   return head_;
 }
 

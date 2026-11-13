@@ -246,8 +246,8 @@ std::optional<Admission> admitGuide(const std::string& guide);
 bool isBlankGuide(const std::string& guide);
 std::optional<Admission> admitStampedGuide(const std::string& guide);
 
-// The single feed-worthy deed a subgraph delta represents, read off which lattice fields the frame
-// sets. Salience order: a node's own life, then legend deeds, then a node's fields, then edges. A frame that sets
+// The single feed-worthy deed a subgraph delta represents, read off which lattice fields it sets: a room
+// hands it what landed of a frame, so an echoed register names nothing. Salience order: a node's own life, then legend deeds, then a node's fields, then edges. A frame that sets
 // none of these is nullopt.
 std::optional<Command> headline(const GraphState& graph, const LegendState& legend);
 

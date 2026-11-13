@@ -1,7 +1,9 @@
+#include "products/roadmap/application/ActivityFeed.h"
 #include "products/roadmap/application/TreeRoom.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include <algorithm>
 #include <stdexcept>
 
 using namespace wm;
@@ -90,6 +92,57 @@ TEST(room_join_subgraph_folds_assigns_seq_and_broadcasts) {
   CHECK_EQ(room.snapshot().nodes.size(), 1u);
   REQUIRE_EQ(bus.subgraphBroadcasts.size(), 1u);
   CHECK_EQ(bus.subgraphBroadcasts[0].seq, static_cast<Seq>(1));
+}
+
+// A frame is logged, told in the feed and broadcast as the registers that landed, not as it was sent. One that echoes
+// a node whole, repeats another's label and gives a third a new colour is a recolour of the third: the echoes changed
+// nothing, so they name no deed, mark no row to save and are not sent on. A frame whose every register lands reads as
+// it was sent.
+TEST(room_a_frame_is_logged_fed_and_broadcast_as_the_registers_that_landed) {
+  FakeBus bus;
+  TreeRoom room = makeRoom(bus);
+  apply(room, CreateNode{nid("root"), "Root", "i", NodeColor::sky}, 1);
+  apply(room, CreateNode{nid("b"), "B", "i", NodeColor::sky}, 2);
+  apply(room, CreateNode{nid("c"), "C", "i", NodeColor::sky}, 3);
+  room.markClean();
+  const GraphState held = room.exportState();
+  const auto entryOf = [&](const char* id) {
+    return *std::find_if(held.nodes.begin(), held.nodes.end(), [&](const NodeStateEntry& node) { return node.id == nid(id); });
+  };
+  const Hlc fresh{50, 0, "phone"};
+
+  Subgraph mixed;
+  mixed.treeId = tid();
+  mixed.frameId = "mixed";
+  mixed.actor = "phone";
+  mixed.graph.nodes = {entryOf("root"),
+                       NodeStateEntry{.id = nid("b"), .label = "B", .labelAt = entryOf("b").labelAt},
+                       NodeStateEntry{.id = nid("c"), .color = NodeColor::plum, .colorAt = fresh}};
+  REQUIRE(room.joinSubgraph(mixed, uid()) == std::optional<Seq>(4));
+
+  const GraphState recolour{{NodeStateEntry{.id = nid("c"), .color = NodeColor::plum, .colorAt = fresh}}, {}};
+  REQUIRE_EQ(room.pendingOps().size(), 4u);
+  REQUIRE(std::holds_alternative<SetNodeColor>(room.pendingOps().back().command));
+  CHECK(std::get<SetNodeColor>(room.pendingOps().back().command).id == nid("c"));
+  CHECK(bus.subgraphBroadcasts.back().subgraph.graph == recolour);
+  CHECK_EQ(bus.subgraphBroadcasts.back().subgraph.frameId, std::string("mixed"));
+  NodeStateEntry recoloured = entryOf("c");
+  recoloured.color = NodeColor::plum;
+  recoloured.colorAt = fresh;
+  const GraphState toSave{{recoloured}, {}};
+  CHECK(room.dirtyState().first == toSave);
+  CHECK_EQ(activityFeed(room.snapshot(), room.pendingOps(), 1).front().summary, std::string("recolored C plum"));
+
+  Subgraph whole;
+  whole.treeId = tid();
+  whole.frameId = "whole";
+  whole.actor = "phone";
+  whole.graph.nodes = {NodeStateEntry{.id = nid("d"), .createdAt = Hlc{51, 0, "phone"}, .label = "D", .labelAt = Hlc{51, 0, "phone"}}};
+  whole.graph.edges = {EdgeStateEntry{Edge{nid("root"), nid("d")}, Hlc{51, 0, "phone"}, {}}};
+  REQUIRE(room.joinSubgraph(whole, uid()) == std::optional<Seq>(5));
+  CHECK(bus.subgraphBroadcasts.back().subgraph.graph == whole.graph);
+  REQUIRE(std::holds_alternative<CreateNode>(room.pendingOps().back().command));
+  CHECK(std::get<CreateNode>(room.pendingOps().back().command).id == nid("d"));
 }
 
 TEST(room_join_subgraph_queues_its_headline_for_the_feed) {

@@ -65,32 +65,40 @@ LooseGraph::LooseGraph(const GraphState& state) {
   }
 }
 
-bool LooseGraph::join(const GraphState& state) {
-  bool took = false;
+GraphState LooseGraph::join(const GraphState& state) {
+  GraphState landed;
   for (const auto& node : state.nodes) {
     const auto [held, fresh] = nodes_.try_emplace(node.id);
     NodeRecord& record = held->second;
-    bool nodeTook = record.life.add(node.createdAt);
-    nodeTook |= record.life.remove(node.deletedAt);
-    nodeTook |= record.label.merge(node.label, node.labelAt);
-    nodeTook |= record.icon.merge(node.icon, node.iconAt);
-    nodeTook |= record.color.merge(node.color, node.colorAt);
-    nodeTook |= record.order.merge(node.order, node.orderAt);
-    nodeTook |= record.status.merge(normalizeSeedStatus(node.status), node.statusAt);
-    nodeTook |= record.description.merge(node.description, node.descriptionAt);
-    nodeTook |= record.links.merge(node.links, node.linksAt);
-    nodeTook |= record.opens.merge(node.opens, node.opensAt);
-    if (fresh && !nodeTook) nodes_.erase(held);
-    took |= nodeTook;
+    NodeStateEntry took{.id = node.id};
+    if (record.life.add(node.createdAt)) took.createdAt = node.createdAt;
+    if (record.life.remove(node.deletedAt)) took.deletedAt = node.deletedAt;
+    // A register that takes is answered as the record now holds it.
+    const auto merged = [](auto& held, const auto& sent, const Hlc& at, auto& value, Hlc& stamp) {
+      if (!held.merge(sent, at)) return;
+      value = held.value;
+      stamp = at;
+    };
+    merged(record.label, node.label, node.labelAt, took.label, took.labelAt);
+    merged(record.icon, node.icon, node.iconAt, took.icon, took.iconAt);
+    merged(record.color, node.color, node.colorAt, took.color, took.colorAt);
+    merged(record.order, node.order, node.orderAt, took.order, took.orderAt);
+    merged(record.status, normalizeSeedStatus(node.status), node.statusAt, took.status, took.statusAt);
+    merged(record.description, node.description, node.descriptionAt, took.description, took.descriptionAt);
+    merged(record.links, node.links, node.linksAt, took.links, took.linksAt);
+    merged(record.opens, node.opens, node.opensAt, took.opens, took.opensAt);
+    if (took != NodeStateEntry{.id = node.id}) landed.nodes.push_back(std::move(took));
+    else if (fresh) nodes_.erase(held);
   }
   for (const auto& edge : state.edges) {
     const auto [held, fresh] = edges_.try_emplace(edge.edge);
-    bool edgeTook = held->second.add(edge.addedAt);
-    edgeTook |= held->second.remove(edge.removedAt);
-    if (fresh && !edgeTook) edges_.erase(held);
-    took |= edgeTook;
+    EdgeStateEntry took{edge.edge, {}, {}};
+    if (held->second.add(edge.addedAt)) took.addedAt = edge.addedAt;
+    if (held->second.remove(edge.removedAt)) took.removedAt = edge.removedAt;
+    if (took != EdgeStateEntry{edge.edge, {}, {}}) landed.edges.push_back(took);
+    else if (fresh) edges_.erase(held);
   }
-  return took;
+  return landed;
 }
 
 void LooseGraph::createNode(const NodeId& id, const std::string& label, const std::string& icon,

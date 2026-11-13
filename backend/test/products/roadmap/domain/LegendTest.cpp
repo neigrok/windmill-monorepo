@@ -121,7 +121,7 @@ TEST(join_of_a_kind_that_carries_no_stamp_takes_nothing_and_leaves_the_legend_as
   KindStateEntry ghost;
   ghost.id = kid("ghost");
 
-  CHECK_FALSE(legend.join(LegendState{{ghost}}));
+  CHECK(legend.join(LegendState{{ghost}}).empty());
   CHECK(legend.exportState() == before);
 }
 

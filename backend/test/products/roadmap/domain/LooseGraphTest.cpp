@@ -194,8 +194,8 @@ TEST(join_is_idempotent) {
   LooseGraph once;
   once.join(state);
   LooseGraph twice;
-  CHECK(twice.join(state));
-  CHECK_FALSE(twice.join(state));  // a join whose every stamp is held already takes nothing, and says so
+  CHECK(twice.join(state) == state);
+  CHECK(twice.join(state).empty());  // a join whose every stamp is held already takes nothing, and says so
   CHECK(once.exportState() == twice.exportState());
 }
 
@@ -205,8 +205,8 @@ TEST(join_of_entries_that_carry_no_stamp_takes_nothing_and_leaves_the_graph_as_i
   graph.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   const GraphState before = graph.exportState();
 
-  CHECK_FALSE(graph.join(GraphState{{NodeStateEntry{.id = nid("a")}, NodeStateEntry{.id = nid("ghost")}},
-                                    {EdgeStateEntry{Edge{nid("a"), nid("ghost")}, {}, {}}}}));
+  CHECK(graph.join(GraphState{{NodeStateEntry{.id = nid("a")}, NodeStateEntry{.id = nid("ghost")}},
+                              {EdgeStateEntry{Edge{nid("a"), nid("ghost")}, {}, {}}}}).empty());
   CHECK(graph.exportState() == before);
 }
 
