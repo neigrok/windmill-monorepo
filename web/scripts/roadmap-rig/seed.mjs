@@ -3,7 +3,7 @@
 //   node seed.mjs --backend http://localhost:8088 --cookie <wm_session> [--tree t_...] [--snapshot path]
 // The cookie may also come from WM_RIG_COOKIE; it never lives in the repo.
 // Structure + legend: POST /v1/trees with the client-supplied id (byte-exact document seed).
-// Progress: MCP set_progress in bulk (the backend must run with WINDMILL_MCP_USER = the cookie's user).
+// Progress: MCP update_nodes marks, 200 rows a call (the backend must run with WINDMILL_MCP_USER = the cookie's user).
 // Then re-reads the copy over HTTP and compares node / edge / progress counts with the snapshot.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -69,14 +69,18 @@ if (created.status !== 200) process.exit(1);
 
 const init = await mcp('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'rig-seed', version: '0' } });
 if (!init.sid) { console.error('mcp initialize failed', init); process.exit(1); }
-const updates = snapshot.tree.nodes.map((node) => {
+const markRows = snapshot.tree.nodes.map((node) => {
   const status = node.status === 'complete' ? 'complete' : 'none';
   return { nodeId: node.id, status, ...(status === 'complete' && node.outOfOrder ? { outOfOrder: true } : {}) };
 });
-const progress = await mcp('tools/call', { name: 'set_progress', arguments: { treeId, updates } }, init.sid);
-const receipt = progress.body?.result?.structuredContent ?? progress.body?.result ?? progress.body;
-const receiptText = JSON.stringify(receipt);
-console.log('set_progress', progress.status, receiptText.length > 600 ? receiptText.slice(0, 600) + '…' : receiptText);
+const rowsPerCall = 200;
+for (let start = 0; start < markRows.length; start += rowsPerCall) {
+  const updates = markRows.slice(start, start + rowsPerCall);
+  const progress = await mcp('tools/call', { name: 'update_nodes', arguments: { treeId, updates } }, init.sid);
+  const receipt = progress.body?.result?.structuredContent ?? progress.body?.result ?? progress.body;
+  const receiptText = JSON.stringify(receipt);
+  console.log('update_nodes', start, progress.status, receiptText.length > 600 ? receiptText.slice(0, 600) + '…' : receiptText);
+}
 
 const readBack = await (await fetch(`${backend}/v1/trees/${treeId}`, { headers })).json();
 // GET /v1/trees/:id answers { data: the projection {id,title,nodes,kinds}, state: the lattice frame

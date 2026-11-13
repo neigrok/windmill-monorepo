@@ -44,8 +44,6 @@ std::optional<std::string> requireString(const Json::Value& value, const std::st
                                          Empty empty = Empty::rejected, std::size_t limit = 0);
 std::optional<std::string> optionalString(const Json::Value& value, const std::string& path,
                                           std::size_t limit = 0);
-std::optional<std::string> requireNumber(const Json::Value& value, const std::string& path);
-std::optional<std::string> optionalNumber(const Json::Value& value, const std::string& path);
 std::optional<std::string> optionalBool(const Json::Value& value, const std::string& path);
 std::optional<std::string> requireOneOf(const Json::Value& value, const std::string& path,
                                         const std::vector<const char*>& legal);
@@ -58,10 +56,6 @@ std::optional<std::string> optionalObjects(const Json::Value& value, const std::
 std::optional<std::string> optionalStrings(const Json::Value& value, const std::string& path,
                                            std::size_t itemLimit = 0);
 std::optional<std::string> optionalObject(const Json::Value& value, const std::string& path);
-
-// A canvas position, whole: an object holding both `x` and `y` as finite numbers. `path` names the row it rides
-// ("updates[0]", "nodes[2]"), so a refusal names `<path>.position` or the coordinate it lacks.
-std::optional<std::string> requirePosition(const Json::Value& value, const std::string& path);
 
 // A list of {url, label?} objects; a bare url string is accepted too.
 std::optional<std::string> optionalLinks(const Json::Value& value, const std::string& path);

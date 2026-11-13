@@ -24,22 +24,6 @@ const Json::Value* toolNamed(const Json::Value& catalog, const std::string& name
   return nullptr;
 }
 
-// delete_node takes the handle too, but as one of two forms; its contract is pinned in RoadmapToolsTest.
-const std::vector<const char*> kNodeHandleTools = {"annotate_node", "rename_node", "set_node_color",
-                                                   "move_node"};
-
-Json::Value handleToolArgs(const std::string& tool) {
-  Json::Value args(Json::objectValue);
-  if (tool == "annotate_node") args["description"] = "a note";
-  if (tool == "rename_node") args["label"] = "Renamed";
-  if (tool == "set_node_color") args["color"] = "olive";
-  if (tool == "move_node") {
-    args["x"] = 4.0;
-    args["y"] = 8.0;
-  }
-  return args;
-}
-
 }
 
 // Every tool's grant level, pinned by name.
@@ -59,9 +43,9 @@ TEST(mcp_every_roadmap_tool_declares_the_grant_level_that_reaches_it) {
                                             "get_progress", "find_nodes"}));
   CHECK_EQ(deletes, (std::vector<std::string>{"delete_tree", "delete_node", "remove_kind"}));
   CHECK_EQ(writes, (std::vector<std::string>{
-                       "patch_nodes", "update_nodes", "change_edges", "create_tree", "update_tree", "create_node", "annotate_node", "rename_node", "set_node_color",
-                       "move_node", "tidy", "add_kind", "update_kind", "set_progress", "import_subgraph", "prune"}));
-  CHECK_EQ(catalog.size(), std::size_t{26});
+                       "update_nodes", "change_edges", "create_tree", "update_tree", "create_node", "tidy", "add_kind",
+                       "update_kind", "import_subgraph", "prune"}));
+  CHECK_EQ(catalog.size(), std::size_t{20});
 }
 
 TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
@@ -69,7 +53,7 @@ TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
   const ToolCaller author{h.caller, parseToolScope("roadmap:read roadmap:write")};
   const Json::Value visible = h.tools.listTools(author);
 
-  CHECK_EQ(visible.size(), 23u);
+  CHECK_EQ(visible.size(), 17u);
   for (const char* destructive : {"delete_tree", "delete_node", "remove_kind"})
     CHECK(toolNamed(visible, destructive) == nullptr);
   for (const char* ordinary : {"get_tree", "create_node", "change_edges", "prune"})
@@ -81,81 +65,9 @@ TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
   CHECK_EQ(h.tools.listTools(elsewhere).size(), 0u);
 }
 
-TEST(mcp_a_missing_node_handle_names_nodeId_and_how_to_find_one) {
-  Harness h;
-  h.call("create_node", node("a", "A"));
-
-  for (const char* tool : kNodeHandleTools) {
-    ToolResult refused = h.call(tool, handleToolArgs(tool));
-    CHECK(refused.isError);
-    CHECK_EQ(message(refused),
-             std::string(tool) +
-                 ": missing required argument \"nodeId\". Call get_tree with fields "
-                 "[\"id\",\"label\"] to list the ids this tree has.");
-  }
-}
-
-TEST(mcp_nodeId_is_canonical_and_the_legacy_id_is_still_accepted) {
-  Harness h;
-  h.call("create_node", node("a", "A"));
-
-  for (const char* tool : kNodeHandleTools) {
-    Json::Value canonical = handleToolArgs(tool);
-    canonical["nodeId"] = "a";
-    ToolResult byHandle = h.call(tool, canonical);
-    CHECK_FALSE(byHandle.isError);
-    CHECK(body(byHandle)["applied"].asBool());
-
-    h.call("create_node", node("a", "A"));
-    Json::Value legacy = handleToolArgs(tool);
-    legacy["id"] = "a";
-    ToolResult byAlias = h.call(tool, legacy);
-    CHECK_FALSE(byAlias.isError);
-    CHECK(body(byAlias)["applied"].asBool());
-    h.call("create_node", node("a", "A"));
-  }
-
-  CHECK_FALSE(h.call("set_progress", mark("a", "complete")).isError);
-  Json::Value legacyMark(Json::objectValue);
-  legacyMark["id"] = "a";
-  legacyMark["status"] = "active";
-  ToolResult marked = h.call("set_progress", legacyMark);
-  CHECK_FALSE(marked.isError);
-  CHECK_EQ(body(marked)["nodeId"].asString(), std::string("a"));
-  CHECK_EQ(body(marked)["status"].asString(), std::string("none"));
-}
-
-TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
+TEST(mcp_the_catalog_caps_every_id_and_kind_it_takes) {
   Harness h;
   const Json::Value catalog = h.tools.listTools(h.actor);
-
-  for (const char* name : kNodeHandleTools) {
-    const Json::Value* tool = toolNamed(catalog, name);
-    REQUIRE(tool != nullptr);
-    const Json::Value& schema = (*tool)["inputSchema"];
-    CHECK_EQ(schema["properties"]["nodeId"]["type"].asString(), std::string("string"));
-    CHECK_EQ(schema["properties"]["nodeId"]["description"].asString(),
-             std::string("The node id (legacy `id` is still accepted)."));
-    CHECK(schema["properties"]["id"]["deprecated"].asBool());
-    bool requiresHandle = false;
-    for (const Json::Value& field : schema["required"])
-      if (field.asString() == "nodeId") requiresHandle = true;
-    CHECK(requiresHandle);
-    for (const Json::Value& field : schema["required"]) CHECK(field.asString() != std::string("id"));
-  }
-
-  const Json::Value* progress = toolNamed(catalog, "set_progress");
-  REQUIRE(progress != nullptr);
-  const Json::Value& marks = (*progress)["inputSchema"]["properties"];
-  CHECK_EQ(marks["nodeId"]["type"].asString(), std::string("string"));
-  CHECK(marks["id"]["deprecated"].asBool());
-  const Json::Value& row = marks["updates"]["items"];
-  CHECK_EQ(row["type"].asString(), std::string("object"));
-  CHECK_EQ(row["properties"]["nodeId"]["type"].asString(), std::string("string"));
-  CHECK(row["properties"]["id"]["deprecated"].asBool());
-  REQUIRE_EQ(row["required"].size(), 2u);
-  CHECK_EQ(row["required"][0].asString(), std::string("nodeId"));
-  CHECK_EQ(row["required"][1].asString(), std::string("status"));
 
   const Json::Value* import = toolNamed(catalog, "import_subgraph");
   REQUIRE(import != nullptr);
@@ -178,18 +90,14 @@ TEST(mcp_the_catalog_publishes_nodeId_and_keeps_id_as_a_deprecated_alias) {
   const Json::Value* search = toolNamed(catalog, "find_nodes");
   REQUIRE(search != nullptr);
   CHECK_EQ((*search)["inputSchema"]["properties"]["kind"]["maxLength"].asUInt64(), 128u);
-  const Json::Value* recolor = toolNamed(catalog, "set_node_color");
-  const Json::Value* patch = toolNamed(catalog, "patch_nodes");
-  REQUIRE(recolor != nullptr);
+  const Json::Value* patch = toolNamed(catalog, "update_nodes");
   REQUIRE(patch != nullptr);
   for (const Json::Value* kind : {&(*creation)["inputSchema"]["properties"]["kind"],
-                                  &(*recolor)["inputSchema"]["properties"]["kind"],
                                   &arrays["nodes"]["items"]["properties"]["kind"],
                                   &(*patch)["inputSchema"]["properties"]["updates"]["items"]["properties"]["kind"]}) {
     CHECK_EQ((*kind)["type"].asString(), std::string("string"));
     CHECK_EQ((*kind)["maxLength"].asUInt64(), 128u);
   }
-  CHECK_EQ((*recolor)["inputSchema"]["required"], list({"treeId", "nodeId"}));
   const Json::Value* planting = toolNamed(catalog, "create_tree");
   REQUIRE(planting != nullptr);
   CHECK_EQ((*planting)["inputSchema"]["properties"]["title"]["maxLength"].asUInt64(), 200u);
@@ -233,17 +141,18 @@ TEST(mcp_an_over_long_description_names_the_size_and_the_overage) {
   Json::Value args(Json::objectValue);
   args["nodeId"] = "a";
   args["description"] = repeat('x', 17181);
-  ToolResult refused = h.call("annotate_node", args);
+  ToolResult refused = h.call("update_nodes", asUpdate(args));
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
-           std::string("annotate_node: description would be 17181 characters, 1181 over the 16000 cap"));
+           std::string("update_nodes: description would be 17181 characters, 1181 over the 16000 cap"));
 
   const Json::Value catalog = h.tools.listTools(h.actor);
-  const Json::Value* annotate = toolNamed(catalog, "annotate_node");
-  REQUIRE(annotate != nullptr);
-  CHECK_EQ((*annotate)["inputSchema"]["properties"]["description"]["maxLength"].asUInt64(), 16000u);
-  CHECK_EQ((*annotate)["inputSchema"]["properties"]["appendDescription"]["maxLength"].asUInt64(), 16000u);
-  CHECK_EQ((*annotate)["inputSchema"]["properties"]["icon"]["maxLength"].asUInt64(), 64u);
+  const Json::Value* update = toolNamed(catalog, "update_nodes");
+  REQUIRE(update != nullptr);
+  const Json::Value& row = (*update)["inputSchema"]["properties"]["updates"]["items"]["properties"];
+  CHECK_EQ(row["description"]["maxLength"].asUInt64(), 16000u);
+  CHECK_EQ(row["appendDescription"]["maxLength"].asUInt64(), 16000u);
+  CHECK_EQ(row["icon"]["maxLength"].asUInt64(), 64u);
 }
 
 TEST(mcp_a_cap_refusal_names_every_field_over_its_cap) {
@@ -274,9 +183,9 @@ TEST(mcp_every_cap_counts_code_points_not_bytes) {
   Json::Value over(Json::objectValue);
   over["nodeId"] = "grin";
   over["label"] = wide + "\xF0\x9F\x98\x80";
-  ToolResult refused = h.call("rename_node", over);
+  ToolResult refused = h.call("update_nodes", asUpdate(over));
   CHECK(refused.isError);
-  CHECK_EQ(message(refused), std::string("rename_node: label would be 201 characters, 1 over the 200 cap"));
+  CHECK_EQ(message(refused), std::string("update_nodes: label would be 201 characters, 1 over the 200 cap"));
 
   Json::Value kind(Json::objectValue);
   kind["id"] = "wide";
@@ -303,29 +212,27 @@ TEST(mcp_an_unknown_enum_value_enumerates_the_legal_set) {
   Json::Value status(Json::objectValue);
   status["nodeId"] = "a";
   status["status"] = "finished";
-  ToolResult badStatus = h.call("set_progress", status);
+  ToolResult badStatus = h.call("update_nodes", asUpdate(status));
   CHECK(badStatus.isError);
   CHECK_EQ(message(badStatus),
-           std::string("set_progress: status \"finished\" is not one of {complete, none}"));
+           std::string("update_nodes: updates[0].status \"finished\" is not one of {complete, none}"));
 
   Json::Value updates(Json::arrayValue);
   updates.append(mark("a", "finished"));
   Json::Value batch(Json::objectValue);
   batch["updates"] = updates;
-  ToolResult badRow = h.call("set_progress", batch);
+  ToolResult badRow = h.call("update_nodes", batch);
   CHECK(badRow.isError);
   CHECK_EQ(message(badRow),
-           std::string("set_progress: updates[0].status \"finished\" is not one of "
-                       "{complete, none}"));
+           std::string("update_nodes: updates[0].status \"finished\" is not one of {complete, none}"));
 
   Json::Value color(Json::objectValue);
   color["nodeId"] = "a";
   color["color"] = "chartreuse";
-  ToolResult badColor = h.call("set_node_color", color);
+  ToolResult badColor = h.call("update_nodes", asUpdate(color));
   CHECK(badColor.isError);
   CHECK_EQ(message(badColor),
-           std::string("set_node_color: color \"chartreuse\" is not one of "
-                       "{terracotta, olive, gold, brick, sky, plum}"));
+           std::string("update_nodes: updates[0].color \"chartreuse\" is not one of {terracotta, olive, gold, brick, sky, plum}"));
 
   ToolResult badFilter = h.call("find_nodes", with("color", "chartreuse"));
   CHECK(badFilter.isError);
@@ -431,14 +338,6 @@ TEST(mcp_a_wrong_type_fails_the_call_and_never_the_request) {
   CHECK(wrongType.isError);
   CHECK_EQ(message(wrongType), std::string("create_node: argument \"label\" must be a string, got number"));
 
-  Json::Value moved(Json::objectValue);
-  moved["nodeId"] = "a";
-  moved["x"] = "left";
-  moved["y"] = 3.0;
-  ToolResult wrongNumber = h.call("move_node", moved);
-  CHECK(wrongNumber.isError);
-  CHECK_EQ(message(wrongNumber), std::string("move_node: argument \"x\" must be a number, got string"));
-
   Json::Value notAList(Json::objectValue);
   notAList["nodes"] = "everything";
   ToolResult refused = h.call("import_subgraph", notAList);
@@ -458,11 +357,10 @@ TEST(mcp_a_wrong_type_fails_the_call_and_never_the_request) {
   Json::Value annotated(Json::objectValue);
   annotated["nodeId"] = "a";
   annotated["links"] = links;
-  ToolResult badLink = h.call("annotate_node", annotated);
+  ToolResult badLink = h.call("update_nodes", asUpdate(annotated));
   CHECK(badLink.isError);
   CHECK_EQ(message(badLink),
-           std::string("annotate_node: links[0] must be an object {url, label?} or a url string, "
-                       "got number"));
+           std::string("update_nodes: updates[0].links[0] must be an object {url, label?} or a url string, got number"));
 }
 
 // 17 significant digits quotes back what IEEE stored.
@@ -498,7 +396,9 @@ TEST(mcp_a_missing_tree_id_names_it_and_the_way_to_find_one) {
                        "connection may use."));
 }
 
-// The miss is found in the room before anything is read or judged, so it is named first and the call writes nothing.
+// A mark on a node that opens a tree is answered refused, naming the node and what completes it; a call of marks alone
+// that recorded none is no error and completes as opens-a-tree. A miss is found in the room before anything is read or
+// judged, so it is named first and the call writes nothing.
 TEST(mcp_a_progress_mark_on_a_node_that_opens_a_tree_names_the_node_and_what_completes_it_after_any_missing_node) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
@@ -506,20 +406,21 @@ TEST(mcp_a_progress_mark_on_a_node_that_opens_a_tree_names_the_node_and_what_com
   h.call("create_node", node("a", "A"));
   h.trees.openedReads.clear();  // the edit followed the pointer it set, for its own receipt
 
-  ToolResult refused = h.call("set_progress", mark("idea", "complete"));
-  CHECK(refused.isError);
+  ToolResult refused = h.call("update_nodes", asUpdate(mark("idea", "complete")));
+  CHECK_FALSE(refused.isError);
   CHECK_EQ(refused.outcomeCode, std::string("opens-a-tree"));
-  CHECK_EQ(message(refused),
-           std::string("set_progress: \"idea\" opens a tree: it is complete when that tree is and takes no mark of "
-                       "its own — mark the steps of the tree it opens"));
+  CHECK_EQ(body(refused), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
+    "introducedDiagnostics":[],"progress":[{"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}],
+    "progressApplied":false,"progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.",
+    "progressRefused":["idea"],"seq":2,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea"]})"));
 
-  ToolResult missing = h.call("set_progress", parse(R"({"updates":[{"nodeId":"idea","status":"complete"},
+  ToolResult missing = h.call("update_nodes", parse(R"({"updates":[{"nodeId":"idea","status":"complete"},
                                                                     {"nodeId":"ghost","status":"complete"},
                                                                     {"nodeId":"a","status":"complete"}]})"));
   CHECK(missing.isError);
   CHECK_EQ(missing.outcomeCode, std::string("refused"));
   CHECK_EQ(message(missing),
-           std::string("set_progress: no node in this tree is named ghost. Call get_tree with "
+           std::string("update_nodes: no node in this tree is named \"ghost\". Call get_tree with "
                        "fields [\"id\",\"label\"] to list the ids this tree has."));
   CHECK(h.progressRepo.byKey.empty());
   CHECK_EQ(h.trees.openedReads.size(), 1u);
@@ -527,46 +428,33 @@ TEST(mcp_a_progress_mark_on_a_node_that_opens_a_tree_names_the_node_and_what_com
 
 TEST(mcp_a_progress_mark_on_a_missing_node_names_the_id_and_the_next_move) {
   Harness h;
-  ToolResult refused = h.call("set_progress", mark("ghost", "complete"));
+  ToolResult refused = h.call("update_nodes", asUpdate(mark("ghost", "complete")));
   CHECK(refused.isError);
   CHECK_EQ(message(refused),
-           std::string("set_progress: no node in this tree is named ghost. Call get_tree with "
-                       "fields [\"id\",\"label\"] to list the ids this tree has."));
+           std::string("update_nodes: no node in this tree is named \"ghost\". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has."));
 
-  ToolResult neither = h.call("set_progress", kNoArgs);
+  ToolResult neither = h.call("update_nodes", asUpdate(kNoArgs));
   CHECK(neither.isError);
   CHECK_EQ(message(neither),
-           std::string("set_progress: missing required argument \"nodeId\" (or an \"updates\" batch "
-                       "of {nodeId, status}). Call get_tree with fields [\"id\",\"label\"] to list "
-                       "the ids this tree has."));
+           std::string("update_nodes: missing required argument \"updates[0].nodeId\""));
 }
 
 TEST(mcp_a_silent_no_op_is_refused_by_name) {
   Harness h;
   h.call("create_node", node("a", "A"));
 
-  ToolResult nothing = h.call("annotate_node", with("nodeId", "a"));
+  ToolResult nothing = h.call("update_nodes", asUpdate(with("nodeId", "a")));
   CHECK(nothing.isError);
   CHECK_EQ(message(nothing),
-           std::string("annotate_node: nothing to set — pass at least one of \"description\", "
-                       "\"appendDescription\", \"icon\", \"links\", \"addLinks\", \"opens\"."));
-
-  Json::Value halfPosition(Json::objectValue);
-  halfPosition["label"] = "Half";
-  halfPosition["x"] = 3.0;
-  ToolResult half = h.call("create_node", halfPosition);
-  CHECK(half.isError);
-  CHECK_EQ(message(half),
-           std::string("create_node: arguments \"x\" and \"y\" go together — a position needs both."));
+           std::string("update_nodes: updates[0] sets nothing — pass at least one of label, color, kind, description, appendDescription, icon, links, addLinks, opens, status."));
 }
 
 TEST(mcp_every_tool_failure_names_the_tool_exactly_once) {
   Harness h;
   const std::vector<const char*> tools = {"get_tree",      "update_tree",  "get_progress", "find_nodes", "create_node",
-                                          "annotate_node", "rename_node",  "move_node",  "delete_node",
-                                          "set_node_color",
+                                          "update_nodes",  "delete_node",
                                           "add_kind",      "remove_kind",  "update_kind",
-                                          "set_progress",  "import_subgraph"};
+                                          "import_subgraph"};
   for (const char* name : tools) {
     Json::Value nonsense(Json::objectValue);
     nonsense["fields"] = 12;
@@ -595,29 +483,20 @@ TEST(mcp_a_null_argument_is_absent_and_never_a_command_to_clear) {
   seed["description"] = "the note";
   h.call("create_node", seed);
 
+  // A row's null in a field that takes no null is refused by its path, so it never clears what the node holds.
   Json::Value annotated(Json::objectValue);
   annotated["nodeId"] = "a";
   annotated["description"] = "a new note";
-  annotated["links"] = Json::nullValue;  // "I am not setting links" — not "delete them"
-  CHECK_FALSE(h.call("annotate_node", annotated).isError);
-
+  annotated["links"] = Json::nullValue;
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(annotated))), std::string("update_nodes: updates[0].links must be an array"));
   Json::Value read(Json::objectValue);
-  read["fields"] = list({"id", "description", "links", "position"});
-  const Json::Value a = body(h.call("get_tree", read))["tree"]["nodes"][0];
-  CHECK_EQ(a["description"].asString(), std::string("a new note"));
-  REQUIRE_EQ(a["links"].size(), 1u);
-  CHECK_EQ(a["links"][0]["url"].asString(), std::string("https://spec"));
+  read["fields"] = list({"id", "icon", "description", "links"});
+  CHECK_EQ(body(h.call("get_tree", read))["tree"]["nodes"],
+           parse(R"([{"id":"a","icon":"","description":"the note","links":[{"url":"https://spec"}]}])"));
 
-  // …and a null position is no position, rather than the origin every node would stack on.
-  Json::Value planted(Json::objectValue);
-  planted["id"] = "b";
-  planted["label"] = "B";
-  planted["x"] = Json::nullValue;
-  planted["y"] = Json::nullValue;
-  CHECK_FALSE(h.call("create_node", planted).isError);
-  const Json::Value nodes = body(h.call("get_tree", read))["tree"]["nodes"];
-  for (const Json::Value& n : nodes)
-    if (n["id"].asString() == "b") CHECK_FALSE(n.isMember("position"));
+  // A null argument to create_node is no argument: the node takes that field's default.
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","icon":null,"description":null,"links":null})")).isError);
+  CHECK_EQ(body(h.call("get_tree", read))["tree"]["nodes"][1], parse(R"({"id":"b","icon":""})"));
 }
 
 TEST(mcp_dry_run_is_a_boolean_and_a_preview_never_writes) {
@@ -709,24 +588,6 @@ TEST(mcp_an_import_with_no_nodes_names_the_way_through) {
   CHECK_EQ((*import)["inputSchema"]["description"].asString().find("title?"), std::string::npos);
 }
 
-TEST(mcp_set_progress_refuses_two_routes_at_once) {
-  Harness h;
-  h.call("create_node", node("a", "A"));
-  h.call("create_node", node("b", "B"));
-
-  Json::Value updates(Json::arrayValue);
-  updates.append(mark("b", "complete"));
-  Json::Value both = mark("a", "complete");
-  both["updates"] = updates;
-
-  ToolResult refused = h.call("set_progress", both);
-  CHECK(refused.isError);
-  CHECK_EQ(message(refused),
-           std::string("set_progress: pass a single \"nodeId\"+\"status\" or an \"updates\" batch, "
-                       "not both — the single mark would be dropped."));
-  CHECK_EQ(body(h.call("get_progress", kNoArgs))["completed"].size(), 0u);
-}
-
 TEST(mcp_a_kind_handle_is_read_under_either_spelling) {
   Harness h;
   for (const char* added : {R"({"id":"build","hue":"sky"})", R"({"id":"spare","hue":"olive"})"})
@@ -807,12 +668,11 @@ TEST(mcp_every_write_tool_denies_a_private_tree_exactly_as_it_denies_an_absent_o
   h.trees.byId["priv"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Theirs", {}},
                                     0, fake::uid("someone"), Visibility::private_};
 
-  const std::vector<const char*> writes = {"create_node", "annotate_node", "rename_node",
-                                           "set_node_color", "move_node",  "delete_node",
+  const std::vector<const char*> writes = {"create_node", "update_nodes", "delete_node",
                                            "change_edges",
                                            "tidy",          "add_kind",    "remove_kind",
                                            "update_kind",   "prune",       "import_subgraph",
-                                           "set_progress",  "delete_tree", "update_tree"};
+                                           "delete_tree",   "update_tree"};
   for (const char* name : writes) {
     Json::Value args(Json::objectValue);
     args["label"] = "x";
@@ -822,8 +682,6 @@ TEST(mcp_every_write_tool_denies_a_private_tree_exactly_as_it_denies_an_absent_o
     args["description"] = "x";
     args["guide"] = "x";
     args["status"] = "complete";
-    args["x"] = 1.0;
-    args["y"] = 2.0;
     args["from"] = "a";
     args["to"] = "b";
     args["oldFrom"] = "a";
@@ -832,6 +690,7 @@ TEST(mcp_every_write_tool_denies_a_private_tree_exactly_as_it_denies_an_absent_o
     args["newTo"] = "c";
     args["order"] = list({"a"});
     args["nodes"] = Json::Value(Json::arrayValue);
+    args["updates"] = parse(R"([{"nodeId":"a","label":"x"}])");
 
     Json::Value denied = args;
     denied["treeId"] = "priv";
@@ -860,7 +719,7 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
 
   const Json::Value tools = h.tools.listTools(h.actor);
   for (const char* named : {"get_tree", "update_tree", "find_nodes", "get_diagnostics",
-                            "import_subgraph", "set_progress", "get_nodes", "patch_nodes", "change_edges"}) {
+                            "import_subgraph", "get_nodes", "update_nodes", "change_edges"}) {
     CHECK(text.find("roadmap_" + std::string(named)) != std::string::npos);
     CHECK(toolNamed(tools, named) != nullptr);
   }
@@ -879,6 +738,8 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
                             "A tree is complete when it has at least one node and",
                             "a tree whose pointers lead back to it never is",
                             "Such a node takes no mark of its own",
+                            "`roadmap_update_nodes` answers a row marking one as a `refused` row beside the rows it records and\n"
+                            "lists it under `progressRefused`",
                             "an import's `progress[]` lists it under `progressRefused`",
                             "A mark the node already held is kept, still answered as `status`, and decides nothing.",
                             "`prerequisitesMet` reads the same completed set as `state`.",
@@ -926,12 +787,12 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
                             "On a tree you do not own neither list is answered",
                             "Default true; false leaves both out and reads no other tree"})
     CHECK(includePointers["description"].asString().find(claim) != std::string::npos);
-  for (const char* tool : {"create_node", "annotate_node"})
+  for (const char* tool : {"create_node"})
     CHECK((*toolNamed(tools, tool))["inputSchema"]["properties"]["opens"]["description"].asString().find(
               "A tree that leads back to this one lands, and the receipt's `introducedDiagnostics` names the loop after "
               "the graph's errors, within its five lines") != std::string::npos);
   for (const Json::Value& nodeFields :
-       {(*toolNamed(tools, "patch_nodes"))["inputSchema"]["properties"]["updates"]["items"]["properties"],
+       {(*toolNamed(tools, "update_nodes"))["inputSchema"]["properties"]["updates"]["items"]["properties"],
         (*toolNamed(tools, "import_subgraph"))["inputSchema"]["properties"]["nodes"]["items"]["properties"]})
     CHECK(nodeFields["opens"]["description"].asString().find(
               "A tree that leads back to this one lands, and `introducedDiagnostics` names the loop after the graph's "
@@ -942,7 +803,7 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   CHECK((*toolNamed(tools, "import_subgraph"))["description"].asString().find(
             "A node deleted earlier and re-sent comes back with the fields it had, but for the tree it opened: it opens "
             "the tree this batch names for it, or none") != std::string::npos);
-  CHECK_EQ((*toolNamed(tools, "patch_nodes"))["outputSchema"]["properties"]["pointerDiagnosticsUnavailable"]["type"].asString(),
+  CHECK_EQ((*toolNamed(tools, "update_nodes"))["outputSchema"]["properties"]["pointerDiagnosticsUnavailable"]["type"].asString(),
            std::string("boolean"));
   CHECK_FALSE((*toolNamed(tools, "change_edges"))["outputSchema"]["properties"].isMember("pointerDiagnosticsUnavailable"));
 
@@ -950,9 +811,9 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
   Json::Value rename(Json::objectValue);
   rename["nodeId"] = "a";
   rename["label"] = "A renamed";
-  const Json::Value receipt = body(h.call("rename_node", rename));
-  CHECK_EQ(keys(receipt),
-           (std::vector<std::string>{"applied", "diagnosticsClean", "id", "introducedDiagnostics", "seq"}));
+  const Json::Value receipt = body(h.call("update_nodes", asUpdate(rename)));
+  CHECK_EQ(keys(receipt), (std::vector<std::string>{"applied", "changedNodeIds", "diagnosticsClean", "dryRun",
+                                                     "introducedDiagnostics", "seq", "treeId", "unchangedNodeIds"}));
 
   Json::Value read(Json::objectValue);
   read["fields"] = list({"id", "status", "seedStatus"});
@@ -1014,36 +875,35 @@ TEST(mcp_a_string_that_is_not_valid_utf8_is_refused_by_name_before_any_cap) {
   Json::Value icon(Json::objectValue);
   icon["nodeId"] = "a";
   icon["icon"] = grins;
-  CHECK_FALSE(h.call("annotate_node", icon).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(icon)).isError);
   icon["icon"] = grins + "\xF0\x9F\x98\x80";
-  CHECK_EQ(message(h.call("annotate_node", icon)),
-           std::string("annotate_node: icon would be 65 characters, 1 over the 64 cap"));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(icon))),
+           std::string("update_nodes: icon would be 65 characters, 1 over the 64 cap"));
   icon["icon"] = grins + "\x80";
-  CHECK_EQ(message(h.call("annotate_node", icon)), std::string("annotate_node: icon is not valid UTF-8"));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(icon))), std::string("update_nodes: updates[0].icon is not valid UTF-8"));
 }
 
-// Every edit of one node names a present node, in the sentence delete_node and set_progress use;
-// an id never created or already deleted plants nothing.
+// Every edit of a node names a present node, in the sentence delete_node uses; an id never created or already deleted
+// plants nothing, whatever the row carries.
 TEST(mcp_a_node_edit_on_a_missing_or_deleted_node_is_refused_by_name_and_plants_nothing) {
   Harness h;
   h.call("create_node", node("a", "A"));
-  for (const char* tool : kNodeHandleTools) {
-    Json::Value ghost = handleToolArgs(tool);
-    ghost["nodeId"] = "ghost";
-    ToolResult refused = h.call(tool, ghost);
+  const auto refusal = [&](const char* node, const char* fields) {
+    Json::Value row = parse(fields);
+    row["nodeId"] = node;
+    Json::Value call(Json::objectValue);
+    call["updates"].append(row);
+    const ToolResult refused = h.call("update_nodes", call);
     CHECK(refused.isError);
-    CHECK_EQ(message(refused),
-             std::string(tool) + ": no node in this tree is named \"ghost\". Call get_tree with fields "
-                                 "[\"id\",\"label\"] to list the ids this tree has.");
-  }
+    return message(refused);
+  };
+  for (const char* fields : {R"({"label":"Renamed"})", R"({"color":"olive"})", R"({"description":"a note"})",
+                             R"({"status":"complete"})"})
+    CHECK_EQ(refusal("ghost", fields), std::string("update_nodes: no node in this tree is named \"ghost\". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has."));
   h.call("delete_node", with("nodeId", "a"));
-  for (const char* tool : kNodeHandleTools) {
-    Json::Value dead = handleToolArgs(tool);
-    dead["nodeId"] = "a";
-    CHECK_EQ(message(h.call(tool, dead)),
-             std::string(tool) + ": no node in this tree is named \"a\". Call get_tree with fields "
-                                 "[\"id\",\"label\"] to list the ids this tree has.");
-  }
+  for (const char* fields : {R"({"label":"Renamed"})", R"({"color":"olive"})", R"({"description":"a note"})",
+                             R"({"status":"complete"})"})
+    CHECK_EQ(refusal("a", fields), std::string("update_nodes: no node in this tree is named \"a\". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has."));
   Json::Value everything(Json::objectValue);
   everything["fields"] = list({"id", "description", "icon"});
   CHECK_EQ(body(h.call("get_tree", everything))["tree"]["nodes"].size(), 0u);
@@ -1055,23 +915,19 @@ TEST(mcp_opens_is_published_with_the_id_cap_wherever_it_is_taken_and_as_a_field_
   Harness h;
   const Json::Value catalog = h.tools.listTools(h.actor);
   const Json::Value* create = toolNamed(catalog, "create_node");
-  const Json::Value* annotate = toolNamed(catalog, "annotate_node");
-  const Json::Value* patch = toolNamed(catalog, "patch_nodes");
+  const Json::Value* patch = toolNamed(catalog, "update_nodes");
   const Json::Value* import = toolNamed(catalog, "import_subgraph");
   REQUIRE(create != nullptr);
-  REQUIRE(annotate != nullptr);
   REQUIRE(patch != nullptr);
   REQUIRE(import != nullptr);
   for (const Json::Value& taken : {(*create)["inputSchema"]["properties"]["opens"],
-                                   (*annotate)["inputSchema"]["properties"]["opens"],
                                    (*patch)["inputSchema"]["properties"]["updates"]["items"]["properties"]["opens"],
                                    (*import)["inputSchema"]["properties"]["nodes"]["items"]["properties"]["opens"]}) {
     CHECK_EQ(taken["type"].asString(), std::string("string"));
     CHECK_EQ(taken["maxLength"].asUInt64(), 128u);
   }
 
-  const Json::Value fields = list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "position",
-                                   "status", "seedStatus", "state", "summary", "description", "links", "opens",
+  const Json::Value fields = list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "status", "seedStatus", "state", "summary", "description", "links", "opens",
                                    "url"});
   for (const char* name : {"get_tree", "get_nodes", "find_nodes"}) {
     const Json::Value* tool = toolNamed(catalog, name);
@@ -1099,12 +955,12 @@ TEST(mcp_the_tool_descriptions_say_a_node_that_opens_a_tree_follows_it_and_takes
   CHECK(says("find_nodes", "your marks and, on a tree you own, the trees its nodes open"));
   CHECK(says("list_trees", "a node that opens another tree of yours counts when that tree is complete, not by its mark"));
   CHECK(says("create_node", "is complete for you when that tree is"));
-  CHECK(says("annotate_node", "is complete for you when that tree is"));
-  CHECK(says("set_progress", "On a tree you own, a node that opens another tree of yours takes no mark: it is complete when "
-                             "that tree is, so mark the steps of the tree it opens."));
-  CHECK(says("set_progress", "A single mark on such a node is refused and nothing is written; in `updates` its row answers "
-                             "{nodeId, refused} with the reason and every other row is recorded."));
-  CHECK(says("set_progress", "prerequisitesMet reads the same completed set `state` does, so a prerequisite that opens a "
+  CHECK(says("update_nodes", "is complete for you when that tree is"));
+  CHECK(says("update_nodes", "On a tree you own, a node that opens another tree of yours takes no mark: it is complete when "
+                             "that tree is, so mark the steps of the tree it opens"));
+  CHECK(says("update_nodes", "a row marking one is not recorded and answers {nodeId, refused} with the reason, and every "
+                             "other row is recorded."));
+  CHECK(says("update_nodes", "prerequisitesMet reads the same completed set `state` does, so a prerequisite that opens a "
                              "tree is met when that tree is complete, whatever mark it holds."));
   CHECK(says("import_subgraph", "a row marking a node that opens another tree of yours is not recorded"));
   CHECK(says("import_subgraph", "and is reported back in progressRefused."));
@@ -1117,29 +973,28 @@ TEST(mcp_an_opens_that_is_no_tree_id_is_refused_by_its_path_and_a_null_is_absent
 
   CHECK_EQ(message(h.call("create_node", parse(R"({"label":"B","opens":7})"))),
            std::string("create_node: argument \"opens\" must be a string, got number"));
-  CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","opens":{"treeId":"t","title":"Test Roadmap"}})"))),
-           std::string("annotate_node: argument \"opens\" must be a string, got object"));
-  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":true}]})"))),
-           std::string("patch_nodes: argument \"updates[0].opens\" must be a string, got boolean"));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":{"treeId":"t","title":"Test Roadmap"}})")))),
+           std::string("update_nodes: argument \"updates[0].opens\" must be a string, got object"));
+  CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","opens":true}]})"))),
+           std::string("update_nodes: argument \"updates[0].opens\" must be a string, got boolean"));
   CHECK_EQ(message(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a"},{"id":"b","opens":["t"]}]})"))),
            std::string("import_subgraph: argument \"nodes[1].opens\" must be a string, got array"));
 
   CHECK_EQ(message(h.call("create_node", parse(R"({"label":"B","opens":")" + over + R"("})"))),
            std::string("create_node: opens is 129 characters, 1 over the 128 cap"));
-  CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","opens":")" + over + R"("})"))),
-           std::string("annotate_node: opens is 129 characters, 1 over the 128 cap"));
-  CHECK_EQ(message(h.call("patch_nodes", parse(R"({"updates":[{"nodeId":"a","opens":")" + over + R"("}]})"))),
-           std::string("patch_nodes: updates[0].opens is 129 characters, 1 over the 128 cap"));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":")" + over + R"("})")))),
+           std::string("update_nodes: updates[0].opens is 129 characters, 1 over the 128 cap"));
+  CHECK_EQ(message(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","opens":")" + over + R"("}]})"))),
+           std::string("update_nodes: updates[0].opens is 129 characters, 1 over the 128 cap"));
   CHECK_EQ(message(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","opens":")" + over + R"("}]})"))),
            std::string("import_subgraph: nodes[0].opens is 129 characters, 1 over the 128 cap"));
   Json::Value malformed(Json::objectValue);
   malformed["nodeId"] = "a";
   malformed["opens"] = std::string("t_\xC3\x28");
-  CHECK_EQ(message(h.call("annotate_node", malformed)), std::string("annotate_node: opens is not valid UTF-8"));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(malformed))), std::string("update_nodes: updates[0].opens is not valid UTF-8"));
 
-  CHECK_EQ(message(h.call("annotate_node", parse(R"({"nodeId":"a","opens":null})"))),
-           std::string("annotate_node: nothing to set — pass at least one of \"description\", "
-                       "\"appendDescription\", \"icon\", \"links\", \"addLinks\", \"opens\"."));
+  CHECK_EQ(message(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","opens":null})")))),
+           std::string("update_nodes: missing required argument \"updates[0].opens\""));
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"b","label":"B","opens":null})")).isError);
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","opens":null}]})")).isError);
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
