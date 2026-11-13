@@ -165,28 +165,30 @@ test('Chromium: a tree nothing opens, and any tree from a server that sends no o
   });
 });
 
-test('Chromium: a delete says whether steps opened the tree, and a tree deleted first is no longer counted for the trees it opened', async () => {
+test('Chromium: a delete says whether steps opened the tree and where the tree lived, and a tree deleted first is no longer counted for the trees it opened', async () => {
   const rows = [
     server28({ id: 't_year', title: 'My year', openers: [] }),
     server28({ id: 't_summer', title: 'Summer plans', openers: [{ treeId: 't_year', steps: 1 }] }),
     server28({ id: 't_coast', title: 'Coast trip', openers: [{ treeId: 't_summer', steps: 2 }] }),
     server28({ id: 't_old', title: 'Old server row' }),
+    { id: 't_draft', title: 'Draft on the device', updatedAt: 0, origin: 'device', claimed: false, openers: [{ treeId: 't_year', steps: 2 }] },
   ];
   await withSwitcher(rows, async (page) => {
     await openMenu(page);
     const lines = [];
-    for (const title of ['Summer plans', 'Coast trip', 'Old server row']) {
+    for (const title of ['Summer plans', 'Coast trip', 'Old server row', 'Draft on the device']) {
       await confirmDeleting(page, title);
       lines.push((await confirmingRow(page)).line);
       await page.getByRole('button', { name: 'Delete', exact: true }).click();
       await page.getByRole('menuitem').filter({ hasText: title }).waitFor({ state: 'detached' });
     }
-    assert.deepEqual(lines, ['Also removes the step that opens it in My year', null, null]);
+    assert.deepEqual(lines, ['Also removes the step that opens it in My year', null, null, 'Also removes 2 steps that open it in My year']);
     assert.deepEqual(await page.evaluate(() => window.events), [
       { name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } },
-      { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'some' } },
-      { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'none' } },
-      { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'none' } },
+      { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'some', place: 'account' } },
+      { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'none', place: 'account' } },
+      { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'none', place: 'account' } },
+      { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'some', place: 'device' } },
     ]);
   });
 });

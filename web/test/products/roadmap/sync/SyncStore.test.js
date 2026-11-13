@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
 import { outboxWrites } from '../../../../src/products/roadmap/sync/pendingWrites.js';
@@ -250,6 +250,24 @@ test('an acknowledgement confirms the exact sent value even when a later local v
   session.receiveReject({ frameId: [...session.inFlight.keys()].at(-1), code: 'bad-frame' });
   assert.equal(await session.discard(), true);
   assert.equal((await store.load('tree')).frame.nodes[0].label, 'Accepted');
+});
+
+test('a write the browser fails at its request rejects with that request\'s own error, never with nothing, and the next save still lands', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  await store.save('tree', value());
+  const put = IDBObjectStore.prototype.put;
+  t.mock.method(IDBObjectStore.prototype, 'put', function (record, key) {
+    const request = put.call(this, record, key);
+    this.add(record, key);
+    return request;
+  });
+
+  const failed = await store.save('tree', value()).then(() => 'saved', (error) => error);
+  t.mock.restoreAll();
+
+  assert.deepEqual({ name: failed?.name, isError: failed instanceof Error || failed instanceof DOMException }, { name: 'ConstraintError', isError: true });
+  assert.equal((await store.save('tree', value())).status, 'saved');
 });
 
 test('save rejects storage/validation failures without poisoning subsequent saves', async (t) => {
@@ -955,6 +973,70 @@ test('a mark made on a step whose pointer already stands, and one found again af
   reopened.receive({ t: 'progress', intent: 'graft', marks: [] });
   await settle([store]);
   assert.deepEqual(marksIn([reopened.ws]), ['a:complete']);
+});
+
+test('a mark on a step whose pointer the room found leading to no tree is an ordinary mark: counted, sent once, and set aside again once the step opens another tree', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const { session, sockets, subscribed } = await sessionWithQueuedMarks(env, store, [['k', 'complete']]);
+  await subscribed(POINTER, 2);
+  assert.deepEqual({ sent: marksIn(sockets), pending: owed(session).pending }, { sent: [], pending: 0 });
+
+  session.pointersLeadNowhere([['k', 't_other']]);
+  await settle([store]);
+  assert.deepEqual({ sent: marksIn(sockets), pending: owed(session).pending }, { sent: ['k:complete'], pending: 1 });
+  session.receive({ t: 'progressAck', treeId: 'tree', frameId: session.ws.frames.filter((frame) => frame.t === 'progress').at(-1).frameId });
+  await settle([store]);
+  assert.equal(owed(session).pending, 0);
+
+  session.markProgress(['k'], 'none');
+  session.receive(live([{ id: 'k', opens: 't_found', opensAt: '300:0:srv' }], 3));
+  session.markProgress(['k'], 'complete');
+  await settle([store]);
+  assert.deepEqual({ sent: marksIn(sockets), pending: owed(session).pending }, { sent: ['k:complete', 'k:none'], pending: 0 },
+    'the room had found only the old pointer leading nowhere: the mark under the new one waits on the room');
+  session.pointersLeadNowhere([]);
+  assert.equal(owed(session).pending, 0);
+});
+
+test('a copy that showed its steps done by their seeds sends them as the person\'s marks, stamped here, once its lane holds none; a lane with a mark keeps it as it is', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const seeded = { nodes: ['a', 'b', 'k'].map((id) => ({ id, createdAt: '100:0:srv', label: id, labelAt: '100:0:srv', ...(id === 'k' ? {} : { status: 'complete', statusAt: '100:0:srv' }) })), edges: [], kinds: [] };
+  const session = await env.session(store);
+  session.ws.open();
+  session.receive({ t: 'subgraph', intent: 'delta', ...seeded, seq: 1, reach: 'writer' });
+  session.receive({ t: 'progress', intent: 'graft', marks: [] });
+  await settle([store]);
+
+  session.adoptSeeds();
+  await settle([store]);
+  assert.deepEqual(marksIn([session.ws]), ['a:complete,b:complete']);
+  assert.equal(session.ws.frames.find((frame) => frame.t === 'progress').marks.every(({ at }) => parseHlc(at).actor === session.actor), true);
+
+  session.markProgress(['a'], 'none');
+  session.adoptSeeds();
+  await settle([store]);
+  assert.deepEqual(marksIn([session.ws]), ['a:complete,b:complete', 'a:none']);
+});
+
+test('a claim that gives a tree a fresh id repoints every step at it as a pointer write outside the undo journal, sent like any other', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const { session } = await sessionWithQueuedMarks(env, store, []);
+  session.ws.open();
+  session.receive({ t: 'subgraph', intent: 'delta', nodes: [{ id: 'k', opens: 't_old', opensAt: '200:0:srv' }, { id: 'a', opens: 't_other', opensAt: '200:0:srv' }], edges: [], kinds: [], seq: 2, reach: 'writer' });
+  session.receive({ t: 'progress', intent: 'graft', marks: [] });
+  await settle([store]);
+  const undo = session.undoStack.length;
+
+  assert.equal(session.repoint('t_old', 't_new'), true);
+  assert.equal(session.repoint('t_gone', 't_new'), false);
+  await settle([store]);
+
+  assert.deepEqual(opened(session), { a: 't_other', b: '', k: 't_new', z: '' });
+  assert.equal(session.undoStack.length, undo);
+  assert.deepEqual(pointerWrites(session).at(-1), 'k:t_new');
 });
 
 test('marks and edits made as the socket comes back beside a mark set aside all land: nothing waits, nothing is dropped and Undo keeps its entries', async (t) => {

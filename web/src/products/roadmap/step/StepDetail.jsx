@@ -284,7 +284,7 @@ export function StepDetail({
     phone: surface === 'page',
     layer: layerRef,
     choose: () => {
-      track('roadmap_tree_attach', { step: 'open', band: breakpoint, view: treeActs.view });
+      track('roadmap_tree_attach', { step: 'open', band: breakpoint, view: treeActs.view, place: treeActs.trees.place });
       setTreePicker(true);
     },
     detach: () => {

@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { confirmDeviceOwner } from '../persistence/LocalTreeRegistry.js';
-import { claimLocalTrees } from '../sync/claimLocalTrees.js';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LocalTreeRegistry, confirmDeviceOwner } from '../persistence/LocalTreeRegistry.js';
+import { claimLocalTrees, onTreeClaimed } from '../sync/claimLocalTrees.js';
 import { isOwnershipRefusal, isSessionRefusal } from '../sync/refusals.js';
 
-// Who holds this room: the session's lapse, the claim of device trees at sign-in, and the demotion an ownership refusal forces.
-// Signing in on a roadmap that loaded as someone else's loads it again, as a demotion does: it may be theirs.
+// Who holds this room: the session's lapse, the claim of device trees at sign-in, the demotion an ownership refusal forces,
+// and the holder the room acts for. Signing in on a roadmap that loaded as someone else's loads it again, as a demotion
+// does: it may be theirs.
 export function useRoomAuthority({ treeId, status, account, refresh, knownReaderRef, room: { sessionRef, sceneRef } }) {
   const [lapsed, setLapsed] = useState(false);
   const [demotion, setDemotion] = useState(null); // { edits, cardOpen } | null
+  const [claims, setClaims] = useState(0); // trees any tab's claims took from this device to the account
   const prevAuthRef = useRef(status);
   const suspectRef = useRef(false);
   const demotedRef = useRef(false);
@@ -26,6 +28,8 @@ export function useRoomAuthority({ treeId, status, account, refresh, knownReader
   useEffect(() => {
     if (prevAuthRef.current === 'signed-in') kickClaim();
   }, [kickClaim]);
+
+  useEffect(() => onTreeClaimed(() => setClaims((count) => count + 1)), []);
 
   // A sign-in or sign-out must reconnect: the socket’s principal is fixed at connect.
   useEffect(() => {
@@ -102,5 +106,22 @@ export function useRoomAuthority({ treeId, status, account, refresh, knownReader
     };
   }, [refresh]);
 
-  return { lapsed, demotion, setDemotion };
+  return { lapsed, demotion, setDemotion, claims };
+}
+
+const deviceTrees = new LocalTreeRegistry();
+
+// Who holds the room as its owner, and where (`place`): on a tree that lives only on this device, whoever is at the device,
+// signed in or not, until a claim takes the tree to the account (asked again whenever any tab's claim lands, `claims`, and
+// whenever the account changes in this document); on any other,
+// the account once the server has answered for it in this document (`confirmed` in the shell's auth context; a page that
+// starts with no connection stands on the cached account, which is not one) and while its session has not lapsed. Null for
+// anyone else. The room goes into trees, attaches them and says where it acts for its holder alone.
+export function useRoomHolder({ owner, treeId, account, confirmed, lapsed, claims, registry = deviceTrees }) {
+  const onDevice = useMemo(() => owner && registry.onDevice(treeId) !== null, [owner, treeId, claims, account?.id]);
+  const accountId = owner && !onDevice && confirmed && !lapsed ? account?.id ?? null : null;
+  return useMemo(() => {
+    if (onDevice) return { place: 'device' };
+    return accountId ? { place: 'account', account: accountId } : null;
+  }, [onDevice, accountId]);
 }

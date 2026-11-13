@@ -629,9 +629,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   tree beside Edit step where Complete sat, done of total and Open tree in the dock and the panel, and the tree's mark,
   *Up next · 3 of 8* and Open tree in the bar. The swipe reveals Open and stops there, as it does for Complete; 28.10's
   full swipe that opens the tree is not built.
-- **Section 28 · states with no board.** A tree whose facts the load did not read (the device's own copy, a `503` on the
-  pointers, a pointer set while the roadmap is open until it is read again) shows the tree's mark on the node and Open
-  tree, and no pill, row or words; its step stands by its prerequisites and is never done. A step whose pointer leads nowhere and whose own mark
+- **Section 28 · states with no board.** A tree whose facts the load did not read (the device's copy of a server tree,
+  a `503` on the pointers, a pointer set while the roadmap is open until it is read again, a device read that failed)
+  shows the tree's mark on the node and Open tree, and no pill, row or words; its step stands by its prerequisites and is never done. A step whose pointer leads nowhere and whose own mark
   already completed it shows *Done* with the *Tree not found* row and no words where Complete sat. A locked step whose
   tree loops back or has no steps keeps the loop's or the empty tree's line. The tablet band and C on a card whose tree
   loops back (*Won’t complete by itself*) or is not found (*Can’t complete yet*) follow the desktop boards. Under guides
@@ -653,9 +653,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   deleted since the load shows the generic load error, with no way back but the browser's. During an outage
   `roadmap-opens-load` reports once per page load. The row's Export writes the raw marks, so a step done by its tree
   exports unchecked (filed with the export).
-- **Section 28 · no door without an account.** A lapsed session, a device's copy with nobody signed in and a page
-  that started with no connection (until the server answers for the account) show the tree's mark on such a step and
-  no Open tree, pill press, swipe Open or way back; no board draws this state.
+- **Section 28 · no door without a holder.** On a tree the server keeps, a lapsed session, its copy on a device with
+  nobody signed in and a page that started with no connection (until the server answers for the account) show the
+  tree's mark on such a step and no Open tree, pill press, swipe Open or way back; no board draws this state.
 - **Section 28 · a step that opens the tree it stands in.** No board draws it. It keeps the loop's mark and words
   (*Loops back*, *Won’t complete by itself*) and has no door: no chevron on the pill, no Tree row to press, no Open
   tree.
@@ -695,9 +695,34 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   it* and keeps the drawn sentence for an answer that names one. The phone sheet on 28.65 keeps the sheet shell's
   close button beside the tree's name. 28.39 and 28.42 draw Choose tree where Complete sat; the web offers Change tree
   under the section's ⋯ and no button in the band. The loop's and the missing tree's ways out (*Detach one side.*,
-  *Choose another, or detach it.*) show only to the person who has the ⋯; a lapsed session and a device's copy with
-  nobody signed in keep the fact alone. Crossing 744px with the tree picker open starts it again: the list is read again and the choice is gone. 28.60 and 28.67, the
-  picker on a device with nobody signed in, are not built.
+  *Choose another, or detach it.*) show only to the person who has the ⋯; a lapsed session and a server tree's copy
+  with nobody signed in keep the fact alone. Crossing 744px with the tree picker open starts it again: the list is read
+  again and the choice is gone.
+- **Section 28 · signed out on the trees of this device (28.43–28.46, 28.60, 28.67), against the boards.** The picker
+  is built from 28.60 and 28.67, which restate 28.44 and 28.46 on today's step page: a page in the step modal from 744px
+  and a full-screen page on phones, not 28.44's list in the step's side column; the context line (*For Learn to sail ·
+  3 trees on this device*) where 28.44 has a caption; the closing line beside Cancel from 744px and above the field on
+  phones; an empty tree reads *No steps · on this device* as the signed-in picker says *No steps*, where 28.44 has *No
+  steps yet*. Attach waits while the chosen row is the tree the step opens already, as in the signed-in picker; 28.60
+  and 28.67 draw it ready. 28.60's row carries Ask AI, which a device with nobody signed in does not offer and 28.43
+  does not draw. The boards behind (28.43, 28.45) do not draw the guide's Add guide entry, which stands there as on
+  any owner's tree, and draw a Coach rail from 744px and a Coach field on phones, which the roadmap room does not show.
+- **Section 28 · signed out on the trees of this device, states with no board.** A device with no other tree: *You
+  have no other trees yet.* with the closing line. A pasted address of a tree not on this device, a server tree's
+  included: *No roadmap you can read is at that address.*, with no blocked row and no Fork tree. A device that cannot
+  read its trees (its database will not open, or a record cannot be read): the room shows each such step's tree mark and
+  Open tree with nothing said of the tree, the picker *Couldn’t load your trees* with Try again, and the switcher's
+  delete asks its question alone and then removes nothing: the row stays, as for any delete that fails, and deleting
+  again tries again. One stored record that does not join: only its tree is unknown; it is left out of the picker, a
+  step that opens it shows the mark and Open tree with nothing said, it is neither counted in another tree's delete line
+  nor loses steps to that delete, and every other tree works as drawn. A step on a device tree that opens
+  a server tree, someone else's or a removed one reads *Not found*. A signed-in person on a tree that lives only on the
+  device (planted offline, its claim not landed yet) holds it as the device does: the picker lists the device's trees,
+  tagged, with no closing line. Deleting a device tree others open: the confirmation says 28.50's line, counted on the
+  device; the steps go from the tree this tab has open at once, and from a tree open in another tab when that tab
+  loads again, as any device edit; a tree whose write failed keeps its step, now *Not found* (on the tree open in this
+  tab it vanishes at once and comes back so after a reload). The guides above a device
+  tree are not drawn and not built.
 - **Section 28 · deleting a tree that steps open (28.50–28.52), against the boards.** The steps a deleted tree takes
   from the person's other trees go through those trees' rooms, so a roadmap open in another window loses them live, as
   it loses any step deleted elsewhere, and a step page open on one closes as it does for any such step; NOTE 28.50 says

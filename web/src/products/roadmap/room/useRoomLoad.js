@@ -3,6 +3,7 @@ import { plantedToast, welcomeBackToast } from '../copy.js';
 import { DEMO_STAGED_COMPLETED, DEMO_TREE_ID } from '../demo/demoStage.js';
 import { layoutNameFrom, loadLayoutEngine } from '../layout/index.js';
 import { Opening, Openings } from '../model/Opening.js';
+import { OpenedTrees } from '../model/OpenedTrees.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { HttpTreeRepository } from '../persistence/HttpTreeRepository.js';
@@ -13,7 +14,7 @@ import { peekBorn, takePlantNote } from '../persistence/ViewPrefs.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { SyncSession } from '../sync/SyncSession.js';
 import { refusalReporter } from '../sync/refusals.js';
-import { loadDeviceTree } from '../sync/localTrees.js';
+import { loadDeviceMarks, loadDeviceTree, readDeviceTrees } from '../sync/localTrees.js';
 import { frontierTarget, opensOnFrontier, viewportInsets } from '../graph/viewport.js';
 import { track } from '../../../telemetry/beacon.js';
 
@@ -31,19 +32,37 @@ function savedPlace(place, seed) {
   return { camera, selection };
 }
 
-// What the server or this device holds for the confirmed owner. A tree neither has is an expected answer.
+// What the server or this device holds for the confirmed owner, with the marks its room shows: the server's, or those of
+// the device's record its session restores. A tree neither has is an expected answer.
 async function readRoadmap({ treeId, demo, signal }) {
   const repo = new HttpTreeRepository({ treeId });
   let seed = null;
   try { seed = await repo.loadTree({ signal }); } catch { /* fall through to the blob */ }
   if (signal.aborted) return null;
-  if (!seed) seed = await loadDeviceTree(treeId, { ownerResolved: true });
+  const fromDevice = !seed;
+  if (fromDevice) seed = await loadDeviceTree(treeId, { ownerResolved: true });
   if (!seed) return { unknown: true };
   const overlay = demo
     ? { completed: new Set(DEMO_STAGED_COMPLETED), completedAt: {}, server: false }
-    : await repo.loadProgress(seed, { signal });
+    : await (fromDevice ? loadDeviceMarks(seed) : repo.loadProgress(seed, { signal }));
   const serverActivity = await repo.loadActivity({ limit: 200, signal });
   return { seed, overlay, serverActivity };
+}
+
+// A roadmap's pointers in one word, so a change of any of them shows.
+const pointersOf = (tree) => tree.nodes.flatMap((step) => (step.opens ? `${step.id}>${step.opens}` : [])).join(' ');
+
+// What the trees a device tree's steps open come to, worked out on the device over its own trees, with `tree`'s steps as
+// they stand now. A read the device could not make, already reported, leaves every pointer unread.
+async function openingsOnDevice(tree) {
+  let trees;
+  try {
+    trees = await readDeviceTrees();
+  } catch {
+    return new Openings();
+  }
+  trees.set(tree.id, { completed: new Set(), ...trees.get(tree.id), title: tree.title, nodes: tree.nodes });
+  return new OpenedTrees(trees).openings(tree.id);
 }
 
 // From the door to a live session: repository, domain, layout, the first view, then the socket; a retry runs it again.
@@ -96,9 +115,15 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       }
       const { overlay, serverActivity } = read;
       const owner = read.seed.mine === true && !shared && !demo;
-      // Only its owner's room reads what a step opens: anyone else sees an ordinary step. A device's copy read none, so its pointers stand unread.
-      let openings = owner ? read.seed.openings ?? new Openings() : null;
-      const standing = (projection, joined, own = new Set()) => (openings ? openings.onto(projection, { joined, own, known: knownRef.current }) : projection);
+      // Only its owner's room reads what a step opens: anyone else sees an ordinary step. A tree that lives only here, until
+      // a claim takes it to the account, has its facts worked out on the device, and its projection is the device's own
+      // word, so its pointers always decide. Any other copy from the device read none, so its pointers stand unread.
+      const onDevice = () => owner && new LocalTreeRegistry().onDevice(read.seed.id) !== null;
+      let openings = !owner ? null : onDevice() ? await openingsOnDevice(read.seed) : read.seed.openings ?? new Openings();
+      if (cancelled) return;
+      const standing = (projection, joined, own = new Set()) => (openings
+        ? openings.onto(projection, { joined: joined || onDevice(), own, known: knownRef.current })
+        : projection);
       const seed = standing(read.seed, false);
       const nextTree = new SkillTree(seed);
       const states = UnlockRules.derive(nextTree, overlay);
@@ -150,8 +175,11 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       peersRef.current.clear();
       let projected = read.seed;
       let shown = seed;
+      // What the room stands shows its pointers' facts, and tells the session which lead to no tree: a mark there is an
+      // ordinary mark and is owed, as the server records it.
       const stand = () => {
         shown = standing(projected, session.joinedServer, session.ownPointers());
+        session.pointersLeadNowhere(shown.nodes.flatMap((step) => (step.opening?.dangling ? [[step.id, step.opening.treeId]] : [])));
         latest.current.structure.onTreeChanged(shown);
         workspace.pushArcs();
         return shown;
@@ -161,7 +189,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       // that fails, or still says nothing of it, waits for the next confirmation or reconnect.
       let asked = '';
       const followPointers = () => {
-        if (!openings?.read) return;
+        if (onDevice() || !openings?.read) return;
         const own = session.ownPointers();
         const lacking = shown.nodes.flatMap((step) => (step.opening && (!step.opening.read || step.opening.provisional) && !own.has(step.id)
           ? `${step.id}>${step.opening.treeId}` : [])).join(' ');
@@ -176,11 +204,24 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
           stand();
         }, POINTER_READ_AFTER_MS);
       };
+      // On the device the facts are worked out again whenever a pointer changes, and the last read asked stands.
+      let pointersRead = pointersOf(read.seed);
+      const followOnDevice = () => {
+        const pointers = pointersOf(projected);
+        if (pointers === pointersRead) return;
+        pointersRead = pointers;
+        openingsOnDevice(projected).then((fresh) => {
+          if (cancelled || pointersRead !== pointers || !onDevice()) return;
+          openings = fresh;
+          stand();
+        });
+      };
       const session = new SyncSession({ treeId: seed.id, title: seed.title, guide: seed.guide ?? '', registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
         .onTreeChanged((data) => {
           projected = data;
           stand();
-          followPointers();
+          if (onDevice()) followOnDevice();
+          else followPointers();
         })
         .onConfirmed(followPointers)
         .onPresence((frame) => peersRef.current.set(frame.actor, {

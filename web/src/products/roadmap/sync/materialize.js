@@ -142,6 +142,22 @@ export function materialize(gesture, lattice, clock) {
       }
       break;
     }
+    // Every step that opens the tree `from` opens `to` instead, as when a claim must give that tree a fresh id.
+    case 'Repoint': {
+      for (const step of data.nodes) if (step.opens === g.from) nodes.push(node(step.id, at, { opens: g.to }));
+      break;
+    }
+    // Steps a removal elsewhere takes, as the server's delete with prune does: each tombstoned with every edge touching
+    // it, nothing respliced.
+    case 'PruneNodes': {
+      const present = new Set(data.nodes.map((entry) => entry.id));
+      const doomed = new Set(g.nodeIds.filter((id) => present.has(id)));
+      for (const id of doomed) nodes.push(node(id, at, { deleted: true }));
+      for (const edge of lattice.presentEdges()) {
+        if (doomed.has(edge.from) || doomed.has(edge.to)) edges.push(removeEdge(edge.from, edge.to, at));
+      }
+      break;
+    }
     case 'BulkRecolor': {
       const present = new Set(data.nodes.map((n) => n.id));
       for (const id of g.nodeIds) if (present.has(id)) nodes.push(node(id, at, { color: g.color }));

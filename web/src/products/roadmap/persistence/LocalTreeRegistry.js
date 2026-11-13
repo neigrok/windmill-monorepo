@@ -118,6 +118,13 @@ export class LocalTreeRegistry {
     return owner && entry?.owner === owner && entry.title ? { id, title: entry.title } : null;
   }
 
+  // The row of a tree that lives only on this device: one its holder sees that no account has claimed. Whoever is at the
+  // device holds such a tree, signed in or not.
+  onDevice(id, owner = deviceOwner()) {
+    const entry = this.get(id, owner);
+    return entry && !entry.claimed ? entry : null;
+  }
+
   // The owner is stamped at birth so a tree planted offline by a signed-in person is not anonymous
   // work the next account may claim.
   record(id, title, owner = deviceOwner()) {

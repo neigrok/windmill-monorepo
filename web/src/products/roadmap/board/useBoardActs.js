@@ -158,9 +158,9 @@ export class BoardActs {
     });
   }
 
-  // Sets the tree a step opens from its page over either view, `''` for none, and says so with its Undo. A mark the
-  // step holds is set aside while the pointer stands and is back once it goes. A step that opens that tree already, as
-  // when a peer set it meanwhile, takes nothing and is told nothing.
+  // Sets the tree a step opens from its page over either view, `''` for none, and says so with its Undo; its events say
+  // where the room's holder acts (`place`). A mark the step holds is set aside while the pointer stands and is back once
+  // it goes. A step that opens that tree already, as when a peer set it meanwhile, takes nothing and is told nothing.
   setTree(id, opens) {
     const c = this.collaborators;
     if ((!c.active && !c.graphActive) || !c.owner || !c.tree) return { ok: false };
@@ -181,7 +181,7 @@ export class BoardActs {
     }
     if (!receipt) {
       c.showToast(TREE_TOAST.failed, { act: 'notice' });
-      c.track('roadmap_tree_attach', { step: !opens ? 'detach' : step.opens ? 'change' : 'attach', band: c.band, view, mark, outcome: failed ? 'failed' : 'refused' });
+      c.track('roadmap_tree_attach', { step: !opens ? 'detach' : step.opens ? 'change' : 'attach', band: c.band, view, place: c.place, mark, outcome: failed ? 'failed' : 'refused' });
       return { ok: false };
     }
     const detached = mark === 'kept' ? TREE_TOAST.detachedMarkBack : TREE_TOAST.detached;
@@ -190,11 +190,11 @@ export class BoardActs {
       action: receiptUndo({
         session: c.session, receipt,
         before: () => this.collaborators.onQuiet(),
-        onReverted: () => this.collaborators.track('roadmap_tree_attach', { step: 'undo', band: this.collaborators.band, view }),
+        onReverted: () => this.collaborators.track('roadmap_tree_attach', { step: 'undo', band: this.collaborators.band, view, place: this.collaborators.place }),
         onFailure: (error) => this.collaborators.report('roadmap-tree-attach', error),
       }),
     });
-    c.track('roadmap_tree_attach', { step: !opens ? 'detach' : step.opens ? 'change' : 'attach', band: c.band, view, mark });
+    c.track('roadmap_tree_attach', { step: !opens ? 'detach' : step.opens ? 'change' : 'attach', band: c.band, view, place: c.place, mark });
     return { ok: true };
   }
 

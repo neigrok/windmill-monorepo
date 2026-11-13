@@ -88,6 +88,8 @@ export const SYNC_STATUS = { saving: t('roadmap.sync.saving'), saved: t('roadmap
 export const SYNC_OFFLINE_SHORT = t('roadmap.sync.offlineShort');
 export const REFUSED_SYNC = { body: t('roadmap.refusedSync.body'), retry: t('roadmap.common.retry'), discard: t('roadmap.refusedSync.discard') };
 export const ANONYMOUS_OWNER = t('roadmap.sync.anonymousOwner');
+// The tag of a tree that lives only on this device, wherever trees are listed.
+export const ON_DEVICE = t('roadmap.common.onDevice');
 export const LAPSED_SESSION = t('roadmap.sync.lapsedSession');
 export const DEVICE_REFUSED = { title: t('roadmap.deviceRefused.title'), body: t('roadmap.deviceRefused.body') };
 export const FORK_OFFER = t('roadmap.fork.offer');
