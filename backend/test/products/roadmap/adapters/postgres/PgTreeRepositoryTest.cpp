@@ -490,8 +490,7 @@ TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_
     trees.create(id(name), graph.exportState(), LegendState{}, "Tree " + name, owner);
   };
   const auto mark = [&](const std::string& tree, const UserId& user, const std::string& node) {
-    progress.setStatus(id(tree), user, NodeId{node}, ProgressStatus::complete, false, Hlc{1'700'000'000'002, 0, "r_a"},
-                       1'700'000'000'002);
+    progress.setStatuses(id(tree), user, {{NodeId{node}, ProgressStatus::complete, false, Hlc{1'700'000'000'002, 0, "r_a"}}}, StampedBy::replica, 1'700'000'000'002);
   };
   plant("a", kSam, {{"plain-sam", ""}, {"plain-eve", ""}, {"plain", ""}, {"to-b", "b"}, {"to-b-again", "b"},
                     {"to-b-eve", "b"}, {"to-retired", "retired"}, {"to-theirs", "theirs"}, {"to-absent", "absent"},
@@ -549,14 +548,14 @@ TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_
   plant("stamps", kSam, {{"first", ""}, {"counter", ""}, {"actor", ""}, {"cleared", ""}, {"eve", ""}, {"unmarked", ""},
                          {"no-stamp", ""}, {"unset-stamp", ""}});
   plant("unstamped", kSam, {{"only", ""}});
-  progress.setStatus(id("stamps"), kSam, NodeId{"first"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 0, "r_z"}, 1'700'000'000'090);
-  progress.setStatus(id("stamps"), kSam, NodeId{"counter"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 2, "r_a"}, 1'700'000'000'020);
-  progress.setStatus(id("stamps"), kSam, NodeId{"actor"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 2, "r_b"}, 1'700'000'000'015);
-  progress.setStatus(id("stamps"), kSam, NodeId{"cleared"}, ProgressStatus::none, false, Hlc{1'700'000'000'050, 0, "r_a"}, 1'700'000'000'050);
-  progress.setStatus(id("stamps"), kEve, NodeId{"eve"}, ProgressStatus::complete, false, Hlc{1'700'000'000'060, 0, "r_e"}, 1'700'000'000'060);
+  progress.setStatuses(id("stamps"), kSam, {{NodeId{"first"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 0, "r_z"}}}, StampedBy::replica, 1'700'000'000'090);
+  progress.setStatuses(id("stamps"), kSam, {{NodeId{"counter"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 2, "r_a"}}}, StampedBy::replica, 1'700'000'000'020);
+  progress.setStatuses(id("stamps"), kSam, {{NodeId{"actor"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 2, "r_b"}}}, StampedBy::replica, 1'700'000'000'015);
+  progress.setStatuses(id("stamps"), kSam, {{NodeId{"cleared"}, ProgressStatus::none, false, Hlc{1'700'000'000'050, 0, "r_a"}}}, StampedBy::replica, 1'700'000'000'050);
+  progress.setStatuses(id("stamps"), kEve, {{NodeId{"eve"}, ProgressStatus::complete, false, Hlc{1'700'000'000'060, 0, "r_e"}}}, StampedBy::replica, 1'700'000'000'060);
   for (const char* node : {"no-stamp", "unset-stamp"})
-    progress.setStatus(id("stamps"), kSam, NodeId{node}, ProgressStatus::complete, false, Hlc{}, 1'700'000'000'999);
-  progress.setStatus(id("unstamped"), kSam, NodeId{"only"}, ProgressStatus::complete, false, Hlc{}, 1'700'000'000'999);
+    progress.setStatuses(id("stamps"), kSam, {{NodeId{node}, ProgressStatus::complete, false, Hlc{}}}, StampedBy::replica, 1'700'000'000'999);
+  progress.setStatuses(id("unstamped"), kSam, {{NodeId{"only"}, ProgressStatus::complete, false, Hlc{}}}, StampedBy::replica, 1'700'000'000'999);
   {
     PgLease conn{*pgTestPool()};
     pqxx::work txn{*conn};

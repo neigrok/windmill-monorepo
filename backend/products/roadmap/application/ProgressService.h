@@ -11,15 +11,16 @@
 namespace wm {
 
 // A `complete` set whose prerequisites are not all complete is still recorded — P1 is advisory — but
-// the caller is told so it can warn. `outOfOrder` echoes the word the write carried, so a receipt
-// can tell a meant inversion from an unnoticed one. `unchanged` says the caller already held this
-// mark at its turn, after the marks before it in the same batch: the same status and the same word
-// (Progress::holds). It is written all the same, so its newer stamp lands, as a replica's must for
-// every replica to converge.
+// the caller is told so it can warn. `status` and `outOfOrder` echo what the write asked, so a receipt
+// can tell a meant inversion from an unnoticed one. `applied` and `unchanged` are read off the write
+// itself (ProgressWritten), never off a read made before it: `unchanged` says the row held this mark
+// when the write reached it, after the marks before it in the same batch — the same status and the
+// same word (ProgressMark::carries). It is written all the same, so its newer stamp lands, as a
+// replica's must for every replica to converge.
 struct ProgressOutcome {
   ProgressStatus status;
   bool prerequisitesMet;
-  bool applied = true;  // false when a strictly-later stamp already stood and this write lost
+  bool applied = true;  // false when a replica's write lost to a later stamp; a server door's mark always lands
   bool outOfOrder = false;
   bool unchanged = false;
   bool refused = false;  // the node follows the tree it opens: nothing was written, and the other fields say nothing
@@ -36,8 +37,8 @@ struct ProgressReceipt {
   bool cameToARefusal() const;
 };
 
-// Carries the stamp the marking replica minted. Distinct from domain `ProgressMark`, which is the
-// register a write LANDS in once the overlay keeps it.
+// Carries the stamp its writer minted, a replica or a server door. Distinct from domain `ProgressMark`,
+// which is the register a write LANDS in once the overlay keeps it, at the stamp it took there.
 struct ProgressWrite {
   NodeId node;
   ProgressStatus status;
@@ -55,19 +56,10 @@ public:
 
   // A door's marks on `tree`, handed over once the strand is released, with the pointers the room handed
   // `user` (TreeRoom::pointersFor). A mark on a node that follows its tree (domain/OpenedTrees.h) is refused
-  // and each advisory reads the followed completed set, off one read made only when there is a pointer.
+  // and each advisory reads the followed completed set, off one read made after the marks are written. What
+  // each mark did is the write's own answer, so a mark another door lands meanwhile is never misreported.
   ProgressReceipt mark(const TreeId& tree, const std::map<NodeId, TreeId>& pointers, const UserId& user,
-                       const std::vector<ProgressWrite>& writes, std::uint64_t receivedAtMs);
-
-  ProgressOutcome setStatus(const std::vector<NodeId>& prerequisites, const TreeId& treeId,
-                            const UserId& user, const NodeId& node, ProgressStatus status, bool outOfOrder,
-                            const Hlc& at, std::uint64_t receivedAtMs);
-
-  // The writes as given, on nodes that may have left the tree. Each advisory is judged against the
-  // committed final overlay, and outcomes follow the writes' order.
-  std::vector<ProgressOutcome> setStatuses(const TreeId& treeId, const UserId& user,
-                                           const std::vector<ProgressWrite>& writes,
-                                           std::uint64_t receivedAtMs);
+                       const std::vector<ProgressWrite>& writes, StampedBy stampedBy, std::uint64_t receivedAtMs);
 
   Progress progressOf(const TreeId& treeId, const UserId& user);
 

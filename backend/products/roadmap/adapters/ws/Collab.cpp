@@ -434,7 +434,8 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
   }
 
   // Read and written OUTSIDE the strand — a room's lock is never held across a database call.
-  const ProgressReceipt receipt = progress_.mark(TreeId{treeId}, pointers, principal.user, writes, nowMs);
+  const ProgressReceipt receipt =
+      progress_.mark(TreeId{treeId}, pointers, principal.user, writes, StampedBy::replica, nowMs);
   // Only what landed is echoed; a frame where nothing landed is still acked.
   bus_.broadcastProgress(TreeId{treeId}, principal.user, receipt.recorded);
 

@@ -216,7 +216,7 @@ TEST(list_orders_owned_trees_newest_first_and_excludes_other_owners) {
   seed(s.trees, "old", me, 100, {spec("a", NodeColor::olive), spec("b", NodeColor::olive)});
   seed(s.trees, "fresh", me, 300, {spec("x", NodeColor::sky)});
   seed(s.trees, "notmine", uid("other"), 999, {spec("z", NodeColor::gold)});
-  s.progress.setStatus(tid("old"), me, nid("a"), ProgressStatus::complete, false, at(150, "me"), 150);
+  s.progress.setStatuses(tid("old"), me, {{nid("a"), ProgressStatus::complete, false, at(150, "me")}}, StampedBy::replica, 150);
 
   std::vector<TreeSummary> rows = s.registry.list(me);
 
@@ -248,8 +248,8 @@ TEST(list_counts_a_node_that_opens_a_tree_as_done_when_that_tree_is_complete) {
         TreeRegistry::Creation::created);
   CHECK(s.registry.create(me, TreeId{"t_00000000000000b3"}, treeData("Waiting", {spec("x", NodeColor::sky)})) ==
         TreeRegistry::Creation::created);
-  s.progress.setStatus(TreeId{"t_00000000000000b2"}, me, nid("w"), ProgressStatus::complete, false, Hlc{5, 0, "me"}, 5);
-  s.progress.setStatus(TreeId{"t_00000000000000b1"}, me, nid("stalled"), ProgressStatus::complete, false, Hlc{6, 0, "me"}, 6);
+  s.progress.setStatuses(TreeId{"t_00000000000000b2"}, me, {{nid("w"), ProgressStatus::complete, false, Hlc{5, 0, "me"}}}, StampedBy::replica, 5);
+  s.progress.setStatuses(TreeId{"t_00000000000000b1"}, me, {{nid("stalled"), ProgressStatus::complete, false, Hlc{6, 0, "me"}}}, StampedBy::replica, 6);
 
   std::map<std::string, std::string> doneOfTotal;
   for (const TreeSummary& row : s.registry.list(me))
