@@ -598,7 +598,8 @@ and none overrides another.
   applied; `progressError` says each way the progress fell short, one sentence after the other. A
   graft that landed is not undone by a later overlay failure, and the import completes as `ok`: one
   in the requested `progress[]` is told in the receipt and reported once as `roadmap.import.marks`,
-  and one in the clear of marks on removed nodes as `roadmap.import.clear_marks`. When the graft
+  and one in the clear of marks on removed nodes as `roadmap.import.clear_marks` — a clear made
+  only when the batch tombstoned a node (`NodeEdits::clearMarksOn` reads no overlay for none). When the graft
   landed nothing — no node or kind sent, or `unchanged: true` — the rows of `progress[]` are the
   call, as an `update_nodes` that sends only marks: a failure of theirs is the call's own error and
   its `failed` line. It is **upsert

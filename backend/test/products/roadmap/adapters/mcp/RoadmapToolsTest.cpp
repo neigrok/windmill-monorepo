@@ -7173,6 +7173,64 @@ TEST(mcp_an_imports_failed_progress_rows_are_their_own_failure_beside_a_graft_th
   CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["a"],"outOfOrder":[]})"));
 }
 
+// An import that removes no node has no mark to clear and reads no overlay to find one: with the progress store down it
+// answers as any other graft, on one line and with no report, and beside a progress row the only sentence is the row's.
+// One that tombstones a node still clears its marks, and that clear is the one reported.
+TEST(mcp_an_import_that_tombstones_nothing_reads_no_marks_to_clear) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"gone","label":"Gone"}]})")).isError);
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line.operation + " " + line.outcome); });
+  const auto imported = [&](const char* arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = "t";
+    return gate.callTool("roadmap_import_subgraph", args, h.actor);
+  };
+
+  h.progressRepo.loadsFail = true;
+  h.progressRepo.writesFail = true;
+  const ToolResult bare = imported(R"({"nodes":[{"id":"a","label":"A"}]})");
+  const ToolResult marked = imported(R"({"nodes":[{"id":"b","label":"B"}],"progress":[{"nodeId":"a","status":"complete"}]})");
+  const ToolResult removed = imported(R"({"nodes":[],"tombstone":["gone"]})");
+  installWriteSink({});
+
+  CHECK_FALSE(bare.isError);
+  CHECK_EQ(body(bare)["graphApplied"], Json::Value(true));
+  CHECK_EQ(body(bare)["progressApplied"], Json::Value(true));
+  CHECK_FALSE(body(bare).isMember("progressError"));
+  CHECK_FALSE(marked.isError);
+  CHECK_EQ(body(marked)["progressApplied"], Json::Value(false));
+  CHECK_EQ(body(marked)["progressError"],
+           Json::Value("The graph committed, but the requested progress outcome is uncertain. Read get_progress before "
+                       "retrying progress changes."));
+  CHECK_FALSE(removed.isError);
+  CHECK_EQ(body(removed)["progressApplied"], Json::Value(false));
+  CHECK_EQ(body(removed)["progressError"],
+           Json::Value("The graph committed, but clearing progress on removed nodes failed. Read get_progress before "
+                       "retrying progress changes."));
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{
+               std::string("roadmap.import.marks roadmap mcp failed ") + typeid(std::runtime_error).name(),
+               std::string("roadmap.import.clear_marks roadmap mcp failed ") + typeid(std::runtime_error).name()}));
+  CHECK_EQ(lines, (std::vector<std::string>{"mcp.roadmap_import_subgraph ok", "roadmap.import.marks failed",
+                                            "mcp.roadmap_import_subgraph ok", "roadmap.import.clear_marks failed",
+                                            "mcp.roadmap_import_subgraph ok"}));
+}
+
 // A mark the caller's own replica stamped ahead of the server is overwritten and cleared just after its stamp — a node
 // named twice in one batch after its own row — and carries nothing else ahead: the room's clock does not learn it, so
 // the caller's next mark on another node, the tree's next graph write and, after a restart, the one after that carry

@@ -47,8 +47,8 @@ public:
 
   // The caller's own completion marks on the nodes a write removes, cleared to none through landMarks, so a revive of the
   // node brings none back; anyone else's marks stay theirs. A node that opens a tree goes with its mark as any other
-  // does, so no pointer is judged. Called under the tree's strand with its room open, as the write that removes the
-  // nodes is; answers how many clears landed.
+  // does, so no pointer is judged. A write that removed no node has nothing to clear and reads no overlay. Called under
+  // the tree's strand with its room open, as the write that removes the nodes is; answers how many clears landed.
   std::size_t clearMarksOn(TreeRoom& room, const TreeId& tree, const UserId& actor, const std::vector<NodeId>& removed);
 
   // `nodes` deleted from the room as ONE op under one seq, with the edges touching them when `edges` says so, so the tree
