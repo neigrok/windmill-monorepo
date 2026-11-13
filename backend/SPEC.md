@@ -79,7 +79,8 @@ rejected for structure. Validity is a read model, not a gate.
   owner's marks through `readerView`. `get_progress` answers the caller's own marks on the nodes the
   tree holds alone (`Progress::restrictedTo`): a mark on a deleted node stays stored, shows again on
   a revive, and still reaches the socket's overlay graft and, for a caller who can write the tree,
-  `GET …/progress`, which serve the stored marks.
+  `GET …/progress`, which serve the stored marks. For a tree that is absent, or that the caller
+  cannot read, `get_progress` answers `no such tree`, the same for both, as every MCP read does.
 - `readerView` (`domain/OpenedTrees.h`) — an owner's stored marks on a tree as a caller who cannot
   write it is shown them: the owner's derived completion, and nothing of the trees its nodes open. A
   node with a valid pointer has a row only while the tree it opens is complete for the owner, by the

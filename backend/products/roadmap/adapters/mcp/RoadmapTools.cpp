@@ -521,8 +521,9 @@ ToolResult readDiagnostics(RoomRegistry& registry, TreeRegistry& trees, const Tr
   }
 }
 
-// The caller's marks on the nodes the tree holds. A mark on a node it no longer holds stays stored and is not answered;
-// a tree the caller may not read holds no node they can see. The overlay is read before the strand is taken.
+// The caller's marks on the nodes the tree holds. A mark on a node it no longer holds stays stored and is not answered.
+// A tree that is absent and one the caller may not read are refused alike, as every read refuses them. The overlay is
+// read before the strand is taken.
 ToolResult readProgress(RoomRegistry& registry, ProgressService& progress, const TreeId& tree, const Json::Value& args,
                         const std::optional<UserId>& reader) {
   std::string error;
@@ -534,9 +535,10 @@ ToolResult readProgress(RoomRegistry& registry, ProgressService& progress, const
   {
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
     const TreeRoom* room = registry.open(tree);
-    if (room && canRead(reader, room->owner(), room->visibility()))
-      for (const auto& [node, mark] : overlay.marks)
-        if (room->hasNode(node)) held.insert(node);
+    if (!room || !canRead(reader, room->owner(), room->visibility()))
+      return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    for (const auto& [node, mark] : overlay.marks)
+      if (room->hasNode(node)) held.insert(node);
   }
   return ToolResult::json(projectProgress(overlay.restrictedTo(held), *fields));
 }

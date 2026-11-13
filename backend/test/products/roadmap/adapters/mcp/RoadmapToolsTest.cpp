@@ -2921,7 +2921,9 @@ TEST(mcp_get_progress_describes_out_of_order_as_the_marks_that_carried_the_flag)
                          "completed, and outOfOrder — the subset of completed whose mark carried "
                          "outOfOrder:true, from an update_nodes row's `status` or an import's progress row. Per-user, "
                          "separate from the shared structure. Only marks on nodes the tree holds are answered: a mark "
-                         "on a node someone deleted is kept and shows again when the node comes back."));
+                         "on a node someone deleted is kept and shows again when the node comes back. A roadmap that "
+                         "does not exist, or that you cannot read, is refused as get_tree refuses it; empty lists mean "
+                         "a roadmap you can read and have marked nothing in."));
     const std::string fields = tool.descriptor["inputSchema"]["properties"]["fields"]["description"].asString();
     CHECK(fields.find("the subset of `completed` whose mark carried outOfOrder:true") != std::string::npos);
     return;
@@ -8074,8 +8076,8 @@ TEST(mcp_an_import_progress_row_takes_its_node_by_the_legacy_id) {
 }
 
 // get_progress answers the caller's marks on the nodes the tree holds, in every list: a mark on a node someone else
-// deleted stays stored and is not answered, and shows again when the node comes back. On a tree the caller cannot read
-// it answers none.
+// deleted stays stored and is not answered, and shows again when the node comes back. A tree the caller can no longer
+// read is refused as an absent one is, and its owner, who marked nothing, reads empty lists.
 TEST(mcp_get_progress_answers_only_marks_on_nodes_the_tree_holds) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},
@@ -8097,9 +8099,36 @@ TEST(mcp_get_progress_answers_only_marks_on_nodes_the_tree_holds) {
   CHECK_EQ(progressOf(), parse(R"({"completed":["a","d"],"cleared":[],"outOfOrder":["d"]})"));
 
   h.registry.setVisibility(TreeId{"t"}, Visibility::private_);
-  CHECK_EQ(progressOf(), parse(R"({"completed":[],"cleared":[],"outOfOrder":[]})"));
+  CHECK_EQ(message(h.tools.callTool("get_progress", parse(R"({"treeId":"t","fields":["completed","cleared","outOfOrder"]})"),
+                                    stranger)),
+           std::string("get_progress: no such tree \"t\""));
   CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared","outOfOrder"]})"))),
            parse(R"({"completed":[],"cleared":[],"outOfOrder":[]})"));
+}
+
+// A tree that is not there and a tree that is private to someone else are refused alike, in the sentence get_tree
+// uses for both, so no reply says a private tree exists; a mark the caller stored there while they could read it is
+// not answered. A tree the caller can read answers its lists.
+TEST(mcp_get_progress_refuses_a_tree_that_is_absent_or_private_to_another_in_get_trees_sentence) {
+  Harness h;
+  h.plant("t_theirs", uid("other"), "", {"t"});
+  h.plant("t_public", uid("other"), "", {"t"});
+  h.trees.byId["t_public"].visibility = Visibility::public_;
+  for (const char* tree : {"t_theirs", "t_public"})
+    h.progressRepo.setStatus(TreeId{tree}, h.caller, NodeId{"to-t"}, ProgressStatus::complete, false, Hlc{5, 0, "x"}, 5);
+  const auto answered = [&](const char* tool, const char* tree) {
+    Json::Value args(Json::objectValue);
+    args["treeId"] = tree;
+    const ToolResult result = h.tools.callTool(tool, args, h.actor);
+    checkStructuredContent(h.tools, tool, result, __FILE__, __LINE__);
+    return std::string(result.isError ? "refused " : "answered ") + message(result);
+  };
+
+  CHECK_EQ(answered("get_progress", "t_gone"), std::string("refused get_progress: no such tree \"t_gone\""));
+  CHECK_EQ(answered("get_progress", "t_theirs"), std::string("refused get_progress: no such tree \"t_theirs\""));
+  CHECK_EQ(answered("get_tree", "t_gone"), std::string("refused get_tree: no such tree \"t_gone\""));
+  CHECK_EQ(answered("get_tree", "t_theirs"), std::string("refused get_tree: no such tree \"t_theirs\""));
+  CHECK_EQ(answered("get_progress", "t_public"), std::string(R"(answered {"completed":["to-t"],"outOfOrder":[]})"));
 }
 
 // get_health, tidy and prune are retired: no declaration carries them, and a call to one is refused as a tool the

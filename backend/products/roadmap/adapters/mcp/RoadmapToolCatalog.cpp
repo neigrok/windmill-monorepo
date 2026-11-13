@@ -536,7 +536,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "and outOfOrder — the subset of completed whose mark carried outOfOrder:true, from "
         "an update_nodes row's `status` or an import's progress row. Per-user, separate from the shared structure. "
         "Only marks on nodes the tree holds are answered: a mark on a node someone deleted is kept and shows "
-        "again when the node comes back.",
+        "again when the node comes back. A roadmap that does not exist, or that you cannot read, is refused as "
+        "get_tree refuses it; empty lists mean a roadmap you can read and have marked nothing in.",
         p, {"treeId"}));
   }
   {
