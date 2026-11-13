@@ -628,9 +628,9 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 | Table | Holds |
 | --- | --- |
 | `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb |
-| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open, and whether they open a given one; `pos_x`, `pos_y` and `pos_hlc` are neither read nor written, and stay so an earlier image can run on this database |
+| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open, and whether they open a given one |
 | `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
-| `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp; `cross_branch_exempt` and `cross_branch_exempt_hlc` are neither read nor written, and stay so an earlier image can run on this database |
+| `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |
 | `node_progress` | per-user private overlay — status, `out_of_order`, `hlc`, `stamp_ms`, `stamp_counter` |
 | `tree_og_images` / `tree_og_videos` | the share card PNG and loop, inline `bytea`, one row per tree |
