@@ -31,16 +31,18 @@ jobs:
         run: |
           set -euo pipefail
           # A deploy's migration alters `trees`; it would wait behind the inventory's read, and the roadmap's reads
-          # behind it. Every workflow of the deploy-vps group counts as a deploy, read from the workflows themselves.
-          deploys=$(grep -l -E '^ *group: *deploy-vps *$' .github/workflows/*.yml || true)
-          if [ -z "$deploys" ]; then
-            echo "No workflow names the deploy-vps group, so a deploy cannot be told apart: refusing to run." >&2
+          # behind it. A deploy is a run of a workflow whose concurrency can take the deploy-vps lock, read from the
+          # workflows themselves; a pull request's run takes no lock and reaches no server, so it is not one.
+          deploys=$(awk '/^concurrency:/ { inside = 1; next } /^[^ ]/ { inside = 0 } inside && /deploy-vps/ { print FILENAME }' \
+            .github/workflows/*.yml | sort -u)
+          if ! printf '%s\n' "$deploys" | grep -qx '.github/workflows/deploy.yml'; then
+            echo "Deploy to VPS no longer names the deploy-vps lock where this looks, so a deploy cannot be told apart: refusing to run." >&2
             exit 1
           fi
           for workflow in $deploys; do
             for status in queued in_progress waiting requested pending; do
               runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$(basename "$workflow")" --status "$status" \
-                --json databaseId --jq length)
+                --json event --jq '[.[] | select(.event != "pull_request")] | length')
               if [ "$runs" -ne 0 ]; then
                 echo "Not during a deploy: $(basename "$workflow") has a run $status. Dispatch the inventory again once it has finished." >&2
                 exit 1

@@ -334,8 +334,9 @@ joined session, and checks successful callbacks, receipt replay and durable relo
 
 Dispatch **Ops · subtree inventory** (`ops-subtree-inventory.yml`), never during a deploy: a deploy's
 migration alters `trees`, would wait behind the inventory's read, and would hold every roadmap read
-behind it. Its first step refuses to start while any workflow of the `deploy-vps` group (Deploy to VPS,
-Web Deploy, the production backup, the digest resum) has a run queued or running. It then runs
+behind it. Its first step refuses to start while any workflow whose concurrency can take the
+`deploy-vps` lock (Deploy to VPS, Web Deploy, the production backup, the digest resum) has a run queued
+or running, a pull request's run aside, since it takes no lock and reaches no server. It then runs
 `windmill_subtree_inventory` inside the live `server` container, which already holds `DATABASE_URL`;
 the tool never writes, and no credential leaves the host. Its one JSON object of counts ([SPEC.md](../SPEC.md#subtree-inventory)) is
 private: this repository's logs are public, and where few accounts hold pointers the counts are one
