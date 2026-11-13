@@ -214,7 +214,11 @@ rejected for structure. Validity is a read model, not a gate.
   is serialised with every other write to the parent, a step's deletion among them. In order it
   checks that the caller may read the parent (`no-such-tree` for an absent, deleted or
   private-denied tree, or one whose root is deleted, alike) and write it (`not-writer`), and that
-  the step is present (`step-gone`); then reads the stored site (`TreeRepository::subtreeSite`),
+  the step is present (`step-gone`). A parent whose room holds a write its store has not taken — a
+  save that failed and is being retried (Runtime) — refuses the create as `save-pending`, with
+  nothing written: the create stores the parent's head at the room's next seq, which would move it
+  past writes that are not stored. The refusal lifts when that save lands, and the caller sends the
+  create again. It then reads the stored site (`TreeRepository::subtreeSite`),
   and a parent's room whose head is behind the stored one takes it. A step that already owns a
   subtree answers it, `created: false`, and writes nothing, so a retry after a lost reply and a
   create that lost a race both find the one child. Otherwise it is refused when the child would sit
@@ -449,17 +453,24 @@ Rules:
   retire the room.
 - A save that fails undoes nothing and throws nothing (`Saved::held`): every open page has already
   been sent the write, so the room keeps it, dirty and with its op rows queued, and the registry
-  holds the room and retries the save until the store takes it — on its own timer, 1 s after the
+  holds the room and retries the save until the store takes it, on its own timer: 1 s after the
   failure and then after twice the wait before, up to 60 s between tries (`kFirstRetry`,
-  `kRetryCeiling`), and whenever any call reaches the room, a read or a write that changes nothing
-  included. The op rows land only after the save does. The writer is told the change is applied,
-  held and not to be sent again, in its door's shape: an MCP receipt carries `saved: false` and
-  `saveError` and is not an error; the socket acks the frame with its seq and `unsaved: true`;
-  `PATCH /v1/trees/{id}` answers `202` with `{saved: false, code: "held-unsaved", message}`; a
-  removal lists the tree under `unsaved`. A held room is not closed by the sweep, a `PUT` over one
-  is refused `503 save-pending` until the save lands, and the registry tries each held room once
-  more as it stops. A held write is lost only if the process ends before a save lands; marks a call
-  stored beside it — `update_nodes` rows, the marks `delete_node` clears — are stored already.
+  `kRetryCeiling`). Only that timer and a write that changes the room try a held room's save; a
+  read, a write that changes nothing and the sweep send no statement for it and move no retry. The
+  op rows land only after the save does. The writer is told the change is applied and on every open
+  page, that saving it failed and is being retried, that sending it again is not needed, and that a
+  server restart before the save succeeds loses it, in its door's shape: an MCP receipt carries
+  `saved: false` and `saveError` and is not an error; the socket acks the frame with its seq and
+  `unsaved: true`; `PATCH /v1/trees/{id}` answers `202` with `{saved: false, code: "held-unsaved",
+  message}`; a removal lists the tree under `unsaved`. A call that changes nothing in a held room
+  says so too — `unchanged: true` beside `saved: false`, an ack without a seq beside `unsaved: true`
+  — since what the room holds is not saved. A held room is not closed by the sweep, and a `PUT`
+  over one is refused `503 save-pending` until the save lands. Only a room with something unsaved
+  is ever held: one with nothing to save closes with no statement sent. As the registry stops —
+  and one that goes away has stopped (`~RoomRegistry`) — it tries each held room once more, the
+  wait for a retry in mid-save and all of those saves within `kShutdownSaveBudget` together (5 s,
+  `StatementLimits`), and reports the rooms it could not save as lost. A held write is lost only that way; marks a call stored beside it —
+  `update_nodes` rows, the marks `delete_node` clears — are stored already.
 - `open()` loads the stored lattice and nothing else: a room is its snapshot, and the op log is the
   history the Activity feed reads, never a second source of a tree's state. An op row states one
   deed of its frame — one node of an import, one kind of a re-hue of several — so merging it back
@@ -596,7 +607,8 @@ bytes a tree without pointers answers, and nothing is read for them.
 `PATCH /v1/trees/{id}` sets one register per call — `{visibility}`, `{guide}` or `{title}` — each the
 owner's alone, and answers `204`; a guide or a title set in the tree's live room whose save failed
 answers `202` with `{saved: false, code: "held-unsaved", message}` — applied, on every open page,
-and being saved again by the server, so not to be sent again. A body naming more than one is refused `400`, and a body that is not one JSON object
+and being saved again by the server, so sending it again is not needed; a server restart before the
+save succeeds would lose it. A body naming more than one is refused `400`, and a body that is not one JSON object
 `400 invalid json body`. A guide past 5000 characters, not valid UTF-8 or carrying a NUL is refused
 `400` with the admission's sentence, and an empty one clears it, as one of only spaces, tabs and line
 breaks does (stored as `""`); a real guide keeps its leading and trailing spaces. A title carrying a

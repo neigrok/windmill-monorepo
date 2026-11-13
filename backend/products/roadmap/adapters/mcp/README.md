@@ -304,12 +304,14 @@ refused row recorded no mark, and a dry run (`dryRun: true`, or `applied: false`
 
 An edit lands in the tree's room and is sent to every open page before it is saved, so a save that
 fails does not undo it and is not an error. The receipt is the usual one with `saved: false` and
-`saveError`, one sentence saying the change is applied, that saving it failed and is being retried,
-and that the call is not to be sent again; `update_nodes` and `change_edges` declare both keys in
+`saveError`: the change is applied and on every open page, saving it failed and is being retried,
+sending it again is not needed, and a server restart before the save succeeds would lose it, so
+read the record again later if it matters. `update_nodes` and `change_edges` declare both keys in
 their `outputSchema`. The server holds the room and retries the save by itself (`SPEC.md`,
-Runtime), so no further call is needed; the same call sent again meanwhile changes nothing and
-answers `unchanged: true`. The call's write line reads `held-unsaved`, and the failure is reported
-once as `roadmap.tree.save`. `delete_tree` says the same of another tree's steps by listing the tree
+Runtime), so no further call is needed; the same call sent again meanwhile changes nothing, tries no
+save, and answers `unchanged: true` beside `saved: false`, since what the room holds is not saved.
+The call's write line reads `held-unsaved`, and the outage is reported by the registry as
+`roadmap.tree.save`. `delete_tree` says the same of another tree's steps by listing the tree
 under `unsaved`.
 
 A call that also writes marks saves them apart from the tree, and its receipt tells the two apart.

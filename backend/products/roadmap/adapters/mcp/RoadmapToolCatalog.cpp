@@ -322,9 +322,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     properties["applied"] = boolean("True after the batch has been accepted, including a no-op retry.");
     properties["dryRun"] = boolean("True when the listed changes are a preview.");
     properties["unchanged"] = boolean("True when the batch changes nothing, so it takes no seq. Absent otherwise.");
-    properties["saved"] = boolean("False when the batch is applied and on every open page but saving it failed: the "
-                                  "server holds it and is retrying the save, so do not send the batch again. Absent "
-                                  "when it is saved.");
+    properties["saved"] = boolean("False when what the tree holds is applied and on every open page but not saved: "
+                                  "saving failed and the server is retrying, so sending the batch again is not "
+                                  "needed, and a server restart before the save succeeds would lose it. Also "
+                                  "beside `unchanged` while that lasts. Absent when it is saved.");
     properties["saveError"] = str("One sentence saying so, when saved is false.");
     properties["diagnosticsClean"] = boolean("Whether the graph after an applied batch has no structural errors.");
     properties["introducedDiagnostics"] = strArray(

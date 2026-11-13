@@ -62,7 +62,6 @@ std::string writeCompletionJson(const WriteCompletion& completion) {
   fields["outcome"] = completion.outcome;
   fields["duration_ms"] = completion.durationMs;
   fields["request_id"] = completion.requestId;
-  if (completion.attempts > 0) fields["attempts"] = static_cast<Json::UInt64>(completion.attempts);
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";
   builder["precisionType"] = "decimal";

@@ -826,9 +826,9 @@ TEST(remove_of_one_of_two_trees_that_open_each_other_takes_the_others_opening_st
 // A tree that cannot be edited part-way through keeps its steps and is named in `incomplete`; the trees edited before
 // and after it stay edited, its line is `failed`, and the removal files one Issue under the cascade's name.
 // Each tree is answered as what became of it. A save that fails once the delete applied leaves the steps gone from the
-// room, unsaved and held: its line and the removal's own read held-unsaved, the save's failure is the one Issue the
-// removal files, and the registry's retry keeps the steps gone with no further call. A tree whose room cannot be
-// opened keeps its steps, incomplete, on a failed line.
+// room, unsaved and held: its line and the removal's own read held-unsaved, the outage is reported by the registry
+// under a request of its own, and the registry's retry keeps the steps gone with no further call. A tree whose room
+// cannot be opened keeps its steps, incomplete, on a failed line, and that failure is the removal's own Issue.
 TEST(remove_answers_each_tree_removed_unsaved_or_incomplete_as_it_is_and_files_one_issue) {
   Setup s;
   AtTheDoor door;
@@ -865,8 +865,9 @@ TEST(remove_answers_each_tree_removed_unsaved_or_incomplete_as_it_is_and_files_o
                                                 "roadmap.tree.remove.cascade roadmap rest ok",
                                                 "roadmap.DELETE.v1.trees.id roadmap rest held-unsaved"}));
   CHECK(door.failures->reports ==
-        (std::vector<std::string>{std::string("roadmap.tree.save roadmap rest failed ") +
-                                  typeid(std::runtime_error).name()}));
+        (std::vector<std::string>{std::string("roadmap.tree.save roadmap rest failed ") + typeid(std::runtime_error).name(),
+                                  std::string("roadmap.tree.remove.cascade roadmap rest failed ") +
+                                      typeid(std::runtime_error).name()}));
 
   savesOfBFail = false;
   REQUIRE_EQ(s.retries.set.size(), 1u);
@@ -1115,6 +1116,43 @@ TEST(a_free_proposed_id_is_kept_and_one_any_row_holds_or_that_is_malformed_is_re
 
 // Another writer fills the step, or takes the proposed id, between the site and the store, as a second server process
 // can: the step's child is answered, or a minted id taken, and neither is a failure.
+// A subtree create moves its parent's stored head past whatever the parent's room has not saved, so against a parent
+// held unsaved it is refused, save-pending, with nothing written: no child row, the stored head where it was, no event,
+// one line with its code and no Issue. The refusal lifts by itself: once the registry's retry has saved the parent, the
+// same call creates.
+TEST(create_subtree_under_a_parent_held_unsaved_is_refused_save_pending_until_the_retry_saves_the_parent) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  {
+    std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    s.rooms.open(tid("t_p"))->applyCommand(createNode("mast"), 10, me);
+    s.trees.savesFail = true;
+    REQUIRE(s.rooms.persist(tid("t_p")) == Saved::held);
+  }
+  const Seq storedHead = s.trees.byId["t_p"].head;
+
+  {
+    AtTheDoor door;
+    CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1")) ==
+          (SubtreeAnswer{SubtreeRefusal::savePending}));
+    CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create roadmap internal save-pending"}));
+    CHECK(door.failures->reports.empty());
+  }
+  CHECK(s.trees.subtrees.empty());
+  CHECK_FALSE(s.trees.byId.count("t_00000000000000c1"));
+  CHECK_EQ(s.trees.byId["t_p"].head, storedHead);
+  CHECK(s.bus.subtreeBroadcasts.empty());
+
+  s.trees.savesFail = false;
+  REQUIRE_EQ(s.retries.set.size(), 1u);
+  s.retries.set[0].run();
+  const Subtree child{TreeId{"t_00000000000000c1"}, tid("t_p"), OwningStep{tid("t_p"), nid("rig")}, 1, 0};
+  CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1")) ==
+        (SubtreeAnswer{SubtreeCreation{true, child, storedHead + 2}}));
+  CHECK(s.trees.subtrees == (std::map<std::string, Subtree>{{"t_00000000000000c1", child}}));
+}
+
 TEST(create_subtree_that_loses_its_step_or_its_id_to_another_writer_answers_without_a_failure) {
   Setup s;
   AtTheDoor door;

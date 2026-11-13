@@ -162,20 +162,6 @@ TEST(WriteObservation_a_settled_outcome_names_the_line_its_door_finishes_unless_
   CHECK(recording.reporter->issues.size() == 1);
 }
 
-// The line of a write that landed on a retry carries the tries it took; no other line has the key.
-TEST(WriteObservation_a_retried_writes_line_carries_its_tries_and_no_other_line_the_key) {
-  Recording recording;
-  wm::WriteObservation retried("roadmap.tree.save", "roadmap", "background");
-  retried.tried(3);
-  retried.finish("saved-after-retry");
-  wm::WriteObservation plain("roadmap.tree.save", "roadmap", "background");
-  plain.finish();
-
-  REQUIRE(recording.lines.size() == 2);
-  CHECK(wm::writeCompletionJson(recording.lines[0]).find(R"("attempts":3)") != std::string::npos);
-  CHECK(wm::writeCompletionJson(recording.lines[1]).find("attempts") == std::string::npos);
-}
-
 TEST(WriteObservation_nested_engine_successes_emit_one_info_for_the_outer_request) {
   Recording recording;
   wm::WriteObservation request("gym.save", "gym", "rest");

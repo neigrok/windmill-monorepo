@@ -8649,8 +8649,9 @@ TEST(mcp_the_cross_branch_flag_is_refused_wherever_mcp_took_or_answered_it) {
 
 // A write whose save fails is not an error and is not undone: the change is in the room and on every open page, the
 // receipt says `saved: false` with the one sentence, the call's line reads held-unsaved and the failure is one report
-// under the save's own name. Sent again during the outage the call changes nothing and loses nothing, and with no
-// further call the registry's retry leaves the stored tree equal to the room.
+// under the save's own name. Sent again during the outage the call changes nothing, tries no save, and says both that
+// it changed nothing and that the room is not saved; with no further call the registry's retry leaves the stored tree
+// equal to the room.
 TEST(mcp_a_write_whose_save_fails_answers_applied_and_held_and_the_retry_stores_it_with_no_further_call) {
   struct Failures : FailureReporter {
     std::vector<std::string> reports;
@@ -8683,6 +8684,9 @@ TEST(mcp_a_write_whose_save_fails_answers_applied_and_held_and_the_retry_stores_
     "diagnosticsClean":true,"introducedDiagnostics":[],"saveError":")") + kHeldUnsavedSentence + "\"}"));
   CHECK_FALSE(again.isError);
   CHECK_EQ(body(again)["unchanged"], Json::Value(true));
+  CHECK_EQ(body(again)["saved"], Json::Value(false));
+  CHECK_EQ(body(again)["saveError"], Json::Value(kHeldUnsavedSentence));
+  CHECK_EQ(h.trees.savedNodeCounts.size(), std::size_t{2});
   CHECK_EQ(lines, (std::vector<std::string>{"roadmap.tree.save failed", "mcp.roadmap_update_kind held-unsaved",
                                             "mcp.roadmap_update_kind ok"}));
   CHECK_EQ(reporter.failures->reports, (std::vector<std::string>{std::string("roadmap.tree.save roadmap mcp failed ") +

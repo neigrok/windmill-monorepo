@@ -96,6 +96,10 @@ std::variant<SubtreeCreation, SubtreeRefusal, Admission> TreeRegistry::createSub
     TreeRoom* room = rooms_.open(parent);
     if (!room) return refuse(SubtreeRefusal::noSuchTree);
     if (!room->hasNode(step)) return refuse(SubtreeRefusal::stepGone);
+    // The create stores the parent's head at the room's next seq. A room held unsaved has seqs the store does not, so
+    // the stored head would move past writes that are not stored, and a restart would leave no gap to show them lost:
+    // the create waits for the room's save, which the registry is retrying.
+    if (rooms_.standing(parent) == Saved::held) return refuse(SubtreeRefusal::savePending);
 
     const std::map<NodeId, TreeId> pointers = room->pointers();
     const auto pointer = pointers.find(step);
@@ -351,7 +355,7 @@ std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission> TreeReg
   TreeRoom* room = rooms_.open(tree);
   if (!room) return Renaming::notFound;
   if (title && *title == room->title().value) title.reset();  // the name it already has is no rename
-  if (!title && !guide) return Described{room->head(), true};
+  if (!title && !guide) return Described{room->head(), true, rooms_.standing(tree)};
   const Seq seq = room->describe(title, guide, clock_.nowMs());
   const Saved saved = rooms_.persist(tree);
   if (saved != Saved::gone) return Described{seq, false, saved};

@@ -1389,7 +1389,7 @@ struct Forest {
                                     opens ? std::optional<TreeId>(TreeId{std::string(opens)}) : std::nullopt});
     std::lock_guard<std::mutex> strand(rooms.strandFor(tree));
     rooms.open(tree)->applyCommands(commands, clock.nowMs(), owner);
-    REQUIRE(rooms.persist(tree));
+    REQUIRE(rooms.persist(tree) == Saved::saved);
   }
   SubtreeAnswer create(const TreeId& parent, const char* step, const std::optional<TreeId>& proposed = std::nullopt) {
     return registry.createSubtree(parent, nid(step), kAda, {proposed, std::nullopt});

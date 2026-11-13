@@ -31,14 +31,31 @@ struct TreeRowGone : std::exception {
 // the save failed — the room keeps the writes, which every open page has already been sent, and the registry tries
 // the save again until the store takes them; a caller is told the change is applied and held, and need not resend it.
 // `gone`: the tree's row is gone or retired, so nothing was written and the room has nothing a caller may attest.
-enum class Saved { saved, held, gone };
+// A class, not an enum: a test macro casts its condition to bool, and an enum's first value would read as false, so a
+// save's outcome is only ever compared.
+class Saved {
+public:
+  static const Saved saved;
+  static const Saved held;
+  static const Saved gone;
+  bool operator==(const Saved&) const = default;
+
+private:
+  enum class Outcome { saved, held, gone };
+  constexpr explicit Saved(Outcome outcome) : outcome_(outcome) {}
+  Outcome outcome_;
+};
+inline constexpr Saved Saved::saved{Saved::Outcome::saved};
+inline constexpr Saved Saved::held{Saved::Outcome::held};
+inline constexpr Saved Saved::gone{Saved::Outcome::gone};
 // The outcome a write's line carries when its save is held: applied, not yet stored, being retried. The registry
 // completes the line of the write that asked for the save, so every door tells it alike.
 inline constexpr char kHeldUnsaved[] = "held-unsaved";
 // What a door tells the caller of such a write, in its own reply's shape.
 inline constexpr char kHeldUnsavedSentence[] =
-    "The change is applied and every open page has it, but saving it failed. The server holds it and is retrying the "
-    "save; do not send it again.";
+    "The change is applied and every open page has it, but saving it failed and the server is retrying the save. "
+    "Sending it again is not needed. A server restart before the save succeeds would lose it, so read the record again "
+    "later if it matters.";
 
 // Owns the live TreeRooms, one per tree being viewed or edited. Idle ones are persisted and closed
 // on its own heartbeat — a room is a cache of the row, not a residence. Every live room of one root's
@@ -50,19 +67,27 @@ public:
   // When a held room's save is tried again: `retry` runs once, `delay` from now. The registry's own heartbeat thread
   // unless one is given; a test gives its own and runs the retries itself.
   using RetryTimer = std::function<void(std::chrono::milliseconds delay, std::function<void()> retry)>;
-  // A held room is retried after kFirstRetry, then after twice the wait before, up to kRetryCeiling between tries. Its
-  // failure is reported when it is first held and then at most once per kRetryCeiling of waiting.
+  // A held room is retried after kFirstRetry, then after twice the wait before, up to kRetryCeiling between tries. Only
+  // the timer and a write that changes the room try a held room's save: a read, a write that changes nothing and the
+  // sweep cost it no statement and move no retry. While any room is held the registry files one report under
+  // `roadmap.tree.save` when the first is held and one per kRetryCeiling after, with the number of rooms held; each
+  // room's own hold is two lines, its beginning and its end, under an id minted for that hold.
   static constexpr std::chrono::milliseconds kFirstRetry{1000};
   static constexpr std::chrono::milliseconds kRetryCeiling{60000};
+  // All the time the saves tried at shutdown may take together: under a container's stop grace.
+  static constexpr std::chrono::milliseconds kShutdownSaveBudget{5000};
 
   RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus, RetryTimer retryTimer = {});
-  // Stops the heartbeat, so no retry runs after it, then tries each held room's save once more.
+  // A registry that goes away has stopped: whatever owns one need not remember to.
+  ~RoomRegistry();
+  // Stops the heartbeat, so no retry runs after it, then tries each held room's save once more, the wait for a retry
+  // in mid-save and all of those saves within kShutdownSaveBudget together. The rooms still held after that are lost
+  // with the process: one line and one report say how many.
   void stop();
 
   // nullptr means no such tree; a throw means infrastructure failure, whose detail must be logged
-  // and never surfaced (a pqxx message carries a host, a port, a role). A room found held tries its save
-  // again first, so no call that reaches the tree — a retried write that changes nothing, a read — leaves
-  // the store behind when it can be reached; one whose row has gone meanwhile is retired and answers nullptr.
+  // and never surfaced (a pqxx message carries a host, a port, a role). A held room is answered as it stands: opening
+  // it tries no save.
   TreeRoom* open(const TreeId& id);
 
   // Answers WITHOUT materializing a room. Every path that may refuse asks this BEFORE open(), which
@@ -70,10 +95,10 @@ public:
   // the live RootAccess while any room of the root's trees is open, else the root's row.
   std::optional<TreeAccess> accessOf(const TreeId& id);
 
-  // Save, then land the queued op rows, then close. A row that fails to land after the save is
-  // dropped with the room — logged, never surfaced — since the lattice it describes is durable. A room
-  // whose save fails is held and stays open, its writes being nowhere else: answered false, where a
-  // room that closed, or was not open, answers true.
+  // Save, then land the queued op rows, then close; a room with nothing unsaved closes with no save. A row
+  // that fails to land after the save is dropped with the room — logged, never surfaced — since the lattice
+  // it describes is durable. A room whose save is held, or fails here, stays open, its writes being nowhere
+  // else, and waits for its retry: answered false, where a room that closed, or was not open, answers true.
   bool evict(const TreeId& id);
 
   // Drops a retired tree's room and announces the change; deliberately does NOT persist on the way
@@ -85,9 +110,12 @@ public:
   // Save a live room's dirty slice without evicting, then land its queued op rows. `gone` when the
   // tree's row is gone or retired (TreeRowGone names it where it is reported). `saved` also when the rows
   // fail to land: the save is what a caller's reply attests, and the rows retry on the next persist. A save
-  // that fails throws nothing: the room is held, the failure is reported as `roadmap.tree.save`, and a
-  // retry is set on the timer. Caller holds the strand.
+  // that fails throws nothing: the room is held and a retry is set on the timer. A held room is tried
+  // again only when it has changed since its save was last tried; otherwise it is answered `held` with no
+  // statement sent. Caller holds the strand.
   Saved persist(const TreeId& id);
+  // What a call that changed nothing says of the room's save: `held` while it is, `saved` otherwise.
+  Saved standing(const TreeId& id) const;
   // The share seam, for a root: its row and the access every live room of its trees shares, the narrower first, so
   // making it private shuts its subtrees before its row says so, and opening it opens them after. Each of those rooms
   // is announced. Caller holds the root's strand.
@@ -116,11 +144,13 @@ public:
   std::mutex& strandFor(const TreeId& id);
 
 private:
-  // What asks for a save: a write that has just landed in the room, a call or a sweep that found the room, or the
-  // retry timer. Only the timer's failures count toward the next wait and the next report.
+  // What asks for a save: a write that has just landed in the room, a close — the sweep's, a PUT's, shutdown's — or
+  // the retry timer. Only the timer's failures move the next wait.
   enum class Asked { byAWrite, inPassing, byTheTimer };
   Saved save(const TreeId& id, Asked asked);
   void hold(const TreeId& id, const std::exception& failure, Asked asked);
+  // One report for the registry, with the number of rooms held, under a request of its own.
+  void reportHeld(std::size_t rooms, const std::exception& failure, const char* outcome);
   void land(const TreeId& id, TreeRoom& room);
   // The access every live room of `root`'s trees shares, made from the root's row when none is live. Called under the
   // root's lock; nullptr when the root does not stand.
@@ -137,14 +167,17 @@ private:
   static constexpr std::chrono::minutes kIdleFor{10};
   static constexpr double kSweepSeconds = 30.0;
 
-  // A room whose save failed, until one lands: which hold it is, so a retry set for an earlier one that has since
-  // landed tries nothing; how many saves were tried; the wait before the next timed one; and how much waiting has
-  // passed since the failure was last reported.
+  // A sweep runs every kSweepSeconds, so every kSweepsPerReport-th one that finds rooms held is a ceiling apart.
+  static constexpr std::size_t kSweepsPerReport = 2;
+  // A room whose save failed, until one lands: the id its two lines carry, minted for this hold, by which a retry set
+  // for an earlier one tries nothing; how many saves were tried; the wait before the next timed one; when the hold
+  // began; and the head its save was last tried at, so a call that changes nothing tries no save.
   struct Held {
-    std::uint64_t hold = 0;
+    std::string id;
     std::uint64_t attempts = 1;
     std::chrono::milliseconds wait = kFirstRetry;
-    std::chrono::milliseconds unreported{0};
+    std::chrono::steady_clock::time_point since;
+    Seq triedAt = 0;
   };
   // Steady time, never wall time: a clock stepped backwards must not resurrect a room.
   struct Live {
@@ -160,7 +193,8 @@ private:
   mutable std::mutex mutex_;
   std::map<TreeId, Live> rooms_;
   std::map<TreeId, std::weak_ptr<RootAccess>> roots_;
-  std::uint64_t holds_ = 0;
+  std::size_t sweepsHeld_ = 0;  // sweeps running that found a room held
+  bool stopped_ = false;
   std::function<void(const TreeId&)> accessChanged_;
   std::array<std::mutex, kStrandStripes> strands_;
   std::array<std::mutex, kStrandStripes> rootLocks_;

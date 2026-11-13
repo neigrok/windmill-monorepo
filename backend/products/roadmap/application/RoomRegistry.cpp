@@ -1,5 +1,7 @@
 #include "products/roadmap/application/RoomRegistry.h"
 
+#include "platform/application/StatementLimits.h"
+
 #include <trantor/utils/Logger.h>
 
 #include <algorithm>
@@ -15,6 +17,20 @@ namespace {
 // A room opened with its snapshot behind its op log: the last row's seq is past the head the snapshot was saved at.
 struct SnapshotBehindLog : std::exception {
   const char* what() const noexcept override { return "a room opened with its snapshot behind its op log"; }
+};
+
+// Rooms held with a save that keeps failing, or still held as the registry stopped: what the registry's own report
+// is filed as when no single failure is at hand.
+struct RoomsHeldUnsaved : std::exception {
+  const char* what() const noexcept override { return "rooms are held with a save that keeps failing"; }
+};
+
+// Time that only moves forward, for the budget of the saves tried at shutdown.
+struct SteadyClock : Clock {
+  std::uint64_t nowMs() override {
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+  }
 };
 
 // The door a registry's own line is told at: the one of the call it serves, or the background for the timer's and a
@@ -34,36 +50,47 @@ RoomRegistry::RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus, R
   heartbeat_.start(kSweepSeconds, kSweepSeconds, [this] { sweep(kIdleFor); });
 }
 
+RoomRegistry::~RoomRegistry() { stop(); }
+
 void RoomRegistry::stop() {
+  // One budget for all of stopping: it starts before the heartbeat is joined, since a retry may be in the middle of a
+  // save that hangs. A statement waits and runs no later than its end, and a save asked for after it is refused at
+  // once (StatementLimits), so a store that hangs cannot hold the process past it.
+  SteadyClock clock;
+  const std::uint64_t deadline = clock.nowMs() + static_cast<std::uint64_t>(kShutdownSaveBudget.count());
   heartbeat_.stop();
   std::vector<TreeId> held;
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (stopped_) return;
+    stopped_ = true;
     for (const auto& [id, live] : rooms_)
       if (live.held) held.push_back(id);
   }
+  if (held.empty()) return;
+  const StatementLimits limits{kShutdownSaveBudget, clock, deadline};
+  std::size_t lost = 0;
   for (const TreeId& id : held) {
     std::lock_guard<std::mutex> strand(strandFor(id));
-    save(id, Asked::inPassing);
+    if (save(id, Asked::inPassing) == Saved::held) ++lost;
   }
+  if (lost > 0) reportHeld(lost, RoomsHeldUnsaved{}, "lost-at-shutdown");
+}
+
+void RoomRegistry::reportHeld(std::size_t rooms, const std::exception& failure, const char* outcome) {
+  WriteObservation report{"roadmap.tree.save", "roadmap", doorNow(), freshWriteRequestId()};
+  LOG_ERROR << "roadmap_tree_save outcome=" << outcome << " rooms=" << rooms << " request_id=" << report.requestId();
+  report.fail(failure, outcome);
 }
 
 TreeRoom* RoomRegistry::open(const TreeId& id) {
-  TreeRoom* found = nullptr;
-  bool held = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     auto existing = rooms_.find(id);
     if (existing != rooms_.end()) {
       existing->second.touched = std::chrono::steady_clock::now();  // still in use: not idle
-      found = existing->second.room.get();
-      held = existing->second.held.has_value();
+      return existing->second.room.get();
     }
-  }
-  if (found) {
-    if (!held || save(id, Asked::inPassing) != Saved::gone) return found;
-    retire(id);  // the row went away under the held room, which goes with it
-    return nullptr;
   }
 
   // Loaded outside the registry lock so one large tree's open can't freeze every other tree's
@@ -88,8 +115,9 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
   LooseGraph graph(stored->state);  // full CRDT state — lossless
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
   auto room = std::make_unique<TreeRoom>(id, stored->title, stored->guide, stored->guideInherited,
-                                         std::move(graph), std::move(legend), std::max(stored->head, past.lastSeq),
+                                         std::move(graph), std::move(legend), stored->head,
                                          stored->root, std::move(access), stored->createdAt, bus_);
+  room->takeHeadPast(past.lastSeq);
   room->observe(past.greatestStamp);
   // The room's first save moves the stored head past those rows, and nothing then shows the tree was ever behind:
   // it is told here, once, as the unexpected state it is, under a request of its own so the call that opened the
@@ -129,8 +157,9 @@ std::optional<TreeAccess> RoomRegistry::accessOf(const TreeId& id) {
 }
 
 bool RoomRegistry::evict(const TreeId& id) {
-  // A tree whose row is gone takes its room's edits and op rows with it; a room whose save failed stays, held.
-  if (save(id, Asked::inPassing) == Saved::held) return false;
+  // A held room stays for its retry, which alone tries its save. A tree whose row is gone takes its room's edits and
+  // op rows with it; a room whose save fails here stays, held.
+  if (standing(id) == Saved::held || save(id, Asked::inPassing) == Saved::held) return false;
   std::lock_guard<std::mutex> lock(mutex_);
   rooms_.erase(id);  // a row that did not land is dropped here, and the room's teardown says so
   return true;
@@ -198,6 +227,23 @@ void RoomRegistry::sweep(std::chrono::steady_clock::duration idleFor) {
     evict(id);
   }
   if (!closing.empty()) LOG_INFO << "swept " << closing.size() << " rooms, " << openRooms() << " still open";
+  // The registry's own report of rooms that stay held: one a ceiling, however many rooms there are.
+  std::size_t held = 0;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& [id, live] : rooms_) held += live.held.has_value();
+  }
+  if (held == 0) {
+    sweepsHeld_ = 0;
+    return;
+  }
+  if (++sweepsHeld_ % kSweepsPerReport == 0) reportHeld(held, RoomsHeldUnsaved{}, "failed");
+}
+
+Saved RoomRegistry::standing(const TreeId& id) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto it = rooms_.find(id);
+  return it != rooms_.end() && it->second.held ? Saved::held : Saved::saved;
 }
 
 Saved RoomRegistry::persist(const TreeId& id) { return save(id, Asked::byAWrite); }
@@ -215,11 +261,15 @@ Saved RoomRegistry::save(const TreeId& id, Asked asked) {
     auto it = rooms_.find(id);
     if (it == rooms_.end()) return Saved::saved;  // a closed room holds nothing unsaved
     room = it->second.room.get();
+    held = it->second.held;
+    if (!room->unsaved()) return Saved::saved;  // nothing to save: no statement is sent, and no room is held for it
+    // A held room is the timer's: a write tries its save only when it changed the room since the last try, so a write
+    // that changes nothing costs no statement.
+    if (held && asked == Asked::byAWrite && held->triedAt == room->head()) return Saved::held;
     std::tie(state, legend) = room->dirtyState();  // only what changed since the last save
     title = room->title();
     guide = room->guide();
     head = room->head();
-    held = it->second.held;
   }
   // I/O outside the map lock. The caller holds the tree's strand, so no write can slip in between
   // the export above and the markClean below. The lattice lands first and the op rows after, so a
@@ -242,50 +292,50 @@ Saved RoomRegistry::save(const TreeId& id, Asked asked) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (auto it = rooms_.find(id); it != rooms_.end()) it->second.held.reset();
   }
-  if (!rowStands) return Saved::gone;  // the row is gone; so is what this room would add to it
+  // The row is gone, and so is what this room would add to it: a hold ends there, and says so.
+  if (!rowStands) {
+    if (held) LOG_WARN << "roadmap_tree_save outcome=row-gone hold=" << held->id << " attempts=" << held->attempts + 1;
+    return Saved::gone;
+  }
   room->markClean();
   land(id, *room);
-  if (held) {
-    WriteObservation landed{"roadmap.tree.save", "roadmap", doorNow()};
-    landed.tried(held->attempts + 1);
-    landed.finish("saved-after-retry");
-  }
+  if (held)
+    LOG_WARN << "roadmap_tree_save outcome=saved-after-retry hold=" << held->id << " attempts=" << held->attempts + 1
+             << " held_ms=" << std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - held->since).count();
   return Saved::saved;
 }
 
-// A failed save is reported under one name when the room is first held, and after that only when the timer has
-// waited kRetryCeiling since the last report, however many calls have tried the save in between. Each timed failure
-// doubles the wait up to the ceiling and sets the next retry; a call's or a sweep's failure leaves the timer's chain
-// as it is.
+// A hold begins with one line under an id minted for it, and ends with one (save). The first room held when none
+// was is the registry's report of the outage; the sweep files the ones after. Each timed failure doubles the wait up
+// to the ceiling and sets the next retry; a write's or a close's failure leaves the timer's chain as it is.
 void RoomRegistry::hold(const TreeId& id, const std::exception& failure, Asked asked) {
-  bool report = false;
   std::optional<std::chrono::milliseconds> retryIn;
-  std::uint64_t hold = 0;
+  std::string hold;
+  bool began = false;
+  bool first = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = rooms_.find(id);
     if (it == rooms_.end()) return;
     std::optional<Held>& held = it->second.held;
     if (!held) {
-      held = Held{++holds_};
-      report = true;
+      first = std::none_of(rooms_.begin(), rooms_.end(), [](const auto& entry) { return entry.second.held.has_value(); });
+      held = Held{freshWriteRequestId().substr(0, 16), 1, kFirstRetry, std::chrono::steady_clock::now()};
+      began = true;
       retryIn = held->wait;
     } else {
       ++held->attempts;
       if (asked == Asked::byTheTimer) {
-        held->unreported += held->wait;
         held->wait = std::min(held->wait * 2, kRetryCeiling);
         retryIn = held->wait;
-        report = held->unreported >= kRetryCeiling;
-        if (report) held->unreported = std::chrono::milliseconds{0};
       }
     }
-    hold = held->hold;
+    held->triedAt = it->second.room->head();
+    hold = held->id;
   }
-  if (report) {
-    WriteObservation failing{"roadmap.tree.save", "roadmap", doorNow()};
-    failing.fail(failure);
-  }
+  if (began) LOG_WARN << "roadmap_tree_save outcome=held-unsaved hold=" << hold << " door=" << doorNow();
+  if (first) reportHeld(1, failure, "failed");
   if (!retryIn) return;
   retryTimer_(*retryIn, [this, id, hold] {
     std::lock_guard<std::mutex> strand(strandFor(id));
@@ -293,7 +343,7 @@ void RoomRegistry::hold(const TreeId& id, const std::exception& failure, Asked a
       std::lock_guard<std::mutex> lock(mutex_);
       const auto it = rooms_.find(id);
       // Saved, retired or closed since; a room held anew has a retry of its own.
-      if (it == rooms_.end() || !it->second.held || it->second.held->hold != hold) return;
+      if (it == rooms_.end() || !it->second.held || it->second.held->id != hold) return;
     }
     if (save(id, Asked::byTheTimer) == Saved::gone) retire(id);  // the row went away under the held room
   });

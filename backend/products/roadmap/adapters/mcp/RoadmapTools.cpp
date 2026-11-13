@@ -811,7 +811,7 @@ ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Va
 
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.head();
-    Saved saved = Saved::saved;
+    Saved saved = registry.standing(tree);  // what a change of nothing says: the room's save may be held
     if (!plan.landsNothing()) {
       seq = room.applyCommands(plan.commands, clock.nowMs(), actor);  // a lone command logs as itself
       saved = registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
@@ -1025,6 +1025,8 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
         out["seq"] = static_cast<Json::Int64>(room.applyCommands(batch.commands, clock.nowMs(), actor));
         answerSave(registry.persist(tree), out);  // flush the dirty rows so the web reader sees this edit
         treeLanded = true;
+      } else {
+        answerSave(registry.standing(tree), out);
       }
       const TreeDiagnostics after = room.diagnose();
       if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
@@ -1299,7 +1301,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     if (opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
     const std::optional<Seq> landed = room.importTree(graft, clock.nowMs(), actor);
-    if (landed) answerSave(registry.persist(tree), out);
+    answerSave(landed ? registry.persist(tree) : registry.standing(tree), out);
     out["graphApplied"] = true;
     out["progressApplied"] = true;
     // The caller's marks on what the tombstones took are cleared after the graft, which has landed whatever becomes of

@@ -1849,7 +1849,8 @@ TEST(ws_a_frame_onto_a_tree_whose_row_went_away_under_its_live_room_answers_no_s
 // A frame whose save fails has landed in the room and been sent to every subscriber, so it is not refused: its author
 // is acked with the seq it took, as unsaved, and need not send it again. The frame's line reads held-unsaved, the
 // failure is one Issue under the save's own name with nothing of the frame in any line, and the registry's retry
-// stores the frame with no further frame from anyone.
+// stores the frame with no further frame from anyone. The frame sent again meanwhile lands nothing and is acked
+// without a seq, still as unsaved: what the room holds is not saved.
 TEST(ws_a_frame_whose_save_fails_is_acked_with_its_seq_as_unsaved_and_the_retry_stores_it) {
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");
@@ -1878,6 +1879,9 @@ TEST(ws_a_frame_whose_save_fails_is_acked_with_its_seq_as_unsaved_and_the_retry_
     }
   }
   CHECK(h.trees.byId["t_priv"].guide == Lww<std::string>{});
+
+  h.collab.onMessage(conn, guideFrame("t_priv", "f-held", "Ask Maren before the third branch", "100:0:client"));
+  CHECK_EQ(parse(conn->sent.back()), parse(R"({"t":"subgraphAck","treeId":"t_priv","frameId":"f-held","unsaved":true})"));
 
   h.trees.savesFail = false;
   REQUIRE_EQ(h.retries.set.size(), 1u);

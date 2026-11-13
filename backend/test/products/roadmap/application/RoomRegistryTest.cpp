@@ -1,3 +1,4 @@
+#include "platform/application/StatementLimits.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Graft.h"
 #include "products/roadmap/domain/LooseGraph.h"
@@ -33,8 +34,7 @@ std::size_t nodeCount(const GraphState& state) {
   return LooseGraph(state).presentNodeIds().size();
 }
 
-// What a registry leaves for an operator: its write lines, with the tries a retried one took, its failure reports and
-// its log lines, each as one string.
+// What a registry leaves for an operator: its write lines, its failure reports and its log lines, each as one string.
 struct Told : FailureReporter {
   std::vector<std::string> lines;
   std::vector<std::string> reports;
@@ -42,8 +42,7 @@ struct Told : FailureReporter {
   trantor::Logger::LogLevel level = trantor::Logger::logLevel();
   Told() {
     installWriteSink([this](const WriteCompletion& line) {
-      lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome +
-                      (line.attempts ? " attempts=" + std::to_string(line.attempts) : ""));
+      lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
     });
     installWriteReporter(std::shared_ptr<FailureReporter>(this, [](FailureReporter*) {}));
     trantor::Logger::setLogLevel(trantor::Logger::kTrace);
@@ -292,8 +291,9 @@ TEST(registry_persist_saves_only_the_dirty_slice_and_never_clobbers_the_rest) {
   CHECK_EQ(repo.savedNodeCounts.back(), 1u);       // the slice carried only "added"
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);   // upsert kept "seed" alongside it
 
-  registry.persist(tid());                         // nothing dirtied since
-  CHECK_EQ(repo.savedNodeCounts.back(), 0u);       // an empty slice — just title/head
+  const std::size_t saves = repo.savedNodeCounts.size();
+  registry.persist(tid());                         // nothing written since
+  CHECK_EQ(repo.savedNodeCounts.size(), saves);    // so nothing is saved: no statement is sent
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
 
   room.applyCommand(RenameNode{nid("added"), "Renamed"}, 11, uid());
@@ -588,8 +588,8 @@ TEST(registry_persist_saves_the_lattice_before_it_lands_the_op_rows) {
   CHECK_EQ(log.byTree["t"][1].seq, static_cast<Seq>(9));
 
   journal.clear();
-  registry.persist(tid());                       // nothing queued: the save alone
-  CHECK_EQ(journal, (std::vector<std::string>{"save@9"}));
+  registry.persist(tid());                       // nothing written and nothing queued: nothing is sent
+  CHECK(journal.empty());
 }
 
 TEST(registry_evict_saves_the_lattice_before_it_lands_the_op_rows) {
@@ -643,12 +643,42 @@ TEST(registry_a_crash_after_the_save_and_before_the_row_reopens_the_whole_import
   CHECK(log.since(tid(), 7).empty());  // no row past the saved head: the lattice already holds the frame
 }
 
+// The registry's own lines about held rooms, as the operator reads them: everything from `roadmap_tree_save` to the end
+// of the line, with the hold's id and the times replaced, since each is minted or measured as it runs.
+std::vector<std::string> holdLines(const Told& told) {
+  std::vector<std::string> lines;
+  for (const std::string& logged : told.logged) {
+    const std::size_t from = logged.find("roadmap_tree_save ");
+    if (from == std::string::npos) continue;
+    std::string line = logged.substr(from, logged.find(" - ", from) - from);
+    for (const char* key : {" hold=", " held_ms=", " request_id="}) {
+      const std::size_t at = line.find(key);
+      if (at == std::string::npos) continue;
+      const std::size_t value = at + std::string(key).size();
+      line.replace(value, line.find(' ', value) == std::string::npos ? std::string::npos : line.find(' ', value) - value, "*");
+    }
+    lines.push_back(line);
+  }
+  return lines;
+}
+
+// The id a hold's lines carry, read off the n-th of them.
+std::string holdIdOf(const Told& told, std::size_t nth) {
+  std::size_t seen = 0;
+  for (const std::string& logged : told.logged) {
+    const std::size_t at = logged.find(" hold=");
+    if (at == std::string::npos || seen++ != nth) continue;
+    return logged.substr(at + 6, logged.find(' ', at + 6) - at - 6);
+  }
+  return "";
+}
+
 // A save that fails throws nothing and undoes nothing: the room keeps the write, which every open page already has,
-// and the registry holds it — answered `held`, the asking write's own line `held-unsaved`, the failure one line and
-// one report under `roadmap.tree.save` — and sets one retry a second out. No row lands while the save has not: the
-// rows are only offered to the log once the save has returned. The retry coming due, with no call in between, saves
-// the lattice and then lands the row, tells it in one `saved-after-retry` line with the tries it took, and sets no
-// further retry.
+// and the registry holds it — answered `held`, the asking write's own line `held-unsaved`, the hold's beginning one
+// line under an id minted for it, and the outage one report under `roadmap.tree.save` with the rooms held — and sets
+// one retry a second out. No row lands while the save has not: the rows are only offered to the log once the save has
+// returned. The retry coming due, with no call in between, saves the lattice and then lands the row, ends the hold in
+// one line under the same id with the tries it took and how long it was held, and sets no further retry.
 TEST(registry_a_save_that_fails_holds_the_write_and_its_timed_retry_lands_the_lattice_then_the_op_row) {
   std::vector<std::string> journal;
   RecordingTreeRepository repo(journal);
@@ -677,6 +707,8 @@ TEST(registry_a_save_that_fails_holds_the_write_and_its_timed_retry_lands_the_la
                                                  "mcp.roadmap_create_node roadmap mcp held-unsaved"}));
   CHECK_EQ(told.reports, (std::vector<std::string>{std::string("roadmap.tree.save roadmap mcp failed ") +
                                                    typeid(std::runtime_error).name()}));
+  CHECK_EQ(holdLines(told), (std::vector<std::string>{"roadmap_tree_save outcome=held-unsaved hold=* door=mcp",
+                                                      "roadmap_tree_save outcome=failed rooms=1 request_id=*"}));
   REQUIRE_EQ(retries.set.size(), 1u);
   CHECK(retries.set[0].delay == std::chrono::milliseconds{1000});
 
@@ -688,54 +720,119 @@ TEST(registry_a_save_that_fails_holds_the_write_and_its_timed_retry_lands_the_la
   REQUIRE_EQ(log.byTree["t"].size(), 1u);
   CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(8));
   CHECK(room.pendingOps().empty());
-  CHECK_EQ(told.lines.back(), std::string("roadmap.tree.save roadmap background saved-after-retry attempts=2"));
+  CHECK_EQ(holdLines(told).back(), std::string("roadmap_tree_save outcome=saved-after-retry hold=* attempts=2 held_ms=*"));
+  CHECK_EQ(holdIdOf(told, 0).size(), 16u);
+  CHECK(holdIdOf(told, 0).find_first_not_of("0123456789abcdef") == std::string::npos);
+  CHECK_EQ(holdIdOf(told, 1), holdIdOf(told, 0));
   CHECK_EQ(told.reports.size(), 1u);
   CHECK_EQ(retries.set.size(), 1u);
 }
 
 // A held save is tried again a second after it failed, then after twice the wait before, up to a minute between
-// tries, for as long as it fails and whoever calls. Its failure is reported when it is first held and then at most
-// once a minute of waiting: after the sixth timed failure, 63 seconds in, and after each one a minute apart.
-TEST(registry_retries_a_held_save_after_a_second_then_twice_the_wait_up_to_a_minute_and_reports_it_once_a_minute) {
-  FakeTreeRepository repo;
-  FakeOpLog log;
+// tries, for as long as it fails. Nothing else moves that: a read of the tree, a write that changes nothing and a
+// sweep try no save, set no retry and leave the next wait as it was, and a write that changes the room tries the save
+// once without touching the timer's chain.
+TEST(registry_only_the_timer_and_a_write_that_changes_the_room_try_a_held_save_and_no_call_moves_its_retry) {
+  std::vector<std::string> journal;
+  RecordingTreeRepository repo(journal);
+  RecordingOpLog log(journal);
   FakeBus bus;
   HeldRetries retries;
-  Told told;
   repo.byId["t"] = oneNodeTree();
   RoomRegistry registry(repo, log, bus, retries.timer());
   TreeRoom& room = *registry.open(tid());
   room.applyCommand(createNode("added"), 10, uid());
   repo.savesFail = true;
   CHECK(registry.persist(tid()) == Saved::held);
+  retries.set[0].run();
+  retries.set[1].run();
+  REQUIRE_EQ(retries.set.size(), 3u);
+  CHECK(retries.set[2].delay == std::chrono::milliseconds{4000});
+  const std::size_t tried = journal.size();
 
-  std::vector<long long> delays;
-  std::vector<std::size_t> reportsAfter;
-  for (std::size_t due = 0; due < 8; ++due) {
-    REQUIRE_EQ(retries.set.size(), due + 1);
-    delays.push_back(retries.set[due].delay.count());
+  for (int call = 0; call < 200; ++call) CHECK(registry.open(tid()) == &room);
+  for (int echo = 0; echo < 200; ++echo) CHECK(registry.persist(tid()) == Saved::held);
+  CHECK(registry.standing(tid()) == Saved::held);
+  registry.sweep(std::chrono::seconds(0));
+  CHECK(registry.isOpen(tid()));
+  CHECK_EQ(journal.size(), tried);
+  CHECK_EQ(retries.set.size(), 3u);
+
+  room.applyCommand(createNode("later"), 11, uid());
+  CHECK(registry.persist(tid()) == Saved::held);
+  CHECK_EQ(journal.size(), tried + 1);
+  CHECK_EQ(retries.set.size(), 3u);
+
+  std::vector<long long> delays{1000, 2000, 4000};
+  for (std::size_t due = 2; due < 8; ++due) {
     retries.set[due].run();
-    reportsAfter.push_back(told.reports.size());
+    REQUIRE_EQ(retries.set.size(), due + 2);
+    delays.push_back(retries.set[due + 1].delay.count());
   }
-  REQUIRE_EQ(retries.set.size(), 9u);
-  delays.push_back(retries.set[8].delay.count());
   CHECK_EQ(delays, (std::vector<long long>{1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000}));
-  CHECK_EQ(reportsAfter, (std::vector<std::size_t>{1, 1, 1, 1, 1, 2, 3, 4}));
-  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(7));
 
   repo.savesFail = false;
   retries.set[8].run();
-  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
-  CHECK(LooseGraph(repo.byId["t"].state).hasNode(NodeId{"added"}));
-  CHECK_EQ(told.lines.back(), std::string("roadmap.tree.save roadmap background saved-after-retry attempts=10"));
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(9));
+  CHECK(LooseGraph(repo.byId["t"].state).hasNode(NodeId{"later"}));
+  CHECK(registry.standing(tid()) == Saved::saved);
   CHECK_EQ(retries.set.size(), 9u);
+
+  room.applyCommand(createNode("again"), 12, uid());
+  repo.savesFail = true;
+  CHECK(registry.persist(tid()) == Saved::held);
+  REQUIRE_EQ(retries.set.size(), 10u);
+  const std::size_t before = journal.size();
+  retries.set[7].run();
+  CHECK_EQ(journal.size(), before);
+  CHECK_EQ(retries.set.size(), 10u);
 }
 
-// Any call that reaches a held room tries its save too, without waiting for the timer and without setting a retry or
-// filing a report of its own: while the store still fails the room stays held, and once it answers the call's own
-// open saves the room. A room held anew after that has a retry of its own, and the earlier hold's retry, coming due
-// late, tries nothing.
-TEST(registry_a_call_that_reaches_a_held_room_tries_its_save_and_an_earlier_holds_retry_then_tries_nothing) {
+// An outage is reported for the registry, not per room: one report when the first room is held, and one each minute
+// after from the sweep — every second pass, half a minute apart — with the number of rooms held, however many they
+// are. A room's own hold is two lines, its beginning and its end. A sweep that finds no room held reports nothing.
+TEST(registry_reports_an_outage_once_when_it_begins_and_once_a_minute_with_the_rooms_held_however_many) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  HeldRetries retries;
+  Told told;
+  for (const char* tree : {"t", "u", "v"}) repo.byId[tree] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus, retries.timer());
+  repo.savesFail = true;
+  for (const char* tree : {"t", "u", "v"}) {
+    registry.open(tid(tree))->applyCommand(createNode("added"), 10, uid());
+    CHECK(registry.persist(tid(tree)) == Saved::held);
+  }
+  CHECK_EQ(told.reports.size(), 1u);
+
+  for (int pass = 0; pass < 4; ++pass) registry.sweep(std::chrono::hours(1));
+  for (std::size_t due = 0; due < retries.set.size() && due < 12; ++due) retries.set[due].run();
+
+  REQUIRE_EQ(told.reports.size(), 3u);
+  CHECK_EQ(told.reports[0], std::string("roadmap.tree.save roadmap background failed ") + typeid(std::runtime_error).name());
+  for (const std::string& report : told.reports)
+    CHECK_EQ(report.rfind("roadmap.tree.save roadmap background failed ", 0), std::size_t{0});
+  CHECK_EQ(holdLines(told), (std::vector<std::string>{
+                                "roadmap_tree_save outcome=held-unsaved hold=* door=background",
+                                "roadmap_tree_save outcome=failed rooms=1 request_id=*",
+                                "roadmap_tree_save outcome=held-unsaved hold=* door=background",
+                                "roadmap_tree_save outcome=held-unsaved hold=* door=background",
+                                "roadmap_tree_save outcome=failed rooms=3 request_id=*",
+                                "roadmap_tree_save outcome=failed rooms=3 request_id=*"}));
+
+  repo.savesFail = false;
+  for (std::size_t due = 12; due < retries.set.size(); ++due) retries.set[due].run();
+  const std::size_t reports = told.reports.size();
+  for (int pass = 0; pass < 4; ++pass) registry.sweep(std::chrono::hours(1));
+  CHECK_EQ(told.reports.size(), reports);
+  for (const char* tree : {"t", "u", "v"}) CHECK(registry.standing(tid(tree)) == Saved::saved);
+}
+
+// Only a room with something unsaved can be held. A sweep that finds an idle room with nothing to save closes it with
+// no statement sent, whatever the store would have answered; one with a write still unsaved is held when its save
+// fails, and kept.
+TEST(registry_a_sweep_closes_a_room_with_nothing_unsaved_without_a_save_and_holds_only_one_with_a_write) {
   std::vector<std::string> journal;
   RecordingTreeRepository repo(journal);
   RecordingOpLog log(journal);
@@ -743,65 +840,64 @@ TEST(registry_a_call_that_reaches_a_held_room_tries_its_save_and_an_earlier_hold
   HeldRetries retries;
   Told told;
   repo.byId["t"] = oneNodeTree();
+  repo.byId["dirty"] = oneNodeTree();
   RoomRegistry registry(repo, log, bus, retries.timer());
-  TreeRoom& room = *registry.open(tid());
-  room.applyCommand(createNode("added"), 10, uid());
+  registry.open(tid());
+  registry.open(tid("dirty"))->applyCommand(createNode("added"), 10, uid());
   repo.savesFail = true;
-  CHECK(registry.persist(tid()) == Saved::held);
 
-  CHECK(registry.open(tid()) == &room);
-  CHECK_EQ(journal, (std::vector<std::string>{"save@8", "save@8"}));
+  registry.sweep(std::chrono::seconds(0));
+
+  CHECK_FALSE(registry.isOpen(tid()));
+  CHECK(registry.isOpen(tid("dirty")));
+  CHECK_EQ(journal, (std::vector<std::string>{"save@8"}));
+  CHECK_EQ(holdLines(told).size(), 2u);
   CHECK_EQ(retries.set.size(), 1u);
-  CHECK_EQ(told.reports.size(), 1u);
-
-  repo.savesFail = false;
-  CHECK(registry.open(tid()) == &room);
-  CHECK_EQ(journal, (std::vector<std::string>{"save@8", "save@8", "save@8", "append@8"}));
-  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
-  CHECK_EQ(told.lines.back(), std::string("roadmap.tree.save roadmap background saved-after-retry attempts=3"));
-
-  room.applyCommand(createNode("later"), 11, uid());
-  repo.savesFail = true;
-  CHECK(registry.persist(tid()) == Saved::held);
-  REQUIRE_EQ(retries.set.size(), 2u);
-  CHECK(retries.set[1].delay == std::chrono::milliseconds{1000});
-  const std::size_t saves = journal.size();
-  retries.set[0].run();
-  CHECK_EQ(journal.size(), saves);
-  CHECK_EQ(retries.set.size(), 2u);
 }
 
-// A held room is not closed: its writes are nowhere else. A sweep that finds it idle tries its save and keeps it, and
-// stopping the registry tries each held room once more, so a store that is back by then has the write.
-TEST(registry_keeps_a_held_room_open_through_a_sweep_and_tries_its_save_once_more_as_it_stops) {
+// Stopping the registry tries each held room once more, all within one budget of statement time, so a store that is
+// back by then has the write. A registry that simply goes away has stopped too. Rooms still held after that are lost
+// with the process: one line and one report say how many, under an outcome of their own.
+TEST(registry_tries_its_held_rooms_once_more_as_it_stops_within_one_budget_and_reports_the_ones_it_loses) {
   FakeTreeRepository repo;
   FakeOpLog log;
   FakeBus bus;
   HeldRetries retries;
-  repo.byId["t"] = oneNodeTree();
-  RoomRegistry registry(repo, log, bus, retries.timer());
-  registry.open(tid())->applyCommand(createNode("added"), 10, uid());
-  repo.savesFail = true;
-  CHECK(registry.persist(tid()) == Saved::held);
-
-  registry.sweep(std::chrono::seconds(0));
-  CHECK(registry.isOpen(tid()));
-  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(7));
-
-  repo.savesFail = false;
-  registry.stop();
+  Told told;
+  for (const char* tree : {"t", "u"}) repo.byId[tree] = oneNodeTree();
+  std::vector<long long> budgets;
+  {
+    RoomRegistry registry(repo, log, bus, retries.timer());
+    repo.savesFail = true;
+    for (const char* tree : {"t", "u"}) {
+      registry.open(tid(tree))->applyCommand(createNode("added"), 10, uid());
+      CHECK(registry.persist(tid(tree)) == Saved::held);
+    }
+    repo.savesFail = false;
+    repo.duringSave = [&](const TreeId& tree) {
+      const StatementLimits* open = StatementLimits::current();
+      budgets.push_back(open ? open->lockWait().count() : -1);
+      if (open && open->remaining() > RoomRegistry::kShutdownSaveBudget) budgets.push_back(-2);
+      if (tree == tid("u")) throw std::runtime_error("the write was refused");
+    };
+  }
+  CHECK_EQ(budgets, (std::vector<long long>{5000, 5000}));
   CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
-  CHECK(LooseGraph(repo.byId["t"].state).hasNode(NodeId{"added"}));
-  REQUIRE_EQ(log.byTree["t"].size(), 1u);
+  CHECK_EQ(repo.byId["u"].head, static_cast<Seq>(7));
+  CHECK_EQ(holdLines(told).back(), std::string("roadmap_tree_save outcome=lost-at-shutdown rooms=1 request_id=*"));
+  CHECK_EQ(told.lines.back(), std::string("roadmap.tree.save roadmap background lost-at-shutdown"));
+  CHECK_EQ(told.reports.back().rfind("roadmap.tree.save roadmap background lost-at-shutdown ", 0), std::size_t{0});
 }
 
 // A held room whose row goes away before its save can land has nothing left to save: the retry that finds the row
-// gone retires the room, as every write retires a room whose row went away, and sets no further retry.
-TEST(registry_a_held_room_whose_row_went_away_is_retired_by_its_retry) {
+// gone retires the room, as every write retires a room whose row went away, ends the hold in one line and sets no
+// further retry.
+TEST(registry_a_held_room_whose_row_went_away_is_retired_by_its_retry_which_says_so) {
   FakeTreeRepository repo;
   FakeOpLog log;
   FakeBus bus;
   HeldRetries retries;
+  Told told;
   repo.byId["t"] = oneNodeTree();
   RoomRegistry registry(repo, log, bus, retries.timer());
   registry.open(tid())->applyCommand(createNode("added"), 10, uid());
@@ -814,6 +910,7 @@ TEST(registry_a_held_room_whose_row_went_away_is_retired_by_its_retry) {
   CHECK_FALSE(registry.isOpen(tid()));
   CHECK_EQ(retries.set.size(), 1u);
   CHECK(log.byTree["t"].empty());
+  CHECK_EQ(holdLines(told).back(), std::string("roadmap_tree_save outcome=row-gone hold=* attempts=2"));
 }
 
 // A row that fails to land after the save is an incident for the log, not a refusal for the

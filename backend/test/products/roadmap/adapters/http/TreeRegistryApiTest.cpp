@@ -258,8 +258,8 @@ TEST(patch_guide_sets_the_owners_guide_to_five_thousand_characters_and_refuses_o
 }
 
 // A guide or a title whose save fails is set in the room and on every open page, so the PATCH is no error: 202, with a
-// body that says the change is applied, held and not to be sent again, where a stored one answers 204. The registry's
-// retry stores both with no further request.
+// body that says the change is applied, held and not in need of sending again, where a stored one answers 204; the same
+// guide sent again answers 202 too. The registry's retry stores both with no further request.
 TEST(patch_whose_save_fails_answers_202_applied_and_unsaved_and_the_retry_stores_it) {
   Harness h;
   UserId me = h.signIn("s-live", "sam@example.com");
@@ -278,6 +278,9 @@ TEST(patch_whose_save_fails_answers_202_applied_and_unsaved_and_the_retry_stores
   CHECK_EQ(bodyOf(title), unsaved);
   CHECK_EQ(h.trees.byId["t"].guide.value, std::string(""));
   CHECK_EQ(h.trees.byId["t"].title.value, std::string("Mine"));
+  const drogon::HttpResponsePtr again = sendPatch(h.api, patch(guided("Trunk first."), "s-live"), "t");
+  CHECK_EQ(again->getStatusCode(), drogon::k202Accepted);
+  CHECK_EQ(bodyOf(again), unsaved);
 
   h.trees.savesFail = false;
   REQUIRE_EQ(h.retries.set.size(), 1u);

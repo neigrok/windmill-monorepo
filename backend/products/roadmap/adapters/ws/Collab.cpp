@@ -354,7 +354,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
         // holds nothing: the room is retired, which drops its readers, and the frame answers as absent. A save that
         // fails leaves the frame in the room, already sent to every subscriber and retried by the registry: it is
         // acked with its seq, as unsaved, and needs no resend.
-        const Saved saved = seq ? registry_.persist(TreeId{treeId}) : Saved::saved;
+        const Saved saved = seq ? registry_.persist(TreeId{treeId}) : registry_.standing(TreeId{treeId});
         heldUnsaved = saved == Saved::held;
         if (saved == Saved::gone) {
           registry_.retire(TreeId{treeId});

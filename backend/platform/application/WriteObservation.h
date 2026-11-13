@@ -24,7 +24,6 @@ struct WriteCompletion {
   std::string requestId;
   double durationMs;
   WriteSeverity severity = WriteSeverity::debug;
-  std::uint64_t attempts = 0;  // how many tries a retried write took; 0 for a write that is not one, and off its line
 };
 std::string writeCompletionJson(const WriteCompletion& completion);
 
@@ -70,8 +69,6 @@ public:
   WriteObservation(const WriteObservation&) = delete;
   WriteObservation& operator=(const WriteObservation&) = delete;
   void finish(std::string outcome = "ok");
-  // The write landed on a retry: its line carries how many tries it took.
-  void tried(std::uint64_t attempts) { completion_.attempts = attempts; }
   void settleAs(std::string outcome) { settledOutcome_ = std::move(outcome); }
   void skip();
   void ownInfo();
