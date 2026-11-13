@@ -46,6 +46,10 @@ a multi-variable incantation onto the command line.
 Run each recipe from the repository root. The first runs without Postgres, even if the shell has
 database settings; the second creates and removes two isolated databases. Both run serially.
 
+Build a commit checked out into a reused worktree in a fresh build directory
+(`cmake -S backend -B backend/build-<sha>`). A build directory carried across many commits can link
+a `windmill_server` that corrupts its own memory while every suite still passes.
+
 ```sh
 cmake -S backend -B backend/build
 cmake --build backend/build -j8
