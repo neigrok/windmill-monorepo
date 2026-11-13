@@ -146,18 +146,24 @@ and nothing else of those trees. It goes when the account that held the device s
 (`forgetDeviceTrees`), and a lapsed session keeps it.
 
 **On the device.** A tree that lives only on this device (`LocalTreeRegistry.onDevice`: a row its holder sees that no
-account has claimed) opens trees on this device. `model/OpenedTrees.js` is the server's rule (`OpenedTrees` in
+account has claimed) opens trees on this device. `model/OpenedTrees.js` holds the server's rule (`OpenedTrees` in
 `backend/products/roadmap/domain`, whose cases its tests run): a step that opens one of these trees is complete exactly
 when that tree is, its mark set aside, and any other step, one whose pointer names a tree not among them included,
 follows its mark; a tree is complete when it holds a step and every step is, the least the rule allows, so a loop never
-completes. `readDeviceTrees` (`sync/localTrees.js`) reads every such tree from the device store with the marks its room
-shows (the private lane's where it holds any, else its steps' seeds), and the room works out its openings from them as it
-opens and whenever a pointer of its own changes, with its own steps as they stand; a loop is a tree that leads back to
-this one. Its projection is the device's own word, so its pointers always decide. A pointer at a tree the device does not
-hold this way, a server tree, someone else's or a removed one, is not found. A read that fails reports
-`roadmap-device-opens-read` and leaves every pointer `unread` until a pointer changes or the room loads again. Once a
-claim takes the tree to the account the room stops reading the device, and the facts it holds stand until the server's
-replace them.
+completes. The rule is the same; what it reads as marks differs. `readDeviceTrees` (`sync/localTrees.js`) reads every
+such tree from the device store with the marks its room shows: the private lane's where it holds any, else its steps'
+seeds, which the server never counts. A claim sends what the device showed (`SyncSession.adoptSeeds`): a step done by
+its seed goes up as the person's mark, stamped as any mark made here, so the account's count is the device's. The room
+works out its openings from them as it opens and whenever a pointer of its own changes, with its own steps as they
+stand; a loop is a tree that leads back to this one. Its projection is the device's own word, so its pointers always
+decide. A pointer at a tree the device does not hold this way, a server tree, someone else's or a removed one, is not
+found. A record that does not join stands `unread` and degrades only itself: it is reported once as
+`roadmap-device-opens-read` (`name: corrupt`), a pointer at it is unread, it is never complete, it opens nothing and the
+picker leaves it out, while the rest are read. A device that cannot read its trees at all (its database will not open,
+or a record cannot be read) reports the same under the name of what failed and leaves every pointer `unread` until a
+pointer changes or the room loads again. Once a claim takes the tree to the account, in this tab or another (the claims
+channel, `onTreeClaimed`), the room stops reading the device, and the facts it holds stand until the server's replace
+them.
 
 `UnlockRules.completed` is the one rule: a step that opens a tree is complete exactly when that tree is, whatever its
 mark and its prerequisites, and one whose pointer leads nowhere follows its mark. No hand marks such a step
@@ -166,7 +172,10 @@ and sends nothing for one. A mark that such a step already holds, made before th
 (`SyncSession.owedFrames`): it stays on the device as it is, and while the lattice record holds a pointer it is not sent
 and not counted as unsent, in the outbox, in the status the room shows or in what keeps a refusal standing. Nothing
 else changes for it: no reconnect, no rebaseline, and Discard and Undo are what they are without it. When the pointer
-goes the mark is an ordinary unsent one again and goes with the next flush. The return ledger and the milestones read
+goes, or once the room has found that it leads to no tree (`SyncSession.pointersLeadNowhere`, told on every projection
+it stands: the device's rule on a device tree, the server's facts on any other, and at a claim what the device found),
+the mark is an ordinary unsent one again and goes with the next flush, as the server records a mark on a step whose
+pointer is not valid. A pointer nothing was read of keeps its mark aside. The return ledger and the milestones read
 the same completed set. A roadmap with an `unread` opening does not know that set, so it recomputes nothing: it adds
 the person's own marks to what the ledger holds, and a load in that state leaves the ledger as it was.
 
@@ -195,8 +204,9 @@ stands on the cached account, which is not one) (`place: 'account'`). The way ba
 the roadmap it leads to for that holder, under the title the index keeps: as that account's (`LocalTreeRegistry.owned`),
 or as a tree that lives only here (`onDevice`); `open` writes that row for the roadmap it leaves before it navigates, as
 its session may not have stored anything yet. Without a holder there is no way back, no carried view or step, no door
-into a tree and no event. So a lapsed session, a server tree's copy on a device with nobody signed in, a start with no
-connection and a reader keep the tree's mark and go nowhere. An arrival is settled as the room
+into a tree and no event. So on a tree the server keeps, a lapsed session, its copy on a device with nobody signed in
+and a start with no connection, and anywhere a reader, keep the tree's mark and go nowhere; on a tree that lives only on
+this device the person at it holds it through a lapse. An arrival is settled as the room
 opens: the step and the view leave the entry, which keeps the roadmap it was reached from, so a reload shows the way
 back and is otherwise an ordinary visit. The identity row shows the way back as a chip in its first slot from 744px, and
 as a chevron with the roadmap's title over the tree's on phones. Coming back mounts the roadmap again, so it loads
@@ -214,8 +224,8 @@ return is.
 
 The person who holds the tree makes the pointer on the step itself, never in Edit step: the same holder a tree visit
 acts for, where the roadmap's session can take a write (loaded, and not rebaselining). The room hands the step
-`treeActs` (`{ view, trees, set, lapsed }`) for that person and null for anyone else, so a reader, a server tree's copy
-with nobody signed in and a lapsed session see no control. `trees` reads the trees where the holder's lives (`place`). With it the Tree section stands on every step: *None* and a + on one
+`treeActs` (`{ view, trees, set, lapsed }`) for that person and null for anyone else, so a reader, and on a tree the
+server keeps its copy with nobody signed in and a lapsed session, see no control. `trees` reads the trees where the holder's lives (`place`). With it the Tree section stands on every step: *None* and a + on one
 that opens no tree, and a ⋯ on its heading on one that does, the heading and the ⋯ alone while the tree is `unread`.
 
 The + and Change tree open `TreePicker`: a page in the step modal from 744px and a full-screen page over the Shell
@@ -406,13 +416,17 @@ numbers are those the list read when the menu opened, and no request is made for
 takes the tree's row and its place among the other rows' openers, as its steps went with it. A tree that lives only on
 this device has its openers counted on the device over the other trees here (`withDeviceOpeners`,
 `OpenedTrees.openersOf`), read as the menu opens, so its row says the same line in the same sentence; a device read that
-fails leaves the row asking its question alone. Deleting such a tree removes, after it, the steps of the other trees here
-that open it, as the server's removal does (`removeDeviceOpeners`): each tombstoned with every edge touching it, nothing
-respliced, and the person's mark on it cleared, each tree its own write. The tree this tab has open takes it through its
-session, as a local write outside the undo journal, so its card goes at once; every other tree takes it through its
-stored record, as any device edit, so another tab with that tree open shows it on its next load. A tree whose write fails
-keeps its steps, now opening a tree that is not found, and the removal reports `roadmap-device-cascade` once. Nothing on
-the server is touched.
+fails leaves the row asking its question alone. Deleting such a tree (`deleteDeviceTree`) reads the device's trees first:
+a device that cannot read them refuses the delete with nothing removed, by the switcher's failed-delete path, and
+deleting again tries again, so the person is never told less than the delete does. Then the tree goes and, after it, the
+steps of the other trees here that open it, as the server's removal does (`PruneNodes`): each tombstoned with every edge
+touching it, nothing respliced, and the person's mark on it cleared, each tree its own write. A tree whose record does not
+join was not counted and is not taken from. The tree this tab has open takes it through its session
+(`SyncSession.removeSteps`), as a local write outside the undo journal saved once, so its card goes at once; every other
+tree takes it through its stored record, as any device edit, so another tab with that tree open shows it on its next
+load. A write that fails reports `roadmap-device-cascade` once, under the name of what failed, and its tree keeps its
+steps on disk: the open tab's own steps vanish from its screen and come back after a reload, each opening a tree that is
+not found and following its mark, to detach or delete by hand. Nothing on the server is touched.
 
 **Export** builds one Markdown file through `serializePlan` and `fileNameFor` in `exportArchive.js`, with a
 `<!-- windmill:roadmap -->` marker: its title is metadata, its guide a quote between `<!-- windmill:guide -->` lines that a

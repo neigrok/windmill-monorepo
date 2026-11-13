@@ -709,14 +709,19 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   any owner's tree, and draw a Coach rail from 744px and a Coach field on phones, which the roadmap room does not show.
 - **Section 28 · signed out on the trees of this device, states with no board.** A device with no other tree: *You
   have no other trees yet.* with the closing line. A pasted address of a tree not on this device, a server tree's
-  included: *No roadmap you can read is at that address.*, with no blocked row and no Fork tree. A device read that
-  fails: the room shows each such step's tree mark and Open tree with nothing said of the tree, the picker *Couldn’t
-  load your trees* with Try again, and the switcher's delete asks its question alone. A step on a device tree that opens
+  included: *No roadmap you can read is at that address.*, with no blocked row and no Fork tree. A device that cannot
+  read its trees (its database will not open, or a record cannot be read): the room shows each such step's tree mark and
+  Open tree with nothing said of the tree, the picker *Couldn’t load your trees* with Try again, and the switcher's
+  delete asks its question alone and then removes nothing: the row stays, as for any delete that fails, and deleting
+  again tries again. One stored record that does not join: only its tree is unknown; it is left out of the picker, a
+  step that opens it shows the mark and Open tree with nothing said, it is neither counted in another tree's delete line
+  nor loses steps to that delete, and every other tree works as drawn. A step on a device tree that opens
   a server tree, someone else's or a removed one reads *Not found*. A signed-in person on a tree that lives only on the
   device (planted offline, its claim not landed yet) holds it as the device does: the picker lists the device's trees,
   tagged, with no closing line. Deleting a device tree others open: the confirmation says 28.50's line, counted on the
   device; the steps go from the tree this tab has open at once, and from a tree open in another tab when that tab
-  loads again, as any device edit; a tree whose write failed keeps its step, now *Not found*. The guides above a device
+  loads again, as any device edit; a tree whose write failed keeps its step, now *Not found* (on the tree open in this
+  tab it vanishes at once and comes back so after a reload). The guides above a device
   tree are not drawn and not built.
 - **Section 28 · deleting a tree that steps open (28.50–28.52), against the boards.** The steps a deleted tree takes
   from the person's other trees go through those trees' rooms, so a roadmap open in another window loses them live, as
