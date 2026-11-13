@@ -41,11 +41,16 @@ UserId actorOf(const drogon::WebSocketConnectionPtr& conn) {
   return principalOf(conn).user;
 }
 
+// A frame sent to a connection says nothing of the write in progress: while a write is served, frames go to other
+// connections too — a reject to a reader a fan-out drops, to a page open on a tree a removal retires.
 void send(const drogon::WebSocketConnectionPtr& conn, const Json::Value& frame) {
-  if (frame["t"] == "reject" && frame["code"].isString())
-    finishCurrentWriteRefusal(frame["code"].asString());
-  if (frame["t"] == "skew") finishCurrentWriteRefusal("clock-ahead");
   if (conn->connected()) conn->send(dump(frame));
+}
+
+// The refusal of the frame being served, a `reject` or a `skew`: it finishes that frame's write under its code.
+void refuseFrame(const drogon::WebSocketConnectionPtr& conn, const Json::Value& refusal) {
+  finishCurrentWriteRefusal(refusal["t"] == "skew" ? std::string("clock-ahead") : refusal["code"].asString());
+  send(conn, refusal);
 }
 
 Json::Value rejectFrame(const std::string& treeId, const char* code, const std::string& reason) {
@@ -62,7 +67,7 @@ Json::Value rejectFrame(const std::string& treeId, const char* code, const std::
 void refuseUnreadable(const drogon::WebSocketConnectionPtr& conn, const Json::Value& head) {
   Json::Value reject = rejectFrame(head.get("treeId", "").asString(), kBadFrame, "this frame could not be read");
   if (head["frameId"].isString()) reject["frameId"] = head["frameId"];
-  send(conn, reject);
+  refuseFrame(conn, reject);
 }
 }
 
@@ -272,8 +277,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   if (!stillAuthorized(conn)) {
     Json::Value reject = rejectFrame(treeId, kSignInRequired, "sign in to edit");
     reject["frameId"] = frameId;
-    finishCurrentWriteRefusal(kSignInRequired);
-    send(conn, reject);
+    refuseFrame(conn, reject);
     return;
   }
 
@@ -284,7 +288,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   } catch (const std::exception&) {
     Json::Value reject = rejectFrame(treeId, kBadFrame, "this frame could not be read");
     reject["frameId"] = frameId;
-    send(conn, reject);
+    refuseFrame(conn, reject);
     return;
   }
   incoming.treeId = TreeId{treeId};
@@ -298,7 +302,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
       skew["treeId"] = treeId;
       skew["frameId"] = frameId;
       skew["serverNow"] = static_cast<Json::Int64>(nowMs);
-      send(conn, skew);
+      refuseFrame(conn, skew);
       return;
     }
   }
@@ -340,7 +344,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   }
   if (reject) {
     (*reject)["frameId"] = frameId;
-    send(conn, *reject);
+    refuseFrame(conn, *reject);
     return;
   }
 
@@ -365,7 +369,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
   auto refuse = [&](const char* code, const std::string& reason) {
     Json::Value reject = rejectFrame(treeId, code, reason);
     reject["frameId"] = frameId;
-    send(conn, reject);
+    refuseFrame(conn, reject);
   };
 
   // A lapsed session is told, never dropped; an unacked frame re-flushes on its own.
@@ -394,7 +398,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
       skew["treeId"] = treeId;
       skew["frameId"] = frameId;
       skew["serverNow"] = static_cast<Json::Int64>(nowMs);
-      send(conn, skew);
+      refuseFrame(conn, skew);
       return;
     }
     writes.push_back(ProgressWrite{node, *status, {}, *at});

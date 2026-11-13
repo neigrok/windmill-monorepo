@@ -1,4 +1,6 @@
 #include "products/roadmap/adapters/ws/Collab.h"
+#include "platform/adapters/mcp/CompositeToolHost.h"
+#include "products/roadmap/adapters/mcp/RoadmapTools.h"
 
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/adapters/ws/PresenceHub.h"
@@ -1910,6 +1912,54 @@ TEST(ws_removing_a_tree_sends_a_page_open_on_a_tree_that_opened_it_the_delete_of
   CHECK_EQ(live["nodes"][0]["id"].asString(), std::string("idea"));
   CHECK_FALSE(live["nodes"][0]["deletedAt"].asString().empty());
   CHECK(live["edges"].empty());
+}
+
+// Removing the tree an owner's page is open on — the web's delete of the roadmap being viewed — owes that page a reject,
+// sent while the removal is served. That frame is the page's, not the removal's: on either door the removal's own line
+// is still its own, and a frame's own refusal still finishes the frame's write under its code.
+TEST(ws_a_reject_the_removal_sends_a_page_open_on_its_tree_leaves_the_removals_own_line_its_own) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  RoadmapTools tools{h.rooms, h.progress, h.clock, h.trees_registry, h.edits, "https://app.example"};
+  CompositeToolHost gate(std::vector<ToolModule>{{tools, ""}});
+  const auto pageOn = [&](const char* tree) {
+    h.seedSteps(tree, owner, Visibility::private_, "");
+    auto page = std::make_shared<FakeSocket>();
+    h.collab.onOpen(h.upgrade("s-owner"), page);
+    h.collab.onMessage(page, subscribeFrame(tree));
+    page->sent.clear();
+    return page;
+  };
+  std::vector<std::string> lines;
+  {
+    Observed observed;
+    auto restPage = pageOn("t_rest");
+    {
+      WriteObservation route{"roadmap.DELETE.v1.trees.id", "roadmap", "rest"};
+      WriteContext context{route};
+      CHECK(std::holds_alternative<Cascade>(h.trees_registry.remove(TreeId{"t_rest"}, owner)));
+      route.finish();
+    }
+    auto mcpPage = pageOn("t_mcp");
+    Json::Value args(Json::objectValue);
+    args["treeId"] = "t_mcp";
+    CHECK_FALSE(gate.callTool("delete_tree", args, ToolCaller{owner, ToolScope::everything()}).isError);
+    REQUIRE_EQ(restPage->sent.size(), 1u);
+    REQUIRE_EQ(mcpPage->sent.size(), 1u);
+    CHECK_EQ(rejectCode(restPage->sent[0]) + " " + rejectCode(mcpPage->sent[0]), std::string("no-such-tree no-such-tree"));
+    // The pages' upgrades refresh their session; what is under test is the removal's own lines.
+    for (const WriteCompletion& line : observed.completions)
+      if (line.operation != "auth.session.refresh") lines.push_back(line.operation + " " + line.door + " " + line.outcome);
+  }
+  CHECK(lines == (std::vector<std::string>{"roadmap.DELETE.v1.trees.id rest ok", "mcp.roadmap_delete_tree mcp ok"}));
+
+  auto writer = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), writer);
+  Observed observed;
+  h.collab.onMessage(writer, writeFrame("t_rest"));
+  REQUIRE_EQ(observed.completions.size(), 1u);
+  CHECK_EQ(observed.completions[0].operation + " " + observed.completions[0].outcome,
+           std::string("roadmap.ws.subgraph no-such-tree"));
 }
 
 TEST(ws_progress_ack_carries_no_refused_key_when_no_mark_was_refused) {
