@@ -15,6 +15,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <typeinfo>
 #include <vector>
 
 using namespace wm;
@@ -222,6 +223,42 @@ TEST(registry_a_room_that_opens_behind_its_log_is_reported_with_its_row_count_an
   CHECK(lastIssued < room.pendingOps().back().hlc);
   registry.open(tid());
   CHECK_EQ(told.reports.size(), 1u);
+}
+
+// The clock takes the greatest stamp among the rows past the snapshot, not the last row's. A phone whose clock ran
+// ahead, the server's own rename after it, then a tablet with an honest clock leave the last row the lowest of the
+// three, and the server's next write is still stamped past them all. The open's report is its own, too: a request that
+// opens such a room and then fails files its own failure beside it.
+TEST(registry_a_room_behind_its_log_mints_past_the_greatest_stamp_of_those_rows_and_leaves_its_opener_its_own_report) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  LooseGraph graph;
+  graph.createNode(nid("a"), "A", "icon", NodeColor::sky, at(1));
+  repo.byId["t"] = StoredTree{graph.exportState(), LegendState{}, {"Sail", {}}, 1};
+  log.byTree["t"] = {
+      AppliedOp{1, "o1", CreateNode{nid("a"), "A", "icon", NodeColor::sky}, at(1), uid()},
+      AppliedOp{2, "o2", RenameNode{nid("a"), "By phone"}, Hlc{9'000, 0, "r_phone"}, uid()},
+      AppliedOp{3, "o3", RenameNode{nid("a"), "By the server"}, Hlc{9'000, 1, "srv"}, uid()},
+      AppliedOp{4, "o4", RenameNode{nid("a"), "By tablet"}, Hlc{2'000, 0, "r_tablet"}, uid()},
+  };
+  RoomRegistry registry(repo, log, bus);
+  Told told;
+
+  {
+    WriteObservation door{"mcp.roadmap_update_nodes", "roadmap", "mcp"};
+    WriteContext context{door};
+    TreeRoom& room = *registry.open(tid());
+    room.applyCommand(RenameNode{nid("a"), "After the reopen"}, 3'000, uid());
+    CHECK((Hlc{9'000, 1, "srv"} < room.pendingOps().back().hlc));
+    door.fail(std::runtime_error("the call failed after the open"));
+  }
+
+  CHECK_EQ(told.lines, (std::vector<std::string>{"roadmap.room.open_behind_log roadmap mcp snapshot-behind-log",
+                                                 "mcp.roadmap_update_nodes roadmap mcp failed"}));
+  REQUIRE_EQ(told.reports.size(), 2u);
+  CHECK_EQ(told.reports[0].rfind("roadmap.room.open_behind_log roadmap mcp snapshot-behind-log ", 0), std::size_t{0});
+  CHECK_EQ(told.reports[1], std::string("mcp.roadmap_update_nodes roadmap mcp failed ") + typeid(std::runtime_error).name());
 }
 
 TEST(registry_persist_snapshots_full_state_without_evicting) {

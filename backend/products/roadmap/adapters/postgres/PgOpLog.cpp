@@ -53,13 +53,20 @@ std::vector<AppliedOp> PgOpLog::since(const TreeId& tree, Seq afterSeq) const {
   return ops;
 }
 
-LastOp PgOpLog::last(const TreeId& tree) const {
+// Read as rows, not aggregated: a stamp is text, compared here as the clock compares it. A tree level with its log
+// answers no row.
+LogPast PgOpLog::past(const TreeId& tree, Seq head) const {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  const pqxx::result rows =
-      txn.exec_params("SELECT seq, hlc FROM tree_ops WHERE tree_id = $1 ORDER BY seq DESC LIMIT 1", tree.str());
-  if (rows.empty()) return LastOp{};
-  return LastOp{static_cast<Seq>(rows[0]["seq"].as<long long>()), roadmapStamp(rows[0]["hlc"].as<std::string>())};
+  const pqxx::result rows = txn.exec_params("SELECT seq, hlc FROM tree_ops WHERE tree_id = $1 AND seq > $2",
+                                            tree.str(), static_cast<long long>(head));
+  LogPast past;
+  past.rows = rows.size();
+  for (const auto& row : rows) {
+    past.lastSeq = std::max(past.lastSeq, static_cast<Seq>(row["seq"].as<long long>()));
+    past.greatestStamp = std::max(past.greatestStamp, roadmapStamp(row["hlc"].as<std::string>()));
+  }
+  return past;
 }
 
 }

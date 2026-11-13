@@ -450,14 +450,16 @@ Rules:
   history the Activity feed reads, never a second source of a tree's state. An op row states one
   deed of its frame — one node of an import, one kind of a re-hue of several — so merging it back
   could only approximate the frame, blanking fields the frame left alone or moving one kind of a
-  swap. The room's head is the later of the snapshot's head and the last row's seq
-  (`OpLog::last`), so its next write collides with no row, and its clock observes that row's
-  stamp, so its next write is stamped after every deed the log holds. Rows land after the save,
+  swap. The room's head is the later of the snapshot's head and the last row's seq, so its next
+  write collides with no row, and its clock observes the greatest stamp among the rows past the
+  snapshot (`OpLog::past`) — not the last row's, which a replica with an honest clock leaves below
+  an earlier row from one that ran ahead — so its next write is stamped after every deed those rows
+  hold. Rows land after the save,
   so a snapshot is never behind its own rows. What is given up: a tree whose snapshot a crash left
   behind its op rows before 2026-09-06, when the ordering took hold, and that was never opened
   since, opens without those rows' effects; the feed still lists them. Such an open is reported
-  once, as `roadmap.room.open_behind_log` with the count of rows past the snapshot
-  (`OBSERVABILITY.md`), since the room's first save moves the stored head past them. Two things
+  once, as `roadmap.room.open_behind_log` with the count of rows past the snapshot, decodable or
+  not (`OBSERVABILITY.md`), since the room's first save moves the stored head past them. Two things
   the lost writes left behind are not recovered. A stamp no row carries — a title's, a guide's, one
   of a frame that left no deed, any register's but the one its row is stamped with — is not
   observed, so the server can still stamp a later write of its own below it, and a client that holds
@@ -750,7 +752,7 @@ Rules:
 - `trees.document` is the whole-tree jsonb blob, read only as a fallback for trees whose per-entry
   rows are not yet backfilled. Nothing new depends on it.
 - `tree_ops` scales with edits, not nodes. `ActivityFeed` projects it; `open()` reads only the seq
-  of its last row.
+  and stamp of the rows past the snapshot's head, none for a tree level with its log.
 - Tree deletion writes `deleted_at` and retires its room, then tombstones the steps of the owner's
   other trees that open it (HTTP surface, `DELETE /v1/trees/{id}`). Reads exclude deleted rows and
   save never clears the tombstone. Recreating the caller's own deleted ID returns

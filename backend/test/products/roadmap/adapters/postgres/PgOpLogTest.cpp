@@ -37,7 +37,7 @@ struct DroppingPgOpLog : OpLog {
     throw std::runtime_error("connection dropped after commit");
   }
   std::vector<AppliedOp> since(const TreeId& tree, Seq afterSeq) const override { return inner.since(tree, afterSeq); }
-  LastOp last(const TreeId& tree) const override { return inner.last(tree); }
+  LogPast past(const TreeId& tree, Seq head) const override { return inner.past(tree, head); }
 };
 
 void reset() {
@@ -83,9 +83,11 @@ TEST(pg_op_log_absorbs_a_row_re_sent_after_a_commit_then_drop) {
   CHECK_EQ(log.since(kTree, 0)[0].opId, std::string("op-1"));
 }
 
-// The last row is answered per tree: each tree its own seq and stamp, whatever another tree's log holds, and a tree with
-// no row zero for both.
-TEST(pg_op_log_answers_each_trees_own_last_row) {
+// What the log holds past a head is answered per tree and counted as stored: each tree its own rows, a row the server
+// can no longer decode among them, the last seq, and the greatest stamp wherever it sits — here on the first row, a
+// phone whose clock ran ahead, with the last row the lowest. A tree level with its log, and one with no row, answer
+// nothing.
+TEST(pg_op_log_answers_each_trees_own_rows_past_a_head_undecodable_ones_counted_and_the_greatest_stamp_among_them) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   const TreeId other{std::string("pgtest-op-log-other")};
@@ -97,18 +99,31 @@ TEST(pg_op_log_answers_each_trees_own_last_row) {
   };
   clearOther();
   PgOpLog log{pgTestPool()};
-  AppliedOp early = opAt(1, "op-1");
-  AppliedOp late = opAt(2, "op-2");
-  late.hlc = Hlc{20, 1, "srv"};
+  log.append(kTree, opAt(1, "op-1"));
+  AppliedOp ahead = opAt(2, "op-2");
+  ahead.hlc = Hlc{9'000, 0, "r_phone"};
+  AppliedOp servers = opAt(3, "op-3");
+  servers.hlc = Hlc{9'000, 1, "srv"};
+  AppliedOp honest = opAt(5, "op-5");
+  honest.hlc = Hlc{2'000, 0, "r_tablet"};
+  for (const AppliedOp& op : {ahead, servers, honest}) log.append(kTree, op);
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO tree_ops (tree_id, seq, actor_id, op_id, kind, payload, hlc) "
+                    "VALUES ($1, 4, $2, 'op-4', 'NoSuchDeed', '{}'::jsonb, '2500:0:srv')", kTree.str(), kOwner.str());
+    txn.commit();
+  }
   AppliedOp theirs = opAt(7, "op-7");
-  theirs.hlc = Hlc{90, 4, "r_tab"};
-  log.append(kTree, early);
-  log.append(kTree, late);
+  theirs.hlc = Hlc{90'000, 4, "r_tab"};
   log.append(other, theirs);
 
-  CHECK(log.last(kTree) == (LastOp{2, Hlc{20, 1, "srv"}}));
-  CHECK(log.last(other) == (LastOp{7, Hlc{90, 4, "r_tab"}}));
-  CHECK(log.last(TreeId{std::string("pgtest-op-log-none")}) == LastOp{});
+  CHECK_EQ(log.since(kTree, 1).size(), 3u);
+  CHECK(log.past(kTree, 1) == (LogPast{4, 5, Hlc{9'000, 1, "srv"}}));
+  CHECK(log.past(kTree, 3) == (LogPast{2, 5, Hlc{2'500, 0, "srv"}}));
+  CHECK(log.past(kTree, 5) == LogPast{});
+  CHECK(log.past(other, 0) == (LogPast{1, 7, Hlc{90'000, 4, "r_tab"}}));
+  CHECK(log.past(TreeId{std::string("pgtest-op-log-none")}, 0) == LogPast{});
   clearOther();
 }
 

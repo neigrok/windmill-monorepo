@@ -120,8 +120,8 @@ public:
 
   // One clock per tree, so no two writes collide on a stamp. `nowMs` is wall time from the Clock port.
   Hlc nextStamp(std::uint64_t nowMs);
-  // A stamp issued for this tree that the loaded state does not show — the last op row's, when the snapshot is behind
-  // its log: the next stamp the room mints is past it.
+  // A stamp issued for this tree that the loaded state does not show — the greatest among the op rows past the
+  // snapshot, when it is behind its log: the next stamp the room mints is past it.
   void observe(const Hlc& issued) { clock_.observe(issued); }
 
   // wm::validate over this room's live state: a malformed or over-cap field, a node edit naming no

@@ -19,11 +19,14 @@ struct AppliedOp {
   std::uint64_t createdAtMs = 0;
 };
 
-// The last row the log holds for a tree: its seq and the stamp it carries, both zero when the log holds none.
-struct LastOp {
-  Seq seq = 0;
-  Hlc stamp;
-  bool operator==(const LastOp&) const = default;
+// What the log holds for a tree past a snapshot's head: how many rows, decodable or not, the last one's seq, and the
+// greatest stamp any of them carries — not the last row's, since a replica whose clock ran ahead leaves a later row
+// with an earlier stamp. All zero when the log holds no row past the head.
+struct LogPast {
+  std::size_t rows = 0;
+  Seq lastSeq = 0;
+  Hlc greatestStamp;
+  bool operator==(const LogPast&) const = default;
 };
 
 // Append-only history of merged commands: what the activity feed reads. A tree's state is its stored
@@ -33,8 +36,9 @@ struct OpLog {
   virtual void append(const TreeId& tree, const AppliedOp& op) = 0;
   virtual std::vector<AppliedOp> since(const TreeId& tree, Seq afterSeq) const = 0;
   // A room opens with its head no earlier than the last row's seq, so the row of its next write collides with none,
-  // and with its clock past that row's stamp, so its next write is stamped after every deed the log holds.
-  virtual LastOp last(const TreeId& tree) const = 0;
+  // and with its clock past the greatest stamp of the rows past its snapshot, so its next write is stamped after every
+  // deed those rows hold.
+  virtual LogPast past(const TreeId& tree, Seq head) const = 0;
 };
 
 }

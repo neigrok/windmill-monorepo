@@ -41,12 +41,14 @@ struct FakeOpLog : OpLog {
     }
     return out;
   }
-  LastOp last(const TreeId& tree) const override {
-    LastOp last;
-    if (auto it = byTree.find(tree.str()); it != byTree.end())
-      for (const auto& op : it->second)
-        if (op.seq > last.seq) last = LastOp{op.seq, op.hlc};
-    return last;
+  LogPast past(const TreeId& tree, Seq head) const override {
+    LogPast past;
+    for (const AppliedOp& op : since(tree, head)) {
+      ++past.rows;
+      past.lastSeq = std::max(past.lastSeq, op.seq);
+      past.greatestStamp = std::max(past.greatestStamp, op.hlc);
+    }
+    return past;
   }
 };
 
