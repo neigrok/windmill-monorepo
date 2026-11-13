@@ -4,7 +4,13 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include <trantor/utils/Logger.h>
+
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -25,6 +31,35 @@ StoredTree oneNodeTree() {
 std::size_t nodeCount(const GraphState& state) {
   return LooseGraph(state).presentNodeIds().size();
 }
+
+// What a registry leaves for an operator: its write lines, its failure reports and its log lines, each as one string.
+struct Told : FailureReporter {
+  std::vector<std::string> lines;
+  std::vector<std::string> reports;
+  std::vector<std::string> logged;
+  trantor::Logger::LogLevel level = trantor::Logger::logLevel();
+  Told() {
+    installWriteSink([this](const WriteCompletion& line) {
+      lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
+    });
+    installWriteReporter(std::shared_ptr<FailureReporter>(this, [](FailureReporter*) {}));
+    trantor::Logger::setLogLevel(trantor::Logger::kTrace);
+    trantor::Logger::setOutputFunction(
+        [this](const char* message, std::uint64_t length) { logged.emplace_back(message, length); }, [] {});
+  }
+  ~Told() override {
+    installWriteSink({});
+    installWriteReporter(nullptr);
+    trantor::Logger::setOutputFunction([](const char* message, std::uint64_t length) { fwrite(message, 1, length, stdout); },
+                                       [] { fflush(stdout); });
+    trantor::Logger::setLogLevel(level);
+  }
+  void report(const std::string&, const std::string&, const std::string&) override {}
+  void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                   const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+    reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+  }
+};
 
 // A repository that fails the way a real one does under an outage, not by returning "no such tree".
 struct FailingTreeRepository : FakeTreeRepository {
@@ -144,6 +179,49 @@ TEST(registry_opens_a_room_as_its_snapshot_and_takes_its_next_seq_after_the_last
 
   repo.byId["empty"] = StoredTree{GraphState{}, LegendState{}, {"Empty", {}}, 0};
   CHECK_EQ(registry.open(tid("empty"))->head(), static_cast<Seq>(0));
+}
+
+// A room that opens behind its log — the last op row's seq past the snapshot's head — is an unexpected state, and its
+// first save erases the evidence, so the open tells it: one failed line and one report under a static name, and one
+// line that counts the rows past the snapshot and names no tree. The room's clock takes the last row's stamp, so the
+// server's next write is stamped past every deed the log holds, whatever the wall clock reads. A room that opens level
+// with its log tells nothing.
+TEST(registry_a_room_that_opens_behind_its_log_is_reported_with_its_row_count_and_mints_past_the_last_rows_stamp) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  LooseGraph graph;
+  graph.createNode(nid("a"), "A", "icon", NodeColor::sky, at(1));
+  repo.byId["t"] = StoredTree{graph.exportState(), LegendState{}, {"Sail", {}}, 2};
+  repo.byId["level"] = StoredTree{graph.exportState(), LegendState{}, {"Level", {}}, 1};
+  const Hlc lastIssued{5'000, 3, "srv"};
+  log.byTree["t"] = {
+      AppliedOp{2, "o2", CreateNode{nid("a"), "A", "icon", NodeColor::sky}, at(1), uid()},
+      AppliedOp{3, "o3", RenameNode{nid("a"), "A2"}, Hlc{4'000, 0, "srv"}, uid()},
+      AppliedOp{4, "o4", RenameNode{nid("a"), "A3"}, lastIssued, uid()},
+  };
+  log.byTree["level"] = {AppliedOp{1, "o1", CreateNode{nid("a"), "A", "icon", NodeColor::sky}, at(1), uid()}};
+  RoomRegistry registry(repo, log, bus);
+  Told told;
+
+  registry.open(tid("level"));
+  CHECK(told.lines.empty());
+  CHECK(told.reports.empty());
+
+  TreeRoom& room = *registry.open(tid());
+  CHECK_EQ(told.lines, (std::vector<std::string>{"roadmap.room.open_behind_log roadmap background snapshot-behind-log"}));
+  REQUIRE_EQ(told.reports.size(), 1u);
+  CHECK_EQ(told.reports[0].rfind("roadmap.room.open_behind_log roadmap background snapshot-behind-log ", 0), std::size_t{0});
+  std::vector<std::string> counted;
+  for (const std::string& line : told.logged)
+    if (line.find("roadmap_room_opened_behind_log") != std::string::npos)
+      counted.push_back(line.substr(line.find("roadmap_room_opened_behind_log"), line.find(" request_id=") - line.find("roadmap_room_opened_behind_log")));
+  CHECK_EQ(counted, (std::vector<std::string>{"roadmap_room_opened_behind_log rows=2"}));
+
+  room.applyCommand(RenameNode{nid("a"), "A4"}, 10, uid());
+  CHECK(lastIssued < room.pendingOps().back().hlc);
+  registry.open(tid());
+  CHECK_EQ(told.reports.size(), 1u);
 }
 
 TEST(registry_persist_snapshots_full_state_without_evicting) {

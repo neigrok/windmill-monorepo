@@ -37,7 +37,7 @@ struct DroppingPgOpLog : OpLog {
     throw std::runtime_error("connection dropped after commit");
   }
   std::vector<AppliedOp> since(const TreeId& tree, Seq afterSeq) const override { return inner.since(tree, afterSeq); }
-  Seq lastSeq(const TreeId& tree) const override { return inner.lastSeq(tree); }
+  LastOp last(const TreeId& tree) const override { return inner.last(tree); }
 };
 
 void reset() {
@@ -81,6 +81,35 @@ TEST(pg_op_log_absorbs_a_row_re_sent_after_a_commit_then_drop) {
   CHECK_EQ(rowCount(), 1L);
   REQUIRE_EQ(log.since(kTree, 0).size(), 1u);
   CHECK_EQ(log.since(kTree, 0)[0].opId, std::string("op-1"));
+}
+
+// The last row is answered per tree: each tree its own seq and stamp, whatever another tree's log holds, and a tree with
+// no row zero for both.
+TEST(pg_op_log_answers_each_trees_own_last_row) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const TreeId other{std::string("pgtest-op-log-other")};
+  const auto clearOther = [&] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("DELETE FROM tree_ops WHERE tree_id = $1", other.str());
+    txn.commit();
+  };
+  clearOther();
+  PgOpLog log{pgTestPool()};
+  AppliedOp early = opAt(1, "op-1");
+  AppliedOp late = opAt(2, "op-2");
+  late.hlc = Hlc{20, 1, "srv"};
+  AppliedOp theirs = opAt(7, "op-7");
+  theirs.hlc = Hlc{90, 4, "r_tab"};
+  log.append(kTree, early);
+  log.append(kTree, late);
+  log.append(other, theirs);
+
+  CHECK(log.last(kTree) == (LastOp{2, Hlc{20, 1, "srv"}}));
+  CHECK(log.last(other) == (LastOp{7, Hlc{90, 4, "r_tab"}}));
+  CHECK(log.last(TreeId{std::string("pgtest-op-log-none")}) == LastOp{});
+  clearOther();
 }
 
 // A node has no position, but the log holds the rows an earlier image wrote: a create carrying x and y, a move, and a

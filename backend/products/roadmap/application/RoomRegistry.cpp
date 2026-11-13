@@ -11,6 +11,13 @@
 
 namespace wm {
 
+namespace {
+// A room opened with its snapshot behind its op log: the last row's seq is past the head the snapshot was saved at.
+struct SnapshotBehindLog : std::exception {
+  const char* what() const noexcept override { return "a room opened with its snapshot behind its op log"; }
+};
+}
+
 RoomRegistry::RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus)
     : repo_(repo), ops_(ops), bus_(bus), heartbeat_("rooms", "roadmap") {
   heartbeat_.start(kSweepSeconds, kSweepSeconds, [this] { sweep(kIdleFor); });
@@ -41,13 +48,26 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
 
   // The room is the stored snapshot and nothing else: the op log is the feed's history, and a row of it never states
   // a frame faithfully enough to be merged back. A row past the snapshot's head — what a crash between the two
-  // stores could leave before rows were made to land after the save — changes nothing here; the head is taken past
-  // it, so the row of the room's next write collides with none.
+  // stores could leave before rows were made to land after the save — changes nothing the room holds; the head is
+  // taken past it, so the row of the room's next write collides with none, and the clock past its stamp, so the
+  // server's next write is not stamped below a deed the log holds.
+  const LastOp last = ops_.last(id);
   LooseGraph graph(stored->state);  // full CRDT state — lossless
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
   auto room = std::make_unique<TreeRoom>(id, stored->title, stored->guide, stored->guideInherited,
-                                         std::move(graph), std::move(legend), std::max(stored->head, ops_.lastSeq(id)),
+                                         std::move(graph), std::move(legend), std::max(stored->head, last.seq),
                                          stored->root, std::move(access), stored->createdAt, bus_);
+  room->observe(last.stamp);
+  // The room's first save moves the stored head past those rows, and nothing then shows the tree was ever behind:
+  // it is told here, once, as the unexpected state it is. The line counts the rows and names no tree, whose id a
+  // client may have minted.
+  if (last.seq > stored->head) {
+    const std::string door = currentWriteDoor();
+    WriteObservation behind{"roadmap.room.open_behind_log", "roadmap", door.empty() ? "background" : door};
+    LOG_ERROR << "roadmap_room_opened_behind_log rows=" << ops_.since(id, stored->head).size()
+              << " request_id=" << behind.requestId();
+    behind.fail(SnapshotBehindLog{}, "snapshot-behind-log");
+  }
 
   std::lock_guard<std::mutex> lock(mutex_);
   auto existing = rooms_.find(id);

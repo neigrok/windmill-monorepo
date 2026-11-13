@@ -53,11 +53,13 @@ std::vector<AppliedOp> PgOpLog::since(const TreeId& tree, Seq afterSeq) const {
   return ops;
 }
 
-Seq PgOpLog::lastSeq(const TreeId& tree) const {
+LastOp PgOpLog::last(const TreeId& tree) const {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  const pqxx::result rows = txn.exec_params("SELECT coalesce(max(seq), 0) FROM tree_ops WHERE tree_id = $1", tree.str());
-  return static_cast<Seq>(rows[0][0].as<long long>());
+  const pqxx::result rows =
+      txn.exec_params("SELECT seq, hlc FROM tree_ops WHERE tree_id = $1 ORDER BY seq DESC LIMIT 1", tree.str());
+  if (rows.empty()) return LastOp{};
+  return LastOp{static_cast<Seq>(rows[0]["seq"].as<long long>()), roadmapStamp(rows[0]["hlc"].as<std::string>())};
 }
 
 }

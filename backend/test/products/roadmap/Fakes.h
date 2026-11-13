@@ -41,10 +41,11 @@ struct FakeOpLog : OpLog {
     }
     return out;
   }
-  Seq lastSeq(const TreeId& tree) const override {
-    Seq last = 0;
+  LastOp last(const TreeId& tree) const override {
+    LastOp last;
     if (auto it = byTree.find(tree.str()); it != byTree.end())
-      for (const auto& op : it->second) last = std::max(last, op.seq);
+      for (const auto& op : it->second)
+        if (op.seq > last.seq) last = LastOp{op.seq, op.hlc};
     return last;
   }
 };

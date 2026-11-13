@@ -451,10 +451,20 @@ Rules:
   deed of its frame — one node of an import, one kind of a re-hue of several — so merging it back
   could only approximate the frame, blanking fields the frame left alone or moving one kind of a
   swap. The room's head is the later of the snapshot's head and the last row's seq
-  (`OpLog::lastSeq`), so its next write collides with no row. Rows land after the save, so a
-  snapshot is never behind its own rows. What is given up: a tree whose snapshot a crash left
+  (`OpLog::last`), so its next write collides with no row, and its clock observes that row's
+  stamp, so its next write is stamped after every deed the log holds. Rows land after the save,
+  so a snapshot is never behind its own rows. What is given up: a tree whose snapshot a crash left
   behind its op rows before 2026-09-06, when the ordering took hold, and that was never opened
-  since, opens without those rows' effects; the feed still lists them.
+  since, opens without those rows' effects; the feed still lists them. Such an open is reported
+  once, as `roadmap.room.open_behind_log` with the count of rows past the snapshot
+  (`OBSERVABILITY.md`), since the room's first save moves the stored head past them. Two things
+  the lost writes left behind are not recovered. A stamp no row carries — a title's, a guide's, one
+  of a frame that left no deed, any register's but the one its row is stamped with — is not
+  observed, so the server can still stamp a later write of its own below it, and a client that holds
+  the lost write then reads the server's as older. And the room has forgotten the frame ids it had
+  seen: a client frame resent after such a reopen is joined as a new frame, its registers landing
+  by their stamps over whatever the server wrote meanwhile under a lower one; only its op row is
+  absorbed, by the log's `(tree_id, op_id)` uniqueness.
 - The room clock mints a unique `(ms, counter)` per write, so writes to one tree are totally
   ordered and the actor tiebreak is moot. It observes the loaded stamps before minting;
   `AppliedOp.actor` records authorship independently of the clock actor `srv`.
