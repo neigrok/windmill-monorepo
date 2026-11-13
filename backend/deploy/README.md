@@ -39,7 +39,7 @@ acknowledgement described below; ordinary backend batches cannot make that cutof
 | VPS runtime topology | `deploy/docker-compose.yml` |
 | Promote the candidate files and prove Caddy loaded them (runs on the VPS) | `deploy/deploy-production.sh` |
 | Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
-| Count how the roadmap's pointers between trees meet one owned subtree per step (by hand; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
+| Count how the roadmap's pointers between trees meet one owned subtree per step (by hand, never during a deploy; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
 | Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
 | TLS + reverse proxy | `deploy/Caddyfile` |
 | Env keys the deploy renders | `deploy/.env.example` |
@@ -326,9 +326,12 @@ joined session, and checks successful callbacks, receipt replay and durable relo
 
 ## Count the roadmap's pointers between trees
 
-Dispatch **Ops · subtree inventory** (`ops-subtree-inventory.yml`). It runs `windmill_subtree_inventory`
-inside the live `server` container, which already holds `DATABASE_URL`; the tool never writes, and no
-credential leaves the host. Its one JSON object of counts ([SPEC.md](../SPEC.md#subtree-inventory)) is
+Dispatch **Ops · subtree inventory** (`ops-subtree-inventory.yml`), never during a deploy: a deploy's
+migration alters `trees`, would wait behind the inventory's read, and would hold every roadmap read
+behind it. Its first step refuses to start while any workflow of the `deploy-vps` group (Deploy to VPS,
+Web Deploy, the production backup, the digest resum) has a run queued or running. It then runs
+`windmill_subtree_inventory` inside the live `server` container, which already holds `DATABASE_URL`;
+the tool never writes, and no credential leaves the host. Its one JSON object of counts ([SPEC.md](../SPEC.md#subtree-inventory)) is
 private: this repository's logs are public, and where few accounts hold pointers the counts are one
 person's structure. So the runner seals them to `.github/ops/inventory-recipient.pem` as they arrive,
 and the job log shows the sealed block and the tool's completion line, nothing else. The certificate is

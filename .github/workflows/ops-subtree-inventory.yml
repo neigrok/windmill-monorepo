@@ -1,6 +1,6 @@
-# By hand only: counts how the roadmap's pointers between trees meet one owned subtree per step
-# (backend/SPEC.md, Subtree inventory). The tool runs inside the live server container, reads the database that
-# container already knows and never writes. Where few accounts hold pointers its counts are one person's private
+# By hand only, and never during a deploy: counts how the roadmap's pointers between trees meet one owned subtree
+# per step (backend/SPEC.md, Subtree inventory). The tool runs inside the live server container, reads the database
+# that container already knows and never writes. Where few accounts hold pointers its counts are one person's private
 # structure, and this repository's logs are public, so the counts are sealed on the runner to the owner's certificate,
 # .github/ops/inventory-recipient.pem, before anything is printed. Opening them is in backend/deploy/README.md.
 name: Ops · subtree inventory
@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: vps-ops
@@ -22,8 +23,30 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          sparse-checkout: .github/ops
+          sparse-checkout: .github
           persist-credentials: false
+      - name: Refuse while a deploy runs or waits to run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A deploy's migration alters `trees`; it would wait behind the inventory's read, and the roadmap's reads
+          # behind it. Every workflow of the deploy-vps group counts as a deploy, read from the workflows themselves.
+          deploys=$(grep -l -E '^ *group: *deploy-vps *$' .github/workflows/*.yml || true)
+          if [ -z "$deploys" ]; then
+            echo "No workflow names the deploy-vps group, so a deploy cannot be told apart: refusing to run." >&2
+            exit 1
+          fi
+          for workflow in $deploys; do
+            for status in queued in_progress waiting requested pending; do
+              runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$(basename "$workflow")" --status "$status" \
+                --json databaseId --jq length)
+              if [ "$runs" -ne 0 ]; then
+                echo "Not during a deploy: $(basename "$workflow") has a run $status. Dispatch the inventory again once it has finished." >&2
+                exit 1
+              fi
+            done
+          done
       - name: Count the roadmap's pointers in the live database, sealed to the owner
         env:
           SSH_KEY: ${{ secrets.SSH_KEY }}
@@ -57,7 +80,7 @@ jobs:
           main < /dev/null
           REMOTE
           }
-          # The counts go from ssh straight into the seal, so no plaintext reaches a file or the log, and the sealed block is
-          # printed only once the whole pipe has succeeded.
+          # The counts go from ssh straight into the seal, so no plaintext reaches a file or the log, and the sealed
+          # block is printed only once the whole pipe has succeeded.
           count | openssl smime -encrypt -aes256 -binary -outform PEM -out "$sealed" .github/ops/inventory-recipient.pem
           cat "$sealed"
