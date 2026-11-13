@@ -324,6 +324,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   }
 
   std::optional<Seq> seq;
+  bool heldUnsaved = false;  // the frame landed in the room, whose save failed and is being retried
   std::optional<Json::Value> reject;  // absent while the write is still admissible
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
@@ -349,9 +350,13 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
                              admission->reason);
       } else {
         seq = room->joinSubgraph(incoming, principal.user);
-        // Persist before the ack, so the ack attests durability. A row gone under its live room holds
-        // nothing: the room is retired, which drops its readers, and the frame answers as absent.
-        if (seq && !registry_.persist(TreeId{treeId})) {
+        // Persist before the ack, so the ack attests durability or says what it cannot. A row gone under its live room
+        // holds nothing: the room is retired, which drops its readers, and the frame answers as absent. A save that
+        // fails leaves the frame in the room, already sent to every subscriber and retried by the registry: it is
+        // acked with its seq, as unsaved, and needs no resend.
+        const Saved saved = seq ? registry_.persist(TreeId{treeId}) : Saved::saved;
+        heldUnsaved = saved == Saved::held;
+        if (saved == Saved::gone) {
           registry_.retire(TreeId{treeId});
           reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");
         }
@@ -374,6 +379,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   ack["frameId"] = frameId;
   if (seq) ack["seq"] = static_cast<Json::Int64>(*seq);
   else finishCurrentWriteUnchanged();
+  if (heldUnsaved) ack["unsaved"] = true;
   send(conn, ack);
 }
 

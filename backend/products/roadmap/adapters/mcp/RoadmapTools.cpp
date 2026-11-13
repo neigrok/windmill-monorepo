@@ -585,6 +585,15 @@ ToolResult findNodes(RoomRegistry& registry, TreeRegistry& trees, ProgressServic
   return ToolResult::json(out);
 }
 
+// What a write's receipt says of its save. Saved, nothing: the receipt attests it. Held, the change is in the room and
+// on every open page, the store did not take it and the registry is retrying: the receipt says so, and that the call
+// is not one to send again. It is not an error: the change is applied.
+void answerSave(Saved saved, Json::Value& receipt) {
+  if (saved != Saved::held) return;
+  receipt["saved"] = false;
+  receipt["saveError"] = kHeldUnsavedSentence;
+}
+
 ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& tree, const std::string& tool,
                      Json::Value payload, Clock& clock, const UserId& actor) {
   const std::string kind = *commandKindFor(tool);
@@ -646,13 +655,14 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     if (opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
     const Seq seq = room.applyCommand(*command, clock.nowMs(), actor);
-    registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
+    const Saved saved = registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
     const TreeDiagnostics after = room.diagnose();
     if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
 
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
+    answerSave(saved, out);
     answerDiagnostics(before, after, out);
     if (payload.isMember("id")) out["id"] = payload["id"];
     // A write that named its kind wears it, as resolveHue just said; one that named none is answered
@@ -801,13 +811,15 @@ ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Va
 
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.head();
+    Saved saved = Saved::saved;
     if (!plan.landsNothing()) {
       seq = room.applyCommands(plan.commands, clock.nowMs(), actor);  // a lone command logs as itself
-      registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
+      saved = registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
     }
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
+    answerSave(saved, out);
     out["id"] = update.id.str();
     if (plan.landsNothing()) out["unchanged"] = true;
     if (plan.repaintedNodes) out["repaintedNodes"] = static_cast<Json::UInt64>(*plan.repaintedNodes);
@@ -1011,7 +1023,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       const TreeDiagnostics before = room.diagnose();
       if (!landsNothing) {
         out["seq"] = static_cast<Json::Int64>(room.applyCommands(batch.commands, clock.nowMs(), actor));
-        registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
+        answerSave(registry.persist(tree), out);  // flush the dirty rows so the web reader sees this edit
         treeLanded = true;
       }
       const TreeDiagnostics after = room.diagnose();
@@ -1287,7 +1299,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     if (opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
     const std::optional<Seq> landed = room.importTree(graft, clock.nowMs(), actor);
-    if (landed) registry.persist(tree);
+    if (landed) answerSave(registry.persist(tree), out);
     out["graphApplied"] = true;
     out["progressApplied"] = true;
     // The caller's marks on what the tombstones took are cleared after the graft, which has landed whatever becomes of
@@ -1413,7 +1425,7 @@ ToolResult deleteNodes(RoomRegistry& registry, NodeEdits& edits, const TreeId& t
     if (const std::string* refusal = std::get_if<std::string>(&deleted)) return ToolResult::failure(*refusal);
     const DeletedNodes& landed = std::get<DeletedNodes>(deleted);
     // The tree's row went away under its room, which went with it: the tree is answered as absent.
-    if (!landed.saved) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    if (landed.saved == Saved::gone) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
 
     Json::Value ids(Json::arrayValue);
     for (const NodeId& node : targets) ids.append(node.str());
@@ -1424,6 +1436,7 @@ ToolResult deleteNodes(RoomRegistry& registry, NodeEdits& edits, const TreeId& t
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(landed.seq);
+    answerSave(landed.saved, out);
     answerDiagnostics(before, room.diagnose(), out);
     if (single) out["id"] = targets.front().str();
     out["ids"] = ids;
@@ -1519,6 +1532,7 @@ ToolResult updateTree(TreeRegistry& registry, const TreeId& tree, const Json::Va
   out["applied"] = true;
   out["seq"] = static_cast<Json::Int64>(described.seq);
   if (described.unchanged) out["unchanged"] = true;
+  answerSave(described.saved, out);
   return ToolResult::json(out);
 }
 

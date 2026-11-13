@@ -24,6 +24,7 @@ struct WriteCompletion {
   std::string requestId;
   double durationMs;
   WriteSeverity severity = WriteSeverity::debug;
+  std::uint64_t attempts = 0;  // how many tries a retried write took; 0 for a write that is not one, and off its line
 };
 std::string writeCompletionJson(const WriteCompletion& completion);
 
@@ -43,6 +44,9 @@ void reportCurrentUnknownWriteFailure();
 void finishCurrentWriteRefusal(const std::string& code);
 // The write in progress landed nothing: outcome `unchanged`, an expected one that completes at the level `ok` takes.
 void finishCurrentWriteUnchanged();
+// The write in progress completes as `outcome` when its door finishes it, whatever the door then calls it, unless it
+// fails: for a consequence met beneath the door, which every door's line must tell alike.
+void settleCurrentWriteAs(const std::string& outcome);
 void markCurrentWrite();
 
 class WriteObservation;
@@ -66,6 +70,9 @@ public:
   WriteObservation(const WriteObservation&) = delete;
   WriteObservation& operator=(const WriteObservation&) = delete;
   void finish(std::string outcome = "ok");
+  // The write landed on a retry: its line carries how many tries it took.
+  void tried(std::uint64_t attempts) { completion_.attempts = attempts; }
+  void settleAs(std::string outcome) { settledOutcome_ = std::move(outcome); }
   void skip();
   void ownInfo();
   void wrote();
@@ -92,6 +99,7 @@ private:
   std::atomic<bool> finished_{false};
   std::atomic<bool> failed_{false};
   std::string failedOutcome_ = "failed";
+  std::string settledOutcome_;
 };
 
 template<class Run>

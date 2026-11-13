@@ -205,8 +205,11 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
       return error(drogon::k400BadRequest, "id must be t_ followed by 16 lowercase hex characters", "bad-id");
 
     // Flush and close any live room, THEN read the row that flush just wrote: reading it earlier
-    // rewinds head_seq under the op log.
-    registry_->evict(TreeId{treeId});
+    // rewinds head_seq under the op log. A room whose save is held stays open with edits the row
+    // lacks, and a document written beneath it would never reach its pages: the PUT waits for the save.
+    if (!registry_->evict(TreeId{treeId}))
+      return error(drogon::k503ServiceUnavailable, "an earlier edit of this tree is still being saved — try again",
+                   "save-pending");
     std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
 
     // A save GROWS the stored lattice, so the ceiling is read off what the tree would HOLD.

@@ -3439,7 +3439,7 @@ TEST(mcp_a_forks_copied_guide_is_not_yours_until_its_owner_writes_one_through_an
   CHECK_FALSE(h.tools.callTool("update_tree", mcp, ToolCaller{forker, ToolScope::everything()}).isError);
 
   forkOf("t_rest");
-  CHECK(std::holds_alternative<Seq>(h.treeRegistry.setGuide(TreeId{"t_rest"}, forker, "Prune with care.")));
+  CHECK(std::holds_alternative<TreeRegistry::Described>(h.treeRegistry.setGuide(TreeId{"t_rest"}, forker, "Prune with care.")));
 
   forkOf("t_socket");
   {
@@ -3450,7 +3450,7 @@ TEST(mcp_a_forks_copied_guide_is_not_yours_until_its_owner_writes_one_through_an
     frame.actor = "r_forker";
     frame.guide = Lww<std::string>{"Prune with care.", Hlc{h.clock.ms + 1000, 0, "r_forker"}};
     REQUIRE(h.registry.open(TreeId{"t_socket"})->joinSubgraph(frame, forker).has_value());
-    REQUIRE(h.registry.persist(TreeId{"t_socket"}));
+    REQUIRE(h.registry.persist(TreeId{"t_socket"}) == Saved::saved);
   }
 
   for (const char* fork : {"t_mcp", "t_rest", "t_socket"}) {
@@ -8645,4 +8645,157 @@ TEST(mcp_the_cross_branch_flag_is_refused_wherever_mcp_took_or_answered_it) {
            std::string("get_tree: kindFields[1] \"crossBranchExempt\" is not one of {id, hue, label, description}"));
   CHECK(h->trees.byId["t"] == stored);
   CHECK_EQ(h->trees.byId.size(), trees);
+}
+
+// A write whose save fails is not an error and is not undone: the change is in the room and on every open page, the
+// receipt says `saved: false` with the one sentence, the call's line reads held-unsaved and the failure is one report
+// under the save's own name. Sent again during the outage the call changes nothing and loses nothing, and with no
+// further call the registry's retry leaves the stored tree equal to the room.
+TEST(mcp_a_write_whose_save_fails_answers_applied_and_held_and_the_retry_stores_it_with_no_further_call) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"infra","hue":"sky","label":"Infra"})")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","kind":"infra"})")).isError);
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line.operation + " " + line.outcome); });
+
+  h.trees.savesFail = true;
+  const Json::Value recolour = parse(R"({"treeId":"t","id":"infra","hue":"plum"})");
+  const ToolResult held = gate.callTool("roadmap_update_kind", recolour, h.actor);
+  const ToolResult again = gate.callTool("roadmap_update_kind", recolour, h.actor);
+  installWriteSink({});
+
+  CHECK_FALSE(held.isError);
+  CHECK_EQ(body(held), parse(std::string(R"({"applied":true,"seq":3,"saved":false,"id":"infra","repaintedNodes":1,
+    "diagnosticsClean":true,"introducedDiagnostics":[],"saveError":")") + kHeldUnsavedSentence + "\"}"));
+  CHECK_FALSE(again.isError);
+  CHECK_EQ(body(again)["unchanged"], Json::Value(true));
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.tree.save failed", "mcp.roadmap_update_kind held-unsaved",
+                                            "mcp.roadmap_update_kind ok"}));
+  CHECK_EQ(reporter.failures->reports, (std::vector<std::string>{std::string("roadmap.tree.save roadmap mcp failed ") +
+                                                                 typeid(std::runtime_error).name()}));
+  TreeRoom& room = *h.registry.open(TreeId{"t"});
+  CHECK(room.exportLegend().kinds.front().hue == NodeColor::plum);
+  CHECK(Legend(h.trees.byId["t"].legend).hueOf(KindId{"infra"}) == std::optional<NodeColor>(NodeColor::sky));
+
+  h.trees.savesFail = false;
+  REQUIRE_EQ(h.retries.set.size(), 1u);
+  h.retries.set[0].run();
+  CHECK(LooseGraph(h.trees.byId["t"].state).exportState() == room.exportState());
+  CHECK(Legend(h.trees.byId["t"].legend).exportState() == room.exportLegend());
+  CHECK_EQ(h.trees.byId["t"].head, room.head());
+  CHECK_EQ(h.ops.byTree["t"].size(), 3u);
+}
+
+// Every tool that edits a tree answers a held save the same way: applied, `saved: false` and the sentence, never an
+// error. The registry's one retry then stores what all of them left in the room.
+TEST(mcp_every_tool_that_edits_a_tree_answers_a_held_save_as_applied_and_unsaved) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+  h.trees.savesFail = true;
+  const std::vector<std::pair<const char*, const char*>> edits{
+      {"add_kind", R"({"id":"infra","hue":"sky","label":"Infra"})"},
+      {"create_node", R"({"id":"c","label":"C","kind":"infra"})"},
+      {"update_kind", R"({"id":"infra","label":"Platform"})"},
+      {"update_nodes", R"({"updates":[{"nodeId":"a","label":"A2"}]})"},
+      {"change_edges", R"({"add":[{"from":"a","to":"b"}]})"},
+      {"import_subgraph", R"({"nodes":[{"id":"d","label":"D","kind":"infra"}]})"},
+      {"delete_node", R"({"nodeId":"b"})"},
+      {"update_tree", R"({"title":"Renamed"})"},
+      {"update_tree", R"({"guide":"Trunk first."})"}};
+  std::vector<std::string> answered;
+  for (const auto& [tool, arguments] : edits) {
+    const ToolResult edited = h.call(tool, parse(arguments));
+    if (edited.isError) {
+      answered.push_back(message(edited));
+      continue;
+    }
+    const bool held = body(edited)["saved"] == Json::Value(false) && body(edited)["saveError"] == Json::Value(kHeldUnsavedSentence);
+    answered.push_back(std::string(tool) + (held ? " held" : " saved"));
+  }
+  CHECK_EQ(answered, (std::vector<std::string>{"add_kind held", "create_node held", "update_kind held", "update_nodes held",
+                                               "change_edges held", "import_subgraph held", "delete_node held",
+                                               "update_tree held", "update_tree held"}));
+  TreeRoom& room = *h.registry.open(TreeId{"t"});
+  CHECK_EQ(h.trees.byId["t"].head, static_cast<Seq>(1));
+
+  h.trees.savesFail = false;
+  REQUIRE_EQ(h.retries.set.size(), 1u);
+  h.retries.set[0].run();
+  CHECK(LooseGraph(h.trees.byId["t"].state).exportState() == room.exportState());
+  CHECK(Legend(h.trees.byId["t"].legend).exportState() == room.exportLegend());
+  CHECK(h.trees.byId["t"].title == room.title());
+  CHECK(h.trees.byId["t"].guide == room.guide());
+  CHECK_EQ(h.trees.byId["t"].head, room.head());
+}
+
+// delete_node clears the caller's marks on the node before the delete lands, so a delete whose save then fails answers
+// held with the marks already cleared in the progress store: the node is gone from the room, stands in the stored tree
+// until the retry, and is stored gone by it.
+TEST(mcp_delete_node_whose_save_fails_answers_held_with_its_marks_cleared_and_the_retry_stores_the_delete) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}],"progress":[{"nodeId":"a","status":"complete"}]})")).isError);
+  REQUIRE_EQ(h.progressRepo.byKey.size(), 1u);
+
+  h.trees.savesFail = true;
+  const ToolResult deleted = h.call("delete_node", parse(R"({"nodeId":"a"})"));
+  CHECK_FALSE(deleted.isError);
+  CHECK_EQ(body(deleted)["applied"], Json::Value(true));
+  CHECK_EQ(body(deleted)["saved"], Json::Value(false));
+  CHECK_EQ(body(deleted)["saveError"], Json::Value(kHeldUnsavedSentence));
+  CHECK(h.progressRepo.load(TreeId{"t"}, h.caller).completed.empty());
+  CHECK_FALSE(h.registry.open(TreeId{"t"})->hasNode(NodeId{"a"}));
+  CHECK(LooseGraph(h.trees.byId["t"].state).hasNode(NodeId{"a"}));
+
+  h.trees.savesFail = false;
+  REQUIRE_EQ(h.retries.set.size(), 1u);
+  h.retries.set[0].run();
+  CHECK_FALSE(LooseGraph(h.trees.byId["t"].state).hasNode(NodeId{"a"}));
+}
+
+// update_nodes saves its tree fields and its marks in turn, and its receipt tells each apart. Tree fields whose save
+// is held beside marks that landed: `saved: false`, the marks answered as recorded. Tree fields whose save is held
+// beside marks that failed, as one outage fails both: `saved: false` and `progressApplied: false`, each with its
+// sentence. Neither is an error, and the retry stores the tree fields of both calls.
+TEST(mcp_update_nodes_tells_a_held_tree_save_apart_from_marks_that_landed_and_marks_that_failed) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+
+  h.trees.savesFail = true;
+  const ToolResult marksLanded = h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","label":"A2","status":"complete"})")));
+  CHECK_FALSE(marksLanded.isError);
+  CHECK_EQ(body(marksLanded)["saved"], Json::Value(false));
+  CHECK_EQ(body(marksLanded)["saveError"], Json::Value(kHeldUnsavedSentence));
+  CHECK_FALSE(body(marksLanded).isMember("progressApplied"));
+  CHECK_EQ(body(marksLanded)["progress"][0]["status"], Json::Value("complete"));
+  CHECK_EQ(h.progressRepo.byKey.size(), 1u);
+
+  h.progressRepo.writesFail = true;
+  const ToolResult marksFailed = h.call("update_nodes", asUpdate(parse(R"({"nodeId":"b","label":"B2","status":"complete"})")));
+  CHECK_FALSE(marksFailed.isError);
+  CHECK_EQ(body(marksFailed)["saved"], Json::Value(false));
+  CHECK_EQ(body(marksFailed)["progressApplied"], Json::Value(false));
+  CHECK(body(marksFailed).isMember("progressError"));
+  CHECK_EQ(h.progressRepo.byKey.size(), 1u);
+
+  h.trees.savesFail = false;
+  REQUIRE_EQ(h.retries.set.size(), 1u);
+  h.retries.set[0].run();
+  const TreeData stored = LooseGraph(h.trees.byId["t"].state).toTreeData(TreeId{"t"}, "");
+  std::vector<std::string> labels;
+  for (const NodeSpec& node : stored.nodes) labels.push_back(node.label);
+  CHECK_EQ(labels, (std::vector<std::string>{"A2", "B2"}));
 }

@@ -76,7 +76,9 @@ subscribes again from an empty vector, because a reader's coverage counts pointe
 | `graft` | imported/bootstrap state; contributes content without coverage |
 
 The server broadcasts admitted writes with `intent: live` and `seq`. A persisted write receives
-`subgraphAck {treeId, frameId, seq?}`. A frame that lands nothing — a duplicate, one whose every
+`subgraphAck {treeId, frameId, seq?}`; one that landed and was broadcast but whose save failed
+receives the same ack with `unsaved: true`, and the server retries the save, so the client confirms
+the frame and does not resend it. A frame that lands nothing — a duplicate, one whose every
 stamp the server holds already, or one that carries no stamp a register keeps — is acknowledged
 without a seq, so its sender's gestures are confirmed, and is not saved, logged or broadcast. A frame
 that carries no stamp asks for no write: anyone who may read the tree is acknowledged so, a reader and

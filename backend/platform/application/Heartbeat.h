@@ -6,6 +6,7 @@
 #include <trantor/net/EventLoopThread.h>
 #include <trantor/utils/Logger.h>
 
+#include <chrono>
 #include <exception>
 #include <atomic>
 #include <functional>
@@ -62,31 +63,29 @@ public:
     std::lock_guard lock{mutex_};
     if (stopping_) return;
     auto observation = std::make_shared<WriteObservation>("background." + name_, product_, "background");
-    thread_.getLoop()->queueInLoop([work = std::move(work), observation] {
-      BlockingThread::Mark blocking;
-      WriteContext context{*observation};
-      const auto writes = observation->writeCount();
-      try {
-        work();
-        if (observation->writeCount() == writes) observation->skip();
-        else observation->finish();
-      } catch (const std::exception& error) {
-        observation->fail(error);
-      } catch (...) {
-        observation->failUnknown();
-      }
+    thread_.getLoop()->queueInLoop([work = std::move(work), observation] { observe(*observation, work); });
+  }
+
+  // Run work once on the heartbeat's own loop, `delay` from now, observed from the moment it runs. Work still waiting
+  // when the heartbeat stops never runs.
+  void after(std::chrono::milliseconds delay, std::function<void()> work) {
+    std::lock_guard lock{mutex_};
+    if (stopping_) return;
+    thread_.getLoop()->runAfter(std::chrono::duration<double>(delay).count(), [this, work = std::move(work)] {
+      if (stopping_) return;
+      WriteObservation observation{"background." + name_, product_, "background"};
+      observe(observation, work);
     });
   }
 
 private:
-  void beat() {
-    if (stopping_) return;
+  // The work under `observation`, on a thread allowed to block: a line when it wrote or failed, none when it did not.
+  static void observe(WriteObservation& observation, const std::function<void()>& work) {
     BlockingThread::Mark blocking;
-    WriteObservation observation{"background." + name_, product_, "background"};
     WriteContext context{observation};
     const auto writes = observation.writeCount();
     try {
-      pass_();
+      work();
       if (observation.writeCount() == writes) observation.skip();
       else observation.finish();
     } catch (const std::exception& error) {
@@ -94,6 +93,12 @@ private:
     } catch (...) {
       observation.failUnknown();
     }
+  }
+
+  void beat() {
+    if (stopping_) return;
+    WriteObservation observation{"background." + name_, product_, "background"};
+    observe(observation, pass_);
   }
 
   std::string name_;

@@ -251,8 +251,14 @@ std::variant<Cascade, TreeRegistry::RemovalRefusal> TreeRegistry::remove(const T
         // Nodes the room holds pass every check a deletion makes, so a refusal here is a fault.
         if (std::holds_alternative<std::string>(deleted)) throw std::logic_error("a room refused to delete nodes it holds");
         const DeletedNodes& landed = std::get<DeletedNodes>(deleted);
-        if (!landed.saved) {
+        if (landed.saved == Saved::gone) {
           editing.fail(TreeRowGone{}, "unsaved");
+          cascade.unsaved.push_back(parent);
+          continue;
+        }
+        // The steps are gone from the room and every open page; the registry holds the delete and retries its save.
+        if (landed.saved == Saved::held) {
+          editing.finish(kHeldUnsaved);
           cascade.unsaved.push_back(parent);
           continue;
         }
@@ -262,8 +268,8 @@ std::variant<Cascade, TreeRegistry::RemovalRefusal> TreeRegistry::remove(const T
         cascade.removed.emplace(parent, std::move(nodes));
         editing.finish();
       } catch (const std::exception& error) {
-        // The room's head moves when its delete applies, so a failure after that is its save's: the steps are gone
-        // from the room, unsaved. Before it, nothing was applied and the steps stay.
+        // The room's head moves when its delete applies, so a failure after that leaves the steps gone from the
+        // room, unsaved. Before it, nothing was applied and the steps stay.
         const bool applied = headBefore && room->head() != *headBefore;
         editing.fail(error, applied ? "unsaved" : "failed");
         (applied ? cascade.unsaved : cascade.incomplete).push_back(parent);
@@ -314,8 +320,9 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   if (!stored) return Renaming::notFound;
   if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
     return *refusal == WriteRefusal::nobodysTree ? Renaming::nobodysTree : Renaming::notYours;
-  if (!rooms_.rename(tree, trimmed, clock_.nowMs(), stored->title.stamp)) return Renaming::notFound;
-  return Renaming::renamed;
+  const Saved saved = rooms_.rename(tree, trimmed, clock_.nowMs(), stored->title.stamp);
+  if (saved == Saved::gone) return Renaming::notFound;
+  return saved == Saved::held ? Renaming::renamedUnsaved : Renaming::renamed;
 }
 
 std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission> TreeRegistry::describe(
@@ -346,17 +353,17 @@ std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission> TreeReg
   if (title && *title == room->title().value) title.reset();  // the name it already has is no rename
   if (!title && !guide) return Described{room->head(), true};
   const Seq seq = room->describe(title, guide, clock_.nowMs());
-  if (rooms_.persist(tree)) return Described{seq, false};
+  const Saved saved = rooms_.persist(tree);
+  if (saved != Saved::gone) return Described{seq, false, saved};
   // The row went away under its live room: the room goes too, so no reader is served what it set.
   rooms_.retire(tree);
   return Renaming::notFound;
 }
 
-std::variant<Seq, TreeRegistry::GuideRefusal, Admission> TreeRegistry::setGuide(const TreeId& tree,
-                                                                              const UserId& caller,
-                                                                              const std::string& guide) {
+std::variant<TreeRegistry::Described, TreeRegistry::GuideRefusal, Admission> TreeRegistry::setGuide(
+    const TreeId& tree, const UserId& caller, const std::string& guide) {
   const auto described = describe(tree, caller, Description{std::nullopt, guide});
-  if (const Described* landed = std::get_if<Described>(&described)) return landed->seq;
+  if (const Described* landed = std::get_if<Described>(&described)) return *landed;
   if (const Admission* refusal = std::get_if<Admission>(&described)) return *refusal;
   const Renaming refusal = std::get<Renaming>(described);
   if (refusal == Renaming::notYours) return GuideRefusal::notYours;

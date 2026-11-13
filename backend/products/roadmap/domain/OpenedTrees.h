@@ -74,7 +74,7 @@ struct OpeningSteps {
 
 // What became of the steps of the owner's other trees that opened a removed tree, per tree, each in id order. `removed`:
 // the steps, deleted and saved. `unsaved`: deleted in the tree's room and sent to its open pages, and the save failed —
-// gone now, kept gone by the room's next save, back without the owner's mark should the server restart before it.
+// gone now, kept gone by the save the registry retries, back without the owner's mark should the server restart first.
 // `incomplete`: nothing deleted, the steps kept, each pointing at a tree that no longer stands.
 struct Cascade {
   std::map<TreeId, std::vector<NodeId>> removed;

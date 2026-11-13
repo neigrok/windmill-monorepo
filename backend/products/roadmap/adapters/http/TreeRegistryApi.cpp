@@ -19,6 +19,23 @@ namespace {
 drogon::HttpResponsePtr forbidden(WriteRefusal refusal) {
   return error(drogon::k403Forbidden, sentenceOf(refusal), codeOf(refusal));
 }
+
+// What a title or a guide that was set answers: 204 once it is stored. One whose save the registry holds and is
+// retrying (Saved::held) is applied and on every open page, so it is no error: 202, and a body that says so.
+drogon::HttpResponsePtr answerSet(Saved saved) {
+  if (saved != Saved::held) {
+    auto stored = drogon::HttpResponse::newHttpResponse();
+    stored->setStatusCode(drogon::k204NoContent);
+    return stored;
+  }
+  Json::Value body(Json::objectValue);
+  body["saved"] = false;
+  body["code"] = kHeldUnsaved;
+  body["message"] = kHeldUnsavedSentence;
+  auto held = jsonResponse(body);
+  held->setStatusCode(drogon::k202Accepted);
+  return held;
+}
 }
 
 TreeRegistryApi::TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth)
@@ -163,7 +180,7 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
       callback(error(drogon::k400BadRequest, "guide must be a string"));
       return;
     }
-    const std::variant<Seq, TreeRegistry::GuideRefusal, Admission> outcome =
+    const std::variant<TreeRegistry::Described, TreeRegistry::GuideRefusal, Admission> outcome =
         registry_->setGuide(TreeId{treeId}, *caller, (*json)["guide"].asString());
     if (const Admission* refusal = std::get_if<Admission>(&outcome)) {
       callback(error(drogon::k400BadRequest, refusal->reason));
@@ -181,9 +198,7 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
       callback(error(drogon::k404NotFound, "no such tree"));
       return;
     }
-    auto response = drogon::HttpResponse::newHttpResponse();
-    response->setStatusCode(drogon::k204NoContent);
-    callback(response);
+    callback(answerSet(std::get<TreeRegistry::Described>(outcome).saved));
     return;
   }
 
@@ -206,9 +221,7 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
     callback(forbidden(WriteRefusal::nobodysTree));
     return;
   }
-  auto response = drogon::HttpResponse::newHttpResponse();
-  response->setStatusCode(drogon::k204NoContent);
-  callback(response);
+  callback(answerSet(outcome == TreeRegistry::Renaming::renamedUnsaved ? Saved::held : Saved::saved));
 }
 
 void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback,

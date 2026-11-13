@@ -22,7 +22,8 @@ struct Harness {
   FakeOpLog ops;
   FakeBus bus;
   FakeClock clock;
-  RoomRegistry rooms{trees, ops, bus};
+  HeldRetries retries;
+  RoomRegistry rooms{trees, ops, bus, retries.timer()};
   FakeAuthRepository authRepo;
   FakeEmail email;
   FakeOAuthRepository oauthRepo;
@@ -254,6 +255,35 @@ TEST(patch_guide_sets_the_owners_guide_to_five_thousand_characters_and_refuses_o
   CHECK_EQ(dump(bodyOf(refused)), std::string(R"({"error":"the guide would be 5001 characters, 1 over the 5000 cap"})"));
   CHECK_EQ(h.trees.byId["t"].guide.value, wide);
   CHECK_EQ(h.trees.byId["t"].title.value, std::string("Mine"));
+}
+
+// A guide or a title whose save fails is set in the room and on every open page, so the PATCH is no error: 202, with a
+// body that says the change is applied, held and not to be sent again, where a stored one answers 204. The registry's
+// retry stores both with no further request.
+TEST(patch_whose_save_fails_answers_202_applied_and_unsaved_and_the_retry_stores_it) {
+  Harness h;
+  UserId me = h.signIn("s-live", "sam@example.com");
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};
+  Json::Value unsaved(Json::objectValue);
+  unsaved["saved"] = false;
+  unsaved["code"] = "held-unsaved";
+  unsaved["message"] = kHeldUnsavedSentence;
+
+  h.trees.savesFail = true;
+  const drogon::HttpResponsePtr guide = sendPatch(h.api, patch(guided("Trunk first."), "s-live"), "t");
+  CHECK_EQ(guide->getStatusCode(), drogon::k202Accepted);
+  CHECK_EQ(bodyOf(guide), unsaved);
+  const drogon::HttpResponsePtr title = sendPatch(h.api, patch(titled("Renamed"), "s-live"), "t");
+  CHECK_EQ(title->getStatusCode(), drogon::k202Accepted);
+  CHECK_EQ(bodyOf(title), unsaved);
+  CHECK_EQ(h.trees.byId["t"].guide.value, std::string(""));
+  CHECK_EQ(h.trees.byId["t"].title.value, std::string("Mine"));
+
+  h.trees.savesFail = false;
+  REQUIRE_EQ(h.retries.set.size(), 1u);
+  h.retries.set[0].run();
+  CHECK_EQ(h.trees.byId["t"].guide.value, std::string("Trunk first."));
+  CHECK_EQ(h.trees.byId["t"].title.value, std::string("Renamed"));
 }
 
 TEST(patch_guide_stores_a_guide_of_only_whitespace_as_no_guide_and_keeps_a_real_guides_spaces) {

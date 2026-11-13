@@ -62,6 +62,7 @@ std::string writeCompletionJson(const WriteCompletion& completion) {
   fields["outcome"] = completion.outcome;
   fields["duration_ms"] = completion.durationMs;
   fields["request_id"] = completion.requestId;
+  if (completion.attempts > 0) fields["attempts"] = static_cast<Json::UInt64>(completion.attempts);
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";
   builder["precisionType"] = "decimal";
@@ -85,6 +86,9 @@ void finishCurrentWriteRefusal(const std::string& code) {
 }
 void finishCurrentWriteUnchanged() {
   if (currentObservation) currentObservation->finish("unchanged");
+}
+void settleCurrentWriteAs(const std::string& outcome) {
+  if (currentObservation) currentObservation->settleAs(outcome);
 }
 void markCurrentWrite() {
   if (current) ++current->writes;
@@ -145,7 +149,8 @@ void WriteObservation::skip() {
 
 void WriteObservation::finish(std::string outcome) {
   if (finished_.exchange(true)) return;
-  completion_.outcome = failed_ ? failedOutcome_ : std::move(outcome);
+  completion_.outcome = failed_ ? failedOutcome_
+                        : outcome == "failed" || settledOutcome_.empty() ? std::move(outcome) : settledOutcome_;
   const double elapsed = std::chrono::duration<double, std::milli>(
       std::chrono::steady_clock::now() - started_).count();
   completion_.durationMs = std::round(elapsed * 100) / 100;
