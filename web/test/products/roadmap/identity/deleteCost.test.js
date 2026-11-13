@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { deleteCost, withoutTree } from '../../../../src/products/roadmap/identity/deleteCost.js';
 
-test('a row from a server that sends no openers, and one whose openers are empty, cost nothing to say', () => {
+test('a row from a server that sends no openers, and one whose openers are empty, have nothing more to say', () => {
   const rows = [{ id: 't_sail', title: 'Learn to sail' }, { id: 't_year', title: 'My year' }];
   assert.equal(deleteCost({ id: 't_sail', title: 'Learn to sail' }, rows, { untitled: 'Untitled roadmap' }), null);
   assert.equal(deleteCost({ id: 't_sail', title: 'Learn to sail', openers: [] }, rows, { untitled: 'Untitled roadmap' }), null);

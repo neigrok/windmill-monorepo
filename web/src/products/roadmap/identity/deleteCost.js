@@ -1,7 +1,7 @@
-// What deleting a tree takes from the person's other trees, as the switcher's confirmation says it. A server that removes
-// the steps opening a tree along with it sends `openers` on each row of the list: one { treeId, steps } per other tree of
-// the person's that holds a step opening it. A row without the field came from a server that does not, and costs nothing
-// to say.
+// What deleting a tree takes from the person's other trees, as the switcher's confirmation says it. A server that removes,
+// with a tree, the steps in the person's other trees that open it sends `openers` on each row of the list: one
+// { treeId, steps } per such tree. A row without the field came from a server that does not, and the confirmation says
+// nothing more for it.
 
 // The cost line for `tree` among `rows`, the switcher's list in its own order, or null where no step opens it. The
 // trees named are the first two openers the list holds, in its order and titled as their rows are; an opener the list
