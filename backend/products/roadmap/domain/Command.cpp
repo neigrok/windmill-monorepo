@@ -212,9 +212,9 @@ void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc&
     [&](const ReorderKinds& c) { legend.reorder(c.order, at); },
     [&](const RecolorKind& c) {
       if (!legend.hueOf(c.id)) return;
-      const std::vector<NodeId> wearers = wearersOf(graph, legend, c.id);
+      const std::vector<NodeId> holders = holdersOf(graph, legend, c.id);
       legend.setHue(c.id, c.hue, at);
-      for (const NodeId& node : wearers) graph.setColor(node, c.hue, at);
+      for (const NodeId& node : holders) graph.setColor(node, c.hue, at);
     },
     [&](const Batch& c) {
       for (const Command& member : c.commands) merge(graph, legend, member, at);
@@ -356,6 +356,15 @@ std::vector<NodeId> wearersOf(const LooseGraph& graph, const Legend& legend, con
   const std::optional<NodeColor> hue = legend.hueOf(kind);
   if (!hue) return {};
   return graph.nodesWithColor(*hue);
+}
+
+std::vector<NodeId> holdersOf(const LooseGraph& graph, const Legend& legend, const KindId& kind) {
+  std::vector<NodeId> holders = wearersOf(graph, legend, kind);
+  if (const std::optional<NodeColor> hue = legend.hueOf(kind)) {
+    const std::vector<NodeId> deleted = graph.deletedNodesWithColor(*hue);
+    holders.insert(holders.end(), deleted.begin(), deleted.end());
+  }
+  return holders;
 }
 
 std::optional<Command> changedPart(const NodeSpec& node, const Command& command) {

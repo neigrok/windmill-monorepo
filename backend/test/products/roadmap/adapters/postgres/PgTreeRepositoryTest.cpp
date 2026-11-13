@@ -400,6 +400,60 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
   restarted.stop();
 }
 
+// A deleted node's row takes the colour its kind's re-hue gives it and stays deleted, so across a restart the node an
+// import brings back is under its kind.
+TEST(pg_a_deleted_node_repainted_with_its_kind_comes_back_under_the_kind_after_a_restart) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTreeRepository trees{pgTestPool()};
+  PgOpLog log{pgTestPool()};
+  FakeBus bus;
+  FakeProgressRepository progressRepo;
+  FakeTokens tokens;
+  test::StepClock clock;
+  ProgressService progress{progressRepo, trees};
+  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
+  const auto storedColours = [] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    const pqxx::result rows = txn.exec_params(
+        "SELECT node_id || ':' || color || ':' || present::text AS held FROM tree_nodes WHERE tree_id = $1 ORDER BY node_id",
+        kTree.str());
+    std::vector<std::string> held;
+    for (const auto& row : rows) held.push_back(row["held"].as<std::string>());
+    return held;
+  };
+  const ToolCaller sam{kSam, ToolScope::everything()};
+  const auto arguments = [](const char* json) {
+    Json::Value args = parse(json);
+    args["treeId"] = kTree.str();
+    return args;
+  };
+  {
+    RoomRegistry registry(trees, log, bus);
+    NodeEdits edits{registry, progress, bus, clock};
+    TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
+    RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
+    CHECK_FALSE(tools.callTool("add_kind", arguments(R"({"id":"k","hue":"sky"})"), sam).isError);
+    CHECK_FALSE(tools.callTool("import_subgraph", arguments(R"({"nodes":[{"id":"a","label":"A","kind":"k"},
+      {"id":"b","label":"B","kind":"k"}]})"), sam).isError);
+    CHECK_FALSE(tools.callTool("delete_node", arguments(R"({"nodeId":"b"})"), sam).isError);
+    CHECK_FALSE(tools.callTool("update_kind", arguments(R"({"id":"k","hue":"plum"})"), sam).isError);
+    registry.stop();
+  }
+  CHECK_EQ(storedColours(), (std::vector<std::string>{"a:plum:true", "b:plum:false"}));
+
+  RoomRegistry restarted(trees, log, bus);
+  NodeEdits edits{restarted, progress, bus, clock};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, restarted, edits, clock};
+  RoadmapTools tools{restarted, progress, clock, treeRegistry, edits, "https://app.example"};
+  CHECK_FALSE(tools.callTool("import_subgraph", arguments(R"({"nodes":[{"id":"b"}]})"), sam).isError);
+  CHECK_EQ(test::body(tools.callTool("get_nodes", arguments(R"({"nodeIds":["a","b"],"fields":["id","color","kind"]})"), sam))["nodes"],
+           parse(R"([{"id":"a","color":"plum","kind":"k"},{"id":"b","color":"plum","kind":"k"}])"));
+  restarted.stop();
+  CHECK_EQ(storedColours(), (std::vector<std::string>{"a:plum:true", "b:plum:true"}));
+}
+
 // The statement behind OpenedTrees: a removed node's pointer leads nowhere, a loop ends, and only the owner's marks count.
 TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_to_counted_under_the_owners_marks) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
@@ -432,8 +486,7 @@ TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_
     trees.create(id(name), graph.exportState(), LegendState{}, "Tree " + name, owner);
   };
   const auto mark = [&](const std::string& tree, const UserId& user, const std::string& node) {
-    progress.setStatus(id(tree), user, NodeId{node}, ProgressStatus::complete, false, Hlc{1'700'000'000'002, 0, "r_a"},
-                       1'700'000'000'002);
+    progress.setStatuses(id(tree), user, {{NodeId{node}, ProgressStatus::complete, false, Hlc{1'700'000'000'002, 0, "r_a"}}}, StampedBy::replica, 1'700'000'000'002);
   };
   plant("a", kSam, {{"plain-sam", ""}, {"plain-eve", ""}, {"plain", ""}, {"to-b", "b"}, {"to-b-again", "b"},
                     {"to-b-eve", "b"}, {"to-retired", "retired"}, {"to-theirs", "theirs"}, {"to-absent", "absent"},
@@ -491,14 +544,14 @@ TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_
   plant("stamps", kSam, {{"first", ""}, {"counter", ""}, {"actor", ""}, {"cleared", ""}, {"eve", ""}, {"unmarked", ""},
                          {"no-stamp", ""}, {"unset-stamp", ""}});
   plant("unstamped", kSam, {{"only", ""}});
-  progress.setStatus(id("stamps"), kSam, NodeId{"first"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 0, "r_z"}, 1'700'000'000'090);
-  progress.setStatus(id("stamps"), kSam, NodeId{"counter"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 2, "r_a"}, 1'700'000'000'020);
-  progress.setStatus(id("stamps"), kSam, NodeId{"actor"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 2, "r_b"}, 1'700'000'000'015);
-  progress.setStatus(id("stamps"), kSam, NodeId{"cleared"}, ProgressStatus::none, false, Hlc{1'700'000'000'050, 0, "r_a"}, 1'700'000'000'050);
-  progress.setStatus(id("stamps"), kEve, NodeId{"eve"}, ProgressStatus::complete, false, Hlc{1'700'000'000'060, 0, "r_e"}, 1'700'000'000'060);
+  progress.setStatuses(id("stamps"), kSam, {{NodeId{"first"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 0, "r_z"}}}, StampedBy::replica, 1'700'000'000'090);
+  progress.setStatuses(id("stamps"), kSam, {{NodeId{"counter"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 2, "r_a"}}}, StampedBy::replica, 1'700'000'000'020);
+  progress.setStatuses(id("stamps"), kSam, {{NodeId{"actor"}, ProgressStatus::complete, false, Hlc{1'700'000'000'010, 2, "r_b"}}}, StampedBy::replica, 1'700'000'000'015);
+  progress.setStatuses(id("stamps"), kSam, {{NodeId{"cleared"}, ProgressStatus::none, false, Hlc{1'700'000'000'050, 0, "r_a"}}}, StampedBy::replica, 1'700'000'000'050);
+  progress.setStatuses(id("stamps"), kEve, {{NodeId{"eve"}, ProgressStatus::complete, false, Hlc{1'700'000'000'060, 0, "r_e"}}}, StampedBy::replica, 1'700'000'000'060);
   for (const char* node : {"no-stamp", "unset-stamp"})
-    progress.setStatus(id("stamps"), kSam, NodeId{node}, ProgressStatus::complete, false, Hlc{}, 1'700'000'000'999);
-  progress.setStatus(id("unstamped"), kSam, NodeId{"only"}, ProgressStatus::complete, false, Hlc{}, 1'700'000'000'999);
+    progress.setStatuses(id("stamps"), kSam, {{NodeId{node}, ProgressStatus::complete, false, Hlc{}}}, StampedBy::replica, 1'700'000'000'999);
+  progress.setStatuses(id("unstamped"), kSam, {{NodeId{"only"}, ProgressStatus::complete, false, Hlc{}}}, StampedBy::replica, 1'700'000'000'999);
   {
     PgLease conn{*pgTestPool()};
     pqxx::work txn{*conn};

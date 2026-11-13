@@ -25,8 +25,15 @@ on:
         description: Exact sha256 Docker image content ID for a coordinated change
         type: string
 
+# The lock is taken under the same condition the job runs under. A run this workflow skips (a pull
+# request's or a red Backend CI/CD) waits nowhere, so it cannot cancel a deploy that is waiting.
 concurrency:
-  group: deploy-vps
+  group: >-
+    ${{ ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+         (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.event == 'push'))
+        && 'deploy-vps' || format('deploy-skipped-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:

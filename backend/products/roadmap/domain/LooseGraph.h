@@ -75,6 +75,10 @@ public:
   // Present nodes currently painted `color`: the repaint set for a RecolorKind, and the guard
   // blocking removal of a kind whose hue is still worn.
   std::vector<NodeId> nodesWithColor(NodeColor color) const;
+  // Deleted nodes whose colour register holds `color`, whether or not anyone wrote it: a RecolorKind
+  // repaints them with the present ones, so a node brought back is under its kind. A record never
+  // created is not one.
+  std::vector<NodeId> deletedNodesWithColor(NodeColor color) const;
   bool hueInUse(NodeColor color) const;
 
   std::vector<NodeId> presentNodeIds() const;

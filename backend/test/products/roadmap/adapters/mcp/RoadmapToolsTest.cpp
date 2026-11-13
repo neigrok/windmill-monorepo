@@ -4,6 +4,7 @@
 #include "platform/application/WriteObservation.h"
 #include "products/roadmap/adapters/mcp/ReadShape.h"
 #include "products/roadmap/adapters/json/CommandJson.h"
+#include "products/roadmap/adapters/json/SubgraphJson.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 #include "products/roadmap/application/ActivityFeed.h"
 #include "products/roadmap/application/ForkService.h"
@@ -2184,16 +2185,11 @@ TEST(mcp_import_subgraph_tombstone_needs_the_delete_grant_the_way_delete_node_do
 namespace {
 struct ThrowingProgressRepository : FakeProgressRepository {
   bool armed = false;
-  bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node, ProgressStatus status,
-                 bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) override {
-    if (armed) throw std::runtime_error("connect host=db.internal user=windmill password=hunter2: FATAL");
-    return FakeProgressRepository::setStatus(tree, user, node, status, outOfOrder, at, receivedAtMs);
-  }
-  std::vector<bool> setStatuses(const TreeId& tree, const UserId& user,
-                                 const std::vector<ProgressUpdate>& updates,
-                                 std::uint64_t receivedAtMs) override {
+  std::vector<ProgressWritten> setStatuses(const TreeId& tree, const UserId& user,
+                                           const std::vector<ProgressUpdate>& updates, StampedBy stampedBy,
+                                           std::uint64_t receivedAtMs) override {
     if (armed) throw std::runtime_error("progress transaction failed");
-    return FakeProgressRepository::setStatuses(tree, user, updates, receivedAtMs);
+    return FakeProgressRepository::setStatuses(tree, user, updates, stampedBy, receivedAtMs);
   }
 };
 }
@@ -4789,33 +4785,50 @@ TEST(mcp_an_import_refusal_names_ten_of_its_new_nodes_that_name_no_hue_and_count
   CHECK(h.trees.byId["t"].state == GraphState{});
 }
 
-// A node an import brings back from a delete comes back with the colour someone wrote on it, so re-sent bare it is not
-// refused. One whose colour nobody wrote, as a node imported bare under a terracotta kind is, would come back terracotta:
-// once no kind wears terracotta the bare re-send is refused, as a dry run too, with nothing written, and the same
-// re-send with a kind lands.
-TEST(mcp_an_import_that_revives_a_node_bare_lands_the_colour_someone_wrote_and_refuses_one_nobody_wrote) {
+// A node an import brings back from a delete comes back with the colour it holds, so re-sent bare it is not refused: a
+// colour someone wrote on it, or the one its kind's re-hue gave it while it was deleted — a node imported bare under a
+// terracotta kind, deleted, comes back under that kind in the hue the kind took. One that holds no colour anyone
+// wrote and that no re-hue carried would come back terracotta: once no kind wears terracotta the bare re-send is
+// refused, as a dry run too, with nothing written, and the same re-send with a kind lands.
+TEST(mcp_an_import_that_revives_a_node_bare_lands_the_colour_it_holds_and_refuses_one_that_holds_none) {
   Harness h;
-  const std::string tree = body(h.tools.callTool("create_tree", parse(R"({"title":"Defaults"})"), h.actor))["treeId"].asString();
-  const auto call = [&](const char* tool, const char* arguments) {
-    Json::Value args = parse(arguments);
-    args["treeId"] = tree;
-    ToolResult result = h.tools.callTool(tool, args, h.actor);
-    checkStructuredContent(h.tools, tool, result, __FILE__, __LINE__);
-    return result;
+  const auto planted = [&](const char* title) {
+    return body(h.tools.callTool("create_tree", parse(std::string(R"({"title":")") + title + "\"}"), h.actor))["treeId"].asString();
   };
+  const auto caller = [&](const std::string& tree) {
+    return [&h, tree](const char* tool, const char* arguments) {
+      Json::Value args = parse(arguments);
+      args["treeId"] = tree;
+      ToolResult result = h.tools.callTool(tool, args, h.actor);
+      checkStructuredContent(h.tools, tool, result, __FILE__, __LINE__);
+      return result;
+    };
+  };
+
+  const auto rehued = caller(planted("Rehued"));
+  CHECK_FALSE(rehued("import_subgraph", R"({"nodes":[{"id":"x","label":"X"}]})").isError);
+  CHECK_FALSE(rehued("create_node", R"({"id":"y","label":"Y","kind":"learn"})").isError);
+  CHECK_FALSE(rehued("delete_node", R"({"nodeIds":["x","y"]})").isError);
+  CHECK_FALSE(rehued("update_kind", R"({"id":"build","hue":"sky"})").isError);
+  CHECK_FALSE(rehued("import_subgraph", R"({"nodes":[{"id":"x"},{"id":"y"}]})").isError);
+  CHECK_EQ(body(rehued("get_tree", R"({"fields":["id","label","color","kind"]})"))["tree"]["nodes"],
+           parse(R"([{"id":"x","label":"X","color":"sky","kind":"build"},
+    {"id":"y","label":"Y","color":"olive","kind":"learn"}])"));
+
+  const std::string tree = planted("Unclaimed");
+  const auto call = caller(tree);
   CHECK_FALSE(call("import_subgraph", R"({"nodes":[{"id":"x","label":"X"}]})").isError);
-  CHECK_FALSE(call("create_node", R"({"id":"y","label":"Y","kind":"learn"})").isError);
-  CHECK_FALSE(call("delete_node", R"({"nodeIds":["x","y"]})").isError);
-  CHECK_FALSE(call("update_kind", R"({"id":"build","hue":"sky"})").isError);
+  CHECK_FALSE(call("delete_node", R"({"nodeId":"x"})").isError);
+  CHECK_FALSE(call("remove_kind", R"({"id":"build"})").isError);
   const StoredTree before = h.trees.byId[tree];
   const std::size_t rows = h.ops.byTree[tree].size();
   const std::string refusal(
       "import_subgraph: nodes[0] \"x\" names neither \"kind\" nor \"color\", and no kind of this tree wears terracotta, "
-      "the hue a new node takes without them — name one of the legend's kinds: \"build\" (Build), \"learn\" (Learn), "
+      "the hue a new node takes without them — name one of the legend's kinds: \"learn\" (Learn), "
       "\"milestone\" (Milestone)");
 
-  const ToolResult refused = call("import_subgraph", R"({"nodes":[{"id":"x"},{"id":"y"}]})");
-  const ToolResult rehearsed = call("import_subgraph", R"({"dryRun":true,"nodes":[{"id":"x"},{"id":"y"}]})");
+  const ToolResult refused = call("import_subgraph", R"({"nodes":[{"id":"x"}]})");
+  const ToolResult rehearsed = call("import_subgraph", R"({"dryRun":true,"nodes":[{"id":"x"}]})");
 
   CHECK(refused.isError);
   CHECK_EQ(message(refused), refusal);
@@ -4823,10 +4836,9 @@ TEST(mcp_an_import_that_revives_a_node_bare_lands_the_colour_someone_wrote_and_r
   CHECK(h.trees.byId[tree] == before);
   CHECK_EQ(h.ops.byTree[tree].size(), rows);
 
-  CHECK_FALSE(call("import_subgraph", R"({"nodes":[{"id":"x","kind":"milestone"},{"id":"y"}]})").isError);
+  CHECK_FALSE(call("import_subgraph", R"({"nodes":[{"id":"x","kind":"milestone"}]})").isError);
   CHECK_EQ(body(call("get_tree", R"({"fields":["id","label","color","kind"]})"))["tree"]["nodes"],
-           parse(R"([{"id":"x","label":"X","color":"gold","kind":"milestone"},
-    {"id":"y","label":"Y","color":"olive","kind":"learn"}])"));
+           parse(R"([{"id":"x","label":"X","color":"gold","kind":"milestone"}])"));
 }
 
 // Where a kind wears terracotta, as Build does in the default legend, a node that names neither is terracotta and
@@ -5854,7 +5866,9 @@ TEST(mcp_an_import_that_rehues_a_kind_repaints_the_nodes_that_wore_its_hue) {
 }
 
 // The repaint reads the legend and the nodes as they stood before the batch, so a swap swaps; a node the batch gives
-// its own colour or kind lands what the batch says, and a deleted node or one the batch tombstones is left alone.
+// its own colour or kind lands what the batch says. A node deleted before the batch moves with its kind, uncounted,
+// and so does one the batch itself tombstones, counted because it was present before the call: brought back bare,
+// each is under the kind it was under.
 TEST(mcp_an_import_repaints_against_the_legend_before_the_batch_and_yields_to_its_word) {
   Harness h;
   for (const char* kind : {R"({"id":"apps","hue":"sky"})", R"({"id":"infra","hue":"plum"})", R"({"id":"ops","hue":"gold"})"})
@@ -5867,12 +5881,120 @@ TEST(mcp_an_import_repaints_against_the_legend_before_the_batch_and_yields_to_it
 
   const Json::Value receipt = body(h.call("import_subgraph", parse(R"({"kinds":[{"id":"apps","hue":"plum"},
     {"id":"infra","hue":"sky"}],"nodes":[{"id":"s2","color":"gold"},{"id":"s3","kind":"ops"}],"tombstone":["cut"]})")));
-  CHECK_EQ(receipt["repaintedNodes"].asUInt64(), 2u);
+  CHECK_EQ(receipt["repaintedNodes"].asUInt64(), 3u);
   CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["s1","s2","s3","p1"],"fields":["id","color","kind"]})")))["nodes"],
            parse(R"([{"id":"s1","color":"plum","kind":"apps"},{"id":"s2","color":"gold","kind":"ops"},
              {"id":"s3","color":"gold","kind":"ops"},{"id":"p1","color":"sky","kind":"infra"}])"));
-  for (const NodeStateEntry& node : h.registry.open(TreeId{"t"})->exportState().nodes)
-    if (node.id == NodeId{"gone"} || node.id == NodeId{"cut"}) CHECK(node.color == NodeColor::sky);
+  const LooseGraph left{h.registry.open(TreeId{"t"})->exportState()};
+  CHECK(left.exportNode(NodeId{"gone"})->color == NodeColor::plum);
+  CHECK(left.exportNode(NodeId{"cut"})->color == NodeColor::plum);
+  const Subgraph& frame = h.bus.subgraphBroadcasts.back().subgraph;
+  const auto cut = std::find_if(frame.graph.nodes.begin(), frame.graph.nodes.end(),
+                                [](const NodeStateEntry& node) { return node.id == NodeId{"cut"}; });
+  REQUIRE(cut != frame.graph.nodes.end());
+  CHECK((*cut == NodeStateEntry{.id = NodeId{"cut"}, .deletedAt = cut->deletedAt, .color = NodeColor::plum, .colorAt = cut->deletedAt}));
+  CHECK(cut->deletedAt.isSet());
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"gone"},{"id":"cut"}]})")).isError);
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["gone","cut"],"fields":["id","color","kind"]})")))["nodes"],
+           parse(R"([{"id":"gone","color":"plum","kind":"apps"},{"id":"cut","color":"plum","kind":"apps"}])"));
+}
+
+// One import that re-hues a kind and brings back, bare, a deleted node nobody coloured that sat under it answers what
+// the two calls answer: the repaint reaches the node, so it is not one that names neither kind nor colour, and it
+// comes back under the kind in its new hue. The dry run answers the same.
+TEST(mcp_one_import_that_rehues_a_kind_and_bare_revives_its_uncoloured_wearer_lands_as_the_two_calls_do) {
+  Harness h;
+  const std::string tree = body(h.tools.callTool("create_tree", parse(R"({"title":"Defaults"})"), h.actor))["treeId"].asString();
+  const auto call = [&](const char* tool, const char* arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = tree;
+    ToolResult result = h.tools.callTool(tool, args, h.actor);
+    checkStructuredContent(h.tools, tool, result, __FILE__, __LINE__);
+    return result;
+  };
+  CHECK_FALSE(call("import_subgraph", R"({"nodes":[{"id":"live","label":"Live"},{"id":"x","label":"X"}]})").isError);
+  CHECK_FALSE(call("delete_node", R"({"nodeId":"x"})").isError);
+
+  const ToolResult rehearsed = call("import_subgraph", R"({"dryRun":true,"kinds":[{"id":"build","hue":"sky"}],"nodes":[{"id":"x"}]})");
+  REQUIRE(!rehearsed.isError);
+  CHECK_EQ(body(rehearsed)["repaintedNodes"], Json::Value(1));
+  const ToolResult landed = call("import_subgraph", R"({"kinds":[{"id":"build","hue":"sky"}],"nodes":[{"id":"x"}]})");
+  REQUIRE(!landed.isError);
+  CHECK_EQ(body(landed)["repaintedNodes"], Json::Value(1));
+  CHECK_EQ(body(landed)["newNodes"], Json::Value(1));
+  CHECK_EQ(body(call("get_tree", R"({"fields":["id","color","kind"]})"))["tree"]["nodes"],
+           parse(R"([{"id":"live","color":"sky","kind":"build"},{"id":"x","color":"sky","kind":"build"}])"));
+}
+
+// A kind that takes a new hue carries the deleted nodes that held its old one, through update_kind and through an
+// import's re-hue alike: brought back later, such a node is under its kind and no hue is left unclaimed.
+// repaintedNodes counts the nodes present before the call alone.
+TEST(mcp_a_kind_that_takes_a_new_hue_carries_its_deleted_wearers_so_a_revived_one_is_under_it) {
+  for (const auto& [tool, arguments] : std::vector<std::pair<const char*, const char*>>{
+           {"update_kind", R"({"id":"k","hue":"plum"})"},
+           {"import_subgraph", R"({"kinds":[{"id":"k","hue":"plum"}],"nodes":[]})"}}) {
+    Harness h;
+    CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
+    CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","icon":"i","kind":"k"},
+      {"id":"b","label":"B","icon":"i","kind":"k"}]})")).isError);
+    CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"b"})")).isError);
+
+    const Json::Value rehued = body(h.call(tool, parse(arguments)));
+    CHECK_EQ(rehued["repaintedNodes"], Json::Value(1));
+    const Json::Value revived = body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"b"}]})")));
+    CHECK_EQ(revived["newNodes"], Json::Value(1));
+    CHECK_FALSE(revived.isMember("repaintedNodes"));
+
+    CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a","b"],"fields":["id","color","kind"]})")))["nodes"],
+             parse(R"([{"id":"a","color":"plum","kind":"k"},{"id":"b","color":"plum","kind":"k"}])"));
+    CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["smells"], parse("[]"));
+  }
+}
+
+// A re-hue's frame grows with the deleted nodes it carries, one colour entry for each, the size a present node's is: a
+// thousand deleted wearers beside one present node are a frame of a thousand and one entries, under 300 bytes each.
+TEST(mcp_a_rehue_broadcasts_one_colour_entry_for_each_deleted_wearer_it_carries) {
+  Harness h;
+  const Hlc seed{1, 0, "seed"};
+  LooseGraph graph;
+  graph.createNode(NodeId{"kept"}, "Kept", "i", NodeColor::sky, seed);
+  for (int i = 0; i < 1000; ++i) {
+    const std::string digits = std::to_string(i);
+    const NodeId id{"d" + std::string(4 - digits.size(), '0') + digits};
+    graph.createNode(id, "Gone", "i", NodeColor::sky, seed);
+    graph.deleteNode(id, Hlc{2, 0, "seed"});
+  }
+  h.trees.byId["t"] = StoredTree{graph.exportState(), Legend({{KindId{"k"}, NodeColor::sky, "K"}}, seed).exportState(),
+                                 {"Rehued", {}}, 0, h.caller};
+
+  const Json::Value receipt = body(h.call("update_kind", parse(R"({"id":"k","hue":"plum"})")));
+  CHECK_EQ(receipt["repaintedNodes"], Json::Value(1));
+  REQUIRE_EQ(h.bus.subgraphBroadcasts.size(), 1u);
+  const Subgraph& frame = h.bus.subgraphBroadcasts.back().subgraph;
+  CHECK_EQ(frame.graph.nodes.size(), 1001u);
+  CHECK(dump(toJson(frame)).size() < 1001 * 300);
+}
+
+// An import that re-hues a kind and brings back its deleted wearers in the same batch files them under it by the rule
+// a present node follows: sent with no colour or the colour it held, a node comes back in the new hue; sent another
+// colour or a kind, it is the batch's word. None of them was present before the call, so none is counted.
+TEST(mcp_an_import_that_rehues_a_kind_and_revives_its_deleted_wearers_files_them_by_the_echo_rule) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"j","hue":"gold"})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","kind":"k"},
+    {"id":"b","label":"B","kind":"k"},{"id":"c","label":"C","kind":"k"},{"id":"d","label":"D","kind":"k"},
+    {"id":"e","label":"E","kind":"k"}]})")).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeIds":["b","c","d","e"]})")).isError);
+
+  const Json::Value receipt = body(h.call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"plum"}],
+    "nodes":[{"id":"b"},{"id":"c","color":"sky"},{"id":"d","color":"olive"},{"id":"e","kind":"j"}]})")));
+  CHECK_EQ(receipt["repaintedNodes"], Json::Value(1));
+  CHECK_EQ(receipt["newNodes"], Json::Value(4));
+  CHECK_EQ(body(h.call("get_nodes", parse(R"({"nodeIds":["a","b","c","d","e"],"fields":["id","color","kind"]})")))["nodes"],
+           parse(R"([{"id":"a","color":"plum","kind":"k"},{"id":"b","color":"plum","kind":"k"},
+             {"id":"c","color":"plum","kind":"k"},{"id":"d","color":"olive"},{"id":"e","color":"gold","kind":"j"}])"));
 }
 
 // A node is the batch's word only when the colour the batch lands for it differs from the one it holds: a get_tree
@@ -6664,7 +6786,7 @@ TEST(mcp_a_call_that_recorded_no_mark_and_was_refused_one_completes_as_opens_a_t
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"idea","label":"Idea","opens":"t_sub"},{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
-  h.progressRepo.setStatus(TreeId{"t"}, h.caller, nid("a"), ProgressStatus::complete, false, Hlc{9'000'000, 0, "r_phone"}, 9'000'000);
+  h.progressRepo.setStatuses(TreeId{"t"}, h.caller, {{nid("a"), ProgressStatus::complete, false, Hlc{9'000'000, 0, "r_phone"}}}, StampedBy::replica, 9'000'000);
   CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
   std::vector<WriteCompletion> completions;
   installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
@@ -6756,9 +6878,9 @@ TEST(mcp_an_import_whose_clear_of_marks_on_removed_nodes_throws_reports_it_once_
 }
 
 // A hue no kind wears is a smell, one line per hue naming how many present nodes wear it and the first of them, however
-// they got there: written with no colour where no kind wears terracotta, sent a kind's old hue by the import that
-// re-hues it, revived after its kind moved, or given a third hue. A node under a kind is not counted. A smell is no
-// structural error, so receipts stay clean.
+// they got there: written with no colour where no kind wears terracotta, sent a kind's old hue after its re-hue, or
+// given a third hue. A node under a kind is not counted, one revived after its kind moved among them: it moved with
+// the kind. A smell is no structural error, so receipts stay clean.
 TEST(mcp_a_hue_no_kind_wears_is_a_smell) {
   Harness h;
   CHECK_FALSE(h.call("add_kind", parse(R"({"id":"k","hue":"sky"})")).isError);
@@ -6766,9 +6888,9 @@ TEST(mcp_a_hue_no_kind_wears_is_a_smell) {
     {"id":"c","label":"C","icon":"i","color":"sky"},{"id":"d","label":"D","icon":"i","kind":"k"},
     {"id":"e","label":"E","icon":"i","kind":"k"}]})")).isError);
   CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"c"})")).isError);
-  CHECK_FALSE(h.call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"plum"}],
-    "nodes":[{"id":"b","label":"B","icon":"i","color":"sky"}]})")).isError);
-  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","label":"C"}]})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"kinds":[{"id":"k","hue":"plum"}],"nodes":[]})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"b","label":"B","icon":"i","color":"sky"},
+    {"id":"c","label":"C"}]})")).isError);
   const Json::Value recolored = body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"e","color":"olive"})"))));
   CHECK_EQ(recolored["diagnosticsClean"], Json::Value(true));
   CHECK_EQ(recolored["introducedDiagnostics"], parse("[]"));
@@ -6776,7 +6898,7 @@ TEST(mcp_a_hue_no_kind_wears_is_a_smell) {
   CHECK_EQ(body(h.call("get_diagnostics", kNoArgs))["smells"],
            parse(R"([{"kind":"unclaimed-hue","hue":"terracotta","count":1,"nodes":["a"]},
              {"kind":"unclaimed-hue","hue":"olive","count":1,"nodes":["e"]},
-             {"kind":"unclaimed-hue","hue":"sky","count":2,"nodes":["b","c"]}])"));
+             {"kind":"unclaimed-hue","hue":"sky","count":1,"nodes":["b"]}])"));
 }
 
 // An unclaimed hue names at most the first ten nodes wearing it, in the order nodes are reported, and counts them all:
@@ -7190,9 +7312,7 @@ TEST(mcp_a_server_progress_write_lands_over_a_mark_stamped_ahead_of_the_server) 
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
   const std::uint64_t ahead = h.clock.ms + 120000;  // a phone two minutes ahead, inside the socket's five
   for (const char* node : {"a", "b"})
-    REQUIRE(h.progressRepo.setStatuses(TreeId{"t"}, h.caller,
-                                       {{NodeId{node}, ProgressStatus::complete, false, Hlc{ahead, 0, "phone"}}},
-                                       h.clock.ms).front());
+    REQUIRE(h.progressRepo.setStatuses(TreeId{"t"}, h.caller, {{NodeId{node}, ProgressStatus::complete, false, Hlc{ahead, 0, "phone"}}}, StampedBy::replica, h.clock.ms).front().landed.has_value());
 
   CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"a"})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
   CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"b","status":"none"})")))),
@@ -7201,6 +7321,52 @@ TEST(mcp_a_server_progress_write_lands_over_a_mark_stamped_ahead_of_the_server) 
   CHECK_EQ(storedMarks(h.progress, h.caller), cleared);
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
   CHECK_EQ(body(h.call("get_progress", parse(R"({"fields":["completed","cleared"]})"))), cleared);
+}
+
+// A mark's row is answered by the write that made it. Where another door marks the node while the call's write is on
+// its way — here a socket's clear lands as the statement starts — a repeat of `complete` restores the mark, so its row
+// is a change and not `unchanged`. A server door's mark lands over that clear even when the replica stamped it ahead
+// of the server, just after its stamp: no row a tool answers is one that lost, and the frame carries the stamp it took.
+TEST(mcp_a_mark_row_says_what_its_write_did_when_another_door_marked_the_node_under_it) {
+  for (const bool ahead : {false, true}) {
+    Harness h;
+    CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
+    CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","status":"complete"})"))).isError);
+    const std::string row = fake::FakeProgressRepository::key(TreeId{"t"}, h.caller, NodeId{"a"});
+    const Hlc held = h.progressRepo.byKey.at(row).at;
+    const Hlc slipped = ahead ? Hlc{h.clock.ms + 120000, 0, "phone"} : Hlc{held.physicalMs, held.counter + 1, "phone"};
+    bool landed = false;
+    h.progressRepo.duringBatchWrite = [&] {
+      if (landed) return;
+      landed = true;
+      h.progressRepo.byKey[row] = {ProgressStatus::none, slipped, false};
+    };
+
+    const Json::Value reply = body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","status":"complete"})"))));
+
+    CHECK(landed);
+    CHECK_EQ(reply["progress"], parse(R"([{"nodeId":"a","prerequisitesMet":true,"status":"complete"}])"));
+    CHECK_EQ(storedMarks(h.progress, h.caller), parse(R"({"completed":["a"],"cleared":[]})"));
+    const Hlc took = h.progressRepo.byKey.at(row).at;
+    CHECK(took > slipped);
+    if (ahead) CHECK_EQ(took, (Hlc{slipped.physicalMs, 1, std::string{TreeRoom::kServerActor}}));
+    CHECK_EQ(h.bus.progressBroadcasts.back().marks.marks.at(NodeId{"a"}).at, took);
+  }
+}
+
+// A delete counts the completions its own write cleared: one another door cleared as the delete's clear was on its way
+// was not the delete's to clear, and is not counted.
+TEST(mcp_delete_node_counts_the_marks_its_own_write_cleared) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+  CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
+    {"nodeId":"b","status":"complete"}]})")).isError);
+  const std::string row = fake::FakeProgressRepository::key(TreeId{"t"}, h.caller, NodeId{"a"});
+  const Hlc held = h.progressRepo.byKey.at(row).at;
+  h.progressRepo.duringBatchWrite = [&] { h.progressRepo.byKey[row] = {ProgressStatus::none, held.successor("phone"), false}; };
+
+  CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeIds":["a","b"]})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
+  CHECK_EQ(storedMarks(h.progress, h.caller), parse(R"({"completed":[],"cleared":["a","b"]})"));
 }
 
 // A clear reaches the caller's open sessions as a mark does: one progress frame for the marks it cleared, from a
@@ -7394,8 +7560,7 @@ TEST(mcp_a_mark_stamped_ahead_carries_no_other_write_ahead) {
     CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"},
       {"id":"c","label":"C"}]})")).isError);
     const Hlc held{ahead ? h.clock.ms + 120000 : h.clock.ms - 1, 0, "phone"};
-    CHECK(h.progressRepo.setStatuses(TreeId{"t"}, h.caller, {{NodeId{"a"}, ProgressStatus::complete, false, held}},
-                                       h.clock.ms).front());
+    CHECK(h.progressRepo.setStatuses(TreeId{"t"}, h.caller, {{NodeId{"a"}, ProgressStatus::complete, false, held}}, StampedBy::replica, h.clock.ms).front().landed.has_value());
     const auto stampOf = [&](const char* node) {
       return h.progressRepo.byKey.at(fake::FakeProgressRepository::key(TreeId{"t"}, h.caller, NodeId{node})).at;
     };
@@ -7438,8 +7603,7 @@ TEST(mcp_a_readers_mark_stamped_ahead_moves_nothing_of_the_owners) {
     CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
     const UserId stranger = fake::uid("stranger");
     const Hlc held{ahead ? h.clock.ms + 300000 : h.clock.ms - 1, std::numeric_limits<std::uint32_t>::max(), "phone"};
-    CHECK(h.progressRepo.setStatuses(TreeId{"t"}, stranger, {{NodeId{"a"}, ProgressStatus::complete, false, held}},
-                                       h.clock.ms).front());
+    CHECK(h.progressRepo.setStatuses(TreeId{"t"}, stranger, {{NodeId{"a"}, ProgressStatus::complete, false, held}}, StampedBy::replica, h.clock.ms).front().landed.has_value());
 
     CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"none"}]})"),
                                  ToolCaller{stranger, ToolScope::everything()}).isError);
@@ -8418,7 +8582,7 @@ TEST(mcp_get_progress_refuses_a_tree_that_is_absent_or_private_to_another_in_get
   h.plant("t_public", uid("other"), "", {"t"});
   h.trees.byId["t_public"].visibility = Visibility::public_;
   for (const char* tree : {"t_theirs", "t_public"})
-    h.progressRepo.setStatus(TreeId{tree}, h.caller, NodeId{"to-t"}, ProgressStatus::complete, false, Hlc{5, 0, "x"}, 5);
+    h.progressRepo.setStatuses(TreeId{tree}, h.caller, {{NodeId{"to-t"}, ProgressStatus::complete, false, Hlc{5, 0, "x"}}}, StampedBy::replica, 5);
   const auto answered = [&](const char* tool, const char* tree) {
     Json::Value args(Json::objectValue);
     args["treeId"] = tree;

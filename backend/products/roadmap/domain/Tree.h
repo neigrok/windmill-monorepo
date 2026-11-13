@@ -174,6 +174,9 @@ struct ProgressMark {
   std::uint64_t markedAt = 0;  // epoch ms, server clock; 0 where the overlay keeps no times
   bool outOfOrder = false;
   bool operator==(const ProgressMark&) const = default;
+
+  // Whether this is a mark of `wanted` carrying the `word`: writing that one over it changes nothing a person sees.
+  bool carries(ProgressStatus wanted, bool word) const { return status == wanted && outOfOrder == word; }
 };
 
 // `record` is the only way in, so the id sets can never drift from the registers they project.
@@ -195,8 +198,7 @@ struct Progress {
   // nothing the caller can see; a node never marked holds `none`.
   bool holds(const NodeId& node, ProgressStatus status, bool outOfOrder) const {
     const auto held = marks.find(node);
-    if (held == marks.end()) return status == ProgressStatus::none && !outOfOrder;
-    return held->second.status == status && held->second.outOfOrder == outOfOrder;
+    return (held == marks.end() ? ProgressMark{} : held->second).carries(status, outOfOrder);
   }
   bool operator==(const Progress&) const = default;
 

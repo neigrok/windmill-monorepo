@@ -29,11 +29,12 @@ a multi-variable incantation onto the command line.
   — several agents share this machine and it takes all of their backends too.
 - **Pin the two ports: backend 8088, vite 5173.** Outside a production build
   `web/src/shell/apiBase.js` falls back to `http://localhost:8088` (and
-  `ws://localhost:8088/v1/socket`) unless `VITE_API_BASE_URL` is set, and
-  `WINDMILL_ALLOWED_ORIGINS=http://localhost:5173` is what lets the page's credentialed fetches
-  through CORS. Either one wrong and the page renders chrome and says *"Couldn't load this
+  `ws://localhost:8088/v1/socket`) unless `VITE_API_BASE_URL` is set, and the server's own origin
+  for the app — `WINDMILL_APP_URL`, `http://localhost:5173` when unset — is what lets the page's
+  credentialed fetches through CORS and what every link it hands out starts with (a magic link, a
+  tree's `url`). Either one wrong and the page renders chrome and says *"Couldn't load this
   roadmap…"*, which reads like a broken tree. A second full stack therefore needs both overridden
-  (`VITE_API_BASE_URL` at its backend, `WINDMILL_ALLOWED_ORIGINS` at its vite origin); otherwise
+  (`VITE_API_BASE_URL` at its backend, `WINDMILL_APP_URL` at its vite origin); otherwise
   give parallel agents disjoint ports for backend-only probing (curl/MCP) and keep 8088+5173 for
   whoever needs a browser.
 - A throwaway database keeps a probe's rows away from everyone else's: `createdb -h /tmp <name>`,

@@ -220,10 +220,10 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `update_nodes` | the one tool that edits or marks nodes (`applyBatchEdit`): 1–200 rows, each `nodeId` and any of `label`, `color`/`kind`, `description` or `appendDescription`, `icon`, `links` or `addLinks`, `opens`, and the caller's mark (`status` with `outOfOrder`, read by `readMark`). `appendDescription` joins onto the existing body after a blank line, the cap held against the result; `addLinks` joins links after the ones held, in the order sent (a held url, whitespace around it aside, keeps its place and takes the label sent with it; a url sent twice is refused; the 32-link cap held against the result); `""` clears an `icon`, which is how an `empty-icon` smell is fixed, and an `opens`. The tree fields land as one op — `changedPart` per row, `changedNodeIds`/`unchangedNodeIds`, `unchanged: true` when it lands nothing — each row judged against the node as the batch finds it. Marks land after it, as an import's `progress[]` does, answered in `progress` rows with `prerequisitesMet` judged against the overlay the whole call leaves; `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true`, and a mark the caller already holds answers `unchanged: true` on its row; `unchanged` beside the rows speaks for the tree batch only. When a tree op lands in the call, marks that then fail answer `progressApplied: false` and are reported as `roadmap.update_nodes.marks`; when none does — no tree field sent, or only fields the nodes hold — the marks are the call, and their refusal or failure is the call's. On a tree the caller owns, a mark on a node that opens another tree of theirs is refused (see `opens`): its row answers `refused`, naming the node and no tree, and the receipt lists it in `progressRefused` with `progressError` and `progressApplied: false`; when the marks are the call and each was refused, nothing is written, the reply is no error, and the call completes as `opens-a-tree`. A field is sent when it holds a value: a `null` `kind` or `outOfOrder` is left out, and a `null` in a field that takes none is refused. A mark is the caller's own overlay and needs the write grant on the connection and read access to the tree, so a call carrying only marks works on any tree the caller reads; a call carrying any tree field passes the owner's write gate whole, and on another account's tree is refused with no mark landed. A stale `expectedSeq` refuses the whole call, marks included; `dryRun` previews the tree batch and lands no mark, answering none, as an import's dry run answers none (it reports only `progressSkipped`, which update_nodes refuses instead) |
 | edit | `change_edges` | the one edge tool: 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, a dangling or self edge is removed by naming it in `remove`, optional `expectedSeq` and `dryRun`; a lone change logs as its own `AddEdge` or `RemoveEdge` row; a move — one edge removed and one added that keeps its source or its target, both landing — as the one `ReconnectEdge` that moves an edge (`planEdgeChanges`), which the Activity feed tells as a reroute; any other mix as one `Batch`; one seq, landing whole or not at all; a call that names no edge is told how to list the tree's edges |
 | edit | `create_node` | add a node — its hue as `color` or legend `kind`, `prerequisites[]`, `description`, `links`, `opens` all optional; answers `id` and the `kind` it wears. Each prerequisite is an edge: a create that would take the tree past 20000 edges is refused whole, in the sentence `change_edges` uses |
-| edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. The caller's own marks on the deleted nodes are cleared in the same call, before the delete lands, by the path an import's `tombstone` takes (`NodeEdits::clearMarksOn`, through `NodeEdits::landMarks`, the core every server-stamped mark takes: stamped after the mark it replaces, one batch, one progress frame to the caller's open sessions), so a progress store that fails fails the call with nothing deleted, and a revive brings no cleared mark back; anyone else's marks stay. The deletion is `NodeEdits::deleteNodes`, the path a tree's removal takes the steps that open it by; a tree whose row goes away under its room before the save (an erasure racing the call) is answered as an absent tree, its room gone with the row. `prune: true` also drops every edge touching a deleted node, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}`, `progress` the caller's marks cleared, with or without prune |
+| edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. The caller's own marks on the deleted nodes are cleared in the same call, before the delete lands, by the path an import's `tombstone` takes (`NodeEdits::clearMarksOn`, through `NodeEdits::landMarks`, the core every server-stamped mark takes: stamped after the mark it replaces by the write itself, one batch, one progress frame to the caller's open sessions), so a progress store that fails fails the call with nothing deleted, and a revive brings no cleared mark back; anyone else's marks stay. The deletion is `NodeEdits::deleteNodes`, the path a tree's removal takes the steps that open it by; a tree whose row goes away under its room before the save (an erasure racing the call) is answered as an absent tree, its room gone with the row. `prune: true` also drops every edge touching a deleted node, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}`, `progress` the completions this call's own write cleared, with or without prune |
 | edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant; optional `expectedSeq` and `dryRun`; a graft that changes nothing writes nothing and answers `unchanged: true` (see An edit that changes nothing) |
 | legend | `add_kind` (inline label+description) · `remove_kind` | the legend. A legend's order is the order its kinds were created or imported in: no tool reorders it, and a `ReorderKinds` row the log already holds still decodes, replays and shows in the Activity feed |
-| legend | `update_kind` | a kind's `label`, `description` and/or `hue` as one op under one seq (`planKindUpdate`): one command, or a `Batch` of them, so a replay lands what the call landed; each field is validated and refused as its own command is — `RenameKind`, `DescribeKind`, `RecolorKind` — a field sent as the kind holds it is left out, and a call that changes nothing writes nothing and answers `unchanged: true` with the head; a new hue repaints every node wearing the kind's old hue (`wearersOf`) and the receipt counts them in `repaintedNodes`; no `kindId` alias |
+| legend | `update_kind` | a kind's `label`, `description` and/or `hue` as one op under one seq (`planKindUpdate`): one command, or a `Batch` of them, so a replay lands what the call landed; each field is validated and refused as its own command is — `RenameKind`, `DescribeKind`, `RecolorKind` — a field sent as the kind holds it is left out, and a call that changes nothing writes nothing and answers `unchanged: true` with the head; a new hue repaints every node holding the kind's old hue (`holdersOf`): the present nodes wearing it, which the receipt counts in `repaintedNodes` (`wearersOf`), and the deleted nodes that hold it, uncounted, so one brought back later is under the kind; no `kindId` alias |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
 Every tree-scoped tool takes `treeId`. Applied structural edits return
@@ -385,8 +385,10 @@ the kind's hue moved — when the colour is an echo (`landsOver` over the node's
 `resolveHue` takes) and the node lands the kind's hue as a node filed by kind, never repainted by an
 import's re-hue; a node being created holds no colour to echo. Their write lines carry the outcomes `kind-unknown` and `kind-hue-mismatch`, never the
 kind. A node the tree holds that names neither keeps its colour. One an import brings back from a delete comes
-back with the colour someone wrote on it — a `color`, a `kind` or a repaint; a node first imported bare never had one
-written, and is judged as a new node is. A new one is
+back with the colour someone wrote on it — a `color`, a `kind` or a repaint, the repaint its kind's re-hue gave it
+while it was deleted among them, so a node first imported bare under the terracotta kind comes back under that kind
+in the hue the kind took; one first imported bare that no re-hue carried never had a colour written, and is judged
+as a new node is. A new one is
 terracotta and wears the legend's terracotta kind; where the legend has kinds and none wears terracotta, the node
 would belong to no kind, so `create_node` and `import_subgraph` refuse the whole call (`unnamedHueRefusal`, beside
 `resolveHue`): the sentence names such a node, by `nodes[i]` and id in an import, the first ten of them with a count
@@ -395,7 +397,9 @@ leaves (`resolveKinds` joins what `graftLegend` would land): a batch that adds a
 terracotta, claims its bare new nodes, one that re-hues the terracotta kind away does not, and when the batch carries
 kinds the sentence says it speaks of the legend the batch would leave and lists that one, relabels and new kinds
 included. A node the import would create is one the tree does not hold present; it has a hue of its own when the
-batch names a kind or a colour for it or a record of it holds a colour someone wrote, the reading `graftState` lands
+batch names a kind or a colour for it, when the batch's own repaint reaches it — a deleted node nobody coloured
+whose kind the batch re-hues, so one import that re-hues the terracotta kind and bare-revives such a node lands what
+the two calls land — or when a record of it holds a colour someone wrote, the reading `graftState` lands
 it by. A dry run answers the same refusal. An empty legend has no kind to name, so the node lands terracotta there. Its write line carries the outcome `kind-unnamed`, never the node or a kind.
 
 ## `opens`
@@ -626,15 +630,20 @@ and none overrides another.
   legend holds it is not stamped again, so a `get_tree` round trip
   that carries the legend back changes nothing in it. Rank is never on the wire, so a colliding
   kind keeps its place and a new kind lands after the last one, in batch order. A re-sent kind
-  with a new hue repaints every present node wearing its old hue, in the same frame and at the
-  graft's stamp, by `RecolorKind`'s rule (`wearersOf`, used by `repaintOf`), judged against the
-  legend and nodes as they stood before the batch, so two kinds can swap hues. A node the batch
-  tombstones lands what the batch says, and so does one it files by `kind`: it takes the hue that kind
-  wears after the batch, whatever it wore before. A node sent a `color` that differs from the one it
+  with a new hue repaints every node holding its old hue, present or deleted, in the same frame and
+  at the graft's stamp, by `RecolorKind`'s rule (`holdersOf`, used by `repaintOf`), judged against the
+  legend and nodes as they stood before the batch, so two kinds can swap hues. A deleted node the
+  batch leaves deleted takes the colour alone, so one brought back later is under its kind, and one
+  the batch itself brings back follows the rule a present node does. A node the batch
+  tombstones is sent neither a kind nor a colour, so it is a deleted wearer like any other and moves
+  with its kind, its frame entry carrying the tombstone and the new colour together; it was present
+  before the batch, so `repaintedNodes` counts it. A node the batch files by `kind` lands what the
+  batch says: it takes the hue that kind wears after the batch, whatever it wore before. A node sent a `color` that differs from the one it
   holds keeps that colour, while one sent the colour it holds — a `get_tree` round trip — is repainted
   like any wearer (`landsOver`, the comparison the graft lands every register by). The receipt counts
-  the nodes the repaint moved as `repaintedNodes`, present when a kind's hue changed and previewed by
-  the dry run. A batch whose only change is re-hueing one kind writes a `RecolorKind` row, as
+  the repainted nodes the tree held present before the batch as `repaintedNodes` (`Repaint::present`), a key
+  present when a kind's hue changed and previewed by the dry run; a deleted node the repaint moved is not counted,
+  brought back by the same batch or not. A batch whose only change is re-hueing one kind writes a `RecolorKind` row, as
   `update_kind` does; a batch that re-hues several kinds writes one `RecolorKind` row too, for the first of
   them in id order, so its row does not say what the batch did. The import is at most one op row — a batch that changes nothing
   writes none — and that row names only the batch's most salient change, in `headline()`'s order
@@ -681,10 +690,14 @@ and none overrides another.
   `acknowledged: true` beside `prerequisitesMet`, `get_progress` lists those ids under
   `outOfOrder`, and the `status` field of `get_tree`/`find_nodes` shows `outOfOrder: true` on the
   node. `prerequisitesMet: false` without `acknowledged` is therefore always an inversion nobody
-  acknowledged. A row whose mark equals the one the caller holds at that row's turn — as the call
-  found the overlay, after the rows before it in the same call — the same status and the same
-  `outOfOrder` word, a node never marked holding `none` (`Progress::holds`), answers `unchanged:
-  true` on its row; an import that completes a node and clears it again changed it twice, and says
+  acknowledged. A row whose mark equals the one the row held when the write reached it — after
+  the rows before it in the same call, and after any mark another door landed a moment before — the
+  same status and the same `outOfOrder` word, a node never marked holding `none`
+  (`ProgressMark::carries`), answers `unchanged: true` on its row. That is the write's own answer
+  (`ProgressWritten`, the one statement that reads the row and writes it), never a read made before
+  it, so a repeat of `complete` that restores a mark a socket has just cleared is a change. A tool's
+  mark is written as a server's (`StampedBy::server`): it always lands, just after a later stamp it
+  finds, so no row is one that lost; an import that completes a node and clears it again changed it twice, and says
   neither. Such a row is still stamped: it takes the new stamp and the server's
   receipt time, so the tree's last-marked time moves and open pages receive a progress frame,
   because `ProgressService` lands a socket replica's marks too, and a replica's newer stamp must

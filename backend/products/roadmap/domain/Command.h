@@ -95,9 +95,13 @@ struct RemoveKind { KindId id; };
 struct ReorderKinds { std::vector<KindId> order; };
 struct RecolorKind { KindId id; NodeColor hue; };
 
-// The nodes a recolor of `kind` repaints: every present node wearing the hue the legend holds for it. RecolorKind and
-// an import that re-hues a held kind repaint by this one rule.
+// The present nodes wearing the hue the legend holds for `kind`: the nodes a receipt counts as repainted.
 std::vector<NodeId> wearersOf(const LooseGraph& graph, const Legend& legend, const KindId& kind);
+
+// The nodes a recolor of `kind` repaints: its wearers, and the deleted nodes that hold its hue, so a deleted node moves
+// with its kind and one brought back is under it. RecolorKind and an import that re-hues a held kind repaint by this
+// one rule.
+std::vector<NodeId> holdersOf(const LooseGraph& graph, const Legend& legend, const KindId& kind);
 
 // Several commands that landed as ONE frame under one seq, logged whole so a replay of the op row
 // reproduces the frame and not just its first deed. Every member folds at the batch's own stamp.
@@ -173,8 +177,8 @@ struct KindUpdate {
 };
 
 // What a kind update lands: one command per field that holds another value on the kind — RenameKind, DescribeKind,
-// RecolorKind, in that order — and, when the hue changes, how many nodes it repaints. It lands nothing when every field
-// sent is the one the kind holds.
+// RecolorKind, in that order — and, when the hue changes, how many present nodes it repaints (wearersOf). It lands
+// nothing when every field sent is the one the kind holds.
 struct KindUpdatePlan {
   std::vector<Command> commands;
   std::optional<std::size_t> repaintedNodes;

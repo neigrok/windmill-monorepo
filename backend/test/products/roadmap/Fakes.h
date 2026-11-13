@@ -74,9 +74,10 @@ struct FakeProgressRepository : ProgressRepository {
     bool operator==(const Entry&) const = default;
   };
   std::map<std::string, Entry> byKey;
-  std::function<void()> duringBatchWrite;  // runs inside setStatuses, the way a slow statement holds its caller
+  std::function<void()> duringBatchWrite;  // runs as setStatuses starts, before it reads a row: another door's write
+                                           // made here is one the statement meets, and a slow one holds its caller
   bool loadsFail = false;   // load throws, the way a read Postgres refuses does
-  bool writesFail = false;  // setStatus and setStatuses throw before anything lands
+  bool writesFail = false;  // setStatuses throws before anything lands
 
   static std::string key(const TreeId& t, const UserId& u, const NodeId& n) {
     return t.str() + "\n" + u.str() + "\n" + n.str();
@@ -95,33 +96,38 @@ struct FakeProgressRepository : ProgressRepository {
     return progress;
   }
 
-  bool setStatus(const TreeId& tree, const UserId& user, const NodeId& node,
-                 ProgressStatus status, bool outOfOrder, const Hlc& at, std::uint64_t receivedAtMs) override {
-    (void)receivedAtMs;
-    if (writesFail) throw std::runtime_error("the progress store refused the write");
-    std::string k = key(tree, user, node);
-    auto it = byKey.find(k);
-    if (it != byKey.end() && !(at > it->second.at)) return false;
-    byKey[k] = Entry{status, at, outOfOrder};
-    return true;
-  }
-
-  std::vector<bool> setStatuses(const TreeId& tree, const UserId& user,
-                                 const std::vector<ProgressUpdate>& updates,
-                                 std::uint64_t receivedAtMs) override {
+  // The real store's rules: a replica's mark lands when its stamp is later, a server's always, at its own stamp or
+  // just after the one it found (by millisecond and counter, as the statement compares them).
+  std::vector<ProgressWritten> setStatuses(const TreeId& tree, const UserId& user,
+                                           const std::vector<ProgressUpdate>& updates, StampedBy stampedBy,
+                                           std::uint64_t receivedAtMs) override {
     if (writesFail) throw std::runtime_error("the progress store refused the write");
     if (duringBatchWrite) duringBatchWrite();
     auto next = byKey;
-    std::vector<bool> applied;
+    std::vector<ProgressWritten> written;
     for (const ProgressUpdate& update : updates) {
       const std::string nodeKey = key(tree, user, update.node);
       const auto current = next.find(nodeKey);
-      const bool wins = current == next.end() || update.at > current->second.at;
-      applied.push_back(wins);
-      if (wins) next[nodeKey] = Entry{update.status, update.at, update.outOfOrder};
+      ProgressWritten did;
+      did.held = current == next.end()
+                     ? ProgressMark{}
+                     : ProgressMark{current->second.status, current->second.at, 0, current->second.outOfOrder};
+      Hlc at = update.at;
+      bool lands = current == next.end() || update.at > current->second.at;
+      if (stampedBy == StampedBy::server && current != next.end()) {
+        lands = true;
+        if (std::pair(update.at.physicalMs, update.at.counter) <=
+            std::pair(current->second.at.physicalMs, current->second.at.counter))
+          at = current->second.at.successor(update.at.actor);
+      }
+      if (lands) {
+        next[nodeKey] = Entry{update.status, at, update.outOfOrder};
+        did.landed = ProgressMark{update.status, at, receivedAtMs, update.outOfOrder};
+      }
+      written.push_back(did);
     }
     byKey = std::move(next);
-    return applied;
+    return written;
   }
 
   std::map<TreeId, ProgressDigest> overlaysFor(const UserId& user) override {
