@@ -561,6 +561,7 @@ export class SyncSession {
     if (frame.t === 'ping') return;
     // Only the subscribe reply ('delta') may re-baseline coverage.
     if (frame.t === 'subgraph') return frame.intent === 'delta' ? this.receiveState(frame) : this.receiveLive(frame);
+    if (frame.t === 'subtree') return this.receiveSubtree(frame);
     if (frame.t === 'subgraphAck') return this.receiveAck(frame);
     if (frame.t === 'skew') return this.receiveSkew(frame);
     if (frame.t === 'presence') return void this.presenceHandler?.(frame);
@@ -626,12 +627,18 @@ export class SyncSession {
     this.emitStatus();
   }
 
+  // A sequenced frame is taken only as the next seq: an older one was seen already, and a later one is a gap that a fresh
+  // graft heals.
+  takesNextSeq(frame) {
+    if (this.rebaselining?.has('structure') || this.discardPending) return false;
+    if (typeof frame.seq !== 'number' || frame.seq <= this.lastSeq) return false;
+    if (frame.seq > this.lastSeq + 1) { this.forceReconnect(); return false; }
+    return true;
+  }
+
   // A live broadcast: dense-seq gated, and never touches coverage.
   receiveLive(frame) {
-    if (this.rebaselining?.has('structure') || this.discardPending) return;
-    if (typeof frame.seq !== 'number') return;
-    if (frame.seq <= this.lastSeq) return;                                 // duplicate / already seen
-    if (frame.seq > this.lastSeq + 1) { this.forceReconnect(); return; }   // gap → heal via a fresh graft
+    if (!this.takesNextSeq(frame)) return;
     const pointed = this.pointedIn(frame);
     let frontier;
     try {
@@ -653,6 +660,13 @@ export class SyncSession {
     if (!mine) this.emitProjection('structure');
     this.releaseMarks(pointed);
     this.emitStatus();
+  }
+
+  // A subtree created under one of this tree's steps takes the next seq of the tree's stream, and changes nothing else here.
+  receiveSubtree(frame) {
+    if (!this.takesNextSeq(frame)) return;
+    this.lastSeq = frame.seq;
+    this.scheduleSave();
   }
 
   // The steps a frame names that open a tree before it joins.

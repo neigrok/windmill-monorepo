@@ -88,6 +88,10 @@ a legend kind or writes a kind's hue, label, description or rank. Every other fr
 none: one that writes only a node's icon, order, status or `opens`, removes a kind, or sets
 the title or the guide.
 
+A subtree created under one of the tree's steps takes the next seq of the tree's stream, as
+`subtree {treeId, seq, step, subtree: {id, depth}}`. The browser takes that seq under the same rule as a
+live frame (an older seq was seen, a later one is a gap a fresh subscribe heals) and changes nothing else.
+
 `reject {treeId, frameId?, code, reason}` reports a refusal. Clients branch on `code`, preserving
 unacknowledged state. A rejection naming a frame can strand the same delta on every retry; it must
 remain visible as a durability problem. Server limits and rejection codes live in

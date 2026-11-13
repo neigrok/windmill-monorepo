@@ -1954,3 +1954,21 @@ test('a flush sends each tree register in a frame of its own after the steps, so
   assert.deepEqual({ label: session.lattice.toTreeData().nodes[0].label, title: session.lattice.title, guide: session.lattice.guide, saved: saves.at(-1).frame.guide },
     { label: 'Renamed offline', title: 'Sail offline', guide: '', saved: undefined });
 });
+
+test('a subtree created under a step takes its seq, so the next live frame joins without a reconnect', (t) => {
+  const { session } = connectedSession(t);
+  const socket = session.ws;
+  socket.message({ t: 'subtree', treeId: 'tree', seq: 2, step: 'root', subtree: { id: 't_child', depth: 1 } });
+  socket.message({ t: 'subgraph', intent: 'live', treeId: 'tree', seq: 3, nodes: [{ id: 'peer', createdAt: '999:0:peer' }], edges: [], kinds: [] });
+  assert.deepEqual({ open: session.ws === socket && socket.readyState === TestSocket.OPEN, lastSeq: session.lastSeq,
+    nodes: snapshot(session).map(({ id }) => id).sort() }, { open: true, lastSeq: 3, nodes: ['peer', 'root'] });
+});
+
+test('a subtree frame seen already is ignored, and one past a gap reconnects to heal it', (t) => {
+  const { session } = connectedSession(t);
+  const socket = session.ws;
+  socket.message({ t: 'subtree', treeId: 'tree', seq: 1, step: 'root', subtree: { id: 't_child', depth: 1 } });
+  assert.deepEqual({ open: socket.readyState, lastSeq: session.lastSeq }, { open: TestSocket.OPEN, lastSeq: 1 });
+  socket.message({ t: 'subtree', treeId: 'tree', seq: 3, step: 'root', subtree: { id: 't_child', depth: 1 } });
+  assert.deepEqual({ open: socket.readyState, lastSeq: session.lastSeq }, { open: 3, lastSeq: 1 });
+});
