@@ -4683,6 +4683,101 @@ TEST(mcp_an_import_whose_new_nodes_name_neither_kind_nor_color_is_refused_naming
     {"id":"mast","color":"sky","kind":"read"}])"));
 }
 
+// A batch that re-hues the tree's one terracotta kind leaves a legend no kind of which wears terracotta, so its bare
+// new node is refused, as a dry run too, with nothing written; the sentence speaks of the legend the batch would leave.
+// The mirror lands: a held kind re-hued to terracotta claims the bare new node of its batch.
+TEST(mcp_an_import_that_rehues_a_held_kind_is_judged_with_that_kind_as_the_batch_leaves_it) {
+  Harness away;
+  away.trees.byId["t"].legend = Legend({{KindId{"base"}, NodeColor::terracotta, "Base"}}, Hlc{1, 0, "seed"}).exportState();
+  const StoredTree before = away.trees.byId["t"];
+  const std::string refusal(
+      "import_subgraph: nodes[0] \"b\" names neither \"kind\" nor \"color\", and no kind of the legend this batch would "
+      "leave wears terracotta, the hue a new node takes without them — name one of that legend's kinds: \"base\" (Base)");
+
+  const ToolResult refused =
+      away.call("import_subgraph", parse(R"({"kinds":[{"id":"base","hue":"olive"}],"nodes":[{"id":"b","label":"B"}]})"));
+  const ToolResult rehearsed = away.call(
+      "import_subgraph", parse(R"({"dryRun":true,"kinds":[{"id":"base","hue":"olive"}],"nodes":[{"id":"b","label":"B"}]})"));
+
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused), refusal);
+  CHECK_EQ(message(rehearsed), refusal);
+  CHECK(away.trees.byId["t"] == before);
+  CHECK(away.ops.byTree["t"].empty());
+
+  Harness to;
+  to.trees.byId["t"].legend = Legend({{KindId{"base"}, NodeColor::olive, "Base"}}, Hlc{1, 0, "seed"}).exportState();
+  CHECK_EQ(body(to.call("import_subgraph",
+                        parse(R"({"kinds":[{"id":"base","hue":"terracotta"}],"nodes":[{"id":"b","label":"B"}]})"))),
+           parse(R"({"nodes":1,"edges":0,"kinds":1,"nodeCollisions":[],"kindCollisions":["base"],"newNodes":1,"newKinds":0,
+    "repaintedNodes":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,"tombstoned":{"nodes":0,"edges":0},
+    "graphApplied":true,"progressApplied":true,"imported":true,"seq":1,"diagnosticsClean":true,
+    "introducedDiagnostics":[]})"));
+  CHECK_EQ(body(to.call("get_tree", parse(R"({"fields":["id","color","kind"],"includeGuides":false})")))["tree"],
+           parse(R"({"id":"t","title":"Test Roadmap","url":"https://app.example/#/app/t","guide":{"text":"","yours":true},
+    "kinds":[{"id":"base","hue":"terracotta","label":"Base"}],"nodes":[{"id":"b","color":"terracotta","kind":"base"}]})"));
+}
+
+// The rule is judged on the legend the batch leaves, not the one before it. A batch that adds a terracotta kind lands
+// its bare new node under that kind. A batch that re-hues the terracotta kind away, relabels it and adds a kind is
+// refused in a sentence that lists the legend it would leave: the relabel, the new kind, in that legend's order.
+TEST(mcp_an_import_is_judged_on_the_legend_its_batch_leaves_and_its_refusal_lists_that_legend) {
+  Harness adds;
+  adds.trees.byId["t"].legend =
+      Legend({{KindId{"read"}, NodeColor::sky, "Reading"}, {KindId{"ship"}, NodeColor::plum, "Shipping"}}, Hlc{1, 0, "seed"})
+          .exportState();
+  CHECK_EQ(body(adds.call("import_subgraph", parse(R"({"kinds":[{"id":"build","hue":"terracotta","label":"Build"}],
+    "nodes":[{"id":"b","label":"B"}]})"))),
+           parse(R"({"nodes":1,"edges":0,"kinds":1,"nodeCollisions":[],"kindCollisions":[],"newNodes":1,"newKinds":1,
+    "prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,"tombstoned":{"nodes":0,"edges":0},"graphApplied":true,
+    "progressApplied":true,"imported":true,"seq":1,"diagnosticsClean":true,"introducedDiagnostics":[]})"));
+  CHECK_EQ(body(adds.call("get_tree", parse(R"({"fields":["id","color","kind"],"includeGuides":false})")))["tree"]["nodes"],
+           parse(R"([{"id":"b","color":"terracotta","kind":"build"}])"));
+
+  Harness changes;
+  changes.trees.byId["t"].legend =
+      Legend({{KindId{"base"}, NodeColor::terracotta, "Base"}, {KindId{"read"}, NodeColor::sky, "Reading"}}, Hlc{1, 0, "seed"})
+          .exportState();
+  const StoredTree before = changes.trees.byId["t"];
+  CHECK_EQ(message(changes.call("import_subgraph", parse(R"({"kinds":[{"id":"base","hue":"olive","label":"Groundwork"},
+    {"id":"new","hue":"plum","label":"New"}],"nodes":[{"id":"b","label":"B"}]})"))),
+           std::string("import_subgraph: nodes[0] \"b\" names neither \"kind\" nor \"color\", and no kind of the legend "
+                       "this batch would leave wears terracotta, the hue a new node takes without them — name one of "
+                       "that legend's kinds: \"base\" (Groundwork), \"read\" (Reading), \"new\" (New)"));
+  CHECK(changes.trees.byId["t"] == before);
+}
+
+// A record the tree holds a colour for without ever having created its node, as a frame that set only a colour
+// leaves, comes into being under that colour when an import names it bare: the rule reads the node as the graft
+// lands it, so it is not refused.
+TEST(mcp_an_import_creates_a_node_the_tree_holds_a_colour_for_under_that_colour) {
+  Harness h;
+  h.trees.byId["t"].legend =
+      Legend({{KindId{"read"}, NodeColor::sky, "Reading"}, {KindId{"ship"}, NodeColor::plum, "Shipping"}}, Hlc{1, 0, "seed"})
+          .exportState();
+  h.trees.byId["t"].state.nodes = {NodeStateEntry{.id = NodeId{"ghost"}, .color = NodeColor::sky, .colorAt = Hlc{5, 0, "client"}}};
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"ghost","label":"Ghost"}]})")).isError);
+
+  CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","label","color","kind"],"includeGuides":false})")))["tree"]["nodes"],
+           parse(R"([{"id":"ghost","label":"Ghost","color":"sky","kind":"read"}])"));
+}
+
+// The refusal names the first ten such nodes and counts the rest, so it stays one short sentence whatever the batch.
+TEST(mcp_an_import_refusal_names_ten_of_its_new_nodes_that_name_no_hue_and_counts_the_rest) {
+  Harness h;
+  h.trees.byId["t"].legend = Legend({{KindId{"read"}, NodeColor::sky, "Reading"}}, Hlc{1, 0, "seed"}).exportState();
+  Json::Value batch(Json::objectValue);
+  for (int i = 0; i < 12; ++i) batch["nodes"].append(node(("n" + std::to_string(i)).c_str(), "N"));
+
+  CHECK_EQ(message(h.call("import_subgraph", batch)),
+           std::string("import_subgraph: nodes[0] \"n0\", nodes[1] \"n1\", nodes[2] \"n2\", nodes[3] \"n3\", nodes[4] "
+                       "\"n4\", nodes[5] \"n5\", nodes[6] \"n6\", nodes[7] \"n7\", nodes[8] \"n8\", nodes[9] \"n9\" and 2 "
+                       "more name neither \"kind\" nor \"color\", and no kind of this tree wears terracotta, the hue a new "
+                       "node takes without them — name one of the legend's kinds for each: \"read\" (Reading)"));
+  CHECK(h.trees.byId["t"].state == GraphState{});
+}
+
 // A node an import brings back from a delete comes back with the hue it had, so re-sent bare it is not refused.
 TEST(mcp_an_import_that_revives_a_node_naming_neither_kind_nor_color_is_not_refused) {
   Harness h;

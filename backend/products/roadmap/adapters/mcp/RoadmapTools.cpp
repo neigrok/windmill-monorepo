@@ -623,7 +623,8 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     }
     if (setsHue && !payload.isMember("kind") && !payload.isMember("color")) {
       const std::string named = sentId.empty() ? "the node" : "node \"" + sentId + "\"";
-      if (const std::optional<KindRefusal> refusal = unnamedHueRefusal(room.kinds(), {named})) return kindRefused(*refusal);
+      if (const std::optional<KindRefusal> refusal = unnamedHueRefusal(room.kinds(), {named}, JudgedLegend::held))
+        return kindRefused(*refusal);
     }
 
     // Unreachable by construction: prepareEdit has already refused everything the decode can.

@@ -688,9 +688,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     nodeFields["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
     nodeFields["color"] = enumStr("Optional hue. A new node with neither `color` nor `kind` is terracotta and wears "
                                   "the terracotta kind of the legend this batch leaves; where that legend has kinds "
-                                  "and none is terracotta, the whole batch is refused, naming every such node and "
-                                  "listing the legend's kinds. A node the tree already holds, or held before a "
-                                  "delete, keeps its colour.", kHues);
+                                  "and none is terracotta, the whole batch is refused, naming such nodes, the first "
+                                  "ten of them, and listing that legend's kinds. A node the tree already holds, or "
+                                  "held before a delete, keeps its colour.", kHues);
     nodeFields["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears in the legend "
                                    "this batch leaves, so one batch can add a kind and file nodes under it. Sent "
                                    "with `color`, the two must agree, but for a `color` the node already holds — "

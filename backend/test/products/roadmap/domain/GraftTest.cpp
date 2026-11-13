@@ -617,20 +617,24 @@ TEST(graft_legend_is_empty_when_the_document_carries_no_kinds) {
   CHECK(graftLegend(Legend{}, Graft{}, at(1)) == LegendState{});
 }
 
-// A graft's new node that carries neither a kind nor its colour register refuses the whole graft where the legend the
-// batch leaves has kinds and none wears terracotta, naming every such node. A node the graph holds, present or
-// deleted, keeps its colour and is not one of them; nor is a node that carries a colour or names a kind. A batch that
-// adds a terracotta kind leaves a legend such a node falls under, so it lands, as it does on an empty legend.
-TEST(resolve_kinds_refuses_new_nodes_that_name_no_hue_where_the_legend_the_batch_leaves_has_no_terracotta_kind) {
+// A node a graft would create with no hue of its own refuses the whole graft where the legend the batch leaves has
+// kinds and none wears terracotta, naming every such node. A node the graph holds present keeps its colour and is not
+// one of them; nor is one a delete left, or one the graph holds a colour for without ever having created it, since
+// each comes back with that colour; nor one that carries a colour or names a kind. A record that holds no colour
+// anyone wrote gives its node none.
+TEST(resolve_kinds_refuses_the_nodes_a_graft_would_create_with_no_hue_where_no_kind_wears_terracotta) {
   const Legend legend({{KindId{"read"}, NodeColor::sky, "Reading"}, {KindId{"ship"}, NodeColor::plum, "Shipping"}}, at(1));
   LooseGraph graph;
   graph.createNode(nid("held"), "Held", "", NodeColor::sky, at(2));
   graph.createNode(nid("gone"), "Gone", "", NodeColor::plum, at(2));
   graph.deleteNode(nid("gone"), at(3));
+  graph.setColor(nid("dyed-ghost"), NodeColor::sky, at(4));
+  graph.setLabel(nid("named-ghost"), "Named", at(4));
   Graft graft;
   graft.document.nodes = {spec("hull", {}), spec("held", {}), spec("gone", {}), spec("mast", {}), spec("dyed", {}),
-                          spec("filed", {})};
-  for (const char* bare : {"hull", "held", "gone", "mast", "filed"}) graft.omittedNodeRegisters[nid(bare)] = omittedAllBut({});
+                          spec("dyed-ghost", {}), spec("named-ghost", {}), spec("filed", {})};
+  for (const char* bare : {"hull", "held", "gone", "mast", "dyed-ghost", "named-ghost", "filed"})
+    graft.omittedNodeRegisters[nid(bare)] = omittedAllBut({});
   graft.omittedNodeRegisters[nid("dyed")] = omittedAllBut({NodeRegister::color});
   graft.document.nodes[4].color = NodeColor::gold;
   graft.nodeKinds = {{nid("filed"), KindId{"ship"}}};
@@ -639,17 +643,50 @@ TEST(resolve_kinds_refuses_new_nodes_that_name_no_hue_where_the_legend_the_batch
   REQUIRE(std::holds_alternative<KindRefusal>(refused));
   CHECK((std::get<KindRefusal>(refused) ==
          KindRefusal{KindRefusal::Reason::unnamedHue,
-                     "nodes[0] \"hull\", nodes[3] \"mast\" name neither \"kind\" nor \"color\", and no kind of this tree "
-                     "wears terracotta, the hue a new node takes without them — name one of the legend's kinds for "
-                     "each: \"read\" (Reading), \"ship\" (Shipping)"}));
+                     "nodes[0] \"hull\", nodes[3] \"mast\", nodes[6] \"named-ghost\" name neither \"kind\" nor "
+                     "\"color\", and no kind of this tree wears terracotta, the hue a new node takes without them — "
+                     "name one of the legend's kinds for each: \"read\" (Reading), \"ship\" (Shipping)"}));
 
-  Graft withBuild = graft;
-  withBuild.document.kinds = {{KindId{"build"}, NodeColor::terracotta, "Build"}};
-  CHECK(std::holds_alternative<Graft>(resolveKinds(graph, legend, withBuild)));
   Graft unfiled = graft;
   unfiled.nodeKinds.clear();
   unfiled.document.nodes.pop_back();
   CHECK(std::holds_alternative<Graft>(resolveKinds(graph, Legend{}, unfiled)));
+}
+
+// The rule is judged on the legend the batch leaves, and its sentence lists that legend: a kind the batch re-hues away
+// from terracotta no longer claims a bare new node, one it re-hues to terracotta or adds wearing it does, and a kind
+// it relabels or adds is listed as the batch leaves it, in the order it leaves it.
+TEST(resolve_kinds_judges_a_new_node_with_no_hue_by_the_legend_the_batch_leaves_and_lists_that_legend) {
+  const Legend claimed({{KindId{"base"}, NodeColor::terracotta, "Base"}, {KindId{"read"}, NodeColor::sky, "Reading"}}, at(1));
+  const Legend unclaimed({{KindId{"base"}, NodeColor::olive, "Base"}, {KindId{"read"}, NodeColor::sky, "Reading"}}, at(1));
+  const auto grafting = [](std::vector<Kind> kinds, std::set<KindRegister> omitted) {
+    Graft graft;
+    graft.document.nodes = {spec("b", {})};
+    graft.omittedNodeRegisters[nid("b")] = omittedAllBut({});
+    for (const Kind& kind : kinds) graft.omittedKindRegisters[kind.id] = omitted;
+    graft.document.kinds = std::move(kinds);
+    return graft;
+  };
+
+  const std::variant<Graft, KindRefusal> rehuedAway = resolveKinds(
+      LooseGraph{}, claimed,
+      grafting({{KindId{"base"}, NodeColor::olive, "Groundwork"}, {KindId{"new"}, NodeColor::plum, "New"}},
+               {KindRegister::description}));
+  REQUIRE(std::holds_alternative<KindRefusal>(rehuedAway));
+  CHECK((std::get<KindRefusal>(rehuedAway) ==
+         KindRefusal{KindRefusal::Reason::unnamedHue,
+                     "nodes[0] \"b\" names neither \"kind\" nor \"color\", and no kind of the legend this batch would "
+                     "leave wears terracotta, the hue a new node takes without them — name one of that legend's kinds: "
+                     "\"base\" (Groundwork), \"read\" (Reading), \"new\" (New)"}));
+  CHECK(std::holds_alternative<KindRefusal>(resolveKinds(
+      LooseGraph{}, claimed, grafting({{KindId{"base"}, NodeColor::olive}}, {KindRegister::label, KindRegister::description}))));
+
+  CHECK(std::holds_alternative<Graft>(resolveKinds(
+      LooseGraph{}, unclaimed,
+      grafting({{KindId{"base"}, NodeColor::terracotta}}, {KindRegister::label, KindRegister::description}))));
+  CHECK(std::holds_alternative<Graft>(resolveKinds(
+      LooseGraph{}, unclaimed, grafting({{KindId{"build"}, NodeColor::terracotta, "Build"}}, {KindRegister::description}))));
+  CHECK(std::holds_alternative<KindRefusal>(resolveKinds(LooseGraph{}, unclaimed, grafting({}, {}))));
 }
 
 // One batch can add a kind and file nodes under it: a node's kind lands as the hue it wears in the legend
