@@ -3,30 +3,45 @@
 #include "products/roadmap/domain/Command.h"
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <optional>
 #include <set>
 
 namespace wm {
 
+namespace {
+// Past every stamp a legend holds: what a graft would land in one is read by joining it at this stamp.
+const Hlc kPastEveryStamp{std::numeric_limits<std::uint64_t>::max(), 0, "graft"};
+}
+
 std::variant<Graft, KindRefusal> resolveKinds(const LooseGraph& graph, const Legend& legend, Graft graft) {
-  if (graft.nodeKinds.empty()) return graft;
-  std::vector<Kind> landed = legend.kinds();
-  for (const Kind& kind : graft.document.kinds) {
-    const auto held = std::find_if(landed.begin(), landed.end(), [&](const Kind& k) { return k.id == kind.id; });
-    if (held == landed.end()) landed.push_back(kind);
-    else held->hue = kind.hue;
+  Legend left = legend;
+  left.join(graftLegend(legend, graft, kPastEveryStamp));
+  const std::vector<Kind> landed = left.kinds();
+
+  std::vector<std::string> unnamed;
+  for (std::size_t i = 0; i < graft.document.nodes.size(); ++i) {
+    const NodeId& id = graft.document.nodes[i].id;
+    const std::optional<NodeStateEntry> held = graph.exportNode(id);
+    const bool created = !graph.hasNode(id);
+    const bool hasAHue =
+        graft.carries(id, NodeRegister::color) || graft.nodeKinds.count(id) || (held && held->colorAt.isSet());
+    if (created && !hasAHue) unnamed.push_back("nodes[" + std::to_string(i) + "] \"" + id.str() + "\"");
   }
+  const JudgedLegend judged = graft.document.kinds.empty() ? JudgedLegend::held : JudgedLegend::leftByTheBatch;
+  if (std::optional<KindRefusal> refusal = unnamedHueRefusal(landed, unnamed, judged)) return *refusal;
+
   for (std::size_t i = 0; i < graft.document.nodes.size(); ++i) {
     NodeSpec& node = graft.document.nodes[i];
     const auto named = graft.nodeKinds.find(node.id);
     if (named == graft.nodeKinds.end()) continue;
-    const auto omitted = graft.omittedNodeRegisters.find(node.id);
-    const bool colorSent = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
+    const bool colorSent = graft.carries(node.id, NodeRegister::color);
     const auto hue = resolveHue(landed, HueChoice{colorSent ? std::optional(node.color) : std::nullopt, named->second},
                                 graph.exportNode(node.id), "nodes[" + std::to_string(i) + "].");
     if (const auto* refusal = std::get_if<KindRefusal>(&hue)) return *refusal;
     node.color = *std::get<std::optional<NodeColor>>(hue);
+    const auto omitted = graft.omittedNodeRegisters.find(node.id);
     if (omitted != graft.omittedNodeRegisters.end()) omitted->second.erase(NodeRegister::color);
   }
   return graft;
@@ -82,10 +97,9 @@ Repaint repaintOf(const LooseGraph& graph, const Legend& legend, const Graft& gr
   // A node the batch files by kind lands the hue that kind wears after the batch, whatever it wore.
   for (const auto& [node, kind] : graft.nodeKinds) leftToTheBatch.insert(node);
   for (const NodeSpec& node : graft.document.nodes) {
-    const auto omitted = graft.omittedNodeRegisters.find(node.id);
-    const bool carried = omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(NodeRegister::color);
     // A colour the batch sends wins when it lands: one sent as held is an echo.
-    if (carried && landsOver(graph.exportNode(node.id), &NodeStateEntry::color, node.color)) leftToTheBatch.insert(node.id);
+    if (graft.carries(node.id, NodeRegister::color) && landsOver(graph.exportNode(node.id), &NodeStateEntry::color, node.color))
+      leftToTheBatch.insert(node.id);
   }
   Repaint repaint;
   for (const Kind& kind : graft.document.kinds) {
@@ -140,10 +154,7 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
   std::set<Edge> added;
   for (const NodeSpec& node : graft.document.nodes) {
     const std::optional<Entry> held = graph.exportNode(node.id);  // present, or what a delete left
-    const auto omitted = graft.omittedNodeRegisters.find(node.id);
-    const auto carried = [&](NodeRegister reg) {
-      return omitted == graft.omittedNodeRegisters.end() || !omitted->second.count(reg);
-    };
+    const auto carried = [&](NodeRegister reg) { return graft.carries(node.id, reg); };
     Entry entry;
     entry.id = node.id;
     if (!graph.hasNode(node.id)) entry.createdAt = at;  // new or revived; a present node keeps its creation

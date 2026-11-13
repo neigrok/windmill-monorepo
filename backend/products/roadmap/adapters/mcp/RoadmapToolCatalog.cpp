@@ -187,10 +187,14 @@ Json::Value legendKind() {
 }
 
 // The two facts the wire annotations need that the grant level does not carry (ToolHost.h derives
-// the rest). A bulk edit overwrites or removes many entries in one call and is declared destructive
-// under a write grant. An idempotent write is one a resend with the same arguments leaves unchanged;
-// create_tree and create_node mint an id, so a resend plants a second one.
-const std::set<std::string> kBulkEdits = {"import_subgraph", "update_nodes", "change_edges"};
+// the rest). A destructive write removes wholesale under a write grant: import_subgraph tombstones
+// nodes and, under "replace", drops the edges a node's list does not name. update_nodes and
+// change_edges are the everyday edits and are not destructive: the op log keeps what they overwrite,
+// a removed edge is re-added by naming it, and a client that stops to confirm each of them teaches
+// people to click through the warning the delete-level tools need. An idempotent write is one a
+// resend with the same arguments leaves unchanged; create_tree and create_node mint an id, so a
+// resend plants a second one.
+const std::set<std::string> kDestructiveWrites = {"import_subgraph"};
 const std::set<std::string> kIdempotentWrites = {
     "delete_tree", "update_tree", "delete_node", "add_kind", "remove_kind", "update_kind", "import_subgraph",
     "change_edges"};
@@ -213,7 +217,7 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
   descriptor["description"] = description;
   descriptor["inputSchema"] = schema;
   ToolDeclaration declaration{std::move(descriptor), kRoadmapProduct, access};
-  declaration.bulkEdit = kBulkEdits.count(name) > 0;
+  declaration.destructiveWrite = kDestructiveWrites.count(name) > 0;
   declaration.idempotent = kIdempotentWrites.count(name) > 0;
   return declaration;
 }
@@ -379,9 +383,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "Create a new empty roadmap that you own, with the legend you send in `kinds` or, without it, "
         "the default legend (Build/Learn/Milestone). Optionally name it with `title`. Returns the new "
         "treeId — pass it to the other tools to start authoring — its `url`, where it opens in the app, "
-        "and `kinds`, the legend it was born with, in order, each as {id, hue, label}. A node later "
-        "written with neither `color` nor `kind` is terracotta, so a legend with no terracotta kind "
-        "leaves such a node under no kind.",
+        "and `kinds`, the legend it was born with, in order, each as {id, hue, label}. A node created "
+        "later with neither `color` nor `kind` is terracotta and wears the legend's terracotta kind; in a "
+        "legend with no terracotta kind such a node is refused, so name a `kind` on every node you add.",
         p, {}));
   }
   {
@@ -585,7 +589,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["treeId"] = treeHandle();
     p["label"] = cappedStr("The node's display label.", kMaxNodeLabelLength);
     p["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
-    p["color"] = enumStr("Optional hue; a node with neither `color` nor `kind` is terracotta.", kHues);
+    p["color"] = enumStr("Optional hue. A node with neither `color` nor `kind` is terracotta and wears the legend's "
+                         "terracotta kind; where the legend has kinds and none is terracotta, the call is refused "
+                         "and lists the legend's kinds to name.", kHues);
     p["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears. Sent with `color`, "
                           "the two must agree.", kMaxIdLength);
     p["prerequisites"] = strArray("Optional ids of existing nodes that unlock this one — one edge per id.",
@@ -684,7 +690,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                                  "`prerequisiteMode`; a new one is added.", kMaxIdLength);
     nodeFields["label"] = cappedStr("The node's display label.", kMaxNodeLabelLength);
     nodeFields["icon"] = cappedStr("Optional icon name/emoji.", kMaxIconLength);
-    nodeFields["color"] = enumStr("Optional hue; a new node with neither `color` nor `kind` is terracotta.", kHues);
+    nodeFields["color"] = enumStr("Optional hue. A new node with neither `color` nor `kind` is terracotta and wears "
+                                  "the terracotta kind of the legend this batch leaves; where that legend has kinds "
+                                  "and none is terracotta, the whole batch is refused, naming such nodes, the first "
+                                  "ten of them, and listing that legend's kinds. A node the tree holds keeps its "
+                                  "colour. One brought back from a delete comes back with the colour it was given "
+                                  "by a `color`, a `kind` or a repaint; if it never was given one it counts as new "
+                                  "here and must name a `kind` or `color`.", kHues);
     nodeFields["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears in the legend "
                                    "this batch leaves, so one batch can add a kind and file nodes under it. Sent "
                                    "with `color`, the two must agree, but for a `color` the node already holds — "
@@ -768,7 +780,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "added; the tree's title is not touched. Every other field you leave off a node or kind keeps "
         "the value the tree holds (a new id gets the default), and every field you send replaces it — "
         "an explicit \"\" or [] clears it. A node deleted earlier and re-sent comes back with the fields "
-        "it had, but for the tree it opened: it opens the tree this batch names for it, or none. A kind "
+        "it had, but for the tree it opened: it opens the tree this batch names for it, or none; and one "
+        "that was never given a colour names its `kind` or `color` like a new node (see nodes[].color). A kind "
         "you re-send with a new hue repaints the nodes wearing its old hue, judged "
         "against the legend before the batch (so two kinds can swap hues); a node you file by `kind` takes "
         "the hue that kind wears after the batch, a node you send a `color` that differs from the one it "

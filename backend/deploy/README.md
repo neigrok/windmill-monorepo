@@ -136,7 +136,9 @@ must be public.
 - **Rollback floor**: the oldest image that is safe to run is the first one built from a commit
   containing `backend · purge the retired gym and journal cutover copies`. After the purge, use only
   that image or its descendants: earlier image schemas recreate retired cutover storage and their
-  binaries depend on it. Restoring a pre-engine backup is unsupported. A restore from an engine-era
+  binaries depend on it. For roadmap trees the floor is `0255cb907`: `tree_nodes` holds no `pos_x`,
+  `pos_y` or `pos_hlc`, an earlier image writes them on every tree save, and no image's schema puts
+  them back. Restoring a pre-engine backup is unsupported. A restore from an engine-era
   backup must apply the current schema before starting writers and regenerate `sync_meta.epoch`
   as [the engine restore contract](../../docs/foundation/engine.md) requires.
 - **Migrations**: `db/schema.sql` is idempotent and re-applied on every deploy by the `migrate`
