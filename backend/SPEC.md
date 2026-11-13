@@ -328,7 +328,13 @@ committed before its connection dropped lands once. Only a room closing — `evi
   `TransitiveReduction`.
 - A `DescribeKind` without a description sets nothing: it replays as nothing and the feed skips it,
   alone or inside a `Batch` whose other members it tells.
-- `RecolorKind` is atomic: it swaps a kind's hue and repaints every node wearing the old hue.
+- `RecolorKind` is atomic: it swaps a kind's hue and repaints every node holding the old hue
+  (`holdersOf`) — the present nodes wearing it (`wearersOf`, the ones a receipt counts) and the
+  deleted nodes whose colour register holds it, stamped or not, so a deleted node moves with its
+  kind and one brought back is under it. A record never created is not repainted. The frame carries
+  a deleted node's colour as that one register, with no life stamp: a replica moves the colour and
+  the node stays deleted. An import's re-hue repaints by the same rule (`repaintOf`), and so does
+  the web client's own gesture (`materialize.js`), whose frame the server joins as sent.
 - `validate(graph, legend, command)` runs at the edge. A graph command is refused only for a
   malformed or over-cap field, for a `CreateNode` that would take the tree past its node ceiling or,
   by the edges its prerequisites add, its edge ceiling (`growthWithin`, the sentence every door

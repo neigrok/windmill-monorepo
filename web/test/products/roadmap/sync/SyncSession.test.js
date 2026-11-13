@@ -51,6 +51,27 @@ test('a receipt is session-bound and a global Undo consumes its authority', () =
   assert.equal(session.lattice.toTreeData().nodes[0].color, 'sky');
 });
 
+test('Undo of a kind recolour gives the deleted nodes it repainted their colour back, and Redo repaints them again', () => {
+  const session = sessionWith();
+  session.dispatch({ kind: 'AddKind', id: 'k', hue: 'sky' });
+  session.dispatch({ kind: 'CreateNode', id: 'kept', label: 'Kept', color: 'sky' });
+  session.dispatch({ kind: 'CreateNode', id: 'gone', label: 'Gone', color: 'sky' });
+  session.dispatch({ kind: 'DeleteNode', id: 'gone' });
+  const colours = () => ({
+    kind: session.lattice.orderedKinds().find((kind) => kind.id === 'k').hue,
+    kept: session.lattice.nodes.get('kept').color.v,
+    gone: session.lattice.nodes.get('gone').color.v,
+    goneIsPresent: session.lattice.hasNode('gone'),
+  });
+
+  session.dispatch({ kind: 'RecolorKind', id: 'k', hue: 'plum' });
+  assert.deepEqual(colours(), { kind: 'plum', kept: 'plum', gone: 'plum', goneIsPresent: false });
+  session.undo();
+  assert.deepEqual(colours(), { kind: 'sky', kept: 'sky', gone: 'sky', goneIsPresent: false });
+  session.redo();
+  assert.deepEqual(colours(), { kind: 'plum', kept: 'plum', gone: 'plum', goneIsPresent: false });
+});
+
 test('revert restamps only the captured fields and preserves an unrelated later edit', () => {
   const session = sessionWith();
   const receipt = session.dispatch({ kind: 'SetNodeColor', id: 'root', color: 'sky' });

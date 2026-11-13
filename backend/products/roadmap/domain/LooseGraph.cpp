@@ -211,6 +211,14 @@ std::vector<NodeId> LooseGraph::nodesWithColor(NodeColor color) const {
   return ids;
 }
 
+std::vector<NodeId> LooseGraph::deletedNodesWithColor(NodeColor color) const {
+  std::vector<NodeId> ids;
+  for (const auto& [id, record] : nodes_) {
+    if (record.life.addedAt.isSet() && !record.life.present() && record.color.value == color) ids.push_back(id);
+  }
+  return ids;
+}
+
 bool LooseGraph::hueInUse(NodeColor color) const {
   for (const auto& [id, record] : nodes_) {
     if (record.life.present() && record.color.value == color) return true;

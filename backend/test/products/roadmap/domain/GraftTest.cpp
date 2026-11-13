@@ -186,6 +186,49 @@ TEST(graft_frame_repaints_the_nodes_a_rehued_kind_wore) {
   CHECK(g.exportNode(nid("d"))->color == NodeColor::sky);
 }
 
+// A graft that re-hues a held kind repaints the deleted nodes that held its old hue as it does the present ones, in the
+// same frame: one the batch leaves deleted takes the colour and stays deleted, one it brings back with no colour or
+// with the colour it held comes back in the new hue, and one it sends another colour or files by kind is the batch's
+// word. `present` counts the repainted nodes the graph held present before the batch.
+TEST(graft_frame_repaints_the_deleted_nodes_that_held_a_rehued_kinds_hue) {
+  LooseGraph g;
+  for (const char* id : {"a", "b", "c", "d", "e", "f"}) g.createNode(nid(id), id, "", NodeColor::sky, at(1));
+  for (const char* id : {"b", "c", "d", "e", "f"}) g.deleteNode(nid(id), at(2));
+  const Legend legend({{KindId{"apps"}, NodeColor::sky, "Apps"}, {KindId{"ops"}, NodeColor::gold, "Ops"}}, at(1));
+  Graft graft;
+  graft.document.kinds = {{KindId{"apps"}, NodeColor::plum}};
+  graft.omittedKindRegisters[KindId{"apps"}] = {KindRegister::label, KindRegister::description};
+  graft.document.nodes = {spec("c", {}), spec("d", {}), spec("e", {}), spec("f", {})};
+  graft.document.nodes[1].color = NodeColor::sky;
+  graft.document.nodes[2].color = NodeColor::olive;
+  graft.omittedNodeRegisters[nid("c")] = omittedAllBut({});
+  graft.omittedNodeRegisters[nid("d")] = omittedAllBut({NodeRegister::color});
+  graft.omittedNodeRegisters[nid("e")] = omittedAllBut({NodeRegister::color});
+  graft.omittedNodeRegisters[nid("f")] = omittedAllBut({});
+  graft.nodeKinds = {{nid("f"), KindId{"ops"}}};
+  for (const char* id : {"c", "d", "e", "f"}) graft.omittedPrerequisites.insert(nid(id));
+
+  const std::variant<Graft, KindRefusal> filed = resolveKinds(g, legend, graft);
+  REQUIRE(std::holds_alternative<Graft>(filed));
+  const Repaint repaint = repaintOf(g, legend, std::get<Graft>(filed));
+  CHECK((repaint.nodes == std::map<NodeId, NodeColor>{{nid("a"), NodeColor::plum}, {nid("b"), NodeColor::plum},
+                                                      {nid("c"), NodeColor::plum}, {nid("d"), NodeColor::plum}}));
+  CHECK_EQ(repaint.present, 1u);
+
+  const GraftFrame frame = graftFrame(g, legend, std::get<Graft>(filed), at(3));
+  CHECK((frame.graph.nodes ==
+         std::vector<NodeStateEntry>{
+             {.id = nid("c"), .createdAt = at(3), .color = NodeColor::plum, .colorAt = at(3)},
+             {.id = nid("d"), .createdAt = at(3), .color = NodeColor::plum, .colorAt = at(3)},
+             {.id = nid("e"), .createdAt = at(3), .color = NodeColor::olive, .colorAt = at(3)},
+             {.id = nid("f"), .createdAt = at(3), .color = NodeColor::gold, .colorAt = at(3)},
+             {.id = nid("a"), .color = NodeColor::plum, .colorAt = at(3)},
+             {.id = nid("b"), .color = NodeColor::plum, .colorAt = at(3)}}));
+  g.join(frame.graph);
+  CHECK_FALSE(g.hasNode(nid("b")));
+  CHECK(g.exportNode(nid("b"))->color == NodeColor::plum);
+}
+
 // A node the batch files by kind is the batch's word, even when the hue that kind wears after the batch is the one the
 // node holds: a swap leaves it on that hue under the other kind and repaints only the other wearers.
 TEST(graft_frame_leaves_a_node_filed_by_kind_to_the_batch_beside_a_swap) {

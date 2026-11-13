@@ -95,12 +95,14 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
 LegendState graftLegend(const Legend& legend, const Graft& graft, const Hlc& at);
 
 // What a graft's re-hued kinds repaint, judged against the legend and graph as they stood before the batch by
-// RecolorKind's rule (wearersOf), so a swap swaps: each node wearing a re-hued kind's old hue takes its new hue, but
-// for a node the batch tombstones, files by kind (`nodeKinds`), or sends a colour that differs from the one it holds.
-// `rehued` lists the held kinds whose hue the document changes.
+// RecolorKind's rule (holdersOf), so a swap swaps: each node holding a re-hued kind's old hue, present or deleted,
+// takes its new hue, but for a node the batch tombstones, files by kind (`nodeKinds`), or sends a colour that differs
+// from the one it holds. `rehued` lists the held kinds whose hue the document changes, and `present` counts the
+// repainted nodes the graph held present before the batch: the ones a receipt counts.
 struct Repaint {
   std::vector<KindId> rehued;
   std::map<NodeId, NodeColor> nodes;
+  std::size_t present = 0;
 };
 
 Repaint repaintOf(const LooseGraph& graph, const Legend& legend, const Graft& graft);

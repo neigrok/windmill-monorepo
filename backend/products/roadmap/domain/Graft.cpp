@@ -106,8 +106,11 @@ Repaint repaintOf(const LooseGraph& graph, const Legend& legend, const Graft& gr
     const std::optional<NodeColor> held = legend.hueOf(kind.id);
     if (!held || *held == kind.hue) continue;
     repaint.rehued.push_back(kind.id);
-    for (const NodeId& node : wearersOf(graph, legend, kind.id))
-      if (!leftToTheBatch.count(node)) repaint.nodes[node] = kind.hue;
+    for (const NodeId& node : holdersOf(graph, legend, kind.id)) {
+      if (leftToTheBatch.count(node)) continue;
+      repaint.nodes[node] = kind.hue;
+      if (graph.hasNode(node)) ++repaint.present;
+    }
   }
   return repaint;
 }

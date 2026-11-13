@@ -303,6 +303,30 @@ TEST(room_recoloring_a_kind_repaints_nodes) {
   CHECK_EQ(snapshot.kinds[0].hue, NodeColor::brick);
 }
 
+// The frame a kind's re-hue broadcasts carries a deleted wearer's new colour as that one register, with no life stamp:
+// a replica that joins it moves the colour and the node stays deleted, here and there.
+TEST(room_recoloring_a_kind_broadcasts_a_deleted_wearers_colour_and_no_life_stamp) {
+  FakeBus bus;
+  TreeRoom room = makeRoom(bus);
+  apply(room, AddKind{KindId{"k"}, NodeColor::sky}, 1);
+  apply(room, CreateNode{nid("a"), "A", "i", NodeColor::sky}, 2);
+  apply(room, CreateNode{nid("b"), "B", "i", NodeColor::sky}, 3);
+  apply(room, DeleteNode{nid("b")}, 4);
+
+  apply(room, RecolorKind{KindId{"k"}, NodeColor::plum}, 5);
+
+  const Subgraph& frame = bus.subgraphBroadcasts.back().subgraph;
+  REQUIRE_EQ(frame.legend.kinds.size(), 1u);
+  const Hlc stamp = frame.legend.kinds[0].hueAt;
+  CHECK((frame.graph.nodes ==
+         std::vector<NodeStateEntry>{{.id = nid("a"), .color = NodeColor::plum, .colorAt = stamp},
+                                     {.id = nid("b"), .color = NodeColor::plum, .colorAt = stamp}}));
+  CHECK_FALSE(room.hasNode(nid("b")));
+  LooseGraph replica{room.exportState()};
+  CHECK_FALSE(replica.hasNode(nid("b")));
+  CHECK(replica.exportNode(nid("b"))->color == NodeColor::plum);
+}
+
 TEST(room_tracks_exactly_the_dirty_entries_and_cleans_after_save) {
   FakeBus bus;
   TreeRoom room = makeRoom(bus);

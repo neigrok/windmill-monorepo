@@ -308,6 +308,17 @@ export class TreeLattice {
     return colors;
   }
 
+  // The ids of deleted nodes whose colour register holds `color`, written or not: a kind's recolour repaints them with
+  // the present ones, so a node brought back is under its kind (the server's deletedNodesWithColor). A record never
+  // created is not one.
+  deletedNodesWithColor(color) {
+    const ids = [];
+    for (const [id, record] of this.nodes) {
+      if (hlcIsSet(record.life.addedAt) && !lifePresent(record.life) && record.color.v === color) ids.push(id);
+    }
+    return ids;
+  }
+
   // { id, label, children } per tombstoned node that still has present children; a fresh life.add
   // re-connects the subtree.
   maskedWork() {

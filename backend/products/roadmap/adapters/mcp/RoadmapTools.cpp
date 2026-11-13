@@ -1287,9 +1287,9 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     tombstoned["nodes"] = static_cast<Json::UInt64>(footprint.tombstonedNodes.size());
     tombstoned["edges"] = static_cast<Json::UInt64>(footprint.tombstonedEdges.size());
     out["tombstoned"] = tombstoned;
-    // A held kind the batch re-hues carries the nodes wearing its old hue; the receipt counts them.
+    // A held kind the batch re-hues carries the nodes holding its old hue; the receipt counts the present ones.
     if (const Repaint repaint = room.repaintOf(graft); !repaint.rehued.empty())
-      out["repaintedNodes"] = static_cast<Json::UInt64>(repaint.nodes.size());
+      out["repaintedNodes"] = static_cast<Json::UInt64>(repaint.present);
     if (dryRun) {
       out["dryRun"] = true;
       if (room.graftLandsNothing(graft, clock.nowMs())) out["unchanged"] = true;

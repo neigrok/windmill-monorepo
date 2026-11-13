@@ -176,7 +176,10 @@ export function materialize(gesture, lattice, clock) {
       const target = data.kinds.find((k) => k.id === g.id);
       const oldHue = target?.hue;
       kinds.push(kind(g.id, at, { hue: g.hue }));
-      if (oldHue) for (const n of data.nodes) if (n.color === oldHue) nodes.push(node(n.id, at, { color: g.hue }));
+      if (!oldHue) break;
+      // Every node holding the old hue moves with its kind, the deleted ones too, as the server's RecolorKind does.
+      for (const n of data.nodes) if (n.color === oldHue) nodes.push(node(n.id, at, { color: g.hue }));
+      for (const id of lattice.deletedNodesWithColor(oldHue)) nodes.push(node(id, at, { color: g.hue }));
       break;
     }
     default: break;
