@@ -10,16 +10,19 @@
 
 namespace wm {
 
-void WsPresenceBus::subscribe(const TreeId& tree, const drogon::WebSocketConnectionPtr& conn, const UserId& user) {
+WsPresenceBus::FirstFrames WsPresenceBus::subscribe(const TreeId& tree, const drogon::WebSocketConnectionPtr& conn,
+                                                    const UserId& user) {
+  trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
   std::lock_guard<std::mutex> lock(mutex_);
   subscribers_[tree.str()].insert(conn);
-  connUser_[conn] = user.str();
+  connections_[conn] = Subscriber{user.str(), loop};
+  return FirstFrames{PlaceInOrder{loop, conn}, PlaceInOrder{loop, conn}};
 }
 
 void WsPresenceBus::drop(const drogon::WebSocketConnectionPtr& conn) {
   std::lock_guard<std::mutex> lock(mutex_);
   for (auto& [tree, conns] : subscribers_) conns.erase(conn);
-  connUser_.erase(conn);
+  connections_.erase(conn);
 }
 
 void WsPresenceBus::setReadGate(ReadGate gate) { gate_ = std::move(gate); }
@@ -31,22 +34,25 @@ std::set<drogon::WebSocketConnectionPtr> WsPresenceBus::subscribersOf(const Tree
   return it->second;
 }
 
-std::vector<std::pair<drogon::WebSocketConnectionPtr, Reach>> WsPresenceBus::admitted(const TreeId& tree) {
+std::vector<WsPresenceBus::Admitted> WsPresenceBus::admitted(const TreeId& tree) {
   // The gate is asked with no lock held: it reads the tree's access row, and holding this mutex
   // across that would put the whole bus behind it.
-  std::vector<std::pair<drogon::WebSocketConnectionPtr, Reach>> admitted;
+  std::vector<Admitted> admitted;
   std::vector<drogon::WebSocketConnectionPtr> denied;
   for (const auto& conn : subscribersOf(tree)) {
     const Reach reach = gate_ ? gate_(tree, conn) : Reach::reader;
     if (reach == Reach::none) denied.push_back(conn);
-    else admitted.emplace_back(conn, reach);
+    else admitted.push_back({conn, reach, {}, nullptr});
   }
-  if (!denied.empty()) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = subscribers_.find(tree.str());
-    // Dropped from THIS tree only; connUser_ stays until the connection closes.
-    if (it != subscribers_.end())
-      for (const auto& conn : denied) it->second.erase(conn);
+  std::lock_guard<std::mutex> lock(mutex_);
+  // Dropped from THIS tree only; what the connection's subscription remembered stays until it closes.
+  if (auto it = subscribers_.find(tree.str()); it != subscribers_.end())
+    for (const auto& conn : denied) it->second.erase(conn);
+  for (Admitted& one : admitted) {
+    const auto remembered = connections_.find(one.conn);
+    if (remembered == connections_.end()) continue;  // closed since the gate was asked
+    one.user = remembered->second.user;
+    one.loop = remembered->second.loop;
   }
   return admitted;
 }
@@ -78,17 +84,17 @@ void WsPresenceBus::broadcastSubgraph(const TreeId& tree, Seq seq, const Subgrap
     // A broadcast is a live delta whatever intent the frame arrived with: echoing a client's
     // 'flush' intent would make every subscriber treat it as a re-baselining graft.
     frame["intent"] = "live";
-    return dump(frame);
+    return std::make_shared<const std::string>(dump(frame));
   };
   // Each form is serialized once, and only when a subscriber receives it. A reader's frame goes out
   // even with nothing left in it: its seq is the next one that reader waits for.
-  std::optional<std::string> whole;
-  std::optional<std::string> readers;
-  for (const auto& [conn, reach] : admitted(tree)) {
-    if (!conn->connected()) continue;
-    if (reach == Reach::writer) {
+  std::shared_ptr<const std::string> whole;
+  std::shared_ptr<const std::string> readers;
+  for (const Admitted& one : admitted(tree)) {
+    if (!one.conn->connected()) continue;
+    if (one.reach == Reach::writer) {
       if (!whole) whole = live(subgraph);
-      conn->send(*whole);
+      sendInOrder(one.loop, one.conn, whole);
       continue;
     }
     if (!readers) {
@@ -96,7 +102,7 @@ void WsPresenceBus::broadcastSubgraph(const TreeId& tree, Seq seq, const Subgrap
       view.graph = readerView(std::move(view.graph));
       readers = live(view);
     }
-    conn->send(*readers);
+    sendInOrder(one.loop, one.conn, readers);
   }
 }
 
@@ -108,21 +114,12 @@ void WsPresenceBus::broadcastProgress(const TreeId& tree, const UserId& user, co
   Json::Value frame = toJson(marks);
   frame["t"] = "progress";
   frame["treeId"] = tree.str();
-  const std::string text = dump(frame);
+  const auto text = std::make_shared<const std::string>(dump(frame));
 
   // The same gate as an op broadcast: a mark echoed to this account's other tabs must not reach
   // a tab whose read was revoked while it sat open.
-  std::vector<drogon::WebSocketConnectionPtr> targets;
-  {
-    const std::vector<std::pair<drogon::WebSocketConnectionPtr, Reach>> readers = admitted(tree);
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (const auto& [conn, reach] : readers) {
-      auto owner = connUser_.find(conn);
-      if (owner != connUser_.end() && owner->second == user.str()) targets.push_back(conn);
-    }
-  }
-  for (const auto& conn : targets)
-    if (conn->connected()) conn->send(text);
+  for (const Admitted& one : admitted(tree))
+    if (one.user == user.str() && one.conn->connected()) sendInOrder(one.loop, one.conn, text);
 }
 
 }
