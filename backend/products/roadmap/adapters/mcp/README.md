@@ -51,7 +51,7 @@ Product-only hosts retain local names for in-process agents. Canonical descripti
 instructions use the owning product's tool names; schema literals and call payloads are never
 rewritten.
 
-`create_node`, `tidy`, `add_kind` and `remove_kind` reuse the `commandFromJson` codec: their
+`create_node`, `add_kind` and `remove_kind` reuse the `commandFromJson` codec: their
 argument names are the command payload keys, save for `remove_kind`'s kind handle, which the tool
 layer normalizes (`kindId` → the codec's `id`) before the decode. `commandFromJson` answers a bare
 yes/no, so arguments are validated in the tool layer. `update_nodes`, `update_kind` and
@@ -215,17 +215,15 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | read | `get_tree` | title + `url` (see `url`) + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + `guides` on the first page (see `guides`) + nodes (label, icon, color, `kind`, description, links, `opens`, `url`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
 | read | `get_diagnostics` | cycles / dangling / self-edges / smells, each one line with the `count` of nodes it covers and the first ten as `nodes` (one per kind some node has: `label-too-long`, `empty-icon`, `high-in-degree`; one `unclaimed-hue` line per hue no legend kind wears, with the `hue`; or one node-less `empty-legend` line for a tree whose legend holds no kind), so the list is bounded whatever the tree's size; on a tree the caller owns also `treeLoops` and `danglingPointers` (see `opens`) |
-| read | `get_health` | tidiness metrics + 0–100 score (needs a valid DAG); `crossBranch` skips edges touching a `crossBranchExempt` kind and reports them as `crossBranchExempt` |
-| read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose mark carried `outOfOrder: true`, from an `update_nodes` row or an import's `progress` row |
+| read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose mark carried `outOfOrder: true`, from an `update_nodes` row or an import's `progress` row; every list holds only nodes the tree holds (`Progress::restrictedTo`), so a mark on a node someone deleted stays stored, is not answered, and shows again when the node comes back; a tree the caller cannot read answers none |
 | read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
 | edit | `update_nodes` | the one tool that edits or marks nodes (`applyBatchEdit`): 1–200 rows, each `nodeId` and any of `label`, `color`/`kind`, `description` or `appendDescription`, `icon`, `links` or `addLinks`, `opens`, and the caller's mark (`status` with `outOfOrder`, read by `readMark`). `appendDescription` joins onto the existing body after a blank line, the cap held against the result; `addLinks` joins links after the ones held, in the order sent (a held url, whitespace around it aside, keeps its place and takes the label sent with it; a url sent twice is refused; the 32-link cap held against the result); `""` clears an `icon`, which is how an `empty-icon` smell is fixed, and an `opens`. The tree fields land as one op — `changedPart` per row, `changedNodeIds`/`unchangedNodeIds`, `unchanged: true` when it lands nothing — each row judged against the node as the batch finds it. Marks land after it, as an import's `progress[]` does, answered in `progress` rows with `prerequisitesMet` judged against the overlay the whole call leaves; `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true`, and a mark the caller already holds answers `unchanged: true` on its row; `unchanged` beside the rows speaks for the tree batch only. When a tree op lands in the call, marks that then fail answer `progressApplied: false` and are reported as `roadmap.update_nodes.marks`; when none does — no tree field sent, or only fields the nodes hold — the marks are the call, and their refusal or failure is the call's. On a tree the caller owns, a mark on a node that opens another tree of theirs is refused (see `opens`): its row answers `refused`, naming the node and no tree, and the receipt lists it in `progressRefused` with `progressError` and `progressApplied: false`; when the marks are the call and each was refused, nothing is written, the reply is no error, and the call completes as `opens-a-tree`. A field is sent when it holds a value: a `null` `kind` or `outOfOrder` is left out, and a `null` in a field that takes none is refused. A mark is the caller's own overlay and needs the write grant on the connection and read access to the tree, so a call carrying only marks works on any tree the caller reads; a call carrying any tree field passes the owner's write gate whole, and on another account's tree is refused with no mark landed. A stale `expectedSeq` refuses the whole call, marks included; `dryRun` previews the tree batch and lands no mark, answering none, as an import's dry run answers none (it reports only `progressSkipped`, which update_nodes refuses instead) |
-| edit | `change_edges` | the one edge tool: 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, optional `expectedSeq` and `dryRun`; a lone change logs as its own `AddEdge` or `RemoveEdge` row; a move — one edge removed and one added that keeps its source or its target, both landing — as the one `ReconnectEdge` that moves an edge (`planEdgeChanges`), which the Activity feed tells as a reroute; any other mix as one `Batch`; one seq, landing whole or not at all; a call that names no edge is told how to list the tree's edges |
+| edit | `change_edges` | the one edge tool: 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, a dangling or self edge is removed by naming it in `remove`, optional `expectedSeq` and `dryRun`; a lone change logs as its own `AddEdge` or `RemoveEdge` row; a move — one edge removed and one added that keeps its source or its target, both landing — as the one `ReconnectEdge` that moves an edge (`planEdgeChanges`), which the Activity feed tells as a reroute; any other mix as one `Batch`; one seq, landing whole or not at all; a call that names no edge is told how to list the tree's edges |
 | edit | `create_node` | add a node — its hue as `color` or legend `kind`, `prerequisites[]`, `description`, `links`, `opens` all optional; answers `id` and the `kind` it wears |
-| edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. The caller's own marks on the deleted nodes are cleared in the same call, before the delete lands, by the path an import's `tombstone` and `prune` take (`clearMarksOn`, through `landMarks`, the core every server-stamped mark takes: stamped after the mark it replaces, one batch, one progress frame to the caller's open sessions), so a progress store that fails fails the call with nothing deleted, and a revive brings no cleared mark back; anyone else's marks stay. `prune: true` also drops every edge touching a deleted node, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}`, `progress` the caller's marks cleared, with or without prune |
-| edit | `tidy` · `prune` | transitive reduction / GC dangling edges + orphan progress |
+| edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. The caller's own marks on the deleted nodes are cleared in the same call, before the delete lands, by the path an import's `tombstone` takes (`clearMarksOn`, through `landMarks`, the core every server-stamped mark takes: stamped after the mark it replaces, one batch, one progress frame to the caller's open sessions), so a progress store that fails fails the call with nothing deleted, and a revive brings no cleared mark back; anyone else's marks stay. `prune: true` also drops every edge touching a deleted node, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}`, `progress` the caller's marks cleared, with or without prune |
 | edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant; optional `expectedSeq` and `dryRun`; a graft that changes nothing writes nothing and answers `unchanged: true` (see An edit that changes nothing) |
-| legend | `add_kind` (inline label+description+crossBranchExempt) · `remove_kind` | the legend. A kind's `crossBranchExempt` is set when it is created — `add_kind`, `create_tree` — and changed on an existing kind only by an import's `kinds`. A legend's order is the order its kinds were created or imported in: no tool reorders it, and a `ReorderKinds` row the log already holds still decodes, replays and shows in the Activity feed |
-| legend | `update_kind` | a kind's `label`, `description` and/or `hue` as one op under one seq (`planKindUpdate`): one command, or a `Batch` of them, so a replay lands what the call landed; each field is validated and refused as its own command is — `RenameKind`, `DescribeKind`, `RecolorKind` — a field sent as the kind holds it is left out, and a call that changes nothing writes nothing and answers `unchanged: true` with the head; a new hue repaints every node wearing the kind's old hue (`wearersOf`) and the receipt counts them in `repaintedNodes`; no `crossBranchExempt` and no `kindId` alias |
+| legend | `add_kind` (inline label+description) · `remove_kind` | the legend. A legend's order is the order its kinds were created or imported in: no tool reorders it, and a `ReorderKinds` row the log already holds still decodes, replays and shows in the Activity feed |
+| legend | `update_kind` | a kind's `label`, `description` and/or `hue` as one op under one seq (`planKindUpdate`): one command, or a `Batch` of them, so a replay lands what the call landed; each field is validated and refused as its own command is — `RenameKind`, `DescribeKind`, `RecolorKind` — a field sent as the kind holds it is left out, and a call that changes nothing writes nothing and answers `unchanged: true` with the head; a new hue repaints every node wearing the kind's old hue (`wearersOf`) and the receipt counts them in `repaintedNodes`; no `kindId` alias |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
 Every tree-scoped tool takes `treeId`. Applied structural edits return
@@ -257,7 +255,7 @@ product can declare a tool without its annotations:
   `Gym · Log set`. The composite preserves that title while publishing the canonical prefixed name.
 - `annotations.readOnlyHint` — true exactly for `read`-level tools.
 - `annotations.destructiveHint` — true for a `delete`-level tool and for the writes that
-  overwrite or remove in bulk (`update_nodes`, `change_edges`, `import_subgraph`, `prune`, `tidy` — `kBulkEdits` beside the
+  overwrite or remove in bulk (`update_nodes`, `change_edges`, `import_subgraph` — `kBulkEdits` beside the
   catalog), unless the declaration says `proposal`: `propose_routine_removal` sits at
   `gym:delete` and mints a card the lifter applies, so it is declared non-destructive.
 - `annotations.idempotentHint` — true for every read and for the writes a resend leaves unchanged
@@ -447,8 +445,8 @@ A node may point at another tree: `opens` holds that tree's id.
   an import's `progress[]` take only the nodes that open a tree, which the room hands to a caller who
   can write it and to nobody else (`TreeRoom::pointersFor`), so no mark copies the tree out. All
   five read and write the repositories after letting the strand go, so no other read of the tree
-  waits on those statements. The import's clear of marks on removed nodes, `prune` and
-  `delete_node` read and write the caller's marks while they hold it, and judge no pointer: a step
+  waits on those statements. The import's clear of marks on removed nodes and `delete_node` read
+  and write the caller's marks while they hold it, and judge no pointer: a step
   that opens a tree goes with its mark as any other node does. `list_trees`
   makes no such read: it already holds every tree of the caller's. Every write door saves before it
   answers, so the stored rows are the live ones unless a save failed.
@@ -462,7 +460,7 @@ A node may point at another tree: `opens` holds that tree's id.
   trees is read. `danglingPointers` holds one `{node, treeId}` per node whose pointer is not valid
   — the tree was removed, is someone else's, or the text names none — with the pointer as it is
   stored; this door refuses to set such a pointer, and the socket and `PUT` do not. Neither makes
-  a tree unclean: `diagnosticsClean`, the gate of `get_health` and `TreeDiagnostics::clean()` stay
+  a tree unclean: `diagnosticsClean` and `TreeDiagnostics::clean()` stay
   a statement about the graph. Both are repaired by re-pointing or clearing the node's `opens`.
   A reader who cannot write the tree is answered the graph's diagnostics alone, in the bytes a
   tree without pointers answers, and nothing is read for them.
@@ -543,7 +541,7 @@ and none overrides another.
   `roadmap.tree.guides`, door `mcp`.
 - **A tend** is answered no `guides` and reads no tree above (`ScopedToolHost.cpp`).
 
-## Edges and health
+## Edges
 
 - **`get_tree {includeEdges: true}`** answers a top-level `edges: [{from, to}]` of every live edge
   in the tree — the same whole list on every page, independent of node paging, so ask for it once.
@@ -552,13 +550,7 @@ and none overrides another.
   of a cut list, whatever its node count.
 - **Branches derive from colour.** `TrunkTree` elects each node's trunk parent (same-hue parents
   win) and a node's branch is the run of same-hue trunk parents above it, so an edge joining two
-  hues is `crossBranch` in `get_health`, 60% of the score. A legend kind marked
-  `crossBranchExempt` (set by `add_kind`, `create_tree` or an import's `kinds`, read through `kindFields`) takes every
-  edge touching one of its nodes out of that count; `get_health` reports those as
-  `crossBranchExempt` beside `crossBranch`, and they weigh nothing: the score's fractions are over
-  `edgeCount − crossBranchExempt`, while `edgeCount` stays every live edge. The flag is a kind register
-  like `label` and `description` — its own LWW stamp, carried on the lattice, the document codec
-  and `tree_kinds` — and `import_subgraph` round-trips it on `kinds[]`.
+  hues is a cross-branch edge, which the Activity feed marks `· cross-branch`.
 
 ## Bulk
 
@@ -589,8 +581,8 @@ and none overrides another.
   by id**: an incoming id already present is reported in
   `nodeCollisions`/`kindCollisions`; a new id is added. A re-sent node or kind changes only in
   the registers the batch sends: a node's `label`, `icon`, `color`, `order`, `seedStatus`,
-  `description`, `links` and `opens`, and a kind's `label`, `description` and
-  `crossBranchExempt`, left out, keep the value the tree holds, because the graft stamps an
+  `description`, `links` and `opens`, and a kind's `label` and `description`, left out, keep the
+  value the tree holds, because the graft stamps an
   omitted register unset (`Graft::omittedNodeRegisters` and `graftState`,
   `Graft::omittedKindRegisters` and `graftLegend`) and no stored stamp loses to that. A node the
   tree holds keeps its creation stamp, so it keeps its place among its siblings, and a delete
@@ -604,8 +596,8 @@ and none overrides another.
   sent as the node already holds it, like a prerequisite edge the tree already
   holds, is not stamped again. A new id's omitted register lands as its default. A re-sent kind
   follows the same rule: a kind the legend holds keeps its creation, so a remove stamped before the
-  import that arrives after it still removes it, and a hue, label, description or
-  `crossBranchExempt` sent as the legend holds it is not stamped again, so a `get_tree` round trip
+  import that arrives after it still removes it, and a hue, label or description sent as the
+  legend holds it is not stamped again, so a `get_tree` round trip
   that carries the legend back changes nothing in it. Rank is never on the wire, so a colliding
   kind keeps its place and a new kind lands after the last one, in batch order. A re-sent kind
   with a new hue repaints every present node wearing its old hue, in the same frame and at the
@@ -637,7 +629,7 @@ and none overrides another.
   refused before the tree is read, in `CompositeToolHost`'s own sentence — and deletes nodes in
   that same frame and seq: the node and every present edge touching it in either direction,
   counted back as `tombstoned: {nodes, edges}`. The caller's own progress on them is cleared after
-  the graft, the way `prune` clears an orphan's. A tombstone id
+  the graft, as `delete_node` clears the caller's. A tombstone id
   that does not exist, or that is also in `nodes[]`, or that a batch node names as a prerequisite,
   refuses the whole call naming every offender before anything is applied. Everything lands at one
   stamp minted from the room clock, so a removal beats the edge's `addedAt` and a later re-add
@@ -655,7 +647,7 @@ and none overrides another.
   batch, so a subtree completed out of dependency order still reports correctly. The room strand
   covers node validation, the prerequisites read and the stamps; the commit and the broadcast follow
   once it is released, as on the socket's progress lane. A completion on a node deleted between the
-  two stays as an orphan row until `prune` clears it. An `update_nodes` row naming an unknown node
+  two stays stored, and `get_progress` does not answer it while the node is gone. An `update_nodes` row naming an unknown node
   refuses the call before any overlay mutation; an import skips such a row and lists it in
   `progressSkipped`. A completion meant to land before its prerequisites carries `outOfOrder: true`
   (with `status: complete` only): the word is stored on the row beside the status, under the same stamp,
@@ -673,8 +665,6 @@ and none overrides another.
   land for every replica to converge. A row reports the mark that was asked for: when two
   calls race on a node, the mark with the later stamp is the one stored and echoed, whichever
   call's row was answered last.
-- **`prune`** drops dangling/self edges in one op and clears the caller's progress rows for nodes
-  no longer in the tree.
 - **`find_nodes`** searches without pulling the whole tree. `color` and `kind` are one filter (a
   node's color *is* its kind); every set filter must match (AND). Matches come back best first —
   exact id, id prefix, label hit, id substring, description-only hit. Matching and ranking live in

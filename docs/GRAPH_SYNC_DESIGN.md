@@ -79,7 +79,7 @@ The server broadcasts admitted writes with `intent: live` and `seq`. A persisted
 tracks seen frame IDs, and the op log enforces `(tree_id, op_id)` uniqueness. The op log contains
 one coarse headline per frame, not the full envelope. A frame leaves a deed only when it creates or
 deletes a node, writes a node's label, color, description or links, adds or removes an edge, creates
-a legend kind or writes a kind's hue, label, description, exemption or rank. Every other frame leaves
+a legend kind or writes a kind's hue, label, description or rank. Every other frame leaves
 none: one that writes only a node's icon, order, position, status or `opens`, removes a kind, or sets
 the title or the guide.
 

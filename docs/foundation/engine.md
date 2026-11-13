@@ -2652,7 +2652,7 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 | `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `visibility` lww **server** ∈ {private, unlisted, public}, `opens` at {unlisted, public} (D-4); `visibilitySetBy` lww server; `forkedFrom` const server | — |
 | `node` | tree/T | derived ≤128 chars, fallback `step` | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color`, `ord` (D-25), `pos` ({x, y} or null), `status`, `description` ≤16 000 chars, `links` (`maxItems` 32 of {url ≤2048 chars, label ≤200 chars}) | 10 000 |
 | `edge` | tree/T | keyed `[from, to]` (`ref<node>` each) | yes, keep | — | 20 000 |
-| `kind` | tree/T | derived ≤128 chars, fallback `kind`; genesis `build`, `learn`, `milestone` | revivable, keep | lww: `hue`, `label` ≤24 chars, `description` ≤80 chars, `crossBranchExempt`, `ord` (D-25) | 6 |
+| `kind` | tree/T | derived ≤128 chars, fallback `kind`; genesis `build`, `learn`, `milestone` | revivable, keep | lww: `hue`, `label` ≤24 chars, `description` ≤80 chars, `ord` (D-25) | 6 |
 | `progress` | self/overlay/T | keyed (`ref<node>` id) | none | `mark` lww `{status: complete\|none, outOfOrder: bool}` | — |
 
 **Gestures:**

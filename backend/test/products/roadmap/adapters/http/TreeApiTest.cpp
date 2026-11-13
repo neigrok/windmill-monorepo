@@ -1309,6 +1309,24 @@ TEST(put_to_an_absent_id_adds_its_steps_now_and_a_put_into_a_standing_tree_stays
   CHECK_EQ(mast->createdAt, genesis);
 }
 
+// A kind has no cross-branch flag: a document that still sends one, as a bool or as anything else, lands as one that
+// does not, and no read answers it.
+TEST(put_takes_a_kind_that_still_sends_a_cross_branch_flag_and_no_read_answers_one) {
+  Harness h;
+  h.signIn("s-me");
+  Json::Value sent = document("Flagged", "hull");
+  sent["kinds"] = parse(R"([{"id":"drill","hue":"gold","label":"Drill","description":"","crossBranchExempt":true},
+    {"id":"build","hue":"sky","label":"Build","description":"","crossBranchExempt":"yes"}])");
+  const Json::Value kinds = parse(R"([{"id":"drill","hue":"gold","label":"Drill","description":""},
+    {"id":"build","hue":"sky","label":"Build","description":""}])");
+
+  drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_00000000000000f1", sent);
+
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(response)["data"]["kinds"], kinds);
+  CHECK_EQ(bodyOf(sendGetTree(h.api, "s-me", "t_00000000000000f1"))["data"]["kinds"], kinds);
+}
+
 TEST(put_by_the_owner_overwrites_the_document_and_keeps_the_owner) {
   Harness h;
   UserId me = h.signIn("s-me");
@@ -1411,8 +1429,8 @@ TEST(put_over_the_edge_ceiling_is_413_and_creates_nothing) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k413RequestEntityTooLarge);
   CHECK_EQ(bodyOf(response)["error"].asString(),
-           std::string("this tree would hold 20005 edges, max 20000 — call tidy to drop the edges "
-                       "a longer path already implies"));
+           std::string("this tree would hold 20005 edges, max 20000 — remove edges with change_edges before "
+                       "adding more"));
   CHECK_EQ(h.trees->byId.count("t_0000000000000b17"), std::size_t{0});
 }
 

@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 25,
+  "schemaVersion" : 26,
   "steps" : 
   [
     {
@@ -857,31 +857,6 @@
           {
             "text" : 
             {
-              "avgInDegree" : 1.0,
-              "crossBranch" : 1,
-              "crossBranchExempt" : 0,
-              "edgeCount" : 5,
-              "nodeCount" : 5,
-              "redundant" : 0,
-              "score" : 88
-            },
-            "type" : "text"
-          }
-        ],
-        "isError" : false,
-        "structuredContent" : null
-      },
-      "step" : 19,
-      "tool" : "get_health"
-    },
-    {
-      "result" : 
-      {
-        "content" : 
-        [
-          {
-            "text" : 
-            {
               "applied" : true,
               "changedNodeIds" : [],
               "diagnosticsClean" : true,
@@ -967,7 +942,7 @@
           ]
         }
       },
-      "step" : 20,
+      "step" : 19,
       "tool" : "update_nodes"
     },
     {
@@ -1031,7 +1006,7 @@
         "isError" : false,
         "structuredContent" : null
       },
-      "step" : 21,
+      "step" : 20,
       "tool" : "import_subgraph"
     },
     {
@@ -1117,7 +1092,7 @@
           ]
         }
       },
-      "step" : 22,
+      "step" : 21,
       "tool" : "update_nodes"
     },
     {
@@ -1187,7 +1162,7 @@
           ]
         }
       },
-      "step" : 23,
+      "step" : 22,
       "tool" : "update_nodes"
     },
     {
@@ -1203,7 +1178,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 24,
+      "step" : 23,
       "tool" : "update_nodes"
     },
     {
@@ -1219,7 +1194,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 25,
+      "step" : 24,
       "tool" : "update_nodes"
     },
     {
@@ -1235,7 +1210,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 26,
+      "step" : 25,
       "tool" : "create_node"
     }
   ]

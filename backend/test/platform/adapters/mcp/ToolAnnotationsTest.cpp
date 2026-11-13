@@ -32,17 +32,14 @@ const std::vector<Row> kRoadmap = {
     {"get_tree", "Roadmap · Get tree", true, false, true},
     {"update_tree", "Roadmap · Update tree", false, false, true},
     {"get_diagnostics", "Roadmap · Get diagnostics", true, false, true},
-    {"get_health", "Roadmap · Get health", true, false, true},
     {"get_progress", "Roadmap · Get progress", true, false, true},
     {"find_nodes", "Roadmap · Find nodes", true, false, true},
     {"create_node", "Roadmap · Create node", false, false, false},
     {"delete_node", "Roadmap · Delete node", false, true, true},
-    {"tidy", "Roadmap · Tidy", false, true, true},
     {"add_kind", "Roadmap · Add kind", false, false, true},
     {"remove_kind", "Roadmap · Remove kind", false, true, true},
     {"update_kind", "Roadmap · Update kind", false, false, true},
     {"import_subgraph", "Roadmap · Import subgraph", false, true, true},
-    {"prune", "Roadmap · Prune", false, true, true},
 };
 
 const std::vector<Row> kGym = {
@@ -135,7 +132,6 @@ TEST(only_the_allowlisted_roadmap_writes_are_bulk_edits) {
   std::vector<std::string> bulk;
   for (const ToolDeclaration& tool : roadmapToolCatalog())
     if (tool.bulkEdit) bulk.push_back(tool.name());
-  CHECK_EQ(bulk, (std::vector<std::string>{"update_nodes", "change_edges", "tidy", "import_subgraph",
-                                            "prune"}));
+  CHECK_EQ(bulk, (std::vector<std::string>{"update_nodes", "change_edges", "import_subgraph"}));
   for (const ToolDeclaration& tool : gym::gymToolCatalog()) CHECK_FALSE(tool.bulkEdit);
 }

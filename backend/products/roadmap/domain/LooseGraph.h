@@ -26,10 +26,6 @@ struct NodeRecord {
   Lww<TreeId> opens;                       // the tree this node opens; an empty id opens none
 };
 
-// The budget counts the redundant-edge pass's work: nodes, edges, and their product. Over budget the
-// pass is skipped and reports nothing — tidy finds no edge to drop, health reports 0 redundant.
-bool withinReachabilityBudget(std::size_t nodes, std::size_t edges);
-
 // Whether a fork's nodes open the trees its source's do: its source's owner keeps every pointer as it
 // stands, and anyone else starts with none, so no tree plants a pointer in a stranger's fork.
 enum class ForkOpens { kept, cleared };
@@ -89,10 +85,6 @@ public:
   std::size_t presentNodeCount() const;
   std::size_t presentEdgeCount() const;
   std::vector<Edge> liveEdges() const;
-  std::vector<Edge> redundantEdges() const;
-  // Present edges no valid DAG keeps: a self-edge, or one whose endpoint is absent (never
-  // created, or tombstoned). The prune set — removing them leaves the live graph unchanged.
-  std::vector<Edge> danglingEdges() const;
   // Present edges with either endpoint among `nodes` — what tombstoning those nodes would dangle.
   std::vector<Edge> edgesTouching(const std::vector<NodeId>& nodes) const;
 

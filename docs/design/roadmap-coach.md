@@ -77,7 +77,7 @@ For one roadmap, every turn Coach reads:
 - the roadmap's title and kinds
 - every step: state, prerequisites, unlock count and a short description
 - the progress overlay, with completion dates
-- diagnostics and the health score
+- diagnostics
 - the last ten completions
 
 Above about 300 steps, Coach reads counts, milestones, the frontier and its two-hop neighbourhood instead, and pages the rest with read tools. A conversation started from a step adds that step in full.

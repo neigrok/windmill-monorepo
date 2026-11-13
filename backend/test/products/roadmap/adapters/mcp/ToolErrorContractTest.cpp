@@ -39,13 +39,13 @@ TEST(mcp_every_roadmap_tool_declares_the_grant_level_that_reaches_it) {
     if (tool.access == Access::del) deletes.push_back(tool.name());
   }
 
-  CHECK_EQ(reads, (std::vector<std::string>{"get_nodes", "list_trees", "get_tree", "get_diagnostics", "get_health",
-                                            "get_progress", "find_nodes"}));
+  CHECK_EQ(reads, (std::vector<std::string>{"get_nodes", "list_trees", "get_tree", "get_diagnostics", "get_progress",
+                                            "find_nodes"}));
   CHECK_EQ(deletes, (std::vector<std::string>{"delete_tree", "delete_node", "remove_kind"}));
   CHECK_EQ(writes, (std::vector<std::string>{
-                       "update_nodes", "change_edges", "create_tree", "update_tree", "create_node", "tidy", "add_kind",
-                       "update_kind", "import_subgraph", "prune"}));
-  CHECK_EQ(catalog.size(), std::size_t{20});
+                       "update_nodes", "change_edges", "create_tree", "update_tree", "create_node", "add_kind",
+                       "update_kind", "import_subgraph"}));
+  CHECK_EQ(catalog.size(), std::size_t{17});
 }
 
 TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
@@ -53,14 +53,14 @@ TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
   const ToolCaller author{h.caller, parseToolScope("roadmap:read roadmap:write")};
   const Json::Value visible = h.tools.listTools(author);
 
-  CHECK_EQ(visible.size(), 17u);
+  CHECK_EQ(visible.size(), 14u);
   for (const char* destructive : {"delete_tree", "delete_node", "remove_kind"})
     CHECK(toolNamed(visible, destructive) == nullptr);
-  for (const char* ordinary : {"get_tree", "create_node", "change_edges", "prune"})
+  for (const char* ordinary : {"get_tree", "create_node", "change_edges", "import_subgraph"})
     CHECK(toolNamed(visible, ordinary) != nullptr);
 
   const ToolCaller reader{h.caller, parseToolScope("roadmap:read")};
-  CHECK_EQ(h.tools.listTools(reader).size(), 7u);
+  CHECK_EQ(h.tools.listTools(reader).size(), 6u);
   const ToolCaller elsewhere{h.caller, parseToolScope("gym:read gym:write gym:delete")};
   CHECK_EQ(h.tools.listTools(elsewhere).size(), 0u);
 }
@@ -668,11 +668,8 @@ TEST(mcp_every_write_tool_denies_a_private_tree_exactly_as_it_denies_an_absent_o
   h.trees.byId["priv"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Theirs", {}},
                                     0, fake::uid("someone"), Visibility::private_};
 
-  const std::vector<const char*> writes = {"create_node", "update_nodes", "delete_node",
-                                           "change_edges",
-                                           "tidy",          "add_kind",    "remove_kind",
-                                           "update_kind",   "prune",       "import_subgraph",
-                                           "delete_tree",   "update_tree"};
+  const std::vector<const char*> writes = {"create_node", "update_nodes", "delete_node", "change_edges", "add_kind",
+                                           "remove_kind", "update_kind", "import_subgraph", "delete_tree", "update_tree"};
   for (const char* name : writes) {
     Json::Value args(Json::objectValue);
     args["label"] = "x";
@@ -782,7 +779,7 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
                             "`danglingPointers` holds one {node, treeId} per node whose pointer names no tree of yours that stands",
                             "`danglingPointersOmitted` counts the rest",
                             "the three counts are absent when nothing is left off",
-                            "neither list is among the errors `diagnosticsClean` and get_health count",
+                            "neither list is among the errors `diagnosticsClean` counts",
                             "`pointerDiagnosticsUnavailable: true` says the opened trees could not be read just now",
                             "On a tree you do not own neither list is answered",
                             "Default true; false leaves both out and reads no other tree"})
