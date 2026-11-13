@@ -8,7 +8,8 @@ import { deleteTree, listAllTrees, renameTree } from '../persistence/TreeRegistr
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { buildRoadmapExport, downloadExport } from '../settings/exportArchive.js';
 import { treeShareUrl } from '../share/ShareDialog.jsx';
-import { deleteLocalTree, renameLocalTree } from '../sync/localTrees.js';
+import { deleteLocalTree, readDeviceTrees, removeDeviceOpeners, renameLocalTree } from '../sync/localTrees.js';
+import { withDeviceOpeners } from '../identity/deleteCost.js';
 
 // What the identity row reads and does: Find's handoff, the Next chip, the switcher, the phone's sheet and its verbs.
 export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable = false, address, graphStepReturnRef, anchors: { identityRef }, room: { sessionRef, projectionRef }, revealOnGraph, setSelectedId, setShareOpen, showToast }) {
@@ -125,7 +126,7 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
 
   const switcher = {
     current: currentRoadmap,
-    listTrees: listAllTrees,
+    listTrees: listSwitcherTrees,
     onNew: newRoadmap,
     onPreviewTitle: (id, title) => {
       if (id === treeId) document.title = t('roadmap.room.pageTitle', { title: title.trim() || t('roadmap.common.untitled') });
@@ -136,10 +137,12 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
       return local ? renameLocalTree(id, title) : renameTree(id, title);
     },
     // The server first, so a refused delete leaves the room live; then the session, or its pagehide flush resurrects the blob.
+    // A tree that lives only here takes with it the steps of the other trees here that open it, the room's own through its session.
     onDelete: async (id, { local = false } = {}) => {
       if (!local) await deleteTree(id);
       if (id === treeId) sessionRef.current?.close();
       await deleteLocalTree(id);
+      if (local) await removeDeviceOpeners(id, { live: sessionRef.current });
     },
   };
 
@@ -148,6 +151,13 @@ export function useRowVerbs({ treeId, tree, boardTree, shownStats, who, view, bo
     closeRowActivity, openRowActivity, openActivityStep,
     openRowSettings: () => navigate('/app/settings'),
   };
+}
+
+// The switcher's list, each row of a tree that lives only here with what deleting it takes, as the device counts it. A
+// device read that fails, already reported, leaves those rows without it and the confirmation asks its question alone.
+async function listSwitcherTrees() {
+  const [rows, trees] = await Promise.all([listAllTrees(), readDeviceTrees().catch(() => null)]);
+  return trees ? withDeviceOpeners(rows, trees) : rows;
 }
 
 function newRoadmap() {

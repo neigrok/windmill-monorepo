@@ -1,6 +1,8 @@
 // The tree picker: one of the person's own roadmaps for a step to open. From 744px it is a page in the step modal, and
 // on phones a full-screen page with the field and the commit in the reach band. A pasted address of a roadmap the
-// person can only read is forked first, and the copy is then a row to choose: Fork never attaches by itself.
+// person can only read is forked first, and the copy is then a row to choose: Fork never attaches by itself. On a tree
+// that lives only on this device the rows are this device's trees, each tagged so, counted here, and only their
+// addresses name a roadmap; with nobody signed in the closing line says what signing in adds.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -14,7 +16,7 @@ import { reportRoadmapFailure, reportUnexpectedFailure } from '../reportFailure.
 import { PickerSearch } from './PrerequisitePicker.jsx';
 import { TreeChoices } from './TreeChoices.js';
 import { coverBeneath, useComposerFocus, useComposerViewport } from './composerFocus.js';
-import { LOAD_ERROR, PICKER, backTo, formatCount, pickerFor, treeProgress } from '../copy.js';
+import { LOAD_ERROR, ON_DEVICE, PICKER, backTo, formatCount, pickerFor, treeProgress } from '../copy.js';
 import { t } from '../i18n/index.js';
 import './composer.css';
 
@@ -29,11 +31,15 @@ function failureOf(status) {
   return status >= 500 ? 'server' : 'refused';
 }
 
-// `trees` reads the person's roadmaps (`list`) and the roadmap an address names (`read`). `attachment(complete)` says
-// what attaching a tree, complete or not, does to a hand's mark on the step. `onAttach(row)` sets the tree and answers
-// whether the picker is done; `onLapse` tells the room a read was refused for want of a session.
+// `trees` reads the person's roadmaps (`list`) and the roadmap an address names (`read`) where they live (`place`:
+// 'account' on the server, 'device' on this device, and then `signedIn`). A list that fails may name its `failure`,
+// judged and reported where it was read. `attachment(complete)` says what attaching a tree, complete or not, does to a
+// hand's mark on the step. `onAttach(row)` sets the tree and answers whether the picker is done; `onLapse` tells the room
+// a read was refused for want of a session.
 export function TreePicker({ step, treeId, standing, attachment, trees, layout, headingId, band, view, onAttach, onLapse, onCancel }) {
   const phone = layout === 'phone';
+  const { place } = trees;
+  const onDevice = place === 'device';
   const layer = useRef(null);
   const region = useRef(null);
   const search = useRef(null);
@@ -74,15 +80,15 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
   const countPaste = (id, outcome) => {
     if (counted.current.has(id)) return;
     counted.current.add(id);
-    track('roadmap_tree_attach', { step: 'paste', outcome, band, view });
+    track('roadmap_tree_attach', { step: 'paste', outcome, band, view, place });
   };
 
   useEffect(() => {
     let wanted = true;
-    trees.list().then(({ rows, authoritative, status }) => {
+    trees.list().then(({ rows, authoritative, status, failure }) => {
       if (!wanted) return;
       if (!authoritative) {
-        readFailed('list', Object.assign(new Error('Roadmap list not read'), { status }));
+        readFailed('list', failure ?? Object.assign(new Error('Roadmap list not read'), { status }));
         setListFailure(failureOf(status));
         return;
       }
@@ -140,7 +146,9 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
   const context = known && choices.searched
     ? t('roadmap.treePicker.forMatches', { step, count: choices.count, shown: formatCount(choices.count) })
     : known && choices.rows.length > 0
-      ? t('roadmap.treePicker.forTrees', { step, count: choices.rows.length, shown: formatCount(choices.rows.length) })
+      ? (onDevice
+        ? t('roadmap.treePicker.forDeviceTrees', { step, count: choices.rows.length, shown: formatCount(choices.rows.length) })
+        : t('roadmap.treePicker.forTrees', { step, count: choices.rows.length, shown: formatCount(choices.rows.length) }))
       : pickerFor({ step, total: null });
   const unmatched = known && choices.searched && choices.count === 0 && choices.outcome !== 'unreadable';
   const tabStop = choices?.shown.find((row) => row.id === choices.chosen)?.id ?? choices?.shown[0]?.id ?? null;
@@ -157,7 +165,7 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
     search.current.focus();
   };
   const retry = (read) => {
-    track('roadmap_tree_attach', { step: 'retry', read, band, view });
+    track('roadmap_tree_attach', { step: 'retry', read, band, view, place });
     if (read === 'paste') {
       setChoices(choices.resolved(null));
       setAddressAttempt((count) => count + 1);
@@ -171,7 +179,7 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
     committed.current = onAttach(choices.chosenRow);
   };
   const fork = () => {
-    track('roadmap_tree_attach', { step: 'fork', band, view });
+    track('roadmap_tree_attach', { step: 'fork', band, view, place });
     setForking(true);
   };
   const onKeyDown = (event) => {
@@ -198,7 +206,9 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
   const commit = blocked
     ? <button type="button" className="st-board-step-action st-board-step-action--primary" onClick={fork}>{t('roadmap.treePicker.forkTree')}</button>
     : <button type="button" className="st-board-step-action st-board-step-action--primary" disabled={!listed || !choices.attachable} onClick={attach}>{t('roadmap.treePicker.attach')}</button>;
-  const forkLine = !blocked && <p className="st-board-tree-picker-fork">{t('roadmap.treePicker.forkFirst')}</p>;
+  const closing = onDevice
+    ? !trees.signedIn && <p className="st-board-tree-picker-fork">{t('roadmap.treePicker.deviceLine')}</p>
+    : !blocked && <p className="st-board-tree-picker-fork">{t('roadmap.treePicker.forkFirst')}</p>;
 
   const page = (
     <div ref={region} tabIndex={-1} className={`st-board-picker st-board-tree-picker st-board-picker--${layout}`} onKeyDown={onKeyDown}
@@ -242,7 +252,7 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
               >
                 <span className="st-board-picker-row-text">
                   <strong>{row.title}</strong>
-                  <span>{treeProgress(row)}</span>
+                  <span>{treeProgress(row)}{onDevice && <>{' · '}{ON_DEVICE}</>}</span>
                 </span>
                 <span className="st-board-tree-picker-choice" aria-hidden>
                   {row.id === choices.chosen ? <Check size={20} strokeWidth={1.73} /> : <span className="st-board-tree-picker-radio" />}
@@ -276,9 +286,9 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
         )}
       </div>
       <footer className="st-board-picker-footer">
-        {phone && forkLine}
+        {phone && closing}
         <div className="st-board-picker-actions">
-          {phone ? searchField : <>{forkLine}<button type="button" className="st-board-step-action st-board-step-action--secondary" onClick={onCancel}>{PICKER.cancel}</button></>}
+          {phone ? searchField : <>{closing}<button type="button" className="st-board-step-action st-board-step-action--secondary" onClick={onCancel}>{PICKER.cancel}</button></>}
           {commit}
         </div>
       </footer>

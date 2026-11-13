@@ -1,7 +1,10 @@
 // What deleting a tree takes from the person's other trees, as the switcher's confirmation says it. A server that removes,
 // with a tree, the steps in the person's other trees that open it sends `openers` on each row of the list: one
-// { treeId, steps } per such tree. A row without the field came from a server that does not, and the confirmation says
-// nothing more for it.
+// { treeId, steps } per such tree. A tree that lives only on this device takes them from the other trees here, and its
+// row carries them as the device counts them. A row without the field came from a server that does not, and the
+// confirmation says nothing more for it.
+
+import { OpenedTrees } from '../model/OpenedTrees.js';
 
 // The cost line for `tree` among `rows`, the switcher's list in its own order, or null where no step opens it. The
 // trees named are the first two openers the list holds, in its order and titled as their rows are; an opener the list
@@ -18,6 +21,13 @@ export function deleteCost(tree, rows, { untitled }) {
   if (trees === 2 && second) return { form: 'two', steps, first, second };
   if (trees > 2 && second) return { form: 'more', steps, first, second, more: trees - 2 };
   return { form: 'unnamed', steps, trees };
+}
+
+// The switcher's list with each row of a tree that lives only on this device carrying its openers, counted on the device
+// over its own trees (`trees`, as `readDeviceTrees` reads them).
+export function withDeviceOpeners(rows, trees) {
+  const judged = new OpenedTrees(trees);
+  return rows.map((row) => (row.origin === 'device' && !row.claimed && trees.has(row.id) ? { ...row, openers: judged.openersOf(row.id) } : row));
 }
 
 // The switcher's list once `treeId` is deleted: its row gone, and gone from every row's openers, as its steps went with it.

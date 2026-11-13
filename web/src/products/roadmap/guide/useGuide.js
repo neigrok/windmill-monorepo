@@ -15,9 +15,9 @@ const NONE_ABOVE = Object.freeze([]);
 // without one. `opened` is null while the guide rests on the tree, else { writing: null | { offset }, keyboard }: a note
 // opened to read, or to write from that offset, and whether a key opened it. `entry` holds the guide's control on the
 // tree, which the note opens from and hands focus back to. `above` holds the guides of the holder's trees above this
-// one, farthest first, each { treeId, title, text }: empty where there are none and for anyone but `holder`, the
-// account that holds the room as its owner. `aboveUnread` says a read of them was asked and no answer of the
-// contract's shape has come: it has not answered, or it failed.
+// one, farthest first, each { treeId, title, text }: empty where there are none and for anyone but `holder`, who holds
+// the room as its owner, where it is an account on a tree the server keeps. `aboveUnread` says a read of them was asked
+// and no answer of the contract's shape has come: it has not answered, or it failed.
 export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef }) {
   const text = tree?.guide ?? '';
   const { owner } = who;

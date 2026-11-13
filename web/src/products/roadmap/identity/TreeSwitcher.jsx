@@ -7,7 +7,7 @@ import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
 import { dismissOverlayOutside } from '../board/BoardControls.jsx';
-import { ROADMAP_SHEET, formatCount } from '../copy.js';
+import { ON_DEVICE, ROADMAP_SHEET, formatCount } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { OpeningGlyph } from '../OpeningMarks.jsx';
 import { deleteCost, withoutTree } from './deleteCost.js';
@@ -20,7 +20,7 @@ function seamOf(tree) {
 
 function tagOf(tree) {
   if (!tree.origin) return null;
-  return tree.origin === 'device' && !tree.claimed ? t('roadmap.switcher.onDevice') : t('roadmap.switcher.synced');
+  return tree.origin === 'device' && !tree.claimed ? ON_DEVICE : t('roadmap.switcher.synced');
 }
 
 function agoFrom(updatedAt) {
@@ -177,14 +177,16 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
   // `cost` is what the confirmation said goes with the tree, as the list read it when the menu opened.
   const confirmDelete = async (tree, cost) => {
     setConfirmId(null);
+    const local = seamOf(tree) === 'local';
+    const place = local ? 'device' : 'account';
     try {
-      await onDelete?.(tree.id, { local: seamOf(tree) === 'local' });
+      await onDelete?.(tree.id, { local });
     } catch (error) {
       reportUnexpectedFailure('roadmap-switcher-delete', error);
-      track('roadmap_sheet', { step: 'delete', door: 'switcher', outcome: 'failed' });
+      track('roadmap_sheet', { step: 'delete', door: 'switcher', outcome: 'failed', place });
       return; // a refusal leaves the row standing
     }
-    track('roadmap_sheet', { step: 'delete', door: 'switcher', openers: cost ? 'some' : 'none' });
+    track('roadmap_sheet', { step: 'delete', door: 'switcher', openers: cost ? 'some' : 'none', place });
     const remaining = withoutTree(Array.isArray(trees) ? trees : [], tree.id);
     setTrees(remaining);
     if (tree.id !== current?.id) return;

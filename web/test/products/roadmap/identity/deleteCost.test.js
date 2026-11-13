@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deleteCost, withoutTree } from '../../../../src/products/roadmap/identity/deleteCost.js';
+import { deleteCost, withDeviceOpeners, withoutTree } from '../../../../src/products/roadmap/identity/deleteCost.js';
 
 test('a row from a server that sends no openers, and one whose openers are empty, have nothing more to say', () => {
   const rows = [{ id: 't_sail', title: 'Learn to sail' }, { id: 't_year', title: 'My year' }];
@@ -69,4 +69,31 @@ test('once a tree is deleted the list holds neither its row nor its place among 
   const left = withoutTree(rows, 't_year');
   assert.deepEqual(deleteCost(left.find((row) => row.id === 't_sail'), left, { untitled: 'Untitled roadmap' }),
     { form: 'one', steps: 2, tree: 'Summer plans' }, 'the steps that went with My year are not counted again');
+});
+
+test('a tree that lives only on this device carries its openers as the device counts them over its own trees, and says them as a server row does', () => {
+  const step = (id, opens) => ({ id, ...(opens ? { opens } : {}) });
+  const trees = new Map([
+    ['t_sail', { title: 'Learn to sail', nodes: [step('rig'), step('again', 't_sail')], completed: new Set() }],
+    ['t_year', { title: 'My year', nodes: [step('sail', 't_sail'), step('coast', 't_sail')], completed: new Set() }],
+    ['t_summer', { title: 'Summer plans', nodes: [step('plan', 't_sail')], completed: new Set() }],
+  ]);
+  const rows = [
+    { id: 't_year', title: 'My year', origin: 'device', claimed: false },
+    { id: 't_sail', title: 'Learn to sail', origin: 'device', claimed: false },
+    { id: 't_summer', title: 'Summer plans', origin: 'device', claimed: false },
+    { id: 't_kept', title: 'Kept', origin: 'device', claimed: true },
+    { id: 't_server', title: 'On the server', origin: 'server', openers: [{ treeId: 't_year', steps: 1 }] },
+  ];
+
+  const counted = withDeviceOpeners(rows, trees);
+
+  assert.deepEqual(counted, [
+    { id: 't_year', title: 'My year', origin: 'device', claimed: false, openers: [] },
+    { id: 't_sail', title: 'Learn to sail', origin: 'device', claimed: false, openers: [{ treeId: 't_summer', steps: 1 }, { treeId: 't_year', steps: 2 }] },
+    { id: 't_summer', title: 'Summer plans', origin: 'device', claimed: false, openers: [] },
+    { id: 't_kept', title: 'Kept', origin: 'device', claimed: true },
+    { id: 't_server', title: 'On the server', origin: 'server', openers: [{ treeId: 't_year', steps: 1 }] },
+  ]);
+  assert.deepEqual(deleteCost(counted[1], counted, { untitled: 'Untitled roadmap' }), { form: 'two', steps: 3, first: 'My year', second: 'Summer plans' });
 });

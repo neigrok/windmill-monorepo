@@ -417,3 +417,70 @@ test('a load that read nothing of the trees its steps open leaves the return led
   assert.deepEqual(room.recaps, []);
   assert.deepEqual(JSON.parse(room.storage.getItem('windmill:return:t_year')).completed, ['plan', 'sail']);
 });
+
+test('a tree that lives only on this device has its facts worked out on the device as the room opens, and again once a pointer changes', async (t) => {
+  globalThis.roomLoadIssues = [];
+  t.after(() => { delete globalThis.roomLoadIssues; });
+  const disk = new Map([['windmill:device-trees', JSON.stringify({
+    t_draft: { title: 'A draft', updatedAt: 4, claimed: false, owner: null },
+    t_sail: { title: 'Learn to sail', updatedAt: 3, claimed: false, owner: null },
+    t_book: { title: 'The book', updatedAt: 2, claimed: false, owner: null },
+    t_kept: { title: 'On the server', updatedAt: 1, claimed: true, owner: null },
+  })]]);
+  const storage = { getItem: (key) => disk.get(key) ?? null, setItem: (key, value) => disk.set(key, value) };
+  for (const [key, value] of Object.entries({ window: { location: { search: '', hash: '#/app/t_draft' }, localStorage: storage }, localStorage: storage })) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+    t.after(() => {
+      if (previous) Object.defineProperty(globalThis, key, previous);
+      else delete globalThis[key];
+    });
+  }
+  const step = (id, opens) => ({ id, createdAt: '1:0:device', label: id, labelAt: '1:0:device', ...(opens ? { opens, opensAt: '1:0:device' } : {}) });
+  const records = {
+    t_draft: { frame: { nodes: [step('plan'), step('sail', 't_sail'), step('again', 't_draft'), step('far', 't_kept')], edges: [], kinds: [] } },
+    t_sail: { frame: { nodes: [step('rig'), step('wind')], edges: [], kinds: [] }, progress: { marks: [{ node: 'rig', status: 'complete', at: '2:0:device' }] } },
+    t_book: { frame: { nodes: [], edges: [], kinds: [] } },
+    t_kept: { frame: { nodes: [step('kept')], edges: [], kinds: [] } },
+  };
+  const urls = [];
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    urls.push(url.replace(/^.*\/v1/, '/v1'));
+    return { ok: false, status: 401, json: async () => ({}) };
+  });
+  const stored = t.mock.method(SyncStore.prototype, 'load', async (treeId) => structuredClone(records[treeId] ?? null));
+  const sessions = [];
+  t.mock.method(SyncSession.prototype, 'start', function () { sessions.push(this); return this; });
+  t.mock.method(SyncSession.prototype, 'close', () => {});
+  const shown = [];
+  const props = roomProps('t_draft');
+  props.structure.onTreeChanged = (projection) => shown.push(projection);
+  props.structure.layoutPositions = (tree) => new Map(tree.nodes.map((node) => [node.id, { x: 0, y: 0 }]));
+  const facts = (projection) => Object.fromEntries(projection.nodes.flatMap((node) => (node.opening
+    ? [[node.id, { face: node.opening.face, title: node.opening.title, done: node.opening.done, total: node.opening.total, own: node.opening.own }]] : [])));
+
+  const view = renderHook(t, () => captured.useRoomLoad({ ...props, accountId: null }));
+  await until(() => !view.tree.loading);
+
+  assert.deepEqual(facts(props.room.projectionRef.current), {
+    sail: { face: 'open', title: 'Learn to sail', done: 1, total: 2, own: false },
+    again: { face: 'loop', title: 'A draft', done: 0, total: 4, own: true },
+    far: { face: 'missing', title: '', done: 0, total: 0, own: false },
+  });
+  const reads = stored.mock.callCount();
+  sessions.at(-1).treeHandler({ id: 't_draft', title: 'A draft', nodes: [step('plan'), step('sail', 't_sail'), step('again', 't_draft'), step('far', 't_kept')]
+    .map(({ id, opens }) => ({ id, label: id, prerequisites: [], ...(opens ? { opens } : {}) })) });
+  assert.equal(stored.mock.callCount(), reads, 'the same pointers ask the device nothing');
+
+  sessions.at(-1).treeHandler({ id: 't_draft', title: 'A draft', nodes: [
+    { id: 'plan', label: 'plan', prerequisites: [], opens: 't_book' },
+    { id: 'sail', label: 'sail', prerequisites: [], opens: 't_sail' },
+  ] });
+  await until(() => shown.length === 3);
+  assert.deepEqual(facts(shown.at(-1)), {
+    plan: { face: 'empty', title: 'The book', done: 0, total: 0, own: false },
+    sail: { face: 'open', title: 'Learn to sail', done: 1, total: 2, own: false },
+  });
+  assert.equal(urls.filter((url) => url.startsWith('/v1/trees/')).length, 3, 'the load\'s own tree, marks and activity, and nothing after');
+  assert.deepEqual(globalThis.roomLoadIssues, []);
+});

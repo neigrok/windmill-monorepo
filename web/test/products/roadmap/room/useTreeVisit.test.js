@@ -140,7 +140,7 @@ test('a chain pops one tree per press: the middle tree keeps where it was reache
 });
 
 
-test('the way back is shown to the account that holds the roadmap it leads to, under the title this device keeps for it, and to nobody else', (t) => {
+test('the way back is shown to whoever holds the roadmap it leads to, under the title this device keeps for them, and to nobody else', (t) => {
   browser(t);
   enterTree('t_sail', { from: 't_year', stepId: 'sail', view: 'tree' });
   const arrival = readTreeVisit();
@@ -148,23 +148,27 @@ test('the way back is shown to the account that holds the roadmap it leads to, u
   const track = (name, props) => events.push({ name, props });
   const at = (holder, from = arrival) => renderHook(t, () => useTreeVisit({ room: room('tree'), arrival: from, holder, band: 'desktop', registry: deviceIndex(), track })).tree;
 
-  assert.deepEqual(visitOf(at('u_olya')), { from: { id: 't_year', title: 'My year' }, through: null, view: 'tree', door: 'tree' });
-  assert.equal(typeof at('u_olya').open, 'function');
+  assert.deepEqual(visitOf(at({ place: 'account', account: 'u_olya' })), { from: { id: 't_year', title: 'My year' }, through: null, view: 'tree', door: 'tree' });
+  assert.equal(typeof at({ place: 'account', account: 'u_olya' }).open, 'function');
 
   const signedOut = at(null);
   assert.deepEqual(visitOf(signedOut), { from: null, through: null, view: null, door: null });
   assert.equal(signedOut.open, null);
 
-  assert.deepEqual(visitOf(at('u_maya')), { from: null, through: null, view: 'tree', door: 'tree' });
-  assert.deepEqual(visitOf(at('u_olya', { ...arrival, from: 't_draft' })).from, null);
-  assert.deepEqual(visitOf(at('u_olya', { ...arrival, from: 't_unknown' })).from, null);
+  assert.deepEqual(visitOf(at({ place: 'account', account: 'u_maya' })), { from: null, through: null, view: 'tree', door: 'tree' });
+  assert.deepEqual(visitOf(at({ place: 'account', account: 'u_olya' }, { ...arrival, from: 't_draft' })).from, null);
+  assert.deepEqual(visitOf(at({ place: 'account', account: 'u_olya' }, { ...arrival, from: 't_unknown' })).from, null);
+
+  assert.deepEqual(visitOf(at({ place: 'device' }, { ...arrival, from: 't_draft' })), { from: { id: 't_draft', title: 'A draft' }, through: null, view: 'tree', door: 'tree' });
+  assert.equal(typeof at({ place: 'device' }).open, 'function');
+  assert.deepEqual(visitOf(at({ place: 'device' })).from, null);
   assert.deepEqual(events, []);
 });
 
 test('opening a tree from a step says which door and where, and nothing of the tree, the step or their names', (t) => {
   const { entries } = browser(t);
   const events = [];
-  const hook = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: readTreeVisit(), holder: 'u_olya', band: 'phone', registry: deviceIndex(), track: (name, props) => events.push({ name, props }) }));
+  const hook = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: readTreeVisit(), holder: { place: 'account', account: 'u_olya' }, band: 'phone', registry: deviceIndex(), track: (name, props) => events.push({ name, props }) }));
 
   assert.equal(hook.tree.open('bike', 'pill'), false);
   assert.equal(hook.tree.open('plan', 'pill'), false);
@@ -172,8 +176,28 @@ test('opening a tree from a step says which door and where, and nothing of the t
   assert.equal(hook.tree.open('sail', 'pill'), true);
 
   assert.deepEqual(entries.map(({ href }) => href), ['/#/app/t_year', '/#/app/t_sail']);
-  assert.deepEqual(events, [{ name: 'roadmap_tree_open', props: { door: 'pill', view: 'board', band: 'phone' } }]);
+  assert.deepEqual(events, [{ name: 'roadmap_tree_open', props: { door: 'pill', view: 'board', band: 'phone', place: 'account' } }]);
   assert.deepEqual(TREE_DOORS, ['pill', 'swipe', 'toast', 'step', 'dock', 'panel', 'bar', 'guide']);
+});
+
+test('on a tree that lives only on this device its holder goes in by the same doors, and the event says the device', (t) => {
+  const { entries } = browser(t, '/#/app/t_draft');
+  const events = [];
+  const draft = new SkillTree({ id: 't_draft', title: 'A draft', nodes: [
+    { id: 'sail', label: 'Learn to sail', prerequisites: [], opens: 't_sail', opening: new Opening({ treeId: 't_sail', read: true, valid: true, title: 'Learn to sail', done: 3, total: 8 }) },
+  ] });
+  const registry = deviceIndex();
+  const hook = renderHook(t, () => useTreeVisit({ room: { standingTreeRef: { current: draft }, viewRef: { current: 'tree' } }, arrival: readTreeVisit(), holder: { place: 'device' }, band: 'desktop', registry, track: (name, props) => events.push({ name, props }) }));
+
+  assert.equal(hook.tree.open('sail', 'step'), true);
+
+  assert.deepEqual(entries.map((entry) => ({ href: entry.href, kept: kept(entry) })), [
+    { href: '/#/app/t_draft', kept: { roadmapWentThrough: { stepId: 'sail', view: 'tree' } } },
+    { href: '/#/app/t_sail', kept: { roadmapCameFrom: { treeId: 't_draft', view: 'tree' } } },
+  ]);
+  assert.deepEqual(events, [{ name: 'roadmap_tree_open', props: { door: 'step', view: 'graph', band: 'desktop', place: 'device' } }]);
+  const { updatedAt, ...row } = registry.onDevice('t_draft');
+  assert.deepEqual(row, { id: 't_draft', title: 'A draft', claimed: false });
 });
 
 test('the guide’s door goes up into a tree above, which no step here opens: its entry names this tree, and the one left names no step', (t) => {
@@ -181,7 +205,7 @@ test('the guide’s door goes up into a tree above, which no step here opens: it
   const events = [];
   const sail = new SkillTree({ id: 't_sail', title: 'Learn to sail', nodes: [{ id: 'rig', label: 'Rig the boat', prerequisites: [] }] });
   const registry = deviceIndex();
-  const hook = renderHook(t, () => useTreeVisit({ room: { standingTreeRef: { current: sail }, viewRef: { current: 'tree' } }, arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry, track: (name, props) => events.push({ name, props }) }));
+  const hook = renderHook(t, () => useTreeVisit({ room: { standingTreeRef: { current: sail }, viewRef: { current: 'tree' } }, arrival: readTreeVisit(), holder: { place: 'account', account: 'u_olya' }, band: 'desktop', registry, track: (name, props) => events.push({ name, props }) }));
 
   assert.equal(hook.tree.open('t_sail', 'guide'), false);
   assert.equal(hook.tree.open(undefined, 'guide'), false);
@@ -192,15 +216,15 @@ test('the guide’s door goes up into a tree above, which no step here opens: it
     { href: '/#/app/t_sail', kept: { roadmapWentThrough: { stepId: null, view: 'tree' } } },
     { href: '/#/app/t_year', kept: { roadmapCameFrom: { treeId: 't_sail', view: 'tree' } } },
   ]);
-  assert.deepEqual(events, [{ name: 'roadmap_tree_open', props: { door: 'guide', view: 'graph', band: 'desktop' } }]);
-  const above = renderHook(t, () => useTreeVisit({ room: room('tree'), arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry, track: () => {} }));
+  assert.deepEqual(events, [{ name: 'roadmap_tree_open', props: { door: 'guide', view: 'graph', band: 'desktop', place: 'account' } }]);
+  const above = renderHook(t, () => useTreeVisit({ room: room('tree'), arrival: readTreeVisit(), holder: { place: 'account', account: 'u_olya' }, band: 'desktop', registry, track: () => {} }));
   assert.deepEqual(visitOf(above.tree), { from: { id: 't_sail', title: 'Learn to sail' }, through: null, view: 'tree', door: 'tree' });
 
   window.history.back();
   assert.deepEqual(readTreeVisit(), { from: null, through: null, view: 'tree', door: 'back' });
-  const returned = renderHook(t, () => useTreeVisit({ room: { standingTreeRef: { current: sail }, viewRef: { current: 'tree' } }, arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry, track: (name, props) => events.push({ name, props }) }));
+  const returned = renderHook(t, () => useTreeVisit({ room: { standingTreeRef: { current: sail }, viewRef: { current: 'tree' } }, arrival: readTreeVisit(), holder: { place: 'account', account: 'u_olya' }, band: 'desktop', registry, track: (name, props) => events.push({ name, props }) }));
   assert.deepEqual(visitOf(returned.tree), { from: null, through: null, view: 'tree', door: 'back' });
-  assert.deepEqual(events.slice(1), [{ name: 'roadmap_tree_back', props: { band: 'desktop' } }]);
+  assert.deepEqual(events.slice(1), [{ name: 'roadmap_tree_back', props: { band: 'desktop', place: 'account' } }]);
   assert.deepEqual(kept(entries[0]), {});
 });
 
@@ -211,17 +235,17 @@ test('a step that opens the tree it stands in goes nowhere: no entry, no event, 
   const self = new SkillTree({ id: 't_year', title: 'My year', nodes: [
     { id: 'again', label: 'Again', prerequisites: [], opens: 't_year', opening: Opening.fromWire({ treeId: 't_year', title: 'My year', state: 'open', done: 0, total: 1, loop: true }).inItsOwnTree() },
   ] });
-  const hook = renderHook(t, () => useTreeVisit({ room: { standingTreeRef: { current: self }, viewRef: { current: 'board' } }, arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry: deviceIndex(), track }));
+  const hook = renderHook(t, () => useTreeVisit({ room: { standingTreeRef: { current: self }, viewRef: { current: 'board' } }, arrival: readTreeVisit(), holder: { place: 'account', account: 'u_olya' }, band: 'desktop', registry: deviceIndex(), track }));
 
   assert.equal(hook.tree.open('again', 'step'), false);
 
   assert.deepEqual(entries, [{ href: '/#/app/t_year', state: null }]);
-  const reloaded = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry: deviceIndex(), track }));
+  const reloaded = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: readTreeVisit(), holder: { place: 'account', account: 'u_olya' }, band: 'desktop', registry: deviceIndex(), track }));
   assert.deepEqual(visitOf(reloaded.tree), { from: null, through: null, view: null, door: null });
   assert.deepEqual(events, []);
 });
 
-test('coming back is said once the room has its holder, with the band alone, and a reload of the entry says nothing', (t) => {
+test('coming back is said once the room has its holder, with the band and where it acts, and a reload of the entry says nothing', (t) => {
   const { window } = browser(t);
   enterTree('t_sail', { from: 't_year', stepId: 'sail', view: 'tree' });
   window.history.back();
@@ -234,18 +258,18 @@ test('coming back is said once the room has its holder, with the band alone, and
   assert.deepEqual(visitOf(returned.tree), { from: null, through: null, view: null, door: null });
   assert.deepEqual(events, []);
 
-  who.holder = 'u_olya';
+  who.holder = { place: 'account', account: 'u_olya' };
   returned.redraw();
   assert.deepEqual(visitOf(returned.tree), { from: null, through: 'sail', view: 'tree', door: 'back' });
   who.holder = null;
   returned.redraw();
-  who.holder = 'u_olya';
+  who.holder = { place: 'account', account: 'u_olya' };
   returned.redraw();
-  assert.deepEqual(events, [{ name: 'roadmap_tree_back', props: { band: 'desktop' } }]);
+  assert.deepEqual(events, [{ name: 'roadmap_tree_back', props: { band: 'desktop', place: 'account' } }]);
 
-  const reloaded = renderHook(t, () => useTreeVisit({ room: room('tree'), arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry: deviceIndex(), track }));
+  const reloaded = renderHook(t, () => useTreeVisit({ room: room('tree'), arrival: readTreeVisit(), holder: { place: 'account', account: 'u_olya' }, band: 'desktop', registry: deviceIndex(), track }));
   assert.deepEqual(visitOf(reloaded.tree), { from: null, through: null, view: null, door: null });
-  assert.deepEqual(events, [{ name: 'roadmap_tree_back', props: { band: 'desktop' } }]);
+  assert.deepEqual(events, [{ name: 'roadmap_tree_back', props: { band: 'desktop', place: 'account' } }]);
 });
 
 test('a return nobody holds is settled all the same: a reader who comes back, then signs in and reloads, is told of no return', (t) => {
@@ -264,13 +288,13 @@ test('going in writes the roadmap’s row in the device’s index first, as the 
   browser(t);
   const disk = new Map();
   const registry = new LocalTreeRegistry({ getItem: (key) => disk.get(key) ?? null, setItem: (key, value) => disk.set(key, value) });
-  const leaving = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry, track: () => {} }));
+  const leaving = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: readTreeVisit(), holder: { place: 'account', account: 'u_olya' }, band: 'desktop', registry, track: () => {} }));
   assert.equal(registry.owned('t_year', 'u_olya'), null);
 
   assert.equal(leaving.tree.open('sail', 'pill'), true);
 
-  const arrived = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: readTreeVisit(), holder: 'u_olya', band: 'desktop', registry, track: () => {} }));
+  const arrived = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: readTreeVisit(), holder: { place: 'account', account: 'u_olya' }, band: 'desktop', registry, track: () => {} }));
   assert.deepEqual(arrived.tree.from, { id: 't_year', title: 'My year' });
-  const elsewhere = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: { from: 't_year', through: null, view: null, door: null }, holder: 'u_maya', band: 'desktop', registry, track: () => {} }));
+  const elsewhere = renderHook(t, () => useTreeVisit({ room: room('board'), arrival: { from: 't_year', through: null, view: null, door: null }, holder: { place: 'account', account: 'u_maya' }, band: 'desktop', registry, track: () => {} }));
   assert.equal(elsewhere.tree.from, null);
 });

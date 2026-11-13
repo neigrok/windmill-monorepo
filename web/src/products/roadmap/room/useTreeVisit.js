@@ -2,8 +2,8 @@
 // guide stands above this one. Both ride history entries and never tree data: the entry of the tree gone into names the
 // tree the person came from, and the entry they left names the step they went through, or none for a way up. So a
 // direct link has no way back, a chain pops one tree per press, and the browser's Back reads what the chip reads.
-// An entry outlives a sign-out, so it holds ids alone: the way back is shown only to the account that holds the tree it
-// leads to, under the title this device's index keeps for that account.
+// An entry outlives a sign-out, so it holds ids alone: the way back is shown only to whoever holds the tree it leads to,
+// under the title this device's index keeps for them: the account's own row, or the row of a tree that lives only here.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { navigate } from '../../../shell/navigation.js';
@@ -60,10 +60,10 @@ export function settleTreeVisit() {
 
 const deviceTrees = new LocalTreeRegistry();
 
-// The room's side of it. `arrival` is what the entry said as the room opened, and `holder` the account that holds this
-// room as its owner, or null. Without a holder the entry is not acted on: no way back, no carried view or step, no door
-// into a tree and nothing said. `open` goes into a tree from the door that offered it, off the tree and the view the
-// room stands on at that moment, and `back` is the chip's press.
+// The room's side of it. `arrival` is what the entry said as the room opened, and `holder` who holds this room as its
+// owner (`useRoomHolder`), or null. Without a holder the entry is not acted on: no way back, no carried view or step, no
+// door into a tree and nothing said. `open` goes into a tree from the door that offered it, off the tree and the view the
+// room stands on at that moment, and `back` is the chip's press. Every event says where the holder acts (`place`).
 export function useTreeVisit({ room, arrival, holder, band, registry = deviceTrees, track = beacon }) {
   useEffect(settleTreeVisit, []);
 
@@ -72,7 +72,7 @@ export function useTreeVisit({ room, arrival, holder, band, registry = deviceTre
   useEffect(() => {
     if (!returned || saidBack.current) return;
     saidBack.current = true;
-    track('roadmap_tree_back', { band });
+    track('roadmap_tree_back', { band, place: holder.place });
   }, [returned]);
 
   const open = useCallback((id, door) => {
@@ -84,15 +84,20 @@ export function useTreeVisit({ room, arrival, holder, band, registry = deviceTre
     const treeId = door === 'guide' ? id : opening?.leads ? opening.treeId : null;
     if (typeof treeId !== 'string' || treeId === tree.treeId) return false;
     const view = room.viewRef.current;
-    track('roadmap_tree_open', { door, view: view === 'board' ? 'board' : 'graph', band });
+    track('roadmap_tree_open', { door, view: view === 'board' ? 'board' : 'graph', band, place: holder.place });
     // The way back reads this roadmap's row in the device's index, which its session may not have written yet.
-    registry.touch(tree.treeId, tree.title, holder);
+    registry.touch(tree.treeId, tree.title, holder.account);
     enterTree(treeId, { from: tree.treeId, stepId, view });
     return true;
   }, [room, band, holder]);
   const back = useCallback(() => window.history.back(), []);
 
-  const from = useMemo(() => (holder && arrival.from ? registry.owned(arrival.from, holder) : null), [holder, arrival.from]);
+  const from = useMemo(() => {
+    if (!holder || !arrival.from) return null;
+    if (holder.place === 'account') return registry.owned(arrival.from, holder.account);
+    const row = registry.onDevice(arrival.from);
+    return row?.title ? { id: row.id, title: row.title } : null;
+  }, [holder, arrival.from]);
   if (!holder) return { from: null, through: null, view: null, door: null, open: null, back };
   return { from, through: arrival.through, view: arrival.view, door: arrival.door, open, back };
 }

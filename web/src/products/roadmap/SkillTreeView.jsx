@@ -35,9 +35,10 @@ import { UnlockRules } from './model/UnlockRules.js';
 import { PasteComposer } from './paste/PasteComposer.jsx';
 import { PresenceLayer } from './presence/PresenceLayer.jsx';
 import { listServerTrees, readTreeCard } from './persistence/TreeRegistry.js';
+import { listDeviceTrees, readDeviceTreeCard } from './sync/localTrees.js';
 import { reportRoadmapFailure } from './reportFailure.js';
 import { toastSeat, useRoadmapToast } from './room/useRoadmapToast.js';
-import { useRoomAuthority } from './room/useRoomAuthority.js';
+import { useRoomAuthority, useRoomHolder } from './room/useRoomAuthority.js';
 import { useRoomLoad } from './room/useRoomLoad.js';
 import { useRoomProgress } from './room/useRoomProgress.js';
 import { useRoomScene } from './room/useRoomScene.js';
@@ -90,7 +91,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
   // Who is looking, and what this device keeps for them.
   const knownReaderRef = useRef(false);
-  const { lapsed, demotion, setDemotion } = useRoomAuthority({ treeId, status, account, refresh, knownReaderRef, room });
+  const { lapsed, demotion, setDemotion, claims } = useRoomAuthority({ treeId, status, account, refresh, knownReaderRef, room });
   const placeKept = !shared && breakpoint === 'desktop';
   const desktopEditorRef = useRef(false);
   const phone = breakpoint === 'phone';
@@ -169,9 +170,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     stopEditing();
     collapse();
   }, [closeComposer, stopEditing, collapse]);
-  // The account that holds this room as its owner, once the server has answered for it in this document: a lapsed
-  // session, a device's copy with nobody signed in and a start with no connection have none.
-  const holder = owner && accountConfirmed && !lapsed ? account.id : null;
+  const holder = useRoomHolder({ owner, treeId, account, confirmed: accountConfirmed, lapsed, claims });
   const treeVisit = useTreeVisit({ room, arrival, holder, band: breakpoint });
   const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, carried: treeVisit, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
   const { decidedView, boardActive, canvasView, shownView, boardFacts, boardAwaitsRoadmap, switchView, onSwitchView } = view;
@@ -232,15 +231,18 @@ export function SkillTreeView({ treeId, demo = false }) {
     onReveal: (id) => setBoardReveal((current) => ({ id, key: (current?.key ?? 0) + 1 })),
     onQuiet: () => setBoardQuiet((current) => current + 1),
     openTree: treeVisit.open,
+    place: holder?.place ?? null,
     band: breakpoint,
     track, emit, report: reportRoadmapFailure,
   });
-  // Attaching, changing and detaching the tree a step opens: the holder's, while the session can take a write. A chosen
-  // tree's row stands at once from what the picker knew of it, and a read the server refuses for want of a session is
-  // the room's lapse, as a refused write is.
+  // Attaching, changing and detaching the tree a step opens: the holder's, while the session can take a write, among the
+  // trees where the holder's lives (the server's, or this device's). A chosen tree's row stands at once from what the
+  // picker knew of it, and a read the server refuses for want of a session is the room's lapse, as a refused write is.
   const treeActs = holder !== null && syncSession?.ready && !syncSnapshot?.rebaselining ? {
     view: boardActive ? 'board' : 'graph',
-    trees: { list: listServerTrees, read: readTreeCard },
+    trees: holder.place === 'device'
+      ? { place: 'device', signedIn: status === 'signed-in', list: listDeviceTrees, read: readDeviceTreeCard }
+      : { place: 'account', list: listServerTrees, read: readTreeCard },
     set: (id, chosen) => {
       if (chosen) load.knowTree(id, chosen);
       return boardActs.setTree(id, chosen?.id ?? '');
