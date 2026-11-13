@@ -42,9 +42,11 @@ UserId actorOf(const drogon::WebSocketConnectionPtr& conn) {
 }
 
 // A frame sent to a connection says nothing of the write in progress: while a write is served, frames go to other
-// connections too — a reject to a reader a fan-out drops, to a page open on a tree a removal retires.
+// connections too — a reject to a reader a fan-out drops, to a page open on a tree a removal retires. It is queued on
+// the loop that serves the frame, the connection's own for a reply, as a broadcast is (sendInOrder): the ack of a
+// write goes out after the broadcast of that write, which the handler queued before it.
 void send(const drogon::WebSocketConnectionPtr& conn, const Json::Value& frame) {
-  if (conn->connected()) conn->send(dump(frame));
+  sendInOrder(trantor::EventLoop::getEventLoopOfCurrentThread(), conn, std::make_shared<const std::string>(dump(frame)));
 }
 
 // The refusal of the frame being served, a `reject` or a `skew`: it finishes that frame's write under its code.
@@ -192,13 +194,19 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
     return;
   }
 
-  Json::Value frame;
+  // The delta, the head it reports and the view it was cut to are read under the strand; the places of the delta and
+  // the progress graft in the connection's send order are taken there too, with the join, and each frame is written
+  // out once the strand is released.
+  std::optional<WsPresenceBus::FirstFrames> first;
+  Subgraph delta;
+  Seq head = 0;
+  Reach reach = Reach::none;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
       // Gate the read before the room is materialized; absent and private-denied answer identically.
       stillAuthorized(conn);
-      const Reach reach = reachOf(conn, TreeId{treeId});
+      reach = reachOf(conn, TreeId{treeId});
       if (reach == Reach::none) {
         send(conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
         return;
@@ -208,18 +216,12 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
         send(conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
         return;
       }
-      // Join under the strand, so no broadcast slips between the delta and the subscription.
-      bus_.subscribe(TreeId{treeId}, conn, principal.user);
+      // Join under the strand, so no broadcast slips between the delta and the subscription, and the delta goes out
+      // ahead of every broadcast made after it.
+      first = bus_.subscribe(TreeId{treeId}, conn, principal.user);
       presence_.join(conn, TreeId{treeId});
-
-      Subgraph delta = room->deltaSince(clientVector);
-      if (reach == Reach::reader) delta.graph = readerView(std::move(delta.graph));
-      delta.frameId = "delta-" + std::to_string(room->head());
-      delta.actor = "srv";
-      frame = toJson(delta);
-      frame["seq"] = static_cast<Json::Int64>(room->head());
-      // The verdict that chose this delta's view, so an empty pointer reads as none or as withheld.
-      frame["reach"] = reach == Reach::writer ? "writer" : "reader";
+      delta = room->deltaSince(clientVector);
+      head = room->head();
     } catch (const std::exception& error) {
       // An infrastructure failure is never the socket's to relay.
       reportCurrentWriteFailure(error);
@@ -228,7 +230,14 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       return;
     }
   }
-  send(conn, frame);
+  if (reach == Reach::reader) delta.graph = readerView(std::move(delta.graph));
+  delta.frameId = "delta-" + std::to_string(head);
+  delta.actor = "srv";
+  Json::Value frame = toJson(delta);
+  frame["seq"] = static_cast<Json::Int64>(head);
+  // The verdict that chose this delta's view, so an empty pointer reads as none or as withheld.
+  frame["reach"] = reach == Reach::writer ? "writer" : "reader";
+  first->delta.send(dump(frame));
 
   // Read OUTSIDE the strand — a room's lock is never held across a database call.
   // Gate on `authenticated`, never on a non-empty user: a guest carries a real guest identity.
@@ -238,7 +247,7 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
   graft["treeId"] = treeId;
   // `graft`, not an echo: the receiver may re-baseline its coverage on it, and an empty graft still ships.
   graft["intent"] = "graft";
-  send(conn, graft);
+  first->graft.send(dump(graft));
 }
 
 // Every write re-proves the session, throttled to one lookup a minute.
