@@ -1,14 +1,16 @@
 // Rows wear a tag — "on this device" for unclaimed local trees, "synced" for the rest — and every
 // edit routes by that tag, never by presence in the server list.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { Icon } from '../../../design-system';
 import { reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 import { hueOf } from '../theme.js';
 import { dismissOverlayOutside } from '../board/BoardControls.jsx';
-import { ROADMAP_SHEET } from '../copy.js';
+import { ROADMAP_SHEET, formatCount } from '../copy.js';
 import { t } from '../i18n/index.js';
+import { OpeningGlyph } from '../OpeningMarks.jsx';
+import { deleteCost, withoutTree } from './deleteCost.js';
 
 // Unclaimed device rows edit the local seams and must never see the server.
 function seamOf(tree) {
@@ -43,6 +45,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
   const [draft, setDraft] = useState('');
   const [confirmId, setConfirmId] = useState(null);
   const [flashId, setFlashId] = useState(null);
+  const costId = useId();
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
   const inputRef = useRef(null);
@@ -171,7 +174,8 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
     onPreviewTitle?.(id, rows.find((r) => r.id === id)?.title ?? '');
   };
 
-  const confirmDelete = async (tree) => {
+  // `cost` is what the confirmation said goes with the tree, as the list read it when the menu opened.
+  const confirmDelete = async (tree, cost) => {
     setConfirmId(null);
     try {
       await onDelete?.(tree.id, { local: seamOf(tree) === 'local' });
@@ -180,8 +184,8 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
       track('roadmap_sheet', { step: 'delete', door: 'switcher', outcome: 'failed' });
       return; // a refusal leaves the row standing
     }
-    track('roadmap_sheet', { step: 'delete', door: 'switcher' });
-    const remaining = (Array.isArray(trees) ? trees : []).filter((r) => r.id !== tree.id);
+    track('roadmap_sheet', { step: 'delete', door: 'switcher', openers: cost ? 'some' : 'none' });
+    const remaining = withoutTree(Array.isArray(trees) ? trees : [], tree.id);
     setTrees(remaining);
     if (tree.id !== current?.id) return;
     setOpen(false); // land on the newest remaining, or hand bare #/app to the resolver
@@ -227,6 +231,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
             const editing = editingId === tree.id;
             const confirming = confirmId === tree.id;
             const rowTitle = tree.title?.trim() || t('roadmap.common.untitled');
+            const cost = confirming ? deleteCost(tree, rows, { untitled: t('roadmap.common.untitled') }) : null;
             return (
               <div key={tree.id} role="menuitem" tabIndex={0}
                 className={flashId === tree.id ? 'st-switcher-flash' : undefined}
@@ -251,13 +256,14 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
                 onMouseLeave={() => setHoverId((h) => (h === tree.id ? null : h))}
                 style={{
                   ...row,
+                  alignItems: cost ? 'flex-start' : 'center',
                   cursor: editing || confirming ? 'default' : 'pointer',
                   background: isCurrent ? 'var(--color-brand-soft)'
                     : hoverId === tree.id && !confirming ? 'var(--surface-hover)' : 'transparent',
                   boxShadow: editing ? 'inset 0 0 0 1.5px var(--accent-terracotta-400)' : undefined,
                 }}
               >
-                <Ring done={tree.done} total={tree.total} kind={tree.dominantKind} />
+                <Ring done={tree.done} total={tree.total} kind={tree.dominantKind} onFirstLine={Boolean(cost)} />
                 {editing ? (
                   <input ref={inputRef} value={draft} aria-label={t('roadmap.switcher.nameLabel')} maxLength={200}
                     onChange={(e) => { setDraft(e.target.value); onPreviewTitle?.(tree.id, e.target.value); }}
@@ -271,10 +277,17 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
                     style={editField}
                   />
                 ) : confirming ? (
-                  <span style={rowText}>
+                  <span style={{ ...rowText, gap: cost ? 6 : 3 }}>
                     <span style={confirmCopy}>{t('roadmap.switcher.deleteConfirm', { title: rowTitle })}</span>
-                    <span style={{ display: 'flex', gap: 8, marginTop: 3 }}>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); confirmDelete(tree); }} style={confirmDeleteBtn}>{t('roadmap.common.delete')}</button>
+                    {cost && (
+                      <span id={costId} style={costLine}>
+                        <span style={costMark}><OpeningGlyph face="open" size={14} /></span>
+                        <span>{costSentence(cost)}</span>
+                      </span>
+                    )}
+                    <span style={{ display: 'flex', gap: 8 }}>
+                      <button type="button" aria-describedby={cost ? costId : undefined}
+                        onClick={(e) => { e.stopPropagation(); confirmDelete(tree, cost); }} style={confirmDeleteBtn}>{t('roadmap.common.delete')}</button>
                       <button type="button" onClick={(e) => { e.stopPropagation(); setConfirmId(null); }} style={confirmKeepBtn}>{t('roadmap.switcher.keep')}</button>
                     </span>
                   </span>
@@ -350,6 +363,17 @@ function readout(tree) {
   return [count, ago].filter(Boolean).join(' · ');
 }
 
+// The cost line's one sentence, the titles of the trees it names in bold.
+function costSentence(cost) {
+  const shown = formatCount(cost.steps);
+  if (cost.form === 'one') return t('roadmap.switcher.costOne', { count: cost.steps, shown, tree: <strong>{cost.tree}</strong> });
+  if (cost.form === 'two') return t('roadmap.switcher.costTwo', { count: cost.steps, shown, first: <strong>{cost.first}</strong>, second: <strong>{cost.second}</strong> });
+  if (cost.form === 'more') {
+    return t('roadmap.switcher.costMore', { count: cost.steps, shown, first: <strong>{cost.first}</strong>, second: <strong>{cost.second}</strong>, more: cost.more });
+  }
+  return t('roadmap.switcher.costUnnamed', { count: cost.steps, shown, trees: cost.trees });
+}
+
 // The tag span is keyed by its text so a live flip remounts it into the cross-fade.
 function RowMeta({ tree }) {
   const meta = readout(tree);
@@ -378,13 +402,15 @@ function Check() {
   );
 }
 
-function Ring({ done = 0, total, kind }) {
+// In a row aligned to its top the ring sits on the first line of the text beside it.
+function Ring({ done = 0, total, kind, onFirstLine = false }) {
   const hue = hueOf(kind).base;
-  if (!total) return <span style={{ ...bud, borderColor: hue, background: 'transparent' }} />;
+  const seat = onFirstLine ? { marginTop: 2 } : {};
+  if (!total) return <span style={{ ...bud, ...seat, borderColor: hue, background: 'transparent' }} />;
   const frac = Math.max(0, Math.min(1, done / total));
   const c = 2 * Math.PI * 6;
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" style={{ flex: 'none' }}>
+    <svg width="16" height="16" viewBox="0 0 16 16" style={{ flex: 'none', ...seat }}>
       <circle cx="8" cy="8" r="6" fill="none" stroke="var(--border-default)" strokeWidth="2" />
       <circle cx="8" cy="8" r="6" fill="none" stroke={hue} strokeWidth="2" strokeLinecap="round"
         strokeDasharray={`${frac * c} ${c}`} transform="rotate(-90 8 8)" />
@@ -392,8 +418,9 @@ function Ring({ done = 0, total, kind }) {
   );
 }
 
+// As wide as its longest row would stand on one line, within the bounds: a confirming row's words wrap at the widest.
 const menu = {
-  position: 'absolute', top: 'calc(100% + 8px)', left: 0, minWidth: 244, maxWidth: 300,
+  position: 'absolute', top: 'calc(100% + 8px)', left: 0, width: 'max-content', minWidth: 244, maxWidth: 300,
   padding: 6, background: 'var(--surface-card)', border: '1px solid var(--border-subtle)',
   borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', zIndex: 40,
   fontFamily: 'var(--font-body)', animation: 'wm-fade-in-up var(--duration-fast) var(--ease-soft)',
@@ -413,7 +440,12 @@ const action = {
   background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer',
   transition: 'background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard)',
 };
-const confirmCopy = { fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+const confirmCopy = { fontWeight: 700, overflowWrap: 'break-word' };
+const costLine = {
+  display: 'flex', gap: 6, padding: '6px 8px', borderRadius: 'var(--radius-sm)', background: 'var(--color-danger-bg)',
+  color: 'var(--text-primary)', fontSize: 12, lineHeight: '16px', overflowWrap: 'break-word',
+};
+const costMark = { display: 'flex', flex: 'none', paddingTop: 1, color: 'var(--accent-brick-500)' };
 const confirmDeleteBtn = {
   padding: '2px 8px', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
   background: 'var(--color-danger-bg)', color: 'var(--accent-brick-500)',

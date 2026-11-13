@@ -224,7 +224,8 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Roadmap sheet | `roadmap_sheet` | `step: open/switch/search/browse` |
 | Roadmap sheet's New roadmap | `roadmap_sheet` | `step: new`, `door?: search` |
 | Roadmap sheet closed | `roadmap_sheet` | `step: close`, `via: close/escape/scrim` |
-| Tablet and desktop roadmap switcher; a rename or a delete once the request succeeded | `roadmap_sheet` | `step: open/switch/new/browse/rename/delete`, `door: switcher` |
+| Tablet and desktop roadmap switcher; a rename once the request succeeded | `roadmap_sheet` | `step: open/switch/new/browse/rename`, `door: switcher` |
+| The switcher's delete once the request succeeded, and whether its confirmation said that steps in the person's other trees open the tree: `some`, or `none`, as for a row from a server that sends no `openers` | `roadmap_sheet` | `step: delete`, `door: switcher`, `openers: none/some` |
 | The switcher's rename or delete failed | `roadmap_sheet` | `step: rename/delete`, `door: switcher`, `outcome: failed` |
 | What's next opened, a card picked, or closed by toggle, outside pointer, genuine focus departure, Escape or context change | `roadmap_whats_next` | `step: open/pick/close`, `count: 0/1/2-5/6-20/21+` |
 | Open the guide's note from its entry on the tree: the card from 744px, the row on phones, and what the entry knew of the guides above at the press: `none`, `some`, or `unread` while their read has not answered or after it failed, a 200 that is not the contract's shape among the failures | `roadmap_guide` | `step: open`, `door: card/row`, `view: board/graph`, `role: owner/reader`, `above: none/some/unread` |

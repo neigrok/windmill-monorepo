@@ -127,6 +127,22 @@ test("a different account lists its own trees and the anonymous one, never the p
   assert.equal(deviceOwner(), 'u_b');
 });
 
+test('a server row keeps the openers the server sent, as sent, a row from a server without them has none, and a device row never has them', async () => {
+  browser({ index: { t_anon: ANON } });
+  serverSaying({ me: 'u_b', trees: [
+    { id: 't_year', title: 'My year', updatedAt: 30, openers: [] },
+    { id: 't_coast', title: 'Coast trip', updatedAt: 40, openers: [{ treeId: 't_year', steps: 2 }, { treeId: 't_life', steps: 1 }] },
+    { id: 't_old', title: 'Before the cascade', updatedAt: 10 },
+  ] });
+
+  assert.deepEqual(await listAllTrees(), [
+    { id: 't_coast', title: 'Coast trip', updatedAt: 40, openers: [{ treeId: 't_year', steps: 2 }, { treeId: 't_life', steps: 1 }], origin: 'server' },
+    { id: 't_year', title: 'My year', updatedAt: 30, openers: [], origin: 'server' },
+    { id: 't_anon', title: 'Learn to sail', updatedAt: 20, claimed: false, origin: 'device' },
+    { id: 't_old', title: 'Before the cascade', updatedAt: 10, origin: 'server' },
+  ]);
+});
+
 test('the owner comes back and finds their own row again — scoping is not a one-way door', async () => {
   browser({ index: { t_a: A_PRIVATE, t_anon: ANON } });
   serverSaying({ me: 'u_a', trees: [{ id: 't_a', title: 'A private therapy plan', updatedAt: 30 }] });
