@@ -247,17 +247,20 @@ Every `tools/list` entry contains `{name, title, description, inputSchema, annot
 `progress` row, every field but `nodeId` optional — plus compatibility text generated from the same
 result object; the tool tests hold every result to its schema (`test/platform/adapters/mcp/OutputSchema.h`). The
 catalog writes `name`, `description` and `inputSchema` and states two facts beside them — whether a
-write edits in bulk and whether a resend leaves it unchanged; `ToolDeclaration::wire()`
+write is destructive and whether a resend leaves it unchanged; `ToolDeclaration::wire()`
 (`platform/ports/ToolHost.h`) derives everything else from those facts and the grant level, so no
 product can declare a tool without its annotations:
 
 - `title` — the product word, a middle dot, the name in words: `Roadmap · Get tree`,
   `Gym · Log set`. The composite preserves that title while publishing the canonical prefixed name.
 - `annotations.readOnlyHint` — true exactly for `read`-level tools.
-- `annotations.destructiveHint` — true for a `delete`-level tool and for the writes that
-  overwrite or remove in bulk (`update_nodes`, `change_edges`, `import_subgraph` — `kBulkEdits` beside the
-  catalog), unless the declaration says `proposal`: `propose_routine_removal` sits at
-  `gym:delete` and mints a card the lifter applies, so it is declared non-destructive.
+- `annotations.destructiveHint` — true for a `delete`-level tool (`delete_node`, `delete_tree`,
+  `remove_kind`) and for the one write that removes wholesale, `import_subgraph`
+  (`kDestructiveWrites` beside the catalog), unless the declaration says `proposal`:
+  `propose_routine_removal` sits at `gym:delete` and mints a card the lifter applies, so it is
+  declared non-destructive. `update_nodes` and `change_edges` are the everyday edits and are false:
+  the op log keeps what they overwrite, a removed edge is re-added by naming it, and a confirmation
+  on every rename or mark would wear out the warning the destructive tools need.
 - `annotations.idempotentHint` — true for every read and for the writes a resend leaves unchanged
   (`kIdempotentWrites` beside the catalog); false for `create_tree` and `create_node`, which mint
   an id, and for `update_nodes`, whose `appendDescription` can duplicate text. Gym declarations describe

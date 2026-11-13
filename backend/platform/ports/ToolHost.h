@@ -60,15 +60,15 @@ struct ToolDeclaration {
   Json::Value descriptor;  // {name, description, inputSchema}, as the catalog wrote it
   std::string product;     // whose grant reaches it: the `product` half of `gym:delete`
   Access access;
-  bool bulkEdit = false;    // a `write` that overwrites or removes many entries in one call
+  bool destructiveWrite = false;  // a `write` that removes what a person authored, wholesale, in one call
   bool idempotent = false;  // a write the same arguments leave unchanged the second time
   bool proposal = false;    // a `delete`-level tool that only PROPOSES the removal, for a human to apply
 
   std::string name() const { return descriptor.get("name", "").asString(); }
 
-  // A delete-level tool destroys by definition, a bulk edit destroys under a write grant, and a
-  // proposal destroys nothing: the grant buys the right to ask.
-  bool destructive() const { return !proposal && (access == Access::del || bulkEdit); }
+  // A delete-level tool destroys by definition, a destructive write destroys under a write grant, and
+  // a proposal destroys nothing: the grant buys the right to ask.
+  bool destructive() const { return !proposal && (access == Access::del || destructiveWrite); }
 
   // "Roadmap · Get tree": the product word first, so a client's search groups one product's tools.
   std::string title() const {

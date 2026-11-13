@@ -192,7 +192,7 @@ Json::Value meta(const char* product, const char* access) {
 TEST(composite_lists_every_tool_in_its_wire_shape_with_annotations_derived_from_its_declaration) {
   FakeProduct r = roadmap();
   r.declare("prune", Access::write, {"treeId"});
-  r.catalog.back().bulkEdit = true;
+  r.catalog.back().destructiveWrite = true;
   r.catalog.back().idempotent = true;
   r.declare("rename_node", Access::write, {"treeId", "nodeId", "label"});
   r.catalog.back().idempotent = true;

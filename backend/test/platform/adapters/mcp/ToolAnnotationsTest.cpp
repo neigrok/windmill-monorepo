@@ -24,8 +24,8 @@ struct Row {
 
 const std::vector<Row> kRoadmap = {
     {"get_nodes", "Roadmap · Get nodes", true, false, true},
-    {"update_nodes", "Roadmap · Update nodes", false, true, false},
-    {"change_edges", "Roadmap · Change edges", false, true, true},
+    {"update_nodes", "Roadmap · Update nodes", false, false, false},
+    {"change_edges", "Roadmap · Change edges", false, false, true},
     {"create_tree", "Roadmap · Create tree", false, false, false},
     {"list_trees", "Roadmap · List trees", true, false, true},
     {"delete_tree", "Roadmap · Delete tree", false, true, true},
@@ -112,7 +112,7 @@ void checkCatalog(const std::vector<ToolDeclaration>& catalog, const std::vector
     CHECK_EQ(wire["annotations"]["readOnlyHint"].asBool(), declared.access == Access::read);
     if (declared.proposal) CHECK_FALSE(wire["annotations"]["destructiveHint"].asBool());
     if (declared.access == Access::del && !declared.proposal) CHECK(wire["annotations"]["destructiveHint"].asBool());
-    if (declared.bulkEdit && !declared.proposal) CHECK(wire["annotations"]["destructiveHint"].asBool());
+    if (declared.destructiveWrite && !declared.proposal) CHECK(wire["annotations"]["destructiveHint"].asBool());
     if (declared.access == Access::read) CHECK(wire["annotations"]["idempotentHint"].asBool());
     CHECK_EQ(wire["title"].asString().rfind(std::string(productWord) + " · ", 0), std::size_t{0});
   }
@@ -128,10 +128,19 @@ TEST(every_gym_tool_carries_the_annotations_its_declaration_derives) {
   checkCatalog(gym::gymToolCatalog(), kGym, "gym", "Gym");
 }
 
-TEST(only_the_allowlisted_roadmap_writes_are_bulk_edits) {
-  std::vector<std::string> bulk;
+TEST(import_subgraph_is_the_one_roadmap_write_declared_destructive_and_gym_declares_none) {
+  std::vector<std::string> writes;
   for (const ToolDeclaration& tool : roadmapToolCatalog())
-    if (tool.bulkEdit) bulk.push_back(tool.name());
-  CHECK_EQ(bulk, (std::vector<std::string>{"update_nodes", "change_edges", "import_subgraph"}));
-  for (const ToolDeclaration& tool : gym::gymToolCatalog()) CHECK_FALSE(tool.bulkEdit);
+    if (tool.destructiveWrite) writes.push_back(tool.name());
+  CHECK_EQ(writes, (std::vector<std::string>{"import_subgraph"}));
+  for (const ToolDeclaration& tool : gym::gymToolCatalog()) CHECK_FALSE(tool.destructiveWrite);
+}
+
+// The whole set a client is told may destroy, read off the wire: the delete level and import_subgraph. The everyday
+// edits, update_nodes and change_edges, are not in it, and a tool added later is placed here on purpose.
+TEST(the_roadmap_tools_published_as_destructive_are_the_delete_level_and_import_subgraph) {
+  std::vector<std::string> destructive;
+  for (const ToolDeclaration& tool : roadmapToolCatalog())
+    if (tool.wire()["annotations"]["destructiveHint"].asBool()) destructive.push_back(tool.name());
+  CHECK_EQ(destructive, (std::vector<std::string>{"delete_tree", "delete_node", "remove_kind", "import_subgraph"}));
 }
