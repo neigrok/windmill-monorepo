@@ -187,10 +187,14 @@ Json::Value legendKind() {
 }
 
 // The two facts the wire annotations need that the grant level does not carry (ToolHost.h derives
-// the rest). A bulk edit overwrites or removes many entries in one call and is declared destructive
-// under a write grant. An idempotent write is one a resend with the same arguments leaves unchanged;
-// create_tree and create_node mint an id, so a resend plants a second one.
-const std::set<std::string> kBulkEdits = {"import_subgraph", "update_nodes", "change_edges"};
+// the rest). A destructive write removes wholesale under a write grant: import_subgraph tombstones
+// nodes and, under "replace", drops the edges a node's list does not name. update_nodes and
+// change_edges are the everyday edits and are not destructive: the op log keeps what they overwrite,
+// a removed edge is re-added by naming it, and a client that stops to confirm each of them teaches
+// people to click through the warning the delete-level tools need. An idempotent write is one a
+// resend with the same arguments leaves unchanged; create_tree and create_node mint an id, so a
+// resend plants a second one.
+const std::set<std::string> kDestructiveWrites = {"import_subgraph"};
 const std::set<std::string> kIdempotentWrites = {
     "delete_tree", "update_tree", "delete_node", "add_kind", "remove_kind", "update_kind", "import_subgraph",
     "change_edges"};
@@ -213,7 +217,7 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
   descriptor["description"] = description;
   descriptor["inputSchema"] = schema;
   ToolDeclaration declaration{std::move(descriptor), kRoadmapProduct, access};
-  declaration.bulkEdit = kBulkEdits.count(name) > 0;
+  declaration.destructiveWrite = kDestructiveWrites.count(name) > 0;
   declaration.idempotent = kIdempotentWrites.count(name) > 0;
   return declaration;
 }
