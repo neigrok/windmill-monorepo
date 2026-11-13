@@ -11,6 +11,7 @@ import { ON_DEVICE, ROADMAP_SHEET, formatCount } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { OpeningGlyph } from '../OpeningMarks.jsx';
 import { deleteCost, withoutTree } from './deleteCost.js';
+import { onTreeClaimed } from '../sync/claimLocalTrees.js';
 
 // Unclaimed device rows edit the local seams and must never see the server.
 function seamOf(tree) {
@@ -102,11 +103,9 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
   useEffect(() => {
     if (!open) return undefined;
-    const onClaimed = (event) => setTrees((prev) => (Array.isArray(prev)
-      ? prev.map((row) => (row.id === event.detail?.treeId ? { ...row, claimed: true } : row))
-      : prev));
-    window.addEventListener('wm-tree-claimed', onClaimed);
-    return () => window.removeEventListener('wm-tree-claimed', onClaimed);
+    return onTreeClaimed((treeId) => setTrees((prev) => (Array.isArray(prev)
+      ? prev.map((row) => (row.id === treeId ? { ...row, claimed: true } : row))
+      : prev)));
   }, [open]);
 
   useEffect(() => {
