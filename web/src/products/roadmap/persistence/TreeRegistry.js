@@ -162,7 +162,7 @@ export async function readGuides(treeId, signal) {
   throw new AuthError('Could not read the guides', { code: body.code, status: response.status });
 }
 
-// Retire a roadmap (DELETE /v1/trees/:id, 204 — a soft delete; it leaves every list).
+// Retire a roadmap (DELETE /v1/trees/:id — a soft delete; it leaves every list). Any 2xx is success; no reply body is read.
 export async function deleteTree(treeId) {
   let response;
   try {
