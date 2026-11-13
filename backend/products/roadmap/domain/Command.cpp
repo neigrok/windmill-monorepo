@@ -586,6 +586,65 @@ std::optional<Admission> admitRegister(const std::string& field, const std::stri
 }
 }
 
+std::optional<Admission> admitBornKinds(const std::vector<Kind>& kinds) {
+  const auto malformed = [](std::string reason) { return Admission{Admission::Verdict::malformed, std::move(reason)}; };
+  if (kinds.empty())
+    return malformed("kinds, when sent, names at least one kind — leave it out for the default legend");
+  if (kinds.size() > kMaxKinds)
+    return Admission{Admission::Verdict::tooLarge, "kinds has " + std::to_string(kinds.size()) + " items, max " +
+                                                       std::to_string(kMaxKinds)};
+  const auto overCap = [](const std::string& path, const std::string& text, std::size_t cap) -> std::optional<std::string> {
+    if (!isValidUtf8(text)) return path + " is not valid UTF-8";
+    const std::size_t characters = codePointCount(text);
+    if (characters <= cap) return std::nullopt;
+    return path + " is " + std::to_string(characters) + " characters, " + std::to_string(characters - cap) +
+           " over the " + std::to_string(cap) + " cap";
+  };
+  std::map<KindId, std::size_t> idAt;
+  for (std::size_t i = 0; i < kinds.size(); ++i) {
+    const std::string path = "kinds[" + std::to_string(i) + "]";
+    if (std::optional<std::string> bad = overCap(path + ".id", kinds[i].id.str(), kMaxIdLength)) return malformed(*bad);
+    if (kinds[i].id.empty()) return malformed("argument \"" + path + ".id\" must be a non-empty string, got \"\"");
+    if (std::optional<std::string> bad = overCap(path + ".label", kinds[i].label, kMaxKindLabelLength))
+      return malformed(*bad);
+    if (std::optional<std::string> bad = overCap(path + ".description", kinds[i].description, kMaxKindDescriptionLength))
+      return malformed(*bad);
+    const auto [seen, fresh] = idAt.emplace(kinds[i].id, i);
+    if (!fresh)
+      return malformed(path + ".id \"" + seen->first.str() + "\" is already used by kinds[" +
+                       std::to_string(seen->second) + "] — an id names one kind per batch");
+  }
+  return admitMergedKinds({}, kinds);
+}
+
+std::optional<Admission> admitMergedKinds(const std::vector<Kind>& current, const std::vector<Kind>& incoming) {
+  std::set<KindId> replaced;
+  for (const Kind& kind : incoming) replaced.insert(kind.id);
+
+  std::map<NodeColor, KindId> hueOwner;
+  std::size_t size = 0;
+  for (const Kind& kind : current) {
+    if (replaced.count(kind.id)) continue;  // the incoming row overwrites this one
+    hueOwner[kind.hue] = kind.id;
+    ++size;
+  }
+  for (std::size_t i = 0; i < incoming.size(); ++i) {
+    const Kind& kind = incoming[i];
+    const auto owner = hueOwner.find(kind.hue);
+    if (owner != hueOwner.end() && owner->second != kind.id)
+      return Admission{Admission::Verdict::malformed,
+                       "kinds[" + std::to_string(i) + "].hue \"" + std::string(toString(kind.hue)) +
+                           "\" already belongs to kind \"" + owner->second.str() +
+                           "\" — a hue names one kind, so pick a free one"};
+    hueOwner[kind.hue] = kind.id;
+    ++size;
+  }
+  if (size > kMaxKinds)
+    return Admission{Admission::Verdict::tooLarge, "this import would leave " + std::to_string(size) +
+                                                       " kinds in the legend, max " + std::to_string(kMaxKinds)};
+  return std::nullopt;
+}
+
 std::optional<Admission> admitTitle(const std::string& title) {
   return admitRegister("the title", title, kMaxTitleChars);
 }

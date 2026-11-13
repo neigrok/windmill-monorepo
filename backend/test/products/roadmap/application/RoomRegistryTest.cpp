@@ -5,6 +5,7 @@
 #include "test/testing.h"
 
 #include <chrono>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -241,7 +242,7 @@ TEST(registry_access_of_reads_the_live_room_before_the_row) {
   repo.byId["t"].visibility = Visibility::private_;
   RoomRegistry registry(repo, log, bus);
 
-  registry.open(tid())->setVisibility(Visibility::public_);  // live only; the column still says private
+  registry.open(tid())->rootAccess()->setVisibility(Visibility::public_);  // live only; the column still says private
   REQUIRE(registry.accessOf(tid()).has_value());
   CHECK(registry.accessOf(tid())->visibility == Visibility::public_);
 }
@@ -310,34 +311,55 @@ TEST(registry_set_visibility_announces_the_change) {
   CHECK_EQ(announced.front(), std::string("t"));
 }
 
-// A subtree's visibility is its root's: a root's change reaches every tree under it, its live room and its readers, and a
-// change aimed at a subtree alone sets nothing.
-TEST(registry_set_visibility_of_a_root_reaches_its_subtrees_and_of_a_subtree_alone_sets_nothing) {
+// A subtree has no access of its own: open or closed it is read by its root's, a change of the root's visibility reaches
+// its open room at once, narrower before the row and wider after it, and the root's removal takes it out of reach.
+TEST(registry_a_subtree_is_read_by_its_roots_access_which_a_change_to_the_root_reaches_at_once) {
   FakeTreeRepository repo;
   FakeOpLog log;
   FakeBus bus;
   repo.byId["t"] = oneNodeTree();
+  repo.byId["t"].owner = uid("owner");
   repo.byId["c"] = oneNodeTree();
   repo.byId["g"] = oneNodeTree();
-  repo.byId["other"] = oneNodeTree();
   repo.subtrees["c"] = Subtree{tid("c"), tid("t"), OwningStep{tid("t"), nid("seed")}, 1, 0};
   repo.subtrees["g"] = Subtree{tid("g"), tid("t"), OwningStep{tid("c"), nid("seed")}, 2, 0};
   RoomRegistry registry(repo, log, bus);
-  TreeRoom& subtree = *registry.open(tid("c"));
   std::vector<std::string> announced;
   registry.whenAccessChanges([&](const TreeId& id) { announced.push_back(id.str()); });
+  const TreeRoom& open = *registry.open(tid("c"));
+  const auto visibilityOf = [&registry](const char* tree) { return registry.accessOf(tid(tree))->visibility; };
+  CHECK(registry.accessOf(tid("g")) ==
+        std::optional<TreeAccess>(TreeAccess{uid("owner"), Visibility::private_, tid("t")}));
 
+  std::vector<Visibility> duringTheWrite;
+  repo.duringVisibilitySet = [&] { duringTheWrite.push_back(visibilityOf("c")); };
   registry.setVisibility(tid("t"), Visibility::unlisted);
-  CHECK(subtree.visibility() == Visibility::unlisted);
-  for (const char* tree : {"t", "c", "g"}) CHECK(repo.byId[tree].visibility == Visibility::unlisted);
-  CHECK(repo.byId["other"].visibility == Visibility::private_);
-  CHECK(announced == (std::vector<std::string>{"c", "g", "t"}));
+  registry.setVisibility(tid("t"), Visibility::private_);
+  CHECK(duringTheWrite == (std::vector<Visibility>{Visibility::private_, Visibility::private_}));
+  registry.setVisibility(tid("t"), Visibility::public_);
+  CHECK(open.visibility() == Visibility::public_);
+  CHECK(visibilityOf("g") == Visibility::public_);
+  CHECK(announced == (std::vector<std::string>{"t", "c", "t", "c", "t", "c"}));
+
+  repo.duringVisibilitySet = [] { throw std::runtime_error("the write was refused"); };
+  bool refused = false;
+  try {
+    registry.setVisibility(tid("t"), Visibility::private_);
+  } catch (const std::runtime_error&) {
+    refused = true;
+  }
+  CHECK(refused);
+  CHECK(open.visibility() == Visibility::public_);  // narrowed for the write, and back once it failed
 
   announced.clear();
-  registry.setVisibility(tid("c"), Visibility::public_);
-  CHECK(subtree.visibility() == Visibility::unlisted);
-  for (const char* tree : {"t", "c", "g"}) CHECK(repo.byId[tree].visibility == Visibility::unlisted);
-  CHECK(announced.empty());
+  {
+    std::lock_guard<std::mutex> strand(registry.strandFor(tid("t")));
+    registry.remove(tid("t"));
+  }
+  CHECK_FALSE(registry.accessOf(tid("c")).has_value());
+  CHECK_FALSE(registry.accessOf(tid("g")).has_value());
+  CHECK_FALSE(open.readableBy(uid("owner")));
+  CHECK(announced == (std::vector<std::string>{"t", "c"}));
 }
 
 // A retirement drops the room WITHOUT persisting it, and announces so readers are re-decided.

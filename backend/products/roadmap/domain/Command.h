@@ -227,6 +227,7 @@ struct Admission {
   enum class Verdict { tooLarge, malformed };
   Verdict verdict;
   std::string reason;
+  bool operator==(const Admission&) const = default;
 };
 std::optional<Admission> admit(const TreeData& document);
 // A join: the caps are read off what the graph would HOLD once the arrival lands. The join is
@@ -237,6 +238,12 @@ std::optional<Admission> admit(const LooseGraph& graph, const Graft& incoming);
 std::optional<Admission> admit(const LooseGraph& graph, const TreeData& incoming);
 std::optional<Admission> admit(const LooseGraph& graph, const GraphState& incoming);
 std::optional<Admission> admit(const Legend& legend, const LegendState& incoming);
+// The kinds a new tree is sent to be born with (Legend::bornWith), in the words create_tree answers: at least one when
+// sent, at most kMaxKinds, each id non-empty and every field within its cap, an id and a hue once each.
+std::optional<Admission> admitBornKinds(const std::vector<Kind>& kinds);
+// `incoming` joined onto a legend holding `current`, an incoming row replacing the kind of its id: no hue is worn by two
+// kinds, and the legend holds at most kMaxKinds.
+std::optional<Admission> admitMergedKinds(const std::vector<Kind>& current, const std::vector<Kind>& incoming);
 // A tree register's one bound: valid UTF-8 with no NUL, within its cap. Past it is malformed, never truncated.
 std::optional<Admission> admitTitle(const std::string& title);
 std::optional<Admission> admitGuide(const std::string& guide);

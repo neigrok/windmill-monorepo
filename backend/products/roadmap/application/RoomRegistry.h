@@ -27,7 +27,10 @@ struct TreeRowGone : std::exception {
 };
 
 // Owns the live TreeRooms, one per tree being viewed or edited. Idle ones are persisted and closed
-// on its own heartbeat — a room is a cache of the row, not a residence.
+// on its own heartbeat — a room is a cache of the row, not a residence. Every live room of one root's
+// trees shares that root's RootAccess, which is made and changed under the root's lock alone: the
+// open that makes it reads the root's row under it, and a change of the root's visibility or its
+// removal writes the row under it, so no live room ever answers a reader its root's row does not.
 class RoomRegistry {
 public:
   RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus);
@@ -38,7 +41,8 @@ public:
   TreeRoom* open(const TreeId& id);
 
   // Answers WITHOUT materializing a room. Every path that may refuse asks this BEFORE open(), which
-  // drags the whole lattice off disk and pins it.
+  // drags the whole lattice off disk and pins it. A tree of any depth is answered its root's access:
+  // the live RootAccess while any room of the root's trees is open, else the root's row.
   std::optional<TreeAccess> accessOf(const TreeId& id);
 
   // Save, then land the queued op rows, then close. A row that fails to land after the save is
@@ -56,9 +60,13 @@ public:
   // names it where it is reported). Answers true when the rows fail to land: the save is what a
   // caller's reply attests, and the rows retry on the next persist. Throws only when the save itself failed.
   bool persist(const TreeId& id);
-  // The share seam: durable, then in each live room. A root's visibility is set with every tree under it, and a
-  // subtree's alone is never set (TreeRepository::setVisibility).
-  void setVisibility(const TreeId& id, Visibility visibility);
+  // The share seam, for a root: its row and the access every live room of its trees shares, the narrower first, so
+  // making it private shuts its subtrees before its row says so, and opening it opens them after. Each of those rooms
+  // is announced. Caller holds the root's strand.
+  void setVisibility(const TreeId& root, Visibility visibility);
+  // Soft-deletes the tree's row and retires its room. A root's shared access falls first, so every live room of its
+  // trees answers as absent before its row does, and each is announced. Caller holds the tree's strand.
+  void remove(const TreeId& id);
   bool isOpen(const TreeId& id) const;
   std::size_t openRooms() const;
 
@@ -81,6 +89,15 @@ public:
 
 private:
   void land(const TreeId& id, TreeRoom& room);
+  // The access every live room of `root`'s trees shares, made from the root's row when none is live. Called under the
+  // root's lock; nullptr when the root does not stand.
+  std::shared_ptr<RootAccess> shareRootAccess(const TreeId& root);
+  // The live one, or nullptr. Caller holds mutex_.
+  std::shared_ptr<RootAccess> liveRootAccess(const TreeId& root);
+  // The live rooms of `root`'s trees, the root's own among them.
+  std::vector<TreeId> roomsUnder(const TreeId& root) const;
+  // A leaf lock per root: taken under a strand, never the other way round, and nothing is taken under it.
+  std::mutex& rootLockFor(const TreeId& root);
 
   static constexpr std::size_t kStrandStripes = 64;
   static constexpr std::size_t kMaxRooms = 256;
@@ -98,8 +115,10 @@ private:
   PresenceBus& bus_;
   mutable std::mutex mutex_;
   std::map<TreeId, Live> rooms_;
+  std::map<TreeId, std::weak_ptr<RootAccess>> roots_;
   std::function<void(const TreeId&)> accessChanged_;
   std::array<std::mutex, kStrandStripes> strands_;
+  std::array<std::mutex, kStrandStripes> rootLocks_;
   // Last, so it destructs first: its destructor joins the sweeper, which must happen while the
   // members above are still alive.
   Heartbeat heartbeat_;

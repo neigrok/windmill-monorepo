@@ -302,12 +302,11 @@ order by 1;
         self.apply_schema()
         query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
         command([*query, """
-drop trigger trees_place_root on trees;
+drop trigger trees_place on trees;
 drop trigger trees_place_fixed on trees;
-drop function trees_place_root();
+drop function trees_place();
 drop function trees_place_fixed();
 drop index trees_parent_step;
-drop index trees_root;
 alter table trees drop column parent_tree, drop column parent_step, drop column root_tree, drop column depth;
 insert into trees(id,owner_id,title,title_hlc,visibility,head_seq) values
   ('t_00000000000000a1','00000000-0000-4000-8000-000000000044','Standing','1:0:old','unlisted',3),

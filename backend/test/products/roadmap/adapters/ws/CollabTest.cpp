@@ -2367,7 +2367,7 @@ TEST(ws_every_subscriber_of_the_parent_receives_one_subtree_frame_at_the_seq_it_
   const auto elsewhere = subscribed("s-owner", "t_other");
 
   const auto answer =
-      h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, TreeId{"t_00000000000000c1"});
+      h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {TreeId{"t_00000000000000c1"}, std::nullopt});
   REQUIRE(std::holds_alternative<SubtreeCreation>(answer));
   CHECK_EQ(std::get<SubtreeCreation>(answer).parentSeq, Seq{1});
   const Json::Value told = parse(R"({"t":"subtree","treeId":"t_p","seq":1,"step":"plain",)"

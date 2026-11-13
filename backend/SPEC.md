@@ -199,33 +199,41 @@ rejected for structure. Validity is a read model, not a gate.
   tree, who is answered the tree's own guide alone.
 - Subtrees (`domain/Subtree.h`) — each tree has a place among trees. A root has no parent, is its
   own root and sits at depth 0. A subtree is owned by one step of another tree, its owning step in
-  its parent tree; it has its parent's root, owner and visibility and sits one deeper, at most
-  `kMaxTreeDepth` (8). The place is written once, when the tree is created, and never changed, and a
-  subtree is always a new tree under a standing one: a subtree has one parent, never moves, never
-  closes a loop and is never another account's. A step owns at most one subtree, which the store
-  enforces whatever writes it. No door creates a subtree yet: every stored tree is a root, and
-  everything else this spec says of a tree holds for it as written.
+  its parent tree; it has its parent's root and owner and sits one deeper, at most `kMaxTreeDepth`
+  (8). It has no access of its own: it is read by its root's owner and visibility, and stands only
+  while its root does (Authorization). The place is written once, when the tree is created, and
+  never changed, and a subtree is always a new tree under a standing one: a subtree has one parent,
+  never moves, never closes a loop and is never another account's. A step owns at most one subtree.
+  The store enforces all of it whatever writes it (Persistence). No door creates a subtree yet:
+  every stored tree is a root, and everything else this spec says of a tree holds for it as written.
 
-  `TreeRegistry::createSubtree(parent, step, caller, proposedId?)` is the one operation that creates
-  one, for every door to call. It is keyed by the pair (`parent`, `step`) and runs under the
-  parent's strand, so it is serialised with every other write to the parent, a step's deletion
-  among them. In order it checks that the caller may read the parent (`no-such-tree` for an absent,
-  deleted or private-denied tree alike) and write it (`not-writer`), and that the step is present
-  (`step-gone`); then reads the stored site (`TreeRepository::subtreeSite`). A step that already
-  owns a subtree answers it, `created: false`, and writes nothing, so a retry after a lost reply and
-  a create that lost a race both find the one child. Otherwise it is refused when the child would
-  sit deeper than the cap (`depth-limit`) and when the step's pointer is valid as `OpenedTrees`
-  judges one, at a standing tree of the same owner, the parent itself included
-  (`step-opens-a-tree`); a pointer that leads nowhere does not stop it. A `proposedId` that is a well-formed tree id and names no row, standing
-  or deleted, anyone's, is kept, and any other is replaced by a minted id. The child is stored and
-  the parent's head moved to its next seq in one transaction (`TreeRepository::createSubtree`):
-  an empty tree with an empty title, at seq 0, its own room. That seq is then the parent's
-  `subtree` event, which every subscriber of the parent is sent (WebSocket surface); it changes no
-  register and leaves no `tree_ops` row. The answer is `{created, subtree: {id, root, parent:
-  {tree, step}, depth, seq}, parentSeq}`, `parentSeq` the seq the event took, or the parent's head
-  when the step already owned the child. A refusal writes nothing. A failure before the transaction
-  commits leaves no row, no seq and no event; one after it, in telling the subscribers, leaves the
-  child and its seq taken, and a retry answers that child.
+  `TreeRegistry::createSubtree(parent, step, caller, {proposedId?, kinds?})` is the one operation
+  that creates one, for every door to call. It is keyed by the pair (`parent`, `step`). The kinds,
+  when sent, are judged first as `create_tree` judges its `kinds` (`admitBornKinds`: the same caps,
+  refusals and words) and a refusal writes nothing. The rest runs under the parent's strand, so it
+  is serialised with every other write to the parent, a step's deletion among them. In order it
+  checks that the caller may read the parent (`no-such-tree` for an absent, deleted or
+  private-denied tree, or one whose root is deleted, alike) and write it (`not-writer`), and that
+  the step is present (`step-gone`); then reads the stored site (`TreeRepository::subtreeSite`),
+  and a parent's room whose head is behind the stored one takes it. A step that already owns a
+  subtree answers it, `created: false`, and writes nothing, so a retry after a lost reply and a
+  create that lost a race both find the one child. Otherwise it is refused when the child would sit
+  deeper than the cap (`depth-limit`) and when the step's pointer is valid as `OpenedTrees` judges
+  one, at a standing tree of the same owner, the parent itself included (`step-opens-a-tree`); a
+  pointer that leads nowhere does not stop it. A `proposedId` that is a well-formed tree id and
+  names no row, standing or deleted, anyone's, is kept, and any other is replaced by a minted id.
+  The child is stored with its legend, and the parent's head moved to its next seq, in one
+  transaction (`TreeRepository::createSubtree`) that holds the owner's account as `create` does: an
+  empty tree with an empty title, at seq 0, its own room, born with the kinds it was sent or, with
+  none, the default legend. A step another writer filled between the site and the store is read
+  again and answered as owned, and an id another writer took is replaced by a minted one; a second
+  conflict is a failure. The stored seq is then the parent's `subtree` event, which every
+  subscriber of the parent is sent (WebSocket surface); it changes no register and leaves no
+  `tree_ops` row. The answer is `{created, subtree: {id, root, parent: {tree, step}, depth, seq},
+  parentSeq}`, `parentSeq` the seq the event took, or the parent's head when the step already owned
+  the child, at or past the seq the child took. A failure before the transaction commits leaves no
+  row, no seq and no event; one after it, in telling the subscribers, leaves the child and its seq
+  taken, and a retry answers that child.
 
 Derived read models:
 
@@ -456,9 +464,15 @@ clients branch on the code, humans read the sentence.
 `unlisted` vs `public` is consent, not permission: `public` admits the tree to the gallery and
 lets its share page be indexed.
 
-A subtree's visibility is its root's (Model, Subtrees): it is stored from its parent's row when it is
-created, a change to a root's visibility sets every tree under it, deleted ones included, and their
-live rooms, and a change aimed at a subtree alone sets nothing.
+A subtree's access is its root's (Model, Subtrees), read at every access: the root's owner and
+visibility, and none at all while its root is deleted. A closed tree's row is read with its root's
+(`TreeRepository::load`, `loadAccess`); every live room of one root's trees shares one `RootAccess`,
+so `RoomRegistry::accessOf`, the socket gates, the bus's read gate and the MCP reads answer a subtree
+as its root. That access is made, under the root's lock, from the root's row, and a change of the
+root's visibility or its removal writes the row under the same lock, the narrower first: making the
+root private shuts its open subtrees before its row says so, and opening it opens them after, so no
+subtree ever admits a reader its root does not. A visibility change aimed at a subtree is refused
+`not-a-root` (`PATCH /v1/trees/{id}`, `409`, naming the step it hangs from and its root).
 
 Absent and private-denied answer identically on every surface — no existence leak.
 
@@ -637,9 +651,10 @@ that can, `reader` for any other) ·
 `peer` · `subtree {treeId, seq, step, subtree: {id, depth}}`.
 
 `subtree` says a subtree was created under `step` (Model, Subtrees). It takes the tree's next seq and
-goes to every subscriber, reader and writer alike, carrying the same bytes. No door creates a
-subtree yet, so no connection is sent one. The web client skips a frame type it does not know, and
-so takes the seq after a skipped `subtree` frame for a gap and subscribes again.
+goes to every subscriber, reader and writer alike, carrying the same bytes: whoever may read the tree
+may read its subtrees, whose access is its root's. No door creates a subtree yet, so no connection is
+sent one. The web client skips a frame type it does not know, so the next frame's seq reads as a gap
+to it: it reconnects, then subscribes again.
 
 `progressAck.refused` is present only when the frame carried a mark that was refused: an array of
 `{node, code}`, one per refused mark in the frame's order. The one code is `opens-a-tree` — the node
@@ -715,14 +730,15 @@ Rules:
   consulting the actor. Clears retain a stamped `none` row.
 - The og-image and og-video rows carry no FK to `trees`: they are addressed by tree id and read
   behind the tree's own visibility gate, so a stray row is simply unreachable.
-- A tree's place (Model, Subtrees) is written once, at insert: a subtree's `INSERT` takes its
-  `root_tree`, `depth`, `owner_id` and `visibility` from its parent's standing row in the same
-  statement. `trees_place_root` makes any row inserted without a parent a root, `root_tree` its own
-  id and `depth` 0, whoever inserts it, so a binary that knows nothing of subtrees still writes
-  roots, and `db/schema.sql` makes a root of every row that has no `root_tree`.
-  `trees_place_fixed` refuses an `UPDATE` that changes any of the four. `trees_parent_step` is unique
-  on (`parent_tree`, `parent_step`) for rows with a parent, so a step owns one subtree whatever
-  writes it, and `trees_root` finds a root's trees when its visibility is set.
+- A tree's place (Model, Subtrees) is written once, at insert, by the store. `trees_place` makes a
+  row inserted without a parent a root, `root_tree` its own id and `depth` 0, whoever inserts it, so
+  a binary that knows nothing of subtrees still writes roots, and `db/schema.sql` makes a root of
+  every row that has no `root_tree`. A row inserted with a parent takes its `root_tree`, its
+  `owner_id` and its `depth` from the parent's standing row, held against its removal, whatever the
+  insert names; a parent that does not stand is refused, and so is one at depth 8. Its `visibility`
+  column holds `private`, and no read of its access reads it. `trees_place_fixed` refuses an
+  `UPDATE` that changes any of the four. `trees_parent_step` is unique on (`parent_tree`,
+  `parent_step`) for rows with a parent, so a step owns one subtree whatever writes it.
 
 Indexes that exist because their query runs on every render: `trees_owner` (the registry list),
 `trees_forked_from` (fork lineage, asked once per share page and once per gallery card),

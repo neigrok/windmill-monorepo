@@ -306,7 +306,7 @@ struct RoomRead {
 std::optional<RoomRead> readRoom(RoomRegistry& registry, const TreeId& tree, const std::optional<UserId>& caller) {
   std::lock_guard<std::mutex> lock(registry.strandFor(tree));
   TreeRoom* room = registry.open(tree);
-  if (!room || !canRead(caller, room->owner(), room->visibility())) return std::nullopt;
+  if (!room || !room->readableBy(caller)) return std::nullopt;
   return RoomRead{room->snapshot(), room->head(), room->owner(), room->guideInherited()};
 }
 
@@ -498,7 +498,7 @@ ToolResult readDiagnostics(RoomRegistry& registry, TreeRegistry& trees, const Tr
   {
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
     TreeRoom* room = registry.open(tree);
-    if (!room || !canRead(caller, room->owner(), room->visibility()))
+    if (!room || !room->readableBy(caller))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     graph = room->diagnose();
     if (asked && canWrite(caller, room->owner())) pointers = room->pointers();
@@ -535,7 +535,7 @@ ToolResult readProgress(RoomRegistry& registry, ProgressService& progress, const
   {
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
     const TreeRoom* room = registry.open(tree);
-    if (!room || !canRead(reader, room->owner(), room->visibility()))
+    if (!room || !room->readableBy(reader))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     for (const auto& [node, mark] : overlay.marks)
       if (room->hasNode(node)) held.insert(node);
@@ -593,7 +593,7 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
   std::optional<PointerEdit> pointerEdit;
   const ToolResult edited = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     // Read gate first, answering as an absent tree does, then the write gate: the owner alone.
-    if (!canRead(actor, room.owner(), room.visibility()))
+    if (!room.readableBy(actor))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
@@ -731,7 +731,7 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
     std::lock_guard<std::mutex> lock(registry.strandFor(tree));
     TreeRoom* room = registry.open(tree);
     // Not owner-gated (a per-user overlay), but private stays owner-only: a mark would confirm which ids exist.
-    if (!room || !canRead(user, room->owner(), room->visibility()))
+    if (!room || !room->readableBy(user))
       return "no such tree \"" + tree.str() + "\"";  // byte-identical to every other absent message
     for (const RequestedMark& mark : requested) {
       if (!room->hasNode(mark.node)) { batch.skipped.append(mark.node.str()); continue; }
@@ -791,7 +791,7 @@ ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Va
   if (args["hue"].isString()) update.hue = parseColor(args["hue"].asString());
 
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    if (!canRead(actor, room.owner(), room.visibility()))
+    if (!room.readableBy(actor))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
@@ -940,7 +940,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
   bool treeLanded = false;  // an op landed on the tree in this call
   std::optional<PointerEdit> pointerEdit;
   ToolResult edited = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    if (!canRead(actor, room.owner(), room.visibility()))
+    if (!room.readableBy(actor))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     // Marks alone write the caller's own overlay, which reading the tree is enough for; every other field is the owner's.
     if (!nodes || !patches.empty())
@@ -1140,35 +1140,6 @@ std::optional<std::string> checkImport(const Json::Value& args) {
   return std::nullopt;
 }
 
-// A duplicate hue is unrepairable once it lands.
-std::optional<std::string> checkMergedLegend(const std::vector<Kind>& current,
-                                             const std::vector<Kind>& incoming) {
-  std::set<std::string> replaced;
-  for (const Kind& kind : incoming) replaced.insert(kind.id.str());
-
-  std::map<NodeColor, KindId> hueOwner;
-  std::size_t size = 0;
-  for (const Kind& kind : current) {
-    if (replaced.count(kind.id.str())) continue;  // the incoming row overwrites this one
-    hueOwner[kind.hue] = kind.id;
-    ++size;
-  }
-  for (Json::ArrayIndex i = 0; i < incoming.size(); ++i) {
-    const Kind& kind = incoming[i];
-    auto owner = hueOwner.find(kind.hue);
-    if (owner != hueOwner.end() && owner->second != kind.id)
-      return "kinds[" + std::to_string(i) + "].hue \"" + std::string(toString(kind.hue)) +
-             "\" already belongs to kind \"" + owner->second.str() +
-             "\" — a hue names one kind, so pick a free one";
-    hueOwner[kind.hue] = kind.id;
-    ++size;
-  }
-  if (size > kMaxKinds)
-    return "this import would leave " + std::to_string(size) + " kinds in the legend, max " +
-           std::to_string(kMaxKinds);
-  return std::nullopt;
-}
-
 ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& edits, const TreeId& tree,
                           const Json::Value& args, Clock& clock, const ToolCaller& caller) {
   if (std::optional<std::string> bad = checkImport(args)) return ToolResult::failure(*bad);
@@ -1221,7 +1192,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
   std::optional<PointerEdit> pointerEdit;
   ToolResult grafted = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     // Read gate before the write gate: a dry run's collision list would leak ids to a non-reader.
-    if (!canRead(actor, room.owner(), room.visibility()))
+    if (!room.readableBy(actor))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
@@ -1249,8 +1220,9 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
 
     const TreeData& incoming = graft.document;
     TreeData current = room.snapshot();  // collision = an incoming id already present (an upsert overwrites it)
-    if (std::optional<std::string> bad = checkMergedLegend(current.kinds, incoming.kinds))
-      return ToolResult::failure(*bad);
+    // A duplicate hue is unrepairable once it lands.
+    if (std::optional<Admission> refusal = admitMergedKinds(current.kinds, incoming.kinds))
+      return ToolResult::failure(refusal->reason);
     std::variant<Graft, KindRefusal> filed = room.resolveKinds(graft);
     if (const auto* refusal = std::get_if<KindRefusal>(&filed)) return kindRefused(*refusal);
     graft = std::get<Graft>(std::move(filed));
@@ -1424,7 +1396,7 @@ ToolResult deleteNodes(RoomRegistry& registry, NodeEdits& edits, const TreeId& t
   const bool single = args["nodeIds"].isNull();
 
   return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
-    if (!canRead(actor, room.owner(), room.visibility()))
+    if (!room.readableBy(actor))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
@@ -1465,12 +1437,11 @@ ToolResult deleteNodes(RoomRegistry& registry, NodeEdits& edits, const TreeId& t
 // in the shape get_tree answers kinds by default, and reads nothing back once the tree is inserted.
 ToolResult createTree(TreeRegistry& trees, const std::string& origin, const UserId& caller, const Json::Value& args) {
   if (std::optional<std::string> bad = optionalString(args["title"], "title")) return ToolResult::failure(*bad);
-  if (args["kinds"].isArray() && args["kinds"].empty())
-    return ToolResult::failure("kinds, when sent, names at least one kind — leave it out for the default legend");
   if (std::optional<std::string> bad = checkKinds(args["kinds"], kMaxKinds)) return ToolResult::failure(*bad);
   const std::optional<TreeData> sent = treeFromJson(args, TreeId{});
   if (!sent) return ToolResult::failure("this tree's title or kinds carry a field of the wrong type");
-  if (std::optional<std::string> bad = checkMergedLegend({}, sent->kinds)) return ToolResult::failure(*bad);
+  if (args["kinds"].isArray())
+    if (std::optional<Admission> refusal = admitBornKinds(sent->kinds)) return ToolResult::failure(refusal->reason);
 
   TreeData initial;
   initial.title = sent->title;

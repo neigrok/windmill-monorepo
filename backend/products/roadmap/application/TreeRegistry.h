@@ -37,17 +37,25 @@ public:
   enum class Creation { created, existedYours, retired, taken };
   Creation create(const UserId& owner, const TreeId& id, const TreeData& initial);
 
+  // What a caller may ask of the subtree it creates: an id it minted, and the kinds of its legend. Each is optional: a
+  // free, well-formed id is kept and any other replaced by a minted one, and no kinds gives the default legend.
+  struct SubtreeRequest {
+    std::optional<TreeId> proposedId;
+    std::optional<std::vector<Kind>> kinds;
+  };
   // A subtree under `step` of `parent` (SPEC.md, Model, Subtrees), keyed by the pair, so a retry or a lost race answers
-  // the subtree the step already owns, `created` false, and writes nothing. Under the parent's strand, so it is
-  // serialised with every other write to the parent, a step's deletion among them: read gate → write gate → the step
-  // stands → the stored site → the subtree the step owns → depth → the step's legacy pointer → the child stored with
-  // the parent's next seq in one transaction → that seq's `subtree` event told to the parent's subscribers. A free,
-  // well-formed `proposedId` is kept and any other replaced by a minted id. A call that fails leaves no row, no seq
-  // and no event. One `roadmap.subtree.create` line per call, at the door the call came through (`internal` outside
-  // one). No door calls it yet.
-  std::variant<SubtreeCreation, SubtreeRefusal> createSubtree(const TreeId& parent, const NodeId& step,
-                                                              const UserId& caller,
-                                                              const std::optional<TreeId>& proposedId = std::nullopt);
+  // the subtree the step already owns, `created` false, and writes nothing. The kinds are judged first, as create_tree
+  // judges them (admitBornKinds). Then, under the parent's strand, so it is serialised with every other write to the
+  // parent, a step's deletion among them: read gate → write gate → the step stands → the stored site → the subtree the
+  // step owns → depth → the step's legacy pointer → the child stored with its legend and the parent's next seq in one
+  // transaction → that seq's `subtree` event told to the parent's subscribers. A step another writer filled meanwhile
+  // is answered as owned, and an id another writer took meanwhile is replaced by a minted one, once. A call that fails
+  // before the commit leaves no row, no seq and no event; one that fails after it is `unannounced`. One
+  // `roadmap.subtree.create` line per call, at the door the call came through (`internal` outside one). No door calls
+  // it yet.
+  std::variant<SubtreeCreation, SubtreeRefusal, Admission> createSubtree(const TreeId& parent, const NodeId& step,
+                                                                         const UserId& caller,
+                                                                         const SubtreeRequest& request = {});
 
   std::vector<TreeSummary> list(const UserId& owner);
 
@@ -110,10 +118,12 @@ public:
   enum class GuideRefusal { notFound, notYours, nobodysTree };
   std::variant<Seq, GuideRefusal, Admission> setGuide(const TreeId& tree, const UserId& caller, const std::string& guide);
 
-  // owner check → set read visibility through RoomRegistry: the durable column write plus the live
-  // room's cache, so a just-shared tree stops 404-ing at once.
+  // owner check → a root's alone, a subtree answering NotARoot with its owning step → set read visibility through
+  // RoomRegistry: the durable column write plus the live access of every room of the root's trees, so a just-shared
+  // tree stops 404-ing at once.
   enum class VisibilityChange { changed, notFound, notYours, nobodysTree };
-  VisibilityChange setVisibility(const TreeId& tree, const UserId& caller, Visibility visibility);
+  std::variant<VisibilityChange, NotARoot> setVisibility(const TreeId& tree, const UserId& caller,
+                                                         Visibility visibility);
 
 private:
   TreeRepository& trees_;

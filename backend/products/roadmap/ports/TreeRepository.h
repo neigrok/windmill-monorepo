@@ -17,6 +17,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace wm {
@@ -33,7 +34,8 @@ struct FollowTimedOut : std::exception {
 
 // An unset title or guide stamp means the create-time baseline, never written since; an empty
 // owner means a legacy row nobody may write. `guideInherited` marks a guide a fork copied from someone
-// else's tree: its author's words, until a guide of the owner's lands over it.
+// else's tree: its author's words, until a guide of the owner's lands over it. A subtree's `owner` and
+// `visibility` are its root's, and `parent` is set on a subtree alone.
 struct StoredTree {
   GraphState state;
   LegendState legend;
@@ -44,6 +46,8 @@ struct StoredTree {
   std::uint64_t createdAt = 0;  // epoch ms
   Lww<std::string> guide;
   bool guideInherited = false;
+  TreeId root;
+  std::optional<OwningStep> parent;
   bool operator==(const StoredTree&) const = default;
 };
 
@@ -64,22 +68,30 @@ struct ListedTree {
   std::string sourceTitle;
 };
 
-// The two facts an access decision needs, without the whole-lattice cost of load().
+// The two facts an access decision needs, without the whole-lattice cost of load(): the root's, for a tree of any depth,
+// and the root they were read from.
 struct TreeAccess {
   std::optional<UserId> owner;
   Visibility visibility = Visibility::private_;
+  TreeId root;
+  bool operator==(const TreeAccess&) const = default;
 };
 
-// What creating a subtree under one step of a standing tree reads off the stored rows: that tree's root and depth, the
-// subtree the step already owns, standing or deleted, whether the tree the step's pointer names stands and is the same
-// owner's, and whether a proposed id names any row, anyone's, standing or deleted.
+// What creating a subtree under one step of a standing tree reads off the stored rows: that tree's root, depth and head,
+// the subtree the step already owns, standing or deleted, whether the tree the step's pointer names stands and is the
+// same owner's, and whether a proposed id names any row, anyone's, standing or deleted.
 struct SubtreeSite {
   TreeId root;
   int depth = 0;
+  Seq head = 0;
   std::optional<Subtree> owned;
   bool opensATree = false;
   bool proposedTaken = false;
 };
+
+// Why storing a subtree stored nothing: its parent no longer stands or its account is gone, the step owns a subtree
+// another writer stored meanwhile, or the id names a row.
+enum class SubtreeConflict { parentGone, stepOwned, idTaken };
 
 struct ForkLineage {
   bool isFork = false;
@@ -89,6 +101,7 @@ struct ForkLineage {
 
 struct TreeRepository {
   virtual ~TreeRepository() = default;
+  // A subtree whose root does not stand answers nullopt, as a tree that does not stand does.
   virtual std::optional<StoredTree> load(const TreeId& tree) = 0;
   virtual std::optional<TreeAccess> loadAccess(const TreeId& tree) = 0;
   // Who owned a row that outlived its delete; a live row (or none) answers nullopt.
@@ -131,10 +144,9 @@ struct TreeRepository {
   // The closed-room seam only — a live room's title reaches the column through save(). Lands only
   // under a stamp dominating the stored one.
   virtual void rename(const TreeId& tree, const Lww<std::string>& title) = 0;
-  // The owner check is the caller's, not this write's. A subtree's visibility is its root's, so a root's is set with every
-  // tree under it, deleted or not, and a subtree's alone is never set; a soft-deleted root is left alone. Answers the
-  // trees it set.
-  virtual std::vector<TreeId> setVisibility(const TreeId& tree, Visibility visibility) = 0;
+  // The owner check is the caller's, not this write's. A root's alone: a subtree's is its root's and is never set, and a
+  // soft-deleted root is left alone.
+  virtual void setVisibility(const TreeId& tree, Visibility visibility) = 0;
   // Verbatim copy of `source`'s document; the copy starts a fresh op log at head 0, its title and
   // guide under the stamps given and the guide marked `guideInherited` as the caller rules. Throws
   // DuplicateTree on an id collision.
@@ -146,11 +158,11 @@ struct TreeRepository {
   virtual std::optional<SubtreeSite> subtreeSite(const TreeId& parent, const NodeId& step,
                                                  const std::optional<TreeId>& opened,
                                                  const std::optional<TreeId>& proposed) = 0;
-  // `child` stored as the subtree `parent` owns and the parent tree's head moved to `parentSeq`, in one transaction. The
-  // child takes the parent's owner, visibility and root from its row in the same statement, one deeper, with an empty
-  // title, at seq 0. When the parent no longer stands nothing is written and nullopt answered; when `child` names a row
-  // or the step already owns a subtree, nothing is written and DuplicateTree thrown.
-  virtual std::optional<Subtree> createSubtree(const TreeId& child, const OwningStep& parent, Seq parentSeq) = 0;
+  // `child` stored as the subtree `parent` owns, holding `legend`, and the parent tree's head moved to `parentSeq`, in one
+  // transaction that holds the owner's account against its erasure. The child takes its root, depth and owner from the
+  // parent's row, with an empty title, at seq 0. A conflict writes nothing.
+  virtual std::variant<Subtree, SubtreeConflict> createSubtree(const TreeId& child, const OwningStep& parent,
+                                                               const LegendState& legend, Seq parentSeq) = 0;
 };
 
 }

@@ -35,6 +35,13 @@ struct SubtreeCreation {
   bool operator==(const SubtreeCreation&) const = default;
 };
 
+// A change that only a root takes, aimed at a subtree: refused `not-a-root`, naming where the subtree hangs and its root.
+struct NotARoot {
+  OwningStep owningStep;
+  TreeId root;
+  bool operator==(const NotARoot&) const = default;
+};
+
 // Why a subtree was not created. Each is expected: a line, never an Issue.
 enum class SubtreeRefusal { noSuchTree, notWriter, stepGone, depthLimit, stepOpensATree };
 

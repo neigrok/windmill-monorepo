@@ -125,8 +125,21 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
       callback(error(drogon::k400BadRequest, "visibility must be private, unlisted, or public"));
       return;
     }
-    TreeRegistry::VisibilityChange outcome =
+    const std::variant<TreeRegistry::VisibilityChange, NotARoot> answer =
         registry_->setVisibility(TreeId{treeId}, *caller, parseVisibility(requested));
+    if (const NotARoot* refusal = std::get_if<NotARoot>(&answer)) {
+      Json::Value body(Json::objectValue);
+      body["error"] = "this tree hangs from step \"" + refusal->owningStep.step.str() + "\" of " +
+                      refusal->owningStep.tree.str() + " and is shared as its root " + refusal->root.str() +
+                      " is: set the root's visibility";
+      body["code"] = "not-a-root";
+      body["parent"]["tree"] = refusal->owningStep.tree.str();
+      body["parent"]["step"] = refusal->owningStep.step.str();
+      body["root"] = refusal->root.str();
+      callback(jsonResponse(body, drogon::k409Conflict));
+      return;
+    }
+    const TreeRegistry::VisibilityChange outcome = std::get<TreeRegistry::VisibilityChange>(answer);
     if (outcome == TreeRegistry::VisibilityChange::notFound) {
       callback(error(drogon::k404NotFound, "no such tree"));
       return;
