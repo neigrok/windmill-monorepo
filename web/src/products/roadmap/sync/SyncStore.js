@@ -15,7 +15,9 @@ const CHANNEL = 'windmill-roadmap-lane-epochs';
 class DatabaseRecords {
   constructor(db) { this.db = db; }
 
-  // One transaction over a tree's record: `work` reads what is stored and may put its replacement.
+  // One transaction over a tree's record: `work` reads what is stored and may put its replacement. A failure rejects with
+  // what failed: `work`'s own throw, else the failing request's error, which reaches the transaction before its own
+  // `error` is set.
   transact(treeId, mode, work) {
     return new Promise((resolve, reject) => {
       const txn = this.db.transaction(STORE, mode);
@@ -30,9 +32,10 @@ class DatabaseRecords {
           txn.abort();
         }
       };
+      const failed = (event) => reject(failure ?? event?.target?.error ?? txn.error ?? new DOMException('The record was not written', 'AbortError'));
       txn.oncomplete = () => resolve(answer);
-      txn.onerror = () => reject(failure ?? txn.error);
-      txn.onabort = () => reject(failure ?? txn.error);
+      txn.onerror = failed;
+      txn.onabort = failed;
     });
   }
 
@@ -48,9 +51,10 @@ class DatabaseRecords {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(STORE, 'readwrite');
       transaction.objectStore(STORE).delete(treeId);
+      const failed = (event) => reject(event?.target?.error ?? transaction.error ?? new DOMException('The record was not cleared', 'AbortError'));
       transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error);
+      transaction.onerror = failed;
+      transaction.onabort = failed;
     });
   }
 }

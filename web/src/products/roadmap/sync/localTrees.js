@@ -5,6 +5,7 @@
 import { SyncSession } from './SyncSession.js';
 import { SyncStore } from './SyncStore.js';
 import { pendingGestures } from './pendingWrites.js';
+import { materialize } from './materialize.js';
 import { HlcClock, TreeLattice, hlcText } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
 import { LocalTreeRegistry, resolveDeviceOwner, deviceOwner, deviceOwnerAnswered } from '../persistence/LocalTreeRegistry.js';
@@ -150,22 +151,56 @@ function marksShown(saved, nodes) {
   return { completed: new Set(nodes.filter((step) => step.status === 'complete').map((step) => step.id)), completedAt: {} };
 }
 
+// A device record that does not join as a lattice: its steps cannot be known.
+class CorruptDeviceRecord extends Error {
+  constructor(cause) {
+    super('Device record does not join', { cause });
+    this.name = 'CorruptDeviceRecord';
+  }
+}
+
+// The one bounded tag a device failure reports under: the browser's own name for what failed, `corrupt` for a record that
+// does not join, `other` for anything else. Never a message.
+const DEVICE_FAILURES = new Set(['QuotaExceededError', 'AbortError', 'UnknownError', 'ConstraintError', 'DataError', 'DataCloneError',
+  'InvalidStateError', 'NotFoundError', 'ReadOnlyError', 'TransactionInactiveError', 'VersionError', 'SecurityError', 'TimeoutError']);
+function failureTags(error) {
+  if (error instanceof CorruptDeviceRecord) return { name: 'corrupt' };
+  return { name: error instanceof DOMException && DEVICE_FAILURES.has(error.name) ? error.name : 'other' };
+}
+
+// The steps of a stored record as a lattice, or why they cannot be known.
+function joinedRecord(treeId, title, saved) {
+  const lattice = new TreeLattice(treeId, title);
+  try {
+    lattice.join(saved.frame);
+  } catch (error) {
+    throw new CorruptDeviceRecord(error);
+  }
+  return lattice;
+}
+
 // The trees that live only on this device, for the person who holds it, by id: each one's title, its steps and the marks
-// its room shows (`marksShown`). A record this browser cannot read reports `roadmap-device-opens-read` and the read
-// throws, judged.
+// its room shows (`marksShown`). A record that does not join reports `roadmap-device-opens-read` (`corrupt`) and stands
+// `unread`, its steps unknown, while the rest are read. A device that cannot read its trees at all (its database will not
+// open, or a record cannot be read) reports the same and the read throws, judged.
 export async function readDeviceTrees({ registry = new LocalTreeRegistry(), store = new SyncStore(), report = reportRoadmapFailure } = {}) {
   const trees = new Map();
   try {
-    for (const row of registry.list().filter((entry) => !entry.claimed)) {
+    const held = new Set(await store.treeIds({ durable: true }));
+    for (const row of registry.list().filter((entry) => !entry.claimed && held.has(entry.id))) {
       const saved = await store.load(row.id);
       if (!saved) continue;
-      const lattice = new TreeLattice(row.id, row.title);
-      lattice.join(saved.frame);
-      const { title, nodes } = lattice.toTreeData();
-      trees.set(row.id, { title, nodes, completed: marksShown(saved, nodes).completed });
+      try {
+        const { title, nodes } = joinedRecord(row.id, row.title, saved).toTreeData();
+        trees.set(row.id, { title, nodes, completed: marksShown(saved, nodes).completed });
+      } catch (error) {
+        if (!(error instanceof CorruptDeviceRecord)) throw error;
+        report('roadmap-device-opens-read', error, failureTags(error));
+        trees.set(row.id, { title: row.title, unread: true, nodes: [], completed: new Set() });
+      }
     }
   } catch (error) {
-    report('roadmap-device-opens-read', error);
+    report('roadmap-device-opens-read', error, failureTags(error));
     throw new BoundaryFailure('Device trees not read', { cause: error });
   }
   return trees;
@@ -181,7 +216,8 @@ export async function listDeviceTrees(read = readDeviceTrees) {
     return { rows: [], authoritative: false, status: 0, failure };
   }
   const judged = new OpenedTrees(trees);
-  return { rows: [...trees].map(([id, tree]) => ({ id, title: tree.title, ...judged.progressOf(id) })), authoritative: true };
+  const rows = [...trees].filter(([, tree]) => !tree.unread).map(([id, tree]) => ({ id, title: tree.title, ...judged.progressOf(id) }));
+  return { rows, authoritative: true };
 }
 
 // What an address the picker was given comes to on such a device: a tree of this device's is the person's own, and any
@@ -223,8 +259,7 @@ async function stampDeviceRegister(treeId, name, value) {
 // discard moves the record.
 async function amendDeviceRecord(store, treeId, saved, change) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const lattice = new TreeLattice(treeId);
-    lattice.join(saved.frame);
+    const lattice = joinedRecord(treeId, '', saved);
     const progress = new ProgressLattice();
     progress.join(saved.progress);
     const clock = new HlcClock(`r_${crypto.randomUUID?.().slice(0, 8) ?? `${Date.now()}`}`);
@@ -262,54 +297,79 @@ export async function deleteLocalTree(treeId) {
   new PlaceStore().forget(treeId); // a dead last-place dead-ends the next magic-link landing
 }
 
-// Removing a device tree takes with it the steps of the person's other device trees that open it, as the server's
-// removal does: each tombstoned with every edge touching it, nothing respliced, and the person's mark on it cleared.
-// Each tree takes its own write, so one that fails leaves the others' steps gone: the tree open in this tab through its
-// session `live`, as a local write outside the undo journal, and every other through its stored record, as any device
-// edit. A failure reports `roadmap-device-cascade` once; it never throws.
-export async function removeDeviceOpeners(treeId, { live = null, registry = new LocalTreeRegistry(), store = new SyncStore(), report = reportRoadmapFailure } = {}) {
+// Removing a tree that lives only on this device, with the steps of the person's other trees here that open it, as the
+// server's removal does: each tombstoned with every edge touching it, nothing respliced, and the person's mark on it
+// cleared. The device's trees are read first, and a device that cannot read them refuses the delete with nothing removed
+// (the read's failure, judged, is the delete's). Then the tree goes, its session `live` closed first where this tab has it
+// open. A tree whose record does not join was neither counted nor is taken from. Each other tree takes its own write, so
+// one that fails leaves the others' steps gone: the tree open in this tab through `live`, as a local write outside the undo
+// journal, and every other through its stored record, as any device edit. A write that fails reports
+// `roadmap-device-cascade` once, under the name of what failed.
+export async function deleteDeviceTree(treeId, { live = null, registry = new LocalTreeRegistry(), store = new SyncStore(), report = reportRoadmapFailure } = {}) {
+  const trees = await readDeviceTrees({ registry, store, report });
+  if (live?.treeId === treeId) live.close();
+  await deleteLocalTree(treeId);
+  let failed = false;
   let failure = null;
-  for (const row of registry.list().filter((entry) => !entry.claimed && entry.id !== treeId)) {
+  for (const [id, tree] of trees) {
+    if (id === treeId || tree.unread) continue;
     try {
-      if (live?.treeId === row.id && live.ready && !live.closed) {
-        const steps = stepsOpening(live.lattice, treeId);
-        if (steps.length === 0) continue;
-        live.apply(prunedSteps(live.lattice, steps, live.clock.tick(Date.now())));
-        const marked = steps.filter((id) => live.progress.marks.get(id)?.status === 'complete');
-        if (marked.length > 0) live.markProgress(marked, 'none');
-        continue;
+      if (live?.treeId === id && live.ready && !live.closed) {
+        const unsaved = await live.removeSteps(stepsOpening(live.lattice, treeId));
+        if (unsaved) throw unsaved;
+      } else {
+        await removeStoredSteps(store, id, treeId);
       }
-      const saved = await store.load(row.id);
-      if (!saved) continue;
-      await amendDeviceRecord(store, row.id, saved, (lattice, progress, clock) => {
-        const steps = stepsOpening(lattice, treeId);
-        if (steps.length === 0) return [];
-        const at = clock.tick(Date.now());
-        lattice.join(prunedSteps(lattice, steps, at));
-        progress.join({ marks: steps.filter((id) => progress.marks.get(id)?.status === 'complete').map((node) => ({ node, status: 'none', at: hlcText(at) })) });
-        return ['structure', 'progress'];
-      });
     } catch (error) {
+      failed = true;
       failure ??= error;
     }
   }
-  if (failure) report('roadmap-device-cascade', failure);
+  if (failed) report('roadmap-device-cascade', failure, failureTags(failure));
+}
+
+// The stored record's steps that open `treeId`, pruned under one stamp with the person's marks on them cleared.
+async function removeStoredSteps(store, id, treeId) {
+  const saved = await store.load(id);
+  if (!saved) return;
+  await amendDeviceRecord(store, id, saved, (lattice, progress, clock) => {
+    const writes = materialize({ kind: 'PruneNodes', nodeIds: stepsOpening(lattice, treeId) }, lattice, clock);
+    if (writes.nodes.length === 0) return [];
+    lattice.join(writes);
+    const at = writes.nodes[0].deletedAt;
+    progress.join({ marks: writes.nodes.filter(({ id: step }) => progress.marks.get(step)?.status === 'complete').map(({ id: node }) => ({ node, status: 'none', at })) });
+    return ['structure', 'progress'];
+  });
+}
+
+// Every step on this device that opens `fromId` opens `toId` instead, as when a claim must give that tree a fresh id: an
+// ordinary pointer write, through the open tab's session `live` where it holds the tree and through the stored record
+// otherwise. Answers the trees whose steps it wrote.
+export async function repointDeviceSteps(fromId, toId, { live = null, registry = new LocalTreeRegistry(), store = new SyncStore() } = {}) {
+  const written = [];
+  for (const row of registry.list()) {
+    if (live?.treeId === row.id && live.ready && !live.closed) {
+      if (live.repoint(fromId, toId)) written.push(row.id);
+      continue;
+    }
+    const saved = await store.load(row.id);
+    if (!saved) continue;
+    let wrote = false;
+    await amendDeviceRecord(store, row.id, saved, (lattice, progress, clock) => {
+      const writes = materialize({ kind: 'Repoint', from: fromId, to: toId }, lattice, clock);
+      wrote = writes.nodes.length > 0;
+      if (!wrote) return [];
+      lattice.join(writes);
+      return ['structure'];
+    });
+    if (wrote) written.push(row.id);
+  }
+  return written;
 }
 
 // The steps of a tree that open `treeId`.
 function stepsOpening(lattice, treeId) {
   return lattice.toTreeData().nodes.filter((step) => step.opens === treeId).map((step) => step.id);
-}
-
-// What removing `steps` writes under one stamp: each one's tombstone and every edge touching it, as a delete with prune does.
-function prunedSteps(lattice, steps, at) {
-  const doomed = new Set(steps);
-  const stamp = hlcText(at);
-  return {
-    nodes: steps.map((id) => ({ id, deletedAt: stamp })),
-    edges: lattice.presentEdges().filter(({ from, to }) => doomed.has(from) || doomed.has(to)).map(({ from, to }) => ({ from, to, removedAt: stamp })),
-    kinds: [],
-  };
 }
 
 // When the account holding this device changes, everything not anonymous goes: stamped

@@ -34,3 +34,17 @@ test('whoever is at the device holds a tree that lives only here, signed in or n
   assert.equal(holderAt({ confirmed: true, owner: false }), null);
   assert.equal(holderAt({ treeId: 't_draft' }), null, 'a reader holds nothing, wherever the tree lives');
 });
+
+test('an account that arrives in this document asks again where the tree lives, so a claim another tab ran is seen', (t) => {
+  const disk = new Map([['windmill:device-trees', JSON.stringify({ t_draft: { title: 'A draft', updatedAt: 1, claimed: false, owner: null } })]]);
+  const registry = new LocalTreeRegistry({ getItem: (key) => disk.get(key) ?? null, setItem: (key, value) => disk.set(key, value) });
+  const room = { owner: true, treeId: 't_draft', account: null, confirmed: false, lapsed: false, claims: 0 };
+  const hook = renderHook(t, () => useRoomHolder({ ...room, registry }));
+  assert.deepEqual(hook.tree, { place: 'device' });
+
+  registry.attribute(['t_draft'], 'u_olya');
+  Object.assign(room, { account: { id: 'u_olya' }, confirmed: true });
+  hook.redraw();
+
+  assert.deepEqual(hook.tree, { place: 'account', account: 'u_olya' });
+});

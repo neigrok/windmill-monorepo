@@ -29,6 +29,8 @@ window.openStep = ({ steps, completed, opens = {}, facts = {}, holder = true, pl
     const [nodes, setNodes] = useState(steps);
     const [read, setRead] = useState(opens);
     const [open, setOpen] = useState(true);
+    const [where, setWhere] = useState(place);
+    window.setPlace = setWhere;
     const [breakpoint, setBreakpoint] = useState(() => bandOf(window.innerWidth));
     useEffect(() => {
       const follow = () => setBreakpoint(bandOf(window.innerWidth));
@@ -40,7 +42,7 @@ window.openStep = ({ steps, completed, opens = {}, facts = {}, holder = true, pl
     const treeActs = holder ? {
       view: 'board',
       trees: {
-        place,
+        place: where,
         signedIn,
         list: async () => {
           call('list');
@@ -731,6 +733,22 @@ test('a device read that failed is a list that could not be loaded, with Try aga
   await listed(page);
   assert.deepEqual((await picker(page)).rows, DEVICE_ROWS);
   assert.deepEqual({ calls: await calls(page), reports: await reports(page) }, { calls: ['list', 'list'], reports: [] });
+  assert.deepEqual(errors, []);
+  await page.context().close();
+});
+
+test('a picker open as a claim takes this device\'s trees to the account reads its list again: the account\'s rows, the fork line, and an address of one of them is that row', async () => {
+  const errors = [];
+  const page = await openStep(DESKTOP, { place: 'device', signedIn: true, rows: deviceTrees(), completed: ['plan'] }, errors);
+  await attachATree(page);
+  await listed(page);
+
+  await page.evaluate((rows) => { window.rows = rows; window.setPlace('account'); }, ownTrees());
+  await page.waitForFunction(() => document.querySelector('.st-board-tree-picker-fork')?.textContent.startsWith('Someone else'));
+  assert.deepEqual((await picker(page)).rows, SAIL_ROWS);
+  await page.getByLabel('Find a tree').fill(`${origin}/t/t_7ead000000000002`);
+  await page.waitForFunction(() => (window.events ?? []).some((line) => line.includes('"outcome":"own"')));
+  assert.deepEqual({ rows: (await picker(page)).rows, calls: await calls(page) }, { rows: ['● Reading list · 12 of 12 done'], calls: ['list', 'list'] });
   assert.deepEqual(errors, []);
   await page.context().close();
 });

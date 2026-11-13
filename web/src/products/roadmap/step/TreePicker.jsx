@@ -83,8 +83,11 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
     track('roadmap_tree_attach', { step: 'paste', outcome, band, view, place });
   };
 
+  // The list is read as the picker opens, again on Try again, and again when the trees it reads move, as a claim takes this
+  // device's trees to the account: what an address was read to answer then answers nothing.
   useEffect(() => {
     let wanted = true;
+    resolutions.current = new Map();
     trees.list().then(({ rows, authoritative, status, failure }) => {
       if (!wanted) return;
       if (!authoritative) {
@@ -98,7 +101,7 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
       setChoices((current) => (current ? current.listed(others) : new TreeChoices({ rows: others, standing })));
     });
     return () => { wanted = false; };
-  }, [listAttempt]);
+  }, [listAttempt, place]);
 
   // An address is read once the field has been still, at once when it was pasted, and once for each roadmap it names.
   const address = choices?.address ?? null;

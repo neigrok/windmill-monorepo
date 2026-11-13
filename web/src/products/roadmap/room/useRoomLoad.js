@@ -175,8 +175,11 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       peersRef.current.clear();
       let projected = read.seed;
       let shown = seed;
+      // What the room stands shows its pointers' facts, and tells the session which lead to no tree: a mark there is an
+      // ordinary mark and is owed, as the server records it.
       const stand = () => {
         shown = standing(projected, session.joinedServer, session.ownPointers());
+        session.pointersLeadNowhere(shown.nodes.flatMap((step) => (step.opening?.dangling ? [[step.id, step.opening.treeId]] : [])));
         latest.current.structure.onTreeChanged(shown);
         workspace.pushArcs();
         return shown;

@@ -170,3 +170,45 @@ test('random accounts agree with the rule enumerated over every set of their tre
   }
   assert.equal(disagreements, 0);
 });
+
+test('the same trees in another order give the same answer', () => {
+  const answer = (ids, reversed) => {
+    const order = (nodes) => (reversed ? [...nodes].reverse() : nodes);
+    const all = judged({
+      root: tree(order([step('to-first', ids[0]), step('to-loop', ids[3]), step('plain')]), ['plain', 'to-loop']),
+      [ids[0]]: tree(order([step('x'), step('down', ids[1]), step('gone', 't_removed')]), ['x', 'gone']),
+      [ids[1]]: tree(order([step('down', ids[2]), step('y')]), ['y']),
+      [ids[2]]: tree([step('z')], ['z']),
+      [ids[3]]: tree([step('back', ids[4])]),
+      [ids[4]]: tree([step('back', ids[3])]),
+    });
+    const openings = all.openings('root');
+    return [['to-first', 'to-loop'].map((id) => { const o = openings.byStep.get(id); return [o.complete, o.done, o.total]; }), all.progressOf('root')];
+  };
+  const expected = [[[true, 3, 3], [false, 0, 1]], { done: 2, total: 3 }];
+
+  assert.deepEqual(answer(['a', 'b', 'c', 'd', 'e'], false), expected);
+  assert.deepEqual(answer(['e', 'd', 'c', 'b', 'a'], false), expected);
+  assert.deepEqual(answer(['c', 'e', 'a', 'd', 'b'], true), expected);
+});
+
+test('a pointer at free text and at a tree not among these dangles, and a mark on either counts', () => {
+  const all = judged({ root: tree([step('text', 'not a tree id, "quoted"'), step('theirs', 't_theirs'), step('plain')], ['text', 'theirs']) });
+
+  assert.deepEqual([...all.openings('root').byStep].map(([id, opening]) => [id, opening.dangling]), [['text', true], ['theirs', true]]);
+  assert.deepEqual(all.progressOf('root'), { done: 2, total: 3 });
+});
+
+test('a tree whose steps could not be read stands unread: a pointer at it is unread, not missing, it is never complete, and it opens nothing', () => {
+  const all = judged({
+    root: tree([step('to-unread', 'blank'), step('to-sub', 'sub')]),
+    blank: { unread: true, nodes: [], completed: new Set() },
+    sub: tree([step('s')], ['s']),
+  });
+
+  assert.deepEqual(all.openings('root'), openings({ 'to-unread': Opening.unread('blank'), 'to-sub': open('sub', { complete: true, done: 1, total: 1 }) }));
+  assert.deepEqual(all.progressOf('root'), { done: 1, total: 2 });
+  assert.deepEqual([...all.complete], ['sub']);
+  assert.deepEqual(all.openersOf('sub'), [{ treeId: 'root', steps: 1 }]);
+  assert.deepEqual(all.openersOf('blank'), [{ treeId: 'root', steps: 1 }]);
+});

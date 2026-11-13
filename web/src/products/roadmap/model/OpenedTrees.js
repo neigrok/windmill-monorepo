@@ -6,14 +6,15 @@ import { Opening, Openings } from './Opening.js';
 // step is. Completeness is the least the rule allows, so a loop never completes. The device judges its own trees by it.
 export class OpenedTrees {
   // `trees` holds each tree by id as `{ title, nodes, completed }`: its steps, each with the tree it `opens` if any, and
-  // the ids of the steps its person marked complete.
+  // the ids of the steps its person marked complete. A tree whose steps could not be read is `unread`: it stands, so a
+  // pointer at it is not a missing one, but nothing of it is known, so it is never complete and opens nothing.
   constructor(trees) {
     this.trees = trees;
     this.complete = new Set();
     for (let grew = true; grew;) {
       grew = false;
       for (const [id, tree] of trees) {
-        if (this.complete.has(id) || tree.nodes.length === 0 || !tree.nodes.every((step) => this.done(tree, step))) continue;
+        if (this.complete.has(id) || tree.unread || tree.nodes.length === 0 || !tree.nodes.every((step) => this.done(tree, step))) continue;
         this.complete.add(id);
         grew = true;
       }
@@ -31,7 +32,7 @@ export class OpenedTrees {
   }
 
   // What each step of `treeId` that opens a tree comes to, as a server's read of it says: a tree not among these is not
-  // found, and one that leads back to `treeId` is a loop.
+  // found, one whose steps could not be read is unread, and one that leads back to `treeId` is a loop.
   openings(treeId) {
     const back = this.leadingBackTo(treeId);
     const byStep = new Map();
@@ -39,6 +40,10 @@ export class OpenedTrees {
       if (!step.opens) continue;
       if (!this.trees.has(step.opens)) {
         byStep.set(step.id, new Opening({ treeId: step.opens, read: true }));
+        continue;
+      }
+      if (this.trees.get(step.opens).unread) {
+        byStep.set(step.id, Opening.unread(step.opens));
         continue;
       }
       byStep.set(step.id, new Opening({

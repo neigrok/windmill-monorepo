@@ -80,6 +80,7 @@ export class SyncSession {
     this.joinedServer = false;                      // the server's state has joined this lattice since the session began
     this.reach = null;                              // 'writer' or 'reader': what the server last took this connection for
     this.confirmations = 0;                         // structure the server has confirmed: acks, grafts and peers' frames
+    this.leadNowhere = new Map();                   // step → the pointer the room found leading to no tree: its mark is owed
     this.lastSeq = 0;
     this.fullGraftPending = false;
     this.sent = new Set();                          // frameIds we authored — echoes already applied
@@ -258,11 +259,28 @@ export class SyncSession {
 
   // What a lane owes the server, beside its confirmed baseline: all of the structure, and every mark but those set
   // aside. A mark on a step that opens a tree stays on the device as it is, and while the pointer stands it is neither
-  // sent nor counted as unsent; with the pointer gone it is an ordinary mark again.
+  // sent nor counted as unsent; with the pointer gone, or once the room has found that it leads to no tree, it is an
+  // ordinary mark again.
   owedFrames(lane) {
     const { frame, confirmed } = this.laneFrames(lane);
     if (lane === 'structure') return { frame, confirmed };
-    return { frame: { marks: frame.marks.filter(({ node }) => !this.lattice.nodes.get(node)?.opens.v) }, confirmed };
+    return { frame: { marks: frame.marks.filter(({ node }) => this.markOwed(node)) }, confirmed };
+  }
+
+  // Whether a step's mark is an ordinary one: it holds no pointer, or the pointer it holds is one the room found leading
+  // to no tree. A pointer nothing was found of keeps its mark set aside.
+  markOwed(stepId) {
+    const opens = this.lattice.nodes.get(stepId)?.opens.v;
+    return !opens || this.leadNowhere.get(stepId) === opens;
+  }
+
+  // The pointers the room found leading to no tree, by step, as its facts read them: the device's rule on a tree that
+  // lives only here, the server's on any other. A mark on such a step is owed like any other, and one newly owed goes.
+  pointersLeadNowhere(pointers) {
+    const released = [...pointers].some(([step, tree]) => this.leadNowhere.get(step) !== tree);
+    this.leadNowhere = new Map(pointers);
+    if (released && this.canResend('progress')) this.flushProgress();
+    this.emitStatus();
   }
 
   unconfirmedWrites(lane) {
@@ -644,7 +662,7 @@ export class SyncSession {
 
   // A pointer a join took away releases the mark set aside on its step, and it goes like any other.
   releaseMarks(pointed) {
-    if (pointed.some((node) => !this.lattice.nodes.get(node.id).opens.v) && this.canResend('progress')) this.flushProgress();
+    if (pointed.some((node) => this.markOwed(node.id)) && this.canResend('progress')) this.flushProgress();
   }
 
   receiveAck(frame) {
@@ -748,8 +766,9 @@ export class SyncSession {
     this.emitStatus();
   }
 
-  // Queue the local snapshot before sending; a mark stays pending until an ack, durable echo or graft confirms it.
-  markProgress(nodeIds, status) {
+  // Queue the local snapshot before sending; a mark stays pending until an ack, durable echo or graft confirms it. A
+  // caller that saves the write itself passes `save: false`.
+  markProgress(nodeIds, status, { save = true } = {}) {
     if (this.rebaselining?.has('progress')) return this.progress.overlay();
     const now = Date.now();
     const at = this.clock.tick(now);
@@ -760,10 +779,18 @@ export class SyncSession {
     }
     if (!changed) return this.progress.overlay();
     this.gestures.progress = pendingGestures(this.progress.toFrame(), this.confirmedProgress.toFrame(), this.gestures.progress);
-    this.persistWrite();
+    if (save) this.persistWrite();
     this.flushProgress();
     this.emitStatus();
     return this.progress.overlay();
+  }
+
+  // What a device copy's room showed done from its steps' seeds, where its lane holds no mark, made the person's own marks,
+  // stamped as any mark made here, so a claim sends what the device showed.
+  adoptSeeds() {
+    if (this.progress.marks.size > 0) return;
+    const seeded = this.lattice.toTreeData().nodes.filter((step) => step.status === 'complete').map((step) => step.id);
+    if (seeded.length > 0) this.markProgress(seeded, 'complete');
   }
 
   flushProgress() {
@@ -1052,7 +1079,30 @@ export class SyncSession {
     to.push(counterInverse);
   }
 
-  apply(writes) {
+  // Steps a removal elsewhere takes (`PruneNodes`), with the person's marks on them cleared: a local write outside the
+  // undo journal, sent as any other and saved once. Answers what failed of the save, which the caller reports.
+  async removeSteps(stepIds) {
+    const writes = materialize({ kind: 'PruneNodes', nodeIds: stepIds }, this.lattice, this.clock);
+    if (writes.nodes.length === 0) return null;
+    const marked = stepIds.filter((id) => this.progress.marks.get(id)?.status === 'complete');
+    this.apply(writes, { save: false });
+    if (marked.length > 0) this.markProgress(marked, 'none', { save: false });
+    let failure = null;
+    await this.persistNow((error) => { failure = error ?? new DOMException('The steps were not saved', 'AbortError'); });
+    return failure;
+  }
+
+  // Every step that opens the tree `from` opens `to` instead (`Repoint`), as when a claim gives that tree a fresh id: a local
+  // write outside the undo journal, sent as any other. Answers whether a step opened it.
+  repoint(from, to) {
+    const writes = materialize({ kind: 'Repoint', from, to }, this.lattice, this.clock);
+    if (writes.nodes.length === 0) return false;
+    this.apply(writes);
+    return true;
+  }
+
+  // A local write: joined, shown, saved unless the caller saves it (`save: false`), and sent while live.
+  apply(writes, { save = true } = {}) {
     const pointed = this.pointedIn(writes);
     this.lattice.join(writes);
     this.gestures.structure = pendingGestures(writes, this.confirmedStructure.toFrame(), this.gestures.structure);
@@ -1066,7 +1116,7 @@ export class SyncSession {
     } catch (error) {
       this.reportFailure('roadmap-sync-notify', error);
     }
-    this.persistWrite();
+    if (save) this.persistWrite();
     if (this.phase !== 'live') return;
     try {
       this.send(writes);

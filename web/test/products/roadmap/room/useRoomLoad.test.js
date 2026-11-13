@@ -450,6 +450,7 @@ test('a tree that lives only on this device opens on the marks its record holds,
     return { ok: false, status: 401, json: async () => ({}) };
   });
   const stored = t.mock.method(SyncStore.prototype, 'load', async (treeId) => structuredClone(records[treeId] ?? null));
+  t.mock.method(SyncStore.prototype, 'treeIds', async () => Object.keys(records));
   const sessions = [];
   t.mock.method(SyncSession.prototype, 'start', function () { sessions.push(this); return this; });
   t.mock.method(SyncSession.prototype, 'close', () => {});
@@ -475,6 +476,7 @@ test('a tree that lives only on this device opens on the marks its record holds,
   sessions.at(-1).treeHandler({ id: 't_draft', title: 'A draft', nodes: [step('plan'), step('sail', 't_sail'), step('again', 't_draft'), step('far', 't_kept')]
     .map(({ id, opens }) => ({ id, label: id, prerequisites: [], ...(opens ? { opens } : {}) })) });
   assert.equal(stored.mock.callCount(), reads, 'the same pointers ask the device nothing');
+  assert.deepEqual([...sessions.at(-1).leadNowhere], [['far', 't_kept']], 'the session owes the mark of a step whose pointer leads nowhere');
 
   sessions.at(-1).treeHandler({ id: 't_draft', title: 'A draft', nodes: [
     { id: 'plan', label: 'plan', prerequisites: [], opens: 't_book' },

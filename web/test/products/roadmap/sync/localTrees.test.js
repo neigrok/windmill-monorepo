@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
 import { MissingDeviceTree, bearImportedTree, bearLocalTree, deviceKeepsTrees, loadDeviceTree, renameLocalTree, setLocalGuide, moveLocalTree, deleteLocalTree, forgetDeviceTrees,
-  listDeviceTrees, readDeviceTreeCard, readDeviceTrees, removeDeviceOpeners } from '../../../../src/products/roadmap/sync/localTrees.js';
+  deleteDeviceTree, listDeviceTrees, readDeviceTreeCard, readDeviceTrees, repointDeviceSteps } from '../../../../src/products/roadmap/sync/localTrees.js';
+import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
+import { OpenedTrees } from '../../../../src/products/roadmap/model/OpenedTrees.js';
+import { deleteCost, withDeviceOpeners } from '../../../../src/products/roadmap/identity/deleteCost.js';
 import { LocalTreeRegistry } from '../../../../src/products/roadmap/persistence/LocalTreeRegistry.js';
 import { BoundaryFailure } from '../../../../src/products/roadmap/reportFailure.js';
-import { HlcClock, TreeLattice } from '../../../../src/products/roadmap/sync/lattice.js';
-import { ProgressLattice } from '../../../../src/products/roadmap/sync/progressLattice.js';
+import { TreeLattice } from '../../../../src/products/roadmap/sync/lattice.js';
 
 const frame = { nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }], edges: [], kinds: [] };
 
@@ -242,7 +244,7 @@ test('the picker lists the device\'s trees newest first, counted on the device, 
   assert.equal(await readDeviceTreeCard('t_0123456789abcdef'), null);
 });
 
-test('a record the device cannot read is reported once as a device read, and the picker\'s list stands unread with its failure judged', async (t) => {
+test('a device that cannot read its trees reports once under the name of what failed, and the picker\'s list stands unread with its failure judged', async (t) => {
   await deviceTrees(t);
   const load = SyncStore.prototype.load;
   t.mock.method(SyncStore.prototype, 'load', async function (treeId) {
@@ -250,23 +252,82 @@ test('a record the device cannot read is reported once as a device read, and the
     return load.call(this, treeId);
   });
   const reports = [];
-  const report = (operation, error) => reports.push({ operation, name: error.name });
+  const report = (operation, error, tags) => reports.push({ operation, name: error.name, tags });
 
   await assert.rejects(readDeviceTrees({ report }), BoundaryFailure);
-  assert.deepEqual(reports, [{ operation: 'roadmap-device-opens-read', name: 'UnknownError' }]);
+  assert.deepEqual(reports, [{ operation: 'roadmap-device-opens-read', name: 'UnknownError', tags: { name: 'UnknownError' } }]);
   const listed = await listDeviceTrees(() => readDeviceTrees({ report }));
   assert.deepEqual({ ...listed, failure: listed.failure instanceof BoundaryFailure }, { rows: [], authoritative: false, status: 0, failure: true });
 });
 
-test('removing a device tree takes the steps of the other trees here that open it: tombstoned, their edges gone with nothing respliced, their marks cleared', async (t) => {
-  const { store } = await deviceTrees(t);
+test('a database that will not open is a device that cannot read its trees, not one that holds none', async (t) => {
+  await deviceTrees(t);
+  t.mock.method(SyncStore.prototype, 'db', () => Promise.reject(new DOMException('backing store', 'UnknownError')));
   const reports = [];
 
-  await removeDeviceOpeners('t_sail', { report: (operation) => reports.push(operation) });
+  await assert.rejects(readDeviceTrees({ report: (operation, error, tags) => reports.push([operation, tags]) }), BoundaryFailure);
+  assert.deepEqual(reports, [['roadmap-device-opens-read', { name: 'UnknownError' }]]);
+});
 
+test('a record that does not join degrades only itself: it is reported once as corrupt, stands unread and opens nothing, and the rest are read and counted', async (t) => {
+  const { store } = await deviceTrees(t);
+  const records = await store.records();
+  await records.transact('t_summer', 'readwrite', (row, put) => put({ ...row, frame: { nodes: 5, edges: [], kinds: [] } }));
+  const reports = [];
+
+  const trees = await readDeviceTrees({ report: (operation, error, tags) => reports.push([operation, tags]) });
+
+  assert.deepEqual(reports, [['roadmap-device-opens-read', { name: 'corrupt' }]]);
+  assert.deepEqual(trees.get('t_summer'), { title: 'Summer plans', unread: true, nodes: [], completed: new Set() });
+  assert.deepEqual(new OpenedTrees(trees).openersOf('t_sail'), [{ treeId: 't_year', steps: 1 }]);
+  assert.deepEqual((await listDeviceTrees(() => Promise.resolve(trees))).rows.map((row) => row.id), ['t_year', 't_sail', 't_seeded']);
+});
+
+// A device with nobody signed in: an open tab's session never reaches a server.
+class QuietSocket {
+  static OPEN = 1;
+  constructor() { this.readyState = 0; }
+  addEventListener() {}
+  send() { throw new Error('nothing may be sent'); }
+  close() {}
+}
+
+function sessions(t) {
+  for (const [key, value] of Object.entries({ WebSocket: QuietSocket, document: { addEventListener() {}, removeEventListener() {}, visibilityState: 'visible' } })) {
+    const prior = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+    t.after(() => {
+      if (prior) Object.defineProperty(globalThis, key, prior);
+      else delete globalThis[key];
+    });
+  }
+  Object.assign(globalThis.window, { addEventListener() {}, removeEventListener() {} });
+  return async (store, treeId, title, failures = []) => {
+    const session = new SyncSession({ treeId, title, registry: null, store, reportFailure: (operation, error) => failures.push([operation, error?.name]) });
+    await session.start();
+    t.after(() => session.close());
+    return session;
+  };
+}
+
+const present = (lattice) => lattice.toTreeData().nodes.map((step) => [step.id, step.opens ?? '', step.prerequisites]);
+const stepsOf = async (store, treeId) => {
+  const lattice = new TreeLattice(treeId);
+  lattice.join((await store.load(treeId)).frame);
+  return present(lattice);
+};
+
+test('deleting a device tree takes the steps of the other trees here that open it, exactly as the line counted them: tombstoned, their edges gone with nothing respliced, their marks cleared', async (t) => {
+  const { registry, store } = await deviceTrees(t);
+  const rows = registry.list().map((row) => ({ ...row, origin: 'device' }));
+  const counted = withDeviceOpeners(rows, await readDeviceTrees());
+  const reports = [];
+
+  await deleteDeviceTree('t_sail', { report: (operation) => reports.push(operation) });
+
+  assert.deepEqual(deleteCost(counted.find((row) => row.id === 't_sail'), counted, { untitled: 'Untitled roadmap' }), { form: 'two', steps: 2, first: 'My year', second: 'Summer plans' });
   assert.deepEqual(shapeOf(await readDeviceTrees()), {
     t_year: { title: 'My year', steps: [['plan', '', []], ['coast', '', []]], completed: ['plan'] },
-    t_sail: { title: 'Learn to sail', steps: [['rig', '', []], ['wind', '', []]], completed: ['rig'] },
     t_summer: { title: 'Summer plans', steps: [['swim', '', []]], completed: [] },
     t_seeded: { title: 'Seeded', steps: [['one', '', []], ['two', '', []]], completed: ['one'] },
   });
@@ -276,49 +337,134 @@ test('removing a device tree takes the steps of the other trees here that open i
   assert.deepEqual(Object.keys(year.gestures.structure), ['1:0:a', removedAt]);
   assert.deepEqual(Object.keys(year.gestures.progress), ['2:0:a', removedAt]);
   assert.deepEqual((await store.load('t_server')).frame, stored([['far', 't_sail']]).frame);
+  assert.equal(await store.load('t_sail'), null);
+  assert.equal(registry.get('t_sail'), null);
   assert.deepEqual(reports, []);
 });
 
-test('the tree open in this tab takes its share through its session, as a local write, and the others through their records', async (t) => {
+test('the tree open in this tab takes its share through its session, outside the undo journal, and saves it once; ⌘Z after it touches only the act it undoes', async (t) => {
   const { store } = await deviceTrees(t);
-  const lattice = new TreeLattice('t_year', 'My year');
-  lattice.join(stored([['plan'], ['sail', 't_sail'], ['coast']], [['plan', 'sail'], ['sail', 'coast']]).frame);
-  const progress = new ProgressLattice();
-  progress.join(stored([], [], [['sail', 'complete'], ['plan', 'complete']]).progress);
-  const clock = new HlcClock('r_live');
-  lattice.seedClock(clock);
-  const applied = [];
-  const marked = [];
-  const live = { treeId: 't_year', ready: true, closed: false, lattice, progress, clock,
-    apply(writes) { applied.push(writes); lattice.join(writes); }, markProgress: (ids, status) => marked.push([ids, status]) };
+  const session = await sessions(t)(store, 't_year', 'My year');
+  assert.ok(session.dispatch({ kind: 'SetNodeTree', id: 'coast', opens: 't_summer' }));
 
-  await removeDeviceOpeners('t_sail', { live });
+  await deleteDeviceTree('t_sail', { live: session });
+  await store.chain;
 
-  const at = applied[0].nodes[0].deletedAt;
-  assert.deepEqual(applied, [{ nodes: [{ id: 'sail', deletedAt: at }], edges: [{ from: 'plan', to: 'sail', removedAt: at }, { from: 'sail', to: 'coast', removedAt: at }], kinds: [] }]);
-  assert.deepEqual(marked, [[['sail'], 'none']]);
-  assert.deepEqual(lattice.toTreeData().nodes.map((step) => [step.id, step.prerequisites]), [['plan', []], ['coast', []]]);
-  assert.deepEqual((await store.load('t_year')).frame, stored([['plan'], ['sail', 't_sail'], ['coast']], [['plan', 'sail'], ['sail', 'coast']]).frame);
-  assert.deepEqual(shapeOf(await readDeviceTrees()).t_summer.steps, [['swim', '', []]]);
+  assert.equal(session.undoStack.length, 1);
+  assert.deepEqual(present(session.lattice), [['plan', '', []], ['coast', 't_summer', []]]);
+  assert.deepEqual([...session.progress.overlay().completed], ['plan']);
+  assert.deepEqual(await stepsOf(store, 't_year'), [['plan', '', []], ['coast', 't_summer', []]]);
+  assert.deepEqual(await stepsOf(store, 't_summer'), [['swim', '', []]]);
+  session.undo();
+  assert.deepEqual(present(session.lattice), [['plan', '', []], ['coast', '', []]]);
 });
 
-test('a tree whose write fails keeps its steps, the others\' still go, and the cascade reports once', async (t) => {
-  await deviceTrees(t);
-  const save = SyncStore.prototype.save;
-  t.mock.method(SyncStore.prototype, 'save', async function (treeId, value) {
-    if (treeId === 't_year' || treeId === 't_seeded') throw new DOMException('full', 'QuotaExceededError');
-    return save.call(this, treeId, value);
-  });
-  t.mock.method(SyncStore.prototype, 'load', async function (treeId) {
-    if (treeId === 't_seeded') throw new DOMException('gone', 'UnknownError');
-    return (await this.records()).transact(treeId, 'readonly', (row) => row ?? null);
+test('the open tab\'s own tree that cannot save its share reports once, as the cascade, under the name of what failed', async (t) => {
+  const { store } = await deviceTrees(t);
+  const failures = [];
+  const session = await sessions(t)(store, 't_year', 'My year', failures);
+  const put = IDBObjectStore.prototype.put;
+  t.mock.method(IDBObjectStore.prototype, 'put', function (value, key) {
+    if (key === 't_year') throw new DOMException('forced', 'QuotaExceededError');
+    return put.call(this, value, key);
   });
   const reports = [];
 
-  await removeDeviceOpeners('t_sail', { report: (operation, error) => reports.push({ operation, name: error.name }) });
-
+  await deleteDeviceTree('t_sail', { live: session, report: (operation, error, tags) => reports.push([operation, tags]) });
+  await store.chain;
   t.mock.restoreAll();
-  const trees = shapeOf(await readDeviceTrees());
-  assert.deepEqual([trees.t_year.steps.map(([id]) => id), trees.t_summer.steps.map(([id]) => id)], [['plan', 'sail', 'coast'], ['swim']]);
-  assert.deepEqual(reports, [{ operation: 'roadmap-device-cascade', name: 'QuotaExceededError' }]);
+
+  assert.deepEqual(reports, [['roadmap-device-cascade', { name: 'QuotaExceededError' }]]);
+  assert.deepEqual(failures, []);
+  assert.deepEqual(present(session.lattice).map(([id]) => id), ['plan', 'coast']);
+  assert.deepEqual((await stepsOf(store, 't_year')).map(([id]) => id), ['plan', 'sail', 'coast'], 'on disk the steps stand, to come back as Not found');
+});
+
+test('a closed tree whose write the browser fails at its request keeps its steps, the others still go, and the cascade reports once under that name', async (t) => {
+  const { store } = await deviceTrees(t);
+  const put = IDBObjectStore.prototype.put;
+  t.mock.method(IDBObjectStore.prototype, 'put', function (value, key) {
+    const request = put.call(this, value, key);
+    if (key === 't_summer') this.add(value, key);
+    return request;
+  });
+  const reports = [];
+
+  await deleteDeviceTree('t_sail', { report: (operation, error, tags) => reports.push([operation, error instanceof DOMException, tags]) });
+  t.mock.restoreAll();
+
+  assert.deepEqual(reports, [['roadmap-device-cascade', true, { name: 'ConstraintError' }]]);
+  assert.deepEqual((await stepsOf(store, 't_summer')).map(([id]) => id), ['plan2', 'swim']);
+  assert.deepEqual((await stepsOf(store, 't_year')).map(([id]) => id), ['plan', 'coast']);
+});
+
+test('a device that cannot read its trees refuses the delete with nothing removed: the tree and every opener stand', async (t) => {
+  const { registry, store } = await deviceTrees(t);
+  t.mock.method(SyncStore.prototype, 'db', () => Promise.reject(new DOMException('backing store', 'UnknownError')));
+  const reports = [];
+
+  await assert.rejects(deleteDeviceTree('t_sail', { report: (operation, error, tags) => reports.push([operation, tags]) }), BoundaryFailure);
+  t.mock.restoreAll();
+
+  assert.deepEqual(reports, [['roadmap-device-opens-read', { name: 'UnknownError' }]]);
+  assert.equal(registry.get('t_sail').title, 'Learn to sail');
+  assert.deepEqual((await stepsOf(store, 't_sail')).map(([id]) => id), ['rig', 'wind']);
+  assert.deepEqual((await stepsOf(store, 't_year')).map(([id]) => id), ['plan', 'sail', 'coast']);
+});
+
+test('a corrupt record is neither told of nor taken from: the delete goes for the rest and reports no write failure', async (t) => {
+  const { store } = await deviceTrees(t);
+  const records = await store.records();
+  await records.transact('t_summer', 'readwrite', (row, put) => put({ ...row, frame: { nodes: 5, edges: [], kinds: [] } }));
+  const reports = [];
+
+  await deleteDeviceTree('t_sail', { report: (operation, error, tags) => reports.push([operation, tags]) });
+
+  assert.deepEqual(reports, [['roadmap-device-opens-read', { name: 'corrupt' }]]);
+  assert.deepEqual((await stepsOf(store, 't_year')).map(([id]) => id), ['plan', 'coast']);
+  assert.deepEqual((await store.load('t_summer')).frame, { nodes: 5, edges: [], kinds: [] });
+});
+
+test('a tree that opens itself and two trees that open each other: deleting one takes its openers and leaves its own pointers to go with it', async (t) => {
+  const { registry, store } = device(t);
+  registry.write({
+    t_self: { title: 'Self', updatedAt: 3, claimed: false, owner: null },
+    t_m: { title: 'M', updatedAt: 2, claimed: false, owner: null },
+    t_n: { title: 'N', updatedAt: 1, claimed: false, owner: null },
+  });
+  await store.save('t_self', stored([['again', 't_self'], ['to-m', 't_m']]));
+  await store.save('t_m', stored([['to-n', 't_n'], ['m2']]));
+  await store.save('t_n', stored([['to-m', 't_m'], ['to-self', 't_self'], ['n2']]));
+
+  await deleteDeviceTree('t_m');
+
+  assert.deepEqual(Object.fromEntries([...(await readDeviceTrees())].map(([id, tree]) => [id, tree.nodes.map((step) => step.id)])), { t_self: ['again'], t_n: ['to-self', 'n2'] });
+});
+
+test('a removed tree planted again under its id does not bring back the steps that went with it', async (t) => {
+  const { registry, store } = await deviceTrees(t);
+  await deleteDeviceTree('t_sail');
+  registry.write({ ...registry.entries(), t_sail: { title: 'Again', updatedAt: 10, claimed: false, owner: null } });
+  await store.save('t_sail', stored([['new']]));
+
+  const trees = await readDeviceTrees();
+
+  assert.deepEqual([trees.get('t_year').nodes.map((step) => step.id), trees.get('t_summer').nodes.map((step) => step.id)], [['plan', 'coast'], ['swim']]);
+});
+
+test('a tree given a fresh id keeps every pointer at it: each tree on the device that opened it, up or not, opens the fresh id, the open one through its session', async (t) => {
+  const { store } = await deviceTrees(t);
+  const session = await sessions(t)(store, 't_year', 'My year');
+  const undo = session.undoStack.length;
+
+  const written = await repointDeviceSteps('t_sail', 't_fresh', { live: session });
+  await store.chain;
+
+  assert.deepEqual(written, ['t_year', 't_summer', 't_server']);
+  assert.deepEqual(present(session.lattice), [['plan', '', []], ['sail', 't_fresh', ['plan']], ['coast', '', ['sail']]]);
+  assert.equal(session.undoStack.length, undo);
+  assert.deepEqual(await stepsOf(store, 't_summer'), [['plan2', 't_fresh', []], ['swim', '', []]]);
+  assert.deepEqual(await stepsOf(store, 't_server'), [['far', 't_fresh', []]]);
+  assert.deepEqual(await stepsOf(store, 't_seeded'), [['one', '', []], ['two', '', []]]);
+  assert.equal(Object.keys((await store.load('t_summer')).gestures.structure).length, 2, 'the pointer write is owed, to go up with the tree');
 });

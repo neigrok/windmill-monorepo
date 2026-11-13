@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { claimLocalTrees } from '../../../../src/products/roadmap/sync/claimLocalTrees.js';
+import { claimLocalTrees, onTreeClaimed } from '../../../../src/products/roadmap/sync/claimLocalTrees.js';
 import { track } from '../../../../src/telemetry/beacon.js';
 
 const BASE = 'http://localhost:8088';
@@ -66,11 +66,15 @@ const plants = (calls) => calls.filter((call) => call.method === 'POST' && call.
 const planted = (treeId) => ({ ok: true, status: 200, json: async () => ({ treeId, existed: false }) });
 const conflict = (code, error) => ({ ok: false, status: 409, json: async () => ({ code, error }) });
 
-function openSessionFor(treeId) {
+function openSessionFor(treeId, acts = []) {
   return {
     treeId,
     phase: 'live',
-    forceReconnect() {},
+    ready: true,
+    closed: false,
+    adoptSeeds() { acts.push('adoptSeeds'); },
+    repoint(from, to) { acts.push(`repoint ${from}>${to}`); return false; },
+    forceReconnect() { acts.push('reconnect'); },
     onDrained(handler) { if (handler) setImmediate(handler); return this; },
     sendProgress() {},
     close() { throw new Error('the claim must never close a session it did not open'); },
@@ -107,8 +111,9 @@ test('an id another account owns still remaps — a fresh id, and everything loc
     { hash: '#/app/t_mine', blobs: { 'windmill:legend:t_mine': '{"kinds":[]}' } },
   );
   const calls = serverThat(conflict('id-taken', 'that id is taken'), planted(FRESH_ID));
+  const acts = [];
 
-  const result = await claimLocalTrees({ openTreeId: FRESH_ID, openSession: () => openSessionFor(FRESH_ID) });
+  const result = await claimLocalTrees({ openTreeId: FRESH_ID, openSession: () => openSessionFor(FRESH_ID, acts) });
 
   assert.deepEqual(plants(calls).map((call) => call.body), [
     { id: 't_mine', title: 'Learn to sail' },
@@ -121,6 +126,7 @@ test('an id another account owns still remaps — a fresh id, and everything loc
   assert.equal(browser.blob('windmill:legend:t_mine'), null);
   assert.equal(browser.blob(`windmill:legend:${FRESH_ID}`), '{"kinds":[]}');
   assert.equal(globalThis.window.location.hash, `#/app/${FRESH_ID}`);
+  assert.deepEqual(acts, [`repoint t_mine>${FRESH_ID}`, 'adoptSeeds', 'reconnect'], 'the open tree keeps its pointers at the fresh id, and goes up with its seeds as marks');
   assert.deepEqual(browser.events, [
     { type: 'wm-claim-start', detail: null },
     { type: 'wm-claim-conflict', detail: { treeId: 't_mine', remappedTo: FRESH_ID } },
@@ -257,4 +263,36 @@ test('a ghost claims nothing — the marker is not an account, and no tree is pl
   assert.deepEqual(result, { claimed: 0 });
   assert.deepEqual(browser.events, []);
   assert.deepEqual(browser.index(), { t_anon: { title: 'Learn to sail', updatedAt: 20, claimed: false, owner: null } });
+});
+
+test('every tab hears a claim: the tree goes out on the device\'s claims channel, and a tab listening hears it as its own document does', async (t) => {
+  const posted = [];
+  class Channel {
+    static open = new Set();
+    constructor(name) { this.name = name; Channel.open.add(this); }
+    postMessage(data) { posted.push({ name: this.name, data }); for (const peer of Channel.open) if (peer !== this && peer.name === this.name) peer.onmessage?.({ data }); }
+    close() { Channel.open.delete(this); }
+  }
+  const prior = Object.getOwnPropertyDescriptor(globalThis, 'BroadcastChannel');
+  Object.defineProperty(globalThis, 'BroadcastChannel', { configurable: true, writable: true, value: Channel });
+  t.after(() => (prior ? Object.defineProperty(globalThis, 'BroadcastChannel', prior) : delete globalThis.BroadcastChannel));
+  browserWith({ t_live: { title: 'Learn to cook', updatedAt: 10, claimed: false } });
+  serverThat(planted('t_live'));
+  const heard = [];
+  const otherTab = new Channel('windmill-roadmap-claims');
+  otherTab.onmessage = ({ data }) => heard.push(data.treeId);
+
+  await claimLocalTrees({ openTreeId: 't_live', openSession: () => openSessionFor('t_live') });
+
+  assert.deepEqual({ posted, heard }, { posted: [{ name: 'windmill-roadmap-claims', data: { treeId: 't_live' } }], heard: ['t_live'] });
+  otherTab.close();
+
+  globalThis.window = new EventTarget();
+  const told = [];
+  const stop = onTreeClaimed((treeId) => told.push(treeId));
+  new Channel('windmill-roadmap-claims').postMessage({ treeId: 't_far' });
+  globalThis.window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId: 't_here' } }));
+  stop();
+  new Channel('windmill-roadmap-claims').postMessage({ treeId: 't_after' });
+  assert.deepEqual(told, ['t_far', 't_here']);
 });
