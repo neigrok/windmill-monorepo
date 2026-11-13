@@ -312,14 +312,18 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
       AgentStep step;
       step.tool = name;
       step.failed = result.isError;
-      // A write changed nothing, and is no edit of the run's, only when its reply says so for every part it answers:
-      // `unchanged` on the reply — an import's speaks for its graft — and on each progress row it lists, which speaks
-      // for its own mark.
-      bool unchanged = result.payload.isObject() && result.payload.get("unchanged", false).asBool();
-      if (unchanged)
-        for (const Json::Value& row : result.payload["progress"])
-          unchanged = unchanged && row.get("unchanged", false).asBool();
-      step.changedTree = mutatesTree(name) && !result.isError && !unchanged;
+      // A write is an edit of the run's only when its reply says it wrote: its tree op landed — the reply does not
+      // answer `unchanged`, which an import's speaks for its graft — or a progress row recorded a mark the caller did
+      // not hold already. A refused row recorded none, and a dry run (`dryRun: true`, or `applied: false`) wrote
+      // nothing, whatever its preview says would change.
+      const Json::Value& reply = result.payload;
+      const bool previewed =
+          reply.isObject() && (reply.get("dryRun", false).asBool() || !reply.get("applied", true).asBool());
+      bool wrote = !reply.isObject() || !reply.get("unchanged", false).asBool();
+      if (reply.isObject())
+        for (const Json::Value& row : reply["progress"])
+          wrote = wrote || (!row.isMember("refused") && !row.get("unchanged", false).asBool());
+      step.changedTree = mutatesTree(name) && !result.isError && !previewed && wrote;
       step.note = stepNote(name, result);
       if (step.changedTree) ++edits;
       onStep(step);
