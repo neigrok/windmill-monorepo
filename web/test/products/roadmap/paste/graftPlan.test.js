@@ -22,9 +22,9 @@ test('attach: a named root grafts as a child of the target, subtree kept, sparkl
   });
 
   assert.deepStrictEqual(graft.nodes, [
-    { id: 'deployment', label: 'Deployment', color: 'terracotta', position: null },
-    { id: 'write-dockerfile', label: 'write dockerfile', color: 'terracotta', position: null },
-    { id: 'set-up-ci', label: 'set up CI', color: 'terracotta', position: null },
+    { id: 'deployment', label: 'Deployment', color: 'terracotta' },
+    { id: 'write-dockerfile', label: 'write dockerfile', color: 'terracotta' },
+    { id: 'set-up-ci', label: 'set up CI', color: 'terracotta' },
   ]);
   assert.ok(!('icon' in graft.nodes[0]), 'the grafted root must not carry the sparkles icon');
   assert.deepStrictEqual(graft.edges, [
@@ -47,9 +47,9 @@ test('dissolve: a headless flat list attaches directly under the target, no wrap
   });
 
   assert.deepStrictEqual(graft.nodes, [
-    { id: 'one', label: 'one', color: 'terracotta', position: null },
-    { id: 'two', label: 'two', color: 'terracotta', position: null },
-    { id: 'three', label: 'three', color: 'terracotta', position: null },
+    { id: 'one', label: 'one', color: 'terracotta' },
+    { id: 'two', label: 'two', color: 'terracotta' },
+    { id: 'three', label: 'three', color: 'terracotta' },
   ]);
   assert.deepStrictEqual(graft.edges, [
     { from: 'target', to: 'one' },
@@ -64,9 +64,9 @@ test('no target (empty tree): an attached root lands as a real root, subtree kep
   const graft = graftPlan({ parse, targetId: null, reservedNodeIds: [], liveKinds: LIVE_KINDS });
 
   assert.deepStrictEqual(graft.nodes, [
-    { id: 'deployment', label: 'Deployment', color: 'terracotta', position: null },
-    { id: 'write-dockerfile', label: 'write dockerfile', color: 'terracotta', position: null },
-    { id: 'set-up-ci', label: 'set up CI', color: 'terracotta', position: null },
+    { id: 'deployment', label: 'Deployment', color: 'terracotta' },
+    { id: 'write-dockerfile', label: 'write dockerfile', color: 'terracotta' },
+    { id: 'set-up-ci', label: 'set up CI', color: 'terracotta' },
   ]);
   assert.deepStrictEqual(graft.edges, [
     { from: 'deployment', to: 'write-dockerfile' },
@@ -79,8 +79,8 @@ test('no target (empty tree): a dissolved flat list lands as roots, no wrapper',
   const graft = graftPlan({ parse, targetId: null, reservedNodeIds: [], liveKinds: LIVE_KINDS });
 
   assert.deepStrictEqual(graft.nodes, [
-    { id: 'one', label: 'one', color: 'terracotta', position: null },
-    { id: 'two', label: 'two', color: 'terracotta', position: null },
+    { id: 'one', label: 'one', color: 'terracotta' },
+    { id: 'two', label: 'two', color: 'terracotta' },
   ]);
   assert.deepStrictEqual(graft.edges, []);
 });
@@ -95,8 +95,8 @@ test('id collision: colliding parsed ids are suffixed, every node kept and its e
   });
 
   assert.deepStrictEqual(graft.nodes, [
-    { id: 'foo-2', label: 'Foo', color: 'terracotta', position: null },
-    { id: 'bar', label: 'Bar', color: 'terracotta', position: null },
+    { id: 'foo-2', label: 'Foo', color: 'terracotta' },
+    { id: 'bar', label: 'Bar', color: 'terracotta' },
   ]);
   assert.deepStrictEqual(graft.edges, [
     { from: 'target', to: 'foo-2' },

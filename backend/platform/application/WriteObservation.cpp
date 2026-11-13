@@ -82,6 +82,9 @@ void reportCurrentUnknownWriteFailure() {
 void finishCurrentWriteRefusal(const std::string& code) {
   if (currentObservation) currentObservation->finish(code);
 }
+void finishCurrentWriteUnchanged() {
+  if (currentObservation) currentObservation->finish("unchanged");
+}
 void markCurrentWrite() {
   if (current) ++current->writes;
 }
@@ -147,7 +150,7 @@ void WriteObservation::finish(std::string outcome) {
   completion_.durationMs = std::round(elapsed * 100) / 100;
   completion_.severity = WriteSeverity::warn;
   if (failed_ || completion_.outcome == "failed") completion_.severity = WriteSeverity::error;
-  else if (completion_.outcome == "ok")
+  else if (completion_.outcome == "ok" || completion_.outcome == "unchanged")
     completion_.severity = state_->infoOwner == serial_ && !state_->infoEmitted.exchange(true) ? WriteSeverity::info : WriteSeverity::debug;
   std::function<void(const WriteCompletion&)> sink;
   {

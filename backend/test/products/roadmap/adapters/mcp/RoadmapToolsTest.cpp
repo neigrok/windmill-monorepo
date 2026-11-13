@@ -5107,7 +5107,7 @@ TEST(mcp_get_tree_reads_the_trees_above_after_it_has_let_go_of_the_trees_strand)
 TEST(mcp_a_tree_and_its_steps_answer_where_they_open_on_the_web) {
   Harness h;
   LooseGraph theirs;
-  theirs.createNode(NodeId{"why?"}, "Why", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "x"});
+  theirs.createNode(NodeId{"why?"}, "Why", "", NodeColor::sky, Hlc{1, 0, "x"});
   h.trees.byId["t_theirs"] = StoredTree{theirs.exportState(), LegendState{}, {"Their plans", {}}, 0,
                                         uid("someone-else"), Visibility::public_};
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"two words","label":"Two words"})")).isError);
@@ -7604,8 +7604,8 @@ TEST(mcp_change_edges_removes_a_dangling_and_a_self_edge_by_name) {
 TEST(mcp_change_edges_refuses_an_edge_past_the_cap) {
   Harness h;
   LooseGraph graph;
-  graph.createNode(NodeId{"a"}, "A", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "seed"});
-  graph.createNode(NodeId{"b"}, "B", "", NodeColor::sky, std::nullopt, Hlc{1, 0, "seed"});
+  graph.createNode(NodeId{"a"}, "A", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  graph.createNode(NodeId{"b"}, "B", "", NodeColor::sky, Hlc{1, 0, "seed"});
   for (std::size_t i = 0; i < kMaxEdges; ++i) graph.addEdge(NodeId{"a"}, NodeId{"m-" + std::to_string(i)}, Hlc{2, 0, "seed"});
   h.trees.byId["t"] = StoredTree{graph.exportState(), LegendState{}, {"Full", {}}, 0, h.caller};
   CHECK_EQ(message(h.call("change_edges", parse(R"({"add":[{"from":"a","to":"b"}]})"))),
@@ -7756,8 +7756,8 @@ TEST(mcp_the_retired_node_and_progress_tools_are_refused_as_unknown_tools) {
   CHECK_EQ(body(h->call("get_progress", kNoArgs)), parse(R"({"completed":[],"outOfOrder":[]})"));
 }
 
-// A node's position is off the MCP surface: create_node takes no x or y, an import's node and an update_nodes row no
-// position, and no read answers one. Each is refused at the gate in its own words, with nothing written.
+// A node holds no position: create_node takes no x or y, an import's node and an update_nodes row no position, and no
+// read answers one. Each is refused at the gate in its own words, with nothing written.
 TEST(mcp_a_node_position_is_refused_wherever_the_surface_took_or_answered_it) {
   auto h = nodeTree();
   const StoredTree stored = h->trees.byId["t"];
@@ -7790,22 +7790,19 @@ TEST(mcp_a_node_position_is_refused_wherever_the_surface_took_or_answered_it) {
   CHECK_EQ(h->ops.byTree["t"].size(), rows);
 }
 
-// A node's position stays the domain's: a client's frame sets it, and no MCP write moves or clears it — an import that
-// re-sends the node and an update_nodes row carry none.
-TEST(mcp_a_position_a_client_set_survives_every_mcp_write_to_its_node) {
-  Harness h;
-  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
-  h.registry.open(TreeId{"t"})->applyCommand(RepositionNode{NodeId{"a"}, Vec2{120, 60}}, h.clock.nowMs(), h.caller);
-  const auto positionOfA = [&] {
-    for (const NodeSpec& node : h.registry.open(TreeId{"t"})->snapshot().nodes)
-      if (node.id == NodeId{"a"}) return node.position;
-    return std::optional<Vec2>{};
-  };
-  REQUIRE((positionOfA() == std::optional<Vec2>(Vec2{120, 60})));
+// The gate refuses create_node's x and y; beneath it the handler reads neither, so a call that reaches it with them
+// lands the node its twin without them lands, and logs the row its twin logs.
+TEST(mcp_create_node_beneath_the_gate_lands_no_x_or_y) {
+  Harness placed;
+  Harness plain;
 
-  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A2","icon":"star"}]})")).isError);
-  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","label":"A3","color":"plum"})"))).isError);
-  CHECK((positionOfA() == std::optional<Vec2>(Vec2{120, 60})));
+  CHECK_FALSE(placed.call("create_node", parse(R"({"id":"n","label":"N","x":3,"y":4})")).isError);
+  CHECK_FALSE(plain.call("create_node", parse(R"({"id":"n","label":"N"})")).isError);
+
+  CHECK(placed.trees.byId["t"].state == plain.trees.byId["t"].state);
+  REQUIRE_EQ(placed.ops.byTree["t"].size(), 1u);
+  CHECK_EQ(dump(commandPayload(placed.ops.byTree["t"][0].command)),
+           std::string(R"({"color":"terracotta","icon":"","id":"n","label":"N","opens":""})"));
 }
 
 // An import's progress row still takes a node by the legacy `id`, which the schema publishes deprecated beside `nodeId`.

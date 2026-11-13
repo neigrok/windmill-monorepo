@@ -43,8 +43,8 @@ TEST(live_subgraph_round_trips_exactly) {
   subgraph.intent = SubgraphIntent::live;
 
   LooseGraph graph;
-  graph.createNode(nid("a"), "A", "zap", NodeColor::sky, Vec2{1, 2}, at(5));
-  graph.createNode(nid("root"), "Root", "sprout", NodeColor::gold, std::nullopt, at(4));
+  graph.createNode(nid("a"), "A", "zap", NodeColor::sky, at(5));
+  graph.createNode(nid("root"), "Root", "sprout", NodeColor::gold, at(4));
   graph.addEdge(nid("root"), nid("a"), at(6));
   subgraph.graph = graph.exportState();
   subgraph.legend = Legend::seededDefaults(at(1)).exportState();
@@ -73,7 +73,7 @@ TEST(title_and_guide_ride_the_wire_as_v_at_registers_and_round_trip) {
 
 TEST(full_delta_round_trips_with_coverage) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "zap", NodeColor::sky, std::nullopt, at(2));
+  source.createNode(nid("a"), "A", "zap", NodeColor::sky, at(2));
   source.addEdge(nid("a"), nid("a"), at(3));
   Legend legend = Legend::seededDefaults(at(1));
 
@@ -90,7 +90,7 @@ TEST(full_delta_round_trips_with_coverage) {
 
 TEST(masked_delta_round_trips_its_unset_stamps) {
   LooseGraph source;
-  source.createNode(nid("a"), "A", "zap", NodeColor::sky, std::nullopt, at(1));
+  source.createNode(nid("a"), "A", "zap", NodeColor::sky, at(1));
   source.setColor(nid("a"), NodeColor::brick, at(5));  // a later field the peer has not seen
 
   VersionVector peer;
@@ -109,7 +109,7 @@ TEST(masked_delta_round_trips_its_unset_stamps) {
 
 TEST(subscribe_delta_against_a_caught_up_vector_is_empty) {
   LooseGraph graph;
-  graph.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(5));
+  graph.createNode(nid("a"), "A", "x", NodeColor::sky, at(5));
   Legend legend = Legend::seededDefaults(at(1));
   VersionVector full = frontier(graph.exportState(), legend.exportState());
 
@@ -125,7 +125,7 @@ TEST(subscribe_delta_against_a_caught_up_vector_is_empty) {
 
 TEST(subscribe_delta_against_an_empty_vector_is_the_whole_state) {
   LooseGraph graph;
-  graph.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(5));
+  graph.createNode(nid("a"), "A", "x", NodeColor::sky, at(5));
   Legend legend = Legend::seededDefaults(at(1));
 
   VersionVector empty = versionVectorFromJson(Json::Value(Json::objectValue));

@@ -81,7 +81,7 @@ function fakeIndexedDB(records) {
 function blobFor(treeId, title, label) {
   const lattice = new TreeLattice(treeId, title);
   const clock = new HlcClock('a_test');
-  lattice.join(materialize({ kind: 'CreateNode', id: 'n1', label, icon: 'sparkles', color: 'terracotta', x: 0, y: 0 }, lattice, clock));
+  lattice.join(materialize({ kind: 'CreateNode', id: 'n1', label, icon: 'sparkles', color: 'terracotta' }, lattice, clock));
   return { frame: lattice.toFrame(), lastSeq: 0 };
 }
 

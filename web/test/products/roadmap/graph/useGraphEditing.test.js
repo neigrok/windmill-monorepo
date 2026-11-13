@@ -91,7 +91,7 @@ test('a plan pasted on the Board puts its toast and Undo on the Board, and the U
 
 test('the Graph refuses a delete that takes the last root a hold leaves standing, from either door', (t) => {
   const { session, editing, toasts, standingTreeRef } = room(t);
-  session.dispatch({ kind: 'CreateNode', id: 'solo', label: 'Sail solo', icon: 'sparkles', color: 'gold', x: 0, y: 0 });
+  session.dispatch({ kind: 'CreateNode', id: 'solo', label: 'Sail solo', icon: 'sparkles', color: 'gold' });
   const tree = new SkillTree(session.lattice.toTreeData());
   assert.deepEqual(tree.roots().map((root) => root.id).sort(), ['course', 'solo']);
   const before = steps(session);
@@ -106,7 +106,7 @@ test('the Graph refuses a delete that takes the last root a hold leaves standing
 
 test('select-all then Delete on a many-rooted roadmap is refused like the sole root', (t) => {
   const { session, editing, selection, toasts, standingTreeRef } = room(t);
-  session.dispatch({ kind: 'CreateNode', id: 'solo', label: 'Sail solo', icon: 'sparkles', color: 'gold', x: 0, y: 0 });
+  session.dispatch({ kind: 'CreateNode', id: 'solo', label: 'Sail solo', icon: 'sparkles', color: 'gold' });
   standingTreeRef.current = new SkillTree(session.lattice.toTreeData());
   const before = steps(session);
   selection.selectedIdsRef.current = new Set(Object.keys(before));

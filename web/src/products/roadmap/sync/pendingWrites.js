@@ -74,11 +74,15 @@ export function pendingRecordCount(stamps) {
   return new Set(Object.keys(stamps).map((key) => JSON.stringify(JSON.parse(key).slice(0, 2)))).size;
 }
 
-export function retainedProgressGestures(frame, gestures = {}) {
+// The references among a lane's `gestures` to registers its `frame` holds. One to a register the lattice does not keep,
+// as a stored record may name, or to a mark whose stamp no mark can carry, is no unsent write; a gesture left with no
+// reference is gone.
+export function retainedGestures(lane, frame, gestures = {}) {
   const current = writeStamps(frame);
+  const holds = ([key, at]) => current[key] && (lane !== 'progress' || progressStamp(at));
   const retained = {};
   for (const [stamp, references] of Object.entries(gestures)) {
-    const valid = Object.fromEntries(Object.entries(references).filter(([key, at]) => current[key] && progressStamp(at)));
+    const valid = Object.fromEntries(Object.entries(references).filter(holds));
     if (Object.keys(valid).length) retained[stamp] = valid;
   }
   return retained;

@@ -102,6 +102,7 @@ inline std::optional<std::string> normalizeSeedStatus(const std::optional<std::s
   return status;
 }
 
+// A point on the canvas, as a viewer's cursor reaches the others in the room.
 struct Vec2 {
   double x = 0;
   double y = 0;
@@ -139,7 +140,6 @@ struct NodeSpec {
   NodeColor color = NodeColor::terracotta;
   std::string order;  // fractional-index sibling key ('' ⇒ layout falls back to creation time)
   std::vector<NodeId> prerequisites;
-  std::optional<Vec2> position;
   std::optional<std::string> status;
   std::string description;
   std::vector<Link> links;

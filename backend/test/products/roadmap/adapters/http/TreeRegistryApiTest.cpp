@@ -433,6 +433,29 @@ TEST(create_with_a_wrong_typed_field_is_400_not_a_thrown_500) {
   CHECK_EQ(h.trees.byId.size(), std::size_t{0});
 }
 
+// A node has no stored position: a document that still sends one with a node, of any shape, plants exactly what its
+// twin without it plants.
+TEST(create_takes_a_node_that_still_sends_a_position_and_plants_its_twin_without_it) {
+  Harness h;
+  h.signIn("s-me", "sam@example.com");
+  const auto planted = [&](const char* id, const char* nodes) {
+    Json::Value body = claim(id, "Learn to sail");
+    body["nodes"] = parse(nodes);
+    drogon::HttpResponsePtr response = create(h.api, post(body, "s-me"));
+    CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+    return dump(toJson(h.trees.byId[id].state));
+  };
+
+  const std::string plain = planted("t_00000000000000a1", R"([{"id":"hull","label":"Hull"}])");
+
+  CHECK_EQ(planted("t_00000000000000a2", R"([{"id":"hull","label":"Hull","position":{"x":3,"y":4}}])"), plain);
+  CHECK_EQ(planted("t_00000000000000a3", R"([{"id":"hull","label":"Hull","position":"left of the mast"}])"), plain);
+  CHECK_EQ(plain, dump(parse(R"({"edges":[],"nodes":[{"color":"terracotta","colorAt":"1700000000000:0:srv",
+    "createdAt":"1700000000000:0:srv","deletedAt":"0:0:","description":"","descriptionAt":"0:0:","icon":"",
+    "iconAt":"1700000000000:0:srv","id":"hull","label":"Hull","labelAt":"1700000000000:0:srv","links":[],
+    "linksAt":"0:0:","opens":"","opensAt":"0:0:","order":"","orderAt":"0:0:","statusAt":"0:0:"}]})")));
+}
+
 TEST(create_and_patch_refuse_a_non_object_json_root_with_400) {
   Harness h;
   h.signIn("s-me", "sam@example.com");

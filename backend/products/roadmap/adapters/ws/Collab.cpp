@@ -274,23 +274,30 @@ Reach Collab::reachOf(const drogon::WebSocketConnectionPtr& conn, const TreeId& 
 void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame) {
   const Principal& principal = principalOf(conn);
   std::string frameId = frame.get("frameId", "").asString();
-  if (!stillAuthorized(conn)) {
+  const bool signedIn = stillAuthorized(conn);
+
+  // Refuse by code, never by throw: a throw strands the client's in-flight entry for this frameId.
+  std::optional<Subgraph> decoded;
+  try {
+    decoded = subgraphFromJson(frame);
+  } catch (const std::exception&) {
+  }
+  // A frame that carries no stamp asks for no write, so it needs no write access and no session: whoever may read
+  // the tree is answered as for any frame that lands nothing, and the room is not touched.
+  const bool asksNoWrite = decoded && decoded->carriesNoStamp();
+  if (!signedIn && !asksNoWrite) {
     Json::Value reject = rejectFrame(treeId, kSignInRequired, "sign in to edit");
     reject["frameId"] = frameId;
     refuseFrame(conn, reject);
     return;
   }
-
-  // Refuse by code, never by throw: a throw strands the client's in-flight entry for this frameId.
-  Subgraph incoming;
-  try {
-    incoming = subgraphFromJson(frame);
-  } catch (const std::exception&) {
+  if (!decoded) {
     Json::Value reject = rejectFrame(treeId, kBadFrame, "this frame could not be read");
     reject["frameId"] = frameId;
     refuseFrame(conn, reject);
     return;
   }
+  Subgraph& incoming = *decoded;
   incoming.treeId = TreeId{treeId};
 
   // The skew clamp covers every stamp the frame carries, the title and guide registers included.
@@ -313,12 +320,16 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
       // Both gates decide off the stored access row, before the room is materialized. Read gate first:
-      // a private tree answers "no such tree", byte-identical to an absent one.
+      // a private tree answers as an absent one does, byte for byte — "no such tree" to an account,
+      // the sign-in refusal to a visitor without one.
+      const std::optional<UserId> caller = signedIn ? std::optional<UserId>(principal.user) : std::nullopt;
       const std::optional<TreeAccess> access = registry_.accessOf(TreeId{treeId});
-      std::optional<WriteRefusal> refusal =
-          access ? writeRefusalFor(principal.user, access->owner) : std::nullopt;
-      if (!access || !canRead(principal.user, access->owner, access->visibility)) {
-        reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");
+      std::optional<WriteRefusal> refusal = access ? writeRefusalFor(caller, access->owner) : std::nullopt;
+      if (!access || !canRead(caller, access->owner, access->visibility)) {
+        reject = signedIn ? rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"")
+                          : rejectFrame(treeId, kSignInRequired, "sign in to edit");
+      } else if (asksNoWrite) {
+        // No write gate, no admission, no join, and no room loaded for it.
       } else if (refusal) {
         reject = rejectFrame(treeId, codeOf(*refusal), sentenceOf(*refusal));
       } else if (TreeRoom* room = registry_.open(TreeId{treeId}); !room) {
@@ -353,6 +364,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   ack["treeId"] = treeId;
   ack["frameId"] = frameId;
   if (seq) ack["seq"] = static_cast<Json::Int64>(*seq);
+  else finishCurrentWriteUnchanged();
   send(conn, ack);
 }
 

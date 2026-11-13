@@ -891,6 +891,32 @@ TEST(remove_answers_a_tree_whose_row_went_away_under_its_room_as_unsaved) {
                                   typeid(TreeRowGone).name()}));
 }
 
+// A tree whose steps that opened the removed one are gone from its room since the read — deleted there, not yet saved —
+// has nothing taken: no op, no seq, no frame and no line, and the reply does not name it.
+TEST(remove_takes_nothing_from_a_tree_whose_opening_steps_are_already_gone_and_does_not_name_it) {
+  Setup s;
+  AtTheDoor door;
+  UserId me = uid("me");
+  seed(s.trees, "t_target", me, 100, {spec("t1", NodeColor::sky)});
+  seed(s.trees, "t_a", me, 90, {opening("a1", "t_target"), spec("a2", NodeColor::sky)});
+  seed(s.trees, "t_b", me, 80, {opening("b1", "t_target")});
+  TreeRoom* gone = s.rooms.open(tid("t_a"));
+  REQUIRE(gone != nullptr);
+  gone->applyCommand(DeleteNode{nid("a1")}, s.clock.now, me);
+  const Seq head = gone->head();
+  s.bus.subgraphBroadcasts.clear();
+
+  Cascade went;
+  went.removed[tid("t_b")] = {nid("b1")};
+  CHECK(door.remove(s.registry, tid("t_target"), me) == Removal{went});
+
+  CHECK_EQ(s.rooms.open(tid("t_a"))->head(), head);
+  REQUIRE_EQ(s.bus.subgraphBroadcasts.size(), 1u);
+  CHECK_EQ(s.bus.subgraphBroadcasts[0].tree, std::string("t_b"));
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.tree.remove.cascade roadmap rest ok",
+                                                "roadmap.DELETE.v1.trees.id roadmap rest ok"}));
+}
+
 // The read and every tree's statements run under the cascade's limits, a lock waited for at most a second, and the
 // cascade ends eight seconds after the read began: a tree it has not reached by then keeps its steps, incomplete, and
 // writes no line of its own.

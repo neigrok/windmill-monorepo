@@ -28,7 +28,7 @@ export function graftPlan({ parse, targetId, reservedNodeIds, liveKinds }) {
   for (const parsed of parse.nodes) {
     if (dissolve && parsed.id === rootId) continue;
     const id = remap.get(parsed.id);
-    const grafted = { id, label: parsed.label, color: parsed.color, position: null };
+    const grafted = { id, label: parsed.label, color: parsed.color };
     if (parsed.status) grafted.status = parsed.status;
     if (parsed.description) grafted.description = parsed.description;
     if (parsed.links?.length) grafted.links = [...parsed.links];

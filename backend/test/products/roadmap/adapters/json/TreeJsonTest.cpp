@@ -36,7 +36,7 @@ TEST(a_bare_url_string_parses_as_a_labelless_link) {
 
 TEST(graph_state_round_trips_description_and_links_with_stamps) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   g.setDescription(nid("a"), "body", at(2));
   g.setLinks(nid("a"), {Link{"PR", "https://p"}}, at(3));
 
@@ -46,7 +46,7 @@ TEST(graph_state_round_trips_description_and_links_with_stamps) {
 
 TEST(graph_state_round_trips_the_order_register_with_its_stamp) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   GraphState orderWrite;
   NodeStateEntry entry; entry.id = nid("a"); entry.order = "a3"; entry.orderAt = at(4);
   orderWrite.nodes.push_back(entry);
@@ -73,7 +73,7 @@ TEST(tree_document_round_trips_the_order_key) {
 
 TEST(graph_state_carries_opens_with_its_stamp_and_a_node_without_the_field_clears_nothing) {
   LooseGraph g;
-  g.createNode(nid("a"), "A", "x", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
   g.setOpens(nid("a"), TreeId{"t_9362d9bc883e0a1e"}, at(4));
 
   const Json::Value json = toJson(g.exportState());

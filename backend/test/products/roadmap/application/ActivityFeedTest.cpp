@@ -37,9 +37,9 @@ AppliedOp op(Seq seq, Command command, const char* actor, std::uint64_t at) {
 
 std::vector<AppliedOp> log() {
   return {
-      op(1, CreateNode{nid("renderer"), "WebGL2 renderer", "zap", NodeColor::sky, {}, std::nullopt}, "u5", 1000),
+      op(1, CreateNode{nid("renderer"), "WebGL2 renderer", "zap", NodeColor::sky}, "u5", 1000),
       op(2, RenameNode{nid("renderer"), "Renderer"}, "dev", 2000),
-      op(3, RepositionNode{nid("renderer"), Vec2{9, 9}}, "u5", 3000),  // a nudge — omitted from the feed
+      op(3, RepositionNode{}, "u5", 3000),  // a stored move — omitted from the feed
       op(4, AddEdge{nid("product"), nid("renderer")}, "u5", 4000),
       op(5, DeleteNode{nid("ghost")}, "genesis", 5000),               // gone from the tree → id stands in
       op(6, TransitiveReduction{}, "dev", 6000),
@@ -48,7 +48,7 @@ std::vector<AppliedOp> log() {
 
 }
 
-TEST(activity_projects_ops_to_human_events_skipping_nudges) {
+TEST(activity_projects_ops_to_human_events_skipping_a_stored_move) {
   std::vector<ActivityEvent> events = activityFeed(currentTree(), log(), 100);
 
   REQUIRE_EQ(events.size(), 5u);  // the RepositionNode is dropped
@@ -88,10 +88,10 @@ TEST(activity_keeps_the_most_recent_when_over_limit) {
 TEST(activity_sums_a_batch_by_verb_under_its_first_members_subject) {
   std::vector<AppliedOp> ops = {
       op(7, Batch{{DeleteNode{nid("renderer")}, DeleteNode{nid("ghost")},
-                   RemoveEdge{nid("product"), nid("renderer")}, RepositionNode{nid("product"), Vec2{1, 1}}}},
+                   RemoveEdge{nid("product"), nid("renderer")}, RepositionNode{}}},
          "dev", 7000),
       op(8, Batch{{RemoveEdge{nid("product"), nid("renderer")}}}, "u5", 8000),
-      op(9, Batch{{RepositionNode{nid("product"), Vec2{2, 2}}}}, "u5", 9000),  // nudges only: no event
+      op(9, Batch{{RepositionNode{}}}, "u5", 9000),  // stored moves only: no event
   };
   std::vector<ActivityEvent> events = activityFeed(currentTree(), ops, 100);
 
@@ -180,9 +180,32 @@ TEST(activity_reads_past_tidy_prune_and_cross_branch_rows) {
                                            "35 You | added-kind | added a plum kind"}));
 }
 
+// The log keeps rows that set a position, which nothing writes any more: a move alone is no deed of the feed's, a Batch
+// that held one is told by its other members, and a create that carried a position reads as any create.
+TEST(activity_reads_past_rows_that_set_a_position) {
+  const std::tuple<const char*, const char*, const char*> stored[] = {
+      {"CreateNode", R"({"id":"sail","label":"Sail","color":"sky","x":3,"y":4})", "dev"},
+      {"RepositionNode", R"({"id":"sail","x":5,"y":6})", "dev"},
+      {"Batch", R"({"commands":[{"kind":"RepositionNode","payload":{"id":"renderer","x":7,"y":8}},
+        {"kind":"RenameNode","payload":{"id":"renderer","label":"Renderer"}}]})", "u5"},
+  };
+  std::vector<AppliedOp> ops;
+  for (const auto& [kind, payload, actor] : stored) {
+    const std::optional<Command> row = commandFromJson(kind, parse(payload));
+    REQUIRE(row.has_value());
+    const Seq seq = 40 + ops.size();
+    ops.push_back(op(seq, *row, actor, seq * 1000));
+  }
+  std::vector<std::string> rows;
+  for (const ActivityEvent& event : activityFeed(currentTree(), ops, 100))
+    rows.push_back(std::to_string(event.seq) + " " + event.actor + " | " + event.verb + " | " + event.summary);
+  CHECK_EQ(rows, (std::vector<std::string>{"40 You | added | added Sail",
+                                           "42 Guest 5 | renamed | renamed 1 node"}));
+}
+
 // The feed goes to every reader of a tree, so it never says which tree a node opens.
 TEST(activity_names_no_tree_a_node_opens) {
-  CreateNode created{nid("renderer"), "WebGL2 renderer", "zap", NodeColor::sky, {}, std::nullopt};
+  CreateNode created{nid("renderer"), "WebGL2 renderer", "zap", NodeColor::sky};
   created.opens = TreeId{"t_private_sub"};
   AnnotateNode pointed{nid("product")};
   pointed.opens = TreeId{"t_private_sub"};

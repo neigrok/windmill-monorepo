@@ -18,7 +18,7 @@ Hlc at(std::uint64_t ms) { return Hlc{ms, 0, "a"}; }
 LooseGraph seeded() {
   LooseGraph g;
   for (const char* id : {"a", "b", "c", "n", "d"})
-    g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+    g.createNode(nid(id), id, "", NodeColor::sky, at(1));
   g.addEdge(nid("a"), nid("n"), at(1));
   g.addEdge(nid("c"), nid("n"), at(1));
   g.addEdge(nid("n"), nid("d"), at(1));
@@ -45,8 +45,7 @@ NodeSpec spec(const char* id, std::vector<const char*> prerequisites) {
 std::set<NodeRegister> omittedAllBut(const std::set<NodeRegister>& sent) {
   std::set<NodeRegister> omitted;
   for (NodeRegister reg : {NodeRegister::label, NodeRegister::icon, NodeRegister::color, NodeRegister::order,
-                           NodeRegister::position, NodeRegister::status, NodeRegister::description,
-                           NodeRegister::links, NodeRegister::opens})
+                           NodeRegister::status, NodeRegister::description, NodeRegister::links, NodeRegister::opens})
     if (!sent.count(reg)) omitted.insert(reg);
   return omitted;
 }
@@ -168,7 +167,7 @@ TEST(graft_frame_repaints_the_nodes_a_rehued_kind_wore) {
   LooseGraph g;
   for (const auto& [id, color] : std::vector<std::pair<const char*, NodeColor>>{
            {"a", NodeColor::sky}, {"b", NodeColor::plum}, {"c", NodeColor::sky}, {"d", NodeColor::sky}})
-    g.createNode(nid(id), id, "", color, std::nullopt, at(1));
+    g.createNode(nid(id), id, "", color, at(1));
   const Legend legend({{KindId{"apps"}, NodeColor::sky, "Apps"}, {KindId{"infra"}, NodeColor::plum, "Infra"}}, at(1));
   Graft graft;
   graft.document.kinds = {{KindId{"apps"}, NodeColor::plum}, {KindId{"infra"}, NodeColor::sky}};
@@ -193,7 +192,7 @@ TEST(graft_frame_leaves_a_node_filed_by_kind_to_the_batch_beside_a_swap) {
   LooseGraph g;
   for (const auto& [id, color] : std::vector<std::pair<const char*, NodeColor>>{
            {"a", NodeColor::sky}, {"b", NodeColor::sky}, {"c", NodeColor::plum}})
-    g.createNode(nid(id), id, "", color, std::nullopt, at(1));
+    g.createNode(nid(id), id, "", color, at(1));
   const Legend legend({{KindId{"apps"}, NodeColor::sky, "Apps"}, {KindId{"infra"}, NodeColor::plum, "Infra"}}, at(1));
   Graft graft;
   graft.document.kinds = {{KindId{"apps"}, NodeColor::plum}, {KindId{"infra"}, NodeColor::sky}};
@@ -272,7 +271,7 @@ TEST(graft_state_never_adds_an_edge_onto_a_node_it_tombstones) {
 TEST(graft_admission_is_judged_on_what_the_graft_leaves_behind) {
   LooseGraph g;
   for (std::size_t i = 0; i < kMaxNodes; ++i)
-    g.createNode(NodeId{"n" + std::to_string(i)}, "N", "", NodeColor::sky, std::nullopt, at(1));
+    g.createNode(NodeId{"n" + std::to_string(i)}, "N", "", NodeColor::sky, at(1));
 
   Graft grows;
   grows.document.nodes = {spec("extra", {})};
@@ -291,10 +290,10 @@ TEST(graft_admission_is_judged_on_what_the_graft_leaves_behind) {
 // held edge add nothing, the new edge lands at the graft's stamp.
 TEST(graft_state_keeps_a_held_nodes_creation_stamp_and_carries_only_what_the_batch_changes) {
   LooseGraph g;
-  g.createNode(nid("root"), "Root", "", NodeColor::sky, std::nullopt, at(1000));
-  g.createNode(nid("x"), "X", "", NodeColor::sky, std::nullopt, at(1000));
-  g.createNode(nid("a"), "A", "", NodeColor::sky, std::nullopt, at(1001));
-  g.createNode(nid("b"), "B", "", NodeColor::sky, std::nullopt, at(1002));
+  g.createNode(nid("root"), "Root", "", NodeColor::sky, at(1000));
+  g.createNode(nid("x"), "X", "", NodeColor::sky, at(1000));
+  g.createNode(nid("a"), "A", "", NodeColor::sky, at(1001));
+  g.createNode(nid("b"), "B", "", NodeColor::sky, at(1002));
   g.addEdge(nid("root"), nid("a"), at(1001));
   g.addEdge(nid("root"), nid("b"), at(1002));
   const NodeStateEntry held = *g.exportNode(nid("a"));
@@ -318,7 +317,7 @@ TEST(graft_state_keeps_a_held_nodes_creation_stamp_and_carries_only_what_the_bat
 // delete leaves and the edge it added dangles, so a later revival brings both back.
 TEST(graft_state_loses_a_re_sent_node_to_a_delete_stamped_before_it_and_joined_after_it) {
   LooseGraph g;
-  for (const char* id : {"root", "x", "a"}) g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+  for (const char* id : {"root", "x", "a"}) g.createNode(nid(id), id, "", NodeColor::sky, at(1));
   g.addEdge(nid("root"), nid("a"), at(1));
 
   NodeSpec renamed = spec("a", {"x"});
@@ -352,7 +351,7 @@ TEST(graft_state_loses_a_re_sent_node_to_a_delete_stamped_before_it_and_joined_a
 // writes nothing; changed alone, the frame carries that register alone.
 TEST(graft_state_lands_the_tree_a_node_opens_only_where_the_batch_changes_it) {
   LooseGraph g;
-  g.createNode(nid("n"), "N", "", NodeColor::sky, std::nullopt, at(1));
+  g.createNode(nid("n"), "N", "", NodeColor::sky, at(1));
   g.setOpens(nid("n"), TreeId{"t_sub"}, at(1));
 
   NodeSpec resent = spec("n", {});
@@ -372,7 +371,7 @@ TEST(graft_state_lands_the_tree_a_node_opens_only_where_the_batch_changes_it) {
 
 TEST(graft_state_creates_a_new_node_revives_a_deleted_one_and_edits_a_present_one) {
   LooseGraph g;
-  for (const char* id : {"root", "gone"}) g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+  for (const char* id : {"root", "gone"}) g.createNode(nid(id), id, "", NodeColor::sky, at(1));
   g.deleteNode(nid("gone"), at(2));
 
   NodeSpec fresh = spec("fresh", {"root"});
@@ -396,7 +395,7 @@ TEST(graft_state_creates_a_new_node_revives_a_deleted_one_and_edits_a_present_on
 // a register it carries lands at the graft's stamp, an empty one included.
 TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_even_empty) {
   LooseGraph g;
-  g.createNode(nid("n"), "N", "star", NodeColor::sky, Vec2{1, 2}, at(1), "complete");
+  g.createNode(nid("n"), "N", "star", NodeColor::sky, at(1), "complete");
   g.setOrder(nid("n"), "a0", at(1));
   g.setDescription(nid("n"), "Read it", at(1));
   g.setLinks(nid("n"), {Link{"home", "https://windmill.works"}}, at(1));
@@ -419,7 +418,7 @@ TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_e
   CHECK(*g.exportNode(nid("n")) ==
         (NodeStateEntry{.id = nid("n"), .createdAt = at(1), .label = "N", .labelAt = at(1), .iconAt = at(2),
                         .color = NodeColor::plum, .colorAt = at(2), .order = "a0", .orderAt = at(1),
-                        .position = Vec2{1, 2}, .positionAt = at(1), .status = "complete", .statusAt = at(1),
+                        .status = "complete", .statusAt = at(1),
                         .descriptionAt = at(2), .links = {Link{"home", "https://windmill.works"}},
                         .linksAt = at(1), .opens = TreeId{"t_sub"}, .opensAt = at(1)}));
 }
@@ -428,10 +427,10 @@ TEST(graft_state_leaves_an_omitted_node_register_alone_and_lands_a_carried_one_e
 // carries it empty clears it, and one that leaves it out keeps it.
 TEST(graft_state_sets_clears_and_leaves_the_tree_a_node_opens) {
   LooseGraph g;
-  g.createNode(nid("n"), "N", "", NodeColor::sky, std::nullopt, at(1));
-  const std::set<NodeRegister> allButOpens = {NodeRegister::label,    NodeRegister::icon,   NodeRegister::color,
-                                              NodeRegister::order,    NodeRegister::position, NodeRegister::status,
-                                              NodeRegister::description, NodeRegister::links};
+  g.createNode(nid("n"), "N", "", NodeColor::sky, at(1));
+  const std::set<NodeRegister> allButOpens = {NodeRegister::label,  NodeRegister::icon,  NodeRegister::color,
+                                              NodeRegister::order,  NodeRegister::status, NodeRegister::description,
+                                              NodeRegister::links};
   std::set<NodeRegister> everyRegister = allButOpens;
   everyRegister.insert(NodeRegister::opens);
 
@@ -471,7 +470,7 @@ TEST(graft_state_sets_clears_and_leaves_the_tree_a_node_opens) {
 TEST(graft_state_brings_a_deleted_node_back_opening_nothing_unless_the_document_names_a_tree) {
   LooseGraph g;
   for (const char* id : {"gone", "here"}) {
-    g.createNode(nid(id), id, "", NodeColor::sky, std::nullopt, at(1));
+    g.createNode(nid(id), id, "", NodeColor::sky, at(1));
     g.setDescription(nid(id), "Read it", at(1));
     g.setLinks(nid(id), {Link{"home", "https://windmill.works"}}, at(1));
     g.setOpens(nid(id), TreeId{"t_sub"}, at(1));

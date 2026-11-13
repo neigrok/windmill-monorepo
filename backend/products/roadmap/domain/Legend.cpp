@@ -29,16 +29,21 @@ Legend::Legend(const std::vector<Kind>& kinds, const Hlc& at) {
   }
 }
 
-void Legend::join(const LegendState& state) {
+bool Legend::join(const LegendState& state) {
+  bool took = false;
   for (const KindStateEntry& kind : state.kinds) {
-    KindRecord& record = kinds_[kind.id];
-    record.life.add(kind.createdAt);
-    record.life.remove(kind.deletedAt);
-    record.hue.merge(kind.hue, kind.hueAt);
-    record.label.merge(kind.label, kind.labelAt);
-    record.description.merge(kind.description, kind.descriptionAt);
-    record.rank.merge(kind.rank, kind.rankAt);
+    const auto [held, fresh] = kinds_.try_emplace(kind.id);
+    KindRecord& record = held->second;
+    bool kindTook = record.life.add(kind.createdAt);
+    kindTook |= record.life.remove(kind.deletedAt);
+    kindTook |= record.hue.merge(kind.hue, kind.hueAt);
+    kindTook |= record.label.merge(kind.label, kind.labelAt);
+    kindTook |= record.description.merge(kind.description, kind.descriptionAt);
+    kindTook |= record.rank.merge(kind.rank, kind.rankAt);
+    if (fresh && !kindTook) kinds_.erase(held);
+    took |= kindTook;
   }
+  return took;
 }
 
 std::vector<Kind> Legend::bornWith(const std::vector<Kind>& sent) {

@@ -45,8 +45,10 @@ public:
   explicit Legend(const LegendState& state);
   Legend(const std::vector<Kind>& kinds, const Hlc& at);
 
-  // Fold a partial legend state in, under the same element-set + LWW discipline as LooseGraph::join.
-  void join(const LegendState& state);
+  // Fold a partial legend state in, under the same element-set + LWW discipline as LooseGraph::join, and answer
+  // whether any stamp it carried took; a kind none of whose stamps took leaves the legend without a record it did
+  // not have.
+  bool join(const LegendState& state);
 
   // The kinds a tree is born with: those it is sent, in their order, or the three defaults when it is
   // sent none. TreeRegistry plants them and create_tree answers them, so the two cannot disagree.

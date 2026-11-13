@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { IDBFactory } from 'fake-indexeddb';
 import { SyncStore } from '../../../../src/products/roadmap/sync/SyncStore.js';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
@@ -408,6 +409,106 @@ test('pending gestures survive reload and repeated edits to one register, then a
   assert.ok(reports[0].error.stack);
   assert.equal(await session.discard(), true);
   assert.deepEqual((await store.load('tree')).gestures, { structure: {}, progress: saved.gestures.progress });
+});
+
+// The fixture is the record the bundle that still kept a node position left in IndexedDB: the server's root carried one,
+// and a step it created and a rename it made were never acknowledged. Every create of that bundle stamped a position.
+test('a record stored while nodes held a position opens without one and its unsent edits drain to none', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const record = JSON.parse(readFileSync(new URL('../fixtures/record-with-positions.json', import.meta.url), 'utf8'));
+  const db = await store.db();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction('trees', 'readwrite');
+    transaction.objectStore('trees').put(record, 'tree');
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+  });
+  const created = '1700000008000:0:r_79641cdf';
+  const renamed = '1700000009000:0:r_79641cdf';
+  const references = (at, ...keys) => Object.fromEntries(keys.map((key) => [JSON.stringify(key), at]));
+  const owed = {
+    nodes: [
+      { id: 'root', label: 'Renamed', labelAt: renamed },
+      { id: 'child', createdAt: created, label: 'Child', labelAt: created, icon: '', iconAt: created, color: 'terracotta',
+        colorAt: created, order: 'a0', orderAt: created },
+    ],
+    edges: [{ from: 'root', to: 'child', addedAt: created }],
+    kinds: [],
+  };
+
+  const session = await env.session(store);
+
+  assert.deepEqual(session.gestures, { structure: {
+    [created]: references(created, ['nodes', 'child', 'createdAt'], ['nodes', 'child', 'labelAt'], ['nodes', 'child', 'iconAt'],
+      ['nodes', 'child', 'colorAt'], ['nodes', 'child', 'orderAt'], ['edges', ['root', 'child'], 'addedAt']),
+    [renamed]: references(renamed, ['nodes', 'root', 'labelAt']),
+  }, progress: {} });
+  assert.deepEqual(session.lattice.toFrame(), { nodes: [
+    { id: 'root', createdAt: '1:0:server', label: 'Renamed', labelAt: renamed },
+    owed.nodes[1],
+  ], edges: owed.edges, kinds: [] });
+  assert.equal(session.statusSnapshot().structureGestures, 2);
+
+  session.ws.open();
+  session.receive({ t: 'subgraph', intent: 'delta', seq: 1, coverage: { server: '1:0:server' }, reach: 'writer', edges: [], kinds: [],
+    nodes: [{ id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' }] });
+  session.receiveProgressGraft({ marks: [] });
+  await settle([store]);
+  const [flush] = session.ws.frames.filter((frame) => frame.t === 'subgraph');
+  assert.deepEqual({ nodes: flush.nodes, edges: flush.edges, kinds: flush.kinds }, owed);
+  session.receive({ t: 'subgraphAck', treeId: 'tree', frameId: flush.frameId });
+  await settle([store]);
+
+  assert.deepEqual({ edits: session.pendingEditCount(), gestures: session.statusSnapshot().structureGestures,
+    pending: session.statusSnapshot().structurePending }, { edits: 0, gestures: 0, pending: 0 });
+  const stored = await store.load('tree');
+  assert.deepEqual(stored.gestures.structure, {});
+  assert.deepEqual(stored.frame, session.lattice.toFrame());
+});
+
+// The fixture is the record the bundle that still kept a node position left once the server had confirmed all it held:
+// the root the server sent and a step the tab created, each with a position in the lattice and in the confirmed baseline.
+test('a record confirmed while nodes held a position opens owing nothing and sends nothing when the server answers without one', async (t) => {
+  const env = environment(t);
+  const store = env.store();
+  const record = JSON.parse(readFileSync(new URL('../fixtures/record-with-confirmed-positions.json', import.meta.url), 'utf8'));
+  const db = await store.db();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction('trees', 'readwrite');
+    transaction.objectStore('trees').put(record, 'tree');
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+  });
+  const created = '1700000008000:0:r_94991425';
+  const held = {
+    nodes: [
+      { id: 'root', createdAt: '1:0:server', label: 'Root', labelAt: '1:0:server' },
+      { id: 'child', createdAt: created, label: 'Child', labelAt: created, icon: '', iconAt: created, color: 'terracotta',
+        colorAt: created, order: 'a0', orderAt: created },
+    ],
+    edges: [{ from: 'root', to: 'child', addedAt: created }],
+    kinds: [],
+  };
+  const owed = (session) => ({ edits: session.pendingEditCount(), gestures: session.statusSnapshot().structureGestures,
+    pending: session.statusSnapshot().structurePending });
+
+  const session = await env.session(store);
+
+  assert.deepEqual(session.lattice.toFrame(), held);
+  assert.deepEqual(owed(session), { edits: 0, gestures: 0, pending: 0 });
+
+  session.ws.open();
+  session.receive({ t: 'subgraph', intent: 'delta', seq: 2, coverage: { server: '1:0:server', r_94991425: created }, reach: 'writer',
+    ...held });
+  session.receiveProgressGraft({ marks: [] });
+  await settle([store]);
+
+  assert.deepEqual(session.ws.frames.filter((frame) => frame.t === 'subgraph'), []);
+  assert.deepEqual(owed(session), { edits: 0, gestures: 0, pending: 0 });
+  const stored = await store.load('tree');
+  assert.deepEqual(stored.gestures.structure, {});
+  assert.deepEqual(stored.frame, held);
 });
 
 function refuseDatabase(t) {

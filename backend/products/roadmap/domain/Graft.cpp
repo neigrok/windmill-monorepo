@@ -158,7 +158,6 @@ GraphState graftState(const LooseGraph& graph, const Graft& graft, const Hlc& at
     land(carried(NodeRegister::icon), &Entry::icon, &Entry::iconAt, node.icon);
     land(carried(NodeRegister::color), &Entry::color, &Entry::colorAt, node.color);
     land(carried(NodeRegister::order), &Entry::order, &Entry::orderAt, node.order);
-    land(carried(NodeRegister::position), &Entry::position, &Entry::positionAt, node.position);
     land(carried(NodeRegister::status), &Entry::status, &Entry::statusAt, normalizeSeedStatus(node.status));
     land(carried(NodeRegister::description), &Entry::description, &Entry::descriptionAt, node.description);
     land(carried(NodeRegister::links), &Entry::links, &Entry::linksAt, node.links);

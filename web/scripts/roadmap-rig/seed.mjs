@@ -32,7 +32,6 @@ function documentOf(tree) {
     if (n.order) node.order = n.order;
     if (n.description) node.description = n.description;
     if (n.links?.length) node.links = n.links;
-    if (n.position) node.position = n.position;
     // `status`, `state`, `kind`, `outOfOrder` are the caller's own marks / derived views, not document fields.
     return node;
   });
