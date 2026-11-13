@@ -70,10 +70,13 @@ EXPECTED = {
     "trees": 21,
     "roots": 7,
     "owned": 4,
+    "hanging": 0,
     "multiOpened": {"trees": 2, "sameTree": 1, "acrossTrees": 1, "maxOpeners": 2},
-    "cycles": {"trees": 7, "selfPointers": 1, "loops": {"1": 1, "2": 1, "3-8": 1, "9+": 0}},
+    "cycles": {"trees": 7, "selfPointers": 1, "alsoMultiOpened": 0, "loops": {"1": 1, "2": 1, "3-8": 1, "9+": 0},
+               "byEntries": {"0": 3, "1": 0, "2+": 0}},
     "dangling": {"missing": 1, "deleted": 1, "foreign": 2, "notATreeId": 1},
     "depth": {"deepest": 4, "1": 1, "2": 1, "3": 1, "4+": 1},
+    "depthIfResolved": {"deepest": 4, "1": 5, "2": 1, "3": 5, "4+": 1},
     "accounts": {"withPointers": 2, "needingChoice": 2},
 }
 

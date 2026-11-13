@@ -693,18 +693,29 @@ account alone by the validity rule `OpenedTrees` holds (Model), and the accounts
   a tree only someone else's step names is a root.
 - `owned` — standing trees on no loop that exactly one step opens, from another tree. They convert with
   no choice.
+- `hanging` — owned trees no root reaches through owned trees alone: they hang under a tree opened twice
+  or under a loop, and `depth` leaves them out.
 - `multiOpened` — standing trees on no loop that two or more steps open, with `sameTree` (two or more
   of those steps in one tree), `acrossTrees` (those steps in two or more trees; a tree may count in
   both) and `maxOpeners`, the most steps opening one of them, counted up to 100.
 - `cycles` — standing trees on a loop of valid pointers, with `selfPointers`, the steps opening the tree
   they stand in, and `loops` by how many trees each holds: `1`, `2`, `3-8` and `9+`. A loop is a set of
   trees each of which leads to every other (`OpenedTrees::loops`), so two loops through one tree count
-  as one.
+  as one. `byEntries` counts the loops again by how many present steps from outside the loop open one of
+  its trees: `0` (the loop needs a root of its own), `1` (a cut that needs no choice) and `2+`.
+  `alsoMultiOpened` counts the trees on a loop that two or more steps open, the loop's own steps and the
+  tree's included; `multiOpened` does not count them.
 - `dangling` — steps whose pointer is not valid, by what it names: `missing` (no row, shaped as a tree
   id), `deleted` (the account's own deleted tree), `foreign` (another account's tree or nobody's,
   standing or deleted) and `notATreeId` (no row, and not shaped as a tree id).
 - `depth` — the trees a root reaches through owned trees alone, at `1`, `2`, `3` and `4+` pointers
   down, and the `deepest`. An owned tree under a tree opened twice, or under a loop, has no depth.
+- `depthIfResolved` — every standing tree at the deepest any choice could nest it, in the same buckets,
+  and the `deepest`: an upper bound on the nesting the conversion can make. It is the longest way down
+  valid pointers, where a loop of n trees counts n deep. Whichever steps a choice keeps, a way down from a
+  root enters a loop at most once and passes each of its trees at most once, so a loop cut into a chain
+  can stack all its trees; every tree of the loop is counted at the depth of the deepest of them. A tree
+  or a loop that nothing outside it opens starts at the top.
 - `accounts` — `withPointers`, the accounts with any step that names a tree, and `needingChoice`, those
   with a tree opened twice, a tree on a loop or a dangling step.
 

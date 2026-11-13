@@ -17,10 +17,20 @@ constexpr const char* kFailed = "The subtree inventory could not be read.\n";
 // The inventory as the one JSON object the tool prints: counts, and nothing that names a tree or an account.
 Json::Value countsOf(const wm::SubtreeInventory& counted) {
   const auto count = [](std::size_t value) { return Json::Value(static_cast<Json::UInt64>(value)); };
+  const auto depthOf = [&count](const wm::SubtreeInventory::Depth& depth) {
+    Json::Value out(Json::objectValue);
+    out["deepest"] = count(depth.deepest);
+    out["1"] = count(depth.one);
+    out["2"] = count(depth.two);
+    out["3"] = count(depth.three);
+    out["4+"] = count(depth.moreThanThree);
+    return out;
+  };
   Json::Value out(Json::objectValue);
   out["trees"] = count(counted.trees);
   out["roots"] = count(counted.roots);
   out["owned"] = count(counted.owned);
+  out["hanging"] = count(counted.hanging);
   Json::Value& multiOpened = out["multiOpened"];
   multiOpened["trees"] = count(counted.multiOpened.trees);
   multiOpened["sameTree"] = count(counted.multiOpened.sameTree);
@@ -29,21 +39,21 @@ Json::Value countsOf(const wm::SubtreeInventory& counted) {
   Json::Value& cycles = out["cycles"];
   cycles["trees"] = count(counted.cycles.trees);
   cycles["selfPointers"] = count(counted.cycles.selfPointers);
+  cycles["alsoMultiOpened"] = count(counted.cycles.alsoMultiOpened);
   cycles["loops"]["1"] = count(counted.cycles.loops.one);
   cycles["loops"]["2"] = count(counted.cycles.loops.two);
   cycles["loops"]["3-8"] = count(counted.cycles.loops.threeToEight);
   cycles["loops"]["9+"] = count(counted.cycles.loops.moreThanEight);
+  cycles["byEntries"]["0"] = count(counted.cycles.byEntries.none);
+  cycles["byEntries"]["1"] = count(counted.cycles.byEntries.one);
+  cycles["byEntries"]["2+"] = count(counted.cycles.byEntries.twoOrMore);
   Json::Value& dangling = out["dangling"];
   dangling["missing"] = count(counted.dangling.missing);
   dangling["deleted"] = count(counted.dangling.deleted);
   dangling["foreign"] = count(counted.dangling.foreign);
   dangling["notATreeId"] = count(counted.dangling.notATreeId);
-  Json::Value& depth = out["depth"];
-  depth["deepest"] = count(counted.depth.deepest);
-  depth["1"] = count(counted.depth.one);
-  depth["2"] = count(counted.depth.two);
-  depth["3"] = count(counted.depth.three);
-  depth["4+"] = count(counted.depth.moreThanThree);
+  out["depth"] = depthOf(counted.depth);
+  out["depthIfResolved"] = depthOf(counted.depthIfResolved);
   out["accounts"]["withPointers"] = count(counted.accounts.withPointers);
   out["accounts"]["needingChoice"] = count(counted.accounts.needingChoice);
   return out;

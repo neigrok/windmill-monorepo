@@ -1239,12 +1239,14 @@ TEST(pg_each_accounts_trees_reads_every_accounts_standing_trees_with_their_prese
   CHECK(std::set<UserId>(visited.begin(), visited.end()).size() == visited.size());
   CHECK_FALSE(nobodysTreeRead);
 
-  // The answer the fakes give: two roots, the tree opened twice and by itself on a loop of one, and a step per way a
-  // pointer can fail.
+  // The answer the fakes give: two roots, the tree opened twice and by itself on a loop of one that two steps enter, and
+  // a step per way a pointer can fail.
   SubtreeInventory counted;
   counted.trees = 4;
   counted.roots = 2;
-  counted.cycles = {.trees = 1, .selfPointers = 1, .loops = {.one = 1}};
+  counted.cycles = {
+      .trees = 1, .selfPointers = 1, .alsoMultiOpened = 1, .loops = {.one = 1}, .byEntries = {.twoOrMore = 1}};
+  counted.depthIfResolved = {.deepest = 1, .one = 1};
   counted.dangling = {.missing = 1, .deleted = 1, .foreign = 2, .notATreeId = 1};
   counted.accounts = {.withPointers = 1, .needingChoice = 1};
   CHECK(inventory(read.at(mine)) == counted);
