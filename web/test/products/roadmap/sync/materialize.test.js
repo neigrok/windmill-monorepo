@@ -535,3 +535,31 @@ test('SetNodeTree writes nothing for the tree a step opens already, for none whe
   lattice.join(materialize({ kind: 'DeleteNode', id: 'sail' }, lattice, clock));
   assert.deepStrictEqual(materialize({ kind: 'SetNodeTree', id: 'sail', opens: 't_2222222222222222' }, lattice, clock), nothing);
 });
+
+test('RecolorKind repaints the deleted nodes that held the kind\'s hue, they stay deleted, and one brought back is under the kind', () => {
+  const { lattice, play } = newTree();
+  play({ kind: 'AddKind', id: 'k', hue: 'sky' });
+  play({ kind: 'AddKind', id: 'j', hue: 'gold' });
+  play({ kind: 'CreateNode', id: 'a', label: 'A', color: 'sky' });
+  play({ kind: 'CreateNode', id: 'b', label: 'B', color: 'sky' });
+  play({ kind: 'CreateNode', id: 'c', label: 'C', color: 'gold' });
+  play({ kind: 'BulkDelete', nodeIds: ['b', 'c'], edges: [] });
+  lattice.join({ nodes: [{ id: 'ghost', color: 'sky', colorAt: '5:0:peer' }] });
+  const clock = new HlcClock('tester');
+  clock.observe({ ms: Date.now() + 1000, counter: 0, actor: 'tester' });
+
+  const writes = materialize({ kind: 'RecolorKind', id: 'k', hue: 'plum' }, lattice, clock);
+  const stamp = writes.kinds[0].hueAt;
+  assert.deepEqual(writes, {
+    nodes: [{ id: 'a', color: 'plum', colorAt: stamp }, { id: 'b', color: 'plum', colorAt: stamp }],
+    edges: [],
+    kinds: [{ id: 'k', hue: 'plum', hueAt: stamp }],
+  });
+  lattice.join(writes);
+  assert.deepEqual(lattice.toTreeData().nodes.map(({ id, color }) => ({ id, color })), [{ id: 'a', color: 'plum' }]);
+  assert.deepEqual(['b', 'c', 'ghost'].map((id) => lattice.nodes.get(id).color.v), ['plum', 'gold', 'sky']);
+
+  lattice.join({ nodes: [{ id: 'b', createdAt: `${Date.now() + 5000}:0:srv` }] });
+  assert.deepEqual(lattice.toTreeData().nodes.map(({ id, color }) => ({ id, color })).sort((x, y) => (x.id < y.id ? -1 : 1)),
+    [{ id: 'a', color: 'plum' }, { id: 'b', color: 'plum' }]);
+});

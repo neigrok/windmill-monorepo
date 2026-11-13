@@ -399,6 +399,60 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
   restarted.stop();
 }
 
+// A deleted node's row takes the colour its kind's re-hue gives it and stays deleted, so across a restart the node an
+// import brings back is under its kind.
+TEST(pg_a_deleted_node_repainted_with_its_kind_comes_back_under_the_kind_after_a_restart) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgTreeRepository trees{pgTestPool()};
+  PgOpLog log{pgTestPool()};
+  FakeBus bus;
+  FakeProgressRepository progressRepo;
+  FakeTokens tokens;
+  test::StepClock clock;
+  ProgressService progress{progressRepo, trees};
+  trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
+  const auto storedColours = [] {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    const pqxx::result rows = txn.exec_params(
+        "SELECT node_id || ':' || color || ':' || present::text AS held FROM tree_nodes WHERE tree_id = $1 ORDER BY node_id",
+        kTree.str());
+    std::vector<std::string> held;
+    for (const auto& row : rows) held.push_back(row["held"].as<std::string>());
+    return held;
+  };
+  const ToolCaller sam{kSam, ToolScope::everything()};
+  const auto arguments = [](const char* json) {
+    Json::Value args = parse(json);
+    args["treeId"] = kTree.str();
+    return args;
+  };
+  {
+    RoomRegistry registry(trees, log, bus);
+    NodeEdits edits{registry, progress, bus, clock};
+    TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
+    RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
+    CHECK_FALSE(tools.callTool("add_kind", arguments(R"({"id":"k","hue":"sky"})"), sam).isError);
+    CHECK_FALSE(tools.callTool("import_subgraph", arguments(R"({"nodes":[{"id":"a","label":"A","kind":"k"},
+      {"id":"b","label":"B","kind":"k"}]})"), sam).isError);
+    CHECK_FALSE(tools.callTool("delete_node", arguments(R"({"nodeId":"b"})"), sam).isError);
+    CHECK_FALSE(tools.callTool("update_kind", arguments(R"({"id":"k","hue":"plum"})"), sam).isError);
+    registry.stop();
+  }
+  CHECK_EQ(storedColours(), (std::vector<std::string>{"a:plum:true", "b:plum:false"}));
+
+  RoomRegistry restarted(trees, log, bus);
+  NodeEdits edits{restarted, progress, bus, clock};
+  TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, restarted, edits, clock};
+  RoadmapTools tools{restarted, progress, clock, treeRegistry, edits, "https://app.example"};
+  CHECK_FALSE(tools.callTool("import_subgraph", arguments(R"({"nodes":[{"id":"b"}]})"), sam).isError);
+  CHECK_EQ(test::body(tools.callTool("get_nodes", arguments(R"({"nodeIds":["a","b"],"fields":["id","color","kind"]})"), sam))["nodes"],
+           parse(R"([{"id":"a","color":"plum","kind":"k"},{"id":"b","color":"plum","kind":"k"}])"));
+  restarted.stop();
+  CHECK_EQ(storedColours(), (std::vector<std::string>{"a:plum:true", "b:plum:true"}));
+}
+
 // The statement behind OpenedTrees: a removed node's pointer leads nowhere, a loop ends, and only the owner's marks count.
 TEST(pg_opened_from_answers_every_standing_tree_of_the_owners_the_pointers_lead_to_counted_under_the_owners_marks) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);

@@ -223,7 +223,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | edit | `delete_node` | tombstone nodes: one `nodeId` or `nodeIds` (1..200), exactly one form; a missing id refuses the whole call naming each; one op, one seq. The caller's own marks on the deleted nodes are cleared in the same call, before the delete lands, by the path an import's `tombstone` takes (`NodeEdits::clearMarksOn`, through `NodeEdits::landMarks`, the core every server-stamped mark takes: stamped after the mark it replaces, one batch, one progress frame to the caller's open sessions), so a progress store that fails fails the call with nothing deleted, and a revive brings no cleared mark back; anyone else's marks stay. The deletion is `NodeEdits::deleteNodes`, the path a tree's removal takes the steps that open it by; a tree whose row goes away under its room before the save (an erasure racing the call) is answered as an absent tree, its room gone with the row. `prune: true` also drops every edge touching a deleted node, under the delete grant; receipt carries `ids` and `pruned: {edges, progress}`, `progress` the caller's marks cleared, with or without prune |
 | edit | `import_subgraph` | bulk upsert a whole `get_tree`-shaped slice as one graft frame — a field left off a re-sent node or kind keeps its value (`opens` included, but on a node the import brings back from a delete, which opens none), `prerequisiteMode` merge (union) or replace, `tombstone[]` deletes in the same frame and needs the `roadmap:delete` grant; optional `expectedSeq` and `dryRun`; a graft that changes nothing writes nothing and answers `unchanged: true` (see An edit that changes nothing) |
 | legend | `add_kind` (inline label+description) · `remove_kind` | the legend. A legend's order is the order its kinds were created or imported in: no tool reorders it, and a `ReorderKinds` row the log already holds still decodes, replays and shows in the Activity feed |
-| legend | `update_kind` | a kind's `label`, `description` and/or `hue` as one op under one seq (`planKindUpdate`): one command, or a `Batch` of them, so a replay lands what the call landed; each field is validated and refused as its own command is — `RenameKind`, `DescribeKind`, `RecolorKind` — a field sent as the kind holds it is left out, and a call that changes nothing writes nothing and answers `unchanged: true` with the head; a new hue repaints every node wearing the kind's old hue (`wearersOf`) and the receipt counts them in `repaintedNodes`; no `kindId` alias |
+| legend | `update_kind` | a kind's `label`, `description` and/or `hue` as one op under one seq (`planKindUpdate`): one command, or a `Batch` of them, so a replay lands what the call landed; each field is validated and refused as its own command is — `RenameKind`, `DescribeKind`, `RecolorKind` — a field sent as the kind holds it is left out, and a call that changes nothing writes nothing and answers `unchanged: true` with the head; a new hue repaints every node holding the kind's old hue (`holdersOf`): the present nodes wearing it, which the receipt counts in `repaintedNodes` (`wearersOf`), and the deleted nodes that hold it, uncounted, so one brought back later is under the kind; no `kindId` alias |
 | resource | `windmill://quickstart` | the read-me-first document; no tool slot |
 
 Every tree-scoped tool takes `treeId`. Applied structural edits return
@@ -385,8 +385,10 @@ the kind's hue moved — when the colour is an echo (`landsOver` over the node's
 `resolveHue` takes) and the node lands the kind's hue as a node filed by kind, never repainted by an
 import's re-hue; a node being created holds no colour to echo. Their write lines carry the outcomes `kind-unknown` and `kind-hue-mismatch`, never the
 kind. A node the tree holds that names neither keeps its colour. One an import brings back from a delete comes
-back with the colour someone wrote on it — a `color`, a `kind` or a repaint; a node first imported bare never had one
-written, and is judged as a new node is. A new one is
+back with the colour someone wrote on it — a `color`, a `kind` or a repaint, the repaint its kind's re-hue gave it
+while it was deleted among them, so a node first imported bare under the terracotta kind comes back under that kind
+in the hue the kind took; one first imported bare that no re-hue carried never had a colour written, and is judged
+as a new node is. A new one is
 terracotta and wears the legend's terracotta kind; where the legend has kinds and none wears terracotta, the node
 would belong to no kind, so `create_node` and `import_subgraph` refuse the whole call (`unnamedHueRefusal`, beside
 `resolveHue`): the sentence names such a node, by `nodes[i]` and id in an import, the first ten of them with a count
@@ -395,7 +397,9 @@ leaves (`resolveKinds` joins what `graftLegend` would land): a batch that adds a
 terracotta, claims its bare new nodes, one that re-hues the terracotta kind away does not, and when the batch carries
 kinds the sentence says it speaks of the legend the batch would leave and lists that one, relabels and new kinds
 included. A node the import would create is one the tree does not hold present; it has a hue of its own when the
-batch names a kind or a colour for it or a record of it holds a colour someone wrote, the reading `graftState` lands
+batch names a kind or a colour for it, when the batch's own repaint reaches it — a deleted node nobody coloured
+whose kind the batch re-hues, so one import that re-hues the terracotta kind and bare-revives such a node lands what
+the two calls land — or when a record of it holds a colour someone wrote, the reading `graftState` lands
 it by. A dry run answers the same refusal. An empty legend has no kind to name, so the node lands terracotta there. Its write line carries the outcome `kind-unnamed`, never the node or a kind.
 
 ## `opens`
@@ -626,15 +630,20 @@ and none overrides another.
   legend holds it is not stamped again, so a `get_tree` round trip
   that carries the legend back changes nothing in it. Rank is never on the wire, so a colliding
   kind keeps its place and a new kind lands after the last one, in batch order. A re-sent kind
-  with a new hue repaints every present node wearing its old hue, in the same frame and at the
-  graft's stamp, by `RecolorKind`'s rule (`wearersOf`, used by `repaintOf`), judged against the
-  legend and nodes as they stood before the batch, so two kinds can swap hues. A node the batch
-  tombstones lands what the batch says, and so does one it files by `kind`: it takes the hue that kind
-  wears after the batch, whatever it wore before. A node sent a `color` that differs from the one it
+  with a new hue repaints every node holding its old hue, present or deleted, in the same frame and
+  at the graft's stamp, by `RecolorKind`'s rule (`holdersOf`, used by `repaintOf`), judged against the
+  legend and nodes as they stood before the batch, so two kinds can swap hues. A deleted node the
+  batch leaves deleted takes the colour alone, so one brought back later is under its kind, and one
+  the batch itself brings back follows the rule a present node does. A node the batch
+  tombstones is sent neither a kind nor a colour, so it is a deleted wearer like any other and moves
+  with its kind, its frame entry carrying the tombstone and the new colour together; it was present
+  before the batch, so `repaintedNodes` counts it. A node the batch files by `kind` lands what the
+  batch says: it takes the hue that kind wears after the batch, whatever it wore before. A node sent a `color` that differs from the one it
   holds keeps that colour, while one sent the colour it holds — a `get_tree` round trip — is repainted
   like any wearer (`landsOver`, the comparison the graft lands every register by). The receipt counts
-  the nodes the repaint moved as `repaintedNodes`, present when a kind's hue changed and previewed by
-  the dry run. A batch whose only change is re-hueing one kind writes a `RecolorKind` row, as
+  the repainted nodes the tree held present before the batch as `repaintedNodes` (`Repaint::present`), a key
+  present when a kind's hue changed and previewed by the dry run; a deleted node the repaint moved is not counted,
+  brought back by the same batch or not. A batch whose only change is re-hueing one kind writes a `RecolorKind` row, as
   `update_kind` does; a batch that re-hues several kinds writes one `RecolorKind` row too, for the first of
   them in id order, so its row does not say what the batch did. The import is at most one op row — a batch that changes nothing
   writes none — and that row names only the batch's most salient change, in `headline()`'s order

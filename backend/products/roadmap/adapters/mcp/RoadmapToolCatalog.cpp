@@ -686,7 +686,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     tools.push_back(tool("update_kind", Access::write,
         "Change a legend kind's `label`, `description` or `hue` — any of them, at least one — as ONE op "
         "under one seq. A new `hue` repaints every node wearing the kind's old hue, "
-        "and the receipt counts them in `repaintedNodes`. A field sent as the kind holds it is left out; a "
+        "and the receipt counts them in `repaintedNodes`; a deleted node that held the old hue is repainted "
+        "too, uncounted, so one brought back later is under the kind. A field sent as the kind holds it is left out; a "
         "call that changes nothing writes nothing and answers `unchanged: true` with the tree's current `seq`.",
         p, {"treeId", "id"}));
   }
@@ -704,8 +705,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                                   "and none is terracotta, the whole batch is refused, naming such nodes, the first "
                                   "ten of them, and listing that legend's kinds. A node the tree holds keeps its "
                                   "colour. One brought back from a delete comes back with the colour it was given "
-                                  "by a `color`, a `kind` or a repaint; if it never was given one it counts as new "
-                                  "here and must name a `kind` or `color`.", kHues);
+                                  "by a `color`, a `kind` or a repaint — its kind's re-hue repaints it while it is "
+                                  "deleted too, so it comes back under its kind; if it never was given one it "
+                                  "counts as new here and must name a `kind` or `color`.", kHues);
     nodeFields["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears in the legend "
                                    "this batch leaves, so one batch can add a kind and file nodes under it. Sent "
                                    "with `color`, the two must agree, but for a `color` the node already holds — "
@@ -794,7 +796,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "you re-send with a new hue repaints the nodes wearing its old hue, judged "
         "against the legend before the batch (so two kinds can swap hues); a node you file by `kind` takes "
         "the hue that kind wears after the batch, a node you send a `color` that differs from the one it "
-        "holds keeps that colour, and the receipt's repaintedNodes counts the rest. The "
+        "holds keeps that colour, and the receipt's repaintedNodes counts the rest. A deleted node that held "
+        "the old hue is repainted too, uncounted, so it comes back under its kind, in this batch or a later one; "
+        "a node this batch tombstones is repainted and counted, since it was in the tree before the batch. The "
         "only removals are the ones you ask for: `tombstone` ids (which need the roadmap:delete grant), "
         "and under \"replace\" the edges into a node that the prerequisites list you send for it does not name. The receipt counts what the batch carried — `nodes`, "
         "`edges` (the prerequisites across them), `kinds` — so check `edges` against what you meant "

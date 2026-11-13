@@ -63,6 +63,35 @@ TEST(recoloring_a_kind_swaps_hue_and_repaints_nodes) {
   CHECK_EQ(g.nodeView(nid("c"))->color, NodeColor::gold);  // gold untouched
 }
 
+// A kind that takes a new hue carries the deleted nodes that held its old one, each at the write's stamp and still
+// deleted, so one brought back later is filed where its kind now is. A deleted node is matched as a present one is, by
+// the colour its register holds whether or not anyone wrote it; one on another hue, and a record never created, stay.
+TEST(recoloring_a_kind_repaints_the_deleted_nodes_that_held_its_hue) {
+  LooseGraph g;
+  g.createNode(nid("a"), "A", "x", NodeColor::olive, at(1));
+  g.createNode(nid("b"), "B", "x", NodeColor::olive, at(1));
+  g.createNode(nid("c"), "C", "x", NodeColor::gold, at(1));
+  g.deleteNode(nid("b"), at(2));
+  g.deleteNode(nid("c"), at(2));
+  g.setColor(nid("ghost"), NodeColor::olive, at(1));
+  g.join(GraphState{{NodeStateEntry{.id = nid("bare"), .createdAt = at(1), .deletedAt = at(2)}}, {}});
+  Legend legend({{kid("learn"), NodeColor::olive, "Learn", ""}, {kid("base"), NodeColor::terracotta, "Base", ""}}, at(1));
+
+  merge(g, legend, Command{RecolorKind{kid("learn"), NodeColor::sky}}, at(5));
+  merge(g, legend, Command{RecolorKind{kid("base"), NodeColor::plum}}, at(6));
+
+  CHECK_EQ(g.nodeView(nid("a"))->color, NodeColor::sky);
+  CHECK((*g.exportNode(nid("b")) == NodeStateEntry{.id = nid("b"), .createdAt = at(1), .deletedAt = at(2), .label = "B",
+                                                   .labelAt = at(1), .icon = "x", .iconAt = at(1),
+                                                   .color = NodeColor::sky, .colorAt = at(5)}));
+  CHECK((*g.exportNode(nid("c")) == NodeStateEntry{.id = nid("c"), .createdAt = at(1), .deletedAt = at(2), .label = "C",
+                                                   .labelAt = at(1), .icon = "x", .iconAt = at(1),
+                                                   .color = NodeColor::gold, .colorAt = at(1)}));
+  CHECK((*g.exportNode(nid("ghost")) == NodeStateEntry{.id = nid("ghost"), .color = NodeColor::olive, .colorAt = at(1)}));
+  CHECK((*g.exportNode(nid("bare")) == NodeStateEntry{.id = nid("bare"), .createdAt = at(1), .deletedAt = at(2),
+                                                      .color = NodeColor::plum, .colorAt = at(6)}));
+}
+
 TEST(validate_passes_graph_commands_always) {
   LooseGraph g = seeded();
   Legend legend;
