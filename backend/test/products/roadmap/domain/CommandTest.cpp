@@ -125,6 +125,28 @@ TEST(validate_rejects_new_create_at_node_capacity) {
   CHECK_FALSE(validate(g, legend, Command{CreateNode{nid("n0"), "L", "i"}}).has_value());  // existing node, not new
 }
 
+// A create adds one edge per prerequisite the tree does not hold already, and the edge cap judges it as it judges
+// every other arrival: by the total the tree would hold, in growthWithin's sentence. A prerequisite named twice is one
+// edge, an edge the tree holds is none, and a create that adds none lands on a tree at its cap.
+TEST(validate_refuses_a_create_whose_prerequisites_would_take_the_tree_past_the_edge_cap) {
+  LooseGraph g = seeded();
+  Legend legend;
+  for (std::size_t i = 0; i + 2 < kMaxEdges; ++i) g.addEdge(nid("a"), nid(("m-" + std::to_string(i)).c_str()), at(2));
+  REQUIRE_EQ(g.presentEdgeCount(), kMaxEdges - 1);
+
+  CHECK_EQ(validate(g, legend, Command{CreateNode{nid("c"), "C", "", NodeColor::sky, {nid("a"), nid("b")}}}),
+           std::optional<std::string>("this tree would hold 20001 edges, max 20000 — remove edges with change_edges "
+                                      "before adding more"));
+  CHECK_FALSE(validate(g, legend, Command{CreateNode{nid("c"), "C", "", NodeColor::sky, {nid("a"), nid("a")}}}).has_value());
+  g.addEdge(nid("a"), nid("c"), at(3));
+  REQUIRE_EQ(g.presentEdgeCount(), kMaxEdges);
+  CHECK_EQ(validate(g, legend, Command{CreateNode{nid("c"), "C", "", NodeColor::sky, {nid("a"), nid("b")}}}),
+           std::optional<std::string>("this tree would hold 20001 edges, max 20000 — remove edges with change_edges "
+                                      "before adding more"));
+  CHECK_FALSE(validate(g, legend, Command{CreateNode{nid("c"), "C", "", NodeColor::sky, {nid("a")}}}).has_value());
+  CHECK_FALSE(validate(g, legend, Command{CreateNode{nid("c"), "C", "", NodeColor::sky}}).has_value());
+}
+
 TEST(validate_admits_normal_create_and_add_edge) {
   LooseGraph g = seeded();
   Legend legend;

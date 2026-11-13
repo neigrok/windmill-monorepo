@@ -209,8 +209,9 @@ std::variant<std::vector<Link>, std::string> withLinksAdded(const std::vector<Li
 void merge(LooseGraph& graph, Legend& legend, const Command& command, const Hlc& at);
 
 // Server-authoritative validation before a command is admitted to the log. A graph command is
-// refused only for a malformed or over-cap field, or — for an edit of one node's registers
-// (rename, recolor, move, annotate) — an id no present node carries, with the sentence
+// refused only for a malformed or over-cap field, for a create that would take the tree past its node
+// ceiling or, by the edges its prerequisites add, its edge ceiling, or — for an edit of one node's
+// registers (rename, recolor, annotate) — an id no present node carries, with the sentence
 // `no node in this tree is named "x"`; legend commands may also be refused for hue uniqueness,
 // ≤6 kinds and in-use removal. The string is a human-readable reason.
 std::optional<std::string> validate(const LooseGraph& graph, const Legend& legend, const Command& command);

@@ -7876,6 +7876,27 @@ TEST(mcp_change_edges_refuses_an_edge_past_the_cap) {
     "add":[{"from":"a","to":"b"}]})")))["addedEdges"], parse(R"([{"from":"a","to":"b"}])"));
 }
 
+// create_node's prerequisites are edges, and a tree at its edge cap refuses them as change_edges does, in the same
+// sentence, with nothing written: no node, no edge, no op row. A node created without one lands there as before.
+TEST(mcp_create_node_refuses_prerequisites_that_would_take_the_tree_past_the_edge_cap) {
+  Harness h;
+  LooseGraph graph;
+  graph.createNode(NodeId{"a"}, "A", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  for (std::size_t i = 0; i < kMaxEdges; ++i) graph.addEdge(NodeId{"a"}, NodeId{"m-" + std::to_string(i)}, Hlc{2, 0, "seed"});
+  h.trees.byId["t"] = StoredTree{graph.exportState(), LegendState{}, {"Full", {}}, 0, h.caller};
+  const StoredTree full = h.trees.byId["t"];
+
+  const ToolResult refused = h.call("create_node", parse(R"({"id":"b","label":"B","prerequisites":["a"]})"));
+
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused), std::string("create_node: this tree would hold 20001 edges, max 20000 — remove edges with "
+                                         "change_edges before adding more"));
+  CHECK(h.trees.byId["t"] == full);
+  CHECK(h.ops.byTree["t"].empty());
+  CHECK_EQ(body(h.call("create_node", parse(R"({"id":"b","label":"B"})"))),
+           parse(R"({"applied":true,"seq":1,"id":"b","diagnosticsClean":false,"introducedDiagnostics":[]})"));
+}
+
 // An edge added that the tree holds, and one removed that it does not, write nothing and answer unchanged.
 TEST(mcp_change_edges_writes_nothing_for_an_edge_held_or_absent) {
   auto h = edgeTree();

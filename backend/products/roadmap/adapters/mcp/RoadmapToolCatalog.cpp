@@ -595,7 +595,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                          "and lists the legend's kinds to name.", kHues);
     p["kind"] = cappedStr("Optional legend kind id: the node takes the hue that kind wears. Sent with `color`, "
                           "the two must agree.", kMaxIdLength);
-    p["prerequisites"] = strArray("Optional ids of existing nodes that unlock this one — one edge per id.",
+    p["prerequisites"] = strArray("Optional ids of existing nodes that unlock this one — one edge per id. A tree "
+                                  "holds at most 20000 edges: a create that would pass it is refused whole.",
                                   kMaxIdLength);
     p["parentId"] = cappedStr("Optional single prerequisite (a convenience alias folded into prerequisites).",
                               kMaxIdLength);

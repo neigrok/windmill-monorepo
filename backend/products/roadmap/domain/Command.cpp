@@ -250,6 +250,13 @@ std::optional<std::string> validate(const LooseGraph& graph, const Legend& legen
       if (!graph.hasNode(c.id) && graph.presentNodeCount() >= kMaxNodes)
         return "tree is at node capacity (" + std::to_string(kMaxNodes) +
                " nodes) — delete a node before adding another";
+      // Each prerequisite the tree does not hold an edge from is an edge the create adds, once however often named.
+      std::set<NodeId> newPrerequisites;
+      for (const NodeId& prereq : c.prerequisites)
+        if (!graph.edgePresent(prereq, c.id)) newPrerequisites.insert(prereq);
+      const std::size_t edges = graph.presentEdgeCount();
+      if (std::optional<Admission> refusal = growthWithin(0, 0, edges, edges + newPrerequisites.size()))
+        return refusal->reason;
       return std::nullopt;
     },
     [&](const AnnotateNode& c) -> std::optional<std::string> {

@@ -325,7 +325,9 @@ committed before its connection dropped lands once. Only a room closing — `evi
   alone or inside a `Batch` whose other members it tells.
 - `RecolorKind` is atomic: it swaps a kind's hue and repaints every node wearing the old hue.
 - `validate(graph, legend, command)` runs at the edge. A graph command is refused only for a
-  malformed or over-cap field, or — `RenameNode` · `SetNodeColor` · `AnnotateNode` — an id no
+  malformed or over-cap field, for a `CreateNode` that would take the tree past its node ceiling or,
+  by the edges its prerequisites add, its edge ceiling (`growthWithin`, the sentence every door
+  uses), or — `RenameNode` · `SetNodeColor` · `AnnotateNode` — an id no
   present node carries (`no node in this tree is named "x"`), so no edit plants a phantom. Legend
   commands may be refused — hue uniqueness, ≤6 kinds, no in-use removal, length caps are all locally
   decidable on the authoritative state.
