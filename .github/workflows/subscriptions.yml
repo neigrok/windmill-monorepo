@@ -1,8 +1,8 @@
 name: Subscriptions CI
 
 # The Windmill One subscription service (services/subscriptions): the crates' dependency rule,
-# formatting, Clippy with warnings denied and the tests. Its wire fixtures
-# (packages/api-contract/subscriptions): what generate.py writes, and keeping the rules check.py holds.
+# formatting, Clippy with warnings denied and the tests, then the image built and driven once. Its wire
+# fixtures (packages/api-contract/subscriptions): what generate.py writes, and keeping the rules check.py holds.
 
 on:
   push:
@@ -60,6 +60,70 @@ jobs:
 
       - name: Tests
         run: cargo test --locked
+
+  # The image from services/subscriptions/Dockerfile, built for Linux in release mode and run once: it
+  # becomes healthy, both listeners answer ready, the public one answers no internal path, and SIGTERM
+  # stops it with exit code 0.
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build the image
+        uses: docker/build-push-action@v7
+        with:
+          context: services/subscriptions
+          load: true
+          tags: windmill-subscriptions:ci
+          build-args: SENTRY_RELEASE=${{ github.sha }}
+          cache-from: type=gha,scope=subscriptions
+          cache-to: type=gha,scope=subscriptions,mode=max
+
+      - name: Drive the container
+        run: |
+          docker run -d --name subscriptions -p 8082:8082 -p 8083:8083 -e SENTRY_ENVIRONMENT=ci windmill-subscriptions:ci
+          for attempt in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' subscriptions)" = healthy ] && break
+            sleep 1
+          done
+          test "$(docker inspect -f '{{.State.Health.Status}}' subscriptions)" = healthy
+          test "$(curl -fsS http://127.0.0.1:8082/health)" = '{"status":"ready"}'
+          test "$(curl -fsS http://127.0.0.1:8083/health)" = '{"status":"ready"}'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/internal/v1/feed)" = 404
+          docker stop subscriptions
+          test "$(docker inspect -f '{{.State.ExitCode}}' subscriptions)" = 0
+          docker logs subscriptions | grep '"message":"stopped"'
+
+      # Sentry's ingest here accepts every connection and never answers, so each send hangs until the
+      # service gives up on it. The container must still exit 0 before Docker's 10 s kill.
+      - name: Stop in time while Sentry never answers
+        run: |
+          python3 -c 'import socket; hole = socket.create_server(("0.0.0.0", 9478)); held = [hole.accept()[0] for _ in iter(int, 1)]' > /dev/null 2>&1 &
+          docker run -d --name unanswered --add-host host.docker.internal:host-gateway -p 18083:8083 \
+            -e SENTRY_ENVIRONMENT=ci -e SENTRY_DSN=http://public@host.docker.internal:9478/1 \
+            -e SUBSCRIPTIONS_PANIC_ROUTE_ENABLED=true windmill-subscriptions:ci
+          for attempt in $(seq 1 30); do
+            curl -sf -o /dev/null http://127.0.0.1:18083/health && break
+            sleep 1
+          done
+          for panic in 1 2 3; do
+            test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18083/debug/panic)" = 500
+          done
+          started=$(date +%s)
+          docker stop unanswered
+          elapsed=$(( $(date +%s) - started ))
+          echo "stopped in ${elapsed}s"
+          test "$(docker inspect -f '{{.State.ExitCode}}' unanswered)" = 0
+          test "$elapsed" -lt 10
+
+      - name: The containers' logs
+        if: always()
+        run: |
+          docker logs subscriptions || true
+          docker logs unanswered || true
 
   fixtures:
     runs-on: ubuntu-latest
