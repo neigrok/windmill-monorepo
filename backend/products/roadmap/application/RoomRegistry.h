@@ -62,6 +62,44 @@ inline constexpr char kHeldEarlierSentence[] =
     "This call changed nothing in the tree. The tree holds earlier changes that are not saved yet, and the server is "
     "retrying the save; a server restart before it succeeds would lose them.";
 
+// One per live room, shared with every write that waits on a save of it, so a room that closes or is retired under a
+// waiting write still answers it.
+struct SaveLine {
+  // One save of the room at a time, held across its statements: two saves of one tree never pass each other, and a
+  // write's op row lands after the save that covers it and before any later one. Taken before the strand, never under
+  // it, so whoever waits here holds no reader up.
+  std::timed_mutex gate;
+  // The head the store last took from the room. Read and written under the gate.
+  Seq stored = 0;
+  // The room was dropped with what it held unsaved: nothing more of it is stored. Under the registry's lock.
+  bool retired = false;
+};
+
+class RoomRegistry;
+
+// A write's wait for the save that stores it. A door takes one under the strand, once its write has landed in the
+// room (RoomRegistry::persist), builds its reply, lets the strand go and only then waits: the statement runs with the
+// strand free, so a read of the tree, and a write to it, never waits behind the store. `saved`: the store holds the
+// write, whichever save took it. `held`: the save that covered it failed and the registry is retrying; a write that
+// queued behind that save is told so without a statement of its own. `gone`: the tree's row went away, or the room was
+// retired, before the write was stored. Waited on under the strand it would never return.
+class PendingSave {
+public:
+  // Nothing to wait for: a call that changed nothing, or a tree with no live room, is answered as it stands.
+  PendingSave(Saved answered) : answered_(answered) {}
+  Saved wait();
+
+private:
+  friend class RoomRegistry;
+  PendingSave(RoomRegistry& registry, TreeId tree, std::shared_ptr<SaveLine> line, Seq seq)
+      : registry_(&registry), tree_(std::move(tree)), line_(std::move(line)), seq_(seq) {}
+  RoomRegistry* registry_ = nullptr;
+  TreeId tree_{""};
+  std::shared_ptr<SaveLine> line_;
+  Seq seq_ = 0;
+  Saved answered_ = Saved::saved;
+};
+
 // Owns the live TreeRooms, one per tree being viewed or edited. Idle ones are persisted and closed
 // on its own heartbeat — a room is a cache of the row, not a residence. Every live room of one root's
 // trees shares that root's RootAccess, which is made and changed under the root's lock alone: the
@@ -69,6 +107,11 @@ inline constexpr char kHeldEarlierSentence[] =
 // root's visibility or its removal writes the row under it, so no live room ever answers a reader its
 // root's row does not. Each room records its own owning steps in it as its writes land, so a branch
 // hides the moment the step that owns it is deleted, on every gate, and shows again with its revive.
+//
+// A room's save runs off its strand. Under the strand the save copies what the room holds unsaved and lets go; it
+// stores the copy, then its op rows; under the strand again it clears the room's marks only if no write landed
+// meanwhile, and otherwise leaves them all for the next save. One save of a room runs at a time (SaveLine). So the
+// strand is held for memory work alone on this path, and a store that hangs holds up only the writes waiting on it.
 class RoomRegistry {
 public:
   // When a held room's save is tried again: `retry` runs once, `delay` from now. The registry's own heartbeat thread
@@ -88,8 +131,8 @@ public:
   // A registry that goes away has stopped: whatever owns one need not remember to.
   ~RoomRegistry();
   // Stops the heartbeat, so no retry runs after it, then tries each held room's save once more, the wait for a retry
-  // in mid-save and all of those saves within kShutdownSaveBudget together. The rooms still held after that are lost
-  // with the process: one line and one report say how many.
+  // or a write in mid-save and all of those saves within kShutdownSaveBudget together. The rooms still held after
+  // that are lost with the process: one line and one report say how many.
   void stop();
 
   // nullptr means no such tree; a throw means infrastructure failure, whose detail must be logged
@@ -115,8 +158,21 @@ public:
   // Save, then land the queued op rows, then close; a room with nothing unsaved closes with no save. A row
   // that fails to land after the save is dropped with the room — logged, never surfaced — since the lattice
   // it describes is durable. A room whose save is held, or fails here, stays open, its writes being nowhere
-  // else, and waits for its retry: answered false, where a room that closed, or was not open, answers true.
+  // else, and waits for its retry, and so does one a write landed in while it was saved: answered false, where a
+  // room that closed, or was not open, answers true. The caller holds no strand: the save runs off it.
   bool evict(const TreeId& id);
+  // The save of whatever the tree's room holds unsaved, run here and waited for, for a caller that is about to write
+  // the tree's row itself and holds no write of its own in the room (a write waits on what persist answers). `held`
+  // for a room that is held, or whose save fails here: a held room's save is the timer's, and costs no statement.
+  // The caller holds no strand.
+  Saved flush(const TreeId& id);
+  // Whether the store holds every write of the tree's room and no save of it is running, so nothing the registry does
+  // is writing, or about to write, the tree's row: what a caller that writes the row itself asks before it does. A
+  // tree with no live room is flushed. Caller holds the strand.
+  bool flushed(const TreeId& id) const;
+  // Closes a flushed room, with no statement; false, and the room stays, when it is not flushed. Caller holds the
+  // strand.
+  bool close(const TreeId& id);
 
   // Drops a retired tree's room and announces the change; deliberately does NOT persist on the way
   // out. Caller holds the strand.
@@ -124,13 +180,14 @@ public:
   // Retires, each under its own strand, the rooms of trees whose rows were deleted outside this
   // registry — the trees of an erased account.
   void retireErased(const std::vector<std::string>& trees);
-  // Save a live room's dirty slice without evicting, then land its queued op rows. `gone` when the
-  // tree's row is gone or retired (TreeRowGone names it where it is reported). `saved` also when the rows
-  // fail to land: the save is what a caller's reply attests, and the rows retry on the next persist. A save
-  // that fails throws nothing: the room is held and a retry is set on the timer. A held room is tried
-  // again only when it has changed since its save was last tried; otherwise it is answered `held` with no
-  // statement sent. Caller holds the strand.
-  Saved persist(const TreeId& id);
+  // The save of a live room's dirty slice, without evicting, and of its queued op rows after: asked for here, under
+  // the strand, by the write that has just landed, with no statement sent, and run where the caller waits on what is
+  // answered, with the strand let go. There it is `gone` when the tree's row is gone or retired (TreeRowGone names it
+  // where it is reported), and the room is retired with it. `saved` also when the rows fail to land: the save is what
+  // a caller's reply attests, and the rows retry on the next save. A save that fails throws nothing: the room is held
+  // and a retry is set on the timer. A held room is tried again only when it has changed since its save was last
+  // tried; otherwise it is answered `held` with no statement sent. Caller holds the strand.
+  [[nodiscard]] PendingSave persist(const TreeId& id);
   // What a call that changed nothing says of the room's save: `held` while it is, `saved` otherwise.
   Saved standing(const TreeId& id) const;
   // The share seam, for a root: its row and the access every live room of its trees shares, the narrower first, so
@@ -151,24 +208,32 @@ public:
   // the room cap.
   void sweep(std::chrono::steady_clock::duration idleFor);
 
-  // A live room takes the rename through its lattice; a closed tree's goes straight to the column,
-  // stamped past `persistedStamp` so it dominates the stored title. `gone` when the live room's row is
-  // gone, and the room is retired. Caller holds the strand.
-  Saved rename(const TreeId& id, const std::string& title, std::uint64_t nowMs, const Hlc& persistedStamp);
+  // A live room takes the rename through its lattice, and its save is the caller's to wait on (persist); a closed
+  // tree's goes straight to the column, stamped past `persistedStamp` so it dominates the stored title. Caller holds
+  // the strand.
+  [[nodiscard]] PendingSave rename(const TreeId& id, const std::string& title, std::uint64_t nowMs,
+                                   const Hlc& persistedStamp);
 
   // One writer per tree: every caller that touches a room holds this. Striped over a fixed lock
   // array so unknown tree ids can't grow it; never hold two strands at once.
   std::mutex& strandFor(const TreeId& id);
 
 private:
-  // What asks for a save: a write that has just landed in the room, a close — the sweep's, a PUT's, shutdown's — or
-  // the retry timer. Only the timer's failures move the next wait.
-  enum class Asked { byAWrite, inPassing, byTheTimer };
-  Saved save(const TreeId& id, Asked asked);
-  void hold(const TreeId& id, const std::exception& failure, Asked asked);
+  friend class PendingSave;
+  // What asks for a save: a write that has just landed in the room; a caller in passing — a close, the sweep's or a
+  // PUT's, or a subtree's create — which never tries a held room; the retry timer; or the registry as it stops. Only
+  // the timer's failures move the next wait.
+  enum class Asked { byAWrite, inPassing, byTheTimer, atShutdown };
+  // One save of the room `line` belongs to, as the class comment tells it. The caller holds the line's gate and no
+  // strand. A room that closed since the save was asked for has everything stored; one retired has not.
+  Saved save(const TreeId& id, const std::shared_ptr<SaveLine>& line, Asked asked);
+  // Holds the room for a save tried at head `triedAt` that failed. `gone` when the room was retired under the save.
+  Saved hold(const TreeId& id, const std::shared_ptr<SaveLine>& line, const std::exception& failure, Asked asked,
+             Seq triedAt);
   // One report for the registry, with the number of rooms held, under a request of its own.
   void reportHeld(std::size_t rooms, const std::exception& failure, const char* outcome);
-  void land(const TreeId& id, TreeRoom& room);
+  // Appends the rows in order and answers how many landed: the first failure stops it.
+  std::size_t land(const TreeId& id, const std::vector<AppliedOp>& rows);
   // The access every live room of `root`'s trees shares, made from the root's row and its absent owning steps when none is
   // live. Called under the root's lock; nullptr when the root does not stand.
   std::shared_ptr<RootAccess> shareRootAccess(const TreeId& root);
@@ -194,7 +259,7 @@ private:
   static constexpr std::size_t kSweepsPerReport = 2;
   // A room whose save failed, until one lands: the id its two lines carry, minted for this hold, by which a retry set
   // for an earlier one tries nothing; how many saves were tried; the wait before the next timed one; when the hold
-  // began; and the head its save was last tried at, so a call that changes nothing tries no save.
+  // began; and the head its save was last tried at, so a write that failed save already covered tries none.
   struct Held {
     std::string id;
     std::uint64_t attempts = 1;
@@ -203,10 +268,14 @@ private:
     Seq triedAt = 0;
   };
   // Steady time, never wall time: a clock stepped backwards must not resurrect a room.
+  // `saving` while a save of the room is between its copy and its clearing of the marks: a statement may be writing
+  // the tree's row.
   struct Live {
     std::unique_ptr<TreeRoom> room;
     std::chrono::steady_clock::time_point touched;
     std::optional<Held> held;
+    std::shared_ptr<SaveLine> line = std::make_shared<SaveLine>();
+    bool saving = false;
   };
 
   TreeRepository& repo_;
