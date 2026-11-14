@@ -1,5 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from 'playwright';
 import { createServer } from 'vite';
@@ -43,7 +44,9 @@ const ready = (async () => {
         });
       },
     }], optimizeDeps: { include: ['react', 'react-dom/client'] }, server: { host: '127.0.0.1', port: 0 } });
-  await server.listen(0);
+  const serverReady = once(server.httpServer, 'listening');
+  server.httpServer.listen(0, '127.0.0.1');
+  await serverReady;
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   browser = await chromium.launch({ headless: true });
   webkitBrowser = await webkit.launch({ headless: true });
@@ -51,6 +54,41 @@ const ready = (async () => {
 after(async () => { try { await ready; } finally { await browser?.close(); await webkitBrowser?.close(); await server?.close(); } });
 
 for (const engine of ['Chromium', 'WebKit']) {
+  test(`${engine}: shortcuts keep their scroll region keyboard reachable across a coalesced resize`, async () => {
+    await ready;
+    const [forward, backward] = engine === 'WebKit' ? ['Alt+Tab', 'Alt+Shift+Tab'] : ['Tab', 'Shift+Tab'];
+    const page = await (engine === 'Chromium' ? browser : webkitBrowser).newPage({ viewport: { width: 390, height: 500 }, reducedMotion: 'reduce' });
+    try {
+      await page.goto(`${origin}/shortcuts-test`);
+      await page.waitForFunction(() => typeof window.paint === 'function');
+      await page.evaluate(() => window.paint({ view: 'board', owner: true, readOnly: true }));
+      await page.keyboard.press(forward);
+      await page.keyboard.press('Enter');
+      const dialog = page.getByRole('dialog');
+      await dialog.waitFor();
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        await Promise.all(document.getAnimations().map((animation) => animation.finished));
+      });
+      const body = dialog.getByRole('region');
+      await page.waitForFunction(() => document.querySelector('[role="region"]').tabIndex === 0, null, { timeout: 2000 });
+      const compact = await body.evaluate((element) => ({ height: element.clientHeight, content: element.scrollHeight, tabIndex: element.tabIndex }));
+      assert.ok(compact.content > compact.height);
+      await page.keyboard.press(forward);
+      assert.equal(await page.getByRole('button', { name: 'Close', exact: true }).evaluate((element) => element === document.activeElement), true);
+      await body.evaluate(async (element) => {
+        const minHeight = element.style.minHeight;
+        element.style.minHeight = `${element.scrollHeight}px`;
+        window.dispatchEvent(new Event('resize'));
+        element.style.minHeight = minHeight;
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      });
+      assert.deepEqual(await body.evaluate((element) => ({ height: element.clientHeight, content: element.scrollHeight, tabIndex: element.tabIndex })), compact);
+      await page.keyboard.press(backward);
+      assert.equal(await body.evaluate((element) => element === document.activeElement), true);
+    } finally { await page.close(); }
+  });
+
   for (const width of [390, 1440]) {
     for (const view of ['graph', 'board']) {
       test(`${engine}: shortcuts ${view} ${width}px keeps its header pinned and list keyboard reachable`, async (t) => {
@@ -123,13 +161,17 @@ for (const engine of ['Chromium', 'WebKit']) {
           assert.equal(await body.evaluate((element) => element === document.activeElement), true);
           if (process.env.SHORTCUT_CAPTURE_DIR) await page.screenshot({ path: `${process.env.SHORTCUT_CAPTURE_DIR}/${engine}-${view}-${width}-dark-compact.png` });
           await page.keyboard.press(forward);
+          const compactHeight = await body.evaluate((element) => element.clientHeight);
           await page.setViewportSize({ width, height: 1200 });
-          await page.waitForFunction(() => {
+          await page.waitForFunction((compactHeight) => {
             const body = document.querySelector('[role="region"]');
-            return body.tabIndex === (body.scrollHeight > body.clientHeight ? 0 : -1);
-          }, null, { timeout: 2000 });
+            return body.clientHeight > compactHeight && body.tabIndex === (body.scrollHeight > body.clientHeight ? 0 : -1);
+          }, compactHeight, { timeout: 2000 });
           await page.setViewportSize({ width, height: 500 });
-          await page.waitForFunction(() => document.querySelector('[role="region"]').tabIndex === 0, null, { timeout: 2000 });
+          await page.waitForFunction((compactHeight) => {
+            const body = document.querySelector('[role="region"]');
+            return body.clientHeight === compactHeight && body.scrollHeight > body.clientHeight && body.tabIndex === 0;
+          }, compactHeight, { timeout: 2000 });
           await page.keyboard.press(backward);
           assert.equal(await body.evaluate((element) => element === document.activeElement), true);
           await page.keyboard.press('Escape');

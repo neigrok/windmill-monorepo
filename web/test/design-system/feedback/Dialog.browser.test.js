@@ -1,5 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
@@ -35,10 +36,10 @@ function Fixture(props) {
   else if (props.kind === 'feedback') dialog = e(FeedbackDialog, common);
   else if (props.kind === 'sync') dialog = open ? e(SyncDecisions, { question: { kind: 'signed-out', count: { page: 1 } },
     work: { type: 'page', counted: (count) => count + (count === 1 ? ' page' : ' pages'), many: 'pages' }, onCancel: close, onDecision: close }) : null;
-  else dialog = e(Dialog, { ...common, title: props.custom ? undefined : props.title ?? 'Shared dialog',
+  else dialog = e(Dialog, { ...common, key: props.gate, title: props.custom ? undefined : props.title ?? 'Shared dialog',
     labelledBy: props.custom ? 'custom-title' : undefined, onClose: props.empty ? undefined : close,
-    focusableBody: props.focusableBody,
-    footer: props.long ? e('button', { id: 'footer' }, 'Continue') : undefined },
+    focusableBody: props.focusableBody, gate: props.gate,
+    footer: props.long ? ({ seen }) => e('button', { id: 'footer', disabled: props.gate === 'scrolled' && !seen }, 'Continue') : undefined },
     props.custom && e('h2', { id: 'custom-title' }, props.title ?? 'Custom title'),
     props.long && e('p', { style: { height: props.bodyHeight ?? 1200 } }, 'Noninteractive body'),
     !props.empty && !props.long && e(React.Fragment, null,
@@ -72,7 +73,9 @@ const ready = (async () => {
         });
       },
     }], optimizeDeps: { include: ['react', 'react-dom/client'] }, server: { host: '127.0.0.1', port: 0 } });
-  await server.listen(0);
+  const serverReady = once(server.httpServer, 'listening');
+  server.httpServer.listen(0, '127.0.0.1');
+  await serverReady;
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
 })();
 ready.catch(() => {});
@@ -197,6 +200,64 @@ test('an opted-in body leaves Tab order when its content fits and returns when i
     await page.keyboard.press('Escape');
     await page.getByRole('dialog').waitFor({ state: 'detached' });
     assert.equal(await page.locator('#opener').evaluate((element) => element === document.activeElement), true);
+  });
+});
+
+test('the scroll gate ignores a coalesced resize, opens at the end, and follows content growth', async (t) => {
+  await visit(t, { long: true, focusableBody: true, gate: 'scrolled', bodyHeight: 1200 }, async (page) => {
+    const body = page.getByRole('region', { name: 'Shared dialog', exact: true });
+    const footer = page.getByRole('button', { name: 'Continue', exact: true });
+    await page.waitForFunction(() => document.querySelector('[role="region"]').tabIndex === 0, null, { timeout: 2000 });
+    assert.equal(await footer.isDisabled(), true);
+    await body.evaluate(async (element) => {
+      const minHeight = element.style.minHeight;
+      element.style.minHeight = `${element.scrollHeight}px`;
+      window.dispatchEvent(new Event('resize'));
+      element.style.minHeight = minHeight;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    assert.equal(await footer.isDisabled(), true);
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    assert.equal(await body.evaluate((element) => element === document.activeElement), true);
+    await page.keyboard.press('End');
+    await page.waitForFunction(() => !document.querySelector('#footer').disabled, null, { timeout: 2000 });
+    await page.evaluate(() => window.paint({ long: true, focusableBody: true, gate: 'scrolled', bodyHeight: 2400 }));
+    await page.waitForFunction(() => document.querySelector('#footer').disabled, null, { timeout: 2000 });
+    await page.evaluate(() => window.paint({ long: true, focusableBody: true, gate: 'scrolled', bodyHeight: 24 }));
+    await page.waitForFunction(() => !document.querySelector('#footer').disabled, null, { timeout: 2000 });
+    assert.deepEqual(await body.evaluate((element) => ({ overflow: element.scrollHeight > element.clientHeight, tabIndex: element.tabIndex })), { overflow: false, tabIndex: -1 });
+  });
+});
+
+test('without ResizeObserver, viewport resize keeps the scroll body in the correct Tab order', async (t) => {
+  await visit(t, { long: true, focusableBody: true, bodyHeight: 600 }, async (page) => {
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.evaluate(() => { window.ResizeObserver = undefined; });
+    await page.setViewportSize({ width: 800, height: 500 });
+    await page.locator('#opener').click();
+    const body = page.getByRole('region', { name: 'Shared dialog', exact: true });
+    const footer = page.getByRole('button', { name: 'Continue', exact: true });
+    await page.waitForFunction(() => document.querySelector('[role="region"]')?.tabIndex === 0, null, { timeout: 2000 });
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    assert.equal(await body.evaluate((element) => element === document.activeElement), true);
+    await page.keyboard.press('Shift+Tab');
+    await page.setViewportSize({ width: 800, height: 1000 });
+    await page.waitForFunction(() => {
+      const body = document.querySelector('[role="region"]');
+      return body.scrollHeight <= body.clientHeight && body.tabIndex === -1;
+    }, null, { timeout: 2000 });
+    await page.keyboard.press('Tab');
+    assert.equal(await footer.evaluate((element) => element === document.activeElement), true);
+    await page.setViewportSize({ width: 800, height: 500 });
+    await page.waitForFunction(() => {
+      const body = document.querySelector('[role="region"]');
+      return body.scrollHeight > body.clientHeight && body.tabIndex === 0;
+    }, null, { timeout: 2000 });
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await body.evaluate((element) => element === document.activeElement), true);
   });
 });
 
