@@ -306,8 +306,9 @@ account's AI allowance · 503 busy (`kVoiceInFlightPerAccount` 2, `kVoiceInFligh
 
 With durable USD allowances on (`backend/AI_ALLOWANCES.md`), the allowance step reads the account's
 allowance and refuses one that is not `ok` with its own code. The transcriber's admission then holds
-the take's ceiling before any audio leaves and settles it at the tokens the vendor billed; a refused
-admission answers under the code that refused it. Both answer as Coach's allowance refusals do:
+the take's ceiling on a Windmill One grant before any audio leaves, refusing any lesser principal as
+`funding_required`, and settles it at the tokens the vendor billed; a refused admission answers under
+the code that refused it and gives the take's bytes back to `kVoiceBytesPerDay`. Both answer as Coach's allowance refusals do:
 `code`, `reason` (`allowance_exhausted`, `request_exceeds_remaining` or `unavailable`), `error` and
 the `allowance` object, 429 for `subject_exhausted` and 503 for every other ledger code. With them
 off, the step is 429 past the account's trailing-30-day AI allowance.
@@ -324,9 +325,10 @@ could not answer`. A successful empty transcript is still 200 `{text:""}`; failu
 distinct.
 
 The handler does not wait on the vendor: it hands its callback to the transcriber and returns, and
-the reply is written from the transcriber's loop, after the take's charge is settled. `VoiceRation`
-is in memory and best-effort; the money is held by the account's AI allowance and the process fuse
-(`platform/domain/AiFuse.h`).
+the reply is written from the transcriber's loop, after the take's charge is settled, under the
+route's request id. The vendor gets 300 s to answer, and stopping the transcriber lets takes still
+with it settle for up to 5 s before its loop ends. `VoiceRation` is in memory and best-effort; the
+money is held by the account's AI allowance and the process fuse (`platform/domain/AiFuse.h`).
 
 Rules:
 

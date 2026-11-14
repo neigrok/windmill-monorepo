@@ -138,23 +138,29 @@ session opened it. Anonymous roadmap composition remains `compose-unavailable`; 
 this credential.
 
 Journal Talk (`POST /v1/journal/transcribe`, operation `transcribe`) runs on OpenAI
-`gpt-4o-transcribe`, which bills tokens: the vendor's pricing page gives it one input price, $2.50
-per 1M tokens, and $10.00 per 1M output tokens (`AiUsage.cpp`); Talk sends no text prompt. A take's byte size
-bounds no duration — a lower bitrate packs more seconds into the same bytes — so each take reserves
-the model's own ceiling: its 16,000-token context window priced as input plus its 2,000 output
-tokens, $0.06 (`OpenAiTranscriber.cpp`). That is the vendor's documented bound, not one this server
+`gpt-4o-transcribe`, which bills tokens. Its model page prices audio tokens at $2.50 per 1M input
+and $10.00 per 1M output, and the pricing page's Transcription row gives the same two prices with
+no separate text-input price (`AiUsage.cpp`); Talk sends no text prompt. A take's byte size bounds
+no duration — a lower bitrate packs more seconds into the same bytes — so each take reserves the
+model's own ceiling: its 16,000-token context window priced as input plus its 2,000 output tokens,
+$0.06 (`OpenAiTranscriber.cpp`). That is the vendor's documented bound, not one this server
 measures: the reply's `usage` object (`type: "tokens"`, `input_tokens`, `output_tokens`) is what the
 vendor billed, and settles the take at that cost, with an unfunded excess kept as overrun debt as
-for any round.
-An error status from the vendor, or a request that never reached a connection or TLS session,
-consumed nothing and settles at zero. A timeout, a connection dropped mid-exchange, an unreadable
-reply or a reply without token usage keeps the whole hold as uncertain. Talk requires Windmill One,
-checked before any audio is read, so a take draws only on a funded grant; the route answers the
-allowance's own codes: 429 `subject_exhausted` for a spent or too-small allowance, 503 for
-`funding_required`, `concurrency_exhausted`, `debt_outstanding` and the other ledger codes, each with
-the allowance object Coach's refusals carry, and 503 `ai_accounting_unavailable` when the ledger
-cannot be asked. A transcriber configured with a model that has no ceiling is not configured in
-this mode, and the route answers 503 `voice_unavailable`.
+for any round. A transcript that comes back without usable token usage was heard, and settles at
+the $0.06 ceiling. An error status from the vendor, or a request that never reached a connection or
+TLS session, consumed nothing and settles at zero. A timeout (300 s, `OpenAiTranscriber.cpp`), a
+connection dropped mid-exchange or an unreadable reply keeps the whole hold as uncertain. Stopping
+the server lets takes still with the vendor answer and settle for up to 5 s, inside Docker's 10 s
+stop timeout; one still out after that keeps its dispatched hold.
+
+Talk requires Windmill One, checked before any audio is read, and its admission refuses any
+principal below Windmill One as `funding_required`, so a take draws only on a funded grant and
+never on the free pools. The route answers the allowance's own codes: 429 `subject_exhausted` for
+a spent or too-small allowance, 503 for `funding_required`, `concurrency_exhausted`,
+`debt_outstanding` and the other ledger codes, each with the allowance object Coach's refusals
+carry, and 503 `ai_accounting_unavailable` when the ledger cannot be asked. A transcriber
+configured with a model that has no ceiling is not configured in this mode, and the route answers
+503 `voice_unavailable`.
 
 The supported Claude model allowlist matches the Claude rows of `AiUsage.cpp`. Unknown models, unsupported pricing
 options, server tools and one-hour cache writes refuse admission. Each Claude round locally

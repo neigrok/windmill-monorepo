@@ -16,12 +16,15 @@ are not guaranteed to preserve identity. Customer USD screens remain work.
 | Gym Coach | `ask` / `claude-opus-5` | Individual and applicable free/funded budgets; technical question burst protection remains. |
 | Anonymous Gym onboarding | `coach.preview` / `claude-sonnet-5` | Lifetime installation and shared free budgets; one bounded call, public exercises only. |
 | Journal Echoes | `echo.segment`, `echo.curate` / `claude-sonnet-5` | Debits the same individual allowance, including automatic background work. |
-| Journal Talk | `transcribe` / `gpt-4o-transcribe` | Windmill One only: holds the model's $0.06 token ceiling on the funded grant before audio leaves and settles at the tokens the vendor billed. The Talk audio ration below applies too. |
+| Journal Talk | `transcribe` / `gpt-4o-transcribe` | Windmill One grants only: holds the model's $0.06 token ceiling before audio leaves and settles at the tokens the vendor billed, or at that ceiling when a transcript comes back without usage. |
 
 Adapters record supported token counts, product, operation, run/iteration, model and outcome. Failed
 calls can carry billed usage. Incomplete usage retains a durable hold. Ordinary MCP operations
 performed by an external assistant do not incur Windmill's hosted-model cost. Browser search and
 the self-hosted Echoes embedder do not incur hosted-model token charges.
+
+Talk also keeps an in-memory audio ration in both modes: a 30 MiB daily refill, at most two takes
+per account and eight per process with the vendor. A take the allowance refuses gives its bytes back.
 
 Each Claude round locally estimates tokens for the actual system prompt, messages/history, tools,
 results and images, then reserves estimated input cost plus the full output cap sent to the provider; a
@@ -80,7 +83,6 @@ The existing deployment behavior remains available while the feature is off:
 | Passive Journal AI | Separate $2 trailing-30-day operational ceiling. |
 | Roadmap requests | 30 Free / 300 One per UTC calendar month. |
 | Coach questions | Three-question capacity, refilled continuously at ten per day; zero-model-turn failures return the question. |
-| Talk audio | 30 MiB daily refill, at most two takes per account and eight per process. |
 | Process safeguard | $20 over a trailing hour, held in memory. |
 
 These legacy counters do not reserve each later model turn. They must not be described as the
