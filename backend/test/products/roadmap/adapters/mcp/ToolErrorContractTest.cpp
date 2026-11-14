@@ -1058,7 +1058,7 @@ TEST(mcp_opens_is_published_alike_wherever_it_is_taken_and_as_a_field_no_read_de
   for (const Json::Value& taken : {(*create)["inputSchema"]["properties"]["opens"],
                                    (*patch)["inputSchema"]["properties"]["updates"]["items"]["properties"]["opens"],
                                    (*import)["inputSchema"]["properties"]["nodes"]["items"]["properties"]["opens"]})
-    CHECK_EQ(taken, parse(R"({"type":"string","description":"The id of a tree you own for this node to open; \"\" for none."})"));
+    CHECK_EQ(taken, parse(R"({"type":"string","description":"The id of a top-level roadmap of yours for this node to open; \"\" for none. A step that owns a subtree keeps its own."})"));
 
   const Json::Value fields = list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "status", "seedStatus", "state", "summary", "description", "links", "opens",
                                    "url"});
