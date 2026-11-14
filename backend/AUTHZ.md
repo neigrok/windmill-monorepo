@@ -94,9 +94,11 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   nobody's to write**: the seeded demo tree (`t_9e407a96b5330ebe`, `owner_id NULL`, `public`) is
   world-readable and editable by no one. Every write path runs `canRead` first, so a refusal never
   confirms that a private id names something; a readable tree the caller does not own answers `403`.
-  One door does not hold to it yet. A create under a client-minted id (`POST /v1/trees`, a fork's
+  Two doors do not hold to it yet. A create under a client-minted id (`POST /v1/trees`, a fork's
   requested id) answers `409` when that id is another account's tree, private or not, or a hidden
-  subtree's.
+  subtree's. `PUT /v1/trees/{tree}/steps/{step}/subtree` keeps a `proposedId` no row holds and
+  mints another for one any row holds, anyone's, so the id it answers tells the parent's owner
+  whether the proposed id was taken. Tree ids are random, so neither can be walked.
 - **Forks** require read access to the source and create new trees owned by the recipient — the root
   and its standing branch — and do not require write access to the source. A subtree is never forked
   alone.
@@ -128,9 +130,9 @@ above it, which is why the `subtree` frame, the subscribe answer's `subtrees` an
 `path` down from its root. A change only a root takes — a visibility change, a removal, a fork, a
 create at its id — aimed at a subtree is refused `not-a-root`, after the read gate, so it tells only
 someone who may read the subtree where it hangs; a hidden subtree answers it as an absent tree, but
-for the create-at-id door above, which answers it `409` (`POST /v1/trees`). A
-deletion of an owning step names its subtree (`branches`) or is refused `branch-unconfirmed` after the
-write gate. Pointers stay the writer's alone.
+for the two create-at-id doors above, which answer it `409` (`POST /v1/trees`) and a minted id in
+its place (a subtree's create). A deletion of an owning step names its subtree (`branches`) or is
+refused `branch-unconfirmed` after the write gate. Pointers stay the writer's alone.
 
 ## Per surface
 

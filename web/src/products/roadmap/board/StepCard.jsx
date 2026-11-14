@@ -50,7 +50,7 @@ export const StepCard = React.memo(function StepCard({ card, selected = false, a
   );
   // An Up next card's swipe reveals what the card is for: Complete, or Open where its completion is its tree's.
   const reveal = card.opening
-    ? card.opening.leads && openTree && { label: TREE.openShort, name: openTreeAction({ step: card.step.label }), glyph: <OpeningGlyph face="open" size={24} />, run: () => openTree(card.id, 'swipe') }
+    ? card.opening.leads && openTree && { label: TREE.openShort, name: openTreeAction({ step: card.step.label, owned: card.opening.owned }), glyph: <OpeningGlyph face="open" size={24} />, run: () => openTree(card.id, 'swipe') }
     : onComplete && {
       label: STEP_DETAIL.complete, name: completeStepAction({ step: card.step.label }), run: () => onComplete(card.id, 'swipe'),
       glyph: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="m5 12 4 4 10-10" /></svg>,

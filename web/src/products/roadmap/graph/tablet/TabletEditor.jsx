@@ -3,7 +3,7 @@ import { Icon, Card } from '../../../../design-system';
 import { NodeAnnotation, ReadOnlyStateChip, SheetStateFruit, SheetRelations } from '../StepPanel.jsx';
 import { KindChoice } from '../../board/BoardControls.jsx';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../../theme.js';
-import { COMPOSER, STEP_DETAIL, TREE, deleteCostLine } from '../../copy.js';
+import { COMPOSER, STEP_DETAIL, deleteCostLine, openTreeLabel } from '../../copy.js';
 import { OpeningGlyph } from '../../OpeningMarks.jsx';
 import { useTreeDoor } from '../../room/useTreeVisit.js';
 import { t } from '../../i18n/index.js';
@@ -135,7 +135,7 @@ export function TabletEditor({ node, state, prerequisites = [], unlocks = [], co
         {openTree && (
           <button type="button" style={barkVerb} onClick={openTree}>
             <OpeningGlyph face={node.opening.face} size={16} />
-            {TREE.open}
+            {openTreeLabel(node.opening)}
           </button>
         )}
         <button type="button" style={barkVerb} onClick={() => onAddStep(node.id)}>

@@ -1,5 +1,6 @@
 import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { run } from 'node:test';
 import { spec } from 'node:test/reporters';
@@ -20,7 +21,8 @@ const performanceFiles = files.filter((file) => /\.perf\.test\.(js|mjs)$/.test(f
 const runtimeFuzzFiles = files.filter((file) => file.endsWith('platform/sync/fuzz/runtime.test.js'));
 const ordinaryFiles = files.filter((file) => !performanceFiles.includes(file) && !runtimeFuzzFiles.includes(file)).sort();
 if (ordinaryFiles.length) {
-  const runner = run({ files: ordinaryFiles, concurrency: true, timeout: 120000 });
+  const concurrency = Math.min(4, Math.max(1, availableParallelism() - 1));
+  const runner = run({ files: ordinaryFiles, concurrency, timeout: 120000 });
   runner.on('test:fail', () => { process.exitCode = 1; });
   for await (const chunk of runner.compose(spec())) process.stdout.write(chunk);
 }

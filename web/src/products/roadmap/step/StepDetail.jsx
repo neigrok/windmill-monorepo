@@ -24,7 +24,7 @@ import './page.css';
 import {
   COLUMN_TITLES, LABELS, deleteCostLine, LINK_COPIED, STATE_WORDS, STEP_DETAIL, TREE, WORKSPACE_EMPTY, checkedToast,
   DELETE_CONFIRM, deleteConfirm, backTo, completedOutcome, formatCount, lockedStatus, prerequisitesTally, resetOutcome, resetPreview,
-  openTreeStated, treeBand, treeState, treeTitle,
+  openTreeLabel, openTreeStated, treeBand, treeState, treeTitle,
 } from '../copy.js';
 import { t } from '../i18n/index.js';
 
@@ -279,7 +279,8 @@ export function StepDetail({
     event.preventDefault();
     event.stopPropagation();
   };
-  const treeLink = editable && treeActs ? {
+  // A step that owns a subtree opens it for good: no pointer is attached to it, changed or detached.
+  const treeLink = editable && treeActs && !facts.opening?.owned ? {
     control: treeControl,
     phone: surface === 'page',
     layer: layerRef,
@@ -370,10 +371,14 @@ export function StepDetail({
   const noteAction = surface === 'page' && section === 'workspace';
   const noteLabel = workspace?.note ? STEP_DETAIL.editNote : WORKSPACE_EMPTY.addNote;
   const editLabel = noteAction ? noteLabel : STEP_DETAIL.editStep;
+  // Anyone who reads the roadmap goes into the subtree a step owns where its owner's Complete sits.
+  const subtreeBand = !editable && facts.opening?.owned && openTree
+    ? <div className="st-board-step-buttons"><TreeBand facts={facts} onOpenTree={openTree} /></div>
+    : null;
   const actions = editable && !noteEditing && (facts.column !== 'locked' || noteAction || edit || facts.opening)
     ? <StepActions facts={facts} phone={surface === 'page'} onComplete={() => complete('complete')} onReset={reset} onOpenTree={openTree}
         editLabel={editLabel} editRef={pinnedNoteRef} onEdit={noteAction ? () => workspaceRef.current?.openNote(pinnedNoteRef) : edit} />
-    : null;
+    : subtreeBand;
   const liveChecked = checked && surface === 'page' && workspace?.subtasks?.some((item) => item.id === checked.id && item.done);
   const checkedNotice = liveChecked && !noteEditing ? <div className="st-board-step-checked">
     <StepIcons.statusDone />
@@ -537,7 +542,7 @@ function Overview({ facts, outcome, onUndo, onOpenStep, onOpenTree, treeLink, on
           {facts.unlocks.map((related) => <RelationRow key={related.id} related={related} onOpen={onOpenStep} />)}
         </section>
       )}
-      {(facts.opening?.read || treeLink) && <TreeSection facts={facts} onOpen={onOpenTree} link={treeLink} />}
+      {!facts.opening?.owned && (facts.opening?.read || treeLink) && <TreeSection facts={facts} onOpen={onOpenTree} link={treeLink} />}
       {onViewBranch && (
         <div className="st-board-step-explore">
           <button type="button" className="st-board-step-view-branch" onClick={onViewBranch}>{STEP_DETAIL.viewBranch}</button>
@@ -820,7 +825,7 @@ function StepActions({ facts, phone, onComplete, onReset, onOpenTree, editLabel,
 // Going in is primary only while it is the way forward: the step up next, and nothing in its tree's way.
 function TreeBand({ facts, onOpenTree }) {
   const { opening, column, toGo } = facts;
-  const words = treeBand(opening, { column, toGo });
+  const words = opening.owned ? treeState(opening, facts.roadmap) : treeBand(opening, { column, toGo });
   const forward = opening.workable && column === 'upNext';
   const waiting = opening.workable && column === 'locked';
   return (
@@ -833,7 +838,7 @@ function TreeBand({ facts, onOpenTree }) {
       )}
       {onOpenTree && (
         <button type="button" className={`st-board-step-action st-board-step-action--tree st-board-step-action--${forward ? 'primary' : 'secondary'}`} onClick={onOpenTree}>
-          {TREE.open}
+          {openTreeLabel(opening)}
         </button>
       )}
     </>
