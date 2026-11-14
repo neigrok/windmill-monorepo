@@ -5,7 +5,7 @@ policy, funding validation, approximate per-request reservations and rollout req
 `AI_ALLOWANCES_ENABLED` defaults to false in configuration and is enabled in production. Anonymous
 Gym onboarding uses a separate installation credential and one bounded model call. It requires
 `AI_INSTALLATIONS_ENABLED`, durable IP limits and the shared free budgets. Installation resets
-are not guaranteed to preserve identity. Audio accounting and customer USD screens remain work.
+are not guaranteed to preserve identity. Customer USD screens remain work.
 
 ## Metered work
 
@@ -16,15 +16,16 @@ are not guaranteed to preserve identity. Audio accounting and customer USD scree
 | Gym Coach | `ask` / `claude-opus-5` | Individual and applicable free/funded budgets; technical question burst protection remains. |
 | Anonymous Gym onboarding | `coach.preview` / `claude-sonnet-5` | Lifetime installation and shared free budgets; one bounded call, public exercises only. |
 | Journal Echoes | `echo.segment`, `echo.curate` / `claude-sonnet-5` | Debits the same individual allowance, including automatic background work. |
-| Journal Talk | `transcribe` / `gpt-4o-transcribe` | Refused pending verified audio bounds and audio/text pricing. |
+| Journal Talk | `transcribe` / `gpt-4o-transcribe` | Windmill One only: holds the model's $0.06 token ceiling on the funded grant before audio leaves and settles at the tokens the vendor billed. The Talk audio ration below applies too. |
 
 Adapters record supported token counts, product, operation, run/iteration, model and outcome. Failed
 calls can carry billed usage. Incomplete usage retains a durable hold. Ordinary MCP operations
 performed by an external assistant do not incur Windmill's hosted-model cost. Browser search and
 the self-hosted Echoes embedder do not incur hosted-model token charges.
 
-Each vendor round locally estimates tokens for the actual system prompt, messages/history, tools,
-results and images, then reserves estimated input cost plus the full output cap sent to the provider. This does
+Each Claude round locally estimates tokens for the actual system prompt, messages/history, tools,
+results and images, then reserves estimated input cost plus the full output cap sent to the provider; a
+Talk take reserves its transcription model's token ceiling instead. This does
 not guarantee a hard spending ceiling. Actual usage settles the call: unused reservation is
 released and underestimates are charged in full. A variance that fits every original funding
 budget, including other unresolved holds and bound-device attribution, with no existing debt,
