@@ -1750,6 +1750,22 @@ Android. It and the product differ in these places.
   drawing omits them. Content implementation does not close complete-screen acceptance.
   Tracking: `gym-web-navigation-parity-deferred`. Figma owns the board status markers.
 
+## Windmill One
+
+Spec: [subscription service](../foundation/subscriptions.md). The web Plan views for a subscription
+bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
+
+- **Superseded Plan drawings.** The Shell file's Proposals section `11:5499` (boards `2:9372`,
+  `2:9405`, `2:9429`, `2:9445`, `2:9469`) shows credits, Manage and Cancel inside Windmill and a fixed
+  $12. Web board 21 "Account settings — signed in" `2:203` has no Plan or AI allowance section. The
+  Design System component "Account / Usage row" `89:876` shows per-product credits. Delete the
+  Proposals boards and retire the component when the 🚧 views are built; board 21 takes the Plan and AI
+  allowance sections then.
+- **Echoes and the AI allowance.** `journal.landing.echoes.free` and `shell.landingHead.faq.costAnswer`
+  say echoes never use the AI allowance. `backend/AI_ALLOWANCES.md` says every hosted AI call debits the
+  allowance, including background Journal processing. Check whether echo derivation calls a hosted
+  model, then make the copy or the allowance document name what is true.
+
 ## Marketing and email
 
 - **0g / 0h · Landing colour rules.** Clarify whether several product-skin windows are allowed

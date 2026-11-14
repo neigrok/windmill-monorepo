@@ -17,13 +17,13 @@ A locally successful action can teach us about usability even when it cannot be 
 
 ## Public iOS launch
 
-Day 0 is the first verified public install date for the announced storefront. Open a new cohort for the first seven days of the App Store release. Keep the November web builders and beta lifters in their original cohorts. If One goes on sale on a different day or through a different channel, start its purchase window there.
+Day 0 is the first verified public install date for the announced storefront. Open a new cohort for the first seven days of the App Store release. Keep the November web builders and beta lifters in their original cohorts. Windmill One goes on sale inside the iOS app with this release, so its purchase window also starts on day 0.
 
 | Question | Readout |
 |---|---|
 | Did people find and install Windmill? | At day 7 record App Store product-page views and first-time downloads for the same dates and storefront, with source where available. Keep store totals and in-app totals in their own columns. |
 | Did the iPhone Roadmap give them a reason to return? | Among observable first-time native Roadmap starters, count distinct people who complete a step within 48 hours of starting and whose progress persists. For the same starters count returns to their tree on days 7 through 13 after starting. Report observed starters, mature windows and unknowns beside each count. Until a native cohort query is verified, use opt-in observations and label that sample. |
-| Did anyone buy One and get what they paid for? | From the actual sale date, count distinct genuine paying accounts, refunds, successful entitlement and funded-period delivery for the announced channel. Exclude sandbox, owner-funded access and team verification purchases. Calculate offer-to-purchase conversion only for a measured group that saw the offer. [One launch checks](reports/04-gym-demo-and-checkout.md) |
+| Did anyone buy One and get what they paid for? | From day 0, count distinct genuine paying accounts, refunds, successful entitlement and funded-period delivery. A genuine purchase is an App Store production purchase. Exclude sandbox purchases, owner and team access, and team verification purchases. Calculate offer-to-purchase conversion only for a measured group that saw the offer. [One launch checks](reports/04-gym-demo-and-checkout.md) |
 
 At the first weekly review, pick one issue from the stage with the strongest observed loss. Close the native return read only once the last starter has had 14 days. Use the billing period to date the first renewal read. Store downloads, signed-in activations and settled buyers each have a different denominator.
 

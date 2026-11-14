@@ -1,0 +1,17 @@
+[package]
+name = "server"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "subscriptions"
+path = "src/main.rs"
+
+[dependencies]
+app_store = { path = "../app_store" }
+domain = { path = "../domain" }
+storage = { path = "../storage" }
+
+[lints]
+workspace = true

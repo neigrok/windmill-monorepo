@@ -29,4 +29,4 @@ change one thing and repeat. If reach or evidence falls short, report the actual
 decision. [Gym product definition](../../PRODUCT_LOG.md#gym)
 
 Record repeat Coach use separately from repeat logging. A pricing conversation can reveal which job someone
-values. Payment, renewal and subscriber acquisition cost remain unmeasured while checkout is closed.
+values. Payment, renewal and subscriber acquisition cost remain unmeasured until One goes on sale in the iOS app.

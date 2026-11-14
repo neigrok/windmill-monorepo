@@ -119,6 +119,7 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
   auto room = std::make_unique<TreeRoom>(id, stored->title, stored->guide, stored->guideInherited,
                                          std::move(graph), std::move(legend), stored->head, stored->root,
                                          stored->path, stored->subtrees, std::move(access), stored->createdAt, bus_);
+  room->restoreLandSeqs(stored->landed);
   room->takeHeadPast(past.lastSeq);
   room->observe(past.greatestStamp);
   // The room's first save moves the stored head past those rows, and nothing then shows the tree was ever behind:
@@ -362,6 +363,7 @@ Saved RoomRegistry::save(const TreeId& id, const std::shared_ptr<SaveLine>& line
   Lww<std::string> guide;
   Seq head = 0;
   std::vector<AppliedOp> rows;
+  LandSeqs landSeqs;
   std::uint64_t writes = 0;
   std::optional<Held> held;
   {
@@ -382,6 +384,7 @@ Saved RoomRegistry::save(const TreeId& id, const std::shared_ptr<SaveLine>& line
     guide = room.guide();
     head = room.head();
     rows = room.pendingOps();
+    landSeqs = room.landSeqs();
     writes = room.writes();
     it->second.saving = true;
   }
@@ -390,7 +393,7 @@ Saved RoomRegistry::save(const TreeId& id, const std::shared_ptr<SaveLine>& line
   // lattice cannot back.
   bool rowStands = false;
   try {
-    rowStands = repo_.save(id, state, legend, title, guide, head);
+    rowStands = repo_.save(id, state, legend, title, guide, head, landSeqs);
   } catch (const std::bad_alloc&) {
     throw;
   } catch (const std::exception& failure) {
@@ -473,24 +476,6 @@ Saved RoomRegistry::hold(const TreeId& id, const std::shared_ptr<SaveLine>& line
     save(id, line, Asked::byTheTimer);  // a row that went away under the held room retires it there
   });
   return Saved::held;
-}
-
-PendingSave RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint64_t nowMs,
-                                 const Hlc& persistedStamp) {
-  TreeRoom* room = nullptr;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = rooms_.find(id);
-    if (it != rooms_.end()) room = it->second.room.get();
-  }
-  if (!room) {
-    HlcClock clock{std::string{TreeRoom::kServerActor}};
-    clock.observe(persistedStamp);  // the receive rule: the mint always dominates the row
-    repo_.rename(id, Lww<std::string>{title, clock.tick(nowMs)});
-    return Saved::saved;
-  }
-  room->rename(title, nowMs);  // joins + broadcasts under the caller-held strand
-  return persist(id);          // durable before the response, like the socket's ack — or held
 }
 
 void RoomRegistry::setVisibility(const TreeId& root, Visibility visibility) {

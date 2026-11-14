@@ -96,10 +96,12 @@ public:
   static constexpr std::chrono::milliseconds kCascadeLockWait{1'000};
   static constexpr std::chrono::milliseconds kCascadeTime{8'000};
 
-  // trim → refuse a blank, text that is not valid UTF-8 and a NUL → read gate → owner check → apply through
-  // RoomRegistry. A tree whose row went away under its live room answers notFound. A subtree's title is its owning
-  // step's label, so it lands there (relabel). renamedUnsaved: the name is the room's and every open page's — the
-  // parent's, for a subtree — and the registry holds its save and is retrying it (Saved::held).
+  // A title alone, set as describe sets one: trimmed, a blank, text that is not valid UTF-8 and a NUL refused, then
+  // the read gate, the owner check and the tree's room, opened when none is live, whose clock stamps it past every
+  // stamp the tree holds. A name the tree already has lands nothing and answers renamed. A tree whose row went away
+  // under its live room answers notFound. A subtree's title is its owning step's label, so it lands there (relabel).
+  // renamedUnsaved: the name is the room's and every open page's — the parent's, for a subtree — and the registry
+  // holds its save and is retrying it (Saved::held).
   enum class Renaming { renamed, renamedUnsaved, notFound, notYours, nobodysTree, blankTitle, malformedTitle, nulInTitle };
   Renaming rename(const TreeId& tree, const UserId& caller, const std::string& title);
   // The title a rename lands: trimmed, cut to kMaxTitleChars, or the refusal of a blank, malformed or NUL-holding one.

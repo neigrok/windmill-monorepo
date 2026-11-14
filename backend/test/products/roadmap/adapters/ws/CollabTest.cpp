@@ -143,6 +143,18 @@ std::string subscribeFrame(const std::string& treeId) {
   return dump(f);
 }
 
+// The subscribe a tab that was away sends on its return: the coverage its last answer gave it and, when it says one, the
+// last seq it applied.
+std::string resubscribeFrame(const std::string& treeId, const Json::Value& coverage,
+                             const Json::Value& lastSeq = Json::nullValue) {
+  Json::Value f(Json::objectValue);
+  f["t"] = "subscribe";
+  f["treeId"] = treeId;
+  f["vector"] = coverage;
+  if (!lastSeq.isNull()) f["lastSeq"] = lastSeq;
+  return dump(f);
+}
+
 // A frame that writes one node's label.
 std::string writeFrame(const std::string& treeId) {
   Json::Value f(Json::objectValue);
@@ -403,6 +415,212 @@ TEST(ws_the_subscribe_answer_says_writer_to_the_owner_and_reader_to_anyone_else_
     CHECK_EQ(lastFrameOfType(*stranger, "subgraph"), answer(withheld, "reader"));
     CHECK_EQ(lastFrameOfType(*signedOut, "subgraph"), answer(withheld, "reader"));
   }
+}
+
+// A tree where replica `r_a` wrote `n` at 100 and `m` at 300, a tab subscribed then and went away, and `r_a`'s write of
+// `n`'s label at 200 landed late, at seq 3: a stamp the tab's coverage of `r_a`, 300, is already past.
+struct LateWrite {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  std::shared_ptr<FakeSocket> writer = std::make_shared<FakeSocket>();
+  Json::Value coverage;  // what the tab that went away was told it covers
+  NodeStateEntry landedLate;  // `n` as the room holds it once the late write has landed
+
+  explicit LateWrite(Visibility visibility = Visibility::private_) {
+    h.signIn("s-stranger", "stranger@example.com");
+    h.seed("t_late", owner, visibility);
+    h.collab.onOpen(h.upgrade("s-owner"), writer);
+    h.collab.onMessage(writer, registerFrame("t_late", "f-n", R"({"id":"n","createdAt":"100:0:r_a","label":"N","labelAt":"100:0:r_a",
+                                                                   "opens":"t_00000000000000f2","opensAt":"100:0:r_a"})"));
+    h.collab.onMessage(writer, registerFrame("t_late", "f-m", R"({"id":"m","createdAt":"300:0:r_a"})"));
+    const auto tab = returning("s-owner");
+    h.collab.onMessage(tab, subscribeFrame("t_late"));
+    const Json::Value answer = lastFrameOfType(*tab, "subgraph");
+    coverage = answer["coverage"];
+    h.collab.onClose(tab);
+    h.collab.onMessage(writer, registerFrame("t_late", "f-late", R"({"id":"n","label":"N late","labelAt":"200:0:r_a"})"));
+    landedLate.id = NodeId{"n"};
+    landedLate.createdAt = Hlc{100, 0, "r_a"};
+    landedLate.label = "N late";
+    landedLate.labelAt = Hlc{200, 0, "r_a"};
+    landedLate.opens = TreeId{"t_00000000000000f2"};
+    landedLate.opensAt = Hlc{100, 0, "r_a"};
+  }
+  std::shared_ptr<FakeSocket> returning(const char* session) {
+    const auto tab = std::make_shared<FakeSocket>();
+    h.collab.onOpen(h.upgrade(session), tab);
+    return tab;
+  }
+  // The delta a tab is answered on its return with `lastSeq`, none when null.
+  Json::Value answered(const char* session, const Json::Value& lastSeq) {
+    const auto tab = returning(session);
+    h.collab.onMessage(tab, resubscribeFrame("t_late", coverage, lastSeq));
+    return lastFrameOfType(*tab, "subgraph");
+  }
+};
+
+// A subscriber is cut by its vector, and a vector describes a writer only while that writer's writes land in stamp
+// order. So the delta is also everything that landed late past the position the subscriber holds, sent whole: a write that
+// lands late, under a stamp the vector is already past, reaches a tab that was away while it landed.
+TEST(a_write_that_lands_late_reaches_a_subscriber_whose_vector_already_covers_its_stamp) {
+  LateWrite late;
+  CHECK_EQ(late.coverage, parse(R"({"r_a":"300:0:r_a"})"));
+
+  const Json::Value delta = late.answered("s-owner", 2);
+
+  CHECK_EQ(delta["seq"].asInt64(), 3);
+  CHECK_EQ(delta["nodes"], toJson(GraphState{{late.landedLate}, {}})["nodes"]);
+  CHECK_EQ(delta["edges"], Json::Value(Json::arrayValue));
+  CHECK_EQ(delta["kinds"], Json::Value(Json::arrayValue));
+  CHECK_EQ(delta["coverage"], late.coverage);
+}
+
+// Only what landed late is sent whole. A tab that was away while steps were renamed in the ordinary way, each under a
+// stamp past everything the room held, is sent the changed registers alone: byte for byte what the vector by itself
+// cuts for it, whatever position it says.
+TEST(a_tab_away_while_steps_were_renamed_is_sent_the_changed_registers_alone) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_away", owner, Visibility::private_);
+  const auto writer = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), writer);
+  int at = 100;
+  for (const char* step : {"a", "b", "c"}) {
+    const std::string stamp = std::to_string(at++) + ":0:r_a";
+    h.collab.onMessage(writer, registerFrame("t_away", step,
+                                             std::string(R"({"id":")") + step + R"(","createdAt":")" + stamp +
+                                                 R"(","label":"Step","labelAt":")" + stamp +
+                                                 R"(","description":"Three hundred characters of it.","descriptionAt":")" + stamp + R"("})"));
+  }
+  const auto subscribed = [&](const Json::Value& vector, const Json::Value& lastSeq) {
+    const auto tab = std::make_shared<FakeSocket>();
+    h.collab.onOpen(h.upgrade("s-owner"), tab);
+    h.collab.onMessage(tab, resubscribeFrame("t_away", vector, lastSeq));
+    const Json::Value answer = lastFrameOfType(*tab, "subgraph");
+    h.collab.onClose(tab);
+    return answer;
+  };
+  const Json::Value first = subscribed(Json::Value(Json::objectValue), Json::nullValue);
+  REQUIRE_EQ(first["seq"].asInt64(), 3);
+
+  h.collab.onMessage(writer, registerFrame("t_away", "f-a", R"({"id":"a","label":"Renamed a","labelAt":"400:0:r_a"})"));
+  h.collab.onMessage(writer, registerFrame("t_away", "f-b", R"({"id":"b","label":"Renamed b","labelAt":"500:0:r_a"})"));
+
+  const Json::Value byPosition = subscribed(first["coverage"], 3);
+  NodeStateEntry a{.id = NodeId{"a"}, .label = "Renamed a", .labelAt = Hlc{400, 0, "r_a"}};
+  NodeStateEntry b{.id = NodeId{"b"}, .label = "Renamed b", .labelAt = Hlc{500, 0, "r_a"}};
+  CHECK_EQ(byPosition["seq"].asInt64(), 5);
+  CHECK_EQ(byPosition["nodes"], toJson(GraphState{{a, b}, {}})["nodes"]);
+  CHECK_EQ(dump(byPosition), dump(subscribed(first["coverage"], Json::nullValue)));
+  CHECK_EQ(dump(byPosition), dump(subscribed(first["coverage"], 0)));
+}
+
+// A room rebuilt from the rows has forgotten a mark that another actor's write has since overwritten, and a
+// subscriber may still hold it. C subscribes holding r_a at 300; r_b writes over that register; the room closes and
+// opens again; r_a's write at 200 lands. The room now holds nothing of r_a's past 100, but everything a tree ever
+// held is at or below the greatest stamp its rows hold, so the write is judged late by that floor and C, back with the
+// position it left at, is sent it.
+TEST(a_late_write_reaches_a_subscriber_whose_mark_the_reopened_room_no_longer_holds) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_floor", owner, Visibility::private_);
+  const auto writer = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), writer);
+  h.collab.onMessage(writer, registerFrame("t_floor", "f-n", R"({"id":"n","createdAt":"100:0:r_a"})"));
+  h.collab.onMessage(writer, registerFrame("t_floor", "f-m", R"({"id":"m","createdAt":"101:0:r_a"})"));
+  h.collab.onMessage(writer, registerFrame("t_floor", "f-a300", R"({"id":"m","label":"A at 300","labelAt":"300:0:r_a"})"));
+  const auto c = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), c);
+  h.collab.onMessage(c, subscribeFrame("t_floor"));
+  const Json::Value held = lastFrameOfType(*c, "subgraph");
+  REQUIRE_EQ(held["coverage"], parse(R"({"r_a":"300:0:r_a"})"));
+  REQUIRE_EQ(held["seq"].asInt64(), 3);
+  h.collab.onClose(c);
+
+  h.collab.onMessage(writer, registerFrame("t_floor", "f-b400", R"({"id":"m","label":"B at 400","labelAt":"400:0:r_b"})"));
+  REQUIRE(h.rooms.evict(TreeId{"t_floor"}));  // closed with everything stored; the next frame opens it from the rows
+  h.collab.onMessage(writer, registerFrame("t_floor", "f-a200", R"({"id":"n","label":"A at 200","labelAt":"200:0:r_a"})"));
+
+  const auto back = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), back);
+  h.collab.onMessage(back, resubscribeFrame("t_floor", held["coverage"], held["seq"]));
+  const Json::Value delta = lastFrameOfType(*back, "subgraph");
+  const NodeStateEntry n{.id = NodeId{"n"}, .createdAt = Hlc{100, 0, "r_a"}, .label = "A at 200", .labelAt = Hlc{200, 0, "r_a"}};
+  const NodeStateEntry m{.id = NodeId{"m"}, .label = "B at 400", .labelAt = Hlc{400, 0, "r_b"}};
+  CHECK_EQ(delta["seq"].asInt64(), 5);
+  CHECK_EQ(delta["coverage"], parse(R"({"r_a":"200:0:r_a","r_b":"400:0:r_b"})"));
+  CHECK_EQ(delta["nodes"], toJson(GraphState{{m, n}, {}})["nodes"]);  // `m` cut to the label C lacks, `n` whole
+}
+
+// A subscriber that says no position, or one that is not a non-negative whole number, is cut by its vector alone, and
+// is not refused for it.
+TEST(a_subscribe_with_no_last_seq_or_one_that_is_no_position_is_cut_by_its_vector_alone) {
+  LateWrite late;
+  for (const Json::Value& lastSeq : {Json::Value(Json::nullValue), Json::Value("2"), Json::Value(-1), Json::Value(1.5),
+                                     Json::Value(true), Json::Value(Json::objectValue)}) {
+    const Json::Value delta = late.answered("s-owner", lastSeq);
+    CHECK_EQ(delta["t"].asString(), std::string("subgraph"));
+    CHECK_EQ(delta["seq"].asInt64(), 3);
+    CHECK_EQ(delta["nodes"], Json::Value(Json::arrayValue));
+  }
+}
+
+// A tab that holds the head and covers every stamp is sent no entry: nothing landed late past its position.
+TEST(a_subscriber_at_the_head_is_sent_nothing_it_has) {
+  LateWrite late;
+  const Json::Value delta = late.answered("s-owner", 3);
+  CHECK_EQ(delta["seq"].asInt64(), 3);
+  CHECK_EQ(delta["nodes"], Json::Value(Json::arrayValue));
+  CHECK_EQ(delta["edges"], Json::Value(Json::arrayValue));
+  CHECK_EQ(delta["kinds"], Json::Value(Json::arrayValue));
+  CHECK(delta["title"].isNull());
+  CHECK(delta["guide"].isNull());
+}
+
+// The reader's view is cut after the seq rule as it is after the vector's: an entry sent whole because it landed late
+// goes to a reader without the pointer a writer alone is shown.
+TEST(a_reader_is_not_sent_what_a_writer_alone_may_see_because_it_landed_late) {
+  LateWrite late(Visibility::unlisted);
+  NodeStateEntry withheld = late.landedLate;
+  withheld.opens = TreeId{};
+  withheld.opensAt = Hlc{};
+
+  for (const char* reader : {"s-stranger", ""}) {
+    const Json::Value delta = late.answered(reader, 2);
+    CHECK_EQ(delta["reach"].asString(), std::string("reader"));
+    CHECK_EQ(delta["nodes"], toJson(GraphState{{withheld}, {}})["nodes"]);
+  }
+  const Json::Value writers = late.answered("s-owner", 2);
+  CHECK_EQ(writers["reach"].asString(), std::string("writer"));
+  CHECK_EQ(writers["nodes"], toJson(GraphState{{late.landedLate}, {}})["nodes"]);
+}
+
+// A write that lands a late register says so in one line of counts, and so does a subscribe answer that holds an
+// entry whole for its land seq where the vector alone would have masked it or left it out. Neither names a tree, a
+// step, an account or a stamp, and neither is written for an ordinary write or an answer the vector alone cuts.
+TEST(a_late_landing_and_an_answer_that_carries_late_entries_each_leave_one_line_of_counts) {
+  std::vector<std::string> told;
+  {
+    Observed observed;
+    LateWrite late;
+    // Two late registers and an ordinary one in one frame, at seq 4.
+    late.h.collab.onMessage(late.writer, registerFrame("t_late", "f-mixed", R"({"id":"m","label":"M late","labelAt":"250:0:r_a",
+        "icon":"anchor","iconAt":"260:0:r_a","description":"Past its actor's mark","descriptionAt":"400:0:r_a"})"));
+    late.answered("s-owner", 2);  // away since seq 2: `n` and `m` are both held whole for their land seq
+    late.answered("s-owner", 3);  // away since seq 3: `m` alone
+    late.answered("s-owner", 4);  // at the head: nothing landed late past it
+    late.answered("s-owner", Json::Value());  // no position: the vector alone
+    const auto fresh = late.returning("s-owner");  // an empty vector is answered the whole state by the vector alone
+    late.h.collab.onMessage(fresh, resubscribeFrame("t_late", Json::Value(Json::objectValue), 0));
+    for (const std::string& line : observed.lines)
+      for (const char* name : {"roadmap_late_landing", "roadmap_subscribe_late_entries"})
+        if (line.find(name) != std::string::npos) told.push_back(line.substr(line.find(name), line.find(" - ") - line.find(name)));
+  }
+
+  CHECK_EQ(told, (std::vector<std::string>{"roadmap_late_landing door=websocket registers=1",
+                                           "roadmap_late_landing door=websocket registers=2",
+                                           "roadmap_subscribe_late_entries entries=2",
+                                           "roadmap_subscribe_late_entries entries=1"}));
 }
 
 TEST(ws_subscribe_to_an_absent_tree_is_rejected) {

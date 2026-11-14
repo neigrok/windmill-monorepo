@@ -7,6 +7,7 @@
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/OpenedTrees.h"
+#include "products/roadmap/domain/Subgraph.h"
 #include "products/roadmap/domain/Subtree.h"
 #include "products/roadmap/domain/Tree.h"
 
@@ -50,6 +51,8 @@ struct StoredTree {
   TreeId root;
   std::vector<OwningStep> path;
   std::map<NodeId, TreeId> subtrees;
+  // The land seq each row and tree register holds, the ones at 0 left out.
+  LandSeqs landed;
   bool operator==(const StoredTree&) const = default;
 };
 
@@ -157,9 +160,11 @@ struct TreeRepository {
   // Upsert a slice onto a tree whose row stands: entries given replace their rows, absent ones are
   // untouched, and a save never deletes. A tree with no row, or a soft-deleted one, is left as it is,
   // and answers false. The title and the guide each land only under a stamp dominating the stored one;
-  // a guide that lands is the owner's own, so it clears `guideInherited`.
+  // a guide that lands is the owner's own, so it clears `guideInherited`. Each row written, and each register that
+  // lands, takes the land seq `landed` holds for it, never a lower one than it has; none there leaves it as it is.
   virtual bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-                    const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) = 0;
+                    const Lww<std::string>& title, const Lww<std::string>& guide, Seq head,
+                    const LandSeqs& landed = {}) = 0;
   // Insert a brand-new tree. Throws DuplicateTree on an id collision (never overwrites a tree).
   virtual void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
                       const std::string& title, const UserId& owner) = 0;
@@ -193,9 +198,6 @@ struct TreeRepository {
   // Retire a root by stamping deleted_at; every read filters it, and every tree under it, out afterwards. A subtree's
   // row is never retired: it goes and comes back with its owning step.
   virtual void softDelete(const TreeId& tree) = 0;
-  // The closed-room seam only — a live room's title reaches the column through save(). Lands only
-  // under a stamp dominating the stored one.
-  virtual void rename(const TreeId& tree, const Lww<std::string>& title) = 0;
   // The owner check is the caller's, not this write's. A root's alone: a subtree's is its root's and is never set, and a
   // soft-deleted root is left alone.
   virtual void setVisibility(const TreeId& tree, Visibility visibility) = 0;
