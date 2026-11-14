@@ -13,8 +13,8 @@ for (const engine of [chromium, webkit]) {
         try {
           await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
           const title = role === 'owner' ? 'Guide' : 'Author’s note';
-          const card = page.getByRole('button', { name: `${title}: One step a week.` });
-          await card.click();
+          const entry = page.getByRole('button', { name: `${title}: One step a week.` });
+          await entry.click();
           const note = page.getByRole('dialog', { name: title, exact: true });
           await note.waitFor();
           await settled(page);
@@ -28,7 +28,7 @@ for (const engine of [chromium, webkit]) {
           }
           await page.keyboard.press('Escape');
           await note.waitFor({ state: 'detached' });
-          await page.waitForFunction(() => document.activeElement.matches('.st-guide-card'));
+          await page.waitForFunction(() => document.activeElement.matches('.st-guide-entry'));
           assert.equal(await stepInert(page), false);
         } finally { await page.close(); }
       });
@@ -70,7 +70,7 @@ for (const engine of [chromium, webkit]) {
         if (door === 'backdrop') await page.mouse.click(10, 10);
         await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
         assert.deepEqual(await events(page), [
-          { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' },
+          { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' },
           { step: 'edit', via: 'pencil' },
           { step: 'cancel' },
         ], door);
