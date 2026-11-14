@@ -235,6 +235,7 @@ TEST(write_http_ai_allowance_and_funding_refusals_keep_their_codes_without_issue
       {"roadmap.POST.v1.compose", "compose-unavailable"},
       {"journal.POST.v1.journal.transcribe", "voice_unavailable"},
       {"journal.POST.v1.journal.transcribe", "voice_busy"},
+      {"journal.POST.v1.journal.transcribe", "voice_ration_spent", drogon::k429TooManyRequests},
       {"platform.POST.v1.billing.checkout", "checkout_closed"},
       {"platform.POST.v1.paddle.webhook", "funding_binding_pending"},
       {"platform.POST.v1.paddle.webhook", "funding_unconfigured"},
