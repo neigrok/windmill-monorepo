@@ -2334,19 +2334,24 @@ TEST(pg_the_branch_condition_walks_a_depth_eight_path_by_primary_keys_alone) {
       "EXPLAIN (ANALYZE, TIMING OFF, FORMAT JSON) SELECT t.id FROM trees t WHERE t.id = $1 AND t.deleted_at IS NULL AND " +
           branchStandsCondition("t"),
       above.str());
-  std::map<std::string, double> probes;  // index name → rows it was asked for, over every loop
-  std::set<std::string> scans;
+  std::map<std::string, double> probes;  // index name → how many times it was probed, over every loop
+  std::set<std::string> read;             // every table the plan reads
+  bool sequential = false;
   std::vector<Json::Value> nodes{parse(explained[0][0].as<std::string>())[0]["Plan"]};
   while (!nodes.empty()) {
     const Json::Value node = nodes.back();
     nodes.pop_back();
     for (const Json::Value& child : node["Plans"]) nodes.push_back(child);
-    const std::string relation = node.get("Relation Name", "").asString();
-    if (relation.empty() || node["Actual Loops"].asDouble() == 0) continue;  // a plan's alternative it never ran
-    scans.insert(node["Node Type"].asString() + " " + relation + " " + node.get("Index Name", "").asString());
-    probes[node.get("Index Name", "").asString()] += node["Actual Loops"].asDouble();
+    if (node["Actual Loops"].asDouble() == 0) continue;  // a plan's alternative it never ran
+    // A lookup by key reads as an Index Scan, or as a Bitmap Heap Scan over a Bitmap Index Scan, whichever is priced
+    // lower; the index and its probes are the same.
+    if (node.isMember("Index Name")) probes[node["Index Name"].asString()] += node["Actual Loops"].asDouble();
+    if (node.isMember("Relation Name")) read.insert(node["Relation Name"].asString());
+    sequential = sequential || node["Node Type"].asString() == "Seq Scan";
   }
-  CHECK(scans == (std::set<std::string>{"Index Scan trees trees_pkey", "Index Scan tree_nodes tree_nodes_pkey"}));
+  CHECK_FALSE(sequential);
+  CHECK(read == (std::set<std::string>{"trees", "tree_nodes"}));
+  CHECK_EQ(probes.size(), 2u);
   CHECK_EQ(probes["trees_pkey"], 1.0 + kMaxTreeDepth + 1);  // the tree, then its 8 parents and the root's no-parent
   CHECK_EQ(probes["tree_nodes_pkey"], static_cast<double>(kMaxTreeDepth));
   CHECK_EQ(parse(explained[0][0].as<std::string>())[0]["Plan"]["Actual Rows"].asInt(), 1);

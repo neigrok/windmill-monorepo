@@ -39,7 +39,7 @@ rejected for structure. Validity is a read model, not a gate.
   in. A step that owns a subtree opens it, whatever its pointer holds, in every projection a read
   makes of a document — the room's (`TreeRoom::snapshot`, `pointers`), the stored rows'
   (`TreeRepository` lists, `openedFrom`'s walk) and reminder readiness — and that subtree is valid
-  while its root stands, so completion carries forward through ownership by this one rule. For a caller who can write the tree, a node with a valid pointer is complete exactly when the
+  while its branch stands (Subtrees), so completion carries forward through ownership by this one rule. For a caller who can write the tree, a node with a valid pointer is complete exactly when the
   opened tree is complete for them, whatever its own prerequisites, as a mark made out of order is;
   until then it is locked or available by its prerequisites, and a mark stored on it is kept and
   ignored. A tree is complete for a reader when it holds at least one node and every node is
@@ -128,8 +128,8 @@ rejected for structure. Validity is a read model, not a gate.
   `progress[]` of an `import_subgraph`, a socket `progress` frame) only its nodes that open a tree,
   and each asks `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and
   is the owner's and every such tree their steps open — the subtree a step owns, found through
-  `trees_parent_step`, else the tree its pointer names, a subtree standing while its root does, its
-  root read for a subtree alone: one statement over `trees`,
+  `trees_parent_step`, else the tree its pointer names, a subtree standing while its branch does, its
+  path read for a subtree alone: one statement over `trees`,
   `tree_nodes` and the owner's `node_progress` that reaches each tree once and answers, per tree and
   tree it opens, how many present nodes open it, how many of those the owner marked and the latest
   of those marks, beside the tree's title and its nodes that open none. Each reached tree's nodes
@@ -211,8 +211,9 @@ rejected for structure. Validity is a read model, not a gate.
 - Subtrees (`domain/Subtree.h`) — each tree has a place among trees. A root has no parent, is its
   own root and sits at depth 0. A subtree is owned by one step of another tree, its owning step in
   its parent tree; it has its parent's root and owner and sits one deeper, at most `kMaxTreeDepth`
-  (8). It has no access of its own: it is read by its root's owner and visibility, and stands only
-  while its root does (Authorization). The place is written once, when the tree is created, and
+  (8). Its path is its owning steps from its root down, one per level. It has no access of its own:
+  it is read by its root's owner and visibility, and stands only while its branch does (Lifetime,
+  below; Authorization). The place is written once, when the tree is created, and
   never changed, and a subtree is always a new tree under a standing one: a subtree has one parent,
   never moves, never closes a loop and is never another account's. A step owns at most one subtree.
   The store enforces all of it whatever writes it (Persistence). No door creates a subtree yet.
@@ -259,7 +260,43 @@ rejected for structure. Validity is a read model, not a gate.
     reminder readiness; it counts in its parent as the one step that owns it, and a reminder names
     that step by its label.
   - **Links.** `GET /v1/trees/{subtree}` and `/t/{subtree}` open a subtree by its own id for anyone who
-    may read its root, the share page indexed as its root is.
+    may read its root while its branch stands, the share page indexed as its root is.
+
+  A subtree's lifetime follows its owning steps and its root:
+
+  - **Standing.** A subtree stands while its root stands and every owning step on its path is
+    present; a branch is a subtree with everything under it. Deleting an owning step hides its branch
+    at once, on every gate, for its owner and every reader alike, and the step's revive — the delete's
+    Undo — shows it again (Authorization): a tree whose branch is hidden answers every door as an
+    absent tree does. A write that reaches a hidden branch — a frame admitted before the delete, a
+    held save, a server-origin edit such as a removal's cascade — applies and stays hidden. A hidden
+    branch counts nowhere — lists, the gallery, reminders, the derivation, its parent's `subtree` and
+    `subtrees` — since in each only a present step owns a subtree, and every read of the stored rows
+    applies the same condition (`branchStandsCondition`). Nothing purges: a hidden tree keeps its
+    rows, its content and everyone's marks, and a subtree's row is never retired
+    (`TreeRepository::softDelete` retires a root's alone).
+  - **Not a root.** Nothing deletes, restores or forks a subtree by its own id. `DELETE
+    /v1/trees/{subtree}`, MCP `delete_tree`, a fork (`POST /v1/trees/{subtree}/fork`, a signup's
+    fork) and a visibility change are refused `not-a-root`, naming the step it hangs from and its
+    root, to a caller who may read it; `POST /v1/trees` with a subtree's id is refused `not-a-root` to
+    its owner and is never answered `existed`. No door restores a tree: a root's deletion is final,
+    and a subtree comes back only with its owning step's revive.
+  - **The guarded delete.** A write that deletes an owning step names the subtree it takes in
+    `branches: [subtreeId]`: the socket's `subgraph` frame, MCP `delete_node` and `import_subgraph`'s
+    `tombstone[]`. One that does not is refused `branch-unconfirmed` whole, with nothing written,
+    whatever the subtree holds, so a client that never saw the subtree cannot hide it. The parent's
+    room decides alone (`TreeRoom::unconfirmedBranches`, over the pure `unconfirmedBranches`, asked at
+    admission), and its join refuses an unconfirmed removal as a fault. Each unconfirmed branch is
+    named with its size, `{step, subtree, steps, subtrees}` (`BranchSize`): `steps` the present steps
+    of the subtree and of each standing subtree under it, `subtrees` how many those are, read off the
+    stored rows once the parent's strand is released (`TreeRepository::branchSizes`) and left out when
+    that read fails. `update_nodes` deletes no step and `PUT` tombstones none (HTTP surface). A root
+    removal's cascade never reaches an owning step, which opens its subtree and not the removed root.
+  - **A root's deletion** takes every branch under it, by standing alone: the subtrees' rows are left
+    as they are and read as absent. Each row of `GET /v1/trees` carries `branch: {subtrees, steps}`,
+    what the removal would take — its standing subtrees and the present steps of the root and of each
+    — counted from the rows the list already reads, and the removal's answer repeats it.
+  - **A fork** of a root copies the root and its standing branch in one transaction (Runtime).
 
   `TreeRegistry::createSubtree(parent, step, caller, {proposedId?, kinds?})` is the one operation
   that creates one, for every door to call. It is keyed by the pair (`parent`, `step`). The kinds,
@@ -554,12 +591,19 @@ Rules:
   `AppliedOp.actor` records authorship independently of the clock actor `srv`.
 - Sparse persistence: `dirtyState()` exports only entries dirtied since `markClean()`.
 - Tree content reads use the room; the registry list reads persisted rows without opening rooms.
-  Forks snapshot the source room's graph, legend and guide, clear authored progress baselines, and
-  start a fresh op log with `forked_from` provenance. A fork of the forker's own tree keeps every
-  `opens` as it stands; a fork of anyone else's, or of nobody's, clears them all. Every present step
-  is added to the fork afresh:
-  a stamp from the source room's clock, one counter tick apart in creation order, so a step's
-  creation stamp is when it joined this tree and sibling ties keep their order. The fork's title and
+  A fork (`ForkService`) copies a root and its standing branch: the root, then each subtree a present
+  step of a tree already read owns, a level at a time, each read from its own room under its own
+  strand alone. Each copy snapshots its tree's graph, legend and guide, clears authored progress
+  baselines (no one's marks are copied), and starts a fresh op log; the root copy alone records
+  `forked_from`. Every copy takes a minted id, the root's the one asked for when one is, and each
+  subtree's copy hangs from the copy of its parent under the same step, so a fork never shares a child
+  with its source; a hidden branch is not copied. The copies are stored in one transaction that holds
+  the forker's account (`TreeRepository::fork`), parent first, so each takes its place from its copied
+  parent; a copy whose id is taken stores none of them. One `roadmap_tree_fork` line counts the trees a
+  fork copied. A fork of the forker's own tree keeps every `opens` as it stands; a fork of anyone
+  else's, or of nobody's, clears them all. Every present step of a tree is added to its copy afresh:
+  a stamp from that tree's room clock, one counter tick apart in creation order, so a step's
+  creation stamp is when it joined this tree and sibling ties keep their order. The copy's title and
   guide take the first of those stamps, so a fresh subscriber's delta carries them beside the steps,
   and any later write of the new owner's outranks them. A copied guide with text the forker did not
   write — the source is someone else's or nobody's, or its own guide is still inherited — is marked
@@ -581,14 +625,28 @@ clients branch on the code, humans read the sentence.
 lets its share page be indexed.
 
 A subtree's access is its root's (Model, Subtrees), read at every access: the root's owner and
-visibility, and none at all while its root is deleted. A closed tree's row is read with its root's
-(`TreeRepository::load`, `loadAccess`); every live room of one root's trees shares one `RootAccess`,
-so `RoomRegistry::accessOf`, the socket gates, the bus's read gate and the MCP reads answer a subtree
-as its root. That access is made, under the root's lock, from the root's row, and a change of the
-root's visibility or its removal writes the row under the same lock, the narrower first: making the
-root private shuts its open subtrees before its row says so, and opening it opens them after, so no
-subtree ever admits a reader its root does not. A visibility change aimed at a subtree is refused
-`not-a-root` (`PATCH /v1/trees/{id}`, `409`, naming the step it hangs from and its root).
+visibility, none at all while its root is deleted, and none while an owning step on its path is
+absent. Every door asks it of `RoomRegistry::accessOf` before it opens a room, or of a live room's
+`readableBy`; the tree's content (`TreeRepository::load`) answers no access question. A closed
+tree's access is read off the stored rows with its root's and its path, and whether every step on the
+path is present there (`TreeRepository::loadAccess`). Every live room of one root's trees shares one
+`RootAccess`, holding the root's owner, visibility and standing and the owning steps under the root
+that are absent, so `accessOf`, the socket gates, the bus's read gate and the MCP reads answer a
+subtree by its root and its path, from memory alone for a live room: the socket's fan-out reads no
+store. That access is made under the root's lock from the root's row and its absent owning steps
+(`TreeRepository::absentStepsUnder`), read while no room of the root's trees is live, so the store
+then holds every write of theirs. A change of the root's visibility or its removal writes the row
+under the same lock, the narrower first: making the root private shuts its open subtrees before its
+row says so, and opening it opens them after. Each owning step is recorded by its own tree's room as
+every write lands, under that tree's strand and before the write is told to anyone
+(`TreeRoom::joinSubgraph`, `applyCommands`), so a branch hides the moment its step's deletion lands
+and shows with its revive, saved or not; a `PUT`, which writes a tree's rows with no room, has the
+access take that tree's owning steps from the store once it has. The live rooms below a step whose
+presence changed are told, and the socket drops the readers they may no longer keep. A closed
+subtree's stored answer is taken under its root's lock with no access live, read again there, so a
+parent room that saves a deletion and closes between the first read and that check admits nobody.
+No tree ever admits a reader its root and its path do not. A visibility change aimed at a subtree is
+refused `not-a-root` (`PATCH /v1/trees/{id}`, `409`, naming the step it hangs from and its root).
 
 Absent and private-denied answer identically on every surface — no existence leak.
 
@@ -624,8 +682,11 @@ Single edits have no REST endpoint — they ride the socket; `PUT /v1/trees/{id}
 document and joins it as one write. A PUT that creates the tree stamps its steps at the moment of
 creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stored row of every step
 and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
-and read as unknown creation time. A PUT over a tree whose live room holds a save that failed is
-refused `503 save-pending` with nothing written, until that save lands. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
+and read as unknown creation time. A PUT tombstones nothing: a step it leaves out is untouched, and a
+deleted owning step it carries is revived, its subtree shown again (Model, Subtrees). A PUT aimed at
+a tree whose branch is hidden answers as one aimed at an absent tree does, and writes nothing. A PUT
+over a tree whose live room holds a save that failed is refused `503 save-pending` with nothing
+written, until that save lands. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
 
 `GET /v1/trees/{id}` answers `{seq, data, state, createdAt, visibility, mine, root, parent, path,
 depth}`, the last four where the tree sits and `data.title` its name (Model, Subtrees); a subtree's
@@ -704,20 +765,29 @@ A tree id is `t_` plus 16 lowercase hex characters (`wellFormedTreeId`); a clien
 `POST /v1/trees` accepts initial `TreeData` plus an optional client-minted `id` and returns
 `{treeId, existed}`. The initial steps share one stamp at the moment of creation; the legend takes
 the genesis stamp, byte-equal to a device-born tree's. Retrying an owned existing ID returns `existed: true`. Another account's ID
-returns `409 id-taken`; the caller's deleted ID returns `409 id-retired`. A client must not retry
-that deleted tree under a fresh ID.
+returns `409 id-taken`; the caller's deleted ID returns `409 id-retired`, and the id of a subtree of
+the caller's `409 not-a-root`. A client must not retry that deleted tree under a fresh ID.
+
+`POST /v1/trees/{id}/fork` answers `201 {seq, data}`, the root copy's document (Runtime). A source
+that is absent, hidden or not the caller's to read answers `404`; a subtree's id is refused `409`
+`not-a-root`, `{code, error, parent: {tree, step}, root}`.
 
 `GET /v1/trees` answers the caller's own standing roots, newest activity first, each row `{id, title,
-total, done, createdAt, updatedAt, dominantKind?, openers}`: a subtree is no row, and counts in its
-parent as the one step that owns it, judged with every standing tree of theirs. `openers` names the caller's other
+total, done, createdAt, updatedAt, dominantKind?, openers, branch}`: a subtree is no row, and counts in its
+parent as the one step that owns it, judged with every standing tree of theirs. `branch: {subtrees,
+steps}` is what the root's removal takes (Model, Subtrees). `openers` names the caller's other
 standing trees with a present step whose pointer names the row's tree, `[{treeId, steps}]` in tree id
 order, `steps` counting those steps; the tree's own pointers at itself go with it and are not among
 them, and it is `[]` when nothing opens the tree. It is what a removal would take with the tree, and
 it is judged from the trees the list already holds (`OpenedTrees::openersOf`), with no further read.
 MCP `list_trees` answers the same rows without `openers`, each with its `url`.
 
-`DELETE /v1/trees/{id}` removes a tree and, with it, the steps that open it in the caller's other
-trees: an opened tree goes as a node does. First, with no strand held, the caller's standing trees
+`DELETE /v1/trees/{id}` removes a root, and with it every branch under it and the steps that open it
+in the caller's other trees: an opened tree goes as a node does. A removal is final. Aimed at a
+subtree it is refused `409` `not-a-root`, `{code, error, parent: {tree, step}, root}`, to its owner,
+and nothing is removed: a subtree goes and comes back with its owning step. What the removal takes,
+`TreeRepository::branchSizes` of the tree, is read first, and the answer carries it as `branch:
+{subtrees, steps}`, left out when that read fails, which is reported and refuses nothing. First, with no strand held, the caller's standing trees
 other than this one that hold a present step opening it are read in one statement
 (`TreeRepository::treesOpening`, keyed on the caller's own trees and reading each one's steps through
 `tree_nodes_pointers_idx`, so pointers other accounts plant at the tree are never read; for a tree
@@ -743,9 +813,11 @@ those steps, per tree in tree id order:
   could not be opened, the marks not cleared, or the eight seconds ran out before it was reached — and
   the steps stay. Each points nowhere: it reads as an ordinary step, `get_diagnostics` lists it in
   `danglingPointers`, and the caller can clear its pointer or delete it by hand.
+- `branch: {subtrees, steps}`, what went with the root.
 
-MCP `delete_tree` answers `{deleted, id, removed}`, with `unsaved` and `incomplete` on the same rule,
-and refuses under `cascade-unavailable` with nothing removed as the REST door does. Each is answered to
+MCP `delete_tree` answers `{deleted, id, removed, branch}`, with `unsaved` and `incomplete` on the same
+rule, and refuses under `cascade-unavailable` with nothing removed, and a subtree's id under
+`not-a-root`, as the REST door does. Each is answered to
 the tree's owner alone and names only their trees; a refused delete edits nothing.
 
 `GET /v1/trees/{id}/progress` answers the owner's overlay, `{marks: [{node, status, at, markedAt,
@@ -769,7 +841,8 @@ sweep is closed unless `REMINDERS_ADMIN_TOKEN` is set.
 credential is presented at the upgrade; every write re-proves the session, throttled to one lookup
 a minute, and a revoked session narrows to a guest in place. Visibility is re-asked per frame.
 
-Client → server: `ping` · `subscribe {treeId, vector}` · `subgraph` (a serialized `Subgraph`) ·
+Client → server: `ping` · `subscribe {treeId, vector}` · `subgraph` (a serialized `Subgraph`, with
+`branches: [subtreeId]` naming the subtrees it takes with the owning steps it deletes) ·
 `progress {treeId, frameId, marks[{node, status, at}]}` · `presence {treeId, …}`.
 
 Server → client: `pong` · `subgraph` (intent `delta` carrying `seq` and `reach` as the subscribe
@@ -807,7 +880,16 @@ rejected: its other marks are recorded, echoed and acknowledged.
 
 Reject codes are a stable wire contract — branch on `code`, never on `reason`:
 `no-such-tree` · `server-error` · `sign-in-required` · `tree-too-large` · `bad-frame` ·
-`not-yours` · `nobodys-tree` (the last two from `writeRefusalFor`, on the write lane).
+`not-yours` · `nobodys-tree` (the last two from `writeRefusalFor`, on the write lane) ·
+`branch-unconfirmed`.
+
+A `subgraph` frame that would delete a step owning a subtree its `branches` do not name is refused
+whole as `branch-unconfirmed`, with nothing of it landed (Model, Subtrees): the reject carries
+`branches: [{step, subtree, steps, subtrees}]`, one per such step in step order, and the first one's
+`subtree`, `steps` and `subtrees` beside its code, the counts left out when they could not be read.
+A frame whose `branches` is not a list of tree ids is refused as `bad-frame`. A frame's `branches`
+are never broadcast. Deleting the step hides the subtree: each page open on a tree of its branch is
+sent the `no-such-tree` reject and is no longer sent its frames.
 
 Limits and rules:
 
@@ -869,17 +951,20 @@ Rules:
   rows are not yet backfilled. Nothing new depends on it.
 - `tree_ops` scales with edits, not nodes. `ActivityFeed` projects it; `open()` reads only the seq
   and stamp of the rows past the snapshot's head, none for a tree level with its log.
-- Tree deletion writes `deleted_at` and retires its room, then tombstones the steps of the owner's
-  other trees that open it (HTTP surface, `DELETE /v1/trees/{id}`). Reads exclude deleted rows and
-  save never clears the tombstone. Recreating the caller's own deleted ID returns
+- A root's deletion writes its `deleted_at` and retires its room, then tombstones the steps of the
+  owner's other trees that open it (HTTP surface, `DELETE /v1/trees/{id}`); a subtree's `deleted_at`
+  is never written. Reads exclude deleted rows and every tree under a deleted root, and save never
+  clears the tombstone. Recreating the caller's own deleted ID returns
   `Creation::retired`, so a client can stop replaying it instead of reminting an ID.
-- An erased account's trees are deleted outright, with their rows, ops and everyone's progress on
-  them (`backend/AUTH.md`), and their rooms are retired once that commits. A save lands only on a row
+- An erased account's trees are deleted outright, its subtrees among them, whose rows carry their
+  root's owner, with their rows, ops and everyone's progress on them (`backend/AUTH.md`), and their
+  rooms are retired once that commits. A save lands only on a row
   that stands: a room whose tree row is gone saves nothing and lands no op rows.
 - Progress upserts compare numeric `(stamp_ms, stamp_counter)` strictly; a tie loses without
   consulting the actor. Clears retain a stamped `none` row.
 - The og-image and og-video rows carry no FK to `trees`: they are addressed by tree id and read
-  behind the tree's own visibility gate, so a stray row is simply unreachable.
+  behind the access gate every door asks (`RoomRegistry::accessOf`), so a stray row, or a hidden
+  branch's, is simply unreachable.
 - A tree's place (Model, Subtrees) is written once, at insert, by the store. `trees_place` makes a
   row inserted without a parent a root, `root_tree` its own id and `depth` 0, whoever inserts it, so
   a binary that knows nothing of subtrees still writes roots, and `db/schema.sql` makes a root of

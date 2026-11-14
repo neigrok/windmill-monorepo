@@ -90,12 +90,11 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   nobody's to write**: the seeded demo tree (`t_9e407a96b5330ebe`, `owner_id NULL`, `public`) is
   world-readable and editable by no one. Every write path runs `canRead` first, so a refusal never
   confirms that a private id names something; a readable tree the caller does not own answers `403`.
-  Three doors do not hold to it yet: the share card uploads (`PUT /v1/trees/{id}/og-image` and
-  `/og-video`) answer a signed-in caller `403` on someone else's private tree, and a create under a
-  client-minted id (`POST /v1/trees`, a fork's requested id) answers `409` when that id is another
-  account's tree, private or not.
-- **Forks** require read access to the source and create a new tree owned by the recipient; they do
-  not require write access to the source.
+  One door does not hold to it yet: a create under a client-minted id (`POST /v1/trees`, a fork's
+  requested id) answers `409` when that id is another account's tree, private or not.
+- **Forks** require read access to the source and create new trees owned by the recipient — the root
+  and its standing branch — and do not require write access to the source. A subtree is never forked
+  alone.
 - **Progress marks** (WS `progress`, an MCP `status` row) are not document writes and are not
   owner-gated. They gate on `canRead` alone, and each caller writes only their own per-user overlay
   (`node_progress` is keyed by `user_id`). Any signed-in reader may mark any tree they can read — the
@@ -111,14 +110,21 @@ where `trees_place` (`db/schema.sql`) writes the parent's owner whatever the sta
 is no `UPDATE` of that column anywhere, so a row with `owner_id IS NULL` is unwritable through every
 surface and can be repaired only by hand in SQL.
 
-**A subtree's access is its root's** (`SPEC.md`, Model, Subtrees): every gate above answers a tree
-with a parent from its root's row — the root's owner and visibility, and absent while the root is
-deleted — or, for a live room, from the access every live room of the root's trees shares, which
-narrows before the root's row and widens after it. A subtree's own `visibility` column is not read.
-So whoever may read a tree may read every subtree under it and every tree above it, which is why the
-`subtree` frame, the subscribe answer's `subtrees` and a node read's `subtree` go to a tree's readers
-with the subtrees' ids, why a tree read answers its readers the `path` down from its root, and why a
-visibility change aimed at a subtree is refused `not-a-root`. Pointers stay the writer's alone.
+**A subtree's access is its root's** (`SPEC.md`, Model, Subtrees, and Authorization): every gate
+above answers a tree with a parent from its root's row — the root's owner and visibility, and absent
+while the root is deleted — and its path: absent, to its owner and every reader alike, while an owning
+step on the way down from the root is deleted. For a live room it answers from the access every live
+room of the root's trees shares, which narrows before the root's row and widens after it, and which
+each parent room tells, as its writes land, which of its owning steps are present, so a deleted step
+hides its branch on every gate at once and its revive shows it again. A subtree's own `visibility`
+column is not read. So whoever may read a tree may read every standing subtree under it and every tree
+above it, which is why the `subtree` frame, the subscribe answer's `subtrees` and a node read's
+`subtree` go to a tree's readers with the subtrees' ids, and why a tree read answers its readers the
+`path` down from its root. A change only a root takes — a visibility change, a removal, a fork, a
+create at its id — aimed at a subtree is refused `not-a-root`, after the read gate, so it tells only
+someone who may read the subtree where it hangs; a hidden subtree answers it as an absent tree. A
+deletion of an owning step names its subtree (`branches`) or is refused `branch-unconfirmed` after the
+write gate. Pointers stay the writer's alone.
 
 ## Per surface
 
@@ -172,7 +178,8 @@ of that sweeper.
 
 `subscribe`, the write frame, the progress mark, `TreeApi::readRoom` and both `ForkService` entries
 (`fork`, and `describe`, the unauthenticated magic-link invite) decide on `RoomRegistry::accessOf` —
-the stored `owner` + `visibility` row — **before** `open()` builds a room: a caller about to be
+the stored `owner` + `visibility` row and the tree's path, or a live room's shared access — **before**
+`open()` builds a room: a caller about to be
 refused must not be the reason a whole lattice is loaded, since with a bounded room table that load
 evicts a room somebody is using.
 
