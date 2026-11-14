@@ -49,8 +49,8 @@ The action that applies an observation calls `observe` once:
 1. Load the lineage's `Ledger`: its subscription, if any, and its periods.
 2. Resolve the observation's account hint against the erased accounts into an `AccountHint`, and pass
    the claim when a claim door calls.
-3. Mint `NewIds` for the observation: a subscription id and one period id for each period it states.
-   `observe` uses the ones it needs.
+3. Mint the observation's ids with `Observation::mint_ids`: a subscription id and one period id for
+   each period it states. `observe` uses the ones it needs.
 4. Persist the returned `Change` in one transaction: the subscription, each written or restated
    period, and the events in order, which the ledger stamps with `seq` and `recordedAt`. A `Refusal`
    persists nothing.
@@ -59,9 +59,13 @@ The action that applies an observation calls `observe` once:
 `verifiedAt` is the sweep's bookkeeping: storage stamps it when it applies a pull, and the domain's
 subscription leaves it out, since no single observation can state it (INV-6).
 
+`observe` records `unbound` only when a new purchase moves an ended lineage to another account
+(R-11). Account erasure (§6.4) unbinds every subscription an account holds and records `unbound` for
+each; the domain has no step for it yet, and the erasure node adds one beside `observe`.
+
 `tests/vectors/` holds the lifecycle stories every implementation of the domain passes, and
 `crates/domain/tests/vectors.rs` runs them. `crates/domain/tests/observe.rs` holds the property tests
-of INV-4, INV-5 and INV-6.
+of INV-4, INV-5 and INV-6 and one that replays the feed through §6.3's funding in any order.
 
 ## Toolchain
 

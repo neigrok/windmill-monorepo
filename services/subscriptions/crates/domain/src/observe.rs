@@ -70,12 +70,6 @@ pub struct MintedObservation {
     period_ids: Vec<PeriodId>,
 }
 
-impl MintedObservation {
-    pub fn observation(&self) -> &Observation {
-        &self.observation
-    }
-}
-
 // What the ledger holds for one lineage.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Ledger {
