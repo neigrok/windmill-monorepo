@@ -5583,7 +5583,8 @@ TEST(mcp_an_import_that_changes_anything_lands_with_a_seq_and_no_unchanged) {
            parse(R"([{"id":"owner","hue":"gold","label":"Captain"}])"));
 }
 
-// `unchanged` speaks for the graft only: progress carried beside an unchanged graft is applied and reported as ever.
+// Progress carried beside a graft that lands nothing is applied and reported as ever, and the receipt does not say
+// `unchanged` beside a mark it recorded.
 TEST(mcp_an_import_whose_graft_changes_nothing_still_applies_its_progress) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",

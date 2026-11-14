@@ -102,9 +102,10 @@ batch names for it, or none. Prerequisites merge by default;
 without `prerequisites` keeps them all. The graph commits in one structural
 operation; optional progress commits in a separate atomic phase. Inspect `graphApplied`,
 `progressApplied` and any `progressError`/`progressSkipped`/`progressRefused`: a graph can be applied
-even when progress is incomplete. A graft that changes nothing the tree holds writes nothing and answers
-`unchanged: true` with the tree's current `seq`; the progress beside it is still applied. `dryRun`
-changes neither phase, and `expectedSeq` refuses both when the tree has moved since you read it.
+even when progress is incomplete. A graft that changes nothing the tree holds writes nothing; the progress
+beside it is still applied, and the receipt answers `unchanged: true` with the tree's current `seq` when no
+mark changed either. `dryRun` changes neither phase, and `expectedSeq` refuses both when the tree has moved
+since you read it.
 )";
 
 }  // namespace
