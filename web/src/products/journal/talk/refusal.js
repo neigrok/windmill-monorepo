@@ -35,15 +35,6 @@ function clock() {
   return new Intl.DateTimeFormat(APP_LOCALE, { hour: 'numeric', minute: '2-digit', hourCycle });
 }
 
-function againOn(ms) {
-  const day = new Intl.DateTimeFormat(APP_LOCALE, { month: 'short', day: 'numeric' }).format(ms);
-  return t('journal.talk.again.on', { day, time: clock().format(ms) });
-}
-
-function againAt(ms) {
-  return t('journal.talk.again.at', { time: clock().format(ms) });
-}
-
 export class Refusal {
   // `code` and `reason` are bounded labels for telemetry. `until` is the moment a remembered refusal stops holding the
   // mic shut — Infinity for the rest of the tab — or null for one that is not remembered.
@@ -84,7 +75,7 @@ export class Refusal {
     if (status === 413) return new Refusal({ face: 'tooLong', code: known });
     if (status === 429) {
       return new Refusal({ face: 'turnUsed', code: known,
-        detail: body.retryAtMs ? againAt(body.retryAtMs) : t('journal.talk.again.later') });
+        detail: body.retryAtMs ? t('journal.talk.again.at', { time: clock().format(body.retryAtMs) }) : t('journal.talk.again.later') });
     }
     if (code === 'voice_busy') return new Refusal({ face: 'busy', code: known, detail: t('journal.talk.again.inAMoment') });
     if (code === 'voice_unavailable' || status < 500) return new Refusal({ face: 'notAvailable', code: known });
@@ -106,7 +97,9 @@ export class Refusal {
 function ofAllowance(allowance, code, reason, renews) {
   const known = LEDGER_CODES.has(code) ? code : 'other';
   const resetsAt = allowance?.resetsAtMs ?? null;
-  const dated = { detail: renews && resetsAt ? againOn(resetsAt) : null, until: resetsAt ?? Infinity };
+  const day = resetsAt && new Intl.DateTimeFormat(APP_LOCALE, { month: 'short', day: 'numeric' }).format(resetsAt);
+  const dated = { detail: renews && resetsAt ? t('journal.talk.again.on', { day, time: clock().format(resetsAt) }) : null,
+    until: resetsAt ?? Infinity };
   if (code === 'subject_exhausted') {
     if (reason === 'request_exceeds_remaining' || Number(allowance?.remaining) > 0) {
       return new Refusal({ face: 'tooLittleLeft', code: known, reason: 'request_exceeds_remaining', ...dated });
