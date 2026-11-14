@@ -122,7 +122,8 @@ const Vocabulary<ProgressField>& progressVocabulary();
 // `kindByHue` is the legend's hue -> kind id join, one entry per kind; `openings` holds what each
 // node's pointer comes to (domain/OpenedTrees.h), and stays empty for a caller who cannot write the
 // tree; `subtrees` what each step that owns a subtree says of it; `web` is the tree as the caller
-// opens it, which each node's `url` is built on.
+// opens it, which each node's `url` is built on. `openedTreesUnread` says the trees the steps open
+// were due a follow that was not made in time, so the parts above that read them say nothing of them.
 struct NodeReadContext {
   Progress marks;
   std::map<NodeId, NodeState> states;
@@ -130,6 +131,7 @@ struct NodeReadContext {
   std::map<NodeId, Opening> openings;
   std::map<NodeId, OwnedSubtree> subtrees;
   std::optional<WebTree> web;
+  bool openedTreesUnread = false;
 };
 
 // Field semantics are TreeJson's: empty and absent values are omitted as the document omits

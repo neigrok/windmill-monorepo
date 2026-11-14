@@ -14,12 +14,14 @@ bool ProgressReceipt::cameToARefusal() const {
          std::any_of(outcomes.begin(), outcomes.end(), [](const ProgressOutcome& outcome) { return outcome.refused; });
 }
 
-ProgressReceipt ProgressService::mark(const TreeId& tree, const std::map<NodeId, TreeId>& pointers, const UserId& user,
+ProgressReceipt ProgressService::mark(const TreeId& tree, const FollowedSteps& followed, const UserId& user,
                                       const std::vector<ProgressWrite>& writes, StampedBy stampedBy,
                                       std::uint64_t receivedAtMs) {
   ProgressReceipt receipt;
   if (writes.empty()) return receipt;
-  const OpenedTrees standing(trees_.openedFrom(user, treesOpenedBy(pointers)));
+  const std::map<NodeId, TreeId>& pointers = followed.opened;
+  const OpenedTrees standing(followed.owner ? trees_.openedFrom(*followed.owner, treesOpenedBy(pointers))
+                                            : std::map<TreeId, OpenedTree>{});
   const std::set<NodeId> following = standing.following(tree, pointers);
   std::vector<ProgressUpdate> updates;
   for (const ProgressWrite& write : writes)

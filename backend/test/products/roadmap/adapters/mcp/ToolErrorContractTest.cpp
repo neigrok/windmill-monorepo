@@ -967,7 +967,8 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
                             "`includePointers: false` leaves both lists out",
                             "A deleted node it brings back opens the tree the\nbatch names for it, or none",
                             "send the parent tree's `kinds` to inherit it, or the subtree gets\nthe default legend",
-                            "Sent again, it answers the subtree the step already owns, `created: false`.",
+                            "Sent again, it answers the subtree the step already owns, `created: false`, and\nthat subtree keeps the legend it was created with",
+                            "The `subtree` counts are the owner's progress, and so is the step's completion",
                             "read that id with `roadmap_get_tree` to go down",
                             "`parent: {tree, step}` to go back up, `null` for a top-level roadmap"})
     CHECK(text.find(claim) != std::string::npos);

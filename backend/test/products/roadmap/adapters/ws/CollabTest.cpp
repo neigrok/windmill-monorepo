@@ -3479,3 +3479,31 @@ TEST(ws_a_retried_frame_and_a_pointer_that_would_change_nothing_are_no_refusal_o
     outcomes.push_back(completion.outcome + " " + std::to_string(completion.refused));
   CHECK_EQ(outcomes, (std::vector<std::string>{"unchanged 0", "unchanged 0", "unchanged 0"}));
 }
+
+// A step that owns a subtree takes no hand mark from anyone: a reader's progress frame on it is refused `opens-a-tree`
+// as its owner's is, nothing stored, and the reader's other marks land.
+TEST(ws_a_readers_mark_on_a_step_that_owns_a_subtree_is_refused_as_its_owners_is) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  const UserId reader = h.signIn("s-reader", "reader@example.com");
+  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {TreeId{"t_00000000000000c1"}, std::nullopt})));
+  auto conn = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-reader"), conn);
+  {
+    Observed observed;
+    h.collab.onMessage(conn, progressFrame("t_p", "f1", {{"plain", "complete", "901:0:r_a"}, {"idea", "complete", "902:0:r_a"}}));
+    h.collab.onMessage(conn, progressFrame("t_p", "f2", {{"plain", "complete", "903:0:r_a"}}));
+    REQUIRE_EQ(observed.completions.size(), 2u);
+    CHECK_EQ(observed.completions[0].operation + " " + observed.completions[0].outcome, std::string("roadmap.ws.progress ok"));
+    CHECK_EQ(observed.completions[1].operation + " " + observed.completions[1].outcome,
+             std::string("roadmap.ws.progress opens-a-tree"));
+  }
+  REQUIRE_EQ(conn->sent.size(), 2u);
+  CHECK_EQ(parse(conn->sent[0]),
+           parse(R"({"t":"progressAck","treeId":"t_p","frameId":"f1","refused":[{"node":"plain","code":"opens-a-tree"}]})"));
+  CHECK_EQ(parse(conn->sent[1]),
+           parse(R"({"t":"progressAck","treeId":"t_p","frameId":"f2","refused":[{"node":"plain","code":"opens-a-tree"}]})"));
+  CHECK(h.progressRepo.load(TreeId{"t_p"}, reader).completed == std::set<NodeId>{NodeId{"idea"}});
+}

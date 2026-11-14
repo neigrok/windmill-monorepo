@@ -184,6 +184,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     answered["seq"] = typed("integer");
     answered["nodes"] = listOf(typed("object"));
     answered["missingNodeIds"] = listOf(typed("string"));
+    answered["openedTreesUnavailable"] = typed("boolean");
     declaration.descriptor["outputSchema"] = object(answered, {"treeId", "seq", "nodes", "missingNodeIds"});
     tools.push_back(std::move(declaration));
   }
@@ -270,7 +271,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["kinds"] = legendKinds();
     tools.push_back(treeTool("create_subtree", Access::write,
         "Give a step its own subtree: an empty roadmap the step opens and completes with. Send the parent roadmap's "
-        "legend as `kinds` to inherit it; without them the subtree gets the default legend.",
+        "legend as `kinds` to inherit it; without them the subtree gets the default legend, and a retry keeps the first "
+        "legend.",
         p, {"nodeId"}));
   }
   {
@@ -294,8 +296,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["limit"] = limit();
     p["cursor"] = cursor();
     tools.push_back(treeTool("get_tree", Access::read,
-        "Read a roadmap: its title, where it sits, guides, legend and a page of its nodes, with the `seq` it stands "
-        "at. Call it before editing to learn node ids, and read the guides before working the tree.",
+        "Read a roadmap: its title, guides, legend and a page of its nodes, with the `seq` it stands at. Call it "
+        "before editing to learn node ids, and read the guides before working the tree.",
         p, {}));
   }
   {

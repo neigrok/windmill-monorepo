@@ -779,22 +779,26 @@ TEST(room_applies_an_empty_batch_as_a_no_op_that_mints_no_seq) {
   CHECK_EQ(bus.subgraphBroadcasts.size(), 1u);
 }
 
-// The tree a node opens goes only to a caller who can write the tree, so a room hands its pointers to nobody else.
-TEST(room_hands_its_pointers_to_a_caller_who_can_write_the_tree_and_to_nobody_else) {
+// The tree a node opens goes only to a caller who can write the tree, so a room judges nobody else's marks by its
+// pointers: only by the steps that own a subtree, which take no mark from anyone.
+TEST(room_judges_its_writers_marks_by_its_pointers_and_anyone_elses_by_its_owning_steps_alone) {
   FakeBus bus;
   LooseGraph graph;
   graph.createNode(nid("idea"), "Idea", "", NodeColor::sky, at(1));
   graph.createNode(nid("plain"), "Plain", "", NodeColor::sky, at(2));
   graph.setOpens(nid("idea"), tid("t_sub"), at(3));
-  const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {}, {},
+  graph.createNode(nid("sail"), "Sail", "", NodeColor::sky, at(4));
+  const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {}, {{nid("sail"), tid("t_s")}},
                        std::make_shared<RootAccess>(uid("owner"), Visibility::public_), 0, bus);
   const TreeRoom nobodys(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {}, {},
                          std::make_shared<RootAccess>(std::nullopt, Visibility::public_), 0, bus);
 
-  CHECK(owned.pointersFor(uid("owner")) == (std::map<NodeId, TreeId>{{nid("idea"), tid("t_sub")}}));
-  CHECK(owned.pointersFor(uid("stranger")) == (std::map<NodeId, TreeId>{}));
-  CHECK(owned.pointersFor(std::nullopt) == (std::map<NodeId, TreeId>{}));
-  CHECK(nobodys.pointersFor(uid("owner")) == (std::map<NodeId, TreeId>{}));
+  const FollowedSteps owning{uid("owner"), {{nid("sail"), tid("t_s")}}};
+  CHECK(owned.followedStepsFor(uid("owner")) ==
+        (FollowedSteps{uid("owner"), {{nid("idea"), tid("t_sub")}, {nid("sail"), tid("t_s")}}}));
+  CHECK(owned.followedStepsFor(uid("stranger")) == owning);
+  CHECK(owned.followedStepsFor(std::nullopt) == owning);
+  CHECK(nobodys.followedStepsFor(uid("owner")) == (FollowedSteps{std::nullopt, {}}));
   CHECK_EQ(owned.snapshots(), std::size_t{0});
 }
 
@@ -818,7 +822,7 @@ TEST(room_reads_the_subtree_a_step_owns_as_the_tree_it_opens_whatever_its_pointe
   CHECK(room.pointers() == (std::map<NodeId, TreeId>{{nid("idea"), tid("t_other")}, {nid("sail"), tid("t_s")}}));
   CHECK(room.stampedPointers() == (std::map<NodeId, StampedPointer>{{nid("idea"), {tid("t_other"), at(6)}},
                                                                     {nid("sail"), {tid("t_s"), Hlc{}}}}));
-  CHECK(room.pointersFor(uid("owner")) == room.pointers());
+  CHECK(room.followedStepsFor(uid("owner")) == (FollowedSteps{uid("owner"), room.pointers()}));
   std::map<NodeId, TreeId> opened;
   for (const NodeSpec& node : room.snapshot().nodes) opened.emplace(node.id, node.opens);
   CHECK(opened == (std::map<NodeId, TreeId>{{nid("idea"), tid("t_other")}, {nid("rig"), TreeId{}}, {nid("sail"), tid("t_s")}}));

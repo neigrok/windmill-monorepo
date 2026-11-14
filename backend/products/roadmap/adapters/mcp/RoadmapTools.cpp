@@ -168,17 +168,18 @@ struct SentPointer {
   TreeId tree;
 };
 
-// Every pointer a call sends must be valid (OpenedTrees::pointsAt): a standing root of the caller's, asked of the registry
-// once for the whole call. An echo of the subtree the step owns, present or deleted, as the room holds it, passes before
-// that read, and lands nothing. One sentence serves a tree that is not there, one whose branch is hidden and one that is
-// someone else's: a tree id is the read capability of an unlisted tree, so telling them apart would say which ids exist.
-// A subtree of the caller's that stands is told as one, since they may read it. The refusal carries its own outcome code,
-// so a write line tells a pointer at a tree that is not the caller's from a mistyped argument.
+// Every pointer a call sends a step that owns no subtree must be valid (OpenedTrees::pointsAt): a standing root of the
+// caller's, asked of the registry once for the whole call. A pointer sent a step that owns a subtree, present or deleted,
+// is judged by the step's register alone (refusedPointersOf), whatever it names, so it never refuses the rest of the call.
+// One sentence serves a tree that is not there, one whose branch is hidden and one that is someone else's: a tree id is
+// the read capability of an unlisted tree, so telling them apart would say which ids exist. A subtree of the caller's that
+// stands is told as one, since they may read it. The refusal carries its own outcome code, so a write line tells a pointer
+// at a tree that is not the caller's from a mistyped argument.
 std::optional<ToolResult> checkPointers(TreeRegistry& trees, const UserId& caller, const TreeRoom& room,
                                         const std::vector<SentPointer>& sent) {
   std::vector<SentPointer> judged;
   for (const SentPointer& pointer : sent)
-    if (!pointer.tree.empty() && !room.owns(pointer.step, pointer.tree)) judged.push_back(pointer);
+    if (!pointer.tree.empty() && !room.ownsASubtree(pointer.step)) judged.push_back(pointer);
   std::set<TreeId> targets;
   for (const SentPointer& pointer : judged) targets.insert(pointer.tree);
   const OpenedTrees standing(trees.pointerTargets(caller, targets));
@@ -224,9 +225,10 @@ void answerRefusedPointers(const std::vector<NodeId>& refused, Json::Value& rece
       "a step that owns no subtree.";
 }
 
-// How long the follow an edit makes for its receipt may take. The edit is saved by then and its reply waits on
-// nothing else, so past this the receipt goes out without the loops rather than hold a caller who would retry.
-constexpr std::chrono::milliseconds kReceiptFollowBudget{750};
+// How long a follow a reply waits on may take: a read's of the trees its steps open, and an edit's for its receipt, made
+// once the edit is saved. Past it the reply goes out without what the follow would have told, and says so, rather than
+// hold a caller who would retry.
+constexpr std::chrono::milliseconds kReplyFollowBudget{750};
 
 // What an edit that changed the tree a node opens takes from the room while it holds the strand: the graph's
 // diagnostics before the edit and after it, and each node it made open a tree, or another tree.
@@ -254,7 +256,7 @@ ToolResult withClosedLoops(TreeRegistry& trees, const UserId& actor, const TreeI
   Json::Value receipt = edited.payload;
   WriteObservation observation{"roadmap.receipt.follow", "roadmap", "mcp"};
   try {
-    const OpenedTrees followed(trees.openedFrom(actor, treesOpenedBy(edit->repointed), kReceiptFollowBudget));
+    const OpenedTrees followed(trees.openedFrom(actor, treesOpenedBy(edit->repointed), kReplyFollowBudget));
     answerDiagnostics(edit->before, edit->after, receipt, followed.diagnose(tree, edit->repointed));
     observation.skip();
   } catch (const std::bad_alloc&) {
@@ -363,35 +365,51 @@ WebTree webTreeOf(const std::string& origin, const RoomRead& read, const std::op
   return WebTree{origin, read.data.id, canWrite(caller, read.owner) ? Opener::owner : Opener::reader};
 }
 
-// States are derived over the whole tree, as a prerequisite may sit off the page; only its writer has pointers followed.
-// What a step's subtree comes to is the owner's for every reader: its writer's own follow says it, and anyone else is
-// told it off one budgeted follow of the owner's subtrees (OwnerProgress), or the subtree's id alone when the owner's
-// trees are not followed in time.
+// States are derived over the whole tree, as a prerequisite may sit off the page. The steps whose completion follows a
+// tree are, for the tree's writer, every step that opens one, and for anyone else the steps that own a subtree, which show
+// the owner's completion; those trees are followed after the strand is released, as the owner's, once per read and only
+// when a field or a filter asks for what they say. The writer's follow runs within the reply's budget under
+// `roadmap.tree.follow`; anyone else's is the owner follow every door shares (OwnerProgress). A follow that is not made in
+// time leaves the trees unread: `subtree` its id alone, no `opens`, each such step not complete, and the reply says so.
 NodeReadContext readContextFor(TreeRegistry& trees, OwnerProgress& owners, ProgressService& progress,
                                const std::string& origin, const std::optional<UserId>& caller, const RoomRead& read,
                                const NodeFields& fields, bool filtersOnState) {
   const TreeData& data = read.data;
+  const bool writer = canWrite(caller, read.owner);
   const bool needsStates = fields.count(NodeField::state) || filtersOnState;
   const bool needsMarks = fields.count(NodeField::status) || needsStates;
+  const bool needsOpenings = writer && fields.count(NodeField::opens);
   const bool needsSubtrees = fields.count(NodeField::subtree) && !read.subtrees.empty();
   NodeReadContext context;
   if (needsMarks && caller) context.marks = progress.progressOf(data.id, *caller);
   if (fields.count(NodeField::kind)) context.kindByHue = kindByHue(data.kinds);
   if (fields.count(NodeField::url)) context.web = webTreeOf(origin, read, caller);
-  const bool follows = (needsStates || fields.count(NodeField::opens) || needsSubtrees) && canWrite(caller, read.owner);
-  if (!follows) {
+  const std::map<NodeId, TreeId> steps = writer ? pointersOf(data) : read.subtrees;
+  if (steps.empty() || !(needsStates || needsOpenings || needsSubtrees)) {
     if (needsStates) context.states = UnlockRules::derive(data.nodes, context.marks);
-    if (needsSubtrees) {
-      std::optional<OpenedTrees> opened;
-      FollowTally tally;
-      if (read.owner) opened = owners.followed(*read.owner, treesOpenedBy(read.subtrees), kReaderFollowBudget, "mcp", tally);
-      context.subtrees = ownedSubtrees(read.subtrees, opened);
-    }
     return context;
   }
-  const std::optional<OpenedTrees> opened(std::in_place, trees.openedFrom(*caller, treesOpenedBy(data)));
-  if (needsStates) context.states = UnlockRules::derive(data.nodes, opened->followed(data, context.marks));
-  if (fields.count(NodeField::opens)) context.openings = opened->openings(data);
+
+  std::optional<OpenedTrees> opened;
+  if (writer) {
+    WriteObservation observation{"roadmap.tree.follow", "roadmap", "mcp"};
+    try {
+      opened.emplace(trees.openedFrom(*caller, treesOpenedBy(data), kReplyFollowBudget));
+      observation.skip();
+    } catch (const std::bad_alloc&) {
+      throw;
+    } catch (const FollowTimedOut&) {
+      observation.finish("timeout");
+    } catch (const std::exception& failure) {
+      observation.fail(failure);
+    }
+  } else if (read.owner) {
+    FollowTally tally;
+    opened = owners.followed(*read.owner, treesOpenedBy(steps), kReaderFollowBudget, "mcp", tally);
+  }
+  context.openedTreesUnread = !opened;
+  if (needsStates) context.states = UnlockRules::derive(data.nodes, followedOrUnread(data.id, steps, opened, context.marks));
+  if (needsOpenings && opened) context.openings = opened->openings(data);
   if (needsSubtrees) context.subtrees = ownedSubtrees(read.subtrees, opened);
   return context;
 }
@@ -503,6 +521,7 @@ ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, OwnerProgress& 
   Json::Value out(Json::objectValue);
   out["seq"] = static_cast<Json::Int64>(read->head);
   out["count"] = static_cast<Json::UInt64>(data.nodes.size());  // the whole tree, not this page
+  if (context.openedTreesUnread) out["openedTreesUnavailable"] = true;
   if (!projected.nextCursor.empty()) out["nextCursor"] = projected.nextCursor;
   if (projected.bytes) out["pageBytes"] = static_cast<Json::UInt64>(*projected.bytes);
   out["tree"] = document;
@@ -547,6 +566,7 @@ ToolResult readNodes(RoomRegistry& registry, TreeRegistry& trees, OwnerProgress&
   out["seq"] = static_cast<Json::Int64>(read->head);
   out["nodes"] = Json::Value(Json::arrayValue);
   out["missingNodeIds"] = Json::Value(Json::arrayValue);
+  if (context.openedTreesUnread) out["openedTreesUnavailable"] = true;
   for (const Json::Value& id : args["nodeIds"]) {
     const auto node = byId.find(NodeId{id.asString()});
     if (node == byId.end()) out["missingNodeIds"].append(id);
@@ -666,6 +686,7 @@ ToolResult findNodes(RoomRegistry& registry, TreeRegistry& trees, OwnerProgress&
   ProjectedPage projected = projectPage(matches, *page, *fields, context);
   Json::Value out(Json::objectValue);
   out["count"] = static_cast<Json::UInt64>(matches.size());  // everything that matched, not this page
+  if (context.openedTreesUnread) out["openedTreesUnavailable"] = true;
   out["nodes"] = std::move(projected.nodes);
   if (!projected.nextCursor.empty()) out["nextCursor"] = projected.nextCursor;
   if (projected.bytes) out["pageBytes"] = static_cast<Json::UInt64>(*projected.bytes);
@@ -883,7 +904,7 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
     Clock& clock, const UserId& user, const std::vector<RequestedMark>& requested, bool rejectUnknown) {
   MarkedBatch batch;
   std::vector<ProgressWrite> marks;
-  std::map<NodeId, TreeId> pointers;
+  FollowedSteps followed;
   {
     // The room is consulted under its strand and let go: the marks land, and the trees they may follow are read, once
     // it is released.
@@ -897,7 +918,7 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
       marks.push_back({mark.node, mark.status, room->prerequisitesOf(mark.node), room->nextStamp(clock.nowMs()),
                        mark.outOfOrder});
     }
-    pointers = room->pointersFor(user);
+    followed = room->followedStepsFor(user);
   }
   // update_nodes rejects an unknown id; an import skips it into `skipped`, its graft landed.
   if (rejectUnknown && !batch.skipped.empty()) {
@@ -907,16 +928,20 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
            ". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.";
   }
 
-  const ProgressReceipt receipt = edits.landMarks(tree, user, pointers, marks);
+  const ProgressReceipt receipt = edits.landMarks(tree, user, followed, marks);
+  const bool owns = followed.owner == user;
   batch.cameToARefusal = receipt.cameToARefusal();
   for (std::size_t i = 0; i < marks.size(); ++i) {
     const ProgressOutcome& outcome = receipt.outcomes[i];
     Json::Value row(Json::objectValue);
     row["nodeId"] = marks[i].node.str();
     if (outcome.refused) {
-      // Names the node and never the tree it opens: a tend, which is told of no pointer, reads this too.
-      row["refused"] = "\"" + marks[i].node.str() + "\" opens a tree: it is complete when that tree is and takes "
-                       "no mark of its own — mark the steps of the tree it opens";
+      // Names the node and never the tree it opens: a tend, which is told of no pointer, reads this too. A reader is
+      // refused only on a step that owns a subtree, whose completion is the owner's.
+      row["refused"] = owns ? "\"" + marks[i].node.str() + "\" opens a tree: it is complete when that tree is and takes "
+                              "no mark of its own — mark the steps of the tree it opens"
+                            : "\"" + marks[i].node.str() + "\" owns a subtree: it shows its owner's progress on that "
+                              "subtree and takes no mark of its own";
       batch.refused.append(marks[i].node.str());
       batch.results.append(row);
       continue;
@@ -1707,8 +1732,9 @@ std::string subtreeRefusalSentence(SubtreeRefusal refusal, const TreeId& tree, c
 }
 
 // The subtree a step owns, created empty under it or, when the step owns one already, answered as it is: a retry after a
-// lost reply answers the same subtree with `created: false`. Its legend is the one the call sends, judged as create_tree
-// judges one, or the default: the server never copies the parent's.
+// lost reply answers the same subtree with `created: false`, completes `unchanged`, and says that kinds it sent were not
+// planted. Its legend is the one the call sends, judged as create_tree judges one, or the default: the server never
+// copies the parent's.
 ToolResult createSubtree(TreeRegistry& trees, const TreeId& tree, const Json::Value& args, const UserId& caller) {
   std::string step;
   if (std::optional<std::string> bad = requireHandle(args, kNodeHandle, "", step)) return ToolResult::failure(*bad);
@@ -1737,7 +1763,12 @@ ToolResult createSubtree(TreeRegistry& trees, const TreeId& tree, const Json::Va
   out["created"] = creation.created;
   out["subtree"] = subtree;
   out["parentSeq"] = static_cast<Json::Int64>(creation.parentSeq);
-  return ToolResult::json(out);
+  if (!creation.created && request.kinds)
+    out["kindsError"] = "This step already owns this subtree, which keeps the legend it was created with: the kinds sent "
+                        "were not planted. Change its legend with add_kind, update_kind and remove_kind.";
+  ToolResult answered = ToolResult::json(out);
+  if (!creation.created) answered.outcomeCode = "unchanged";
+  return answered;
 }
 
 // Every row is a tree the caller owns, so each opens in the app.

@@ -205,6 +205,22 @@ private:
   std::size_t walked_ = 0;
 };
 
+// The steps of one tree whose completion follows a tree each opens, as one caller is judged (SPEC.md, Model, Subtrees):
+// `opened`, the tree each step opens, among `owner`'s trees. A caller who can write the tree is judged by every pointer it
+// holds; anyone else by the steps that own a subtree alone, which take no hand mark from anyone and show the owner's
+// completion of their subtree.
+struct FollowedSteps {
+  std::optional<UserId> owner;
+  std::map<NodeId, TreeId> opened;
+  bool operator==(const FollowedSteps&) const = default;
+};
+
+// `marks` on `tree` as its states are derived: each of `steps`, the tree each step opens, follows that tree off `opened`,
+// the owner's trees, or, while they are unread, is not complete whatever its mark, as readerView shows an unread owner.
+// Only `completed` is filled.
+Progress followedOrUnread(const TreeId& tree, const std::map<NodeId, TreeId>& steps,
+                          const std::optional<OpenedTrees>& opened, const Progress& marks);
+
 // What each step of `subtrees`, the subtree each step owns, says of it, off `opened`, the owner's trees: each with no
 // opening when they were not followed, and a step whose subtree no longer stands among them left out.
 std::map<NodeId, OwnedSubtree> ownedSubtrees(const std::map<NodeId, TreeId>& subtrees,
