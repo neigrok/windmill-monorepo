@@ -279,6 +279,9 @@ impl Ledger {
                 served: request.requested,
             },
         };
+        if route != request.expected_route {
+            return Err(StaticCode::AccountingUnavailable);
+        }
         if fuse(&mut tx, route.provider, self.tiers.hourly_fuse, now)
             .await?
             .paused

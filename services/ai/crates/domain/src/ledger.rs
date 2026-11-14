@@ -286,6 +286,7 @@ pub struct Admission {
     pub caller_id: CallerId,
     pub label: String,
     pub requested: ModelClass,
+    pub expected_route: ModelRoute,
     pub reservation: Reservation,
 }
 

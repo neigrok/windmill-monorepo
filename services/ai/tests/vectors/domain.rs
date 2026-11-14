@@ -116,6 +116,12 @@ fn exact_money_and_checked_boundaries() {
             .usd(),
         "0.000283334"
     );
+    assert_eq!(
+        NanoUsd::new(i64::MAX)
+            .unwrap()
+            .remaining(NanoUsd::new(i64::MAX).unwrap(), NanoUsd::new(1).unwrap()),
+        Ok(NanoUsd::ZERO)
+    );
 }
 
 #[test]
@@ -440,6 +446,35 @@ fn live_slices_price_rounded_turns_and_move_only_incremental_cost() {
         validate_audio(48_002, 3, 1),
         Err(StaticCode::InvalidRequest)
     );
+    call.slices = 55;
+    call.reservation = NanoUsd::new(935_000_000).unwrap();
+    call.audio_bytes = 48_002 * 1620;
+    call.audio_seconds = 3240;
+    call.turns = 1620;
+    let progress = LiveProgress {
+        slice: 56,
+        audio_bytes: 48_002 * 1650,
+        audio_seconds: 3300,
+        turns: 1650,
+    };
+    assert_eq!(
+        progress
+            .reserve(
+                &call,
+                &price(),
+                LiveCapacity {
+                    applied: NanoUsd::new(918_000_000).unwrap(),
+                    held: NanoUsd::new(17_000_000).unwrap(),
+                    grant_active: true,
+                    fuse_open: false,
+                    budgets: &[NanoUsd::new(1_000_000_000).unwrap()]
+                }
+            )
+            .unwrap()
+            .reservation
+            .nanos(),
+        952_000_000
+    );
 }
 
 #[test]
@@ -480,4 +515,66 @@ fn ten_thousand_reservations_are_maximal_and_never_exceed_any_budget() {
             Err(code) => assert_eq!(code, StaticCode::SubjectExhausted),
         }
     }
+}
+
+#[test]
+fn one_shared_pool_name_has_one_limit() {
+    let row = TierRule {
+        tier: Tier::Anonymous,
+        amount: NanoUsd::new(1_000_000).unwrap(),
+        month_pool: Some(PoolRule {
+            name: "shared".to_owned(),
+            limit: NanoUsd::new(2_000_000).unwrap(),
+        }),
+        day_pool: Some(PoolRule {
+            name: "shared".to_owned(),
+            limit: NanoUsd::new(1_000_000).unwrap(),
+        }),
+        in_flight: 1,
+        calls_per_minute: 30,
+        output_ceiling: 2000,
+        text: [ModelClass::Large, ModelClass::Medium, ModelClass::Small],
+        transcription: false,
+    };
+    let mut table = TierTable {
+        rows: vec![
+            row.clone(),
+            TierRule {
+                tier: Tier::Free,
+                ..row.clone()
+            },
+            TierRule {
+                tier: Tier::One,
+                month_pool: None,
+                day_pool: None,
+                transcription: true,
+                ..row
+            },
+        ],
+        models: [ModelClass::Large, ModelClass::Medium, ModelClass::Small]
+            .into_iter()
+            .map(|class| TextModel {
+                class,
+                provider: Provider::Anthropic,
+                model: "test".to_owned(),
+            })
+            .collect(),
+        transcription: LiveModel {
+            provider: Provider::Anthropic,
+            model: "test".to_owned(),
+            delay: "low".to_owned(),
+        },
+        labels: vec!["other".to_owned()],
+        owner_grants_max: 25,
+        hourly_fuse: NanoUsd::new(1_000_000).unwrap(),
+    };
+    let book = PriceBook {
+        version: "test".to_owned(),
+        models: vec![price()],
+    };
+    assert_eq!(table.validate(&book), Ok(()));
+    table.rows[1].month_pool.as_mut().unwrap().limit = NanoUsd::new(3_000_000).unwrap();
+    assert_eq!(table.validate(&book), Err(StaticCode::InvalidRequest));
+    table.rows[1].month_pool.as_mut().unwrap().name = "independent".to_owned();
+    assert_eq!(table.validate(&book), Ok(()));
 }

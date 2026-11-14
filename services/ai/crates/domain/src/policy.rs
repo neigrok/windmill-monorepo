@@ -93,6 +93,7 @@ impl TierTable {
                 || row.in_flight == 0
                 || row.calls_per_minute == 0
                 || row.output_ceiling == 0
+                || row.output_ceiling > i32::MAX as u32
             {
                 return Err(StaticCode::InvalidRequest);
             }
@@ -102,6 +103,24 @@ impl TierTable {
                 }
             } else if row.transcription || row.month_pool.is_none() || row.day_pool.is_none() {
                 return Err(StaticCode::InvalidRequest);
+            }
+            for pool in [&row.month_pool, &row.day_pool].into_iter().flatten() {
+                if pool.name.is_empty() || pool.name.len() > 64 || pool.limit == NanoUsd::ZERO {
+                    return Err(StaticCode::InvalidRequest);
+                }
+            }
+            for peer in &self.rows {
+                for (pool, other) in [
+                    (&row.month_pool, &peer.month_pool),
+                    (&row.day_pool, &peer.day_pool),
+                ] {
+                    if let (Some(pool), Some(other)) = (pool, other)
+                        && pool.name == other.name
+                        && pool.limit != other.limit
+                    {
+                        return Err(StaticCode::InvalidRequest);
+                    }
+                }
             }
             for class in [ModelClass::Large, ModelClass::Medium, ModelClass::Small] {
                 let route = self.route(tier, class)?;

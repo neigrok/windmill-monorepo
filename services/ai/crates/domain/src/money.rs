@@ -94,8 +94,8 @@ impl NanoUsd {
     }
 
     pub fn remaining(self, spent: Self, held: Self) -> Result<Self, StaticCode> {
-        let used = spent.checked_add(held)?;
-        Ok(Self(self.0.saturating_sub(used.0).max(0)))
+        let after_spend = self.0.saturating_sub(spent.0).max(0);
+        Ok(Self(after_spend.saturating_sub(held.0).max(0)))
     }
 }
 

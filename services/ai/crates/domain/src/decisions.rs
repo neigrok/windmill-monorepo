@@ -239,7 +239,6 @@ impl LiveProgress {
             || self.audio_seconds < call.audio_seconds
             || self.turns < call.turns
             || self.audio_seconds > u64::from(call.slices) * 60
-            || self.slice > 55
         {
             return Err(StaticCode::InvalidRequest);
         }

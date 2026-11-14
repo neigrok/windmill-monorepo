@@ -56,6 +56,11 @@ fn text(identity: &Identity, name: &str, input: u64, output: u32) -> Admission {
         caller_id: CallerId::new(format!("call_identifier_{name:0>12}")).unwrap(),
         label: "other".to_owned(),
         requested: ModelClass::Small,
+        expected_route: ModelRoute {
+            provider: Provider::Anthropic,
+            model: "claude-haiku-4-5".to_owned(),
+            served: ModelClass::Small,
+        },
         reservation: Reservation::Text(TextBudget {
             input_tokens: input,
             max_tokens: output,
@@ -227,6 +232,11 @@ async fn admission_is_atomic_and_dispatch_is_once() {
         caller_id: CallerId::new("atomic_call_identifier_01".to_owned()).unwrap(),
         label: "other".to_owned(),
         requested: ModelClass::Small,
+        expected_route: ModelRoute {
+            provider: Provider::Anthropic,
+            model: "claude-haiku-4-5".to_owned(),
+            served: ModelClass::Small,
+        },
         reservation: Reservation::Text(TextBudget {
             input_tokens: 10,
             max_tokens: 10,
@@ -604,6 +614,11 @@ async fn live_slices_are_retry_safe_and_final_cost_is_not_charged_twice() {
                     caller_id: CallerId::new("live_call_identifier_001".to_owned()).unwrap(),
                     label: "talk".to_owned(),
                     requested: ModelClass::Small,
+                    expected_route: ModelRoute {
+                        provider: Provider::OpenAi,
+                        model: "gpt-live-transcribe".to_owned(),
+                        served: ModelClass::Small,
+                    },
                     reservation: Reservation::Transcription,
                 },
                 now,
@@ -701,6 +716,11 @@ async fn live_slices_are_retry_safe_and_final_cost_is_not_charged_twice() {
                     caller_id: CallerId::new("live_call_identifier_002".to_owned()).unwrap(),
                     label: "talk".to_owned(),
                     requested: ModelClass::Small,
+                    expected_route: ModelRoute {
+                        provider: Provider::OpenAi,
+                        model: "gpt-live-transcribe".to_owned(),
+                        served: ModelClass::Small,
+                    },
                     reservation: Reservation::Transcription,
                 },
                 now + 64_000,
@@ -1106,4 +1126,66 @@ async fn settlement_uses_immutable_rates_when_a_new_process_loads_another_book()
     control.close().await;
     drop(ledger);
     database.finish(next).await;
+}
+
+#[tokio::test]
+async fn a_tier_transition_cannot_dispatch_a_different_model_than_the_counted_request() {
+    let Some(database) = Database::new().await else {
+        return;
+    };
+    let mut table = tiers();
+    table
+        .rows
+        .iter_mut()
+        .find(|row| row.tier == Tier::One)
+        .unwrap()
+        .text[2] = ModelClass::Medium;
+    let ledger = Ledger::connect(&database.url, table, prices())
+        .await
+        .unwrap();
+    assert!(ledger.acquire_lock().await.unwrap());
+    let now = 1_794_700_800_000;
+    let identity = account("transition", Plan::One);
+    assert_eq!(
+        ledger.allowance(&identity, now).await.unwrap().tier,
+        Tier::Free
+    );
+    let request = text(&identity, "stale", 10, 10);
+    let caller = request.caller_id.clone();
+    ledger
+        .fund(
+            Fund {
+                reference: "new-grant".to_owned(),
+                account_id: "transition".to_owned(),
+                plan: Plan::One,
+                period: Period::month(now).unwrap(),
+            },
+            now,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        ledger.admit(request, now).await,
+        Err(StaticCode::AccountingUnavailable)
+    ));
+    assert!(
+        ledger
+            .lookup(&identity.principal, &caller)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let mut rebuilt = text(&identity, "stale", 10, 10);
+    rebuilt.expected_route = ModelRoute {
+        provider: Provider::Anthropic,
+        model: "claude-sonnet-5".to_owned(),
+        served: ModelClass::Medium,
+    };
+    let call = admitted(ledger.admit(rebuilt, now).await.unwrap());
+    assert_eq!(call.route.model, "claude-sonnet-5");
+    ledger
+        .settle(call.id, settlement(Charge::Unconsumed), now)
+        .await
+        .unwrap();
+    database.finish(ledger).await;
 }
