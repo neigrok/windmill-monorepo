@@ -6,10 +6,12 @@ and roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Specified; nothing is built. The C++ backend holds the AI allowance ledger
-([USD AI allowances](../../backend/AI_ALLOWANCES.md)), the provider keys and every provider call. This
-document specifies the service that replaces all three. The build order lives in the AI service
-roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node `windmill-ai-service`.
+**Status:** Implemented in [services/ai](../../services/ai/ARCHITECTURE.md), with product integrations
+still outside the build. The C++ backend continues to hold its AI allowance ledger
+([USD AI allowances](../../backend/AI_ALLOWANCES.md)), provider keys and existing product calls.
+The service's default deployment has no pinned pass key and admits nobody. Production acceptance
+and provider-billing evidence are tracked in the AI service roadmap tree, which the dogfood tree
+(`t_9362d9bc883e0a1e`) opens from the node `windmill-ai-service`.
 
 **Scope:** One service makes every hosted AI call Windmill pays for. It decides who may make a call
 and what the call may cost, sends it to the provider, streams the answer back and settles the money.
@@ -104,7 +106,8 @@ ceilings, the calls a minute and `OWNER_GRANTS_MAX` are set here. (R-4)
   accounts receive one in a month; beyond that the account stays `free` and the refusal to fund is
   reported, so a fault in whoever signs passes cannot mint unbounded capacity.
 - The table also lists the labels a caller may give its calls (§6.1), and for transcription the
-  model and its delay setting.
+  model and its delay setting. The shipped labels are `coach`, `talk`, `echoes`, `tending` and
+  `other`; the live transcription delay is `low`. Labels are reporting data, never policy.
 - **INV-1.** Every model the tier table names has a rate in the price book for every count its
   provider can report, or the service refuses to start. No call is priced by a guess.
 
@@ -289,6 +292,10 @@ A grant is in force while the clock is inside its period and before its `closedA
 grant and an `owner` grant may cover the same instant; calls then draw on the `subscription` grant,
 and the two are never combined. Capacity a grant has left at its end is gone.
 
+These are ordered operations, not an unordered event set: Close before Fund returns `not_found`,
+and Reopen after Close restores the period. Replaying an operation is idempotent; reordering
+different operations can change the result.
+
 ### §5.6 An installation that became an account
 
 A free account's month counts what its device spent before it signed in. When an account's pass
@@ -466,8 +473,8 @@ returned without a second charge. A live session is the exception, and §6.6 say
 does.
 
 - A `PUT` for a `callId` the principal has used is answered from the existing call when it names the
-  same capability, and with `conflict` otherwise. Its body is not read, and the rate and the fuse do
-  not stand in its way.
+  same capability, and with `conflict` otherwise. Its body is not read. It bypasses the fuse and the
+  call-start rate, and is counted against the separate read rate (§5.7).
 - `GET /v1/calls/{callId}/result` answers the call's result in its original form: the event stream
   from `?after=<id>` on. While the call is still running, the stream continues live. A call has one
   live reader: a new one takes the place of the last.
@@ -495,12 +502,22 @@ whatever funds grants cannot correct a call.
 | `POST /internal/v1/grants/{reference}/reopen` | funding | Reopen. |
 | `GET /internal/v1/principals/{kind}/{id}` | operator | The principal's budgets, grants, bindings and calls. |
 | `GET /internal/v1/calls/{id}` | operator | One call by the service's own `id`, with its principal. |
-| `GET /internal/v1/calls?state=&since=&callId=` | operator | The calls that ended in a state since an instant, or that carry a caller's `callId`. |
+| `GET /internal/v1/calls?state=&since=&callId=&before=` | operator | The calls that ended in a state since an instant, or that carry a caller's `callId`. |
 | `GET /internal/v1/budgets` | operator | The shared budgets and each provider's fuse. |
 | `POST /internal/v1/calls/{id}/correct` | operator | State what an `assumed` call really cost, up or down. The budgets it was pinned to move by the difference. |
 
-The shapes of both doors are golden fixtures that belong in `packages/api-contract/ai/`, one example
-per state a caller must handle. The service checks itself against them, and so does every caller.
+Fund takes `{"accountId":"…","plan":"one","period":{"start":0,"end":1}}`, with epoch
+milliseconds for the period. Close takes `{"closedAt":0}`; Reopen has no body. Their response is
+`{"outcome":"ok"}`, `replay`, `conflict` or `not_found`. Correct takes an exact decimal string,
+`{"charged":"0.01"}`, and returns the call's `state`, `charged` and whether it was a `replay`.
+
+Call lists return at most 1,000 rows in descending service-ID order. `nextBeforeId` is null at the
+end, otherwise pass it as `before` to fetch the next page. Principal inspection uses the same
+pagination for its `calls`; its budgets, grants and installations are returned independently of
+that cursor. `before` is a positive service call ID; `since` is epoch milliseconds.
+
+The shapes of both doors are golden fixtures in `packages/api-contract/ai/`, one example per state
+a caller must handle. The service checks itself against them, and so does every caller.
 
 ### §6.6 The live transcription door
 
