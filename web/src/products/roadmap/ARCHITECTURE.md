@@ -880,10 +880,11 @@ acknowledgements and durability limits.
 clock, the frontier, the frame and Undo all read. `opens`, the tree a step opens, is one of them: joined by its stamp,
 stored, owed to the server until confirmed and restored by Undo like the rest. A step that owns a subtree takes none: the
 session takes a pointer out of any write on it before the write is made, Undo and Redo included
-(`withoutPointersOf`), and never owes its mark; a pointer it holds above what the server confirmed, unsent, or one an
+(`withoutPointersOf`), and never owes its mark. A pointer it holds above what the server confirmed, unsent, or one an
 ack says the server refused (`subgraphAck.refused`, `owns-a-subtree`), goes back to that confirmed value, the one register
-a lattice steps back (`TreeLattice.restorePointer`), and leaves the act that wrote it. Saves join, so the device's record
-can keep the refused stamp; the next subscribe answer puts it back before anything is sent. The server hides the pointer from a
+a lattice steps back (`TreeLattice.restorePointer`), and leaves the act that wrote it. One still in flight when the step
+comes to own a subtree waits for its ack, as the server may have stored it before the subtree came. Saves join, so the
+device's record can keep the refused stamp; the next subscribe answer puts it back before anything is sent. The server hides the pointer from a
 caller who cannot write the tree, so only a writer's answer speaks for pointers: `SyncSession.reach` is the subscribe
 answer's `reach`, and a `sign-in-required` or `no-such-tree` refusal turns it to `reader`. A writer's full graft is the
 server's word on pointers, an older or empty one included. A reader's, or an answer with no `reach`, leaves confirmed the
@@ -922,7 +923,9 @@ dispatches keep their receipt, and persistence or transport failures mark durabi
 failures still throw. A progress mark's save reports the same way. The receive path stores the lattice and its
 separate confirmed baseline. Socket send failures preserve pending writes and reconnect for a fresh graft.
 A server frame whose notification fails reports `roadmap-sync-notify`; one that cannot be parsed or joined reports
-`roadmap-sync-frame` once per session; a stored lane that cannot be read reports `roadmap-sync-restore` once, and the graft
+`roadmap-sync-frame` once per session, a subscribe answer whose `subtrees` holds an entry with no step or id among them,
+and so does a `subtree` frame that names no step or subtree, or a step the tree has never held, which takes its seq and
+keeps nothing; a stored lane that cannot be read reports `roadmap-sync-restore` once, and the graft
 fills it. Invalid progress rows are skipped individually and report `roadmap-sync-progress-mark` with only the
 progress lane tag; valid marks in the same server frame, stored record or legacy drain still join. A socket with no inbound frame for ten seconds, online and in view, reports `roadmap-sync-socket` once; any frame
 clears the count, including a refusal, so a signed-out device tree stays quiet.

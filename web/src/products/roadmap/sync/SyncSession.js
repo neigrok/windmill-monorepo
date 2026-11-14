@@ -39,6 +39,16 @@ function frameFrontier(writes) {
   return new TreeLattice().join(writes);  // join returns the frontier of a frame's stamps
 }
 
+// A subscribe answer's `subtrees`, by step: `{id, depth}`. An entry that is not one — no step or no id — makes the answer
+// one the session cannot take, as a malformed node does; an absent list names none.
+function toldSubtrees(subtrees = []) {
+  if (!Array.isArray(subtrees)) throw new Error('malformed subtrees list');
+  return new Map(subtrees.map((entry) => {
+    if (typeof entry?.step !== 'string' || typeof entry.id !== 'string') throw new Error('malformed subtree entry');
+    return [entry.step, { id: entry.id, depth: entry.depth }];
+  }));
+}
+
 // The steps whose pointer an ack says the server refused: it stores none on a step that owns a subtree.
 function refusedPointers(frame) {
   if (!Array.isArray(frame.refused)) return [];
@@ -654,7 +664,9 @@ export class SyncSession {
     }
     let frontier;
     let coverage;
+    let subtrees;
     try {
+      subtrees = toldSubtrees(frame.subtrees);
       frontier = this.lattice.join(frame);
       coverage = frame.coverage ? VersionVector.fromJSON(frame.coverage) : frontier;
       if (this.fullGraftPending) {
@@ -674,7 +686,7 @@ export class SyncSession {
     }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
     if (typeof frame.seq === 'number') this.lastSeq = frame.seq;
-    this.adoptSubtrees(frame.subtrees);
+    this.adoptSubtrees(subtrees);
     this.ackedServerVector = coverage;
     this.fullGraftPending = false;
     this.confirmedKnown.structure = true;
@@ -729,28 +741,40 @@ export class SyncSession {
   }
 
   // A subtree created under one of this tree's steps takes the next seq of the tree's stream, and stands on its step at
-  // once: new, so empty.
+  // once: new, so empty. A frame that names no step or no subtree, or a step this tree has never held, is reported once
+  // and kept nowhere; the next subscribe answer says which steps own one.
   receiveSubtree(frame) {
     if (!this.takesNextSeq(frame)) return;
     this.lastSeq = frame.seq;
-    if (typeof frame.step === 'string' && typeof frame.subtree?.id === 'string') {
-      this.owned.set(frame.step, { id: frame.subtree.id, depth: frame.subtree.depth, fresh: true });
-      this.putBackPointers([frame.step]);
-      this.emitProjection('structure');
-    }
     this.scheduleSave();
+    if (typeof frame.step !== 'string' || typeof frame.subtree?.id !== 'string') {
+      this.reportOnce('roadmap-sync-frame', new Error('malformed subtree frame'));
+      return;
+    }
+    if (!this.knowsStep(frame.step)) return;
+    this.owned.set(frame.step, { id: frame.subtree.id, depth: frame.subtree.depth, fresh: true });
+    this.putBackPointers([frame.step]);
+    this.emitProjection('structure');
   }
 
   // The subscribe answer's `subtrees`, one per present step that owns one, is the server's word on which do: it heals a
-  // `subtree` frame this session missed. A subtree it was told of as new stays so.
-  adoptSubtrees(subtrees = []) {
-    const told = new Map();
-    for (const { step, id, depth } of Array.isArray(subtrees) ? subtrees : []) {
-      if (typeof step !== 'string' || typeof id !== 'string') continue;
-      told.set(step, { id, depth, fresh: this.owned.get(step)?.id === id && this.owned.get(step).fresh });
+  // `subtree` frame this session missed. A subtree it was told of as new stays so; one on a step this tree has never
+  // held is reported once and not kept.
+  adoptSubtrees(subtrees) {
+    const owned = new Map();
+    for (const [step, { id, depth }] of subtrees) {
+      if (!this.knowsStep(step)) continue;
+      owned.set(step, { id, depth, fresh: this.owned.get(step)?.id === id && this.owned.get(step).fresh });
     }
-    this.owned = told;
-    this.putBackPointers([...told.keys()]);
+    this.owned = owned;
+    this.putBackPointers([...owned.keys()]);
+  }
+
+  // Whether this tree has ever held the step a subtree is said to hang from; one it has not is reported once.
+  knowsStep(stepId) {
+    if (this.lattice.nodes.has(stepId)) return true;
+    this.reportOnce('roadmap-sync-frame', new Error('subtree on a step this tree never held'));
+    return false;
   }
 
   // The subtrees this tree's steps own, by step, as the server has told this session: `{id, depth, fresh}`.
@@ -759,12 +783,13 @@ export class SyncSession {
   }
 
   // A step that owns a subtree takes no pointer: the server stores none on it. Where this device holds one the server
-  // does not, the step's register goes back to what the server confirmed, and no act owes it any more.
+  // does not, the step's register goes back to what the server confirmed, and no act owes it any more. One in flight
+  // waits for its ack, which says whether the server stored it before the subtree came, or refused it.
   putBackPointers(stepIds) {
     const lowered = stepIds.filter((stepId) => {
       const held = this.lattice.nodes.get(stepId)?.opens;
       const confirmed = this.confirmedStructure.nodes.get(stepId)?.opens;
-      return held && compareHlc(held.at, confirmed?.at ?? UNSET_STAMP) > 0;
+      return held && compareHlc(held.at, confirmed?.at ?? UNSET_STAMP) > 0 && !this.pointerInFlight(stepId, held.at);
     });
     if (lowered.length === 0) return;
     for (const stepId of lowered) this.lattice.restorePointer(stepId, this.confirmedStructure.nodes.get(stepId)?.opens);
@@ -774,6 +799,12 @@ export class SyncSession {
       return Object.keys(kept).length ? [[stamp, kept]] : [];
     }));
     this.scheduleSave();
+  }
+
+  // Whether a frame on its way holds this step's pointer under `at`.
+  pointerInFlight(stepId, at) {
+    const stamp = hlcText(at);
+    return [...this.inFlight.values()].some((writes) => writes.nodes.some((row) => row.id === stepId && row.opensAt === stamp));
   }
 
   // The steps a frame names that open a tree before it joins.
@@ -795,10 +826,10 @@ export class SyncSession {
     this.settleUnanswered('structure', frame.frameId);
     this.ackedServerVector.join(frameFrontier(writes));
     this.confirmedStructure.join(withoutPointersOf(writes, new Set(refused)));
-    this.putBackPointers(refused);
-    this.confirm('structure');
     this.inFlight.delete(frame.frameId);
     this.sent.delete(frame.frameId);
+    this.putBackPointers(refused);
+    this.confirm('structure');
     if (stampsOf(writes)[0] === this.dropped.stamp) this.dropped = { stamp: null, closes: 0 };
     this.persistNow();
     this.noteConfirmed();

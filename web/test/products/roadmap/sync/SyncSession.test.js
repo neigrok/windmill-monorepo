@@ -2219,8 +2219,9 @@ test('a subtree frame stands the new subtree on its step at once, and each subsc
     subtrees: [['root', { id: 't_child', depth: 1, fresh: true }]], projections: [['root']],
   });
 
-  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 2, nodes: [], edges: [], kinds: [],
-    subtrees: [{ step: 'root', id: 't_child', depth: 1 }, { step: 'mast', id: 't_mast', depth: 1 }, { step: 7, id: 't_odd' }] });
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 2, edges: [], kinds: [],
+    nodes: [{ id: 'mast', createdAt: '2:0:server', label: 'Mast', labelAt: '2:0:server' }],
+    subtrees: [{ step: 'root', id: 't_child', depth: 1 }, { step: 'mast', id: 't_mast', depth: 1 }] });
   assert.deepEqual([...session.subtrees()], [['root', { id: 't_child', depth: 1, fresh: true }], ['mast', { id: 't_mast', depth: 1, fresh: false }]]);
   session.receiveState({ t: 'subgraph', intent: 'delta', seq: 2, nodes: [], edges: [], kinds: [] });
   assert.deepEqual([...session.subtrees()], []);
@@ -2271,6 +2272,38 @@ test('a pointer the server refused on a step that owns a subtree goes back to wh
     status: [0, 0],
     frames: 1,
   });
+});
+
+test('a pointer in flight that the server stored before the subtree came stays as the server holds it, and is owed no more', (t) => {
+  const { session } = connectedSession(t);
+  session.reach = 'writer';  // the server takes this connection for a writer of the tree
+  session.dispatch({ kind: 'SetNodeTree', id: 'root', opens: 't_dead' });
+  const [frame] = structureFrames(session.ws);
+  session.ws.message({ ...frame, seq: 2 });
+  session.ws.message({ t: 'subtree', treeId: 'tree', seq: 3, step: 'root', subtree: { id: 't_child', depth: 1 } });
+  assert.equal(session.lattice.nodes.get('root').opens.v, 't_dead', 'the subtree frame waits for the ack of the pointer in flight');
+  session.ws.message({ t: 'subgraphAck', treeId: 'tree', frameId: frame.frameId, seq: 2 });
+
+  assert.deepEqual({
+    lattice: session.lattice.nodes.get('root').opens.v,
+    confirmed: session.confirmedStructure.nodes.get('root').opens.v,
+    pending: session.statusSnapshot().structurePending,
+  }, { lattice: 't_dead', confirmed: 't_dead', pending: 0 });
+});
+
+test('a subtree entry the session cannot take is reported once at the frame boundary and kept nowhere', (t) => {
+  const reports = [];
+  const { session } = connectedSession(t, {}, { reportFailure: (operation, error) => reports.push(`${operation} ${error.message}`) });
+  const socket = session.ws;
+
+  socket.message({ t: 'subtree', treeId: 'tree', seq: 2, subtree: {} });
+  socket.message({ t: 'subtree', treeId: 'tree', seq: 3, step: 'ghost', subtree: { id: 't_ghost', depth: 1 } });
+  assert.deepEqual({ lastSeq: session.lastSeq, subtrees: [...session.subtrees()], open: socket.readyState === TestSocket.OPEN },
+    { lastSeq: 3, subtrees: [], open: true });
+
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 3, nodes: [], edges: [], kinds: [], subtrees: [null] });
+  assert.deepEqual({ reports, subtrees: [...session.subtrees()], reconnected: socket.readyState !== TestSocket.OPEN },
+    { reports: ['roadmap-sync-frame malformed subtree frame'], subtrees: [], reconnected: true });
 });
 
 test('a subtree’s session never writes its title: its name is its owning step’s label, so a rename takes another door', (t) => {
