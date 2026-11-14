@@ -206,8 +206,8 @@ One subscription — Windmill One — across roadmap, journal and gym:
 const bool subscribed = entitlements.hasWindmillOne(caller, email);
 ```
 
-`Entitlements` (`platform/application/Entitlements.h`) wraps the Paddle mirror and the
-`grantsAccess` rule. **Voice** asks for a subscription before any audio is touched and consumes
+`Entitlements` (`platform/application/Entitlements.h`) reads it from the backend's copy of each account's
+entitlement ([subscriptions.md](../../../docs/foundation/subscriptions.md) §6.1). **Voice** asks for a subscription before any audio is touched and consumes
 the active AI allowance. **Echoes** are automatic for every signed-in writer, serve full passages,
 and consume only an internal passive-work budget.
 

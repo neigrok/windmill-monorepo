@@ -25,7 +25,7 @@ const std::string kSecret = "pdl_ntfset_windmill_test_secret";
 const std::string kTimestamp = "1700000000";  // the FakeClock's own second
 const std::string kAccount = "44444444-4444-4444-4444-444444444444";
 
-// Every write the edge made, in order — the shared FakeSubscriptionRepository keys on the user id, the field under test.
+// Every write the edge made, in order.
 struct RecordingSubscriptions : SubscriptionRepository {
   std::vector<PaddleCustomer> customers;
   std::vector<PaddleSubscription> subscriptions;

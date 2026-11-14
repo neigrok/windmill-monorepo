@@ -453,12 +453,17 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // bounds spend when Postgres is down.
   auto aiFuse = std::make_shared<AiFuse>(kHourlyFuseNanos);
 
-  // Every paid feature gates through this one seam. WINDMILL_OWNER_EMAILS is a comma-separated
-  // list of addresses that hold Windmill One; unset means nobody is an owner.
+  // Every paid feature gates through this one seam, which reads Windmill One from the backend's own copy of each
+  // account's entitlement whether or not the follower below runs (docs/foundation/subscriptions.md §6.1). Each list is
+  // comma-separated addresses: WINDMILL_OWNER_EMAILS hold Windmill One, and WINDMILL_SANDBOX_EMAILS's sandbox purchases
+  // count (§6.2). Unset means nobody.
+  auto entitlementCopy = std::make_shared<subscriptions::PgEntitlementCopy>(pool);
   const char* ownerEmailsEnv = std::getenv("WINDMILL_OWNER_EMAILS");
-  auto entitlements = std::make_shared<Entitlements>(*subscriptionRepo, *aiUsageRepo,
-                                                     ownerEmailsEnv ? ownerEmailsEnv : "",
-                                                     std::vector<std::string>{"echo.segment", "echo.curate"}, aiBudgets);
+  const char* sandboxEmailsEnv = std::getenv("WINDMILL_SANDBOX_EMAILS");
+  auto entitlements = std::make_shared<Entitlements>(
+      *entitlementCopy, *systemClock, *aiUsageRepo,
+      Allowlists{EmailList{ownerEmailsEnv ? ownerEmailsEnv : ""}, EmailList{sandboxEmailsEnv ? sandboxEmailsEnv : ""}},
+      std::vector<std::string>{"echo.segment", "echo.curate"}, aiBudgets);
 
   // An empty SENTRY_DSN leaves a no-op client.
   auto serverErrors = std::make_shared<PgServerErrorRepository>(pool);
@@ -500,7 +505,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   }
   if (subscriptionService) {
     auto subscriptionFeed = std::make_shared<subscriptions::SubscriptionServiceClient>(*subscriptionService);
-    auto entitlementCopy = std::make_shared<subscriptions::PgEntitlementCopy>(pool);
     auto feedFollower = std::make_shared<subscriptions::FeedFollower>(*subscriptionFeed, *entitlementCopy,
                                                                       subscriptions::FurtherConsumers{}, *sentry);
     lifetime.watch(subscriptionFeed);
@@ -685,7 +689,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                                                          *systemClock, *tokens, *entitlements,
                                                          tendingEnabled);
   lifetime.watch(tendingService, tendRuns, tendingAgent, mcpTools, systemClock, tokens, entitlements,
-                 subscriptionRepo, aiUsageRepo, registry, progressService, progress, treeRegistry, trees, bus);
+                 entitlementCopy, aiUsageRepo, registry, progressService, progress, treeRegistry, trees, bus);
 
   // Weekly reminders, on a dedicated thread — never a drogon request loop, which must not block on
   // libpqxx. Dark twice over: REMINDERS_ENABLED must say so AND the user be named in
@@ -727,7 +731,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto gymAsk = std::make_shared<gym::AskService>(*gymTrainingService, *gymThreads, *systemClock, *gymAskAgent,
                                                *gymTools, *entitlements, sentry);
   lifetime.watch(gymAsk, gymTrainingService, gymThreads, systemClock, gymAskAgent, gymTools, entitlements,
-                 subscriptionRepo, aiUsageRepo, gymLog, gymProgram, gymCatalog, gymNotes, gymBodyweight, tokens, gymDoor, gymPreferences);
+                 entitlementCopy, aiUsageRepo, gymLog, gymProgram, gymCatalog, gymNotes, gymBodyweight, tokens, gymDoor, gymPreferences);
 
   // The phone Coach's turn wire shares Ask's key, endpoint, fuse, sink and budget; its routes are
   // mounted under the same condition as Ask's.
@@ -1219,7 +1223,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                                                       *systemClock, *entitlements,
                                                       SelectionRules{}, SweepBudget{});
   lifetime.watch(journalEchoSweep, journalEchoes, journalSpans, journalSegmenter, journalEmbedder,
-                 journalCurator, systemClock, entitlements, subscriptionRepo, aiUsageRepo);
+                 journalCurator, systemClock, entitlements, entitlementCopy, aiUsageRepo);
   journalEchoSweep->start();
   // Derives on its own thread, never a drogon request thread: a curator call is seconds long.
   auto journalEchoDerivations =

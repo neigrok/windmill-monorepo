@@ -42,12 +42,18 @@ struct FeedEntrySideConsumer {
   virtual void consume(const PageTxn& page, const FeedEntry& entry) = 0;
 };
 
+// The copy as a request reads it: one account's entitlement as the feed last stated it, or none for an account the feed
+// never named. Nothing here reaches the subscription service, so access answers alike while it is down (INV-10).
+struct EntitlementReader {
+  virtual ~EntitlementReader() = default;
+  virtual std::optional<EntitlementResponse> find(const UserId& account) = 0;
+};
+
 // The backend's own copy of every entitlement and its cursor (§6.1); consuming an entry replaces the named account's row.
-struct EntitlementCopy : FeedEntryConsumer {
+struct EntitlementCopy : FeedEntryConsumer, EntitlementReader {
   // A rebuild's copy is emptied within the transaction, so the old copy answers until it commits (INV-11).
   virtual std::unique_ptr<PageTxn> begin(const FeedCursor& target, bool rebuilding) = 0;
   virtual FeedCursor cursor() = 0;
-  virtual std::optional<EntitlementResponse> find(const UserId& account) = 0;
 };
 
 }

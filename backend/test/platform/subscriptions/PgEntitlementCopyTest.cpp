@@ -1,6 +1,8 @@
 #include "platform/subscriptions/PgEntitlementCopy.h"
 
+#include "platform/application/Entitlements.h"
 #include "test/PgTestPool.h"
+#include "test/platform/Fakes.h"
 #include "test/platform/subscriptions/FeedFixture.h"
 #include "test/testing.h"
 
@@ -98,4 +100,27 @@ TEST(pg_entitlement_copy_never_takes_a_row_back_to_an_older_entry_but_a_rebuild_
   CHECK_EQ(rowsAsText(), std::string("3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=3 production=1799056800000\n"));
   CHECK_EQ(copy.find(UserId{"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"})->body, entitlementExample("active"));
   CHECK_EQ(copy.cursor(), (FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 3}));
+}
+
+// With the subscription service down nothing follows its feed, and Windmill One still answers from the row the feed last
+// wrote, lapsing on time with nothing running (INV-10, INV-3).
+TEST(pg_entitlement_copy_answers_windmill_one_with_the_service_down_and_lapses_by_the_clock) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
+  sql("DELETE FROM account_entitlements");
+  sql("INSERT INTO users (id, email) VALUES ('3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61', 'follow-3f6c2a1e@example.com') "
+      "ON CONFLICT (id) DO NOTHING");
+  PgEntitlementCopy copy{pgTestPool()};
+  consume(copy, "from_zero", {3});
+  fake::FakeClock clock;
+  fake::FakeAiUsageRepository usage;
+  const Entitlements entitlements{copy, clock, usage};
+  const UserId buyer{"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"};
+
+  std::string seen;
+  for (const UnixMs at : {1'799'056'799'999ULL, 1'799'056'800'000ULL}) {
+    clock.now = at;
+    seen += std::to_string(at) + (entitlements.hasWindmillOne(buyer, "follow-3f6c2a1e@example.com") ? " one\n" : " free\n");
+  }
+  CHECK_EQ(seen, std::string("1799056799999 one\n1799056800000 free\n"));
+  CHECK_FALSE(entitlements.hasWindmillOne(UserId{"9387ec65-ab17-4b8c-b145-fd0d622966db"}, "claimant@example.com"));
 }

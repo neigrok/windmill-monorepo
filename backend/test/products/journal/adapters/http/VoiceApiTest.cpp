@@ -27,7 +27,7 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, *clock, oauth, footprint, revocations, "https://windmill.works");
   std::shared_ptr<FakeTranscriber> transcriber = std::make_shared<FakeTranscriber>();
-  std::shared_ptr<FakeSubscriptionRepository> subs = std::make_shared<FakeSubscriptionRepository>();
+  std::shared_ptr<FakeEntitlementCopy> subs = std::make_shared<FakeEntitlementCopy>();
   FakeAiUsageRepository usage;
   FakeAiBudgetRepository allowances;
   AiBudgetLimits limits;
@@ -38,7 +38,7 @@ struct Harness {
 
   // `ledger` turns the durable USD allowances on, the mode Windmill One is funded in.
   explicit Harness(bool ledger = false)
-      : entitlements(std::make_shared<Entitlements>(*subs, usage, "", std::vector<std::string>{},
+      : entitlements(std::make_shared<Entitlements>(*subs, *clock, usage, Allowlists{}, std::vector<std::string>{},
                                                     ledger ? budgets : nullptr)),
         api(transcriber, entitlements, auth, clock) {}
 

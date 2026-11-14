@@ -16,8 +16,9 @@ Every hosted AI call, including background work, debits its individual allowance
 `platform/subscriptions/` follows the Windmill One subscription service's feed into `account_entitlements`, the
 backend's own copy of every account's entitlement ([subscriptions.md](../docs/foundation/subscriptions.md) §6.1): the
 feed's vocabulary and cursor (`Feed.h`), the copy and the seam each entry passes through (`EntitlementCopy.h`), the
-worker (`FeedFollower`), the Postgres copy and the client of the service's internal doors. It is off while
-`SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are unset, and nothing reads the copy yet.
+worker (`FeedFollower`), the Postgres copy, the client of the service's internal doors, and an account's hold on Windmill
+One read from its row (`WindmillOne.h`), which `Entitlements::hasWindmillOne` answers from. The follower is off while
+`SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are unset; the copy is read either way.
 
 `products/<p>/` is one product each (roadmap, journal, gym, and the sync engine's test-only probe),
 with four shared layers: `domain/` (pure), `application/` (services over

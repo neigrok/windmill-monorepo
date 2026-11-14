@@ -70,8 +70,9 @@ subscription, price and account bindings must agree. A subscription status or en
 does not fund an allowance. Missing account mirrors receive a retryable refusal.
 
 Each grant carries its source, account, funded period, amount and funding reference. Duplicate
-funding is idempotent; grants cannot overlap within the same account and funding source. An owner
-accessing the allowance receives a $7 calendar-month grant when no subscription grant is current.
+funding is idempotent; grants cannot overlap within the same account and funding source. An owner, or a sandbox
+tester only a sandbox subscription entitles ([subscriptions.md](../docs/foundation/subscriptions.md) §6.2), accessing the
+allowance receives a $7 calendar-month grant when no subscription grant is current.
 An active subscription grant takes precedence over an owner grant; their remaining amounts are
 never combined. An expired subscription period does not prevent the owner's calendar fallback.
 Unused subscription capacity survives a calendar-month boundary and expires at its funded period

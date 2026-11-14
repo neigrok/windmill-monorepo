@@ -11,42 +11,98 @@ using namespace wm::fake;
 
 namespace {
 
-bool holds(const std::string& status) {
-  FakeSubscriptionRepository subs;
-  FakeAiUsageRepository usage;
-  subs.subscribe(UserId{"u"}, status);
-  return Entitlements{subs, usage}.hasWindmillOne(UserId{"u"}, "u@example.com");
-}
-
 long long nowMs() {
   const auto since = std::chrono::system_clock::now().time_since_epoch();
   return std::chrono::duration_cast<std::chrono::milliseconds>(since).count();
 }
 
+// What every gate reads for one account, one line: Windmill One, the AI tier, whether it is funded as owner access is,
+// and the Entitlement a surface shows.
+std::string answers(const Entitlements& entitlements, const UserId& user, const std::string& email) {
+  const AiBudgetPrincipal principal = entitlements.aiPrincipalFor(user, email);
+  const subscriptions::Standing standing = entitlements.standingOf(user, email);
+  return std::string(entitlements.hasWindmillOne(user, email) ? "one" : "free") + " " +
+         std::string(aiBudgetTierName(principal.tier)) + (principal.owner ? " owner-funded" : "") + " shows " +
+         (standing.shown() == subscriptions::Environment::Sandbox ? "sandbox" : "production");
 }
 
-TEST(an_account_with_no_mirrored_subscription_holds_nothing) {
-  FakeSubscriptionRepository subs;
+}
+
+TEST(windmill_one_ends_with_the_copy_s_access_until_by_the_clock_alone) {
+  FakeEntitlementCopy copy;
+  FakeClock clock;
   FakeAiUsageRepository usage;
-  CHECK_EQ((Entitlements{subs, usage}.hasWindmillOne(UserId{"u"}, "u@example.com")), false);
+  const Entitlements entitlements{copy, clock, usage};
+  const UserId buyer{"buyer"};
+  copy.plant(buyer, 1'800'000'000'000);
+
+  std::string seen;
+  for (const UnixMs at : {1'799'999'999'999ULL, 1'800'000'000'000ULL, 1'800'000'000'001ULL}) {
+    clock.now = at;
+    seen += std::to_string(at) + " " + answers(entitlements, buyer, "buyer@example.com") + "\n";
+  }
+  CHECK_EQ(seen, std::string("1799999999999 one windmill_one shows production\n"
+                             "1800000000000 free logged_in shows production\n"
+                             "1800000000001 free logged_in shows production\n"));
 }
 
-TEST(a_live_subscription_grants_windmill_one) {
-  CHECK_EQ(holds("active"), true);
-  CHECK_EQ(holds("trialing"), true);
-  CHECK_EQ(holds("past_due"), true);      // kept through dunning, on purpose
+TEST(a_sandbox_entitlement_grants_an_allowlisted_account_and_no_other) {
+  FakeEntitlementCopy copy;
+  FakeClock clock;
+  FakeAiUsageRepository usage;
+  const Entitlements entitlements{copy, clock, usage, {.sandboxTesters = EmailList{"Tester@Example.com, review@example.com"}}};
+  const UserId tester{"tester"};
+  const UserId stranger{"stranger"};
+  const UserId both{"both"};
+  copy.plant(tester, std::nullopt, 1'700'000'300'000);
+  copy.plant(stranger, std::nullopt, 1'700'000'300'000);
+  copy.plant(both, 1'700'000'600'000, 1'700'000'300'000);
+
+  std::string seen;
+  for (const UnixMs at : {1'700'000'000'000ULL, 1'700'000'300'000ULL}) {
+    clock.now = at;
+    seen += std::to_string(at) + "\n";
+    seen += "  tester " + answers(entitlements, tester, "tester@example.com") + "\n";
+    seen += "  stranger " + answers(entitlements, stranger, "stranger@example.com") + "\n";
+    seen += "  both " + answers(entitlements, both, "review@example.com") + "\n";
+  }
+  // A sandbox period funds no grant, so a tester only sandbox entitles is funded as owner access is (§6.2); one that
+  // production entitles is funded by its periods.
+  CHECK_EQ(seen, std::string("1700000000000\n"
+                             "  tester one windmill_one owner-funded shows sandbox\n"
+                             "  stranger free logged_in shows production\n"
+                             "  both one windmill_one shows production\n"
+                             "1700000300000\n"
+                             "  tester free logged_in shows production\n"
+                             "  stranger free logged_in shows production\n"
+                             "  both one windmill_one shows production\n"));
 }
 
-TEST(a_lapsed_or_paused_subscription_grants_nothing) {
-  CHECK_EQ(holds("paused"), false);
-  CHECK_EQ(holds("canceled"), false);
-  CHECK_EQ(holds("unknown_future_status"), false);
+// The live copy holds no row until the subscription service serves its feed: then only the owner list grants anything.
+TEST(an_account_the_feed_never_named_holds_windmill_one_only_as_an_owner) {
+  FakeEntitlementCopy copy;
+  FakeClock clock;
+  FakeAiUsageRepository usage;
+  const Entitlements entitlements{copy, clock, usage, {.owners = EmailList{"Sam@Example.com, other@windmill.works"}}};
+
+  CHECK_EQ(answers(entitlements, UserId{"u1"}, "sam@example.com"), std::string("one windmill_one owner-funded shows production"));
+  CHECK_EQ(answers(entitlements, UserId{"u2"}, "stranger@example.com"), std::string("free logged_in shows production"));
+  CHECK_EQ(entitlements.isOwner("other@windmill.works"), true);
+  CHECK_EQ(entitlements.isOwner(" OTHER@WINDMILL.WORKS "), true);
+  CHECK_EQ(entitlements.isOwner(""), false);
+  CHECK_EQ(entitlements.isOwner("sam@example.co"), false);
+  CHECK_EQ(entitlements.isOwner("am@example.com"), false);
+
+  const Entitlements nobody{copy, clock, usage};
+  CHECK_EQ(answers(nobody, UserId{"u1"}, "sam@example.com"), std::string("free logged_in shows production"));
+  CHECK_EQ(nobody.isOwner("sam@example.com"), false);
 }
 
 TEST(a_free_account_spends_up_to_the_free_ceiling_and_not_past_it) {
-  FakeSubscriptionRepository subs;
+  FakeEntitlementCopy copy;
+  FakeClock clock;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subs, usage};
+  Entitlements entitlements{copy, clock, usage};
 
   usage.spentByProduct[""] = kFreeMonthlyAiNanos - 1;
   const AiAllowance under = entitlements.aiAllowanceFor(UserId{"u"}, "u@example.com");
@@ -68,10 +124,11 @@ TEST(a_free_account_spends_up_to_the_free_ceiling_and_not_past_it) {
 }
 
 TEST(windmill_one_raises_the_ceiling_to_the_pro_one) {
-  FakeSubscriptionRepository subs;
+  FakeEntitlementCopy copy;
+  FakeClock clock;
   FakeAiUsageRepository usage;
-  subs.subscribe(UserId{"u"});
-  Entitlements entitlements{subs, usage};
+  copy.subscribe(UserId{"u"});
+  Entitlements entitlements{copy, clock, usage};
 
   usage.spentByProduct[""] = kFreeMonthlyAiNanos;
   const AiAllowance under = entitlements.aiAllowanceFor(UserId{"u"}, "u@example.com");
@@ -84,9 +141,10 @@ TEST(windmill_one_raises_the_ceiling_to_the_pro_one) {
 }
 
 TEST(the_sweep_bucket_is_its_own_and_a_maxed_one_leaves_the_account_free_to_ask) {
-  FakeSubscriptionRepository subs;
+  FakeEntitlementCopy copy;
+  FakeClock clock;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subs, usage};
+  Entitlements entitlements{copy, clock, usage};
 
   usage.spentByProduct["journal"] = kSweepMonthlyAiNanos;
   usage.spentByProduct[""] = 0;
@@ -103,9 +161,10 @@ TEST(the_sweep_bucket_is_its_own_and_a_maxed_one_leaves_the_account_free_to_ask)
 }
 
 TEST(both_ceilings_select_separate_operations_over_the_trailing_thirty_days) {
-  FakeSubscriptionRepository subs;
+  FakeEntitlementCopy copy;
+  FakeClock clock;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subs, usage, "", {"passive.segment", "passive.curate"}};
+  Entitlements entitlements{copy, clock, usage, {}, {"passive.segment", "passive.curate"}};
 
   const long long before = nowMs();
   entitlements.aiAllowanceFor(UserId{"u"}, "u@example.com");
@@ -125,29 +184,4 @@ TEST(both_ceilings_select_separate_operations_over_the_trailing_thirty_days) {
     CHECK_EQ(query.sinceMs <= after - kAiWindowMs, true);
   }
   CHECK_EQ(kAiWindowMs, 2'592'000'000LL);
-}
-
-// Nothing can be bought — checkout is hardcoded shut and BillingApi 503s — so the owner list grants what a subscription grants and not one level more.
-TEST(an_owner_address_holds_windmill_one_without_a_subscription) {
-  FakeSubscriptionRepository subscriptions;
-  FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage, "Sam@Example.com, other@windmill.works"};
-
-  CHECK_EQ(entitlements.hasWindmillOne(UserId{"u1"}, "sam@example.com"), true);
-  CHECK_EQ(entitlements.isOwner("other@windmill.works"), true);
-  CHECK_EQ(entitlements.isOwner("OTHER@WINDMILL.WORKS"), true);
-  CHECK_EQ(entitlements.hasWindmillOne(UserId{"u2"}, "stranger@example.com"), false);
-  CHECK_EQ(entitlements.isOwner("stranger@example.com"), false);
-  CHECK_EQ(entitlements.isOwner(""), false);
-  CHECK_EQ(entitlements.isOwner("sam@example.co"), false);
-  CHECK_EQ(entitlements.isOwner("am@example.com"), false);
-}
-
-TEST(with_no_owner_list_every_gate_behaves_exactly_as_before) {
-  FakeSubscriptionRepository subscriptions;
-  FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage};
-
-  CHECK_EQ(entitlements.isOwner("sam@example.com"), false);
-  CHECK_EQ(entitlements.hasWindmillOne(UserId{"u1"}, "sam@example.com"), false);
 }

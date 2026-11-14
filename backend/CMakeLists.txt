@@ -60,6 +60,7 @@ add_library(windmill_platform
   platform/subscriptions/FeedFollower.cpp
   platform/subscriptions/PgEntitlementCopy.cpp
   platform/subscriptions/SubscriptionServiceClient.cpp
+  platform/subscriptions/WindmillOne.cpp
   platform/domain/AiFuse.cpp
   platform/domain/AiUsage.cpp
   platform/domain/AiBudget.cpp

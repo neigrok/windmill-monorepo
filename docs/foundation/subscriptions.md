@@ -7,8 +7,8 @@ invariants (`INV-n`) and rulings (`R-n`) are numbered so reviews, code and roadm
 
 **Status:** Being built; nothing is deployed. What exists is in
 [`services/subscriptions/ARCHITECTURE.md`](../../services/subscriptions/ARCHITECTURE.md). Windmill One cannot be bought on any surface. The C++
-backend mirrors Paddle subscriptions (`backend/platform/adapters/paddle`) and
-`Entitlements::hasWindmillOne` reads that mirror; this document specifies what replaces it. The build
+backend's `Entitlements::hasWindmillOne` reads its own copy of each account's entitlement (§6.1); the Paddle mirror
+(`backend/platform/adapters/paddle`) decides no access. The build
 order and its owner gates live in the Windmill One roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `windmill-one-subscription-service`.
 
