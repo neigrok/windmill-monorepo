@@ -4,11 +4,18 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include <trantor/utils/Logger.h>
+
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <typeinfo>
 #include <vector>
 
 using namespace wm;
@@ -25,6 +32,35 @@ StoredTree oneNodeTree() {
 std::size_t nodeCount(const GraphState& state) {
   return LooseGraph(state).presentNodeIds().size();
 }
+
+// What a registry leaves for an operator: its write lines, its failure reports and its log lines, each as one string.
+struct Told : FailureReporter {
+  std::vector<std::string> lines;
+  std::vector<std::string> reports;
+  std::vector<std::string> logged;
+  trantor::Logger::LogLevel level = trantor::Logger::logLevel();
+  Told() {
+    installWriteSink([this](const WriteCompletion& line) {
+      lines.push_back(line.operation + " " + line.product + " " + line.door + " " + line.outcome);
+    });
+    installWriteReporter(std::shared_ptr<FailureReporter>(this, [](FailureReporter*) {}));
+    trantor::Logger::setLogLevel(trantor::Logger::kTrace);
+    trantor::Logger::setOutputFunction(
+        [this](const char* message, std::uint64_t length) { logged.emplace_back(message, length); }, [] {});
+  }
+  ~Told() override {
+    installWriteSink({});
+    installWriteReporter(nullptr);
+    trantor::Logger::setOutputFunction([](const char* message, std::uint64_t length) { fwrite(message, 1, length, stdout); },
+                                       [] { fflush(stdout); });
+    trantor::Logger::setLogLevel(level);
+  }
+  void report(const std::string&, const std::string&, const std::string&) override {}
+  void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                   const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+    reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+  }
+};
 
 // A repository that fails the way a real one does under an outage, not by returning "no such tree".
 struct FailingTreeRepository : FakeTreeRepository {
@@ -109,21 +145,120 @@ TEST(registry_open_propagates_a_repository_failure_rather_than_nulling_it) {
   CHECK(threw);
 }
 
-TEST(registry_replays_op_log_tail_on_open) {
+// A room opens as its stored snapshot and nothing else: the op log is the history the feed reads, never a second
+// source of a tree's state. Rows past the snapshot's head change nothing the room holds — here a row that would blank a
+// node's fields and one that would move a kind — and the room's head is the later of the snapshot's and the last
+// row's, so its next write takes a seq no row holds and lands in the log.
+TEST(registry_opens_a_room_as_its_snapshot_and_takes_its_next_seq_after_the_last_op_row) {
   FakeTreeRepository repo;
   FakeOpLog log;
   FakeBus bus;
-  repo.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Empty", {}}, 0};  // snapshot is empty at head 0
+  LooseGraph graph;
+  graph.createNode(nid("a"), "A", "icon", NodeColor::sky, at(1));
+  const Legend legend({{KindId{"k"}, NodeColor::sky, "K"}}, at(1));
+  repo.byId["t"] = StoredTree{graph.exportState(), legend.exportState(), {"Sail", {}}, 2};
   log.byTree["t"] = {
-    AppliedOp{1, "o1", createNode("a"), at(1), uid()},
-    AppliedOp{2, "o2", createNode("b"), at(2), uid()},
-    AppliedOp{3, "o3", AddEdge{nid("a"), nid("b")}, at(3), uid()},
+      AppliedOp{1, "o1", AddKind{KindId{"k"}, NodeColor::sky, "K"}, at(1), uid()},
+      AppliedOp{2, "o2", CreateNode{nid("a"), "A", "icon", NodeColor::sky}, at(1), uid()},
+      AppliedOp{3, "o3", CreateNode{nid("a"), "", "", NodeColor::terracotta}, at(5), uid()},
+      AppliedOp{4, "o4", RecolorKind{KindId{"k"}, NodeColor::plum}, at(6), uid()},
   };
+  const StoredTree snapshot = repo.byId["t"];
   RoomRegistry registry(repo, log, bus);
 
   TreeRoom& room = *registry.open(tid());
-  CHECK_EQ(room.head(), static_cast<Seq>(3));      // head advanced to the log tail
-  CHECK_EQ(room.snapshot().nodes.size(), 2u);      // state rebuilt from replay
+  CHECK(room.exportState() == snapshot.state);
+  CHECK(room.exportLegend() == snapshot.legend);
+  CHECK_EQ(room.head(), static_cast<Seq>(4));
+
+  CHECK_EQ(room.applyCommand(RenameNode{nid("a"), "A2"}, 10, uid()), static_cast<Seq>(5));
+  CHECK(registry.persist(tid()));
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(5));
+  REQUIRE_EQ(log.byTree["t"].size(), 5u);
+  CHECK_EQ(log.byTree["t"].back().seq, static_cast<Seq>(5));
+  CHECK(std::holds_alternative<RenameNode>(log.byTree["t"].back().command));
+
+  repo.byId["empty"] = StoredTree{GraphState{}, LegendState{}, {"Empty", {}}, 0};
+  CHECK_EQ(registry.open(tid("empty"))->head(), static_cast<Seq>(0));
+}
+
+// A room that opens behind its log — the last op row's seq past the snapshot's head — is an unexpected state, and its
+// first save erases the evidence, so the open tells it: one failed line and one report under a static name, and one
+// line that counts the rows past the snapshot and names no tree. The room's clock takes the last row's stamp, so the
+// server's next write is stamped past every deed the log holds, whatever the wall clock reads. A room that opens level
+// with its log tells nothing.
+TEST(registry_a_room_that_opens_behind_its_log_is_reported_with_its_row_count_and_mints_past_the_last_rows_stamp) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  LooseGraph graph;
+  graph.createNode(nid("a"), "A", "icon", NodeColor::sky, at(1));
+  repo.byId["t"] = StoredTree{graph.exportState(), LegendState{}, {"Sail", {}}, 2};
+  repo.byId["level"] = StoredTree{graph.exportState(), LegendState{}, {"Level", {}}, 1};
+  const Hlc lastIssued{5'000, 3, "srv"};
+  log.byTree["t"] = {
+      AppliedOp{2, "o2", CreateNode{nid("a"), "A", "icon", NodeColor::sky}, at(1), uid()},
+      AppliedOp{3, "o3", RenameNode{nid("a"), "A2"}, Hlc{4'000, 0, "srv"}, uid()},
+      AppliedOp{4, "o4", RenameNode{nid("a"), "A3"}, lastIssued, uid()},
+  };
+  log.byTree["level"] = {AppliedOp{1, "o1", CreateNode{nid("a"), "A", "icon", NodeColor::sky}, at(1), uid()}};
+  RoomRegistry registry(repo, log, bus);
+  Told told;
+
+  registry.open(tid("level"));
+  CHECK(told.lines.empty());
+  CHECK(told.reports.empty());
+
+  TreeRoom& room = *registry.open(tid());
+  CHECK_EQ(told.lines, (std::vector<std::string>{"roadmap.room.open_behind_log roadmap background snapshot-behind-log"}));
+  REQUIRE_EQ(told.reports.size(), 1u);
+  CHECK_EQ(told.reports[0].rfind("roadmap.room.open_behind_log roadmap background snapshot-behind-log ", 0), std::size_t{0});
+  std::vector<std::string> counted;
+  for (const std::string& line : told.logged)
+    if (line.find("roadmap_room_opened_behind_log") != std::string::npos)
+      counted.push_back(line.substr(line.find("roadmap_room_opened_behind_log"), line.find(" request_id=") - line.find("roadmap_room_opened_behind_log")));
+  CHECK_EQ(counted, (std::vector<std::string>{"roadmap_room_opened_behind_log rows=2"}));
+
+  room.applyCommand(RenameNode{nid("a"), "A4"}, 10, uid());
+  CHECK(lastIssued < room.pendingOps().back().hlc);
+  registry.open(tid());
+  CHECK_EQ(told.reports.size(), 1u);
+}
+
+// The clock takes the greatest stamp among the rows past the snapshot, not the last row's. A phone whose clock ran
+// ahead, the server's own rename after it, then a tablet with an honest clock leave the last row the lowest of the
+// three, and the server's next write is still stamped past them all. The open's report is its own, too: a request that
+// opens such a room and then fails files its own failure beside it.
+TEST(registry_a_room_behind_its_log_mints_past_the_greatest_stamp_of_those_rows_and_leaves_its_opener_its_own_report) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  LooseGraph graph;
+  graph.createNode(nid("a"), "A", "icon", NodeColor::sky, at(1));
+  repo.byId["t"] = StoredTree{graph.exportState(), LegendState{}, {"Sail", {}}, 1};
+  log.byTree["t"] = {
+      AppliedOp{1, "o1", CreateNode{nid("a"), "A", "icon", NodeColor::sky}, at(1), uid()},
+      AppliedOp{2, "o2", RenameNode{nid("a"), "By phone"}, Hlc{9'000, 0, "r_phone"}, uid()},
+      AppliedOp{3, "o3", RenameNode{nid("a"), "By the server"}, Hlc{9'000, 1, "srv"}, uid()},
+      AppliedOp{4, "o4", RenameNode{nid("a"), "By tablet"}, Hlc{2'000, 0, "r_tablet"}, uid()},
+  };
+  RoomRegistry registry(repo, log, bus);
+  Told told;
+
+  {
+    WriteObservation door{"mcp.roadmap_update_nodes", "roadmap", "mcp"};
+    WriteContext context{door};
+    TreeRoom& room = *registry.open(tid());
+    room.applyCommand(RenameNode{nid("a"), "After the reopen"}, 3'000, uid());
+    CHECK((Hlc{9'000, 1, "srv"} < room.pendingOps().back().hlc));
+    door.fail(std::runtime_error("the call failed after the open"));
+  }
+
+  CHECK_EQ(told.lines, (std::vector<std::string>{"roadmap.room.open_behind_log roadmap mcp snapshot-behind-log",
+                                                 "mcp.roadmap_update_nodes roadmap mcp failed"}));
+  REQUIRE_EQ(told.reports.size(), 2u);
+  CHECK_EQ(told.reports[0].rfind("roadmap.room.open_behind_log roadmap mcp snapshot-behind-log ", 0), std::size_t{0});
+  CHECK_EQ(told.reports[1], std::string("mcp.roadmap_update_nodes roadmap mcp failed ") + typeid(std::runtime_error).name());
 }
 
 TEST(registry_persist_snapshots_full_state_without_evicting) {
@@ -474,7 +609,7 @@ TEST(registry_evict_saves_the_lattice_before_it_lands_the_op_rows) {
 
 // The crash between the two stores, on the lossy side: the lattice landed, the row did not. A
 // process that reopens the tree finds the whole 200-node import in the lattice, the head it was
-// saved at, and nothing to replay — the feed misses one deed, and the tree misses nothing.
+// saved at, and no row past it — the feed misses one deed, and the tree misses nothing.
 TEST(registry_a_crash_after_the_save_and_before_the_row_reopens_the_whole_import) {
   std::vector<std::string> journal;
   RecordingTreeRepository repo(journal);
@@ -503,7 +638,7 @@ TEST(registry_a_crash_after_the_save_and_before_the_row_reopens_the_whole_import
   CHECK(room.hasNode(NodeId{"n0"}));
   CHECK(room.hasNode(NodeId{"n199"}));
   CHECK(room.pendingOps().empty());
-  CHECK(log.since(tid(), 7).empty());  // nothing to replay: the lattice already holds the frame
+  CHECK(log.since(tid(), 7).empty());  // no row past the saved head: the lattice already holds the frame
 }
 
 // The inverse cannot happen: a save that fails lands no row, because the rows are only offered to
@@ -590,7 +725,7 @@ TEST(registry_evict_closes_the_room_after_its_save_even_when_the_rows_fail_to_la
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
   CHECK(log.byTree["t"].empty());
 
-  // Reopened, the tree holds the write and has nothing to replay.
+  // Reopened, the tree holds the write, and the log holds no row past its head.
   TreeRoom& room = *registry.open(tid());
   CHECK_EQ(room.head(), static_cast<Seq>(8));
   CHECK(room.hasNode(NodeId{"added"}));

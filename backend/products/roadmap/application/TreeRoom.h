@@ -108,7 +108,7 @@ public:
   // one subgraph. The frameId is minted from the (unique) stamp.
   Seq applyCommand(const Command& command, std::uint64_t nowMs, const UserId& actor);
   // Several commands as ONE edit: one stamp, one frame, one seq, one op row (a Batch, so the log
-  // replays the whole edit), so a reader never sees the tree between them. An empty list is a
+  // tells the whole edit), so a reader never sees the tree between them. An empty list is a
   // no-op answering the current head. Admits nothing on its own.
   Seq applyCommands(const std::vector<Command>& commands, std::uint64_t nowMs, const UserId& actor);
 
@@ -120,6 +120,9 @@ public:
 
   // One clock per tree, so no two writes collide on a stamp. `nowMs` is wall time from the Clock port.
   Hlc nextStamp(std::uint64_t nowMs);
+  // A stamp issued for this tree that the loaded state does not show — the greatest among the op rows past the
+  // snapshot, when it is behind its log: the next stamp the room mints is past it.
+  void observe(const Hlc& issued) { clock_.observe(issued); }
 
   // wm::validate over this room's live state: a malformed or over-cap field, a node edit naming no
   // present node, or a legend rule. Server-driven undo/redo bypasses it.
@@ -143,9 +146,6 @@ public:
   // A subtree created under `step` and stored with this tree's head at nextSeq(): the stream takes that seq and every
   // subscriber is told. It changes no register, dirties nothing and queues no op row.
   void appendSubtree(const NodeId& step, const Subtree& subtree);
-
-  // Advances head + dedup set; does not re-persist or re-broadcast.
-  void replay(const AppliedOp& op);
 
   // The op rows this room's writes minted and no save has yet landed, in seq order. A row leaves
   // the queue only through landPendingOps, which RoomRegistry calls AFTER the lattice is saved at
@@ -173,8 +173,8 @@ public:
   // frontier.
   Subgraph deltaSince(const VersionVector& since) const;
 
-  // Exports only the entries dirtied since the last markClean(); replay() flips the room all-dirty.
-  // The caller holds the strand across export and clean.
+  // Exports only the entries dirtied since the last markClean(). The caller holds the strand across export and
+  // clean.
   std::pair<GraphState, LegendState> dirtyState() const;
   void markClean();
 
@@ -227,7 +227,6 @@ private:
   std::set<NodeId> dirtyNodes_;
   std::set<Edge> dirtyEdges_;
   std::set<KindId> dirtyKinds_;
-  bool allDirty_ = false;  // replayed op tail: footprint unknown, save everything once
   mutable std::size_t snapshots_ = 0;
 };
 

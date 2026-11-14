@@ -82,7 +82,7 @@ std::optional<Command> commandFromJson(const std::string& kind, const Json::Valu
   }
   if (kind == "Batch") {
     // A member that does not decode makes the whole row undecodable: a half-read batch would
-    // replay as a frame the tree never saw.
+    // tell a frame the tree never saw.
     Batch batch;
     for (const Json::Value& member : payload["commands"]) {
       std::optional<Command> decoded = commandFromJson(member["kind"].asString(), member["payload"]);

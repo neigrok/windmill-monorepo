@@ -349,18 +349,18 @@ log, undo and broadcast machinery, and `TreeRoom::applyCommand` emits its writes
 `CreateNode` and `AnnotateNode` carry the tree a node `opens` as an optional: unset leaves the
 pointer, set writes it, and `""` clears it. MCP `create_node` always sets it, `""` when the call
 names no tree, so a created node opens the tree its call names and no other, on an id a deleted node
-held too; a stored `CreateNode` row without the field replays as unset. An `import_subgraph` graft
+held too; a stored `CreateNode` row without the field decodes as unset. An `import_subgraph` graft
 (`graftState`) holds a node it brings back from a delete to the same rule: `opens` left out of the
 batch is cleared there, where every other register left out keeps what the node held, and on a node
 the tree holds a left-out `opens` stays as it stands. The activity feed projects
 neither the pointer nor `AnnotateNode`.
 `TreeRoom::applyCommands` lands several as one frame under one seq and queues them as one `Batch`
-op, so replaying the log tail reproduces the whole edit; an empty list mints nothing.
+op, so the feed tells the whole edit; an empty list mints nothing.
 
 A room never writes the op log itself: each write queues its row (`pendingOps`), and
 `RoomRegistry::persist` — the step every write path takes before it answers — saves the lattice at
 the room's head first and appends the queued rows after (`landPendingOps`). A crash between the
-two leaves a lattice at `N` with no row at `N`: replay is a no-op and the feed misses one deed. A
+two leaves a lattice at `N` with no row at `N`: the feed misses one deed and the tree nothing. A
 row the lattice cannot back cannot be written. An append that fails is logged and never surfaced:
 the lattice is durable, so the write answers as applied and the socket still acks; the rows stay
 queued for the next persist, and `tree_ops` is unique on `(tree_id, op_id)`, so a row that
@@ -376,12 +376,11 @@ committed before its connection dropped lands once. Only a room closing — `evi
   resurrected; its edges stay in the document and are filtered from the derived DAG view. A child
   that loses its only live parent becomes a root — visible as `maskedWork`, never re-tethered.
 - `RepositionNode`, `TransitiveReduction` and `PruneDangling` are written by nothing. A row of any
-  of them that the log holds decodes and replays as nothing: a row is logged only after the lattice
-  holding its effect is saved, so a replayed tail holds no such row. A node holds no position, so the
-  feed skips a `RepositionNode`, alone or inside a `Batch` whose other members it tells, and a stored
-  `CreateNode` row's `x` and `y` are read past. The Activity feed still tells a past
+  of them that the log holds still decodes, for the feed, and lands nothing where it is merged. A
+  node holds no position, so the feed skips a `RepositionNode`, alone or inside a `Batch` whose
+  other members it tells, and a stored `CreateNode` row's `x` and `y` are read past. The Activity feed still tells a past
   `TransitiveReduction`.
-- A `DescribeKind` without a description sets nothing: it replays as nothing and the feed skips it,
+- A `DescribeKind` without a description sets nothing, and the feed skips it,
   alone or inside a `Batch` whose other members it tells.
 - `RecolorKind` is atomic: it swaps a kind's hue and repaints every node holding the old hue
   (`holdersOf`) — the present nodes wearing it (`wearersOf`, the ones a receipt counts) and the
@@ -447,14 +446,31 @@ Rules:
   before the op rows are appended, so the log never runs ahead of the lattice. A save onto a row
   that is gone or soft-deleted writes nothing and `persist` answers false; the socket's `subgraph`
   frame, the guide and a live rename then answer as for an absent tree and retire the room.
-- `open()` loads the stored lattice and then replays the op-log tail past the stored head, so the
-  room reaches the true state and head and new writes never collide on `seq`. Under the save-then-
-  land ordering that tail is empty; it is read for trees saved before the ordering held.
+- `open()` loads the stored lattice and nothing else: a room is its snapshot, and the op log is the
+  history the Activity feed reads, never a second source of a tree's state. An op row states one
+  deed of its frame — one node of an import, one kind of a re-hue of several — so merging it back
+  could only approximate the frame, blanking fields the frame left alone or moving one kind of a
+  swap. The room's head is the later of the snapshot's head and the last row's seq, so its next
+  write collides with no row, and its clock observes the greatest stamp among the rows past the
+  snapshot (`OpLog::past`) — not the last row's, which a replica with an honest clock leaves below
+  an earlier row from one that ran ahead — so its next write is stamped after every deed those rows
+  hold. Rows land after the save,
+  so a snapshot is never behind its own rows. What is given up: a tree whose snapshot a crash left
+  behind its op rows before 2026-09-06, when the ordering took hold, and that was never opened
+  since, opens without those rows' effects; the feed still lists them. Such an open is reported
+  once, as `roadmap.room.open_behind_log` with the count of rows past the snapshot, decodable or
+  not (`OBSERVABILITY.md`), since the room's first save moves the stored head past them. Two things
+  the lost writes left behind are not recovered. A stamp no row carries — a title's, a guide's, one
+  of a frame that left no deed, any register's but the one its row is stamped with — is not
+  observed, so the server can still stamp a later write of its own below it, and a client that holds
+  the lost write then reads the server's as older. And the room has forgotten the frame ids it had
+  seen: a client frame resent after such a reopen is joined as a new frame, its registers landing
+  by their stamps over whatever the server wrote meanwhile under a lower one; only its op row is
+  absorbed, by the log's `(tree_id, op_id)` uniqueness.
 - The room clock mints a unique `(ms, counter)` per write, so writes to one tree are totally
-  ordered and the actor tiebreak is moot. It observes loaded and replayed stamps before minting;
+  ordered and the actor tiebreak is moot. It observes the loaded stamps before minting;
   `AppliedOp.actor` records authorship independently of the clock actor `srv`.
-- Sparse persistence: `dirtyState()` exports only entries dirtied since `markClean()`. `replay()`
-  flips the room to all-dirty.
+- Sparse persistence: `dirtyState()` exports only entries dirtied since `markClean()`.
 - Tree content reads use the room; the registry list reads persisted rows without opening rooms.
   Forks snapshot the source room's graph, legend and guide, clear authored progress baselines, and
   start a fresh op log with `forked_from` provenance. A fork of the forker's own tree keeps every
@@ -735,8 +751,8 @@ Rules:
   `present` is computed by the writer for read-side projections.
 - `trees.document` is the whole-tree jsonb blob, read only as a fallback for trees whose per-entry
   rows are not yet backfilled. Nothing new depends on it.
-- `tree_ops` scales with edits, not nodes. `ActivityFeed` projects it, and `open()` replays its
-  tail past the stored head to bring a room up to date.
+- `tree_ops` scales with edits, not nodes. `ActivityFeed` projects it; `open()` reads only the seq
+  and stamp of the rows past the snapshot's head, none for a tree level with its log.
 - Tree deletion writes `deleted_at` and retires its room, then tombstones the steps of the owner's
   other trees that open it (HTTP surface, `DELETE /v1/trees/{id}`). Reads exclude deleted rows and
   save never clears the tombstone. Recreating the caller's own deleted ID returns

@@ -14,6 +14,7 @@ public:
 
   void append(const TreeId& tree, const AppliedOp& op) override;
   std::vector<AppliedOp> since(const TreeId& tree, Seq afterSeq) const override;
+  LogPast past(const TreeId& tree, Seq head) const override;
 
 private:
   std::shared_ptr<PgPool> pool_;

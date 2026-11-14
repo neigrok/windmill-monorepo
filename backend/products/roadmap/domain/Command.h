@@ -76,9 +76,8 @@ struct AddEdge { NodeId from; NodeId to; };
 struct RemoveEdge { NodeId from; NodeId to; };
 struct ReconnectEdge { NodeId oldFrom; NodeId oldTo; NodeId newFrom; NodeId newTo; };
 struct DeleteNode { NodeId id; };
-// Written by nothing; a stored row of any of these decodes and replays as nothing. A row is logged only after the
-// lattice holding its effect is saved, so a replay never needs one to act. A node holds no position, so a
-// RepositionNode row has nothing to set.
+// Written by nothing; a stored row of any of these still decodes, for the Activity feed, and lands nothing where it
+// is merged. A node holds no position, so a RepositionNode row has nothing to set.
 struct RepositionNode {};
 struct TransitiveReduction {};
 struct PruneDangling {};
@@ -86,8 +85,7 @@ struct PruneDangling {};
 // Legend commands, on the same op log / undo / broadcast machinery as the node/edge commands.
 // RecolorKind is atomic: it swaps a kind's hue *and* repaints every node wearing the old hue.
 struct RenameKind { KindId id; std::string label; };
-// A description it carries is written. A stored row that carried none sets nothing: it replays as nothing and the
-// feed skips it.
+// A description it carries is written. A stored row that carried none sets nothing, and the feed skips it.
 struct DescribeKind { KindId id; std::optional<std::string> description; };
 // A kind's label and description may be seeded inline at creation, so a legend entry lands in one op.
 struct AddKind { KindId id; NodeColor hue; std::string label; std::string description; };
@@ -103,8 +101,8 @@ std::vector<NodeId> wearersOf(const LooseGraph& graph, const Legend& legend, con
 // one rule.
 std::vector<NodeId> holdersOf(const LooseGraph& graph, const Legend& legend, const KindId& kind);
 
-// Several commands that landed as ONE frame under one seq, logged whole so a replay of the op row
-// reproduces the frame and not just its first deed. Every member folds at the batch's own stamp.
+// Several commands that landed as ONE frame under one seq, logged whole so the op row tells the frame
+// and not just its first deed. Every member folds at the batch's own stamp.
 struct Batch;
 
 using Command = std::variant<RenameNode, SetNodeColor, RepositionNode, CreateNode, AnnotateNode,

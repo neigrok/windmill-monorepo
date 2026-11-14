@@ -30,6 +30,9 @@ std::string writeCompletionJson(const WriteCompletion& completion);
 void installWriteReporter(std::shared_ptr<FailureReporter> reporter);
 void installWriteSink(std::function<void(const WriteCompletion&)> sink);
 std::string writeRequestId();
+// A request id of its own, whatever write is in progress: for an observation that is no part of the request it happens
+// under, so its report does not take that request's one Issue.
+std::string freshWriteRequestId();
 std::string currentWriteRequestId();
 // The door the write in progress came through (`mcp`, `Coach`, …), or "" outside one: a write a handler observes beside
 // it is told at the same door.

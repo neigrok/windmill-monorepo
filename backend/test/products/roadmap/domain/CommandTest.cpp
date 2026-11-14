@@ -28,8 +28,8 @@ static LooseGraph seeded() {
 }
 
 // Nothing writes a TransitiveReduction or a PruneDangling any more, and a row of either the log holds changes nothing
-// on replay: a row is logged only after the lattice holding its effect is saved, so a replay never needs one to act.
-TEST(a_stored_tidy_or_prune_row_replays_as_nothing) {
+// where it is merged: such a row is history for the Activity feed, and no room is built from it.
+TEST(a_stored_tidy_or_prune_row_lands_nothing_where_it_is_merged) {
   LooseGraph g;
   Legend legend;
   g.createNode(nid("a"), "A", "x", NodeColor::sky, at(1));
