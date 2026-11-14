@@ -864,7 +864,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   show no name. After a failure, eligible tablet app routes offer the account or device roadmap list through
   [approved 32](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1098-71834); loading, empty and failed lists stay distinct.
   Shared-reader routes offer no recovery switcher, including while signed in. Other bands show no name after failure.
-  No failed roadmap offers Share or the Board/Graph switch: the Graph's load error veils its topbar.
+  A failed Board offers neither Share nor the Board/Graph switch: the Graph's load error veils its topbar.
   Proposed, awaiting the owner outside the tablet Board: a still name skeleton without a chevron (15.08) and
   *Your roadmaps* after failure (15.09). The view switch waits for an accessible Graph load-error topbar.
 - **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and field focus. G4 retains the phone Graph
