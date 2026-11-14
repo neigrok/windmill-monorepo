@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 #include <variant>
 
@@ -37,6 +38,26 @@ drogon::HttpResponsePtr answerSet(Saved saved) {
   auto held = jsonResponse(body);
   held->setStatusCode(drogon::k202Accepted);
   return held;
+}
+
+// A subtree's create refused with nothing written, in the words an API caller is shown beside the code it branches on.
+drogon::HttpResponsePtr refused(SubtreeRefusal refusal) {
+  switch (refusal) {
+    case SubtreeRefusal::noSuchTree: return error(drogon::k404NotFound, "no such tree", codeOf(refusal));
+    case SubtreeRefusal::notWriter:
+      return error(drogon::k403Forbidden, "only the roadmap's owner can add a subtree to its steps", codeOf(refusal));
+    case SubtreeRefusal::stepGone:
+      return error(drogon::k409Conflict, "that step is no longer in this roadmap", codeOf(refusal));
+    case SubtreeRefusal::depthLimit:
+      return error(drogon::k409Conflict, "subtrees go eight levels deep at most", codeOf(refusal));
+    case SubtreeRefusal::stepOpensATree:
+      return error(drogon::k409Conflict,
+                   "this step opens another of your roadmaps: detach it before it holds a subtree", codeOf(refusal));
+    case SubtreeRefusal::savePending:
+      return error(drogon::k503ServiceUnavailable, "this roadmap's last change is still being saved: try again",
+                   codeOf(refusal));
+  }
+  throw std::logic_error("an unknown subtree refusal");
 }
 }
 
@@ -269,6 +290,52 @@ void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback
     counting.fail(failure);
   }
   callback(jsonResponse(body));
+}
+
+void TreeRegistryApi::createSubtree(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
+                                    const std::string& treeId, const std::string& stepId) {
+  std::optional<UserId> caller = callerOf(req, *auth_);
+  if (!caller) {
+    callback(error(drogon::k401Unauthorized, "sign in to add a subtree"));
+    return;
+  }
+  std::shared_ptr<Json::Value> json = req->getJsonObject();
+  if ((json && !json->isObject()) || (!json && !req->body().empty())) {
+    callback(error(drogon::k400BadRequest, "invalid json body"));
+    return;
+  }
+  // An id the caller minted is kept when it is a well-formed tree id no row holds; the registry mints any other.
+  TreeRegistry::SubtreeRequest request;
+  if (json && json->isMember("proposedId") && !(*json)["proposedId"].isNull()) {
+    if (!(*json)["proposedId"].isString()) {
+      callback(error(drogon::k400BadRequest, "proposedId must be a string"));
+      return;
+    }
+    request.proposedId = TreeId{(*json)["proposedId"].asString()};
+  }
+  if (json && json->isMember("kinds") && !(*json)["kinds"].isNull()) {
+    request.kinds = kindsFromJson((*json)["kinds"]);
+    if (!request.kinds) {
+      callback(error(drogon::k400BadRequest,
+                     "kinds must be a list of kinds whose id, hue, label and description are strings"));
+      return;
+    }
+  }
+
+  const std::variant<SubtreeCreation, SubtreeRefusal, Admission> answer =
+      registry_->createSubtree(TreeId{treeId}, NodeId{stepId}, *caller, request);
+  if (const Admission* refusal = std::get_if<Admission>(&answer)) {
+    const bool tooLarge = refusal->verdict == Admission::Verdict::tooLarge;
+    callback(error(tooLarge ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest, refusal->reason,
+                   "kinds-refused"));
+    return;
+  }
+  if (const SubtreeRefusal* refusal = std::get_if<SubtreeRefusal>(&answer)) {
+    callback(refused(*refusal));
+    return;
+  }
+  const SubtreeCreation& creation = std::get<SubtreeCreation>(answer);
+  callback(jsonResponse(toJson(creation), creation.created ? drogon::k201Created : drogon::k200OK));
 }
 
 }

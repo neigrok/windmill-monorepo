@@ -194,6 +194,11 @@ TEST(write_http_expected_refusals_never_create_issues_and_unsafe_codes_are_disca
            std::string("failed"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k409Conflict, "private", "not-a-root"), "roadmap.DELETE.v1.trees.id"),
            std::string("not-a-root"));
+  const std::string subtree = "roadmap.PUT.v1.trees.tree.steps.step.subtree";
+  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "save-pending"), subtree),
+           std::string("save-pending"));
+  for (const char* code : {"kinds-refused", "no-such-tree", "not-writer", "step-gone", "depth-limit", "step-opens-a-tree"})
+    CHECK_EQ(writeHttpOutcome(error(drogon::k409Conflict, "private", code), subtree), std::string(code));
 }
 
 TEST(write_http_coach_routine_confirmation_refusals_log_their_codes) {

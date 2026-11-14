@@ -3,6 +3,7 @@
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Command.h"
+#include "products/roadmap/domain/Legend.h"
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
@@ -868,3 +869,151 @@ TEST(delete_counts_the_branch_only_once_the_removal_passed_its_gates) {
   CHECK_EQ(bodyOf(removed), parse(R"({"removed":[],"branch":{"subtrees":1,"steps":1}})"));
   CHECK(h.trees.sizeReads == (std::vector<std::set<TreeId>>{{tid("t_root")}}));
 }
+
+namespace {
+
+// The subtree door, run as the REST route runs it: inside the route's own write observation at door `rest`, the request's
+// body and its answer whole, and the lines the create writes (a session's refresh writes its own, not counted here).
+struct SubtreeDoor {
+  TreeRegistryApi& api;
+  std::vector<std::string> lines;
+  explicit SubtreeDoor(TreeRegistryApi& api) : api(api) {
+    installWriteSink([this](const WriteCompletion& line) {
+      if (line.operation.rfind("roadmap.", 0) == 0) lines.push_back(line.operation + " " + line.door + " " + line.outcome);
+    });
+  }
+  ~SubtreeDoor() { installWriteSink({}); }
+  std::string put(const std::string& tree, const std::string& step, const std::string& body, const std::string& session) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Put);
+    request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    request->setBody(body);
+    if (!session.empty()) request->addCookie("wm_session", session);
+    WriteObservation route{"roadmap.PUT.v1.trees.tree.steps.step.subtree", "roadmap", "rest"};
+    WriteContext context{route};
+    drogon::HttpResponsePtr answered;
+    api.createSubtree(request, [&](const drogon::HttpResponsePtr& response) { answered = response; }, tree, step);
+    route.skip();
+    return std::to_string(answered->getStatusCode()) + " " + dump(parse(std::string(answered->getBody())));
+  }
+};
+
+std::string answer(int status, const std::string& body) { return std::to_string(status) + " " + dump(parse(body)); }
+
+}
+
+// PUT /v1/trees/{tree}/steps/{step}/subtree creates an empty subtree under the step, born with the kinds it is sent and
+// under the id it proposes, and answers 201 with where it sits; a retry answers the same subtree 200, `created` false,
+// at the parent's head, and writes nothing. Each call writes one `roadmap.subtree.create` line at door `rest`.
+TEST(put_subtree_creates_an_empty_child_with_the_kinds_sent_and_a_retry_answers_it_unchanged) {
+  Harness h;
+  const UserId me = h.signIn("s-live", "sam@example.com");
+  LooseGraph year;
+  year.createNode(nid("sail"), "Learn to sail", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  year.createNode(nid("coast"), "Sail the coast", "", NodeColor::olive, Hlc{1, 0, "seed"});
+  h.trees.byId["t_a"] = StoredTree{year.exportState(), LegendState{}, {"My year", {}}, 0, me};
+  SubtreeDoor door{h.api};
+  const std::string body = R"({"proposedId":"t_00000000000000c1",)"
+                           R"("kinds":[{"id":"learn","hue":"olive","label":"Learn","description":""}]})";
+
+  const std::string created = door.put("t_a", "sail", body, "s-live");
+  const std::string again = door.put("t_a", "sail", body, "s-live");
+
+  CHECK_EQ(created, answer(201, R"({"created":true,"subtree":{"id":"t_00000000000000c1","root":"t_a",)"
+                                R"("parent":{"tree":"t_a","step":"sail"},"depth":1,"seq":0},"parentSeq":1})"));
+  CHECK_EQ(again, answer(200, R"({"created":false,"subtree":{"id":"t_00000000000000c1","root":"t_a",)"
+                              R"("parent":{"tree":"t_a","step":"sail"},"depth":1,"seq":0},"parentSeq":1})"));
+  const std::vector<Kind> sent{Kind{KindId{"learn"}, NodeColor::olive, "Learn", ""}};
+  CHECK(h.trees.byId["t_00000000000000c1"].legend == Legend(Legend::bornWith(sent), Hlc{1, 0, "genesis"}).exportState());
+  CHECK(h.trees.byId["t_00000000000000c1"].state == GraphState{});
+  CHECK_EQ(h.trees.subtrees.size(), 1u);
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create rest ok",
+                                                "roadmap.subtree.create rest unchanged"}));
+}
+
+// Every refusal answers its code and its words, and writes nothing: no subtree, no child row. A body the door cannot
+// read is refused before the registry is asked; one the registry refuses writes the create's line with that code.
+TEST(put_subtree_refusals_answer_their_code_and_write_nothing) {
+  Harness h;
+  const UserId me = h.signIn("s-live", "sam@example.com");
+  h.signIn("s-stranger", "stranger@example.com");
+  const auto plant = [&](const char* id, std::vector<NodeSpec> steps, Visibility visibility = Visibility::private_) {
+    TreeData data;
+    data.id = TreeId{std::string(id)};
+    data.nodes = std::move(steps);
+    h.trees.byId[id] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(), LegendState{}, {id, {}}, 0, me,
+                                  visibility};
+  };
+  const auto step = [](const char* id, const char* opens = "") {
+    NodeSpec node;
+    node.id = NodeId{std::string(id)};
+    node.label = id;
+    node.opens = TreeId{std::string(opens)};
+    return node;
+  };
+  plant("t_a", {step("sail"), step("map", "t_b")});
+  plant("t_b", {step("knot")});
+  plant("t_shared", {step("rig")}, Visibility::public_);
+  plant("t_deep", {step("hoist")});
+  h.trees.subtrees["t_deep"] = Subtree{tid("t_deep"), tid("t_a"), OwningStep{tid("t_a"), nid("sail")}, kMaxTreeDepth, 0};
+  SubtreeDoor door{h.api};
+
+  CHECK_EQ(door.put("t_a", "sail", "{}", ""), answer(401, R"({"error":"sign in to add a subtree"})"));
+  CHECK_EQ(door.put("t_a", "sail", "[]", "s-live"), answer(400, R"({"error":"invalid json body"})"));
+  CHECK_EQ(door.put("t_a", "sail", R"({"proposedId":7})", "s-live"),
+           answer(400, R"({"error":"proposedId must be a string"})"));
+  CHECK_EQ(door.put("t_a", "sail", R"({"kinds":{"id":"learn"}})", "s-live"),
+           answer(400, R"({"error":"kinds must be a list of kinds whose id, hue, label and description are strings"})"));
+  CHECK_EQ(door.put("t_a", "sail", R"({"kinds":[]})", "s-live"),
+           answer(400, R"({"code":"kinds-refused","error":"kinds, when sent, names at least one kind — leave it out for )"
+                       R"(the default legend"})"));
+  CHECK_EQ(door.put("t_9999999999999999", "sail", "{}", "s-live"),
+           answer(404, R"({"code":"no-such-tree","error":"no such tree"})"));
+  CHECK_EQ(door.put("t_a", "sail", "{}", "s-stranger"), answer(404, R"({"code":"no-such-tree","error":"no such tree"})"));
+  CHECK_EQ(door.put("t_shared", "rig", "{}", "s-stranger"),
+           answer(403, R"({"code":"not-writer","error":"only the roadmap's owner can add a subtree to its steps"})"));
+  CHECK_EQ(door.put("t_a", "nope", "{}", "s-live"),
+           answer(409, R"({"code":"step-gone","error":"that step is no longer in this roadmap"})"));
+  CHECK_EQ(door.put("t_deep", "hoist", "{}", "s-live"),
+           answer(409, R"({"code":"depth-limit","error":"subtrees go eight levels deep at most"})"));
+  CHECK_EQ(door.put("t_a", "map", "{}", "s-live"),
+           answer(409, R"({"code":"step-opens-a-tree","error":"this step opens another of your roadmaps: detach it )"
+                       R"(before it holds a subtree"})"));
+
+  CHECK_EQ(h.trees.subtrees.size(), 1u);
+  CHECK(door.lines == (std::vector<std::string>{
+                          "roadmap.subtree.create rest kinds-refused", "roadmap.subtree.create rest no-such-tree",
+                          "roadmap.subtree.create rest no-such-tree", "roadmap.subtree.create rest not-writer",
+                          "roadmap.subtree.create rest step-gone", "roadmap.subtree.create rest depth-limit",
+                          "roadmap.subtree.create rest step-opens-a-tree"}));
+}
+
+// A parent whose last save failed and is being retried refuses the create `save-pending`, 503, with nothing written; once
+// the retry has saved the parent, the same request creates.
+TEST(put_subtree_under_a_parent_held_unsaved_answers_save_pending_until_its_save_lands) {
+  Harness h;
+  const UserId me = h.signIn("s-live", "sam@example.com");
+  LooseGraph year;
+  year.createNode(nid("sail"), "Learn to sail", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  h.trees.byId["t_a"] = StoredTree{year.exportState(), LegendState{}, {"My year", {}}, 0, me};
+  {
+    std::unique_lock<std::mutex> strand(h.rooms.strandFor(tid("t_a")));
+    h.rooms.open(tid("t_a"))->applyCommand(CreateNode{nid("mast"), "Mast", "", NodeColor::sky}, h.clock.nowMs(), me);
+    h.trees.savesFail = true;
+    PendingSave saving = h.rooms.persist(tid("t_a"));
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::held);
+  }
+  SubtreeDoor door{h.api};
+
+  CHECK_EQ(door.put("t_a", "sail", "{}", "s-live"),
+           answer(503, R"({"code":"save-pending","error":"this roadmap's last change is still being saved: try again"})"));
+  CHECK(h.trees.subtrees.empty());
+
+  h.trees.savesFail = false;
+  REQUIRE_EQ(h.retries.set.size(), 1u);
+  h.retries.set[0].run();
+  CHECK_EQ(door.put("t_a", "sail", "{}", "s-live").substr(0, 4), std::string("201 "));
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create rest save-pending", "roadmap.subtree.create rest ok"}));
+}
+

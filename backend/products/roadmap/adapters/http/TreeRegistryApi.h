@@ -23,6 +23,10 @@ public:
   void listTrees(const drogon::HttpRequestPtr& req, HttpCallback&& callback);                       // GET    /v1/trees
   void patchTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);   // PATCH  /v1/trees/:id — one of {visibility}, {guide} or {title}
   void deleteTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);  // DELETE /v1/trees/:id — 200 with what went with it
+  // PUT /v1/trees/:tree/steps/:step/subtree — {proposedId?, kinds?}: 201 with the subtree it created, 200 with the one the
+  // step already owns.
+  void createSubtree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId,
+                     const std::string& stepId);
 
 private:
   std::shared_ptr<TreeRegistry> registry_;
