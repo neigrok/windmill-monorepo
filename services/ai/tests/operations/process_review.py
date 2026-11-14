@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import select
+import shutil
 import signal
 import socket
 import socketserver
@@ -182,7 +183,7 @@ class DatabaseProxy(socketserver.BaseRequestHandler):
 
 class ProcessReview(unittest.TestCase):
     def setUp(self):
-        self.folder = tempfile.TemporaryDirectory(prefix="case-", dir="/private/tmp/wm-ai-review-ops")
+        self.folder = tempfile.TemporaryDirectory(prefix="case-", dir=SUITE_SCRATCH)
         self.scratch = Path(self.folder.name)
         self.database_name = "ai_ops_" + uuid.uuid4().hex
         self.database = SOURCE.rsplit("/", 1)[0] + "/" + self.database_name
@@ -509,6 +510,38 @@ class ProcessReview(unittest.TestCase):
             provider.shutdown()
             provider.server_close()
 
+    def test_restore_transaction_is_atomic_and_restored_service_stays_dark(self):
+        process, public, _ = self.start()
+        pending = self.executor.submit(self.text, public, "operations-backup-call-fixture")
+        self.assertTrue(self.provider.started.wait(10))
+        dump = self.scratch / "ai.dump"
+        subprocess.run(["pg_dump", "--dbname=" + self.database, "--format=custom", "--file=" + str(dump)], capture_output=True, timeout=15, check=True)
+        checksum = hashlib.sha256(dump.read_bytes()).hexdigest()
+        listing = subprocess.run(["pg_restore", "--list", str(dump)], capture_output=True, text=True, timeout=10, check=True).stdout
+        self.assertIn(";     dbname: " + self.database_name, listing)
+        process.kill()
+        process.wait(timeout=10)
+        self.provider.release.set()
+        try:
+            pending.result(timeout=10)
+        except (OSError, http.client.HTTPException):
+            pass
+        self.sql("DROP DATABASE " + self.database_name, admin=True)
+        self.sql("CREATE DATABASE " + self.database_name, admin=True)
+        self.sql("CREATE TABLE ai_calls (restore_collision boolean)")
+        arguments = ["pg_restore", "--dbname=" + self.database, "--single-transaction", "--exit-on-error", "--no-owner", "--no-acl", str(dump)]
+        failed = subprocess.run(arguments, capture_output=True, timeout=15)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(self.sql("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"), "ai_calls")
+        self.sql("DROP TABLE ai_calls")
+        self.assertEqual(hashlib.sha256(dump.read_bytes()).hexdigest(), checksum)
+        subprocess.run(arguments, capture_output=True, timeout=15, check=True)
+        _, public, internal = self.start({"AI_PASS_KEYS": "{}"})
+        self.assertEqual(self.request(public, "/health"), (200, {"status": "ready"}))
+        self.assertEqual(self.request(public, "/v1/allowance", token=self.token)[1]["code"], "pass_signature")
+        call = self.request(internal, "/internal/v1/calls?callId=operations-backup-call-fixture", token=OPERATOR)[1]["calls"][0]
+        self.assertEqual((call["state"], call["charged"]), ("assumed", call["reservation"]))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -516,5 +549,9 @@ if __name__ == "__main__":
     arguments, tests = parser.parse_known_args()
     if not SOURCE:
         parser.error("AI_TEST_DATABASE_URL must name a disposable PostgreSQL cluster")
-    BINARY = str(Path(arguments.binary).resolve())
-    unittest.main(argv=[__file__, *tests])
+    with tempfile.TemporaryDirectory(prefix="wm-ai-operations-") as SUITE_SCRATCH:
+        pinned_binary = Path(SUITE_SCRATCH) / "windmill-ai"
+        shutil.copy2(Path(arguments.binary).resolve(), pinned_binary)
+        BINARY = str(pinned_binary)
+        print("AI operations binary SHA256: " + hashlib.sha256(pinned_binary.read_bytes()).hexdigest(), flush=True)
+        unittest.main(argv=[__file__, *tests])
