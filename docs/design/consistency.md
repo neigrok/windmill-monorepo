@@ -840,10 +840,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · reader Graph title affordance.** G8-H1 makes the selected-step title open the reader's read-only step page, with Fork
   remaining primary. The approved [04.06 bar](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=377-14343) has no visual tap
   affordance on that title. Proposed, awaiting the owner: a 44px title row with a chevron (25.10).
-- **Board · filter strip at 744.** The built strip ends at y=172; 08.13 draws it ending at y=160.
-  The tablet Activity panel keeps the drawn 12px gap beneath the strip, so on the Board it stands at
-  y=184 where [08.13](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-48638) draws
-  y=172; on the Graph, with no strip, it stands at y=172. Reconcile the strip's padding with the frame.
+- **Board · filter strip at 744.** On an owner's Board with an Add guide card, the built strip runs from y=236 to y=280,
+  with the Activity panel 12px below it at y=292. On the Graph, with no strip, the panel stands at y=172.
+  [08.13](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-48638) draws the strip from y=116 to y=160
+  and the panel 12px below it at y=172, but omits the existing Guide. Reconcile the Guide and filter arrangement in design.
 - **Graph and Board · last root.** A roadmap keeps a root on every view and band. While a selection takes every root, the phone Board's bulk bar and the desktop and
   tablet selection bars drop Delete with nothing saying why, and the phone's Recolor sits at half width beside an empty half. Proposed, awaiting the owner: Delete keeps
   its place, dimmed and `aria-disabled`, with *A roadmap keeps one starting step* under the count, on all three bars
