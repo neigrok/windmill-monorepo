@@ -45,8 +45,9 @@ Each is a `git format-patch` file against the pinned release, with a message wri
 - `0004` — a WebSocket connection says how many bytes it has written to its socket
   (`WebSocketConnection::bytesSent()`, the count its TCP connection keeps). `send()` queues without
   limit and the TCP connection is private, so without it a server cannot tell a peer that reads slowly
-  from one that has stopped reading. The roadmap socket drops a subscriber that is handed frames and
-  writes none (`Outbound`, `products/roadmap/adapters/ws/WsPresenceBus.h`).
+  from one that has stopped reading. The roadmap socket knows by it what each connection has not yet
+  written of what it was handed, and drops one that writes nothing or falls too far behind
+  (`Outbound`, `products/roadmap/adapters/ws/WsPresenceBus.h`).
 
 `test/third_party/drogon/PatchesTest.cpp` pins all four against Drogon itself, on a loopback
 connection in the test process: the first three against its parser, the fourth on a socket whose
