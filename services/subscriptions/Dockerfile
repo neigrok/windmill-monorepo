@@ -17,6 +17,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 # The workspace names tools/ as members, so cargo needs them present; the build below compiles none.
 COPY tools ./tools
+# The storage crate embeds every migration in the binary at compile time.
+COPY migrations ./migrations
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release --locked --bin subscriptions \
@@ -42,7 +44,8 @@ EXPOSE 8082 8083
 
 USER subscriptions
 
-# The internal listener's /health, on whatever port SUBSCRIPTIONS_INTERNAL_ADDRESS names at run time.
+# The internal listener's /health, on whatever port SUBSCRIPTIONS_INTERNAL_ADDRESS names at run time. It
+# answers ready only while the ledger's database answers.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -fsS -o /dev/null "http://127.0.0.1:${SUBSCRIPTIONS_INTERNAL_ADDRESS##*:}/health" || exit 1
 

@@ -7,5 +7,17 @@ publish.workspace = true
 [dependencies]
 domain = { path = "../domain" }
 
+# `macros` and `migrate` embed migrations/ in the binary. No query here is checked against a database at
+# compile time, so a build needs none.
+sqlx = { version = "0.9.0", default-features = false, features = ["macros", "migrate", "postgres", "runtime-tokio", "tls-rustls-ring-webpki", "uuid"] }
+tokio = { version = "1.54.1", features = ["time"] }
+url = "2.5.8"
+uuid = "1.18.1"
+
+[dev-dependencies]
+futures-util = "0.3.31"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }
+uuid = { version = "1.18.1", features = ["v4"] }
+
 [lints]
 workspace = true

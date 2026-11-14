@@ -6,17 +6,29 @@ use axum::http::{Request, StatusCode};
 use axum::routing::get;
 use serde_json::{Value, json};
 use server::config::Config;
-use server::listeners::{Bounds, Listener};
+use server::listeners::{Bounds, Listener, Readiness};
+use storage::StorageError;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
+
+// Answers ready, as a ledger that answers does.
+#[derive(Clone)]
+struct Answering;
+
+impl Readiness for Answering {
+    async fn ready(&self) -> Result<(), StorageError> {
+        Ok(())
+    }
+}
 
 #[tokio::test]
 async fn both_listeners_answer_ready() {
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
+        "SUBSCRIPTIONS_DATABASE_URL" => Some("postgresql://ledger@127.0.0.1:1/ledger".to_owned()),
         "SENTRY_ENVIRONMENT" => Some("test".to_owned()),
         _ => None,
     })
@@ -24,7 +36,7 @@ async fn both_listeners_answer_ready() {
 
     for listener in [Listener::Public, Listener::Internal] {
         let response = listener
-            .router(&config, Bounds::default())
+            .router(&config, Answering, Bounds::default())
             .oneshot(Request::get("/health").body(Body::empty()).unwrap())
             .await
             .unwrap();
@@ -39,10 +51,51 @@ async fn both_listeners_answer_ready() {
 }
 
 #[tokio::test]
+async fn both_listeners_answer_unavailable_while_the_ledger_does_not_answer() {
+    #[derive(Clone)]
+    struct Silent;
+
+    impl Readiness for Silent {
+        async fn ready(&self) -> Result<(), StorageError> {
+            Err(StorageError::Unreachable)
+        }
+    }
+
+    let config = Config::from_environment(|variable| match variable {
+        "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
+        "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
+        "SUBSCRIPTIONS_DATABASE_URL" => Some("postgresql://ledger@127.0.0.1:1/ledger".to_owned()),
+        "SENTRY_ENVIRONMENT" => Some("test".to_owned()),
+        _ => None,
+    })
+    .unwrap();
+
+    for listener in [Listener::Public, Listener::Internal] {
+        let response = listener
+            .router(&config, Silent, Bounds::default())
+            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "{listener:?}"
+        );
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({ "status": "unavailable" })
+        );
+    }
+}
+
+#[tokio::test]
 async fn the_public_listener_answers_no_internal_path() {
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
+        "SUBSCRIPTIONS_DATABASE_URL" => Some("postgresql://ledger@127.0.0.1:1/ledger".to_owned()),
         "SENTRY_ENVIRONMENT" => Some("test".to_owned()),
         "SUBSCRIPTIONS_PANIC_ROUTE_ENABLED" => Some("true".to_owned()),
         _ => None,
@@ -51,7 +104,7 @@ async fn the_public_listener_answers_no_internal_path() {
 
     for path in ["/internal/v1/feed?after=0&limit=10", "/debug/panic"] {
         let response = Listener::Public
-            .router(&config, Bounds::default())
+            .router(&config, Answering, Bounds::default())
             .oneshot(Request::get(path).body(Body::empty()).unwrap())
             .await
             .unwrap();
@@ -65,13 +118,14 @@ async fn the_panic_route_exists_only_when_enabled() {
     let disabled = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
+        "SUBSCRIPTIONS_DATABASE_URL" => Some("postgresql://ledger@127.0.0.1:1/ledger".to_owned()),
         "SENTRY_ENVIRONMENT" => Some("test".to_owned()),
         _ => None,
     })
     .unwrap();
 
     let response = Listener::Internal
-        .router(&disabled, Bounds::default())
+        .router(&disabled, Answering, Bounds::default())
         .oneshot(Request::get("/debug/panic").body(Body::empty()).unwrap())
         .await
         .unwrap();
@@ -84,12 +138,13 @@ async fn a_panicking_handler_answers_500_and_its_listener_keeps_answering() {
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
+        "SUBSCRIPTIONS_DATABASE_URL" => Some("postgresql://ledger@127.0.0.1:1/ledger".to_owned()),
         "SENTRY_ENVIRONMENT" => Some("test".to_owned()),
         "SUBSCRIPTIONS_PANIC_ROUTE_ENABLED" => Some("true".to_owned()),
         _ => None,
     })
     .unwrap();
-    let internal = Listener::Internal.router(&config, Bounds::default());
+    let internal = Listener::Internal.router(&config, Answering, Bounds::default());
 
     let panicked = internal
         .clone()
@@ -115,11 +170,12 @@ async fn a_body_over_its_bound_is_refused_before_any_handler() {
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
+        "SUBSCRIPTIONS_DATABASE_URL" => Some("postgresql://ledger@127.0.0.1:1/ledger".to_owned()),
         "SENTRY_ENVIRONMENT" => Some("test".to_owned()),
         _ => None,
     })
     .unwrap();
-    let public = Listener::Public.router(&config, Bounds::default());
+    let public = Listener::Public.router(&config, Answering, Bounds::default());
 
     let mut answers = Vec::new();
     for length in [64 * 1024, 64 * 1024 + 1] {
@@ -166,6 +222,7 @@ async fn a_request_head_that_stalls_is_dropped_at_its_bound() {
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:0".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:0".to_owned()),
+        "SUBSCRIPTIONS_DATABASE_URL" => Some("postgresql://ledger@127.0.0.1:1/ledger".to_owned()),
         "SENTRY_ENVIRONMENT" => Some("test".to_owned()),
         _ => None,
     })
@@ -177,7 +234,7 @@ async fn a_request_head_that_stalls_is_dropped_at_its_bound() {
     let socket = TcpListener::bind(config.public_address).await.unwrap();
     let address = socket.local_addr().unwrap();
     let stop = CancellationToken::new();
-    let router = Listener::Public.router(&config, bounds);
+    let router = Listener::Public.router(&config, Answering, bounds);
     let server = tokio::spawn(Listener::Public.serve(socket, router, bounds, stop.clone()));
 
     let mut client = TcpStream::connect(address).await.unwrap();

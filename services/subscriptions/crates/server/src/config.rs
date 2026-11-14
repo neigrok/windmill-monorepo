@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 
 use sentry::types::Dsn;
+use storage::DatabaseUrl;
 use tracing_subscriber::filter::LevelFilter;
 
 // The deployments the forced-panic route may run in, matched trimmed and in any case.
@@ -12,6 +13,7 @@ const PANIC_ROUTE_ENVIRONMENTS: [&str; 4] = ["local", "development", "test", "ci
 pub struct Config {
     pub public_address: SocketAddr,
     pub internal_address: SocketAddr,
+    pub database_url: DatabaseUrl,
     pub environment: String,
     pub release: Option<String>,
     pub sentry_dsn: Option<Dsn>,
@@ -27,6 +29,7 @@ impl Config {
         let config = Config {
             public_address: variables.required("SUBSCRIPTIONS_PUBLIC_ADDRESS")?,
             internal_address: variables.required("SUBSCRIPTIONS_INTERNAL_ADDRESS")?,
+            database_url: variables.required("SUBSCRIPTIONS_DATABASE_URL")?,
             environment: variables.required("SENTRY_ENVIRONMENT")?,
             release: variables.optional("SENTRY_RELEASE")?,
             sentry_dsn: variables.optional("SENTRY_DSN")?,
@@ -90,7 +93,8 @@ impl<F: Fn(&str) -> Option<String>> Variables<F> {
     }
 }
 
-// Names the variable, never its value: a value may be a secret, such as the key in SENTRY_DSN.
+// Names the variable, never its value: a value may be a secret, such as the key in SENTRY_DSN or the
+// password in SUBSCRIPTIONS_DATABASE_URL.
 #[derive(Debug, PartialEq)]
 pub struct ConfigError {
     pub variable: &'static str,

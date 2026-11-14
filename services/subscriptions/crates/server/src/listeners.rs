@@ -16,7 +16,8 @@ use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::server::graceful::GracefulShutdown;
 use hyper_util::service::TowerToHyperService;
 use sentry::{Hub, SentryFutureExt};
-use serde_json::{Value, json};
+use serde_json::json;
+use storage::{Ledger, StorageError};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tower_http::limit::RequestBodyLimitLayer;
@@ -44,6 +45,18 @@ impl Default for Bounds {
     }
 }
 
+// What a health answer asks before it says ready: whether the ledger answers, since every door reads
+// or writes it. `Ledger` is the one the service runs on.
+pub trait Readiness: Clone + Send + Sync + 'static {
+    fn ready(&self) -> impl Future<Output = Result<(), StorageError>> + Send;
+}
+
+impl Readiness for Ledger {
+    async fn ready(&self) -> Result<(), StorageError> {
+        self.check().await
+    }
+}
+
 // Two ports, so no path rule can expose an internal route (spec §5): one router per listener.
 #[derive(Clone, Copy, Debug)]
 pub enum Listener {
@@ -66,8 +79,10 @@ impl Listener {
         }
     }
 
-    pub fn router(self, config: &Config, bounds: Bounds) -> Router {
-        let routes = Router::new().route("/health", get(health));
+    pub fn router<R: Readiness>(self, config: &Config, readiness: R, bounds: Bounds) -> Router {
+        let routes = Router::new()
+            .route("/health", get(health::<R>))
+            .with_state(readiness);
         let routes = match self {
             Listener::Public => routes,
             Listener::Internal if config.panic_route_enabled => {
@@ -142,8 +157,20 @@ impl Listener {
     }
 }
 
-async fn health() -> Json<Value> {
-    Json(json!({ "status": "ready" }))
+async fn health<R: Readiness>(State(readiness): State<R>) -> Response {
+    match readiness.ready().await {
+        Ok(()) => Json(json!({ "status": "ready" })).into_response(),
+        Err(failure) => {
+            tracing::warn!(
+                operation = "ledger.check",
+                code = failure.code(),
+                sqlstate = failure.sqlstate(),
+                "ledger did not answer"
+            );
+            let body = Json(json!({ "status": "unavailable" }));
+            (StatusCode::SERVICE_UNAVAILABLE, body).into_response()
+        }
+    }
 }
 
 // Proves that a handler's panic reaches Sentry; configuration allows it in test deployments only.

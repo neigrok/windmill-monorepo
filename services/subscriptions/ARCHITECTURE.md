@@ -7,9 +7,12 @@ dependency rule are in [STRUCTURE.md](../../STRUCTURE.md); this file holds the s
 The Rust workspace, its four crates and one tool exist. `domain` models the subscription and folds
 the stores' observations into it ([Domain](#domain)); `app_store` verifies App Store signed payloads
 ([below](#app-store-signature-verification)), and the tool `app_store_test_signer` signs them under a
-chain only tests trust ([App Store test signer](#app-store-test-signer)); `subscriptions`, the server
-binary, answers health on both of its listeners, logs every request and reports to Sentry
-([Server](#server)); `storage` is empty. Nothing is deployed.
+chain only tests trust ([App Store test signer](#app-store-test-signer)); `storage` opens the ledger,
+the service's own database, and migrates it ([Storage](#storage)); `subscriptions`, the server binary,
+opens the ledger before it listens, answers health on both of its listeners, logs every request and
+reports to Sentry ([Server](#server)). The service does not run in production. The production compose
+provisions its database once `SUBSCRIPTIONS_DB_PASSWORD` is set, and does nothing until then
+([deploy README](../../backend/deploy/README.md#the-subscription-database)).
 
 ## Crates
 
@@ -247,11 +250,60 @@ on. It lives in `tools/`, not `crates/`, because it is not part of the service: 
 are not the service's own in Sentry (`telemetry::SERVICE_CRATES`). Its tests verify what it signs
 through `app_store`, a dev-dependency.
 
+## Storage
+
+### The database
+
+The ledger lives in a database of its own, `windmill_subscriptions`, in the host's Postgres, owned by a
+role of the same name (spec §9). Where the deploy has provisioned it, rules at the head of the
+cluster's `pg_hba.conf` turn the backend's role, `windmill`, away from it on every path, the cluster's
+own socket included; its own role needs its password on both paths and reaches no other database. A
+`pg_hba.conf` rule binds a superuser, which `windmill` is and which `REVOKE CONNECT` would not stop; what
+a superuser set on reaching the database can still do is listed in the deploy README. The rules are
+`backend/deploy/subscriptions-db/pg_hba.conf`; how they, the role and the database are provisioned,
+backed up and restored is in the
+[deploy README](../../backend/deploy/README.md#the-subscription-database).
+
+`storage::Ledger::open` connects and brings the schema up to the newest migration before it returns,
+so no `Ledger` exists over an older schema. It holds at most 8 connections, gives a connection 5 s to
+open, and `Ledger::check` gives the database 2 s to answer.
+
+### Migrations
+
+`migrations/` holds every schema change as `NNNN_<what>.sql`, applied in order, each in a transaction
+of its own, and recorded in `_sqlx_migrations`. `sqlx::migrate!` embeds them in the binary at compile
+time, so no build reads a database and no image carries the files; `crates/storage/build.rs` rebuilds
+the crate when one is added. A merged migration is never edited: the ledger records each one's
+checksum, and a database whose record differs from the binary's, or that holds a migration the binary
+does not have, is refused as `migration`. An image older than the database's newest migration
+therefore does not start.
+
+| Migration | What it creates |
+|---|---|
+| `0001_ledger.sql` | `ledger`: one row, whose `epoch` (a UUID) is minted when the ledger is created and replaced when it is restored (spec §5.2) |
+
+### Failures
+
+A database failure is a `StorageError`: a code and, where the server sent one, its SQLSTATE. The
+server's message is never kept, because it can quote a statement or a value.
+
+| Code | When |
+|---|---|
+| `unreachable` | no connection within its bound: nothing listens, the network refused or TLS failed |
+| `refused` | the server would not let the role in: a `pg_hba.conf` rule (`28000`), a wrong password (`28P01`), no such database (`3D000`) |
+| `migration` | the schema could not be brought up to the binary's, or the database holds a migration the binary does not |
+| `database` | anything else the database answered |
+
+`storage::DatabaseUrl` reads a `postgres://` or `postgresql://` URL. Its query may carry only `host`
+(a host or a unix socket directory), `port`, `user`, `dbname` and `sslmode`: the driver logs any other
+parameter with its value, and the URL holds the role's password. Neither its `Debug` nor any error
+repeats it.
+
 ## Server
 
 `crates/server` holds three modules, `config`, `listeners` and `telemetry`, and the binary
-`subscriptions`, whose `main.rs` reads the configuration, starts telemetry and serves both listeners
-until a signal.
+`subscriptions`, whose `main.rs` reads the configuration, starts telemetry, opens the ledger and serves
+both listeners until a signal.
 
 ### Configuration
 
@@ -263,12 +315,20 @@ value.
 |---|---|---|
 | `SUBSCRIPTIONS_PUBLIC_ADDRESS` | yes | Socket address of the public listener, such as `0.0.0.0:8082` |
 | `SUBSCRIPTIONS_INTERNAL_ADDRESS` | yes | Socket address of the internal listener, such as `0.0.0.0:8083` |
+| `SUBSCRIPTIONS_DATABASE_URL` | yes | The ledger's database, as a `storage::DatabaseUrl` ([Storage](#failures)), such as `postgresql://windmill_subscriptions:<password>@db:5432/windmill_subscriptions` |
 | `SENTRY_ENVIRONMENT` | yes | The deployment's name, such as `production`; Sentry files every report and log under it |
 | `SENTRY_DSN` | no | Where Sentry reports go; unset turns Sentry off, logged once at start |
 | `SENTRY_RELEASE` | no | The build's git sha, attached to every report |
-| `WINDMILL_LOG_LEVEL` | no | The lowest level written to stdout: `trace`, `debug`, `info` (default), `warn`, `error` or `fatal`, in any case, the words the backend reads; `fatal` reads as `error` |
+| `WINDMILL_LOG_LEVEL` | no | The lowest level written to stdout: `trace`, `debug`, `info` (default), `warn`, `error` or `fatal`, in any case, the words the backend reads; `fatal` reads as `error`. sqlx's own lines stay at `warn` or above, because below it they carry the server's raw error text |
 | `SENTRY_LOG_LEVEL` | no | The same words: the lowest level of the service's own lines sent to Sentry as Logs; default `info` |
 | `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` | no | `true` adds `GET /debug/panic` to the internal listener; refused unless `SENTRY_ENVIRONMENT`, trimmed and in any case, is `local`, `development`, `test` or `ci` |
+
+### Start
+
+The ledger opens before either listener binds, so no door ever answers over an older schema. A ledger
+that does not open stops the start with exit code 1, one line `ledger.open failed` carrying its
+`code` and `sqlstate`, and a Sentry Issue ([Logs and Sentry](#logs-and-sentry)). A ledger that
+opens writes `ledger open` with its `epoch`.
 
 ### Listeners
 
@@ -278,8 +338,8 @@ does not exist on the public one and answers 404 there.
 
 | Listener | Route | Answer |
 |---|---|---|
-| public | `GET /health` | 200 `{"status":"ready"}` |
-| internal | `GET /health` | 200 `{"status":"ready"}`; the image's `HEALTHCHECK` asks it |
+| public | `GET /health` | 200 `{"status":"ready"}` while the ledger answers `Ledger::check`, else 503 `{"status":"unavailable"}` |
+| internal | `GET /health` | the same; the image's `HEALTHCHECK` asks it |
 | internal | `GET /debug/panic` | panics, only while `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` is `true` |
 
 `listeners::Bounds` holds what a client may take on either listener:
@@ -294,9 +354,13 @@ A handler runs only while its client waits: a client that leaves cancels it. A d
 outlive its request, such as the App Store notification door, spawns that work as a pipeline of its
 own.
 
+Both listeners answer health the same way because every door reads or writes the ledger. The routers
+take what they ask as a `listeners::Readiness`, which `Ledger` is, so a test hands them a fake.
+
 SIGTERM or SIGINT stops both listeners from accepting. Each open connection then finishes its request
-within the bounds above, for at most 6 s; Sentry's last flush takes at most 1 s more and the send in
-progress at most 2 s, so the process exits 0 inside Docker's 10 s, whether or not Sentry answers.
+within the bounds above, and the ledger's connections close once no request holds one, for at most
+6 s together; Sentry's last flush takes at most 1 s more and the send in progress at most 2 s, so the
+process exits 0 inside Docker's 10 s, whether or not Sentry answers.
 
 ### Logs and Sentry
 
@@ -311,26 +375,40 @@ The line reads no header, body or raw path. A 5xx line is at `error`, a 4xx or c
 {"timestamp":"2026-11-14T10:58:01.163207Z","level":"ERROR","message":"request","listener":"internal","method":"GET","route":"/debug/panic","status":500,"outcome":"panicked","duration_ms":4.3,"request_id":"8244ce4ef07341ff85532a1d8dfc7cf9"}
 ```
 
+A health check the ledger does not answer also writes `ledger did not answer` at `warn`, with
+`operation` `ledger.check`, the failure's `code` and `sqlstate`, inside the request's span.
+
 Lines from every crate of the workspace (`telemetry::SERVICE_CRATES`) also go to Sentry as Logs; a
 vendor's lines stay on stdout. A line at `error` creates no Issue. Issues come from explicit
-reports: a panic after start is reported with its location and stack and without its message, and
-logged as `panic` with the event's `sentry_event_id` (absent while Sentry is off). The stack ends at
+reports, each logged with the event's `sentry_event_id` (absent while Sentry is off):
+
+- `telemetry::report_failure` reports an unexpected failure of a named operation (spec §10). Its
+  message is the operation, such as `ledger.open`; its tags are `operation`, `code` and, from the
+  database, `sqlstate`; one Issue gathers each operation and code. Its line is `<operation> failed`
+  at `error`. `ledger.open` is the one operation so far.
+- A panic after start is reported with its location and stack and without its message, and logged as
+  `panic`. The stack ends at
 the panicking frame, and the service's crates are its in-app frames. A panic inside a request also
 carries that request's span in its line and its `listener`, `route` and `request_id` as tags, and the
 request answers 500 `{"error":"internal"}` while the listener keeps answering.
 
 ### Run
 
+The local Postgres gets the ledger's database and role as
+[backend/RUNNING.md](../../backend/RUNNING.md#2-database) shows. Then:
+
 ```sh
 SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0.0.1:8083 \
+  SUBSCRIPTIONS_DATABASE_URL="postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions" \
   SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
 ```
 
-The image builds from this directory and sets both addresses itself:
+The image builds from this directory and sets both addresses itself. A container reaches the host's
+Postgres over TCP, so it needs a URL with a host and a role that may sign in over it; the deploy
+README's [rehearsal](../../backend/deploy/README.md#rehearse-it-locally) runs it beside its database:
 
 ```sh
 docker build --build-arg SENTRY_RELEASE="$(git rev-parse HEAD)" -t windmill-subscriptions .
-docker run --rm -p 8082:8082 -p 8083:8083 -e SENTRY_ENVIRONMENT=local windmill-subscriptions
 ```
 
 ## Toolchain
@@ -353,7 +431,17 @@ cargo test --locked
 
 `check-dependencies.sh` needs `jq` and runs from any directory.
 
-A second job builds the image and runs it twice. First it must become healthy, answer ready on both
-listeners, answer 404 for an internal path on the public port and exit 0 on SIGTERM. Then, with a
-Sentry that accepts and never answers and three panics waiting to send, `docker stop` must exit 0
-within 10 s.
+The tests that need Postgres, in `crates/storage/tests/ledger.rs`, run only where
+`SUBSCRIPTIONS_TEST_DATABASE_URL` names a database whose role may create databases; each test creates
+an empty one beside it and drops it after. Without the variable they are compiled as ignored, so the
+summary counts them as not run. Against the local Homebrew Postgres:
+
+```sh
+SUBSCRIPTIONS_TEST_DATABASE_URL="postgresql:///postgres?host=/tmp" cargo test --locked
+```
+
+The check job runs them against a Postgres 16 service. A second job builds the image and runs it
+twice beside a Postgres of its own. First it must migrate the empty database, become healthy, answer
+ready on both listeners, answer 404 for an internal path on the public port and exit 0 on SIGTERM.
+Then, with a Sentry that accepts and never answers and three panics waiting to send, `docker stop`
+must exit 0 within 10 s.

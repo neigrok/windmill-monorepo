@@ -1,0 +1,16 @@
+# The subscription service on this stack, for rehearsing its database on a local Docker before the
+# service runs in production (README.md, "Rehearse it locally"). Layer it over
+# docker-compose.yml with a project name of its own:
+#   docker compose -p <name> -f docker-compose.yml -f docker-compose.subscriptions.yml up -d subscriptions
+services:
+  subscriptions:
+    image: windmill-subscriptions:local
+    build: ../../services/subscriptions
+    restart: "no"
+    depends_on:
+      subscriptions-db:
+        condition: service_completed_successfully
+    environment:
+      # SUBSCRIPTIONS_DB_PASSWORD is hex, so it sits in the URL unescaped.
+      SUBSCRIPTIONS_DATABASE_URL: postgresql://windmill_subscriptions:${SUBSCRIPTIONS_DB_PASSWORD:-}@db:5432/windmill_subscriptions
+      SENTRY_ENVIRONMENT: local

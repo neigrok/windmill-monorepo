@@ -9,7 +9,7 @@ use sentry::transports::ReqwestHttpTransportOptions;
 use sentry::{ClientInitGuard, ClientOptions, Transport, TransportFactory, TransportOptions};
 use tracing::Subscriber;
 use tracing_subscriber::Layer;
-use tracing_subscriber::filter::Targets;
+use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
@@ -40,11 +40,18 @@ where
         .with_writer(writer)
 }
 
-// Stdout takes lines from WINDMILL_LOG_LEVEL; Sentry Logs, the service's own from SENTRY_LOG_LEVEL.
+// Stdout takes lines from WINDMILL_LOG_LEVEL; Sentry Logs, the service's own from SENTRY_LOG_LEVEL. No line
+// of sqlx's below `warn` reaches either: those carry the server's raw text, such as a notice or an error.
+// That bound filters every layer at once. As a filter of one layer it would also swallow the line after
+// any sqlx line it turned away, because sqlx asks whether a line is wanted and then never writes it.
 pub fn start(config: &Config) -> ClientInitGuard {
+    let quiet_sqlx = Targets::new()
+        .with_default(LevelFilter::TRACE)
+        .with_target("sqlx", LevelFilter::WARN);
     let own_lines =
         Targets::new().with_targets(SERVICE_CRATES.map(|name| (name, config.sentry_log_level)));
     tracing_subscriber::registry()
+        .with(quiet_sqlx)
         .with(json_lines(io::stdout).with_filter(config.log_level))
         .with(LogLayer::new().with_filter(own_lines))
         .init();
@@ -81,7 +88,31 @@ impl TransportFactory for BoundedSends {
     }
 }
 
-// The one source of Issues: location and stack, never the message, which may hold anything.
+// An unexpected failure of a named operation (spec §10): one Issue per operation and code, and one
+// line naming both. No message travels: a failure's text can quote what it was handed.
+pub fn report_failure(operation: &'static str, code: &'static str, sqlstate: Option<&str>) {
+    let event_id = sentry::with_scope(
+        |scope| {
+            scope.set_tag("operation", operation);
+            scope.set_tag("code", code);
+            if let Some(sqlstate) = sqlstate {
+                scope.set_tag("sqlstate", sqlstate);
+            }
+            scope.set_fingerprint(Some(&[operation, code]));
+        },
+        || sentry::capture_message(operation, sentry::Level::Error),
+    );
+    let sentry_event_id = (!event_id.is_nil()).then(|| event_id.simple().to_string());
+    tracing::error!(
+        operation,
+        code,
+        sqlstate,
+        sentry_event_id,
+        "{operation} failed"
+    );
+}
+
+// The other source of Issues: location and stack, never the message, which may hold anything.
 pub fn report_panics() {
     std::panic::set_hook(Box::new(|panic| {
         let location = panic.location().map_or_else(
