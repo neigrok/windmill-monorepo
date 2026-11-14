@@ -61,12 +61,15 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
     // The copy is the forker's own words only when they wrote the source's: their own tree, whose guide is not itself
     // a copy. Anyone else's — an ownerless tree's included — is inherited.
     const bool guideInherited = !guide.empty() && (!ownsSource || room->guideInherited());
-    const std::string title = !next.parent && !requestedTitle.empty() ? requestedTitle : room->title().value;
+    // A subtree's name is its copied step's label: its own title register, which nothing reads, is not copied.
+    const Lww<std::string> title = next.parent ? Lww<std::string>{}
+                                               : Lww<std::string>{requestedTitle.empty() ? room->title().value
+                                                                                         : requestedTitle,
+                                                                  plantedAt};
     copies.push_back(TreeCopy{next.copy, next.source, next.parent,
                               LooseGraph(room->exportState())
                                   .forkState(plantedAt, ownsSource ? ForkOpens::kept : ForkOpens::cleared),
-                              room->exportLegend(), Lww<std::string>{title, plantedAt},
-                              Lww<std::string>{guide, plantedAt}, guideInherited});
+                              room->exportLegend(), title, Lww<std::string>{guide, plantedAt}, guideInherited});
     for (const auto& [step, subtree] : room->subtrees())
       pending.push_back(Pending{subtree, mint(), OwningStep{next.copy, step}});
   }

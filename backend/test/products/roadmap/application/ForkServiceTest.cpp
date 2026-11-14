@@ -423,3 +423,18 @@ TEST(fork_copies_the_roots_standing_branch_under_fresh_ids_and_never_a_subtree_a
   CHECK(h.trees.forkedFrom == (std::map<std::string, std::string>{{"t_d1", "t_src"}}));
   CHECK(h.rooms.accessOf(tid("t_d3"))->owner == std::optional<UserId>(uid("me")));
 }
+
+// A subtree's own title register is read by nothing — its name is its owning step's label — so a fork copies none of
+// it into the forker's account: the copy's title is empty and unstamped, and the copied step's label names it.
+TEST(fork_copies_no_subtrees_own_title_register) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+  h.trees.byId["t_s"] = StoredTree{GraphState{}, LegendState{}, {"Its own register", Hlc{9, 0, "r_old"}}, 0,
+                                   uid("owner"), Visibility::private_};
+  h.trees.subtrees["t_s"] = Subtree{tid("t_s"), tid("t_src"), OwningStep{tid("t_src"), nid("root")}, 1, 0};
+
+  REQUIRE(h.service.fork(tid("t_src"), "", "", uid("me")).outcome == ForkService::Outcome::forked);
+  REQUIRE_EQ(h.trees.forks.back().size(), 2u);
+  CHECK(h.trees.forks.back()[1].title == Lww<std::string>{});
+  CHECK_EQ(h.trees.nameOf(tid("t_d2")).value, std::string("Root"));
+}

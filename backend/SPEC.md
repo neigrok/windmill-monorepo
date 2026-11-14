@@ -603,9 +603,11 @@ Rules:
   fork copied. A fork of the forker's own tree keeps every `opens` as it stands; a fork of anyone
   else's, or of nobody's, clears them all. Every present step of a tree is added to its copy afresh:
   a stamp from that tree's room clock, one counter tick apart in creation order, so a step's
-  creation stamp is when it joined this tree and sibling ties keep their order. The copy's title and
-  guide take the first of those stamps, so a fresh subscriber's delta carries them beside the steps,
-  and any later write of the new owner's outranks them. A copied guide with text the forker did not
+  creation stamp is when it joined this tree and sibling ties keep their order. The root copy's title
+  and every copy's guide take the first of those stamps, so a fresh subscriber's delta carries them
+  beside the steps, and any later write of the new owner's outranks them. A subtree's copy takes no
+  title of its own — its own title register, which nothing reads, stays empty — and is named by its
+  copied step's label. A copied guide with text the forker did not
   write — the source is someone else's or nobody's, or its own guide is still inherited — is marked
   inherited (`trees.guide_inherited`): its author's words, which MCP `get_tree` answers `yours: false`,
   until a guide of the new owner's lands over it through any door. A fork of the forker's own tree
