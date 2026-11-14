@@ -751,9 +751,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Section 29 · the share line (29.14).** The dialog keeps its title *Share roadmap* where 29.14 and 29b.03 have
   *Share My year*. For a roadmap whose steps own subtrees each sentence says who reads it in 29b.03's words, which follow
   canon's publishing disclosure: publishing, *Publishing makes My year public: anyone can view and fork it, subtrees
-  included, and it can appear in the public gallery.*; published, *My year is public: …*; unlisted, *Anyone with this
-  link can view and fork My year, subtrees included.* 29.14's *readable* and *Anyone with the shared link can open them*
-  leave out the fork and the gallery.
+  included, and it can appear in the public gallery.*; published, *My year is public: …*; unlisted, to a reader, *Anyone
+  with this link can view and fork My year, subtrees included.* The owner of an unlisted roadmap is offered Publish, under
+  the publishing sentence. 29.14's *readable* and *Anyone with the shared link can open them* leave out the fork and the
+  gallery.
 - **Section 29 · built and not drawn.** An owning step's Board card is section 28's card for a step that opens a tree:
   the pill with done of total and its bar, or *No steps*, with no title beside it since the subtree is named by the
   step; a press on it goes in. Inside a subtree the room offers no switcher, roadmap sheet, Share, Fork or milestone
