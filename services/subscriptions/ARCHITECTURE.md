@@ -4,10 +4,11 @@ The service that owns every fact about a paid Windmill One subscription. Specifi
 [subscriptions.md](../../docs/foundation/subscriptions.md). The repository's layout and its own
 dependency rule are in [STRUCTURE.md](../../STRUCTURE.md); this file holds the service's.
 
-The Rust workspace and its four crates exist. `app_store` verifies App Store signed payloads
+The Rust workspace and its four crates exist. `domain` models the subscription and folds the stores'
+observations into it ([Domain](#domain)); `app_store` verifies App Store signed payloads
 ([below](#app-store-signature-verification)); `subscriptions`, the server binary, answers health on
-both of its listeners, logs every request and reports to Sentry ([Server](#server)); `domain` and
-`storage` are empty. Nothing is deployed.
+both of its listeners, logs every request and reports to Sentry ([Server](#server)); `storage` is
+empty. Nothing is deployed.
 
 ## Crates
 
@@ -33,6 +34,48 @@ Every crate inherits `[workspace.lints]`, which forbids `unsafe` code.
 `check-dependencies.sh` reads `cargo metadata` and fails, naming each offending edge, when a normal
 or build dependency between the crates is not one of the five edges above, or when `domain` has a
 normal or build dependency outside its allowlist.
+
+## Domain
+
+`domain` holds every rule about a subscription's lifecycle, as pure functions of values: no I/O, no
+clock, no randomness. Its files, by kind:
+
+| File | Holds |
+|---|---|
+| `values.rs` | Instants (epoch milliseconds), spans, money, the text ids and the closed names: `Store`, `Environment`, `Plan` |
+| `subscription.rs` | The record: `Subscription`, its `Status` as the newest observation stated it, a `State` that carries only its own facts, `Period`, and access (`access_until`, `grants_access`) |
+| `observe.rs` | `Observation`, what a caller hands `observe`, the `Change` it returns, `Event` and `Refusal` |
+| `entitlement.rs` | `AccountEntitlement`, one `Entitlement` block per environment, folded from the ledger alone |
+
+The action that applies an observation calls `observe` once:
+
+1. Load the lineage's `Ledger`: its subscription, if any, and its periods.
+2. Resolve the observation's account hint against the erased accounts into an `AccountHint`, and pass
+   the claim when a claim door calls.
+3. Mint the observation's ids with `Observation::mint_ids`: a subscription id and one period id for
+   each period it states. `observe` uses the ones it needs.
+4. Persist the returned `Change` in one transaction: the subscription, each written or restated
+   period, and the events in order, which the ledger stamps with `seq` and `recordedAt`. A `Refusal`
+   persists nothing.
+5. After the commit, write `hint_for_store`, when present, to the store as the account hint.
+
+`verifiedAt` is the sweep's bookkeeping: storage stamps it when it applies a pull, and the domain's
+subscription leaves it out, since no single observation can state it (INV-6).
+
+`observe` records `unbound` only when a new purchase moves an ended lineage to another account
+(R-11). Account erasure (§6.4) unbinds every subscription an account holds and records `unbound` for
+each; the domain has no step for it yet, and the erasure node adds one beside `observe`.
+
+Known limits:
+
+- A period from before an R-11 move that the ledger first hears of after it is recorded under the new
+  account, since the domain keeps no history of bindings.
+- An ended lineage never bound and bought again with a hint binds by the ordinary rule: at `startedAt`,
+  with its earlier periods recorded again (INV-13).
+
+`tests/vectors/` holds the lifecycle stories every implementation of the domain passes, and
+`crates/domain/tests/vectors.rs` runs them. `crates/domain/tests/observe.rs` holds the property tests
+of INV-4, INV-5 and INV-6 and one that replays the feed through §6.3's funding in any order.
 
 ## App Store signature verification
 

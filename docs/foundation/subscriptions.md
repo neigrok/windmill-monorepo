@@ -47,7 +47,8 @@ It is written in Rust. It runs as its own container on the production host besid
 - **D-4 Period.** One stretch `[start, end)` the customer paid for or was granted, as the store states
   it, with the store transaction that created it, its price and currency, and its refund time while the
   store has taken the money back. A renewal's period starts where the previous one ends, not at the
-  instant the store charged it, so the periods of one subscription never overlap.
+  instant the store charged it, so the periods a store states for one subscription do not overlap; one
+  that does is written as stated all the same, since a period is its store transaction (INV-7).
 - **D-5 Observation.** A verified statement by a store of one subscription's whole state at one
   instant (`observedAt`, the store's own stamp). Every adapter produces observations and nothing else.
 - **D-6 Event.** A normalized fact recorded when an observation changes a subscription. Events are
@@ -67,7 +68,7 @@ It is written in Rust. It runs as its own container on the production host besid
 | Identity | `id` | The service's own UUID. |
 | | `store`, `environment`, `storeSubscriptionId` | D-1, D-2, D-3. Unique together. |
 | | `plan`, `productId`, `billingInterval` | D-9, the store's SKU, and an ISO 8601 duration (`P1M`). |
-| Binding | `accountId`, `boundAt`, `boundBy` | D-7. `boundBy` is `purchase` or `claim`. Null until bound. |
+| Binding | `accountId`, `boundAt`, `boundBy` | D-7. `boundBy` is `purchase` or `claim`. Null until bound. `boundAt` is `startedAt` for a binding at purchase, whichever observation carries the hint; the new purchase's start when a purchase moves an ended lineage (R-11); and the claim's instant for a claim. |
 | Lifecycle | `state` | §3.2. |
 | | `startedAt` | The first purchase of this lineage. |
 | | `currentPeriod` | The start and end of the period in force (D-4). |
@@ -118,17 +119,28 @@ same lineage, which returns the subscription to `active` and records `started` a
 
 ### §3.4 Observation and events
 
-The domain has one write: `observe(subscription | none, observation) → (subscription, events)`.
+The domain has one write, `observe`. It takes what the ledger holds for one lineage (the subscription
+or none, and its periods), one observation with the ids the caller minted for what it may write, the
+observation's account hint as resolved against the erased accounts, and a claim if a claim door calls;
+it returns the subscription, the periods to write and the events to append, or a refusal (§4).
 
 - **INV-4 Idempotent.** Applying an observation twice changes nothing and records nothing.
-- **INV-5 Stale-safe.** An observation older than the record's `observedAt` changes no field of the
-  subscription. It still adds a period the ledger lacks, and its statement of a period's refund time
-  applies when it is newer than the statement that last set or cleared that refund time.
-- **INV-6 Convergent.** For any order of any set of observations, the resulting subscription equals the
-  one the newest observation alone produces, and the resulting set of periods is the union, each
-  period's refund time as its newest statement gives it.
-- **INV-7.** A period is identified by its store transaction and written once. Afterwards only its
-  refund time changes: set when the store takes the money back, cleared when the store reverses that.
+- **INV-5 Stale-safe.** An observation the record's newest statement supersedes changes no field of
+  the subscription but its binding (§4). It still adds a period the ledger lacks, and its statement of a
+  period's refund time applies when it supersedes the newest statement of that period the ledger has
+  applied.
+- **INV-6 Convergent.** For any order of any set of observations, the resulting subscription, its
+  binding aside (§4), equals the one the newest observation alone produces, and the resulting set of
+  periods is the union, each period's refund time as its newest statement gives it and its stretch as
+  INV-7 keeps it. One statement supersedes another when its `observedAt` is later or, at the same
+  instant, when its content orders after the other's in one fixed order over every stated field, so
+  statements stamped alike converge too; a period's refund statements order by stamp, then refund time.
+- **INV-7.** A period is identified by its store transaction and written once: its stretch, price and
+  offer are those of the statement that wrote it, and a later statement of the same transaction with
+  another stretch changes none of them, so the stretch is the one exception to INV-6's order. A
+  store's extension of the period in force shows in the status's `currentPeriod` (`period_extended`).
+  Afterwards only its refund time changes: set when the store takes the money back, cleared when the
+  store reverses that. A period keeps the `observedAt` of the newest statement of it applied.
 
 Events: `started`, `renewed`, `renewal_turned_off`, `renewal_turned_on`, `payment_failed`,
 `payment_recovered`, `pause_scheduled`, `paused`, `resumed`, `plan_change_scheduled`, `plan_changed`,
@@ -137,15 +149,41 @@ three period events `period_recorded`, `period_refunded` and `period_refund_reve
 `seq`, `type`, `occurredAt` (the store's time), `recordedAt`, `subscriptionId` and `accountId`; a period
 event also carries its period.
 
+An observation's events read in story order: its state events, then `unbound` and `bound`, then its
+period events by their periods' starts, and `expired` or `revoked` last. A state event is recorded
+when the newest status changes as below, and occurs at the observation's `observedAt` unless another
+instant is named:
+
+- `started`: the lineage is new, at `startedAt`; or it leaves `expired`, or leaves `revoked` with a new
+  period in force, at that period's start. A new period in force is one that starts later. The events
+  after it compare the stated status with an `active`, renewing subscription in the same period.
+- A new period in force records the one event that names how it came: `renewed` after `active`,
+  `payment_recovered` after `grace` or `on_hold`, `resumed` after `paused`. Turning `active` from those
+  states records `payment_recovered` or `resumed` with or without a new period.
+- `revocation_reversed`: it leaves `revoked` without a new period in force.
+- `plan_changed`: the product changes. `period_extended`: the period in force keeps its start and ends
+  later.
+- `payment_failed`: it enters `grace` or `on_hold` from a state that is neither, at `paymentFailedAt`.
+- `renewal_turned_off`, at `cancelRequestedAt` when stated, and `renewal_turned_on`: `autoRenew` changes.
+- `plan_change_scheduled`, `pause_scheduled`: `nextProductId` or `pauseScheduledFor` is set to a new
+  value.
+- `paused`, `expired`, `revoked`: it enters that state, at `pausedAt` or `endedAt`.
+- `unbound` and `bound` occur at `boundAt` and `period_refunded` at the refund time; the other period
+  events occur at `observedAt`.
+
 - **INV-8.** Events are appended under one lock, so `seq` order is commit order and a reader that has
   seen `seq = n` has seen every event below it. `seq` increases and may skip numbers.
-- **INV-13.** Each change to a period records one period event, whatever state events the same
-  observation records or does not: `period_recorded` when the period is written, `period_refunded`
-  when its refund time is set, `period_refund_reversed` when it is cleared. Binding a subscription
-  records `period_recorded` again under the new account for each period written before the binding,
-  carrying its refund time as it stands, so a period written while the subscription was unbound still
-  reaches its account. A period written by the observation that binds is recorded once, under the
-  account. Lifecycle events never carry a period; period events are the only ones that do.
+- **INV-13.** An observation records at most one period event for each period, whatever state events
+  it records or does not. `period_recorded` when it writes the period, carrying its refund time as
+  stated, so a period first heard of refunded records `period_recorded` alone; otherwise
+  `period_refunded` when its refund time is set and `period_refund_reversed` when it is cleared.
+  Binding an unbound subscription records `period_recorded` again under the account for each period it
+  holds, carrying its refund time as it stands, and that event stands for any change the same
+  observation makes to the period; so a period written while the subscription was unbound still
+  reaches its account, and one written by the binding observation is recorded once. A purchase that
+  moves an ended lineage to another account (R-11) records no period again: the periods before it stay
+  recorded under the account that paid for them. Lifecycle events never carry a period; period events
+  are the only ones that do.
 - **INV-14.** An observation that changes a field the entitlement carries (§5.2) records at least one
   event. When no event above names the change, as with `grace` turning `on_hold`, a new price or a
   redeemed offer, it records `updated`.
@@ -175,15 +213,19 @@ period leaves a running subscription `active` (§8).
 - **INV-9.** A subscription binds to at most one account. A binding ends only by account erasure
   (§6.4) or an operator transfer, and both record an event.
 - **At purchase.** The app passes the signed-in account's id as the store's account hint. The first
-  verified observation carrying a hint binds the subscription to the account it names. A hint that
-  names an erased account (§6.4) counts as no hint.
+  verified observation carrying a hint binds the subscription to the account it names. First means
+  first applied, so the binding follows arrival and INV-6 leaves it aside. A hint that names an erased
+  account (§6.4) counts as no hint.
 - **By claim.** The app posts the store's signed transaction through the backend (§5.3). The service
   verifies it and binds an unbound subscription to the caller. A claim for a subscription already
   bound to the caller succeeds without change. A claim for one bound to another account, or whose
   account hint names another account that is not erased, is refused with `bound_to_another_account`
   (R-3). A claim for an unbound subscription whose hint names an erased account binds it to the
   caller (R-9).
-- A later observation whose hint differs never rebinds.
+- A later observation whose hint differs never rebinds, except a new purchase (R-11): an observation
+  that takes the subscription out of `expired` or `revoked` (§3.2) with a hint naming another live
+  account moves it to that account, recording `unbound` under the old account and `bound` under the
+  new one, at the new purchase's start. A claim or restore that pays nothing never moves it (R-3).
 - An unbound subscription is recorded in full and entitles no one.
 - Only a purchase its buyer owns binds. A subscription the store reports as shared or assigned to
   the device's Apple account is recorded and entitles no one.
@@ -349,7 +391,10 @@ period's `id`, so no store id reaches the backend. (R-4, R-5)
   overlap rule only until `closedAt`; spent capacity is not recovered. A close for a grant that does
   not exist changes nothing.
 - A `period_refund_reversed` entry reopens that grant by clearing its `closedAt`. A reopen that would
-  overlap another grant of the account answers `Conflict` and leaves the grant closed.
+  overlap another grant of the account answers `Conflict` and leaves the grant closed. For a period
+  with no grant, as one first heard of refunded, it funds the period as a `period_recorded` entry
+  would; `fund` is idempotent, so the funded grants are the same in whatever order the store's
+  statements arrived.
 - An account that holds Windmill One through a subscription and has no funded grant in force, as in
   `grace`, in the renewal slack or after a `Conflict`, is admitted under the free signed-in
   allowance.
@@ -467,7 +512,7 @@ The backend's role cannot read it.
 
 ## §11 Rulings
 
-The owner's rulings. R-1 to R-7, R-9 and R-10 are settled; R-8 is open, and its row holds what this
+The owner's rulings. R-1 to R-7 and R-9 to R-11 are settled; R-8 is open, and its row holds what this
 document assumes until it is ruled.
 
 | | Question | Ruling |
@@ -482,3 +527,4 @@ document assumes until it is ruled.
 | R-8 | Two live subscriptions on one account | Open. Assumed: both are recorded; access is one; the account screen says the person is charged twice and where to cancel. Applies already to two Apple Accounts bound to one Windmill account, and to every second store. |
 | R-9 | A subscription whose account hint names an erased account | Binds to the account that claims it; the erased account no longer exists. R-3 still refuses a claim against a live account. |
 | R-10 | Selling more than one seat of the subscription | No. Multiseat purchases are off in App Store Connect, which keeps the product out of Apple Business and Apple School Manager. A seat someone else paid for entitles no one. |
+| R-11 | An ended subscription bought again under another Windmill account | It moves to the account that paid: `unbound` under the old account, then `bound` under the new one at the new purchase's start. Periods from that purchase on go to the new account; earlier ones stay recorded under the old one. A restore or claim that pays nothing is still refused (R-3). |
