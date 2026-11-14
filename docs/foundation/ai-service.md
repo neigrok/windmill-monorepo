@@ -705,8 +705,8 @@ Transcription, as the provider documents it:
   a person, and the charge then follows it.
 - The session accepts no compressed audio, so a caller sends about 48 kB a second.
 - The provider recommends, and does not require, an identifier of the end user on a session; the
-  adapter sends none. It keeps what a Realtime session carried for 30 days for abuse monitoring,
-  unless zero data retention is arranged for the account (R-11).
+  adapter sends none. It keeps what a Realtime session carried for 30 days for abuse monitoring and
+  does not train on it. Zero data retention exists for the account and is not arranged (R-11).
 
 Speech is not built anywhere in Windmill. The rule its adapter follows: the reservation is the most
 the chosen model can bill for the request's text, read from its documentation into the price book;
@@ -842,7 +842,8 @@ designed when the service is built, one integration at a time.
   an MCP key and no browser session, so this move includes a door a session can call.
 - **I-5 Voice.** Journal Talk streams the microphone to the live transcription door, detecting the
   person's pauses on the device, and journal read-aloud calls the speech door. Both run from the
-  device and are part of Windmill One.
+  device and are part of Windmill One. Where Talk is offered, the product tells the person that
+  their speech is sent to the provider and kept there for 30 days (R-11).
 - **I-6 Work nobody waits on.** When the backend has AI work for an account with no device present,
   it calls the same doors with a pass it signs for that account. The queue of that work stays in the
   backend, and a refusal or an unreachable service leaves the work due. Such a call takes one of the
@@ -864,8 +865,8 @@ designed when the service is built, one integration at a time.
 
 ## §13 Rulings
 
-The owner's rulings. All are settled but the speech half of R-6 and R-11, whose rows hold what this
-document assumes until they are ruled.
+The owner's rulings. All are settled but the speech half of R-6, whose row holds what this document
+assumes until it is ruled.
 
 | | Question | Ruling |
 |---|---|---|
@@ -879,7 +880,7 @@ document assumes until they are ruled.
 | R-8 | A call the provider billed above its reservation | The whole cost is spent and reported, and nobody is locked out. (2026-11-14) |
 | R-9 | How long a call's row is kept | 90 days, after which only the budgets' sums remain. (2026-11-14) |
 | R-10 | Whether installations and free accounts share one daily pool | Shared. The tier table can give each its own. (2026-11-14) |
-| R-11 | Whether the voice provider may keep what a session carried | Open. Assumed: zero data retention is arranged with the provider before a person's speech is sent, so nothing a Talk session carried is kept there. |
+| R-11 | Whether the voice provider may keep what a session carried | Zero data retention is not arranged; the owner cannot arrange it. What a Talk session carried is kept at the provider for 30 days for abuse monitoring and is not used for training, as its data page said on 2026-11-14. The product says so wherever Talk is offered (I-5). (2026-11-14) |
 
 What this service does differently from the backend's ledger, beyond moving it:
 
