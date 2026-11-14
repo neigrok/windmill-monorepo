@@ -156,9 +156,9 @@ Server API client, `chrono`, `serde_with` and `uuid`, which the verifier does no
 ### The database
 
 The ledger lives in a database of its own, `windmill_subscriptions`, in the host's Postgres, owned by a
-role of the same name (spec §9). Rules at the head of the cluster's `pg_hba.conf` turn the backend's
-role, `windmill`, away from it on every path, the cluster's own socket included, and let its role reach
-no other database. A `pg_hba.conf` rule binds a superuser, which `windmill` is and which `REVOKE
+role of the same name (spec §9). Where the deploy has provisioned it, rules at the head of the
+cluster's `pg_hba.conf` turn the backend's role, `windmill`, away from it on every path, the cluster's
+own socket included, and let its role reach no other database. A `pg_hba.conf` rule binds a superuser, which `windmill` is and which `REVOKE
 CONNECT` would not stop. The rules are `backend/deploy/subscriptions-db/pg_hba.conf`; how they, the
 role and the database are provisioned, backed up and restored is in the
 [deploy README](../../backend/deploy/README.md#the-subscription-database).
@@ -226,8 +226,8 @@ value.
 
 The ledger opens before either listener binds, so no door ever answers over an older schema. A ledger
 that does not open stops the start with exit code 1, one line `ledger.open failed` carrying its
-`code` and `sqlstate`, and a Sentry Issue ([Logs and Sentry](#logs-and-sentry)). Docker's restart
-policy starts it again. A ledger that opens writes `ledger open` with its `epoch`.
+`code` and `sqlstate`, and a Sentry Issue ([Logs and Sentry](#logs-and-sentry)). A ledger that
+opens writes `ledger open` with its `epoch`.
 
 ### Listeners
 
