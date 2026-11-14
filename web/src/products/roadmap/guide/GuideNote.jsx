@@ -260,11 +260,9 @@ export function GuideNote({ guide, band }) {
     const fit = () => {
       box.style.height = 'auto';
       if (!phone) {
-        const status = body.current.querySelector('.st-guide-status');
-        const style = getComputedStyle(body.current);
-        const room = Math.max(0, body.current.clientHeight - parseFloat(style.paddingTop) - (status ? status.offsetHeight + parseFloat(style.rowGap) : 0) - 1);
         const draftHeight = caretFoot(box, box.value.length) + box.offsetHeight - box.clientHeight;
-        box.style.minHeight = `${Math.min(room, Math.max(64, draftHeight))}px`;
+        box.style.minHeight = '0px';
+        box.style.height = `${Math.max(64, draftHeight + parseFloat(getComputedStyle(box).lineHeight))}px`;
         return;
       }
       box.style.minHeight = '';
