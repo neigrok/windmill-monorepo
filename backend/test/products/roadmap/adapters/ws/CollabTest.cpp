@@ -2648,3 +2648,59 @@ TEST(ws_a_subscriber_is_sent_its_delta_and_then_its_graft_each_in_its_own_place_
   CHECK_EQ(frames, (std::vector<std::string>{"subgraph delta", "progress graft", "subgraph live", "progress echo"}));
 }
 
+
+// A frame that deletes a step owning a subtree names the subtree in `branches`, or the whole frame is refused
+// `branch-unconfirmed`, nothing of it landed, each branch named with its size. Named, the delete hides the branch at
+// once: a page open on the subtree is sent the reject an absent tree gets and is dropped, and a fresh subscribe to it,
+// or a write, answers as for an absent tree. The step's revive — its Undo — shows the subtree again.
+TEST(ws_a_frame_deleting_an_owning_step_names_its_subtree_and_the_delete_hides_the_branch_until_the_step_is_revived) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  const TreeId child{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {child, std::nullopt})));
+  auto writer = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), writer);
+  h.collab.onMessage(writer, registerFrame(child.str(), "k1", R"({"id":"knot","createdAt":"150:0:web","label":"Knot","labelAt":"150:0:web"})"));
+  auto reader = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), reader);
+  h.collab.onMessage(reader, subscribeFrame(child.str()));
+  REQUIRE_EQ(countOfType(*reader, "subgraph"), 1u);
+  reader->sent.clear();
+  writer->sent.clear();
+
+  const std::string deletion = registerFrame("t_p", "d1", R"({"id":"plain","deletedAt":"200:0:web"})");
+  {
+    Observed observed;
+    h.collab.onMessage(writer, deletion);
+    REQUIRE_EQ(observed.completions.size(), 1u);
+    CHECK_EQ(observed.completions[0].operation + " " + observed.completions[0].outcome,
+             std::string("roadmap.ws.subgraph branch-unconfirmed"));
+    CHECK(observed.issues.empty());
+  }
+  CHECK_EQ(parse(writer->sent.back()),
+           parse(R"({"t":"reject","treeId":"t_p","frameId":"d1","code":"branch-unconfirmed",)"
+                 R"("reason":"this frame deletes a step that owns a subtree it does not name: send the subtree's id in )"
+                 R"(branches to take it with the step","subtree":"t_00000000000000c1","steps":1,"subtrees":0,)"
+                 R"("branches":[{"step":"plain","subtree":"t_00000000000000c1","steps":1,"subtrees":0}]})"));
+  CHECK(reader->sent.empty());
+  CHECK(h.rooms.open(TreeId{"t_p"})->hasNode(NodeId{"plain"}));
+
+  Json::Value confirmed = parse(deletion);
+  confirmed["frameId"] = "d2";
+  confirmed["branches"].append(child.str());
+  h.collab.onMessage(writer, dump(confirmed));
+  CHECK_EQ(lastFrameOfType(*writer, "subgraphAck")["frameId"].asString(), std::string("d2"));
+  CHECK_EQ(rejectCode(reader->sent.back()), std::string("no-such-tree"));
+  auto late = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), late);
+  h.collab.onMessage(late, subscribeFrame(child.str()));
+  CHECK_EQ(rejectCode(late->sent.back()), std::string("no-such-tree"));
+  h.collab.onMessage(writer, registerFrame(child.str(), "k2", R"({"id":"hitch","createdAt":"210:0:web"})"));
+  CHECK_EQ(rejectCode(writer->sent.back()), std::string("no-such-tree"));
+
+  h.collab.onMessage(writer, registerFrame("t_p", "u1", R"({"id":"plain","createdAt":"300:0:web"})"));
+  h.collab.onMessage(late, subscribeFrame(child.str()));
+  CHECK_EQ(lastFrameOfType(*late, "subgraph")["nodes"].size(), 1u);
+}

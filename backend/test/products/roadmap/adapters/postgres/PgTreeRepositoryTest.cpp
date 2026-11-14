@@ -2251,3 +2251,133 @@ TEST(pg_the_owners_list_leaves_out_the_subtree_of_a_removed_root) {
   CHECK(listed() == (std::set<TreeId>{kOther}));
   CHECK(trees.openedFrom(kAda, {kChild}).empty());
 }
+
+// A deleted owning step hides its branch from every read of the stored rows — the access, the place, the owner's list,
+// the walk of what a tree opens, the guides above — at any depth, while the hidden trees keep their rows and their
+// content; the root's absent owning steps and its branch's size say the same. Its revive shows the branch again, and
+// nothing retires a subtree's row by its id.
+TEST(pg_a_deleted_owning_step_hides_its_branch_from_every_stored_read_and_its_revive_shows_it_again) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kAda, {{"sail", nullptr}, {"coast", nullptr}});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kParent, "sail", kChild)));
+  forest.edit(kChild, kAda, {{"rig", nullptr}, {"knot", nullptr}});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kChild, "rig", kGrandchild)));
+  forest.edit(kGrandchild, kAda, {{"bowline", nullptr}});
+  PgTreeRepository trees{pgTestPool()};
+  const auto standing = [&] {
+    std::set<TreeId> ids;
+    for (const OwnedTree& tree : trees.listOwnedBy(kAda)) ids.insert(tree.data.id);
+    return ids;
+  };
+  const auto setStep = [&](const TreeId& tree, const char* step, bool present, std::set<TreeId> branches) {
+    std::lock_guard<std::mutex> strand(forest.rooms.strandFor(tree));
+    TreeRoom* room = forest.rooms.open(tree);
+    if (present) room->applyCommand(CreateNode{nid(step), step, "icon", NodeColor::sky}, forest.clock.nowMs(), kAda);
+    else room->applyCommands({DeleteNode{nid(step)}}, forest.clock.nowMs(), kAda, branches);
+    REQUIRE(forest.rooms.persist(tree) == Saved::saved);
+  };
+  CHECK(trees.branchSizes({kParent, kChild}) ==
+        (std::map<TreeId, BranchSize>{{kParent, BranchSize{2, 5}}, {kChild, BranchSize{1, 3}}}));
+  CHECK(trees.loadAccess(kGrandchild)->stands);
+
+  setStep(kParent, "sail", false, {kChild});
+  for (const TreeId& hidden : {kChild, kGrandchild}) {
+    const std::optional<StoredAccess> access = trees.loadAccess(hidden);
+    REQUIRE(access.has_value());
+    CHECK_FALSE(access->stands);
+    CHECK_FALSE(trees.placeOf(hidden).has_value());
+    CHECK(trees.load(hidden).has_value());
+  }
+  CHECK(trees.loadAccess(kGrandchild)->access.path ==
+        (std::vector<OwningStep>{OwningStep{kParent, nid("sail")}, OwningStep{kChild, nid("rig")}}));
+  CHECK(standing() == (std::set<TreeId>{kParent}));
+  CHECK(trees.openedFrom(kAda, {kChild, kGrandchild}).empty());
+  CHECK(trees.guidedTreesAbove(kAda, kGrandchild).empty());
+  CHECK(trees.absentStepsUnder(kParent) == (std::set<OwningStep>{OwningStep{kParent, nid("sail")}}));
+  CHECK(trees.branchSizes({kParent}) == (std::map<TreeId, BranchSize>{{kParent, BranchSize{0, 1}}}));
+
+  setStep(kChild, "rig", false, {kGrandchild});
+  setStep(kParent, "sail", true, {});
+  CHECK(standing() == (std::set<TreeId>{kParent, kChild}));
+  CHECK(trees.loadAccess(kChild)->stands);
+  CHECK_FALSE(trees.loadAccess(kGrandchild)->stands);
+  CHECK(trees.absentStepsUnder(kParent) == (std::set<OwningStep>{OwningStep{kChild, nid("rig")}}));
+
+  setStep(kChild, "rig", true, {});
+  CHECK(standing() == (std::set<TreeId>{kParent, kChild, kGrandchild}));
+  CHECK(trees.placeOf(kGrandchild).has_value());
+  CHECK(trees.absentStepsUnder(kParent).empty());
+  trees.softDelete(kChild);
+  CHECK(trees.loadAccess(kChild).has_value());
+}
+
+// "Every owning step on the path is present" is one walk up a subtree's parents: at depth 8 it reads the 9 rows of trees
+// on the way through trees_pkey, the root's last, and the 8 owning steps through tree_nodes_pkey, and nothing else.
+TEST(pg_the_branch_condition_walks_a_depth_eight_path_by_primary_keys_alone) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kAda, {{"down", nullptr}});
+  TreeId above = kParent;
+  for (int depth = 1; depth <= kMaxTreeDepth; ++depth) {
+    const TreeId below{"t_5ab00000000000d" + std::to_string(depth)};
+    REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(above, "down", below)));
+    if (depth < kMaxTreeDepth) forest.edit(below, kAda, {{"down", nullptr}});
+    above = below;
+  }
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  txn.exec("SET LOCAL enable_seqscan = off");
+  const pqxx::result explained = txn.exec_params(
+      "EXPLAIN (ANALYZE, TIMING OFF, FORMAT JSON) SELECT t.id FROM trees t WHERE t.id = $1 AND t.deleted_at IS NULL AND " +
+          branchStandsCondition("t"),
+      above.str());
+  std::map<std::string, double> probes;  // index name → rows it was asked for, over every loop
+  std::set<std::string> scans;
+  std::vector<Json::Value> nodes{parse(explained[0][0].as<std::string>())[0]["Plan"]};
+  while (!nodes.empty()) {
+    const Json::Value node = nodes.back();
+    nodes.pop_back();
+    for (const Json::Value& child : node["Plans"]) nodes.push_back(child);
+    const std::string relation = node.get("Relation Name", "").asString();
+    if (relation.empty() || node["Actual Loops"].asDouble() == 0) continue;  // a plan's alternative it never ran
+    scans.insert(node["Node Type"].asString() + " " + relation + " " + node.get("Index Name", "").asString());
+    probes[node.get("Index Name", "").asString()] += node["Actual Loops"].asDouble();
+  }
+  CHECK(scans == (std::set<std::string>{"Index Scan trees trees_pkey", "Index Scan tree_nodes tree_nodes_pkey"}));
+  CHECK_EQ(probes["trees_pkey"], 1.0 + kMaxTreeDepth + 1);  // the tree, then its 8 parents and the root's no-parent
+  CHECK_EQ(probes["tree_nodes_pkey"], static_cast<double>(kMaxTreeDepth));
+  CHECK_EQ(parse(explained[0][0].as<std::string>())[0]["Plan"]["Actual Rows"].asInt(), 1);
+}
+
+// A fork's copies land in one transaction: a copy whose id is taken stores none of them.
+TEST(pg_a_fork_stores_every_copy_of_a_branch_or_none) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kOther, kAda, {{"taken", nullptr}});
+  LooseGraph steps;
+  steps.createNode(nid("sail"), "Sail", "icon", NodeColor::sky, Hlc{5, 0, "srv"});
+  const auto copy = [&](const char* id, std::optional<OwningStep> parent) {
+    return TreeCopy{TreeId{std::string(id)}, kParent, std::move(parent), steps.exportState(), LegendState{},
+                    Lww<std::string>{"Copy", Hlc{5, 0, "srv"}}, Lww<std::string>{"", Hlc{5, 0, "srv"}}, false};
+  };
+  const TreeId root{"t_5ab00000000000f0"};
+  bool refused = false;
+  try {
+    forest.trees.fork({copy("t_5ab00000000000f0", std::nullopt), copy("t_5ab0000000000002", OwningStep{root, nid("sail")})},
+                      kBea);
+  } catch (const DuplicateTree&) {
+    refused = true;
+  }
+  CHECK(refused);
+  CHECK_EQ(placeOf(root), std::string(""));
+
+  forest.trees.fork({copy("t_5ab00000000000f0", std::nullopt), copy("t_5ab00000000000f1", OwningStep{root, nid("sail")})},
+                    kBea);
+  CHECK_EQ(placeOf(TreeId{"t_5ab00000000000f1"}),
+           root.str() + " sail " + root.str() + " 1 " + kBea.str() + " private [Copy] 0");
+  CHECK(forest.trees.loadAccess(TreeId{"t_5ab00000000000f1"})->stands);
+}

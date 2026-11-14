@@ -209,3 +209,20 @@ TEST(a_register_is_null_absent_or_a_string_value_with_its_stamp_and_anything_els
   CHECK(empty.guide == (std::optional<Lww<std::string>>{Lww<std::string>{"", at(9)}}));
   CHECK_FALSE(empty.title.has_value());
 }
+
+// A frame's `branches` are read as the subtrees it confirms and are never written back out: a broadcast carries none.
+// Any other shape is no frame this server reads.
+TEST(a_frames_branches_are_read_and_never_written) {
+  const Subgraph frame = subgraphFromJson(parse(R"({"treeId":"t","frameId":"f","branches":["t_s","t_r","t_s"]})"));
+  CHECK(frame.branches == (std::set<TreeId>{TreeId{"t_r"}, TreeId{"t_s"}}));
+  CHECK_FALSE(toJson(frame).isMember("branches"));
+  for (const char* malformed : {R"({"branches":"t_s"})", R"({"branches":[7]})"}) {
+    bool refused = false;
+    try {
+      subgraphFromJson(parse(malformed));
+    } catch (const std::invalid_argument&) {
+      refused = true;
+    }
+    CHECK(refused);
+  }
+}

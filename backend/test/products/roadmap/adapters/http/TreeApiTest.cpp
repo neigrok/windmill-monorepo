@@ -1944,3 +1944,44 @@ TEST(get_guides_names_a_subtree_by_its_owning_step_and_never_by_its_own_title_re
            parse(R"({"guides":[{"treeId":"t_s","title":"Learn to sail","text":"Rig first.","yours":false}]})"));
   CHECK_EQ(bodyOf(sendGetTree(h.api, "", "t_s"))["data"]["title"], Json::Value("Learn to sail"));
 }
+
+// A fork of a subtree is refused 409 `not-a-root`, naming where it hangs; a fork of its root copies the branch. While a
+// stored deletion of an owning step hides the branch, every read of a tree in it — the tree, its guides, its
+// diagnostics — answers the 404 an absent tree gets, to its owner and to a reader, and a fork or a PUT aimed at it does
+// too, answered as one aimed at an absent tree is; a PUT of the parent that carries the step revives it and shows the
+// branch again.
+TEST(a_hidden_branch_answers_every_rest_door_as_absent_and_a_subtree_is_forked_only_with_its_root) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-stranger", "stranger@example.com");
+  h.seedForest(owner, Visibility::unlisted);
+
+  const drogon::HttpResponsePtr refused = sendFork(h.api, forkRequest(Json::Value(Json::objectValue), "s-stranger"), "t_r");
+  REQUIRE_EQ(refused->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(bodyOf(refused), parse(R"({"code":"not-a-root","parent":{"tree":"t_s","step":"rig"},"root":"t_a",)"
+                                  R"("error":"this tree hangs from step \"rig\" of t_s under the root t_a: a subtree is )"
+                                  R"(copied with its root, so fork the root"})"));
+  const drogon::HttpResponsePtr forked = sendFork(h.api, forkRequest(Json::Value(Json::objectValue), "s-stranger"), "t_a");
+  REQUIRE_EQ(forked->getStatusCode(), drogon::k201Created);
+  CHECK_EQ(h.trees->forks.back().size(), 3u);
+
+  h.rooms->sweep(std::chrono::steady_clock::duration::zero());
+  LooseGraph root(h.trees->byId["t_a"].state);
+  root.deleteNode(NodeId{"sail"}, Hlc{50, 0, "web"});
+  h.trees->byId["t_a"].state = root.exportState();
+  for (const char* session : {"s-owner", "s-stranger", ""})
+    for (const char* tree : {"t_s", "t_r"}) {
+      CHECK_EQ(sendGetTree(h.api, session, tree)->getStatusCode(), drogon::k404NotFound);
+      CHECK_EQ(sendGetGuides(h.api, session, tree)->getStatusCode(), drogon::k404NotFound);
+      CHECK_EQ(sendGetDiagnostics(h.api, session, tree)->getStatusCode(), drogon::k404NotFound);
+    }
+  CHECK_EQ(sendFork(h.api, forkRequest(Json::Value(Json::objectValue), "s-owner"), "t_s")->getStatusCode(),
+           drogon::k404NotFound);
+  CHECK_EQ(sendPut(h.api, "s-owner", "t_s", document("Mine", "knot"))->getStatusCode(),
+           sendPut(h.api, "s-owner", "t_zz", document("Mine", "knot"))->getStatusCode());
+  CHECK_FALSE(h.trees->byId.count("t_zz"));
+  CHECK_EQ(storedNodeIds(*h.trees, "t_s"), (std::vector<std::string>{"knot", "rig"}));
+
+  REQUIRE_EQ(sendPut(h.api, "s-owner", "t_a", document("My year", "sail"))->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(sendGetTree(h.api, "s-stranger", "t_r")->getStatusCode(), drogon::k200OK);
+}

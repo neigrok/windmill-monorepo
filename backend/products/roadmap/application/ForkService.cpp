@@ -22,7 +22,7 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
                                       const std::string& requestedTitle, const UserId& owner) {
   const std::uint64_t startedMs = clock_.nowMs();
   const auto mint = [this] { return TreeId{"t_" + tokens_.mint().digest.substr(0, 16)}; };
-  const TreeId newId = requestedId.empty() ? mint() : TreeId{requestedId};
+  TreeId newId{requestedId};  // minted once the source is admitted, when none is asked for
 
   // The root first, then each subtree its present steps own, a level at a time: every tree read as its room holds it
   // (live edits folded in), each under its own strand alone, its copy hung from the copy of the tree it hangs from.
@@ -35,7 +35,7 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
   std::vector<TreeCopy> copies;
   bool ownsSource = false;
   while (!pending.empty()) {
-    const Pending next = pending.front();
+    Pending next = pending.front();
     pending.pop_front();
     std::lock_guard<std::mutex> lock(registry_.strandFor(next.source));
     if (!next.parent) {
@@ -48,6 +48,8 @@ ForkService::Result ForkService::fork(const TreeId& source, const std::string& r
       if (const std::optional<OwningStep> parent = access->parent())
         return {Outcome::notARoot, {}, NotARoot{*parent, access->root}};
       ownsSource = canWrite(owner, access->owner);
+      if (newId.empty()) newId = mint();
+      next.copy = newId;
     }
     TreeRoom* room = registry_.open(next.source);
     if (!room) return {Outcome::noSource, {}, std::nullopt};  // the root went away during the walk: nothing is written

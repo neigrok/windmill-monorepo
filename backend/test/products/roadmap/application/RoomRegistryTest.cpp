@@ -500,6 +500,113 @@ TEST(registry_a_subtree_is_read_by_its_roots_access_which_a_change_to_the_root_r
   CHECK(announced == (std::vector<std::string>{"t", "c"}));
 }
 
+// A root `t` whose step `seed` owns the subtree `c`, whose step `seed` owns `g`: a branch two deep.
+void plantBranch(FakeTreeRepository& repo) {
+  repo.byId["t"] = oneNodeTree();
+  repo.byId["t"].owner = uid("owner");
+  repo.byId["t"].visibility = Visibility::unlisted;
+  repo.byId["c"] = oneNodeTree();
+  repo.byId["g"] = oneNodeTree();
+  repo.subtrees["c"] = Subtree{tid("c"), tid("t"), OwningStep{tid("t"), nid("seed")}, 1, 0};
+  repo.subtrees["g"] = Subtree{tid("g"), tid("t"), OwningStep{tid("c"), nid("seed")}, 2, 0};
+}
+
+// What every gate a door asks answers of `tree` for a reader: the registry's access, and a live room's own gate.
+bool admitted(RoomRegistry& registry, const char* tree) {
+  const std::optional<TreeAccess> access = registry.accessOf(tid(tree));
+  return access && canRead(uid("reader"), access->owner, access->visibility);
+}
+
+// Deleting an owning step hides its branch the moment it lands in the parent's room, before any save: every gate, a
+// live room's and a closed tree's, the deeper tree's too, answers the branch as absent to its owner and to a reader,
+// even while the parent's save is held; and the live rooms below are told.
+TEST(registry_a_deleted_owning_step_hides_its_branch_on_every_gate_before_its_save_lands) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  HeldRetries retries;
+  plantBranch(repo);
+  RoomRegistry registry(repo, log, bus, retries.timer());
+  std::vector<std::string> announced;
+  registry.whenAccessChanges([&](const TreeId& id) { announced.push_back(id.str()); });
+  const TreeRoom& child = *registry.open(tid("c"));
+  CHECK(admitted(registry, "c"));
+  CHECK(admitted(registry, "g"));
+
+  repo.savesFail = true;
+  {
+    std::lock_guard<std::mutex> strand(registry.strandFor(tid("t")));
+    registry.open(tid("t"))->applyCommands({DeleteNode{nid("seed")}}, 20, uid("owner"), {tid("c")});
+    CHECK(registry.persist(tid("t")) == Saved::held);
+  }
+  CHECK(LooseGraph(repo.byId["t"].state).hasNode(nid("seed")));  // the store has not taken the delete
+  CHECK_FALSE(registry.accessOf(tid("c")).has_value());
+  CHECK_FALSE(registry.accessOf(tid("g")).has_value());
+  CHECK_FALSE(child.readableBy(uid("owner")));
+  CHECK_FALSE(child.readableBy(uid("reader")));
+  CHECK(admitted(registry, "t"));
+  CHECK(announced == (std::vector<std::string>{"c"}));
+}
+
+// A revived owning step — the delete's Undo — shows its branch again at once, before its save lands, on every gate.
+TEST(registry_a_revived_owning_step_shows_its_branch_again_before_its_save_lands) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  HeldRetries retries;
+  plantBranch(repo);
+  LooseGraph deleted(repo.byId["c"].state);
+  deleted.deleteNode(nid("seed"), at(5));
+  repo.byId["c"].state = deleted.exportState();
+  RoomRegistry registry(repo, log, bus, retries.timer());
+  CHECK_FALSE(registry.accessOf(tid("g")).has_value());
+  const TreeRoom& root = *registry.open(tid("t"));
+  CHECK_FALSE(registry.accessOf(tid("g")).has_value());  // the live access starts from the stored rows
+
+  repo.savesFail = true;
+  {
+    std::lock_guard<std::mutex> strand(registry.strandFor(tid("c")));
+    registry.open(tid("c"))->applyCommand(createNode("seed"), 30, uid("owner"));
+    CHECK(registry.persist(tid("c")) == Saved::held);
+  }
+  CHECK_FALSE(LooseGraph(repo.byId["c"].state).hasNode(nid("seed")));
+  CHECK(admitted(registry, "g"));
+  CHECK(root.readableBy(uid("reader")));
+}
+
+// A closed subtree's access read while its parent's room holds an unsaved deletion is read again, under the root's lock,
+// once no room of the root is live: a parent room that saves the delete and closes between the read and the check
+// admits nobody.
+TEST(registry_a_parent_room_closing_mid_check_admits_nobody) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  HeldRetries retries;
+  plantBranch(repo);
+  RoomRegistry registry(repo, log, bus, retries.timer());
+  repo.savesFail = true;
+  {
+    std::lock_guard<std::mutex> strand(registry.strandFor(tid("t")));
+    registry.open(tid("t"))->applyCommands({DeleteNode{nid("seed")}}, 20, uid("owner"), {tid("c")});
+    CHECK(registry.persist(tid("t")) == Saved::held);
+  }
+  // Between the first read, which finds the step still stored, and the check of the live access, the parent's save
+  // lands and its room closes, taking the root's live access with it.
+  repo.afterAccessRead = [&] {
+    repo.savesFail = false;
+    retries.set.back().run();
+    {
+      std::lock_guard<std::mutex> strand(registry.strandFor(tid("t")));
+      CHECK(registry.evict(tid("t")));
+    }
+    repo.afterAccessRead = nullptr;  // last: this clears the closure running it
+  };
+  repo.accessReads.clear();
+  CHECK_FALSE(registry.accessOf(tid("g")).has_value());
+  CHECK_FALSE(registry.isOpen(tid("t")));
+  CHECK(repo.accessReads == (std::vector<TreeId>{tid("g"), tid("g")}));
+}
+
 // A retirement drops the room WITHOUT persisting it, and announces so readers are re-decided.
 TEST(registry_retire_drops_the_room_unsaved_and_announces_it) {
   FakeTreeRepository repo;

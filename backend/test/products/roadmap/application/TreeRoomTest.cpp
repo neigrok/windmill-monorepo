@@ -706,3 +706,77 @@ TEST(room_sends_a_subtree_no_title_register_of_its_own_and_a_root_its_own) {
   CHECK(root.title == (std::optional<Lww<std::string>>(Lww<std::string>{"Its own register", at(9, "r_old")})));
   CHECK(root.coverage->marks.count("r_old"));
 }
+
+// A deletion of an owning step names its subtree, whatever door it comes through: the room tells each door which steps
+// a write would take unnamed — a frame by what its join deletes, a graft by its tombstones, a deletion by the steps it
+// names — and a write that would land one anyway is a fault, refused with nothing landed and nobody told.
+TEST(room_names_the_owning_steps_a_write_would_remove_unconfirmed_and_never_lands_one) {
+  FakeBus bus;
+  LooseGraph graph;
+  graph.createNode(nid("sail"), "Sail", "", NodeColor::sky, at(1));
+  graph.createNode(nid("plain"), "Plain", "", NodeColor::sky, at(1));
+  TreeRoom room(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {}, {{nid("sail"), tid("t_s")}},
+                std::make_shared<RootAccess>(uid("owner"), Visibility::private_), 0, bus);
+
+  Subgraph frame;
+  frame.frameId = "f1";
+  frame.graph.nodes.push_back(NodeStateEntry{.id = nid("sail"), .deletedAt = at(5, "web")});
+  frame.graph.nodes.push_back(NodeStateEntry{.id = nid("plain"), .deletedAt = at(5, "web")});
+  CHECK(room.unconfirmedBranches(frame) == (std::vector<UnconfirmedBranch>{{nid("sail"), tid("t_s")}}));
+  Graft graft;
+  graft.tombstones = {nid("sail")};
+  CHECK(room.unconfirmedBranches(graft) == (std::vector<UnconfirmedBranch>{{nid("sail"), tid("t_s")}}));
+  CHECK(room.unconfirmedBranches({nid("sail"), nid("plain")}, {}) ==
+        (std::vector<UnconfirmedBranch>{{nid("sail"), tid("t_s")}}));
+
+  const auto aFault = [](const auto& write) {
+    try {
+      write();
+    } catch (const std::logic_error&) {
+      return true;
+    }
+    return false;
+  };
+  CHECK(aFault([&] { room.joinSubgraph(frame, uid("owner")); }));
+  CHECK(aFault([&] { room.importTree(graft, 10, uid("owner")); }));
+  CHECK(aFault([&] { room.applyCommands({DeleteNode{nid("sail")}}, 10, uid("owner")); }));
+  CHECK(room.hasNode(nid("sail")));
+  CHECK(room.hasNode(nid("plain")));
+  CHECK_EQ(room.head(), Seq{0});
+  CHECK(bus.subgraphBroadcasts.empty());
+
+  frame.branches = {tid("t_s")};
+  graft.branches = {tid("t_s")};
+  CHECK(room.unconfirmedBranches(frame).empty());
+  CHECK(room.unconfirmedBranches(graft).empty());
+  CHECK(room.joinSubgraph(frame, uid("owner")) == std::optional<Seq>(1));
+  CHECK_FALSE(room.hasNode(nid("sail")));
+  CHECK(bus.subgraphBroadcasts.back().subgraph.branches.empty());  // a confirmation, never sent on
+}
+
+// Every write records the room's owning steps in the root's access before it is told, so the access answers a deleted
+// step's branch as absent before any subscriber hears of the delete, and a revive's as standing; each change is told
+// once.
+TEST(room_records_its_owning_steps_in_the_roots_access_before_the_write_is_told) {
+  FakeBus bus;
+  LooseGraph graph;
+  graph.createNode(nid("sail"), "Sail", "", NodeColor::sky, at(1));
+  std::vector<OwningStep> moved;
+  const auto access = std::make_shared<RootAccess>(uid("owner"), Visibility::private_, std::set<OwningStep>{},
+                                                   [&moved](const OwningStep& step) { moved.push_back(step); });
+  TreeRoom room(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {}, {{nid("sail"), tid("t_s")}}, access, 0,
+                bus);
+  const std::vector<OwningStep> below{OwningStep{tid(), nid("sail")}};
+  CHECK(access->admits(below));
+
+  room.applyCommands({DeleteNode{nid("sail")}}, 10, uid("owner"), {tid("t_s")});
+  CHECK_FALSE(access->admits(below));
+  CHECK(access->admits({}));
+  room.applyCommand(RenameNode{nid("sail"), "Still gone"}, 11, uid("owner"));
+  room.applyCommand(CreateNode{nid("sail"), "Sail", "", NodeColor::sky}, 12, uid("owner"));
+  CHECK(access->admits(below));
+  CHECK(moved == (std::vector<OwningStep>{OwningStep{tid(), nid("sail")}, OwningStep{tid(), nid("sail")}}));
+
+  access->setStanding(false);
+  CHECK_FALSE(access->admits({}));
+}

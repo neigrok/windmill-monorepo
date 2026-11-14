@@ -1636,3 +1636,59 @@ TEST(renaming_a_subtree_whose_parent_save_fails_is_held_in_the_parent_and_its_na
   CHECK_EQ(s.trees.placeOf(child)->title, std::string("Rig a dinghy"));
   CHECK(s.registry.rename(child, me, "Rig a skiff") == TreeRegistry::Renaming::renamed);
 }
+
+// A subtree goes and comes back with its owning step alone. Aimed at its id, a removal and a visibility change are
+// refused `not-a-root` to its owner, naming where it hangs, and a create is refused as `notARoot`; while its branch is
+// hidden every one of them, a rename too, answers as for an absent tree, at any depth. Reviving the step shows it again,
+// and the root's removal takes every branch under it.
+TEST(a_subtree_is_never_removed_shared_or_planted_by_its_own_id_and_a_hidden_one_answers_as_absent) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  const TreeId child{"t_00000000000000c1"};
+  const TreeId grandchild{"t_00000000000000c2"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing(child.str().c_str()))));
+  {
+    std::lock_guard<std::mutex> strand(s.rooms.strandFor(child));
+    s.rooms.open(child)->applyCommand(CreateNode{nid("knot"), "Knot", "", NodeColor::sky}, s.clock.nowMs(), me);
+    REQUIRE(s.rooms.persist(child) == Saved::saved);
+  }
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      s.registry.createSubtree(child, nid("knot"), me, proposing(grandchild.str().c_str()))));
+
+  const NotARoot hanging{OwningStep{tid("t_p"), nid("rig")}, tid("t_p")};
+  using Shared = std::variant<TreeRegistry::VisibilityChange, NotARoot>;
+  CHECK(s.registry.remove(child, me) == Removal{hanging});
+  CHECK(s.registry.remove(grandchild, me) == (Removal{NotARoot{OwningStep{child, nid("knot")}, tid("t_p")}}));
+  CHECK(s.registry.setVisibility(child, me, Visibility::public_) == Shared{hanging});
+  CHECK(s.registry.create(me, child, treeData("Mine", {})) == TreeRegistry::Creation::notARoot);
+  CHECK(s.registry.create(uid("eve"), child, treeData("Mine", {})) == TreeRegistry::Creation::taken);
+  CHECK(s.registry.remove(child, uid("eve")) == Removal{TreeRegistry::RemovalRefusal::notFound});
+  CHECK_FALSE(s.trees.deletedIds.count(child.str()));
+
+  {
+    std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    REQUIRE(std::holds_alternative<DeletedNodes>(
+        s.edits.deleteNodes(*s.rooms.open(tid("t_p")), tid("t_p"), {nid("rig")}, DanglingEdges::kept, me, {child})));
+  }
+  for (const TreeId& hidden : {child, grandchild}) {
+    CHECK(s.registry.remove(hidden, me) == Removal{TreeRegistry::RemovalRefusal::notFound});
+    CHECK(s.registry.setVisibility(hidden, me, Visibility::public_) == Shared{TreeRegistry::VisibilityChange::notFound});
+    CHECK(s.registry.rename(hidden, me, "Renamed") == TreeRegistry::Renaming::notFound);
+    CHECK_FALSE(s.registry.placeOf(hidden).has_value());
+  }
+  CHECK(s.registry.create(me, child, treeData("Mine", {})) == TreeRegistry::Creation::notARoot);
+
+  {
+    std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    s.rooms.open(tid("t_p"))->applyCommand(CreateNode{nid("rig"), "Rig", "", NodeColor::sky}, s.clock.nowMs() + 1, me);
+    REQUIRE(s.rooms.persist(tid("t_p")) == Saved::saved);
+  }
+  CHECK(s.registry.remove(grandchild, me) == (Removal{NotARoot{OwningStep{child, nid("knot")}, tid("t_p")}}));
+  CHECK(s.registry.placeOf(grandchild).has_value());
+
+  CHECK(s.registry.remove(tid("t_p"), me) == Removal{Cascade{}});
+  CHECK_FALSE(s.rooms.accessOf(child).has_value());
+  CHECK_FALSE(s.rooms.accessOf(grandchild).has_value());
+  CHECK_FALSE(s.trees.deletedIds.count(child.str()));  // nothing purges: the branch's rows stay as they were
+}

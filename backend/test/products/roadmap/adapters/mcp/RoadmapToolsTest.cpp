@@ -8900,3 +8900,56 @@ TEST(mcp_a_call_that_changes_nothing_in_a_held_room_says_earlier_changes_are_uns
   CHECK_EQ(h.progressRepo.byKey.size(), 1u);
 }
 
+
+// delete_node and import_subgraph take a step that owns a subtree only when `branches` names that subtree; otherwise the
+// whole call is refused `branch-unconfirmed`, nothing written, each subtree named with its size, a dry run's too.
+// Named, the delete hides the subtree: it reads as absent, delete_tree on it answers as for an absent tree, and the
+// step's revive shows it again, when delete_tree on it is refused `not-a-root`, naming the step it hangs from.
+TEST(mcp_a_step_that_owns_a_subtree_is_deleted_only_with_its_subtree_named_and_the_subtree_never_by_its_own_id) {
+  Harness h;
+  LooseGraph graph;
+  graph.createNode(NodeId{"rig"}, "Rig", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  graph.createNode(NodeId{"plain"}, "Plain", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  h.trees.byId["t"].state = graph.exportState();
+  const TreeId child{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"rig"}, h.caller, {child, std::nullopt})));
+  const auto on = [&h](const char* name, const TreeId& tree, Json::Value args) {
+    args["treeId"] = tree.str();
+    return h.tools.callTool(name, args, ToolCaller{h.caller, ToolScope::everything()});
+  };
+  REQUIRE(!on("create_node", child, parse(R"({"id":"knot","label":"Knot","color":"sky"})")).isError);
+
+  const std::string unnamed = "step \"rig\" owns the subtree \"t_00000000000000c1\", holding 1 steps with 0 subtrees "
+                              "under it. Deleting a step that owns a subtree hides that subtree and everything under it "
+                              "until the step is revived; pass branches: [\"t_00000000000000c1\"] to take them with their "
+                              "steps. Nothing was deleted.";
+  const ToolResult refused = h.call("delete_node", parse(R"({"nodeIds":["plain","rig"]})"));
+  CHECK(refused.isError);
+  CHECK_EQ(refused.outcomeCode, std::string("branch-unconfirmed"));
+  CHECK_EQ(message(refused), "delete_node: " + unnamed);
+  const ToolResult preview = h.call("import_subgraph", parse(R"({"nodes":[],"tombstone":["rig"],"dryRun":true})"));
+  CHECK_EQ(message(preview), "import_subgraph: " + unnamed);
+  CHECK_EQ(preview.outcomeCode, std::string("branch-unconfirmed"));
+  CHECK(h.registry.open(TreeId{"t"})->hasNode(NodeId{"plain"}));
+  CHECK(h.registry.open(TreeId{"t"})->hasNode(NodeId{"rig"}));
+
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[],"tombstone":["rig"],"branches":["t_00000000000000c1"]})")).isError);
+  CHECK_EQ(message(on("get_tree", child, Json::Value(Json::objectValue))), std::string("get_tree: no such tree \"t_00000000000000c1\""));
+  CHECK_EQ(message(on("delete_tree", child, Json::Value(Json::objectValue))),
+           std::string("delete_tree: no such tree \"t_00000000000000c1\""));
+
+  REQUIRE(!h.call("create_node", parse(R"({"id":"rig","label":"Rig","color":"sky"})")).isError);
+  CHECK_FALSE(on("get_tree", child, Json::Value(Json::objectValue)).isError);
+  const ToolResult notARoot = on("delete_tree", child, Json::Value(Json::objectValue));
+  CHECK_EQ(notARoot.outcomeCode, std::string("not-a-root"));
+  CHECK_EQ(message(notARoot),
+           std::string("delete_tree: this tree is a subtree: it hangs from step \"rig\" of \"t\" under the roadmap \"t\", and "
+                       "goes and comes back with that step. Delete the step with delete_node, naming this tree in its "
+                       "branches, and revive the step to bring it back."));
+  CHECK_FALSE(h.trees.deletedIds.count(child.str()));
+
+  const ToolResult deleted = h.call("delete_node", parse(R"({"nodeId":"rig","branches":["t_00000000000000c1"]})"));
+  CHECK_FALSE(deleted.isError);
+  CHECK_FALSE(h.registry.accessOf(child).has_value());
+}
