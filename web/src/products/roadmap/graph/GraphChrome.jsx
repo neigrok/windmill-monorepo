@@ -6,7 +6,7 @@ import { KIND_CSS } from '../theme.js';
 import { DOCK_WIDTH, TABLET_PANEL_WIDTH } from './viewport.js';
 import { useCoveredLayer } from '../step/composerFocus.js';
 import { DeviceLine } from '../sync/SyncNotices.jsx';
-import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP, RECOLOR, TREE, treeLine } from '../copy.js';
+import { COLUMN_TITLES, FORK_OFFER, OPEN_STEP, RECOLOR, openTreeLabel, treeLine } from '../copy.js';
 import { OpeningGlyph } from '../OpeningMarks.jsx';
 import { useTreeDoor } from '../room/useTreeVisit.js';
 import { t } from '../i18n/index.js';
@@ -165,7 +165,7 @@ export function GraphChrome({
           </div>
           <button type="button" className="st-graph-step-primary" data-graph-step-primary=""
             onClick={onFork ?? openTree ?? (() => onOpenStep?.(step.id))}>
-            {onFork ? FORK_OFFER : openTree ? TREE.open : OPEN_STEP}
+            {onFork ? FORK_OFFER : openTree ? openTreeLabel(opening) : OPEN_STEP}
           </button>
         </div>
       )}

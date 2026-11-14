@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { elementsOf, loadScreen, renderHook, textOf } from '../../gym/harness.mjs';
 
-async function shareRoom(t, { visibility = 'private', mine = true, treeId = 't_example', request, copy } = {}) {
+async function shareRoom(t, { visibility = 'private', mine = true, treeId = 't_example', title = '', subtrees = false, request, copy } = {}) {
   const originalWindow = globalThis.window;
   const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   const originalDocument = globalThis.document;
@@ -25,7 +25,7 @@ async function shareRoom(t, { visibility = 'private', mine = true, treeId = 't_e
     else delete globalThis.navigator;
   });
   const { ShareDialog } = await loadScreen('products/roadmap/share/ShareDialog.jsx');
-  const props = { open: true, visibility, mine, treeId, onClose() {}, onStanceChange(next) {
+  const props = { open: true, visibility, mine, treeId, title, subtrees, onClose() {}, onStanceChange(next) {
     calls.push(['visibility', next]);
     props.visibility = next;
     room.redraw();
@@ -59,6 +59,20 @@ for (const visibility of ['private', 'unlisted']) {
     assert.equal(view.inputs()[0].props.value, 'https://windmill.works/t/t_example');
   });
 }
+
+test('publishing a roadmap whose steps own subtrees says they become readable with it, and only while publishing', async (t) => {
+  const paragraphs = (view) => elementsOf(view.room.tree).filter((item) => item.type === 'p').map(textOf);
+  const view = await shareRoom(t, { title: 'My year', subtrees: true });
+  assert.deepEqual(paragraphs(view), [
+    'Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.',
+    'Publishing makes My year and all of its subtrees readable. Anyone with the shared link can open them.',
+  ]);
+  view.props.visibility = 'public';
+  view.room.redraw();
+  assert.deepEqual(paragraphs(view), ['This roadmap is public. Anyone can view and fork it, and it can appear in the public gallery.']);
+  const plain = await shareRoom(t, { title: 'My year' });
+  assert.deepEqual(paragraphs(plain), ['Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.']);
+});
 
 test('server refusal never copies or claims success and publishing can be retried', async (t) => {
   let fail = true;

@@ -300,7 +300,7 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
       if (allDone) for (const node of data.nodes) node.status = 'complete';
       if (broad) data.nodes.push(...structuredClone(BROAD_NODES));
       if (coached) data.nodes.push(structuredClone(COACHED_NODE));
-      body = { data, mine: role !== 'reader', visibility: 'public' };
+      body = { data, root: 't_sail', parent: null, path: [], depth: 0, mine: role !== 'reader', visibility: 'public' };
     }
     if (path === '/v1/trees') {
       const others = manyTrees ? Array.from({ length: 11 }, (_, index) => ({ id: `t_many_${index}`, title: `Spanish chapter ${index}`, done: 0, total: 5, dominantKind: 'olive' })) : [];

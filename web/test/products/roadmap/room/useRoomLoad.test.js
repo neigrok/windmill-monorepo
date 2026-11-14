@@ -6,6 +6,7 @@ import { until } from '../../../platform/sync/fakes.js';
 import { useRoomLoad } from '../../../../src/products/roadmap/room/useRoomLoad.js';
 import { HttpTreeRepository } from '../../../../src/products/roadmap/persistence/HttpTreeRepository.js';
 import { SyncSession } from '../../../../src/products/roadmap/sync/SyncSession.js';
+import { TreePlace } from '../../../../src/products/roadmap/model/Opening.js';
 
 import { build } from 'vite';
 import { dirname, resolve } from 'node:path';
@@ -211,7 +212,7 @@ for (const failure of ['unavailable', '5xx', 'offline', 'thrown']) for (const sh
       await reading;
       if (failure === 'offline') throw new TypeError('offline');
       if (failure === 'unavailable' || failure === '5xx') return { ok: false, status: failure === '5xx' ? 503 : 404, json: async () => ({}) };
-      return { ok: true, status: 200, json: async () => ({ data: { id: 't_missing', title: 'Plan', nodes: [] }, mine: true }) };
+      return { ok: true, status: 200, json: async () => ({ data: { id: 't_missing', title: 'Plan', nodes: [] }, root: 't_missing', parent: null, path: [], depth: 0, mine: true }) };
     });
     if (failure === 'thrown') t.mock.method(captured.HttpTreeRepository.prototype, 'loadProgress', async () => { throw error; });
     const warn = t.mock.method(console, 'warn', () => {});
@@ -245,14 +246,14 @@ for (const failure of ['unavailable', '5xx', 'offline', 'thrown']) for (const sh
 
 // An owner's room over a server that answers each tree read in turn, with the session's socket never opened: the test
 // speaks for the session through `emit`. `shown` is every projection the room handed on, `recaps` every return recap.
-async function ownerRoom(t, { treeAnswers, stored = null, ledger = null }) {
+async function ownerRoom(t, { treeAnswers, stored = null, ledger = null, treeId = 't_year' }) {
   globalThis.roomLoadIssues = [];
   t.after(() => { delete globalThis.roomLoadIssues; });
   const disk = new Map([['windmill:device-trees', JSON.stringify({ t_year: { title: 'My year', owner: 'A', claimed: true } })]]);
   if (ledger) disk.set('windmill:return:t_year', JSON.stringify(ledger));
   const storage = { getItem: (key) => disk.get(key) ?? null, setItem: (key, value) => disk.set(key, value) };
   const globals = {
-    window: { location: { search: '', hash: '#/app/t_year' }, localStorage: storage },
+    window: { location: { search: '', hash: `#/app/${treeId}` }, localStorage: storage },
     document: { visibilityState: 'visible' },
     navigator: { onLine: true },
   };
@@ -279,7 +280,7 @@ async function ownerRoom(t, { treeAnswers, stored = null, ledger = null }) {
   t.mock.method(SyncSession.prototype, 'close', () => {});
   const shown = [];
   const recaps = [];
-  const props = roomProps('t_year');
+  const props = roomProps(treeId);
   props.desktopEditorRef.current = true;
   props.structure.onTreeChanged = (projection) => shown.push(projection);
   props.structure.layoutPositions = (tree) => new Map(tree.nodes.map((step) => [step.id, { x: 0, y: 0 }]));
@@ -303,7 +304,7 @@ const yearSteps = (pointers = {}) => [
   { id: 'sail', label: 'Learn to sail', prerequisites: ['plan'], ...(pointers.sail ? { opens: pointers.sail } : {}) },
   { id: 'book', label: 'Write the book', prerequisites: ['plan'], ...(pointers.book ? { opens: pointers.book } : {}) },
 ];
-const yearAnswer = (opens) => answeredTree({ data: { id: 't_year', title: 'My year', nodes: yearSteps({ sail: 't_sail' }) }, mine: true, opens });
+const yearAnswer = (opens) => answeredTree({ data: { id: 't_year', title: 'My year', nodes: yearSteps({ sail: 't_sail' }) }, root: 't_year', parent: null, path: [], depth: 0, mine: true, opens });
 const SAIL_DONE = { treeId: 't_sail', title: 'Learn to sail', state: 'complete', done: 8, total: 8, loop: false };
 const BOOK_OPEN = { treeId: 't_book', title: 'The book', state: 'open', done: 1, total: 4, loop: false };
 
@@ -491,3 +492,28 @@ test('a tree that lives only on this device opens on the marks its record holds,
     'the load\'s own tree and activity, its marks from the device, and nothing after');
   assert.deepEqual(globalThis.roomLoadIssues, []);
 });
+
+// Learn to sail hangs from My year's step sail; inside it, Rig the boat owns a subtree that is done, and Read the wind a
+// pointer at another tree of the owner's.
+const SAIL_PLACE = { root: 't_year', parent: { tree: 't_year', step: 'sail' }, path: [{ tree: 't_year', step: 'sail', title: 'My year' }], depth: 1 };
+const sailSteps = () => [
+  { id: 'rig', label: 'Rig the boat', prerequisites: [], subtree: { id: 't_rig', done: 1, total: 1, state: 'complete' } },
+  { id: 'wind', label: 'Read the wind', prerequisites: [], opens: 't_weather' },
+  { id: 'knot', label: 'Tie a bowline', prerequisites: [] },
+];
+const WEATHER = { treeId: 't_weather', title: 'Weather', state: 'open', done: 0, total: 3, loop: false };
+
+for (const mine of [true, false]) {
+  test(`a subtree’s room says where it sits and stands the subtrees its steps own for ${mine ? 'its owner' : 'a reader'}, and its session keeps no row of the device’s index`, async (t) => {
+    const room = await ownerRoom(t, { treeId: 't_sail', treeAnswers: [answeredTree({ data: { id: 't_sail', title: 'Learn to sail', nodes: sailSteps() }, ...SAIL_PLACE, mine, opens: mine ? { wind: WEATHER } : undefined })] });
+
+    assert.deepEqual(room.view.tree.treePlace, TreePlace.fromWire(SAIL_PLACE));
+    assert.deepEqual(room.faces(room.props.room.projectionRef.current), { rig: 'complete', wind: mine ? 'open' : null, knot: null });
+    assert.deepEqual({ subtree: room.session().subtree, registry: room.session().registry }, { subtree: true, registry: null });
+
+    room.session().owned = new Map([['rig', { id: 't_rig', depth: 2, fresh: false }], ['knot', { id: 't_knot', depth: 2, fresh: true }]]);
+    room.emit({ id: 't_sail', title: 'Learn to sail', nodes: sailSteps().map(({ subtree, ...step }) => step) }, { joined: true });
+    assert.deepEqual(room.faces(room.shown.at(-1)), { rig: 'complete', wind: mine ? 'open' : null, knot: 'empty' });
+  });
+}
+

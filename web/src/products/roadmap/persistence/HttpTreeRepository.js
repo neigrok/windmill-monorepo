@@ -1,7 +1,7 @@
 // Tree reads over HTTP, per treeId. A bootstrap read only: a live SyncSession's private
 // lane owns the overlay.
 
-import { Openings } from '../model/Opening.js';
+import { Openings, TreePlace } from '../model/Opening.js';
 import { ProgressLattice } from '../sync/progressLattice.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { BoundaryFailure, reportInvalidProgressMark, pageWatching, reportRoadmapFailure } from '../reportFailure.js';
@@ -37,17 +37,20 @@ export class HttpTreeRepository {
     return response.json().catch(() => null);
   }
 
+  // The tree, where it sits among the trees and what its steps open. An answer that is not a tree, or that does not say
+  // where it sits, reports as a failed read.
   async loadTree({ signal } = {}) {
     const operation = this.operation ?? 'roadmap-tree-load';
     const body = await this.answer('loadTree', '', { operation, signal });
-    if (!Array.isArray(body?.data?.nodes)) {
+    const place = body && TreePlace.fromWire(body);
+    if (!Array.isArray(body?.data?.nodes) || !place) {
       this.reportFailure(operation);
       throw new Error(`loadTree ${this.treeId}: the answer is not a tree`);
     }
     this.treeRead = true;
     return {
       ...body.data, visibility: body.visibility ?? null, mine: body.mine ?? false, createdAt: body.createdAt ?? 0,
-      openings: Openings.fromWire(body.opens),
+      place, openings: Openings.fromWire(body.opens, body.data.nodes),
     };
   }
 

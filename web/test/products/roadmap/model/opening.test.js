@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Opening, Openings } from '../../../../src/products/roadmap/model/Opening.js';
+import { Opening, Openings, TreePlace } from '../../../../src/products/roadmap/model/Opening.js';
 
 const facts = (opening) => ({ ...opening, dangling: opening.dangling, leads: opening.leads, face: opening.face, gauge: opening.gauge });
 
@@ -15,17 +15,17 @@ test('an opening is built from each shape the server answers', () => {
   };
 
   assert.deepEqual(Object.fromEntries(Object.entries(read).map(([name, opening]) => [name, facts(opening)])), {
-    open: { treeId: 't_sail', read: true, valid: true, complete: false, title: 'Learn to sail', done: 3, total: 8, loop: false, own: false, provisional: false, dangling: false, leads: true, face: 'open', gauge: 3 / 8 },
-    complete: { treeId: 't_read', read: true, valid: true, complete: true, title: 'Reading list', done: 12, total: 12, loop: false, own: false, provisional: false, dangling: false, leads: true, face: 'complete', gauge: 1 },
-    loop: { treeId: 't_loop', read: true, valid: true, complete: false, title: 'Learn to sail', done: 3, total: 8, loop: true, own: false, provisional: false, dangling: false, leads: true, face: 'loop', gauge: 3 / 8 },
-    empty: { treeId: 't_book', read: true, valid: true, complete: false, title: 'Book draft', done: 0, total: 0, loop: false, own: false, provisional: false, dangling: false, leads: true, face: 'empty', gauge: 0 },
-    missing: { treeId: 't_bike', read: true, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, own: false, provisional: false, dangling: true, leads: false, face: 'missing', gauge: null },
+    open: { treeId: 't_sail', read: true, valid: true, complete: false, title: 'Learn to sail', done: 3, total: 8, loop: false, owned: false, own: false, provisional: false, dangling: false, leads: true, face: 'open', gauge: 3 / 8 },
+    complete: { treeId: 't_read', read: true, valid: true, complete: true, title: 'Reading list', done: 12, total: 12, loop: false, owned: false, own: false, provisional: false, dangling: false, leads: true, face: 'complete', gauge: 1 },
+    loop: { treeId: 't_loop', read: true, valid: true, complete: false, title: 'Learn to sail', done: 3, total: 8, loop: true, owned: false, own: false, provisional: false, dangling: false, leads: true, face: 'loop', gauge: 3 / 8 },
+    empty: { treeId: 't_book', read: true, valid: true, complete: false, title: 'Book draft', done: 0, total: 0, loop: false, owned: false, own: false, provisional: false, dangling: false, leads: true, face: 'empty', gauge: 0 },
+    missing: { treeId: 't_bike', read: true, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, owned: false, own: false, provisional: false, dangling: true, leads: false, face: 'missing', gauge: null },
   });
 });
 
 test('a pointer with no facts read is unread: it names its tree and claims nothing else', () => {
   assert.deepEqual(facts(Opening.unread('t_sail')), {
-    treeId: 't_sail', read: false, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, own: false, provisional: false, dangling: false, leads: true, face: 'unread', gauge: null,
+    treeId: 't_sail', read: false, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, owned: false, own: false, provisional: false, dangling: false, leads: true, face: 'unread', gauge: null,
   });
 });
 
@@ -187,3 +187,86 @@ test('what the picker knew of a tree: complete once every one of its steps is, a
   ]);
   assert.equal(Opening.fromWire({ treeId: 't_x', title: 'X', state: 'open', done: 1, total: 2 }).provisional, false);
 });
+
+test('the subtree a step owns is read from the node that owns it: how far it is, or nothing but its id where it was not followed', () => {
+  const read = {
+    open: Opening.owned({ id: 't_sail', done: 3, total: 8, state: 'open' }),
+    complete: Opening.owned({ id: 't_rig', done: 1, total: 1, state: 'complete' }),
+    empty: Opening.owned({ id: 't_wind', done: 0, total: 0, state: 'open' }),
+    unread: Opening.owned({ id: 't_hoist' }),
+  };
+
+  assert.deepEqual(Object.fromEntries(Object.entries(read).map(([name, opening]) => [name, facts(opening)])), {
+    open: { treeId: 't_sail', read: true, owned: true, own: false, provisional: false, valid: true, complete: false, title: '', done: 3, total: 8, loop: false, dangling: false, leads: true, face: 'open', gauge: 3 / 8 },
+    complete: { treeId: 't_rig', read: true, owned: true, own: false, provisional: false, valid: true, complete: true, title: '', done: 1, total: 1, loop: false, dangling: false, leads: true, face: 'complete', gauge: 1 },
+    empty: { treeId: 't_wind', read: true, owned: true, own: false, provisional: false, valid: true, complete: false, title: '', done: 0, total: 0, loop: false, dangling: false, leads: true, face: 'empty', gauge: 0 },
+    unread: { treeId: 't_hoist', read: false, owned: true, own: false, provisional: false, valid: false, complete: false, title: '', done: 0, total: 0, loop: false, dangling: false, leads: true, face: 'unread', gauge: null },
+  });
+  assert.equal(read.open.titleBeside({ label: 'Learn to sail' }), null);
+});
+
+test('a step that owns a subtree opens it whatever its pointer holds, and a reader’s room stands the subtrees and no pointer', () => {
+  const openings = Openings.fromWire(
+    { sail: { treeId: 't_sail', title: 'Learn to sail', state: 'open', done: 3, total: 8, loop: false },
+      read: { treeId: 't_reading', title: 'Reading list', state: 'complete', done: 2, total: 2, loop: false } },
+    [{ id: 'sail', subtree: { id: 't_sail', done: 3, total: 8, state: 'open' } }, { id: 'read' }, { id: 'coast', subtree: { id: 't_coast' } }],
+  );
+  const projection = { id: 't_year', title: 'My year', nodes: [
+    { id: 'sail', label: 'Learn to sail', prerequisites: [], opens: 't_old' },
+    { id: 'read', label: 'Read more', prerequisites: [], opens: 't_reading' },
+    { id: 'coast', label: 'Sail the coast', prerequisites: ['sail'] },
+  ] };
+  const stood = (shown, joined) => shown.onto(projection, { joined }).nodes.map(({ id, opening }) => [id, opening && { treeId: opening.treeId, owned: opening.owned, face: opening.face }]);
+
+  const owner = [
+    ['sail', { treeId: 't_sail', owned: true, face: 'open' }],
+    ['read', { treeId: 't_reading', owned: false, face: 'complete' }],
+    ['coast', { treeId: 't_coast', owned: true, face: 'unread' }],
+  ];
+  assert.deepEqual(stood(openings, false), owner);
+  assert.deepEqual(stood(openings, true), owner);
+  const reader = [['sail', owner[0][1]], ['read', undefined], ['coast', owner[2][1]]];
+  assert.deepEqual(stood(openings.subtreesAlone(), false), reader);
+  assert.deepEqual(stood(openings.subtreesAlone(), true), reader);
+});
+
+test('a subtree the session is told of after the load stands on its step: a new one empty, any other the load did not read unread', () => {
+  const openings = Openings.fromWire({}, [{ id: 'sail', subtree: { id: 't_sail', done: 3, total: 8, state: 'open' } }]);
+  const projection = { id: 't_year', title: 'My year', nodes: [
+    { id: 'sail', label: 'Learn to sail', prerequisites: [] },
+    { id: 'wind', label: 'Read the wind', prerequisites: [] },
+    { id: 'knot', label: 'Tie a bowline', prerequisites: [] },
+  ] };
+  const subtrees = new Map([
+    ['sail', { id: 't_sail', depth: 1, fresh: false }],
+    ['wind', { id: 't_wind', depth: 1, fresh: true }],
+    ['knot', { id: 't_knot', depth: 1, fresh: false }],
+  ]);
+
+  assert.deepEqual(openings.onto(projection, { joined: true, subtrees }).nodes.map(({ id, opening }) => [id, opening]), [
+    ['sail', openings.owned.get('sail')],
+    ['wind', Opening.owned({ id: 't_wind', done: 0, total: 0, state: 'open' })],
+    ['knot', Opening.owned({ id: 't_knot' })],
+  ]);
+});
+
+test('a tree read says where the tree sits: a root has no way up, a subtree its parent, the step there that owns it and the parent’s name', () => {
+  const root = TreePlace.fromWire({ root: 't_year', parent: null, path: [], depth: 0 });
+  const grandchild = TreePlace.fromWire({
+    root: 't_year', parent: { tree: 't_sail', step: 'rig' }, depth: 2,
+    path: [{ tree: 't_year', step: 'sail', title: 'My year' }, { tree: 't_sail', step: 'rig', title: 'Learn to sail' }],
+  });
+
+  assert.deepEqual({ subtree: root.subtree, up: root.up }, { subtree: false, up: null });
+  assert.deepEqual({ subtree: grandchild.subtree, up: grandchild.up, depth: grandchild.depth }, {
+    subtree: true, up: { treeId: 't_sail', stepId: 'rig', title: 'Learn to sail' }, depth: 2,
+  });
+  assert.deepEqual([
+    {},
+    { root: 't_year', parent: null, path: [{ tree: 't_year', step: 'sail', title: 'My year' }], depth: 0 },
+    { root: 't_year', parent: { tree: 't_sail', step: 'rig' }, path: [], depth: 1 },
+    { root: 't_year', parent: { tree: 't_sail' }, path: [{ tree: 't_year', step: 'sail', title: 'My year' }], depth: 1 },
+    { root: 't_year', parent: null, path: [], depth: '0' },
+  ].map((answer) => TreePlace.fromWire(answer)), [null, null, null, null, null]);
+});
+

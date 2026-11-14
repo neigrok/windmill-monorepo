@@ -83,7 +83,8 @@ a stamp past the one the step's register holds — naming another tree than that
 with `refused: [{node, field: "opens", code: "owns-a-subtree"}]`, one per such step in the frame's order:
 that register was not stored, every other register of the frame landed, and `seq` is absent when nothing
 else did ([the model](../backend/SPEC.md#model), Legacy pointers). A retried frame is answered as the
-duplicate it is. The browser confirms such a frame as it confirms any other. A frame that lands nothing — a duplicate, one whose every
+duplicate it is. The browser confirms the rest of such a frame and puts each refused step's pointer back to what the
+server confirmed; it makes no pointer write on a step it knows owns a subtree, and owes no mark there. A frame that lands nothing — a duplicate, one whose every
 stamp the server holds already, or one that carries no stamp a register keeps — is acknowledged
 without a seq, so its sender's gestures are confirmed, and is not saved, logged or broadcast. A frame
 that carries no stamp asks for no write: anyone who may read the tree is acknowledged so, a reader and
@@ -97,7 +98,8 @@ the title or the guide.
 
 A subtree created under one of the tree's steps takes the next seq of the tree's stream, as
 `subtree {treeId, seq, step, subtree: {id, depth}}`. The browser takes that seq under the same rule as a
-live frame (an older seq was seen, a later one is a gap a fresh subscribe heals) and changes nothing else.
+live frame (an older seq was seen, a later one is a gap a fresh subscribe heals) and stands the new, empty subtree on
+its step. The subscribe answer's `subtrees: [{step, id, depth}]` is the server's word on which steps own one.
 
 `reject {treeId, frameId?, code, reason}` reports a refusal. Clients branch on `code`, preserving
 unacknowledged state. A rejection naming a frame can strand the same delta on every retry; it must

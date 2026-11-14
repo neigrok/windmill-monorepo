@@ -2209,6 +2209,77 @@ test('a subtree created under a step takes its seq, so the next live frame joins
     nodes: snapshot(session).map(({ id }) => id).sort() }, { open: true, lastSeq: 3, nodes: ['peer', 'root'] });
 });
 
+test('a subtree frame stands the new subtree on its step at once, and each subscribe answer is the server’s word on which steps own one', (t) => {
+  const { session } = connectedSession(t);
+  const projections = [];
+  session.onTreeChanged((data) => projections.push(data.nodes.map(({ id }) => id)));
+
+  session.ws.message({ t: 'subtree', treeId: 'tree', seq: 2, step: 'root', subtree: { id: 't_child', depth: 1 } });
+  assert.deepEqual({ subtrees: [...session.subtrees()], projections }, {
+    subtrees: [['root', { id: 't_child', depth: 1, fresh: true }]], projections: [['root']],
+  });
+
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 2, nodes: [], edges: [], kinds: [],
+    subtrees: [{ step: 'root', id: 't_child', depth: 1 }, { step: 'mast', id: 't_mast', depth: 1 }, { step: 7, id: 't_odd' }] });
+  assert.deepEqual([...session.subtrees()], [['root', { id: 't_child', depth: 1, fresh: true }], ['mast', { id: 't_mast', depth: 1, fresh: false }]]);
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 2, nodes: [], edges: [], kinds: [] });
+  assert.deepEqual([...session.subtrees()], []);
+});
+
+test('a step that owns a subtree takes no pointer and no mark: one held unsent goes back, no act writes another, an Undo included, and its mark is never owed', (t) => {
+  const { session } = connectedSession(t);
+  session.reach = 'writer';  // the server takes this connection for a writer of the tree
+  session.phase = 'offline';
+  session.dispatch({ kind: 'SetNodeTree', id: 'root', opens: 't_old' });
+  assert.equal(session.statusSnapshot().structurePending, 1);
+  session.phase = 'live';
+  session.receiveState({ t: 'subgraph', intent: 'delta', seq: 1, reach: 'writer', nodes: [], edges: [], kinds: [], subtrees: [{ step: 'root', id: 't_child', depth: 1 }] });
+  const sent = session.ws.frames.length;
+
+  assert.equal(session.dispatch({ kind: 'SetNodeTree', id: 'root', opens: 't_other' }), null);
+  session.undo();
+  session.markProgress('root', 'complete');
+  const { structurePending, progressPending, structureGestures, progressGestures } = session.statusSnapshot();
+  assert.deepEqual({ opens: session.lattice.nodes.get('root').opens.v, frames: session.ws.frames.slice(sent), structurePending, progressPending, structureGestures, progressGestures }, {
+    opens: '', frames: [], structurePending: 0, progressPending: 0, structureGestures: 0, progressGestures: 0,
+  });
+});
+
+test('a pointer the server refused on a step that owns a subtree goes back to what it confirmed, owed no more, and the rest of the frame is confirmed', (t) => {
+  const { session } = connectedSession(t);
+  session.reach = 'writer';  // the server takes this connection for a writer of the tree
+  const projections = [];
+  session.onTreeChanged((data) => projections.push(data.nodes.map(({ id, label, opens }) => ({ id, label, opens: opens ?? '' }))));
+  session.phase = 'offline';
+  session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Learn to sail' });
+  session.dispatch({ kind: 'SetNodeTree', id: 'root', opens: 't_other' });
+  session.phase = 'live';
+  session.flush();
+  const [frame] = structureFrames(session.ws);
+  assert.deepEqual(frame.nodes.map(({ id, label, opens }) => ({ id, label, opens })), [{ id: 'root', label: 'Learn to sail', opens: 't_other' }]);
+
+  session.receiveAck({ t: 'subgraphAck', treeId: 'tree', frameId: frame.frameId, seq: 2, refused: [{ node: 'root', field: 'opens', code: 'owns-a-subtree' }] });
+  session.flush();
+  assert.deepEqual({
+    shown: projections.at(-1),
+    confirmed: { label: session.confirmedStructure.nodes.get('root').label.v, opens: session.confirmedStructure.nodes.get('root').opens.v },
+    status: [session.statusSnapshot().structurePending, session.statusSnapshot().structureGestures],
+    frames: structureFrames(session.ws).length,
+  }, {
+    shown: [{ id: 'root', label: 'Learn to sail', opens: '' }],
+    confirmed: { label: 'Learn to sail', opens: '' },
+    status: [0, 0],
+    frames: 1,
+  });
+});
+
+test('a subtree’s session never writes its title: its name is its owning step’s label, so a rename takes another door', (t) => {
+  const { session } = connectedSession(t, {}, { subtree: true, title: 'Learn to sail' });
+  const sent = session.ws.frames.length;
+  assert.equal(session.renameTree('Sailing'), false);
+  assert.deepEqual({ title: session.lattice.title, frames: session.ws.frames.length - sent }, { title: 'Learn to sail', frames: 0 });
+});
+
 test('a subtree frame seen already is ignored, and one past a gap reconnects to heal it', (t) => {
   const { session } = connectedSession(t);
   const socket = session.ws;

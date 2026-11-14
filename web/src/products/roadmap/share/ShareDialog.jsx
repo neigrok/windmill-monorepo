@@ -19,7 +19,8 @@ function refusalReason(failure, act) {
   return (failure.said ?? t('roadmap.share.visibilityFailed')) || act;
 }
 
-export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceChange }) {
+// `subtrees` says the roadmap holds subtrees, which publishing it makes readable with it; `title` names it.
+export function ShareDialog({ open, onClose, treeId, visibility, mine, title = '', subtrees = false, onStanceChange }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -112,6 +113,7 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, onStanceC
                 ? t('roadmap.share.public')
                 : reachable ? t('roadmap.share.unlisted') : t('roadmap.share.private')}
           </p>
+          {publish && subtrees && <p>{t('roadmap.share.publishingSubtrees', { roadmap: title.trim() || t('roadmap.common.untitled') })}</p>}
           {reachable && (
             <input
               ref={urlRef}

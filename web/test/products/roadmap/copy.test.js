@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { Opening } from '../../../src/products/roadmap/model/Opening.js';
 import {
+  openTreeAction,
+  openTreeLabel,
   treeBand,
   treeLine,
   openTreeStated,
@@ -591,6 +593,25 @@ test('where Complete sat: what completes the step, by its column and what its tr
     missing: ['Can’t complete yet', 'Can’t complete yet', null],
     unread: [null, null, null],
   });
+});
+
+test('a subtree a step owns is gone into by Open subtree and says how far it is, an empty one that it has no steps yet', () => {
+  const owned = {
+    open: Opening.owned({ id: 't_sail', done: 0, total: 1, state: 'open' }),
+    complete: Opening.owned({ id: 't_sail', done: 1, total: 1, state: 'complete' }),
+    empty: Opening.owned({ id: 't_wind', done: 0, total: 0, state: 'open' }),
+    unread: Opening.owned({ id: 't_rig' }),
+  };
+  const said = (say) => Object.fromEntries(Object.entries(owned).map(([face, opening]) => [face, say(opening)]));
+
+  assert.deepEqual(said((opening) => [openTreeLabel(opening), treeState(opening, 'My year'), treeLine(opening)]), {
+    open: ['Open subtree', '0 of 1 done', '0 of 1'],
+    complete: ['Open subtree', '1 of 1 done', '1 of 1'],
+    empty: ['Open subtree', 'No steps yet', 'No steps'],
+    unread: ['Open subtree', null, null],
+  });
+  assert.deepEqual([openTreeLabel(Opening.unread('t_sail')), openTreeAction({ step: 'Learn to sail', owned: true }), openTreeAction({ step: 'Learn to sail' })],
+    ['Open tree', 'Open the subtree of Learn to sail', 'Open the tree of Learn to sail']);
 });
 
 test('the guide’s card says whose guides apply from above: one tree, two, or the two farthest and how many more', () => {
