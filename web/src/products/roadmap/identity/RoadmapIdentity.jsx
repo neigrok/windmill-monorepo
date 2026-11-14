@@ -17,7 +17,7 @@ const FULL_DESKTOP_QUERY = '(min-width: 1280px)';
 // `back` is the tree this one was gone into from, with the way back to it: a chip in the first slot from 744px, a
 // chevron with that tree as an eyebrow over the title on a phone.
 export function RoadmapIdentity({
-  band, view, role, title, back = null, switcher, progress, onSwitchView, graphUnavailable = false, onGraphUnavailable, find, next,
+  band, view, role, title, loading = false, back = null, switcher, progress, onSwitchView, graphUnavailable = false, onGraphUnavailable, find, next,
   onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom, onActivity, activityOpen = false,
 }) {
   const bar = useRef(null);
@@ -142,6 +142,7 @@ export function RoadmapIdentity({
         </button>
       )}
       <div className="st-roadmap-context">
+        {tablet && view === 'board' && loading && title === undefined && <span className="st-roadmap-title-skeleton" aria-hidden />}
         {sheetAvailable && (
           <button ref={titleButton} className={`st-roadmap-title st-roadmap-title-button${eyebrow ? ' st-roadmap-title--from' : ''}`} type="button"
             aria-label={title} aria-haspopup="dialog" aria-expanded={open === 'sheet'} onClick={() => toggle('sheet')}>

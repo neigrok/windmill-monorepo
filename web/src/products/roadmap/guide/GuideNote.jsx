@@ -63,9 +63,16 @@ export function GuideNote({ guide, band, view, onSeat }) {
   // The note stands over its entry, grown 4px to the left and 16px up: measured in the window, and in the room the
   // note shares while it reads.
   const seatOverEntry = () => {
-    const entry = guide.entry.current?.getBoundingClientRect();
-    const room = guide.entry.current?.closest('.st-root')?.getBoundingClientRect();
-    return entry ? { left: entry.left - 4, top: entry.top - 16, roomLeft: room?.left ?? 0, roomTop: room?.top ?? 0 } : null;
+    const entry = guide.entry.current;
+    if (!entry) return null;
+    const box = entry.getBoundingClientRect();
+    const transform = getComputedStyle(entry).transform;
+    const scale = new DOMMatrixReadOnly(transform === 'none' ? undefined : transform);
+    const room = entry.closest('.st-root')?.getBoundingClientRect();
+    // The press scales the entry about its centre; seat the note at the entry's unscaled edges.
+    const left = box.left - (box.width / scale.a - box.width) / 2;
+    const top = box.top - (box.height / scale.d - box.height) / 2;
+    return { left: left - 4, top: top - 16, roomLeft: room?.left ?? 0, roomTop: room?.top ?? 0 };
   };
   const [draft, setDraft] = useState(() => (opening ? new GuideDraft(guide.text) : null));
   const [caret, setCaret] = useState(() => (opening ? { offset: opening.offset, scroll: 0 } : null));

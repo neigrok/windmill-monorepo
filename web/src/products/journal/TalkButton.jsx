@@ -1,6 +1,6 @@
 // Talk: speak a page instead of typing it. Entitlement is checked before the mic opens, so no recording
 // is lost to a 403. Audio goes to the voice endpoint and the transcript drops into today; no audio is
-// kept. A browser without MediaRecorder never shows it, and a 503 retires it for the session.
+// kept. A browser without MediaRecorder never shows it, and any refusal but 401 or 403 retires it for the session.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Mic } from 'lucide-react';
@@ -78,7 +78,7 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
         // A session or subscription that lapsed between the check and the send: re-sync so the mic re-locks.
         if (error.status === 403) { setPhase('idle'); refresh(); flash(t('journal.talk.locked')); }
         else if (error.status === 401) { setPhase('idle'); setOpen(false); onNeedSignIn?.(); }
-        else { setPhase('hidden'); setOpen(false); }   // 503 (no vendor) or worse — retire it quietly
+        else { setPhase('hidden'); setOpen(false); }   // any other refusal, the AI allowance's included — retire it quietly
       }
     };
     recorderRef.current = recorder;

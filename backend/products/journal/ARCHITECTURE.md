@@ -293,26 +293,42 @@ invalid dates with 400 `bad date`, and keeps the diagnostic 200 response describ
 
 ## Voice
 
-Transcription is bought from an ASR vendor (`OpenAiTranscriber`), behind `ports/Transcriber.h`:
-`configured()` plus one asynchronous `transcribe(user, audio, mimeType, done)`. `done` fires exactly
-once, on any thread, and `nullopt` is a vendor failure distinct from an empty transcript.
+Transcription is bought from an ASR vendor (`OpenAiTranscriber`, OpenAI `gpt-4o-transcribe`, which
+OpenAI lists as deprecated and shuts down on 2027-02-26), behind `ports/Transcriber.h`: `configured()` plus one asynchronous `transcribe(user, audio, mimeType, done)`.
+`done` fires exactly once, on any thread, with a `Transcription`: the text, where an empty text is a
+take with no words and never a failure; or no text and the AI allowance code that kept the audio on
+the server; or neither, a failure to transcribe.
 
-`VoiceApi` settles everything refusable before the upload, in this order: 401 signed out · 403 not
-a subscriber · 503 no vendor wired · 400 no audio · 413 past `kMaxAudioBytes` (6 MB) · 429 past the
-account's trailing-30-day AI allowance · 503 busy (`kVoiceInFlightPerAccount` 2,
-`kVoiceInFlightTotal` 8) · 429 past `kVoiceBytesPerDay` (30 MB). A vendor failure is 502, never
-`200 {"text":""}`.
+`VoiceApi` settles everything it can refuse before the upload, in this order: 401 signed out · 403
+not a subscriber · 503 no vendor wired · 400 no audio · 413 past `kMaxAudioBytes` (6 MB) · the
+account's AI allowance · 503 busy (`kVoiceInFlightPerAccount` 2, `kVoiceInFlightTotal` 8) · 429 past
+`kVoiceBytesPerDay` (30 MB). A vendor failure is 502, never `200 {"text":""}`.
 
-The corresponding `error` sentences, without a `code`, are `sign in to talk`, `talk is part of
-Windmill One`, `voice is not available right now`, `no audio`, `that take is too long to
-transcribe`, `talk has had its turn for now`, `voice is busy right now`, and `talk has had its turn
-for today`. Vendor failure is 502 `the transcriber could not answer`. A successful empty transcript
-is still 200 `{text:""}`; failure and silence remain distinct.
+With durable USD allowances on (`backend/AI_ALLOWANCES.md`), the allowance step reads the account's
+allowance and refuses one that is not `ok` with its own code. The transcriber's admission then holds
+the take's ceiling on a Windmill One grant before any audio leaves, refusing any lesser principal as
+`funding_required`, and settles it at the tokens the vendor billed; a refused admission answers under
+the code that refused it and gives the take's bytes back to `kVoiceBytesPerDay`. Both answer as Coach's allowance refusals do:
+`code`, `reason` (`allowance_exhausted`, `request_exceeds_remaining` or `unavailable`), `error` and
+the `allowance` object, 429 for `subject_exhausted` and 503 for every other ledger code. With them
+off, the step is 429 past the account's trailing-30-day AI allowance.
+
+The `error` sentences are `sign in to talk`, `talk is part of Windmill One`, `voice is not available
+right now` (code `voice_unavailable`), `no audio`, `that take is too long to transcribe`, `voice is
+busy right now` (code `voice_busy`) and `talk has had its turn for today`. The allowance step answers
+`talk has had its turn for now` with allowances off; with them on, `your AI allowance is fully used
+or reserved`, `a take needs more AI allowance than you have left`, `your plan has no funded AI
+allowance for this period`, `another AI request is still in progress` or `talk's AI allowance is
+unavailable right now`, and `talk's AI allowance could not be checked right now` (code
+`ai_accounting_unavailable`) when the ledger cannot be asked. Vendor failure is 502 `the transcriber
+could not answer`. A successful empty transcript is still 200 `{text:""}`; failure and silence remain
+distinct.
 
 The handler does not wait on the vendor: it hands its callback to the transcriber and returns, and
-the reply is written from the transcriber's loop. `VoiceRation` is in memory and best-effort; the
-hard ceilings are the ledger-backed account allowance and the process fuse
-(`platform/domain/AiFuse.h`).
+the reply is written from the transcriber's loop, after the take's charge is settled, under the
+route's request id. The vendor gets 300 s to answer, and stopping the transcriber lets takes still
+with it settle for up to 5 s before its loop ends. `VoiceRation` is in memory and best-effort; the
+money is held by the account's AI allowance and the process fuse (`platform/domain/AiFuse.h`).
 
 Rules:
 
@@ -351,7 +367,8 @@ Two obligations fall out of on-device search:
   `journalEchoSweep->start()`, `journalEchoDerivations->start()` — each its own trantor loop.
 - Every vendor edge is chosen there and nowhere else, on the presence of an environment variable:
   `HttpEmbedder` (`JOURNAL_EMBEDDER_URL`) or `NullEmbedder`, `AnthropicCurator` or `NullCurator`,
-  `AnthropicSegmenter` or `RuleSegmenter`, `OpenAiTranscriber` or `NullTranscriber`. The curator and
+  `AnthropicSegmenter` or `RuleSegmenter`, `OpenAiTranscriber` (`OPENAI_API_KEY`; `OPENAI_BASE_URL`
+  points it at another origin speaking the same protocol) or `NullTranscriber`. The curator and
   the segmenter share `ANTHROPIC_API_KEY`. Without the required echo boundaries the echo pass writes
   nothing; an unconfigured transcription boundary answers `POST /transcribe` with 503.
 - `JOURNAL_NUDGE_ADMIN_TOKEN` guards the nudge sweep door and `JOURNAL_ECHO_ADMIN_TOKEN` the echo

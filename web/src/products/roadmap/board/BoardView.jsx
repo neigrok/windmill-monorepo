@@ -256,7 +256,7 @@ function BoardView({
       {phone && deviceLine && <DeviceLine text={deviceLine.text} onSignIn={deviceLine.onSignIn} />}
       {guide}
       {frame !== 'columns' && !phone && refusedNotice}
-      {frame === 'loading' && <BoardSkeleton phone={phone} />}
+      {frame === 'loading' && <BoardSkeleton band={breakpoint} />}
       {frame === 'error' && <LoadError phone={phone} onRetry={retry} />}
       {frame === 'empty' && onNewStep && <EmptyRoadmap onNewStep={() => onNewStep('empty')} />}
       {frame === 'columns' && (

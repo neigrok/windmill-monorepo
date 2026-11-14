@@ -1,0 +1,15 @@
+{
+  "note": "TEST: the notification Windmill asks Apple for to check the door. Silent; it is not reported.",
+  "notification": {
+    "notificationType": "TEST",
+    "subtype": null,
+    "signedDate": 1803132000000,
+    "environment": "Production",
+    "status": null,
+    "transaction": null,
+    "renewalInfo": null
+  },
+  "expect": {
+    "silent": "test"
+  }
+}

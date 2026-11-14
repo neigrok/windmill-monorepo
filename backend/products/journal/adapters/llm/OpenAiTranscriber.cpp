@@ -1,19 +1,57 @@
 #include "products/journal/adapters/llm/OpenAiTranscriber.h"
-#include "platform/adapters/llm/AiCallBudget.h"
 
 #include "platform/adapters/http/VendorCall.h"
+#include "platform/adapters/json/JsonText.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 #include "platform/adapters/llm/AnthropicClient.h"
+#include "platform/application/WriteObservation.h"
 
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
-#include <json/json.h>
 #include <trantor/utils/Logger.h>
 
+#include <array>
+#include <chrono>
 #include <memory>
 #include <utility>
 
 namespace wm {
+
+namespace {
+
+// What one request may hold, from each model's page at developers.openai.com/api/docs/models.
+struct TranscriptionLimits {
+  const char* model;
+  long long contextTokens;
+  long long outputTokens;
+};
+
+constexpr std::array<TranscriptionLimits, 1> kTranscriptionLimits{{
+    {"gpt-4o-transcribe", 16'000, 2'000},
+}};
+
+// OpenAI documents no latency. The largest take is 6 MiB (kMaxAudioBytes) and at most the model's 16,000-token window
+// of audio, about 26.7 minutes at the 1 token per 100 ms OpenAI counts user audio at; such a take gets 300 s to
+// upload and be transcribed before its send is called ambiguous.
+constexpr double kTranscriptionTimeoutSeconds = 300.0;
+
+// How long stop() lets takes still with the vendor answer and settle: inside the 10 s Docker gives a stopping
+// container, with time left for the rest of shutdown.
+constexpr std::chrono::seconds kShutdownDrain{5};
+
+// How a take ends for the ledger. An answer that is not a success consumed nothing, and neither did a request that
+// never reached a connection or a TLS session: both settle at zero. A success settles at what it billed. Anything
+// else — a timeout, a connection dropped mid-exchange — may have been heard and billed, so its hold stays.
+AiCallEnd takeEnd(drogon::ReqResult result, const drogon::HttpResponsePtr& response) {
+  if (result == drogon::ReqResult::Ok && response)
+    return response->statusCode() / 100 == 2 ? AiCallEnd::settled : AiCallEnd::unconsumed;
+  const bool neverSent = result == drogon::ReqResult::BadServerAddress ||
+                         result == drogon::ReqResult::HandshakeError || result == drogon::ReqResult::InvalidCertificate;
+  return neverSent ? AiCallEnd::unconsumed : AiCallEnd::uncertain;
+}
+
+}
 
 // The file extension OpenAI infers the container/codec from: the mime's subtype, stripped of any
 // parameters ("audio/webm;codecs=opus" -> "webm").
@@ -25,30 +63,72 @@ std::string transcriptionExtension(const std::string& mimeType) {
   return subtype.empty() ? "webm" : subtype;
 }
 
-OpenAiTranscriber::OpenAiTranscriber(std::string apiKey, std::string model,
-                                     std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage, std::shared_ptr<AiCallBudget> budget)
-    : apiKey_(std::move(apiKey)), model_(std::move(model)), fuse_(std::move(fuse)),
-      usage_(std::move(usage)), budget_(std::move(budget)) {
+std::optional<long long> transcriptionCeilingNanos(const std::string& model) {
+  for (const TranscriptionLimits& limits : kTranscriptionLimits)
+    if (model == limits.model) return costNanos(model, TokenUse{limits.contextTokens, limits.outputTokens, 0, 0});
+  return std::nullopt;
+}
+
+std::optional<long long> transcriptionActualNanos(const std::string& model, const Json::Value& usage) {
+  if (!usage.isObject() || usage["type"] != "tokens") return std::nullopt;
+  for (const char* field : {"input_tokens", "output_tokens"})
+    if (!usage[field].isInt64() || usage[field].asInt64() < 0 || usage[field].asInt64() > 1'000'000)
+      return std::nullopt;
+  return costNanos(model, TokenUse{usage["input_tokens"].asInt64(), usage["output_tokens"].asInt64(), 0, 0});
+}
+
+OpenAiTranscriber::OpenAiTranscriber(std::string apiKey, std::string model, std::shared_ptr<AiFuse> fuse,
+                                     std::shared_ptr<UsageSink> usage, std::shared_ptr<AiCallBudget> budget,
+                                     std::string baseUrl)
+    : apiKey_(std::move(apiKey)), model_(std::move(model)), fuse_(std::move(fuse)), usage_(std::move(usage)),
+      budget_(std::move(budget)), baseUrl_(std::move(baseUrl)) {
   loop_.run();
 }
 
-bool OpenAiTranscriber::configured() const {
-  return !apiKey_.empty() && !budget_;
+void OpenAiTranscriber::stop() {
+  std::call_once(stopped_, [this] {
+    {
+      std::unique_lock lock(takesMutex_);
+      takesSettled_.wait_for(lock, kShutdownDrain, [this] { return takesWithVendor_ == 0; });
+    }
+    loop_.run();
+    auto* loop = loop_.getLoop();
+    loop->queueInLoop([loop] { loop->quit(); });
+    loop_.wait();
+  });
 }
 
-void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
-                                   const std::string& mimeType,
-                                   std::function<void(std::optional<Transcript>)> done) {
-  if (budget_) {
-    LOG_WARN << "operation=ai.transcribe product=journal door=vendor outcome=unsupported_audio_accounting";
-    done(std::nullopt);
-    return;
-  }
+bool OpenAiTranscriber::configured() const {
+  return !apiKey_.empty() && (!budget_ || transcriptionCeilingNanos(model_).has_value());
+}
+
+void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio, const std::string& mimeType,
+                                   std::function<void(Transcription)> done) {
   // The process-wide hourly ceiling, asked before a byte is sent.
   if (fuse_ && !fuse_->allows(nowMs())) {
     LOG_ERROR << "openai transcribe refused: hourly AI fuse";
-    done(std::nullopt);
+    done(Transcription::failed());
     return;
+  }
+
+  AiSpend spend;
+  spend.user = user;
+  spend.product = "journal";
+  spend.operation = "transcribe";
+  spend.model = model_;
+  spend.runId = newRunId("voice");
+
+  // The take holds the most it can cost on a Windmill One grant before the audio leaves; an allowance that cannot hold
+  // it keeps the audio here.
+  std::optional<AiBudgetReservation> reservation;
+  if (budget_) {
+    const AiCallAdmission admission =
+        budget_->begin(spend, transcriptionCeilingNanos(model_), AiCallFunding::windmillOne);
+    if (!admission.reservation) {
+      done(Transcription::refused(admission.refusal));
+      return;
+    }
+    reservation = admission.reservation;
   }
 
   const std::string boundary = "----WindmillTalkBoundaryVoZ8kQ1pXsW7"; // never appears in opus/mp4 bytes
@@ -66,7 +146,7 @@ void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
   form += audio;
   form += "\r\n--" + boundary + "--\r\n";
 
-  auto client = drogon::HttpClient::newHttpClient("https://api.openai.com", loop_.getLoop());
+  auto client = drogon::HttpClient::newHttpClient(baseUrl_, loop_.getLoop());
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Post);
   req->setPath("/v1/audio/transcriptions");
@@ -76,47 +156,57 @@ void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
 
   // Reports vendor, operation, status and cost, never a byte of the audio or the transcript.
   auto call = std::make_shared<VendorCall>("openai", "transcribe");
-  const std::string runId = newRunId("voice");
+  const std::string requestId = currentWriteRequestId();
+  {
+    std::lock_guard lock(takesMutex_);
+    ++takesWithVendor_;
+  }
   // `client` rides into the callback because nothing else owns it once this function returns.
   client->sendRequest(
       req,
-      [this, client, call, runId, user, done = std::move(done)](
-          drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
-        AiSpend spend;
-        spend.user = user;
-        spend.product = "journal";
-        spend.operation = "transcribe";
-        spend.model = model_;
-        spend.runId = runId;
+      [this, client, call, spend, reservation, requestId, done = std::move(done)](
+          drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
+        // The take's vendor round, under the request id of the route that sent it, so the ledger and usage lines it
+        // settles share that id.
+        WriteObservation round{"journal.transcribe", "journal", "vendor", requestId};
+        WriteContext context{round};
+        const bool succeeded = call->succeeded(result, response);
+        const std::optional<Json::Value> reply = succeeded ? parseWhole(std::string(response->getBody())) : std::nullopt;
+        const bool readable = reply && reply->isObject();
+        const Json::Value usage = readable ? (*reply)["usage"] : Json::Value();
+        const Json::Value text = readable ? (*reply)["text"] : Json::Value();
+        const std::optional<long long> billed = transcriptionActualNanos(model_, usage);
+        // A transcript is proof the vendor did the work: with no usage to price, the take settles at the most it could
+        // cost rather than holding that, and the slot with it, for good.
+        const bool unpriced = text.isString() && !billed;
 
-        if (!call->succeeded(result, resp)) {
-          spend.outcome = resp && resp->getStatusCode() == drogon::k429TooManyRequests
-                              ? AiOutcome::rateLimited
-                              : AiOutcome::transport;
-          meterSpend(spend, fuse_, usage_);
-          done(std::nullopt);
-          return;
-        }
+        // Settled before the answer is written, so the slot this take held is open to the next one.
+        if (reservation)
+          budget_->finish(*reservation, unpriced ? std::optional<long long>{reservation->amountNanos} : billed,
+                          takeEnd(result, response));
 
-        Json::Value parsed;
-        Json::Reader reader;
-        if (!reader.parse(std::string(resp->getBody()), parsed) || !parsed.isMember("text")) {
-          LOG_ERROR << "OpenAI transcribe: unreadable response";
-          spend.outcome = AiOutcome::schemaInvalid;
-          meterSpend(spend, fuse_, usage_);
-          done(std::nullopt);
-          return;
-        }
-
-        // What the reply says it cost, never an estimate. A reply carrying no `usage` object counts
-        // as zero tokens and still lands a row.
-        spend.tokens = tokensFrom(parsed["usage"]);
-        if (!parsed.isMember("usage")) LOG_ERROR << "OpenAI transcribe: reply carried no usage";
-        spend.outcome = AiOutcome::ok;
+        // What the reply says it cost, never an estimate. A failed call lands a row too.
+        spend.tokens = tokensFrom(usage);
+        spend.outcome = !succeeded ? (response && response->getStatusCode() == drogon::k429TooManyRequests
+                                          ? AiOutcome::rateLimited
+                                          : AiOutcome::transport)
+                        : !text.isString() ? AiOutcome::schemaInvalid
+                                           : AiOutcome::ok;
         meterSpend(spend, fuse_, usage_);
-        done(Transcript{parsed["text"].asString()});
+
+        if (succeeded && !text.isString()) LOG_ERROR << "OpenAI transcribe: unreadable reply";
+        else if (unpriced && reservation)
+          LOG_ERROR << "OpenAI transcribe: reply carried no token usage; the take settles at its ceiling";
+        else if (unpriced) LOG_ERROR << "OpenAI transcribe: reply carried no token usage";
+        round.finish(spend.outcome);
+        {
+          std::lock_guard lock(takesMutex_);
+          --takesWithVendor_;
+        }
+        takesSettled_.notify_all();
+        done(text.isString() ? Transcription::words(text.asString()) : Transcription::failed());
       },
-      60.0);
+      kTranscriptionTimeoutSeconds);
 }
 
 }

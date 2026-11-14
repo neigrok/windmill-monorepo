@@ -141,7 +141,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
       {drogon::Post});
 
   // The entitlement is checked before any audio is touched; no vendor wired means a 503.
-  auto voiceApi = std::make_shared<VoiceApi>(deps.transcriber, deps.entitlements, deps.authService);
+  auto voiceApi = std::make_shared<VoiceApi>(deps.transcriber, deps.entitlements, deps.authService, deps.clock);
   routes.registerHandler(
       "/v1/journal/transcribe",
       [voiceApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

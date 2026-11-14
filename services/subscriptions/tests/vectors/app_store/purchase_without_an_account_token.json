@@ -1,0 +1,105 @@
+{
+  "note": "SUBSCRIBED INITIAL_BUY with no appAccountToken: the observation names no account; a claim binds it (\u00a74).",
+  "notification": {
+    "notificationType": "SUBSCRIBED",
+    "subtype": "INITIAL_BUY",
+    "signedDate": 1798797605000,
+    "environment": "Production",
+    "status": 1,
+    "transaction": {
+      "transactionId": "2000000100000001",
+      "originalTransactionId": "2000000100000001",
+      "webOrderLineItemId": "2000000100000101",
+      "bundleId": "works.windmill.app",
+      "productId": "works.windmill.app.one.monthly",
+      "subscriptionGroupIdentifier": "21540000",
+      "purchaseDate": 1798797600000,
+      "originalPurchaseDate": 1798797600000,
+      "expiresDate": 1801476000000,
+      "quantity": 1,
+      "type": "Auto-Renewable Subscription",
+      "inAppOwnershipType": "PURCHASED",
+      "signedDate": 1798797605000,
+      "environment": "Production",
+      "transactionReason": "PURCHASE",
+      "storefront": "USA",
+      "storefrontId": "143441",
+      "price": 12000,
+      "currency": "USD",
+      "appTransactionId": "704512345678901234",
+      "billingPlanType": "BILLED_UPFRONT"
+    },
+    "renewalInfo": {
+      "originalTransactionId": "2000000100000001",
+      "productId": "works.windmill.app.one.monthly",
+      "autoRenewProductId": "works.windmill.app.one.monthly",
+      "autoRenewStatus": 1,
+      "isInBillingRetryPeriod": false,
+      "renewalDate": 1801476000000,
+      "renewalPrice": 12000,
+      "currency": "USD",
+      "recentSubscriptionStartDate": 1798797600000,
+      "appTransactionId": "704512345678901234",
+      "signedDate": 1798797605000,
+      "environment": "Production"
+    }
+  },
+  "expect": {
+    "observation": {
+      "lineage": {
+        "store": "app_store",
+        "environment": "production",
+        "storeSubscriptionId": "2000000100000001"
+      },
+      "observedAt": "2027-01-01T10:00:05Z",
+      "ownership": "purchased",
+      "status": {
+        "plan": "windmill_one",
+        "productId": "works.windmill.app.one.monthly",
+        "billingInterval": "P1M",
+        "startedAt": "2027-01-01T10:00:00Z",
+        "state": "active",
+        "currentPeriod": {
+          "start": "2027-01-01T10:00:00Z",
+          "end": "2027-02-01T10:00:00Z"
+        },
+        "autoRenew": true,
+        "nextChargeAt": "2027-02-01T10:00:00Z",
+        "nextCharge": {
+          "amount": "12.00",
+          "currency": "USD"
+        },
+        "nextProductId": null,
+        "cancelRequestedAt": null,
+        "paymentFailedAt": null,
+        "graceEndsAt": null,
+        "pauseScheduledFor": null,
+        "pausedAt": null,
+        "resumesAt": null,
+        "endedAt": null,
+        "endReason": null,
+        "offerKind": null,
+        "offerEndsAt": null,
+        "price": {
+          "amount": "12.00",
+          "currency": "USD"
+        },
+        "storefront": "USA"
+      },
+      "periods": [
+        {
+          "transaction": "2000000100000001",
+          "start": "2027-01-01T10:00:00Z",
+          "end": "2027-02-01T10:00:00Z",
+          "price": {
+            "amount": "12.00",
+            "currency": "USD"
+          },
+          "offerKind": null,
+          "refundedAt": null
+        }
+      ]
+    },
+    "accountToken": null
+  }
+}

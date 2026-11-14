@@ -559,6 +559,36 @@ test('Chromium: Board loading shows the still filter placeholders above the colu
   assert.deepEqual(errors, []);
 });
 
+test('Chromium: tablet loading folds Done to a still, inert rail', async () => {
+  await ready;
+  const errors = [];
+  for (const [width, breakpoint] of [[744, 'tablet'], [1023, 'tablet'], [1024, 'desktop']]) {
+    const page = await openStatePage({ width, height: 900 }, { nodes: null, loading: true, breakpoint }, errors);
+    try {
+      const actual = await page.evaluate(() => {
+        const rail = document.querySelector('.st-board-columns-rail--done');
+        const columns = document.querySelector('.st-board-columns');
+        return {
+          busy: columns.getAttribute('aria-busy'),
+          full: columns.querySelectorAll('.st-board-columns-column').length,
+          rail: rail !== null,
+          width: rail && Math.round(rail.getBoundingClientRect().width),
+          title: rail?.querySelector('.st-board-columns-title')?.textContent ?? null,
+          cards: rail?.querySelectorAll('.st-board-columns-deck-card').length ?? 0,
+          controls: rail?.querySelectorAll('button, a, input, [tabindex]').length ?? 0,
+          still: rail ? rail.getAnimations({ subtree: true }).length === 0 : true,
+        };
+      });
+      assert.deepEqual(actual, breakpoint === 'tablet'
+        ? { busy: 'true', full: 2, rail: true, width: width === 744 ? 136 : 168, title: 'Done', cards: 3, controls: 0, still: true }
+        : { busy: 'true', full: 3, rail: false, width: null, title: null, cards: 0, controls: 0, still: true });
+    } finally {
+      await page.close();
+    }
+  }
+  assert.deepEqual(errors, []);
+});
+
 test('Chromium: skeleton cards hold still on every band (02.09): from 744 radius 20, height 72, lines 180×14 and up to 240×10; the phone keeps its card', async () => {
   await ready;
   const errors = [];
@@ -588,7 +618,7 @@ test('Chromium: skeleton cards hold still on every band (02.09): from 744 radius
   const desktop = { cards: 8, moving: 0, radius: '20px', height: 72, border: '1px', title: [180, 14], detail: [240, 10] };
   assert.deepEqual(await measure({ width: 1440, height: 900 }, 'desktop'), desktop);
   assert.deepEqual(await measure({ width: 1440, height: 900 }, 'desktop', { reducedMotion: 'reduce' }), desktop);
-  assert.deepEqual(await measure({ width: 744, height: 900 }, 'tablet'), { cards: 8, moving: 0, radius: '20px', height: 72, border: '1px', title: [159, 14], detail: [159, 10] });
+  assert.deepEqual(await measure({ width: 744, height: 900 }, 'tablet'), { cards: 5, moving: 0, radius: '20px', height: 72, border: '1px', title: [180, 14], detail: [202, 10] });
   assert.deepEqual(await measure({ width: 390, height: 844 }, 'phone'), { cards: 3, moving: 0, radius: '16px', height: 72, border: '1px', title: [180, 14], detail: [240, 10] });
   assert.deepEqual(errors, []);
 });
