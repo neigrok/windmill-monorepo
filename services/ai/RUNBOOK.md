@@ -25,6 +25,16 @@ Bound the complete run with the test runner's timeout; CI also has job deadlines
 need no database, run `cargo test -p ai-domain -p ai-providers --locked`. The process probes also
 need `psql`, `pg_dump` and `openssl` on the path.
 
+Build and probe the shipping image from the same directory:
+
+```sh
+docker build -t windmill-ai:local .
+bash tests/operations/image_smoke.sh windmill-ai:local
+```
+
+The image probe creates and removes its own network and containers, publishes no host port, and
+keeps caller admission closed. CI runs this same script.
+
 The wire corpus and pass vectors live in `packages/api-contract/ai`. From the repository root, run
 `python3 packages/api-contract/ai/passes/generate.py --check`,
 `python3 packages/api-contract/ai/wire/generate.py --check` and
@@ -158,6 +168,9 @@ transcription billing rule has been checked against a real bill. Local simulated
 establish no claim about that bill or production alert delivery.
 
 Configure alerts for `budget.threshold`, `provider.fuse`, assumed accounting, reservation excess,
-owner funding refusal and provider credential refusal. Test each with harmless controlled fixtures
+owner funding refusal, provider credential refusal and `provider.busy`. The last reports a
+three-minute busy streak with gaps no longer than a minute, and resets after recovery or a longer
+gap. Database errors use static `ledger.*` operations and are reported at most once per operation
+per minute. Test each with harmless controlled fixtures
 and confirm delivery with the owner. Never include a prompt, pass, principal ID or provider key in
 the acceptance record.

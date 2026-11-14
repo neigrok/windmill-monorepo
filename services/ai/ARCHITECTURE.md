@@ -36,6 +36,9 @@ The ledger holds a dedicated PostgreSQL session's advisory lock. Short mutation 
 on that same session under a mutex; losing the session prevents another mutation from committing
 under an unrelated pooled connection. Provider I/O never holds the writer. Other connections serve
 reads. Statement, lock and transaction timeouts bound database work.
+Each server database boundary also has a five-second client deadline, covering a connection that
+stops replying. Shutdown starts its budget at the signal and never waits for a database-held lock
+before closing admission.
 
 Admission loads the budgets and identity facts, applies the pure domain decisions, then writes the
 reservation and its pins in one transaction. A separate conditional update changes `reserved` to
@@ -62,6 +65,8 @@ difference.
 A service-owned task retains each admitted call after its HTTP reader disconnects. The provider
 adapter has no retry or redirect policy. A malformed or oversized provider stream is drained with
 content discarded, bounded by the call deadline. Only known unconsumed work releases a reservation.
+Live provider writes have a one-second deadline; cancellation drops the unfinished transport write.
+Attempted audio remains accounted even when that write times out.
 
 An admission and its in-memory owner registration share a lifecycle lock with orphan recovery.
 The sweep cannot mistake a newly committed call for an abandoned one. The same coordination closes
@@ -81,6 +86,8 @@ Results live only in bounded memory. A new reader replaces the previous one. Act
 toward the same bounds as ended results; eviction never cancels accounting or provider draining.
 A principal cannot evict another principal's result. A timer removes expired results even without
 new traffic. Audio and transcript buffers are bounded separately from socket buffering.
+The producing task owns a result guard. If it exits before a terminal event, the guard clears its
+unfinished content and wakes readers immediately, independently of ledger recovery.
 
 ## Observability
 
@@ -88,6 +95,8 @@ The service emits no product events. Calling surfaces own those events; accounti
 the ledger. Logs and Sentry carry fixed operation names, bounded policy labels, technical outcomes,
 durations, counts, amounts and the service's numeric call ID. They never carry caller IDs, principal
 IDs, passes, keys, prompt text, transcripts, tools, images, audio, provider error text or request URLs.
+Write lines identify `product: ai` and their static public, internal or background door. Terminal
+call lines use the state actually settled, including a usage calculation that became assumed.
 
 The tracing subscriber allows service targets only. Dependency tracing cannot expose HTTP headers
 or WebSocket frames. Panic reports contain location and stack, without the panic payload. Container
@@ -100,11 +109,14 @@ core dumps are disabled.
 | Provider key or account refusal | Error |
 | Contradictory installation binding or owner funding cap | Error |
 | Free-pool threshold, open provider fuse, conflicting Fund or Reopen | Warning |
+| Provider busy for three minutes, with no gap longer than a minute | Warning once per continuous streak |
 | Ordinary budget, capability, concurrency and request refusals | Structured log only |
 
 Free-pool crossings are recorded transactionally with an outbox. Pre-authentication refusals,
 rate refusals and process-cap refusals are aggregated by code. The public listener never mounts an
 internal route, and funding and operating use distinct bearer secrets.
+Database Issues are limited to one per static operation per minute. Storage refusals still reach
+their callers, and settlement keeps retrying after its response deadline.
 
 The [runbook](RUNBOOK.md) covers local operation, investigation, correction and rotation. Live
 provider billing checks and delivery of production alert rules are deployment acceptance gates;

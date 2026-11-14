@@ -259,11 +259,13 @@ class ProcessReview(unittest.TestCase):
         body = None if value is None else json.dumps(value)
         if body:
             headers["Content-Type"] = "application/json"
-        connection.request(method, path, body, headers)
-        response = connection.getresponse()
-        data = response.read().decode()
-        status = response.status
-        connection.close()
+        try:
+            connection.request(method, path, body, headers)
+            with connection.getresponse() as response:
+                data = response.read().decode()
+                status = response.status
+        finally:
+            connection.close()
         try:
             return status, json.loads(data)
         except json.JSONDecodeError:
@@ -337,6 +339,7 @@ class ProcessReview(unittest.TestCase):
         self.assertTrue(self.provider.count_started.wait(10))
         body = json.dumps({"model": "small", "messages": [{"role": "user", "parts": [{"text": "fixture"}]}], "output": {"maxTokens": 20}})
         body_pending = http.client.HTTPConnection("127.0.0.1", public, timeout=10)
+        self.addCleanup(body_pending.close)
         body_pending.putrequest("PUT", "/v1/calls/operations-body-pending-fixture/text")
         body_pending.putheader("Authorization", "Bearer " + self.token)
         body_pending.putheader("Content-Length", str(len(body)))
