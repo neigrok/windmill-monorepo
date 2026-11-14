@@ -622,7 +622,8 @@ Cards, explicit Graph node clicks or taps, Graph Enter, related steps, activity 
 The origin product canvas stays mounted, hidden and inert, retaining Board scroll or Graph camera and selection;
 the Graph render loop stops while covered. The Shell and placeholder Coach remain reachable. The document has no
 modal role, scrim, Tab trap or document-wide Escape listener. Escape inside it closes the whole visit unless a
-nested editor or picker handles it first. Those nested controls keep their own dialog focus behavior.
+nested editor or picker handles it first. Those nested controls isolate the surrounding document, Shell and Coach,
+restore their prior inertness, and return focus to their opener. Hidden origin notices do not intercept Escape.
 
 The open step rides the hash as `?step=<id>` (`stepAddress.js`). Each activation and related step is a history entry;
 Back leaves one step, Close leaves the visit, and a direct link uses replace-removal. Unrelated hash fields and
@@ -643,6 +644,8 @@ conversation, history, proposals or backend behavior.
 `StepFacts` derives status, relationships and completion outcomes from the whole tree. Complete and Reset stay in
 place with a six-second inline Undo and an outcome line. Undo restores the mark without ceremony or activity;
 the progress lattice dates the new mark. Finished subtasks offer Complete step but never complete it themselves.
+Demotion removes write controls and private editing state without clearing stored workspace. Retained progress
+callbacks check current authority before writing or emitting an Undo event.
 The menu retains Copy link, Open in Graph, Select and Delete where available; owner up-next and done steps retain
 View branch. Tablet owners can leave the document for the existing Add step or Connect tool. Newly created blank
 Graph nodes keep their naming handoff; bulk, aim, edge removal, paste and Activity retain their own surfaces.
@@ -650,7 +653,8 @@ Graph nodes keep their naming handoff; bulk, aim, edge removal, paste and Activi
 Edit step opens the existing `StepComposer` through `StepDraft`, `BoardActs.edit` and `EditNode`, retaining every
 field, dirty/discard handling, remote-change reconciliation, prerequisite checks, held deletes and write refusals.
 My workspace and History use `StepWorkspace`: named checkboxes, the private note renderer, personal links and
-static activity rows. The note editor saves once, changed Cancel asks to discard, and system Back or remote closure
+static activity rows. Completion snapshots name no actor; locally authored and server-authored events retain their
+known attribution. The note editor saves once, changed Cancel asks to discard, and system Back or remote closure
 silently discards. Its source-range formatter preserves untouched note bytes. Phone subtask checks retain their
 six-second Undo.
 

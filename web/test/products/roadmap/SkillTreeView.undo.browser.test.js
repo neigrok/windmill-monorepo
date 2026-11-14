@@ -18,7 +18,8 @@ hostTest('Chromium: desktop delete Undo after a later link keeps the link, and â
   try {
     const before = await steps(page);
     await page.evaluate(() => window.scene.select('dock'));
-    await page.evaluate(() => window.scene.options.onDeleteNode('dock'));
+    await page.locator('canvas[data-graph-focus]').focus();
+    await page.keyboard.press('Delete');
     await graphToast(page).waitFor();
     assert.equal(await graphToast(page).locator('.st-board-toast-message').textContent(), 'Step deleted');
     await laterLink(page);
@@ -142,7 +143,8 @@ hostTest('Chromium: a revert that throws reports its static operation and claims
   const { page, errors } = await openHost({ width: 1440, broad: true });
   try {
     await page.evaluate(() => window.scene.select('dock'));
-    await page.evaluate(() => window.scene.options.onDeleteNode('dock'));
+    await page.locator('canvas[data-graph-focus]').focus();
+    await page.keyboard.press('Delete');
     await graphToast(page).waitFor();
     await page.evaluate(() => { window.session.revert = () => { throw new Error('Fixture revert failure'); }; });
     await undoButton(page).click();

@@ -705,8 +705,11 @@ test('Chromium: Delete from ⋯ hands focus to the columns’ tab stop, drops th
     assert.equal(await page.getByRole('article').count(), 1);
     await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
     await page.getByRole('article').waitFor({ state: 'detached' });
-    await page.waitForFunction(() => document.activeElement?.matches('.st-board-card, [data-column]'));
-    assert.deepEqual(await page.evaluate(() => [Boolean(document.activeElement.closest('[data-column]')), location.hash]), [true, '#/app/sail']);
+    await page.waitForFunction(() => document.activeElement?.matches('[data-column="locked"]'));
+    assert.deepEqual(await page.evaluate(() => [document.activeElement.dataset.column, document.activeElement.tabIndex, Boolean(document.activeElement.closest('[inert]')), location.hash]), ['locked', -1, false, '#/app/sail']);
+    await page.locator('.st-board-card[tabindex="0"]').filter({ hasText: 'Leave the dock' }).waitFor();
+    await page.keyboard.press('Tab');
+    assert.deepEqual([await focusedName(page), await page.evaluate(() => document.activeElement.tabIndex)], ['Leave the dock', 0]);
     await page.evaluate(() => restoreSteps());
     await card(page, 'Read the wind').waitFor();
     assert.deepEqual([await page.getByRole('article').count(), (await events(page)).filter((line) => line.startsWith('roadmap_board_step_open')).length], [0, 1]);

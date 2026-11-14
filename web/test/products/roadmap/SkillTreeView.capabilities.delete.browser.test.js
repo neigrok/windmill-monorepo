@@ -179,7 +179,8 @@ hostTest('§2.5 Delete: the desktop Graph delete gesture removes a step the road
   const { page, errors } = await openHost({ width: 1440 });
   try {
     await page.evaluate(() => window.scene.select('dock'));
-    await page.evaluate(() => window.scene.options.onDeleteNode('dock'));
+    await page.locator('canvas[data-graph-focus]').focus();
+    await page.keyboard.press('Delete');
     await page.waitForFunction(() => window.session.lattice.toTreeData().nodes.length === 2);
     assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_delete')),
       [{ name: 'roadmap_board_delete', props: { step: 'sent', via: 'direct', view: 'graph' } }]);

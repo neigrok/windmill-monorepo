@@ -300,7 +300,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   if (boardComposer !== null && shownComposer === null) setBoardComposer(null);
   const stepCovering = detailId !== null || boardComposer !== null;
   activationRef.current = (id) => {
-    if (!canvasView || stepCovering || selection.multiMode || tablet.aim || tablet.removing || !boardTree?.nodesById.has(id)) return;
+    if (!canvasView || stepCovering || selection.multiMode || tablet.aim || !boardTree?.nodesById.has(id)) return;
     stepPage.openFromGraph(id);
   };
   useEffect(() => {

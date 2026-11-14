@@ -177,7 +177,7 @@ class Visit {
 
 const identity = (page, role, view) => page.locator(`.st-roadmap-identity[data-role="${role}"][data-view="${view}"]`);
 const boardCards = (page) => page.locator('.st-view-layer--board.is-active .st-board-card:visible');
-const stepDialog = (page) => page.locator('.st-board-step-layer [role="dialog"]');
+const stepDocument = (page) => page.locator('.st-board-step-layer article');
 
 async function paintedShare(page) {
   const shot = await page.locator('canvas.st-canvas').screenshot({ style: CANVAS_ONLY, animations: 'allow', scale: 'css' });
@@ -225,15 +225,15 @@ async function openFirstStep(page) {
   const card = boardCards(page).first();
   const title = (await card.locator('.st-board-card-title').innerText()).trim();
   await card.click();
-  await stepDialog(page).waitFor();
-  const shown = (await stepDialog(page).innerText()).trim();
+  await stepDocument(page).waitFor();
+  const shown = (await stepDocument(page).innerText()).trim();
   if (!shown.includes(title)) throw new Error(`the step page does not name "${title}"`);
   if (!(await page.evaluate(() => window.location.hash)).includes('step=')) throw new Error('the open step is not in the address');
 }
 
 async function closeWithBack(page) {
   await page.goBack();
-  await stepDialog(page).waitFor({ state: 'detached' });
+  await stepDocument(page).waitFor({ state: 'detached' });
   if ((await page.evaluate(() => window.location.hash)).includes('step=')) throw new Error('Back left the step in the address');
   await boardCards(page).first().waitFor();
 }
@@ -252,7 +252,7 @@ async function openAndCloseFork(page, band) {
 
 async function reopenWithForward(page) {
   await page.goForward();
-  await stepDialog(page).waitFor();
+  await stepDocument(page).waitFor();
 }
 
 async function demoWalk(page, { band, site, visit }) {
@@ -280,7 +280,7 @@ async function publicRoadmapWalk(page, { site, visit }) {
   }
   await openFirstStep(page);
   for (const action of ['Complete', 'Edit step', 'Reset']) {
-    if (await stepDialog(page).getByRole('button', { name: action, exact: true }).count()) throw new Error(`a reader's step offers ${action}`);
+    if (await stepDocument(page).getByRole('button', { name: action, exact: true }).count()) throw new Error(`a reader's step offers ${action}`);
   }
   await closeWithBack(page);
   await reopenWithForward(page);
@@ -294,8 +294,8 @@ async function stepLinkWalk(page, { site, visit }) {
   if (visibility !== 'public') throw new Error(`the roadmap is ${visibility}, not public`);
   const step = data.nodes[0];
   await page.goto(`${site.base}/t/${site.roadmap}#?step=${encodeURIComponent(step.id)}`);
-  await stepDialog(page).waitFor();
-  if (!(await stepDialog(page).innerText()).includes(step.label)) throw new Error(`the link did not land on "${step.label}"`);
+  await stepDocument(page).waitFor();
+  if (!(await stepDocument(page).innerText()).includes(step.label)) throw new Error(`the link did not land on "${step.label}"`);
   await visit.sessionAnswered();
 }
 

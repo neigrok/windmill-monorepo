@@ -133,15 +133,17 @@ hostTest('Chromium: a delayed copy result cannot announce on a later step or ste
   } finally { await page.close(); }
 });
 
-for (const role of ['owner', 'reader']) {
-  hostTest(`Chromium: a signed-in ${role} on a shared URL reads shared content without device-private workspace`, async () => {
-    const { page, errors, requests } = await openHost({ width: 744, role, address: '#/t/', auth: 'signed-in' });
+for (const options of [
+  { role: 'owner', address: '#/t/', auth: 'signed-in' },
+  { role: 'reader', address: '#/t/', auth: 'signed-in' },
+  { role: 'reader', appUrl: true, auth: 'signed-in' },
+  { demo: true },
+]) {
+  hostTest(`Chromium: ${JSON.stringify(options)} reads shared content without persisted device-private workspace`, async () => {
+    const workspace = { wind: { note: 'Private preparation note', subtasks: [{ id: 'secret', label: 'Private task', done: false }], links: [] } };
+    const { page, errors, requests } = await openHost({ width: 744, workspace, ...options });
     try {
-      await page.evaluate(() => localStorage.setItem('windmill:workspace:t_sail', JSON.stringify({
-        wind: { note: 'Private preparation note', subtasks: [{ id: 'secret', label: 'Private task', done: false }], links: [] },
-      })));
-      await page.reload();
-      await page.waitForFunction(() => window.session?.ready && window.scene?.nodesById.has('wind'));
+      assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('windmill:workspace:t_sail'))), workspace);
       await page.evaluate(() => window.scene.activate('wind'));
       const step = page.getByRole('article', { name: 'Read the wind', exact: true });
       await step.waitFor();
@@ -151,11 +153,104 @@ for (const role of ['owner', 'reader']) {
       assert.equal(await page.getByText('Private task', { exact: true }).count(), 0);
       assert.equal(await step.locator('.st-step-history-section').count(), 1);
       assert.deepEqual(requests.filter((path) => path.endsWith('/guides')), []);
+      assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_workspace')), []);
+      assert.equal(await page.evaluate(() => JSON.stringify([window.events, window.issues]).includes('Private')), false);
+      assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('windmill:workspace:t_sail'))), workspace);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });
 }
 
+hostTest('Chromium: reader history describes a completion snapshot without attributing it to the viewer', async () => {
+  const { page, errors } = await openHost({ width: 744, role: 'reader' });
+  try {
+    await page.evaluate(() => window.scene.activate('course'));
+    await page.getByRole('article', { name: 'Choose a course', exact: true }).waitFor();
+    assert.deepEqual(await page.locator('.st-board-workspace-event > span:not(.st-event-avatar)').allTextContents(), ['Choose a course completed']);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: demotion revokes completion Undo without a progress write or Undo event', async () => {
+  const { page, errors } = await openHost({ width: 744 });
+  try {
+    await page.evaluate(() => window.scene.activate('wind'));
+    await page.getByRole('button', { name: 'Complete', exact: true }).click();
+    await page.locator('.st-board-step-undo').waitFor();
+    await page.evaluate(() => {
+      window.progressWrites = [];
+      const mark = window.session.markProgress.bind(window.session);
+      window.session.markProgress = (...args) => { window.progressWrites.push(args); return mark(...args); };
+      window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: { code: 'not-yours' } }));
+    });
+    await page.locator('.st-board-step-undo').waitFor({ state: 'detached' });
+    assert.equal(await page.getByRole('button', { name: 'Reset', exact: true }).count(), 0);
+    assert.deepEqual(await page.evaluate(() => window.progressWrites), []);
+    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name, props }) => name === 'roadmap_board_step_action' && props.action === 'undo')), []);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: demotion closes private note editing while preserving stored workspace and reader Escape', async () => {
+  const workspace = { wind: { note: 'Private preparation note', subtasks: [], links: [] } };
+  const { page, errors } = await openHost({ width: 744, workspace });
+  try {
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('windmill:workspace:t_sail'))), workspace);
+    await page.evaluate(() => window.scene.activate('wind'));
+    await page.locator('.st-board-workspace-note-heading').getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Note', exact: true }).waitFor();
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('wm-edit-forbidden', { detail: { code: 'not-yours' } })));
+    await page.locator('.st-board-workspace, .st-board-note-editor').waitFor({ state: 'detached' });
+    assert.equal(await page.getByText('Private preparation note', { exact: true }).count(), 0);
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('windmill:workspace:t_sail'))), workspace);
+    await page.getByRole('article').focus();
+    await page.keyboard.press('Escape');
+    await page.getByRole('article').waitFor({ state: 'detached' });
+    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_workspace')), []);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+for (const width of [390, 744, 1440]) {
+  hostTest(`Chromium: the nested tree picker isolates Shell and Coach at ${width}px and restores prior inertness and focus`, async () => {
+    const { page, errors } = await openHost({ width, shell: true });
+    try {
+      await page.evaluate(() => window.scene.activate('wind'));
+      const attach = page.getByRole('button', { name: 'Attach a tree', exact: true });
+      await attach.click();
+      const picker = page.getByRole('dialog', { name: 'Attach a tree', exact: true });
+      await picker.waitFor();
+      assert.equal(await page.locator('.wm-head').evaluate((node) => !!node.closest('[inert]')), true);
+      if (width > 390) {
+        assert.equal(await page.locator('.st-step-coach').evaluate((node) => !!node.closest('[inert]')), true);
+        await assert.rejects(page.locator('.st-step-coach button').click({ timeout: 500 }), /Timeout/);
+      }
+      await page.keyboard.press('Tab');
+      assert.equal(await picker.evaluate((node) => node.contains(document.activeElement)), true);
+      await page.keyboard.press('Escape');
+      await picker.waitFor({ state: 'detached' });
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Attach a tree');
+      assert.equal(await page.locator('.wm-head').evaluate((node) => !!node.closest('[inert]')), false);
+      assert.equal(await page.locator('.st-product-canvas').evaluate((node) => node.inert), true);
+      if (width > 390) assert.equal(await page.locator('.st-step-coach').evaluate((node) => !!node.closest('[inert]')), false);
+      assert.deepEqual(await page.evaluate(() => window.events.filter(({ props }) => props.action === 'collapseCoach' || props.action === 'expandCoach')), []);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+hostTest('Chromium: the first tablet node tap after remove-link mode opens the shared document', async () => {
+  const { page, errors } = await openHost({ width: 744 });
+  try {
+    await page.evaluate(() => { window.scene.pickEdge = () => ({ from: 'wind', to: 'dock' }); window.editTap(10, 10, null); });
+    await page.getByRole('group', { name: 'Remove this link', exact: true }).waitFor();
+    await page.evaluate(() => window.editTap(10, 10, 'wind'));
+    await page.getByRole('group', { name: 'Remove this link', exact: true }).waitFor({ state: 'detached' });
+    await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.session.lattice.toTreeData().nodes.find(({ id }) => id === 'dock').prerequisites), ['wind']);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
 
 hostTest('Chromium: Open in Graph focuses its canvas and View branch reveals the existing Board filter', async () => {
   const { page, errors } = await openHost({ width: 1440, surface: 'board', broad: true });

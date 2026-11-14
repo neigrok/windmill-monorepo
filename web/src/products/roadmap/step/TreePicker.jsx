@@ -59,7 +59,12 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
     if (phone) return coverBeneath(layer.current);
     const host = region.current.closest('.st-step-picker-host');
     if (!host) return undefined;
-    const restores = [...host.parentElement.children].filter((node) => node !== host).map(coverLayer);
+    const restores = [];
+    for (let branch = host; branch !== document.body; branch = branch.parentElement) {
+      for (const sibling of branch.parentElement.children) {
+        if (sibling !== branch) restores.push(coverLayer(sibling));
+      }
+    }
     return () => restores.forEach((restore) => restore());
   }, [phone]);
 

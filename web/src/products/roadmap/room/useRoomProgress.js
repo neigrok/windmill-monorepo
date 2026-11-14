@@ -69,6 +69,7 @@ export class RoomProgress {
 
   // A step that opens a tree takes no mark: no door offers one, and a call that reaches here for one changes and sends nothing.
   mark(ids, target, wire = ids, at = Date.now()) {
+    if (!this.collaborators.demo && !this.ownMarks) return this.snapshot;
     const steps = this.collaborators.treeRef.current?.nodesById;
     if (ids.some((id) => !takesMark(steps?.get(id)))) return this.snapshot;
     const next = advanceProgress(this.snapshot, ids, target, at);
@@ -127,6 +128,7 @@ export class RoomProgress {
       surface: 'graph', act: 'complete', holdMs: 6000, focusTarget: document.activeElement,
       action: { label: LABELS.undo, run: () => {
         const current = this.collaborators;
+        if (!current.demo && !this.ownMarks) return;
         try {
           this.restore(id, before);
           current.track('roadmap_graph_toast', { act: 'complete', step: 'undo' });
@@ -144,6 +146,7 @@ export class RoomProgress {
     if (!targets.length) return;
     const before = this.snapshot;
     const next = this.mark(targets, 'complete');
+    if (next === before) return;
     this.collaborators.track('roadmap_board_complete', { door: 'bulk', count: countBucket(targets.length) });
     this.announceChanges({ completed: targets, unlocked: progressChanges(this.collaborators.treeRef.current, before, next).unlocked });
     const offer = this.milestoneOffer(before, next);

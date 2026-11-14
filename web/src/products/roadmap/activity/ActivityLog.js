@@ -3,7 +3,7 @@ import { t } from '../i18n/index.js';
 export class ActivityEvent {
   constructor({ id, actor, verb, nodeId, label, kind, at, summary }) {
     this.id = id;
-    this.actor = actor ?? null; // null → the tree itself (an unlock has no person)
+    this.actor = actor ?? null; // A progress snapshot or an unlock names no actor.
     this.verb = verb;
     this.nodeId = nodeId ?? null;
     this.label = label ?? ''; // snapshot at emit
@@ -70,7 +70,6 @@ export class ActivityLog {
       const node = tree.nodesById.get(id);
       return new ActivityEvent({
         id: `seed-${id}`,
-        actor: t('roadmap.activity.you'),
         verb: 'completed',
         nodeId: id,
         label: node.label,

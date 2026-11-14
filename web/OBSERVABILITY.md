@@ -168,7 +168,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Undo on the toast of an attach, a change or a detach. ⌘Z and ⇧⌘Z after one are `roadmap_board_undo` (`undoKey`, `redoKey`), not this | `roadmap_tree_attach` | `step: undo`, `band: phone/tablet/desktop`, `view: board/graph`, `place: device/account` |
 | Try again on the tree picker's line for a list that could not be read, or for an address whose read failed | `roadmap_tree_attach` | `step: retry`, `read: list/paste`, `band: phone/tablet/desktop`, `view: board/graph`, `place: device/account` |
 | Open a step | `roadmap_board_step_open` | `surface: document`, `column: locked/upNext/done`, `door: card/graph/activity/step/link` |
-| Shared step document action | `roadmap_board_step_action` | `surface: document`, `action: complete/completeFromSubtasks/reset/undo/openInGraph/viewBranch/delete/edit/editNote/select/addStep/connect/expandCoach/collapseCoach` |
+| Shared step document action; completion, reset and Undo require current owner authority. A retained Undo after demotion writes and emits nothing | `roadmap_board_step_action` | `surface: document`, `action: complete/completeFromSubtasks/reset/undo/openInGraph/viewBranch/delete/edit/editNote/select/addStep/connect/expandCoach/collapseCoach` |
 | Scroll to a step section | `roadmap_board_step_action` | `surface: document`, `action: section`, `section: workspace/history` |
 | Copy a step's link | `roadmap_board_step_action` | `surface: document`, `action: copyLink`, `outcome: ok/failed` |
 | Reset from the Graph's dock or tablet panel | `roadmap_board_step_action` | `surface: dock/panel`, `action: reset` |

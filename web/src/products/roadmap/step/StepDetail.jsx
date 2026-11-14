@@ -82,6 +82,8 @@ export function StepDetail({
   const sectionScroll = useRef(null);
   const currentStep = useRef(id);
   currentStep.current = id;
+  const editableRef = useRef(editable);
+  editableRef.current = editable;
   const editingRef = useRef(false);
   const treeControl = useRef(null);
   const closeTreePicker = useRef(null);
@@ -99,7 +101,7 @@ export function StepDetail({
   const [treePicker, setTreePicker] = useState(false);
   originRef.current = trail[0];
   leaveRef.current = onClose;
-  editingRef.current = noteEditing;
+  editingRef.current = editable && noteEditing;
 
   if (stepShown !== id) {
     setStepShown(id);
@@ -110,6 +112,14 @@ export function StepDetail({
     setTreePicker(false);
     treeChanged.current = false;
     attachedAt.current = -Infinity;
+  }
+
+  if (!editable) {
+    if (outcome) setOutcome(null);
+    if (deleting) setDeleting(false);
+    if (noteEditing) setNoteEditing(false);
+    if (checked) setChecked(null);
+    if (treePicker) setTreePicker(false);
   }
 
   if (checked && !workspace?.subtasks?.some((item) => item.id === checked.id && item.done)) {
@@ -203,6 +213,7 @@ export function StepDetail({
 
   // Completion and Undo retain this document and report their outcome beside its status.
   const complete = (action) => {
+    if (!editableRef.current || currentStep.current !== id) return;
     const before = { completed, completedAt };
     onComplete(id);
     setOutcome({ kind: 'complete', line: completedOutcome({ unlocked: facts.opens.map(titleOf) }), undoable: true, before });
@@ -210,6 +221,7 @@ export function StepDetail({
   };
 
   const reset = () => {
+    if (!editableRef.current || currentStep.current !== id) return;
     const before = { completed, completedAt };
     onReset(id);
     setOutcome({ kind: 'reset', line: resetOutcome({ relocked: facts.relocks }), undoable: true, before });
@@ -217,6 +229,7 @@ export function StepDetail({
   };
 
   const undo = () => {
+    if (!editableRef.current || currentStep.current !== id || !outcome?.undoable) return;
     try {
       onRestore(id, outcome.before);
       act('undo');
