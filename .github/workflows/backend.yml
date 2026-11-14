@@ -1,7 +1,9 @@
 name: Backend CI/CD
 
-# services/embedder ships from here as a second image under the SAME package, tagged
-# `embedder-<sha>`: one package means one visibility setting, and the host pulls with no login.
+# services/embedder and services/subscriptions ship from here as images under the SAME package, tagged
+# `embedder-<sha>` and `subscriptions-<sha>`: one package means one visibility setting, the host pulls
+# with no login, and every commit this deploys has all three images. The subscription service's own
+# checks run in subscriptions.yml.
 
 on:
   push:
@@ -9,6 +11,7 @@ on:
     paths:
       - 'backend/**'
       - 'services/embedder/**'
+      - 'services/subscriptions/**'
       - 'packages/api-contract/sync/*.registry.json'
       - 'packages/api-contract/sync/composition.json'
       - 'packages/api-contract/sync/corpus/**'
@@ -22,11 +25,13 @@ on:
       - '.github/workflows/deploy.yml'
       - '!backend/**/*.md'
       - '!services/embedder/**/*.md'
+      - '!services/subscriptions/**/*.md'
   # The restore proof drives the web sync engine, so a pull request that changes it runs here too.
   pull_request:
     paths:
       - 'backend/**'
       - 'services/embedder/**'
+      - 'services/subscriptions/**'
       - 'packages/api-contract/sync/*.registry.json'
       - 'packages/api-contract/sync/composition.json'
       - 'packages/api-contract/sync/corpus/**'
@@ -42,6 +47,7 @@ on:
       - '.github/workflows/deploy.yml'
       - '!backend/**/*.md'
       - '!services/embedder/**/*.md'
+      - '!services/subscriptions/**/*.md'
   workflow_dispatch:
     inputs:
       verify_live_coach:
@@ -70,6 +76,9 @@ jobs:
       - uses: actions/checkout@v5
       - name: Verify deployment workflow and image context
         run: python3 backend/test/deploy/deploy_production_test.py DeployWorkflowTest -v
+      - name: The production Caddyfile sends each path to its service
+        timeout-minutes: 5
+        run: python3 backend/test/deploy/caddyfile_routes_test.py -v
       - uses: docker/setup-buildx-action@v4
       - name: Build + test (builder stage)
         uses: docker/build-push-action@v7
@@ -309,7 +318,8 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           test -n "$ANTHROPIC_API_KEY"
-          export AI_INSTALLATION_IP_HMAC_KEY="$(cat "$RUNNER_TEMP/anonymous-coach-live/installation-key")"
+          AI_INSTALLATION_IP_HMAC_KEY="$(cat "$RUNNER_TEMP/anonymous-coach-live/installation-key")"
+          export AI_INSTALLATION_IP_HMAC_KEY
           docker run -d --name anonymous-coach-server --network host \
             --add-host api.resend.com:127.0.0.1 -v "$RUNNER_TEMP/anonymous-coach-live:/evidence" \
             -e ANTHROPIC_API_KEY -e DATABASE_URL -e PORT=8088 -e WINDMILL_HOST=127.0.0.1 \
@@ -394,3 +404,14 @@ jobs:
             ${{ env.IMAGE }}:embedder-latest
           cache-from: type=gha,scope=embedder
           cache-to: type=gha,mode=max,scope=embedder
+      # The commit is baked in as the service's Sentry release; the compose file does not set one.
+      - uses: docker/build-push-action@v7
+        with:
+          context: services/subscriptions
+          build-args: SENTRY_RELEASE=${{ github.sha }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:subscriptions-${{ github.sha }}
+            ${{ env.IMAGE }}:subscriptions-latest
+          cache-from: type=gha,scope=subscriptions
+          cache-to: type=gha,mode=max,scope=subscriptions

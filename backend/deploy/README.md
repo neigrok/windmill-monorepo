@@ -1,11 +1,12 @@
 # Deploying windmill-backend
 
-Backend CI publishes the server and embedder images. The deploy workflow runs the stack on one
-VPS under `docker compose`. That second workflow runs itself, and refuses to run on
+Backend CI publishes the server, embedder and subscription service images. The deploy workflow runs
+the stack on one VPS under `docker compose`. That second workflow runs itself, and refuses to run on
 anything but a SUCCESSFUL `push`-triggered Backend CI/CD on `main` — a red `ctest`, a branch, or a
 pull request all stop at the image. It deploys the sha that passed, never `:latest`, so two pushes in
 a row cannot ship each other's binary. A manual dispatch runs from `main` and requires a full image
-commit SHA. Both server and migration are pinned to the inspected Docker content ID before promotion.
+commit SHA. The server, the migration and the subscription service are pinned to the inspected Docker
+content IDs before promotion.
 Every candidate carries `sync-compatibility.json`, generated from the same composed registries as its
 binary. A missing manifest or unreadable live hello stops deployment before migration, environment
 promotion or container replacement. Any change to the minimum accepted schema needs the manual
@@ -19,7 +20,7 @@ the last merge that touched the web and re-run it if it was cancelled.
 
 ```
  push to main ─▶ test (ctest in builder image)
-                   └▶ build-and-push (slim runtime image ─▶ ghcr.io)
+                   └▶ build-and-push (server, embedder and subscriptions images ─▶ ghcr.io)
                         └▶ deploy.yml, automatically, on that run's success
 
  (or by hand) run deploy.yml ─▶ render ~/windmill/.env ─▶ ship compose + Caddyfile ─▶ prune + pull + up + migrate
@@ -27,7 +28,9 @@ the last merge that touched the web and re-run it if it was cancelled.
  VPS
  ┌──────────────────── docker compose (private network) ────────────────────┐
  │  caddy :80/:443  ─▶  server :8080   (HTTP + WebSocket + MCP at /mcp)      │
+ │       │          ─▶  subscriptions :8082 (/v1/stores/* only)              │
  │       │          ─▶  /srv/windmill-web (the rsynced SPA, file_server)     │
+ │       │              subscriptions :8083 (internal; this network only)    │
  │       │              embedder :8081  (journal echo vectors; model mount)  │
  │       │              migrate (one-shot: applies db/schema.sql)            │
  │       │              subscriptions-db (one-shot: the subscription db)     │
@@ -41,16 +44,16 @@ the last merge that touched the web and re-run it if it was cancelled.
 | Piece | File |
 | --- | --- |
 | Build (Drogon + libpqxx, compile, `ctest`) | `backend/Dockerfile` |
-| Build + test + publish the image (on push to `main`) | `/.github/workflows/backend.yml` |
+| Build + test + publish the images (on push to `main`) | `/.github/workflows/backend.yml` |
+| The subscription service's image and its own checks | `/services/subscriptions/Dockerfile`, `/.github/workflows/subscriptions.yml` |
 | Deploy to the VPS (automatic on a green Backend CI/CD; renders `~/windmill/.env`) | `/.github/workflows/deploy.yml` |
 | VPS runtime topology | `deploy/docker-compose.yml` |
-| Promote the candidate files, prove Caddy loaded them and report the subscription database's provisioning (runs on the VPS) | `deploy/deploy-production.sh` |
+| Promote the candidate files, prove Caddy loaded them, report the subscription database's provisioning and start the subscription service (runs on the VPS) | `deploy/deploy-production.sh` |
 | Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
 | Count how the roadmap's pointers between trees meet one owned subtree per step (by hand, never during a deploy; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
 | Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
-| TLS + reverse proxy | `deploy/Caddyfile` |
+| TLS + reverse proxy, and the test that drives it against stand-ins for both upstreams | `deploy/Caddyfile`, `test/deploy/caddyfile_routes_test.py` |
 | The subscription service's database, its role and its `pg_hba.conf` rules (the `subscriptions-db` one-shot; shipped as `subscriptions-db.next` and promoted with the compose file) | `deploy/subscriptions-db/` |
-| The subscription service beside this stack, for a local rehearsal only | `deploy/docker-compose.subscriptions.yml` |
 | Env keys the deploy renders | `deploy/.env.example` |
 
 ## One-time VPS bootstrap
@@ -97,6 +100,7 @@ The deploy job creates `~/windmill/` and everything under it.
 | `SSH_PORT` | SSH port (e.g. `22`) |
 | `SSH_KEY` | CI deploy **private** key (whole PEM) |
 | `POSTGRES_PASSWORD` | Postgres password |
+| `SUBSCRIPTIONS_DB_PASSWORD` | The subscription database role's password, 64 lowercase hex characters ([below](#the-subscription-database)) |
 
 **Variables** — same page → Variables:
 
@@ -122,7 +126,8 @@ must be public.
 - **Deploy**: automatic on every green Backend CI/CD run on `main`; Actions → Deploy to VPS → Run
   workflow is the by-hand path. It rewrites `~/windmill/.env` wholesale from GitHub secrets +
   variables — only `POSTGRES_PASSWORD` is preserved from the host — and refuses before touching the
-  box if `DOMAIN_APP`, `DOMAIN_API`, `ACME_EMAIL`, `POSTGRES_PASSWORD` or `RESEND_FROM` is unset.
+  box if `DOMAIN_APP`, `DOMAIN_API`, `ACME_EMAIL`, `POSTGRES_PASSWORD`, `SUBSCRIPTIONS_DB_PASSWORD` or
+  `RESEND_FROM` is unset.
   `CF_IPS` is configured nowhere: the job fetches Cloudflare's live edge list, falls back to the
   committed default in `deploy/docker-compose.yml`, and refuses on the same guard if both come back
   empty — an empty allow-list would make Caddy 403 the whole site.
@@ -132,14 +137,16 @@ must be public.
   each probe has a timeout. The excluded boundary schema and every previously supported schema
   removed by the cutoff must return `426 upgrade-required` at hello, push, pull and WebSocket
   upgrade. The runtime receipt names the checks that passed. Last, the `subscriptions-db` one-shot must
-  pass or skip ([below](#the-subscription-database)). Credentials and failed command output are never
+  pass ([below](#the-subscription-database)) and the subscription service must turn healthy on its pinned
+  image ([below](#the-subscription-service)). Credentials and failed command output are never
   dumped. This proves configuration reached PID 1 and the selected
   image serves HTTP; output-cap enforcement requires a binary that supports that setting.
-- **Logs**: `cd ~/windmill && docker compose logs -f server` (or `caddy`, `db`, `embedder`).
+- **Logs**: `cd ~/windmill && docker compose logs -f server` (or `caddy`, `db`, `embedder`, `subscriptions`).
 - **Status**: `docker compose ps`.
-- **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. Both
-  the server and `embedder-<sha>` images must exist, and the server image must contain its compatibility
-  manifest. Only the image goes back: the run renders `.env`
+- **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. The
+  server, `embedder-<sha>` and `subscriptions-<sha>` images must exist, and the server image must contain
+  its compatibility manifest. An image built before Backend CI published the subscription service has no
+  `subscriptions-<sha>` beside it, so a rollback to it is refused at the pull, before anything changes. Only the image goes back: the run renders `.env`
   and ships `docker-compose.yml`, the Caddyfile and `deploy-production.sh` from the branch it is
   dispatched on (`main` only), and `migrate` applies the selected image's own `db/schema.sql`.
   A lower minimum is a compatibility change too and requires exact manual acknowledgement. That
@@ -328,11 +335,43 @@ dependent delete before replaying its source; older servers can acknowledge an a
 without preserving its death or lack a successful command's durable replay receipt. Epoch rotation
 alone cannot correct those implementations.
 
+## The subscription service
+
+`subscriptions` runs the Windmill One subscription service
+([ARCHITECTURE.md](../../services/subscriptions/ARCHITECTURE.md)) from
+`ghcr.io/neigrok/windmill-monorepo:subscriptions-<sha>`, the image Backend CI builds from
+`services/subscriptions` for the same commit as the server's. No store is connected: the public
+listener answers `GET /health` and 404s every other path, every path under `/v1/stores/` included.
+
+- **Routing**: Caddy forwards `/v1/stores/*`, on both hosts and behind the Cloudflare gate, to the public
+  port, 8082, and nothing else; the server never sees such a path. The internal port, 8083, is published
+  nowhere and no Caddy route names it, so only containers on this compose network reach it.
+- **Healthy** means the image's `HEALTHCHECK`, a `curl` of the internal listener's `/health` every 10 s,
+  answers 200 `{"status":"ready"}`: the service opened and migrated its ledger before it listened, and the
+  ledger answers. Three failures in a row make it `unhealthy`. Docker restarts the container when its
+  process exits (`restart: unless-stopped`), never because it is unhealthy.
+- **Status**: `docker compose ps subscriptions` shows `(healthy)`, and
+  `docker compose exec -T subscriptions curl -s localhost:8083/health` prints the answer.
+- **Logs**: `docker compose logs -f subscriptions`, one JSON object per line: `ledger open` with the
+  ledger's epoch at start, then one line per request. Its Logs and failure reports go to the server's
+  Sentry project under the same environment, with the commit the image was built from as release; the
+  `operation` tag, such as `ledger.open`, names a failure.
+- **Restart**: `docker compose restart subscriptions`. It stops within Docker's 10 s and exits 0.
+- **In a deploy**: `deploy-production.sh` pins the service to the content ID it pulled
+  (`SUBSCRIPTIONS_IMAGE` in `.env`) before anything changes, brings everything else up without it, and
+  starts it last, with `docker compose up -d --no-deps subscriptions`, once the backend is verified and
+  `subscriptions-db` has passed. It waits up to 60 s for `healthy`, checks that the container runs the
+  pinned content ID, and prints `PASS subscription service: healthy on its pinned image`. Otherwise it
+  prints `FAIL subscription service …; the backend is deployed and serving` and the run is red, with the
+  container it started left as it is and nothing rolled back; while the service is down, Caddy answers
+  `/v1/stores/*` with 502. A `subscriptions-db` FAIL ends the run before this step and leaves the running
+  service as it was. A missing `subscriptions-<sha>` image stops the deploy at the pull, before anything
+  changes.
+
 ## The subscription database
 
-The subscription service ([ARCHITECTURE.md](../../services/subscriptions/ARCHITECTURE.md)) keeps its
-ledger in `windmill_subscriptions`, a database of its own in this cluster, owned by a role of the same
-name. No `subscriptions` container runs in production yet. The `subscriptions-db` one-shot
+The subscription service keeps its ledger in `windmill_subscriptions`, a database of its own in this
+cluster, owned by a role of the same name. The `subscriptions-db` one-shot
 (`deploy/subscriptions-db/provision.sh`) provisions the database on every `docker compose up`, so on
 every deploy and against the existing volume, as `migrate` applies the schema. Its `psql` connects as the
 backend does, as `windmill` over the network to the backend's database.
@@ -355,24 +394,24 @@ backend does, as `windmill` over the network to the backend's database.
    still reaches its own database.
 
 It ends in one line, `PASS subscriptions database: …` with `rules installed` or `rules unchanged`, or
-`FAIL subscriptions database: <what failed>` on stderr with exit code 1. Nothing depends on it, so it
-never holds up the backend. `deploy-production.sh` reads its outcome once the backend is verified and
-prints that line; a FAIL turns the deploy run red, while the backend it deployed stays up and serving.
+`FAIL subscriptions database: <what failed>` on stderr with exit code 1. Only the subscription service
+waits on it, so it never holds up the backend. `deploy-production.sh` reads its outcome once the backend
+is verified and prints that line; a FAIL turns the deploy run red, while the backend it deployed stays up
+and serving.
 
-While the GitHub secret `SUBSCRIPTIONS_DB_PASSWORD` does not exist, the render writes it empty and the
-one-shot prints `SKIP subscriptions database: SUBSCRIPTIONS_DB_PASSWORD is not set, so nothing was
-provisioned`, exits 0 and touches nothing: no rule, role or database. To provision it, generate the
-password as hex, so it sits in a `postgres://` URL unescaped, save it as that secret, and deploy. The
-render refuses any other value, naming the variable and never its value.
+The GitHub secret `SUBSCRIPTIONS_DB_PASSWORD` is the role's password, generated as hex so it sits in the
+service's `postgres://` URL unescaped:
 
 ```sh
 openssl rand -hex 32
 ```
 
-The deploy then prints `PASS … (rules installed)`, and on the host `docker compose exec -T db psql -U
-windmill windmill_subscriptions -c 'select 1'` fails with `pg_hba.conf rejects connection`. Deleting
-the secret afterwards stops the provisioning and leaves the rules, the role, its password and the
-database as they are.
+The render refuses to deploy while the secret is missing or holds anything else, naming the variable and
+never its value. The first deploy with it prints `PASS … (rules installed)` and each one after it
+`PASS … (rules unchanged)`; on the host `docker compose exec -T db psql -U windmill windmill_subscriptions
+-c 'select 1'` fails with `pg_hba.conf rejects connection`. Run without the password, as a local compose
+may be, the one-shot prints `SKIP subscriptions database: SUBSCRIPTIONS_DB_PASSWORD is not set, so
+nothing was provisioned`, exits 0 and touches nothing: no rule, role or database.
 
 - **What the rules hold**: a `pg_hba.conf` rule binds `windmill` although it is the cluster's
   superuser, so no connection as the backend's role reaches the database, from its container or over
@@ -393,22 +432,25 @@ database as they are.
 
 Verify the dump's recorded sha256 and its `pg_restore --list` first. A restored ledger takes a new
 epoch, every time, so that a reader's cursor from before the restore means nothing after it (spec
-§5.2). From `~/windmill`, with nothing connected to the database:
+§5.2). From `~/windmill`, with deployments paused; the first line stops the service, the only other
+client of the database:
 
 ```sh
 set -eu
 RESTORE_DUMP="$PWD/backups/<backup>.dump"
 export PGPASSWORD=$(sed -n 's/^SUBSCRIPTIONS_DB_PASSWORD=//p' .env)
+docker compose stop subscriptions
 docker compose exec -T db dropdb -U windmill windmill_subscriptions
 docker compose run --rm -T subscriptions-db
 docker compose exec -T -e PGPASSWORD db pg_restore -U windmill_subscriptions -d windmill_subscriptions \
   --single-transaction --exit-on-error --no-owner --no-acl < "$RESTORE_DUMP"
 docker compose exec -T -e PGPASSWORD db psql -U windmill_subscriptions -d windmill_subscriptions -XAtq \
   -v ON_ERROR_STOP=1 -c 'update ledger set epoch = gen_random_uuid() returning epoch'
+docker compose start subscriptions
 ```
 
-`subscriptions-db` recreates the database empty, owned by its role and behind its rules; the last line
-prints the new epoch.
+`subscriptions-db` recreates the database empty, owned by its role and behind its rules; the `update`
+prints the new epoch, and the service, started again, logs `ledger open` with it.
 
 ### Let the backend in again
 
@@ -433,23 +475,23 @@ docker compose exec -T db psql -U windmill windmill -XAtc 'select 1'
 
 Until the next deploy puts the subscription rules back, `windmill` reaches `windmill_subscriptions`.
 
-### Rehearse it locally
+### Run it locally
 
-`deploy/docker-compose.subscriptions.yml` adds the service to this stack, built from
-`services/subscriptions`. From the repository root, with Docker running:
+The production compose runs the service from a local image when `SUBSCRIPTIONS_IMAGE` names one in
+place of the published `subscriptions-<sha>`. From the repository root, with Docker running:
 
 ```sh
 (
   set -eu
   REHEARSAL_ENV=$(mktemp)
   rehearse() {
-    docker compose -p subscriptions-rehearsal --env-file "$REHEARSAL_ENV" \
-      -f backend/deploy/docker-compose.yml -f backend/deploy/docker-compose.subscriptions.yml "$@"
+    docker compose -p subscriptions-rehearsal --env-file "$REHEARSAL_ENV" -f backend/deploy/docker-compose.yml "$@"
   }
   trap 'rehearse down -v; rm -f "$REHEARSAL_ENV"' EXIT
-  printf 'POSTGRES_PASSWORD=%s\nSUBSCRIPTIONS_DB_PASSWORD=%s\nDOMAIN_APP=app.localhost\nDOMAIN_API=api.localhost\nACME_EMAIL=ops@example.invalid\n' \
-    "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" > "$REHEARSAL_ENV"
-  rehearse up -d --build --wait subscriptions
+  docker build -t windmill-subscriptions:local services/subscriptions
+  printf 'POSTGRES_PASSWORD=%s\nSUBSCRIPTIONS_DB_PASSWORD=%s\nSUBSCRIPTIONS_IMAGE=%s\nSENTRY_ENVIRONMENT=local\nDOMAIN_APP=app.localhost\nDOMAIN_API=api.localhost\nACME_EMAIL=ops@example.invalid\n' \
+    "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" windmill-subscriptions:local > "$REHEARSAL_ENV"
+  rehearse up -d --wait subscriptions
   rehearse logs subscriptions-db subscriptions
   rehearse exec -T subscriptions curl -s localhost:8083/health
   if rehearse exec -T db psql -U windmill windmill_subscriptions -c 'select 1'; then
@@ -535,8 +577,8 @@ stdout did not take the counts.
 
 The frontend is the `web/` half of this monorepo — a static Vite SPA, no container, no registry.
 `.github/workflows/web.yml` tests, builds, and rsyncs `dist/` into `~/windmill/web/` on a push to
-`main`; Caddy serves it at `DOMAIN_APP` and path-routes `/v1`, `/mcp` and `/oauth` to `server`. One
-origin, so the build bakes in no API host.
+`main`; Caddy serves it at `DOMAIN_APP`, path-routes `/v1/stores/*` to `subscriptions` and the rest of
+`/v1`, `/mcp` and `/oauth` to `server`. One origin, so the build bakes in no API host.
 
 `server` mounts that directory read-only as `WINDMILL_WEB_ROOT` to splice unfurl meta into the
 `/t/:id` share pages, and `embedder` mounts `web/models` for its weights. **On a fresh host, run the

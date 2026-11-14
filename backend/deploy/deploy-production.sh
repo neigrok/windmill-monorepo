@@ -37,8 +37,19 @@ docker image prune -af > /dev/null
 docker builder prune -af > /dev/null
 "${candidate[@]}" pull
 python3 "$(dirname "$0")/sync_compatibility.py" preflight "$candidate_env" sync-cutover.json "$verification/sync.json"
+# The subscription service is pinned to the content ID it was pulled as, like the server and the migration.
+subscriptions_image=$("${candidate[@]}" config --format json |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["subscriptions"]["image"])')
+subscriptions_id=$(docker image inspect --format '{{.Id}}' "$subscriptions_image")
+if [[ ! "$subscriptions_id" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+  printf 'FAIL candidate subscription image has no immutable content ID\n' >&2
+  exit 1
+fi
+sed '/^SUBSCRIPTIONS_IMAGE=/d' "$candidate_env" > "$verification/candidate.env"
+printf 'SUBSCRIPTIONS_IMAGE=%s\n' "$subscriptions_id" >> "$verification/candidate.env"
+mv "$verification/candidate.env" "$candidate_env"
 
-# The inspected image and sync minimum are approved before any migration or container changes.
+# The inspected images and sync minimum are approved before any migration or container changes.
 [[ ! -f .env ]] || cp .env .env.bak
 mv "$candidate_env" .env
 mv docker-compose.next.yml docker-compose.yml
@@ -56,7 +67,14 @@ if docker compose exec -T caddy cat /etc/caddy/Caddyfile > "$verification/Caddyf
    cmp -s Caddyfile "$verification/Caddyfile.before"; then
   caddy_changed=0
 fi
-docker compose up -d --pull never
+# Everything but the subscription service comes up here. That one waits on its database's provisioning and
+# starts last, below, so neither of them can keep the backend from starting.
+services=$(docker compose config --services)
+backend=()
+while read -r service; do
+  [[ "$service" == subscriptions ]] || backend+=("$service")
+done <<< "$services"
+docker compose up -d --pull never "${backend[@]}"
 # A single-file bind mount retains its inode across mv. Recreate to bind the new file.
 if [[ "$caddy_changed" == 1 ]]; then
   docker compose up -d --no-deps --force-recreate --pull never caddy
@@ -132,8 +150,9 @@ except Exception:
 PY
 python3 "$(dirname "$0")/sync_compatibility.py" verify "$verification/sync.json"
 rm -f .env.bak rendered.env sync-cutover.json
-# The subscription database's one-shot ran with `up`, and nothing waits on it, so its outcome is read here,
-# once the backend is verified: a FAIL turns this run red while the backend stays deployed and serving.
+# The subscription database's one-shot ran with `up`, and nothing there waits on it, so its outcome is read
+# here, once the backend is verified. A FAIL turns this run red while the backend stays deployed and serving,
+# and leaves the subscription service as it was.
 provisioning=$(docker compose ps -aq subscriptions-db)
 if [[ -z "$provisioning" ]]; then
   printf 'FAIL subscription database provisioning did not run; the backend is deployed and serving\n' >&2
@@ -156,4 +175,26 @@ case "$outcome" in
       "${outcome%% *}" >&2
     exit 1 ;;
 esac
+# The subscription service starts on the database its provisioning has just passed. One that does not turn
+# healthy on its pinned image turns this run red; it is not rolled back, and the backend stays deployed and serving.
+if ! docker compose up -d --no-deps --pull never subscriptions; then
+  printf 'FAIL subscription service did not start; the backend is deployed and serving\n' >&2
+  exit 1
+fi
+subscriptions=$(docker compose ps -aq subscriptions)
+for ((attempt=0; attempt<60; attempt++)); do
+  health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+    "$subscriptions")
+  [[ "$health" == healthy || "$health" == unhealthy ]] && break
+  sleep 1
+done
+if [[ "$health" != healthy ]]; then
+  printf 'FAIL subscription service was %s after %s s; the backend is deployed and serving\n' "$health" "$attempt" >&2
+  exit 1
+fi
+if [[ "$(docker inspect --format '{{.Image}}' "$subscriptions")" != "$(sed -n 's/^SUBSCRIPTIONS_IMAGE=//p' .env)" ]]; then
+  printf 'FAIL running subscription service image differs from intended image; the backend is deployed and serving\n' >&2
+  exit 1
+fi
+printf 'PASS subscription service: healthy on its pinned image\n'
 printf 'PASS deployed: immutable image, sync compatibility, process environment and Caddy verified; DB password preserved\n'
