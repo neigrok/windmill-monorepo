@@ -2254,7 +2254,8 @@ TEST(pg_the_owners_list_leaves_out_the_subtree_of_a_removed_root) {
 
 // A deleted owning step hides its branch from every read of the stored rows that judges standing — the access, the
 // owner's list, the walk of what a tree opens, the guides above — at any depth, while the hidden trees keep their rows,
-// their content and their place; the root's absent owning steps and its branch's size say the same. Its revive shows the branch again, and
+// their content and their place; the root's absent owning steps and its branch's size say the same. Its revive shows
+// the branch again, and
 // nothing retires a subtree's row by its id.
 TEST(pg_a_deleted_owning_step_hides_its_branch_from_every_stored_read_and_its_revive_shows_it_again) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);

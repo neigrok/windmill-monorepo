@@ -1987,8 +1987,8 @@ TEST(a_hidden_branch_answers_every_rest_door_as_absent_and_a_subtree_is_forked_o
 }
 
 // The gate alone decides whether a branch stands. A revive whose save the store has not taken yet shows the branch to
-// the gate at once, and every read past it answers the tree as it stands — its name, its place, its guides — while the
-// stored rows still hold the step deleted.
+// the gate at once, and every read past it answers the tree as it stands — its name, its place, its guides — while
+// the stored rows still hold the step deleted.
 TEST(a_revive_held_unsaved_shows_the_branch_to_every_read_past_the_gate) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
@@ -1999,8 +1999,9 @@ TEST(a_revive_held_unsaved_shows_the_branch_to_every_read_past_the_gate) {
     write(*h.rooms->open(TreeId{"t_a"}));
     return h.rooms->persist(TreeId{"t_a"});
   };
-  REQUIRE(onRoot([&](TreeRoom& room) { room.applyCommands({DeleteNode{NodeId{"sail"}}}, 50, owner, {TreeId{"t_s"}}); }) ==
-          Saved::saved);
+  REQUIRE(onRoot([&](TreeRoom& room) {
+            room.applyCommands({DeleteNode{NodeId{"sail"}}}, 50, owner, {TreeId{"t_s"}});
+          }) == Saved::saved);
   REQUIRE_EQ(sendGetTree(h.api, "s-owner", "t_r")->getStatusCode(), drogon::k404NotFound);
 
   h.trees->savesFail = true;
@@ -2048,7 +2049,8 @@ TEST(a_put_whose_standing_read_fails_answers_its_save_and_the_sweep_settles_the_
 
   std::vector<std::string> lines;
   installWriteSink([&](const WriteCompletion& line) {
-    if (line.operation == "roadmap.tree.standing") lines.push_back(line.operation + " " + line.door + " " + line.outcome);
+    if (line.operation != "roadmap.tree.standing") return;
+    lines.push_back(line.operation + " " + line.door + " " + line.outcome);
   });
   h.trees->absentReadsFail = true;
   const drogon::HttpResponsePtr put = [&] {

@@ -179,7 +179,7 @@ void RoomRegistry::settleOwningSteps(const TreeId& root) {
   if (live) settle(root, *live);
 }
 
-bool RoomRegistry::settle(const TreeId& root, RootAccess& live) {
+void RoomRegistry::settle(const TreeId& root, RootAccess& live) {
   std::vector<OwningStep> moved;
   {
     // Under the root's lock no tree of the root's can finish opening, so each one without a live room holds as the store
@@ -196,12 +196,11 @@ bool RoomRegistry::settle(const TreeId& root, RootAccess& live) {
     } catch (const std::exception& failure) {
       standing.fail(failure);
       live.unsettle();
-      return false;
+      return;
     }
   }
   // Told with no lock held: whoever listens asks accessOf again, which may take the root's lock.
   for (const OwningStep& step : moved) announceBelow(root, step);
-  return true;
 }
 
 bool RoomRegistry::evict(const TreeId& id) {
@@ -280,7 +279,8 @@ void RoomRegistry::sweep(std::chrono::steady_clock::duration idleFor) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     for (const auto& [root, weak] : roots_)
-      if (const std::shared_ptr<RootAccess> live = weak.lock(); live && !live->settled()) unsettled.emplace_back(root, live);
+      if (const std::shared_ptr<RootAccess> live = weak.lock(); live && !live->settled())
+        unsettled.emplace_back(root, live);
   }
   for (const auto& [root, live] : unsettled) settle(root, *live);
   // The registry's own report of rooms that stay held: one a ceiling, however many rooms there are.
