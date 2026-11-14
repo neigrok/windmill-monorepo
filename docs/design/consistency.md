@@ -861,10 +861,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   summary follows its arrival, and the welcome-back recap names progress since the previous visit. Without WebGL2 neither appears
   on the Board. No approved frame draws either Board presentation; the follow-up is to draw both on the applicable bands.
 - **Board · the topbar before a roadmap loads.** Before the load answers, the tablet Board shows a still name skeleton; other bands
-  show no name. After a failure the build shows no name and offers no Share. It shows the switch while loading, but not after a failed load: the Graph's
-  load error veils the topbar, so the switch would lead where a pointer cannot come back from. Proposed, awaiting the owner: a still name
-  skeleton with no chevron while loading outside the tablet Board (15.08), and *Your roadmaps* with its chevron after a failed load (15.09). The switch returns to
-  the load error once the Graph's load error leaves the topbar reachable.
+  show no name. After a failure, eligible tablet app routes offer the account or device roadmap list through
+  [approved 32](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1098-71834); loading, empty and failed lists stay distinct.
+  Shared-reader routes offer no recovery switcher, including while signed in. Other bands show no name after failure.
+  A failed Board offers neither Share nor the Board/Graph switch: the Graph's load error veils its topbar.
+  Proposed, awaiting the owner outside the tablet Board: a still name skeleton without a chevron (15.08) and
+  *Your roadmaps* after failure (15.09). The view switch waits for an accessible Graph load-error topbar.
 - **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and field focus. G4 retains the phone Graph
   camera group under the row. Proposed, awaiting the owner: 25.11, 25.12.
 - **Board · reader Graph title affordance.** G8-H1 makes the selected-step title open the reader's read-only step page, with Fork
