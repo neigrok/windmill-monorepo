@@ -234,12 +234,11 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     callback(error(tooLarge ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest, refusal->reason));
     return;
   }
-  // The whole decision runs under the tree's strand; the callback fires outside the lock.
-  drogon::HttpResponsePtr reply = [&]() -> drogon::HttpResponsePtr {
-    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
-    // Judge on the two authorization columns alone and touch nothing until they say yes: an
-    // eviction above this gate would close the live room of whatever id a stranger names.
-    std::optional<TreeAccess> access = trees_->loadAccess(TreeId{treeId});
+  // Judged on the two authorization columns alone, and nothing touched until they say yes: an eviction above this
+  // gate would close the live room of whatever id a stranger names.
+  std::optional<TreeAccess> access;
+  const auto gateRefusal = [&]() -> drogon::HttpResponsePtr {
+    access = trees_->loadAccess(TreeId{treeId});
     // Unreadable answers "no such tree": a refusal must never state that a private id is taken.
     if (access && !canRead(caller, access->owner, access->visibility))
       return error(drogon::k404NotFound, "no such tree");
@@ -247,18 +246,35 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
       if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))
         return error(drogon::k403Forbidden, sentenceOf(*refusal), codeOf(*refusal));
     }
-
     // A PUT to an id no row holds CREATES the tree, so it must be well-formed; an existing tree
     // keeps whatever id it has.
     if (!access && !wellFormedTreeId(treeId))
       return error(drogon::k400BadRequest, "id must be t_ followed by 16 lowercase hex characters", "bad-id");
-
-    // Flush and close any live room, THEN read the row that flush just wrote: reading it earlier
-    // rewinds head_seq under the op log. A room whose save is held stays open with edits the row
-    // lacks, and a document written beneath it would never reach its pages: the PUT waits for the save.
-    if (!registry_->evict(TreeId{treeId}))
-      return error(drogon::k503ServiceUnavailable, "an earlier edit of this tree is still being saved — try again",
-                   "save-pending");
+    return nullptr;
+  };
+  const auto savePending = [] {
+    return error(drogon::k503ServiceUnavailable, "an earlier edit of this tree is still being saved — try again",
+                 "save-pending");
+  };
+  // Flush and close any live room before the strand is taken, since its save runs off the strand. A room whose save
+  // is held stays open with edits the row lacks, and a document written beneath it would never reach its pages: the
+  // PUT waits for the save.
+  if (drogon::HttpResponsePtr refusal = gateRefusal()) {
+    callback(refusal);
+    return;
+  }
+  if (!registry_->evict(TreeId{treeId})) {
+    callback(savePending());
+    return;
+  }
+  // The decision itself runs under the tree's strand, judged again there; the callback fires outside the lock.
+  drogon::HttpResponsePtr reply = [&]() -> drogon::HttpResponsePtr {
+    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
+    if (drogon::HttpResponsePtr refusal = gateRefusal()) return refusal;
+    // A room opened since the flush is closed here, with no statement, when the row holds all of it; one a write has
+    // landed in is not, and the PUT waits as it does for a held one. THEN the row that flush wrote is read: reading
+    // it earlier rewinds head_seq under the op log.
+    if (!registry_->close(TreeId{treeId})) return savePending();
     std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
 
     // A save GROWS the stored lattice, so the ceiling is read off what the tree would HOLD.

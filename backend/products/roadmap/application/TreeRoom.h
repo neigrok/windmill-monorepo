@@ -133,10 +133,17 @@ public:
     if (lastRow <= head_) return;
     head_ = lastRow;
     unsaved_ = true;
+    ++writes_;
   }
   // Whether the room holds anything its store does not: a write since the last save, or an op row still to land. A
   // subtree created under one of its steps is stored by its own transaction, the head with it, and leaves nothing.
   bool unsaved() const { return unsaved_ || !pendingOps_.empty(); }
+  // The first of the two alone: a room without one, and with no save of it running, is one whose row the store holds
+  // level with it.
+  bool holdsUnsavedWrites() const { return unsaved_; }
+  // How many writes the room has taken. A save reads it as it copies the dirty slice under the strand and again once
+  // the store took the slice: the same number means no write landed between, so the slice was all the room had dirty.
+  std::uint64_t writes() const { return writes_; }
 
   // wm::validate over this room's live state: a malformed or over-cap field, a node edit naming no
   // present node, or a legend rule. Server-driven undo/redo bypasses it.
@@ -165,13 +172,13 @@ public:
   // missed the subtree's creation takes. It takes no seq and tells no one.
   void ownSubtree(const NodeId& step, const TreeId& subtree) { subtrees_[step] = subtree; }
 
-  // The op rows this room's writes minted and no save has yet landed, in seq order. A row leaves
-  // the queue only through landPendingOps, which RoomRegistry calls AFTER the lattice is saved at
-  // the head those rows carry — so the log can never run ahead of the lattice. Each row is
-  // appended and dropped in turn, so an append that throws leaves the rest queued for the next
-  // save, and the log's `(tree_id, op_id)` uniqueness absorbs the retry.
+  // The op rows this room's writes minted and no save has yet landed, in seq order. RoomRegistry copies them with the
+  // slice it saves and appends them AFTER the lattice is saved at the head they carry — so the log can never run ahead
+  // of the lattice — and the ones that landed leave the queue through dropLandedOps: the first `landed` of it, which
+  // are the rows copied, since a write queues its row at the back. An append that throws leaves its row and the rest
+  // queued for the next save, and the log's `(tree_id, op_id)` uniqueness absorbs the retry.
   const std::vector<AppliedOp>& pendingOps() const { return pendingOps_; }
-  void landPendingOps(OpLog& log);
+  void dropLandedOps(std::size_t landed);
 
   // A room closing with rows still queued drops them — the lattice they describe is durable, only
   // the feed misses those deeds — and says so in the log.
@@ -197,8 +204,8 @@ public:
   // covered: its subscriber is sent its owning step's label beside the delta.
   Subgraph deltaSince(const VersionVector& since) const;
 
-  // Exports only the entries dirtied since the last markClean(). The caller holds the strand across export and
-  // clean.
+  // Exports only the entries dirtied since the last markClean(). The caller holds the strand for each; a save that
+  // lets it go between the two cleans only when writes() reads as it did at the export.
   std::pair<GraphState, LegendState> dirtyState() const;
   void markClean();
 
@@ -257,6 +264,7 @@ private:
   PresenceBus& bus_;
   HlcClock clock_;
   bool unsaved_ = false;  // a write has landed since the store last took the room
+  std::uint64_t writes_ = 0;
   std::set<NodeId> dirtyNodes_;
   std::set<Edge> dirtyEdges_;
   std::set<KindId> dirtyKinds_;

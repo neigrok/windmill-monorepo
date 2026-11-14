@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -91,6 +92,13 @@ struct RecordingOpLog : FakeOpLog {
     FakeOpLog::append(tree, op);
   }
 };
+
+// The write a door makes: landed in the room under the strand, its save asked for there and waited on without it.
+PendingSave writeNode(RoomRegistry& registry, const char* node, std::uint64_t nowMs) {
+  std::lock_guard<std::mutex> strand(registry.strandFor(tid()));
+  registry.open(tid())->applyCommand(createNode(node), nowMs, uid());
+  return registry.persist(tid());
+}
 
 Graft manyNodeGraft(std::size_t count) {
   Graft graft;
@@ -173,7 +181,7 @@ TEST(registry_opens_a_room_as_its_snapshot_and_takes_its_next_seq_after_the_last
   CHECK_EQ(room.head(), static_cast<Seq>(4));
 
   CHECK_EQ(room.applyCommand(RenameNode{nid("a"), "A2"}, 10, uid()), static_cast<Seq>(5));
-  CHECK(registry.persist(tid()) == Saved::saved);
+  CHECK(registry.persist(tid()).wait() == Saved::saved);
   CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(5));
   REQUIRE_EQ(log.byTree["t"].size(), 5u);
   CHECK_EQ(log.byTree["t"].back().seq, static_cast<Seq>(5));
@@ -271,7 +279,7 @@ TEST(registry_persist_snapshots_full_state_without_evicting) {
 
   TreeRoom& room = *registry.open(tid());
   room.applyCommand(createNode("added"), 10, uid());
-  registry.persist(tid());
+  registry.persist(tid()).wait();
 
   CHECK(registry.isOpen(tid()));                       // still live
   CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));  // snapshot advanced
@@ -287,17 +295,17 @@ TEST(registry_persist_saves_only_the_dirty_slice_and_never_clobbers_the_rest) {
 
   TreeRoom& room = *registry.open(tid());
   room.applyCommand(createNode("added"), 10, uid());
-  registry.persist(tid());
+  registry.persist(tid()).wait();
   CHECK_EQ(repo.savedNodeCounts.back(), 1u);       // the slice carried only "added"
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);   // upsert kept "seed" alongside it
 
   const std::size_t saves = repo.savedNodeCounts.size();
-  registry.persist(tid());                         // nothing written since
+  registry.persist(tid()).wait();                         // nothing written since
   CHECK_EQ(repo.savedNodeCounts.size(), saves);    // so nothing is saved: no statement is sent
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
 
   room.applyCommand(RenameNode{nid("added"), "Renamed"}, 11, uid());
-  registry.persist(tid());
+  registry.persist(tid()).wait();
   CHECK_EQ(repo.savedNodeCounts.back(), 1u);       // only the renamed node again
 }
 
@@ -312,7 +320,7 @@ TEST(registry_never_gives_an_unowned_tree_an_owner) {
   CHECK_FALSE(room.owner().has_value());
 
   room.applyCommand(createNode("added"), 10, UserId{"alice"});
-  registry.persist(tid());
+  registry.persist(tid()).wait();
 
   CHECK_FALSE(room.owner().has_value());            // the live room's cache is still empty
   CHECK_FALSE(repo.byId["t"].owner.has_value());    // and so is the row
@@ -538,27 +546,30 @@ TEST(registry_access_of_stops_speaking_for_a_tree_once_its_room_is_retired) {
   CHECK_EQ(registry.open(tid()), static_cast<TreeRoom*>(nullptr));  // and nothing reloads it
 }
 
-TEST(registry_persist_and_a_live_rename_answer_false_once_the_row_went_away_and_the_rename_retires_the_room) {
+TEST(registry_a_save_that_finds_the_row_gone_answers_gone_and_retires_the_room_whichever_write_asked_for_it) {
   FakeTreeRepository repo;
   FakeOpLog log;
   FakeBus bus;
   repo.byId["t"] = oneNodeTree();
+  repo.byId["u"] = oneNodeTree();
   RoomRegistry registry(repo, log, bus);
   std::vector<std::string> announced;
   registry.whenAccessChanges([&](const TreeId& id) { announced.push_back(id.str()); });
 
   registry.open(tid())->applyCommand(createNode("added"), 10, uid());
-  CHECK(registry.persist(tid()) == Saved::saved);
-  repo.deletedIds.insert("t");  // soft-deleted outside this registry, its row kept
+  CHECK(registry.persist(tid()).wait() == Saved::saved);
+  registry.open(tid("u"));
+  repo.deletedIds.insert("t");  // soft-deleted outside this registry, their rows kept
+  repo.deletedIds.insert("u");
   registry.open(tid())->applyCommand(createNode("ghost"), 11, uid());
 
-  CHECK(registry.persist(tid()) == Saved::gone);
-  CHECK(registry.isOpen(tid()));
-  CHECK(registry.rename(tid(), "Ghost title", 12, Hlc{}) == Saved::gone);
+  CHECK(registry.persist(tid()).wait() == Saved::gone);
   CHECK_FALSE(registry.isOpen(tid()));
-  CHECK_EQ(announced, std::vector<std::string>{"t"});
+  CHECK(registry.rename(tid("u"), "Ghost title", 12, Hlc{}).wait() == Saved::gone);
+  CHECK_FALSE(registry.isOpen(tid("u")));
+  CHECK_EQ(announced, (std::vector<std::string>{"t", "u"}));
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
-  CHECK(repo.byId["t"].title == (Lww<std::string>{"Seeded", {}}));
+  CHECK(repo.byId["u"].title == (Lww<std::string>{"Seeded", {}}));
   CHECK_EQ(registry.open(tid()), static_cast<TreeRoom*>(nullptr));
 }
 
@@ -579,7 +590,7 @@ TEST(registry_persist_saves_the_lattice_before_it_lands_the_op_rows) {
   CHECK(log.byTree["t"].empty());
   CHECK_EQ(room.pendingOps().size(), 2u);
 
-  registry.persist(tid());
+  registry.persist(tid()).wait();
   CHECK_EQ(journal, (std::vector<std::string>{"save@9", "append@8", "append@9"}));
   CHECK(room.pendingOps().empty());
   CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(9));
@@ -588,7 +599,7 @@ TEST(registry_persist_saves_the_lattice_before_it_lands_the_op_rows) {
   CHECK_EQ(log.byTree["t"][1].seq, static_cast<Seq>(9));
 
   journal.clear();
-  registry.persist(tid());                       // nothing written and nothing queued: nothing is sent
+  registry.persist(tid()).wait();                       // nothing written and nothing queued: nothing is sent
   CHECK(journal.empty());
 }
 
@@ -624,7 +635,7 @@ TEST(registry_a_crash_after_the_save_and_before_the_row_reopens_the_whole_import
     const Seq seq = room.importTree(manyNodeGraft(200), 10, uid()).value();
     CHECK_EQ(seq, static_cast<Seq>(8));
     log.failAppend = true;
-    registry.persist(tid());  // the row's failure is logged, never thrown: the lattice is durable
+    registry.persist(tid()).wait();  // the row's failure is logged, never thrown: the lattice is durable
     CHECK_EQ(journal, (std::vector<std::string>{"save@8", "append@8"}));
     CHECK_EQ(room.pendingOps().size(), 1u);  // still queued for the next save, had the process lived
   }
@@ -695,7 +706,7 @@ TEST(registry_a_save_that_fails_holds_the_write_and_its_timed_retry_lands_the_la
   {
     WriteObservation door{"mcp.roadmap_create_node", "roadmap", "mcp"};
     WriteContext context{door};
-    CHECK(registry.persist(tid()) == Saved::held);
+    CHECK(registry.persist(tid()).wait() == Saved::held);
     door.finish();
   }
   CHECK_EQ(journal, (std::vector<std::string>{"save@8"}));
@@ -743,7 +754,7 @@ TEST(registry_only_the_timer_and_a_write_that_changes_the_room_try_a_held_save_a
   TreeRoom& room = *registry.open(tid());
   room.applyCommand(createNode("added"), 10, uid());
   repo.savesFail = true;
-  CHECK(registry.persist(tid()) == Saved::held);
+  CHECK(registry.persist(tid()).wait() == Saved::held);
   retries.set[0].run();
   retries.set[1].run();
   REQUIRE_EQ(retries.set.size(), 3u);
@@ -751,7 +762,7 @@ TEST(registry_only_the_timer_and_a_write_that_changes_the_room_try_a_held_save_a
   const std::size_t tried = journal.size();
 
   for (int call = 0; call < 200; ++call) CHECK(registry.open(tid()) == &room);
-  for (int echo = 0; echo < 200; ++echo) CHECK(registry.persist(tid()) == Saved::held);
+  for (int echo = 0; echo < 200; ++echo) CHECK(registry.persist(tid()).wait() == Saved::held);
   CHECK(registry.standing(tid()) == Saved::held);
   registry.sweep(std::chrono::seconds(0));
   CHECK(registry.isOpen(tid()));
@@ -759,7 +770,7 @@ TEST(registry_only_the_timer_and_a_write_that_changes_the_room_try_a_held_save_a
   CHECK_EQ(retries.set.size(), 3u);
 
   room.applyCommand(createNode("later"), 11, uid());
-  CHECK(registry.persist(tid()) == Saved::held);
+  CHECK(registry.persist(tid()).wait() == Saved::held);
   CHECK_EQ(journal.size(), tried + 1);
   CHECK_EQ(retries.set.size(), 3u);
 
@@ -780,7 +791,7 @@ TEST(registry_only_the_timer_and_a_write_that_changes_the_room_try_a_held_save_a
 
   room.applyCommand(createNode("again"), 12, uid());
   repo.savesFail = true;
-  CHECK(registry.persist(tid()) == Saved::held);
+  CHECK(registry.persist(tid()).wait() == Saved::held);
   REQUIRE_EQ(retries.set.size(), 10u);
   const std::size_t before = journal.size();
   retries.set[7].run();
@@ -802,7 +813,7 @@ TEST(registry_reports_an_outage_once_when_it_begins_and_once_a_minute_with_the_r
   repo.savesFail = true;
   for (const char* tree : {"t", "u", "v"}) {
     registry.open(tid(tree))->applyCommand(createNode("added"), 10, uid());
-    CHECK(registry.persist(tid(tree)) == Saved::held);
+    CHECK(registry.persist(tid(tree)).wait() == Saved::held);
   }
   CHECK_EQ(told.reports.size(), 1u);
 
@@ -871,7 +882,7 @@ TEST(registry_tries_its_held_rooms_once_more_as_it_stops_within_one_budget_and_r
     repo.savesFail = true;
     for (const char* tree : {"t", "u"}) {
       registry.open(tid(tree))->applyCommand(createNode("added"), 10, uid());
-      CHECK(registry.persist(tid(tree)) == Saved::held);
+      CHECK(registry.persist(tid(tree)).wait() == Saved::held);
     }
     repo.savesFail = false;
     repo.duringSave = [&](const TreeId& tree) {
@@ -902,7 +913,7 @@ TEST(registry_a_held_room_whose_row_went_away_is_retired_by_its_retry_which_says
   RoomRegistry registry(repo, log, bus, retries.timer());
   registry.open(tid())->applyCommand(createNode("added"), 10, uid());
   repo.savesFail = true;
-  CHECK(registry.persist(tid()) == Saved::held);
+  CHECK(registry.persist(tid()).wait() == Saved::held);
 
   repo.savesFail = false;
   repo.deletedIds.insert("t");
@@ -927,7 +938,7 @@ TEST(registry_persist_returns_normally_when_a_row_fails_to_land_and_lands_it_nex
   TreeRoom& room = *registry.open(tid());
   room.applyCommand(createNode("added"), 10, uid());
   log.failAppend = true;
-  registry.persist(tid());
+  registry.persist(tid()).wait();
   CHECK_EQ(journal, (std::vector<std::string>{"save@8", "append@8"}));
   CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
   CHECK(log.byTree["t"].empty());
@@ -935,7 +946,7 @@ TEST(registry_persist_returns_normally_when_a_row_fails_to_land_and_lands_it_nex
 
   log.failAppend = false;
   room.applyCommand(createNode("also"), 11, uid());
-  registry.persist(tid());
+  registry.persist(tid()).wait();
   CHECK_EQ(journal, (std::vector<std::string>{"save@8", "append@8", "save@9", "append@8", "append@9"}));
   CHECK(room.pendingOps().empty());
   REQUIRE_EQ(log.byTree["t"].size(), 2u);
@@ -967,4 +978,246 @@ TEST(registry_evict_closes_the_room_after_its_save_even_when_the_rows_fail_to_la
   CHECK_EQ(room.head(), static_cast<Seq>(8));
   CHECK(room.hasNode(NodeId{"added"}));
   CHECK(room.pendingOps().empty());
+}
+
+TEST(registry_a_save_runs_with_the_strand_let_go_so_a_read_and_a_write_of_the_tree_land_while_the_store_hangs) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+  HangingStore store;
+  repo.duringSave = store.duringSave();
+
+  PendingSave first = writeNode(registry, "a", 10);
+  std::future<Saved> saving = std::async(std::launch::async, [&] { return first.wait(); });
+  REQUIRE(store.reachedBy(1, std::chrono::seconds(10)));
+
+  std::future<std::size_t> reading = std::async(std::launch::async, [&] {
+    std::lock_guard<std::mutex> strand(registry.strandFor(tid()));
+    TreeRoom* room = registry.open(tid());
+    room->applyCommand(createNode("b"), 11, uid());
+    return room->snapshot().nodes.size();
+  });
+  const bool landedWhileTheStoreHung = reading.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+  const bool stillSaving = saving.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
+  store.letGoOfIt();
+  CHECK(landedWhileTheStoreHung);
+  CHECK(stillSaving);
+  CHECK_EQ(reading.get(), 3u);
+  CHECK(saving.get() == Saved::saved);
+
+  // The store took "a" at the head it was copied at, and its row after. "b" landed while it did: its marks stay, the
+  // room is not settled, and its own save stores it with its row.
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
+  REQUIRE_EQ(log.byTree["t"].size(), 1u);
+  CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(8));
+  CHECK_FALSE(registry.settled(tid()));
+  REQUIRE_EQ(registry.open(tid())->pendingOps().size(), 1u);
+  CHECK_EQ(registry.open(tid())->pendingOps()[0].seq, static_cast<Seq>(9));
+
+  CHECK(registry.persist(tid()).wait() == Saved::saved);
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 3u);
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(9));
+  REQUIRE_EQ(log.byTree["t"].size(), 2u);
+  CHECK_EQ(log.byTree["t"][1].seq, static_cast<Seq>(9));
+  CHECK(registry.settled(tid()));
+}
+
+TEST(registry_two_saves_of_one_tree_never_pass_each_other_and_each_op_row_lands_after_the_save_that_covers_it) {
+  std::vector<std::string> journal;
+  RecordingTreeRepository repo(journal);
+  RecordingOpLog log(journal);
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+  HangingStore store;
+  repo.duringSave = store.duringSave();
+
+  PendingSave first = writeNode(registry, "a", 10);
+  std::future<Saved> firstSaving = std::async(std::launch::async, [&] { return first.wait(); });
+  REQUIRE(store.reachedBy(1, std::chrono::seconds(10)));
+  PendingSave second = writeNode(registry, "b", 11);
+  std::future<Saved> secondSaving = std::async(std::launch::async, [&] { return second.wait(); });
+  // The second save waits for the first: it has sent the store nothing while the first is still there.
+  const bool secondReachedTheStore = store.reachedBy(2, std::chrono::milliseconds(300));
+  store.letGoOfIt();
+  CHECK_FALSE(secondReachedTheStore);
+  CHECK(firstSaving.get() == Saved::saved);
+  CHECK(secondSaving.get() == Saved::saved);
+
+  CHECK_EQ(journal, (std::vector<std::string>{"save@8", "append@8", "save@9", "append@9"}));
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(9));
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 3u);
+  CHECK(registry.settled(tid()));
+}
+
+TEST(registry_writes_that_queue_behind_a_save_that_fails_share_its_answer_and_only_a_later_write_is_tried_again) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  HeldRetries retries;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus, retries.timer());
+  HangingStore store;
+  store.refuses = true;
+  repo.duringSave = store.duringSave();
+
+  // "a" and "b" are both in the room when the first save copies it; "c" lands while the store holds that save.
+  PendingSave first = writeNode(registry, "a", 10);
+  PendingSave second = writeNode(registry, "b", 11);
+  std::future<Saved> firstSaving = std::async(std::launch::async, [&] { return first.wait(); });
+  REQUIRE(store.reachedBy(1, std::chrono::seconds(10)));
+  std::future<Saved> secondSaving = std::async(std::launch::async, [&] { return second.wait(); });
+  PendingSave third = writeNode(registry, "c", 12);
+  std::future<Saved> thirdSaving = std::async(std::launch::async, [&] { return third.wait(); });
+  store.letGoOfIt();
+
+  CHECK(firstSaving.get() == Saved::held);
+  CHECK(secondSaving.get() == Saved::held);
+  CHECK(thirdSaving.get() == Saved::held);
+  // The first save covered "a" and "b"; the room changed after it, so one more was tried, which covered "c". Whoever
+  // of the two waiting writes ran it, the other was answered without a statement.
+  CHECK_EQ(store.entered, 2);
+  CHECK_EQ(retries.set.size(), 1u);
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 1u);
+  CHECK(log.byTree["t"].empty());
+
+  repo.duringSave = {};
+  retries.set[0].run();
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 4u);
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(10));
+  REQUIRE_EQ(log.byTree["t"].size(), 3u);
+  CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(8));
+  CHECK_EQ(log.byTree["t"][2].seq, static_cast<Seq>(10));
+  CHECK(registry.standing(tid()) == Saved::saved);
+}
+
+TEST(registry_a_write_an_earlier_save_stored_is_answered_saved_though_the_save_of_a_later_write_fails) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  HeldRetries retries;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus, retries.timer());
+  int saves = 0;
+  bool refuses = false;
+  repo.duringSave = [&](const TreeId&) {
+    ++saves;
+    if (refuses) throw std::runtime_error("the write was refused");
+  };
+
+  PendingSave first = writeNode(registry, "a", 10);
+  PendingSave second = writeNode(registry, "b", 11);
+  CHECK(second.wait() == Saved::saved);  // one save stores both
+  CHECK_EQ(saves, 1);
+
+  PendingSave third = writeNode(registry, "c", 12);
+  refuses = true;
+  CHECK(first.wait() == Saved::saved);  // "a" is stored; the save it ran, and that failed, is of "c"
+  CHECK_EQ(saves, 2);
+  CHECK(registry.standing(tid()) == Saved::held);
+  CHECK(third.wait() == Saved::held);  // covered by the save that just failed: no statement of its own
+  CHECK_EQ(saves, 2);
+  CHECK_EQ(retries.set.size(), 1u);
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 3u);
+}
+
+TEST(registry_a_write_whose_room_closed_is_answered_saved_and_one_whose_room_was_retired_gone_with_no_statement) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  repo.byId["u"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+
+  PendingSave closed = writeNode(registry, "a", 10);
+  CHECK(registry.evict(tid()));
+  CHECK_EQ(repo.savedNodeCounts.size(), 1u);
+  CHECK(closed.wait() == Saved::saved);
+  CHECK_EQ(repo.savedNodeCounts.size(), 1u);
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
+
+  PendingSave retired = Saved::saved;
+  {
+    std::lock_guard<std::mutex> strand(registry.strandFor(tid("u")));
+    registry.open(tid("u"))->applyCommand(createNode("a"), 11, uid());
+    retired = registry.persist(tid("u"));
+    registry.retire(tid("u"));
+  }
+  CHECK(retired.wait() == Saved::gone);
+  CHECK_EQ(repo.savedNodeCounts.size(), 1u);
+  CHECK_EQ(nodeCount(repo.byId["u"].state), 1u);
+}
+
+TEST(registry_a_room_is_settled_only_with_every_write_stored_and_no_save_running_and_only_a_settled_one_closes) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+  const auto closes = [&] {
+    std::lock_guard<std::mutex> strand(registry.strandFor(tid()));
+    return registry.close(tid());
+  };
+
+  CHECK(registry.settled(tid()));  // no live room: nothing of the registry's is writing the row
+  PendingSave write = writeNode(registry, "a", 10);
+  CHECK_FALSE(registry.settled(tid()));
+  CHECK_FALSE(closes());
+  CHECK(registry.isOpen(tid()));
+
+  // The store takes the write and the row's append fails: every write is stored, and nothing is running.
+  log.failNextAppends = 1;
+  CHECK(write.wait() == Saved::saved);
+  CHECK(registry.settled(tid()));
+
+  // The save that lands the row writes the tree's row again: the room is not settled while it runs.
+  HangingStore store;
+  repo.duringSave = store.duringSave();
+  std::future<Saved> landing = std::async(std::launch::async, [&] { return registry.persist(tid()).wait(); });
+  REQUIRE(store.reachedBy(1, std::chrono::seconds(10)));
+  const bool settledWhileSaving = registry.settled(tid());
+  const bool closedWhileSaving = closes();
+  store.letGoOfIt();
+  CHECK_FALSE(settledWhileSaving);
+  CHECK_FALSE(closedWhileSaving);
+  CHECK(landing.get() == Saved::saved);
+  CHECK_EQ(log.byTree["t"].size(), 1u);
+
+  const std::size_t statements = repo.savedNodeCounts.size();
+  CHECK(closes());
+  CHECK_FALSE(registry.isOpen(tid()));
+  CHECK_EQ(repo.savedNodeCounts.size(), statements);
+}
+
+TEST(registry_evict_leaves_open_a_room_a_write_landed_in_while_it_was_saved_and_closes_it_once_that_is_stored) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+  PendingSave first = writeNode(registry, "a", 10);
+  PendingSave second = Saved::saved;
+  bool landed = false;
+  repo.duringSave = [&](const TreeId&) {
+    if (landed) return;
+    landed = true;
+    second = writeNode(registry, "b", 11);  // the strand is free while the store holds the save
+  };
+
+  CHECK_FALSE(registry.evict(tid()));
+  CHECK(registry.isOpen(tid()));
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
+  CHECK_EQ(repo.savedNodeCounts.size(), 1u);
+
+  CHECK(registry.evict(tid()));
+  CHECK_FALSE(registry.isOpen(tid()));
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 3u);
+  CHECK_EQ(repo.savedNodeCounts.size(), 2u);
+  // Each write is answered by the save that stored it, the room being closed: neither sends a statement.
+  CHECK(first.wait() == Saved::saved);
+  CHECK(second.wait() == Saved::saved);
+  CHECK_EQ(repo.savedNodeCounts.size(), 2u);
 }

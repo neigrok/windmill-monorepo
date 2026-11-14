@@ -12,9 +12,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -33,6 +35,36 @@ struct HeldRetries {
   std::vector<Retry> set;
   std::function<void(std::chrono::milliseconds, std::function<void()>)> timer() {
     return [this](std::chrono::milliseconds delay, std::function<void()> retry) { set.push_back({delay, std::move(retry)}); };
+  }
+};
+
+// A store that takes a save and does not answer, the way a statement waiting on a locked row does, until it is let
+// go; a save that arrives after that is answered at once. Every wait on it is bounded.
+struct HangingStore {
+  std::mutex mutex;
+  std::condition_variable changed;
+  int entered = 0;
+  bool letGo = false;
+  bool refuses = false;  // each save is refused once it is let go, the way a statement that times out is
+  std::function<void(const TreeId&)> duringSave() {
+    return [this](const TreeId&) {
+      std::unique_lock<std::mutex> lock(mutex);
+      ++entered;
+      changed.notify_all();
+      changed.wait(lock, [this] { return letGo; });
+      if (refuses) throw std::runtime_error("canceling statement due to statement timeout");
+    };
+  }
+  bool reachedBy(int saves, std::chrono::milliseconds within) {
+    std::unique_lock<std::mutex> lock(mutex);
+    return changed.wait_for(lock, within, [&] { return entered >= saves; });
+  }
+  void letGoOfIt() {
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      letGo = true;
+    }
+    changed.notify_all();
   }
 };
 

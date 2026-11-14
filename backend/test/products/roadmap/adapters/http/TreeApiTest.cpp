@@ -1642,6 +1642,35 @@ TEST(put_over_a_live_room_whose_save_is_held_is_refused_until_the_save_lands) {
   CHECK(LooseGraph(h.trees->byId["t_00000000000000ce"].state).hasNode(NodeId{"socket-step"}));
 }
 
+// The PUT flushes the live room before it takes the strand, since a save runs off it. An edit that lands in the room
+// while that save is with the store is not in what it stored: the room stays open, the PUT is refused as it is over a
+// held room, with nothing written, and the next one, which stores the edit, lands.
+TEST(put_over_a_room_an_edit_landed_in_while_its_flush_was_saving_is_refused_until_that_edit_is_stored) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_00000000000000cf", "Old name", me, Visibility::unlisted);
+  editInTheLiveRoom(h, "t_00000000000000cf", "first-step", me);
+  bool landed = false;
+  h.trees->duringSave = [&](const TreeId&) {
+    if (landed) return;
+    landed = true;
+    editInTheLiveRoom(h, "t_00000000000000cf", "second-step", me);
+  };
+
+  drogon::HttpResponsePtr refused = sendPut(h.api, "s-me", "t_00000000000000cf", document("New name", "mast"));
+  CHECK_EQ(refused->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK_EQ(bodyOf(refused), parse(R"({"error":"an earlier edit of this tree is still being saved — try again","code":"save-pending"})"));
+  CHECK(h.rooms->isOpen(TreeId{"t_00000000000000cf"}));
+  CHECK_EQ(h.trees->byId["t_00000000000000cf"].title.value, std::string("Old name"));
+  CHECK(LooseGraph(h.trees->byId["t_00000000000000cf"].state).hasNode(NodeId{"first-step"}));
+  CHECK_FALSE(LooseGraph(h.trees->byId["t_00000000000000cf"].state).hasNode(NodeId{"second-step"}));
+
+  CHECK_EQ(sendPut(h.api, "s-me", "t_00000000000000cf", document("New name", "mast"))->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(h.trees->byId["t_00000000000000cf"].title.value, std::string("New name"));
+  CHECK(LooseGraph(h.trees->byId["t_00000000000000cf"].state).hasNode(NodeId{"second-step"}));
+  CHECK(LooseGraph(h.trees->byId["t_00000000000000cf"].state).hasNode(NodeId{"mast"}));
+}
+
 TEST(put_leaves_the_guide_alone_and_answers_with_the_one_the_tree_holds) {
   Harness h;
   UserId me = h.signIn("s-me");

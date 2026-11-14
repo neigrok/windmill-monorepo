@@ -268,11 +268,16 @@ rejected for structure. Validity is a read model, not a gate.
   is serialised with every other write to the parent, a step's deletion among them. In order it
   checks that the caller may read the parent (`no-such-tree` for an absent, deleted or
   private-denied tree, or one whose root is deleted, alike) and write it (`not-writer`), and that
-  the step is present (`step-gone`). A parent whose room holds a write its store has not taken — a
-  save that failed and is being retried (Runtime) — refuses the create as `save-pending`, with
-  nothing written: the create stores the parent's head at the room's next seq, which would move it
-  past writes that are not stored. The refusal lifts when that save lands, and the caller sends the
-  create again. It then reads the stored site (`TreeRepository::subtreeSite`),
+  the step is present (`step-gone`). The create stores the parent's head at the room's next seq, in
+  its own transaction, so it runs only over a room that is settled (`RoomRegistry::settled`): every
+  write the room holds is stored and no save of it is running. A head stored past writes that are
+  not would leave no gap to show them lost, and a save still running would write an older head over
+  the create's. A parent whose save failed and is being retried (Runtime) refuses the create as
+  `save-pending`, with nothing written; the refusal lifts when that save lands, and the caller sends
+  the create again. A parent whose write is being saved is waited for, with the strand let go
+  (`RoomRegistry::settle`), and judged again from the gates, three times at most, each wait letting
+  another write in; a save that fails meanwhile, or a third look that still finds a write unsaved,
+  is the same `save-pending`. It then reads the stored site (`TreeRepository::subtreeSite`),
   and a parent's room whose head is behind the stored one takes it. A step that already owns a
   subtree answers it, `created: false`, and writes nothing, so a retry after a lost reply and a
   create that lost a race both find the one child; a parent's room that missed it records it, with
@@ -416,13 +421,15 @@ neither the pointer nor `AnnotateNode`.
 `TreeRoom::applyCommands` lands several as one frame under one seq and queues them as one `Batch`
 op, so the feed tells the whole edit; an empty list mints nothing.
 
-A room never writes the op log itself: each write queues its row (`pendingOps`), and
-`RoomRegistry::persist` — the step every write path takes before it answers — saves the lattice at
-the room's head first and appends the queued rows after (`landPendingOps`). A crash between the
-two leaves a lattice at `N` with no row at `N`: the feed misses one deed and the tree nothing. A
+A room never writes the op log itself: each write queues its row (`pendingOps`), and the room's
+save — asked for by `RoomRegistry::persist`, the step every write path takes before it answers —
+stores the lattice at the head it copied first and appends the rows queued at that copy after
+(`RoomRegistry::land`); the ones that landed then leave the queue (`dropLandedOps`). One save of a
+room runs at a time, so rows land in seq order, each after the save that covers it. A crash between
+the two leaves a lattice at `N` with no row at `N`: the feed misses one deed and the tree nothing. A
 row the lattice cannot back cannot be written. An append that fails is logged and never surfaced:
 the lattice is durable, so the write answers as applied and the socket still acks; the rows stay
-queued for the next persist, and `tree_ops` is unique on `(tree_id, op_id)`, so a row that
+queued for the next save, and `tree_ops` is unique on `(tree_id, op_id)`, so a row that
 committed before its connection dropped lands once. Only a room closing — `evict` after its save,
 `retire`, shutdown — drops queued rows, and the room's teardown logs
 `N op rows for <tree> never landed`.
@@ -496,22 +503,40 @@ opens rooms on demand, hands out `strandFor(treeId)`, persists (`persist`) and e
 
 Rules:
 
-- Hold the tree's strand across mutation and persistence; `RoomRegistry::persist` releases its
-  room-map mutex before database I/O. Never hold two strands at once: they are a fixed stripe array
-  shared by unrelated tree ids.
+- Hold the tree's strand across mutation, and never across a save. A write lands in the room under
+  the strand, asks for its save there (`RoomRegistry::persist`, which sends no statement and answers
+  a `PendingSave`), builds its reply, lets the strand go and only then waits (`PendingSave::wait`).
+  The save copies under the strand what the room holds unsaved — the dirty slice, both registers,
+  the head, the queued op rows — and lets go; it stores the copy and then its rows with no strand
+  and no room-map mutex held; under the strand again it clears the room's marks only if no write
+  landed meanwhile (`TreeRoom::writes`), and otherwise leaves them all for the next save, which
+  stores them again with the rest. So a store that hangs holds up the writes waiting on it and no
+  reader, of that tree or of any other.
+- One save of a room runs at a time (`SaveLine::gate`, taken before the strand and never under it):
+  two saves of one tree never pass each other, so a later snapshot is never overwritten by an
+  earlier one. A write waits for its own save: it is answered `saved` once a save that copied the
+  room at or past its seq is stored, whichever write ran it. Writes that queue behind a save that
+  fails share its answer when it covered them, with no statement of their own; one that landed
+  after its copy is tried once more.
+- Whoever writes a tree's row itself — a subtree's create, a `PUT` — does so under the strand and
+  only over a room that is settled (`RoomRegistry::settled`): no write unsaved, none held, no save
+  running. Whoever waits on a save, or evicts, holds no strand at all: strands are a fixed stripe
+  array shared by unrelated tree ids, so a wait under any of them could stand in the way of the very
+  save it waits for. Never hold two strands at once, for the same reason.
 - `accessOf(treeId)` answers authorization from the stored row; ask it **before** `open()`, which
   drags the whole lattice off disk and pins it.
-- Persist before acking, so an ack attests durability or says what it cannot. Within a persist the
-  lattice is saved before the op rows are appended, so the log never runs ahead of the lattice. A
-  save onto a row that is gone or soft-deleted writes nothing and `persist` answers `gone`; the
-  socket's `subgraph` frame, the guide and a live rename then answer as for an absent tree and
-  retire the room.
+- Persist before acking, so an ack attests durability or says what it cannot. Within a save the
+  lattice is stored before the op rows are appended, so the log never runs ahead of the lattice. A
+  save onto a row that is gone or soft-deleted writes nothing, retires the room and answers `gone`,
+  as it does to a write whose room was retired before its save ran; the socket's `subgraph` frame,
+  the guide and a live rename then answer as for an absent tree.
 - A save that fails undoes nothing and throws nothing (`Saved::held`): every open page has already
   been sent the write, so the room keeps it, dirty and with its op rows queued, and the registry
   holds the room and retries the save until the store takes it, on its own timer: 1 s after the
   failure and then after twice the wait before, up to 60 s between tries (`kFirstRetry`,
   `kRetryCeiling`). Only that timer and a write that changes the room try a held room's save; a
-  read, a write that changes nothing and the sweep send no statement for it and move no retry. The
+  read, a write that changes nothing, the sweep, a `PUT` and a subtree's create send no statement
+  for it and move no retry. The
   op rows land only after the save does. The writer is told the change is applied and on every open
   page, that saving it failed and is being retried, that sending it again is not needed, and that a
   server restart before the save succeeds loses it, in its door's shape: an MCP receipt carries
@@ -522,10 +547,11 @@ Rules:
   tree, earlier changes are not saved yet and are being retried, a restart before the save succeeds
   would lose them — `unchanged: true` beside `saved: false`, an ack without a seq beside `unsaved: true`
   — since what the room holds is not saved. A held room is not closed by the sweep, and a `PUT`
-  over one is refused `503 save-pending` until the save lands. Only a room with something unsaved
+  over one is refused `503 save-pending` until the save lands, as it is over a room an edit landed
+  in while the `PUT` was flushing it. Only a room with something unsaved
   is ever held: one with nothing to save closes with no statement sent. As the registry stops —
   and one that goes away has stopped (`~RoomRegistry`) — it tries each held room once more, the
-  wait for a retry in mid-save and all of those saves within `kShutdownSaveBudget` together (5 s,
+  wait for a retry or a write in mid-save and all of those saves within `kShutdownSaveBudget` together (5 s,
   `StatementLimits`), and reports the rooms it could not save as lost. A held write is lost only that way; marks a call stored beside it —
   `update_nodes` rows, the marks `delete_node` clears — are stored already.
 - `open()` loads the stored lattice and nothing else: a room is its snapshot, and the op log is the
@@ -552,7 +578,8 @@ Rules:
 - The room clock mints a unique `(ms, counter)` per write, so writes to one tree are totally
   ordered and the actor tiebreak is moot. It observes the loaded stamps before minting;
   `AppliedOp.actor` records authorship independently of the clock actor `srv`.
-- Sparse persistence: `dirtyState()` exports only entries dirtied since `markClean()`.
+- Sparse persistence: `dirtyState()` exports only entries dirtied since `markClean()`, which a save
+  calls only when no write landed between its copy and the store taking it.
 - Tree content reads use the room; the registry list reads persisted rows without opening rooms.
   Forks snapshot the source room's graph, legend and guide, clear authored progress baselines, and
   start a fresh op log with `forked_from` provenance. A fork of the forker's own tree keeps every
@@ -624,7 +651,9 @@ Single edits have no REST endpoint — they ride the socket; `PUT /v1/trees/{id}
 document and joins it as one write. A PUT that creates the tree stamps its steps at the moment of
 creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stored row of every step
 and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
-and read as unknown creation time. A PUT over a tree whose live room holds a save that failed is
+and read as unknown creation time. The PUT flushes and closes the tree's live room before it takes
+the strand, and under the strand closes one opened since only if it is settled: over a room that
+holds a save that failed, or an edit that landed while it was being flushed, it is
 refused `503 save-pending` with nothing written, until that save lands. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
 
 `GET /v1/trees/{id}` answers `{seq, data, state, createdAt, visibility, mine, root, parent, path,

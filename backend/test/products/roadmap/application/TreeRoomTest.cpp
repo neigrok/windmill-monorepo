@@ -355,59 +355,29 @@ TEST(room_never_rejects_and_surfaces_cycle) {
   CHECK_EQ(report.cycles[0].members.size(), 2u);
 }
 
-TEST(room_lands_its_queued_op_rows_in_seq_order_and_the_log_answers_since_seq) {
-  FakeOpLog log;
+TEST(room_queues_its_op_rows_in_seq_order_and_the_ones_that_landed_leave_from_the_front) {
   FakeBus bus;
   TreeRoom room = makeRoom(bus);
 
   apply(room, createNode("a"), 1);
   apply(room, createNode("b"), 2);
   apply(room, AddEdge{nid("a"), nid("b")}, 3);
-  CHECK_EQ(room.pendingOps().size(), 3u);
-  CHECK(log.byTree["t"].empty());  // nothing reaches the log until the room is told to land
-
-  room.landPendingOps(log);
-  CHECK(room.pendingOps().empty());
-  REQUIRE_EQ(log.byTree["t"].size(), 3u);
-  CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(1));
-  CHECK_EQ(log.byTree["t"][2].seq, static_cast<Seq>(3));
-  CHECK_EQ(log.since(tid(), 1).size(), 2u);
-  CHECK_EQ(log.since(tid(), 0).size(), 3u);
-
-  room.landPendingOps(log);  // nothing queued: nothing appended twice
-  CHECK_EQ(log.byTree["t"].size(), 3u);
-}
-
-// An append that throws mid-way leaves the rows it did not land queued, in order, for the next save.
-TEST(room_keeps_the_rows_an_append_failure_did_not_land) {
-  struct FailingOnce : FakeOpLog {
-    int failuresLeft = 1;
-    void append(const TreeId& tree, const AppliedOp& op) override {
-      if (failuresLeft-- > 0) throw std::runtime_error("connection reset");
-      FakeOpLog::append(tree, op);
-    }
-  } log;
-  FakeBus bus;
-  TreeRoom room = makeRoom(bus);
-  apply(room, createNode("a"), 1);
-  apply(room, createNode("b"), 2);
-
-  bool threw = false;
-  try {
-    room.landPendingOps(log);
-  } catch (const std::runtime_error&) {
-    threw = true;
-  }
-  CHECK(threw);
-  CHECK(log.byTree["t"].empty());
-  REQUIRE_EQ(room.pendingOps().size(), 2u);
+  REQUIRE_EQ(room.pendingOps().size(), 3u);
   CHECK_EQ(room.pendingOps()[0].seq, static_cast<Seq>(1));
+  CHECK_EQ(room.pendingOps()[2].seq, static_cast<Seq>(3));
 
-  room.landPendingOps(log);
+  // A save copied the three rows and its append failed on the third; a write queued a fourth meanwhile.
+  apply(room, createNode("c"), 4);
+  room.dropLandedOps(2);
+  REQUIRE_EQ(room.pendingOps().size(), 2u);
+  CHECK_EQ(room.pendingOps()[0].seq, static_cast<Seq>(3));
+  CHECK_EQ(room.pendingOps()[1].seq, static_cast<Seq>(4));
+  CHECK(room.unsaved());
+
+  room.dropLandedOps(0);  // an append that landed nothing leaves the queue as it is
+  CHECK_EQ(room.pendingOps().size(), 2u);
+  room.dropLandedOps(2);
   CHECK(room.pendingOps().empty());
-  REQUIRE_EQ(log.byTree["t"].size(), 2u);
-  CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(1));
-  CHECK_EQ(log.byTree["t"][1].seq, static_cast<Seq>(2));
 }
 
 TEST(room_snapshot_carries_the_legend) {
