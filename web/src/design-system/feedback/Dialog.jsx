@@ -82,8 +82,9 @@ export function Dialog({ open, onClose, title, labelledBy, header, children, foo
   useEffect(() => {
     if (!open || (!gated && !focusableBody)) return undefined;
     measure();
-    window.addEventListener('resize', measure);
     const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    // A window resize can arrive before layout; observe the body and content when available.
+    if (!observer) window.addEventListener('resize', measure);
     if (observer && bodyRef.current) observer.observe(bodyRef.current);
     if (observer && contentRef.current) observer.observe(contentRef.current);
     return () => {
