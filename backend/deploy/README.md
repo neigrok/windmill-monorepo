@@ -30,7 +30,7 @@ the last merge that touched the web and re-run it if it was cancelled.
  │  caddy :80/:443  ─▶  server :8080   (HTTP + WebSocket + MCP at /mcp)      │
  │       │          ─▶  subscriptions :8082 (/v1/stores/* only)              │
  │       │          ─▶  /srv/windmill-web (the rsynced SPA, file_server)     │
- │       │              subscriptions :8083 (internal; this network only)    │
+ │       │              subscriptions :8083 (internal-doors: server only)    │
  │       │              embedder :8081  (journal echo vectors; model mount)  │
  │       │              migrate (one-shot: applies db/schema.sql)            │
  │       │              subscriptions-db (one-shot: the subscription db)     │
@@ -355,13 +355,16 @@ listener answers `GET /health` and 404s every other path, every path under `/v1/
 
 - **Routing**: Caddy forwards `/v1/stores/*`, on both hosts and behind the Cloudflare gate, to the public
   port, 8082, and nothing else; the server never sees such a path. The internal port, 8083, is published
-  nowhere and no Caddy route names it, so only containers on this compose network reach it.
+  nowhere and no Caddy route names it. The internal listener binds `subscriptions-internal`, the
+  service's alias on `internal-doors`, an `internal: true` network only the server shares, so Caddy and
+  the embedder cannot reach it; its doors also ask for `SUBSCRIPTIONS_INTERNAL_TOKEN`
+  ([below](#windmill-one-the-entitlement-copy)).
 - **Healthy** means the image's `HEALTHCHECK`, a `curl` of the internal listener's `/health` every 10 s,
   answers 200 `{"status":"ready"}`: the service opened and migrated its ledger before it listened, and the
   ledger answers. Three failures in a row make it `unhealthy`. Docker restarts the container when its
   process exits (`restart: unless-stopped`), never because it is unhealthy.
 - **Status**: `docker compose ps subscriptions` shows `(healthy)`, and
-  `docker compose exec -T subscriptions curl -s localhost:8083/health` prints the answer.
+  `docker compose exec -T subscriptions curl -s subscriptions-internal:8083/health` prints the answer.
 - **Logs**: `docker compose logs -f subscriptions`, one JSON object per line: `ledger open` with the
   ledger's epoch at start, then one line per request. Its Logs and failure reports go to the server's
   Sentry project under the same environment, with the commit the image was built from as release; the
@@ -507,7 +510,7 @@ place of the published `subscriptions-<sha>`. From the repository root, with Doc
     "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" windmill-subscriptions:local > "$REHEARSAL_ENV"
   rehearse up -d --wait subscriptions
   rehearse logs subscriptions-db subscriptions
-  rehearse exec -T subscriptions curl -s localhost:8083/health
+  rehearse exec -T subscriptions curl -s subscriptions-internal:8083/health
   if rehearse exec -T db psql -U windmill windmill_subscriptions -c 'select 1'; then
     echo 'FAIL the backend role reached windmill_subscriptions'
     exit 1
@@ -593,6 +596,14 @@ The server follows the subscription service's feed into `account_entitlements`, 
 account's entitlement ([subscriptions.md](../../docs/foundation/subscriptions.md) §6.1), once
 `SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are both set. With neither it logs at
 start that the follower is off; with one alone it refuses to start, naming the other.
+
+In production both come from one GitHub secret, `SUBSCRIPTIONS_INTERNAL_TOKEN`: 64 lowercase hex
+characters (`openssl rand -hex 32`), which the deploy refuses in any other non-empty form. The deploy
+renders it into `.env`, and compose hands it to the server and to the subscription service, whose
+internal doors ask for it as a bearer. Compose sets the server's `SUBSCRIPTIONS_INTERNAL_URL`, to
+`http://subscriptions-internal:8083`, only while the token is set. With the secret unset or empty the
+server gets neither, so the follower stays off, and every internal door answers 401. The deploy after the
+secret is set turns the follower on, and it reads the feed from zero.
 
 **A page the backend cannot apply stops the copy for every account, by design.** A page applies whole
 or not at all, and the follower skips no entry, since a skipped entry would leave someone's paid state

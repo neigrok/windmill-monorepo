@@ -843,7 +843,25 @@ class DeployWorkflowTest(unittest.TestCase):
                                ("private canary@host/db", (1, malformed))):
             with self.subTest(length=len(value)):
                 result = subprocess.run(["bash", "-euo", "pipefail", "-c", guard], capture_output=True, text=True,
-                                        env={**os.environ, **required, "SUBSCRIPTIONS_DB_PASSWORD": value})
+                                        env={**os.environ, **required, "SUBSCRIPTIONS_DB_PASSWORD": value,
+                                             "SUBSCRIPTIONS_INTERNAL_TOKEN": ""})
+                self.assertEqual((result.returncode, result.stdout + result.stderr), outcome)
+
+    def test_the_internal_token_renders_only_empty_or_as_hex_and_is_never_repeated(self):
+        text = (SCRIPT.parents[2] / ".github/workflows/deploy.yml").read_text()
+        start = text.index("          missing=\n")
+        guard = textwrap.dedent(text[start:text.index('          if [ "$AI_INSTALLATIONS_ENABLED"', start)])
+        malformed = ("Refusing to render — SUBSCRIPTIONS_INTERNAL_TOKEN must be empty or 64 lowercase hex characters"
+                     " (openssl rand -hex 32).\n")
+        required = {key: "configured" for key in ("DOMAIN_APP", "DOMAIN_API", "ACME_EMAIL", "POSTGRES_PASSWORD",
+                                                  "RESEND_FROM", "CF_IPS")}
+        for value, outcome in (("", (0, "")), ("0123456789abcdef" * 4, (0, "")), ("A" * 64, (1, malformed)),
+                               ("a" * 63, (1, malformed)), ("a" * 64 + "\n", (1, malformed)),
+                               ("${PRIVATE_CANARY}" + "a" * 47, (1, malformed))):
+            with self.subTest(length=len(value)):
+                result = subprocess.run(["bash", "-euo", "pipefail", "-c", guard], capture_output=True, text=True,
+                                        env={**os.environ, **required, "SUBSCRIPTIONS_DB_PASSWORD": "f" * 64,
+                                             "SUBSCRIPTIONS_INTERNAL_TOKEN": value})
                 self.assertEqual((result.returncode, result.stdout + result.stderr), outcome)
 
     def test_backend_readiness_probes_admit_the_current_schema_without_pinning_an_old_client(self):
