@@ -8750,7 +8750,7 @@ TEST(mcp_a_write_whose_save_fails_answers_applied_and_held_and_the_retry_stores_
   CHECK_FALSE(again.isError);
   CHECK_EQ(body(again)["unchanged"], Json::Value(true));
   CHECK_EQ(body(again)["saved"], Json::Value(false));
-  CHECK_EQ(body(again)["saveError"], Json::Value(kHeldUnsavedSentence));
+  CHECK_EQ(body(again)["saveError"], Json::Value(kHeldEarlierSentence));
   CHECK_EQ(h.trees.savedNodeCounts.size(), std::size_t{2});
   CHECK_EQ(lines, (std::vector<std::string>{"roadmap.tree.save failed", "mcp.roadmap_update_kind held-unsaved",
                                             "mcp.roadmap_update_kind ok"}));
@@ -8868,3 +8868,35 @@ TEST(mcp_update_nodes_tells_a_held_tree_save_apart_from_marks_that_landed_and_ma
   for (const NodeSpec& node : stored.nodes) labels.push_back(node.label);
   CHECK_EQ(labels, (std::vector<std::string>{"A2", "B2"}));
 }
+
+
+// A call that changes nothing in a held room does not claim a change of its own: beside `unchanged: true` and
+// `saved: false` its sentence says that it changed nothing and that earlier changes of the tree are not saved yet. A
+// marks-only update_nodes is such a call — its mark is stored, the tree is as it was — and so are an import, a kind
+// update and a tree update that repeat what the tree holds.
+TEST(mcp_a_call_that_changes_nothing_in_a_held_room_says_earlier_changes_are_unsaved_not_its_own) {
+  Harness h;
+  CHECK_FALSE(h.call("add_kind", parse(R"({"id":"infra","hue":"sky","label":"Infra"})")).isError);
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A","kind":"infra"}]})")).isError);
+  CHECK_FALSE(h.call("update_tree", parse(R"({"title":"Named"})")).isError);
+  h.trees.savesFail = true;
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","label":"A2"})"))))["saveError"], Json::Value(kHeldUnsavedSentence));
+
+  const std::vector<std::pair<const char*, const char*>> echoes{
+      {"update_nodes", R"({"updates":[{"nodeId":"a","status":"complete"}]})"},
+      {"update_nodes", R"({"updates":[{"nodeId":"a","label":"A2"}]})"},
+      {"import_subgraph", R"({"nodes":[{"id":"a","label":"A2"}]})"},
+      {"update_kind", R"({"id":"infra","label":"Infra"})"},
+      {"update_tree", R"({"title":"Named"})"}};
+  std::vector<std::string> answered;
+  for (const auto& [tool, arguments] : echoes) {
+    const Json::Value receipt = body(h.call(tool, parse(arguments)));
+    answered.push_back(std::string(tool) + (receipt["unchanged"] == Json::Value(true) ? " unchanged" : " changed") +
+                       (receipt["saved"] == Json::Value(false) ? " unsaved: " : " saved: ") + receipt["saveError"].asString());
+  }
+  const std::string earlier = std::string(" unchanged unsaved: ") + kHeldEarlierSentence;
+  CHECK_EQ(answered, (std::vector<std::string>{"update_nodes" + earlier, "update_nodes" + earlier, "import_subgraph" + earlier,
+                                               "update_kind" + earlier, "update_tree" + earlier}));
+  CHECK_EQ(h.progressRepo.byKey.size(), 1u);
+}
+

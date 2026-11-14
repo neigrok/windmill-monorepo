@@ -518,7 +518,9 @@ Rules:
   `saved: false` and `saveError` and is not an error; the socket acks the frame with its seq and
   `unsaved: true`; `PATCH /v1/trees/{id}` answers `202` with `{saved: false, code: "held-unsaved",
   message}`; a removal lists the tree under `unsaved`. A call that changes nothing in a held room
-  says so too — `unchanged: true` beside `saved: false`, an ack without a seq beside `unsaved: true`
+  says so too, in a sentence of its own that claims no change — this call changed nothing in the
+  tree, earlier changes are not saved yet and are being retried, a restart before the save succeeds
+  would lose them — `unchanged: true` beside `saved: false`, an ack without a seq beside `unsaved: true`
   — since what the room holds is not saved. A held room is not closed by the sweep, and a `PUT`
   over one is refused `503 save-pending` until the save lands. Only a room with something unsaved
   is ever held: one with nothing to save closes with no statement sent. As the registry stops —
