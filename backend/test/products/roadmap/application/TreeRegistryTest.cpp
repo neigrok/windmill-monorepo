@@ -299,7 +299,7 @@ TEST(rename_retitles_an_owned_tree_trimmed_and_the_list_shows_it) {
   std::vector<TreeSummary> rows = s.registry.list(me);
   REQUIRE_EQ(rows.size(), 1u);
   CHECK_EQ(rows[0].title, std::string("Autumn plans"));
-  CHECK_EQ(s.bus.subgraphBroadcasts.size(), 0u);
+  CHECK(s.rooms.isOpen(tid("t")));  // written through the tree's room, opened for it
 }
 
 // A tree the caller may not read is answered as an absent one, never as someone else's.
@@ -415,6 +415,37 @@ TEST(a_renames_stamp_survives_eviction_and_an_older_stamped_write_after_reload_l
   CHECK(s.registry.rename(tid("t"), me, "Renamed again") == TreeRegistry::Renaming::renamed);
   CHECK(reloaded.title() == (Lww<std::string>{"Renamed again", Hlc{1'700'000'000'000, 1, "srv"}}));
   CHECK(s.trees.byId["t"].title == (Lww<std::string>{"Renamed again", Hlc{1'700'000'000'000, 1, "srv"}}));
+}
+
+// A rename is stamped by the tree's room, past every stamp the tree holds, whether a room was open or not. A server
+// stamp can be ahead of the wall clock — a command minted past a replica's fast clock — and a tab's vector holds it: a
+// rename made after the room closed is still past it, so the tab is sent the rename on its return.
+TEST(a_rename_made_while_no_room_is_open_reaches_a_tab_whose_vector_holds_a_server_stamp_ahead_of_the_clock) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  TreeRoom& room = *s.rooms.open(tid("t"));
+  const std::uint64_t ahead = s.clock.nowMs() + 200'000;
+  Subgraph fast;
+  fast.treeId = tid("t");
+  fast.frameId = "f-fast";
+  fast.actor = "r_phone";
+  fast.graph.nodes.push_back(NodeStateEntry{.id = nid("a"), .label = "From a fast clock", .labelAt = Hlc{ahead, 0, "r_phone"}});
+  REQUIRE(room.joinSubgraph(fast, me).has_value());
+  room.applyCommand(SetNodeColor{nid("a"), NodeColor::plum}, s.clock.nowMs(), me);
+  const VersionVector tabHolds = *room.deltaSince(VersionVector{}).coverage;
+  const Seq tabApplied = room.head();
+  REQUIRE(tabHolds.covers(Hlc{ahead, 1, "srv"}));
+  REQUIRE(s.rooms.persist(tid("t")).wait() == Saved::saved);
+  REQUIRE(s.rooms.evict(tid("t")));
+
+  CHECK(s.registry.rename(tid("t"), me, "Renamed with no room open") == TreeRegistry::Renaming::renamed);
+
+  const Lww<std::string> renamed{"Renamed with no room open", Hlc{ahead, 2, "srv"}};
+  CHECK(s.trees.byId["t"].title == renamed);
+  const Subgraph returned = s.rooms.open(tid("t"))->deltaSince(tabHolds, tabApplied);
+  REQUIRE(returned.title.has_value());
+  CHECK(*returned.title == renamed);
 }
 
 TEST(set_visibility_reshares_an_owned_tree_and_the_column_reflects_it) {

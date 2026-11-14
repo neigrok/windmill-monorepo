@@ -233,9 +233,20 @@ public:
   GraphState exportState() const;
   LegendState exportLegend() const;
   // What a peer at `since` is missing — graph, legend, title and guide — covering the room's whole
-  // frontier. A subtree's own title register is read by nothing (SPEC.md, Model, Subtrees), so it is neither sent nor
-  // covered: its subscriber is sent its owning step's label beside the delta.
-  Subgraph deltaSince(const VersionVector& since) const;
+  // frontier. A peer that says the last seq it applied, `position`, is also sent, whole, every entry and tree register
+  // that landed late past it (LandSeqs): under a stamp the vector may already be past. A subtree's own title register
+  // is read by nothing (SPEC.md, Model, Subtrees), so it is neither sent nor covered: its subscriber is sent its
+  // owning step's label beside the delta.
+  Subgraph deltaSince(const VersionVector& since, std::optional<Seq> position = std::nullopt) const;
+  // How many entries and tree registers of `deltaSince(since, position)` are there, or whole, for their land seq alone:
+  // the ones the vector would have masked or left out.
+  std::size_t lateEntriesFor(const VersionVector& since, Seq position) const;
+  // The seq at which each entry and tree register last landed late; a save stores the ones of the rows it writes.
+  const LandSeqs& landSeqs() const { return landSeqs_; }
+  // The land seqs the stored rows hold, as the room opens.
+  void restoreLandSeqs(LandSeqs stored) { landSeqs_ = std::move(stored); }
+  // The stamps the room has held, by which a register that lands is judged late.
+  const HeldStamps& held() const { return held_; }
 
   // Exports only the entries dirtied since the last markClean(). The caller holds the strand for each; a save that
   // lets it go between the two cleans only when writes() reads as it did at the export.
@@ -307,6 +318,8 @@ private:
   std::vector<AppliedOp> pendingOps_;
   PresenceBus& bus_;
   HlcClock clock_;
+  LandSeqs landSeqs_;
+  HeldStamps held_;
   bool unsaved_ = false;  // a write has landed since the store last took the room
   std::uint64_t writes_ = 0;
   std::set<NodeId> dirtyNodes_;

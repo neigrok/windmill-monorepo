@@ -1,5 +1,7 @@
 #include "products/roadmap/application/TreeRoom.h"
 
+#include "platform/application/WriteObservation.h"
+
 #include <trantor/utils/Logger.h>
 
 #include <algorithm>
@@ -71,11 +73,11 @@ TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bo
       clock_(std::string{kServerActor}) {
   // Fold every stamp the loaded document already carries — the graph frontier and the title and guide
   // registers — so a fresh mint after restart is always ahead of anything persisted.
-  for (const auto& [actor, mark] : frontier(graph_.exportState(), legend_.exportState()).marks) {
-    clock_.observe(mark);
-  }
-  clock_.observe(title_.stamp);
-  clock_.observe(guide_.stamp);
+  VersionVector loaded = frontier(graph_.exportState(), legend_.exportState());
+  loaded.observe(title_.stamp);
+  loaded.observe(guide_.stamp);
+  for (const auto& [actor, mark] : loaded.marks) clock_.observe(mark);
+  held_ = HeldStamps{std::move(loaded)};
   // The room opens as its stored rows stand, which no other room of the tree's can have written past: its owning steps
   // are recorded as they are, so an access that missed a write without a room learns them here.
   recordOwningSteps();
@@ -112,6 +114,20 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   unsaved_ = true;
   ++writes_;
   ++head_;
+  std::size_t lateRegisters = landSeqs_.landLate(landed.graph, landed.legend, held_, head_);
+  if (titleTook && held_.holds(title_.stamp)) {
+    landSeqs_.title = head_;
+    ++lateRegisters;
+  }
+  if (guideTook && held_.holds(guide_.stamp)) {
+    landSeqs_.guide = head_;
+    ++lateRegisters;
+  }
+  held_.marks.join(frontier(landed));
+  if (lateRegisters > 0) {
+    const std::string door = currentWriteDoor();
+    LOG_INFO << "roadmap_late_landing door=" << (door.empty() ? "background" : door) << " registers=" << lateRegisters;
+  }
   // One op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
   // double-counts. A frame with no feed-worthy deed (headline) queues nothing.
   if (std::optional<Command> deed = headline(landed.graph, landed.legend, graph_, legend_))
@@ -161,6 +177,7 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
   const Command deed = commands.size() == 1 ? commands.front() : Command{Batch{commands}};
   pendingOps_.push_back(AppliedOp{head_, frameId, deed, stamp, actor});
   markDirty(produced.graph, produced.legend);  // the broadcast delta is exactly the write's footprint
+  held_.marks.join(frontier(produced));  // minted past everything held, so nothing of it is late
   recordOwningSteps();
   bus_.broadcastSubgraph(id_, head_, produced);
   return head_;
@@ -293,16 +310,29 @@ TreeData TreeRoom::snapshot() const {
   return data;
 }
 
-Subgraph TreeRoom::deltaSince(const VersionVector& since) const {
-  Subgraph delta = deltaBetween(graph_.exportState(), legend_.exportState(), since);
+Subgraph TreeRoom::deltaSince(const VersionVector& since, std::optional<Seq> position) const {
+  const auto landedPast = [&position](Seq landSeq) { return position && landSeq > *position; };
+  Subgraph delta = deltaBetween(graph_.exportState(), legend_.exportState(), since,
+                                position ? landSeqs_.past(*position) : Landed{});
   delta.treeId = id_;
   if (path_.empty()) {
-    if (!since.covers(title_.stamp)) delta.title = title_;
+    if (!since.covers(title_.stamp) || landedPast(landSeqs_.title)) delta.title = title_;
     delta.coverage->observe(title_.stamp);
   }
-  if (!since.covers(guide_.stamp)) delta.guide = guide_;
+  if (!since.covers(guide_.stamp) || landedPast(landSeqs_.guide)) delta.guide = guide_;
   delta.coverage->observe(guide_.stamp);
   return delta;
+}
+
+std::size_t TreeRoom::lateEntriesFor(const VersionVector& since, Seq position) const {
+  const Landed late = landSeqs_.past(position);
+  std::size_t entries = 0;
+  if (!late.nodes.empty() || !late.edges.empty() || !late.kinds.empty())
+    entries = hiddenBy(since, graph_.exportState(), legend_.exportState(), late);
+  // A register that holds a land seq was written, so its stamp is set.
+  if (path_.empty() && landSeqs_.title > position && since.covers(title_.stamp)) ++entries;
+  if (landSeqs_.guide > position && since.covers(guide_.stamp)) ++entries;
+  return entries;
 }
 
 std::map<NodeId, TreeId> TreeRoom::pointersFor(const std::optional<UserId>& caller) const {

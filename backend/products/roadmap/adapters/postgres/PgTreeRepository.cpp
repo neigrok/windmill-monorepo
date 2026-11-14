@@ -63,13 +63,14 @@ bool entryPresent(const Hlc& added, const Hlc& removed) {
   return added.isSet() && !(removed > added);
 }
 
-void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node) {
+// A row is written with the land seq its save gives it and keeps a later one it already holds.
+void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node, Seq landSeq) {
   txn.exec_params(
       "INSERT INTO tree_nodes (tree_id, node_id, created_hlc, deleted_hlc, label, label_hlc, "
       "icon, icon_hlc, color, color_hlc, status, status_hlc, "
-      "description, description_hlc, links, links_hlc, present, ord, ord_hlc, opens, opens_hlc) "
+      "description, description_hlc, links, links_hlc, present, ord, ord_hlc, opens, opens_hlc, land_seq) "
       "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, "
-      "$15::jsonb, $16, $17, $18, $19, $20, $21) "
+      "$15::jsonb, $16, $17, $18, $19, $20, $21, $22) "
       "ON CONFLICT (tree_id, node_id) DO UPDATE SET "
       "created_hlc = EXCLUDED.created_hlc, deleted_hlc = EXCLUDED.deleted_hlc, "
       "label = EXCLUDED.label, label_hlc = EXCLUDED.label_hlc, "
@@ -79,7 +80,8 @@ void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node)
       "description = EXCLUDED.description, description_hlc = EXCLUDED.description_hlc, "
       "links = EXCLUDED.links, links_hlc = EXCLUDED.links_hlc, present = EXCLUDED.present, "
       "ord = EXCLUDED.ord, ord_hlc = EXCLUDED.ord_hlc, "
-      "opens = EXCLUDED.opens, opens_hlc = EXCLUDED.opens_hlc",
+      "opens = EXCLUDED.opens, opens_hlc = EXCLUDED.opens_hlc, "
+      "land_seq = GREATEST(tree_nodes.land_seq, EXCLUDED.land_seq)",
       tree.str(), node.id.str(), toString(node.createdAt), toString(node.deletedAt),
       node.label, toString(node.labelAt), node.icon, toString(node.iconAt),
       std::string(toString(node.color)), toString(node.colorAt),
@@ -87,39 +89,50 @@ void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node)
       node.description, toString(node.descriptionAt),
       dump(linksToJson(node.links)), toString(node.linksAt),
       entryPresent(node.createdAt, node.deletedAt),
-      node.order, toString(node.orderAt), node.opens.str(), toString(node.opensAt));
+      node.order, toString(node.orderAt), node.opens.str(), toString(node.opensAt),
+      static_cast<long long>(landSeq));
 }
 
-void upsertEdge(pqxx::work& txn, const TreeId& tree, const EdgeStateEntry& edge) {
+void upsertEdge(pqxx::work& txn, const TreeId& tree, const EdgeStateEntry& edge, Seq landSeq) {
   txn.exec_params(
-      "INSERT INTO tree_edges (tree_id, from_id, to_id, added_hlc, removed_hlc) "
-      "VALUES ($1, $2, $3, $4, $5) "
+      "INSERT INTO tree_edges (tree_id, from_id, to_id, added_hlc, removed_hlc, land_seq) "
+      "VALUES ($1, $2, $3, $4, $5, $6) "
       "ON CONFLICT (tree_id, from_id, to_id) DO UPDATE SET "
-      "added_hlc = EXCLUDED.added_hlc, removed_hlc = EXCLUDED.removed_hlc",
+      "added_hlc = EXCLUDED.added_hlc, removed_hlc = EXCLUDED.removed_hlc, "
+      "land_seq = GREATEST(tree_edges.land_seq, EXCLUDED.land_seq)",
       tree.str(), edge.edge.from.str(), edge.edge.to.str(),
-      toString(edge.addedAt), toString(edge.removedAt));
+      toString(edge.addedAt), toString(edge.removedAt), static_cast<long long>(landSeq));
 }
 
-void upsertKind(pqxx::work& txn, const TreeId& tree, const KindStateEntry& kind) {
+void upsertKind(pqxx::work& txn, const TreeId& tree, const KindStateEntry& kind, Seq landSeq) {
   txn.exec_params(
       "INSERT INTO tree_kinds (tree_id, kind_id, created_hlc, deleted_hlc, hue, hue_hlc, "
-      "label, label_hlc, description, description_hlc, rank, rank_hlc) "
-      "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) "
+      "label, label_hlc, description, description_hlc, rank, rank_hlc, land_seq) "
+      "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) "
       "ON CONFLICT (tree_id, kind_id) DO UPDATE SET "
       "created_hlc = EXCLUDED.created_hlc, deleted_hlc = EXCLUDED.deleted_hlc, "
       "hue = EXCLUDED.hue, hue_hlc = EXCLUDED.hue_hlc, "
       "label = EXCLUDED.label, label_hlc = EXCLUDED.label_hlc, "
       "description = EXCLUDED.description, description_hlc = EXCLUDED.description_hlc, "
-      "rank = EXCLUDED.rank, rank_hlc = EXCLUDED.rank_hlc",
+      "rank = EXCLUDED.rank, rank_hlc = EXCLUDED.rank_hlc, "
+      "land_seq = GREATEST(tree_kinds.land_seq, EXCLUDED.land_seq)",
       tree.str(), kind.id.str(), toString(kind.createdAt), toString(kind.deletedAt),
       std::string(toString(kind.hue)), toString(kind.hueAt), kind.label, toString(kind.labelAt),
-      kind.description, toString(kind.descriptionAt), kind.rank, toString(kind.rankAt));
+      kind.description, toString(kind.descriptionAt), kind.rank, toString(kind.rankAt),
+      static_cast<long long>(landSeq));
 }
 
-void upsertSlice(pqxx::work& txn, const TreeId& tree, const GraphState& state, const LegendState& legend) {
-  for (const NodeStateEntry& node : state.nodes) upsertNode(txn, tree, node);
-  for (const EdgeStateEntry& edge : state.edges) upsertEdge(txn, tree, edge);
-  for (const KindStateEntry& kind : legend.kinds) upsertKind(txn, tree, kind);
+// Each row takes the land seq `landed` holds for it, 0 where it holds none: the rows a tree is born with, and every
+// row that never landed late.
+void upsertSlice(pqxx::work& txn, const TreeId& tree, const GraphState& state, const LegendState& legend,
+                 const LandSeqs& landed = {}) {
+  const auto seqOf = [](const auto& seqs, const auto& key) {
+    const auto held = seqs.find(key);
+    return held == seqs.end() ? Seq{0} : held->second;
+  };
+  for (const NodeStateEntry& node : state.nodes) upsertNode(txn, tree, node, seqOf(landed.nodes, node.id));
+  for (const EdgeStateEntry& edge : state.edges) upsertEdge(txn, tree, edge, seqOf(landed.edges, edge.edge));
+  for (const KindStateEntry& kind : legend.kinds) upsertKind(txn, tree, kind, seqOf(landed.kinds, kind.id));
 }
 
 // pqxx names the row type row_ref on macOS and row on CI's Linux, so these accessors pin the
@@ -151,30 +164,37 @@ NodeStateEntry nodeFromRow(const auto& row) {
   return node;
 }
 
-GraphState graphRows(pqxx::work& txn, const TreeId& tree) {
+// The rows of a tree's graph, and into `landed` the land seq of each that holds one past 0.
+GraphState graphRows(pqxx::work& txn, const TreeId& tree, LandSeqs& landed) {
   GraphState state;
   pqxx::result nodes = txn.exec_params(
       "SELECT node_id, created_hlc, deleted_hlc, label, label_hlc, icon, icon_hlc, color, "
       "color_hlc, ord, ord_hlc, status, status_hlc, description, "
-      "description_hlc, links::text AS links, links_hlc, opens, opens_hlc FROM tree_nodes WHERE tree_id = $1",
+      "description_hlc, links::text AS links, links_hlc, opens, opens_hlc, land_seq FROM tree_nodes WHERE tree_id = $1",
       tree.str());
-  for (const auto& row : nodes) state.nodes.push_back(nodeFromRow(row));
+  for (const auto& row : nodes) {
+    state.nodes.push_back(nodeFromRow(row));
+    if (const long long seq = row["land_seq"].template as<long long>(); seq > 0)
+      landed.nodes[state.nodes.back().id] = static_cast<Seq>(seq);
+  }
 
   pqxx::result edges = txn.exec_params(
-      "SELECT from_id, to_id, added_hlc, removed_hlc FROM tree_edges WHERE tree_id = $1", tree.str());
+      "SELECT from_id, to_id, added_hlc, removed_hlc, land_seq FROM tree_edges WHERE tree_id = $1", tree.str());
   for (const auto& row : edges) {
     state.edges.push_back(EdgeStateEntry{
         Edge{NodeId{row["from_id"].as<std::string>()}, NodeId{row["to_id"].as<std::string>()}},
         roadmapStamp(row["added_hlc"].as<std::string>()), roadmapStamp(row["removed_hlc"].as<std::string>())});
+    if (const long long seq = row["land_seq"].template as<long long>(); seq > 0)
+      landed.edges[state.edges.back().edge] = static_cast<Seq>(seq);
   }
   return state;
 }
 
-LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
+LegendState legendRows(pqxx::work& txn, const TreeId& tree, LandSeqs& landed) {
   LegendState legend;
   pqxx::result kinds = txn.exec_params(
       "SELECT kind_id, created_hlc, deleted_hlc, hue, hue_hlc, label, label_hlc, description, "
-      "description_hlc, rank, rank_hlc "
+      "description_hlc, rank, rank_hlc, land_seq "
       "FROM tree_kinds WHERE tree_id = $1",
       tree.str());
   for (const auto& row : kinds) {
@@ -190,6 +210,8 @@ LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
     kind.descriptionAt = roadmapStamp(row["description_hlc"].as<std::string>());
     kind.rank = row["rank"].as<double>();
     kind.rankAt = roadmapStamp(row["rank_hlc"].as<std::string>());
+    if (const long long seq = row["land_seq"].template as<long long>(); seq > 0)
+      landed.kinds[kind.id] = static_cast<Seq>(seq);
     legend.kinds.push_back(std::move(kind));
   }
   return legend;
@@ -363,6 +385,7 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   // is the access's question, not the content's.
   pqxx::result rows = txn.exec_params(
       "SELECT t.title, t.title_hlc, t.guide, t.guide_hlc, t.guide_inherited, t.head_seq, t.document::text, "
+      "t.title_land_seq, t.guide_land_seq, "
       "r.owner_id::text AS owner_id, r.visibility, t.root_tree, t.parent_tree, "
       "(extract(epoch from t.created_at) * 1000)::bigint AS created_ms "
       "FROM trees t JOIN trees r ON r.id = t.root_tree "
@@ -371,8 +394,11 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   if (rows.empty()) return std::nullopt;
   const auto row = rows[0];
 
-  GraphState state = graphRows(txn, tree);
-  LegendState legend = legendRows(txn, tree);
+  LandSeqs landed;
+  landed.title = static_cast<Seq>(row["title_land_seq"].as<long long>());
+  landed.guide = static_cast<Seq>(row["guide_land_seq"].as<long long>());
+  GraphState state = graphRows(txn, tree, landed);
+  LegendState legend = legendRows(txn, tree, landed);
   if (state.nodes.empty() && state.edges.empty() && legend.kinds.empty()) {
     // A tree whose lattice lives only in the document blob: parse it and backfill the rows in this
     // same transaction.
@@ -408,11 +434,12 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
                     parseVisibility(row["visibility"].as<std::string>()),
                     static_cast<std::uint64_t>(row["created_ms"].as<long long>()), std::move(guide),
                     row["guide_inherited"].as<bool>(), TreeId{text(row, "root_tree")}, std::move(path),
-                    std::move(subtrees)};
+                    std::move(subtrees), std::move(landed)};
 }
 
 bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-                            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) {
+                            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head,
+                            const LandSeqs& landed) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   // Only onto a row that stands: a tree erased or retired under its live room is not written back.
@@ -423,20 +450,24 @@ bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
     return false;
   // The title and guide registers are LWW at their columns: each lands only under a dominating
   // stamp. (ms, counter) order numerically; a tie falls to byte order (COLLATE "C"), which is the
-  // actor tiebreak.
+  // actor tiebreak. A register that lands takes the land seq the room holds for it.
   txn.exec_params(
-      "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5 "
+      "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5, "
+      "title_land_seq = GREATEST(title_land_seq, $6) "
       "WHERE id = $1 AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
       "> (title_ms, title_counter, title_hlc COLLATE \"C\")",
       tree.str(), title.value, toString(title.stamp),
-      static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter));
+      static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter),
+      static_cast<long long>(landed.title));
   txn.exec_params(
-      "UPDATE trees SET guide = $2, guide_hlc = $3, guide_ms = $4, guide_counter = $5, guide_inherited = false "
+      "UPDATE trees SET guide = $2, guide_hlc = $3, guide_ms = $4, guide_counter = $5, guide_inherited = false, "
+      "guide_land_seq = GREATEST(guide_land_seq, $6) "
       "WHERE id = $1 AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
       "> (guide_ms, guide_counter, guide_hlc COLLATE \"C\")",
       tree.str(), guide.value, toString(guide.stamp),
-      static_cast<long long>(guide.stamp.physicalMs), static_cast<long long>(guide.stamp.counter));
-  upsertSlice(txn, tree, state, legend);  // only the dirty slice — never the whole tree
+      static_cast<long long>(guide.stamp.physicalMs), static_cast<long long>(guide.stamp.counter),
+      static_cast<long long>(landed.guide));
+  upsertSlice(txn, tree, state, legend, landed);  // only the dirty slice — never the whole tree
   txn.commit();
   markCurrentWrite();
   return true;
@@ -781,19 +812,6 @@ void PgTreeRepository::softDelete(const TreeId& tree) {
   pqxx::work txn{*conn};
   txn.exec_params("UPDATE trees SET deleted_at = now() WHERE id = $1 AND parent_tree IS NULL AND deleted_at IS NULL",
                   tree.str());
-  txn.commit();
-}
-
-void PgTreeRepository::rename(const TreeId& tree, const Lww<std::string>& title) {
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  txn.exec_params(  // the same LWW guard as save(): only a dominating stamp lands
-      "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5, "
-      "updated_at = now() WHERE id = $1 AND deleted_at IS NULL "
-      "AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
-      "> (title_ms, title_counter, title_hlc COLLATE \"C\")",
-      tree.str(), title.value, toString(title.stamp),
-      static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter));
   txn.commit();
 }
 
