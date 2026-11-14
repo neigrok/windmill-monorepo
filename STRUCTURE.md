@@ -40,6 +40,8 @@ packages/
   api-contract/             shared wire contracts, executable golden fixtures and the JS sync core/client
 services/
   embedder/                 HTTP sidecar for journal passage vectors
+  subscriptions/            Rust workspace of the Windmill One subscription service; its four crates,
+                            domain, app_store, storage and server, are empty
 tools/                     standalone operational tools
   lift-import/              imports Lift training history over the gym API
   resend-webhook-probe/     sends a signed synthetic bounce to verify webhook configuration
@@ -78,6 +80,7 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 | `ios-release.yml` | archive the app and upload it to App Store Connect, dispatched by hand |
 | `android.yml` | build and test; tags and versioned dispatches produce unpublished signing inputs |
 | `embedder.yml` | check pinned vectors and the sidecar HTTP process |
+| `subscriptions.yml` | check the subscription service's crate dependency rule, formatting, Clippy with warnings denied and tests |
 | `tools.yml` | run the Lift importer suite |
 | `contract.yml` | check the sync corpus is what the JS reference generates; run the reference's tests and a fixed-seed replay fuzz |
 | `deploy.yml` | deploy a successful backend main-push SHA or a main-reachable commit SHA; sync minimum changes require an exact manual cutoff acknowledgement |
@@ -117,7 +120,7 @@ contents. Native acceptance and a same-key update check precede publication. See
   [phone-hosted Coach abilities](docs/foundation/mobile/gym_coach.md), specified for both phones.
   Both phones implement phone-hosted turns.
   [The subscription service](docs/foundation/subscriptions.md) for Windmill One is specified and not
-  built.
+  built; its [workspace](services/subscriptions/ARCHITECTURE.md) holds four empty crates.
 - [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
   model loop the web uses. [The iOS app](apps/ios/App/README.md) also documents
   signed-in routine onboarding.
