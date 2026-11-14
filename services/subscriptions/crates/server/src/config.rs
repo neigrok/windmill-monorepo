@@ -5,8 +5,8 @@ use std::str::FromStr;
 use sentry::types::Dsn;
 use tracing_subscriber::filter::LevelFilter;
 
-// The deployment environment the forced-panic route is refused in.
-const PRODUCTION: &str = "production";
+// The deployments the forced-panic route may run in, matched trimmed and in any case.
+const PANIC_ROUTE_ENVIRONMENTS: [&str; 4] = ["local", "development", "test", "ci"];
 
 #[derive(Debug, PartialEq)]
 pub struct Config {
@@ -32,21 +32,40 @@ impl Config {
             sentry_dsn: variables.optional("SENTRY_DSN")?,
             log_level: variables
                 .optional("WINDMILL_LOG_LEVEL")?
-                .unwrap_or(LevelFilter::INFO),
+                .map_or(LevelFilter::INFO, |LogLevel(level)| level),
             sentry_log_level: variables
                 .optional("SENTRY_LOG_LEVEL")?
-                .unwrap_or(LevelFilter::INFO),
+                .map_or(LevelFilter::INFO, |LogLevel(level)| level),
             panic_route_enabled: variables
                 .optional("SUBSCRIPTIONS_PANIC_ROUTE_ENABLED")?
                 .unwrap_or(false),
         };
-        if config.panic_route_enabled && config.environment == PRODUCTION {
+        let environment = config.environment.trim().to_ascii_lowercase();
+        if config.panic_route_enabled && !PANIC_ROUTE_ENVIRONMENTS.contains(&environment.as_str()) {
             return Err(ConfigError {
                 variable: "SUBSCRIPTIONS_PANIC_ROUTE_ENABLED",
-                problem: Problem::RefusedInProduction,
+                problem: Problem::RefusedInEnvironment,
             });
         }
         Ok(config)
+    }
+}
+
+// The words the backend reads from the same two variables, in any case; `fatal` reads as `error`.
+struct LogLevel(LevelFilter);
+
+impl FromStr for LogLevel {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<LogLevel, ()> {
+        match value.to_ascii_lowercase().as_str() {
+            "trace" => Ok(LogLevel(LevelFilter::TRACE)),
+            "debug" => Ok(LogLevel(LevelFilter::DEBUG)),
+            "info" => Ok(LogLevel(LevelFilter::INFO)),
+            "warn" => Ok(LogLevel(LevelFilter::WARN)),
+            "error" | "fatal" => Ok(LogLevel(LevelFilter::ERROR)),
+            _ => Err(()),
+        }
     }
 }
 
@@ -82,7 +101,7 @@ pub struct ConfigError {
 pub enum Problem {
     Missing,
     Malformed,
-    RefusedInProduction,
+    RefusedInEnvironment,
 }
 
 impl fmt::Display for ConfigError {
@@ -91,12 +110,11 @@ impl fmt::Display for ConfigError {
         match self.problem {
             Problem::Missing => write!(formatter, "{variable} is not set"),
             Problem::Malformed => write!(formatter, "{variable} is malformed"),
-            Problem::RefusedInProduction => {
-                write!(
-                    formatter,
-                    "{variable} is refused while SENTRY_ENVIRONMENT is {PRODUCTION}"
-                )
-            }
+            Problem::RefusedInEnvironment => write!(
+                formatter,
+                "{variable} is refused unless SENTRY_ENVIRONMENT is one of {}",
+                PANIC_ROUTE_ENVIRONMENTS.join(", ")
+            ),
         }
     }
 }

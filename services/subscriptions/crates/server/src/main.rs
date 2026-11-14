@@ -1,9 +1,11 @@
+use std::panic::AssertUnwindSafe;
 use std::process::ExitCode;
 use std::time::Duration;
 use std::{env, io};
 
+use futures_util::FutureExt;
 use server::config::Config;
-use server::listeners::Listener;
+use server::listeners::{Bounds, Listener};
 use server::telemetry;
 use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
@@ -12,8 +14,8 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
 
-// Docker kills 10 s after SIGTERM: 7 s for requests in flight, up to 2 s for Sentry's last flush.
-const DRAIN_BOUND: Duration = Duration::from_secs(7);
+// Docker kills 10 s after SIGTERM: 6 s for open connections, then at most 3 s for Sentry.
+const DRAIN_BOUND: Duration = Duration::from_secs(6);
 
 fn main() -> ExitCode {
     let config = match Config::from_environment(|variable| env::var(variable).ok()) {
@@ -56,6 +58,7 @@ async fn serve(config: Config) -> ExitCode {
         }
     };
 
+    let bounds = Bounds::default();
     let stop = CancellationToken::new();
     let mut running = JoinSet::new();
     for listener in [Listener::Public, Listener::Internal] {
@@ -68,17 +71,30 @@ async fn serve(config: Config) -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        tracing::info!(listener = listener.label(), %address, "listening");
-        let server = axum::serve(socket, listener.router(&config))
-            .with_graceful_shutdown(stop.clone().cancelled_owned());
-        running.spawn(server.into_future());
+        let bound = socket.local_addr().unwrap_or(address);
+        tracing::info!(listener = listener.label(), address = %bound, "listening");
+        let router = listener.router(&config, bounds);
+        let stop = stop.clone();
+        running.spawn(async move {
+            let served = AssertUnwindSafe(listener.serve(socket, router, bounds, stop))
+                .catch_unwind()
+                .await;
+            (
+                listener,
+                if served.is_ok() {
+                    "returned"
+                } else {
+                    "panicked"
+                },
+            )
+        });
     }
 
     let signal = tokio::select! {
         _ = terminate.recv() => "SIGTERM",
         _ = interrupt.recv() => "SIGINT",
-        _ = running.join_next() => {
-            tracing::error!("a listener stopped by itself");
+        Some(Ok((listener, why))) = running.join_next() => {
+            tracing::error!(listener = listener.label(), why, "listener stopped by itself");
             return ExitCode::FAILURE;
         }
     };

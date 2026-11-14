@@ -5,8 +5,9 @@ invariants (`INV-n`) and rulings (`R-n`) are numbered so reviews, code and roadm
 
 ## §0 Status and scope
 
-**Status:** Specified, not built. `services/subscriptions/` holds the Rust workspace with its four crates
-empty; nothing runs and nothing is deployed. Windmill One cannot be bought on any surface. The C++
+**Status:** Specified, being built. `services/subscriptions/` holds the Rust workspace; its server
+answers health on both listeners and holds no subscription logic, and nothing is deployed. Windmill
+One cannot be bought on any surface. The C++
 backend mirrors Paddle subscriptions (`backend/platform/adapters/paddle`) and
 `Entitlements::hasWindmillOne` reads that mirror; this document specifies what replaces it. The build
 order and its owner gates live in the Windmill One roadmap tree, which the dogfood tree

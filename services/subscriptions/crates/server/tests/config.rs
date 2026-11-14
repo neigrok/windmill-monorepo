@@ -6,7 +6,7 @@ fn every_variable_is_read_into_one_config() {
     let environment = [
         ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
         ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "0.0.0.0:8083"),
-        ("SENTRY_ENVIRONMENT", "staging"),
+        ("SENTRY_ENVIRONMENT", "ci"),
         ("SENTRY_RELEASE", "2d63d2ac9"),
         ("SENTRY_DSN", "https://public@sentry.example/7"),
         ("WINDMILL_LOG_LEVEL", "debug"),
@@ -26,7 +26,7 @@ fn every_variable_is_read_into_one_config() {
         Ok(Config {
             public_address: "0.0.0.0:8082".parse().unwrap(),
             internal_address: "0.0.0.0:8083".parse().unwrap(),
-            environment: "staging".to_owned(),
+            environment: "ci".to_owned(),
             release: Some("2d63d2ac9".to_owned()),
             sentry_dsn: Some("https://public@sentry.example/7".parse().unwrap()),
             log_level: LevelFilter::DEBUG,
@@ -109,8 +109,9 @@ fn a_malformed_value_is_refused_by_its_name_and_never_repeated() {
         ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "public:secret-port"),
         ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "8083"),
         ("SENTRY_DSN", "secret-key-without-a-host"),
-        ("WINDMILL_LOG_LEVEL", "loud"),
-        ("SENTRY_LOG_LEVEL", "chatty"),
+        ("WINDMILL_LOG_LEVEL", "off"),
+        ("WINDMILL_LOG_LEVEL", "0"),
+        ("SENTRY_LOG_LEVEL", "warning"),
         ("SUBSCRIPTIONS_PANIC_ROUTE_ENABLED", "yes"),
     ] {
         let environment = [
@@ -142,24 +143,79 @@ fn a_malformed_value_is_refused_by_its_name_and_never_repeated() {
 }
 
 #[test]
-fn the_panic_route_is_refused_in_production() {
-    let environment = [
-        ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
-        ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "0.0.0.0:8083"),
-        ("SENTRY_ENVIRONMENT", "production"),
-        ("SUBSCRIPTIONS_PANIC_ROUTE_ENABLED", "true"),
-    ];
+fn the_backend_s_level_words_are_read_in_any_case() {
+    for (word, level) in [
+        ("trace", LevelFilter::TRACE),
+        ("DEBUG", LevelFilter::DEBUG),
+        ("Info", LevelFilter::INFO),
+        ("warn", LevelFilter::WARN),
+        ("ERROR", LevelFilter::ERROR),
+        ("fatal", LevelFilter::ERROR),
+    ] {
+        let environment = [
+            ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
+            ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "0.0.0.0:8083"),
+            ("SENTRY_ENVIRONMENT", "staging"),
+            ("WINDMILL_LOG_LEVEL", word),
+            ("SENTRY_LOG_LEVEL", word),
+        ];
 
-    let refusal = Config::from_environment(|variable| {
-        environment
-            .iter()
-            .find(|(name, _)| *name == variable)
-            .map(|(_, value)| value.to_string())
-    })
-    .unwrap_err();
+        let config = Config::from_environment(|variable| {
+            environment
+                .iter()
+                .find(|(name, _)| *name == variable)
+                .map(|(_, value)| value.to_string())
+        })
+        .unwrap();
 
-    assert_eq!(
-        refusal.to_string(),
-        "SUBSCRIPTIONS_PANIC_ROUTE_ENABLED is refused while SENTRY_ENVIRONMENT is production"
-    );
+        assert_eq!(
+            (config.log_level, config.sentry_log_level),
+            (level, level),
+            "{word}"
+        );
+    }
+}
+
+#[test]
+fn the_panic_route_is_allowed_only_in_test_deployments() {
+    for (environment_name, allowed) in [
+        ("local", true),
+        (" CI ", true),
+        ("Test", true),
+        ("development", true),
+        ("production", false),
+        ("Production", false),
+        ("production ", false),
+        ("staging", false),
+    ] {
+        let environment = [
+            ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
+            ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "0.0.0.0:8083"),
+            ("SENTRY_ENVIRONMENT", environment_name),
+            ("SUBSCRIPTIONS_PANIC_ROUTE_ENABLED", "true"),
+        ];
+
+        let config = Config::from_environment(|variable| {
+            environment
+                .iter()
+                .find(|(name, _)| *name == variable)
+                .map(|(_, value)| value.to_string())
+        });
+
+        match config {
+            Ok(config) => assert!(
+                allowed && config.panic_route_enabled,
+                "{environment_name:?}"
+            ),
+            Err(refusal) => {
+                assert!(!allowed, "{environment_name:?}");
+                assert_eq!(
+                    refusal.to_string(),
+                    "SUBSCRIPTIONS_PANIC_ROUTE_ENABLED is refused unless SENTRY_ENVIRONMENT is \
+                     one of \
+                     local, development, test, ci"
+                );
+            }
+        }
+    }
 }

@@ -52,15 +52,15 @@ value.
 | `SENTRY_ENVIRONMENT` | yes | The deployment's name, such as `production`; Sentry files every report and log under it |
 | `SENTRY_DSN` | no | Where Sentry reports go; unset turns Sentry off, logged once at start |
 | `SENTRY_RELEASE` | no | The build's git sha, attached to every report |
-| `WINDMILL_LOG_LEVEL` | no | `error`, `warn`, `info` (default), `debug` or `trace`: the lowest level written to stdout |
-| `SENTRY_LOG_LEVEL` | no | The same levels: the lowest level of the service's own lines sent to Sentry as Logs; default `info` |
-| `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` | no | `true` adds `GET /debug/panic` to the internal listener; refused while `SENTRY_ENVIRONMENT` is `production` |
+| `WINDMILL_LOG_LEVEL` | no | The lowest level written to stdout: `trace`, `debug`, `info` (default), `warn`, `error` or `fatal`, in any case, the words the backend reads; `fatal` reads as `error` |
+| `SENTRY_LOG_LEVEL` | no | The same words: the lowest level of the service's own lines sent to Sentry as Logs; default `info` |
+| `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` | no | `true` adds `GET /debug/panic` to the internal listener; refused unless `SENTRY_ENVIRONMENT`, trimmed and in any case, is `local`, `development`, `test` or `ci` |
 
 ### Listeners
 
 The image listens on 8082 (public) and 8083 (internal), beside the backend's 8080 and the embedder's
-8081. Each listener builds its own router, so a route on the internal listener does not exist on the
-public one and answers 404 there.
+8081, and speaks HTTP/1.1. Each listener builds its own router, so a route on the internal listener
+does not exist on the public one and answers 404 there.
 
 | Listener | Route | Answer |
 |---|---|---|
@@ -68,26 +68,42 @@ public one and answers 404 there.
 | internal | `GET /health` | 200 `{"status":"ready"}`; the image's `HEALTHCHECK` asks it |
 | internal | `GET /debug/panic` | panics, only while `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` is `true` |
 
-SIGTERM or SIGINT stops both listeners from accepting and gives requests in flight 7 seconds to
-finish, then the process exits 0.
+`listeners::Bounds` holds what a client may take on either listener:
+
+| Bound | Value | Past it |
+|---|---|---|
+| request head | 5 s | the connection closes without an answer |
+| request, body and handler | 5 s | 503 `{"error":"timeout"}` |
+| request body | 64 KiB | 413, before any handler reads it |
+
+A handler runs only while its client waits: a client that leaves cancels it. A door whose work must
+outlive its request, such as the App Store notification door, spawns that work as a pipeline of its
+own.
+
+SIGTERM or SIGINT stops both listeners from accepting. Each open connection then finishes its request
+within the bounds above, for at most 6 s; Sentry's last flush takes at most 1 s more and the send in
+progress at most 2 s, so the process exits 0 inside Docker's 10 s, whether or not Sentry answers.
 
 ### Logs and Sentry
 
-Every line on stdout is one JSON object. Each request writes one line when it is answered: `listener`,
-`method` (a method outside the standard nine is `other`), `route` (the route template, or `unmatched`),
-`status`, `duration_ms` and `request_id`. It reads no header, body or raw path. A 5xx line is at
-`error`, a 4xx at `warn`, a ready health answer at `debug` and anything else at `info`:
+Every line on stdout is one JSON object. Each request writes one line when it ends: `listener`,
+`method` (a method outside the standard nine is `other`), `route` (the route template, or
+`unmatched`), `status`, `outcome`, `duration_ms` and `request_id`. `outcome` is `answered`,
+`panicked`, `timed_out`, or `cancelled` when the client left first; a cancelled line has no `status`.
+The line reads no header, body or raw path. A 5xx line is at `error`, a 4xx or cancelled line at
+`warn`, a ready health answer at `debug` and anything else at `info`:
 
 ```json
-{"timestamp":"2026-11-14T10:13:00.487493Z","level":"ERROR","message":"request","listener":"internal","method":"GET","route":"/debug/panic","status":500,"duration_ms":6.48,"request_id":"3dd341d704504b2f8750739e8edf1bbd"}
+{"timestamp":"2026-11-14T10:58:01.163207Z","level":"ERROR","message":"request","listener":"internal","method":"GET","route":"/debug/panic","status":500,"outcome":"panicked","duration_ms":4.3,"request_id":"8244ce4ef07341ff85532a1d8dfc7cf9"}
 ```
 
-The service's own lines also go to Sentry as Logs; a vendor's lines stay on stdout. A line at `error`
-creates no Issue. Issues come from explicit reports: a panic after start is reported with its
-location and stack and without its message, and logged as `panic` with the event's
-`sentry_event_id`. A panic inside a request also carries that request's span in its line and its
-`listener`, `route` and `request_id` as tags, and the request answers 500 `{"error":"internal"}`
-while the listener keeps answering.
+Lines from every crate of the workspace (`telemetry::SERVICE_CRATES`) also go to Sentry as Logs; a
+vendor's lines stay on stdout. A line at `error` creates no Issue. Issues come from explicit
+reports: a panic after start is reported with its location and stack and without its message, and
+logged as `panic` with the event's `sentry_event_id` (absent while Sentry is off). The stack ends at
+the panicking frame, and the service's crates are its in-app frames. A panic inside a request also
+carries that request's span in its line and its `listener`, `route` and `request_id` as tags, and the
+request answers 500 `{"error":"internal"}` while the listener keeps answering.
 
 ### Run
 
@@ -123,5 +139,7 @@ cargo test --locked
 
 `check-dependencies.sh` needs `jq` and runs from any directory.
 
-A second job builds the image and runs it once: it must become healthy, answer ready on both
-listeners, answer 404 for an internal path on the public port and exit 0 on SIGTERM.
+A second job builds the image and runs it twice. First it must become healthy, answer ready on both
+listeners, answer 404 for an internal path on the public port and exit 0 on SIGTERM. Then, with a
+Sentry that accepts and never answers and three panics waiting to send, `docker stop` must exit 0
+within 10 s.

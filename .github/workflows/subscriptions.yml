@@ -92,6 +92,30 @@ jobs:
           test "$(docker inspect -f '{{.State.ExitCode}}' subscriptions)" = 0
           docker logs subscriptions | grep '"message":"stopped"'
 
-      - name: The container's log
+      # Sentry's ingest here accepts every connection and never answers, so each send hangs until the
+      # service gives up on it. The container must still exit 0 before Docker's 10 s kill.
+      - name: Stop in time while Sentry never answers
+        run: |
+          python3 -c 'import socket; hole = socket.create_server(("0.0.0.0", 9478)); held = [hole.accept()[0] for _ in iter(int, 1)]' > /dev/null 2>&1 &
+          docker run -d --name unanswered --add-host host.docker.internal:host-gateway -p 18083:8083 \
+            -e SENTRY_ENVIRONMENT=ci -e SENTRY_DSN=http://public@host.docker.internal:9478/1 \
+            -e SUBSCRIPTIONS_PANIC_ROUTE_ENABLED=true windmill-subscriptions:ci
+          for attempt in $(seq 1 30); do
+            curl -sf -o /dev/null http://127.0.0.1:18083/health && break
+            sleep 1
+          done
+          for panic in 1 2 3; do
+            test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18083/debug/panic)" = 500
+          done
+          started=$(date +%s)
+          docker stop unanswered
+          elapsed=$(( $(date +%s) - started ))
+          echo "stopped in ${elapsed}s"
+          test "$(docker inspect -f '{{.State.ExitCode}}' unanswered)" = 0
+          test "$elapsed" -lt 10
+
+      - name: The containers' logs
         if: always()
-        run: docker logs subscriptions || true
+        run: |
+          docker logs subscriptions || true
+          docker logs unanswered || true

@@ -2,12 +2,15 @@
 
 use std::io;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use axum::Router;
 use axum::body::Body;
 use axum::http::Request;
+use axum::routing::get;
 use serde_json::{Value, json};
 use server::config::Config;
-use server::listeners::Listener;
+use server::listeners::{Bounds, Listener};
 use server::telemetry::json_lines;
 use tower::ServiceExt;
 use tracing_subscriber::prelude::*;
@@ -42,18 +45,36 @@ async fn each_request_writes_one_line_naming_its_route_and_nothing_it_carried() 
     );
 
     Listener::Internal
-        .router(&config)
+        .router(&config, Bounds::default())
         .oneshot(Request::get("/health").body(Body::empty()).unwrap())
         .await
         .unwrap();
     Listener::Public
-        .router(&config)
+        .router(&config, Bounds::default())
         .oneshot(
             Request::post("/internal/v1/accounts/acct_secret/claims?token=secret")
                 .header("authorization", "Bearer secret")
                 .body(Body::from(r#"{"signedTransaction":"secret"}"#))
                 .unwrap(),
         )
+        .await
+        .unwrap();
+    let stalled = Router::new().route("/stall", get(std::future::pending::<()>));
+    let abandoned = Listener::Internal
+        .boundary(stalled.clone(), Bounds::default())
+        .oneshot(Request::get("/stall").body(Body::empty()).unwrap());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), abandoned)
+            .await
+            .is_err()
+    );
+    let bounds = Bounds {
+        request: Duration::from_millis(20),
+        ..Bounds::default()
+    };
+    Listener::Internal
+        .boundary(stalled, bounds)
+        .oneshot(Request::get("/stall").body(Body::empty()).unwrap())
         .await
         .unwrap();
 
@@ -84,6 +105,7 @@ async fn each_request_writes_one_line_naming_its_route_and_nothing_it_carried() 
                 "method": "GET",
                 "route": "/health",
                 "status": 200,
+                "outcome": "answered",
             }),
             json!({
                 "level": "WARN",
@@ -92,6 +114,24 @@ async fn each_request_writes_one_line_naming_its_route_and_nothing_it_carried() 
                 "method": "POST",
                 "route": "unmatched",
                 "status": 404,
+                "outcome": "answered",
+            }),
+            json!({
+                "level": "WARN",
+                "message": "request",
+                "listener": "internal",
+                "method": "GET",
+                "route": "/stall",
+                "outcome": "cancelled",
+            }),
+            json!({
+                "level": "ERROR",
+                "message": "request",
+                "listener": "internal",
+                "method": "GET",
+                "route": "/stall",
+                "status": 503,
+                "outcome": "timed_out",
             }),
         ]
     );
