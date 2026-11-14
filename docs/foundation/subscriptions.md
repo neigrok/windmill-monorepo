@@ -517,7 +517,7 @@ document assumes until it is ruled.
 
 | | Question | Ruling |
 |---|---|---|
-| R-1 | Price, period and sharing on the App Store | One monthly product at the App Store price point nearest $12. No annual product. Family Sharing off. Windmill enrols in the App Store Small Business Program. |
+| R-1 | Price, period and sharing on the App Store | One monthly product at the App Store price point $12.00. No annual product. Family Sharing off. Windmill enrols in the App Store Small Business Program. |
 | R-2 | Must a person sign in to buy? | Yes. Windmill One belongs to an account. Everything free stays usable signed out. |
 | R-3 | A purchase restored under a different Windmill account | Refused, naming that it belongs to another account. No silent transfer. |
 | R-4 | A free trial | None. The free monthly allowance is the trial, and an unpaid period funds nothing. |

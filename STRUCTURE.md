@@ -80,7 +80,7 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 | `ios-release.yml` | archive the app and upload it to App Store Connect, dispatched by hand |
 | `android.yml` | build and test; tags and versioned dispatches produce unpublished signing inputs |
 | `embedder.yml` | check pinned vectors and the sidecar HTTP process |
-| `subscriptions.yml` | check the subscription service's crate dependency rule, formatting, Clippy with warnings denied and tests; build its image and run it |
+| `subscriptions.yml` | check the subscription service's crate dependency rule, formatting, Clippy with warnings denied and tests; build its image and run it; check its wire fixtures are what `generate.py` writes and pass `check.py` |
 | `tools.yml` | run the Lift importer suite |
 | `contract.yml` | check the sync corpus is what the JS reference generates; run the reference's tests and a fixed-seed replay fuzz |
 | `deploy.yml` | deploy a successful backend main-push SHA or a main-reachable commit SHA; sync minimum changes require an exact manual cutoff acknowledgement |
