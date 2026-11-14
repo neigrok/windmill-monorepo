@@ -108,10 +108,12 @@ using ModelCall = std::function<std::optional<Json::Value>(const Json::Value& re
 
 // One vendor round as the ledger reads it: the reply, or none — and, with none, whether the vendor
 // is known to have consumed nothing (it answered an error before any message began), so the round
-// settles at zero instead of staying held as an ambiguous send.
+// settles at zero instead of staying held as an ambiguous send. `cancelled` is a round this server
+// stopped on purpose: it settles at once at what it used, never held as an ambiguous send.
 struct ModelRound {
   std::optional<Json::Value> reply;
   bool unconsumed = false;
+  bool cancelled = false;
 };
 using ModelRoundCall = std::function<ModelRound(const Json::Value& request)>;
 

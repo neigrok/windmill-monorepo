@@ -5,6 +5,7 @@
 
 #include <drogon/utils/Utilities.h>
 #include <trantor/utils/Logger.h>
+#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
@@ -285,7 +286,14 @@ AiCallAdmission AiCallBudget::admit(const AiBudgetPrincipal& principal, std::opt
 
 void AiCallBudget::finish(const AiBudgetReservation& reservation, const std::string& model,
                           const Json::Value& usage, AiCallEnd end) {
-  finish(reservation, end == AiCallEnd::settled ? anthropicActualNanos(model, usage) : std::nullopt, end);
+  if (end != AiCallEnd::cancelled) {
+    finish(reservation, end == AiCallEnd::settled ? anthropicActualNanos(model, usage) : std::nullopt, end);
+    return;
+  }
+  const long long held = reservation.amountNanos;
+  const long long beforeAnyOutput = reservation.outputBudget ? reservation.outputBudget->inputNanos : held;
+  const long long used = usage.isNull() ? beforeAnyOutput : anthropicActualNanos(model, usage).value_or(held);
+  finish(reservation, std::min(used, held), end);
 }
 
 void AiCallBudget::finish(const AiBudgetReservation& reservation, std::optional<long long> actualNanos, AiCallEnd end) {
@@ -293,6 +301,8 @@ void AiCallBudget::finish(const AiBudgetReservation& reservation, std::optional<
   WriteContext context{observation};
   try {
     const auto amount = end == AiCallEnd::settled ? actualNanos
+                      : end == AiCallEnd::cancelled
+                          ? std::optional<long long>{actualNanos.value_or(reservation.amountNanos)}
                       : end == AiCallEnd::unconsumed ? std::optional<long long>{0} : std::nullopt;
     const auto result = amount ? budgets_->settle(reservation.id, *amount) : budgets_->markUncertain(reservation.id);
     // The hold lapsed and was let go while the round was out: what the vendor billed for it is Windmill's.
@@ -302,7 +312,8 @@ void AiCallBudget::finish(const AiBudgetReservation& reservation, std::optional<
     }
     if (result.code != AiBudgetCode::Ok && result.code != AiBudgetCode::Replay)
       throw std::runtime_error("AI accounting transition refused");
-    observation.finish(!amount ? "uncertain" : end == AiCallEnd::unconsumed ? "unconsumed" : "settled");
+    observation.finish(!amount ? "uncertain" : end == AiCallEnd::unconsumed ? "unconsumed"
+                       : end == AiCallEnd::cancelled ? "cancelled" : "settled");
   } catch (const std::exception& error) {
     observation.fail(error);
   } catch (...) {

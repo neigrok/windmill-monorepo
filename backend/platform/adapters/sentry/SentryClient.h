@@ -40,9 +40,10 @@ public:
   static Json::Value writeEvent(const std::string& operation, const std::string& product,
                                 const std::string& door, const std::string& outcome,
                                 const std::string& requestId, const std::string& exceptionType);
-  // Level warning, grouped by operation and outcome, and under the same per-minute cap as every report.
+  // Level warning, grouped by operation and outcome, under a per-minute cap of its own.
   void reportWarning(const std::string& operation, const std::string& product, const std::string& door,
-                     const std::string& outcome, const std::string& requestId) override;
+                     const std::string& outcome, const std::string& requestId,
+                     const std::map<std::string, std::string>& tags) override;
   void drain();
 
   // The server's own log lines, as Sentry structured logs (envelope item type `log`). Buffered
@@ -62,7 +63,12 @@ private:
 
   // A per-minute cap: an error storm must not mint one outbound TLS connection per failed request
   // on the single loop thread. Excess reports drop; the DB server_errors mirror still records every one.
-  bool allow();
+  // Failures and warnings each have a window of their own, so no burst of warnings drops a failure.
+  struct RateWindow {
+    std::int64_t startMs = 0;
+    int count = 0;
+  };
+  bool allow(RateWindow& window);
 
   bool enabled_ = false;
   std::string host_;
@@ -71,8 +77,8 @@ private:
   std::string environment_;
   std::string release_;
   std::mutex rateMutex_;
-  std::int64_t windowStartMs_ = 0;
-  int windowCount_ = 0;
+  RateWindow failures_;
+  RateWindow warnings_;
 
   // One trace for the whole process run, so every log line since boot is one query in Sentry.
   std::string runTraceId_;

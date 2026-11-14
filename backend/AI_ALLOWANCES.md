@@ -113,18 +113,36 @@ can clear that liability while retaining actual spend. Periods and grants remain
 month or grant does not fund an old call. Historical debt and in-flight calls continue to affect
 admission after a new funded period begins. Replaying settlement changes and reports nothing.
 
-An ambiguous send, partial stream, missing usage or accounting failure keeps its reservation as
-`uncertain`, and a call a restart cut off stays `dispatched`. A hold whose cost is still
-unconfirmed 10 minutes after its admission (`kAiBudgetHoldLifetimeMs`, `AiBudget.h`) lapses: the
-ledger releases it at zero, frees its slot and its held amount in every budget, and keeps the
-record with its reserved amount and the state it left (`released_from`: `reserved`, `dispatched`
-or `uncertain`). Windmill absorbs whatever the vendor billed for a lapsed call. Every vendor call
-this server makes has a deadline well inside that bound; the longest is 300 s. Each admission and
-each allowance read first releases its own principal's lapsed holds, those of the devices bound to
-an account included, so a lapsed hold never refuses the next call or shows as reserved;
-`AiBudgetHoldSweep` releases every principal's each minute, so the shared free pools stop counting
-one within a minute of its lapse. A settlement or uncertainty that arrives after the release changes nothing.
-An undispatched reservation may also be released at once.
+A round this server stops on purpose — Coach's Stop, a phone turn's stop, a stopping server — is
+not ambiguous. It settles at once at what it used, and its slot frees at once: the input the
+vendor reported when the message began, plus the output streamed so far. The output is the
+vendor's own count when one arrived, or, when larger, the stream counted as the request estimate
+counts input: a token per three UTF-8 bytes the model wrote (text, thinking, a tool's name and
+input), rounded up, and three a content block (`AnthropicStream.h`). A round stopped before its
+message began settles at its input estimate. Neither ever settles above its hold. A thinking block
+the vendor summarises may count fewer tokens than it billed.
+
+An ambiguous send, a stream the connection cut short, missing usage or accounting failure keeps
+its reservation as `uncertain`, and a call a restart cut off stays `dispatched`. A hold whose cost
+is still unconfirmed 10 minutes after its admission (`kAiBudgetHoldLifetimeMs`, `AiBudget.h`)
+lapses: the ledger releases it at zero, frees its slot and its held amount in every budget, and
+keeps the record with its reserved amount and the state it left (`released_from`: `reserved`,
+`dispatched` or `uncertain`). Windmill absorbs whatever the vendor billed for a lapsed call. Every
+vendor call this server makes has a deadline well inside that bound; the longest is 300 s. Each
+admission and each allowance read first releases its own principal's lapsed holds, those of the
+devices bound to an account included, so a lapsed hold never refuses the next call or shows as
+reserved; `AiBudgetHoldSweep` releases every principal's each minute, at most 200 a pass, so the
+shared free pools stop counting one within a minute of its lapse. A settlement or uncertainty that
+arrives after the release changes nothing. An undispatched reservation may also be released at
+once.
+
+Concurrency never exceeds a principal's slots: a lapsed hold holds its slot until it is released.
+What Windmill can absorb is bounded per principal by its slots × 6 lapses an hour × the
+reservation of each lapsed round, its largest estimated cost. Service-wide only the $20 process-hour
+fuse bounds it, and the fuse is charged only for rounds that returned usage, so it sees part of it.
+Each release logs the count and the reserved amount it let go by the state each hold left; the
+`dispatched` and `uncertain` amounts bound what Windmill absorbed, and a `reserved` hold was never
+sent (OBSERVABILITY.md).
 
 Budget occupancy includes settled cost plus held reservations. Crossings of 50%, 80% and 95% are
 written to a durable outbox in the same transaction as their budget change. Each scope, budget
@@ -271,7 +289,7 @@ Neither endpoint nor telemetry exposes aggregate budget amounts.
 
 `concurrency_exhausted` means the principal's earlier calls hold every slot it has, whether they
 are still running or their cost is not yet confirmed. Coach and Talk say so and that each slot frees
-when its call finishes or 10 minutes after the call began.
+when its cost is confirmed, at most 10 minutes after its call began.
 
 Coach JSON and SSE preserve expected allowance refusal codes and metadata. A request too large
 for positive remaining capacity is distinguished from a fully used allowance by the allowance

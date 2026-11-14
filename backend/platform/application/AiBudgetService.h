@@ -18,8 +18,9 @@ public:
   AiBudgetResult markUncertain(const std::string& id);
   AiBudgetResult settle(const std::string& id, long long actualNanos);
   AiBudgetResult release(const std::string& id);
-  // The sweep's pass over every principal: releases each hold that lapsed by now, and answers how many it let go.
-  int releaseLapsed();
+  // The sweep's pass over every principal: releases holds that lapsed by now, at most ten batches of twenty and none
+  // after `stopping` answers true, and answers how many it let go.
+  int releaseLapsed(const std::function<bool()>& stopping = {});
   AiBudgetResult reconcileOverrun(const std::string& id);
   AiBudgetGrantResult fund(const AiBudgetGrant& grant);
   std::optional<std::string> boundAccount(const std::string& deviceId) const;
@@ -29,7 +30,10 @@ public:
   AiBudgetCode retryAlert(const std::string& id, const std::string& claimToken, long long nextAttemptMs);
 
 private:
-  int releaseLapsed(const std::optional<AiBudgetSubject>& subject, long long atMs, const std::string& door);
+  // Batch after batch while `anotherBatch` allows and the last came back full; one tally line and one warning for all
+  // it let go.
+  int releaseLapsed(const std::optional<AiBudgetSubject>& subject, long long atMs, const std::string& door,
+                    const std::function<bool()>& anotherBatch);
 
   AiBudgetRepository& repository_;
   std::function<AiBudgetLimits()> limits_;

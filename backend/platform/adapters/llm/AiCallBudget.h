@@ -15,7 +15,7 @@ std::optional<long long> anthropicReservationNanos(const Json::Value& request);
 std::optional<AiOutputBudget> anthropicOutputBudget(const Json::Value& request, int minOutputTokens);
 std::optional<long long> anthropicActualNanos(const std::string& model, const Json::Value& usage);
 
-enum class AiCallEnd { settled, unconsumed, uncertain };
+enum class AiCallEnd { settled, unconsumed, uncertain, cancelled };
 
 // Who may fund a round: any allowance its caller holds, or only a Windmill One grant, for a round that must never draw
 // on the free pools.
@@ -42,7 +42,9 @@ public:
   AiCallAdmission begin(const AiSpend& spend, std::optional<long long> ceilingNanos, AiCallFunding funding);
   // `settled` books the vendor's reported usage; `unconsumed` books zero — the vendor consumed
   // nothing: it answered an error before any work began, or never received the request; `uncertain`
-  // keeps the hold — the send is ambiguous — until it lapses. A round whose hold already lapsed books nothing.
+  // keeps the hold — the send is ambiguous — until it lapses; `cancelled`, a round this server stopped on purpose,
+  // books at once what its usage counts — or, with no message begun, the round's input estimate — never more than
+  // its hold. A round whose hold already lapsed books nothing.
   void finish(const AiBudgetReservation& reservation, const std::string& model,
               const Json::Value& usage, AiCallEnd end);
   // The same for a round its adapter priced: `actualNanos` is what the vendor billed, and none keeps a settled

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 
 namespace wm {
@@ -15,10 +16,11 @@ struct FailureReporter {
     report(product, operation, "door=" + door + " outcome=" + outcome + " request_id=" +
            requestId + " exception_type=" + exceptionType);
   }
-  // An expected event someone should see as it happens, never a failure: filed at WARNING, so it takes no write's Issue.
+  // An expected event someone should see as it happens, never a failure: a level-warning event, which never stands in
+  // for the one failure a write's request reports. `tags` are bounded labels.
   virtual void reportWarning(const std::string& /*operation*/, const std::string& /*product*/,
                              const std::string& /*door*/, const std::string& /*outcome*/,
-                             const std::string& /*requestId*/) {}
+                             const std::string& /*requestId*/, const std::map<std::string, std::string>& /*tags*/) {}
 };
 
 }

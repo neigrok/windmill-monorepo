@@ -1,6 +1,11 @@
 #include "products/gym/adapters/llm/AnthropicAsk.h"
 #include "platform/adapters/llm/AiCallBudget.h"
+#include "platform/application/Entitlements.h"
+#include "platform/domain/AiUsage.h"
 
+#include "test/platform/FakeAiBudgetRepository.h"
+#include "test/platform/Fakes.h"
+#include "test/platform/adapters/llm/LoopbackStream.h"
 #include "test/testing.h"
 
 #include <functional>
@@ -598,4 +603,44 @@ TEST(coach_fuse_recovery_reports_later_transport_and_malformed_failures) {
     CHECK_EQ(type, std::string(typeid(std::runtime_error).name()));
     CHECK(type.find("PRIVATE_") == std::string::npos);
   }
+}
+
+// Stop is this server's own decision, not an ambiguous send: the round settles at once at the input the vendor reported
+// and the output that streamed — a token per three bytes of the text, rounded up, and three for its one block — so
+// the slot is free for the next question and nothing waits ten minutes to lapse.
+TEST(ask_stop_settles_the_round_at_once_at_the_input_and_the_output_that_streamed) {
+  test::LoopbackStream vendor{3'000, std::string(50, 'w'), 400, std::chrono::milliseconds(10)};
+  fake::FakeAiBudgetRepository repository;
+  auto budgets = std::make_shared<AiBudgetService>(repository, [] { return AiBudgetLimits{}; },
+                                                  [] { return 1'792'000'000'000LL; });
+  fake::FakeAuthRepository accounts;
+  const auto lifter = accounts.createUser(Email{"lifter@example.com"}, "Lifter");
+  fake::FakeSubscriptionRepository subscriptions;
+  fake::FakeAiUsageRepository ledger;
+  Entitlements entitlements{subscriptions, ledger, {}, {}, budgets};
+  struct Failures : FailureReporter {
+    int reports = 0;
+    void report(const std::string&, const std::string&, const std::string&) override { ++reports; }
+  };
+  const auto failures = std::make_shared<Failures>();
+  AnthropicAsk ask{"PRIVATE_API_KEY", failures, nullptr, nullptr, vendor.baseUrl(),
+                   std::make_shared<AiCallBudget>(budgets, entitlements, accounts, *failures)};
+  FakeToolHost host;
+  std::string streamed;
+  AskControl control;
+  control.text = [&](const std::string& text) { streamed = text; };
+  control.continueRun = [&] { return streamed.size() < 300; };
+  const ToolCaller caller{lifter.id, ToolScope({{"gym", Access::read}})};
+  const auto answer = ask.answer(question("Plan my week."), caller, host, control);
+  CHECK_FALSE(answer.ok);
+  REQUIRE(streamed.size() >= 300);
+  REQUIRE_EQ(repository.reservations.size(), 1u);
+  const auto& round = repository.reservations.begin()->second;
+  CHECK_EQ(round.state, AiBudgetState::Settled);
+  const long long output = static_cast<long long>((streamed.size() + 2) / 3 + 3);
+  const auto used = costNanos("claude-opus-5", TokenUse{3'000, output, 0, 0});
+  REQUIRE(used);
+  CHECK(*used < round.amountNanos);
+  CHECK_EQ(round.actualNanos, used);
+  CHECK(vendor.sent() < 400);
 }

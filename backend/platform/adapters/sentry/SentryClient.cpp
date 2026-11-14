@@ -121,17 +121,17 @@ void SentryClient::drain() {
   pendingChanged_.wait_for(lock, std::chrono::seconds(11), [this] { return pending_ == 0; });
 }
 
-bool SentryClient::allow() {
+bool SentryClient::allow(RateWindow& window) {
   static constexpr int kMaxPerMinute = 60;
   const std::int64_t now =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
   std::lock_guard<std::mutex> lock(rateMutex_);
-  if (now - windowStartMs_ > 60000) {
-    windowStartMs_ = now;
-    windowCount_ = 0;
+  if (now - window.startMs > 60000) {
+    window.startMs = now;
+    window.count = 0;
   }
-  if (windowCount_ >= kMaxPerMinute) return false;
-  ++windowCount_;
+  if (window.count >= kMaxPerMinute) return false;
+  ++window.count;
   return true;
 }
 
@@ -156,7 +156,7 @@ void SentryClient::report(const std::string& kind, const std::string& where,
     if (claimWriteIssue()) reportWrite(where, kind, "handled", "failed", requestId, typeid(std::runtime_error).name());
     return;
   }
-  if (stopping_ || !enabled_ || !allow()) return;
+  if (stopping_ || !enabled_ || !allow(failures_)) return;
   const std::string id = hex32();
   Json::Value event = newEvent(id, kind);
   event["transaction"] = where;
@@ -186,7 +186,7 @@ Json::Value SentryClient::writeEvent(const std::string& operation, const std::st
 void SentryClient::reportWrite(const std::string& operation, const std::string& product,
                                const std::string& door, const std::string& outcome,
                                const std::string& requestId, const std::string& exceptionType) {
-  if (stopping_ || !enabled_ || !allow()) return;
+  if (stopping_ || !enabled_ || !allow(failures_)) return;
   const std::string id = hex32();
   Json::Value event = newEvent(id, product);
   const Json::Value write = writeEvent(operation, product, door, outcome, requestId, exceptionType);
@@ -195,8 +195,9 @@ void SentryClient::reportWrite(const std::string& operation, const std::string& 
 }
 
 void SentryClient::reportWarning(const std::string& operation, const std::string& product, const std::string& door,
-                                 const std::string& outcome, const std::string& requestId) {
-  if (stopping_ || !enabled_ || !allow()) return;
+                                 const std::string& outcome, const std::string& requestId,
+                                 const std::map<std::string, std::string>& tags) {
+  if (stopping_ || !enabled_ || !allow(warnings_)) return;
   const std::string id = hex32();
   Json::Value event = newEvent(id, product);
   event["level"] = "warning";
@@ -207,6 +208,7 @@ void SentryClient::reportWarning(const std::string& operation, const std::string
   event["tags"]["door"] = door;
   event["tags"]["outcome"] = outcome;
   event["tags"]["request_id"] = requestId;
+  for (const auto& [name, value] : tags) event["tags"][name] = value;
   event["fingerprint"].append(operation);
   event["fingerprint"].append(outcome);
   ship(id, event);
@@ -214,7 +216,7 @@ void SentryClient::reportWarning(const std::string& operation, const std::string
 
 void SentryClient::captureException(const std::string& kind, const std::string& method,
                                     const std::string& path, const std::string&) {
-  if (stopping_ || !enabled_ || !allow()) return;
+  if (stopping_ || !enabled_ || !allow(failures_)) return;
 
   const std::string id = hex32();
   Json::Value event = newEvent(id, kind);

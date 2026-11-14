@@ -41,9 +41,10 @@ std::string currentWriteRequestId();
 // it is told at the same door.
 std::string currentWriteDoor();
 bool claimWriteIssue();
-// Files an expected event to the installed reporter at WARNING, under the request id the caller gives it.
+// Files an expected event to the installed reporter as a level-warning event, under the caller's request id.
 void reportWriteWarning(const std::string& operation, const std::string& product, const std::string& door,
-                        const std::string& outcome, const std::string& requestId);
+                        const std::string& outcome, const std::string& requestId,
+                        const std::map<std::string, std::string>& tags);
 void reportCurrentWriteFailure(const std::exception& error);
 void reportCurrentUnknownWriteFailure();
 void finishCurrentWriteRefusal(const std::string& code);

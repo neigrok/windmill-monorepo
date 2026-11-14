@@ -139,8 +139,11 @@ struct BudgetFailures : FailureReporter {
     reports.push_back(kind + " " + where + " " + detail);
   }
   void reportWarning(const std::string& operation, const std::string& product, const std::string& door,
-                     const std::string& outcome, const std::string& requestId) override {
-    warnings.push_back(operation + " " + product + " " + door + " " + outcome + " " + requestId);
+                     const std::string& outcome, const std::string& requestId,
+                     const std::map<std::string, std::string>& tags) override {
+    std::string warning = operation + " " + product + " " + door + " " + outcome + " " + requestId;
+    for (const auto& [name, value] : tags) warning += " " + name + "=" + value;
+    warnings.push_back(warning);
   }
 };
 
@@ -156,7 +159,7 @@ struct BudgetObservations {
     trantor::Logger::setOutputFunction(
         [this](const char* message, std::uint64_t length) {
           const std::string line(message, length);
-          const std::size_t start = line.find("ai_hold_released");
+          const std::size_t start = line.find("ai_hold_");
           if (start != std::string::npos) releaseLines.push_back(line.substr(start, line.rfind(" - ") - start));
         },
         [] {});
@@ -326,19 +329,17 @@ TEST(ai_budget_service_admission_and_reads_release_their_principals_lapsed_holds
   std::vector<std::string> outcomes;
   for (const auto& line : observations.lines) outcomes.push_back(line.operation + " " + line.door + " " + line.outcome);
   CHECK_EQ(outcomes, (std::vector<std::string>{"ai.budget.release_lapsed ai ok", "ai.budget.reserve ai ok"}));
-  REQUIRE_EQ(observations.releaseLines.size(), std::size_t{2});
-  REQUIRE_EQ(observations.failures->warnings.size(), std::size_t{2});
-  for (std::size_t index = 0; index < 2; ++index) {
-    const std::string was = index == 0 ? "dispatched" : "reserved";
-    const std::string line = observations.releaseLines[index];
-    const std::string requestId = line.substr(line.rfind('=') + 1);
-    CHECK_EQ(requestId.size(), std::size_t{32});
-    CHECK(requestId != observations.lines[0].requestId);
-    CHECK_EQ(line, "ai_hold_released operation=ai.budget.release_lapsed door=ai outcome=" + was +
-             " age=under_1h request_id=" + requestId);
-    CHECK_EQ(observations.failures->warnings[index], "ai.budget.release_lapsed platform ai " + was + " " + requestId);
-  }
-  CHECK(observations.releaseLines[0] != observations.releaseLines[1]);
+  REQUIRE_EQ(observations.releaseLines.size(), std::size_t{3});
+  const std::string released = observations.releaseLines[2].substr(observations.releaseLines[2].rfind('=') + 1);
+  CHECK_EQ(released.size(), std::size_t{32});
+  CHECK(released != observations.lines[0].requestId);
+  CHECK_EQ(observations.releaseLines, (std::vector<std::string>{
+      "ai_hold_released operation=ai.budget.release_lapsed door=ai outcome=dispatched age=under_1h request_id=" + released,
+      "ai_hold_released operation=ai.budget.release_lapsed door=ai outcome=reserved age=under_1h request_id=" + released,
+      "ai_hold_lapses operation=ai.budget.release_lapsed door=ai released=2 dispatched=1 dispatched_nanos=10 "
+      "reserved=1 reserved_nanos=10 uncertain=0 uncertain_nanos=0 request_id=" + released}));
+  CHECK_EQ(observations.failures->warnings, (std::vector<std::string>{
+      "ai.budget.release_lapsed platform ai released " + released + " dispatched=1 reserved=1 uncertain=0"}));
   CHECK_EQ(service.settle("lost", 8).code, AiBudgetCode::InvalidState);
   CHECK_EQ(repository.rows.at("lost").state, AiBudgetState::Released);
 
@@ -350,8 +351,12 @@ TEST(ai_budget_service_admission_and_reads_release_their_principals_lapsed_holds
   outcomes.clear();
   for (const auto& line : observations.lines) outcomes.push_back(line.operation + " " + line.door + " " + line.outcome);
   CHECK_EQ(outcomes, (std::vector<std::string>{"ai.budget.release_lapsed ai ok", "ai.budget.view ai ok"}));
-  REQUIRE_EQ(observations.releaseLines.size(), std::size_t{3});
-  CHECK(observations.releaseLines[2].find("door=ai outcome=dispatched age=under_1h ") != std::string::npos);
+  REQUIRE_EQ(observations.releaseLines.size(), std::size_t{5});
+  CHECK(observations.releaseLines[3].find("ai_hold_released operation=ai.budget.release_lapsed door=ai outcome=dispatched "
+                                         "age=under_1h ") == 0);
+  CHECK(observations.releaseLines[4].find("ai_hold_lapses operation=ai.budget.release_lapsed door=ai released=1 "
+                                         "dispatched=1 dispatched_nanos=10 reserved=0 ") == 0);
+  CHECK_EQ(observations.failures->warnings.size(), std::size_t{2});
 
   observations.lines.clear();
   now = admitted + 2 * kAiBudgetHoldLifetimeMs + 86'400'000;
@@ -360,13 +365,43 @@ TEST(ai_budget_service_admission_and_reads_release_their_principals_lapsed_holds
   CHECK_EQ(std::get<2>(repository.lapseSweeps.back()), std::optional<AiBudgetSubject>{});
   REQUIRE_EQ(observations.lines.size(), std::size_t{1});
   CHECK_EQ(observations.lines[0].operation + " " + observations.lines[0].door, "ai.budget.release_lapsed background");
-  REQUIRE_EQ(observations.releaseLines.size(), std::size_t{6});
-  CHECK(observations.releaseLines[5].find("door=background outcome=uncertain age=over_1d ") != std::string::npos);
-  CHECK_EQ(observations.failures->warnings.size(), std::size_t{6});
+  REQUIRE_EQ(observations.releaseLines.size(), std::size_t{9});
+  CHECK(observations.releaseLines[7].find("door=background outcome=uncertain age=over_1d ") != std::string::npos);
+  const std::string swept = observations.releaseLines[8].substr(observations.releaseLines[8].rfind('=') + 1);
+  CHECK_EQ(observations.releaseLines[8], "ai_hold_lapses operation=ai.budget.release_lapsed door=background released=3 "
+           "dispatched=0 dispatched_nanos=0 reserved=2 reserved_nanos=20 uncertain=1 uncertain_nanos=10 request_id=" + swept);
+  REQUIRE_EQ(observations.failures->warnings.size(), std::size_t{3});
+  CHECK_EQ(observations.failures->warnings[2],
+           "ai.budget.release_lapsed platform background released " + swept + " dispatched=0 reserved=2 uncertain=1");
   CHECK(observations.failures->reports.empty());
   observations.lines.clear();
   CHECK_EQ(service.releaseLapsed(), 0);
   CHECK(observations.lines.empty());
+}
+
+TEST(ai_budget_service_sweep_pass_releases_at_most_two_hundred_holds_and_no_batch_once_stopping) {
+  BudgetObservations observations;
+  BudgetRepository repository;
+  const long long admitted = 1'767'225'600'000;
+  long long now = admitted;
+  AiBudgetService service{repository, [] { return AiBudgetLimits{}; }, [&] { return now; }};
+  for (int index = 0; index < 250; ++index) {
+    const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, "account-" + std::to_string(index)},
+                                      AiBudgetTier::LoggedIn};
+    REQUIRE_EQ(service.reserve("hold-" + std::to_string(index), principal, 10).code, AiBudgetCode::Ok);
+  }
+  now = admitted + kAiBudgetHoldLifetimeMs;
+  CHECK_EQ(service.releaseLapsed([] { return true; }), 0);
+  int asked = 0;
+  CHECK_EQ(service.releaseLapsed([&] { return ++asked > 1; }), 20);
+  CHECK_EQ(service.releaseLapsed(), 200);
+  CHECK_EQ(service.releaseLapsed(), 30);
+  CHECK_EQ(service.releaseLapsed(), 0);
+  for (const auto& [id, hold] : repository.rows) CHECK_EQ(hold.state, AiBudgetState::Released);
+  REQUIRE_EQ(observations.failures->warnings.size(), std::size_t{3});
+  CHECK(observations.failures->warnings[1].find(" released ") != std::string::npos);
+  CHECK(observations.failures->warnings[1].find(" reserved=200 ") != std::string::npos);
+  CHECK(observations.failures->reports.empty());
 }
 
 TEST(ai_budget_service_observes_owner_grant_side_effects_but_skips_successful_read_logs) {

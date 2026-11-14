@@ -539,3 +539,45 @@ TEST(ai_call_budget_round_whose_hold_lapsed_while_out_books_nothing_and_files_no
     CHECK_FALSE(row.actualNanos);
   }
 }
+
+TEST(ai_call_budget_a_cancelled_round_settles_at_once_at_its_input_estimate_or_its_usage_never_above_its_hold) {
+  FakeAiBudgetRepository repository;
+  auto service = std::make_shared<AiBudgetService>(repository, [] { return AiBudgetLimits{}; },
+                                                   [] { return 1'792'000'000'000LL; });
+  FakeAuthRepository accounts;
+  const auto user = accounts.createUser(Email{"stopper@example.com"}, "Stopper");
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository ledger;
+  Entitlements entitlements{subscriptions, ledger, {}, {}, service};
+  Failures failures;
+  auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
+  AiSpend spend;
+  spend.user = user.id;
+  spend.model = "claude-opus-5";
+  const auto request = parse(R"({"model":"claude-opus-5","max_tokens":2000,"messages":[{"role":"user","content":"Hi"}]})");
+  std::optional<ModelRound> next;
+  auto call = metered([&](const Json::Value&) { return *next; }, spend, {}, {}, {}, {}, budget, {}, 1'024);
+  std::vector<std::string> accounted;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.operation == "ai.call.account") accounted.push_back(line.outcome);
+  });
+  next = ModelRound{std::nullopt, false, true};
+  CHECK_FALSE(call(request));
+  REQUIRE_EQ(repository.reservations.size(), 1u);
+  const auto beforeTheMessage = repository.reservations.begin()->second;
+  REQUIRE(beforeTheMessage.outputBudget);
+  CHECK_EQ(beforeTheMessage.state, AiBudgetState::Settled);
+  CHECK_EQ(beforeTheMessage.actualNanos, std::optional<long long>{beforeTheMessage.outputBudget->inputNanos});
+  next = ModelRound{parse(R"({"stop_reason":"cancelled","content":[],"usage":{"input_tokens":3000,
+      "output_tokens":100000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}})"), false, true};
+  REQUIRE(call(request));
+  installWriteSink({});
+  REQUIRE_EQ(repository.reservations.size(), 2u);
+  for (const auto& [id, round] : repository.reservations) {
+    CHECK_EQ(round.state, AiBudgetState::Settled);
+    if (id == beforeTheMessage.id) continue;
+    CHECK_EQ(round.actualNanos, std::optional<long long>{round.amountNanos});
+  }
+  CHECK_EQ(accounted, (std::vector<std::string>{"cancelled", "cancelled"}));
+  CHECK(failures.reports.empty());
+}

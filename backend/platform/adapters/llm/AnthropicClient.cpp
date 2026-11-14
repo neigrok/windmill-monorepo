@@ -257,7 +257,8 @@ ModelCall metered(ModelRoundCall inner, AiSpend frame, std::shared_ptr<AiFuse> f
       const std::string reason = reply && (*reply)["stop_reason"].isString()
           ? (*reply)["stop_reason"].asString() : std::string();
       const bool complete = reason == "end_turn" || reason == "tool_use" || reason == "max_tokens" || reason == "refusal";
-      const AiCallEnd end = complete ? AiCallEnd::settled : round.unconsumed ? AiCallEnd::unconsumed : AiCallEnd::uncertain;
+      const AiCallEnd end = complete ? AiCallEnd::settled : round.unconsumed ? AiCallEnd::unconsumed
+                          : round.cancelled ? AiCallEnd::cancelled : AiCallEnd::uncertain;
       budget->finish(*reservation, spend.model, reply ? (*reply)["usage"] : Json::Value(), end);
     }
     if (!reply) {

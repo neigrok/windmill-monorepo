@@ -3,6 +3,7 @@
 #include "platform/application/AiBudgetService.h"
 #include "platform/application/Heartbeat.h"
 
+#include <atomic>
 #include <memory>
 #include <utility>
 
@@ -14,14 +15,23 @@ class AiBudgetHoldSweep {
 public:
   explicit AiBudgetHoldSweep(std::shared_ptr<AiBudgetService> budgets) : budgets_(std::move(budgets)) {}
 
-  void start() { heartbeat_.start(kFirstTickSeconds, kPeriodSeconds, [this] { budgets_->releaseLapsed(); }); }
-  void stop() { heartbeat_.stop(); }
+  void start() {
+    heartbeat_.start(kFirstTickSeconds, kPeriodSeconds, [this] {
+      budgets_->releaseLapsed([this] { return stopping_.load(); });
+    });
+  }
+  // A pass under way finishes the batch it is in and starts no other.
+  void stop() {
+    stopping_ = true;
+    heartbeat_.stop();
+  }
 
 private:
   static constexpr double kFirstTickSeconds = 30;
   static constexpr double kPeriodSeconds = 60;
 
   std::shared_ptr<AiBudgetService> budgets_;
+  std::atomic<bool> stopping_{false};
   // Last, so it destructs first — the rule Heartbeat asks of its callers.
   Heartbeat heartbeat_{"ai-budget-holds"};
 };
