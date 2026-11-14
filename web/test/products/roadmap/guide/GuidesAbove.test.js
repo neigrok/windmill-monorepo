@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { guidesAbove, namedAbove, readFailureReason } from '../../../../src/products/roadmap/guide/GuidesAbove.js';
+import { guidesAbove, readFailureReason } from '../../../../src/products/roadmap/guide/GuidesAbove.js';
 
 test('the guides above are the reply’s in its order, farthest first, without the tree’s own', () => {
   const reply = { guides: [
@@ -82,14 +82,4 @@ test('a failed read says in one word which kind it was', () => {
   assert.equal(readFailureReason({ status: 500, code: 'guides-unavailable' }), 'server');
   assert.equal(readFailureReason({ status: 502 }), 'server');
   assert.equal(readFailureReason({ status: 0, code: 'unreachable' }), 'network');
-});
-
-test('the line names the two farthest trees and counts the rest', () => {
-  const above = (...titles) => titles.map((title) => ({ treeId: `t_${title}`, title, text: 'A guide.' }));
-
-  assert.deepEqual(namedAbove(above('My life')), { first: 'My life', second: null, more: 0 });
-  assert.deepEqual(namedAbove(above('My life', 'My year')), { first: 'My life', second: 'My year', more: 0 });
-  assert.deepEqual(namedAbove(above('My life', 'My year', 'Learn to sail')), { first: 'My life', second: 'My year', more: 1 });
-  assert.deepEqual(namedAbove(above('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H')), { first: 'A', second: 'B', more: 6 });
-  assert.deepEqual(namedAbove([]), { first: null, second: null, more: 0 });
 });

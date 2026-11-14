@@ -20,9 +20,6 @@ export function GraphChrome({
   onFork,
   deviceLine = null,
   guide = null,
-  guideTop = 0,
-  guideRight = 0,
-  onGuideBox,
   ctaEcho = false,
   onFocus,
   onShowAll,
@@ -43,7 +40,6 @@ export function GraphChrome({
   const cameraRef = useRef(null);
   const nudgeRef = useRef(null);
   const barRef = useRef(null);
-  const guideRef = useRef(null);
 
   const appear = 'wm-fade-in-up var(--duration-fast) var(--ease-soft)';
   const canvasView = view === 'tree';
@@ -91,21 +87,6 @@ export function GraphChrome({
       window.removeEventListener('resize', measure);
     };
   }, [onTopBottom, nudge, canvasView, rowBottom, phoneCameraTop]);
-
-  // The guide's card publishes the box it holds on the canvas, so the camera frames the tree beside it.
-  const guideOnCanvas = canvasView && !phone && Boolean(guide);
-  useLayoutEffect(() => {
-    if (!guideOnCanvas || !onGuideBox) return undefined;
-    const seat = guideRef.current;
-    const publish = () => onGuideBox({ left: seat.offsetLeft, top: seat.offsetTop, width: seat.offsetWidth, height: seat.offsetHeight });
-    publish();
-    const observer = new ResizeObserver(publish);
-    observer.observe(seat);
-    return () => {
-      observer.disconnect();
-      onGuideBox(null);
-    };
-  }, [guideOnCanvas, onGuideBox, guideTop, guideRight]);
 
   return (
     <div
@@ -175,10 +156,6 @@ export function GraphChrome({
           {deviceLine && <DeviceLine {...deviceLine} />}
           {guide}
         </div>
-      )}
-
-      {guideOnCanvas && (
-        <div ref={guideRef} className="st-graph-guide" style={{ top: guideTop, maxWidth: `calc(100% - ${28 + guideRight}px)` }}>{guide}</div>
       )}
 
       {/* The phone camera clears the row and its device notice. */}

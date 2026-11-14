@@ -31,9 +31,3 @@ export function readFailureReason(error) {
   if (error?.status === 503 && error.code === 'guides-unavailable') return 'unavailable';
   return 'server';
 }
-
-// What the entry's line names: the two farthest trees, and how many more stand between them and this one.
-export function namedAbove(above) {
-  const [first = null, second = null] = above.map((guide) => guide.title);
-  return { first, second, more: Math.max(0, above.length - 2) };
-}

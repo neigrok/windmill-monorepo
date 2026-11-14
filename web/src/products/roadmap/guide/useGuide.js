@@ -80,7 +80,7 @@ export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef
   // null until one is asked, then { treeId, holder, above }, where `above` is null until the read answers, and once it
   // has, `shaped` says the answer was the contract's. A tree that lives only on this device has none to ask for.
   // Leaving the tree, or the holder going, aborts the read and drops what it brought, so a return reads again. A read
-  // that failed leaves the tree's own guide standing and says nothing; it reports once, as does an answer that is not
+  // that failed leaves parent status unread and the tree's own guide standing; it reports once, as does an answer that is not
   // the contract's shape, whose well-formed guides still show.
   useEffect(() => {
     if (!holder || new LocalTreeRegistry().get(treeId)?.claimed === false) return undefined;
