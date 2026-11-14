@@ -1073,6 +1073,16 @@ TEST(node_patch_plan_hands_back_the_kind_refusal_of_the_row_that_named_the_kind)
                                                        "\"sky\" — send one of the two, or both when they agree"}));
 }
 
+// packages/api-contract/roadmap-socket.json: the most a message on the tree socket carries is the size the shared
+// contract names, which the web client's largest frame is held under by its own test.
+TEST(the_socket_takes_a_message_of_the_size_the_shared_contract_names) {
+  std::ifstream stream(WM_ROADMAP_SOCKET, std::ios::binary);
+  Json::Value contract;
+  stream >> contract;
+  CHECK_EQ(kMaxSocketMessageBytes, static_cast<std::size_t>(contract["maxInboundBytes"].asUInt64()));
+  CHECK(contract["maxFrameBytes"].asUInt64() < contract["maxInboundBytes"].asUInt64());
+}
+
 TEST(edge_change_plan_validates_net_capacity_and_all_endpoints_before_apply) {
   LooseGraph graph = seeded();
   Legend legend;

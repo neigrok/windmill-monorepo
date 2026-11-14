@@ -334,11 +334,13 @@ add_executable(windmill_domain_tests
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_probe windmill_product_sync)
 # The corpus and the product registries are read from the contract at run time, so the tests see every file the
 # contract holds; the gym turn exchanges (gym/turns), the gym domain vectors (gym/domain) and the roadmap's web
-# addresses (roadmap-addresses.json) and the link urls a person is shown (roadmap-link-urls.json) the same way.
+# addresses (roadmap-addresses.json), the link urls a person is shown (roadmap-link-urls.json) and the tree socket's
+# message sizes (roadmap-socket.json) the same way.
 target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
   WM_GYM_TURNS_DIR="${WM_API_CONTRACT_DIR}/gym/turns" WM_GYM_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/gym/domain"
   WM_ROADMAP_ADDRESSES="${WM_API_CONTRACT_DIR}/roadmap-addresses.json"
-  WM_ROADMAP_LINK_URLS="${WM_API_CONTRACT_DIR}/roadmap-link-urls.json")
+  WM_ROADMAP_LINK_URLS="${WM_API_CONTRACT_DIR}/roadmap-link-urls.json"
+  WM_ROADMAP_SOCKET="${WM_API_CONTRACT_DIR}/roadmap-socket.json")
 
 enable_testing()
 add_test(NAME domain COMMAND windmill_domain_tests)

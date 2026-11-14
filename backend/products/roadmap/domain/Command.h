@@ -32,6 +32,13 @@ constexpr std::size_t kMaxGuideChars = 5000;             // a roadmap's guide: w
 constexpr std::size_t kMaxKinds = 6;                     // legend kinds per tree (one per hue)
 constexpr std::size_t kMaxKindLabelLength = 24;          // a legend kind's label
 constexpr std::size_t kMaxKindDescriptionLength = 80;    // a kind's sorting brief
+// The most bytes one message on the tree socket carries. packages/api-contract/roadmap-socket.json names it, the
+// server sets the framework's inbound limit to it (platform/infra/main.cpp), and the web client packs its frames
+// under it. A node entry always fits a message of its own: every capped text at six bytes a character, the most JSON
+// spends on one, with room for its keys and stamps.
+constexpr std::size_t kMaxSocketMessageBytes = 1024 * 1024;
+static_assert(6 * (2 * kMaxIdLength + kMaxNodeLabelLength + kMaxIconLength + kMaxNodeDescriptionLength +
+                   kMaxNodeLinks * (kMaxLinkLabelLength + kMaxLinkUrlLength)) + 4096 < kMaxSocketMessageBytes);
 
 // The one reading of "characters" every cap is held to: UTF-8 code points, so a CJK character or
 // an emoji counts once. byteOffsetOfCodePoint is where code point `index` (zero-based) starts, or

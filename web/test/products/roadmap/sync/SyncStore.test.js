@@ -474,7 +474,8 @@ test('a record stored while nodes held a position opens without one and its unse
   session.receiveProgressGraft({ marks: [] });
   await settle([store]);
   const [flush] = session.ws.frames.filter((frame) => frame.t === 'subgraph');
-  assert.deepEqual({ nodes: flush.nodes, edges: flush.edges, kinds: flush.kinds }, owed);
+  assert.deepEqual({ nodes: flush.nodes, edges: flush.edges, kinds: flush.kinds }, { ...owed, nodes: [owed.nodes[1], owed.nodes[0]] },
+    'one frame, the earlier stamp first: the create, then the rename');
   session.receive({ t: 'subgraphAck', treeId: 'tree', frameId: flush.frameId });
   await settle([store]);
 

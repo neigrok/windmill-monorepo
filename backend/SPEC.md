@@ -736,6 +736,12 @@ Limits and rules:
 
 - Frame rate: 50/sec sustained per connection, burst 100. A flooding connection's frames are
   dropped before parse.
+- Message size: an inbound message carries at most `kMaxSocketMessageBytes` (1 MiB,
+  `domain/Command.h`; `packages/api-contract/roadmap-socket.json` names it and the size the web
+  client packs its frames under). `main.cpp` sets it as the framework's limit, which is one limit
+  for every socket the server serves and drops the connection of a larger message before any handler
+  runs: nothing is answered and no write line is logged for it. A node entry at every field's cap
+  fits a message of its own.
 - Skew clamp: a frame stamped past `now + 5 min` is refused whole (a `skew` frame), title and guide
   registers included — a runaway stamp must not own a name or a guide for years. Both lanes apply it.
 - A progress frame carries at most 2000 marks; a mark missing node, status or stamp refuses the

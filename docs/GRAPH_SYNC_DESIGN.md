@@ -113,8 +113,8 @@ The browser joins the response, adopts its coverage and seq, then flushes each r
 is greater than its confirmed baseline's stamp, excluding the same register and stamp already in
 flight. Status counts the same unconfirmed registers. Actor frontiers cannot confirm individual
 registers: a rejected or unanswered frame can leave a gap below an accepted frame's frontier.
-Flushes split their steps above 256 KiB into independent subgraphs, then send the title and the guide each in a frame of
-its own, so a refused register strands no step and a server answering in order confirms the steps first.
+Flushes pack their steps into subgraphs of whole stamps, earliest first, of at most 256 KiB of JSON text each, as a live write is packed, and send the title and the guide each in a frame of
+its own in that same order, so a refused register strands no step.
 
 The confirmed structure baseline joins grafts, other replicas' live frames and the exact writes retained
 for an acknowledged frame. Own structure echoes join the lattice without confirming: the server broadcasts them
@@ -138,6 +138,37 @@ sent after the ping it is matched with. Three outstanding pings force reconnecti
 queue even while other traffic arrives. The client reports `roadmap-sync-dropped` once per session
 with only a bounded lane tag, and coalesces a resend starting at one second, doubling to eight seconds
 until the lane drains.
+No structure frame is larger than `MAX_FRAME_BYTES` of JSON text (`packages/api-contract/roadmap-socket.json`,
+under the server's inbound limit), but for a single entry that alone is. A frame holds whole stamps
+and never part of one, and a replica's frames go out in stamp order (`sync/frames.js`). A subscriber
+is answered with everything past the stamps it covers, so a stamp half-landed when a replica grafted
+would be one whose other half that replica is never sent. An act too large for one frame is therefore
+stamped once per frame where the write is made (`SyncSession.apply`, `stampedPerFrame`): the first
+part keeps the act's stamp and each next takes the clock's next tick of the same millisecond, so the
+parts are consecutive and the lattice and the saved record hold the stamps the frames go out under; a
+reload in the middle of a send resends the same frames. A kind's own registers go in the first part.
+Each frame takes its own seq, op row and feed line, and the act stays one unsent edit. A write keeps
+the stamp it was made under for good: a retry, a reload and a resend send it as it was. One stamp
+can still be too large for a frame — in a record a bundle before this rule saved, which stamped a
+whole act once — and that stamp alone is cut across frames under its one stamp, as that bundle sent
+it. What this leaves: a writer that goes away after some frames of an act have landed shows its peers
+the act half-applied until it returns — after the first frame of a re-hue the kind wears its new hue
+and the steps still to follow hold the old one — and a peer that re-hues the same kind in that window
+moves only the steps it can see wearing it, so the steps the first writer paints afterwards end
+outside the kind. And a write that lands after a later-stamped write of the same replica — a refused
+or held bank retried late — is not sent to a replica that grafted in between and was away.
+
+The server drops the connection of a message past its limit without a word, and so may a proxy in
+between. The judgement is of one frame, the lane's first, whatever is queued behind it: lost
+unanswered with five sockets running, and heavier than `UNSENDABLE_FROM_BYTES` (64 KiB, a size no
+healthy path refuses), it stands refused as unsendable and `roadmap-sync-unlandable` is reported
+once. Its stamps are held unsent until Retry, and with them every other part of the acts it
+carries, so no part of an act lands while another is held; every other write goes on, and Retry
+sends the held frames as they were stamped. A lighter frame is sent again with every socket, without
+limit, and a frame that is acknowledged is counted afresh. A connection that dies five times running
+for another reason while such a frame is unanswered is judged the same way: with the socket dying
+around a 142 KiB frame at a chance of 0.5 it was judged in 3 of 48 runs, at 0.9 in 26 of 48, and
+Retry landed it each time.
 Resends pause while refused, offline, rebaselining or closed. A late acknowledgement for a settled
 frame is ignored. Socket closure and epoch adoption clear pending ping boundaries and delivery timers.
 

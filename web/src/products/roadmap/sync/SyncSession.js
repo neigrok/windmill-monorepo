@@ -7,6 +7,7 @@ import { socketUrl } from '../../../shell/apiBase.js';
 import { HlcClock, NODE_REGISTERS, TREE_REGISTERS, TreeLattice, UNWRITTEN_NODE, VersionVector, hlcText, parseHlc } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
 import { materialize } from './materialize.js';
+import { MAX_FRAME_BYTES, UNSENDABLE_FROM_BYTES, bytesOf, frameRoom, framesOf, stampedPerFrame, stampsOf } from './frames.js';
 import { UNSENDABLE, isOwnershipRefusal, isSessionRefusal, strandsTheBank } from './refusals.js';
 import { SyncStore } from './SyncStore.js';
 import { frameWrites, outboxStamps, outboxWrites, pendingGestures, pendingRecordCount, retainedGestures, writeStamps } from './pendingWrites.js';
@@ -19,7 +20,9 @@ const DEFAULT_URL = socketUrl();
 const MAX_BACKOFF_MS = 8000;
 const FIRST_RESEND_MS = 1000;
 const MAX_TIMER_MS = 2 ** 31 - 1;
-const FLUSH_CHUNK_BYTES = 256 * 1024;
+// Sockets lost running with the lane's first frame unanswered before that frame is judged one this browser cannot
+// send.
+const UNANSWERED_CLOSES_LIMIT = 5;
 const HEARTBEAT_MS = 20000;
 // Dead-socket detection counts consecutive unanswered pings, not wall-clock silence: a
 // backgrounded tab's setInterval throttles to ~once/60s. STALE_MS is only for the wake/online path.
@@ -42,9 +45,8 @@ function writesNothing(writes) {
 
 export class SyncSession {
   constructor({ url = DEFAULT_URL, treeId, title = '', guide = '', registry = new LocalTreeRegistry(), store = new SyncStore(),
-    reportFailure = reportRoadmapFailure, chunkBytes = FLUSH_CHUNK_BYTES, timers = globalThis } = {}) {
+    reportFailure = reportRoadmapFailure, chunkBytes = MAX_FRAME_BYTES, timers = globalThis } = {}) {
     this.url = url;
-    this.chunkBytes = chunkBytes;
     this.timers = timers;
     this.resendTimers = { structure: null, progress: null };
     this.skewTimers = { structure: null, progress: null };
@@ -54,6 +56,7 @@ export class SyncSession {
     this.reportInvalidProgressMark = () => reportInvalidProgressMark(this.reportFailure);
     this.treeId = treeId;
     this.actor = replicaActor();
+    this.room = frameRoom(treeId, this.actor, chunkBytes);  // the bytes one frame leaves for its writes
     this.clock = new HlcClock(this.actor);
     this.lattice = new TreeLattice(treeId, title, guide);  // the doc's title and guide are stampless baselines; any stamped write dominates
     // This account's own marks: same clock and same blob as the structure, never the same frame.
@@ -112,6 +115,8 @@ export class SyncSession {
     this.online = typeof navigator === 'undefined' || navigator.onLine !== false;
     this.refusals = new Map();
     this.refusalEpisodes = new Map();
+    this.dropped = { stamp: null, closes: 0 };      // sockets lost running with the frame of this first stamp unanswered
+    this.unsendable = new Set();                    // stamps of a frame judged unsendable: held until Retry
     this.receiptVersion = 0;
     this.rebaselining = null;
     this.discardPending = false;
@@ -194,8 +199,12 @@ export class SyncSession {
     for (const handler of this.statusHandlers) handler(snapshot);
   }
 
+  // The person says to send what was refused again: what was held goes, as it was stamped, with the flush the reconnect
+  // brings.
   retry() {
     this.refusals.clear();
+    this.dropped = { stamp: null, closes: 0 };
+    this.unsendable.clear();
     this.emitStatus();
     this.forceReconnect();
   }
@@ -484,6 +493,7 @@ export class SyncSession {
       this.stopHeartbeat();
       this.phase = this.rebaselining && this.online ? 'syncing' : 'offline';
       this.clearDeliveryTimers();
+      this.noteDropped();
       this.inFlight.clear();
       this.progressInFlight.clear();
       this.emitStatus();
@@ -492,6 +502,36 @@ export class SyncSession {
     });
     socket.addEventListener('error', () => { try { socket.close(); } catch { /* close handler reconnects */ } });
     return this;
+  }
+
+  // A socket lost with structure frames unanswered. The judgement is of one frame, the lane's first, whatever is queued
+  // behind it: lost unanswered with UNANSWERED_CLOSES_LIMIT sockets running, and past the size any healthy path
+  // carries, it is a frame the path drops the connection for — a message past a size limit is refused that way, with
+  // no word. It stands refused as a write this browser cannot send and is reported once. Its stamps are held, and with
+  // them every other stamp of the acts it carries, so no part of an act lands while another is held: not sent again
+  // until Retry, while every other write goes on. A smaller frame is retried with each socket, without limit.
+  noteDropped() {
+    const head = this.inFlight.values().next().value;
+    if (!head) return;
+    const bytes = bytesOf(head);
+    const stamp = stampsOf(head)[0];
+    if (bytes <= UNSENDABLE_FROM_BYTES) {
+      this.dropped = { stamp: null, closes: 0 };
+      return;
+    }
+    this.dropped = { stamp, closes: this.dropped.stamp === stamp ? this.dropped.closes + 1 : 1 };
+    if (this.dropped.closes !== UNANSWERED_CLOSES_LIMIT) return;
+    const judged = new Set(stampsOf(head));
+    for (const references of Object.values(this.gestures.structure)) {
+      const ofAct = Object.values(references);
+      if (ofAct.some((written) => judged.has(written))) for (const written of ofAct) this.unsendable.add(written);
+    }
+    for (const written of judged) this.unsendable.add(written);
+    this.durabilityAtRisk = true;
+    const refusal = this.standRefusal('structure', UNSENDABLE);
+    for (const handler of this.refusalHandlers) handler(refusal);
+    const size = bytes < 128 * 1024 ? 'under-128k' : bytes < 256 * 1024 ? 'under-256k' : bytes < 1024 * 1024 ? 'under-1m' : 'over-1m';
+    this.reportOnce('roadmap-sync-unlandable', new Error('Roadmap frame dropped with its socket'), { lane: 'structure', size });
   }
 
   // A socket that stays unanswered, online and in view, is broken; being offline or hidden is not a failure.
@@ -688,6 +728,7 @@ export class SyncSession {
     this.confirm('structure');
     this.inFlight.delete(frame.frameId);
     this.sent.delete(frame.frameId);
+    if (stampsOf(writes)[0] === this.dropped.stamp) this.dropped = { stamp: null, closes: 0 };
     this.persistNow();
     this.noteConfirmed();
     this.noteDrained();
@@ -968,17 +1009,21 @@ export class SyncSession {
     return pendingRecordCount(this.unconfirmedWrites('progress'));
   }
 
-  // Unconfirmed registers not already carried by this connection: the steps first, then each tree register in a frame of
-  // its own, so a refused title or guide strands nothing else and a server answering in order confirms the steps first.
+  // The structure writes the server does not hold and this connection does not carry, less the stamps held as
+  // unsendable.
+  unsentStructure() {
+    const pending = outboxWrites(this.lattice.toFrame(), this.confirmedStructure.toFrame(), this.inFlight.values());
+    if (!this.unsendable.size) return pending;
+    return { nodes: [], edges: [], kinds: [], ...frameWrites(pending, (key, stamp) => !this.unsendable.has(stamp)) };
+  }
+
+  // Sends what the lane has unsent, as frames of whole stamps in stamp order (framesOf), each write under the stamp
+  // it was made with: a reload in the middle of a send resends the same frames.
   flush() {
     if (this.rebaselining?.has('structure') || this.discardPending) return;
-    const pending = outboxWrites(this.lattice.toFrame(), this.confirmedStructure.toFrame(), this.inFlight.values());
+    const pending = this.unsentStructure();
     if (writesNothing(pending)) return;
-    const steps = { nodes: pending.nodes, edges: pending.edges, kinds: pending.kinds };
-    if (!writesNothing(steps)) for (const chunk of chunkDelta(steps, this.chunkBytes)) this.send(chunk, 'flush');
-    for (const name of TREE_REGISTERS) {
-      if (pending[name]) this.send({ nodes: [], edges: [], kinds: [], [name]: pending[name] }, 'flush');
-    }
+    this.send(pending, 'flush');
   }
 
   dispatch(gesture) {
@@ -990,14 +1035,15 @@ export class SyncSession {
     const redo = this.redoStack;
     this.undoStack.push(inverse);
     this.redoStack = [];
+    let written;
     try {
-      this.apply(writes);
+      written = this.apply(writes);
     } catch (error) {
       this.undoStack.splice(this.undoStack.indexOf(inverse), 1);
       this.redoStack = redo;
       throw error;
     }
-    this.receipts.set(receipt, { inverse, written: writeStamps(writes) });
+    this.receipts.set(receipt, { inverse, written: writeStamps(written) });
     return receipt;
   }
 
@@ -1115,11 +1161,17 @@ export class SyncSession {
     return true;
   }
 
-  // A local write: joined, shown, saved unless the caller saves it (`save: false`), and sent while live.
+  // A local write: stamped for the frames that will carry it (stampedPerFrame), joined, shown, saved unless the caller
+  // saves it (`save: false`), and sent while live. Every local write comes through here, so the stamps the lattice and
+  // the saved record hold are the ones its frames go out under. Answers the write as it was stamped. One act stays one
+  // unsent edit however many stamps it was cut into: it is counted under its first.
   apply(writes, { save = true } = {}) {
+    writes = stampedPerFrame(writes, this.clock, this.room);
     const pointed = this.pointedIn(writes);
     this.lattice.join(writes);
-    this.gestures.structure = pendingGestures(writes, this.confirmedStructure.toFrame(), this.gestures.structure);
+    const act = stampsOf(writes)[0];
+    this.gestures.structure = pendingGestures({}, this.confirmedStructure.toFrame(),
+      act ? { ...this.gestures.structure, [act]: writeStamps(writes) } : this.gestures.structure);
     try {
       this.emitStatus();
     } catch (error) {
@@ -1131,7 +1183,7 @@ export class SyncSession {
       this.reportFailure('roadmap-sync-notify', error);
     }
     if (save) this.persistWrite();
-    if (this.phase !== 'live') return;
+    if (this.phase !== 'live') return writes;
     try {
       this.send(writes);
     } catch (error) {
@@ -1140,6 +1192,7 @@ export class SyncSession {
       this.forceReconnect();
     }
     this.releaseMarks(pointed);
+    return writes;
   }
 
   // A local write's save: a failure leaves the write standing and durability at risk.
@@ -1160,14 +1213,13 @@ export class SyncSession {
       // A pointer goes only to a server that takes this connection for a writer; until one does it stays owed here.
       if (!this.writesPointers) writes = frameWrites(writes, (key) => JSON.parse(key)[2] !== 'opensAt');
       if (writesNothing(writes)) return;
-      const frameId = crypto.randomUUID?.() ?? `f-${Date.now()}-${Math.random()}`;
-      this.sent.add(frameId);
-      const frame = {
-        t: 'subgraph', v: 1, treeId: this.treeId, frameId, actor: this.actor, intent,
-        nodes: writes.nodes ?? [], edges: writes.edges ?? [], kinds: writes.kinds ?? [],
-      };
-      for (const name of TREE_REGISTERS) if (writes[name]) frame[name] = writes[name];
-      this.sendFrame('structure', socket, frame, structuredClone(writes));
+      // A write goes as one frame, or as many as its stamps take: each frame whole stamps, earliest first (framesOf).
+      for (const part of framesOf(writes, this.room)) {
+        const frameId = crypto.randomUUID?.() ?? `f-${Date.now()}-${Math.random()}`;
+        this.sent.add(frameId);
+        this.sendFrame('structure', socket, { t: 'subgraph', v: 1, treeId: this.treeId, frameId, actor: this.actor, intent, ...part },
+          structuredClone(part));
+      }
     });
   }
 
@@ -1354,23 +1406,3 @@ export class SyncSession {
     this.refusalHandlers.clear();
   }
 }
-
-// Splits an oversized flush of steps by entry count; each chunk is an independently valid subgraph.
-function* chunkDelta(delta, chunkBytes) {
-  const size = JSON.stringify(delta).length;
-  if (size <= chunkBytes) { yield delta; return; }
-  const all = [
-    ...delta.nodes.map((n) => ['nodes', n]),
-    ...delta.edges.map((e) => ['edges', e]),
-    ...delta.kinds.map((k) => ['kinds', k]),
-  ];
-  if (!all.length) { yield delta; return; }
-  const parts = Math.ceil(size / chunkBytes);
-  const perChunk = Math.max(1, Math.ceil(all.length / parts));
-  for (let i = 0; i < all.length; i += perChunk) {
-    const chunk = { nodes: [], edges: [], kinds: [] };
-    for (const [section, entry] of all.slice(i, i + perChunk)) chunk[section].push(entry);
-    yield chunk;
-  }
-}
-

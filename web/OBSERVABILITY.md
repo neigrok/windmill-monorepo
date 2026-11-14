@@ -345,6 +345,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-restore` | A stored lane or record that cannot be read, once per session | That lane stays out until the server's graft fills it |
 | `roadmap-sync-socket` | A socket with no inbound frame for ten seconds while online and in view, once per session | The Shell's sync status; reconnects keep trying |
 | `roadmap-sync-dropped` | A write reply or heartbeat pong proves an earlier frame unanswered, once per session, tagged with the first affected `lane: structure/progress` | The write stays pending and is sent again |
+| `roadmap-sync-unlandable` | The socket closed five times running with the lane's first structure frame unanswered, and that frame is heavier than 64 KiB: one the path drops the connection for, as the server does a message past its size limit. A lighter frame is never judged. Once per session, tagged `lane: structure` and the frame's `size` bucket (`under-128k`, `under-256k`, `under-1m`, `over-1m`) | The refused card of a write this browser cannot send; that frame's writes, and the other parts of the acts it carries, stay unsent until Retry, and other writes go on |
 | `roadmap-sync-frame` | A server frame that cannot be parsed or joined, once per session | The frame is dropped; a lane frame resubscribes |
 | `roadmap-sync-discard` | An unexpected discard failure | The refusal stays |
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |

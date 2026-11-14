@@ -510,6 +510,14 @@ TEST(write_http_inventory_covers_every_registered_mutating_route) {
   }
 }
 
+// The framework drops the connection of a socket message past its inbound limit with no word to any handler and offers
+// no way to read the limit back, so the line that sets it is held here: main takes it from the constant the shared
+// contract file is held to (the_socket_takes_a_message_of_the_size_the_shared_contract_names).
+TEST(main_sets_the_socket_message_limit_from_the_roadmap_contracts_constant) {
+  const std::string main = sourceText(backendPath() / "platform/infra/main.cpp");
+  CHECK(std::regex_search(main, std::regex(R"(app\.setClientMaxWebSocketMessageSize\s*\(\s*kMaxSocketMessageBytes\s*\))")));
+}
+
 TEST(write_http_registered_retired_routes_equal_the_gym_retirement_ledger) {
   auto& app = drogon::app();
   gym::GymDeps gymDeps{};
