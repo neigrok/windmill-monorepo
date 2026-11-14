@@ -273,7 +273,7 @@ fn grants_are_idempotent_and_only_same_source_overlaps_conflict() {
         period: Period::new(150, 250).unwrap(),
     };
     assert_eq!(
-        request.decide(None, &[existing.clone()]),
+        request.decide(None, std::slice::from_ref(&existing)),
         Ok(GrantOutcome::Conflict)
     );
     assert_eq!(
@@ -378,11 +378,13 @@ fn live_slices_price_rounded_turns_and_move_only_incremental_cost() {
         .reserve(
             &call,
             &price(),
-            NanoUsd::ZERO,
-            call.reservation,
-            true,
-            false,
-            &[NanoUsd::new(1_000_000_000).unwrap()],
+            LiveCapacity {
+                applied: NanoUsd::ZERO,
+                held: call.reservation,
+                grant_active: true,
+                fuse_open: false,
+                budgets: &[NanoUsd::new(1_000_000_000).unwrap()],
+            },
         )
         .unwrap();
     assert_eq!(
@@ -424,11 +426,13 @@ fn live_slices_price_rounded_turns_and_move_only_incremental_cost() {
         .reserve(
             &call,
             &price(),
-            slice.cost,
-            slice.held,
-            false,
-            false,
-            &[NanoUsd::new(1_000_000_000).unwrap()]
+            LiveCapacity {
+                applied: slice.cost,
+                held: slice.held,
+                grant_active: false,
+                fuse_open: false,
+                budgets: &[NanoUsd::new(1_000_000_000).unwrap()]
+            }
         ),
         Err(StaticCode::FundingRequired)
     ));
@@ -436,4 +440,44 @@ fn live_slices_price_rounded_turns_and_move_only_incremental_cost() {
         validate_audio(48_002, 3, 1),
         Err(StaticCode::InvalidRequest)
     );
+}
+
+#[test]
+fn ten_thousand_reservations_are_maximal_and_never_exceed_any_budget() {
+    let mut seed = 0x6174_6f6d_6963_u64;
+    for _ in 0..10_000 {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let input = seed % 10_000;
+        let maximum = (seed.rotate_left(13) % 16_000 + 1) as u32;
+        let minimum = (seed.rotate_left(29) % u64::from(maximum) + 1) as u32;
+        let money = NanoUsd::new((seed.rotate_left(7) % 200_000_000) as i64).unwrap();
+        let request = TextBudget {
+            input_tokens: input,
+            max_tokens: maximum,
+            min_tokens: Some(minimum),
+            cache: seed & 1 == 0,
+        };
+        match price().reserve_text(request, 16_000, &[(money, StaticCode::SubjectExhausted)]) {
+            Ok((cap, reservation)) => {
+                assert!((minimum..=maximum).contains(&cap));
+                assert!(reservation <= money);
+                if cap < maximum {
+                    assert_eq!(
+                        price().reserve_text(
+                            TextBudget {
+                                min_tokens: Some(cap + 1),
+                                ..request
+                            },
+                            16_000,
+                            &[(money, StaticCode::SubjectExhausted)]
+                        ),
+                        Err(StaticCode::SubjectExhausted)
+                    );
+                }
+            }
+            Err(code) => assert_eq!(code, StaticCode::SubjectExhausted),
+        }
+    }
 }

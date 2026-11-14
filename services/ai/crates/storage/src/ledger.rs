@@ -65,10 +65,10 @@ impl Ledger {
 
     pub async fn acquire_lock(&self) -> Result<bool, StaticCode> {
         let mut writer = self.writer.lock().await;
-        if let Some(connection) = writer.as_mut() {
-            if connection.ping().await.is_ok() {
-                return Ok(true);
-            }
+        if let Some(connection) = writer.as_mut()
+            && connection.ping().await.is_ok()
+        {
+            return Ok(true);
         }
         *writer = None;
         let mut connection = self
@@ -486,11 +486,13 @@ impl Ledger {
         let slice = progress.reserve(
             &call,
             &price,
-            rows::money(&row, "applied")?,
-            rows::money(&row, "held")?,
-            grant_active,
-            fuse_open,
-            &budgets,
+            LiveCapacity {
+                applied: rows::money(&row, "applied")?,
+                held: rows::money(&row, "held")?,
+                grant_active,
+                fuse_open,
+                budgets: &budgets,
+            },
         )?;
         let reservation = slice.reservation;
         let cost = slice.cost;
@@ -527,7 +529,7 @@ impl Ledger {
         let row = call_row(&mut tx, id).await?;
         let call = rows::call(&row)?;
         let delta = call.correction(cost)?;
-        let replay = delta == 0;
+        let replay = delta == 0 && call.original_charge.is_some();
         if !replay {
             move_money(
                 &mut tx,
@@ -565,8 +567,9 @@ impl Ledger {
         state: Option<CallState>,
         since: Option<i64>,
         caller: Option<&CallerId>,
+        before: Option<i64>,
     ) -> Result<Vec<Call>, StaticCode> {
-        let rows = sqlx::query("SELECT * FROM ai_calls WHERE ($1::text IS NULL OR state=$1) AND ($2::bigint IS NULL OR ended_at>=$2) AND ($3::text IS NULL OR caller_id=$3) ORDER BY id DESC LIMIT 1000").bind(state.map(CallState::as_str)).bind(since).bind(caller.map(CallerId::as_str)).fetch_all(&self.pool).await.map_err(|_| StaticCode::AccountingUnavailable)?;
+        let rows = sqlx::query("SELECT * FROM ai_calls WHERE ($1::text IS NULL OR state=$1) AND ($2::bigint IS NULL OR ended_at>=$2) AND ($3::text IS NULL OR caller_id=$3) AND ($4::bigint IS NULL OR id<$4) ORDER BY id DESC LIMIT 1001").bind(state.map(CallState::as_str)).bind(since).bind(caller.map(CallerId::as_str)).bind(before).fetch_all(&self.pool).await.map_err(|_| StaticCode::AccountingUnavailable)?;
         rows.iter().map(rows::call).collect()
     }
 
@@ -574,6 +577,7 @@ impl Ledger {
         &self,
         principal: &Principal,
         _now: i64,
+        before: Option<i64>,
     ) -> Result<PrincipalLedger, StaticCode> {
         let budget_rows = sqlx::query(
             "SELECT * FROM ai_budgets WHERE principal_kind=$1 AND principal_id=$2 ORDER BY id",
@@ -585,7 +589,7 @@ impl Ledger {
         .map_err(|_| StaticCode::AccountingUnavailable)?;
         let grant_rows = sqlx::query("SELECT g.*,b.limit_nanos,b.spent,b.held FROM ai_grants g JOIN ai_budgets b ON b.id=g.budget_id WHERE $1='account' AND account_id=$2 ORDER BY g.id").bind(principal.kind()).bind(principal.id()).fetch_all(&self.pool).await.map_err(|_| StaticCode::AccountingUnavailable)?;
         let installations = sqlx::query_scalar("SELECT installation_id FROM ai_bindings WHERE ($1='account' AND account_id=$2) OR ($1='installation' AND installation_id=$2) ORDER BY installation_id").bind(principal.kind()).bind(principal.id()).fetch_all(&self.pool).await.map_err(|_| StaticCode::AccountingUnavailable)?;
-        let calls = sqlx::query("SELECT c.* FROM ai_calls c WHERE (c.principal_kind=$1 AND c.principal_id=$2) OR ($1='account' AND c.principal_kind='installation' AND EXISTS(SELECT 1 FROM ai_bindings b WHERE b.installation_id=c.principal_id AND b.account_id=$2)) ORDER BY id DESC LIMIT 1000").bind(principal.kind()).bind(principal.id()).fetch_all(&self.pool).await.map_err(|_| StaticCode::AccountingUnavailable)?;
+        let calls = sqlx::query("SELECT c.* FROM ai_calls c WHERE ((c.principal_kind=$1 AND c.principal_id=$2) OR ($1='account' AND c.principal_kind='installation' AND EXISTS(SELECT 1 FROM ai_bindings b WHERE b.installation_id=c.principal_id AND b.account_id=$2))) AND ($3::bigint IS NULL OR c.id<$3) ORDER BY id DESC LIMIT 1001").bind(principal.kind()).bind(principal.id()).bind(before).fetch_all(&self.pool).await.map_err(|_| StaticCode::AccountingUnavailable)?;
         Ok(PrincipalLedger {
             budgets: budget_rows
                 .iter()
@@ -726,26 +730,25 @@ async fn scope(
     let day = Period::day(now)?;
     let principal = &identity.principal;
     let in_flight: i64 = sqlx::query_scalar("SELECT count(*) FROM ai_calls c WHERE c.state IN ('reserved','dispatched') AND ((c.principal_kind=$1 AND c.principal_id=$2) OR ($1='account' AND c.principal_kind='installation' AND EXISTS(SELECT 1 FROM ai_bindings b WHERE b.installation_id=c.principal_id AND b.account_id=$2)))").bind(principal.kind()).bind(principal.id()).fetch_one(&mut *connection).await.map_err(|_| StaticCode::AccountingUnavailable)?;
-    if let Principal::Account(account) = principal {
-        if identity.plan == Plan::One {
-            if let Some(row) = active_grant(connection, account, now).await? {
-                let source = GrantSource::parse(rows::value(&row, "source")?)?;
-                let own = get_budget(connection, rows::value(&row, "budget_id")?).await?;
-                return Ok(Scope {
-                    tier: Tier::One,
-                    period: if source == GrantSource::Owner {
-                        AllowancePeriod::CalendarMonthUtc
-                    } else {
-                        AllowancePeriod::BillingPeriod
-                    },
-                    own,
-                    month: None,
-                    day: None,
-                    in_flight,
-                    bound: false,
-                });
-            }
-        }
+    if let Principal::Account(account) = principal
+        && identity.plan == Plan::One
+        && let Some(row) = active_grant(connection, account, now).await?
+    {
+        let source = GrantSource::parse(rows::value(&row, "source")?)?;
+        let own = get_budget(connection, rows::value(&row, "budget_id")?).await?;
+        return Ok(Scope {
+            tier: Tier::One,
+            period: if source == GrantSource::Owner {
+                AllowancePeriod::CalendarMonthUtc
+            } else {
+                AllowancePeriod::BillingPeriod
+            },
+            own,
+            month: None,
+            day: None,
+            in_flight,
+            bound: false,
+        });
     }
     let (tier, own_kind, own_period, period) = match principal {
         Principal::Installation(_) => (
@@ -981,14 +984,13 @@ async fn settle(
     if call.state == CallState::Reserved && !matches!(settlement.charge, Charge::Unconsumed) {
         return Err(StaticCode::Conflict);
     }
-    if let Some(id) = &settlement.provider_request_id {
-        if id.len() > 256
+    if let Some(id) = &settlement.provider_request_id
+        && (id.len() > 256
             || !id
                 .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.' | b':'))
-        {
-            return Err(StaticCode::InvalidRequest);
-        }
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.' | b':')))
+    {
+        return Err(StaticCode::InvalidRequest);
     }
     let price_row = sqlx::query("SELECT * FROM ai_call_prices WHERE call_id=$1")
         .bind(call.id)
@@ -1015,6 +1017,21 @@ async fn settle(
         now,
     )
     .await?;
+    sqlx::query("DELETE FROM ai_spend_events WHERE call_id=$1")
+        .bind(call.id)
+        .execute(&mut *connection)
+        .await
+        .map_err(|_| StaticCode::AccountingUnavailable)?;
+    if cost != NanoUsd::ZERO {
+        sqlx::query("INSERT INTO ai_spend_events(call_id,provider,at,delta) VALUES($1,$2,$3,$4)")
+            .bind(call.id)
+            .bind(call.route.provider.as_str())
+            .bind(now)
+            .bind(cost.nanos())
+            .execute(&mut *connection)
+            .await
+            .map_err(|_| StaticCode::AccountingUnavailable)?;
+    }
     sqlx::query("UPDATE ai_calls SET state=$2,charged=$3,applied=$3,held=0,input_tokens=$4,output_tokens=$5,cache_write_tokens=$6,cache_write_1h_tokens=$7,cache_read_tokens=$8,audio_bytes=$9,audio_seconds=$10,turns=$11,provider_request_id=$12,stop=$13,code=$14,ended_at=$15 WHERE id=$1 AND state=$16")
         .bind(call.id).bind(state.as_str()).bind(cost.nanos()).bind(usage.map(|usage| i64::try_from(usage.input)).transpose().map_err(|_| StaticCode::InvalidRequest)?).bind(usage.map(|usage| i64::try_from(usage.output)).transpose().map_err(|_| StaticCode::InvalidRequest)?).bind(usage.map(|usage| i64::try_from(usage.cache_write)).transpose().map_err(|_| StaticCode::InvalidRequest)?).bind(usage.map(|usage| i64::try_from(usage.cache_write_1h)).transpose().map_err(|_| StaticCode::InvalidRequest)?).bind(usage.map(|usage| i64::try_from(usage.cache_read)).transpose().map_err(|_| StaticCode::InvalidRequest)?).bind(i64::try_from(audio.0).map_err(|_| StaticCode::InvalidRequest)?).bind(i64::try_from(audio.1).map_err(|_| StaticCode::InvalidRequest)?).bind(i32::try_from(audio.2).map_err(|_| StaticCode::InvalidRequest)?).bind(settlement.provider_request_id).bind(settlement.stop.map(Stop::as_str)).bind(settlement.code.map(StaticCode::as_str)).bind(now).bind(call.state.as_str()).execute(connection).await.map_err(|_| StaticCode::AccountingUnavailable)?;
     Ok(SettlementOutcome {

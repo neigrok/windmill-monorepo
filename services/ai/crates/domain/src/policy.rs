@@ -149,10 +149,10 @@ pub struct ModelPrice {
 
 impl ModelPrice {
     pub fn token_rates(&self, prompt_tokens: u64) -> Result<TokenRates, StaticCode> {
-        if let Some((threshold, rates)) = self.long_prompt {
-            if prompt_tokens > threshold {
-                return Ok(rates);
-            }
+        if let Some((threshold, rates)) = self.long_prompt
+            && prompt_tokens > threshold
+        {
+            return Ok(rates);
         }
         self.tokens.ok_or(StaticCode::InvalidRequest)
     }

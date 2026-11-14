@@ -11,6 +11,10 @@ delay = "low"
 class = "large"
 provider = "anthropic"
 model = "claude-opus-5"
+image_token_ceiling = 4784
+tool_overhead_tokens = 286
+count_source = ["https://platform.claude.com/docs/en/build-with-claude/vision", "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview"]
+count_checked_at = "2026-11-15"
 reasoning = "adaptive"
 efforts = ["low", "medium", "high", "xhigh", "max"]
 
@@ -18,6 +22,10 @@ efforts = ["low", "medium", "high", "xhigh", "max"]
 class = "medium"
 provider = "anthropic"
 model = "claude-sonnet-5"
+image_token_ceiling = 4784
+tool_overhead_tokens = 354
+count_source = ["https://platform.claude.com/docs/en/build-with-claude/vision", "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview"]
+count_checked_at = "2026-11-15"
 reasoning = "adaptive"
 efforts = ["low", "medium", "high", "xhigh", "max"]
 
@@ -25,6 +33,10 @@ efforts = ["low", "medium", "high", "xhigh", "max"]
 class = "small"
 provider = "anthropic"
 model = "claude-haiku-4-5"
+image_token_ceiling = 1568
+tool_overhead_tokens = 496
+count_source = ["https://platform.claude.com/docs/en/build-with-claude/vision", "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview"]
+count_checked_at = "2026-11-15"
 reasoning = "budget"
 efforts = ["low", "medium", "high"]
 

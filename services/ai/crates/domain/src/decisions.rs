@@ -204,6 +204,14 @@ pub struct LiveSlice {
     pub held_delta: i64,
 }
 
+pub struct LiveCapacity<'a> {
+    pub applied: NanoUsd,
+    pub held: NanoUsd,
+    pub grant_active: bool,
+    pub fuse_open: bool,
+    pub budgets: &'a [NanoUsd],
+}
+
 impl LiveProgress {
     pub fn is_replay(&self, call: &Call) -> bool {
         self.slice == call.slices
@@ -216,11 +224,7 @@ impl LiveProgress {
         &self,
         call: &Call,
         price: &ModelPrice,
-        applied: NanoUsd,
-        held: NanoUsd,
-        grant_active: bool,
-        fuse_open: bool,
-        budgets: &[NanoUsd],
+        capacity: LiveCapacity<'_>,
     ) -> Result<LiveSlice, StaticCode> {
         validate_audio(self.audio_bytes, self.audio_seconds, self.turns)?;
         if call.capability != Capability::Transcription || call.state != CallState::Dispatched {
@@ -239,15 +243,15 @@ impl LiveProgress {
         {
             return Err(StaticCode::InvalidRequest);
         }
-        if !grant_active {
+        if !capacity.grant_active {
             return Err(StaticCode::FundingRequired);
         }
-        if fuse_open {
+        if capacity.fuse_open {
             return Err(StaticCode::Paused);
         }
         let reservation = price.audio_rate()?.checked_mul(u64::from(self.slice))?;
         let extra = reservation.checked_sub(call.reservation)?;
-        if budgets.iter().any(|remaining| extra > *remaining) {
+        if capacity.budgets.iter().any(|remaining| extra > *remaining) {
             return Err(StaticCode::SubjectExhausted);
         }
         let cost = price.audio_cost(self.audio_seconds)?;
@@ -256,10 +260,10 @@ impl LiveProgress {
             reservation,
             cost,
             held: next_held,
-            spent_delta: cost.checked_sub(applied)?.nanos(),
+            spent_delta: cost.checked_sub(capacity.applied)?.nanos(),
             held_delta: next_held
                 .nanos()
-                .checked_sub(held.nanos())
+                .checked_sub(capacity.held.nanos())
                 .ok_or(StaticCode::InvalidRequest)?,
         })
     }
