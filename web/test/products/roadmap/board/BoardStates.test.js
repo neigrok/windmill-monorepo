@@ -49,6 +49,7 @@ test('BoardStates — from 744px the skeleton holds the three columns with their
   const card = '<span class="st-board-skeleton-card st-board-skeleton-card--plain" aria-hidden="true"><span class="st-board-skeleton-rail"></span>'
     + '<span class="st-board-skeleton-lines"><span class="st-board-skeleton-line"></span><span class="st-board-skeleton-line"></span></span></span>';
   assert.equal(frame({ loading: true }), [
+    '<div class="st-board-skeleton-filter" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>',
     '<div class="st-board-columns" aria-busy="true" tabindex="-1">',
     '<section class="st-board-columns-column st-board-columns-column--locked" tabindex="-1"><h2 class="st-board-columns-heading st-board-columns-heading--locked">',
     `<span class="st-board-columns-title">Locked</span></h2>${card}${card}${card}</section>`,

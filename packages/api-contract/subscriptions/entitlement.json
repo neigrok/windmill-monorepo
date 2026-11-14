@@ -20,7 +20,7 @@
             "autoRenew": true,
             "nextChargeAt": 1798970400000,
             "nextCharge": {
-              "amount": "11.99",
+              "amount": "12.00",
               "currency": "USD"
             },
             "nextProductId": null,
@@ -299,7 +299,7 @@
             "autoRenew": true,
             "nextChargeAt": 1796742600000,
             "nextCharge": {
-              "amount": "11.99",
+              "amount": "12.00",
               "currency": "USD"
             },
             "nextProductId": null,
@@ -368,7 +368,7 @@
             "autoRenew": true,
             "nextChargeAt": 1799766300000,
             "nextCharge": {
-              "amount": "11.99",
+              "amount": "12.00",
               "currency": "USD"
             },
             "nextProductId": null,
@@ -407,7 +407,7 @@
             "autoRenew": true,
             "nextChargeAt": 1799568000000,
             "nextCharge": {
-              "amount": "11.99",
+              "amount": "12.00",
               "currency": "USD"
             },
             "nextProductId": null,
@@ -436,7 +436,7 @@
               "autoRenew": true,
               "nextChargeAt": 1798970400000,
               "nextCharge": {
-                "amount": "11.99",
+                "amount": "12.00",
                 "currency": "USD"
               },
               "nextProductId": null,
@@ -481,7 +481,7 @@
             "autoRenew": true,
             "nextChargeAt": 1799568000000,
             "nextCharge": {
-              "amount": "11.99",
+              "amount": "12.00",
               "currency": "USD"
             },
             "nextProductId": null,
@@ -510,7 +510,7 @@
               "autoRenew": true,
               "nextChargeAt": 1798970400000,
               "nextCharge": {
-                "amount": "11.99",
+                "amount": "12.00",
                 "currency": "USD"
               },
               "nextProductId": null,
