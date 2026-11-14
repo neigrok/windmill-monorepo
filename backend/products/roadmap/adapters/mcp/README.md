@@ -432,27 +432,32 @@ A node may point at another tree: `opens` holds that tree's id.
 - **Write.** `create_node`, an `update_nodes` row and an `import_subgraph` node take `opens`, a
   string of at most 128 characters. On `create_node`, absent or `""` opens nothing: the
   door always writes the pointer, so an id that is present, or that a deleted node held, keeps none
-  of the pointer it had. On the others, absent leaves the pointer, `""` clears it and a value
+  of the pointer it had — but for a step that owns a subtree, which opens it and takes no pointer
+  (below). On the others, absent leaves the pointer, `""` clears it and a value
   sets it. `null` is absent, save in an `update_nodes` row, which refuses it as it refuses a `null`
   label. `opens` alone is something to set.
-- **The target is checked at this door only.** Every non-empty `opens` in a call must name a tree
-  that stands and is the caller's, asked in one read for the whole call
-  (`TreeRegistry::titlesOwnedBy`), before the room is written and before a `dryRun` answers.
-  Otherwise the whole call is refused naming the argument path and the id — `opens`,
-  `updates[3].opens`, `nodes[2].opens` — in one sentence for a tree that is not there, a deleted one
-  and someone else's, so the refusal confirms no id. Its write line carries the outcome
-  `opens-not-yours`. A node may open the tree it is in. The read is made before the tree's strand is
+- **The target is checked at this door only.** Every non-empty `opens` in a call must be valid — a
+  root that stands and is the caller's (`SPEC.md`, Model, Legacy pointers) — judged on one read for
+  the whole call (`TreeRegistry::pointerTargets`), before the room is written and before a `dryRun`
+  answers. Otherwise the whole call is refused naming the argument path and the id — `opens`,
+  `updates[3].opens`, `nodes[2].opens`. A subtree of the caller's whose branch stands is refused as
+  one, in words that say the step that owns it opens it and `list_trees` lists the roots a node may
+  open, under the outcome `opens-a-subtree`. A tree that is not there, a deleted one, a hidden
+  subtree and someone else's are refused in one sentence, so the refusal confirms no id, under the
+  outcome `opens-not-yours`. A step that owns a subtree passes with its own subtree's id, an echo
+  that lands nothing. A node may open the tree it is in while that tree is a root. The read is made before the tree's strand is
   taken, since no database read runs under it, so the door refuses a pointer at a tree that does not
   stand *when it checks*: an edit racing that tree's removal can leave the step pointing at it after
   the removal has taken the steps that opened it. Such a step points nowhere: it reads as an ordinary
   step, and `get_diagnostics` lists it in `danglingPointers`.
 - **Read.** `opens` is a `fields` value on `get_tree`, `get_nodes` and `find_nodes`, never in a
   default. A node answers `opens: {treeId, title, state}` when the caller can write the tree being
-  read, the pointer is set, and the opened tree stands and is theirs; the key is omitted otherwise,
+  read and the node opens a tree: its pointer is valid — the opened tree a root that stands and is
+  theirs — or it owns a subtree (below). The key is omitted otherwise, for a pointer at a subtree too,
   so a reader of someone else's tree and a signed-out caller never receive it. `state` is
   `complete` or `open`, and the title is the opened tree's stored one.
-- **The node follows the tree, for its owner.** A pointer is valid when its target stands and
-  belongs to the owner of the tree the node is in. For a caller who can write the tree, a node with
+- **The node follows the tree, for its owner.** A pointer is valid when its target is a root that
+  stands and belongs to the owner of the tree the node is in. For a caller who can write the tree, a node with
   a valid pointer is `complete` exactly when the opened tree is complete for them, whatever its own
   prerequisites, and `locked` or `available` by its prerequisites until then; a mark it already
   holds is kept, answered as `status` and by `get_progress`, and decides nothing. A tree is
@@ -485,9 +490,16 @@ A node may point at another tree: `opens` holds that tree's id.
   valid is ordinary for its owner too.
 - **A step that owns a subtree.** No door creates a subtree yet (`SPEC.md`, Model, Subtrees). A step
   that owns one opens it, whatever its `opens` holds, so for its owner it is answered and judged
-  exactly as a node with a valid pointer at that subtree: `opens` names the subtree, titled by the
-  step's own label, `state`, the `state` filter and `list_trees`' `done` follow it, an empty subtree
-  is unfinished, and the step takes no mark. `list_trees` lists roots alone. `update_tree` with a
+  exactly as a node with a valid pointer: `opens` names the subtree, titled by the step's own label,
+  `state`, the `state` filter and `list_trees`' `done` follow it, an empty subtree is unfinished, and
+  the step takes no mark. Its `opens` takes no write either (`SPEC.md`, Model, Legacy pointers): an
+  `opens` a call sends it that is not its own subtree's id, `""` included, is refused for that step
+  alone and the rest of the call applies — `create_node` reviving the deleted step, `update_nodes` and
+  `import_subgraph`, a `dryRun` of either too. The receipt lists each such step in `opensRefused` and
+  says in `opensError` that their `opens` was left as it was and that another roadmap is opened from a
+  step that owns no subtree; a row whose only change was that `opens` is among `unchangedNodeIds`, and
+  a call whose whole write was such a pointer answers `unchanged` and completes under the outcome
+  `owns-a-subtree`. A pointer at a subtree from any other step leads nowhere. `list_trees` lists roots alone. `update_tree` with a
   `title` aimed at a subtree renames its owning step in the parent, the subtree's name, and answers
   the subtree's own `seq`, its head when only the title moved; a `guide` sent beside it lands in the
   subtree's own room after it, so a guide that fails leaves the new name in place. A rename whose save

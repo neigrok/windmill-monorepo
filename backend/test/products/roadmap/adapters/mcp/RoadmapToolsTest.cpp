@@ -9061,6 +9061,9 @@ TEST(mcp_a_pointer_sent_a_step_that_owns_a_subtree_is_refused_by_register_and_th
   }
   CHECK_FALSE(through("roadmap_create_node", R"({"treeId":"t","id":"plain","label":"Plain"})").isMember("opensRefused"));
   installWriteSink({});
+  // The receipt keys are declared in update_nodes' published outputSchema, which h.call holds every result to.
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"sail","opens":"t_other"})"))))["opensRefused"],
+           refusedSail);
 
   CHECK_EQ(outcomes, (std::vector<std::string>{
                          "mcp.roadmap_update_nodes ok", "mcp.roadmap_update_nodes ok",

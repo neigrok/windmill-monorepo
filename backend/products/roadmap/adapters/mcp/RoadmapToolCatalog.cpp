@@ -281,11 +281,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       const Json::Value mark = progressRow();
       row["status"] = mark["status"];
       row["outOfOrder"] = mark["outOfOrder"];
-      row["opens"] = cappedStr("Id of a tree you own that this node opens — the node is complete for you when that "
-                               "tree is; empty string clears it. One naming "
-                               "a tree that is not yours refuses the whole batch. A tree that leads back to "
-                               "this one lands, and `introducedDiagnostics` names the loop after the graph's "
-                               "errors, within its five lines: a tree on a loop never completes.", kMaxIdLength);
+      row["opens"] = cappedStr("Id of a tree you own that has no parent, which this node opens — the node is "
+                               "complete for you when that tree is; empty string clears it. One naming "
+                               "a tree that is not yours, or a subtree, refuses the whole batch. A step that owns a "
+                               "subtree keeps its own: one sent there is listed in opensRefused, and the rest lands. "
+                               "A tree that leads back to this one lands, and `introducedDiagnostics` names the loop "
+                               "after the graph's errors, within its five lines: a tree on a loop never completes.",
+                               kMaxIdLength);
       p["updates"] = objArray("1..200 distinct existing nodes, each with at least one field or a mark.", row, {"nodeId"});
       p["updates"]["minItems"] = 1;
       p["updates"]["maxItems"] = static_cast<Json::UInt64>(kMaxPatchNodes);
@@ -364,6 +366,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                   "and a refusal answers here as any other. Absent when every mark landed.");
       properties["progressError"] = str("What fell short, when progressApplied is false: one sentence for the refused "
                                         "rows, one for a failure of the marks.");
+      properties["opensRefused"] = strArray("The ids of the rows whose `opens` was refused, in input order: each names "
+                                            "a step that owns a subtree, which opens it whatever its `opens` holds, so "
+                                            "that `opens` was left as it was and the row's other fields landed. Absent "
+                                            "when none was.", kMaxIdLength);
+      properties["opensError"] = str("One sentence saying so, when opensRefused is present.");
     } else {
       for (const char* field : {"addedEdges", "removedEdges"}) {
         properties[field] = objArray("Edges that change, in input order.", edgeProperties, {"from", "to"});
@@ -621,13 +628,15 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["description"] = cappedStr("Optional annotation body — notes about the node.",
                                  kMaxNodeDescriptionLength);
     p["links"] = linkArray("Optional external references (docs, PRs, designs).");
-    p["opens"] = cappedStr("Optional id of a tree you own that this node opens: the node points at that tree, "
-                           "is complete for you when that tree is, and get_tree, get_nodes and find_nodes "
-                           "answer the tree's id, title and state under the `opens` field. A tree that is not "
-                           "yours is refused. A tree that leads back to this one lands, and the receipt's "
+    p["opens"] = cappedStr("Optional id of a tree you own that has no parent, which this node opens: the node "
+                           "points at that tree, is complete for you when that tree is, and get_tree, get_nodes and "
+                           "find_nodes answer the tree's id, title and state under the `opens` field. A tree that "
+                           "is not yours, or a subtree, is refused. A tree that leads back to this one lands, and the receipt's "
                            "`introducedDiagnostics` names the loop after the graph's errors, within its five "
                            "lines: a tree on a loop never completes. Omit, or pass \"\", and the node opens "
-                           "none, whatever a deleted node under the same id opened.",
+                           "none, whatever a deleted node under the same id opened, unless that node is a step that "
+                           "owns a subtree: it comes back opening its subtree, and an `opens` sent there is listed "
+                           "in opensRefused.",
                            kMaxIdLength);
     p["id"] = cappedStr("Optional id to PROPOSE for the new node; minted from the label if omitted. "
                         "(`nodeId` names a node that already exists and is not accepted here.)",
@@ -743,11 +752,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "marks. Your own progress is not this: pass it in `progress[]`.", kStatuses);
     nodeFields["description"] = cappedStr("Optional annotation body.", kMaxNodeDescriptionLength);
     nodeFields["links"] = linkArray("Optional external references.");
-    nodeFields["opens"] = cappedStr("Optional id of a tree you own that this node opens — the id as a string, "
-                                    "which is the `treeId` inside the `opens` get_tree answers. \"\" clears it, "
-                                    "and one naming a tree that is not yours refuses the whole import. Left "
-                                    "out, a node the tree holds keeps the tree it opens, and a node this import "
-                                    "brings back from a delete opens none. A tree that leads back to this one "
+    nodeFields["opens"] = cappedStr("Optional id of a tree you own that has no parent, which this node opens — the "
+                                    "id as a string, which is the `treeId` inside the `opens` get_tree answers. \"\" "
+                                    "clears it, and one naming a tree that is not yours, or a subtree, refuses the "
+                                    "whole import. A step that owns a subtree keeps its own: one sent there is "
+                                    "listed in opensRefused, and the rest lands. Left out, a node the tree holds "
+                                    "keeps the tree it opens, and a node this import brings back from a delete opens "
+                                    "none, or its subtree when it owns one. A tree that leads back to this one "
                                     "lands, and `introducedDiagnostics` names the loop after the graph's errors, "
                                     "within its five lines: a tree on a loop never completes.",
                                     kMaxIdLength);
