@@ -59,9 +59,9 @@ public:
 
   std::vector<TreeSummary> list(const UserId& owner);
 
-  // The title of each tree among `trees` that stands and is `owner`'s, by id — the trees a node of
-  // theirs may open. Read off the stored rows, as list() is.
-  std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees);
+  // Each tree among `trees` that stands and is `owner`'s, with where it hangs — what a pointer of theirs at it comes to
+  // is OpenedTrees' to judge. Read off the stored rows, as list() is.
+  std::map<TreeId, OpenedTree> pointerTargets(const UserId& owner, const std::set<TreeId>& trees);
 
   // What following `opened` finds among `owner`'s standing trees (TreeRepository::openedFrom), off the stored rows,
   // within `budget` when one is given.

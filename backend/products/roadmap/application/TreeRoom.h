@@ -90,7 +90,8 @@ public:
   // nullopt means the frame lands nothing — a duplicate, or one whose every stamp the room already
   // holds — so it takes no seq, dirties nothing and is told to no one. Admits nothing on its own —
   // every door that can refuse asks admit() and unconfirmedBranches() first; a frame that removes an owning step its
-  // `branches` do not name is a fault (std::logic_error), refused before anything lands. Every owning step the frame
+  // `branches` do not name is a fault (std::logic_error), refused before anything lands. A pointer it writes on a step
+  // that owns a subtree is left out of what lands, as on every write path (refusedPointers). Every owning step the frame
   // leaves present or absent is recorded in the root's access before the frame is told.
   std::optional<Seq> joinSubgraph(const Subgraph& incoming, const UserId& actor);
 
@@ -115,7 +116,22 @@ public:
   // Whether importTree(incoming) at `nowMs` would land nothing, read off a copy of the room clock so
   // nothing moves: the preview a dry run answers.
   bool graftLandsNothing(const Graft& incoming, std::uint64_t nowMs) const {
-    return graftFrame(graph_, legend_, incoming, HlcClock(clock_).tick(nowMs)).landsNothing();
+    GraftFrame frame = graftFrame(graph_, legend_, incoming, HlcClock(clock_).tick(nowMs));
+    withoutOwnedPointers(frame.graph, subtrees_);
+    return frame.landsNothing();
+  }
+  // Every write path lands no pointer on a step that owns a subtree, so a door answers each pointer that would otherwise
+  // have changed the step's register `owns-a-subtree`, and the rest of its write applies. Of a frame's, in its order: one
+  // whose stamp the join would take, naming another tree than the subtree. A frame this room has joined before is a
+  // duplicate, answered as one, with nothing judged anew.
+  std::vector<NodeId> refusedPointers(const Subgraph& incoming) const;
+  // Of the pointers a write the server stamps sends, each a step and the tree it names, in the order sent: one naming a
+  // tree the register does not hold, nor the subtree (wm::refusedPointers).
+  std::vector<NodeId> refusedPointers(const std::vector<std::pair<NodeId, TreeId>>& sent) const;
+  // Whether `step`, present or deleted, owns `subtree`: a pointer it is sent naming it is an echo, which lands nothing.
+  bool owns(const NodeId& step, const TreeId& subtree) const {
+    const auto owned = subtrees_.find(step);
+    return owned != subtrees_.end() && owned->second == subtree;
   }
 
   // A node write's kind read off this room's own legend, under the strand the write then takes, so a
@@ -183,7 +199,7 @@ public:
   std::optional<std::string> validate(const Command& command) const;
 
   std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(const std::vector<NodePatch>& updates) const {
-    return wm::planNodePatches(graph_, legend_, updates);
+    return wm::planNodePatches(graph_, legend_, updates, subtrees_);
   }
   std::variant<EdgeChangePlan, std::string> planEdgeChanges(const EdgeChanges& changes) const {
     return wm::planEdgeChanges(graph_, changes);
@@ -259,6 +275,7 @@ public:
   // The node's live prerequisites (incoming DAG edges); empty if the node is absent.
   std::vector<NodeId> prerequisitesOf(const NodeId& node) const;
   bool hasNode(const NodeId& node) const;  // present: created, not tombstoned
+  bool hasHeld(const NodeId& node) const;  // present or tombstoned: an id the tree has held
   // A present node's label; none for a node the tree does not hold.
   std::optional<std::string> labelOf(const NodeId& node) const;
   bool hasEdge(const NodeId& from, const NodeId& to) const;

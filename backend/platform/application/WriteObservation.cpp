@@ -62,6 +62,7 @@ std::string writeCompletionJson(const WriteCompletion& completion) {
   fields["outcome"] = completion.outcome;
   fields["duration_ms"] = completion.durationMs;
   fields["request_id"] = completion.requestId;
+  if (completion.refused) fields["refused"] = static_cast<Json::UInt64>(completion.refused);
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";
   builder["precisionType"] = "decimal";
@@ -88,6 +89,9 @@ void finishCurrentWriteUnchanged() {
 }
 void settleCurrentWriteAs(const std::string& outcome) {
   if (currentObservation) currentObservation->settleAs(outcome);
+}
+void countCurrentWriteRefused(std::uint64_t count) {
+  if (currentObservation) currentObservation->countRefused(count);
 }
 void markCurrentWrite() {
   if (current) ++current->writes;

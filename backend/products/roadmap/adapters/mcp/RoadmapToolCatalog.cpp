@@ -58,7 +58,11 @@ Json::Value kind() { return typed("string", "A legend kind's id, standing for th
 
 Json::Value icon() { return typed("string", "An icon name or an emoji; \"\" for none."); }
 
-Json::Value opens() { return typed("string", "The id of a tree you own for this node to open; \"\" for none."); }
+Json::Value opens() {
+  return typed("string",
+               "The id of a top-level roadmap of yours for this node to open; \"\" for none. A step that owns a "
+               "subtree keeps its own.");
+}
 
 Json::Value prerequisites() {
   return listOf(typed("string"), "Ids of the nodes that must be complete before this one unlocks.");
@@ -219,6 +223,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     answered["progressRefused"] = listOf(typed("string"));
     answered["progressApplied"] = typed("boolean");
     answered["progressError"] = typed("string");
+    answered["opensRefused"] = listOf(typed("string"));
+    answered["opensError"] = typed("string");
     // The rows that sent a tree field, partitioned; a call of marks alone answers neither.
     for (const char* partition : {"changedNodeIds", "unchangedNodeIds"}) answered[partition] = listOf(typed("string"));
     declaration.descriptor["outputSchema"] = receipt;

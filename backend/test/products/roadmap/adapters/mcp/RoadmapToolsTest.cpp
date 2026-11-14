@@ -3637,7 +3637,7 @@ TEST(mcp_no_read_answers_the_tree_a_node_opens_to_a_caller_who_cannot_write_the_
   h.trees.byId["t_secret_sub"] =
       StoredTree{LooseGraph().exportState(), LegendState{}, {"Secret plans", {}}, 0, h.caller, Visibility::unlisted};
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_secret_sub"})")).isError);
-  const std::size_t readsAfterTheWrite = h.trees.titleReads.size();
+  const std::size_t readsAfterTheWrite = h.trees.targetReads.size();
   const std::vector<std::set<TreeId>> followedByTheWrite = h.trees.openedReads;
 
   for (const UserId& reader : {uid("stranger"), UserId{}}) {
@@ -3654,7 +3654,7 @@ TEST(mcp_no_read_answers_the_tree_a_node_opens_to_a_caller_who_cannot_write_the_
       CHECK_EQ(message(reply).find("Secret plans"), std::string::npos);
     }
   }
-  CHECK_EQ(h.trees.titleReads.size(), readsAfterTheWrite);
+  CHECK_EQ(h.trees.targetReads.size(), readsAfterTheWrite);
   CHECK_EQ(h.trees.openedReads, followedByTheWrite);
 
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
@@ -3696,23 +3696,23 @@ TEST(mcp_the_trees_a_call_opens_are_read_once_and_a_reply_follows_them_only_when
   CHECK_FALSE(h.call("import_subgraph",
                      parse(R"({"nodes":[{"id":"a","opens":"t_sub"},{"id":"b","opens":"t_other"},{"id":"c","opens":"t_sub"},{"id":"d"}]})"))
                   .isError);
-  CHECK_EQ(h.trees.titleReads, (std::vector<std::set<TreeId>>{{TreeId{"t_other"}, TreeId{"t_sub"}}}));
+  CHECK_EQ(h.trees.targetReads, (std::vector<std::set<TreeId>>{{TreeId{"t_other"}, TreeId{"t_sub"}}}));
   const std::set<TreeId> opened{TreeId{"t_other"}, TreeId{"t_sub"}};
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened}));
   CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t_other"},{"nodeId":"d","opens":"t_sub"},{"nodeId":"b","label":"B"}]})")).isError);
-  CHECK_EQ(h.trees.titleReads.size(), 2u);
+  CHECK_EQ(h.trees.targetReads.size(), 2u);
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened}));
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"e","label":"E"})")).isError);
   CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"e","opens":""})"))).isError);
-  CHECK_EQ(h.trees.titleReads.size(), 2u);
+  CHECK_EQ(h.trees.targetReads.size(), 2u);
 
   CHECK_FALSE(h.call("get_tree", kNoArgs).isError);
   CHECK_FALSE(h.call("find_nodes", kNoArgs).isError);
   CHECK_FALSE(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","label","description"]})")).isError);
-  CHECK_EQ(h.trees.titleReads.size(), 2u);
+  CHECK_EQ(h.trees.targetReads.size(), 2u);
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened}));
   CHECK_FALSE(h.call("get_tree", parse(R"({"fields":["id","opens"]})")).isError);
-  CHECK_EQ(h.trees.titleReads.size(), 2u);
+  CHECK_EQ(h.trees.targetReads.size(), 2u);
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened, opened}));
 }
 
@@ -3760,7 +3760,9 @@ TEST(mcp_create_node_on_a_deleted_id_opens_nothing_when_opens_is_the_empty_strin
   CHECK_EQ(h.trees.byId["t"].state.nodes[0].opens, TreeId{});
 }
 
-TEST(mcp_create_node_minting_the_id_of_a_deleted_node_opens_nothing) {
+// A minted id is never one a deleted node held, so the new node opens nothing and the deleted one keeps its pointer
+// stored for its revive.
+TEST(mcp_create_node_minting_an_id_passes_over_a_deleted_nodes_and_opens_nothing) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
   CHECK_FALSE(h.call("create_node", parse(R"({"label":"Renderer Core","opens":"t_sub"})")).isError);
@@ -3768,9 +3770,10 @@ TEST(mcp_create_node_minting_the_id_of_a_deleted_node_opens_nothing) {
 
   const ToolResult again = h.call("create_node", parse(R"({"label":"Renderer Core"})"));
 
-  CHECK_EQ(body(again)["id"].asString(), std::string("renderer-core"));
+  CHECK_EQ(body(again)["id"].asString(), std::string("renderer-core-2"));
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
-           parse(R"([{"id":"renderer-core"}])"));
+           parse(R"([{"id":"renderer-core-2"}])"));
+  CHECK_EQ(LooseGraph(h.trees.byId["t"].state).exportNode(NodeId{"renderer-core"})->opens, TreeId{"t_sub"});
 }
 
 TEST(mcp_create_node_on_a_present_id_leaves_it_opening_only_the_tree_the_call_names) {
@@ -4133,7 +4136,7 @@ TEST(mcp_get_diagnostics_answers_a_reader_who_cannot_write_the_tree_what_a_twin_
   CHECK_FALSE(h.tools.callTool("import_subgraph", parse(R"({"treeId":"t_twin","nodes":[{"id":"loop","label":"Loop"},
       {"id":"gone","label":"Gone"},{"id":"plain","label":"Plain","prerequisites":["ghost"]}]})"), h.actor).isError);
   h.trees.softDelete(TreeId{"t_gone"});
-  const std::size_t titleReads = h.trees.titleReads.size();
+  const std::size_t targetReads = h.trees.targetReads.size();
   h.trees.openedReads.clear();
   h.trees.openedReadsFail = true;
 
@@ -4154,7 +4157,7 @@ TEST(mcp_get_diagnostics_answers_a_reader_who_cannot_write_the_tree_what_a_twin_
     }
   }
   CHECK(h.trees.openedReads.empty());
-  CHECK_EQ(h.trees.titleReads.size(), titleReads);
+  CHECK_EQ(h.trees.targetReads.size(), targetReads);
 }
 
 // Following costs one read, and only where it can say something: none for a tree that holds no pointer, where
@@ -9080,4 +9083,246 @@ TEST(mcp_delete_tree_counts_the_branch_only_once_the_removal_passed_its_gates) {
   CHECK(h.trees.sizeReads.empty());
   CHECK_EQ(body(h.call("delete_tree", kNoArgs))["branch"], parse(R"({"subtrees":0,"steps":0})"));
   CHECK_EQ(h.trees.sizeReads.size(), 1u);
+}
+
+// A step that owns a subtree takes no pointer (SPEC.md, Model, Legacy pointers). Every tool that writes one — update_nodes,
+// import_subgraph, create_node reviving the step — answers it in `opensRefused` with what to do in `opensError`, keeps the
+// step's register as it was and applies the rest of the call; a dry run says so too. A call whose whole word was such a
+// pointer completes under `owns-a-subtree`. An echo of the step's own subtree, and a call that sends none, are no refusal.
+TEST(mcp_a_pointer_sent_a_step_that_owns_a_subtree_is_refused_by_register_and_the_rest_of_the_call_applies) {
+  Harness h;
+  h.trees.byId["t_other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Side quest", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", node("sail", "Sail")).isError);
+  CHECK_FALSE(h.call("create_node", node("idea", "Idea")).isError);
+  {
+    // A pointer that leads nowhere, as a released client could leave one, lets the step come to own a subtree.
+    std::unique_lock<std::mutex> strand(h.registry.strandFor(TreeId{"t"}));
+    h.registry.open(TreeId{"t"})->applyCommand(
+        AnnotateNode{NodeId{"sail"}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, TreeId{"t_stale"}},
+        h.clock.nowMs(), h.caller);
+    PendingSave saving = h.registry.persist(TreeId{"t"});
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
+  }
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  const auto registerOfSail = [&] { return LooseGraph(h.trees.byId["t"].state).exportNode(NodeId{"sail"})->opens.str(); };
+  const Json::Value refusedSail = parse(R"(["sail"])");
+  const Json::Value sentence(
+      "Some steps own a subtree, which each opens whatever its opens holds: their opens was left as it was and the rest "
+      "of the call applied — those ids are listed in opensRefused. To open another roadmap from this tree, set opens on "
+      "a step that owns no subtree.");
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<std::string> outcomes;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.operation.rfind("mcp.", 0) == 0) outcomes.push_back(line.operation + " " + line.outcome);
+  });
+  const auto through = [&](const char* tool, const std::string& arguments) {
+    const ToolResult result = gate.callTool(tool, parse(arguments), h.actor);
+    CHECK_FALSE(result.isError);
+    return result.isError ? Json::Value(message(result)) : body(result);
+  };
+
+  const Json::Value previewed =
+      through("roadmap_update_nodes", R"({"treeId":"t","updates":[{"nodeId":"sail","opens":"t_other"}],"dryRun":true})");
+  CHECK_EQ(previewed["opensRefused"], refusedSail);
+  CHECK_EQ(previewed["opensError"], sentence);
+  CHECK_EQ(previewed["unchangedNodeIds"], refusedSail);
+  CHECK(previewed["unchanged"].asBool());
+
+  const Json::Value updated = through(
+      "roadmap_update_nodes",
+      R"({"treeId":"t","updates":[{"nodeId":"sail","label":"Sail on","opens":"t_other"},{"nodeId":"idea","opens":"t_other"}]})");
+  CHECK_EQ(updated["opensRefused"], refusedSail);
+  CHECK_EQ(updated["changedNodeIds"], parse(R"(["sail","idea"])"));
+  CHECK_EQ(registerOfSail(), std::string("t_stale"));
+  CHECK_EQ(LooseGraph(h.trees.byId["t"].state).nodeView(NodeId{"sail"})->label, std::string("Sail on"));
+  CHECK_EQ(LooseGraph(h.trees.byId["t"].state).nodeView(NodeId{"idea"})->opens, TreeId{"t_other"});
+
+  CHECK_EQ(through("roadmap_update_nodes", R"({"treeId":"t","updates":[{"nodeId":"sail","opens":""}]})")["opensRefused"],
+           refusedSail);
+  const Json::Value echoed =
+      through("roadmap_update_nodes", R"({"treeId":"t","updates":[{"nodeId":"sail","opens":"t_00000000000000c1"}]})");
+  CHECK_FALSE(echoed.isMember("opensRefused"));
+  CHECK(echoed["unchanged"].asBool());
+
+  const Json::Value grafted = through("roadmap_import_subgraph", R"({"treeId":"t","nodes":[{"id":"sail","opens":"t_other"}]})");
+  CHECK_EQ(grafted["opensRefused"], refusedSail);
+  CHECK(grafted["unchanged"].asBool());
+  const Json::Value graftPreviewed =
+      through("roadmap_import_subgraph", R"({"treeId":"t","nodes":[{"id":"sail","opens":"t_other"}],"dryRun":true})");
+  CHECK_EQ(graftPreviewed["opensRefused"], refusedSail);
+  CHECK(graftPreviewed["unchanged"].asBool());
+  CHECK_EQ(registerOfSail(), std::string("t_stale"));
+
+  CHECK_FALSE(gate.callTool("roadmap_delete_node", parse(R"({"treeId":"t","nodeId":"sail","branches":["t_00000000000000c1"]})"),
+                            h.actor).isError);
+  const Json::Value revived =
+      through("roadmap_create_node", R"({"treeId":"t","id":"sail","label":"Sail","opens":"t_other"})");
+  CHECK_EQ(revived["opensRefused"], refusedSail);
+  CHECK_EQ(registerOfSail(), std::string("t_stale"));
+  {
+    std::lock_guard<std::mutex> strand(h.registry.strandFor(TreeId{"t"}));
+    CHECK(h.registry.open(TreeId{"t"})->subtrees() == (std::map<NodeId, TreeId>{{NodeId{"sail"}, sailing}}));
+  }
+  CHECK_FALSE(through("roadmap_create_node", R"({"treeId":"t","id":"plain","label":"Plain"})").isMember("opensRefused"));
+  installWriteSink({});
+  // The receipt keys are declared in update_nodes' published outputSchema, which h.call holds every result to.
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"sail","opens":"t_other"})"))))["opensRefused"],
+           refusedSail);
+
+  CHECK_EQ(outcomes, (std::vector<std::string>{
+                         "mcp.roadmap_update_nodes ok", "mcp.roadmap_update_nodes ok",
+                         "mcp.roadmap_update_nodes owns-a-subtree", "mcp.roadmap_update_nodes ok",
+                         "mcp.roadmap_import_subgraph owns-a-subtree", "mcp.roadmap_import_subgraph ok",
+                         "mcp.roadmap_delete_node ok", "mcp.roadmap_create_node ok", "mcp.roadmap_create_node ok"}));
+}
+
+// A new pointer at a subtree leads nowhere, so MCP refuses it whole, nothing written, telling the caller the subtree is
+// theirs and opened by its owning step. A subtree whose branch is hidden, like someone else's tree, is answered as a
+// tree that is not theirs. The owning step's echo of its own subtree passes.
+TEST(mcp_a_new_pointer_at_a_subtree_is_refused_whole_as_opens_a_subtree) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Sail")).isError);
+  CHECK_FALSE(h.call("create_node", node("idea", "Idea")).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  const GraphState before = h.trees.byId["t"].state;
+
+  for (const char* arguments : {R"({"updates":[{"nodeId":"idea","opens":"t_00000000000000c1"}]})",
+                                R"({"nodes":[{"id":"idea","opens":"t_00000000000000c1"}],"dryRun":true})",
+                                R"({"id":"twin","label":"Twin","opens":"t_00000000000000c1"})"}) {
+    const Json::Value args = parse(arguments);
+    const char* tool = args.isMember("updates") ? "update_nodes" : args.isMember("nodes") ? "import_subgraph" : "create_node";
+    const ToolResult refused = h.call(tool, args);
+    CHECK(refused.isError);
+    CHECK_EQ(refused.outcomeCode, std::string("opens-a-subtree"));
+    const std::string path = args.isMember("updates") ? "updates[0].opens" : args.isMember("nodes") ? "nodes[0].opens" : "opens";
+    CHECK_EQ(message(refused), tool + std::string(": ") + path +
+                                   " names \"t_00000000000000c1\", a subtree of one of your roadmaps, which only the "
+                                      "step that owns it opens — a node opens a roadmap that has no parent: list_trees "
+                                      "lists them");
+  }
+  CHECK(h.trees.byId["t"].state == before);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"sail","opens":"t_00000000000000c1"})"))).isError);
+
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"sail","branches":["t_00000000000000c1"]})")).isError);
+  const ToolResult hidden = h.call("update_nodes", asUpdate(parse(R"({"nodeId":"idea","opens":"t_00000000000000c1"})")));
+  CHECK(hidden.isError);
+  CHECK_EQ(hidden.outcomeCode, std::string("opens-not-yours"));
+}
+
+// An owning step's echo of its own subtree is no refusal on any tool, its subtree hidden or not: the create and the import
+// that revive the deleted step pass with it, a dry run too, and the step comes back owning its subtree.
+TEST(mcp_an_owning_steps_echo_of_its_own_subtree_passes_on_every_tool_hidden_or_not) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Sail")).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  const auto owned = [&] {
+    std::lock_guard<std::mutex> strand(h.registry.strandFor(TreeId{"t"}));
+    return h.registry.open(TreeId{"t"})->subtrees();
+  };
+  const std::map<NodeId, TreeId> shown{{NodeId{"sail"}, sailing}};
+  const auto hide = [&] {
+    REQUIRE(!h.call("delete_node", parse(R"({"nodeId":"sail","branches":["t_00000000000000c1"]})")).isError);
+    REQUIRE(owned().empty());
+  };
+
+  hide();
+  const ToolResult created = h.call("create_node", parse(R"({"id":"sail","label":"Sail","opens":"t_00000000000000c1"})"));
+  CHECK_FALSE(created.isError);
+  CHECK_FALSE(body(created).isMember("opensRefused"));
+  CHECK(owned() == shown);
+
+  hide();
+  const Json::Value echo = parse(R"({"nodes":[{"id":"sail","label":"Sail","opens":"t_00000000000000c1"}]})");
+  Json::Value preview = echo;
+  preview["dryRun"] = true;
+  const ToolResult previewed = h.call("import_subgraph", preview);
+  CHECK_FALSE(previewed.isError);
+  CHECK_FALSE(body(previewed).isMember("opensRefused"));
+  CHECK(owned().empty());
+  const ToolResult imported = h.call("import_subgraph", echo);
+  CHECK_FALSE(imported.isError);
+  CHECK_FALSE(body(imported).isMember("opensRefused"));
+  CHECK(owned() == shown);
+}
+
+// A create that names no id takes none the tree has held: its slug skips present and deleted ids alike, so only a create
+// that names a deleted step's id brings it back, and with it a branch that step owns.
+TEST(mcp_create_node_without_an_id_never_takes_one_a_deleted_step_held) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Sail")).isError);
+  CHECK_FALSE(h.call("create_node", node("plain", "Plain")).isError);
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {TreeId{"t_00000000000000c1"}, std::nullopt})));
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"sail","branches":["t_00000000000000c1"]})")).isError);
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"plain"})")).isError);
+
+  CHECK_EQ(body(h.call("create_node", parse(R"({"label":"Sail"})")))["id"], Json::Value("sail-2"));
+  CHECK_EQ(body(h.call("create_node", parse(R"({"label":"Plain"})")))["id"], Json::Value("plain-2"));
+  std::lock_guard<std::mutex> strand(h.registry.strandFor(TreeId{"t"}));
+  TreeRoom* room = h.registry.open(TreeId{"t"});
+  CHECK_FALSE(room->hasNode(NodeId{"sail"}));
+  CHECK_FALSE(room->hasNode(NodeId{"plain"}));
+  CHECK(room->subtrees().empty());
+}
+
+// The refused pointers of a call are listed in the order the call sent them.
+TEST(mcp_opens_refused_lists_the_steps_in_the_order_the_call_sent_them) {
+  Harness h;
+  h.trees.byId["t_other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Side quest", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", node("sail", "Sail")).isError);
+  CHECK_FALSE(h.call("create_node", node("gone", "Gone")).isError);
+  for (const auto& [step, child] : {std::pair{"sail", "t_00000000000000c1"}, {"gone", "t_00000000000000c2"}})
+    REQUIRE(std::holds_alternative<SubtreeCreation>(
+        h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{step}, h.caller, {TreeId{child}, std::nullopt})));
+
+  CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"sail","opens":"t_other"},
+                                                           {"nodeId":"gone","opens":"t_other"}]})")))["opensRefused"],
+           parse(R"(["sail","gone"])"));
+  CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"sail","opens":"t_other"},{"id":"gone","opens":"t_other"}],
+                                                   "dryRun":true})")))["opensRefused"],
+           parse(R"(["sail","gone"])"));
+}
+
+// Every write that refused a pointer says how many on its line, whatever its outcome, so on-call can count them; a dry
+// run writes nothing and counts none, and a pointer that changes nothing is no refusal.
+TEST(mcp_a_write_that_refused_a_pointer_counts_it_on_its_line_and_a_dry_run_counts_none) {
+  Harness h;
+  h.trees.byId["t_other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Side quest", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", node("sail", "Sail")).isError);
+  CHECK_FALSE(h.call("create_node", node("idea", "Idea")).isError);
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {TreeId{"t_00000000000000c1"}, std::nullopt})));
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.operation.rfind("mcp.", 0) == 0)
+      lines.push_back(line.operation + " " + line.outcome + " " + std::to_string(line.refused));
+  });
+  for (const char* call : {
+           R"(["roadmap_update_nodes",{"treeId":"t","updates":[{"nodeId":"sail","label":"Sail on","opens":"t_other"},{"nodeId":"idea","opens":"t_other"}]}])",
+           R"(["roadmap_update_nodes",{"treeId":"t","updates":[{"nodeId":"sail","opens":"t_other"}]}])",
+           R"(["roadmap_update_nodes",{"treeId":"t","updates":[{"nodeId":"sail","opens":"t_other"}],"dryRun":true}])",
+           R"(["roadmap_update_nodes",{"treeId":"t","updates":[{"nodeId":"sail","opens":""}]}])",
+           R"(["roadmap_import_subgraph",{"treeId":"t","nodes":[{"id":"sail","opens":"t_other"}]}])",
+           R"(["roadmap_import_subgraph",{"treeId":"t","nodes":[{"id":"sail","opens":"t_other"}],"dryRun":true}])",
+           R"(["roadmap_delete_node",{"treeId":"t","nodeId":"sail","branches":["t_00000000000000c1"]}])",
+           R"(["roadmap_create_node",{"treeId":"t","id":"sail","label":"Sail","opens":"t_other"}])",
+           R"(["roadmap_create_node",{"treeId":"t","label":"Plain"}])"}) {
+    const Json::Value sent = parse(call);
+    CHECK_FALSE(gate.callTool(sent[0].asString(), sent[1], h.actor).isError);
+  }
+  installWriteSink({});
+
+  CHECK_EQ(lines, (std::vector<std::string>{
+                      "mcp.roadmap_update_nodes ok 1", "mcp.roadmap_update_nodes owns-a-subtree 1",
+                      "mcp.roadmap_update_nodes ok 0", "mcp.roadmap_update_nodes ok 0",
+                      "mcp.roadmap_import_subgraph owns-a-subtree 1", "mcp.roadmap_import_subgraph ok 0",
+                      "mcp.roadmap_delete_node ok 0", "mcp.roadmap_create_node ok 1", "mcp.roadmap_create_node ok 0"}));
 }
