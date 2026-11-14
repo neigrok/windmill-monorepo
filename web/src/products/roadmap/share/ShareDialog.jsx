@@ -19,7 +19,7 @@ function refusalReason(failure, act) {
   return (failure.said ?? t('roadmap.share.visibilityFailed')) || act;
 }
 
-// `subtrees` says the roadmap holds subtrees, which publishing it makes readable with it; `title` names it.
+// `subtrees` says the roadmap's steps own subtrees, which whoever reads it reads too; `title` names it.
 export function ShareDialog({ open, onClose, treeId, visibility, mine, title = '', subtrees = false, onStanceChange }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -30,6 +30,17 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, title = '
   const shareUrl = treeShareUrl(treeId);
   const reachable = visibility === 'public' || visibility === 'unlisted';
   const publish = mine && visibility !== 'public';
+  // Who reads the roadmap, as publishing it or its standing says: a roadmap whose steps own subtrees takes them with it.
+  const roadmap = title.trim() || t('roadmap.common.untitled');
+  const readers = subtrees ? {
+    publishing: t('roadmap.share.publishingWithSubtrees', { roadmap }),
+    public: t('roadmap.share.publicWithSubtrees', { roadmap }),
+    unlisted: t('roadmap.share.unlistedWithSubtrees', { roadmap }),
+  } : {
+    publishing: t('roadmap.share.publishing'),
+    public: t('roadmap.share.public'),
+    unlisted: t('roadmap.share.unlisted'),
+  };
 
   useEffect(() => {
     mounted.current = true;
@@ -108,12 +119,11 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, title = '
         <div>
           <p>
             {publish
-              ? t('roadmap.share.publishing')
+              ? readers.publishing
               : visibility === 'public'
-                ? t('roadmap.share.public')
-                : reachable ? t('roadmap.share.unlisted') : t('roadmap.share.private')}
+                ? readers.public
+                : reachable ? readers.unlisted : t('roadmap.share.private')}
           </p>
-          {publish && subtrees && <p>{t('roadmap.share.publishingSubtrees', { roadmap: title.trim() || t('roadmap.common.untitled') })}</p>}
           {reachable && (
             <input
               ref={urlRef}

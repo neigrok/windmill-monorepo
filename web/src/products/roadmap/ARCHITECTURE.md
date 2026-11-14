@@ -255,8 +255,8 @@ each with `role`.
 Inside a subtree the room offers no switcher, no roadmap sheet, no Share and no Fork, and a milestone offers no share:
 a subtree is shared and forked as its root is. Its name is its owning step's label, which only the parent's room writes:
 its session never stamps the title register (`renameTree` answers false), so a rename takes `PATCH /v1/trees/{id}`,
-and it keeps no row of the device's index, which lists roots. Publishing a root that holds subtrees says that they become
-readable with it.
+and it keeps no row of the device's index, which lists roots. The share dialog of a root whose steps own subtrees says in
+each of its sentences that whoever reads the root reads them too.
 
 ### Attaching, changing and detaching
 

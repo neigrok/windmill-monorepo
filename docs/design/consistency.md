@@ -748,18 +748,25 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   open an owner's empty subtree on the Graph with *No nodes yet* and *Add first node*. The web opens an owner's empty
   roadmap on the Board (`initialView`, rule 1), with *Your first step* and New step, whichever view the step was
   pressed from, as it does for a tree a pointer opens.
-- **Section 29 · the share line (29.14).** The dialog keeps its title *Share roadmap* where the board has *Share My
-  year*, and its publishing sentence, which also says the roadmap can be forked and shown in the gallery; the board's
-  line about subtrees stands beneath it, only while publishing a roadmap whose steps own subtrees. A roadmap already
-  public or unlisted says nothing of its subtrees; no board draws those states.
+- **Section 29 · the share line (29.14).** The dialog keeps its title *Share roadmap* where 29.14 and 29b.03 have
+  *Share My year*. For a roadmap whose steps own subtrees each sentence says who reads it in 29b.03's words, which follow
+  canon's publishing disclosure: publishing, *Publishing makes My year public: anyone can view and fork it, subtrees
+  included, and it can appear in the public gallery.*; published, *My year is public: …*; unlisted, *Anyone with this
+  link can view and fork My year, subtrees included.* 29.14's *readable* and *Anyone with the shared link can open them*
+  leave out the fork and the gallery.
 - **Section 29 · built and not drawn.** An owning step's Board card is section 28's card for a step that opens a tree:
   the pill with done of total and its bar, or *No steps*, with no title beside it since the subtree is named by the
   step; a press on it goes in. Inside a subtree the room offers no switcher, roadmap sheet, Share, Fork or milestone
   share offer, and renames nothing: its name is its owning step's label. A subtree reached by a link shows the same way
   back, and its press opens the owning step on its parent. A reader whose follow of the owner's trees failed gets an
-  owning step's mark and Open subtree with nothing said of how far it is. A subtree opened from the device's copy, with
-  no connection, reads as a root, with no way back. Section 29's device frames (29.22–29.28, 29.32, 29.33, 29.38,
+  owning step's mark and Open subtree with nothing said of how far it is. A subtree opened with no connection shows
+  *Couldn't load this roadmap*: a subtree keeps no row of the device's index, so its room has no device copy to open
+  (`subtree-device`). Section 29's device frames (29.22–29.28, 29.32, 29.33, 29.38,
   29.42–29.45, 29.53, 29.54, 29.61, 29.64, 29.67) belong with the device store and are not built.
+- **Section 29b against the build (29b.01, 29b.03).** 29b.03 draws Share inside a subtree, speaking for its root
+  (*Share My year*, with *Learn to sail is part of My year and is shared with it.* first); the room offers no Share
+  inside a subtree. 29b.01 has a C on an owning step's card say *Completes with its subtree*; the build says section 28's
+  *Completes with its tree*, with Open subtree.
 - **Phone step page · 20.01 against the build.** 🚀 20.01 (397:28208) draws the counts and chevrons short of the right
   edge, a two-colour identity rail and no Shell row; the build runs them to the edge under the Shell row.
 - **Tree switcher · delete row.** Rename and delete show on hover only, so a touch tablet from 744 px has no clear way

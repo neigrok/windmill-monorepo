@@ -60,18 +60,25 @@ for (const visibility of ['private', 'unlisted']) {
   });
 }
 
-test('publishing a roadmap whose steps own subtrees says they become readable with it, and only while publishing', async (t) => {
-  const paragraphs = (view) => elementsOf(view.room.tree).filter((item) => item.type === 'p').map(textOf);
-  const view = await shareRoom(t, { title: 'My year', subtrees: true });
-  assert.deepEqual(paragraphs(view), [
-    'Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.',
-    'Publishing makes My year and all of its subtrees readable. Anyone with the shared link can open them.',
-  ]);
-  view.props.visibility = 'public';
-  view.room.redraw();
-  assert.deepEqual(paragraphs(view), ['This roadmap is public. Anyone can view and fork it, and it can appear in the public gallery.']);
-  const plain = await shareRoom(t, { title: 'My year' });
-  assert.deepEqual(paragraphs(plain), ['Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.']);
+test('a roadmap whose steps own subtrees says who reads them with it, publishing or published, in the words canon gives publishing', async (t) => {
+  const said = async (visibility, { mine = true, subtrees = true } = {}) => {
+    const view = await shareRoom(t, { visibility, mine, title: 'My year', subtrees });
+    return elementsOf(view.room.tree).filter((item) => item.type === 'p').map(textOf);
+  };
+
+  assert.deepEqual({
+    private: await said('private'),
+    unlisted: await said('unlisted'),
+    public: await said('public'),
+    unlistedRead: await said('unlisted', { mine: false }),
+    none: await said('private', { subtrees: false }),
+  }, {
+    private: ['Publishing makes My year public: anyone can view and fork it, subtrees included, and it can appear in the public gallery.'],
+    unlisted: ['Publishing makes My year public: anyone can view and fork it, subtrees included, and it can appear in the public gallery.'],
+    public: ['My year is public: anyone can view and fork it, subtrees included, and it can appear in the public gallery.'],
+    unlistedRead: ['Anyone with this link can view and fork My year, subtrees included.'],
+    none: ['Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.'],
+  });
 });
 
 test('server refusal never copies or claims success and publishing can be retried', async (t) => {
