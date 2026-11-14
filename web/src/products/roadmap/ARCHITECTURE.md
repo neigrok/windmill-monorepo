@@ -121,7 +121,11 @@ failures retain Retry list. The existing array-only registry reads retain their 
 
 Opening recovery reads its list with a 15-second account request limit; Retry list repeats that read, while the central Try again repeats only the
 requested roadmap load. Search matches available rows, and expand controls appear only for relationships
-established by returned openers. Rows navigate only returned IDs. The popover focuses Search, its first action
+established by returned openers. A child shown beneath an expanded row is omitted from the flat peers; a child
+shared by several expanded rows remains under each proven relationship. Moving an expanded child into the
+one-level nested display closes its own expansion, leaving its children available through other expanded rows
+or the flat list. Collapse restores flat peers, and search always shows flat matching rows. Rows navigate only
+returned IDs. The popover focuses Search, its first action
 or Retry list after the read; Escape restores the trigger, outside dismissal preserves the clicked focus,
 and late replies cannot reopen it. Browser history supplies Back. New tree and the gallery use their existing
 navigation callbacks.

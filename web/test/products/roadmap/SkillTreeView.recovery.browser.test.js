@@ -70,9 +70,15 @@ for (const browserName of ['chromium', 'webkit']) {
       assert.equal(calls, 2);
       await page.getByRole('button', { name: 'Expand My year', exact: true }).click();
       assert.equal(await page.locator('.st-recovery-row--child').textContent(), 'Reading list');
+      assert.deepEqual(await page.locator('.st-recovery-pick').allTextContents(), ['My year', 'Reading list']);
       assert.equal(await page.getByRole('button', { name: 'Expand Reading list', exact: true }).count(), 0);
+      await page.getByRole('button', { name: 'Collapse My year', exact: true }).click();
+      assert.deepEqual(await page.locator('.st-recovery-pick').allTextContents(), ['My year', 'Reading list']);
+      assert.equal(await page.locator('.st-recovery-row--child').count(), 0);
+      await page.getByRole('button', { name: 'Expand My year', exact: true }).click();
       await search.fill('Reading');
       assert.deepEqual(await page.locator('.st-recovery-pick').allTextContents(), ['Reading list']);
+      assert.equal(await page.locator('.st-recovery-row--child, .st-recovery-expand').count(), 0);
       await page.keyboard.press('Tab');
       assert.equal(await page.getByRole('button', { name: 'Open Reading list', exact: true }).evaluate((element) => document.activeElement === element), true);
       await page.keyboard.press('Space');
@@ -90,10 +96,50 @@ for (const browserName of ['chromium', 'webkit']) {
         { name: 'roadmap_recovery', props: { step: 'retry', place: 'account' } },
         { name: 'roadmap_recovery', props: { step: 'list', place: 'account', outcome: 'available' } },
         { name: 'roadmap_recovery', props: { step: 'expand', place: 'account' } },
+        { name: 'roadmap_recovery', props: { step: 'collapse', place: 'account' } },
+        { name: 'roadmap_recovery', props: { step: 'expand', place: 'account' } },
         { name: 'roadmap_recovery', props: { step: 'search', place: 'account' } },
         { name: 'roadmap_recovery', props: { step: 'switch', place: 'account' } },
       ]);
       assert.deepEqual(telemetry.issues, [{ operation: 'roadmap-recovery-list', stack: true, tags: { place: 'account', reason: 'server' } }]);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+
+  hostTest(`${browserName}: expanded relationships omit peer duplicates without hiding descendants or choosing a unique parent`, async () => {
+    const { page, errors } = await openHost({ browserName, width: 744, surface: 'board', loadFailure: true });
+    try {
+      await page.route('**/v1/trees', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ trees: [
+        { id: 't_first', title: 'First parent' },
+        { id: 't_second', title: 'Second parent' },
+        { id: 't_shared', title: 'Shared child', openers: [{ treeId: 't_first', steps: 1 }, { treeId: 't_second', steps: 1 }] },
+        { id: 't_leaf', title: 'Leaf', openers: [{ treeId: 't_shared', steps: 1 }] },
+      ] }) }));
+      await page.getByRole('button', { name: 'Your roadmaps', exact: true }).click();
+      const search = page.getByRole('textbox', { name: 'Search roadmaps', exact: true });
+      await search.waitFor();
+      await page.getByRole('button', { name: 'Expand Shared child', exact: true }).click();
+      assert.deepEqual(await page.locator('.st-recovery-pick').allTextContents(), ['First parent', 'Second parent', 'Shared child', 'Leaf']);
+      assert.deepEqual(await page.locator('.st-recovery-row--child .st-recovery-pick').allTextContents(), ['Leaf']);
+      await page.getByRole('button', { name: 'Expand Second parent', exact: true }).click();
+      assert.deepEqual(await page.locator('.st-recovery-pick').allTextContents(), ['First parent', 'Second parent', 'Shared child', 'Leaf']);
+      assert.deepEqual(await page.locator('.st-recovery-row--child .st-recovery-pick').allTextContents(), ['Shared child']);
+      await page.getByRole('button', { name: 'Expand First parent', exact: true }).click();
+      assert.deepEqual(await page.locator('.st-recovery-pick').allTextContents(), ['First parent', 'Shared child', 'Second parent', 'Shared child', 'Leaf']);
+      assert.deepEqual(await page.locator('.st-recovery-row:not(.st-recovery-row--child) .st-recovery-pick').allTextContents(), ['First parent', 'Second parent', 'Leaf']);
+      assert.deepEqual(await page.locator('.st-recovery-row--child .st-recovery-pick').allTextContents(), ['Shared child', 'Shared child']);
+      await search.fill('child');
+      assert.deepEqual(await page.locator('.st-recovery-pick').allTextContents(), ['Shared child']);
+      assert.equal(await page.locator('.st-recovery-row--child, .st-recovery-expand').count(), 0);
+      await search.fill('');
+      assert.deepEqual(await page.locator('.st-recovery-pick').allTextContents(), ['First parent', 'Shared child', 'Second parent', 'Shared child', 'Leaf']);
+      await page.getByRole('button', { name: 'Collapse First parent', exact: true }).click();
+      assert.deepEqual(await page.locator('.st-recovery-pick').allTextContents(), ['First parent', 'Second parent', 'Shared child', 'Leaf']);
+      assert.deepEqual(await page.locator('.st-recovery-row--child .st-recovery-pick').allTextContents(), ['Shared child']);
+      await page.getByRole('button', { name: 'Collapse Second parent', exact: true }).click();
+      assert.deepEqual(await page.locator('.st-recovery-pick').allTextContents(), ['First parent', 'Second parent', 'Shared child', 'Leaf']);
+      assert.equal(await page.locator('.st-recovery-row--child').count(), 0);
+      assert.equal(await page.getByRole('button', { name: 'Expand Shared child', exact: true }).count(), 1);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });

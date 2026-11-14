@@ -91,11 +91,14 @@ export function RecoveryTreeSwitcher({ place, onPickTree, onNew, onBrowse }) {
   const available = list.state === 'ready' && list.rows.length > 0;
   const hasQuery = query.trim().length > 0;
   const rows = list.rows.filter((row) => roadmapMatch(row.title ?? '', query));
+  const childrenById = new Map(rows.map((tree) => [tree.id, hasQuery ? [] : list.rows.filter((child) => child.id !== tree.id
+    && Array.isArray(child.openers) && child.openers.some((opener) => opener?.treeId === tree.id && Number.isInteger(opener.steps) && opener.steps > 0))]));
+  const nestedIds = new Set(rows.flatMap((tree) => expanded.has(tree.id) ? childrenById.get(tree.id).map((child) => child.id) : []));
+  const peers = rows.filter((tree) => !nestedIds.has(tree.id));
   const row = (tree, nested = false) => {
     const title = tree.title || t('roadmap.common.untitled');
-    const below = nested || hasQuery ? [] : list.rows.filter((child) => child.id !== tree.id
-      && Array.isArray(child.openers) && child.openers.some((opener) => opener?.treeId === tree.id && Number.isInteger(opener.steps) && opener.steps > 0));
-    const isExpanded = expanded.has(tree.id);
+    const below = nested ? [] : childrenById.get(tree.id);
+    const isExpanded = !nested && !hasQuery && expanded.has(tree.id);
     return <React.Fragment key={tree.id}>
       <div className={`st-recovery-row${nested ? ' st-recovery-row--child' : ''}`}>
         {below.length > 0 ? <button type="button" className="st-recovery-expand" aria-expanded={isExpanded}
@@ -103,7 +106,13 @@ export function RecoveryTreeSwitcher({ place, onPickTree, onNew, onBrowse }) {
           onClick={() => {
             setExpanded((value) => {
               const next = new Set(value);
-              if (next.has(tree.id)) next.delete(tree.id); else next.add(tree.id);
+              if (next.has(tree.id)) {
+                next.delete(tree.id);
+                return next;
+              }
+              // A nested row cannot expand, so its expansion must not hide any peers.
+              for (const child of below) next.delete(child.id);
+              next.add(tree.id);
               return next;
             });
             track('roadmap_recovery', { step: isExpanded ? 'collapse' : 'expand', place });
@@ -155,7 +164,7 @@ export function RecoveryTreeSwitcher({ place, onPickTree, onNew, onBrowse }) {
         setAttempt((value) => value + 1);
       }}>{t('roadmap.recovery.retry')}</Button>}
       {available && <div className="st-recovery-rows">
-        {rows.map((tree) => row(tree))}
+        {peers.map((tree) => row(tree))}
         {rows.length === 0 && <p className="st-recovery-message" role="status">{t('roadmap.recovery.noMatches')}</p>}
       </div>}
       {(onNew || onBrowse) && <div className="st-recovery-divider" />}
