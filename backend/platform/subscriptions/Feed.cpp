@@ -5,8 +5,7 @@
 namespace wm::subscriptions {
 
 namespace {
-// Every key of the contract is always present (packages/api-contract/subscriptions/README.md), so a missing one is a
-// body the contract does not describe.
+// Every key of the contract is always present (packages/api-contract/subscriptions/README.md).
 const Json::Value& field(const Json::Value& object, const char* key) {
   if (!object.isObject() || !object.isMember(key)) throw FeedUnavailable("malformed");
   return object[key];

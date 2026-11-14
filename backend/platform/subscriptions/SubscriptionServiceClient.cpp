@@ -11,8 +11,7 @@
 namespace wm::subscriptions {
 
 namespace {
-// drogon's transport verdict as a bounded word. It reports a name that does not resolve and a connection refused alike,
-// so both read `unreachable`.
+// drogon's transport verdict as a bounded word; it reports an unknown name and a refused connection alike: `unreachable`.
 std::string answerFor(drogon::ReqResult result) {
   switch (result) {
     case drogon::ReqResult::Timeout: return "timeout";

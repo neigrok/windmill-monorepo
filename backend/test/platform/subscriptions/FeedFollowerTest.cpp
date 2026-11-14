@@ -7,6 +7,7 @@
 
 #include <pqxx/pqxx>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <mutex>
@@ -65,8 +66,10 @@ std::string nameOf(FollowStep step) {
 
 struct Reports : FailureReporter {
   std::vector<std::string> lines;
+  std::vector<std::string> requestIds;
   void report(const std::string& kind, const std::string& where, const std::string& detail) override {
     lines.push_back(kind + " " + where + " " + detail);
+    requestIds.push_back(currentWriteRequestId());
   }
 };
 
@@ -82,6 +85,7 @@ public:
                                                                  : "debug";
       std::lock_guard lock{mutex_};
       lines_.push_back(line.outcome + "/" + level + " " + line.product + " " + line.door);
+      requestIds_.push_back(line.requestId);
     });
   }
   ~FollowLines() { installWriteSink({}); }
@@ -91,9 +95,18 @@ public:
     return lines_;
   }
 
+  // Whether any line was written under one of these request ids: a report that took a read's Issue.
+  bool sharesARequestWith(const std::vector<std::string>& ids) {
+    std::lock_guard lock{mutex_};
+    for (const std::string& id : ids)
+      if (id.empty() || std::find(requestIds_.begin(), requestIds_.end(), id) != requestIds_.end()) return true;
+    return false;
+  }
+
 private:
   std::mutex mutex_;
   std::vector<std::string> lines_;
+  std::vector<std::string> requestIds_;
 };
 }
 
@@ -135,6 +148,7 @@ TEST(pg_subscription_follow_an_incremental_follow_equals_a_rebuild_from_zero) {
   CHECK_EQ(feed.reads().size(), std::size_t{14});
   CHECK_EQ(feed.reads().back(), (std::pair<Seq, int>{25, 500}));
   CHECK_EQ(reports.lines, (std::vector<std::string>{"platform subscription.follow.restored cause=epoch"}));
+  CHECK_FALSE(lines.sharesARequestWith(reports.requestIds));
   CHECK_EQ(lines.taken(), (std::vector<std::string>{
       "ok/info platform background", "ok/info platform background", "ok/info platform background",
       "ok/info platform background", "ok/info platform background", "ok/info platform background",
@@ -329,6 +343,7 @@ TEST(pg_subscription_follow_a_stopped_service_leaves_every_row_answering_and_is_
   now += 1s;
   CHECK_EQ(nameOf(follower.follow()), std::string("unavailable"));
   CHECK_EQ(reports.lines, (std::vector<std::string>{"platform subscription.follow.stalled cause=unavailable answer=network"}));
+  CHECK_FALSE(lines.sharesARequestWith(reports.requestIds));
   now += 4min;
   CHECK_EQ(nameOf(follower.follow()), std::string("unavailable"));
   CHECK_EQ(reports.lines.size(), std::size_t{1});

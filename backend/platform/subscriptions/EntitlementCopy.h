@@ -7,8 +7,7 @@
 
 namespace wm::subscriptions {
 
-// The one transaction a page is applied in: every consumer's writes and the cursor commit together or not at all.
-// It holds the stored cursor for its whole life, so no other follower moves it meanwhile.
+// The one transaction a page applies in; it holds the stored cursor, so no other follower moves it meanwhile.
 class PageTxn {
 public:
   virtual ~PageTxn() = default;
@@ -16,16 +15,14 @@ public:
   virtual void commit() = 0;
 };
 
-// What the backend does with each feed entry, inside the page's transaction and in the order the follower was given:
-// the copy first, then whatever later work an entry funds or records. A consumer that throws rolls the page back, and
-// the page is read again; every consumer is idempotent, since a rebuild reads every entry again.
+// What the backend does with each entry inside the page's transaction, in order: the copy first, then later work.
+// A consumer that throws rolls the page back to be read again, and a rebuild reads every entry again: be idempotent.
 struct FeedEntryConsumer {
   virtual ~FeedEntryConsumer() = default;
   virtual void consume(PageTxn& txn, const FeedEntry& entry) = 0;
 };
 
-// The backend's own copy of every account's entitlement and the cursor it stands at (§6.1). It consumes each entry
-// first: the named account's row becomes the entry's entitlement, both environments included.
+// The backend's own copy of every entitlement and its cursor (§6.1); consuming an entry replaces the named account's row.
 struct EntitlementCopy : FeedEntryConsumer {
   virtual std::unique_ptr<PageTxn> begin() = 0;
   virtual FeedCursor cursor() = 0;

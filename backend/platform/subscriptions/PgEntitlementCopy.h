@@ -11,9 +11,8 @@ namespace wm::subscriptions {
 // The page's transaction on Postgres, for a consumer whose writes belong to the page: a process never mixes stores.
 pqxx::work& sqlOf(PageTxn& txn);
 
-// account_entitlements and subscription_feed_cursor (db/schema.sql). An entry never takes a row back to an older seq,
-// so a replayed entry changes nothing. An entry naming an account this backend no longer holds, one erased before the
-// service unbound it, writes no row; erasing an account takes its row with it.
+// account_entitlements and subscription_feed_cursor (db/schema.sql). No entry takes a row back to an older seq, and an
+// entry naming an account this backend no longer holds (erased before the service unbound it) writes no row.
 class PgEntitlementCopy : public EntitlementCopy {
 public:
   explicit PgEntitlementCopy(std::shared_ptr<PgPool> pool);

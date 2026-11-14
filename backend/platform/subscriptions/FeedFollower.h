@@ -16,8 +16,7 @@
 
 namespace wm::subscriptions {
 
-// How the follower paces itself (§6.1): read again at most `poll` after catching up, `retry` after a read that made
-// no progress, and report a cursor that has made none for `stallAfter`.
+// The pace (§6.1): `poll` after catching up, `retry` after a read that made no progress, a stall after `stallAfter`.
 struct FollowerTiming {
   std::chrono::milliseconds poll{5'000};
   std::chrono::milliseconds retry{30'000};
@@ -36,10 +35,8 @@ enum class FollowStep {
   overtaken,    // another follower moved the cursor while the page was read; nothing applied
 };
 
-// Follows the subscription service's feed into the backend's own copy of every entitlement (§6.1), on a thread of its
-// own. Each page goes through the copy and then each further consumer, in the order given, inside one transaction
-// that also moves the cursor. A restored ledger is read whole from zero first, then replaces the copy in one
-// transaction, so the old copy answers until the rebuilt one does (INV-11).
+// Follows the service's feed into the copy on a thread of its own (§6.1), each page applied in one transaction. A
+// restored ledger is read whole from zero, then replaces the copy in one transaction: the old copy answers till then.
 class FeedFollower {
 public:
   using Now = std::function<std::chrono::steady_clock::time_point()>;
@@ -62,7 +59,10 @@ public:
   bool reach(Seq seq, std::chrono::milliseconds wait);
 
 private:
-  FollowStep apply(const FeedCursor& from, const FeedPage& page, WriteObservation& observation);
+  // The page's one transaction: every entry through every consumer in order, then the cursor moved to `to`; a rebuild
+  // empties the copy first. Nothing applies when another follower moved the cursor since `from` was read.
+  FollowStep apply(const FeedCursor& from, const std::vector<FeedEntry>& entries, const FeedCursor& to, bool rebuilding,
+                   WriteObservation& observation);
   FollowStep rebuild(const FeedCursor& from, const std::string& cause, WriteObservation& observation);
   void standsAt(Seq seq);
   void watchForStall(FollowStep step, const FeedCursor& from, const std::string& answer);

@@ -21,18 +21,20 @@ public:
                 Now now = [] { return std::chrono::steady_clock::now(); })
       : reporter_(reporter), operation_(std::move(operation)), window_(window), now_(std::move(now)) {}
 
-  // `detail` is a bounded diagnostic, never user content. A report inside the window of the last one sends nothing.
-  void report(const std::string& detail) {
+  // `detail` is a bounded diagnostic, never user content. A report inside the window of the last one sends nothing, and
+  // answers false.
+  bool report(const std::string& detail) {
     {
       std::lock_guard lock(mutex_);
       const auto at = now_();
-      if (last_ && at - *last_ < window_) return;
+      if (last_ && at - *last_ < window_) return false;
       last_ = at;
     }
     try {
       reporter_.report("platform", operation_, detail);
     } catch (...) {
     }
+    return true;
   }
 
 private:

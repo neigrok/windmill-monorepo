@@ -12,16 +12,14 @@
 
 namespace wm::subscriptions {
 
-// The feed could not be read: the service was unreachable, refused, or answered a body the contract does not
-// describe. `answer` is a bounded word (`timeout`, `network`, `503`, `malformed`, …), never a body.
+// The feed could not be read; `answer` is a bounded word (`timeout`, `unreachable`, `503`, `malformed`, …), never a body.
 struct FeedUnavailable : std::runtime_error {
   explicit FeedUnavailable(std::string answer)
       : std::runtime_error("subscription feed unavailable: " + answer), answer(std::move(answer)) {}
   const std::string answer;
 };
 
-// §5.2 EntitlementResponse: one account's Windmill One entitlement in each environment, as the service folds it. The
-// backend decides access from each environment's `accessUntil`; `body` is the response whole, for what a surface shows.
+// §5.2 EntitlementResponse: one account's entitlement in each environment; access reads `accessUntil`, a surface `body`.
 struct EntitlementResponse {
   explicit EntitlementResponse(Json::Value response);
 
@@ -50,18 +48,15 @@ struct FeedPage {
   Seq latestSeq = 0;
 };
 
-// Where the copy stands in the ledger: the epoch it was read under and the last seq applied. A copy that never read
-// the feed has no epoch.
+// Where the copy stands in the ledger: the epoch it was read under, none before its first page, and the last seq applied.
 struct FeedCursor {
   std::string epoch;
   Seq seq = 0;
 
-  // §6.1: a page under another epoch, or a ledger that ends below this cursor, comes from a restored ledger. The
-  // cause names which, for the report; nothing when the page can continue this cursor.
+  // §6.1: why `page` comes from a restored ledger (another epoch, or a ledger ending below this cursor), or nothing.
   std::optional<std::string> restoreIn(const FeedPage& page) const;
 
-  // Where the copy stands once `page` is applied after this cursor. Throws FeedUnavailable when the page does not
-  // continue it: another epoch, or an entry at or below the cursor.
+  // Where the copy stands once `page` applies; FeedUnavailable when it does not continue this cursor.
   FeedCursor past(const FeedPage& page) const;
 
   bool caughtUpWith(const FeedPage& page) const { return seq >= page.latestSeq; }

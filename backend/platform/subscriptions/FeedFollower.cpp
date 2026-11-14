@@ -46,7 +46,7 @@ FollowStep FeedFollower::follow() {
     const FeedPage page = feed_.page(from.seq, timing_.pageLimit);
     latestSeq_ = page.latestSeq;
     if (const auto cause = from.restoreIn(page)) return rebuild(from, *cause, observation);
-    if (!page.entries.empty()) return apply(from, page, observation);
+    if (!page.entries.empty()) return apply(from, page.entries, from.past(page), false, observation);
     if (from.caughtUpWith(page)) {
       lastProgress_ = now_();
       observation.skip();
@@ -69,27 +69,32 @@ FollowStep FeedFollower::follow() {
   return FollowStep::failed;
 }
 
-FollowStep FeedFollower::apply(const FeedCursor& from, const FeedPage& page, WriteObservation& observation) {
-  const FeedCursor next = from.past(page);
+FollowStep FeedFollower::apply(const FeedCursor& from, const std::vector<FeedEntry>& entries, const FeedCursor& to,
+                               bool rebuilding, WriteObservation& observation) {
   const std::unique_ptr<PageTxn> txn = copy_.begin();
   if (txn->cursor() != from) {
     observation.skip();
     return FollowStep::overtaken;
   }
-  for (const FeedEntry& entry : page.entries)
+  if (rebuilding) copy_.clear(*txn);
+  for (const FeedEntry& entry : entries)
     for (FeedEntryConsumer& consumer : consumers_) consumer.consume(*txn, entry);
-  copy_.advance(*txn, next);
+  copy_.advance(*txn, to);
   txn->commit();
   observation.wrote();
-  observation.finish();
+  observation.finish(rebuilding ? "rebuilt" : "ok");
   lastProgress_ = now_();
-  standsAt(next.seq);
-  return FollowStep::applied;
+  standsAt(to.seq);
+  return rebuilding ? FollowStep::rebuilt : FollowStep::applied;
 }
 
 FollowStep FeedFollower::rebuild(const FeedCursor& from, const std::string& cause, WriteObservation& observation) {
-  restores_.report("cause=" + cause);
   LOG_WARN << "subscription follow: the ledger was restored (" << cause << "), rebuilding the copy from zero";
+  {
+    // An Issue of its own, apart from the read's: a rebuild that then fails reports that failure too.
+    WriteContext own{freshWriteRequestId()};
+    restores_.report("cause=" + cause);
+  }
 
   std::vector<FeedEntry> ledger;
   FeedCursor rebuilt;
@@ -100,22 +105,7 @@ FollowStep FeedFollower::rebuild(const FeedCursor& from, const std::string& caus
     whole = page.entries.empty() || rebuilt.caughtUpWith(page);
     std::move(page.entries.begin(), page.entries.end(), std::back_inserter(ledger));
   }
-
-  const std::unique_ptr<PageTxn> txn = copy_.begin();
-  if (txn->cursor() != from) {
-    observation.skip();
-    return FollowStep::overtaken;
-  }
-  copy_.clear(*txn);
-  for (const FeedEntry& entry : ledger)
-    for (FeedEntryConsumer& consumer : consumers_) consumer.consume(*txn, entry);
-  copy_.advance(*txn, rebuilt);
-  txn->commit();
-  observation.wrote();
-  observation.finish("rebuilt");
-  lastProgress_ = now_();
-  standsAt(rebuilt.seq);
-  return FollowStep::rebuilt;
+  return apply(from, ledger, rebuilt, true, observation);
 }
 
 bool FeedFollower::reach(Seq seq, std::chrono::milliseconds wait) {
@@ -135,17 +125,16 @@ void FeedFollower::standsAt(Seq seq) {
   moved_.notify_all();
 }
 
-// §10: a cursor that has not moved for `stallAfter` while the ledger reports newer events, or while the feed cannot
-// be read at all, is reported once per window; the copy meanwhile answers as it stands (INV-10).
+// §10: a cursor still for `stallAfter` while the ledger has newer events, or the feed cannot be read, is reported.
 void FeedFollower::watchForStall(FollowStep step, const FeedCursor& from, const std::string& answer) {
   if (now_() - lastProgress_ < timing_.stallAfter) return;
-  if (step == FollowStep::unavailable) {
-    stalls_.report("cause=unavailable answer=" + answer);
-    return;
-  }
   const Seq behind = latestSeq_ && *latestSeq_ > from.seq ? *latestSeq_ - from.seq : 0;
-  stalls_.report(std::string(step == FollowStep::failed ? "cause=failed" : "cause=behind") +
-                 " behind=" + std::to_string(behind));
+  const std::string cause = step == FollowStep::unavailable ? "cause=unavailable answer=" + answer
+                            : step == FollowStep::failed   ? "cause=failed behind=" + std::to_string(behind)
+                                                           : "cause=behind behind=" + std::to_string(behind);
+  // An Issue of its own, apart from the read's; the report carries no detail, so the line names the cause.
+  WriteContext own{freshWriteRequestId()};
+  if (stalls_.report(cause)) LOG_WARN << "subscription follow: the cursor has stalled (" << cause << ")";
 }
 
 void FeedFollower::run() {
