@@ -100,6 +100,22 @@ Use `npm run build` as the gate. `prebuild` fetches self-hosted weights into `pu
 `vite.config.js` checks that roadmap's `DEFAULT_KINDS` and `GENESIS_STAMP` match
 `packages/api-contract/genesis.js`, preserving agreement between device and server trees.
 
+Verify an existing build against a running local backend from the repository root:
+
+```sh
+node web/scripts/serve-built.mjs --root web/dist --port 5300 --backend http://127.0.0.1:8088 --duration 1800
+```
+
+The server binds `127.0.0.1`, serves the existing files without rebuilding and proxies `/v1`, `/mcp`
+and `/oauth` on the same origin. The backend argument is an HTTP(S) origin without credentials,
+path, query or fragment. WebSocket upgrades use fresh upstream connections because Drogon can
+reject an upgrade on a connection reused after an HTTP request. Missing assets return 404; `/app`
+and its extensionless descendants and `/t/:id` use the built index. Shared-tree paths verify the
+frontend, not backend-rendered metadata; `/gallery` serves the built `gallery.html` when present.
+The process exits after 30 minutes by default or on SIGINT/SIGTERM, closing HTTP and upgraded
+connections. Readiness prints the port, resolved root and index SHA-256; requests and credentials
+are never logged. This local verification tool sends no product events or Sentry reports.
+
 ## Static pages and search
 
 `scripts/build-landing-shells.mjs` builds `/`, `/roadmap`, `/journal` and `/gym` from
