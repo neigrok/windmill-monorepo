@@ -1621,7 +1621,8 @@ ToolResult deleteNodes(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& e
 // it sends none. The reply answers that legend from Legend::bornWith, the rule the registry plants by,
 // in the shape get_tree answers kinds by default, and reads nothing back once the tree is inserted.
 ToolResult createTree(TreeRegistry& trees, const std::string& origin, const UserId& caller, const Json::Value& args) {
-  if (std::optional<std::string> bad = optionalString(args["title"], "title")) return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = optionalString(args["title"], "title", kMaxTitleChars))
+    return ToolResult::failure(*bad);
   if (std::optional<std::string> bad = checkKinds(args["kinds"], kMaxKinds)) return ToolResult::failure(*bad);
   const std::optional<TreeData> sent = treeFromJson(args, TreeId{});
   if (!sent) return ToolResult::failure("this tree's title or kinds carry a field of the wrong type");
@@ -1694,8 +1695,11 @@ ToolResult updateTree(TreeRegistry& registry, const TreeId& tree, const Json::Va
   const Json::Value& guide = args["guide"];
   if (title.isNull() && guide.isNull())
     return ToolResult::failure("nothing to set — pass at least one of \"title\", \"guide\".");
-  // A title is judged by rename's own rule (TreeRegistry::titleFrom), so the tool checks only that one is a string.
+  // A blank or malformed title is refused by rename's own rule (TreeRegistry::titleFrom). That rule cuts a title past
+  // its cap, and this door refuses one, as it refuses every argument past its cap.
   if (!title.isNull() && !title.isString()) return ToolResult::failure(*requireString(title, "title"));
+  if (title.isString() && isValidUtf8(title.asString()))
+    if (std::optional<std::string> bad = optionalString(title, "title", kMaxTitleChars)) return ToolResult::failure(*bad);
   if (!guide.isNull() && !guide.isString())
     return ToolResult::failure(*requireString(guide, "guide") + ". A guide is plain text of at most " +
                                std::to_string(kMaxGuideChars) + " characters; \"\" clears it.");

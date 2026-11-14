@@ -3351,8 +3351,7 @@ TEST(mcp_update_tree_holds_5000_code_points_of_any_width_and_names_the_bound_whe
   const Json::Value& schema = (*declared)["inputSchema"];
   CHECK_EQ(schema["properties"]["guide"]["type"].asString(), std::string("string"));
   CHECK_FALSE(schema["properties"]["guide"].isMember("maxLength"));
-  CHECK_EQ(schema["properties"]["title"]["type"].asString(), std::string("string"));
-  CHECK_EQ(schema["properties"]["title"]["maxLength"].asUInt64(), static_cast<Json::UInt64>(200));
+  CHECK_EQ(schema["properties"]["title"], parse(R"({"type":"string"})"));
   CHECK_EQ(schema["required"], list({"treeId"}));
 }
 
@@ -5743,9 +5742,9 @@ TEST(mcp_update_tree_renames_the_tree_and_sets_its_guide_in_one_step) {
   CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.title->value, std::string("Winter plans"));
   CHECK_EQ(h.bus.subgraphBroadcasts.back().subgraph.guide->value, std::string("Rig first."));
   CHECK_EQ(body(h.call("update_tree", with("guide", "Rig first."))), parse(R"({"applied":true,"seq":4})"));
-  CHECK_EQ(body(h.call("update_tree", with("title", std::string(201, 'x').c_str()))), parse(R"({"applied":true,"seq":5})"));
-  CHECK_EQ(title(), Json::Value(std::string(200, 'x')));
-  CHECK_EQ(body(h.call("update_tree", with("title", "Winter plans"))), parse(R"({"applied":true,"seq":6})"));
+  CHECK_EQ(message(h.call("update_tree", with("title", std::string(201, 'x').c_str()))),
+           std::string("update_tree: title is 201 characters, 1 over the 200 cap"));
+  CHECK_EQ(title(), Json::Value("Winter plans"));
   CHECK_EQ(h.ops.byTree["t"].size(), rows);
 
   const StoredTree stored = h.trees.byId["t"];

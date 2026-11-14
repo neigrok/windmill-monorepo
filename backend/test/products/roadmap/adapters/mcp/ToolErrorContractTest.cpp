@@ -121,17 +121,15 @@ void collectDescriptions(const Json::Value& schema, const std::string& name,
 
 }
 
-// A bound is published only where the server does not refuse past it by name: a roadmap's title is never refused for
-// its length, and a page's size has a default. Every other bound is a refusal, pinned two cases below.
+// A bound is published only where the server does not refuse past it by name: a page's size has a default. Every
+// other bound is a refusal, pinned two cases below.
 TEST(mcp_the_catalog_publishes_a_bound_only_where_no_refusal_names_it) {
   std::vector<std::string> bounds;
   for (const ToolDeclaration& tool : roadmapToolCatalog()) {
     collectBounds(tool.descriptor["inputSchema"], tool.name() + ".inputSchema", bounds);
     collectBounds(tool.descriptor["outputSchema"], tool.name() + ".outputSchema", bounds);
   }
-  CHECK_EQ(bounds, (std::vector<std::string>{"create_tree.inputSchema.properties.title.maxLength",
-                                             "get_tree.inputSchema.properties.limit.default",
-                                             "update_tree.inputSchema.properties.title.maxLength",
+  CHECK_EQ(bounds, (std::vector<std::string>{"get_tree.inputSchema.properties.limit.default",
                                              "find_nodes.inputSchema.properties.limit.default"}));
 }
 
@@ -226,6 +224,10 @@ TEST(mcp_every_bound_the_catalog_leaves_out_is_refused_in_a_sentence_that_names_
       {"change_edges", R"({"remove":[{"to":"b","from":)" + id + "}]}",
        "remove[0].from is 129 characters, 1 over the 128 cap"},
 
+      {"create_tree", R"({"title":)" + textOf(250) + "}", "title is 250 characters, 50 over the 200 cap"},
+      {"update_tree", R"({"title":)" + textOf(250) + "}", "title is 250 characters, 50 over the 200 cap"},
+      {"update_tree", R"({"guide":"Rig first.","title":)" + textOf(201) + "}",
+       "title is 201 characters, 1 over the 200 cap"},
       {"create_tree", R"({"kinds":[{"hue":"sky","id":)" + id + "}]}", "kinds[0].id is 129 characters, 1 over the 128 cap"},
       {"create_tree", R"({"kinds":[{"hue":"sky","id":"k","label":)" + textOf(25) + "}]}",
        "kinds[0].label is 25 characters, 1 over the 24 cap"},
@@ -380,6 +382,42 @@ TEST(mcp_every_cap_counts_code_points_not_bytes) {
   adding["add"].append(longId);
   CHECK_EQ(message(h.call("change_edges", adding)),
            std::string("change_edges: add[0].to is 129 characters, 1 over the 128 cap"));
+}
+
+// A title is held to its cap at both tools that set one, by refusal, counted in code points as it was sent. A tree
+// that already holds a longer title keeps it and reads as it is.
+TEST(mcp_a_title_is_held_to_two_hundred_code_points_at_both_tools_and_a_longer_one_a_tree_holds_is_kept) {
+  Harness h;
+  std::string wide;
+  for (int i = 0; i < 200; ++i) wide += "\xF0\x9F\x98\x80";  // 200 × U+1F600, 800 bytes
+  const auto titleOf = [&](const std::string& tree) {
+    Json::Value args = parse(R"({"includeGuides":false})");
+    args["treeId"] = tree;
+    return body(h.tools.callTool("get_tree", args, h.actor))["tree"]["title"].asString();
+  };
+
+  const std::string planted = body(h.tools.callTool("create_tree", with("title", wide.c_str()), h.actor))["treeId"].asString();
+  CHECK_EQ(titleOf(planted), wide);
+  CHECK_EQ(message(h.tools.callTool("create_tree", with("title", (wide + "\xF0\x9F\x98\x80").c_str()), h.actor)),
+           std::string("create_tree: title is 201 characters, 1 over the 200 cap"));
+  CHECK_EQ(h.trees.byId.size(), 2u);
+
+  CHECK_FALSE(h.call("update_tree", with("title", wide.c_str())).isError);
+  CHECK_EQ(titleOf("t"), wide);
+  const StoredTree stored = h.trees.byId["t"];
+  CHECK_EQ(message(h.call("update_tree", with("title", (wide + "\xF0\x9F\x98\x80").c_str()))),
+           std::string("update_tree: title is 201 characters, 1 over the 200 cap"));
+  CHECK_EQ(message(h.call("update_tree", with("title", (std::string(200, 'x') + " ").c_str()))),
+           std::string("update_tree: title is 201 characters, 1 over the 200 cap"));
+  CHECK(h.trees.byId["t"] == stored);
+
+  const std::string marathon(250, 'm');
+  h.trees.byId["t_long"] = StoredTree{LooseGraph().exportState(), LegendState{}, {marathon, {}}, 0, h.caller};
+  CHECK_EQ(titleOf("t_long"), marathon);
+  Json::Value guided = with("guide", "Rig first.");
+  guided["treeId"] = "t_long";
+  CHECK_FALSE(h.tools.callTool("update_tree", guided, h.actor).isError);
+  CHECK_EQ(titleOf("t_long"), marathon);
 }
 
 TEST(mcp_an_unknown_enum_value_enumerates_the_legal_set) {
