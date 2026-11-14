@@ -633,6 +633,11 @@ Both listeners answer health the same way because every door reads or writes the
 take what they ask of it as traits, `listeners::Readiness` and `internal::Reads`, which `Ledger` is, so a
 test hands them a fake.
 
+SIGTERM or SIGINT stops both listeners from accepting. Each open connection then finishes its request
+within the bounds above, and the ledger's connections close once no request holds one, for at most
+6 s together; Sentry's last flush takes at most 1 s more and the send in progress at most 2 s, so the
+process exits 0 inside Docker's 10 s, whether or not Sentry answers.
+
 ### Internal doors
 
 `internal` holds the backend's doors (spec §5.2); the internal router merges them, so none exists on the
@@ -654,11 +659,6 @@ compares the bodies byte for byte, key order included. It also tells the feed's 
 up to the sandbox renewal, seq 13, and checks those pages and three account reads against the fixtures: at
 seq 14 the fixture's refund turns renewal off without the `renewal_turned_off` that `observe` records
 (§3.4), and the erasure at seq 26 has no step in the domain yet.
-
-SIGTERM or SIGINT stops both listeners from accepting. Each open connection then finishes its request
-within the bounds above, and the ledger's connections close once no request holds one, for at most
-6 s together; Sentry's last flush takes at most 1 s more and the send in progress at most 2 s, so the
-process exits 0 inside Docker's 10 s, whether or not Sentry answers.
 
 ### Logs and Sentry
 
