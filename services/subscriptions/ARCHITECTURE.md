@@ -4,12 +4,14 @@ The service that owns every fact about a paid Windmill One subscription. Specifi
 [subscriptions.md](../../docs/foundation/subscriptions.md). The repository's layout and its own
 dependency rule are in [STRUCTURE.md](../../STRUCTURE.md); this file holds the service's.
 
-The Rust workspace and its four crates exist. `app_store` verifies App Store signed payloads
-([below](#app-store-signature-verification)); `storage` opens the ledger, the service's own database,
-and migrates it ([Storage](#storage)); `subscriptions`, the server binary, opens the ledger before it
-listens, answers health on both of its listeners, logs every request and reports to Sentry
-([Server](#server)); `domain` is empty. The service does not run in production. The production
-compose provisions its database once `SUBSCRIPTIONS_DB_PASSWORD` is set, and does nothing until then
+The Rust workspace, its four crates and one tool exist. `domain` models the subscription and folds
+the stores' observations into it ([Domain](#domain)); `app_store` verifies App Store signed payloads
+([below](#app-store-signature-verification)), and the tool `app_store_test_signer` signs them under a
+chain only tests trust ([App Store test signer](#app-store-test-signer)); `storage` opens the ledger,
+the service's own database, and migrates it ([Storage](#storage)); `subscriptions`, the server binary,
+opens the ledger before it listens, answers health on both of its listeners, logs every request and
+reports to Sentry ([Server](#server)). The service does not run in production. The production compose
+provisions its database once `SUBSCRIPTIONS_DB_PASSWORD` is set, and does nothing until then
 ([deploy README](../../backend/deploy/README.md#the-subscription-database)).
 
 ## Crates
@@ -21,7 +23,9 @@ compose provisions its database once `SUBSCRIPTIONS_DB_PASSWORD` is set, and doe
 | `storage` | Postgres: the inbox, subscriptions, periods, events and the feed read |
 | `server` | the composition root, built as the binary `subscriptions`: both listeners, the sweep, configuration |
 
-Every crate inherits `[workspace.lints]`, which forbids `unsafe` code.
+`crates/` holds the service and nothing else. `tools/` holds the workspace's other crates, which the
+service never runs: `app_store_test_signer` ([below](#app-store-test-signer)). Every crate inherits
+`[workspace.lints]`, which forbids `unsafe` code.
 
 ## Dependency rule
 
@@ -32,10 +36,54 @@ Every crate inherits `[workspace.lints]`, which forbids `unsafe` code.
 - `app_store` and `storage` depend on `domain` and not on each other. A later store is one more crate
   beside `app_store`, with the same edges.
 - `server` depends on `domain`, `app_store` and `storage`.
+- `app_store_test_signer` depends on no crate of the workspace, and no crate depends on it but
+  through dev-dependencies, so no build of `subscriptions` contains it.
 
 `check-dependencies.sh` reads `cargo metadata` and fails, naming each offending edge, when a normal
 or build dependency between the crates is not one of the five edges above, or when `domain` has a
 normal or build dependency outside its allowlist.
+
+## Domain
+
+`domain` holds every rule about a subscription's lifecycle, as pure functions of values: no I/O, no
+clock, no randomness. Its files, by kind:
+
+| File | Holds |
+|---|---|
+| `values.rs` | Instants (epoch milliseconds), spans, money, the text ids and the closed names: `Store`, `Environment`, `Plan` |
+| `subscription.rs` | The record: `Subscription`, its `Status` as the newest observation stated it, a `State` that carries only its own facts, `Period`, and access (`access_until`, `grants_access`) |
+| `observe.rs` | `Observation`, what a caller hands `observe`, the `Change` it returns, `Event` and `Refusal` |
+| `entitlement.rs` | `AccountEntitlement`, one `Entitlement` block per environment, folded from the ledger alone |
+
+The action that applies an observation calls `observe` once:
+
+1. Load the lineage's `Ledger`: its subscription, if any, and its periods.
+2. Resolve the observation's account hint against the erased accounts into an `AccountHint`, and pass
+   the claim when a claim door calls.
+3. Mint the observation's ids with `Observation::mint_ids`: a subscription id and one period id for
+   each period it states. `observe` uses the ones it needs.
+4. Persist the returned `Change` in one transaction: the subscription, each written or restated
+   period, and the events in order, which the ledger stamps with `seq` and `recordedAt`. A `Refusal`
+   persists nothing.
+5. After the commit, write `hint_for_store`, when present, to the store as the account hint.
+
+`verifiedAt` is the sweep's bookkeeping: storage stamps it when it applies a pull, and the domain's
+subscription leaves it out, since no single observation can state it (INV-6).
+
+`observe` records `unbound` only when a new purchase moves an ended lineage to another account
+(R-11). Account erasure (§6.4) unbinds every subscription an account holds and records `unbound` for
+each; the domain has no step for it yet, and the erasure node adds one beside `observe`.
+
+Known limits:
+
+- A period from before an R-11 move that the ledger first hears of after it is recorded under the new
+  account, since the domain keeps no history of bindings.
+- An ended lineage never bound and bought again with a hint binds by the ordinary rule: at `startedAt`,
+  with its earlier periods recorded again (INV-13).
+
+`tests/vectors/` holds the lifecycle stories every implementation of the domain passes, and
+`crates/domain/tests/vectors.rs` runs them. `crates/domain/tests/observe.rs` holds the property tests
+of INV-4, INV-5 and INV-6 and one that replays the feed through §6.3's funding in any order.
 
 ## App Store signature verification
 
@@ -73,7 +121,8 @@ App Store Server API rather than trust the transaction it is handed.
 
 `SignedDataVerifier::windmill(clock)` is the production configuration: the pinned Apple root and the
 bundle id `works.windmill.app`. `SignedDataVerifier::new(roots, bundle_id, clock)` takes other roots
-and another bundle id; the tests in `crates/app_store/tests/` sign under chains they generate. No
+and another bundle id; the tests in `crates/app_store/tests/` sign under chains they generate, and
+`app_store_test_signer` signs under the committed test chain ([below](#app-store-test-signer)). No
 verifier accepts `Xcode` or `LocalTesting` (spec §8).
 
 ### Where the rules come from
@@ -150,6 +199,56 @@ The community crate `app-store-server-library` was not used. It ports Apple's li
 but it validates the chain with `x509-validator`, a crate its author first published in 2026 that
 has no audit. The check this service rests on would sit in that crate. It also brings an App Store
 Server API client, `chrono`, `serde_with` and `uuid`, which the verifier does not need.
+
+## App Store test signer
+
+`app_store_test_signer` signs App Store notifications and transactions under a test chain, for tests
+and for local and CI runs that drive a purchase, a renewal or a refund without Apple. The chain is
+committed in [`tests/fixtures/app_store/test-chain/`](tests/fixtures/app_store/test-chain/README.md):
+a P-384 root, a P-384 intermediate carrying Apple's WWDR marker and a P-256 leaf carrying Apple's
+receipt-signing marker, with the leaf's key. A verifier built with `SignedDataVerifier::new` and that
+root believes what it signs; `SignedDataVerifier::windmill` refuses it with `untrusted_chain`.
+
+The binary reads a description on stdin and writes the signed payload, a compact JWS, on stdout:
+
+```sh
+cargo run -q -p app_store_test_signer < tests/fixtures/app_store/test-payloads/renewed.json
+```
+
+The library behind it, for Rust tests, is `sign(description, now)`, with the root as `TEST_ROOT`.
+
+A description is a JSON object holding one key, `notification` or `transaction`, whose value is that
+payload as Apple's documentation shows it decoded. A notification's `data.signedTransactionInfo` and
+`data.signedRenewalInfo` may hold decoded objects too; each is signed and put back as its JWS. Every
+JWS has the header `alg` `ES256` with an `x5c` of leaf, intermediate and root, and is signed with the
+leaf's key. A field the description leaves out takes the value below, in the objects the description
+has; the signer adds no object, such as a `data` to a notification without one. A field it states is
+signed as stated, so a test can also sign what the verifier must refuse.
+
+| Payload | Field | Value when left out |
+|---|---|---|
+| notification | `notificationUUID` | a new random UUID: each signing is a new notification, and posting one JWS twice is a redelivery |
+| notification | `version` | `2.0` |
+| notification's `data` | `environment`, `bundleId` | `Sandbox`, `works.windmill.app` |
+| nested transaction | `environment`, `bundleId` | its notification's |
+| nested renewal info | `environment` | its notification's |
+| standalone transaction | `environment`, `bundleId` | `Sandbox`, `works.windmill.app` |
+| each of them | `signedDate` | the signing time |
+
+A date Apple states in epoch milliseconds (`signedDate`, `purchaseDate`, `originalPurchaseDate`,
+`expiresDate`, `revocationDate`, `renewalDate`, `gracePeriodExpiresDate`,
+`recentSubscriptionStartDate`) is written either in milliseconds or as `now` with an optional offset
+in days, hours or minutes, such as `now+30d`, `now-2h` or `now+15m`, counted from the signing time.
+Any other string is refused, naming its field. The committed descriptions, one for each moment of a
+subscription the later checks drive, are listed in
+[`test-payloads/README.md`](tests/fixtures/app_store/test-payloads/README.md).
+
+It is a crate of its own rather than a cargo feature of `app_store`, so the dependency rule, which
+`check-dependencies.sh` enforces, keeps it out of `subscriptions`: a normal or build edge to it is not
+one of the five allowed. A feature would keep it out only while nothing in a build turned the feature
+on. It lives in `tools/`, not `crates/`, because it is not part of the service: its frames and lines
+are not the service's own in Sentry (`telemetry::SERVICE_CRATES`). Its tests verify what it signs
+through `app_store`, a dev-dependency.
 
 ## Storage
 

@@ -47,17 +47,22 @@ export function BoardSkeleton({ phone }) {
     );
   }
   return (
-    <div className="st-board-columns" aria-busy="true" tabIndex={-1}>
-      {COLUMNS.map((column) => (
-        <section key={column} className={`st-board-columns-column st-board-columns-column--${column}`} tabIndex={-1}>
-          <h2 className={`st-board-columns-heading st-board-columns-heading--${column}`}>
-            {column === 'upNext' && <span className="st-board-columns-accent" aria-hidden />}
-            <span className="st-board-columns-title">{COLUMN_TITLES[column]}</span>
-          </h2>
-          {Array.from({ length: SKELETON_CARDS[column] }, (_, index) => <SkeletonCard key={index} size="plain" />)}
-        </section>
-      ))}
-    </div>
+    <>
+      <div className="st-board-skeleton-filter" aria-hidden>
+        {Array.from({ length: 5 }, (_, index) => <span key={index} />)}
+      </div>
+      <div className="st-board-columns" aria-busy="true" tabIndex={-1}>
+        {COLUMNS.map((column) => (
+          <section key={column} className={`st-board-columns-column st-board-columns-column--${column}`} tabIndex={-1}>
+            <h2 className={`st-board-columns-heading st-board-columns-heading--${column}`}>
+              {column === 'upNext' && <span className="st-board-columns-accent" aria-hidden />}
+              <span className="st-board-columns-title">{COLUMN_TITLES[column]}</span>
+            </h2>
+            {Array.from({ length: SKELETON_CARDS[column] }, (_, index) => <SkeletonCard key={index} size="plain" />)}
+          </section>
+        ))}
+      </div>
+    </>
   );
 }
 

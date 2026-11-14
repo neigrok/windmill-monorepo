@@ -2,20 +2,25 @@ name: Subscriptions CI
 
 # The Windmill One subscription service (services/subscriptions): the crates' dependency rule,
 # formatting, Clippy with warnings denied and the tests, the Postgres ones included, then the image
-# built and driven once against a database of its own.
+# built and driven once against a database of its own. Its wire fixtures
+# (packages/api-contract/subscriptions): what generate.py writes, and keeping the rules check.py holds.
 
 on:
   push:
     branches: [main]
     paths:
       - 'services/subscriptions/**'
+      - 'packages/api-contract/subscriptions/**'
       - '.github/workflows/subscriptions.yml'
       - '!services/subscriptions/**/*.md'
+      - '!packages/api-contract/subscriptions/**/*.md'
   pull_request:
     paths:
       - 'services/subscriptions/**'
+      - 'packages/api-contract/subscriptions/**'
       - '.github/workflows/subscriptions.yml'
       - '!services/subscriptions/**/*.md'
+      - '!packages/api-contract/subscriptions/**/*.md'
   workflow_dispatch:
 
 concurrency:
@@ -148,3 +153,18 @@ jobs:
           docker logs subscriptions || true
           docker logs unanswered || true
           docker logs ledger || true
+
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: packages/api-contract/subscriptions
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: The fixtures are what generate.py writes
+        run: python3 generate.py --check
+
+      - name: The fixtures keep the contract's rules
+        run: python3 check.py

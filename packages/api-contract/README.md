@@ -14,8 +14,8 @@ has the layout and commands; [sync/corpus/README.md](sync/corpus/README.md) the 
 
 Windmill One's wire shapes ([subscriptions.md](../../docs/foundation/subscriptions.md) §5): golden
 fixtures of the entitlement, the feed, both claim doors and `GET /v1/subscription`.
-[subscriptions/README.md](subscriptions/README.md) lists the files, who writes and reads each, and their
-rules.
+[subscriptions/README.md](subscriptions/README.md) lists the files, who writes and reads each, their rules,
+and the generator and checker that keep them.
 
 ## `gym/catalog.json`
 

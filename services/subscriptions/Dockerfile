@@ -15,6 +15,8 @@ RUN grep -qxF "channel = \"${RUST_VERSION}\"" /pinned/rust-toolchain.toml \
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+# The workspace names tools/ as members, so cargo needs them present; the build below compiles none.
+COPY tools ./tools
 # The storage crate embeds every migration in the binary at compile time.
 COPY migrations ./migrations
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
