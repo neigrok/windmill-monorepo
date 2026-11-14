@@ -49,16 +49,20 @@ function climbTo({ treeId, stepId }, { view, route }) {
 }
 
 // What this history entry says of the visit: the tree the person came from, the step they went through before coming
-// back, null for a way up through the guide, the view an arrival carries and whether the step gone through owns the tree.
-// A returning entry's view wins, as it is the one they left this tree in.
+// back, null for a way up through the guide, and the view an arrival carries; and, apart, the two ways a subtree enters
+// it: `downFromParent`, this tree was gone into as the subtree `from` holds, and `upFromSubtree`, the step gone through
+// owns the tree the person comes back from. A returning entry's view wins, as it is the one they left this tree in.
 export function readTreeVisit(state = window.history.state) {
   const cameFrom = typeof state?.[CAME_FROM]?.treeId === 'string' ? state[CAME_FROM] : null;
   const left = state?.[WENT_THROUGH];
   const wentThrough = left && (left.stepId === null || typeof left.stepId === 'string') ? left : null;
   const from = cameFrom?.treeId ?? null;
-  if (wentThrough) return { from, through: wentThrough.stepId, view: viewOf(wentThrough), door: 'back', subtree: wentThrough.subtree === true };
-  if (viewOf(cameFrom)) return { from, through: null, view: viewOf(cameFrom), door: 'tree', subtree: cameFrom.subtree === true };
-  return { from, through: null, view: null, door: null, subtree: cameFrom?.subtree === true };
+  const downFromParent = cameFrom?.subtree === true;
+  if (wentThrough) {
+    return { from, through: wentThrough.stepId, view: viewOf(wentThrough), door: 'back', downFromParent, upFromSubtree: wentThrough.subtree === true };
+  }
+  if (viewOf(cameFrom)) return { from, through: null, view: viewOf(cameFrom), door: 'tree', downFromParent, upFromSubtree: false };
+  return { from, through: null, view: null, door: null, downFromParent, upFromSubtree: false };
 }
 
 // An arrival is settled once: the step gone through and the view either side carried leave the entry, which keeps only
@@ -83,15 +87,17 @@ const deviceTrees = new LocalTreeRegistry();
 export function useTreeVisit({ room, arrival, holder, visitor = false, place = null, route = '#/app/', role = 'owner', band, registry = deviceTrees, track = beacon }) {
   useEffect(settleTreeVisit, []);
   const roams = holder !== null || visitor;
-  const ours = arrival.subtree ? roams : holder !== null;
+  // The arrival this entry tells of came by a subtree's door: down into this tree from its parent, or back up from one.
+  const bySubtree = arrival.door === 'back' ? arrival.upFromSubtree : arrival.downFromParent;
+  const ours = bySubtree ? roams : holder !== null;
 
   // A return up from a subtree is said once the room knows whose it is.
-  const returned = ours && arrival.door === 'back' && (!arrival.subtree || role !== null);
+  const returned = ours && arrival.door === 'back' && (!arrival.upFromSubtree || role !== null);
   const saidBack = useRef(false);
   useEffect(() => {
     if (!returned || saidBack.current) return;
     saidBack.current = true;
-    if (arrival.subtree) track('roadmap_subtree_back', { band, role });
+    if (arrival.upFromSubtree) track('roadmap_subtree_back', { band, role });
     else track('roadmap_tree_back', { band, place: holder.place });
   }, [returned]);
 
@@ -123,7 +129,7 @@ export function useTreeVisit({ room, arrival, holder, visitor = false, place = n
   // else to its parent with that step open.
   const up = roams ? place?.up ?? null : null;
   const back = useCallback(() => {
-    if (up && !(arrival.subtree && arrival.from === up.treeId)) {
+    if (up && !(arrival.downFromParent && arrival.from === up.treeId)) {
       climbTo(up, { view: room.viewRef.current, route });
       return;
     }
@@ -132,11 +138,11 @@ export function useTreeVisit({ room, arrival, holder, visitor = false, place = n
 
   const from = useMemo(() => {
     if (up) return { id: up.treeId, title: up.title };
-    if (!holder || !arrival.from || arrival.subtree) return null;
+    if (!holder || !arrival.from || arrival.downFromParent) return null;
     if (holder.place === 'account') return registry.owned(arrival.from, holder.account);
     const row = registry.onDevice(arrival.from);
     return row?.title ? { id: row.id, title: row.title } : null;
-  }, [holder, arrival.from, arrival.subtree, up]);
+  }, [holder, arrival.from, arrival.downFromParent, up]);
   if (!roams) return { from: null, through: null, view: null, door: null, open: null, back };
   if (!ours) return { from, through: null, view: null, door: null, open, back };
   return { from, through: arrival.through, view: arrival.view, door: arrival.door, open, back };
