@@ -599,7 +599,8 @@ committed before its connection dropped lands once. Only a room closing — `evi
 
 ### Bounds
 
-Declared once in `domain/Command.h` and published as `maxLength` by the MCP surface. Every length
+Declared once in `domain/Command.h`. The MCP surface tells a cap in the refusal past it and publishes
+none in a tool's schema but a title's `maxLength` (`adapters/mcp/README.md`). Every length
 is counted in characters — Unicode code points, `codePointCount` — never bytes, and a refusal
 names each field over its cap and by how much. Text that is not valid UTF-8 (an overlong form, a
 surrogate, a code point past U+10FFFF, a lone or missing continuation byte) is refused at the same

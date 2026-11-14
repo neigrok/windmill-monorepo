@@ -6,7 +6,7 @@ namespace {
 
 constexpr char kQuickstart[] = R"(# Windmill roadmap quickstart
 
-Tool schemas describe arguments and limits. These are the app-specific semantics.
+Tool schemas describe arguments; a refusal names the limit it met. These are the app-specific semantics.
 
 ## A tree's guide
 

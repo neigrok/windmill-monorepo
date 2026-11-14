@@ -152,7 +152,11 @@ std::optional<std::string> checkImportedNode(const Json::Value& node, const std:
   if (std::optional<std::string> bad = optionalString(node["order"], path + ".order")) return bad;
   if (std::optional<std::string> bad = optionalStrings(node["prerequisites"], path + ".prerequisites", kMaxIdLength))
     return bad;
-  if (std::optional<std::string> bad = optionalString(node["opens"], path + ".opens", kMaxIdLength)) return bad;
+  if (std::optional<std::string> bad = optionalString(node["opens"], path + ".opens", kMaxIdLength)) {
+    // A read answers `opens` as an object, so a node sent back as it was read is told which part of it to send.
+    if (node["opens"].isObject()) return *bad + ". Send the id alone: the treeId inside the opens that a read answers.";
+    return bad;
+  }
   return checkAnnotation(node, path + ".");
 }
 
