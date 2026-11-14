@@ -3,8 +3,7 @@ use std::cmp::Reverse;
 use crate::subscription::Subscription;
 use crate::values::{AccountId, Environment, Instant, Plan};
 
-// D-8: an account's answer, one block per environment, so a sandbox purchase never stands in for a
-// production one. It is a function of the ledger alone; whoever reads it applies the clock (INV-1).
+// D-8: one block per environment, folded from the ledger alone; whoever reads it applies the clock (INV-1).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountEntitlement {
     pub account_id: AccountId,
@@ -34,8 +33,7 @@ pub struct Entitlement {
 }
 
 impl Entitlement {
-    // §5.2. Governing: the subscription whose state grants access until the latest instant, else the
-    // one observed last, the smaller id breaking a tie. Others: every other one not ended, by id.
+    // §5.2: governing grants access the longest, else was observed last, ties to the smaller id; others by id.
     fn of(mut subscriptions: Vec<Subscription>) -> Entitlement {
         let precedence = |subscription: &Subscription| match subscription.access_until() {
             Some(access_until) => (true, access_until, Reverse(subscription.id.clone())),

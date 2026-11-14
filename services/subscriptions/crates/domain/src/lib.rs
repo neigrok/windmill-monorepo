@@ -5,7 +5,7 @@ mod values;
 
 pub use entitlement::{AccountEntitlement, Entitlement};
 pub use observe::{
-    AccountHint, Accounts, Change, Claim, Event, EventKind, Ledger, NewIds, Observation,
+    AccountHint, Accounts, Change, Claim, Event, EventKind, Ledger, MintedObservation, Observation,
     ObservedPeriod, Ownership, PeriodChange, Refusal, observe,
 };
 pub use subscription::{

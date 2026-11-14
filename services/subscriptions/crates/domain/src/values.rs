@@ -24,13 +24,13 @@ impl Add<Duration> for Instant {
 }
 
 // [start, end): a period's stretch, or the period in force.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Span {
     pub start: Instant,
     pub end: Instant,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Money {
     amount: String,
     currency: String,
@@ -91,7 +91,7 @@ text_values!(
 
 macro_rules! closed_names {
     ($(pub enum $name:ident { $($variant:ident = $text:literal),+ $(,)? })+) => {$(
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub enum $name {
             $($variant),+
         }

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use domain::{
     AccountEntitlement, AccountHint, AccountId, Accounts, BillingInterval, Change, Claim,
-    EndReason, Ending, Entitlement, Environment, Event, Instant, Ledger, Lineage, Money, NewIds,
+    EndReason, Ending, Entitlement, Environment, Event, Instant, Ledger, Lineage, Money,
     NextCharge, Observation, ObservedPeriod, Offer, OfferKind, Ownership, Period, PeriodChange,
     PeriodId, Plan, ProductId, Renewal, Span, State, Status, Store, StoreSubscriptionId,
     StoreTransactionId, Storefront, Subscription, SubscriptionId, observe,
@@ -43,8 +43,7 @@ fn every_vector_passes() {
     );
 }
 
-// Runs one story step by step; each step's ids are minted from the store's own ids so a reader can
-// follow them: `sub-<storeSubscriptionId>` and `period-<transaction>`.
+// Runs one story; ids are minted from the store's own, `sub-<storeSubscriptionId>` and `period-<transaction>`.
 fn tell(path: &Path) -> Result<(), String> {
     let name = path.file_name().expect("a file name").to_string_lossy();
     let story: Value = serde_json::from_str(&fs::read_to_string(path).expect("a readable vector"))
@@ -70,18 +69,14 @@ fn tell(path: &Path) -> Result<(), String> {
             hint: hint(field(step, "hint")),
             claim: claim(field(step, "claim")),
         };
-        let ids = NewIds::for_observation(
-            &observation,
-            SubscriptionId::new(format!(
-                "sub-{}",
-                observation.lineage.store_subscription_id.as_str()
-            )),
+        let lineage = observation.lineage.clone();
+        let observation = observation.mint_ids(
+            SubscriptionId::new(format!("sub-{}", lineage.store_subscription_id.as_str())),
             |period| PeriodId::new(format!("period-{}", period.transaction.as_str())),
         );
-        let lineage = observation.lineage.clone();
         let ledger = ledgers.get(&lineage).cloned().unwrap_or_default();
 
-        match observe(ledger.clone(), observation, accounts, ids) {
+        match observe(ledger.clone(), observation, accounts) {
             Ok(change) => {
                 compare(&place, field(step, "expect"), &change_json(&change))?;
                 let subscription = &change.subscription;

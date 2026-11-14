@@ -1,31 +1,33 @@
+use std::collections::BTreeMap;
+
 use domain::{
-    AccountHint, AccountId, Accounts, BillingInterval, Change, EndReason, Ending, Environment,
-    Instant, Ledger, Lineage, Money, NewIds, NextCharge, Observation, ObservedPeriod, Offer,
-    OfferKind, Ownership, Period, PeriodChange, PeriodId, Plan, ProductId, Renewal, Span, State,
-    Status, Store, StoreSubscriptionId, StoreTransactionId, Storefront, SubscriptionId, observe,
+    AccountHint, AccountId, Accounts, BillingInterval, Binding, BoundBy, Change, EndReason, Ending,
+    Environment, Event, EventKind, Instant, Ledger, Lineage, Money, NextCharge, Observation,
+    ObservedPeriod, Offer, OfferKind, Ownership, Period, PeriodChange, PeriodId, Plan, ProductId,
+    Renewal, Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId, Storefront,
+    Subscription, SubscriptionId, observe,
 };
-use proptest::collection::{btree_set, vec};
+use proptest::collection::vec;
 use proptest::option;
 use proptest::prelude::*;
 use proptest::sample::select;
 
-// A store's truth about one lineage, stated at several distinct instants, in an arbitrary order.
+// A store's truth about one lineage, stated at instants that may tie, each with the hint it carried.
 #[derive(Clone, Debug)]
 struct History {
-    observations: Vec<Observation>,
-    hint: AccountHint,
+    observations: Vec<(Observation, AccountHint)>,
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(512))]
+    #![proptest_config(ProptestConfig::with_cases(2000))]
 
     #[test]
     fn inv_4_an_observation_applied_twice_changes_nothing_and_records_nothing(history in history()) {
         let mut ledger = Ledger::default();
-        for observation in history.observations {
-            let change = observe_alone(&ledger, &observation, &history.hint);
+        for (observation, hint) in &history.observations {
+            let change = observe_alone(&ledger, observation, hint);
             apply(&mut ledger, change);
-            let again = observe_alone(&ledger, &observation, &history.hint);
+            let again = observe_alone(&ledger, observation, hint);
             let unchanged = Change {
                 subscription: ledger.subscription.clone().expect("the ledger holds the subscription"),
                 periods: Vec::new(),
@@ -37,87 +39,95 @@ proptest! {
     }
 
     #[test]
-    fn inv_5_an_older_observation_changes_no_field_but_still_writes_and_refunds_periods(history in history()) {
-        let newest = newest(&history.observations).clone();
+    fn inv_5_a_superseded_observation_changes_no_field_but_still_binds_writes_and_refunds(history in history()) {
+        let newest = newest(&history);
         let mut ledger = Ledger::default();
-        let change = observe_alone(&ledger, &newest, &history.hint);
+        let change = observe_alone(&ledger, &history.observations[newest].0, &history.observations[newest].1);
         apply(&mut ledger, change);
-        for observation in history.observations.iter().filter(|observation| **observation != newest) {
-            let change = observe_alone(&ledger, observation, &history.hint);
+        for (observation, hint) in history.observations.iter().enumerate().filter(|(index, _)| *index != newest).map(|(_, step)| step) {
+            let held = ledger.subscription.clone().expect("the newest observation wrote the subscription");
+            let change = observe_alone(&ledger, observation, hint);
+            let binding = held.binding.clone().or_else(|| bound_by_hint(observation.ownership, hint));
             let restated: Vec<PeriodChange> = observation
                 .periods
                 .iter()
-                .filter_map(|stated| match ledger.periods.iter().find(|held| held.transaction == stated.transaction) {
-                    None => Some(PeriodChange::Written(Period {
-                        id: PeriodId::new(format!("period-{}", stated.transaction.as_str())),
-                        transaction: stated.transaction.clone(),
-                        span: stated.span,
-                        price: stated.price.clone(),
-                        offer_kind: stated.offer_kind,
-                        refunded_at: stated.refunded_at,
-                        observed_at: observation.observed_at,
-                    })),
-                    Some(held) if observation.observed_at > held.observed_at => Some(PeriodChange::Restated(Period {
-                        refunded_at: stated.refunded_at,
-                        observed_at: observation.observed_at,
-                        ..held.clone()
-                    })),
+                .filter_map(|stated| match ledger.periods.iter().find(|period| period.transaction == stated.transaction) {
+                    None => Some(PeriodChange::Written(written(stated, observation.observed_at))),
+                    Some(period)
+                        if (observation.observed_at, stated.refunded_at) > (period.observed_at, period.refunded_at) =>
+                    {
+                        Some(PeriodChange::Restated(Period {
+                            refunded_at: stated.refunded_at,
+                            observed_at: observation.observed_at,
+                            ..period.clone()
+                        }))
+                    }
                     Some(_) => None,
                 })
                 .collect();
-            prop_assert_eq!(Some(&change.subscription), ledger.subscription.as_ref());
+            prop_assert_eq!(&change.subscription, &Subscription { binding, ..held });
             prop_assert_eq!(&change.periods, &restated);
-            prop_assert!(change.events.iter().all(|event| event.kind.period().is_some()), "a lifecycle event in {:?}", change.events);
+            prop_assert!(
+                change.events.iter().all(|event| event.kind.period().is_some() || event.kind == EventKind::Bound),
+                "a state event in {:?}",
+                change.events
+            );
             apply(&mut ledger, change);
         }
     }
 
     #[test]
-    fn inv_6_any_order_ends_in_the_newest_observations_subscription_and_the_union_of_periods(history in history()) {
-        let mut ledger = Ledger::default();
-        for observation in &history.observations {
-            let change = observe_alone(&ledger, observation, &history.hint);
-            apply(&mut ledger, change);
-        }
+    fn inv_6_any_order_ends_in_the_newest_statement_and_the_union_of_periods_ties_and_hints_included(history in history()) {
+        let ledger = replay(&history.observations);
 
-        let newest = newest(&history.observations);
-        let alone = observe_alone(&Ledger::default(), newest, &history.hint).subscription;
-        let mut union: Vec<Period> = Vec::new();
-        for observation in &history.observations {
+        let alone = history
+            .observations
+            .iter()
+            .map(|(observation, _)| observe_alone(&Ledger::default(), observation, &AccountHint::Absent).subscription)
+            .max_by(|one, other| (one.observed_at, &one.status).cmp(&(other.observed_at, &other.status)))
+            .expect("a history states at least once");
+        let binding = history
+            .observations
+            .iter()
+            .find_map(|(observation, hint)| bound_by_hint(observation.ownership, hint));
+        let mut union: BTreeMap<StoreTransactionId, Period> = BTreeMap::new();
+        for (observation, _) in &history.observations {
             for stated in &observation.periods {
-                let period = Period {
-                    id: PeriodId::new(format!("period-{}", stated.transaction.as_str())),
-                    transaction: stated.transaction.clone(),
-                    span: stated.span,
-                    price: stated.price.clone(),
-                    offer_kind: stated.offer_kind,
-                    refunded_at: stated.refunded_at,
-                    observed_at: observation.observed_at,
-                };
-                match union.iter_mut().find(|known| known.transaction == stated.transaction) {
-                    None => union.push(period),
-                    Some(known) if known.observed_at < period.observed_at => *known = period,
-                    Some(_) => {}
+                let period = written(stated, observation.observed_at);
+                let supersedes = union.get(&stated.transaction).is_none_or(|known| {
+                    (period.observed_at, period.refunded_at) > (known.observed_at, known.refunded_at)
+                });
+                if supersedes {
+                    union.insert(stated.transaction.clone(), period);
                 }
             }
         }
-        union.sort_by(|one, other| one.transaction.cmp(&other.transaction));
-        ledger.periods.sort_by(|one, other| one.transaction.cmp(&other.transaction));
+        let mut periods = ledger.periods.clone();
+        periods.sort_by(|one, other| one.transaction.cmp(&other.transaction));
 
-        prop_assert_eq!(ledger.subscription, Some(alone));
-        prop_assert_eq!(ledger.periods, union);
+        prop_assert_eq!(ledger.subscription, Some(Subscription { binding, ..alone }));
+        prop_assert_eq!(periods, union.into_values().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn funding_from_the_feed_converges_under_any_order(history in history()) {
+        let mut in_stamp_order = history.observations.clone();
+        in_stamp_order.sort_by_key(|(observation, _)| observation.observed_at);
+        prop_assert_eq!(open_grants(&history.observations), open_grants(&in_stamp_order));
     }
 }
 
 fn observe_alone(ledger: &Ledger, observation: &Observation, hint: &AccountHint) -> Change {
-    let ids = NewIds::for_observation(observation, SubscriptionId::new("sub-lineage"), |period| {
-        PeriodId::new(format!("period-{}", period.transaction.as_str()))
-    });
+    let observation = observation
+        .clone()
+        .mint_ids(SubscriptionId::new("sub-lineage"), |period| {
+            PeriodId::new(format!("period-{}", period.transaction.as_str()))
+        });
     let accounts = Accounts {
         hint: hint.clone(),
         claim: None,
     };
-    observe(ledger.clone(), observation.clone(), accounts, ids)
+    observe(ledger.clone(), observation, accounts)
         .expect("an observation without a claim is never refused")
 }
 
@@ -138,11 +148,115 @@ fn apply(ledger: &mut Ledger, change: Change) {
     }
 }
 
-fn newest(observations: &[Observation]) -> &Observation {
-    observations
-        .iter()
-        .max_by_key(|observation| observation.observed_at)
+fn replay(observations: &[(Observation, AccountHint)]) -> Ledger {
+    let mut ledger = Ledger::default();
+    for (observation, hint) in observations {
+        let change = observe_alone(&ledger, observation, hint);
+        apply(&mut ledger, change);
+    }
+    ledger
+}
+
+fn newest(history: &History) -> usize {
+    (0..history.observations.len())
+        .max_by_key(|index| {
+            let observation = &history.observations[*index].0;
+            let alone =
+                observe_alone(&Ledger::default(), observation, &AccountHint::Absent).subscription;
+            (alone.observed_at, alone.status)
+        })
         .expect("a history states at least once")
+}
+
+fn bound_by_hint(ownership: Ownership, hint: &AccountHint) -> Option<Binding> {
+    match (ownership, hint) {
+        (Ownership::Purchased, AccountHint::Live(account_id)) => Some(Binding {
+            account_id: account_id.clone(),
+            bound_at: at(0),
+            bound_by: BoundBy::Purchase,
+        }),
+        _ => None,
+    }
+}
+
+fn written(stated: &ObservedPeriod, observed_at: Instant) -> Period {
+    Period {
+        id: PeriodId::new(format!("period-{}", stated.transaction.as_str())),
+        transaction: stated.transaction.clone(),
+        span: stated.span,
+        price: stated.price.clone(),
+        offer_kind: stated.offer_kind,
+        refunded_at: stated.refunded_at,
+        observed_at,
+    }
+}
+
+// §6.3 as the backend's follower applies the feed, over one production lineage: the open grants it ends with.
+fn open_grants(observations: &[(Observation, AccountHint)]) -> BTreeMap<PeriodId, AccountId> {
+    let mut ledger = Ledger::default();
+    let mut feed: Vec<Event> = Vec::new();
+    for (observation, hint) in observations {
+        let change = observe_alone(&ledger, observation, hint);
+        feed.extend(change.events.clone());
+        apply(&mut ledger, change);
+    }
+
+    let mut grants: BTreeMap<PeriodId, (AccountId, Span, Option<Instant>)> = BTreeMap::new();
+    let overlaps = |grants: &BTreeMap<PeriodId, (AccountId, Span, Option<Instant>)>,
+                    period: &Period,
+                    account: &AccountId| {
+        grants.iter().any(|(id, (holder, span, closed_at))| {
+            *id != period.id
+                && holder == account
+                && period.span.start
+                    < closed_at.map_or(span.end, |closed_at| closed_at.min(span.end))
+                && span.start < period.span.end
+        })
+    };
+    let fund = |grants: &mut BTreeMap<PeriodId, (AccountId, Span, Option<Instant>)>,
+                period: &Period,
+                account: &AccountId| {
+        let paid = period
+            .price
+            .amount()
+            .bytes()
+            .any(|digit| (b'1'..=b'9').contains(&digit));
+        if paid && !grants.contains_key(&period.id) && !overlaps(grants, period, account) {
+            grants.insert(period.id.clone(), (account.clone(), period.span, None));
+        }
+    };
+    for event in &feed {
+        let Some(account) = &event.account_id else {
+            continue;
+        };
+        match &event.kind {
+            EventKind::PeriodRecorded(period) if period.refunded_at.is_none() => {
+                fund(&mut grants, period, account)
+            }
+            EventKind::PeriodRefunded(period) => {
+                if let Some((_, span, closed_at)) = grants.get_mut(&period.id) {
+                    *closed_at = period
+                        .refunded_at
+                        .map(|refunded_at| refunded_at.min(span.end));
+                }
+            }
+            EventKind::PeriodRefundReversed(period) => match grants.get(&period.id).cloned() {
+                Some((holder, _, _)) if !overlaps(&grants, period, &holder) => {
+                    grants
+                        .entry(period.id.clone())
+                        .and_modify(|(_, _, closed_at)| *closed_at = None);
+                }
+                Some(_) => {}
+                None => fund(&mut grants, period, account),
+            },
+            _ => {}
+        }
+    }
+    grants
+        .into_iter()
+        .filter(|(_, (_, _, closed_at))| closed_at.is_none())
+        .map(|(id, (account, _, _))| (id, account))
+        .collect()
 }
 
 fn at(minute: i64) -> Instant {
@@ -153,7 +267,6 @@ fn usd(amount: &str) -> Money {
     Money::new(amount, "USD").expect("a price")
 }
 
-// Four monthly transactions; each may be refunded at some minute, and that refund reversed later.
 fn transaction_span(index: usize) -> Span {
     let month = 43_200 * i64::try_from(index).expect("a small index");
     Span {
@@ -164,64 +277,70 @@ fn transaction_span(index: usize) -> Span {
 
 fn history() -> impl Strategy<Value = History> {
     let refund = option::of((0..200_000i64, option::of(1..100_000i64)));
+    let stamp = (0..40i64).prop_map(|slot| slot * 5_000);
+    let hint = prop_oneof![
+        Just(AccountHint::Absent),
+        Just(AccountHint::Live(AccountId::new("account-ada"))),
+        Just(AccountHint::Erased),
+    ];
     (
         vec(refund, 4),
-        btree_set(0..200_000i64, 1..=6),
-        prop_oneof![
-            Just(AccountHint::Absent),
-            Just(AccountHint::Live(AccountId::new("account-ada")))
-        ],
+        vec(stamp, 1..=6),
         prop_oneof![Just(Ownership::Purchased), Just(Ownership::Shared)],
     )
-        .prop_flat_map(|(refunds, minutes, hint, ownership)| {
+        .prop_flat_map(move |(refunds, minutes, ownership)| {
             let count = minutes.len();
             (
                 Just(refunds),
-                Just(minutes.into_iter().collect::<Vec<_>>()),
-                Just(hint),
+                Just(minutes),
                 Just(ownership),
                 vec(status(), count),
                 vec(vec(any::<bool>(), 4), count),
+                vec(hint.clone(), count),
             )
         })
-        .prop_flat_map(|(refunds, minutes, hint, ownership, statuses, stated)| {
-            let observations: Vec<Observation> = minutes
+        .prop_flat_map(|(refunds, minutes, ownership, statuses, stated, hints)| {
+            let observations: Vec<(Observation, AccountHint)> = minutes
                 .iter()
                 .zip(statuses)
                 .zip(stated)
-                .map(|((minute, status), stated)| Observation {
-                    lineage: Lineage {
-                        store: Store::AppStore,
-                        environment: Environment::Production,
-                        store_subscription_id: StoreSubscriptionId::new("lineage"),
-                    },
-                    observed_at: at(*minute),
-                    ownership,
-                    status,
-                    periods: (0..4)
-                        .filter(|index| stated[*index])
-                        .map(|index| ObservedPeriod {
-                            transaction: StoreTransactionId::new(format!("t{index}")),
-                            span: transaction_span(index),
-                            price: usd("11.99"),
-                            offer_kind: (index == 0).then_some(OfferKind::Introductory),
-                            refunded_at: match refunds[index] {
-                                Some((refunded, reversal))
-                                    if refunded <= *minute
-                                        && reversal
-                                            .is_none_or(|after| *minute < refunded + after) =>
-                                {
-                                    Some(at(refunded))
-                                }
-                                _ => None,
-                            },
-                        })
-                        .collect(),
+                .zip(hints)
+                .map(|(((minute, status), stated), hint)| {
+                    let observation = Observation {
+                        lineage: Lineage {
+                            store: Store::AppStore,
+                            environment: Environment::Production,
+                            store_subscription_id: StoreSubscriptionId::new("lineage"),
+                        },
+                        observed_at: at(*minute),
+                        ownership,
+                        status,
+                        periods: (0..4)
+                            .filter(|index| stated[*index])
+                            .map(|index| ObservedPeriod {
+                                transaction: StoreTransactionId::new(format!("t{index}")),
+                                span: transaction_span(index),
+                                price: usd("11.99"),
+                                offer_kind: (index == 0).then_some(OfferKind::Introductory),
+                                refunded_at: match refunds[index] {
+                                    Some((refunded, reversal))
+                                        if refunded <= *minute
+                                            && reversal
+                                                .is_none_or(|after| *minute < refunded + after) =>
+                                    {
+                                        Some(at(refunded))
+                                    }
+                                    _ => None,
+                                },
+                            })
+                            .collect(),
+                    };
+                    (observation, hint)
                 })
                 .collect();
-            (Just(observations).prop_shuffle(), Just(hint))
+            Just(observations).prop_shuffle()
         })
-        .prop_map(|(observations, hint)| History { observations, hint })
+        .prop_map(|observations| History { observations })
 }
 
 fn status() -> impl Strategy<Value = Status> {

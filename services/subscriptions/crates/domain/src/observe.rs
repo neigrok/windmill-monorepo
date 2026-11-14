@@ -47,23 +47,32 @@ pub struct Accounts {
     pub claim: Option<Claim>,
 }
 
-// Ids are minted by the caller, one for each period the observation states, so observe stays deterministic.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NewIds {
-    subscription: SubscriptionId,
-    periods: Vec<PeriodId>,
+impl Observation {
+    pub fn mint_ids(
+        self,
+        subscription_id: SubscriptionId,
+        period_id: impl FnMut(&ObservedPeriod) -> PeriodId,
+    ) -> MintedObservation {
+        let period_ids = self.periods.iter().map(period_id).collect();
+        MintedObservation {
+            observation: self,
+            subscription_id,
+            period_ids,
+        }
+    }
 }
 
-impl NewIds {
-    pub fn for_observation(
-        observation: &Observation,
-        subscription: SubscriptionId,
-        period: impl FnMut(&ObservedPeriod) -> PeriodId,
-    ) -> NewIds {
-        NewIds {
-            subscription,
-            periods: observation.periods.iter().map(period).collect(),
-        }
+// An observation with the ids its new records take, minted by the caller so observe stays deterministic.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MintedObservation {
+    observation: Observation,
+    subscription_id: SubscriptionId,
+    period_ids: Vec<PeriodId>,
+}
+
+impl MintedObservation {
+    pub fn observation(&self) -> &Observation {
+        &self.observation
     }
 }
 
@@ -183,16 +192,20 @@ impl Error for Refusal {}
 // §3.4: the domain's one write. Every store, door and sweep reaches the ledger through it.
 pub fn observe(
     ledger: Ledger,
-    observation: Observation,
+    observation: MintedObservation,
     accounts: Accounts,
-    ids: NewIds,
 ) -> Result<Change, Refusal> {
-    let Observation {
-        lineage,
-        observed_at,
-        ownership,
-        status,
-        periods: stated_periods,
+    let MintedObservation {
+        observation:
+            Observation {
+                lineage,
+                observed_at,
+                ownership,
+                status,
+                periods: stated_periods,
+            },
+        subscription_id,
+        period_ids,
     } = observation;
     let Ledger {
         subscription: held,
@@ -203,19 +216,23 @@ pub fn observe(
         "observe was handed the ledger of another lineage"
     );
 
-    let adopts_status = held
-        .as_ref()
-        .is_none_or(|held| observed_at > held.observed_at);
     let status = status.charging_only_while_renewing();
+    let supersedes = held
+        .as_ref()
+        .is_none_or(|held| (observed_at, &status) > (held.observed_at, &held.status));
+    let bought_again_at = held
+        .as_ref()
+        .filter(|held| supersedes && status.is_bought_again_after(&held.status))
+        .map(|_| status.current_period.start);
     let mut subscription = match held.clone() {
         None => Subscription {
-            id: ids.subscription.clone(),
+            id: subscription_id,
             lineage,
             binding: None,
             status,
             observed_at,
         },
-        Some(held) if adopts_status => Subscription {
+        Some(held) if supersedes => Subscription {
             status,
             observed_at,
             ..held
@@ -229,51 +246,66 @@ pub fn observe(
         ownership,
         &accounts,
         subscription.status.started_at,
+        bought_again_at,
     )?;
-    let newly_bound = match (held_binding, &subscription.binding) {
-        (None, Some(binding)) => Some(binding.clone()),
-        _ => None,
-    };
+    let first_bound = held_binding.is_none() && subscription.binding.is_some();
 
-    let (period_changes, period_events) = record_periods(
-        &held_periods,
-        stated_periods,
-        ids,
-        observed_at,
-        newly_bound.is_some(),
-    );
+    let stated_periods = stated_periods.into_iter().zip(period_ids).collect();
+    let (period_changes, period_events) =
+        record_periods(&held_periods, stated_periods, observed_at, first_bound);
 
-    let lifecycle = if adopts_status {
-        lifecycle_events(
+    let lifecycle = match &held {
+        Some(held) if !supersedes => Vec::new(),
+        held => lifecycle_events(
             held.as_ref().map(|held| &held.status),
             &subscription.status,
             observed_at,
-        )
-    } else {
-        Vec::new()
+        ),
     };
     let (ending, going_on): (Vec<_>, Vec<_>) = lifecycle
         .into_iter()
         .partition(|(kind, _)| matches!(kind, EventKind::Expired | EventKind::Revoked));
-    let bound = newly_bound
-        .as_ref()
-        .map(|binding| (EventKind::Bound, binding.bound_at));
+    let account_id = subscription.account_id().cloned();
+    let event = |(kind, occurred_at): (EventKind, Instant), account_id: Option<AccountId>| Event {
+        kind,
+        occurred_at,
+        subscription_id: subscription.id.clone(),
+        account_id,
+    };
+    let binding_events = match (&held_binding, &subscription.binding) {
+        (Some(before), Some(after)) if before.account_id != after.account_id => vec![
+            event(
+                (EventKind::Unbound, after.bound_at),
+                Some(before.account_id.clone()),
+            ),
+            event(
+                (EventKind::Bound, after.bound_at),
+                Some(after.account_id.clone()),
+            ),
+        ],
+        (None, Some(after)) => vec![event(
+            (EventKind::Bound, after.bound_at),
+            Some(after.account_id.clone()),
+        )],
+        _ => Vec::new(),
+    };
     let events = going_on
         .into_iter()
-        .chain(bound)
-        .chain(period_events)
-        .chain(ending)
-        .map(|(kind, occurred_at)| Event {
-            kind,
-            occurred_at,
-            subscription_id: subscription.id.clone(),
-            account_id: subscription.account_id().cloned(),
-        })
+        .map(|moment| event(moment, account_id.clone()))
+        .chain(binding_events)
+        .chain(
+            period_events
+                .into_iter()
+                .chain(ending)
+                .map(|moment| event(moment, account_id.clone())),
+        )
         .collect();
 
-    let hint_for_store = newly_bound
-        .filter(|binding| binding.bound_by == BoundBy::Claim)
-        .map(|binding| binding.account_id);
+    let hint_for_store = subscription
+        .binding
+        .as_ref()
+        .filter(|binding| first_bound && binding.bound_by == BoundBy::Claim)
+        .map(|binding| binding.account_id.clone());
     Ok(Change {
         subscription,
         periods: period_changes,
@@ -282,21 +314,32 @@ pub fn observe(
     })
 }
 
-// §4. A hint binds only a purchase its buyer owns; a claim binds what no hint has.
+// §4: a hint binds a purchase its buyer owns, a new purchase moves an ended lineage (R-11), a claim binds the rest.
 fn bind(
     held: Option<Binding>,
     ownership: Ownership,
     accounts: &Accounts,
-    purchased_at: Instant,
+    started_at: Instant,
+    bought_again_at: Option<Instant>,
 ) -> Result<Option<Binding>, Refusal> {
-    let binding = held.or_else(|| match (&accounts.hint, ownership) {
-        (AccountHint::Live(account_id), Ownership::Purchased) => Some(Binding {
-            account_id: account_id.clone(),
-            bound_at: purchased_at,
+    let payer = match (&accounts.hint, ownership) {
+        (AccountHint::Live(account_id), Ownership::Purchased) => Some(account_id),
+        _ => None,
+    };
+    let binding = match (held, payer, bought_again_at) {
+        (Some(held), Some(payer), Some(bought_at)) if held.account_id != *payer => Some(Binding {
+            account_id: payer.clone(),
+            bound_at: bought_at,
             bound_by: BoundBy::Purchase,
         }),
-        _ => None,
-    });
+        (Some(held), _, _) => Some(held),
+        (None, Some(payer), _) => Some(Binding {
+            account_id: payer.clone(),
+            bound_at: started_at,
+            bound_by: BoundBy::Purchase,
+        }),
+        (None, None, _) => None,
+    };
     let Some(claim) = &accounts.claim else {
         return Ok(binding);
     };
@@ -315,23 +358,16 @@ fn bind(
     }
 }
 
-// INV-7 and INV-13: a stated period the ledger lacks is written; a newer statement of a held one moves
-// its refund time. Each change records its period event, and a binding records every period again.
+// INV-7 and INV-13: write what the ledger lacks, restate what a statement supersedes, one event per period.
 fn record_periods(
     held: &[Period],
-    stated: Vec<ObservedPeriod>,
-    ids: NewIds,
+    stated: Vec<(ObservedPeriod, PeriodId)>,
     observed_at: Instant,
-    binds: bool,
+    first_bound: bool,
 ) -> (Vec<PeriodChange>, Vec<(EventKind, Instant)>) {
-    assert_eq!(
-        ids.periods.len(),
-        stated.len(),
-        "NewIds was minted for another observation"
-    );
     let mut periods = held.to_vec();
     let mut changes = Vec::new();
-    for (stated, id) in stated.into_iter().zip(ids.periods) {
+    for (stated, id) in stated {
         match periods
             .iter_mut()
             .find(|period| period.transaction == stated.transaction)
@@ -349,7 +385,9 @@ fn record_periods(
                 changes.push(PeriodChange::Written(period.clone()));
                 periods.push(period);
             }
-            Some(period) if observed_at > period.observed_at => {
+            Some(period)
+                if (observed_at, stated.refunded_at) > (period.observed_at, period.refunded_at) =>
+            {
                 period.refunded_at = stated.refunded_at;
                 period.observed_at = observed_at;
                 changes.push(PeriodChange::Restated(period.clone()));
@@ -366,44 +404,26 @@ fn record_periods(
         let before = held
             .iter()
             .find(|held| held.transaction == period.transaction);
-        if before.is_none() || binds {
-            events.push((EventKind::PeriodRecorded(period.clone()), observed_at));
-        }
-        let refunded_before = before.and_then(|before| before.refunded_at);
-        let refund_event = match (refunded_before, period.refunded_at) {
-            (earlier, Some(refunded_at)) if earlier != Some(refunded_at) => {
+        let event = match (before.map(|before| before.refunded_at), period.refunded_at) {
+            (None, _) => Some((EventKind::PeriodRecorded(period), observed_at)),
+            _ if first_bound => Some((EventKind::PeriodRecorded(period), observed_at)),
+            (Some(earlier), Some(refunded_at)) if earlier != Some(refunded_at) => {
                 Some((EventKind::PeriodRefunded(period), refunded_at))
             }
-            (Some(_), None) => Some((EventKind::PeriodRefundReversed(period), observed_at)),
+            (Some(Some(_)), None) => Some((EventKind::PeriodRefundReversed(period), observed_at)),
             _ => None,
         };
-        events.extend(refund_event);
+        events.extend(event);
     }
     (changes, events)
 }
 
-// The events a change of status records, in story order. A lineage that starts, or starts again
-// after it ended, is told as a fresh renewing subscription that moved to what the store states. A new
-// period in force records the one event that names how it came: started, renewed, payment_recovered
-// or resumed.
+// §3.4: the state events of a change of status, in story order; a lineage bought (again) is told from a fresh start.
 fn lifecycle_events(
     held: Option<&Status>,
     after: &Status,
     observed_at: Instant,
 ) -> Vec<(EventKind, Instant)> {
-    let active: fn(&State) -> bool = |state| matches!(state, State::Active { .. });
-    let paused: fn(&State) -> bool = |state| matches!(state, State::Paused { .. });
-    let expired: fn(&State) -> bool = |state| matches!(state, State::Expired(_));
-    let revoked: fn(&State) -> bool = |state| matches!(state, State::Revoked(_));
-    let in_trouble: fn(&State) -> bool = State::in_payment_trouble;
-
-    let starts_again = |before: &Status| match before.state {
-        State::Expired(_) => !after.state.has_ended(),
-        State::Revoked(_) => {
-            !after.state.has_ended() && after.current_period.start != before.current_period.start
-        }
-        _ => false,
-    };
     let freshly_started = Status {
         state: State::Active {
             pause_scheduled_for: None,
@@ -418,7 +438,7 @@ fn lifecycle_events(
     };
     let mut events = Vec::new();
     let before = match held {
-        Some(before) if !starts_again(before) => before,
+        Some(before) if !after.is_bought_again_after(before) => before,
         _ => {
             let purchased_at = match held {
                 None => after.started_at,
@@ -432,29 +452,42 @@ fn lifecycle_events(
     let (was, is) = (&before.state, &after.state);
     let enters = |kind: fn(&State) -> bool| kind(is) && !kind(was);
     let leaves = |kind: fn(&State) -> bool| kind(was) && !kind(is);
-    let new_period = after.current_period.start != before.current_period.start;
+    let new_period = after.current_period.start > before.current_period.start;
     let ended_at = is.ending().map_or(observed_at, |ending| ending.at);
     let story = [
-        (leaves(revoked), EventKind::RevocationReversed, observed_at),
         (
-            in_trouble(was) && active(is),
+            leaves(State::is_revoked),
+            EventKind::RevocationReversed,
+            observed_at,
+        ),
+        (
+            was.in_payment_trouble() && is.is_active(),
             EventKind::PaymentRecovered,
             observed_at,
         ),
-        (paused(was) && active(is), EventKind::Resumed, observed_at),
-        (active(was) && new_period, EventKind::Renewed, observed_at),
+        (
+            was.is_paused() && is.is_active(),
+            EventKind::Resumed,
+            observed_at,
+        ),
+        (
+            was.is_active() && new_period,
+            EventKind::Renewed,
+            observed_at,
+        ),
         (
             after.product_id != before.product_id,
             EventKind::PlanChanged,
             observed_at,
         ),
         (
-            !new_period && after.current_period.end > before.current_period.end,
+            after.current_period.start == before.current_period.start
+                && after.current_period.end > before.current_period.end,
             EventKind::PeriodExtended,
             observed_at,
         ),
         (
-            enters(in_trouble),
+            enters(State::in_payment_trouble),
             EventKind::PaymentFailed,
             is.payment_failed_at().unwrap_or(observed_at),
         ),
@@ -481,12 +514,12 @@ fn lifecycle_events(
             observed_at,
         ),
         (
-            enters(paused),
+            enters(State::is_paused),
             EventKind::Paused,
             is.paused_at().unwrap_or(observed_at),
         ),
-        (enters(expired), EventKind::Expired, ended_at),
-        (enters(revoked), EventKind::Revoked, ended_at),
+        (enters(State::is_expired), EventKind::Expired, ended_at),
+        (enters(State::is_revoked), EventKind::Revoked, ended_at),
     ];
     events.extend(
         story

@@ -62,8 +62,8 @@ pub struct Binding {
     pub bound_by: BoundBy,
 }
 
-// Everything a store states about a subscription at one instant. The subscription holds the newest.
-#[derive(Clone, Debug, PartialEq, Eq)]
+// Everything a store states about a subscription at one instant; its order breaks a tie of stamps (INV-6).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Status {
     pub plan: Plan,
     pub product_id: ProductId,
@@ -79,16 +79,27 @@ pub struct Status {
 
 impl Status {
     pub(crate) fn charging_only_while_renewing(mut self) -> Status {
-        let renews = self.renewal.auto_renew && matches!(self.state, State::Active { .. });
+        let renews = self.renewal.auto_renew && self.state.is_active();
         if !renews {
             self.renewal.next_charge = None;
         }
         self
     }
+
+    // §3.2: only a new purchase takes an ended lineage out of expired, or out of revoked into a new period.
+    pub(crate) fn is_bought_again_after(&self, held: &Status) -> bool {
+        match held.state {
+            State::Expired(_) => !self.state.has_ended(),
+            State::Revoked(_) => {
+                !self.state.has_ended() && self.current_period.start > held.current_period.start
+            }
+            _ => false,
+        }
+    }
 }
 
 // §3.2: each state carries the facts that exist only in it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum State {
     Active {
         pause_scheduled_for: Option<Instant>,
@@ -120,8 +131,24 @@ impl State {
         }
     }
 
+    pub fn is_active(&self) -> bool {
+        matches!(self, State::Active { .. })
+    }
+
+    pub fn is_paused(&self) -> bool {
+        matches!(self, State::Paused { .. })
+    }
+
+    pub fn is_expired(&self) -> bool {
+        matches!(self, State::Expired(_))
+    }
+
+    pub fn is_revoked(&self) -> bool {
+        matches!(self, State::Revoked(_))
+    }
+
     pub fn has_ended(&self) -> bool {
-        matches!(self, State::Expired(_) | State::Revoked(_))
+        self.is_expired() || self.is_revoked()
     }
 
     pub fn in_payment_trouble(&self) -> bool {
@@ -176,13 +203,13 @@ impl State {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Ending {
     pub at: Instant,
     pub reason: EndReason,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Renewal {
     pub auto_renew: bool,
     pub next_charge: Option<NextCharge>,
@@ -190,19 +217,19 @@ pub struct Renewal {
     pub cancel_requested_at: Option<Instant>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NextCharge {
     pub at: Instant,
     pub price: Money,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Offer {
     pub kind: OfferKind,
     pub ends_at: Option<Instant>,
 }
 
-// D-4. Written once (INV-7); its refund time follows the newest statement about it.
+// D-4: its stretch is the one its first statement gave (INV-7); its refund time follows the newest statement.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Period {
     pub id: PeriodId,
