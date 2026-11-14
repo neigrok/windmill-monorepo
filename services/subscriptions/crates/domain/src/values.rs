@@ -119,7 +119,8 @@ macro_rules! shown_in_debug {
     )+};
 }
 
-// §10: a store's ids name a purchase and stay out of every log line and panic message.
+// §10: a store's ids name a purchase, and an account id is the account hint a store carries; both stay out of every
+// log line and panic message.
 macro_rules! redacted_in_debug {
     ($($name:ident),+ $(,)?) => {$(
         impl fmt::Debug for $name {
@@ -133,13 +134,12 @@ macro_rules! redacted_in_debug {
 shown_in_debug!(
     SubscriptionId,
     PeriodId,
-    AccountId,
     ProductId,
     BillingInterval,
-    Storefront,
+    Storefront
 );
 
-redacted_in_debug!(StoreSubscriptionId, StoreTransactionId);
+redacted_in_debug!(StoreSubscriptionId, StoreTransactionId, AccountId);
 
 macro_rules! closed_names {
     ($(pub enum $name:ident { $($variant:ident = $text:literal),+ $(,)? })+) => {$(

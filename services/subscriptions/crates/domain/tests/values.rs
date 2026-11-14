@@ -1,7 +1,7 @@
 use domain::{
-    BillingInterval, Environment, Instant, Lineage, Money, Observation, ObservedPeriod, Ownership,
-    Plan, ProductId, Renewal, Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId,
-    Storefront,
+    AccountHint, AccountId, BillingInterval, Claim, Claimant, Environment, Instant, Lineage, Money,
+    Observation, ObservedPeriod, Ownership, Plan, ProductId, Renewal, Span, State, Status, Store,
+    StoreSubscriptionId, StoreTransactionId, Storefront,
 };
 
 #[test]
@@ -54,6 +54,21 @@ fn an_observation_formatted_for_debugging_names_no_store_id() {
     assert!(printed.contains("StoreSubscriptionId(redacted)"));
     assert!(printed.contains("StoreTransactionId(redacted)"));
     assert!(printed.contains("works.windmill.app.one.monthly"));
+}
+
+#[test]
+fn an_account_id_formatted_for_debugging_is_redacted() {
+    let account_id = AccountId::new("6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84");
+    let claim = Claim {
+        claimant: Claimant::Live(account_id.clone()),
+        at: Instant::from_epoch_millis(1_798_797_600_000),
+    };
+
+    assert_eq!(
+        format!("{:?} {claim:?}", AccountHint::Live(account_id)),
+        "Live(AccountId(redacted)) Claim { claimant: Live(AccountId(redacted)), \
+         at: Instant(1798797600000) }"
+    );
 }
 
 #[test]

@@ -503,3 +503,81 @@ TEST(ai_call_budget_settles_an_unconsumed_round_at_zero_and_holds_an_ambiguous_o
   for (const auto& [id, row] : repository.reservations) held += row.state == AiBudgetState::Uncertain ? 1 : 0;
   CHECK_EQ(held, 1);
 }
+
+TEST(ai_call_budget_round_whose_hold_lapsed_while_out_books_nothing_and_files_no_issue) {
+  FakeAiBudgetRepository repository;
+  long long now = 1'792'000'000'000LL;
+  auto service = std::make_shared<AiBudgetService>(repository, [] { return AiBudgetLimits{}; }, [&] { return now; });
+  FakeAuthRepository accounts;
+  const auto user = accounts.createUser(Email{"sam@example.com"}, "Sam");
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository ledger;
+  Entitlements entitlements{subscriptions, ledger, {}};
+  Failures failures;
+  AiCallBudget budget{service, entitlements, accounts, failures};
+  AiSpend spend;
+  spend.user = user.id;
+  const auto settled = budget.begin(spend, std::optional<long long>{10'000'000}, AiCallFunding::anyAllowance);
+  REQUIRE(settled.reservation);
+  now += kAiBudgetHoldLifetimeMs;
+  const auto ambiguous = budget.begin(spend, std::optional<long long>{10'000'000}, AiCallFunding::anyAllowance);
+  REQUIRE(ambiguous.reservation);
+  now += kAiBudgetHoldLifetimeMs;
+  CHECK_EQ(service->releaseLapsed(), 1);
+  std::vector<std::string> accounted;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.operation == "ai.call.account") accounted.push_back(line.outcome);
+  });
+  budget.finish(*settled.reservation, std::optional<long long>{5'000'000}, AiCallEnd::settled);
+  budget.finish(*ambiguous.reservation, std::nullopt, AiCallEnd::uncertain);
+  installWriteSink({});
+  CHECK_EQ(accounted, (std::vector<std::string>{"released", "released"}));
+  CHECK(failures.reports.empty());
+  for (const auto& [id, row] : repository.reservations) {
+    CHECK_EQ(row.state, AiBudgetState::Released);
+    CHECK_EQ(row.releasedFrom, std::optional<AiBudgetState>{AiBudgetState::Dispatched});
+    CHECK_FALSE(row.actualNanos);
+  }
+}
+
+TEST(ai_call_budget_a_cancelled_round_settles_at_once_at_its_input_estimate_or_its_usage_never_above_its_hold) {
+  FakeAiBudgetRepository repository;
+  auto service = std::make_shared<AiBudgetService>(repository, [] { return AiBudgetLimits{}; },
+                                                   [] { return 1'792'000'000'000LL; });
+  FakeAuthRepository accounts;
+  const auto user = accounts.createUser(Email{"stopper@example.com"}, "Stopper");
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository ledger;
+  Entitlements entitlements{subscriptions, ledger, {}, {}, service};
+  Failures failures;
+  auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
+  AiSpend spend;
+  spend.user = user.id;
+  spend.model = "claude-opus-5";
+  const auto request = parse(R"({"model":"claude-opus-5","max_tokens":2000,"messages":[{"role":"user","content":"Hi"}]})");
+  std::optional<ModelRound> next;
+  auto call = metered([&](const Json::Value&) { return *next; }, spend, {}, {}, {}, {}, budget, {}, 1'024);
+  std::vector<std::string> accounted;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.operation == "ai.call.account") accounted.push_back(line.outcome);
+  });
+  next = ModelRound{std::nullopt, false, true};
+  CHECK_FALSE(call(request));
+  REQUIRE_EQ(repository.reservations.size(), 1u);
+  const auto beforeTheMessage = repository.reservations.begin()->second;
+  REQUIRE(beforeTheMessage.outputBudget);
+  CHECK_EQ(beforeTheMessage.state, AiBudgetState::Settled);
+  CHECK_EQ(beforeTheMessage.actualNanos, std::optional<long long>{beforeTheMessage.outputBudget->inputNanos});
+  next = ModelRound{parse(R"({"stop_reason":"cancelled","content":[],"usage":{"input_tokens":3000,
+      "output_tokens":100000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}})"), false, true};
+  REQUIRE(call(request));
+  installWriteSink({});
+  REQUIRE_EQ(repository.reservations.size(), 2u);
+  for (const auto& [id, round] : repository.reservations) {
+    CHECK_EQ(round.state, AiBudgetState::Settled);
+    if (id == beforeTheMessage.id) continue;
+    CHECK_EQ(round.actualNanos, std::optional<long long>{round.amountNanos});
+  }
+  CHECK_EQ(accounted, (std::vector<std::string>{"cancelled", "cancelled"}));
+  CHECK(failures.reports.empty());
+}

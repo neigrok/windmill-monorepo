@@ -37,7 +37,8 @@ constexpr std::chrono::seconds kShutdownDrain{5};
 
 // How a take ends for the ledger. An answer that is not a success consumed nothing, and neither did a request that
 // never reached a connection or a TLS session: both settle at zero. A success settles at what it billed. Anything
-// else — a timeout, a connection dropped mid-exchange — may have been heard and billed, so its hold stays.
+// else — a timeout, a connection dropped mid-exchange — may have been heard and billed, so its hold stays until it
+// lapses.
 AiCallEnd takeEnd(drogon::ReqResult result, const drogon::HttpResponsePtr& response) {
   if (result == drogon::ReqResult::Ok && response)
     return response->statusCode() / 100 == 2 ? AiCallEnd::settled : AiCallEnd::unconsumed;

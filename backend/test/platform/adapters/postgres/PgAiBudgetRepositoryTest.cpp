@@ -1192,3 +1192,177 @@ TEST(pg_ai_budget_replay_and_dispatch_are_single_claim_and_conflicting_subjects_
   pqxx::work txn{*conn};
   CHECK_EQ(txn.exec("SELECT count(*) FROM ai_budget_reservations")[0][0].as<int>(), 1);
 }
+
+TEST(pg_ai_budget_lapsed_holds_release_at_zero_free_their_slots_and_never_settle_later) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("DELETE FROM ai_budget_alerts; DELETE FROM ai_budget_reservations; DELETE FROM ai_budget_balances; "
+             "DELETE FROM ai_budget_grants; DELETE FROM ai_budget_device_accounts");
+    txn.commit();
+  }
+  const AiBudgetLimits limits;
+  const long long admitted = 1'767'229'200'000;
+  const long long lapsed = admitted + kAiBudgetHoldLifetimeMs;
+  const AiBudgetPrincipal free{{AiBudgetSubjectKind::Account, "free"}, AiBudgetTier::LoggedIn};
+  const AiBudgetPrincipal device{{AiBudgetSubjectKind::Device, "device"}, AiBudgetTier::Anonymous};
+  const AiBudgetPrincipal paid{{AiBudgetSubjectKind::Account, "paid"}, AiBudgetTier::WindmillOne};
+  PgAiBudgetRepository repository{pgTestPool()};
+  CHECK_EQ(repository.fund({"grant", "paid", AiBudgetFundingSource::Subscription, *AiBudgetPeriod::at(admitted),
+                            limits.paidPeriodNanos, "invoice"}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"timed-out", free, 40, admitted}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.markDispatched("timed-out").code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.markUncertain("timed-out").code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"device-call", device, 30, admitted}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.markDispatched("device-call").code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.bindDevice("device", "free", admitted, limits), AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"paid-uncertain", paid, 50, admitted}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.markDispatched("paid-uncertain").code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.markUncertain("paid-uncertain").code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"paid-restart", paid, 60, admitted + 60'000}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.markDispatched("paid-restart").code, AiBudgetCode::Ok);
+
+  CHECK(repository.releaseLapsed(lapsed - 1, 20, std::nullopt).empty());
+  CHECK_EQ(repository.reserve({"too-soon", free, 10, lapsed - 1}, limits).code, AiBudgetCode::ConcurrencyExhausted);
+  CHECK_EQ(repository.reserve({"too-soon", paid, 10, lapsed - 1}, limits).code, AiBudgetCode::ConcurrencyExhausted);
+
+  PgAiBudgetRepository restarted{pgTestPool()};
+  const auto freed = restarted.releaseLapsed(lapsed, 20, free.subject);
+  REQUIRE_EQ(freed.size(), std::size_t{2});
+  CHECK_EQ(freed[0].id, std::string("device-call"));
+  CHECK_EQ(freed[0].releasedFrom, std::optional<AiBudgetState>{AiBudgetState::Dispatched});
+  CHECK_EQ(freed[0].amountNanos, 30);
+  CHECK_EQ(freed[1].id, std::string("timed-out"));
+  CHECK_EQ(freed[1].releasedFrom, std::optional<AiBudgetState>{AiBudgetState::Uncertain});
+  CHECK_EQ(freed[1].amountNanos, 40);
+  for (const auto& hold : freed) {
+    CHECK_EQ(hold.state, AiBudgetState::Released);
+    CHECK_FALSE(hold.actualNanos);
+  }
+  const auto account = restarted.snapshot(free, lapsed, limits);
+  CHECK_EQ(account.concurrentCalls, 0);
+  CHECK_EQ(account.subject.spentNanos, 0);
+  CHECK_EQ(account.subject.heldNanos, 0);
+  CHECK_EQ(account.freeMonth.spentNanos, 0);
+  CHECK_EQ(account.freeMonth.heldNanos, 0);
+  CHECK_EQ(account.freeDay.spentNanos, 0);
+  CHECK_EQ(account.freeDay.heldNanos, 0);
+  const auto installation = restarted.snapshot(device, lapsed, limits);
+  CHECK_EQ(installation.subject.spentNanos, 0);
+  CHECK_EQ(installation.subject.heldNanos, 0);
+  CHECK_EQ(restarted.snapshot(paid, lapsed, limits).concurrentCalls, 2);
+  CHECK_EQ(restarted.snapshot(paid, lapsed, limits).subject.heldNanos, 110);
+  CHECK_EQ(restarted.reserve({"next", free, 10, lapsed}, limits).code, AiBudgetCode::Ok);
+
+  const auto lateSettle = restarted.settle("timed-out", 35);
+  CHECK_EQ(lateSettle.code, AiBudgetCode::InvalidState);
+  REQUIRE(lateSettle.reservation);
+  CHECK_EQ(lateSettle.reservation->state, AiBudgetState::Released);
+  CHECK_EQ(restarted.markUncertain("device-call").code, AiBudgetCode::InvalidState);
+  CHECK_EQ(restarted.settle("device-call", 0).code, AiBudgetCode::InvalidState);
+  CHECK(restarted.releaseLapsed(lapsed, 20, free.subject).empty());
+  const auto afterLateCallbacks = restarted.snapshot(free, lapsed, limits);
+  CHECK_EQ(afterLateCallbacks.concurrentCalls, 1);
+  CHECK_EQ(afterLateCallbacks.subject.spentNanos, 0);
+  CHECK_EQ(afterLateCallbacks.subject.heldNanos, 10);
+  CHECK_EQ(afterLateCallbacks.freeMonth.spentNanos, 0);
+  CHECK_EQ(afterLateCallbacks.freeMonth.heldNanos, 10);
+
+  const auto oldest = restarted.releaseLapsed(lapsed + 60'000, 1, std::nullopt);
+  REQUIRE_EQ(oldest.size(), std::size_t{1});
+  CHECK_EQ(oldest[0].id, std::string("paid-uncertain"));
+  const auto restart = restarted.releaseLapsed(lapsed + 60'000, 1, std::nullopt);
+  REQUIRE_EQ(restart.size(), std::size_t{1});
+  CHECK_EQ(restart[0].id, std::string("paid-restart"));
+  CHECK_EQ(restart[0].releasedFrom, std::optional<AiBudgetState>{AiBudgetState::Dispatched});
+  CHECK(restarted.releaseLapsed(lapsed + 60'000, 1, std::nullopt).empty());
+  const auto grant = restarted.snapshot(paid, lapsed + 60'000, limits);
+  CHECK_EQ(grant.concurrentCalls, 0);
+  CHECK_EQ(grant.subject.spentNanos, 0);
+  CHECK_EQ(grant.subject.heldNanos, 0);
+
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  const pqxx::result rows = txn.exec(
+      "SELECT id || ' ' || state || ' ' || coalesce(released_from, '-') || ' ' || amount_nanos || ' ' || "
+      "coalesce(actual_nanos::text, '-') FROM ai_budget_reservations ORDER BY id");
+  std::vector<std::string> ledger;
+  for (std::size_t index = 0; index < rows.size(); ++index) ledger.push_back(rows[index][0].as<std::string>());
+  CHECK_EQ(ledger, (std::vector<std::string>{
+      "device-call released dispatched 30 -", "next reserved - 10 -", "paid-restart released dispatched 60 -",
+      "paid-uncertain released uncertain 50 -", "timed-out released uncertain 40 -"}));
+}
+
+TEST(pg_ai_budget_lapse_sweeps_racing_admissions_release_each_hold_once_and_keep_counters_exact) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("DELETE FROM ai_budget_alerts; DELETE FROM ai_budget_reservations; DELETE FROM ai_budget_balances; "
+             "DELETE FROM ai_budget_grants; DELETE FROM ai_budget_device_accounts");
+    txn.commit();
+  }
+  const AiBudgetLimits limits;
+  const long long admitted = 1'767'229'200'000;
+  const long long now = admitted + kAiBudgetHoldLifetimeMs;
+  {
+    PgAiBudgetRepository setup{pgTestPool()};
+    for (int account = 0; account < 4; ++account) {
+      const auto id = "lapsed-" + std::to_string(account);
+      const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, "racer-" + std::to_string(account)},
+                                        AiBudgetTier::LoggedIn};
+      CHECK_EQ(setup.reserve({id, principal, 10 + account, admitted}, limits).code, AiBudgetCode::Ok);
+      CHECK_EQ(setup.markDispatched(id).code, AiBudgetCode::Ok);
+      if (account % 2) CHECK_EQ(setup.markUncertain(id).code, AiBudgetCode::Ok);
+    }
+  }
+  std::array<std::vector<AiBudgetReservation>, 12> released;
+  std::array<AiBudgetCode, 12> codes{};
+  std::array<std::exception_ptr, 12> failures;
+  std::barrier start{12};
+  std::vector<std::thread> threads;
+  for (int index = 0; index < 12; ++index) threads.emplace_back([&, index] {
+    PgAiBudgetRepository process{pgTestPool()};
+    const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, "racer-" + std::to_string(index % 4)},
+                                      AiBudgetTier::LoggedIn};
+    start.arrive_and_wait();
+    try {
+      if (index < 8) {
+        released[index] = process.releaseLapsed(now, 20, principal.subject);
+        codes[index] = process.reserve({"new-" + std::to_string(index), principal, 5, now}, limits).code;
+        return;
+      }
+      for (auto batch = process.releaseLapsed(now, 1, std::nullopt); !batch.empty();
+           batch = process.releaseLapsed(now, 1, std::nullopt))
+        released[index].insert(released[index].end(), batch.begin(), batch.end());
+    } catch (...) { failures[index] = std::current_exception(); }
+  });
+  for (auto& thread : threads) thread.join();
+  for (const auto& failure : failures) CHECK_FALSE(failure);
+  std::vector<std::string> ids;
+  for (const auto& holds : released)
+    for (const auto& hold : holds) ids.push_back(hold.id);
+  std::sort(ids.begin(), ids.end());
+  CHECK_EQ(ids, (std::vector<std::string>{"lapsed-0", "lapsed-1", "lapsed-2", "lapsed-3"}));
+  for (int account = 0; account < 4; ++account) {
+    const std::array<AiBudgetCode, 2> admissions{codes[account], codes[account + 4]};
+    CHECK_EQ(std::count(admissions.begin(), admissions.end(), AiBudgetCode::Ok), 1);
+    CHECK_EQ(std::count(admissions.begin(), admissions.end(), AiBudgetCode::ConcurrencyExhausted), 1);
+  }
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  const pqxx::result drift = txn.exec(
+      "SELECT b.scope || ' ' || b.subject_key || ' spent ' || b.spent_nanos || ' held ' || b.held_nanos || "
+      "' unresolved ' || coalesce((SELECT sum(r.amount_nanos) FROM ai_budget_reservations r "
+      "WHERE r.state IN ('reserved', 'dispatched', 'uncertain') AND (b.scope <> 'account_month' OR r.subject_id = b.subject_key)), 0) "
+      "FROM ai_budget_balances b ORDER BY b.scope, b.subject_key");
+  std::vector<std::string> balances;
+  for (std::size_t index = 0; index < drift.size(); ++index) balances.push_back(drift[index][0].as<std::string>());
+  CHECK_EQ(balances, (std::vector<std::string>{
+      "account_month racer-0 spent 0 held 5 unresolved 5", "account_month racer-1 spent 0 held 5 unresolved 5",
+      "account_month racer-2 spent 0 held 5 unresolved 5", "account_month racer-3 spent 0 held 5 unresolved 5",
+      "free_day all spent 0 held 20 unresolved 20", "free_month all spent 0 held 20 unresolved 20"}));
+  CHECK_EQ(txn.exec("SELECT count(*) FROM ai_budget_reservations WHERE state = 'released' AND released_from IS NOT NULL "
+                    "AND actual_nanos IS NULL")[0][0].as<int>(), 4);
+}
