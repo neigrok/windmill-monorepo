@@ -566,14 +566,14 @@ principal.
 
 ### §8.2 Voice: OpenAI
 
-The voice doors are the same whatever model serves them. Which model does is the tier table's to
-name and is not settled (R-6), because the provider is retiring the ones in use. Read on OpenAI's
+The voice doors are the same whatever model serves them. Transcription runs on `gpt-transcribe`; the
+speech model is not chosen (R-6). The provider is retiring the models in use today. Read on OpenAI's
 documentation on 2026-11-14:
 
 | Model | Door | Billed by | Shutdown |
 |---|---|---|---|
 | `gpt-4o-transcribe` (Journal Talk today) | `/v1/audio/transcriptions` | tokens: $2.50 per 1M input, $10.00 per 1M output | 2027-02-26 |
-| `gpt-transcribe` | `/v1/audio/transcriptions` | audio duration: $0.0045 a minute | none published |
+| `gpt-transcribe` (this service) | `/v1/audio/transcriptions` | audio duration: $0.0045 a minute | none published |
 | `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` | `/v1/audio/speech` | characters, or text tokens in and audio tokens out | 2027-01-06, all of them |
 
 The provider names its Realtime API as the replacement for the speech door, which is a session and
@@ -582,15 +582,17 @@ cost, and nothing on what a request costs when its caller disconnects (INV-7, IN
 
 Transcription:
 
-- The body is at most `MAX_AUDIO_BODY`. A body's size bounds no duration, so the reservation is the
-  model's ceiling. For a model billed by tokens that is its context window priced as input plus its
-  output limit: 16,000 and 2,000 tokens for `gpt-4o-transcribe`, $0.06.
-- A model billed by duration has no ceiling the service can state: the size bounds nothing and the
-  provider documents no longest take. The service serves such a model only once it measures a take's
-  length itself, by decoding it, before admission (R-6).
-- The adapter asks for a streamed transcript. The last event's `usage` settles the call:
-  `{type: "tokens", input_tokens, output_tokens}` or `{type: "duration", seconds}`. A transcript
-  that arrives without usable usage was heard, and the call ends `assumed`, at the ceiling.
+- The body is at most `MAX_AUDIO_BODY`. A body's size bounds no length and the provider documents no
+  longest take, so the service measures a take's length itself before admission, by walking the
+  audio's packets and never by a length a header states. A take longer than `MAX_TAKE` is refused as
+  `too_large`.
+- The reservation is the price of the measured length rounded up to a whole minute, which is a
+  ceiling however the provider rounds.
+- The adapter asks for a streamed transcript. The call settles from the seconds the provider states
+  in its last event's `usage` (`{type: "duration", seconds}`), and from the length the service
+  measured when it states none. The provider's pages show neither whether this model states its usage
+  nor how it rounds a minute. Both are read from its bill when the door is built, and until the
+  price book records them a call costs its reservation.
 
 Speech is not built anywhere in Windmill. The rule its adapter follows: the reservation is the most
 the chosen model can bill for the request's text, read from its documentation into the price book;
@@ -655,7 +657,7 @@ Configuration, with the values the service ships with:
 | `COUNT_MARGIN` | 2% and 64 tokens | `HOURLY_FUSE` | $20 a provider |
 | `CALLS_IN_FLIGHT_MAX` | 256 | `OWNER_GRANTS_MAX` | 25 a month |
 | `CALL_RETENTION` | 90 days | `COUNT_DEADLINE` | 2 s |
-| `READS_PER_MINUTE` | 120 | | |
+| `READS_PER_MINUTE` | 120 | `MAX_TAKE` | 20 min |
 
 ## §10 Observability
 
@@ -742,21 +744,21 @@ designed when the service is built, one integration at a time.
 
 ## §13 Rulings
 
-The owner's rulings. R-3, R-4, R-5 and R-7 are settled; the others are open, and each row holds what
-this document assumes until it is ruled.
+The owner's rulings. All are settled but the speech half of R-6, whose row holds what this document
+assumes until it is ruled.
 
 | | Question | Ruling |
 |---|---|---|
-| R-1 | A call the provider may have worked on without saying what it cost | Open. Assumed: it costs its whole reservation, at once, and an operator may correct it. |
-| R-2 | Who hears that a shared budget is nearly spent | Open. Assumed: free-pool crossings and the fuse report to Sentry, where an alert rule writes to the owner. A person's own budget raises no report. |
+| R-1 | A call the provider may have worked on without saying what it cost | It costs its whole reservation, at once, and an operator may correct it. (2026-11-14) |
+| R-2 | Who hears that a shared budget is nearly spent | Free-pool crossings and the fuse report to Sentry, where an alert rule writes to the owner. A person's own budget raises no report. (2026-11-14) |
 | R-3 | The ledger rows the backend holds at cutover | Dropped. No subscription has been sold, so no paid grant is lost; each installation's lifetime spend and each account's month start again. (2026-11-14) |
 | R-4 | The amounts and limits of each tier | One table with a row a tier, holding the backend's amounts as they stand. The output ceilings, the calls a minute and `OWNER_GRANTS_MAX` are values this document sets. (2026-11-14) |
 | R-5 | Who may use transcription and speech | Windmill One only, from a grant. (2026-11-14) |
-| R-6 | The models that serve transcription and speech | Open. Transcription is assumed to stay on `gpt-4o-transcribe` until the service can measure a take's length, and to move to `gpt-transcribe` before 2027-02-26. Nothing is assumed for speech: every model on the provider's speech door shuts down on 2027-01-06, so the capability is built after a model, and possibly another provider, is chosen (§8.2). |
+| R-6 | The models that serve transcription and speech | Transcription runs on `gpt-transcribe`. (2026-11-14) The speech model is open, and nothing is assumed for it: every model on the provider's speech door shuts down on 2027-01-06, so speech is built after a model, and possibly another provider, is chosen (§8.2). |
 | R-7 | Whose prompts the service accepts | Any. It enforces money rules only. (2026-11-14) |
-| R-8 | A call the provider billed above its reservation | Open. Assumed: the whole cost is spent and reported, and nobody is locked out. |
-| R-9 | How long a call's row is kept | Open. Assumed: 90 days, after which only the budgets' sums remain. |
-| R-10 | Whether installations and free accounts share one daily pool | Open. Assumed: shared. The tier table can give each its own. |
+| R-8 | A call the provider billed above its reservation | The whole cost is spent and reported, and nobody is locked out. (2026-11-14) |
+| R-9 | How long a call's row is kept | 90 days, after which only the budgets' sums remain. (2026-11-14) |
+| R-10 | Whether installations and free accounts share one daily pool | Shared. The tier table can give each its own. (2026-11-14) |
 
 What this service does differently from the backend's ledger, beyond moving it:
 
@@ -774,3 +776,5 @@ What this service does differently from the backend's ledger, beyond moving it:
   with no grant in force is `free`, as [subscriptions §6.3](subscriptions.md#63-funding-the-ai-allowance)
   says and the backend's code does not yet do.
 - A call's row is deleted after `CALL_RETENTION` (R-9).
+- Transcription runs on `gpt-transcribe` and reserves each take's measured length (R-6); the backend
+  runs `gpt-4o-transcribe` and reserves that model's token ceiling for every take.
