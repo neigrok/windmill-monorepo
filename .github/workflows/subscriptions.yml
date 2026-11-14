@@ -1,7 +1,8 @@
 name: Subscriptions CI
 
 # The Windmill One subscription service (services/subscriptions): the crates' dependency rule,
-# formatting, Clippy with warnings denied and the tests, then the image built and driven once.
+# formatting, Clippy with warnings denied and the tests, the Postgres ones included, then the image
+# built and driven once against a database of its own.
 
 on:
   push:
@@ -32,6 +33,18 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The storage tests create and drop databases beside this one; without it they are ignored.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      SUBSCRIPTIONS_TEST_DATABASE_URL: postgresql://postgres:ci@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v5
 
@@ -56,9 +69,9 @@ jobs:
       - name: Tests
         run: cargo test --locked
 
-  # The image from services/subscriptions/Dockerfile, built for Linux in release mode and run once: it
-  # becomes healthy, both listeners answer ready, the public one answers no internal path, and SIGTERM
-  # stops it with exit code 0.
+  # The image from services/subscriptions/Dockerfile, built for Linux in release mode and run once beside
+  # a Postgres: it migrates the empty database, becomes healthy, both listeners answer ready, the public
+  # one answers no internal path, and SIGTERM stops it with exit code 0.
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -77,9 +90,22 @@ jobs:
           cache-from: type=gha,scope=subscriptions
           cache-to: type=gha,scope=subscriptions,mode=max
 
+      - name: Start the ledger's database
+        run: |
+          docker network create ci
+          docker run -d --name ledger --network ci -e POSTGRES_USER=windmill_subscriptions \
+            -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=windmill_subscriptions postgres:16
+          for attempt in $(seq 1 30); do
+            docker exec ledger pg_isready -h 127.0.0.1 -U windmill_subscriptions -d windmill_subscriptions && break
+            sleep 1
+          done
+          docker exec ledger pg_isready -h 127.0.0.1 -U windmill_subscriptions -d windmill_subscriptions
+
       - name: Drive the container
         run: |
-          docker run -d --name subscriptions -p 8082:8082 -p 8083:8083 -e SENTRY_ENVIRONMENT=ci windmill-subscriptions:ci
+          docker run -d --name subscriptions --network ci -p 8082:8082 -p 8083:8083 -e SENTRY_ENVIRONMENT=ci \
+            -e SUBSCRIPTIONS_DATABASE_URL=postgresql://windmill_subscriptions:ci@ledger:5432/windmill_subscriptions \
+            windmill-subscriptions:ci
           for attempt in $(seq 1 30); do
             [ "$(docker inspect -f '{{.State.Health.Status}}' subscriptions)" = healthy ] && break
             sleep 1
@@ -90,6 +116,7 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/internal/v1/feed)" = 404
           docker stop subscriptions
           test "$(docker inspect -f '{{.State.ExitCode}}' subscriptions)" = 0
+          docker logs subscriptions | grep '"message":"ledger open"'
           docker logs subscriptions | grep '"message":"stopped"'
 
       # Sentry's ingest here accepts every connection and never answers, so each send hangs until the
@@ -97,8 +124,9 @@ jobs:
       - name: Stop in time while Sentry never answers
         run: |
           python3 -c 'import socket; hole = socket.create_server(("0.0.0.0", 9478)); held = [hole.accept()[0] for _ in iter(int, 1)]' > /dev/null 2>&1 &
-          docker run -d --name unanswered --add-host host.docker.internal:host-gateway -p 18083:8083 \
+          docker run -d --name unanswered --network ci --add-host host.docker.internal:host-gateway -p 18083:8083 \
             -e SENTRY_ENVIRONMENT=ci -e SENTRY_DSN=http://public@host.docker.internal:9478/1 \
+            -e SUBSCRIPTIONS_DATABASE_URL=postgresql://windmill_subscriptions:ci@ledger:5432/windmill_subscriptions \
             -e SUBSCRIPTIONS_PANIC_ROUTE_ENABLED=true windmill-subscriptions:ci
           for attempt in $(seq 1 30); do
             curl -sf -o /dev/null http://127.0.0.1:18083/health && break
@@ -119,3 +147,4 @@ jobs:
         run: |
           docker logs subscriptions || true
           docker logs unanswered || true
+          docker logs ledger || true

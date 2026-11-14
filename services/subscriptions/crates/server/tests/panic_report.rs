@@ -3,15 +3,27 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use server::config::Config;
-use server::listeners::{Bounds, Listener};
+use server::listeners::{Bounds, Listener, Readiness};
 use server::telemetry::{SERVICE_CRATES, report_panics};
+use storage::StorageError;
 use tower::ServiceExt;
+
+// Answers ready, as a ledger that answers does.
+#[derive(Clone)]
+struct Answering;
+
+impl Readiness for Answering {
+    async fn ready(&self) -> Result<(), StorageError> {
+        Ok(())
+    }
+}
 
 #[test]
 fn a_handler_panic_reaches_sentry_with_its_route_and_without_its_message() {
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
+        "SUBSCRIPTIONS_DATABASE_URL" => Some("postgresql://ledger@127.0.0.1:1/ledger".to_owned()),
         "SENTRY_ENVIRONMENT" => Some("test".to_owned()),
         "SUBSCRIPTIONS_PANIC_ROUTE_ENABLED" => Some("true".to_owned()),
         _ => None,
@@ -27,7 +39,7 @@ fn a_handler_panic_reaches_sentry_with_its_route_and_without_its_message() {
     let events = sentry::test::with_captured_events(|| {
         let response = runtime.block_on(
             Listener::Internal
-                .router(&config, Bounds::default())
+                .router(&config, Answering, Bounds::default())
                 .oneshot(Request::get("/debug/panic").body(Body::empty()).unwrap()),
         );
         status = Some(response.unwrap().status());

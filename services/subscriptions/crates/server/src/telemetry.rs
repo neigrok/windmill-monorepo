@@ -81,7 +81,31 @@ impl TransportFactory for BoundedSends {
     }
 }
 
-// The one source of Issues: location and stack, never the message, which may hold anything.
+// An unexpected failure of a named operation (spec §10): one Issue per operation and code, and one
+// line naming both. No message travels: a failure's text can quote what it was handed.
+pub fn report_failure(operation: &'static str, code: &'static str, sqlstate: Option<&str>) {
+    let event_id = sentry::with_scope(
+        |scope| {
+            scope.set_tag("operation", operation);
+            scope.set_tag("code", code);
+            if let Some(sqlstate) = sqlstate {
+                scope.set_tag("sqlstate", sqlstate);
+            }
+            scope.set_fingerprint(Some(&[operation, code]));
+        },
+        || sentry::capture_message(operation, sentry::Level::Error),
+    );
+    let sentry_event_id = (!event_id.is_nil()).then(|| event_id.simple().to_string());
+    tracing::error!(
+        operation,
+        code,
+        sqlstate,
+        sentry_event_id,
+        "{operation} failed"
+    );
+}
+
+// The other source of Issues: location and stack, never the message, which may hold anything.
 pub fn report_panics() {
     std::panic::set_hook(Box::new(|panic| {
         let location = panic.location().map_or_else(
