@@ -1,5 +1,5 @@
 # The subscription service on this stack, for rehearsing its database on a local Docker before the
-# service runs in production (README.md, "Rehearse the subscription database"). Layer it over
+# service runs in production (README.md, "Rehearse it locally"). Layer it over
 # docker-compose.yml with a project name of its own:
 #   docker compose -p <name> -f docker-compose.yml -f docker-compose.subscriptions.yml up -d subscriptions
 services:

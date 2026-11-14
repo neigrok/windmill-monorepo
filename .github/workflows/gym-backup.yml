@@ -41,14 +41,21 @@ jobs:
               'pg_dump --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --format=custom' \
               > "backups/products-$stamp.dump.partial"
             keep products "$(docker compose exec -T db printenv POSTGRES_DB)"
-            # The subscription ledger exists once a deploy has run with its password set, and is dumped as
-            # its own role: pg_hba.conf turns the backend's role away from it.
-            if grep -q '^SUBSCRIPTIONS_DB_PASSWORD=.' .env; then
-              docker compose exec -T db pg_dump --username=windmill_subscriptions \
-                --dbname=windmill_subscriptions --format=custom > "backups/subscriptions-$stamp.dump.partial"
+            # The subscription ledger is dumped wherever it exists, as its own role and with its password:
+            # pg_hba.conf turns the backend's role away from it, and asks that role for a password even over
+            # the socket.
+            ledger=$(docker compose exec -T db sh -ec 'psql -XAtq --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' \
+              <<< "select 1 from pg_database where datname = 'windmill_subscriptions'")
+            if [ "$ledger" = 1 ]; then
+              PGPASSWORD=$(sed -n 's/^SUBSCRIPTIONS_DB_PASSWORD=//p' .env) \
+                docker compose exec -T -e PGPASSWORD db pg_dump --username=windmill_subscriptions \
+                --dbname=windmill_subscriptions --format=custom > "backups/subscriptions-$stamp.dump.partial" || {
+                printf 'FAIL backup: windmill_subscriptions could not be dumped with the password in .env\n' >&2
+                return 1
+              }
               keep subscriptions windmill_subscriptions
             else
-              printf 'SKIP subscriptions backup: SUBSCRIPTIONS_DB_PASSWORD is not set, so windmill_subscriptions is not provisioned\n'
+              printf 'SKIP subscriptions backup: windmill_subscriptions does not exist\n'
             fi
           }
           # Keeps backups/<name>-<stamp>.dump.partial once pg_restore reads it back as a dump of <database>,

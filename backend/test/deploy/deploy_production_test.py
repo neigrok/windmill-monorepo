@@ -15,6 +15,8 @@ import unittest
 
 
 SCRIPT = Path(__file__).resolve().parents[2] / "deploy/deploy-production.sh"
+PROVISIONING_SKIP = "SKIP subscriptions database: SUBSCRIPTIONS_DB_PASSWORD is not set, so nothing was provisioned"
+DEPLOYED = "PASS deployed: immutable image, sync compatibility, process environment and Caddy verified; DB password preserved\n"
 
 
 def server_config(environment=".env"):
@@ -42,6 +44,10 @@ def compose(state, arguments):
             "migrate": {"image": state.get("migrationImage", server_config(environment)["image"])}}})
     if command == ["ps", "-q", "server"]:
         return 0, "server-container"
+    if command == ["ps", "-aq", "subscriptions-db"]:
+        return 0, "provisioning-container"
+    if command == ["logs", "--no-log-prefix", "--tail", "1", "subscriptions-db"]:
+        return 0, state.get("provisioningLine", PROVISIONING_SKIP) + "\n"
     if command[0] == "up":
         state["promoted"] = True
         if "--force-recreate" in command:
@@ -102,6 +108,8 @@ def docker_shim(arguments):
     if arguments[:3] == ["inspect", "--format", '{"image":{{json .Config.Image}},"id":{{json .Image}}}']:
         status, output = 0, json.dumps({"image": state.get("serverImage", server_config()["image"]),
                                       "id": state.get("serverImageId", "sha256:" + "a" * 64)})
+    elif arguments == ["inspect", "--format", "{{.State.Status}} {{.State.ExitCode}}", "provisioning-container"]:
+        status, output = 0, state.get("provisioningOutcome", "exited 0")
     elif arguments[:4] == ["image", "inspect", "--format", "{{.Id}}"]:
         status, output = 0, state.get("candidateImageId", "sha256:" + "a" * 64)
     elif arguments in (["image", "prune", "-af"], ["builder", "prune", "-af"]):
@@ -126,6 +134,8 @@ class DeployProductionTest(unittest.TestCase):
         (self.work / ".env").write_text("IMAGE_TAG=old\nPOSTGRES_PASSWORD=live-secret\n")
         (self.work / "docker-compose.yml").write_text("# live compose\n")
         (self.work / "Caddyfile").write_text("# live Caddyfile\n")
+        (self.work / "subscriptions-db").mkdir()
+        (self.work / "subscriptions-db/provision.sh").write_text("# live provisioning\n")
         self.upload_candidate()
         self.state_path = root / "docker-state.json"
         self.state_path.write_text(json.dumps({"commands": [], "caddyMount": "# live Caddyfile\n",
@@ -143,11 +153,14 @@ class DeployProductionTest(unittest.TestCase):
         (self.work / "rendered.env").write_text("IMAGE_TAG=new\nPOSTGRES_PASSWORD=rendered-secret\nDOMAIN_APP=example.test\n")
         (self.work / "docker-compose.next.yml").write_text("# candidate compose\n")
         (self.work / "Caddyfile.next").write_text("# candidate Caddyfile\n")
+        (self.work / "subscriptions-db.next").mkdir(exist_ok=True)
+        (self.work / "subscriptions-db.next/provision.sh").write_text("# candidate provisioning\n")
         (self.work / "sync-cutover.json").write_text(json.dumps({
             "mode": "automatic", "oldMinimum": "", "newMinimum": "", "imageId": ""}) + "\n")
 
     def files(self):
-        return {path.name: path.read_text() for path in self.work.iterdir()}
+        return {path.name: path.read_text() if path.is_file() else
+                {child.name: child.read_text() for child in path.iterdir()} for path in self.work.iterdir()}
 
     def state(self, **changes):
         state = json.loads(self.state_path.read_text())
@@ -165,9 +178,10 @@ class DeployProductionTest(unittest.TestCase):
     def test_promotes_the_candidate_keeps_the_database_password_and_recreates_a_changed_caddy(self):
         result = self.deploy()
         self.assertEqual((result.returncode, result.stdout, result.stderr),
-                         (0, "PASS deployed: immutable image, sync compatibility, process environment and Caddy verified; DB password preserved\n", ""))
+                         (0, PROVISIONING_SKIP + "\n" + DEPLOYED, ""))
         self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
+                                        "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "Caddyfile": "# candidate Caddyfile\n"})
         state = self.state()
         self.assertEqual([command for command in state.pop("commands") if command[:2] == ["compose", "up"]], [
@@ -235,7 +249,7 @@ class DeployProductionTest(unittest.TestCase):
         self.approve(4, 8)
         result = self.deploy()
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0,
-            "PASS deployed: immutable image, sync compatibility, process environment and Caddy verified; DB password preserved\n", ""))
+            PROVISIONING_SKIP + "\n" + DEPLOYED, ""))
         self.assertEqual((self.work / ".env").read_text(), "IMAGE_TAG=" + "b" * 40 +
                          "\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 + "\n")
         commands = self.state()["commands"]
@@ -295,6 +309,7 @@ class DeployProductionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
+                                        "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "Caddyfile": "# live Caddyfile\n"})
         self.assertNotIn("--force-recreate", [argument for command in self.state()["commands"] for argument in command])
 
@@ -342,6 +357,7 @@ class DeployProductionTest(unittest.TestCase):
                                         "rendered.env": "IMAGE_TAG=new\nPOSTGRES_PASSWORD=rendered-secret\nDOMAIN_APP=example.test\n",
                                         "sync-cutover.json": json.dumps({"mode": "automatic", "oldMinimum": "", "newMinimum": "", "imageId": ""}) + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
+                                        "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "Caddyfile": "# candidate Caddyfile\n"})
         self.assertEqual(self.state()["caddyMount"], "# live Caddyfile\n")
         self.upload_candidate()
@@ -350,11 +366,37 @@ class DeployProductionTest(unittest.TestCase):
         self.assertEqual(retried.returncode, 0, retried.stderr)
         self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
+                                        "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "Caddyfile": "# candidate Caddyfile\n"})
         state = self.state()
         self.assertIn(["compose", "up", "-d", "--no-deps", "--force-recreate", "--pull", "never", "caddy"], state["commands"])
         self.assertEqual((state["caddyMount"], state["caddyActive"]),
                          ("# candidate Caddyfile\n", {"file": "# candidate Caddyfile\n"}))
+
+    def test_a_provisioning_that_fails_turns_the_run_red_with_the_backend_deployed(self):
+        self.state(provisioningOutcome="exited 1",
+                   provisioningLine="FAIL subscriptions database: the role or the database could not be created")
+        result = self.deploy()
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (1,
+            "FAIL subscriptions database: the role or the database could not be created\n",
+            "FAIL subscription database provisioning exited with code 1; the backend is deployed and serving\n"))
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 + "\n",
+                                        "docker-compose.yml": "# candidate compose\n",
+                                        "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
+                                        "Caddyfile": "# candidate Caddyfile\n"})
+        self.assertIn(["compose", "up", "-d", "--pull", "never"], self.state()["commands"])
+
+    def test_a_passing_provisioning_prints_its_line_before_the_deploy_passes(self):
+        line = ("PASS subscriptions database: windmill_subscriptions provisioned, refused to the backend role"
+                " (rules installed)")
+        self.state(provisioningLine=line)
+        result = self.deploy()
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, line + "\n" + DEPLOYED, ""))
+
+    def test_a_missing_provisioning_candidate_refuses_before_any_change(self):
+        shutil.rmtree(self.work / "subscriptions-db.next")
+        self.assert_refused_before_any_change(None, "FAIL candidate subscriptions-db folder is missing\n",
+                                              [["compose", "version"]])
 
     def assert_refused_before_any_change(self, path, refusal, commands):
         uploaded = self.files()
@@ -386,7 +428,7 @@ class DeployProductionTest(unittest.TestCase):
         self.state(healthFailures=1, healthResponses=["302"])
         result = self.deploy()
         self.assertEqual((result.returncode, result.stdout, result.stderr),
-                         (0, "PASS deployed: immutable image, sync compatibility, process environment and Caddy verified; DB password preserved\n", ""))
+                         (0, PROVISIONING_SKIP + "\n" + DEPLOYED, ""))
         self.assertEqual(sum(command[1:6] == ["exec", "-T", "server", "curl", "--silent"]
                              for command in self.state()["commands"]), 8)
         self.assertFalse(any(command[-1] == "installation-key-present" for command in self.state()["commands"]))
@@ -397,7 +439,7 @@ class DeployProductionTest(unittest.TestCase):
             out.write("AI_ALLOWANCES_ENABLED=true\nAI_INSTALLATIONS_ENABLED=true\nAI_INSTALLATION_IP_HMAC_KEY=" + "private_key_canary" * 4 + "\n")
         result = self.deploy()
         self.assertEqual((result.returncode, result.stdout, result.stderr),
-                         (0, "PASS deployed: immutable image, sync compatibility, process environment and Caddy verified; DB password preserved\n", ""))
+                         (0, PROVISIONING_SKIP + "\n" + DEPLOYED, ""))
         self.assertNotIn("private_key_canary", result.stdout + result.stderr)
         self.assertNotIn("private_key_canary", json.dumps(self.state()["commands"]))
 
@@ -680,6 +722,20 @@ class DeployWorkflowTest(unittest.TestCase):
             self.assertEqual((result.returncode, result.stdout, result.stderr), (code, "", error))
         release = next(line.strip() for line in text.splitlines() if line.strip().startswith("SENTRY_RELEASE:"))
         self.assertEqual(release, "SENTRY_RELEASE: ${{ inputs.image_tag || github.event.workflow_run.head_sha }}")
+
+    def test_the_subscription_password_renders_only_empty_or_as_hex_and_is_never_repeated(self):
+        text = (SCRIPT.parents[2] / ".github/workflows/deploy.yml").read_text()
+        start = text.index("          # The role's password sits unescaped")
+        guard = textwrap.dedent(text[start:text.index('          if [ "$AI_INSTALLATIONS_ENABLED"', start)])
+        refusal = ("Refusing to render — SUBSCRIPTIONS_DB_PASSWORD must be empty or 64 lowercase hex characters"
+                   " (openssl rand -hex 32).\n")
+        for value, outcome in (("", (0, "")), ("0123456789abcdef" * 4, (0, "")), ("A" * 64, (1, refusal)),
+                               ("a" * 63, (1, refusal)), ("a" * 64 + "\n", (1, refusal)),
+                               ("private canary@host/db", (1, refusal))):
+            with self.subTest(length=len(value)):
+                result = subprocess.run(["bash", "-euo", "pipefail", "-c", guard], capture_output=True, text=True,
+                                        env={**os.environ, "SUBSCRIPTIONS_DB_PASSWORD": value})
+                self.assertEqual((result.returncode, result.stdout + result.stderr), outcome)
 
     def test_backend_readiness_probes_admit_the_current_schema_without_pinning_an_old_client(self):
         root = SCRIPT.parents[2]

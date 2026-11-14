@@ -257,9 +257,11 @@ through `app_store`, a dev-dependency.
 The ledger lives in a database of its own, `windmill_subscriptions`, in the host's Postgres, owned by a
 role of the same name (spec §9). Where the deploy has provisioned it, rules at the head of the
 cluster's `pg_hba.conf` turn the backend's role, `windmill`, away from it on every path, the cluster's
-own socket included, and let its role reach no other database. A `pg_hba.conf` rule binds a superuser, which `windmill` is and which `REVOKE
-CONNECT` would not stop. The rules are `backend/deploy/subscriptions-db/pg_hba.conf`; how they, the
-role and the database are provisioned, backed up and restored is in the
+own socket included; its own role needs its password on both paths and reaches no other database. A
+`pg_hba.conf` rule binds a superuser, which `windmill` is and which `REVOKE CONNECT` would not stop; what
+a superuser set on reaching the database can still do is listed in the deploy README. The rules are
+`backend/deploy/subscriptions-db/pg_hba.conf`; how they, the role and the database are provisioned,
+backed up and restored is in the
 [deploy README](../../backend/deploy/README.md#the-subscription-database).
 
 `storage::Ledger::open` connects and brings the schema up to the newest migration before it returns,
@@ -317,7 +319,7 @@ value.
 | `SENTRY_ENVIRONMENT` | yes | The deployment's name, such as `production`; Sentry files every report and log under it |
 | `SENTRY_DSN` | no | Where Sentry reports go; unset turns Sentry off, logged once at start |
 | `SENTRY_RELEASE` | no | The build's git sha, attached to every report |
-| `WINDMILL_LOG_LEVEL` | no | The lowest level written to stdout: `trace`, `debug`, `info` (default), `warn`, `error` or `fatal`, in any case, the words the backend reads; `fatal` reads as `error` |
+| `WINDMILL_LOG_LEVEL` | no | The lowest level written to stdout: `trace`, `debug`, `info` (default), `warn`, `error` or `fatal`, in any case, the words the backend reads; `fatal` reads as `error`. sqlx's own lines stay at `warn` or above, because below it they carry the server's raw error text |
 | `SENTRY_LOG_LEVEL` | no | The same words: the lowest level of the service's own lines sent to Sentry as Logs; default `info` |
 | `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` | no | `true` adds `GET /debug/panic` to the internal listener; refused unless `SENTRY_ENVIRONMENT`, trimmed and in any case, is `local`, `development`, `test` or `ci` |
 

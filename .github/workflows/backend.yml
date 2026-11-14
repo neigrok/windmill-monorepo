@@ -345,8 +345,21 @@ jobs:
           docker rm -f anonymous-coach-server anonymous-coach-observer || true
           sudo rm -rf "$RUNNER_TEMP/anonymous-coach-live"
 
+  # The subscriptions-db one-shot (backend/deploy/subscriptions-db), which every deploy runs, on the production
+  # compose's Postgres 16 holding rows of the backend's: without its password, twice with it, with rules that
+  # lack a final newline, over a live pg_hba.conf holding a block left open, and with rules that would turn the
+  # backend away before or after the reload. The backend must reach its rows after each. It gates the image, so
+  # a script that could lock the backend out of its database is never published or deployed.
+  subscriptions-db:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: The one-shot never turns the backend away
+        run: python3 backend/test/deploy/subscriptions_db_test.py -v
+
   build-and-push:
-    needs: [test, postgres]
+    needs: [test, postgres, subscriptions-db]
     if: github.event_name != 'pull_request' && !inputs.verify_live_coach && !inputs.verify_live_anonymous_coach
     runs-on: ubuntu-latest
     permissions:
