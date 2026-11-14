@@ -3,7 +3,7 @@
 Descriptions of App Store payloads for `app_store_test_signer` to sign under the
 [test chain](../test-chain/README.md). Each describes one moment in the life of one Windmill One
 subscription: original transaction `2000000000000001`, product `works.windmill.app.one.monthly` at
-US$11.99, bought with the account hint `6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84`. Its dates count from
+US$12.00, bought with the account hint `6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84`. Its dates count from
 the moment it is signed, so a description signed today states today's dates.
 
 | File | Payload | `status` | The moment |

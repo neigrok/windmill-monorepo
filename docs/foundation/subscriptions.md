@@ -427,11 +427,14 @@ services/subscriptions/
                           library, so this crate is the whole integration
     storage/              Postgres: inbox, subscriptions, periods, events, the feed read
     server/               the composition root: both listeners, the sweep, configuration
+  tools/
+    app_store_test_signer/  signs App Store payloads under a test root; never linked into the service
   migrations/
   tests/
     vectors/              observation sequences with the subscription, periods and events they
                           must produce
-    fixtures/app_store/   signed payloads recorded from sandbox
+    fixtures/app_store/   the pinned roots' material, the test chain and its example stories, and
+                          signed payloads recorded from sandbox
 ```
 
 `domain` depends on no other crate. `app_store` and `storage` depend on `domain` and not on each
