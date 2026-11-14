@@ -85,9 +85,10 @@ public:
   enum class RemovalRefusal { notFound, notYours, nobodysTree, cascadeUnavailable };
   // The read of the caller's trees whose steps open the tree, with no strand held, refused whole when it fails → read gate
   // (absent, private-denied and a hidden branch alike) → owner check → a root's alone, a subtree answering NotARoot with
-  // its owning step → soft-delete → retire the room, under the tree's strand; every branch under the root goes with it. Then, with that strand released, those steps go with
-  // the tree: each tree, in id order and under its own strand alone, has them deleted as delete_node with prune deletes
-  // nodes (NodeEdits), the caller's marks on them cleared, and is answered removed, unsaved or incomplete (Cascade).
+  // its owning step → soft-delete → retire the room, under the tree's strand; every branch under the root goes with it.
+  // Then, with that strand released, those steps go with the tree: each tree, in id order and under its own strand
+  // alone, has them deleted as delete_node with prune deletes nodes (NodeEdits), the caller's marks on them cleared, and
+  // is answered removed, unsaved or incomplete (Cascade).
   // The read and every tree's statements wait for a lock at most kCascadeLockWait, and all of it ends kCascadeTime after
   // the read began: a tree not reached by then is incomplete. Each tree edited writes one `roadmap.tree.remove.cascade`
   // line, and the removal one `roadmap_tree_remove_cascade` line of counts.

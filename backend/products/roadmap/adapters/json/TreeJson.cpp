@@ -178,9 +178,11 @@ Json::Value toJson(const UnconfirmedBranch& branch, const std::optional<BranchSi
   return body;
 }
 
-Json::Value toJson(const NotARoot& refusal) {
+Json::Value toJson(const NotARoot& refusal, const std::string& remedy) {
   Json::Value body(Json::objectValue);
   body["code"] = kNotARoot;
+  body["error"] = "this tree hangs from step \"" + refusal.owningStep.step.str() + "\" of " +
+                  refusal.owningStep.tree.str() + " under the root " + refusal.root.str() + ": " + remedy;
   body["parent"]["tree"] = refusal.owningStep.tree.str();
   body["parent"]["step"] = refusal.owningStep.step.str();
   body["root"] = refusal.root.str();

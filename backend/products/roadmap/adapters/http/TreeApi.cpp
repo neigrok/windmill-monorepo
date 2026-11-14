@@ -341,12 +341,8 @@ void TreeApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     return;
   }
   if (forked.outcome == ForkService::Outcome::notARoot) {
-    const NotARoot& refusal = *forked.notARoot;
-    Json::Value body = toJson(refusal);
-    body["error"] = "this tree hangs from step \"" + refusal.owningStep.step.str() + "\" of " +
-                    refusal.owningStep.tree.str() + " under the root " + refusal.root.str() +
-                    ": a subtree is copied with its root, so fork the root";
-    callback(jsonResponse(body, drogon::k409Conflict));
+    callback(jsonResponse(toJson(*forked.notARoot, "a subtree is copied with its root, so fork the root"),
+                          drogon::k409Conflict));
     return;
   }
 

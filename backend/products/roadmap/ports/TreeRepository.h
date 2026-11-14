@@ -96,8 +96,8 @@ struct StoredAccess {
   bool operator==(const StoredAccess&) const = default;
 };
 
-// One tree of a fork as it is copied: the copy's id, the tree it copies, the copied tree it hangs from with the same step
-// (none for the root), and the state, legend, title and guide it is born with.
+// One tree of a fork as it is copied: the copy's id, the tree it copies, the copied tree it hangs from with the same
+// step (none for the root), and the state, legend, title and guide it is born with.
 struct TreeCopy {
   TreeId id;
   TreeId source;

@@ -38,14 +38,6 @@ drogon::HttpResponsePtr answerSet(Saved saved) {
   held->setStatusCode(drogon::k202Accepted);
   return held;
 }
-
-// A root's change aimed at a subtree: 409, the door's sentence beside where the subtree hangs.
-drogon::HttpResponsePtr notARoot(const NotARoot& refusal, const std::string& remedy) {
-  Json::Value body = toJson(refusal);
-  body["error"] = "this tree hangs from step \"" + refusal.owningStep.step.str() + "\" of " +
-                  refusal.owningStep.tree.str() + " under the root " + refusal.root.str() + ": " + remedy;
-  return jsonResponse(body, drogon::k409Conflict);
-}
 }
 
 TreeRegistryApi::TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::shared_ptr<AuthService> auth)
@@ -161,7 +153,8 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
     const std::variant<TreeRegistry::VisibilityChange, NotARoot> answer =
         registry_->setVisibility(TreeId{treeId}, *caller, parseVisibility(requested));
     if (const NotARoot* refusal = std::get_if<NotARoot>(&answer)) {
-      callback(notARoot(*refusal, "it is shared as its root is, so set the root's visibility"));
+      callback(jsonResponse(toJson(*refusal, "it is shared as its root is, so set the root's visibility"),
+                            drogon::k409Conflict));
       return;
     }
     const TreeRegistry::VisibilityChange outcome = std::get<TreeRegistry::VisibilityChange>(answer);
@@ -254,7 +247,8 @@ void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback
   const std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot> removed =
       registry_->remove(TreeId{treeId}, *caller);
   if (const NotARoot* refusal = std::get_if<NotARoot>(&removed)) {
-    callback(notARoot(*refusal, "it goes with that step: delete the step, and its Undo brings the subtree back"));
+    const std::string remedy = "it goes with that step: delete the step, and its Undo brings the subtree back";
+    callback(jsonResponse(toJson(*refusal, remedy), drogon::k409Conflict));
     return;
   }
   if (const TreeRegistry::RemovalRefusal* refusal = std::get_if<TreeRegistry::RemovalRefusal>(&removed)) {

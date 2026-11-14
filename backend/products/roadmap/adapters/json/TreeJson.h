@@ -51,8 +51,9 @@ Json::Value toJson(const BranchSize& branch);
 // One owning step a write would remove unconfirmed: {step, subtree, steps, subtrees}, the counts of the subtree's own
 // branch, the subtree's steps among them, and left out when they could not be read.
 Json::Value toJson(const UnconfirmedBranch& branch, const std::optional<BranchSize>& size);
-// A root's change aimed at a subtree, beside the door's own sentence: {code: "not-a-root", parent: {tree, step}, root}.
-Json::Value toJson(const NotARoot& refusal);
+// A root's change aimed at a subtree, as REST answers it: {code: "not-a-root", error, parent: {tree, step}, root}, the
+// error naming where it hangs and then `remedy`, the door's own words.
+Json::Value toJson(const NotARoot& refusal, const std::string& remedy);
 // `opens` of GET /v1/trees/{id}, by node id; `loop` marks an opening whose tree is among `leadingBack`.
 Json::Value toJson(const std::map<NodeId, Opening>& openings, const std::set<TreeId>& leadingBack);
 // `guides` of GET /v1/trees/{id}/guides and of MCP get_tree, in the order given: one {treeId, title, text, yours} each.

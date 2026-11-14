@@ -41,7 +41,8 @@ std::string branchStandsCondition(std::string_view tree) {
          "WITH RECURSIVE up(parent_tree, parent_step, gone) AS ("
          "  SELECT " + t + ".parent_tree, " + t + ".parent_step, false "
          "  UNION ALL "
-         "  SELECT p.parent_tree, p.parent_step, p.deleted_at IS NOT NULL FROM up JOIN trees p ON p.id = up.parent_tree) "
+         "  SELECT p.parent_tree, p.parent_step, p.deleted_at IS NOT NULL "
+         "  FROM up JOIN trees p ON p.id = up.parent_tree) "
          "SELECT 1 FROM up WHERE gone OR (parent_tree IS NOT NULL AND NOT EXISTS ("
          "  SELECT 1 FROM tree_nodes s WHERE s.tree_id = up.parent_tree AND s.node_id = up.parent_step AND s.present))"
          ") END";
@@ -259,7 +260,8 @@ std::set<OwningStep> PgTreeRepository::absentStepsUnder(const TreeId& root) {
       "WHERE s.tree_id = f.parent_tree AND s.node_id = f.parent_step AND s.present)",
       root.str());
   std::set<OwningStep> absent;
-  for (const auto& row : rows) absent.insert(OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}});
+  for (const auto& row : rows)
+    absent.insert(OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}});
   return absent;
 }
 
