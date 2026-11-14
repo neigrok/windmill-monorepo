@@ -175,7 +175,8 @@ measuring tool, not a gate.
 
 The auth provider opens the browser sync engine once for this document and owns cookie cleanup.
 Product preparations run before networking; occupied rooms pin Add/Discard, and sign-out pins
-Keep/Discard after the bounded flush. Account closure records a durable intent and discards that
+Keep/Discard after the bounded flush. A product's `signOutNotice()` adds a line to the sign-out question, with a download
+of what signing out discards from the tab (the journal's kept Talk take), and its `forgetDevice` drops it. Account closure records a durable intent and discards that
 account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh.
 `platform/sync/react.js` exports `useSyncEngine()` and
 `useSyncRecords(scope)`. The anonymous journal uses record observations; Gym retains its account gate.
