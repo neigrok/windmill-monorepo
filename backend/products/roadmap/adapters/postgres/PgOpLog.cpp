@@ -10,7 +10,7 @@
 namespace wm {
 
 namespace {
-constexpr int kOpReadLimit = 10000;  // cap one replay read so a giant op log can't be slurped whole
+constexpr int kOpReadLimit = 10000;  // cap one read so a giant op log can't be slurped whole
 }
 
 PgOpLog::PgOpLog(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
@@ -51,6 +51,22 @@ std::vector<AppliedOp> PgOpLog::since(const TreeId& tree, Seq afterSeq) const {
     ops.push_back(std::move(op));
   }
   return ops;
+}
+
+// Read as rows, not aggregated: a stamp is text, compared here as the clock compares it. A tree level with its log
+// answers no row.
+LogPast PgOpLog::past(const TreeId& tree, Seq head) const {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const pqxx::result rows = txn.exec_params("SELECT seq, hlc FROM tree_ops WHERE tree_id = $1 AND seq > $2",
+                                            tree.str(), static_cast<long long>(head));
+  LogPast past;
+  past.rows = rows.size();
+  for (const auto& row : rows) {
+    past.lastSeq = std::max(past.lastSeq, static_cast<Seq>(row["seq"].as<long long>()));
+    past.greatestStamp = std::max(past.greatestStamp, roadmapStamp(row["hlc"].as<std::string>()));
+  }
+  return past;
 }
 
 }

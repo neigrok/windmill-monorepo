@@ -792,8 +792,8 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
   return batch;
 }
 
-// A kind's label, description and hue, any of them, as ONE op under one seq: a single command, or a Batch of them, so a
-// replay lands what the call landed. What the kind already holds is left out, and a call that changes nothing writes
+// A kind's label, description and hue, any of them, as ONE op under one seq: a single command, or a Batch of them, so
+// the op row tells all the call landed. What the kind already holds is left out, and a call that changes nothing writes
 // nothing and answers the tree's head.
 ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Value& args, Clock& clock,
                       const UserId& actor) {

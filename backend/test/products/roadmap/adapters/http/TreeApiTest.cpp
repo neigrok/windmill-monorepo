@@ -1599,7 +1599,7 @@ TEST(a_put_to_a_private_tree_you_cannot_read_leaves_its_live_room_open_and_untou
   CHECK(h.trees->byId["t_00000000000000aa"] == before);
 }
 
-TEST(put_over_a_live_room_saves_at_the_rooms_head_so_no_op_tail_replays_over_it) {
+TEST(put_over_a_live_room_saves_at_the_rooms_head_so_no_op_row_is_left_past_it) {
   Harness h;
   UserId me = h.signIn("s-me");
   h.seed("t_00000000000000cc", "Old name", me, Visibility::unlisted);

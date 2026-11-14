@@ -47,16 +47,6 @@ TEST(room_next_stamp_is_monotone_and_server_actored) {
   CHECK_EQ(first.actor, std::string("srv"));
 }
 
-TEST(room_next_stamp_dominates_a_replayed_op_after_restart) {
-  FakeBus bus;
-  TreeRoom room = makeRoom(bus);
-
-  Hlc high{9000, 3, "peer"};
-  room.replay(AppliedOp{5, "r1", createNode("z"), high, uid()});  // a loaded op-log tail
-  Hlc next = room.nextStamp(10);  // local wall clock is far behind the replayed stamp
-  CHECK(next > high);             // the receive rule on replay keeps a fresh mint ahead
-}
-
 TEST(room_next_stamp_dominates_the_loaded_document_state) {
   LooseGraph loaded;
   Hlc old{8000, 2, "old"};
@@ -514,18 +504,6 @@ TEST(room_tracks_exactly_the_dirty_entries_and_cleans_after_save) {
   CHECK_EQ(cleanLegend.kinds.size(), 0u);
 }
 
-TEST(room_replay_flips_to_all_dirty_so_the_next_save_writes_everything) {
-  FakeBus bus;
-  TreeRoom room = makeRoom(bus);
-  apply(room, createNode("a"), 1);
-  room.markClean();
-
-  room.replay(AppliedOp{2, "r1", createNode("z"), at(5), uid()});
-  auto [graph, legend] = room.dirtyState();
-  CHECK_EQ(graph.nodes.size(), 2u);
-  CHECK_EQ(legend.kinds.size(), 0u);
-}
-
 TEST(room_applies_a_batch_as_one_frame_under_one_seq_with_one_op_row_holding_every_member) {
   FakeBus bus;
   TreeRoom room = makeRoom(bus);
@@ -649,68 +627,6 @@ TEST(room_import_loses_a_re_sent_kind_to_a_remove_stamped_before_it_that_arrives
                                      .deletedAt = Hlc{50, 0, "u1"}, .hue = NodeColor::sky,
                                      .hueAt = Hlc{10, 0, "srv"}, .label = "Backend services",
                                      .labelAt = Hlc{100, 0, "srv"}, .rank = 0, .rankAt = Hlc{10, 0, "srv"}}}}));
-}
-
-// A row past the stored head — what the log holds for a tree saved before rows were made to land
-// after the lattice — replays whole: a room reopened from the N-1 document lands the entire batch,
-// not its first member.
-TEST(room_replays_a_batch_op_past_the_stored_head_whole) {
-  FakeOpLog log;
-  FakeBus bus;
-  TreeRoom live = makeRoom(bus);
-  apply(live, createNode("a"), 1);
-  apply(live, createNode("b"), 2);
-  apply(live, AddEdge{nid("a"), nid("b")}, 3);
-  const LooseGraph persisted{live.exportState()};  // the document as saved at head 3
-  const Legend persistedLegend{live.exportLegend()};
-
-  live.applyCommands({DeleteNode{nid("a")}, DeleteNode{nid("b")}, RemoveEdge{nid("a"), nid("b")}}, 4, uid());
-  live.landPendingOps(log);
-
-  FakeBus quiet;
-  TreeRoom reopened(tid(), {"Title", {}}, {}, false, persisted, persistedLegend, 3, tid(), std::nullopt, 0, {},
-                    std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, quiet);
-  CHECK(reopened.hasNode(nid("b")));
-  for (const AppliedOp& op : log.since(tid(), 3)) reopened.replay(op);
-  CHECK_EQ(reopened.head(), static_cast<Seq>(4));
-  CHECK_FALSE(reopened.hasNode(nid("a")));
-  CHECK_FALSE(reopened.hasNode(nid("b")));
-  CHECK_FALSE(reopened.hasEdge(nid("a"), nid("b")));
-  CHECK_EQ(reopened.exportState(), live.exportState());
-}
-
-// A round trip that re-hues a kind — every wearer sent back with the colour it holds — repaints them live, so the
-// RecolorKind row it writes replays to the same room.
-TEST(room_replays_a_round_trip_rehue_to_the_room_it_left) {
-  FakeOpLog log;
-  FakeBus bus;
-  TreeRoom live = makeRoom(bus);
-  apply(live, AddKind{KindId{"k"}, NodeColor::sky, "K"}, 1);
-  apply(live, CreateNode{nid("a"), "A", "", NodeColor::sky}, 2);
-  const LooseGraph persisted{live.exportState()};
-  const Legend persistedLegend{live.exportLegend()};
-
-  Graft graft;
-  graft.document.kinds = {{KindId{"k"}, NodeColor::plum, "K"}};
-  graft.omittedKindRegisters[KindId{"k"}] = {KindRegister::description};
-  NodeSpec a;
-  a.id = nid("a");
-  a.label = "A";
-  a.color = NodeColor::sky;
-  graft.document.nodes = {a};
-  graft.omittedNodeRegisters[nid("a")] = {NodeRegister::icon,        NodeRegister::order, NodeRegister::status,
-                                          NodeRegister::description, NodeRegister::links, NodeRegister::opens};
-  REQUIRE(live.importTree(graft, 10, uid()).has_value());
-  live.landPendingOps(log);
-  CHECK(live.snapshot().nodes[0].color == NodeColor::plum);
-
-  FakeBus quiet;
-  TreeRoom reopened(tid(), {"Title", {}}, {}, false, persisted, persistedLegend, 2, tid(), std::nullopt, 0, {},
-                    std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, quiet);
-  for (const AppliedOp& op : log.since(tid(), 2)) reopened.replay(op);
-  CHECK(reopened.snapshot().nodes[0].color == NodeColor::plum);
-  CHECK(reopened.exportLegend() == live.exportLegend());
-  CHECK_EQ(reopened.exportState(), live.exportState());
 }
 
 TEST(room_applies_an_empty_batch_as_a_no_op_that_mints_no_seq) {

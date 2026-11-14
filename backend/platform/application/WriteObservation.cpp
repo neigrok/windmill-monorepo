@@ -70,6 +70,7 @@ std::string writeCompletionJson(const WriteCompletion& completion) {
 }
 
 std::string writeRequestId() { return current ? current->id : newRequestId(); }
+std::string freshWriteRequestId() { return newRequestId(); }
 std::string currentWriteRequestId() { return current ? current->id : std::string{}; }
 std::string currentWriteDoor() { return currentObservation ? currentObservation->door() : std::string{}; }
 bool claimWriteIssue() { return !current || !current->reported.exchange(true); }

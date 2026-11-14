@@ -92,8 +92,8 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
   produced.frameId = frameId;
   produced.actor = stamp.actor;
   produced.intent = SubgraphIntent::live;
-  // The op row is the whole frame: a lone command as itself, a batch as one Batch, so replaying
-  // the log tail past a stored head lands exactly what this call did.
+  // The op row is the whole frame: a lone command as itself, a batch as one Batch, so the feed
+  // tells all of what this call did.
   const Command deed = commands.size() == 1 ? commands.front() : Command{Batch{commands}};
   pendingOps_.push_back(AppliedOp{head_, frameId, deed, stamp, actor});
   markDirty(produced.graph, produced.legend);  // the broadcast delta is exactly the write's footprint
@@ -135,14 +135,6 @@ void TreeRoom::appendSubtree(const NodeId& step, const Subtree& subtree) {
   bus_.broadcastSubtree(id_, head_, step, subtree);
 }
 
-void TreeRoom::replay(const AppliedOp& op) {
-  appliedOpIds_.insert(op.opId);
-  clock_.observe(op.hlc);  // the op-log tail advances the clock past every stamp it replays
-  merge(graph_, legend_, op.command, op.hlc);
-  head_ = op.seq;
-  allDirty_ = true;  // the snapshot is behind the log; the next save writes the full state
-}
-
 void TreeRoom::landPendingOps(OpLog& log) {
   while (!pendingOps_.empty()) {
     log.append(id_, pendingOps_.front());
@@ -157,7 +149,6 @@ void TreeRoom::markDirty(const GraphState& graph, const LegendState& legend) {
 }
 
 std::pair<GraphState, LegendState> TreeRoom::dirtyState() const {
-  if (allDirty_) return {graph_.exportState(), legend_.exportState()};
   GraphState graph;
   LegendState legend;
   for (const NodeId& id : dirtyNodes_)
@@ -173,7 +164,6 @@ void TreeRoom::markClean() {
   dirtyNodes_.clear();
   dirtyEdges_.clear();
   dirtyKinds_.clear();
-  allDirty_ = false;
 }
 
 TreeDiagnostics TreeRoom::diagnose() const {

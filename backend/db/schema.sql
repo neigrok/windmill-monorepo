@@ -213,7 +213,7 @@ create table if not exists tree_og_videos (
   updated_at timestamptz not null default now()
 );
 
--- append-only op log: activity, undo, reconnect replay
+-- append-only op log: the history the activity feed reads; a tree's state is its snapshot alone
 create table if not exists tree_ops (
   tree_id    text not null,
   seq        bigint not null,

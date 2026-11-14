@@ -41,6 +41,15 @@ struct FakeOpLog : OpLog {
     }
     return out;
   }
+  LogPast past(const TreeId& tree, Seq head) const override {
+    LogPast past;
+    for (const AppliedOp& op : since(tree, head)) {
+      ++past.rows;
+      past.lastSeq = std::max(past.lastSeq, op.seq);
+      past.greatestStamp = std::max(past.greatestStamp, op.hlc);
+    }
+    return past;
+  }
 };
 
 struct FakeBus : PresenceBus {
