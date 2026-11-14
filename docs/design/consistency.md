@@ -788,10 +788,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · Roadmap complete for a reader.** The Board shows a reader the title alone, plus the crown and a secondary Fork offer on
   phones. Proposed, awaiting the owner: *All 8 steps done* / *Fork it to walk these steps yourself.*, with Fork primary on phones
   (25.03, 15.03).
-- **Board · states at 744px.** At 744–1023px the build uses the desktop load-error and empty frames. Proposed, awaiting the owner:
-  15.05–15.06; neither has columns, so neither has a rail.
+- **Board · states at 744px.** At 744–1023px the build uses the desktop load-error and empty frames. The owner approved
+  15.05–15.06; both await implementation, and neither has columns or a rail.
 - **Board · New step on an empty phone roadmap.** An owner's empty roadmap reaches the Board on phone, tablet and desktop. Its New
-  step opens the composer (185:2149, 226:1055); the tablet uses the desktop empty-state structure pending 15.06.
+  step opens the composer (185:2149, 226:1055); the tablet uses the desktop empty-state structure pending implementation of approved 15.06.
 - **Board · composer and picker at 744px.** At 744–1023px the owner-approved picker is a page inside
   the 600px composer dialog: back chevron, Prerequisites, *for <draft>*, search, chips, results, Cancel
   and Apply. The implementation uses this page layout. The canon is ✅ 744 09.02–09.04: 470:23411,
