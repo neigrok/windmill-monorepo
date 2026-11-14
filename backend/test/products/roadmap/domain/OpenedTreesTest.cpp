@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <optional>
 #include <random>
 #include <set>
 #include <string>
@@ -231,6 +232,20 @@ TEST(done_counts_a_nested_node_by_the_tree_it_opens) {
                                  {{"mid", marks({"marked", "to-open", "to-removed"})}, {"leaf-done", marks({"l"})}});
 
   CHECK(all.openings(root) == (std::map<NodeId, Opening>{{nid("idea"), {tid("mid"), false, "Tree mid", false, 3, 6}}}));
+}
+
+// A step that owns a subtree tells every reader of the tree what the subtree comes to for its owner: unread until the
+// owner's trees are followed, and nothing once the subtree no longer stands among them.
+TEST(a_step_that_owns_a_subtree_is_told_its_owners_way_through_it_unread_until_followed_and_nothing_once_it_is_gone) {
+  const std::map<NodeId, TreeId> subtrees{{nid("sail"), tid("t_s")}, {nid("gone"), tid("t_gone")}};
+  const std::optional<OpenedTrees> followed =
+      opened({tree("t_s", {step("knot"), step("rig")})}, {{"t_s", marks({"knot"})}});
+
+  CHECK(ownedSubtrees(subtrees, followed) ==
+        (std::map<NodeId, OwnedSubtree>{{nid("sail"), {tid("t_s"), Opening{tid("t_s"), false, "Tree t_s", false, 1, 2}}}}));
+  CHECK(ownedSubtrees(subtrees, std::nullopt) ==
+        (std::map<NodeId, OwnedSubtree>{{nid("gone"), {tid("t_gone"), std::nullopt}},
+                                        {nid("sail"), {tid("t_s"), std::nullopt}}}));
 }
 
 TEST(the_trees_that_lead_back_to_a_tree_are_found_at_any_distance_and_a_loop_elsewhere_is_not_among_them) {

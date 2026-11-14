@@ -7,8 +7,12 @@
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include <map>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <variant>
+#include <vector>
 
 using namespace wm;
 using namespace wm::fake;
@@ -387,17 +391,18 @@ TEST(patch_visibility_rejects_an_unknown_value_with_400) {
   CHECK(h.trees.byId["t"].visibility == Visibility::private_);
 }
 
+// A tree the caller may read and not write; one they may not read is answered as absent (below).
 TEST(patch_visibility_refuses_a_non_owner_with_403) {
   Harness h;
   h.signIn("s-live", "sam@example.com");
-  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner")};
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner"), Visibility::unlisted};
 
   drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t");
 
   CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"not-yours","error":"this tree belongs to another account"})"));
-  CHECK(h.trees.byId["t"].visibility == Visibility::private_);
+  CHECK(h.trees.byId["t"].visibility == Visibility::unlisted);
 }
 
 TEST(patch_visibility_of_an_unowned_tree_says_it_is_nobodys) {
@@ -679,4 +684,97 @@ TEST(list_rows_carry_their_openers_and_delete_answers_the_steps_that_went_with_t
   CHECK_EQ(bodyOf(refused), parse(R"({"error":"nothing was removed: the steps that open this roadmap could not be read; try again",
                                      "code":"cascade-unavailable"})"));
   CHECK_FALSE(h.trees.deletedIds.count("t_four"));
+}
+
+// The list holds roots alone: a subtree is no row, and counts in its parent as the one step that owns it, done when the
+// subtree is. Renaming a subtree with PATCH {title} renames that step, which names the subtree.
+TEST(list_holds_roots_alone_and_patch_renames_a_subtree_through_its_owning_step) {
+  Harness h;
+  const UserId me = h.signIn("s-live", "sam@example.com");
+  const auto plant = [&](const char* id, const char* title, const std::vector<const char*>& steps) {
+    TreeData data;
+    data.id = TreeId{std::string(id)};
+    data.title = title;
+    for (const char* step : steps) {
+      NodeSpec node;
+      node.id = NodeId{std::string(step)};
+      node.label = step;
+      data.nodes.push_back(node);
+    }
+    h.trees.byId[id] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(), LegendState{}, {title, {}}, 0, me};
+  };
+  plant("t_a", "My year", {"sail", "coast"});
+  plant("t_b", "Work", {"ship"});
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.registry->createSubtree(TreeId{"t_a"}, NodeId{"sail"}, me, {sailing, std::nullopt})));
+  const auto rows = [&] {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Get);
+    request->addCookie("wm_session", "s-live");
+    drogon::HttpResponsePtr listed;
+    h.api.listTrees(request, [&](const drogon::HttpResponsePtr& response) { listed = response; });
+    const Json::Value body = bodyOf(listed);
+    std::map<std::string, std::string> doneOfTotal;
+    for (const Json::Value& row : body["trees"])
+      doneOfTotal[row["id"].asString()] = row["done"].asString() + "/" + row["total"].asString();
+    return doneOfTotal;
+  };
+
+  CHECK(rows() == (std::map<std::string, std::string>{{"t_a", "0/2"}, {"t_b", "0/1"}}));
+  {
+    std::lock_guard<std::mutex> strand(h.rooms.strandFor(sailing));
+    h.rooms.open(sailing)->applyCommand(CreateNode{NodeId{"knot"}, "Knot", "", NodeColor::sky}, h.clock.nowMs(), me);
+    REQUIRE(h.rooms.persist(sailing) == Saved::saved);
+  }
+  CHECK(rows() == (std::map<std::string, std::string>{{"t_a", "0/2"}, {"t_b", "0/1"}}));
+  h.progress.setStatuses(sailing, me, {{NodeId{"knot"}, ProgressStatus::complete, false, Hlc{5, 0, "r_a"}}},
+                         StampedBy::replica, 5);
+  CHECK(rows() == (std::map<std::string, std::string>{{"t_a", "1/2"}, {"t_b", "0/1"}}));
+
+  CHECK_EQ(sendPatch(h.api, patch(titled("Learn to sail"), "s-live"), sailing.str())->getStatusCode(),
+           drogon::k204NoContent);
+  std::lock_guard<std::mutex> strand(h.rooms.strandFor(TreeId{"t_a"}));
+  CHECK(h.rooms.open(TreeId{"t_a"})->labelOf(NodeId{"sail"}) == std::optional<std::string>("Learn to sail"));
+  CHECK_EQ(h.trees.byId[sailing.str()].title.value, std::string(""));
+}
+
+// A write refusal never confirms a private id: a stranger's rename or visibility change of a private tree, a root or a
+// subtree at any depth, answers exactly as one aimed at an id no row holds, and the tree is left as it was.
+TEST(patch_from_a_stranger_answers_a_private_tree_as_an_absent_one_at_every_depth) {
+  Harness h;
+  const UserId me = h.signIn("s-live", "sam@example.com");
+  h.signIn("s-stranger", "stranger@example.com");
+  TreeData data;
+  data.id = TreeId{"t_a"};
+  data.title = "Private year";
+  NodeSpec sail;
+  sail.id = NodeId{"sail"};
+  sail.label = "sail";
+  data.nodes = {sail};
+  h.trees.byId["t_a"] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(), LegendState{}, {"Private year", {}}, 0, me};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.registry->createSubtree(TreeId{"t_a"}, NodeId{"sail"}, me, {TreeId{"t_00000000000000c1"}, std::nullopt})));
+  {
+    std::lock_guard<std::mutex> strand(h.rooms.strandFor(TreeId{"t_00000000000000c1"}));
+    h.rooms.open(TreeId{"t_00000000000000c1"})->applyCommand(CreateNode{NodeId{"rig"}, "Rig", "", NodeColor::sky},
+                                                            h.clock.nowMs(), me);
+    REQUIRE(h.rooms.persist(TreeId{"t_00000000000000c1"}) == Saved::saved);
+  }
+  REQUIRE(std::holds_alternative<SubtreeCreation>(h.registry->createSubtree(
+      TreeId{"t_00000000000000c1"}, NodeId{"rig"}, me, {TreeId{"t_00000000000000c2"}, std::nullopt})));
+  const auto answered = [&](const drogon::HttpResponsePtr& response) {
+    return std::to_string(response->getStatusCode()) + " " + std::string(response->getBody());
+  };
+  const std::string absent = answered(sendPatch(h.api, patch(titled("Mine now"), "s-stranger"), "t_00000000000000ff"));
+  CHECK_EQ(absent, std::string(R"(404 {"error":"no such tree"})"));
+
+  for (const char* tree : {"t_a", "t_00000000000000c1", "t_00000000000000c2"}) {
+    CHECK_EQ(answered(sendPatch(h.api, patch(titled("Mine now"), "s-stranger"), tree)), absent);
+    CHECK_EQ(answered(sendPatch(h.api, patch(shareTo("public"), "s-stranger"), tree)), absent);
+  }
+  CHECK_EQ(h.trees.byId["t_a"].title.value, std::string("Private year"));
+  CHECK(h.trees.byId["t_a"].visibility == Visibility::private_);
+  CHECK_EQ(sendPatch(h.api, patch(titled("My year"), "s-live"), "t_a")->getStatusCode(), drogon::k204NoContent);
+  CHECK_EQ(sendPatch(h.api, patch(shareTo("unlisted"), "s-live"), "t_a")->getStatusCode(), drogon::k204NoContent);
 }

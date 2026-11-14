@@ -119,6 +119,41 @@ TEST(registry_counts_a_node_that_opens_a_tree_as_done_when_that_tree_is_complete
   CHECK_EQ(doneOfTotal, (std::vector<std::string>{"main 2/4", "open 0/1", "sub 1/1"}));
 }
 
+// A subtree is no row of the list: it counts in its parent as the one step that owns it, done once its own steps all
+// are, however deep, unfinished while it holds none, and open again when a leaf below reopens.
+TEST(registry_lists_roots_alone_and_counts_a_step_that_owns_a_subtree_done_when_the_subtree_is) {
+  NodeSpec sail = spec("sail", NodeColor::sky, {});
+  sail.opens = TreeId{std::string("t_s")};
+  NodeSpec empty = spec("empty", NodeColor::sky, {});
+  empty.opens = TreeId{std::string("t_e")};
+  NodeSpec rig = spec("rig", NodeColor::sky, {});
+  rig.opens = TreeId{std::string("t_r")};
+  Progress onRoot;
+  onRoot.completed = {nid("coast")};
+  Progress onSail;
+  onSail.completed = {nid("knot")};
+  Progress onRig;
+  onRig.completed = {nid("bowline")};
+  const OwningStep underSail{TreeId{std::string("t_a")}, nid("sail")};
+  std::vector<LoadedTree> loaded;
+  loaded.push_back({tree("t_a", {sail, spec("coast", NodeColor::sky, {nid("sail")}), empty}), 0, 2, onRoot, 0});
+  loaded.push_back({tree("t_s", {rig, spec("knot", NodeColor::sky, {})}), 0, 3, onSail, 0, underSail});
+  loaded.push_back({tree("t_r", {spec("bowline", NodeColor::sky, {})}), 0, 4, onRig, 0,
+                    OwningStep{TreeId{std::string("t_s")}, nid("rig")}});
+  loaded.push_back({tree("t_e", {}), 0, 5, Progress{}, 0, OwningStep{TreeId{std::string("t_a")}, nid("empty")}});
+  const auto rows = [&] {
+    std::vector<std::string> doneOfTotal;
+    for (const TreeSummary& summary : registrySummaries(loaded))
+      doneOfTotal.push_back(summary.id.str() + " " + std::to_string(summary.stats.done) + "/" +
+                            std::to_string(summary.stats.total));
+    return doneOfTotal;
+  };
+
+  CHECK_EQ(rows(), (std::vector<std::string>{"t_a 2/3"}));
+  loaded[2].progress = Progress{};
+  CHECK_EQ(rows(), (std::vector<std::string>{"t_a 1/3"}));
+}
+
 TEST(registry_counts_a_chain_of_twenty_trees_as_done_from_the_mark_at_its_end) {
   const auto name = [](int k) { return std::string(k < 10 ? "t0" : "t") + std::to_string(k); };
   std::vector<LoadedTree> loaded;

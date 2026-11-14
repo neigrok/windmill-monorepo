@@ -38,6 +38,7 @@ std::vector<TreeReadiness> readinessOf(const std::vector<LoadedTree>& trees) {
   std::vector<TreeReadiness> readiness;
   readiness.reserve(trees.size());
   for (const LoadedTree& loaded : trees) {
+    if (loaded.parent) continue;
     const TreeData& data = loaded.data;
     const Progress followed = opened.followed(data, loaded.progress);
     const TreeStats stats = treeStats(data, followed);

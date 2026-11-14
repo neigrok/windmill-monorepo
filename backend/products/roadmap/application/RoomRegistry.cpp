@@ -115,8 +115,9 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
   LooseGraph graph(stored->state);  // full CRDT state — lossless
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
   auto room = std::make_unique<TreeRoom>(id, stored->title, stored->guide, stored->guideInherited,
-                                         std::move(graph), std::move(legend), stored->head,
-                                         stored->root, std::move(access), stored->createdAt, bus_);
+                                         std::move(graph), std::move(legend), stored->head, stored->root,
+                                         stored->parent, stored->depth, stored->subtrees, std::move(access),
+                                         stored->createdAt, bus_);
   room->takeHeadPast(past.lastSeq);
   room->observe(past.greatestStamp);
   // The room's first save moves the stored head past those rows, and nothing then shows the tree was ever behind:
@@ -143,7 +144,7 @@ std::optional<TreeAccess> RoomRegistry::accessOf(const TreeId& id) {
     if (it != rooms_.end()) {
       const TreeRoom& room = *it->second.room;
       if (!room.rootAccess()->stands()) return std::nullopt;
-      return TreeAccess{room.owner(), room.visibility(), room.root()};
+      return TreeAccess{room.owner(), room.visibility(), room.root(), room.parent()};
     }
   }
   const std::optional<TreeAccess> stored = repo_.loadAccess(id);  // the root's row, no lattice
@@ -153,7 +154,7 @@ std::optional<TreeAccess> RoomRegistry::accessOf(const TreeId& id) {
   const std::shared_ptr<RootAccess> live = liveRootAccess(stored->root);
   if (!live) return stored;
   if (!live->stands()) return std::nullopt;
-  return TreeAccess{live->owner(), live->visibility(), stored->root};
+  return TreeAccess{live->owner(), live->visibility(), stored->root, stored->parent};
 }
 
 bool RoomRegistry::evict(const TreeId& id) {

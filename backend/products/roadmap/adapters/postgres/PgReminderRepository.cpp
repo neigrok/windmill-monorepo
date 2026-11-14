@@ -2,6 +2,7 @@
 #include "platform/application/WriteObservation.h"
 
 #include "platform/adapters/postgres/PgPool.h"
+#include "products/roadmap/adapters/postgres/PgTreeRepository.h"
 #include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/TreeSummary.h"
@@ -53,8 +54,6 @@ constexpr std::string_view kAdvanceNextSlot =
     "                   )::timestamp + make_interval(mins => r.slot_minute)) AT TIME ZONE r.iana_tz "
     "FROM served s WHERE r.user_id = s.user_id";
 
-constexpr std::string_view kReadinessNodeColumns =
-    "node_id, label, label_hlc, color, color_hlc, opens, opens_hlc, created_hlc, deleted_hlc";
 
 template <typename Row>
 NodeStateEntry nodeFromRow(const Row& row) {
@@ -110,10 +109,16 @@ std::vector<DueUser> PgReminderRepository::dueNow(std::uint64_t nowMs, int limit
 std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  // Every standing tree of theirs, each subtree with the step it hangs from; a subtree stands while its root does.
   pqxx::result trees = txn.exec_params(
-      "SELECT id, title, (extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
-      "FROM trees WHERE owner_id = $1::uuid AND deleted_at IS NULL ORDER BY id",
+      "SELECT t.id, t.title, t.parent_tree, t.parent_step, (extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms "
+      "FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND " + rootStandsCondition("t") + " ORDER BY t.id",
       user.str());
+  // A step that owns a standing subtree opens it, whatever its pointer holds.
+  const std::string steps =
+      "SELECT n.node_id, n.label, n.label_hlc, n.color, n.color_hlc, " + stepOpensColumn("n") + " AS opens, n.opens_hlc, "
+      "n.created_hlc, n.deleted_hlc FROM tree_nodes n " + ownedSubtreeJoin("n") +
+      " WHERE n.tree_id = $1 AND n.present ORDER BY n.node_id";
 
   // Joined through their own trees so it rides the node_progress primary key rather than scanning by user.
   std::map<TreeId, Progress> overlays;
@@ -140,10 +145,7 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
     const TreeId id{row["id"].as<std::string>()};
 
     GraphState state;
-    pqxx::result nodes = txn.exec_params(
-        "SELECT " + std::string(kReadinessNodeColumns) +
-            " FROM tree_nodes WHERE tree_id = $1 AND present ORDER BY node_id",
-        id.str());
+    pqxx::result nodes = txn.exec_params(steps, id.str());
     for (const auto& node : nodes) state.nodes.push_back(nodeFromRow(node));
     pqxx::result edges = txn.exec_params(
         "SELECT from_id, to_id, added_hlc, removed_hlc FROM tree_edges WHERE tree_id = $1", id.str());
@@ -159,6 +161,8 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
     tree.updatedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
     tree.progress = overlays[id];
     tree.lastMarkedAt = markedAt[id];
+    if (!row["parent_tree"].is_null())
+      tree.parent = OwningStep{TreeId{row["parent_tree"].as<std::string>()}, NodeId{row["parent_step"].as<std::string>()}};
     loaded.push_back(std::move(tree));
   }
   return readinessOf(loaded);

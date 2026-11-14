@@ -90,6 +90,10 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   nobody's to write**: the seeded demo tree (`t_9e407a96b5330ebe`, `owner_id NULL`, `public`) is
   world-readable and editable by no one. Every write path runs `canRead` first, so a refusal never
   confirms that a private id names something; a readable tree the caller does not own answers `403`.
+  Three doors do not hold to it yet: the share card uploads (`PUT /v1/trees/{id}/og-image` and
+  `/og-video`) answer a signed-in caller `403` on someone else's private tree, and a create under a
+  client-minted id (`POST /v1/trees`, a fork's requested id) answers `409` when that id is another
+  account's tree, private or not.
 - **Forks** require read access to the source and create a new tree owned by the recipient; they do
   not require write access to the source.
 - **Progress marks** (WS `progress`, an MCP `status` row) are not document writes and are not
@@ -111,9 +115,10 @@ surface and can be repaired only by hand in SQL.
 with a parent from its root's row — the root's owner and visibility, and absent while the root is
 deleted — or, for a live room, from the access every live room of the root's trees shares, which
 narrows before the root's row and widens after it. A subtree's own `visibility` column is not read.
-So whoever may read a tree may read every subtree under it, which is why the `subtree` frame goes
-to a tree's readers with the subtree's id, and why a visibility change aimed at a subtree is refused
-`not-a-root`.
+So whoever may read a tree may read every subtree under it and every tree above it, which is why the
+`subtree` frame, the subscribe answer's `subtrees` and a node read's `subtree` go to a tree's readers
+with the subtrees' ids, why a tree read answers its readers the `path` down from its root, and why a
+visibility change aimed at a subtree is refused `not-a-root`. Pointers stay the writer's alone.
 
 ## Per surface
 

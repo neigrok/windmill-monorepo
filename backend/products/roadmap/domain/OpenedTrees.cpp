@@ -110,20 +110,32 @@ Progress OpenedTrees::followed(const TreeData& tree, const Progress& marks) cons
   return followed(pointersOf(tree), marks);
 }
 
+Opening OpenedTrees::opening(const TreeId& tree) const {
+  const auto opened = standing_.find(tree);
+  if (opened == standing_.end()) return Opening{tree, true};
+  const int total = opened->second.total;
+  return Opening{tree, false, opened->second.title, complete_.count(tree) > 0, total - pending_.at(tree), total};
+}
+
 std::map<NodeId, Opening> OpenedTrees::openings(const TreeData& tree) const {
   std::map<NodeId, Opening> openings;
-  for (const NodeSpec& node : tree.nodes) {
-    if (node.opens.empty()) continue;
-    const auto opened = standing_.find(node.opens);
-    if (opened == standing_.end()) {
-      openings.emplace(node.id, Opening{node.opens, true});
+  for (const NodeSpec& node : tree.nodes)
+    if (!node.opens.empty()) openings.emplace(node.id, opening(node.opens));
+  return openings;
+}
+
+std::map<NodeId, OwnedSubtree> ownedSubtrees(const std::map<NodeId, TreeId>& subtrees,
+                                             const std::optional<OpenedTrees>& opened) {
+  std::map<NodeId, OwnedSubtree> owned;
+  for (const auto& [step, subtree] : subtrees) {
+    if (!opened) {
+      owned.emplace(step, OwnedSubtree{subtree, std::nullopt});
       continue;
     }
-    const int total = opened->second.total;
-    openings.emplace(node.id, Opening{node.opens, false, opened->second.title, complete_.count(node.opens) > 0,
-                                      total - pending_.at(node.opens), total});
+    const Opening opening = opened->opening(subtree);
+    if (!opening.missing) owned.emplace(step, OwnedSubtree{subtree, opening});
   }
-  return openings;
+  return owned;
 }
 
 WaysBack OpenedTrees::waysBackTo(const TreeId& tree) const {

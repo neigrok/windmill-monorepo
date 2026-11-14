@@ -59,6 +59,14 @@ struct Opening {
   bool operator==(const Opening&) const = default;
 };
 
+// What a step that owns a subtree says of it to anyone who may read the tree (SPEC.md, Model, Subtrees): the subtree,
+// and what it comes to for the owner once the owner's trees are followed, none until then.
+struct OwnedSubtree {
+  TreeId id;
+  std::optional<Opening> opening;
+  bool operator==(const OwnedSubtree&) const = default;
+};
+
 // The most one answer of pointer diagnostics lists: the nodes on a loop of trees, the trees along one way back and
 // the pointers that dangle. What is past a cap is counted, never built.
 constexpr std::size_t kMaxTreeLoops = 50;
@@ -152,6 +160,8 @@ public:
   // `marks` on a tree, with each node that holds a valid pointer following its tree; only `completed` is filled.
   Progress followed(const std::map<NodeId, TreeId>& pointers, const Progress& marks) const;
   Progress followed(const TreeData& tree, const Progress& marks) const;
+  // What a pointer at `tree` comes to.
+  Opening opening(const TreeId& tree) const;
   // One entry per node of `tree` that holds a pointer.
   std::map<NodeId, Opening> openings(const TreeData& tree) const;
   // The latest mark in what completed `tree`: of the reader's marks on its nodes that follow no tree and, for each
@@ -181,6 +191,11 @@ private:
   std::map<TreeId, LatestMark> complete_;
   std::size_t walked_ = 0;
 };
+
+// What each step of `subtrees`, the subtree each step owns, says of it, off `opened`, the owner's trees: each with no
+// opening when they were not followed, and a step whose subtree no longer stands among them left out.
+std::map<NodeId, OwnedSubtree> ownedSubtrees(const std::map<NodeId, TreeId>& subtrees,
+                                             const std::optional<OpenedTrees>& opened);
 
 // An owner's stored `marks` on a tree as a caller who cannot write it is shown them: the owner's derived completion,
 // and nothing of the trees its nodes open. A node whose pointer is valid has a row only while its tree is complete

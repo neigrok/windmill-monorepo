@@ -14,6 +14,7 @@
 #include <chrono>
 #include <optional>
 #include <set>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -64,6 +65,28 @@ struct Harness {
       if (std::string(opens) != "") graph.setOpens(NodeId{step}, TreeId{opens}, Hlc{2, 0, "seed"});
     }
     trees->byId[id] = StoredTree{graph.exportState(), LegendState{}, {id, {}}, 0, owner, visibility};
+  }
+
+  // The contract's wire example (SPEC.md, Model, Subtrees): roots `t_a` "My year" and `t_b` "Work"; in `t_a`, `sail`
+  // owns `t_s` and `coast` needs `sail`; in `t_s`, `rig` owns `t_r` beside `knot`; `t_r` holds `bowline`.
+  void seedForest(const UserId& owner, Visibility visibility) {
+    const auto planted = [&](const char* id, const char* title, const std::vector<std::pair<const char*, const char*>>& steps) {
+      LooseGraph graph;
+      std::uint64_t ms = 1;
+      for (const auto& [step, label] : steps) graph.createNode(NodeId{step}, label, "", NodeColor::sky, Hlc{ms++, 0, "seed"});
+      if (std::string(id) == "t_a") graph.addEdge(NodeId{"sail"}, NodeId{"coast"}, Hlc{ms, 0, "seed"});
+      trees->byId[id] = StoredTree{graph.exportState(), LegendState{}, {title, {}}, 0, owner, visibility};
+    };
+    planted("t_a", "My year", {{"sail", "Learn to sail"}, {"coast", "Sail the coast"}});
+    planted("t_b", "Work", {{"ship", "Ship it"}});
+    planted("t_s", "", {{"rig", "Rig the boat"}, {"knot", "Tie a knot"}});
+    planted("t_r", "", {{"bowline", "Bowline"}});
+    trees->subtrees["t_s"] = Subtree{TreeId{"t_s"}, TreeId{"t_a"}, OwningStep{TreeId{"t_a"}, NodeId{"sail"}}, 1, 0};
+    trees->subtrees["t_r"] = Subtree{TreeId{"t_r"}, TreeId{"t_a"}, OwningStep{TreeId{"t_s"}, NodeId{"rig"}}, 2, 0};
+  }
+
+  void mark(const char* tree, const UserId& owner, const char* step, ProgressStatus status, std::uint64_t ms) {
+    progress->setStatuses(TreeId{tree}, owner, {{NodeId{step}, status, false, Hlc{ms, 0, "r_a"}}}, StampedBy::replica, ms);
   }
 
   void seedSource(const char* id, const char* title) {
@@ -438,7 +461,7 @@ TEST(get_tree_answers_the_owner_what_each_pointer_comes_to_and_no_other_reader_t
   h.trees->openedReadsFail = true;
   for (const char* reader : {"s-stranger", ""}) {
     const Json::Value read = bodyOf(sendGetTree(h.api, reader, "t_main"));
-    CHECK_EQ(read.getMemberNames(), (std::vector<std::string>{"createdAt", "data", "mine", "seq", "state", "visibility"}));
+    CHECK_EQ(read.getMemberNames(), (std::vector<std::string>{"createdAt", "data", "depth", "mine", "parent", "path", "root", "seq", "state", "visibility"}));
     CHECK_EQ(dump(read).find("t_done"), std::string::npos);
     CHECK_EQ(dump(read).find("opens\":\"t_"), std::string::npos);
   }
@@ -583,9 +606,10 @@ TEST(get_tree_carries_no_guides_and_never_reads_the_trees_above) {
   const drogon::HttpResponsePtr mine = sendGetTree(h.api, "s-me", "t_mine");
   CHECK_EQ(mine->getStatusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(mine).getMemberNames(),
-           (std::vector<std::string>{"createdAt", "data", "mine", "opens", "seq", "state", "visibility"}));
+           (std::vector<std::string>{"createdAt", "data", "depth", "mine", "opens", "parent", "path", "root", "seq", "state",
+                                     "visibility"}));
   CHECK_EQ(bodyOf(sendGetTree(h.api, "", "t_mine")).getMemberNames(),
-           (std::vector<std::string>{"createdAt", "data", "mine", "seq", "state", "visibility"}));
+           (std::vector<std::string>{"createdAt", "data", "depth", "mine", "parent", "path", "root", "seq", "state", "visibility"}));
   CHECK(h.trees->aboveReads.empty());
 }
 
@@ -1391,6 +1415,7 @@ TEST(put_takes_a_node_that_still_sends_a_position_and_no_read_answers_one) {
   Json::Value plainRead = bodyOf(sendGetTree(h.api, "s-me", "t_00000000000000f3"));
   for (Json::Value* read : {&placedRead, &plainRead}) {
     read->removeMember("createdAt");
+    read->removeMember("root");
     (*read)["data"].removeMember("id");
     (*read)["state"].removeMember("treeId");
   }
@@ -1790,4 +1815,132 @@ TEST(a_tree_read_that_fails_still_answers_404_and_files_one_issue_under_a_static
   CHECK_EQ(reporter.failures->reports, (std::vector<std::string>{issue, issue}));
   for (const std::string& report : reporter.failures->reports)
     CHECK(report.find("connection reset") == std::string::npos);
+}
+
+// A subtree opens by its own id for anyone who may read its root: named by its owning step's label and placed under it,
+// root first. A root answers its own name, no parent, an empty path and depth 0. A stranger to a private root is
+// answered as for an absent tree.
+TEST(get_tree_answers_a_grandchilds_name_and_its_way_down_from_its_root_to_anyone_who_may_read_the_root) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-stranger", "stranger@example.com");
+  h.seedForest(owner, Visibility::unlisted);
+  const Json::Value grandchild = parse(R"({"root":"t_a","parent":{"tree":"t_s","step":"rig"},"path":[)"
+                                       R"({"tree":"t_a","step":"sail","title":"My year"},)"
+                                       R"({"tree":"t_s","step":"rig","title":"Learn to sail"}],"depth":2})");
+
+  for (const char* session : {"s-owner", "s-stranger", ""}) {
+    const drogon::HttpResponsePtr read = sendGetTree(h.api, session, "t_r");
+    REQUIRE_EQ(read->getStatusCode(), drogon::k200OK);
+    const Json::Value body = *read->getJsonObject();
+    for (const char* key : {"root", "parent", "path", "depth"}) CHECK_EQ(body[key], grandchild[key]);
+    CHECK_EQ(body["data"]["title"].asString(), std::string("Rig the boat"));
+  }
+  const Json::Value root = *sendGetTree(h.api, "", "t_a")->getJsonObject();
+  CHECK_EQ(root["root"], Json::Value("t_a"));
+  CHECK(root["parent"].isNull());
+  CHECK_EQ(root["path"], Json::Value(Json::arrayValue));
+  CHECK_EQ(root["depth"], Json::Value(0));
+  CHECK_EQ(root["data"]["title"].asString(), std::string("My year"));
+
+  h.rooms->sweep(std::chrono::steady_clock::duration::zero());
+  h.trees->byId["t_a"].visibility = Visibility::private_;
+  CHECK_EQ(sendGetTree(h.api, "s-stranger", "t_r")->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(sendGetTree(h.api, "s-owner", "t_r")->getStatusCode(), drogon::k200OK);
+}
+
+// A step that owns a subtree carries what the subtree comes to for its owner on every node read, its writer's and its
+// readers' alike, and no other step carries one: done once every step below is, however deep, open again when a leaf
+// reopens. Only the writer is told the pointers, the owning step's among them. A reader whose owner cannot be followed is
+// told the subtree alone.
+TEST(get_tree_tells_every_reader_what_a_step_owning_a_subtree_comes_to_for_the_owner) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedForest(owner, Visibility::unlisted);
+  h.mark("t_r", owner, "bowline", ProgressStatus::complete, 10);
+  const auto nodesOf = [&](const char* session) {
+    const drogon::HttpResponsePtr read = sendGetTree(h.api, session, "t_a");
+    CHECK_EQ(read->getStatusCode(), drogon::k200OK);
+    std::map<std::string, Json::Value> nodes;
+    for (const Json::Value& node : (*read->getJsonObject())["data"]["nodes"]) nodes[node["id"].asString()] = node;
+    return nodes;
+  };
+  const Json::Value open = parse(R"({"id":"t_s","done":1,"total":2,"state":"open"})");
+
+  std::map<std::string, Json::Value> written = nodesOf("s-owner");
+  CHECK_EQ(written["sail"]["subtree"], open);
+  CHECK_EQ(written["sail"]["opens"], Json::Value("t_s"));
+  CHECK_FALSE(written["coast"].isMember("subtree"));
+  CHECK_EQ((*sendGetTree(h.api, "s-owner", "t_a")->getJsonObject())["opens"],
+           parse(R"({"sail":{"treeId":"t_s","title":"Learn to sail","state":"open","done":1,"total":2,"loop":false}})"));
+  std::map<std::string, Json::Value> read = nodesOf("");
+  CHECK_EQ(read["sail"]["subtree"], open);
+  CHECK_FALSE(read["sail"].isMember("opens"));
+  CHECK_FALSE(read["coast"].isMember("subtree"));
+  CHECK_FALSE((*sendGetTree(h.api, "", "t_a")->getJsonObject()).isMember("opens"));
+
+  h.mark("t_s", owner, "knot", ProgressStatus::complete, 11);
+  const Json::Value complete = parse(R"({"id":"t_s","done":2,"total":2,"state":"complete"})");
+  CHECK_EQ(nodesOf("s-owner")["sail"]["subtree"], complete);
+  CHECK_EQ(nodesOf("")["sail"]["subtree"], complete);
+  h.mark("t_r", owner, "bowline", ProgressStatus::none, 12);
+  CHECK_EQ(nodesOf("")["sail"]["subtree"], open);
+
+  h.trees->openedReadsFail = true;
+  CHECK_EQ(nodesOf("")["sail"]["subtree"], parse(R"({"id":"t_s"})"));
+  CHECK_EQ(sendGetTree(h.api, "s-owner", "t_a")->getStatusCode(), drogon::k503ServiceUnavailable);
+}
+
+// A subtree's name and place are read once its strand is released: a read that fails answers as an absent tree does,
+// the tree read and the guides read alike, each under one Issue of the place read's own, and a root, whose place is its
+// own, makes no such read.
+TEST(get_tree_of_a_subtree_whose_place_cannot_be_read_answers_404_under_one_issue) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+  installWriteReporter(failures);
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedForest(owner, Visibility::unlisted);
+  h.trees->placeReadsFail = true;
+
+  const drogon::HttpResponsePtr subtree = sendGetTree(h.api, "", "t_s");
+  const drogon::HttpResponsePtr guides = sendGetGuides(h.api, "s-owner", "t_s");
+  const drogon::HttpResponsePtr root = sendGetTree(h.api, "", "t_a");
+  const drogon::HttpResponsePtr rootGuides = sendGetGuides(h.api, "", "t_a");
+  installWriteReporter(nullptr);
+
+  const std::string absent{sendGetTree(h.api, "", "t_absent")->getBody()};
+  CHECK_EQ(subtree->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(std::string(subtree->getBody()), absent);
+  CHECK_EQ(guides->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(std::string(guides->getBody()), absent);
+  CHECK_EQ(root->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(rootGuides->getStatusCode(), drogon::k200OK);
+  const std::string failed = "roadmap.tree.place roadmap rest failed " + std::string(typeid(std::runtime_error).name());
+  CHECK_EQ(failures->reports, (std::vector<std::string>{failed, failed}));
+}
+
+// A subtree is named by its owning step's label on the guides read too, its writer's and its readers' alike: its own
+// title register, which the socket and a posted document still write, is read by nothing.
+TEST(get_guides_names_a_subtree_by_its_owning_step_and_never_by_its_own_title_register) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedForest(owner, Visibility::unlisted);
+  h.trees->byId["t_a"].guide = Lww<std::string>{"Plan the year.", Hlc{2, 0, "seed"}};
+  h.trees->byId["t_s"].guide = Lww<std::string>{"Rig first.", Hlc{2, 0, "seed"}};
+  h.trees->byId["t_s"].title = Lww<std::string>{"Its own register", Hlc{3, 0, "r_old"}};
+
+  CHECK_EQ(bodyOf(sendGetGuides(h.api, "s-owner", "t_s")),
+           parse(R"({"guides":[{"treeId":"t_a","title":"My year","text":"Plan the year.","yours":true},)"
+                 R"({"treeId":"t_s","title":"Learn to sail","text":"Rig first.","yours":true}]})"));
+  CHECK_EQ(bodyOf(sendGetGuides(h.api, "", "t_s")),
+           parse(R"({"guides":[{"treeId":"t_s","title":"Learn to sail","text":"Rig first.","yours":false}]})"));
+  CHECK_EQ(bodyOf(sendGetTree(h.api, "", "t_s"))["data"]["title"], Json::Value("Learn to sail"));
 }

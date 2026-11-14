@@ -1,15 +1,19 @@
 #include "products/roadmap/adapters/http/SharePageApi.h"
 
+#include "platform/application/WriteObservation.h"
+#include "platform/ports/FailureReporter.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using namespace wm;
 using namespace wm::fake;
@@ -308,4 +312,58 @@ TEST(page_falls_back_to_a_hash_redirect_when_the_web_root_is_missing) {
 
   CHECK_EQ(resp->getStatusCode(), drogon::k200OK);
   CHECK(has(resp->getBody(), "url=/#/t/t_shared"));
+}
+
+// A subtree's own link opens it for anyone who may read its root, named by its owning step's label and indexed as its
+// root is: a private root keeps it from a stranger, whose page is the raw shell.
+TEST(page_of_a_subtree_names_it_by_its_owning_step_and_follows_its_roots_visibility) {
+  Harness h;
+  h.seed("t_root", "My year", UserId{"owner"}, Visibility::public_, 2);
+  h.seed("t_sail", "", UserId{"owner"}, Visibility::private_, 3);
+  h.trees->subtrees["t_sail"] =
+      Subtree{TreeId{"t_sail"}, TreeId{"t_root"}, OwningStep{TreeId{"t_root"}, NodeId{"n1"}}, 1, 0};
+  SharePageApi api = h.make(makeWebRoot(SHELL));
+
+  const drogon::HttpResponsePtr shared = sendPage(api, "", "t_sail");
+  CHECK(has(shared->getBody(), "<title>Step 1 \xE2\x80\x94 Windmill</title>"));
+  CHECK(has(shared->getBody(), "A Windmill skill tree \xE2\x80\x94 3 steps."));
+  CHECK(has(shared->getBody(), "content=\"index, follow, max-image-preview:large\""));
+
+  h.rooms->sweep(std::chrono::steady_clock::duration::zero());
+  h.trees->byId["t_root"].visibility = Visibility::private_;
+  CHECK_EQ(std::string(sendPage(api, "", "t_sail")->getBody()), SHELL);
+}
+
+// The share page's reads report what fails, each under its own operation at door `share`: the tree's access and room
+// under `roadmap.share.read`, a subtree's name under `roadmap.tree.place`. Either way the page is the shell, verbatim,
+// and never a subtree's own title register.
+TEST(page_whose_reads_fail_serves_the_shell_and_reports_each_failure_under_its_own_operation) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string&, const std::string& door, const std::string& outcome,
+                     const std::string&, const std::string&) override {
+      reports.push_back(operation + " " + door + " " + outcome);
+    }
+  };
+  std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+  installWriteReporter(failures);
+  Harness h;
+  h.seed("t_root", "My year", UserId{"owner"}, Visibility::public_, 2);
+  h.seed("t_sail", "Its own register", UserId{"owner"}, Visibility::private_, 3);
+  h.trees->subtrees["t_sail"] =
+      Subtree{TreeId{"t_sail"}, TreeId{"t_root"}, OwningStep{TreeId{"t_root"}, NodeId{"n1"}}, 1, 0};
+  SharePageApi api = h.make(makeWebRoot(SHELL));
+
+  h.trees->accessReadsFail = true;
+  const std::string unreadAccess{sendPage(api, "", "t_root")->getBody()};
+  h.trees->accessReadsFail = false;
+  h.trees->placeReadsFail = true;
+  const drogon::HttpResponsePtr unnamed = sendPage(api, "", "t_sail");
+  installWriteReporter(nullptr);
+
+  CHECK_EQ(unreadAccess, SHELL);
+  CHECK_EQ(unnamed->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(std::string(unnamed->getBody()), SHELL);
+  CHECK_EQ(failures->reports, (std::vector<std::string>{"roadmap.share.read share failed", "roadmap.tree.place share failed"}));
 }

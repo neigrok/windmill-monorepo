@@ -2,6 +2,10 @@
 
 #include "products/roadmap/domain/Ids.h"
 
+#include <optional>
+#include <string>
+#include <vector>
+
 namespace wm {
 
 // The step that owns a subtree, in the subtree's parent tree.
@@ -13,6 +17,27 @@ struct OwningStep {
 
 // How deep a subtree may sit: a root is at 0, a subtree of it at 1.
 constexpr int kMaxTreeDepth = 8;
+
+// One tree on the way down from a root to a subtree under it: the tree, its step the way passes through, and its name.
+struct PathStep {
+  TreeId tree;
+  NodeId step;
+  std::string title;
+  bool operator==(const PathStep&) const = default;
+};
+
+// A tree among trees as a read answers it (SPEC.md, Model, Subtrees). `title` is its name, set under `titleAt`: a root's
+// own title, a subtree's owning step's label, read through, since a subtree has no name of its own. `path` is the way
+// down from its root, root first, the tree itself left out. A root answers no parent, an empty path and depth 0.
+struct Place {
+  std::string title;
+  Hlc titleAt;
+  TreeId root;
+  std::optional<OwningStep> parent;
+  std::vector<PathStep> path;
+  int depth = 0;
+  bool operator==(const Place&) const = default;
+};
 
 // A subtree where it sits (SPEC.md, Model, Subtrees): its root, its owning step and its depth, written once when it is
 // created and never changed, and `seq`, the head of its own stream.

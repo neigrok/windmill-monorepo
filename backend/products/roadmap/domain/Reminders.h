@@ -36,7 +36,9 @@ struct TreeReadiness {
   std::vector<ReadyStep> ready;
 };
 
-// One person's trees with their own marks, in the order given; a tree SkillTree refuses has nothing ready.
+// One row per root of one person's trees, with their own marks, in the order given; a tree SkillTree refuses has
+// nothing ready. Every tree is judged, and a subtree is no row: its owning step is one step of its parent (SPEC.md,
+// Model, Subtrees), as the switcher lists them.
 std::vector<TreeReadiness> readinessOf(const std::vector<LoadedTree>& trees);
 
 // `slotDate` is the LOCAL date of this week's slot and doubles as the ledger's week key;

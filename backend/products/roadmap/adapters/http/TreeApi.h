@@ -42,6 +42,9 @@ private:
   // without a reason when the caller may not have the tree.
   bool readRoom(const std::string& treeId, const std::optional<UserId>& caller,
                 const std::function<void(TreeRoom&)>& read);
+  // A subtree's place and name, read through its parents OUTSIDE the strand: nothing when it no longer stands, or when
+  // the read fails, which is reported under its own operation (`roadmap.tree.place`).
+  std::optional<Place> placeOf(const TreeId& tree);
 
   std::shared_ptr<RoomRegistry> registry_;
   std::shared_ptr<TreeRepository> trees_;

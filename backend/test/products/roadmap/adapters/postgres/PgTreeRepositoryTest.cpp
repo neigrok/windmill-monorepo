@@ -4,6 +4,7 @@
 #include "platform/application/WriteObservation.h"
 #include "products/roadmap/adapters/postgres/PgOpLog.h"
 #include "products/roadmap/adapters/postgres/PgProgressRepository.h"
+#include "products/roadmap/adapters/postgres/PgReminderRepository.h"
 #include "products/roadmap/application/ActivityFeed.h"
 #include "products/roadmap/application/ForkService.h"
 #include "products/roadmap/application/NodeEdits.h"
@@ -2097,4 +2098,156 @@ TEST(pg_each_accounts_trees_reads_every_accounts_standing_trees_with_their_prese
     CHECK(nodeReads == std::set<std::string>{"tree_nodes_pointers_idx"});
   }
   clear();
+}
+
+// A subtree is read through its parents: its name is its owning step's label, its way down runs from its root with each
+// tree on it named the same way, and it stands only while its root does. The owner's list holds it with the step it
+// hangs from, that step opening it; the gallery lists its root alone, the step opening it under no stamp.
+TEST(pg_a_grandchild_is_named_and_placed_through_its_parents_and_listed_beside_its_root_for_its_owner_alone) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kAda, {{"sail", nullptr}, {"coast", nullptr}});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kParent, "sail", kChild)));
+  forest.edit(kChild, kAda, {{"rig", nullptr}, {"knot", nullptr}});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kChild, "rig", kGrandchild)));
+  REQUIRE(forest.registry.rename(kChild, kAda, "Learn to sail") == TreeRegistry::Renaming::renamed);
+  PgTreeRepository trees{pgTestPool()};
+
+  std::optional<Place> place = trees.placeOf(kGrandchild);
+  REQUIRE(place.has_value());
+  CHECK(place->titleAt.isSet());
+  place->titleAt = Hlc{};
+  CHECK(*place == (Place{"rig", Hlc{}, kParent, OwningStep{kChild, nid("rig")},
+                         {PathStep{kParent, nid("sail"), "Planted"}, PathStep{kChild, nid("rig"), "Learn to sail"}}, 2}));
+  CHECK(trees.placeOf(kParent) == (std::optional<Place>(Place{"Planted", Hlc{}, kParent, std::nullopt, {}, 0})));
+  CHECK(trees.loadAccess(kGrandchild)->parent == (std::optional<OwningStep>(OwningStep{kChild, nid("rig")})));
+  const std::optional<StoredTree> child = trees.load(kChild);
+  REQUIRE(child.has_value());
+  CHECK_EQ(child->depth, 1);
+  CHECK(child->subtrees == (std::map<NodeId, TreeId>{{nid("rig"), kGrandchild}}));
+
+  std::map<TreeId, OwnedTree> owned;
+  for (OwnedTree& tree : trees.listOwnedBy(kAda)) owned.emplace(tree.data.id, std::move(tree));
+  REQUIRE_EQ(owned.size(), 3u);
+  CHECK_FALSE(owned[kParent].parent.has_value());
+  CHECK(owned[kChild].parent == (std::optional<OwningStep>(OwningStep{kParent, nid("sail")})));
+  CHECK(owned[kGrandchild].parent == (std::optional<OwningStep>(OwningStep{kChild, nid("rig")})));
+  std::map<NodeId, TreeId> opened;
+  for (const NodeSpec& node : owned[kParent].data.nodes) opened.emplace(node.id, node.opens);
+  CHECK(opened == (std::map<NodeId, TreeId>{{nid("coast"), TreeId{}}, {nid("sail"), kChild}}));
+
+  REQUIRE(forest.registry.setVisibility(kParent, kAda, Visibility::public_) ==
+          (std::variant<TreeRegistry::VisibilityChange, NotARoot>{TreeRegistry::VisibilityChange::changed}));
+  std::vector<ListedTree> listed;
+  for (ListedTree& tree : trees.listPublic())
+    if (tree.owner == kAda) listed.push_back(std::move(tree));
+  REQUIRE_EQ(listed.size(), 1u);
+  CHECK(listed[0].data.id == kParent);
+  CHECK(listed[0].pointers == (std::map<NodeId, StampedPointer>{{nid("sail"), {kChild, Hlc{}}}}));
+
+  REQUIRE(std::holds_alternative<Cascade>(forest.registry.remove(kParent, kAda)));
+  CHECK_FALSE(trees.placeOf(kGrandchild).has_value());
+}
+
+// The owner's walk follows each step into the subtree it owns, whatever the step's pointer holds: the step is done once
+// every step below it is, however deep, and open again when a leaf below reopens; an empty subtree is unfinished.
+// Reminder readiness judges the account the same way, and answers its roots alone.
+TEST(pg_the_owners_walk_follows_each_step_into_the_subtree_it_owns_whatever_its_pointer_holds) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kOther, kAda, {{"far", nullptr}});
+  forest.plant(kParent, kAda, {{"sail", nullptr}, {"empty", nullptr}});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kParent, "sail", kChild)));
+  const SubtreeAnswer emptied = forest.create(kParent, "empty");
+  REQUIRE(std::holds_alternative<SubtreeCreation>(emptied));
+  const TreeId empty = std::get<SubtreeCreation>(emptied).subtree.id;
+  forest.edit(kChild, kAda, {{"rig", nullptr}, {"knot", nullptr}});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kChild, "rig", kGrandchild)));
+  forest.edit(kGrandchild, kAda, {{"bowline", nullptr}});
+  {
+    std::lock_guard<std::mutex> strand(forest.rooms.strandFor(kParent));
+    forest.rooms.open(kParent)->applyCommand(AnnotateNode{nid("sail"), {}, {}, {}, {}, kOther}, forest.clock.nowMs(), kAda);
+    REQUIRE(forest.rooms.persist(kParent) == Saved::saved);
+  }
+  const auto markAs = [&](const TreeId& tree, const char* step, ProgressStatus status) {
+    const std::uint64_t ms = forest.clock.nowMs();
+    forest.progressRepo.setStatuses(tree, kAda, {{nid(step), status, false, Hlc{ms, 0, "r_a"}}}, StampedBy::replica, ms);
+  };
+  markAs(kGrandchild, "bowline", ProgressStatus::complete);
+  markAs(kChild, "knot", ProgressStatus::complete);
+  PgTreeRepository trees{pgTestPool()};
+  const auto openingOf = [&](const TreeId& tree) { return OpenedTrees(trees.openedFrom(kAda, {tree})).opening(tree); };
+
+  CHECK(openingOf(kChild) == (Opening{kChild, false, "sail", true, 2, 2}));
+  CHECK(openingOf(empty) == (Opening{empty, false, "empty", false, 0, 0}));
+  TreeData parent;
+  {
+    std::lock_guard<std::mutex> strand(forest.rooms.strandFor(kParent));
+    parent = forest.rooms.open(kParent)->snapshot();
+  }
+  CHECK(OpenedTrees(trees.openedFrom(kAda, treesOpenedBy(parent))).openings(parent) ==
+        (std::map<NodeId, Opening>{{nid("empty"), {empty, false, "empty", false, 0, 0}},
+                                   {nid("sail"), {kChild, false, "sail", true, 2, 2}}}));
+  std::map<TreeId, std::string> readiness;
+  for (const TreeReadiness& tree : PgReminderRepository{pgTestPool()}.readinessFor(kAda))
+    readiness[tree.id] = tree.title + " " + std::to_string(tree.done) + "/" + std::to_string(tree.total);
+  CHECK(readiness == (std::map<TreeId, std::string>{{kOther, "Planted 0/1"}, {kParent, "Planted 1/2"}}));
+
+  markAs(kGrandchild, "bowline", ProgressStatus::none);
+  CHECK(openingOf(kChild) == (Opening{kChild, false, "sail", false, 1, 2}));
+}
+
+// A subtree's guides above it are its ancestors', up its parents, farthest first, and a root's are the trees whose steps
+// point at it: a pointer at a subtree makes nothing above it, and a step that owns a subtree points nowhere else.
+TEST(pg_the_trees_above_a_subtree_are_its_ancestors_and_a_root_keeps_the_trees_that_point_at_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kAda, {{"sail", nullptr}});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kParent, "sail", kChild)));
+  forest.edit(kChild, kAda, {{"rig", nullptr}});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kChild, "rig", kGrandchild)));
+  forest.plant(kOther, kAda, {{"to-parent", kParent.str().c_str()}, {"to-child", kChild.str().c_str()}});
+  {
+    std::lock_guard<std::mutex> strand(forest.rooms.strandFor(kParent));
+    forest.rooms.open(kParent)->applyCommand(AnnotateNode{nid("sail"), {}, {}, {}, {}, kOther}, forest.clock.nowMs(), kAda);
+    REQUIRE(forest.rooms.persist(kParent) == Saved::saved);
+  }
+  for (const auto& [tree, guide] : std::vector<std::pair<TreeId, const char*>>{
+           {kOther, "Other."}, {kParent, "Parent."}, {kChild, "Child."}, {kGrandchild, "Grandchild."}})
+    REQUIRE(std::holds_alternative<TreeRegistry::Described>(forest.registry.setGuide(tree, kAda, guide)));
+  PgTreeRepository trees{pgTestPool()};
+
+  CHECK(trees.guidedTreesAbove(kAda, kGrandchild) ==
+        (std::map<TreeId, TreeAbove>{{kChild, {1, "sail", "Child.", false}},
+                                     {kParent, {2, "Planted", "Parent.", false}},
+                                     {kOther, {3, "Planted", "Other.", false}}}));
+  CHECK(trees.guidedTreesAbove(kAda, kChild) ==
+        (std::map<TreeId, TreeAbove>{{kParent, {1, "Planted", "Parent.", false}}, {kOther, {2, "Planted", "Other.", false}}}));
+  CHECK(trees.guidedTreesAbove(kAda, kParent) == (std::map<TreeId, TreeAbove>{{kOther, {1, "Planted", "Other.", false}}}));
+  CHECK(trees.guidedTreesAbove(kAda, kOther).empty());
+}
+
+// A subtree stands only while its root does, in the owner's list as in every other read: once its root is removed it is
+// no tree of theirs to judge, and a pointer at it leads nowhere, as the walk a tree read makes says.
+TEST(pg_the_owners_list_leaves_out_the_subtree_of_a_removed_root) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kAda, {{"sail", nullptr}});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kParent, "sail", kChild)));
+  forest.plant(kOther, kAda, {{"to-child", kChild.str().c_str()}});
+  PgTreeRepository trees{pgTestPool()};
+  const auto listed = [&] {
+    std::set<TreeId> ids;
+    for (const OwnedTree& tree : trees.listOwnedBy(kAda)) ids.insert(tree.data.id);
+    return ids;
+  };
+  CHECK(listed() == (std::set<TreeId>{kParent, kChild, kOther}));
+
+  REQUIRE(std::holds_alternative<Cascade>(forest.registry.remove(kParent, kAda)));
+  CHECK(listed() == (std::set<TreeId>{kOther}));
+  CHECK(trees.openedFrom(kAda, {kChild}).empty());
 }

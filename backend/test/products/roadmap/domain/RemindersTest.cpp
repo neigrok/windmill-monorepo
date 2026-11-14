@@ -351,3 +351,48 @@ TEST(a_tree_that_cannot_be_validated_has_nothing_ready_and_keeps_its_counts) {
   CHECK_EQ(readiness[0].done, 1);
   CHECK(readiness[0].ready.empty());
 }
+
+// Reminders speak of roots, as the switcher lists them: a subtree is no readiness row and never the featured tree or
+// another tree with steps ready. Its owning step is one step of its parent, ready by the usual rule and named by its
+// own label, until the subtree completes.
+TEST(readiness_rows_are_roots_alone_and_a_step_that_owns_a_subtree_is_one_step_of_its_root) {
+  const auto spec = [](const char* id, const char* label, const char* opens = "", std::vector<NodeId> prerequisites = {}) {
+    NodeSpec node;
+    node.id = NodeId{std::string(id)};
+    node.label = label;
+    node.color = NodeColor::sky;
+    node.opens = TreeId{std::string(opens)};
+    node.prerequisites = std::move(prerequisites);
+    return node;
+  };
+  LoadedTree root;
+  root.data.id = TreeId{std::string("t_a")};
+  root.data.title = "My year";
+  root.data.nodes = {spec("sail", "Learn to sail", "t_s"), spec("coast", "Sail the coast", "", {NodeId{"sail"}})};
+  root.updatedAt = kNow - 30 * kDay;
+  LoadedTree sailing;
+  sailing.data.id = TreeId{std::string("t_s")};
+  sailing.data.title = "";
+  sailing.data.nodes = {spec("rig", "Rig the boat"), spec("knot", "Tie a knot")};
+  sailing.updatedAt = kNow - 20 * kDay;
+  sailing.parent = OwningStep{TreeId{std::string("t_a")}, NodeId{"sail"}};
+  ReminderCandidate candidate = sendable();
+  candidate.trees = readinessOf({root, sailing});
+
+  REQUIRE_EQ(candidate.trees.size(), std::size_t{1});
+  CHECK_EQ(candidate.trees[0].id, TreeId{std::string("t_a")});
+  CHECK_EQ(candidate.trees[0].total, 2);
+  CHECK_EQ(candidate.trees[0].done, 0);
+  REQUIRE_EQ(candidate.trees[0].ready.size(), std::size_t{1});
+  CHECK_EQ(candidate.trees[0].ready[0].label, std::string("Learn to sail"));
+  const ReminderDecision decision = decide(candidate, kNow);
+  CHECK_EQ(decision.content.treeId, TreeId{std::string("t_a")});
+  CHECK_EQ(decision.content.otherReadyTrees, 0);
+
+  sailing.progress.completed = {NodeId{"rig"}, NodeId{"knot"}};
+  const std::vector<TreeReadiness> completed = readinessOf({root, sailing});
+  REQUIRE_EQ(completed.size(), std::size_t{1});
+  CHECK_EQ(completed[0].done, 1);
+  REQUIRE_EQ(completed[0].ready.size(), std::size_t{1});
+  CHECK_EQ(completed[0].ready[0].label, std::string("Sail the coast"));
+}

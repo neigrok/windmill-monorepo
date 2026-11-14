@@ -51,16 +51,34 @@ bool TreeApi::readRoom(const std::string& treeId, const std::optional<UserId>& c
   }
 }
 
+std::optional<Place> TreeApi::placeOf(const TreeId& tree) {
+  WriteObservation observation{"roadmap.tree.place", "roadmap", "rest"};
+  try {
+    std::optional<Place> place = trees_->placeOf(tree);
+    observation.skip();
+    return place;
+  } catch (const std::exception& failure) {
+    observation.fail(failure);
+    return std::nullopt;
+  }
+}
+
 void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
   std::optional<UserId> caller = callerOf(req);
   Json::Value body(Json::objectValue);
   TreeData data;
   bool mine = false;
+  std::optional<UserId> owner;
+  std::optional<Place> place;
+  std::map<NodeId, TreeId> subtrees;
   if (!readRoom(treeId, caller, [&](TreeRoom& room) {
         mine = canWrite(caller, room.owner());
+        owner = room.owner();
         data = room.snapshot();
+        subtrees = room.subtrees();
+        // A root's place is its own; a subtree's way down from its root is read once the strand is released.
+        if (!room.parent()) place = Place{data.title, room.title().stamp, room.root(), std::nullopt, {}, 0};
         body["seq"] = static_cast<Json::Int64>(room.head());
-        body["data"] = toJson(mine ? data : readerView(data));
         Subgraph state;
         state.treeId = TreeId{treeId};
         state.frameId = "snapshot-" + std::to_string(room.head());
@@ -77,15 +95,35 @@ void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
+  // A subtree's name and its way down are read through its parents, and a failure answers as the room read's does.
+  if (!place) place = placeOf(TreeId{treeId});
+  if (!place) {
+    callback(error(drogon::k404NotFound, "no such tree"));
+    return;
+  }
+  data.title = place->title;
+  const Json::Value where = toJson(*place);
+  for (const std::string& key : where.getMemberNames()) body[key] = where[key];
+
+  // What each step's subtree, and for the tree's writer each pointer, comes to, off one follow of the owner's trees made
+  // OUTSIDE the room strand, as getProgress loads. The writer follows every tree the tree's steps open; a reader the
+  // subtrees alone, under the budget and cool-off every reader's follow of an owner shares (OwnerProgress), and is shown
+  // the subtrees unread when the owner cannot be followed.
   if (!mine) {
+    std::optional<OpenedTrees> opened;
+    if (owner && !subtrees.empty()) {
+      FollowTally tally;
+      opened = progress_->followed(*owner, treesOpenedBy(subtrees), kReaderFollowBudget, "rest", tally);
+    }
+    body["data"] = toJson(readerView(data), ownedSubtrees(subtrees, opened));
     callback(jsonResponse(body));
     return;
   }
-  // What each pointer comes to, for the tree's writer alone and OUTSIDE the room strand, as getProgress loads.
   WriteObservation observation{"roadmap.tree.follow", "roadmap", "rest"};
   try {
-    const OpenedTrees opened(trees_->openedFrom(*caller, treesOpenedBy(data)));
-    body["opens"] = toJson(opened.openings(data), opened.leadingBackTo(data.id));
+    const std::optional<OpenedTrees> opened(std::in_place, trees_->openedFrom(*caller, treesOpenedBy(data)));
+    body["data"] = toJson(data, ownedSubtrees(subtrees, opened));
+    body["opens"] = toJson(opened->openings(data), opened->leadingBackTo(data.id));
     observation.skip();
   } catch (const std::exception& failure) {
     // Not an absent tree: a 5xx is what a client reports and retries.
@@ -101,13 +139,24 @@ void TreeApi::getGuides(const drogon::HttpRequestPtr& req, HttpCallback&& callba
   const std::optional<UserId> caller = callerOf(req);
   Guide own;
   bool mine = false;
+  bool subtree = false;
   if (!readRoom(treeId, caller, [&](TreeRoom& room) {
         mine = canWrite(caller, room.owner());
+        subtree = room.parent().has_value();
         // A guide is the caller's own only on a tree they can write, and not when a fork copied it from someone else's.
         own = Guide{TreeId{treeId}, room.title().value, room.guide().value, mine && !room.guideInherited()};
       })) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
+  }
+  // A subtree is named by its owning step's label, read through its parent as the tree read reads it.
+  if (subtree) {
+    const std::optional<Place> place = placeOf(TreeId{treeId});
+    if (!place) {
+      callback(error(drogon::k404NotFound, "no such tree"));
+      return;
+    }
+    own.title = place->title;
   }
   Json::Value body(Json::objectValue);
   if (!mine) {

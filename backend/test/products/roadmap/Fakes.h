@@ -226,18 +226,22 @@ struct FakeTreeRepository : TreeRepository {
     if (it == byId.end()) return std::nullopt;
     return it->second;
   }
+  bool accessReadsFail = false;  // loadAccess throws, the way a dropped connection does
   // The same facts the real repository reads off the root's row, projected off the stored trees.
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override {
+    if (accessReadsFail) throw std::runtime_error("connection reset mid-read");
     const std::optional<StoredTree> stored = placed(tree);
     if (!stored) return std::nullopt;
-    return TreeAccess{stored->owner, stored->visibility, stored->root};
+    return TreeAccess{stored->owner, stored->visibility, stored->root, stored->parent};
   }
-  // The row as the real repository answers it: with its place, a subtree read by its root's owner and visibility, and
-  // nothing while it or its root does not stand.
+  // The row as the real repository answers it: with its place and the standing subtree each step owns, a subtree read
+  // by its root's owner and visibility, and nothing while it or its root does not stand.
   std::optional<StoredTree> placed(const TreeId& tree) const {
     std::optional<StoredTree> stored = row(tree);
     if (!stored) return std::nullopt;
     stored->root = rootOf(tree);
+    stored->depth = depthOf(tree);
+    stored->subtrees = ownedBy(tree);
     const auto subtree = subtrees.find(tree.str());
     if (subtree == subtrees.end()) return stored;
     const std::optional<StoredTree> root = row(stored->root);
@@ -246,6 +250,43 @@ struct FakeTreeRepository : TreeRepository {
     stored->visibility = root->visibility;
     stored->parent = subtree->second.parent;
     return stored;
+  }
+  // The standing subtree each step of `tree` owns, by step.
+  std::map<NodeId, TreeId> ownedBy(const TreeId& tree) const {
+    std::map<NodeId, TreeId> owned;
+    for (const auto& [id, subtree] : subtrees)
+      if (subtree.parent.tree == tree && row(TreeId{id})) owned.emplace(subtree.parent.step, TreeId{id});
+    return owned;
+  }
+  // A tree's name as every read of the real repository answers it, with its stamp: a root's title, a subtree's owning
+  // step's label.
+  Lww<std::string> nameOf(const TreeId& tree) const {
+    const auto subtree = subtrees.find(tree.str());
+    if (subtree == subtrees.end()) return byId.at(tree.str()).title;
+    for (const NodeStateEntry& node : byId.at(subtree->second.parent.tree.str()).state.nodes)
+      if (node.id == subtree->second.parent.step) return {node.label, node.labelAt};
+    return {};
+  }
+  // The document every read of the real repository projects: present steps, each opening the subtree it owns whatever
+  // its pointer holds, under the tree's name.
+  TreeData documentOf(const TreeId& tree) const {
+    TreeData data = LooseGraph(byId.at(tree.str()).state).toTreeData(tree, nameOf(tree).value);
+    const std::map<NodeId, TreeId> owned = ownedBy(tree);
+    for (NodeSpec& node : data.nodes)
+      if (const auto subtree = owned.find(node.id); subtree != owned.end()) node.opens = subtree->second;
+    return data;
+  }
+  bool placeReadsFail = false;  // placeOf throws, the way a dropped connection does
+  // The real statement's walk: up the parents of a standing tree, each named as every read names it.
+  std::optional<Place> placeOf(const TreeId& tree) override {
+    if (placeReadsFail) throw std::runtime_error("connection reset mid-read");
+    const std::optional<StoredTree> stored = placed(tree);
+    if (!stored) return std::nullopt;
+    const Lww<std::string> name = nameOf(tree);
+    Place place{name.value, name.stamp, stored->root, stored->parent, {}, stored->depth};
+    for (std::optional<OwningStep> above = stored->parent; above; above = placed(above->tree)->parent)
+      place.path.insert(place.path.begin(), PathStep{above->tree, above->step, nameOf(above->tree).value});
+    return place;
   }
   // Projected off the row the delete left behind: only a deleted id answers, and only when it had an owner.
   std::optional<UserId> retiredOwner(const TreeId& tree) override {
@@ -310,12 +351,13 @@ struct FakeTreeRepository : TreeRepository {
   std::vector<OwnedTree> listOwnedBy(const UserId& owner) override {
     std::vector<OwnedTree> owned;
     for (const auto& [id, stored] : byId) {
-      if (deletedIds.count(id)) continue;
+      if (!placed(TreeId{id})) continue;  // the row, or its root, does not stand
       if (!stored.owner || *stored.owner != owner) continue;
-      TreeData data = LooseGraph(stored.state).toTreeData(TreeId{id}, stored.title.value);
+      TreeData data = documentOf(TreeId{id});
+      data.title = stored.title.value;  // the real list reads the column, which a subtree never writes
       std::uint64_t ms = updatedAt.count(id) ? updatedAt.at(id) : 0;
       // The planting time rides the stored tree, unlike updated_at, which this fake keeps in its own map.
-      owned.push_back(OwnedTree{std::move(data), stored.createdAt, ms});
+      owned.push_back(OwnedTree{std::move(data), stored.createdAt, ms, placed(TreeId{id})->parent});
     }
     return owned;
   }
@@ -325,10 +367,12 @@ struct FakeTreeRepository : TreeRepository {
       if (deletedIds.count(id)) continue;
       if (!stored.owner) continue;
       if (stored.visibility != Visibility::public_) continue;  // the query's own visibility filter
+      if (subtrees.count(id)) continue;                         // and its roots alone
       ListedTree entry;
-      const LooseGraph graph(stored.state);
-      entry.data = graph.toTreeData(TreeId{id}, stored.title.value);
-      entry.pointers = graph.stampedPointers();
+      entry.data = documentOf(TreeId{id});
+      entry.pointers = LooseGraph(stored.state).stampedPointers();
+      for (const auto& [step, subtree] : ownedBy(TreeId{id}))
+        if (LooseGraph(stored.state).hasNode(step)) entry.pointers[step] = StampedPointer{subtree, Hlc{}};
       entry.updatedAt = updatedAt.count(id) ? updatedAt.at(id) : 0;
       entry.owner = *stored.owner;
       for (const auto& [forkId, from] : forkedFrom)
@@ -382,11 +426,10 @@ struct FakeTreeRepository : TreeRepository {
     while (!reached.empty()) {
       const TreeId tree = reached.back();
       reached.pop_back();
-      const std::optional<StoredTree> stored = row(tree);
+      const std::optional<StoredTree> stored = placed(tree);
       if (trees.count(tree) || !stored || stored->owner != std::optional<UserId>(owner)) continue;
-      const TreeData data = LooseGraph(stored->state).toTreeData(tree, stored->title.value);
       const OpenedTree& walked =
-          trees.emplace(tree, OpenedTree(data, marks_ ? marks_->load(tree, owner) : Progress{})).first->second;
+          trees.emplace(tree, OpenedTree(documentOf(tree), marks_ ? marks_->load(tree, owner) : Progress{})).first->second;
       for (const auto& [target, pointers] : walked.pointers) reached.push_back(target);
     }
     return trees;
@@ -399,19 +442,28 @@ struct FakeTreeRepository : TreeRepository {
     if (aboveReadsFail) throw std::runtime_error("connection reset mid-read");
     if (duringAboveRead) duringAboveRead();
     std::map<TreeId, TreeAbove> above;
-    const std::optional<StoredTree> asked = row(tree);
+    const std::optional<StoredTree> asked = placed(tree);
     if (!asked || asked->owner != std::optional<UserId>(owner)) return above;
+    // What lies directly below a tree: the subtrees it owns, and each root its steps that own none point at.
+    const auto below = [&](const TreeId& opener) {
+      const std::map<NodeId, TreeId> owned = ownedBy(opener);
+      std::set<TreeId> under;
+      for (const auto& [step, subtree] : owned) under.insert(subtree);
+      for (const auto& [step, target] : LooseGraph(byId.at(opener.str()).state).pointers())
+        if (!owned.count(step) && !subtrees.count(target.str())) under.insert(target);
+      return under;
+    };
     std::set<TreeId> level{tree};
     for (int distance = 1; distance <= kMaxLevelsAbove && !level.empty(); ++distance) {
       std::set<TreeId> next;
       for (const auto& [id, stored] : byId) {
         const TreeId opener{id};
-        if (opener == tree || above.count(opener) || deletedIds.count(id) || stored.owner != std::optional<UserId>(owner))
+        if (opener == tree || above.count(opener) || !placed(opener) || stored.owner != std::optional<UserId>(owner))
           continue;
-        const std::set<TreeId> opened = treesOpenedBy(LooseGraph(stored.state).toTreeData(opener, stored.title.value));
-        if (std::none_of(level.begin(), level.end(), [&](const TreeId& below) { return opened.count(below) > 0; }))
+        const std::set<TreeId> under = below(opener);
+        if (std::none_of(level.begin(), level.end(), [&](const TreeId& lower) { return under.count(lower) > 0; }))
           continue;
-        above.emplace(opener, TreeAbove{distance, stored.title.value, stored.guide.value, stored.guideInherited});
+        above.emplace(opener, TreeAbove{distance, nameOf(opener).value, stored.guide.value, stored.guideInherited});
         next.insert(opener);
       }
       level = std::move(next);

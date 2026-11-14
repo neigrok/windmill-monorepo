@@ -35,7 +35,8 @@ struct FollowTimedOut : std::exception {
 // An unset title or guide stamp means the create-time baseline, never written since; an empty
 // owner means a legacy row nobody may write. `guideInherited` marks a guide a fork copied from someone
 // else's tree: its author's words, until a guide of the owner's lands over it. A subtree's `owner` and
-// `visibility` are its root's, and `parent` is set on a subtree alone.
+// `visibility` are its root's, and `parent` is set on a subtree alone. `subtrees` names the standing subtree each
+// step owns, by step, whether or not the step is present.
 struct StoredTree {
   GraphState state;
   LegendState legend;
@@ -48,17 +49,22 @@ struct StoredTree {
   bool guideInherited = false;
   TreeId root;
   std::optional<OwningStep> parent;
+  int depth = 0;
+  std::map<NodeId, TreeId> subtrees;
   bool operator==(const StoredTree&) const = default;
 };
 
-// Timestamps are epoch ms; the caller's progress is joined in a separate read.
+// Timestamps are epoch ms; the caller's progress is joined in a separate read. Each step of `data` opens the subtree it
+// owns, whatever its pointer holds, and `parent` is set on a subtree alone.
 struct OwnedTree {
   TreeData data;
   std::uint64_t createdAt = 0;
   std::uint64_t updatedAt = 0;
+  std::optional<OwningStep> parent;
 };
 
-// `data` carries the OWNER's progress, not the reader's.
+// `data` carries the OWNER's progress, not the reader's. A step that owns a subtree opens it, its pointer set under no
+// stamp.
 struct ListedTree {
   TreeData data;
   std::map<NodeId, StampedPointer> pointers;  // the tree each step opens, as `data` holds it, with when it was set
@@ -69,11 +75,12 @@ struct ListedTree {
 };
 
 // The two facts an access decision needs, without the whole-lattice cost of load(): the root's, for a tree of any depth,
-// and the root they were read from.
+// and the root they were read from, with the step the tree hangs from, none for a root.
 struct TreeAccess {
   std::optional<UserId> owner;
   Visibility visibility = Visibility::private_;
   TreeId root;
+  std::optional<OwningStep> parent;
   bool operator==(const TreeAccess&) const = default;
 };
 
@@ -104,6 +111,9 @@ struct TreeRepository {
   // A subtree whose root does not stand answers nullopt, as a tree that does not stand does.
   virtual std::optional<StoredTree> load(const TreeId& tree) = 0;
   virtual std::optional<TreeAccess> loadAccess(const TreeId& tree) = 0;
+  // Where `tree` sits as a read answers it (Place), off the stored rows: one walk up its parents, each subtree named by
+  // its owning step's label. nullopt when it does not stand, or its root does not.
+  virtual std::optional<Place> placeOf(const TreeId& tree) = 0;
   // Who owned a row that outlived its delete; a live row (or none) answers nullopt.
   virtual std::optional<UserId> retiredOwner(const TreeId& tree) = 0;
   virtual ForkLineage loadForkLineage(const TreeId& tree) = 0;
@@ -116,23 +126,25 @@ struct TreeRepository {
   // Insert a brand-new tree. Throws DuplicateTree on an id collision (never overwrites a tree).
   virtual void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
                       const std::string& title, const UserId& owner) = 0;
-  // Soft-deleted trees are never returned; ordering is the domain's.
+  // Every standing tree of `owner`'s, subtrees included while their root stands; ordering is the domain's.
   virtual std::vector<OwnedTree> listOwnedBy(const UserId& owner) = 0;
-  // Public trees only, filtered by this query; unowned and soft-deleted are never returned.
+  // Public roots only, filtered by this query; unowned, soft-deleted and subtrees are never returned.
   virtual std::vector<ListedTree> listPublic() = 0;
   // The sources this user forked FROM, only while the copy still stands.
   virtual std::set<TreeId> listForkedSources(const UserId& owner) = 0;
   // The title of each tree among `trees` that stands and is `owner`'s, by id. A soft-deleted tree,
   // someone else's, nobody's and an id no row holds are left out alike.
   virtual std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) = 0;
-  // Each of `opened` that stands and is `owner`'s, and every such tree their pointers lead to, under `owner`'s marks.
-  // With a `budget` the read is given that long and no longer: past it the read is abandoned, holding nothing, and
-  // throws FollowTimedOut.
+  // Each of `opened` that stands and is `owner`'s, and every such tree their steps open, under `owner`'s marks: a step
+  // opens the subtree it owns, else the tree its pointer names, and a subtree is named by its owning step's label. With
+  // a `budget` the read is given that long and no longer: past it the read is abandoned, holding nothing, and throws
+  // FollowTimedOut.
   virtual std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened,
                                                   std::optional<std::chrono::milliseconds> budget = std::nullopt) = 0;
   // The kMaxGuides nearest trees above `tree` that carry a guide (SPEC.md, Model, `guides`; nearestGuided cuts them):
-  // above are `owner`'s standing trees whose present pointers lead down to it within kMaxLevelsAbove, never `tree`
-  // itself. Nothing when `tree` does not stand or is not `owner`'s.
+  // above are `owner`'s standing trees that lead down to it within kMaxLevelsAbove, a subtree's parent directly above
+  // it and a root under each tree whose present steps point at it, never `tree` itself. Nothing when `tree` does not
+  // stand or is not `owner`'s.
   virtual std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree) = 0;
   // `owner`'s standing trees other than `tree` that hold a present node whose pointer names `tree`, in id order, ids
   // compared as bytes; nothing when `tree` is not `owner`'s. Whether `tree` stands does not matter: a removal asks once

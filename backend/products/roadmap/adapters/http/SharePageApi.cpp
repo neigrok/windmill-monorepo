@@ -2,6 +2,7 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/PageShell.h"
+#include "platform/application/WriteObservation.h"
 #include "platform/domain/Origin.h"
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Tree.h"
@@ -81,11 +82,13 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
 
   const std::optional<UserId> caller = callerOf(req, *auth_);
   bool readable = false;
+  bool subtree = false;
   std::string title;
   std::size_t steps = 0;
   Visibility visibility = Visibility::private_;
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{id}));
+    WriteObservation observation{"roadmap.share.read", "roadmap", "share"};
     try {
       // Authorize on the stored row BEFORE opening: this door is anonymous, so opening first would
       // let a stranger pull the lattice of any id they guess off disk and into memory.
@@ -94,17 +97,34 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
         TreeRoom* room = registry_->open(TreeId{id});
         if (room) {
           readable = true;
-          title = room->title().value;
+          subtree = room->parent().has_value();
+          if (!subtree) title = room->title().value;  // a subtree's own register is read by nothing
           steps = room->snapshot().nodes.size();
           visibility = room->visibility();
         }
       }
-    } catch (const std::exception&) {
-    // An infrastructure failure leaves it unreadable, so the shell is served verbatim.
+      observation.skip();  // a read that does not fail leaves no completion line
+    } catch (const std::exception& failure) {
+      // An infrastructure failure leaves it unreadable, so the shell is served verbatim, and is reported.
+      observation.fail(failure);
     }
   }
 
-  // Taken OUTSIDE the room strand, and only for a readable tree.
+  // Taken OUTSIDE the room strand, and only for a readable tree. A subtree is named by its owning step's label, read
+  // through its parent; a tree that went away meanwhile, or a read that failed, leaves the shell verbatim, the failure
+  // reported as the place read's.
+  if (readable && subtree) {
+    WriteObservation observation{"roadmap.tree.place", "roadmap", "share"};
+    try {
+      const std::optional<Place> place = trees_->placeOf(TreeId{id});
+      readable = place.has_value();
+      if (place) title = place->title;
+      observation.skip();
+    } catch (const std::exception& failure) {
+      observation.fail(failure);
+      readable = false;
+    }
+  }
   const ForkLineage lineage = readable ? trees_->loadForkLineage(TreeId{id}) : ForkLineage{};
   const bool hasVideo = readable && videos_->has(id);
   callback(htmlPage(readable ? renderShell(shell, appOrigin_, title, steps, visibility, id, lineage, hasVideo) : shell));
