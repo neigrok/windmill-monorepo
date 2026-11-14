@@ -268,26 +268,29 @@ fn what_a_description_states_is_signed_as_stated_and_a_nested_payload_takes_its_
 
     let signed = sign(description, now).unwrap();
 
-    let (_, notification) = decode(&signed);
+    let (_, mut notification) = decode(&signed);
     let (_, transaction) = decode(
         notification["data"]["signedTransactionInfo"]
             .as_str()
             .unwrap(),
     );
     let (_, renewal_info) = decode(notification["data"]["signedRenewalInfo"].as_str().unwrap());
+    notification["data"]["signedTransactionInfo"] = "<signed transaction>".into();
+    notification["data"]["signedRenewalInfo"] = "<signed renewal info>".into();
     assert_eq!(
-        [
-            &notification["notificationUUID"],
-            &notification["signedDate"],
-            &notification["data"]["bundleId"],
-            &notification["data"]["environment"],
-        ],
-        [
-            &json!("0b4d6a52-8c1e-4f7a-a3b9-5d2e8f1c6a07"),
-            &json!(1_794_610_800_000_i64),
-            &json!("com.example.other"),
-            &json!("Production"),
-        ]
+        notification,
+        json!({
+            "notificationType": "DID_RENEW",
+            "notificationUUID": "0b4d6a52-8c1e-4f7a-a3b9-5d2e8f1c6a07",
+            "version": "2.0",
+            "signedDate": 1_794_610_800_000_i64,
+            "data": {
+                "bundleId": "com.example.other",
+                "environment": "Production",
+                "signedTransactionInfo": "<signed transaction>",
+                "signedRenewalInfo": "<signed renewal info>"
+            }
+        })
     );
     assert_eq!(
         transaction,

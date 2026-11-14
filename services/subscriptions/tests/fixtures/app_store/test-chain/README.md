@@ -1,8 +1,8 @@
 # App Store test chain
 
 A certificate chain shaped like Apple's App Store signing chain, made for Windmill's tests. It is not
-Apple's, and its key signs nothing real. Only non-production configurations trust `root.cer`: the
-subscription service's tests, the local stack and CI. Production trusts Apple's pinned root alone
+Apple's, and its key signs nothing real. Only tests and non-production configurations, such as the
+local stack and CI, may trust `root.cer`. Production trusts Apple's pinned root alone
 (`SignedDataVerifier::windmill`), which refuses everything this chain signs with `untrusted_chain`.
 
 | File | What it is |

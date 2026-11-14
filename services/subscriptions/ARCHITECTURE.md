@@ -156,8 +156,8 @@ Server API client, `chrono`, `serde_with` and `uuid`, which the verifier does no
 
 ## App Store test signer
 
-`app_store_test_signer` signs App Store notifications and transactions under a test chain, so tests,
-the local stack and CI can drive a purchase, a renewal or a refund without Apple. The chain is
+`app_store_test_signer` signs App Store notifications and transactions under a test chain, for tests
+and for local and CI runs that drive a purchase, a renewal or a refund without Apple. The chain is
 committed in [`tests/fixtures/app_store/test-chain/`](tests/fixtures/app_store/test-chain/README.md):
 a P-384 root, a P-384 intermediate carrying Apple's WWDR marker and a P-256 leaf carrying Apple's
 receipt-signing marker, with the leaf's key. A verifier built with `SignedDataVerifier::new` and that
@@ -175,8 +175,9 @@ A description is a JSON object holding one key, `notification` or `transaction`,
 payload as Apple's documentation shows it decoded. A notification's `data.signedTransactionInfo` and
 `data.signedRenewalInfo` may hold decoded objects too; each is signed and put back as its JWS. Every
 JWS has the header `alg` `ES256` with an `x5c` of leaf, intermediate and root, and is signed with the
-leaf's key. A field the description leaves out takes the value below; a field it states is signed as
-stated, so a test can also sign what the verifier must refuse.
+leaf's key. A field the description leaves out takes the value below, in the objects the description
+has; the signer adds no object, such as a `data` to a notification without one. A field it states is
+signed as stated, so a test can also sign what the verifier must refuse.
 
 | Payload | Field | Value when left out |
 |---|---|---|

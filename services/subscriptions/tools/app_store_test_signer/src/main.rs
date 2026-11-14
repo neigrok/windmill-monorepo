@@ -7,7 +7,7 @@ use app_store_test_signer::{Description, sign};
 
 const USAGE: &str = "usage: app_store_test_signer < description.json > signed.jws
 Signs the App Store notification or transaction described on stdin under the test chain, which only
-non-production configurations trust. Descriptions: tests/fixtures/app_store/test-payloads/";
+non-production configurations may trust. Descriptions: tests/fixtures/app_store/test-payloads/";
 
 fn main() -> ExitCode {
     if env::args_os().len() > 1 {
