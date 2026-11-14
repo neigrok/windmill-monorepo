@@ -236,8 +236,10 @@ read's `subtree: {id, done, total, state}` (`Openings.fromWire`), or `{id}` alon
 followed, which stands unread. A room that is not its owner's takes the subtrees and no pointer (`subtreesAlone`). The
 session adds what it is told since the load (`SyncSession.subtrees()`, step → `{id, depth, fresh}`): a `subtree` frame
 says a step has just come to own a new, so empty, subtree, and each subscribe answer's `subtrees` is the server's word on
-which steps own one; a subtree the load did not read stands unread until the next read. Such a step completes with its
-subtree, takes no hand mark and wears the tree's marks on every surface the pointer's opening does, with the subtree's
+which steps own one. A subtree the load did not read stands unread until the room reads the tree again, as for a
+pointer, which only a room the server answers as the tree's writer does: what a reader is told of a subtree waits on the
+owner's trees being followed, so a reader's room waits for its next load. A room that is not the owner's takes only the
+subtrees of what it reads. Such a step completes with its subtree, takes no hand mark and wears the tree's marks on every surface the pointer's opening does, with the subtree's
 own words where the board draws them: Open subtree for Open tree, and on the step page and modal, where Complete sat, how
 far it is (*No steps yet*, *1 of 1 done*) beside Open subtree. A reader gets that band too. The step page has no Tree
 section for it: its pointer takes no write, so nothing is attached, changed or detached there.

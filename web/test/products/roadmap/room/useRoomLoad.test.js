@@ -246,7 +246,7 @@ for (const failure of ['unavailable', '5xx', 'offline', 'thrown']) for (const sh
 
 // An owner's room over a server that answers each tree read in turn, with the session's socket never opened: the test
 // speaks for the session through `emit`. `shown` is every projection the room handed on, `recaps` every return recap.
-async function ownerRoom(t, { treeAnswers, stored = null, ledger = null, treeId = 't_year' }) {
+async function ownerRoom(t, { treeAnswers, stored = null, ledger = null, treeId = 't_year', shared = false }) {
   globalThis.roomLoadIssues = [];
   t.after(() => { delete globalThis.roomLoadIssues; });
   const disk = new Map([['windmill:device-trees', JSON.stringify({ t_year: { title: 'My year', owner: 'A', claimed: true } })]]);
@@ -281,6 +281,7 @@ async function ownerRoom(t, { treeAnswers, stored = null, ledger = null, treeId 
   const shown = [];
   const recaps = [];
   const props = roomProps(treeId);
+  props.shared = shared;
   props.desktopEditorRef.current = true;
   props.structure.onTreeChanged = (projection) => shown.push(projection);
   props.structure.layoutPositions = (tree) => new Map(tree.nodes.map((step) => [step.id, { x: 0, y: 0 }]));
@@ -516,4 +517,41 @@ for (const mine of [true, false]) {
     assert.deepEqual(room.faces(room.shown.at(-1)), { rig: 'complete', wind: mine ? 'open' : null, knot: 'empty' });
   });
 }
+
+// A confirmation that would ask the server again, with the clock run past the read's wait.
+async function confirmOnce(t, room, round) {
+  room.session().confirmations = round;
+  room.session().confirmedHandler();
+  t.mock.timers.tick(600);
+  await settle();
+}
+
+test('a reader’s room fills its subtrees from its load: an unread one is never read again, however many confirmations come', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const unread = () => answeredTree({ data: { id: 't_sail', title: 'Learn to sail', nodes: [
+    { id: 'rig', label: 'Rig the boat', prerequisites: [], subtree: { id: 't_rig' } },
+  ] }, ...SAIL_PLACE, mine: false });
+  const room = await ownerRoom(t, { treeId: 't_sail', treeAnswers: [unread(), unread(), unread()] });
+  room.emit({ id: 't_sail', title: 'Learn to sail', nodes: [{ id: 'rig', label: 'Rig the boat', prerequisites: [] }] }, { joined: true });
+  for (const round of [1, 2, 3]) await confirmOnce(t, room, round);
+
+  assert.deepEqual({ reads: room.reads.tree, face: room.faces(room.shown.at(-1)) }, { reads: 1, face: { rig: 'unread' } });
+});
+
+test('the owner on their own share address reads again for an unread subtree and takes its subtrees alone, never a pointer', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const answer = (subtree) => answeredTree({ data: { id: 't_sail', title: 'Learn to sail', nodes: [
+    { id: 'rig', label: 'Rig the boat', prerequisites: [], subtree },
+    { id: 'wind', label: 'Read the wind', prerequisites: [], opens: 't_weather' },
+  ] }, ...SAIL_PLACE, mine: true, opens: { wind: WEATHER } });
+  const room = await ownerRoom(t, { treeId: 't_sail', shared: true, treeAnswers: [answer({ id: 't_rig' }), answer({ id: 't_rig', done: 1, total: 2, state: 'open' })] });
+  room.emit({ id: 't_sail', title: 'Learn to sail', nodes: [
+    { id: 'rig', label: 'Rig the boat', prerequisites: [] }, { id: 'wind', label: 'Read the wind', prerequisites: [], opens: 't_weather' },
+  ] }, { joined: true });
+  await confirmOnce(t, room, 1);
+  await until(() => room.reads.tree === 2);
+  await settle();
+
+  assert.deepEqual(room.faces(room.shown.at(-1)), { rig: 'open', wind: null });
+});
 

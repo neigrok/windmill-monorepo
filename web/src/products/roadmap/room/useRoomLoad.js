@@ -192,10 +192,13 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       };
       // The facts follow the pointers the server holds. A pointer the room has no read facts of (unread, or as the picker
       // knew it) is read once the server has confirmed it: this device's own on its ack, a peer's with its frame. A read
-      // that fails, or still says nothing of it, waits for the next confirmation or reconnect.
+      // that fails, or still says nothing of it, waits for the next confirmation or reconnect. Only the tree's writer is
+      // told more by reading it again: what a reader is told of a subtree waits on the owner's trees being followed, which
+      // a read soon after would not change, so a room read as a reader's fills its subtrees from its load and the subtree
+      // frames, and reads nothing more. A room that is not the owner's takes only the subtrees of what it reads.
       let asked = '';
       const followPointers = () => {
-        if (onDevice() || !openings?.read) return;
+        if (onDevice() || !openings?.read || read.seed.mine !== true) return;
         const own = session.ownPointers();
         const lacking = shown.nodes.flatMap((step) => (step.opening && (!step.opening.read || step.opening.provisional) && !own.has(step.id)
           ? `${step.id}>${step.opening.treeId}` : [])).join(' ');
@@ -206,7 +209,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
           if (cancelled || asked !== ask) return;
           const fresh = await new HttpTreeRepository({ treeId }).loadTree({ signal: AbortSignal.timeout(POINTER_READ_LIMIT_MS) }).catch(() => null);
           if (cancelled || fresh?.mine !== true) return;
-          openings = fresh.openings;
+          openings = owner ? fresh.openings : fresh.openings.subtreesAlone();
           stand();
         }, POINTER_READ_AFTER_MS);
       };
