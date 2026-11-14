@@ -1,0 +1,1429 @@
+{
+  "examples": [
+    {
+      "name": "from_zero",
+      "request": {
+        "after": 0,
+        "limit": 6
+      },
+      "body": {
+        "epoch": "c09a3ab3-2732-4415-ba88-825ff868cf13",
+        "entries": [
+          {
+            "seq": 1,
+            "type": "started",
+            "occurredAt": 1796292000000,
+            "recordedAt": 1796292004000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1799056800000,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1796292000000,
+                    "end": 1798970400000
+                  },
+                  "accessUntil": 1799056800000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1798970400000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "type": "bound",
+            "occurredAt": 1796292000000,
+            "recordedAt": 1796292004000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1799056800000,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1796292000000,
+                    "end": 1798970400000
+                  },
+                  "accessUntil": 1799056800000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1798970400000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "type": "period_recorded",
+            "occurredAt": 1796292000000,
+            "recordedAt": 1796292004000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": {
+              "id": "e2b8f0a4-7c19-4d6e-a3f5-91c0d7b42e86",
+              "start": 1796292000000,
+              "end": 1798970400000,
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null
+            },
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1799056800000,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1796292000000,
+                    "end": 1798970400000
+                  },
+                  "accessUntil": 1799056800000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1798970400000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "type": "started",
+            "occurredAt": 1796472000000,
+            "recordedAt": 1796472003000,
+            "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+            "accountId": null,
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": null
+          },
+          {
+            "seq": 5,
+            "type": "period_recorded",
+            "occurredAt": 1796472000000,
+            "recordedAt": 1796472003000,
+            "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+            "accountId": null,
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": {
+              "id": "8f04068f-6d76-4afc-bba4-6d7927bc7c4e",
+              "start": 1796472000000,
+              "end": 1799150400000,
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null
+            },
+            "entitlement": null
+          },
+          {
+            "seq": 6,
+            "type": "bound",
+            "occurredAt": 1796547600000,
+            "recordedAt": 1796547600000,
+            "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+            "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1799236800000,
+                "governing": {
+                  "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796472000000,
+                  "currentPeriod": {
+                    "start": 1796472000000,
+                    "end": 1799150400000
+                  },
+                  "accessUntil": 1799236800000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1799150400000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          }
+        ],
+        "latestSeq": 26
+      }
+    },
+    {
+      "name": "claimed_then_sandbox",
+      "request": {
+        "after": 6,
+        "limit": 6
+      },
+      "body": {
+        "epoch": "c09a3ab3-2732-4415-ba88-825ff868cf13",
+        "entries": [
+          {
+            "seq": 7,
+            "type": "period_recorded",
+            "occurredAt": 1796547600000,
+            "recordedAt": 1796547600000,
+            "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+            "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": {
+              "id": "8f04068f-6d76-4afc-bba4-6d7927bc7c4e",
+              "start": 1796472000000,
+              "end": 1799150400000,
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null
+            },
+            "entitlement": {
+              "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1799236800000,
+                "governing": {
+                  "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796472000000,
+                  "currentPeriod": {
+                    "start": 1796472000000,
+                    "end": 1799150400000
+                  },
+                  "accessUntil": 1799236800000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1799150400000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 9,
+            "type": "started",
+            "occurredAt": 1796742000000,
+            "recordedAt": 1796742002000,
+            "subscriptionId": "c0498d34-cdf6-466c-963e-68d373253766",
+            "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+            "store": "app_store",
+            "environment": "sandbox",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+              "production": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              },
+              "sandbox": {
+                "plan": "windmill_one",
+                "accessUntil": 1796742300000,
+                "governing": {
+                  "subscriptionId": "c0498d34-cdf6-466c-963e-68d373253766",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796742000000,
+                  "currentPeriod": {
+                    "start": 1796742000000,
+                    "end": 1796742300000
+                  },
+                  "accessUntil": 1796742300000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1796742300000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 10,
+            "type": "bound",
+            "occurredAt": 1796742000000,
+            "recordedAt": 1796742002000,
+            "subscriptionId": "c0498d34-cdf6-466c-963e-68d373253766",
+            "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+            "store": "app_store",
+            "environment": "sandbox",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+              "production": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              },
+              "sandbox": {
+                "plan": "windmill_one",
+                "accessUntil": 1796742300000,
+                "governing": {
+                  "subscriptionId": "c0498d34-cdf6-466c-963e-68d373253766",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796742000000,
+                  "currentPeriod": {
+                    "start": 1796742000000,
+                    "end": 1796742300000
+                  },
+                  "accessUntil": 1796742300000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1796742300000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "type": "period_recorded",
+            "occurredAt": 1796742000000,
+            "recordedAt": 1796742002000,
+            "subscriptionId": "c0498d34-cdf6-466c-963e-68d373253766",
+            "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+            "store": "app_store",
+            "environment": "sandbox",
+            "offerKind": null,
+            "period": {
+              "id": "5f28ab82-1d7c-4306-bdf4-c36a55bff2c4",
+              "start": 1796742000000,
+              "end": 1796742300000,
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null
+            },
+            "entitlement": {
+              "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+              "production": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              },
+              "sandbox": {
+                "plan": "windmill_one",
+                "accessUntil": 1796742300000,
+                "governing": {
+                  "subscriptionId": "c0498d34-cdf6-466c-963e-68d373253766",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796742000000,
+                  "currentPeriod": {
+                    "start": 1796742000000,
+                    "end": 1796742300000
+                  },
+                  "accessUntil": 1796742300000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1796742300000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "type": "renewed",
+            "occurredAt": 1796742300000,
+            "recordedAt": 1796742302000,
+            "subscriptionId": "c0498d34-cdf6-466c-963e-68d373253766",
+            "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+            "store": "app_store",
+            "environment": "sandbox",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+              "production": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              },
+              "sandbox": {
+                "plan": "windmill_one",
+                "accessUntil": 1796742600000,
+                "governing": {
+                  "subscriptionId": "c0498d34-cdf6-466c-963e-68d373253766",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796742000000,
+                  "currentPeriod": {
+                    "start": 1796742300000,
+                    "end": 1796742600000
+                  },
+                  "accessUntil": 1796742600000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1796742600000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 13,
+            "type": "period_recorded",
+            "occurredAt": 1796742300000,
+            "recordedAt": 1796742302000,
+            "subscriptionId": "c0498d34-cdf6-466c-963e-68d373253766",
+            "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+            "store": "app_store",
+            "environment": "sandbox",
+            "offerKind": null,
+            "period": {
+              "id": "db0e7f48-3c90-456f-813d-5010c088b6d9",
+              "start": 1796742300000,
+              "end": 1796742600000,
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null
+            },
+            "entitlement": {
+              "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+              "production": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              },
+              "sandbox": {
+                "plan": "windmill_one",
+                "accessUntil": 1796742600000,
+                "governing": {
+                  "subscriptionId": "c0498d34-cdf6-466c-963e-68d373253766",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796742000000,
+                  "currentPeriod": {
+                    "start": 1796742300000,
+                    "end": 1796742600000
+                  },
+                  "accessUntil": 1796742600000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1796742600000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              }
+            }
+          }
+        ],
+        "latestSeq": 26
+      }
+    },
+    {
+      "name": "refunded_then_renewed",
+      "request": {
+        "after": 13,
+        "limit": 4
+      },
+      "body": {
+        "epoch": "c09a3ab3-2732-4415-ba88-825ff868cf13",
+        "entries": [
+          {
+            "seq": 14,
+            "type": "period_refunded",
+            "occurredAt": 1797780600000,
+            "recordedAt": 1797780602000,
+            "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+            "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": {
+              "id": "8f04068f-6d76-4afc-bba4-6d7927bc7c4e",
+              "start": 1796472000000,
+              "end": 1799150400000,
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": 1797780600000
+            },
+            "entitlement": {
+              "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+              "production": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": {
+                  "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+                  "store": "app_store",
+                  "state": "revoked",
+                  "startedAt": 1796472000000,
+                  "currentPeriod": {
+                    "start": 1796472000000,
+                    "end": 1799150400000
+                  },
+                  "accessUntil": null,
+                  "autoRenew": false,
+                  "nextChargeAt": null,
+                  "nextCharge": null,
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": 1797780600000,
+                  "endReason": "refunded"
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 15,
+            "type": "revoked",
+            "occurredAt": 1797780600000,
+            "recordedAt": 1797780602000,
+            "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+            "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+              "production": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": {
+                  "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+                  "store": "app_store",
+                  "state": "revoked",
+                  "startedAt": 1796472000000,
+                  "currentPeriod": {
+                    "start": 1796472000000,
+                    "end": 1799150400000
+                  },
+                  "accessUntil": null,
+                  "autoRenew": false,
+                  "nextChargeAt": null,
+                  "nextCharge": null,
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": 1797780600000,
+                  "endReason": "refunded"
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 16,
+            "type": "renewed",
+            "occurredAt": 1798966800000,
+            "recordedAt": 1798966810000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1801735200000,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1798970400000,
+                    "end": 1801648800000
+                  },
+                  "accessUntil": 1801735200000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1801648800000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 17,
+            "type": "period_recorded",
+            "occurredAt": 1798966800000,
+            "recordedAt": 1798966810000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": {
+              "id": "4c7a19e3-b2d0-4f85-9e6a-3d81f5c0a2b7",
+              "start": 1798970400000,
+              "end": 1801648800000,
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null
+            },
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1801735200000,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1798970400000,
+                    "end": 1801648800000
+                  },
+                  "accessUntil": 1801735200000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1801648800000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          }
+        ],
+        "latestSeq": 26
+      }
+    },
+    {
+      "name": "payment_trouble",
+      "request": {
+        "after": 17,
+        "limit": 4
+      },
+      "body": {
+        "epoch": "c09a3ab3-2732-4415-ba88-825ff868cf13",
+        "entries": [
+          {
+            "seq": 18,
+            "type": "payment_failed",
+            "occurredAt": 1801648800000,
+            "recordedAt": 1801648803000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1803031200000,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "grace",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1798970400000,
+                    "end": 1801648800000
+                  },
+                  "accessUntil": 1803031200000,
+                  "autoRenew": true,
+                  "nextChargeAt": null,
+                  "nextCharge": null,
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": 1801648800000,
+                  "graceEndsAt": 1803031200000,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 19,
+            "type": "updated",
+            "occurredAt": 1803031200000,
+            "recordedAt": 1803031203000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "on_hold",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1798970400000,
+                    "end": 1801648800000
+                  },
+                  "accessUntil": null,
+                  "autoRenew": true,
+                  "nextChargeAt": null,
+                  "nextCharge": null,
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": 1801648800000,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 20,
+            "type": "payment_recovered",
+            "occurredAt": 1803304800000,
+            "recordedAt": 1803304803000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1805810400000,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1803304800000,
+                    "end": 1805724000000
+                  },
+                  "accessUntil": 1805810400000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1805724000000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 21,
+            "type": "period_recorded",
+            "occurredAt": 1803304800000,
+            "recordedAt": 1803304803000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": {
+              "id": "d9aaabda-5edd-4f39-a5ab-ec4c8e295161",
+              "start": 1803304800000,
+              "end": 1805724000000,
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null
+            },
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1805810400000,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1803304800000,
+                    "end": 1805724000000
+                  },
+                  "accessUntil": 1805810400000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1805724000000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          }
+        ],
+        "latestSeq": 26
+      }
+    },
+    {
+      "name": "older_period_refunded",
+      "request": {
+        "after": 21,
+        "limit": 4
+      },
+      "body": {
+        "epoch": "c09a3ab3-2732-4415-ba88-825ff868cf13",
+        "entries": [
+          {
+            "seq": 22,
+            "type": "period_refunded",
+            "occurredAt": 1803898800000,
+            "recordedAt": 1803898802000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": {
+              "id": "4c7a19e3-b2d0-4f85-9e6a-3d81f5c0a2b7",
+              "start": 1798970400000,
+              "end": 1801648800000,
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": 1803898800000
+            },
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1805810400000,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1803304800000,
+                    "end": 1805724000000
+                  },
+                  "accessUntil": 1805810400000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1805724000000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 23,
+            "type": "period_refund_reversed",
+            "occurredAt": 1804608000000,
+            "recordedAt": 1804608002000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": {
+              "id": "4c7a19e3-b2d0-4f85-9e6a-3d81f5c0a2b7",
+              "start": 1798970400000,
+              "end": 1801648800000,
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null
+            },
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1805810400000,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1803304800000,
+                    "end": 1805724000000
+                  },
+                  "accessUntil": 1805810400000,
+                  "autoRenew": true,
+                  "nextChargeAt": 1805724000000,
+                  "nextCharge": {
+                    "amount": "11.99",
+                    "currency": "USD"
+                  },
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 24,
+            "type": "renewal_turned_off",
+            "occurredAt": 1804708800000,
+            "recordedAt": 1804708802000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": "windmill_one",
+                "accessUntil": 1805724000000,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "active",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1803304800000,
+                    "end": 1805724000000
+                  },
+                  "accessUntil": 1805724000000,
+                  "autoRenew": false,
+                  "nextChargeAt": null,
+                  "nextCharge": null,
+                  "nextProductId": null,
+                  "cancelRequestedAt": 1804708800000,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": null,
+                  "endReason": null
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 25,
+            "type": "expired",
+            "occurredAt": 1805724000000,
+            "recordedAt": 1805724004000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": {
+                  "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+                  "store": "app_store",
+                  "state": "expired",
+                  "startedAt": 1796292000000,
+                  "currentPeriod": {
+                    "start": 1803304800000,
+                    "end": 1805724000000
+                  },
+                  "accessUntil": null,
+                  "autoRenew": false,
+                  "nextChargeAt": null,
+                  "nextCharge": null,
+                  "nextProductId": null,
+                  "cancelRequestedAt": 1804708800000,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": 1805724000000,
+                  "endReason": "cancelled"
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          }
+        ],
+        "latestSeq": 26
+      }
+    },
+    {
+      "name": "account_erased",
+      "request": {
+        "after": 25,
+        "limit": 500
+      },
+      "body": {
+        "epoch": "c09a3ab3-2732-4415-ba88-825ff868cf13",
+        "entries": [
+          {
+            "seq": 26,
+            "type": "unbound",
+            "occurredAt": 1806580800000,
+            "recordedAt": 1806580800000,
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+              "production": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          }
+        ],
+        "latestSeq": 26
+      }
+    },
+    {
+      "name": "caught_up",
+      "request": {
+        "after": 26,
+        "limit": 500
+      },
+      "body": {
+        "epoch": "c09a3ab3-2732-4415-ba88-825ff868cf13",
+        "entries": [],
+        "latestSeq": 26
+      }
+    },
+    {
+      "name": "ledger_restored",
+      "request": {
+        "after": 26,
+        "limit": 500
+      },
+      "body": {
+        "epoch": "2dd74022-4cb9-42f8-8746-0a186269b54e",
+        "entries": [],
+        "latestSeq": 21
+      }
+    }
+  ]
+}
