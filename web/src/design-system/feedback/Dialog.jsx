@@ -53,11 +53,12 @@ export function useDialogFocus({ open, cardRef, onClose, preserveOutsideFocus = 
 // been read to its end. With `gate="scrolled"` `seen` starts false, turns true once the body is
 // scrolled to its end or fits without scrolling, and drops back to false only if the body grows past
 // the height that was seen — scrolling back up never re-locks it. Without the gate `seen` is true.
-export function Dialog({ open, onClose, title, labelledBy, header, children, footer, className, closeButtonSize = 28, width = 420, gate = null, padding = 'var(--space-8)', preserveOutsideFocus = false }) {
+export function Dialog({ open, onClose, title, labelledBy, header, children, footer, className, closeButtonSize = 28, width = 420, gate = null, padding = 'var(--space-8)', preserveOutsideFocus = false, focusableBody = false }) {
   const cardRef = useRef(null);
   const bodyRef = useRef(null);
   const contentRef = useRef(null);
   const [closeHover, setCloseHover] = useState(false);
+  const [bodyOverflows, setBodyOverflows] = useState(false);
   const gated = gate === 'scrolled';
   const [seen, setSeen] = useState(!gated);
   const seenHeight = useRef(null);
@@ -67,18 +68,19 @@ export function Dialog({ open, onClose, title, labelledBy, header, children, foo
   const measure = useCallback(() => {
     const body = bodyRef.current;
     if (!body) return;
+    if (focusableBody) setBodyOverflows(body.scrollHeight > body.clientHeight);
+    if (!gated) return;
     if (scrolledToEnd(body)) {
       seenHeight.current = body.scrollHeight;
       setSeen(true);
       return;
     }
     if (seenHeight.current != null && body.scrollHeight > seenHeight.current + 2) setSeen(false);
-  }, []);
+  }, [focusableBody, gated]);
 
-  // The gate watches the body's box and its content: a body that fits is seen at once, one that
-  // fills in later (a read answering) is measured again when it grows.
+  // Both the gate and keyboard access follow the body and content as their size changes.
   useEffect(() => {
-    if (!open || !gated) return undefined;
+    if (!open || (!gated && !focusableBody)) return undefined;
     measure();
     window.addEventListener('resize', measure);
     const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
@@ -87,10 +89,13 @@ export function Dialog({ open, onClose, title, labelledBy, header, children, foo
     return () => {
       window.removeEventListener('resize', measure);
       observer?.disconnect();
-      seenHeight.current = null;
-      setSeen(false);
+      if (gated) {
+        seenHeight.current = null;
+        setSeen(false);
+      }
+      setBodyOverflows(false);
     };
-  }, [open, gated, measure]);
+  }, [open, gated, focusableBody, measure]);
 
   if (!open) return null;
   return (
@@ -169,7 +174,9 @@ export function Dialog({ open, onClose, title, labelledBy, header, children, foo
             card's padding is borrowed back here so the clip edge lands on the card wall. */}
         <div
           ref={bodyRef}
-          tabIndex={-1}
+          role={focusableBody ? 'region' : undefined}
+          aria-labelledby={focusableBody ? labelledBy ?? (title ? titleId : undefined) : undefined}
+          tabIndex={focusableBody && bodyOverflows ? 0 : -1}
           onScroll={gated ? measure : undefined}
           style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-base)', color: 'var(--text-secondary)', flex: '1 1 auto', minHeight: 0, overflowY: 'auto', margin: `calc(-1 * var(--space-1)) calc(-1 * ${padding})`, padding: `var(--space-1) ${padding}` }}
         >

@@ -796,7 +796,8 @@
   background: var(--surface-card);
   box-shadow: var(--shadow-sm);
 }
-.st-shortcuts-dialog button:focus-visible {
+.st-shortcuts-dialog button:focus-visible,
+.st-shortcuts-dialog [role="region"]:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }

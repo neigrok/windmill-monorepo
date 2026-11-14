@@ -25,7 +25,7 @@ export function ShortcutsDialog({ open, onClose, readOnly = false, owner = !read
 
   return (
     <Dialog open={open} onClose={onClose} title={board ? SHORTCUTS_TITLE : t('roadmap.shortcuts.keyboardShortcuts')} width={600} preserveOutsideFocus
-      className="st-shortcuts-dialog" closeButtonSize={44} padding="var(--st-sc-padding)"
+      className="st-shortcuts-dialog" closeButtonSize={44} padding="var(--st-sc-padding)" focusableBody
       header={!board && <div className="st-sc-toolbar">
         <div className="st-sc-toggle" role="group" aria-label={t('roadmap.shortcuts.platform')}>
           <button type="button" aria-pressed={platform === 'mac'} onClick={() => setPlatform('mac')}>{t('roadmap.shortcuts.mac')}</button>

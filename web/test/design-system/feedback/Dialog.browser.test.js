@@ -151,6 +151,8 @@ test('the noninteractive overflowing body is not a Tab stop and the footer stays
   await visit(t, { long: true }, async (page) => {
     const scrollBody = page.getByRole('dialog').locator('div[tabindex="-1"]');
     assert.equal(await scrollBody.getAttribute('tabindex'), '-1');
+    assert.equal(await scrollBody.getAttribute('role'), null);
+    assert.equal(await scrollBody.getAttribute('aria-labelledby'), null);
     assert.equal(await scrollBody.evaluate((element) => element.scrollHeight > element.clientHeight), true);
     await page.getByRole('button', { name: 'Close', exact: true }).focus();
     await page.keyboard.press('Tab');

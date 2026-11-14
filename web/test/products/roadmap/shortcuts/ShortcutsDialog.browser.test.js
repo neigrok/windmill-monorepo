@@ -1,7 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 import { createServer } from 'vite';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -24,7 +24,7 @@ function Fixture(props) {
 }
 window.paint = (props) => flushSync(() => root.render(React.createElement(Fixture, props)));
 `;
-let server, browser, origin;
+let server, browser, webkitBrowser, origin;
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-shortcuts-test`,
     plugins: [{ name: 'shortcuts-test', enforce: 'pre',
@@ -46,76 +46,125 @@ const ready = (async () => {
   await server.listen(0);
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   browser = await chromium.launch({ headless: true });
+  webkitBrowser = await webkit.launch({ headless: true });
 })();
-after(async () => { try { await ready; } finally { await browser?.close(); await server?.close(); } });
+after(async () => { try { await ready; } finally { await browser?.close(); await webkitBrowser?.close(); await server?.close(); } });
+
+for (const engine of ['Chromium', 'WebKit']) {
+  for (const width of [390, 1440]) {
+    for (const view of ['graph', 'board']) {
+      test(`${engine}: shortcuts ${view} ${width}px keeps its header pinned and list keyboard reachable`, async (t) => {
+        await ready;
+        const [forward, backward] = engine === 'WebKit' ? ['Alt+Tab', 'Alt+Shift+Tab'] : ['Tab', 'Shift+Tab'];
+        const page = await (engine === 'Chromium' ? browser : webkitBrowser).newPage({ viewport: { width, height: 500 }, reducedMotion: 'reduce' });
+        try {
+          await page.goto(`${origin}/shortcuts-test`);
+          await page.waitForFunction(() => typeof window.paint === 'function');
+          await page.evaluate((props) => {
+            document.documentElement.dataset.theme = 'dark';
+            window.paint(props);
+          }, { view, owner: true, readOnly: width < 744 });
+          const opener = page.locator('#opener');
+          await page.keyboard.press(forward);
+          assert.equal(await opener.evaluate((element) => element === document.activeElement), true);
+          await page.keyboard.press('Enter');
+          const title = view === 'board' ? 'Keyboard shortcuts · Board' : 'Keyboard shortcuts';
+          const dialog = page.getByRole('dialog', { name: title, exact: true });
+          await dialog.waitFor();
+          await page.evaluate(async () => {
+            await document.fonts.ready;
+            await Promise.all(document.getAnimations().map((animation) => animation.finished));
+          });
+          assert.equal(await dialog.evaluate((element) => element === document.activeElement), true);
+          const bounds = await dialog.boundingBox();
+          assert.ok(bounds.x >= 16 && bounds.y >= 16 && bounds.x + bounds.width <= width - 16 && bounds.y + bounds.height <= 484);
+          const close = page.getByRole('button', { name: 'Close', exact: true });
+          const closeBounds = await close.boundingBox();
+          assert.ok(closeBounds.width >= 44 && closeBounds.height >= 44);
+          const body = dialog.getByRole('region', { name: title, exact: true });
+          assert.equal(await body.evaluate((element) => element.scrollHeight > element.clientHeight), true);
+          const header = view === 'graph' ? page.getByRole('group', { name: 'Platform' }) : close;
+          const headerBounds = await header.boundingBox();
+          await page.keyboard.press(forward);
+          assert.equal(await close.evaluate((element) => element === document.activeElement), true);
+          const focusRing = await close.evaluate((element) => getComputedStyle(element).boxShadow);
+          assert.notEqual(focusRing, 'none');
+          if (view === 'graph') {
+            await page.keyboard.press(forward);
+            assert.equal(await page.getByRole('button', { name: 'Mac', exact: true }).evaluate((element) => element === document.activeElement), true);
+            await page.keyboard.press(forward);
+            const windows = page.getByRole('button', { name: 'Windows', exact: true });
+            assert.equal(await windows.evaluate((element) => element === document.activeElement), true);
+            await page.keyboard.press('Space');
+            assert.equal(await windows.getAttribute('aria-pressed'), 'true');
+            assert.equal(await page.getByRole('button', { name: 'Mac', exact: true }).getAttribute('aria-pressed'), 'false');
+            assert.equal(await windows.evaluate((element) => getComputedStyle(element).boxShadow), focusRing);
+          }
+          await page.keyboard.press(forward);
+          assert.equal(await body.evaluate((element) => element === document.activeElement), true);
+          await page.waitForFunction((focusRing) => getComputedStyle(document.querySelector('[role="region"]')).boxShadow === focusRing, focusRing, { timeout: 2000 });
+          await page.keyboard.press('PageDown');
+          await page.waitForFunction(() => document.querySelector('[role="region"]').scrollTop > 0, null, { timeout: 2000 });
+          t.diagnostic(JSON.stringify(await body.evaluate((element) => ({ clientHeight: element.clientHeight, scrollHeight: element.scrollHeight, pageDownTop: element.scrollTop }))));
+          await page.keyboard.press('End');
+          await page.waitForFunction(() => {
+            const body = document.querySelector('[role="region"]');
+            return body.scrollHeight - body.scrollTop - body.clientHeight <= 2;
+          }, null, { timeout: 2000 });
+          const bodyBounds = await body.boundingBox();
+          const lastRowBounds = await dialog.locator('.st-sc-row').last().boundingBox();
+          assert.ok(lastRowBounds.y >= bodyBounds.y && lastRowBounds.y + lastRowBounds.height <= bodyBounds.y + bodyBounds.height);
+          assert.deepEqual(await header.boundingBox(), headerBounds);
+          assert.deepEqual(await close.boundingBox(), closeBounds);
+          await page.keyboard.press(forward);
+          assert.equal(await close.evaluate((element) => element === document.activeElement), true);
+          await page.keyboard.press(backward);
+          assert.equal(await body.evaluate((element) => element === document.activeElement), true);
+          if (process.env.SHORTCUT_CAPTURE_DIR) await page.screenshot({ path: `${process.env.SHORTCUT_CAPTURE_DIR}/${engine}-${view}-${width}-dark-compact.png` });
+          await page.keyboard.press(forward);
+          await page.setViewportSize({ width, height: 1200 });
+          await page.waitForFunction(() => document.querySelector('[role="region"]').tabIndex === -1, null, { timeout: 2000 });
+          assert.equal(await body.evaluate((element) => element.scrollHeight <= element.clientHeight), true);
+          if (view === 'graph') {
+            for (const name of ['Mac', 'Windows']) {
+              await page.keyboard.press(forward);
+              assert.equal(await page.getByRole('button', { name, exact: true }).evaluate((element) => element === document.activeElement), true);
+            }
+          }
+          await page.keyboard.press(forward);
+          assert.equal(await close.evaluate((element) => element === document.activeElement), true);
+          await page.setViewportSize({ width, height: 500 });
+          await page.waitForFunction(() => document.querySelector('[role="region"]').tabIndex === 0, null, { timeout: 2000 });
+          await page.keyboard.press(backward);
+          assert.equal(await body.evaluate((element) => element === document.activeElement), true);
+          await page.keyboard.press('Escape');
+          await dialog.waitFor({ state: 'detached' });
+          assert.equal(await opener.evaluate((element) => element === document.activeElement), true);
+          assert.deepEqual(await page.evaluate(() => window.events), [{ name: 'roadmap_shortcuts_open', props: { view } }]);
+        } finally { await page.close(); }
+      });
+    }
+  }
+}
 
 for (const width of [390, 1440]) {
-  for (const view of ['graph', 'board']) {
-    test(`shortcuts ${view} ${width}px keeps controls and keyboard access in a short dark viewport`, async () => {
-      await ready;
-      const page = await browser.newPage({ viewport: { width, height: 500 }, reducedMotion: 'reduce' });
-      try {
-        await page.goto(`${origin}/shortcuts-test`);
-        await page.waitForFunction(() => typeof window.paint === 'function');
-        await page.evaluate((props) => {
-          document.documentElement.dataset.theme = 'dark';
-          window.paint(props);
-        }, { view, owner: true, readOnly: width < 744 });
-        await page.locator('#opener').click();
-        const dialog = page.getByRole('dialog', { name: view === 'board' ? 'Keyboard shortcuts · Board' : 'Keyboard shortcuts', exact: true });
-        await dialog.waitFor();
-        await page.evaluate(async () => {
-          await document.fonts.ready;
-          await Promise.all(document.getAnimations().map((animation) => animation.finished));
-        });
-        const bounds = await dialog.boundingBox();
-        assert.ok(bounds.x >= 16 && bounds.y >= 16 && bounds.x + bounds.width <= width - 16 && bounds.y + bounds.height <= 484);
-        const close = page.getByRole('button', { name: 'Close', exact: true });
-        const closeBounds = await close.boundingBox();
-        assert.ok(closeBounds.width >= 44 && closeBounds.height >= 44);
-        const body = dialog.locator('div[tabindex="-1"]');
-        assert.equal(await body.evaluate((element) => element.scrollHeight > element.clientHeight), true);
-        const header = view === 'graph' ? page.getByRole('group', { name: 'Platform' }) : close;
-        const headerBounds = await header.boundingBox();
-        await body.focus();
-        await page.keyboard.press('PageDown');
-        await page.waitForFunction(() => document.querySelector('[role="dialog"] div[tabindex="-1"]').scrollTop > 0);
-        assert.deepEqual(await header.boundingBox(), headerBounds);
-        assert.deepEqual(await close.boundingBox(), closeBounds);
-        await dialog.focus();
-        await page.keyboard.press('Tab');
-        assert.equal(await close.evaluate((element) => element === document.activeElement), true);
-        const focusRing = await close.evaluate((element) => getComputedStyle(element).boxShadow);
-        assert.notEqual(focusRing, 'none');
-        if (view === 'graph') {
-          await page.keyboard.press('Tab');
-          assert.equal(await page.getByRole('button', { name: 'Mac', exact: true }).evaluate((element) => element === document.activeElement), true);
-          await page.keyboard.press('Tab');
-          const windows = page.getByRole('button', { name: 'Windows', exact: true });
-          assert.equal(await windows.evaluate((element) => element === document.activeElement), true);
-          await page.keyboard.press('Space');
-          assert.equal(await windows.getAttribute('aria-pressed'), 'true');
-          assert.equal(await page.getByRole('button', { name: 'Mac', exact: true }).getAttribute('aria-pressed'), 'false');
-          assert.equal(await windows.evaluate((element) => getComputedStyle(element).boxShadow), focusRing);
-          for (const button of [page.getByRole('button', { name: 'Mac', exact: true }), windows]) {
-            const box = await button.boundingBox();
-            assert.ok(box.width >= 44);
-            assert.equal(await button.evaluate((element) => getComputedStyle(element, '::after').height), '44px');
-            await page.mouse.click(box.x + box.width / 2, box.y - 8);
-            assert.equal(await button.getAttribute('aria-pressed'), 'true');
-          }
-          await windows.focus();
-        }
-        await page.keyboard.press('Tab');
-        assert.equal(await close.evaluate((element) => element === document.activeElement), true);
-        if (process.env.SHORTCUT_CAPTURE_DIR) await page.screenshot({ path: `${process.env.SHORTCUT_CAPTURE_DIR}/${view}-${width}-dark-compact.png` });
-        await page.keyboard.press('Escape');
-        await dialog.waitFor({ state: 'detached' });
-        assert.equal(await page.locator('#opener').evaluate((element) => element === document.activeElement), true);
-        assert.deepEqual(await page.evaluate(() => window.events), [{ name: 'roadmap_shortcuts_open', props: { view } }]);
-      } finally { await page.close(); }
-    });
-  }
+  test(`shortcuts platform controls keep their 44px targets at ${width}px`, async () => {
+    await ready;
+    const page = await browser.newPage({ viewport: { width, height: 500 }, reducedMotion: 'reduce' });
+    try {
+      await page.goto(`${origin}/shortcuts-test`);
+      await page.waitForFunction(() => typeof window.paint === 'function');
+      await page.evaluate(() => window.paint({ view: 'graph', open: true }));
+      for (const name of ['Windows', 'Mac']) {
+        const button = page.getByRole('button', { name, exact: true });
+        const box = await button.boundingBox();
+        assert.ok(box.width >= 44);
+        assert.equal(await button.evaluate((element) => getComputedStyle(element, '::after').height), '44px');
+        await page.mouse.click(box.x + box.width / 2, box.y - 8);
+        assert.equal(await button.getAttribute('aria-pressed'), 'true');
+      }
+    } finally { await page.close(); }
+  });
 }
 
 for (const exit of ['close', 'backdrop']) {
