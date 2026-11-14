@@ -668,7 +668,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   minus the current tree. 28.38 (the tree was removed between loads) has no phone twin. The row behind the sheet on
   28.33 has no *+2 from above*, which 28.32 draws on it.
 - **Section 28 · making it is drawn twice (28.13–28.23, 28.44, 28.46 and 28.54–28.67).** Journey 3 stands attach, fork
-  first, change and detach on the step editor of 19, which the web does not have. Journey 10 restates it on the step modal
+  first, change and detach on the step editor of 19, which the web does not have. Journey 10, whose tabbed layout is marked superseded while its behavior is retained, restates it on the step modal
   and page: a Tree section with *None* and a +, the picker as a page in the modal, Change tree and Detach tree under the
   section's own ⋯, so a step with a tree shows two ⋯ of different scope. Its picker takes the phone's context line
   (*For Learn to sail · 5 trees*) where 28.14 has a caption, lists My life and reads Coast trip as *0 of 5 done*.
@@ -893,17 +893,14 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   notice. The global notice yields only to a published Offline. By orchestrator ruling under the
   owner's G-R6 approval, an anonymous owner offline keeps the global notice: a device line is not a
   connectivity statement. Readers, the demo and rooms without an Offline publication retain it.
-- **Board · the drawings of what the lift retired.** The product has no List, phone editor sheet, phone aim, remove-link and bulk bars,
-  ControlBar or Next up shelf. Their Web Mobile and Web boards (the [flow index](../index.md#roadmap--web)'s *02 · Find and edit in List*,
-  *List vocabulary*, the phone owner sheets in *04 · Edit and complete steps* (Web Mobile 04.01–04.05, 04.08), and the Next up states in *05 · Progress and feedback*) still stand in Figma. The designer deletes them and their
-  index rows in the 🚀 pass.
-- **Board · modal and the Shell.** The step modal frames (03.01 184:1693, 03.07 379:18290, 05.06 399:37361) draw the scrim over the Shared
-  Shell and centre the modal on the whole viewport, 80px from the top. The build leaves the Shell clear and centres the modal beneath it,
-  106px from the top.
-- **Board · a reader's step modal.** 04.05 (376:13291) draws Overview and History sections, a Copy link icon and *View branch* for a
-  reader. The build gives a reader the overview alone, the ⋯ menu and no *View branch*.
-- **Graph · dock header.** 08.11 (523:32253) and Web 04.01 (33:105) draw a centred title and *Not started*. `graph/StepPanel.jsx` draws
-  the title at the start and says *Up next*, the Board's word.
+- **Board and Graph · superseded step layouts.** List vocabulary, old phone sheets and tabbed
+  Overview/Workspace/History drawings are marked Superseded development target. The [flow index](../index.md#approved-shared-step-editor)
+  points to approved 18/19/27/40, which are in development. Their completion, workspace, history, relationship,
+  deletion and subtree behavior remains part of the migration contract. Link-copy proposals 15.01–15.02 and
+  25.01–25.02 point to approved 37.01–37.15.
+  The deployed step modal leaves the Shell clear and centers beneath it; readers receive overview and the menu.
+  The deployed Graph dock uses a start-aligned title and *Up next*. These are deployed facts, not instructions to
+  reproduce the superseded drawings in the new editor.
 - **Graph · ticker over the selection bar.** Web 16's ticker and the selection bar share the bottom of the canvas with no drawn
   stacking. A rename on the dock followed by a selection inside the ticker's 4.5 seconds lays the ticker across the bar; presses pass
   through it to the bar. Draw where the ticker stands while a selection bar is up.
