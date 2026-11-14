@@ -46,14 +46,18 @@ namespace {
 struct FakeSocket : drogon::WebSocketConnection {
   std::vector<std::string> sent;
   bool open = true;
+  std::size_t written = 0;  // what the peer has taken off the socket: every byte sent, as a peer that reads does
   trantor::InetAddress addr;
 
   void send(const char* msg, uint64_t len, const drogon::WebSocketMessageType) override {
     sent.emplace_back(msg, len);
+    written += len;
   }
   void send(std::string_view msg, const drogon::WebSocketMessageType) override {
     sent.emplace_back(msg);
+    written += msg.size();
   }
+  std::size_t bytesSent() const override { return written; }
   void sendJson(const Json::Value&, const drogon::WebSocketMessageType) override {}
   const trantor::InetAddress& localAddr() const override { return addr; }
   const trantor::InetAddress& peerAddr() const override { return addr; }
@@ -2646,5 +2650,86 @@ TEST(ws_a_subscriber_is_sent_its_delta_and_then_its_graft_each_in_its_own_place_
     if (frame["t"] == "progress") frames.push_back("progress " + frame.get("intent", "echo").asString());
   }
   CHECK_EQ(frames, (std::vector<std::string>{"subgraph delta", "progress graft", "subgraph live", "progress echo"}));
+}
+
+// The stall rule by itself. A subscriber is stalled when more than a mebibyte has been handed to it since it last wrote
+// a byte and it has written none for thirty seconds, or at once past the ceiling; any byte written in between is
+// progress, so a tab on a slow link taking far more than the ceiling is never stalled, one frame alone never stalls
+// it — a first delta of any size goes — and a quiet tab handed little is left alone however long it writes nothing.
+TEST(a_subscriber_is_stalled_by_what_it_was_handed_since_it_last_wrote_and_for_how_long_never_by_size_alone) {
+  const std::chrono::steady_clock::time_point start{};
+  const auto at = [&](long long ms) { return start + std::chrono::milliseconds(ms); };
+  const std::size_t mib = 1024 * 1024;
+
+  Outbound quiet;
+  for (int frame = 0; frame < 600; ++frame) CHECK(!quiet.handing(1024, 500, at(frame * 1000LL)).has_value());
+
+  Outbound stopped;
+  CHECK(!stopped.handing(mib, 500, at(0)).has_value());
+  CHECK(!stopped.handing(mib, 500, at(29'000)).has_value());
+  CHECK(!stopped.handing(mib, 500, at(30'000)).has_value());
+  CHECK(stopped.handing(mib, 500, at(30'001)) == (std::optional<Outbound::Stalled>(Outbound::Stalled{3 * mib, std::chrono::milliseconds{30'001}})));
+  CHECK(stopped.dropped());
+
+  Outbound firstDelta;
+  CHECK(!firstDelta.handing(200 * mib, 150, at(0)).has_value());
+  CHECK(!firstDelta.handing(1024, 151, at(1)).has_value());
+
+  Outbound slow;
+  std::size_t writtenBySlow = 0;
+  for (int frame = 0; frame < 100; ++frame)
+    CHECK(!slow.handing(4 * mib, writtenBySlow += 1, at(frame * 60'000LL)).has_value());
+  CHECK(!slow.dropped());
+
+  Outbound flooded;
+  std::optional<Outbound::Stalled> stalled;
+  int handed = 0;
+  while (!stalled && handed < 100) {
+    stalled = flooded.handing(mib, 0, at(5));
+    ++handed;
+  }
+  CHECK_EQ(handed, 18);
+  CHECK(stalled == (std::optional<Outbound::Stalled>(Outbound::Stalled{17 * mib, std::chrono::milliseconds{0}})));
+}
+
+// A subscriber that stops reading is dropped once what the tree has broadcast to it passes the ceiling with nothing
+// written: its connection is closed and handed nothing more, one line says so with a size bucket and no name of
+// anything, and the subscriber beside it that reads is sent every frame.
+TEST(a_subscriber_that_writes_nothing_is_dropped_past_the_ceiling_and_the_one_beside_it_is_sent_every_frame) {
+  struct CountingSocket : FakeSocket {
+    bool reading = true;
+    std::size_t handed = 0;
+    void send(std::string_view msg, const drogon::WebSocketMessageType) override {
+      handed += 1;
+      if (reading) written += msg.size();
+    }
+  };
+  WsPresenceBus bus;
+  const TreeId tree{"t"};
+  const auto stalled = std::make_shared<CountingSocket>();
+  stalled->reading = false;
+  const auto healthy = std::make_shared<CountingSocket>();
+  bus.subscribe(tree, stalled, UserId{"u"});
+  bus.subscribe(tree, healthy, UserId{"u"});
+  Subgraph heavy;
+  heavy.treeId = tree;
+  for (int step = 0; step < 70; ++step)
+    heavy.graph.nodes.push_back(NodeStateEntry{.id = NodeId{"step-" + std::to_string(step)}, .description = std::string(15'000, 'd'),
+                                               .descriptionAt = Hlc{5, 0, "r_w"}});
+
+  std::vector<std::string> told;
+  {
+    Observed observed;
+    for (Seq seq = 1; seq <= 40; ++seq) bus.broadcastSubgraph(tree, seq, heavy);
+    for (const std::string& line : observed.lines)
+      if (line.find("roadmap_ws_subscriber_dropped") != std::string::npos)
+        told.push_back(line.substr(line.find("roadmap_ws_subscriber_dropped"), line.find(" idle_ms=") - line.find("roadmap_ws_subscriber_dropped")));
+  }
+
+  CHECK_EQ(healthy->handed, std::size_t{40});
+  CHECK(healthy->open);
+  CHECK_FALSE(stalled->open);
+  CHECK(stalled->handed > 14 && stalled->handed < 20);
+  CHECK_EQ(told, (std::vector<std::string>{"roadmap_ws_subscriber_dropped door=websocket queued=over-16m"}));
 }
 

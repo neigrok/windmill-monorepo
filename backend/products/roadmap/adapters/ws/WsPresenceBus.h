@@ -4,11 +4,15 @@
 
 #include <drogon/WebSocketConnection.h>
 #include <trantor/net/EventLoop.h>
+#include <trantor/utils/Logger.h>
 
+#include <chrono>
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -16,36 +20,97 @@
 
 namespace wm {
 
+// What the server holds for one subscriber that is not taking it. A frame handed to a connection that cannot write it
+// stays in the process, and a peer that stops reading would have every later broadcast kept for it without limit. The
+// connection says how many bytes it has written to its socket (bytesSent, third_party/drogon patch 0004): any byte
+// written since the last frame was handed over is progress, a frame half-written included, so a tab on a slow link
+// taking a delta of any size is never stalled. A subscriber is stalled when more than kStalledBytes have been handed
+// to it since it last wrote a byte and it has written none for kStalledFor — a tab that is merely quiet under light
+// traffic stays — or at once when more than kStalledCeilingBytes have, whatever the time. The frame that finds it so
+// is not handed over, and one frame alone never stalls it, whatever its size: a first delta past the ceiling goes.
+// The subscriber is then dropped: the connection is closed, which is what a tab reconnects on, and its subscribe
+// delta is the cheap way to catch up.
+class Outbound {
+public:
+  // More than a tab in the background of a quiet tree is ever behind by; the window is longer than any pause of a
+  // healthy socket and short enough that a busy tree's broadcasts in it stay far under the ceiling.
+  static constexpr std::size_t kStalledBytes = 1024 * 1024;
+  static constexpr std::chrono::seconds kStalledFor{30};
+  // The most handed to a connection that writes nothing, however fast frames come. The process holds about three
+  // times that for it, measured: the framework copies a frame into the connection's buffer, which grows by doubling.
+  static constexpr std::size_t kStalledCeilingBytes = 16 * 1024 * 1024;
+
+  // What a stalled subscriber had been handed since it last wrote, and for how long it had written nothing.
+  struct Stalled {
+    std::size_t queuedBytes;
+    std::chrono::milliseconds idle;
+    bool operator==(const Stalled&) const = default;
+  };
+
+  // A frame of `bytes` is about to be handed to the connection, which has written `sent` bytes so far. Answers the
+  // stall when what it was handed before this frame is already too much; the caller then closes the connection and
+  // hands it nothing more.
+  std::optional<Stalled> handing(std::size_t bytes, std::size_t sent, std::chrono::steady_clock::time_point now) {
+    if (!began_ || sent != sent_) {
+      began_ = true;
+      sent_ = sent;
+      wroteAt_ = now;
+      queued_ = 0;
+    }
+    const auto idle = std::chrono::duration_cast<std::chrono::milliseconds>(now - wroteAt_);
+    if (queued_ > kStalledCeilingBytes || (queued_ > kStalledBytes && idle > kStalledFor)) {
+      dropped_ = true;
+      return Stalled{queued_, idle};
+    }
+    queued_ += bytes;
+    return std::nullopt;
+  }
+  bool dropped() const { return dropped_; }
+
+private:
+  bool began_ = false;
+  bool dropped_ = false;
+  std::size_t sent_ = 0;
+  std::size_t queued_ = 0;
+  std::chrono::steady_clock::time_point wroteAt_;
+};
+
+// Hands `text` to the connection now, on its loop: counted against `outbound` when the connection is a subscriber's,
+// and the connection dropped in place of the send when it is stalled. One line tells a drop: the door, a size bucket
+// of what was held and how long the connection had written nothing — nothing that names a tree, an account or a
+// connection.
+void handOver(const drogon::WebSocketConnectionPtr& conn, const std::shared_ptr<Outbound>& outbound, const std::string& text);
+
 // A frame for a connection, sent from `loop` after everything queued there before it. The framework sends at once from
 // a connection's own loop and through that loop's queue from any other thread, so a frame sent straight from a handler
 // goes out ahead of frames other threads queued while that handler ran: a writer was sent the broadcast of its own
 // frame before those of earlier seqs. Queued every time, on the loop the connection lives on, a connection's frames go
 // out in the order they were handed over, and no lock is held while one is sent. With no loop — a test's thread — the
-// frame is sent at once.
+// frame is sent at once. A subscriber's frames are counted against its `outbound` (handOver); a reply to a connection
+// that subscribes to nothing passes none.
 inline void sendInOrder(trantor::EventLoop* loop, const drogon::WebSocketConnectionPtr& conn,
-                        std::shared_ptr<const std::string> text) {
+                        std::shared_ptr<const std::string> text, std::shared_ptr<Outbound> outbound = nullptr) {
   if (!loop) {
-    if (conn->connected()) conn->send(*text);
+    handOver(conn, outbound, *text);
     return;
   }
-  loop->queueInLoop([conn, text = std::move(text)] {
-    if (conn->connected()) conn->send(*text);
-  });
+  loop->queueInLoop([conn, text = std::move(text), outbound = std::move(outbound)] { handOver(conn, outbound, *text); });
 }
 
 // A frame's place in a connection's send order, taken before the frame is ready. A subscriber's first frame of a
 // channel — the delta, the progress graft — reports a state read once the subscriber has joined and written out
 // later, and every frame handed to the connection in between must follow it: so the place is taken at the join, as a
-// queued send that has nothing to send yet, and `send` gives it its frame. Both happen in one handler on the connection's own loop,
-// which runs nothing it has queued until that handler returns, so the frame is there when its turn comes; a place
-// never given a frame sends nothing. With no loop — a test's thread — nothing can come between, and `send` sends at
-// once.
+// queued send that has nothing to send yet, and `send` gives it its frame. Both happen in one handler on the
+// connection's own loop, which runs nothing it has queued until that handler returns, so the frame is there when its
+// turn comes; a place never given a frame sends nothing. With no loop — a test's thread — nothing can come between,
+// and `send` sends at once.
 class PlaceInOrder {
 public:
-  PlaceInOrder(trantor::EventLoop* loop, drogon::WebSocketConnectionPtr conn) : loop_(loop), conn_(std::move(conn)) {
+  PlaceInOrder(trantor::EventLoop* loop, drogon::WebSocketConnectionPtr conn, std::shared_ptr<Outbound> outbound)
+      : loop_(loop), conn_(std::move(conn)), outbound_(std::move(outbound)) {
     if (!loop_) return;
-    loop_->queueInLoop([conn = conn_, frame = frame_] {
-      if (!frame->empty() && conn->connected()) conn->send(*frame);
+    loop_->queueInLoop([conn = conn_, frame = frame_, outbound = outbound_] {
+      if (!frame->empty()) handOver(conn, outbound, *frame);
     });
   }
   void send(std::string text) {
@@ -53,12 +118,13 @@ public:
       *frame_ = std::move(text);
       return;
     }
-    if (conn_->connected()) conn_->send(text);
+    handOver(conn_, outbound_, text);
   }
 
 private:
   trantor::EventLoop* loop_;
   drogon::WebSocketConnectionPtr conn_;
+  std::shared_ptr<Outbound> outbound_;
   std::shared_ptr<std::string> frame_ = std::make_shared<std::string>();
 };
 
@@ -112,6 +178,7 @@ private:
     Reach reach;
     std::string user;  // empty = anonymous
     trantor::EventLoop* loop;
+    std::shared_ptr<Outbound> outbound;
   };
   // Who may still receive `tree` and how much of it, with everyone the gate refused already dropped.
   std::vector<Admitted> admitted(const TreeId& tree);
@@ -119,6 +186,7 @@ private:
   struct Subscriber {
     std::string user;  // empty = anonymous
     trantor::EventLoop* loop;  // the loop the connection lives on, none for one subscribed outside any
+    std::shared_ptr<Outbound> outbound;  // what it has been handed and not written: one for the connection, every tree
   };
   mutable std::mutex mutex_;
   std::map<std::string, std::set<drogon::WebSocketConnectionPtr>> subscribers_;

@@ -1,0 +1,67 @@
+From f4556799b7768f642b5912772078224079db6f60 Mon Sep 17 00:00:00 2001
+From: Windmill <noreply@windmill.works>
+Date: Sat, 14 Nov 2026 12:00:00 +0400
+Subject: [PATCH 4/4] Expose the bytes a WebSocket connection has written
+
+A server that fans messages out to many WebSocket connections cannot tell
+a peer that reads slowly from one that has stopped reading: send() queues
+without limit and the connection it wraps is private. bytesSent() answers
+what the TCP connection has written to its socket, as TcpConnection does,
+so a caller that counts what it handed to send() knows what is still
+queued for the peer.
+---
+ lib/inc/drogon/WebSocketConnection.h | 8 ++++++++
+ lib/src/WebSocketConnectionImpl.cc   | 5 +++++
+ lib/src/WebSocketConnectionImpl.h    | 1 +
+ 3 files changed, 14 insertions(+)
+
+diff --git a/lib/inc/drogon/WebSocketConnection.h b/lib/inc/drogon/WebSocketConnection.h
+index 2664258..2444ec6 100644
+--- a/lib/inc/drogon/WebSocketConnection.h
++++ b/lib/inc/drogon/WebSocketConnection.h
+@@ -139,6 +139,14 @@ class WebSocketConnection
+     /// Return true if the connection is closed
+     virtual bool disconnected() const = 0;
+ 
++    /**
++     * @brief Return the number of bytes written to the connection's socket.
++     * A caller that counts the bytes it hands to send() learns from the
++     * difference how much is still queued in the process for a peer that
++     * reads slowly or not at all, a partly written message included.
++     */
++    virtual size_t bytesSent() const = 0;
++
+     /**
+      * @brief Shut down the write direction, which means that further send
+      * operations are disabled.
+diff --git a/lib/src/WebSocketConnectionImpl.cc b/lib/src/WebSocketConnectionImpl.cc
+index cd589b6..ab3f97e 100644
+--- a/lib/src/WebSocketConnectionImpl.cc
++++ b/lib/src/WebSocketConnectionImpl.cc
+@@ -211,6 +211,11 @@ bool WebSocketConnectionImpl::disconnected() const
+     return tcpConnectionPtr_->disconnected();
+ }
+ 
++size_t WebSocketConnectionImpl::bytesSent() const
++{
++    return tcpConnectionPtr_->bytesSent();
++}
++
+ void WebSocketConnectionImpl::WebSocketConnectionImpl::shutdown(
+     const CloseCode code,
+     const std::string &reason)
+diff --git a/lib/src/WebSocketConnectionImpl.h b/lib/src/WebSocketConnectionImpl.h
+index 8c71a9c..c24d73d 100644
+--- a/lib/src/WebSocketConnectionImpl.h
++++ b/lib/src/WebSocketConnectionImpl.h
+@@ -73,6 +73,7 @@ class WebSocketConnectionImpl final
+ 
+     bool connected() const override;
+     bool disconnected() const override;
++    size_t bytesSent() const override;
+ 
+     void shutdown(const CloseCode code = CloseCode::kNormalClosure,
+                   const std::string &reason = "") override;  // close write
+-- 
+2.50.1 (Apple Git-155)
+

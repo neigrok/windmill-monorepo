@@ -42,8 +42,15 @@ Each is a `git format-patch` file against the pinned release, with a message wri
   recipient in front of the server never frames a connection's requests otherwise than the server
   does.
 
-`test/third_party/drogon/PatchesTest.cpp` pins all three against Drogon's own parser, on a loopback
-connection in the test process. It also pins Trantor's process-wide SIGPIPE protection: a closed
+- `0004` — a WebSocket connection says how many bytes it has written to its socket
+  (`WebSocketConnection::bytesSent()`, the count its TCP connection keeps). `send()` queues without
+  limit and the TCP connection is private, so without it a server cannot tell a peer that reads slowly
+  from one that has stopped reading. The roadmap socket drops a subscriber that is handed frames and
+  writes none (`Outbound`, `products/roadmap/adapters/ws/WsPresenceBus.h`).
+
+`test/third_party/drogon/PatchesTest.cpp` pins all four against Drogon itself, on a loopback
+connection in the test process: the first three against its parser, the fourth on a socket whose
+client end stops reading. It also pins Trantor's process-wide SIGPIPE protection: a closed
 client's socket write cannot terminate the server. `test/e2e/http_disconnect_test.py` resets twelve
 connections during large replies from the production server, checking it serves a read after each;
 the deployment conformance runs it against both server compositions in CI.

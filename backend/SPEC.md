@@ -401,6 +401,16 @@ after the head it reports follows it, and then the progress graft's, so every ec
 graft, whose marks are read after the join. No live frame goes out ahead of a subscription's first
 frame; an echo of a mark made before the graft's read repeats what the graft holds.
 
+A subscriber that stops reading is dropped. A frame handed to a connection that cannot write it
+stays in the server's memory, so each subscriber's frames are counted against what its connection
+has written to its socket (`Outbound`, `adapters/ws/WsPresenceBus.h`; `bytesSent`, Drogon patch
+`0004`). Any byte written is progress, a frame half-written included, so a tab on a slow link takes
+a delta of any size. A subscriber handed more than 1 MiB since it last wrote a byte, and that has
+written none for 30 s, is stalled, as is one handed more than 16 MiB with nothing written however
+fast the frames came; one frame alone never stalls it, so a first delta of any size goes: its connection is closed without a word, which a tab reconnects on, and its
+subscribe delta brings it level. A quiet tab handed little is left alone. Replies to a frame — acks,
+rejects, pongs — are not counted: they are as small and as many as what the peer itself sends.
+
 ### Commands
 
 `Command` is the server-and-agent-side write path (MCP, tending, imports); it rides the same op
