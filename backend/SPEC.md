@@ -500,6 +500,40 @@ after the head it reports follows it, and then the progress graft's, so every ec
 graft, whose marks are read after the join. No live frame goes out ahead of a subscription's first
 frame; an echo of a mark made before the graft's read repeats what the graft holds.
 
+A connection that stops taking what it is sent is dropped. A frame handed to a connection that
+cannot write it stays in the server's memory, so every frame the server sends a tree-socket
+connection is entered, with the bytes it takes on the wire, in what that connection has been handed
+(`Outbound`, `adapters/ws/WsPresenceBus.h`): a subscription's first frames, a broadcast or an echo,
+a reply, a presence frame. The bytes the connection has written to its socket (`bytesSent`, Drogon
+patch `0004`) leave it oldest frame first, so what is pending is known to the byte and by kind; the
+framework's own ping or pong, a few bytes, is not entered. Three rules drop a connection, each judged
+on what was pending before the frame being handed, so one frame alone never drops it, whatever its
+size:
+
+- `stalled` — something is pending and not one byte was written for 120 s. It is judged when a frame
+  is handed and by a timer every 5 s (`WsPresenceBus::dropStalled`), so a peer that stops reading on
+  a tree nobody writes is dropped too. Any byte written is progress, a frame half-written included.
+  The kernel takes a slow reader's bytes in bursts of about half a megabyte, so the time between two
+  writes is that over the reader's rate — measured on loopback, 104 s at 5 KB/s — and 120 s is the
+  shortest wait that never drops a reader taking 5 KB/s or more. The framework's own idle rule comes
+  first for a peer that is silent too: it closes a connection that neither takes nor sends a byte
+  for 60 s, with no line. A tab sends a ping every 20 s, so `stalled` is what reaches one that keeps
+  sending and takes nothing.
+- `behind` — more than 16 MiB of live frames, broadcasts and echoes, are pending and no first frame
+  of a subscription is. A reader that takes bytes but cannot keep up with its trees is dropped, and
+  its next subscribe is answered one delta in place of the backlog. A subscription's first frames,
+  replies and presence never count toward it, so a large delta, or two back to back, is no backlog.
+  Live frames wait behind a delta not yet written, so while a first frame is pending they are no
+  measure of the reader: one slow to take a large delta is left to finish it, and is dropped as
+  behind only if the live frames that waited are past the bound once the delta is written. A peer
+  that takes nothing of a delta is `stalled`, or reaches the `ceiling`.
+- `ceiling` — more than 320 MiB of any kind are pending: a peer that subscribes again and again
+  without reading. The delta of the largest tree of plain text, 10,000 nodes each described in
+  16,000 characters, is 156 MiB (measured), so two such deltas back to back stay under it.
+
+The frame that finds a rule broken is not handed over and the connection is closed without a word,
+which a tab reconnects on; its subscribe delta brings it level.
+
 ### Commands
 
 `Command` is the server-and-agent-side write path (MCP, tending, imports); it rides the same op

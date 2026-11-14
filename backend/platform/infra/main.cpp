@@ -228,7 +228,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     setCollab(nullptr);
   }, trees, oplog);
   lifetime.watch(registry, trees, oplog, bus);
-  auto presence = std::make_shared<PresenceHub>();
+  auto presence = std::make_shared<PresenceHub>(*bus);
 
   // The session rides in an HttpOnly cookie whose Secure flag and scopes follow the deployment: the live Domain, and
   // every Domain it was set in before (engine.md §9.1 Session cookie scopes).

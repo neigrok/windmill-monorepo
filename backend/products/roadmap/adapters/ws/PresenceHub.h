@@ -1,5 +1,6 @@
 #pragma once
 
+#include "products/roadmap/adapters/ws/WsPresenceBus.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Tree.h"
 
@@ -45,6 +46,8 @@ struct Principal {
 // deltas only.
 class PresenceHub {
 public:
+  explicit PresenceHub(WsPresenceBus& bus) : bus_(bus) {}
+
   void join(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree);
   void update(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree, const Json::Value& frame);
   void leave(const drogon::WebSocketConnectionPtr& conn);
@@ -74,11 +77,13 @@ private:
   };
 
   std::string guestName(const UserId& actor, const std::map<drogon::WebSocketConnectionPtr, Member>& members) const;
+  void sendTo(const drogon::WebSocketConnectionPtr& conn, const std::string& payload);
   // Caller holds mutex_.
   void depart(const std::string& tree, const drogon::WebSocketConnectionPtr& conn);
   Json::Value presenceFrame(const std::string& tree, const Member& member) const;
   Json::Value peerFrame(const std::string& tree, const Member& member, const char* event) const;
 
+  WsPresenceBus& bus_;
   mutable std::mutex mutex_;
   std::map<std::string, Room> byTree_;
 };
