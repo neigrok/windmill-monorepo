@@ -176,7 +176,15 @@ test('Chromium: the pencil writes from the end, Save waits for a change, and the
       assert.deepEqual(await caretState(page), { start: GUIDE.length, end: GUIDE.length, focused: true });
       assert.equal(await page.locator('.st-guide-footer').textContent(), 'Your agents and people you share this tree with can read the guide.CancelSave');
       const save = page.getByRole('button', { name: 'Save' });
-      assert.deepEqual(await save.evaluate((button) => [button.getAttribute('aria-disabled'), getComputedStyle(button).opacity]), ['true', '0.45']);
+      assert.deepEqual(await save.evaluate((button) => [button.getAttribute('aria-disabled'), getComputedStyle(button).opacity, button.style.background]), ['true', '0.45', 'var(--color-brand)']);
+      assert.equal(await field(page).evaluate((box) => {
+        const probe = document.createElement('span');
+        probe.style.color = 'var(--field-focus-edge)';
+        box.after(probe);
+        const matches = getComputedStyle(box).borderTopColor === getComputedStyle(probe).color;
+        probe.remove();
+        return matches;
+      }), true);
       await save.click({ force: true });
       await page.keyboard.press('Meta+Enter');
       assert.deepEqual(await page.evaluate(() => window.writes), []);

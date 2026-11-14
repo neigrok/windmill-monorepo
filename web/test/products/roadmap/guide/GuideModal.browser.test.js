@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium, webkit } from 'playwright';
-import { GUIDE, events, hostGuideSurfaces, open, settled, stepInert } from './guideSurfacesHost.js';
+import { GUIDE, events, hostGuideSurfaces, open, origin, settled, stepInert } from './guideSurfacesHost.js';
 
 hostGuideSurfaces({ cache: 'guide-modal-window-test' });
 
@@ -76,6 +76,60 @@ for (const engine of [chromium, webkit]) {
         ], door);
       } finally { await page.close(); }
     }
+  });
+
+  test(`${engine.name()}: a short window keeps a changed-elsewhere notice, draft and actions separate`, async () => {
+    for (const height of [280, 400, 600]) {
+      const page = await open({ guide: GUIDE, band: 'tablet' }, { engine, width: 744, height, reducedMotion: 'reduce' });
+      try {
+        await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+        await page.getByRole('button', { name: 'Edit guide' }).click();
+        const draft = 'A long line of guide text.\n'.repeat(180);
+        await page.locator('.st-guide-field').fill(draft);
+        await page.evaluate(() => window.setElsewhere('Changed somewhere else'));
+        await page.getByRole('status').waitFor();
+        assert.deepEqual(await page.locator('.st-guide-paper').evaluate((paper) => {
+          const [notice, field, footer, save] = ['.st-guide-status', '.st-guide-field', '.st-guide-footer', '.st-guide-actions > :last-child']
+            .map((selector) => paper.querySelector(selector).getBoundingClientRect());
+          const frame = paper.getBoundingClientRect();
+          return { noticeAboveField: notice.bottom <= field.top, fieldAboveFooter: field.bottom <= footer.top,
+            footerInWindow: footer.bottom <= frame.bottom, actionInWindow: save.bottom <= frame.bottom, fieldVisible: field.height > 0 };
+        }), { noticeAboveField: true, fieldAboveFooter: true, footerInWindow: true, actionInWindow: true, fieldVisible: true }, `${height}px`);
+        assert.equal(await page.locator('.st-guide-field').inputValue(), draft);
+        await page.getByRole('button', { name: 'Cancel' }).click();
+        await page.getByRole('alertdialog', { name: 'Discard draft?' }).waitFor();
+        await page.getByRole('button', { name: 'Keep editing' }).click();
+        assert.equal(await page.locator('.st-guide-field').inputValue(), draft);
+      } finally { await page.close(); }
+    }
+  });
+
+  test(`${engine.name()}: a short window keeps a failed save and changed-elsewhere notice reachable`, async () => {
+    const page = await open({ guide: GUIDE, band: 'tablet', door: 'server' }, { engine, width: 744, height: 280, reducedMotion: 'reduce' });
+    try {
+      await page.route('**/v1/trees/**', (route) => {
+        const headers = { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true', 'access-control-allow-methods': 'PATCH', 'access-control-allow-headers': 'content-type' };
+        return route.fulfill({ status: route.request().method() === 'PATCH' ? 503 : 204, headers });
+      });
+      await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+      await page.getByRole('button', { name: 'Edit guide' }).click();
+      const draft = 'A long line of guide text.\n'.repeat(180);
+      await page.locator('.st-guide-field').fill(draft);
+      await page.evaluate(() => window.setElsewhere('Changed somewhere else'));
+      await page.getByRole('status').waitFor();
+      await page.getByRole('button', { name: 'Save' }).click();
+      assert.equal(await page.getByRole('alert').textContent(), 'Couldn’t save just now. Try again in a moment.');
+      assert.deepEqual(await page.locator('.st-guide-paper').evaluate((paper) => {
+        const [notice, field, footer, retry] = ['.st-guide-status', '.st-guide-field', '.st-guide-footer', '.st-guide-actions > :last-child']
+          .map((selector) => paper.querySelector(selector).getBoundingClientRect());
+        const frame = paper.getBoundingClientRect();
+        return { noticeAboveField: notice.bottom <= field.top, fieldAboveFooter: field.bottom <= footer.top,
+          retryInWindow: retry.bottom <= frame.bottom, fieldVisible: field.height > 0 };
+      }), { noticeAboveField: true, fieldAboveFooter: true, retryInWindow: true, fieldVisible: true });
+      assert.equal(await page.locator('.st-guide-field').inputValue(), draft);
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      await page.getByRole('alertdialog', { name: 'Discard draft?' }).waitFor();
+    } finally { await page.close(); }
   });
 }
 

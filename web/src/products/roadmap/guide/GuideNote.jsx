@@ -261,8 +261,8 @@ export function GuideNote({ guide, band }) {
       box.style.height = 'auto';
       if (!phone) {
         const status = body.current.querySelector('.st-guide-status');
-        const padding = parseFloat(getComputedStyle(body.current).paddingTop);
-        const room = Math.max(0, body.current.clientHeight - padding - (status ? status.offsetHeight + 12 : 0));
+        const style = getComputedStyle(body.current);
+        const room = Math.max(0, body.current.clientHeight - parseFloat(style.paddingTop) - (status ? status.offsetHeight + parseFloat(style.rowGap) : 0) - 1);
         const draftHeight = caretFoot(box, box.value.length) + box.offsetHeight - box.clientHeight;
         box.style.minHeight = `${Math.min(room, Math.max(64, draftHeight))}px`;
         return;
@@ -271,8 +271,13 @@ export function GuideNote({ guide, band }) {
       box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`;
     };
     fit();
+    const observer = phone ? null : new ResizeObserver(fit);
+    observer?.observe(body.current);
     window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', fit);
+    };
   }, [draft?.text, phone, guide.text, line]);
 
   // Writing starts where reading stood: the caret where the press landed, the field scrolled as far as the prose was.
@@ -608,7 +613,7 @@ export function GuideNote({ guide, band }) {
                     onFocus={() => setRinged(lastPress.current === 'key')} onClick={press}>{act.label}</button>
                 </> : <>
                   <Button variant="secondary" onClick={requestLeave}>{t('roadmap.common.cancel')}</Button>
-                  <Button variant={draft.changed ? 'primary' : 'secondary'} held={act.waits} ariaBusy={saving} describedBy={describerId}
+                  <Button variant="primary" held={act.waits} ariaBusy={saving} describedBy={describerId}
                     onClick={press}>{act.label}</Button>
                 </>}
               </div>
