@@ -75,11 +75,11 @@ const deviceTrees = new LocalTreeRegistry();
 // The room's side of it. `arrival` is what the entry said as the room opened; `holder` who holds this room as its owner
 // (`useRoomHolder`), or null; `visitor` whether the room reads a tree that is not its own, demo aside, which lets it go
 // into subtrees as a holder does; `place` where the tree sits, null until the server has said; `route` the address
-// family it stands on and `role` whose room it is (`owner` or `reader`), null until the room has loaded and knows. A room
-// that may go nowhere acts on nothing the
-// entry says: no way back, no carried view or step, no door into a tree and nothing said; one that may go into subtrees
-// alone acts only on an entry a subtree's door left. `open` goes into a tree from the door that offered it, off the tree
-// and the view the room stands on at that moment, and `back` is the chip's press.
+// family it stands on and `role` whose room it is (`owner` or `reader`), null until the room has loaded and knows. A
+// room that may go nowhere acts on nothing the entry says: no way back, no carried view or step, no door into a tree and
+// nothing said; one that may go into subtrees alone acts only on an entry a subtree's door left. `open` goes into a tree
+// from the door that offered it, off the tree and the view the room stands on at that moment, and `back` is the chip's
+// press.
 export function useTreeVisit({ room, arrival, holder, visitor = false, place = null, route = '#/app/', role = 'owner', band, registry = deviceTrees, track = beacon }) {
   useEffect(settleTreeVisit, []);
   const roams = holder !== null || visitor;
