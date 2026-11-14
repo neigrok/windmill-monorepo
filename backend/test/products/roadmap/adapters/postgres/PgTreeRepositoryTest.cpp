@@ -139,7 +139,7 @@ TEST(pg_a_guide_survives_a_restart_and_a_stale_save_cannot_revert_it) {
     RoomRegistry registry(trees, log, bus);
     trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Sam's tree", kSam);
     registry.open(kTree)->setGuide(guide, 1'700'000'000'000);
-    registry.persist(kTree);
+    registry.persist(kTree).wait();
   }
 
   PgTreeRepository restarted{pgTestPool()};
@@ -180,7 +180,7 @@ TEST(pg_opens_survives_a_restart_with_its_stamp_and_only_a_later_write_of_it_cha
     planted.frameId = "f-door";
     planted.graph.nodes = {door};
     registry.open(kTree)->joinSubgraph(planted, kSam);
-    REQUIRE(registry.persist(kTree) == Saved::saved);
+    REQUIRE(registry.persist(kTree).wait() == Saved::saved);
   }
 
   PgTreeRepository restarted{pgTestPool()};
@@ -196,7 +196,7 @@ TEST(pg_opens_survives_a_restart_with_its_stamp_and_only_a_later_write_of_it_cha
   renamed.graph.nodes[0].label = door.label = "Front door";
   renamed.graph.nodes[0].labelAt = door.labelAt = Hlc{1'700'000'000'000, 2, "r_b"};
   registry.open(kTree)->joinSubgraph(renamed, kSam);
-  REQUIRE(registry.persist(kTree) == Saved::saved);
+  REQUIRE(registry.persist(kTree).wait() == Saved::saved);
   CHECK(restarted.load(kTree)->state == (GraphState{{door}, {}}));
 
   Subgraph retargeted;
@@ -206,7 +206,7 @@ TEST(pg_opens_survives_a_restart_with_its_stamp_and_only_a_later_write_of_it_cha
   retargeted.graph.nodes[0].opens = door.opens = kTree;
   retargeted.graph.nodes[0].opensAt = door.opensAt = Hlc{1'700'000'000'000, 3, "r_b"};
   registry.open(kTree)->joinSubgraph(retargeted, kSam);
-  REQUIRE(registry.persist(kTree) == Saved::saved);
+  REQUIRE(registry.persist(kTree).wait() == Saved::saved);
   CHECK(restarted.load(kTree)->state == (GraphState{{door}, {}}));
 
   PgLease conn{*pgTestPool()};
@@ -264,7 +264,7 @@ TEST(pg_a_forks_copied_guide_stays_inherited_until_its_owner_writes_one_across_r
     trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Sam's tree", kSam);
     registry.setVisibility(kTree, Visibility::unlisted);
     registry.open(kTree)->setGuide("Rig first, then sail.", 1'700'000'000'000);
-    REQUIRE(registry.persist(kTree) == Saved::saved);
+    REQUIRE(registry.persist(kTree).wait() == Saved::saved);
     FakeTokens tokens;
     FakeClock clock;
     ForkService forks{registry, trees, tokens, clock};
@@ -283,7 +283,7 @@ TEST(pg_a_forks_copied_guide_stays_inherited_until_its_owner_writes_one_across_r
     CHECK(room.guideInherited());
     room.setGuide("Sail first, rig on the way.", 1'700'000'001'000);
     CHECK_FALSE(room.guideInherited());
-    REQUIRE(registry.persist(kFork) == Saved::saved);
+    REQUIRE(registry.persist(kFork).wait() == Saved::saved);
   }
   PgTreeRepository again{pgTestPool()};
   const std::optional<StoredTree> owned = again.load(kFork);
@@ -511,7 +511,7 @@ TEST(pg_a_room_opens_as_its_snapshot_whatever_rows_the_log_holds_past_it) {
                           CreateNode{NodeId{"gone"}, "Gone", "i", NodeColor::sky}},
                          10, kSam);
       room.applyCommand(DeleteNode{NodeId{"gone"}}, 11, kSam);
-      REQUIRE(registry.persist(kTree) == Saved::saved);
+      REQUIRE(registry.persist(kTree).wait() == Saved::saved);
       saved = room.head();
       write(room);
       REQUIRE_EQ(room.pendingOps().size(), 1u);
@@ -528,7 +528,7 @@ TEST(pg_a_room_opens_as_its_snapshot_whatever_rows_the_log_holds_past_it) {
     CHECK(room.exportLegend() == snapshot.legend);
     CHECK_EQ(room.head(), saved + 1);
     CHECK_EQ(room.applyCommand(RenameNode{NodeId{"a"}, "A2"}, 20, kSam), saved + 2);
-    CHECK(reopened.persist(kTree) == Saved::saved);
+    CHECK(reopened.persist(kTree).wait() == Saved::saved);
     std::vector<std::string> feed;
     for (const ActivityEvent& event : activityFeed(room.snapshot(), log.since(kTree, saved), 10)) feed.push_back(event.summary);
     CHECK_EQ(feed, (std::vector<std::string>{told, "renamed to A2"}));
@@ -895,7 +895,7 @@ TEST(pg_get_diagnostics_tells_the_owner_a_loop_of_trees_and_a_dangling_pointer_a
   AnnotateNode planted{NodeId{"gone"}};
   planted.opens = TreeId{"t_pgtest_never_planted"};
   registry.open(kTree)->applyCommand(planted, clock.nowMs(), kSam);
-  CHECK(registry.persist(kTree) == Saved::saved);
+  CHECK(registry.persist(kTree).wait() == Saved::saved);
 
   Json::Value main = parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],
       "treeLoops":[{"node":"down","path":[]}],"danglingPointers":[{"node":"gone","treeId":"t_pgtest_never_planted"}]})");
@@ -1396,9 +1396,11 @@ struct Forest {
     for (const auto& [step, opens] : steps)
       commands.push_back(CreateNode{nid(step), step, "icon", NodeColor::sky, {}, {}, {},
                                     opens ? std::optional<TreeId>(TreeId{std::string(opens)}) : std::nullopt});
-    std::lock_guard<std::mutex> strand(rooms.strandFor(tree));
+    std::unique_lock<std::mutex> strand(rooms.strandFor(tree));
     rooms.open(tree)->applyCommands(commands, clock.nowMs(), owner);
-    REQUIRE(rooms.persist(tree) == Saved::saved);
+    PendingSave saving = rooms.persist(tree);
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   }
   SubtreeAnswer create(const TreeId& parent, const char* step, const std::optional<TreeId>& proposed = std::nullopt) {
     return registry.createSubtree(parent, nid(step), kAda, {proposed, std::nullopt});
@@ -2235,9 +2237,11 @@ TEST(pg_the_owners_walk_follows_each_step_into_the_subtree_it_owns_whatever_its_
   REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kChild, "rig", kGrandchild)));
   forest.edit(kGrandchild, kAda, {{"bowline", nullptr}});
   {
-    std::lock_guard<std::mutex> strand(forest.rooms.strandFor(kParent));
+    std::unique_lock<std::mutex> strand(forest.rooms.strandFor(kParent));
     forest.rooms.open(kParent)->applyCommand(AnnotateNode{nid("sail"), {}, {}, {}, {}, kOther}, forest.clock.nowMs(), kAda);
-    REQUIRE(forest.rooms.persist(kParent) == Saved::saved);
+    PendingSave saving = forest.rooms.persist(kParent);
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   }
   const auto markAs = [&](const TreeId& tree, const char* step, ProgressStatus status) {
     const std::uint64_t ms = forest.clock.nowMs();
@@ -2279,9 +2283,11 @@ TEST(pg_the_trees_above_a_subtree_are_its_ancestors_and_a_root_keeps_the_trees_t
   REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kChild, "rig", kGrandchild)));
   forest.plant(kOther, kAda, {{"to-parent", kParent.str().c_str()}, {"to-child", kChild.str().c_str()}});
   {
-    std::lock_guard<std::mutex> strand(forest.rooms.strandFor(kParent));
+    std::unique_lock<std::mutex> strand(forest.rooms.strandFor(kParent));
     forest.rooms.open(kParent)->applyCommand(AnnotateNode{nid("sail"), {}, {}, {}, {}, kOther}, forest.clock.nowMs(), kAda);
-    REQUIRE(forest.rooms.persist(kParent) == Saved::saved);
+    PendingSave saving = forest.rooms.persist(kParent);
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   }
   for (const auto& [tree, guide] : std::vector<std::pair<TreeId, const char*>>{
            {kOther, "Other."}, {kParent, "Parent."}, {kChild, "Child."}, {kGrandchild, "Grandchild."}})
@@ -2341,11 +2347,13 @@ TEST(pg_a_deleted_owning_step_hides_its_branch_from_every_stored_read_and_its_re
     return ids;
   };
   const auto setStep = [&](const TreeId& tree, const char* step, bool present, std::set<TreeId> branches) {
-    std::lock_guard<std::mutex> strand(forest.rooms.strandFor(tree));
+    std::unique_lock<std::mutex> strand(forest.rooms.strandFor(tree));
     TreeRoom* room = forest.rooms.open(tree);
     if (present) room->applyCommand(CreateNode{nid(step), step, "icon", NodeColor::sky}, forest.clock.nowMs(), kAda);
     else room->applyCommands({DeleteNode{nid(step)}}, forest.clock.nowMs(), kAda, branches);
-    REQUIRE(forest.rooms.persist(tree) == Saved::saved);
+    PendingSave saving = forest.rooms.persist(tree);
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   };
   CHECK(trees.branchSizes({kParent, kChild}) ==
         (std::map<TreeId, BranchSize>{{kParent, BranchSize{2, 5}}, {kChild, BranchSize{1, 3}}}));

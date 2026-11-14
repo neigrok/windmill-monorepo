@@ -1691,6 +1691,35 @@ TEST(put_over_a_live_room_whose_save_is_held_is_refused_until_the_save_lands) {
   CHECK(LooseGraph(h.trees->byId["t_00000000000000ce"].state).hasNode(NodeId{"socket-step"}));
 }
 
+// The PUT flushes the live room before it takes the strand, since a save runs off it. An edit that lands in the room
+// while that save is with the store is not in what it stored: the room stays open, the PUT is refused as it is over a
+// held room, with nothing written, and the next one, which stores the edit, lands.
+TEST(put_over_a_room_an_edit_landed_in_while_its_flush_was_saving_is_refused_until_that_edit_is_stored) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_00000000000000cf", "Old name", me, Visibility::unlisted);
+  editInTheLiveRoom(h, "t_00000000000000cf", "first-step", me);
+  bool landed = false;
+  h.trees->duringSave = [&](const TreeId&) {
+    if (landed) return;
+    landed = true;
+    editInTheLiveRoom(h, "t_00000000000000cf", "second-step", me);
+  };
+
+  drogon::HttpResponsePtr refused = sendPut(h.api, "s-me", "t_00000000000000cf", document("New name", "mast"));
+  CHECK_EQ(refused->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK_EQ(bodyOf(refused), parse(R"({"error":"an earlier edit of this tree is still being saved — try again","code":"save-pending"})"));
+  CHECK(h.rooms->isOpen(TreeId{"t_00000000000000cf"}));
+  CHECK_EQ(h.trees->byId["t_00000000000000cf"].title.value, std::string("Old name"));
+  CHECK(LooseGraph(h.trees->byId["t_00000000000000cf"].state).hasNode(NodeId{"first-step"}));
+  CHECK_FALSE(LooseGraph(h.trees->byId["t_00000000000000cf"].state).hasNode(NodeId{"second-step"}));
+
+  CHECK_EQ(sendPut(h.api, "s-me", "t_00000000000000cf", document("New name", "mast"))->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(h.trees->byId["t_00000000000000cf"].title.value, std::string("New name"));
+  CHECK(LooseGraph(h.trees->byId["t_00000000000000cf"].state).hasNode(NodeId{"second-step"}));
+  CHECK(LooseGraph(h.trees->byId["t_00000000000000cf"].state).hasNode(NodeId{"mast"}));
+}
+
 TEST(put_leaves_the_guide_alone_and_answers_with_the_one_the_tree_holds) {
   Harness h;
   UserId me = h.signIn("s-me");
@@ -2050,13 +2079,13 @@ TEST(a_revive_held_unsaved_shows_the_branch_to_every_read_past_the_gate) {
   };
   REQUIRE(onRoot([&](TreeRoom& room) {
             room.applyCommands({DeleteNode{NodeId{"sail"}}}, 50, owner, {TreeId{"t_s"}});
-          }) == Saved::saved);
+          }).wait() == Saved::saved);
   REQUIRE_EQ(sendGetTree(h.api, "s-owner", "t_r")->getStatusCode(), drogon::k404NotFound);
 
   h.trees->savesFail = true;
   REQUIRE(onRoot([&](TreeRoom& room) {
             room.applyCommand(CreateNode{NodeId{"sail"}, "Learn to sail", "", NodeColor::sky}, 60, owner);
-          }) == Saved::held);
+          }).wait() == Saved::held);
   CHECK_FALSE(LooseGraph(h.trees->byId["t_a"].state).hasNode(NodeId{"sail"}));
   for (const char* session : {"s-owner", "s-reader"}) {
     const drogon::HttpResponsePtr read = sendGetTree(h.api, session, "t_r");
@@ -2090,9 +2119,11 @@ TEST(a_put_whose_standing_read_fails_answers_its_save_and_the_sweep_settles_the_
   h.seedForest(owner, Visibility::unlisted);
   REQUIRE_EQ(sendGetTree(h.api, "s-owner", "t_s")->getStatusCode(), drogon::k200OK);  // its room stays live
   {
-    std::lock_guard<std::mutex> strand(h.rooms->strandFor(TreeId{"t_a"}));
+    std::unique_lock<std::mutex> strand(h.rooms->strandFor(TreeId{"t_a"}));
     h.rooms->open(TreeId{"t_a"})->applyCommands({DeleteNode{NodeId{"sail"}}}, 50, owner, {TreeId{"t_s"}});
-    REQUIRE(h.rooms->persist(TreeId{"t_a"}) == Saved::saved);
+    PendingSave saving = h.rooms->persist(TreeId{"t_a"});
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   }
   REQUIRE_EQ(sendGetTree(h.api, "s-owner", "t_s")->getStatusCode(), drogon::k404NotFound);
 

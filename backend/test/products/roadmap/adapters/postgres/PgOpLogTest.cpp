@@ -180,13 +180,13 @@ TEST(pg_registry_persist_retries_a_row_that_committed_before_its_connection_drop
   TreeRoom& room = *registry.open(kTree);
   room.applyCommand(createNode("a"), 10, kOwner);
   log.dropNext = true;
-  registry.persist(kTree);
+  registry.persist(kTree).wait();
   CHECK_EQ(room.pendingOps().size(), 1u);
   CHECK_EQ(rowCount(), 1L);
   CHECK_EQ(repo.load(kTree)->head, static_cast<Seq>(1));
 
   room.applyCommand(createNode("b"), 11, kOwner);
-  registry.persist(kTree);
+  registry.persist(kTree).wait();
   CHECK(room.pendingOps().empty());
   CHECK_EQ(rowCount(), 2L);
   REQUIRE_EQ(log.since(kTree, 0).size(), 2u);

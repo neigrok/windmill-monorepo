@@ -1898,6 +1898,39 @@ TEST(ws_a_frame_whose_save_fails_is_acked_with_its_seq_as_unsaved_and_the_retry_
   CHECK_EQ(h.trees.byId["t_priv"].head, static_cast<Seq>(1));
 }
 
+// A frame is acked once its save has answered, and waits for it with the tree's strand let go: a session that
+// subscribes to the tree while the store still holds the save is answered at once, the frame in what it is sent.
+TEST(ws_a_subscriber_is_answered_while_a_frames_save_hangs_and_the_frame_is_acked_once_the_store_answers) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  auto conn = std::make_shared<FakeSocket>();
+  auto watcher = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onOpen(h.upgrade("s-owner"), watcher);
+  HangingStore store;
+  h.trees.duringSave = store.duringSave();
+
+  std::future<void> sending = std::async(std::launch::async, [&] {
+    h.collab.onMessage(conn, guideFrame("t_priv", "f-slow", "Ask Maren before the third branch", "100:0:client"));
+  });
+  REQUIRE(store.reachedBy(1, std::chrono::seconds(10)));
+  std::future<void> subscribing =
+      std::async(std::launch::async, [&] { h.collab.onMessage(watcher, subscribeFrame("t_priv")); });
+  const bool subscribedWhileTheStoreHung = subscribing.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+  const bool ackedWhileTheStoreHung = sending.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+  store.letGoOfIt();
+  subscribing.get();
+  sending.get();
+
+  CHECK(subscribedWhileTheStoreHung);
+  CHECK_FALSE(ackedWhileTheStoreHung);
+  CHECK_EQ(lastFrameOfType(*watcher, "subgraph")["guide"]["v"].asString(), std::string("Ask Maren before the third branch"));
+  REQUIRE_EQ(conn->sent.size(), 1u);
+  CHECK_EQ(parse(conn->sent[0]), parse(R"({"t":"subgraphAck","treeId":"t_priv","frameId":"f-slow","seq":1})"));
+  CHECK_EQ(h.trees.byId["t_priv"].guide.value, std::string("Ask Maren before the third branch"));
+}
+
 TEST(ws_concurrent_opens_frames_converge_on_the_later_stamp_and_a_frame_without_the_field_clears_nothing) {
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");

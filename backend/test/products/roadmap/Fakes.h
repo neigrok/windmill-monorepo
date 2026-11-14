@@ -12,9 +12,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -33,6 +35,36 @@ struct HeldRetries {
   std::vector<Retry> set;
   std::function<void(std::chrono::milliseconds, std::function<void()>)> timer() {
     return [this](std::chrono::milliseconds delay, std::function<void()> retry) { set.push_back({delay, std::move(retry)}); };
+  }
+};
+
+// A store that takes a save and does not answer, the way a statement waiting on a locked row does, until it is let
+// go; a save that arrives after that is answered at once. Every wait on it is bounded.
+struct HangingStore {
+  std::mutex mutex;
+  std::condition_variable changed;
+  int entered = 0;
+  bool letGo = false;
+  bool refuses = false;  // each save is refused once it is let go, the way a statement that times out is
+  std::function<void(const TreeId&)> duringSave() {
+    return [this](const TreeId&) {
+      std::unique_lock<std::mutex> lock(mutex);
+      ++entered;
+      changed.notify_all();
+      changed.wait(lock, [this] { return letGo; });
+      if (refuses) throw std::runtime_error("canceling statement due to statement timeout");
+    };
+  }
+  bool reachedBy(int saves, std::chrono::milliseconds within) {
+    std::unique_lock<std::mutex> lock(mutex);
+    return changed.wait_for(lock, within, [&] { return entered >= saves; });
+  }
+  void letGoOfIt() {
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      letGo = true;
+    }
+    changed.notify_all();
   }
 };
 
@@ -326,12 +358,15 @@ struct FakeTreeRepository : TreeRepository {
     return place;
   }
   bool absentReadsFail = false;  // absentStepsUnder throws, the way a dropped connection does
+  // Runs once absentStepsUnder has read its rows, before it answers: a write stored here is one the read missed.
+  std::function<void()> afterAbsentRead;
   // The real statement's walk: down the root's subtrees, every owning step absent from its tree's rows.
   std::set<OwningStep> absentStepsUnder(const TreeId& root) override {
     if (absentReadsFail) throw std::runtime_error("connection reset mid-read");
     std::set<OwningStep> absent;
     for (const auto& [id, subtree] : subtrees)
       if (row(TreeId{id}) && rootOf(TreeId{id}) == root && !present(subtree.parent)) absent.insert(subtree.parent);
+    if (afterAbsentRead) afterAbsentRead();
     return absent;
   }
   bool sizeReadsFail = false;  // branchSizes throws, the way a dropped connection does

@@ -48,9 +48,7 @@ std::variant<DeletedNodes, std::string, std::vector<UnconfirmedBranch>> NodeEdit
 
   const std::size_t cleared = clearMarksOn(room, tree, actor, nodes);
   const Seq seq = room.applyCommands(commands, clock_.nowMs(), actor, branches);
-  const Saved saved = rooms_.persist(tree);
-  if (saved == Saved::gone) rooms_.retire(tree);
-  return DeletedNodes{seq, dangled.size(), cleared, saved};
+  return DeletedNodes{seq, dangled.size(), cleared, rooms_.persist(tree)};
 }
 
 }

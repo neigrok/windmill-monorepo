@@ -726,9 +726,11 @@ TEST(list_holds_roots_alone_and_patch_renames_a_subtree_through_its_owning_step)
 
   CHECK(rows() == (std::map<std::string, std::string>{{"t_a", "0/2"}, {"t_b", "0/1"}}));
   {
-    std::lock_guard<std::mutex> strand(h.rooms.strandFor(sailing));
+    std::unique_lock<std::mutex> strand(h.rooms.strandFor(sailing));
     h.rooms.open(sailing)->applyCommand(CreateNode{NodeId{"knot"}, "Knot", "", NodeColor::sky}, h.clock.nowMs(), me);
-    REQUIRE(h.rooms.persist(sailing) == Saved::saved);
+    PendingSave saving = h.rooms.persist(sailing);
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   }
   CHECK(rows() == (std::map<std::string, std::string>{{"t_a", "0/2"}, {"t_b", "0/1"}}));
   h.progress.setStatuses(sailing, me, {{NodeId{"knot"}, ProgressStatus::complete, false, Hlc{5, 0, "r_a"}}},
@@ -759,10 +761,12 @@ TEST(patch_from_a_stranger_answers_a_private_tree_as_an_absent_one_at_every_dept
   REQUIRE(std::holds_alternative<SubtreeCreation>(
       h.registry->createSubtree(TreeId{"t_a"}, NodeId{"sail"}, me, {TreeId{"t_00000000000000c1"}, std::nullopt})));
   {
-    std::lock_guard<std::mutex> strand(h.rooms.strandFor(TreeId{"t_00000000000000c1"}));
+    std::unique_lock<std::mutex> strand(h.rooms.strandFor(TreeId{"t_00000000000000c1"}));
     h.rooms.open(TreeId{"t_00000000000000c1"})->applyCommand(CreateNode{NodeId{"rig"}, "Rig", "", NodeColor::sky},
                                                             h.clock.nowMs(), me);
-    REQUIRE(h.rooms.persist(TreeId{"t_00000000000000c1"}) == Saved::saved);
+    PendingSave saving = h.rooms.persist(TreeId{"t_00000000000000c1"});
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   }
   REQUIRE(std::holds_alternative<SubtreeCreation>(h.registry->createSubtree(
       TreeId{"t_00000000000000c1"}, NodeId{"rig"}, me, {TreeId{"t_00000000000000c2"}, std::nullopt})));
