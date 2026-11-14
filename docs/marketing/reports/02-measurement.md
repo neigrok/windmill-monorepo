@@ -23,7 +23,7 @@ tags, text, movement or workout names, screenshots, audio and prompts. Preserve 
 backend observation, a participant confirmation and unknown evidence. Keep participant confirmations out of
 the product event stream. [Pilot scorecard](../funnels.md)
 
-**Later money measurement.** Before a paid test, verify the checkout, grant and refund lifecycle and
+**Later money measurement.** Before a paid test, verify the App Store purchase, grant and refund lifecycle and
 reconcile net receipts, refunds and AI costs. Allocate settled provider costs and unresolved holds correctly
 to their period and funding source. Pricing enquiries and owner-funded grants do not establish purchases.
-[Billing and usage contract](../../AI_USAGE_REVIEW.md) · [Checkout decision](04-gym-demo-and-checkout.md)
+[Billing and usage contract](../../AI_USAGE_REVIEW.md) · [One readiness](04-gym-demo-and-checkout.md)
