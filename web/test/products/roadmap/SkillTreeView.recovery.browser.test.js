@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { chromium, webkit } from 'playwright';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 
-startRoadmapHost({ browserTypes: { chromium, webkit }, port: 5440 });
+startRoadmapHost({ browserTypes: { chromium, webkit } });
 
 hostTest('Chromium: tablet Board load error retains account navigation without owner verbs', async () => {
   const { page, errors } = await openHost({ width: 744, surface: 'board', shell: true, loadFailure: true });

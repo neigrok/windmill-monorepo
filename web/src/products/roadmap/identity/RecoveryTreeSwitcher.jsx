@@ -24,7 +24,7 @@ export function RecoveryTreeSwitcher({ place, onPickTree, onNew, onBrowse }) {
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(new Set());
   const panelId = useId();
-  const label = t(`roadmap.recovery.${place}`);
+  const label = place === 'account' ? t('roadmap.recovery.account') : t('roadmap.recovery.device');
 
   const close = useCallback((step = 'close', restoreFocus = true) => {
     track('roadmap_recovery', { step, place });
@@ -99,7 +99,7 @@ export function RecoveryTreeSwitcher({ place, onPickTree, onNew, onBrowse }) {
     return <React.Fragment key={tree.id}>
       <div className={`st-recovery-row${nested ? ' st-recovery-row--child' : ''}`}>
         {below.length > 0 ? <button type="button" className="st-recovery-expand" aria-expanded={isExpanded}
-          aria-label={t(isExpanded ? 'roadmap.recovery.collapse' : 'roadmap.recovery.expand', { title })}
+          aria-label={isExpanded ? t('roadmap.recovery.collapse', { title }) : t('roadmap.recovery.expand', { title })}
           onClick={() => {
             setExpanded((value) => {
               const next = new Set(value);
@@ -117,7 +117,7 @@ export function RecoveryTreeSwitcher({ place, onPickTree, onNew, onBrowse }) {
   const message = list.state === 'loading' ? t('roadmap.recovery.loading')
     : list.state === 'failed' ? t('roadmap.recovery.failed')
     : available ? t('roadmap.recovery.loaded')
-    : t(place === 'account' ? 'roadmap.recovery.emptyAccount' : 'roadmap.recovery.emptyDevice');
+    : place === 'account' ? t('roadmap.recovery.emptyAccount') : t('roadmap.recovery.emptyDevice');
 
   return <div ref={root} className="st-recovery-switcher">
     <button ref={trigger} type="button" className="st-recovery-trigger" aria-haspopup="dialog" aria-expanded={open}

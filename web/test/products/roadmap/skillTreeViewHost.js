@@ -230,7 +230,7 @@ let server, ready;
 const browsers = new Map();
 let firstPage = true;
 
-export function startRoadmapHost({ browserTypes = { chromium }, port = 0 } = {}) {
+export function startRoadmapHost({ browserTypes = { chromium } } = {}) {
   ready = (async () => {
     const files = await bundleHost();
     const stylesheet = [...files.keys()].find((path) => path.endsWith('.css'));
@@ -250,7 +250,7 @@ export function startRoadmapHost({ browserTypes = { chromium }, port = 0 } = {})
       response.setHeader('Content-Type', CONTENT_TYPES[extname(url.pathname)] ?? 'application/octet-stream');
       response.end(file);
     });
-    await new Promise((listening) => server.listen(port, '127.0.0.1', listening));
+    await new Promise((listening) => server.listen(0, '127.0.0.1', listening));
     origin = `http://127.0.0.1:${server.address().port}`;
     for (const [name, type] of Object.entries(browserTypes)) {
       browsers.set(name, await type.launch({ headless: true }));
