@@ -23,7 +23,11 @@ window.mount = (rows) => createRoot(document.getElementById('fixture')).render(R
   onDelete: async (...args) => {
     (window.deletes ??= []).push(args);
     if (window.failDelete) throw new Error('Private delete text');
-    if (window.deferDelete) await new Promise((resolve) => { window.finishDelete = resolve; });
+    if (window.deferDelete) await new Promise((resolve, reject) => {
+      window.finishDelete = resolve;
+      window.rejectDelete = reject;
+      (window.finishDeletes ??= {})[args[0]] = resolve;
+    });
   },
 }));
 window.entryReady = true;
@@ -330,6 +334,147 @@ for (const engine of ['Chromium', 'WebKit']) {
       await page.getByRole('button', { name: 'Delete Another roadmap' }).waitFor({ state: 'detached' });
       assert.equal(await nextAction.evaluate((button) => document.activeElement === button), true);
     }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: pending deletion preserves later claims, renames and other deletions`, async () => {
+    await withSwitcher([
+      { id: 'other', title: 'Another roadmap', origin: 'server' },
+      { id: 'device', title: 'Device roadmap', origin: 'device', claimed: false },
+      { id: 'rename', title: 'Roadmap to rename', origin: 'server' },
+      { id: 'third', title: 'Third roadmap', origin: 'server' },
+    ], async (page) => {
+      await page.evaluate(() => { window.deferDelete = true; });
+      await openMenu(page);
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).click();
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId: 'device' } })));
+      await page.getByRole('button', { name: 'Rename Device roadmap' }).waitFor({ state: 'detached' });
+      await page.getByRole('button', { name: 'Rename Roadmap to rename' }).click();
+      await page.getByRole('textbox', { name: 'Tree name' }).fill('Saved after delete began');
+      await page.keyboard.press('Enter');
+      await page.getByRole('button', { name: 'Delete Third roadmap' }).click();
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      await page.evaluate(() => window.finishDeletes.third());
+      await page.getByRole('button', { name: 'Delete Third roadmap' }).waitFor({ state: 'detached' });
+      await page.evaluate(() => window.finishDeletes.other());
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).waitFor({ state: 'detached' });
+      assert.deepEqual(await page.locator('.st-switcher-row').evaluateAll((rows) => rows.map((row) => ({ title: row.querySelector('[title]')?.textContent, actions: [...row.querySelectorAll('button')].map((button) => button.getAttribute('aria-label')) }))), [
+        { title: 'Learn to sail', actions: [] },
+        { title: 'Device roadmap', actions: [] },
+        { title: 'Saved after delete began', actions: ['Rename Saved after delete began', 'Delete Saved after delete began'] },
+      ]);
+      assert.deepEqual(await page.evaluate(() => ({ renames: window.renames, deletes: window.deletes, events: window.events })), {
+        renames: [['rename', 'Saved after delete began', { local: false }]],
+        deletes: [['other', { local: false }], ['third', { local: false }]],
+        events: [
+          { name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } },
+          { name: 'roadmap_sheet', props: { step: 'rename', door: 'switcher' } },
+          ...Array.from({ length: 2 }, () => ({ name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'none', place: 'account' } })),
+        ],
+      });
+    }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: a claim during confirmation remains in force after another delete`, async () => {
+    await withSwitcher([
+      { id: 'other', title: 'Another roadmap', origin: 'server' },
+      { id: 'device', title: 'Device roadmap', origin: 'device', claimed: false },
+    ], async (page) => {
+      await page.evaluate(() => { window.deferDelete = true; });
+      await openMenu(page);
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).click();
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      await page.getByRole('button', { name: 'Delete Device roadmap' }).click();
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId: 'device' } })));
+      await page.evaluate(() => { window.deferDelete = false; window.finishDelete(); });
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).waitFor({ state: 'detached' });
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      assert.deepEqual(await page.evaluate(() => window.deletes), [['other', { local: false }]]);
+      assert.equal(await page.getByRole('menuitem').filter({ hasText: 'Device roadmap' }).getByRole('button').count(), 0);
+    }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: held Enter cannot confirm deletion or submit duplicate pending mutations`, async () => {
+    await withSwitcher([{ id: 'other', title: 'Another roadmap', origin: 'server' }], async (page) => {
+      await page.evaluate(() => { window.deferDelete = true; });
+      await openMenu(page);
+      const action = page.getByRole('button', { name: 'Delete Another roadmap' });
+      await action.focus();
+      await page.keyboard.down('Enter');
+      await page.getByRole('button', { name: 'Delete', exact: true }).waitFor();
+      for (let repeat = 0; repeat < 3; repeat += 1) await page.keyboard.down('Enter');
+      assert.deepEqual(await page.evaluate(() => window.deletes ?? []), []);
+      await page.keyboard.up('Enter');
+      await page.keyboard.press('Enter');
+      await action.waitFor();
+      for (let press = 0; press < 3; press += 1) await page.keyboard.press('Enter');
+      await action.click();
+      assert.deepEqual(await page.evaluate(() => window.deletes), [['other', { local: false }]]);
+      await action.focus();
+      await page.keyboard.down('Enter');
+      await page.evaluate(() => window.finishDelete());
+      await action.waitFor({ state: 'detached' });
+      await page.keyboard.down('Enter');
+      await page.keyboard.up('Enter');
+      assert.equal(await page.getByRole('menu').count(), 1);
+      assert.equal(await page.evaluate(() => location.hash), '');
+      assert.deepEqual(await page.evaluate(() => window.events), [
+        { name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } },
+        { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'none', place: 'account' } },
+      ]);
+    }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: a failed pending delete permits a fresh intentional retry`, async () => {
+    await withSwitcher([{ id: 'other', title: 'Another roadmap', origin: 'server' }], async (page) => {
+      await page.evaluate(() => { window.deferDelete = true; });
+      await openMenu(page);
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).click();
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      await page.evaluate(() => window.rejectDelete(new Error('Private delete failure')));
+      await page.waitForFunction(() => window.events.some((event) => event.props.outcome === 'failed'));
+      await page.keyboard.press('Enter');
+      await page.getByRole('button', { name: 'Delete', exact: true }).waitFor();
+      await page.keyboard.press('Enter');
+      await page.evaluate(() => window.finishDelete());
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).waitFor({ state: 'detached' });
+      assert.deepEqual(await page.evaluate(() => ({ deletes: window.deletes, events: window.events })), {
+        deletes: [['other', { local: false }], ['other', { local: false }]],
+        events: [
+          { name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } },
+          { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', outcome: 'failed', place: 'account' } },
+          { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'none', place: 'account' } },
+        ],
+      });
+    }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: a pending current-tree delete respects later route and menu departures`, async () => {
+    for (const departure of ['browse', 'switch', 'close', 'reopen']) {
+      await withSwitcher([
+        { id: 'sail', title: 'Learn to sail', origin: 'server' },
+        { id: 'other', title: 'Another roadmap', origin: 'server' },
+      ], async (page) => {
+        await page.evaluate(() => { window.deferDelete = true; });
+        await openMenu(page);
+        await page.getByRole('button', { name: 'Delete Learn to sail' }).click();
+        await page.getByRole('button', { name: 'Delete', exact: true }).click();
+        if (departure === 'browse') await page.getByRole('menuitem', { name: 'Browse trees planted in public' }).click();
+        if (departure === 'switch') await page.getByRole('menuitem').filter({ hasText: 'Another roadmap' }).locator('[title]').click();
+        if (departure === 'close' || departure === 'reopen') await page.keyboard.press('Escape');
+        await page.getByRole('menu').waitFor({ state: 'detached' });
+        if (departure === 'reopen') {
+          await openMenu(page);
+          await page.getByRole('button', { name: 'Rename Another roadmap' }).focus();
+        }
+        const before = await page.evaluate(() => ({ hash: location.hash, focus: document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent }));
+        await page.evaluate(() => window.finishDelete());
+        await page.waitForFunction(() => window.events.some((event) => event.props.step === 'delete'));
+        assert.deepEqual(await page.evaluate(() => ({ hash: location.hash, focus: document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent })), before);
+        assert.equal(await page.getByRole('menu').count(), departure === 'reopen' ? 1 : 0);
+        assert.deepEqual(await page.evaluate(() => window.deletes), [['sail', { local: false }]]);
+      }, { engine, width: 744, touch: true });
+    }
   });
 
   for (const action of ['rename', 'delete']) {

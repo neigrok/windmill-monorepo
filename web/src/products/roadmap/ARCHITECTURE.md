@@ -433,9 +433,12 @@ equivalent from 744px and owns rename and delete. Its row actions appear on hove
 keyboard focus, and stay visible on coarse-pointer tablets at 744–1023px, with 44px targets. Rename commits on
 Enter or blur; Escape cancels and returns focus to Rename. Keep or Escape in a delete confirmation returns focus
 to Delete; the next Escape closes the menu and returns focus to its trigger. Removing another tree moves focus
-to a surviving row if focus is still in the removed row; removing the current tree closes the menu and follows
-the existing route resolver. Mutation callbacks recheck the current row's origin and claim state, so a device
-claim during an edit or confirmation cannot turn a device operation into a server operation.
+to a surviving row if focus is still in the removed row. Removing the current tree closes the same menu and follows
+the existing route resolver only while the person has stayed in that menu and route. Mutation callbacks recheck
+the current row's origin and claim state, so a device claim during an edit or confirmation cannot turn a device
+operation into a server operation. Delete completions remove from the current registry, preserving later claims,
+titles and deletions. Each tree permits one pending delete; a held Enter cannot confirm or repeat it, and a fresh
+activation can retry a failed request.
 
 **The switcher's delete.** A row's trash turns the row into its confirmation: the question (*Delete Learn to sail?
 This can’t be undone*), then Delete and Keep. A server that removes, with a tree, the steps in the person's other

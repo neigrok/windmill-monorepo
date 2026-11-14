@@ -51,6 +51,9 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
+  const treesRef = useRef(null);
+  const currentRef = useRef(current);
+  const deleteRequestsRef = useRef(new Set());
   const rowRefs = useRef(new Map());
   const focusRef = useRef(null);
   const inputRef = useRef(null);
@@ -61,6 +64,15 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
   const swallowRef = useRef(null); // {rowId, at} — a blur-commit eats the one click that caused it
   editingRef.current = editingId;
   confirmRef.current = confirmId;
+  currentRef.current = current;
+
+  // Async callbacks share the current registry before React renders its next snapshot.
+  const updateTrees = (change) => {
+    const next = change(treesRef.current);
+    treesRef.current = next;
+    setTrees(next);
+    return next;
+  };
 
   const cancelDelete = () => {
     focusRef.current = { id: confirmRef.current, action: 'delete' };
@@ -80,7 +92,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
   useEffect(() => {
     if (!open) return undefined;
     let cancelled = false;
-    listTrees().then((rows) => { if (!cancelled) setTrees(rows); });
+    listTrees().then((rows) => { if (!cancelled) updateTrees(() => rows); });
     return () => { cancelled = true; };
   }, [open, listTrees]);
 
@@ -121,7 +133,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
   useEffect(() => {
     if (!open) return undefined;
-    return onTreeClaimed((treeId) => setTrees((prev) => (Array.isArray(prev)
+    return onTreeClaimed((treeId) => updateTrees((prev) => (Array.isArray(prev)
       ? prev.map((row) => (row.id === treeId ? { ...row, claimed: true } : row))
       : prev)));
   }, [open]);
@@ -162,7 +174,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
     editingRef.current = null; // re-entry guard: blur and outside-close can both land here
     if (returnFocus) focusRef.current = { id, action: 'rename' };
     setEditingId(null);
-    const tree = rows.find((row) => row.id === id);
+    const tree = mergeCurrent(treesRef.current, currentRef.current).find((row) => row.id === id);
     const before = tree?.title ?? '';
     const seam = seamOf(tree ?? {});
     if (seam === null) return void onPreviewTitle?.(id, before);
@@ -173,7 +185,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
       return;
     }
     if (next === before.trim()) return void onPreviewTitle?.(id, before);
-    setTrees((prev) => (Array.isArray(prev) ? prev.map((r) => (r.id === id ? { ...r, title: next } : r)) : prev));
+    updateTrees((prev) => (Array.isArray(prev) ? prev.map((r) => (r.id === id ? { ...r, title: next } : r)) : prev));
     // Local rows route to the local seams by tag — they never PATCH the server.
     new Promise((resolve) => resolve(onRename?.(id, next, { local: seam === 'local' }))).then(() => {
       track('roadmap_sheet', { step: 'rename', door: 'switcher' });
@@ -181,7 +193,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
       reportUnexpectedFailure('roadmap-switcher-rename', error);
       track('roadmap_sheet', { step: 'rename', door: 'switcher', outcome: 'failed' });
       onPreviewTitle?.(id, before);
-      listTrees().then((fresh) => setTrees(fresh));
+      listTrees().then((fresh) => updateTrees(() => fresh));
     });
   };
   commitRef.current = commitEdit;
@@ -197,29 +209,37 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
 
   // `cost` is what the confirmation said goes with the tree, as the list read it when the menu opened.
   const confirmDelete = async (tree, cost) => {
+    if (deleteRequestsRef.current.has(tree.id)) return;
     focusRef.current = { id: tree.id, action: 'delete' };
     setConfirmId(null);
-    const seam = seamOf(rows.find((row) => row.id === tree.id) ?? {});
+    const seam = seamOf(mergeCurrent(treesRef.current, currentRef.current).find((row) => row.id === tree.id) ?? {});
     if (seam === null) return;
     const local = seam === 'local';
     const place = local ? 'device' : 'account';
+    const menuAtDelete = menuRef.current;
+    const routeAtDelete = window.location.hash;
+    const currentAtDelete = currentRef.current?.id;
+    deleteRequestsRef.current.add(tree.id);
     try {
       await onDelete?.(tree.id, { local });
     } catch (error) {
       reportUnexpectedFailure('roadmap-switcher-delete', error);
       track('roadmap_sheet', { step: 'delete', door: 'switcher', outcome: 'failed', place });
       return; // a refusal leaves the row standing
+    } finally {
+      deleteRequestsRef.current.delete(tree.id);
     }
     track('roadmap_sheet', { step: 'delete', door: 'switcher', openers: cost ? 'some' : 'none', place });
-    const remaining = withoutTree(Array.isArray(trees) ? trees : [], tree.id);
-    const removedFocus = tree.id === current?.id ? menuRef.current : rowRefs.current.get(tree.id);
+    const latestRows = mergeCurrent(treesRef.current, currentRef.current);
+    const remaining = updateTrees((latest) => withoutTree(Array.isArray(latest) ? latest : [], tree.id));
+    if (menuRef.current !== menuAtDelete || window.location.hash !== routeAtDelete || currentRef.current?.id !== currentAtDelete) return;
+    const removedFocus = tree.id === currentAtDelete ? menuRef.current : rowRefs.current.get(tree.id);
     if (removedFocus?.contains(document.activeElement)) {
-      const nextRows = rows.filter((row) => row.id !== tree.id);
-      const nextRow = nextRows[Math.min(rows.findIndex((row) => row.id === tree.id), nextRows.length - 1)];
-      focusRef.current = { id: tree.id === current?.id ? null : nextRow?.id };
+      const nextRows = latestRows.filter((row) => row.id !== tree.id);
+      const nextRow = nextRows[Math.min(latestRows.findIndex((row) => row.id === tree.id), nextRows.length - 1)];
+      focusRef.current = { id: tree.id === currentAtDelete ? null : nextRow?.id };
     }
-    setTrees(remaining);
-    if (tree.id !== current?.id) return;
+    if (tree.id !== currentAtDelete) return;
     setOpen(false); // land on the newest remaining, or hand bare #/app to the resolver
     window.location.hash = remaining.length ? `#/app/${remaining[0].id}` : '#/app';
   };
@@ -282,6 +302,10 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
                 }}
                 onDoubleClick={() => { if (editable && !editing && !confirming) startEdit(tree); }}
                 onKeyDown={(e) => {
+                  if (e.key === 'Enter' && e.repeat) {
+                    e.preventDefault();
+                    return;
+                  }
                   if (e.target !== e.currentTarget) return;
                   if ((e.key === 'Enter' || e.key === ' ') && !editing && !confirming) { e.preventDefault(); go(tree.id); }
                 }}
@@ -340,6 +364,7 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
                       onClick={(e) => {
                         e.stopPropagation();
                         clearTimeout(goTimerRef.current);
+                        if (deleteRequestsRef.current.has(tree.id)) return;
                         focusRef.current = { id: tree.id, action: 'confirm' };
                         setConfirmId(tree.id);
                       }}>
