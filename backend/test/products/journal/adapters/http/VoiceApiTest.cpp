@@ -2,6 +2,7 @@
 
 #include "platform/application/Entitlements.h"
 #include "platform/adapters/json/JsonText.h"
+#include "test/platform/FakeAiBudgetRepository.h"
 #include "test/platform/Fakes.h"
 #include "test/products/journal/Fakes.h"
 #include "test/testing.h"
@@ -18,24 +19,45 @@ struct Harness {
   FakeAuthRepository authRepo;
   FakeEmail email;
   FakeTokens tokens;
-  FakeClock clock;
+  std::shared_ptr<FakeClock> clock = std::make_shared<FakeClock>();
   FakeOAuthRepository oauthRepo;
-  OAuthService oauth{oauthRepo, tokens, clock};
+  OAuthService oauth{oauthRepo, tokens, *clock};
   FakeAccountFootprint footprint;
   FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth =
-      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
+      std::make_shared<AuthService>(authRepo, email, tokens, *clock, oauth, footprint, revocations, "https://windmill.works");
   std::shared_ptr<FakeTranscriber> transcriber = std::make_shared<FakeTranscriber>();
   std::shared_ptr<FakeSubscriptionRepository> subs = std::make_shared<FakeSubscriptionRepository>();
   FakeAiUsageRepository usage;
-  std::shared_ptr<Entitlements> entitlements = std::make_shared<Entitlements>(*subs, usage);
-  VoiceApi api{transcriber, entitlements, auth};
+  FakeAiBudgetRepository allowances;
+  AiBudgetLimits limits;
+  std::shared_ptr<AiBudgetService> budgets = std::make_shared<AiBudgetService>(
+      allowances, [this] { return limits; }, [this] { return static_cast<long long>(clock->now); });
+  std::shared_ptr<Entitlements> entitlements;
+  VoiceApi api;
+
+  // `ledger` turns the durable USD allowances on, the mode Windmill One is funded in.
+  explicit Harness(bool ledger = false)
+      : entitlements(std::make_shared<Entitlements>(*subs, usage, "", std::vector<std::string>{},
+                                                    ledger ? budgets : nullptr)),
+        api(transcriber, entitlements, auth, clock) {}
 
   UserId signIn(const std::string& sessionSecret) {
     User user = authRepo.createUser(Email{"sam@example.com"}, "sam");
-    authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock.now + 1'000'000, "", "",
-                           clock.now);
+    authRepo.insertSession(tokens.digestOf(sessionSecret), user.id, clock->now + 1'000'000, "", "",
+                           clock->now);
     return user.id;
+  }
+
+  // A Windmill One subscription whose payment funded the billing period around now.
+  AiBudgetGrant fund(const UserId& user) {
+    subs->subscribe(user);
+    const AiBudgetGrant grant{"grant_talk", user.str(), AiBudgetFundingSource::Subscription,
+                              AiBudgetPeriod{static_cast<long long>(clock->now) - 86'400'000,
+                                             static_cast<long long>(clock->now) + 29LL * 86'400'000},
+                              limits.paidPeriodNanos, "txn_talk"};
+    allowances.grants.emplace(grant.id, grant);
+    return grant;
   }
 };
 
@@ -64,10 +86,18 @@ TEST(voice_without_a_session_is_401) {
   CHECK_EQ(send(h.api, post("opus-bytes"))->getStatusCode(), drogon::k401Unauthorized);
 }
 
-TEST(voice_for_a_non_subscriber_is_403) {
-  Harness h;
-  h.signIn("s-live");
-  CHECK_EQ(send(h.api, post("opus-bytes", "s-live"))->getStatusCode(), drogon::k403Forbidden);
+TEST(voice_for_a_non_subscriber_is_403_before_the_vendor_or_the_ledger_hears_of_it) {
+  for (const bool ledger : {false, true}) {
+    Harness h{ledger};
+    h.signIn("s-live");
+
+    const auto response = send(h.api, post("opus-bytes", "s-live"));
+
+    CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
+    CHECK_EQ(dump(*response->getJsonObject()), std::string{R"({"error":"talk is part of Windmill One"})"});
+    CHECK_EQ(h.transcriber->calls, 0);
+    CHECK_EQ(h.allowances.reads, 0);
+  }
 }
 
 TEST(voice_without_a_vendor_wired_is_503) {
@@ -171,4 +201,91 @@ TEST(voice_refuses_an_account_over_its_ai_allowance_before_the_vendor_sees_it) {
   CHECK_EQ((*response->getJsonObject())["error"].asString(),
            std::string("talk has had its turn for now"));
   CHECK_EQ(h.transcriber->calls, 0);
+}
+
+// The subscriber Windmill One is sold to: a take is transcribed, and once the period's allowance is spent the next one
+// is refused with the allowance's own code before the vendor hears it.
+TEST(voice_with_allowances_on_transcribes_for_a_funded_subscriber_and_refuses_a_spent_allowance_with_its_code) {
+  Harness h{true};
+  UserId me = h.signIn("s-live");
+  const AiBudgetGrant grant = h.fund(me);
+
+  const auto transcribed = send(h.api, post("opus-bytes", "s-live"));
+
+  CHECK_EQ(transcribed->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(*transcribed->getJsonObject()), std::string{R"({"text":"rain all morning"})"});
+  CHECK_EQ(h.transcriber->calls, 1);
+
+  h.allowances.totals.subject.spentNanos = h.limits.paidPeriodNanos;
+  const auto refused = send(h.api, post("opus-bytes", "s-live"));
+
+  CHECK_EQ(refused->getStatusCode(), drogon::k429TooManyRequests);
+  Json::Value expected = parse(R"({"code":"subject_exhausted","reason":"allowance_exhausted",
+      "error":"your AI allowance is fully used or reserved","allowance":{"code":"subject_exhausted",
+      "currency":"USD","period":"billing_period","tier":"windmill_one","configured":true,"limit":"7.000000000",
+      "used":"7.000000000","reserved":"0.000000000","remaining":"0.000000000"}})");
+  expected["allowance"]["resetsAtMs"] = Json::Int64(grant.period.endMs);
+  expected["allowance"]["budgetResetsAtMs"] = Json::Int64(grant.period.endMs);
+  CHECK_EQ(dump(*refused->getJsonObject()), dump(expected));
+  CHECK_EQ(h.transcriber->calls, 1);
+}
+
+TEST(voice_with_allowances_on_answers_a_subscription_no_payment_has_funded_with_funding_required) {
+  Harness h{true};
+  UserId me = h.signIn("s-live");
+  h.subs->subscribe(me);
+
+  const auto response = send(h.api, post("opus-bytes", "s-live"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK_EQ(dump(*response->getJsonObject()), dump(parse(R"({"code":"funding_required","reason":"unavailable",
+      "error":"your plan has no funded AI allowance for this period","allowance":{"code":"funding_required",
+      "currency":"USD","period":"billing_period","tier":"windmill_one","configured":false,"limit":null,
+      "used":"0.000000000","reserved":"0.000000000","remaining":"0.000000000","resetsAtMs":null,
+      "budgetResetsAtMs":null}})")));
+  CHECK_EQ(h.transcriber->calls, 0);
+}
+
+// The read showed room, and the transcriber's admission refused anyway: a take holds more than is left, another AI
+// request holds the slot, or the ledger could not be asked. Each answers under the code that refused it, and every
+// refused take gives its ration slot back.
+TEST(voice_with_allowances_on_answers_a_refused_admission_under_the_code_that_refused_it) {
+  Harness h{true};
+  UserId me = h.signIn("s-live");
+  const AiBudgetGrant grant = h.fund(me);
+  h.allowances.totals.subject.spentNanos = h.limits.paidPeriodNanos - 50'000'000;
+  Json::Value allowance = parse(R"({"currency":"USD","period":"billing_period","tier":"windmill_one",
+      "configured":true,"limit":"7.000000000","used":"6.950000000","reserved":"0.000000000",
+      "remaining":"0.050000000","budgetResetsAtMs":null})");
+  allowance["resetsAtMs"] = Json::Int64(grant.period.endMs);
+
+  struct Case {
+    std::string refusal;
+    drogon::HttpStatusCode status;
+    Json::Value body;
+  };
+  Json::Value capacity = parse(R"({"code":"subject_exhausted","reason":"request_exceeds_remaining",
+      "error":"a take needs more AI allowance than you have left"})");
+  capacity["allowance"] = allowance;
+  capacity["allowance"]["code"] = "subject_exhausted";
+  capacity["allowance"]["budgetResetsAtMs"] = Json::Int64(grant.period.endMs);
+  Json::Value busy = parse(R"({"code":"concurrency_exhausted","reason":"unavailable",
+      "error":"another AI request is still in progress"})");
+  busy["allowance"] = allowance;
+  busy["allowance"]["code"] = "concurrency_exhausted";
+  for (const Case& scenario : std::vector<Case>{
+           {"subject_exhausted", drogon::k429TooManyRequests, capacity},
+           {"concurrency_exhausted", drogon::k503ServiceUnavailable, busy},
+           {"ai_accounting_unavailable", drogon::k503ServiceUnavailable,
+            parse(R"({"code":"ai_accounting_unavailable","error":"talk's AI allowance could not be checked right now"})")},
+           {"unsupported_ai_pricing", drogon::k503ServiceUnavailable,
+            parse(R"({"code":"unsupported_ai_pricing","error":"voice is not available right now"})")}}) {
+    h.transcriber->refusal = scenario.refusal;
+
+    const auto response = send(h.api, post("opus-bytes", "s-live"));
+
+    CHECK_EQ(response->getStatusCode(), scenario.status);
+    CHECK_EQ(dump(*response->getJsonObject()), dump(scenario.body));
+  }
+  CHECK_EQ(h.transcriber->calls, 4);
 }

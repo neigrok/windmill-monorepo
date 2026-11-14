@@ -23,8 +23,8 @@ struct NullEmbedder : Embedder {
 struct NullTranscriber : Transcriber {
   bool configured() const override { return false; }
   void transcribe(const UserId&, const std::string&, const std::string&,
-                  std::function<void(std::optional<Transcript>)> done) override {
-    done(std::nullopt);
+                  std::function<void(Transcription)> done) override {
+    done(Transcription::failed());
   }
 };
 

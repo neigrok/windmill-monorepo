@@ -172,11 +172,40 @@ std::optional<AiOutputBudget> anthropicOutputBudget(const Json::Value& request, 
   return offer;
 }
 
+namespace {
+
+// A Messages round's price before it is sent: Coach's adaptive output offer at its full cap, or the request's own
+// reservation. No amount is a request this ledger cannot price, or one naming another model than its spend.
+struct MessagesPrice {
+  std::optional<long long> amountNanos;
+  std::optional<AiOutputBudget> outputBudget;
+};
+
+MessagesPrice messagesPrice(const AiSpend& spend, const Json::Value& request, int minOutputTokens) {
+  if (!request.isObject() || request["model"] != spend.model || minOutputTokens < 0) return {};
+  if (minOutputTokens == 0) return {anthropicReservationNanos(request), std::nullopt};
+  const auto offer = anthropicOutputBudget(request, minOutputTokens);
+  if (!offer) return {};
+  return {offer->costNanos(offer->maxTokens), offer};
+}
+
+}
+
 AiCallBudget::AiCallBudget(std::shared_ptr<AiBudgetService> budgets, Entitlements& entitlements,
                            AuthRepository& accounts, FailureReporter& failures)
     : budgets_(std::move(budgets)), entitlements_(entitlements), accounts_(accounts), failures_(failures) {}
 
 AiCallAdmission AiCallBudget::begin(const AiSpend& spend, const Json::Value& request, int minOutputTokens) {
+  const MessagesPrice price = messagesPrice(spend, request, minOutputTokens);
+  return beginAccount(spend, price.amountNanos, price.outputBudget);
+}
+
+AiCallAdmission AiCallBudget::begin(const AiSpend& spend, std::optional<long long> ceilingNanos) {
+  return beginAccount(spend, ceilingNanos, std::nullopt);
+}
+
+AiCallAdmission AiCallBudget::beginAccount(const AiSpend& spend, std::optional<long long> amountNanos,
+                                           std::optional<AiOutputBudget> outputBudget) {
   WriteObservation observation{"ai.call.admit", "platform", "vendor", "", &failures_};
   WriteContext context{observation};
   try {
@@ -191,7 +220,7 @@ AiCallAdmission AiCallBudget::begin(const AiSpend& spend, const Json::Value& req
     }
     const auto principal = entitlements_.aiPrincipalFor(account->id, account->email.value);
     observation.skip();
-    return admit(principal, spend, request, minOutputTokens);
+    return admit(principal, amountNanos, outputBudget);
   } catch (...) {
     observation.failUnknown();
     return {{}, "ai_accounting_unavailable"};
@@ -205,22 +234,22 @@ AiCallAdmission AiCallBudget::beginInstallation(const AiInstallationPrincipal& i
     observation.finish("invalid_installation_principal");
     return {{}, "invalid_installation_principal"};
   }
-  return admit({{AiBudgetSubjectKind::Device, installation.id()}, AiBudgetTier::Anonymous}, spend, request, minOutputTokens);
+  const MessagesPrice price = messagesPrice(spend, request, minOutputTokens);
+  return admit({{AiBudgetSubjectKind::Device, installation.id()}, AiBudgetTier::Anonymous}, price.amountNanos,
+               price.outputBudget);
 }
 
-AiCallAdmission AiCallBudget::admit(const AiBudgetPrincipal& principal, const AiSpend& spend,
-                                    const Json::Value& request, int minOutputTokens) {
+AiCallAdmission AiCallBudget::admit(const AiBudgetPrincipal& principal, std::optional<long long> amountNanos,
+                                    std::optional<AiOutputBudget> outputBudget) {
   WriteObservation observation{"ai.call.admit", "platform", "vendor", "", &failures_};
   WriteContext context{observation};
   try {
-    const auto offer = minOutputTokens > 0 ? anthropicOutputBudget(request, minOutputTokens) : std::nullopt;
-    const auto amount = offer ? std::optional<long long>{offer->costNanos(offer->maxTokens)} : anthropicReservationNanos(request);
-    if (request["model"] != spend.model || !amount || minOutputTokens < 0 || (minOutputTokens > 0 && !offer)) {
+    if (!amountNanos) {
       observation.finish("unsupported_ai_pricing");
       return {{}, "unsupported_ai_pricing"};
     }
-    const auto reservation = budgets_->reserve(drogon::utils::getUuid(), principal, *amount, offer);
-    if (offer) {
+    const auto reservation = budgets_->reserve(drogon::utils::getUuid(), principal, *amountNanos, outputBudget);
+    if (const auto& offer = outputBudget) {
       LOG_INFO << "ai_output_admission input_nanos=" << offer->inputNanos
                << " output_token_nanos=" << offer->outputTokenNanos << " min_tokens=" << offer->minTokens
                << " max_tokens=" << offer->maxTokens << " selected_tokens="
@@ -251,10 +280,14 @@ AiCallAdmission AiCallBudget::admit(const AiBudgetPrincipal& principal, const Ai
 
 void AiCallBudget::finish(const AiBudgetReservation& reservation, const std::string& model,
                           const Json::Value& usage, AiCallEnd end) {
+  finish(reservation, end == AiCallEnd::settled ? anthropicActualNanos(model, usage) : std::nullopt, end);
+}
+
+void AiCallBudget::finish(const AiBudgetReservation& reservation, std::optional<long long> actualNanos, AiCallEnd end) {
   WriteObservation observation{"ai.call.account", "platform", "vendor", "", &failures_};
   WriteContext context{observation};
   try {
-    const auto amount = end == AiCallEnd::settled ? anthropicActualNanos(model, usage)
+    const auto amount = end == AiCallEnd::settled ? actualNanos
                       : end == AiCallEnd::unconsumed ? std::optional<long long>{0} : std::nullopt;
     const auto result = amount ? budgets_->settle(reservation.id, *amount) : budgets_->markUncertain(reservation.id);
     if (result.code != AiBudgetCode::Ok && result.code != AiBudgetCode::Replay)

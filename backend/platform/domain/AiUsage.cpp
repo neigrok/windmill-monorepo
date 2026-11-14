@@ -13,7 +13,7 @@ struct ModelRate {
   long long outputNanos;
 };
 
-constexpr std::array<ModelRate, 10> kRates{{
+constexpr std::array<ModelRate, 11> kRates{{
     {"claude-opus-5", 5'000, 25'000},
     {"claude-opus-4-8", 5'000, 25'000},
     {"claude-opus-4-7", 5'000, 25'000},
@@ -24,6 +24,9 @@ constexpr std::array<ModelRate, 10> kRates{{
     {"claude-sonnet-4-6", 3'000, 15'000},
     {"claude-haiku-4-5", 1'000, 5'000},
     {"claude-haiku-4-5-20251001", 1'000, 5'000},
+    // OpenAI's Transcription table, developers.openai.com/api/docs/pricing (read 2026-11-14): $2.50 per 1M input
+    // tokens, audio or text alike, and $10.00 per 1M output tokens.
+    {"gpt-4o-transcribe", 2'500, 10'000},
 }};
 
 // True when everything after `at` is "-" followed by digits: the shape of a pinned snapshot.
@@ -87,7 +90,7 @@ std::optional<long long> costNanos(const std::string& model, const TokenUse& tok
   if (!rate) return std::nullopt;
 
   // Cache modifiers ride on the input rate: a read is a tenth of it, a 5m-ephemeral write a
-  // quarter more. Integer maths only — every rate is a multiple of 1000 nanos, so nothing is lost.
+  // quarter more. Integer maths only — every input rate is a multiple of 20 nanos, so nothing is lost.
   return tokens.input * rate->inputNanos + tokens.output * rate->outputNanos +
          tokens.cacheRead * (rate->inputNanos / 10) + tokens.cacheWrite * (rate->inputNanos * 5 / 4);
 }
