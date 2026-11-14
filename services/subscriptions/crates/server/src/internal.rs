@@ -3,7 +3,7 @@ mod responses;
 use std::fmt;
 use std::str::FromStr;
 
-use axum::extract::rejection::QueryRejection;
+use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{Path, Query, Request, State};
 use axum::http::StatusCode;
 use axum::http::header::{AUTHORIZATION, WWW_AUTHENTICATE};
@@ -164,9 +164,16 @@ async fn feed<R: Reads>(
     Json(FeedPageResponse::from(&page)).into_response()
 }
 
-// `GET /internal/v1/accounts/{accountId}`. The account id is a hint a store carries, so no line names it (§10).
-async fn account<R: Reads>(State(reads): State<R>, Path(account_id): Path<String>) -> Response {
-    let Ok(account_id) = Uuid::parse_str(&account_id) else {
+// `GET /internal/v1/accounts/{accountId}`. The account id is a hint a store carries, so no line or refusal names it
+// (§10).
+async fn account<R: Reads>(
+    State(reads): State<R>,
+    account_id: Result<Path<String>, PathRejection>,
+) -> Response {
+    let Some(account_id) = account_id
+        .ok()
+        .and_then(|Path(account_id)| Uuid::parse_str(&account_id).ok())
+    else {
         return refused(StatusCode::BAD_REQUEST, "invalid_account_id");
     };
     let record = match reads.account(account_id).await {

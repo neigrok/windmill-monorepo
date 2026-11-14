@@ -253,7 +253,7 @@ async fn the_secret_opens_both_doors_and_each_reads_what_it_was_asked() {
 }
 
 #[tokio::test]
-async fn a_feed_query_outside_its_bounds_is_refused_before_the_ledger_is_read() {
+async fn a_query_or_an_account_id_outside_its_bounds_is_refused_before_the_ledger_is_read() {
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
@@ -289,14 +289,21 @@ async fn a_feed_query_outside_its_bounds_is_refused_before_the_ledger_is_read() 
         .await;
         answers.push((query, status, body["code"].clone()));
     }
-    let (status, _, body) = answer(
-        internal,
-        Request::get("/internal/v1/accounts/acct_3f6c2a1e")
-            .header("authorization", "Bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
+    let mut refusals = Vec::new();
+    for path in [
+        "/internal/v1/accounts/acct_3f6c2a1e",
+        "/internal/v1/accounts/%FF3f6c2a1e",
+    ] {
+        let (status, _, body) = answer(
+            internal.clone(),
+            Request::get(path)
+                .header("authorization", "Bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        refusals.push((status, body));
+    }
 
     let invalid = json!("invalid_query");
     assert_eq!(
@@ -330,13 +337,11 @@ async fn a_feed_query_outside_its_bounds_is_refused_before_the_ledger_is_read() 
             ),
         ]
     );
-    assert_eq!(
-        (status, body),
-        (
-            StatusCode::BAD_REQUEST,
-            json!({ "code": "invalid_account_id" })
-        )
+    let invalid_account = (
+        StatusCode::BAD_REQUEST,
+        json!({ "code": "invalid_account_id" }),
     );
+    assert_eq!(refusals, [invalid_account.clone(), invalid_account]);
     assert_eq!(
         *ledger.reads.lock().unwrap(),
         ["feed after 0 limit 1", "feed after 0 limit 500"]
