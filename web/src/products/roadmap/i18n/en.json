@@ -618,5 +618,18 @@
   "roadmap.workspace.removeLink": "Remove link",
   "roadmap.workspace.removeSubtask": "Remove subtask",
   "roadmap.workspace.subtask": "Subtask",
-  "roadmap.workspace.subtasks": "Subtasks"
+  "roadmap.workspace.subtasks": "Subtasks",
+  "roadmap.recovery.account": "Your roadmaps",
+  "roadmap.recovery.device": "On this device",
+  "roadmap.recovery.search": "Search roadmaps",
+  "roadmap.recovery.loading": "Loading your roadmaps…",
+  "roadmap.recovery.emptyAccount": "No roadmaps in this account.",
+  "roadmap.recovery.emptyDevice": "No roadmaps on this device.",
+  "roadmap.recovery.failed": "Couldn’t load your roadmaps.",
+  "roadmap.recovery.retry": "Retry list",
+  "roadmap.recovery.loaded": "Roadmaps loaded.",
+  "roadmap.recovery.noMatches": "No matching roadmaps.",
+  "roadmap.recovery.expand": "Expand {title}",
+  "roadmap.recovery.collapse": "Collapse {title}",
+  "roadmap.recovery.open": "Open {title}"
 }
