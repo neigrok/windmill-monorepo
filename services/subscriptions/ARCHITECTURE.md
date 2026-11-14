@@ -4,9 +4,10 @@ The service that owns every fact about a paid Windmill One subscription. Specifi
 [subscriptions.md](../../docs/foundation/subscriptions.md). The repository's layout and its own
 dependency rule are in [STRUCTURE.md](../../STRUCTURE.md); this file holds the service's.
 
-The Rust workspace and its four crates exist. `app_store` verifies App Store signed payloads (below);
-the other three crates are empty. Nothing runs and nothing is deployed: `subscriptions`, the server
-binary, exits at once.
+The Rust workspace and its four crates exist. `app_store` verifies App Store signed payloads
+([below](#app-store-signature-verification)); `subscriptions`, the server binary, answers health on
+both of its listeners, logs every request and reports to Sentry ([Server](#server)); `domain` and
+`storage` are empty. Nothing is deployed.
 
 ## Crates
 
@@ -147,10 +148,97 @@ but it validates the chain with `x509-validator`, a crate its author first publi
 has no audit. The check this service rests on would sit in that crate. It also brings an App Store
 Server API client, `chrono`, `serde_with` and `uuid`, which the verifier does not need.
 
+## Server
+
+`crates/server` holds three modules, `config`, `listeners` and `telemetry`, and the binary
+`subscriptions`, whose `main.rs` reads the configuration, starts telemetry and serves both listeners
+until a signal.
+
+### Configuration
+
+Read once at start. An empty value counts as unset. A missing required value, a malformed value or a
+refused combination stops the start with exit code 1 and one log line naming the variable, never its
+value.
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `SUBSCRIPTIONS_PUBLIC_ADDRESS` | yes | Socket address of the public listener, such as `0.0.0.0:8082` |
+| `SUBSCRIPTIONS_INTERNAL_ADDRESS` | yes | Socket address of the internal listener, such as `0.0.0.0:8083` |
+| `SENTRY_ENVIRONMENT` | yes | The deployment's name, such as `production`; Sentry files every report and log under it |
+| `SENTRY_DSN` | no | Where Sentry reports go; unset turns Sentry off, logged once at start |
+| `SENTRY_RELEASE` | no | The build's git sha, attached to every report |
+| `WINDMILL_LOG_LEVEL` | no | The lowest level written to stdout: `trace`, `debug`, `info` (default), `warn`, `error` or `fatal`, in any case, the words the backend reads; `fatal` reads as `error` |
+| `SENTRY_LOG_LEVEL` | no | The same words: the lowest level of the service's own lines sent to Sentry as Logs; default `info` |
+| `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` | no | `true` adds `GET /debug/panic` to the internal listener; refused unless `SENTRY_ENVIRONMENT`, trimmed and in any case, is `local`, `development`, `test` or `ci` |
+
+### Listeners
+
+The image listens on 8082 (public) and 8083 (internal), beside the backend's 8080 and the embedder's
+8081, and speaks HTTP/1.1. Each listener builds its own router, so a route on the internal listener
+does not exist on the public one and answers 404 there.
+
+| Listener | Route | Answer |
+|---|---|---|
+| public | `GET /health` | 200 `{"status":"ready"}` |
+| internal | `GET /health` | 200 `{"status":"ready"}`; the image's `HEALTHCHECK` asks it |
+| internal | `GET /debug/panic` | panics, only while `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` is `true` |
+
+`listeners::Bounds` holds what a client may take on either listener:
+
+| Bound | Value | Past it |
+|---|---|---|
+| request head | 5 s | the connection closes without an answer |
+| request, body and handler | 5 s | 503 `{"error":"timeout"}` |
+| request body | 64 KiB | 413, before any handler reads it |
+
+A handler runs only while its client waits: a client that leaves cancels it. A door whose work must
+outlive its request, such as the App Store notification door, spawns that work as a pipeline of its
+own.
+
+SIGTERM or SIGINT stops both listeners from accepting. Each open connection then finishes its request
+within the bounds above, for at most 6 s; Sentry's last flush takes at most 1 s more and the send in
+progress at most 2 s, so the process exits 0 inside Docker's 10 s, whether or not Sentry answers.
+
+### Logs and Sentry
+
+Every line on stdout is one JSON object. Each request writes one line when it ends: `listener`,
+`method` (a method outside the standard nine is `other`), `route` (the route template, or
+`unmatched`), `status`, `outcome`, `duration_ms` and `request_id`. `outcome` is `answered`,
+`panicked`, `timed_out`, or `cancelled` when the client left first; a cancelled line has no `status`.
+The line reads no header, body or raw path. A 5xx line is at `error`, a 4xx or cancelled line at
+`warn`, a ready health answer at `debug` and anything else at `info`:
+
+```json
+{"timestamp":"2026-11-14T10:58:01.163207Z","level":"ERROR","message":"request","listener":"internal","method":"GET","route":"/debug/panic","status":500,"outcome":"panicked","duration_ms":4.3,"request_id":"8244ce4ef07341ff85532a1d8dfc7cf9"}
+```
+
+Lines from every crate of the workspace (`telemetry::SERVICE_CRATES`) also go to Sentry as Logs; a
+vendor's lines stay on stdout. A line at `error` creates no Issue. Issues come from explicit
+reports: a panic after start is reported with its location and stack and without its message, and
+logged as `panic` with the event's `sentry_event_id` (absent while Sentry is off). The stack ends at
+the panicking frame, and the service's crates are its in-app frames. A panic inside a request also
+carries that request's span in its line and its `listener`, `route` and `request_id` as tags, and the
+request answers 500 `{"error":"internal"}` while the listener keeps answering.
+
+### Run
+
+```sh
+SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0.0.1:8083 \
+  SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
+```
+
+The image builds from this directory and sets both addresses itself:
+
+```sh
+docker build --build-arg SENTRY_RELEASE="$(git rev-parse HEAD)" -t windmill-subscriptions .
+docker run --rm -p 8082:8082 -p 8083:8083 -e SENTRY_ENVIRONMENT=local windmill-subscriptions
+```
+
 ## Toolchain
 
 `rust-toolchain.toml` pins Rust 1.99.1 with rustfmt and Clippy; `rustup toolchain install`, run in
 this directory, installs it. `Cargo.lock` is committed, and Clippy and the tests run with `--locked`.
+The `Dockerfile` builds on the `rust` image of the same release and fails when the two differ.
 
 ## Checks
 
@@ -165,3 +253,8 @@ cargo test --locked
 ```
 
 `check-dependencies.sh` needs `jq` and runs from any directory.
+
+A second job builds the image and runs it twice. First it must become healthy, answer ready on both
+listeners, answer 404 for an internal path on the public port and exit 0 on SIGTERM. Then, with a
+Sentry that accepts and never answers and three panics waiting to send, `docker stop` must exit 0
+within 10 s.
