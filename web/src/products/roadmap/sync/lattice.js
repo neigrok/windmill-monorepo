@@ -184,6 +184,12 @@ export class TreeLattice {
     return { nodes };
   }
 
+  // The one register a lattice takes back: a step's pointer the server refused, as it stores none on a step that owns a
+  // subtree. The step holds again what the server confirmed, `register`, or no pointer at all.
+  restorePointer(id, register = null) {
+    this.nodeRecord(id).opens = register ? { v: register.v, at: { ...register.at } } : { v: '', at: { ...UNSET } };
+  }
+
   nodeRecord(id) {
     let record = this.nodes.get(id);
     if (!record) { record = newNode(); this.nodes.set(id, record); }

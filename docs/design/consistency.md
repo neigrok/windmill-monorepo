@@ -734,6 +734,42 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   that open it in 2 of your other trees*); a tree deleted in the open menu leaves the other rows' lines, as its steps
   went with it. The line's graph glyph is the Board / Icon component scaled to 14 px on the boards, a 1.17 px stroke;
   web draws it as every tree glyph, at 1.67 px.
+- **Section 29 · drawn on surfaces the web does not have (29.03, 29.04, 29.06–29.09, 29.16–29.21, 29.29–29.31,
+  29.35–29.37, 29.46–29.62, 29.66–29.68 and the laptop frames).** The boards stand every step on the full-page step
+  editor of 19 beside a Coach rail from 744px and a Coach field on phones, which the roadmap room does not show. The web
+  has the step modal and page: a step that owns a subtree shows, where Complete sat, how far its subtree is (*No steps
+  yet*, *0 of 1 done*, *1 of 1 done*) beside Open subtree, for its owner and for a reader, whose step otherwise has no
+  band (29.16, 29.52); it has no Tree section. 29.10's *Remove step…* on the row is the step's own Delete in its menu
+  and the Graph's dock.
+- **Section 29 · words the web keeps.** The boards say *New node*, *No nodes yet* with *Add first node*, *Mark
+  unfinished*, *Remove step…*, *Keep step* and *Remove branch*; the web keeps *New step*, *Your first step* with New
+  step, *Reset* and *Delete* where it has those surfaces, and takes the subtree's own words from the boards: *Open
+  subtree* and *No steps yet*. A C on an owning step's card raises section 28's toast, *Completes with its
+  tree*, with Open subtree.
+- **Section 29 · an empty subtree on the Graph (29.02, 29.05, 29.34, 29.63, 29.65; laptop 29.02, 29.05).** The boards
+  open an owner's empty subtree on the Graph with *No nodes yet* and *Add first node*. The web opens an owner's empty
+  roadmap on the Board (`initialView`, rule 1), with *Your first step* and New step, whichever view the step was
+  pressed from, as it does for a tree a pointer opens.
+- **Section 29 · the share line (29.14).** The dialog keeps its title *Share roadmap* where 29.14 and 29b.03 have
+  *Share My year*. For a roadmap whose steps own subtrees each sentence says who reads it in 29b.03's words, which follow
+  canon's publishing disclosure: publishing, *Publishing makes My year public: anyone can view and fork it, subtrees
+  included, and it can appear in the public gallery.*; published, *My year is public: …*; unlisted, to a reader, *Anyone
+  with this link can view and fork My year, subtrees included.* The owner of an unlisted roadmap is offered Publish, under
+  the publishing sentence. 29.14's *readable* and *Anyone with the shared link can open them* leave out the fork and the
+  gallery.
+- **Section 29 · built and not drawn.** An owning step's Board card is section 28's card for a step that opens a tree:
+  the pill with done of total and its bar, or *No steps*, with no title beside it since the subtree is named by the
+  step; a press on it goes in. Inside a subtree the room offers no switcher, roadmap sheet, Share, Fork or milestone
+  share offer, and renames nothing: its name is its owning step's label. A subtree reached by a link shows the same way
+  back, and its press opens the owning step on its parent. A reader whose follow of the owner's trees failed gets an
+  owning step's mark and Open subtree with nothing said of how far it is. A subtree opened with no connection shows
+  *Couldn't load this roadmap*: a subtree keeps no row of the device's index, so its room has no device copy to open
+  (`subtree-device`). Section 29's device frames (29.22–29.28, 29.32, 29.33, 29.38,
+  29.42–29.45, 29.53, 29.54, 29.61, 29.64, 29.67) belong with the device store and are not built.
+- **Section 29b against the build (29b.01, 29b.03).** 29b.03 draws Share inside a subtree, speaking for its root
+  (*Share My year*, with *Learn to sail is part of My year and is shared with it.* first); the room offers no Share
+  inside a subtree. 29b.01 has a C on an owning step's card say *Completes with its subtree*; the build says section 28's
+  *Completes with its tree*, with Open subtree.
 - **Phone step page · 20.01 against the build.** 🚀 20.01 (397:28208) draws the counts and chevrons short of the right
   edge, a two-colour identity rail and no Shell row; the build runs them to the edge under the Shell row.
 - **Tree switcher · delete row.** Rename and delete show on hover only, so a touch tablet from 744 px has no clear way

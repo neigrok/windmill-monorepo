@@ -15,6 +15,16 @@ Json::Value edgeJson(const Edge& edge) {
 }
 
 std::string hlcText(const Hlc& at) { return toString(at); }
+
+// An absent or null field takes its default; a field of the wrong type is refused.
+bool optionalText(const Json::Value& value, std::string& out) {
+  if (value.isNull()) return true;
+  if (!value.isString()) return false;
+  out = value.asString();
+  return true;
+}
+
+bool optionalList(const Json::Value& value) { return value.isNull() || value.isArray(); }
 }
 
 Json::Value linksToJson(const std::vector<Link>& links) {
@@ -118,6 +128,20 @@ Json::Value toJson(const Place& place) {
   }
   where["depth"] = place.depth;
   return where;
+}
+
+Json::Value toJson(const SubtreeCreation& creation) {
+  Json::Value body(Json::objectValue);
+  body["created"] = creation.created;
+  Json::Value& subtree = body["subtree"];
+  subtree["id"] = creation.subtree.id.str();
+  subtree["root"] = creation.subtree.root.str();
+  subtree["parent"]["tree"] = creation.subtree.parent.tree.str();
+  subtree["parent"]["step"] = creation.subtree.parent.step.str();
+  subtree["depth"] = creation.subtree.depth;
+  subtree["seq"] = static_cast<Json::Int64>(creation.subtree.seq);
+  body["parentSeq"] = static_cast<Json::Int64>(creation.parentSeq);
+  return body;
 }
 
 Json::Value toJson(const TreeSummary& summary) {
@@ -352,15 +376,24 @@ Json::Value toJson(const TreeDiagnostics& diagnostics, const PointerDiagnostics&
   return root;
 }
 
+std::optional<std::vector<Kind>> kindsFromJson(const Json::Value& kinds) {
+  if (!optionalList(kinds)) return std::nullopt;
+  std::vector<Kind> parsed;
+  for (const Json::Value& k : kinds) {
+    if (!k.isObject()) return std::nullopt;
+    Kind kind;
+    std::string kindId, hue = "terracotta";
+    if (!optionalText(k["id"], kindId) || !optionalText(k["hue"], hue) || !optionalText(k["label"], kind.label) ||
+        !optionalText(k["description"], kind.description))
+      return std::nullopt;
+    kind.id = KindId{kindId};
+    kind.hue = parseColor(hue).value_or(NodeColor::terracotta);
+    parsed.push_back(std::move(kind));
+  }
+  return parsed;
+}
+
 std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) {
-  // An absent or null field takes its default; a field of the wrong type refuses the document.
-  auto text = [](const Json::Value& value, std::string& out) {
-    if (value.isNull()) return true;
-    if (!value.isString()) return false;
-    out = value.asString();
-    return true;
-  };
-  auto list = [](const Json::Value& value) { return value.isNull() || value.isArray(); };
   // linksFromJson is lenient and must never throw, so the document path states the strictness.
   auto links = [](const Json::Value& value) {
     if (!value.isArray()) return false;
@@ -377,24 +410,25 @@ std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) 
 
   TreeData data;
   data.id = id;
-  if (!text(root["title"], data.title)) return std::nullopt;
+  if (!optionalText(root["title"], data.title)) return std::nullopt;
 
-  if (!list(root["nodes"])) return std::nullopt;
+  if (!optionalList(root["nodes"])) return std::nullopt;
   for (const Json::Value& n : root["nodes"]) {
     if (!n.isObject()) return std::nullopt;
     NodeSpec node;
     std::string nodeId, color = "terracotta", opens;
-    if (!text(n["id"], nodeId) || !text(n["label"], node.label) || !text(n["icon"], node.icon) ||
-        !text(n["color"], color) || !text(n["order"], node.order) ||
-        !text(n["description"], node.description) || !text(n["opens"], opens))
+    if (!optionalText(n["id"], nodeId) || !optionalText(n["label"], node.label) ||
+        !optionalText(n["icon"], node.icon) || !optionalText(n["color"], color) ||
+        !optionalText(n["order"], node.order) || !optionalText(n["description"], node.description) ||
+        !optionalText(n["opens"], opens))
       return std::nullopt;
     node.id = NodeId{nodeId};
     node.opens = TreeId{opens};
     node.color = parseColor(color).value_or(NodeColor::terracotta);
-    if (!list(n["prerequisites"])) return std::nullopt;
+    if (!optionalList(n["prerequisites"])) return std::nullopt;
     for (const Json::Value& prereq : n["prerequisites"]) {
       std::string prereqId;
-      if (!text(prereq, prereqId)) return std::nullopt;
+      if (!optionalText(prereq, prereqId)) return std::nullopt;
       node.prerequisites.push_back(NodeId{prereqId});
     }
     if (n.isMember("status") && n["status"].isString()) node.status = normalizeSeedStatus(n["status"].asString());
@@ -405,18 +439,9 @@ std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id) 
     data.nodes.push_back(std::move(node));
   }
 
-  if (!list(root["kinds"])) return std::nullopt;
-  for (const Json::Value& k : root["kinds"]) {
-    if (!k.isObject()) return std::nullopt;
-    Kind kind;
-    std::string kindId, hue = "terracotta";
-    if (!text(k["id"], kindId) || !text(k["hue"], hue) || !text(k["label"], kind.label) ||
-        !text(k["description"], kind.description))
-      return std::nullopt;
-    kind.id = KindId{kindId};
-    kind.hue = parseColor(hue).value_or(NodeColor::terracotta);
-    data.kinds.push_back(std::move(kind));
-  }
+  std::optional<std::vector<Kind>> kinds = kindsFromJson(root["kinds"]);
+  if (!kinds) return std::nullopt;
+  data.kinds = *std::move(kinds);
   return data;
 }
 
