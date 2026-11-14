@@ -15,19 +15,25 @@ use serde_json::{Value, json};
 use time::OffsetDateTime;
 
 struct ChainShape {
+    root_not_after: OffsetDateTime,
+    intermediate_not_after: OffsetDateTime,
+    intermediate_is_ca: bool,
+    intermediate_marked: bool,
     leaf_not_after: OffsetDateTime,
     leaf_marked: bool,
-    intermediate_marked: bool,
-    intermediate_is_ca: bool,
+    leaf_names_its_issuer: bool,
 }
 
 impl Default for ChainShape {
     fn default() -> Self {
         Self {
+            root_not_after: date_time_ymd(2040, 1, 1),
+            intermediate_not_after: date_time_ymd(2036, 1, 1),
+            intermediate_is_ca: true,
+            intermediate_marked: true,
             leaf_not_after: date_time_ymd(2028, 1, 1),
             leaf_marked: true,
-            intermediate_marked: true,
-            intermediate_is_ca: true,
+            leaf_names_its_issuer: true,
         }
     }
 }
@@ -61,7 +67,7 @@ impl TestChain {
         let root_params = certificate(
             "Windmill Test Root",
             IsCa::Ca(BasicConstraints::Unconstrained),
-            (date_time_ymd(2020, 1, 1), date_time_ymd(2040, 1, 1)),
+            (date_time_ymd(2020, 1, 1), shape.root_not_after),
             None,
         );
         let root = root_params.self_signed(&root_key).unwrap();
@@ -73,7 +79,7 @@ impl TestChain {
                 true => IsCa::Ca(BasicConstraints::Constrained(0)),
                 false => IsCa::ExplicitNoCa,
             },
-            (date_time_ymd(2021, 1, 1), date_time_ymd(2036, 1, 1)),
+            (date_time_ymd(2021, 1, 1), shape.intermediate_not_after),
             shape
                 .intermediate_marked
                 .then_some(&[1, 2, 840, 113635, 100, 6, 2, 1]),
@@ -82,6 +88,18 @@ impl TestChain {
             .signed_by(&intermediate_key, &Issuer::new(root_params, root_key))
             .unwrap();
 
+        let leaf_issuer = match shape.leaf_names_its_issuer {
+            true => Issuer::new(intermediate_params, intermediate_key),
+            false => Issuer::new(
+                certificate(
+                    "Windmill Test Other Intermediate",
+                    IsCa::Ca(BasicConstraints::Constrained(0)),
+                    (date_time_ymd(2021, 1, 1), shape.intermediate_not_after),
+                    None,
+                ),
+                intermediate_key,
+            ),
+        };
         let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
         let leaf = certificate(
             "Windmill Test Leaf",
@@ -91,10 +109,7 @@ impl TestChain {
                 .leaf_marked
                 .then_some(&[1, 2, 840, 113635, 100, 6, 11, 1]),
         )
-        .signed_by(
-            &leaf_key,
-            &Issuer::new(intermediate_params, intermediate_key),
-        )
+        .signed_by(&leaf_key, &leaf_issuer)
         .unwrap();
 
         Self {
@@ -373,6 +388,29 @@ fn a_leaf_issued_under_another_intermediate_is_refused() {
 }
 
 #[test]
+fn a_leaf_naming_another_issuer_is_refused_though_the_intermediates_key_signed_it() {
+    let chain = TestChain::issue(ChainShape {
+        leaf_names_its_issuer: false,
+        ..ChainShape::default()
+    });
+    let transaction = chain.sign(&json!({
+        "transactionId": "2000000000000001",
+        "originalTransactionId": "2000000000000001",
+        "bundleId": "works.windmill.app",
+        "productId": "works.windmill.one.monthly",
+        "purchaseDate": 1_790_812_800_000_i64,
+        "signedDate": 1_793_491_260_000_i64,
+        "environment": "Production"
+    }));
+
+    let verified = chain
+        .verifier(&[Environment::Production, Environment::Sandbox])
+        .verify_transaction(&transaction);
+
+    assert_eq!(verified.err(), Some(Refusal::Untrusted));
+}
+
+#[test]
 fn a_payload_whose_leaf_had_expired_when_it_was_signed_is_refused() {
     let chain = TestChain::issue(ChainShape {
         leaf_not_after: date_time_ymd(2026, 6, 1),
@@ -390,6 +428,43 @@ fn a_payload_whose_leaf_had_expired_when_it_was_signed_is_refused() {
         .verify_notification(&notification);
 
     assert_eq!(verified.err(), Some(Refusal::Validity));
+}
+
+#[test]
+fn a_payload_signed_after_its_intermediate_or_root_expired_is_refused() {
+    let transaction = json!({
+        "transactionId": "2000000000000001",
+        "originalTransactionId": "2000000000000001",
+        "bundleId": "works.windmill.app",
+        "productId": "works.windmill.one.monthly",
+        "purchaseDate": 1_790_812_800_000_i64,
+        "signedDate": 1_793_491_260_000_i64,
+        "environment": "Production"
+    });
+    let expired_intermediate = TestChain::issue(ChainShape {
+        intermediate_not_after: date_time_ymd(2026, 6, 1),
+        ..ChainShape::default()
+    });
+    let expired_root = TestChain::issue(ChainShape {
+        root_not_after: date_time_ymd(2026, 6, 1),
+        ..ChainShape::default()
+    });
+
+    let environments = [Environment::Production, Environment::Sandbox];
+    assert_eq!(
+        expired_intermediate
+            .verifier(&environments)
+            .verify_transaction(&expired_intermediate.sign(&transaction))
+            .err(),
+        Some(Refusal::Validity)
+    );
+    assert_eq!(
+        expired_root
+            .verifier(&environments)
+            .verify_transaction(&expired_root.sign(&transaction))
+            .err(),
+        Some(Refusal::Validity)
+    );
 }
 
 #[test]

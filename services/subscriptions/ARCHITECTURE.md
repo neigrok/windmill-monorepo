@@ -60,8 +60,9 @@ transaction id or an account token.
 `SignedDataVerifier::windmill(clock)` is the production configuration: the pinned Apple root, the
 bundle id `works.windmill.app`, and the environments `Production` and `Sandbox`.
 `SignedDataVerifier::new(roots, environments, bundle_id, clock)` takes any of them; the tests in
-`crates/app_store/tests/verification.rs` sign under a chain they generate. Only a verifier built
-with `new` and a test root accepts `Xcode` or `LocalTesting` (spec §8).
+`crates/app_store/tests/verification.rs` sign under a chain they generate. `windmill` never accepts
+`Xcode` or `LocalTesting`; only a verifier built with `new` can, and spec §8 allows that only with a
+test root.
 
 ### Where the rules come from
 
