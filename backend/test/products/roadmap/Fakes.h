@@ -325,8 +325,10 @@ struct FakeTreeRepository : TreeRepository {
     for (const OwningStep& step : stored.path) place.path.push_back(PathStep{step.tree, step.step, nameOf(step.tree).value});
     return place;
   }
+  bool absentReadsFail = false;  // absentStepsUnder throws, the way a dropped connection does
   // The real statement's walk: down the root's subtrees, every owning step absent from its tree's rows.
   std::set<OwningStep> absentStepsUnder(const TreeId& root) override {
+    if (absentReadsFail) throw std::runtime_error("connection reset mid-read");
     std::set<OwningStep> absent;
     for (const auto& [id, subtree] : subtrees)
       if (row(TreeId{id}) && rootOf(TreeId{id}) == root && !present(subtree.parent)) absent.insert(subtree.parent);

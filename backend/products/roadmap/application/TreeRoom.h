@@ -52,14 +52,20 @@ public:
   bool admits(const std::vector<OwningStep>& path) const;
   // Whether `step`, an owning step under the root, is present. A change is told to the StepMoved given.
   void record(const OwningStep& step, bool present);
-  // The owning steps of `tree` as its stored rows hold them, `absent` being every absent one under the root: what a
-  // write that reached the tree's rows without its room leaves.
-  void retake(const TreeId& tree, const std::set<OwningStep>& absent);
+  // The owning steps of every tree under the root but those in `live` as the store holds them, `absent` being every
+  // absent one it holds under the root: what a write that reached a tree's rows without its room leaves. Answers the
+  // steps whose presence changed, for the caller to tell once it holds no lock, and the access is settled from here on.
+  std::vector<OwningStep> settle(const std::set<OwningStep>& absent, const std::set<TreeId>& live);
+  // Whether the access is known to hold every closed tree's owning steps as the store does. Unsettled, it is narrower
+  // than the store, never wider: a write without a room only revives owning steps.
+  bool settled() const { return settled_.load(); }
+  void unsettle() { settled_.store(false); }
 
 private:
   const std::optional<UserId> owner_;
   std::atomic<Visibility> visibility_;
   std::atomic<bool> stands_{true};
+  std::atomic<bool> settled_{true};
   mutable std::mutex mutex_;
   std::set<OwningStep> absent_;
   const StepMoved moved_;

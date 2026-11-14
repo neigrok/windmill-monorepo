@@ -299,7 +299,7 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
       trees_->save(TreeId{treeId}, state, legend, Lww<std::string>{data->title, mint.tick(0)},
                    existing->guide, existing->head);
       // The steps it carries are present now, an owning step it revives among them: its subtree shows again.
-      registry_->retakeOwningSteps(TreeId{treeId});
+      registry_->settleOwningSteps(access->root);
     }
 
     // A document never sets the guide, so the answer states the one the tree holds.

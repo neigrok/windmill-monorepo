@@ -2016,3 +2016,59 @@ TEST(a_revive_held_unsaved_shows_the_branch_to_every_read_past_the_gate) {
     CHECK_EQ(sendGetGuides(h.api, session, "t_s")->getStatusCode(), drogon::k200OK);
   }
 }
+
+// A PUT that revives an owning step lands its save, and then has the root's live access take the tree's owning steps
+// from the store again. That read failing is a failure of its own: one `roadmap.tree.standing` line and one Issue under
+// it, while the PUT answers what its save did. The access stays narrower than the store, the revived branch hidden,
+// until the registry's sweep takes the steps from the store.
+TEST(a_put_whose_standing_read_fails_answers_its_save_and_the_sweep_settles_the_branch) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedForest(owner, Visibility::unlisted);
+  REQUIRE_EQ(sendGetTree(h.api, "s-owner", "t_s")->getStatusCode(), drogon::k200OK);  // its room stays live
+  {
+    std::lock_guard<std::mutex> strand(h.rooms->strandFor(TreeId{"t_a"}));
+    h.rooms->open(TreeId{"t_a"})->applyCommands({DeleteNode{NodeId{"sail"}}}, 50, owner, {TreeId{"t_s"}});
+    REQUIRE(h.rooms->persist(TreeId{"t_a"}) == Saved::saved);
+  }
+  REQUIRE_EQ(sendGetTree(h.api, "s-owner", "t_s")->getStatusCode(), drogon::k404NotFound);
+
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.operation == "roadmap.tree.standing") lines.push_back(line.operation + " " + line.door + " " + line.outcome);
+  });
+  h.trees->absentReadsFail = true;
+  const drogon::HttpResponsePtr put = [&] {
+    WriteObservation route{"roadmap.PUT.v1.trees.id", "roadmap", "rest"};
+    WriteContext context{route};
+    const drogon::HttpResponsePtr answer = sendPut(h.api, "s-owner", "t_a", document("My year", "sail"));
+    route.finish();
+    return answer;
+  }();
+  installWriteSink({});
+  CHECK_EQ(put->getStatusCode(), drogon::k200OK);
+  CHECK(LooseGraph(h.trees->byId["t_a"].state).hasNode(NodeId{"sail"}));
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.tree.standing rest failed"}));
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{std::string("roadmap.tree.standing roadmap rest failed ") +
+                                     typeid(std::runtime_error).name()}));
+  CHECK_EQ(sendGetTree(h.api, "s-owner", "t_s")->getStatusCode(), drogon::k404NotFound);  // narrower, never wider
+
+  h.trees->absentReadsFail = false;
+  h.rooms->sweep(std::chrono::hours(1));
+  CHECK(h.rooms->isOpen(TreeId{"t_s"}));
+  CHECK_EQ(sendGetTree(h.api, "s-owner", "t_s")->getStatusCode(), drogon::k200OK);
+}

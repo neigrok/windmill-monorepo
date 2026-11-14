@@ -607,6 +607,41 @@ TEST(registry_a_parent_room_closing_mid_check_admits_nobody) {
   CHECK(repo.accessReads == (std::vector<TreeId>{tid("g"), tid("g")}));
 }
 
+// Opening a room makes its root's live access, which reads the absent owning steps under the root. That read failing is
+// a failure of its own, reported as `roadmap.tree.standing` at the opening's door with the one Issue of its request, and
+// the open fails: no room, and no access made from half of what the store holds.
+TEST(registry_a_standing_read_that_fails_as_a_room_opens_reports_as_itself) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  plantBranch(repo);
+  RoomRegistry registry(repo, log, bus);
+  repo.absentReadsFail = true;
+  Told told;
+  bool failed = false;
+  {
+    WriteObservation request{"roadmap.ws.subgraph", "roadmap", "websocket"};
+    WriteContext context{request};
+    try {
+      std::lock_guard<std::mutex> strand(registry.strandFor(tid("c")));
+      registry.open(tid("c"));
+    } catch (const std::runtime_error&) {
+      failed = true;
+    }
+    request.fail(std::runtime_error("the frame failed"));
+  }
+  CHECK(failed);
+  CHECK_FALSE(registry.isOpen(tid("c")));
+  CHECK(told.lines == (std::vector<std::string>{"roadmap.tree.standing roadmap websocket failed",
+                                                "roadmap.ws.subgraph roadmap websocket failed"}));
+  CHECK(told.reports == (std::vector<std::string>{std::string("roadmap.tree.standing roadmap websocket failed ") +
+                                                  typeid(std::runtime_error).name()}));
+
+  repo.absentReadsFail = false;
+  std::lock_guard<std::mutex> strand(registry.strandFor(tid("c")));
+  CHECK(registry.open(tid("c")) != nullptr);
+}
+
 // A retirement drops the room WITHOUT persisting it, and announces so readers are re-decided.
 TEST(registry_retire_drops_the_room_unsaved_and_announces_it) {
   FakeTreeRepository repo;

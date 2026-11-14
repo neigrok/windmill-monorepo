@@ -39,16 +39,21 @@ void RootAccess::record(const OwningStep& step, bool present) {
   if (moved && moved_) moved_(step);
 }
 
-void RootAccess::retake(const TreeId& tree, const std::set<OwningStep>& absent) {
-  std::vector<std::pair<OwningStep, bool>> held;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (const OwningStep& step : absent_)
-      if (step.tree == tree) held.emplace_back(step, absent.count(step) == 0);
+std::vector<OwningStep> RootAccess::settle(const std::set<OwningStep>& absent, const std::set<TreeId>& live) {
+  std::vector<OwningStep> moved;
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (auto held = absent_.begin(); held != absent_.end();) {
+    if (live.count(held->tree) || absent.count(*held)) {
+      ++held;
+      continue;
+    }
+    moved.push_back(*held);
+    held = absent_.erase(held);
   }
   for (const OwningStep& step : absent)
-    if (step.tree == tree) held.emplace_back(step, false);
-  for (const auto& [step, present] : held) record(step, present);
+    if (!live.count(step.tree) && absent_.insert(step).second) moved.push_back(step);
+  settled_.store(true);
+  return moved;
 }
 
 TreeRoom::~TreeRoom() {
@@ -71,6 +76,9 @@ TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bo
   }
   clock_.observe(title_.stamp);
   clock_.observe(guide_.stamp);
+  // The room opens as its stored rows stand, which no other room of the tree's can have written past: its owning steps
+  // are recorded as they are, so an access that missed a write without a room learns them here.
+  recordOwningSteps();
 }
 
 Hlc TreeRoom::nextStamp(std::uint64_t nowMs) {

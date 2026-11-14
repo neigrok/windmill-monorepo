@@ -167,18 +167,38 @@ std::optional<TreeAccess> RoomRegistry::accessOf(const TreeId& id) {
   return settled->access;
 }
 
-void RoomRegistry::retakeOwningSteps(const TreeId& tree) {
-  const std::optional<StoredAccess> stored = repo_.loadAccess(tree);
-  if (!stored) return;
-  const TreeId& root = stored->access.root;
+void RoomRegistry::settleOwningSteps(const TreeId& root) {
   std::shared_ptr<RootAccess> live;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     live = liveRootAccess(root);
   }
-  // Recorded with no lock held: each change it makes is announced, and whoever listens asks accessOf again. The caller
-  // holds the tree's strand, so nothing writes its rows meanwhile.
-  if (live) live->retake(tree, repo_.absentStepsUnder(root));
+  if (live) settle(root, *live);
+}
+
+bool RoomRegistry::settle(const TreeId& root, RootAccess& live) {
+  std::vector<OwningStep> moved;
+  {
+    // Under the root's lock no tree of the root's can finish opening, so each one without a live room holds as the store
+    // says, and a room that opens after records its own steps as it opens.
+    std::lock_guard<std::mutex> rootLock(rootLockFor(root));
+    WriteObservation standing{"roadmap.tree.standing", "roadmap", doorNow()};
+    try {
+      const std::set<OwningStep> absent = repo_.absentStepsUnder(root);
+      const std::vector<TreeId> rooms = roomsUnder(root);
+      moved = live.settle(absent, std::set<TreeId>(rooms.begin(), rooms.end()));
+      standing.skip();
+    } catch (const std::bad_alloc&) {
+      throw;
+    } catch (const std::exception& failure) {
+      standing.fail(failure);
+      live.unsettle();
+      return false;
+    }
+  }
+  // Told with no lock held: whoever listens asks accessOf again, which may take the root's lock.
+  for (const OwningStep& step : moved) announceBelow(root, step);
+  return true;
 }
 
 bool RoomRegistry::evict(const TreeId& id) {
@@ -252,6 +272,14 @@ void RoomRegistry::sweep(std::chrono::steady_clock::duration idleFor) {
     evict(id);
   }
   if (!closing.empty()) LOG_INFO << "swept " << closing.size() << " rooms, " << openRooms() << " still open";
+  // Each live access a write without a room left unsettled takes the store's owning steps again.
+  std::vector<std::pair<TreeId, std::shared_ptr<RootAccess>>> unsettled;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& [root, weak] : roots_)
+      if (const std::shared_ptr<RootAccess> live = weak.lock(); live && !live->settled()) unsettled.emplace_back(root, live);
+  }
+  for (const auto& [root, live] : unsettled) settle(root, *live);
   // The registry's own report of rooms that stay held: one a ceiling, however many rooms there are.
   std::size_t held = 0;
   {
@@ -453,8 +481,16 @@ std::shared_ptr<RootAccess> RoomRegistry::shareRootAccess(const TreeId& root) {
   // live, so the store holds every write of theirs: it cannot be stale.
   const std::optional<StoredAccess> stored = repo_.loadAccess(root);
   if (!stored) return nullptr;
-  auto access = std::make_shared<RootAccess>(stored->access.owner, stored->access.visibility,
-                                             repo_.absentStepsUnder(root),
+  std::set<OwningStep> absent;
+  WriteObservation standing{"roadmap.tree.standing", "roadmap", doorNow()};
+  try {
+    absent = repo_.absentStepsUnder(root);
+    standing.skip();
+  } catch (const std::exception& failure) {
+    standing.fail(failure);
+    throw;
+  }
+  auto access = std::make_shared<RootAccess>(stored->access.owner, stored->access.visibility, std::move(absent),
                                              [this, root](const OwningStep& step) { announceBelow(root, step); });
   std::lock_guard<std::mutex> lock(mutex_);
   roots_[root] = access;

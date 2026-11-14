@@ -649,8 +649,13 @@ under the same lock, the narrower first: making the root private shuts its open 
 row says so, and opening it opens them after. Each owning step is recorded by its own tree's room as
 every write lands, under that tree's strand and before the write is told to anyone
 (`TreeRoom::joinSubgraph`, `applyCommands`), so a branch hides the moment its step's deletion lands
-and shows with its revive, saved or not; a `PUT`, which writes a tree's rows with no room, has the
-access take that tree's owning steps from the store once it has. The live rooms below a step whose
+and shows with its revive, saved or not. A room records its owning steps as it opens too, from the
+stored rows no other room of its tree can have written past. A `PUT`, which writes a tree's rows with
+no room, then has the access take the owning steps of every tree under the root with no live room
+from the store (`RoomRegistry::settleOwningSteps`). When that read fails it is reported as itself, the
+`PUT` answers what its save did, and the access is left unsettled — narrower than the store, never
+wider, since a write without a room only revives steps — until the registry's sweep, every 30 s,
+takes them from the store again. The live rooms below a step whose
 presence changed are told, and the socket drops the readers they may no longer keep. A closed
 subtree's stored answer is taken under its root's lock with no access live, read again there, so a
 parent room that saves a deletion and closes between the first read and that check admits nobody.
