@@ -88,13 +88,16 @@ for (const engine of [chromium, webkit]) {
         await page.locator('.st-guide-field').fill(draft);
         await page.evaluate(() => window.setElsewhere('Changed somewhere else'));
         await page.getByRole('status').waitFor();
-        assert.deepEqual(await page.locator('.st-guide-paper').evaluate((paper) => {
+        await settled(page);
+        const { layout, bounds } = await page.locator('.st-guide-paper').evaluate((paper) => {
           const [notice, field, footer, save] = ['.st-guide-status', '.st-guide-field', '.st-guide-footer', '.st-guide-actions > :last-child']
-            .map((selector) => paper.querySelector(selector).getBoundingClientRect());
-          const frame = paper.getBoundingClientRect();
-          return { noticeAboveField: notice.bottom <= field.top, fieldAboveFooter: field.bottom <= footer.top,
-            footerInWindow: footer.bottom <= frame.bottom, actionInWindow: save.bottom <= frame.bottom, fieldVisible: field.height > 0 };
-        }), { noticeAboveField: true, fieldAboveFooter: true, footerInWindow: true, actionInWindow: true, fieldVisible: true }, `${height}px`);
+            .map((selector) => paper.querySelector(selector).getBoundingClientRect().toJSON());
+          const frame = paper.getBoundingClientRect().toJSON();
+          return { bounds: { notice, field, footer, save, frame },
+            layout: { noticeAboveField: notice.bottom <= field.top, fieldAboveFooter: field.bottom <= footer.top,
+              footerInWindow: footer.bottom <= frame.bottom, actionInWindow: save.bottom <= frame.bottom, fieldVisible: field.height > 0 } };
+        });
+        assert.deepEqual(layout, { noticeAboveField: true, fieldAboveFooter: true, footerInWindow: true, actionInWindow: true, fieldVisible: true }, `${height}px: ${JSON.stringify(bounds)}`);
         assert.equal(await page.locator('.st-guide-field').inputValue(), draft);
         await page.getByRole('button', { name: 'Cancel' }).click();
         await page.getByRole('alertdialog', { name: 'Discard draft?' }).waitFor();
@@ -119,6 +122,7 @@ for (const engine of [chromium, webkit]) {
       await page.getByRole('status').waitFor();
       await page.getByRole('button', { name: 'Save' }).click();
       assert.equal(await page.getByRole('alert').textContent(), 'Couldn’t save just now. Try again in a moment.');
+      await settled(page);
       assert.deepEqual(await page.locator('.st-guide-paper').evaluate((paper) => {
         const [notice, field, footer, retry] = ['.st-guide-status', '.st-guide-field', '.st-guide-footer', '.st-guide-actions > :last-child']
           .map((selector) => paper.querySelector(selector).getBoundingClientRect());
@@ -140,6 +144,7 @@ test('a short tablet window keeps the draft and footer actions separate and reac
     await page.getByRole('button', { name: 'Edit guide' }).click();
     const field = page.locator('.st-guide-field');
     await field.fill(`${GUIDE} Written`);
+    await settled(page);
     assert.deepEqual(await page.locator('.st-guide-paper').evaluate((paper) => {
       const [draft, footer, save] = ['.st-guide-field', '.st-guide-footer', '.st-guide-actions > :last-child']
         .map((selector) => paper.querySelector(selector).getBoundingClientRect());
