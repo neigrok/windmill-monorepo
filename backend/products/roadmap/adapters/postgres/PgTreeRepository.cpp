@@ -307,15 +307,11 @@ std::optional<Place> PgTreeRepository::placeOf(const TreeId& tree) {
       "SELECT u.id, " + treeNameColumn("u") + " AS name, "
       "CASE WHEN u.parent_tree IS NULL THEN u.title_hlc ELSE coalesce((SELECT owning.label_hlc FROM tree_nodes owning "
       "WHERE owning.tree_id = u.parent_tree AND owning.node_id = u.parent_step), '') END AS name_hlc, "
-      "u.parent_tree IS NULL OR EXISTS (SELECT 1 FROM tree_nodes owning WHERE owning.tree_id = u.parent_tree "
-      "AND owning.node_id = u.parent_step AND owning.present) AS hangs, "
       "u.parent_tree, u.parent_step, u.depth, u.deleted FROM up u ORDER BY u.depth",
       tree.str());
-  // A tree stands while its own row and its root's do, and every owning step on its path is present: the first row is
-  // the root, the last the tree.
+  // A place is there while its own row and its root's are: the first row is the root, the last the tree. Whether its
+  // branch stands is the access gate's to answer, which every door asks first.
   if (rows.empty() || rows[0]["deleted"].as<bool>() || rows[rows.size() - 1]["deleted"].as<bool>()) return std::nullopt;
-  for (const auto& row : rows)
-    if (!row["hangs"].as<bool>()) return std::nullopt;
 
   const auto& own = rows[rows.size() - 1];
   Place place;

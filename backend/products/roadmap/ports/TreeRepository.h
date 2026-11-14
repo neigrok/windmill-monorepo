@@ -146,7 +146,9 @@ struct TreeRepository {
   // present owning steps, and the present steps of the tree and of each of them.
   virtual std::map<TreeId, BranchSize> branchSizes(const std::set<TreeId>& trees) = 0;
   // Where `tree` sits as a read answers it (Place), off the stored rows: one walk up its parents, each subtree named by
-  // its owning step's label. nullopt when its branch does not stand.
+  // its owning step's label. nullopt when its own row or its root's is deleted. Whether its branch stands is
+  // RoomRegistry::accessOf's to answer, asked first by every door that reads a place, so a branch a live room has shown
+  // again reads by its place before that room's save lands.
   virtual std::optional<Place> placeOf(const TreeId& tree) = 0;
   // Who owned a row that outlived its delete; a live row (or none) answers nullopt.
   virtual std::optional<UserId> retiredOwner(const TreeId& tree) = 0;

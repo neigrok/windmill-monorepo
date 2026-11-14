@@ -267,12 +267,19 @@ rejected for structure. Validity is a read model, not a gate.
   - **Standing.** A subtree stands while its root stands and every owning step on its path is
     present; a branch is a subtree with everything under it. Deleting an owning step hides its branch
     at once, on every gate, for its owner and every reader alike, and the step's revive — the delete's
-    Undo — shows it again (Authorization): a tree whose branch is hidden answers every door as an
-    absent tree does. A write that reaches a hidden branch — a frame admitted before the delete, a
-    held save, a server-origin edit such as a removal's cascade — applies and stays hidden. A hidden
-    branch counts nowhere — lists, the gallery, reminders, the derivation, its parent's `subtree` and
-    `subtrees` — since in each only a present step owns a subtree, and every read of the stored rows
-    applies the same condition (`branchStandsCondition`). Nothing purges: a hidden tree keeps its
+    Undo — shows it again, whether or not the parent's save has landed (Authorization). Every door asks
+    the gate (`RoomRegistry::accessOf`, or a live room's `readableBy`) before it reads anything of a
+    tree, and what it reads past the gate — the tree's place and name (`placeOf`) among it — does not
+    judge standing again. A tree whose branch is hidden answers a read as an absent tree does; the
+    doors that create at an id answer as each says (Not a root; HTTP surface). A new write aimed at a
+    hidden tree is refused as one aimed at an absent tree — `no-such-tree` on the socket — and writes
+    nothing; only a write the gate admitted before the delete landed — a frame in flight, a held save,
+    a server-origin edit such as a removal's cascade — applies, and stays hidden. The refusal turns a
+    client's writes back unwritten, and a client keeps them owed, so they land when the branch
+    returns. A hidden branch counts nowhere — lists, the gallery, reminders, the derivation, its
+    parent's `subtree` and `subtrees` — since in each only a present step owns a subtree, and every
+    list and count over the stored rows applies the same condition (`branchStandsCondition`), lagging a
+    held save as every read of the stored rows does (Runtime). Nothing purges: a hidden tree keeps its
     rows, its content and everyone's marks, and a subtree's row is never retired
     (`TreeRepository::softDelete` retires a root's alone).
   - **Not a root.** Nothing deletes, restores or forks a subtree by its own id. `DELETE

@@ -1675,7 +1675,6 @@ TEST(a_subtree_is_never_removed_shared_or_planted_by_its_own_id_and_a_hidden_one
     CHECK(s.registry.remove(hidden, me) == Removal{TreeRegistry::RemovalRefusal::notFound});
     CHECK(s.registry.setVisibility(hidden, me, Visibility::public_) == Shared{TreeRegistry::VisibilityChange::notFound});
     CHECK(s.registry.rename(hidden, me, "Renamed") == TreeRegistry::Renaming::notFound);
-    CHECK_FALSE(s.registry.placeOf(hidden).has_value());
   }
   CHECK(s.registry.create(me, child, treeData("Mine", {})) == TreeRegistry::Creation::notARoot);
 
@@ -1685,7 +1684,6 @@ TEST(a_subtree_is_never_removed_shared_or_planted_by_its_own_id_and_a_hidden_one
     REQUIRE(s.rooms.persist(tid("t_p")) == Saved::saved);
   }
   CHECK(s.registry.remove(grandchild, me) == (Removal{NotARoot{OwningStep{child, nid("knot")}, tid("t_p")}}));
-  CHECK(s.registry.placeOf(grandchild).has_value());
 
   CHECK(s.registry.remove(tid("t_p"), me) == Removal{Cascade{}});
   CHECK_FALSE(s.rooms.accessOf(child).has_value());

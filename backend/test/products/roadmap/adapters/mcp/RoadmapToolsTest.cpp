@@ -8953,3 +8953,25 @@ TEST(mcp_a_step_that_owns_a_subtree_is_deleted_only_with_its_subtree_named_and_t
   CHECK_FALSE(deleted.isError);
   CHECK_FALSE(h.registry.accessOf(child).has_value());
 }
+
+// get_tree answers a subtree the gate shows, by its step's label, while the revive that showed it waits for its save.
+TEST(mcp_get_tree_answers_a_subtree_whose_revive_is_held_unsaved) {
+  Harness h;
+  LooseGraph graph;
+  graph.createNode(NodeId{"rig"}, "Rig", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  h.trees.byId["t"].state = graph.exportState();
+  const TreeId child{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"rig"}, h.caller, {child, std::nullopt})));
+  REQUIRE(!h.call("delete_node", parse(R"({"nodeId":"rig","branches":["t_00000000000000c1"]})")).isError);
+  h.trees.savesFail = true;
+  const ToolResult revived = h.call("create_node", parse(R"({"id":"rig","label":"Rig","color":"sky"})"));
+  REQUIRE(!revived.isError);
+  CHECK(body(revived).isMember("saved") && !body(revived)["saved"].asBool());
+
+  Json::Value args(Json::objectValue);
+  args["treeId"] = child.str();
+  const ToolResult read = h.tools.callTool("get_tree", args, ToolCaller{h.caller, ToolScope::everything()});
+  REQUIRE(!read.isError);
+  CHECK_EQ(body(read)["tree"]["title"].asString(), std::string("Rig"));
+}

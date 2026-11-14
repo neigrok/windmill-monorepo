@@ -1985,3 +1985,34 @@ TEST(a_hidden_branch_answers_every_rest_door_as_absent_and_a_subtree_is_forked_o
   REQUIRE_EQ(sendPut(h.api, "s-owner", "t_a", document("My year", "sail"))->getStatusCode(), drogon::k200OK);
   CHECK_EQ(sendGetTree(h.api, "s-stranger", "t_r")->getStatusCode(), drogon::k200OK);
 }
+
+// The gate alone decides whether a branch stands. A revive whose save the store has not taken yet shows the branch to
+// the gate at once, and every read past it answers the tree as it stands — its name, its place, its guides — while the
+// stored rows still hold the step deleted.
+TEST(a_revive_held_unsaved_shows_the_branch_to_every_read_past_the_gate) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-reader", "reader@example.com");
+  h.seedForest(owner, Visibility::unlisted);
+  const auto onRoot = [&](const std::function<void(TreeRoom&)>& write) {
+    std::lock_guard<std::mutex> strand(h.rooms->strandFor(TreeId{"t_a"}));
+    write(*h.rooms->open(TreeId{"t_a"}));
+    return h.rooms->persist(TreeId{"t_a"});
+  };
+  REQUIRE(onRoot([&](TreeRoom& room) { room.applyCommands({DeleteNode{NodeId{"sail"}}}, 50, owner, {TreeId{"t_s"}}); }) ==
+          Saved::saved);
+  REQUIRE_EQ(sendGetTree(h.api, "s-owner", "t_r")->getStatusCode(), drogon::k404NotFound);
+
+  h.trees->savesFail = true;
+  REQUIRE(onRoot([&](TreeRoom& room) {
+            room.applyCommand(CreateNode{NodeId{"sail"}, "Learn to sail", "", NodeColor::sky}, 60, owner);
+          }) == Saved::held);
+  CHECK_FALSE(LooseGraph(h.trees->byId["t_a"].state).hasNode(NodeId{"sail"}));
+  for (const char* session : {"s-owner", "s-reader"}) {
+    const drogon::HttpResponsePtr read = sendGetTree(h.api, session, "t_r");
+    REQUIRE_EQ(read->getStatusCode(), drogon::k200OK);
+    CHECK_EQ((*read->getJsonObject())["data"]["title"].asString(), std::string("Rig the boat"));
+    CHECK_EQ((*read->getJsonObject())["path"][0]["title"].asString(), std::string("My year"));
+    CHECK_EQ(sendGetGuides(h.api, session, "t_s")->getStatusCode(), drogon::k200OK);
+  }
+}

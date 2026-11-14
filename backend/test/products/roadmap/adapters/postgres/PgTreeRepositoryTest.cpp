@@ -2252,9 +2252,9 @@ TEST(pg_the_owners_list_leaves_out_the_subtree_of_a_removed_root) {
   CHECK(trees.openedFrom(kAda, {kChild}).empty());
 }
 
-// A deleted owning step hides its branch from every read of the stored rows — the access, the place, the owner's list,
-// the walk of what a tree opens, the guides above — at any depth, while the hidden trees keep their rows and their
-// content; the root's absent owning steps and its branch's size say the same. Its revive shows the branch again, and
+// A deleted owning step hides its branch from every read of the stored rows that judges standing — the access, the
+// owner's list, the walk of what a tree opens, the guides above — at any depth, while the hidden trees keep their rows,
+// their content and their place; the root's absent owning steps and its branch's size say the same. Its revive shows the branch again, and
 // nothing retires a subtree's row by its id.
 TEST(pg_a_deleted_owning_step_hides_its_branch_from_every_stored_read_and_its_revive_shows_it_again) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
@@ -2287,7 +2287,7 @@ TEST(pg_a_deleted_owning_step_hides_its_branch_from_every_stored_read_and_its_re
     const std::optional<StoredAccess> access = trees.loadAccess(hidden);
     REQUIRE(access.has_value());
     CHECK_FALSE(access->stands);
-    CHECK_FALSE(trees.placeOf(hidden).has_value());
+    CHECK(trees.placeOf(hidden).has_value());  // where it sits is content: whether it stands is the gate's
     CHECK(trees.load(hidden).has_value());
   }
   CHECK(trees.loadAccess(kGrandchild)->access.path ==
