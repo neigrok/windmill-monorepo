@@ -70,8 +70,9 @@ function visibleTo(entry, owner) {
 }
 
 export class LocalTreeRegistry {
-  constructor(storage = localStorageOrNothing()) {
-    this.storage = storage;
+  constructor(storage) {
+    this.storage = storage ?? localStorageOrNothing();
+    this.suppliedStorage = storage;
   }
 
   entries() {
@@ -80,6 +81,23 @@ export class LocalTreeRegistry {
     } catch {
       return {};
     }
+  }
+
+  // Recovery must distinguish a successful empty index from one the browser could not read.
+  readList(owner = deviceOwner()) {
+    const storage = this.suppliedStorage ?? window.localStorage;
+    const entries = JSON.parse(storage.getItem(KEY) ?? '{}');
+    if (!entries || typeof entries !== 'object' || Array.isArray(entries)
+      || Object.entries(entries).some(([id, entry]) => !id || !entry || typeof entry !== 'object' || Array.isArray(entry)
+        || (entry.title !== undefined && typeof entry.title !== 'string')
+        || (entry.owner !== undefined && entry.owner !== null && typeof entry.owner !== 'string')
+        || (entry.claimed !== undefined && typeof entry.claimed !== 'boolean'))) {
+      throw new Error('Device tree index malformed');
+    }
+    return Object.entries(entries)
+      .filter(([, entry]) => visibleTo(entry, owner))
+      .map(([id, entry]) => ({ id, title: entry.title ?? '', updatedAt: entry.updatedAt ?? 0, claimed: !!entry.claimed }))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
   write(entries) {
