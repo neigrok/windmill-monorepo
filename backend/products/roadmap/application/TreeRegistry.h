@@ -88,8 +88,9 @@ public:
   static constexpr std::chrono::milliseconds kCascadeTime{8'000};
 
   // trim → refuse a blank, text that is not valid UTF-8 and a NUL → owner check → apply through
-  // RoomRegistry. A tree whose row went away under its live room answers notFound.
-  enum class Renaming { renamed, notFound, notYours, nobodysTree, blankTitle, malformedTitle, nulInTitle };
+  // RoomRegistry. A tree whose row went away under its live room answers notFound. renamedUnsaved: the name is the
+  // room's and every open page's, and the registry holds its save and is retrying it (Saved::held).
+  enum class Renaming { renamed, renamedUnsaved, notFound, notYours, nobodysTree, blankTitle, malformedTitle, nulInTitle };
   Renaming rename(const TreeId& tree, const UserId& caller, const std::string& title);
   // The title a rename lands: trimmed, cut to kMaxTitleChars, or the refusal of a blank, malformed or NUL-holding one.
   static std::variant<std::string, Renaming> titleFrom(const std::string& title);
@@ -107,16 +108,17 @@ public:
   struct Described {
     Seq seq = 0;
     bool unchanged = false;
+    Saved saved = Saved::saved;  // held: set, sent to every open page, and the registry is retrying its save
   };
   std::variant<Described, Renaming, Admission> describe(const TreeId& tree, const UserId& caller,
                                                         const Description& sent);
 
-  // describe with a guide alone: the seq the guide took. An empty guide clears it, and so does one of
+  // describe with a guide alone: what the guide came to. An empty guide clears it, and so does one of
   // only whitespace. A tree the caller cannot read, or whose row went away under its live room,
   // answers notFound; a guide past kMaxGuideChars, not valid UTF-8 or carrying a NUL answers its
   // Admission.
   enum class GuideRefusal { notFound, notYours, nobodysTree };
-  std::variant<Seq, GuideRefusal, Admission> setGuide(const TreeId& tree, const UserId& caller, const std::string& guide);
+  std::variant<Described, GuideRefusal, Admission> setGuide(const TreeId& tree, const UserId& caller, const std::string& guide);
 
   // owner check → a root's alone, a subtree answering NotARoot with its owning step → set read visibility through
   // RoomRegistry: the durable column write plus the live access of every room of the root's trees, so a just-shared

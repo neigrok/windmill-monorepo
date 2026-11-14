@@ -214,7 +214,11 @@ rejected for structure. Validity is a read model, not a gate.
   is serialised with every other write to the parent, a step's deletion among them. In order it
   checks that the caller may read the parent (`no-such-tree` for an absent, deleted or
   private-denied tree, or one whose root is deleted, alike) and write it (`not-writer`), and that
-  the step is present (`step-gone`); then reads the stored site (`TreeRepository::subtreeSite`),
+  the step is present (`step-gone`). A parent whose room holds a write its store has not taken — a
+  save that failed and is being retried (Runtime) — refuses the create as `save-pending`, with
+  nothing written: the create stores the parent's head at the room's next seq, which would move it
+  past writes that are not stored. The refusal lifts when that save lands, and the caller sends the
+  create again. It then reads the stored site (`TreeRepository::subtreeSite`),
   and a parent's room whose head is behind the stored one takes it. A step that already owns a
   subtree answers it, `created: false`, and writes nothing, so a retry after a lost reply and a
   create that lost a race both find the one child. Otherwise it is refused when the child would sit
@@ -442,10 +446,31 @@ Rules:
   shared by unrelated tree ids.
 - `accessOf(treeId)` answers authorization from the stored row; ask it **before** `open()`, which
   drags the whole lattice off disk and pins it.
-- Persist before acking, so an ack attests durability. Within a persist the lattice is saved
-  before the op rows are appended, so the log never runs ahead of the lattice. A save onto a row
-  that is gone or soft-deleted writes nothing and `persist` answers false; the socket's `subgraph`
-  frame, the guide and a live rename then answer as for an absent tree and retire the room.
+- Persist before acking, so an ack attests durability or says what it cannot. Within a persist the
+  lattice is saved before the op rows are appended, so the log never runs ahead of the lattice. A
+  save onto a row that is gone or soft-deleted writes nothing and `persist` answers `gone`; the
+  socket's `subgraph` frame, the guide and a live rename then answer as for an absent tree and
+  retire the room.
+- A save that fails undoes nothing and throws nothing (`Saved::held`): every open page has already
+  been sent the write, so the room keeps it, dirty and with its op rows queued, and the registry
+  holds the room and retries the save until the store takes it, on its own timer: 1 s after the
+  failure and then after twice the wait before, up to 60 s between tries (`kFirstRetry`,
+  `kRetryCeiling`). Only that timer and a write that changes the room try a held room's save; a
+  read, a write that changes nothing and the sweep send no statement for it and move no retry. The
+  op rows land only after the save does. The writer is told the change is applied and on every open
+  page, that saving it failed and is being retried, that sending it again is not needed, and that a
+  server restart before the save succeeds loses it, in its door's shape: an MCP receipt carries
+  `saved: false` and `saveError` and is not an error; the socket acks the frame with its seq and
+  `unsaved: true`; `PATCH /v1/trees/{id}` answers `202` with `{saved: false, code: "held-unsaved",
+  message}`; a removal lists the tree under `unsaved`. A call that changes nothing in a held room
+  says so too — `unchanged: true` beside `saved: false`, an ack without a seq beside `unsaved: true`
+  — since what the room holds is not saved. A held room is not closed by the sweep, and a `PUT`
+  over one is refused `503 save-pending` until the save lands. Only a room with something unsaved
+  is ever held: one with nothing to save closes with no statement sent. As the registry stops —
+  and one that goes away has stopped (`~RoomRegistry`) — it tries each held room once more, the
+  wait for a retry in mid-save and all of those saves within `kShutdownSaveBudget` together (5 s,
+  `StatementLimits`), and reports the rooms it could not save as lost. A held write is lost only that way; marks a call stored beside it —
+  `update_nodes` rows, the marks `delete_node` clears — are stored already.
 - `open()` loads the stored lattice and nothing else: a room is its snapshot, and the op log is the
   history the Activity feed reads, never a second source of a tree's state. An op row states one
   deed of its frame — one node of an import, one kind of a re-hue of several — so merging it back
@@ -542,7 +567,8 @@ Single edits have no REST endpoint — they ride the socket; `PUT /v1/trees/{id}
 document and joins it as one write. A PUT that creates the tree stamps its steps at the moment of
 creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stored row of every step
 and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
-and read as unknown creation time. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
+and read as unknown creation time. A PUT over a tree whose live room holds a save that failed is
+refused `503 save-pending` with nothing written, until that save lands. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
 
 `GET /v1/trees/{id}` answers `{seq, data, state, createdAt, visibility, mine}`. When the caller can
 write the tree the body also carries `opens`, an object keyed by node id with one entry per node
@@ -579,7 +605,10 @@ are absent when that is nothing, and a path that is cut does not end with the tr
 bytes a tree without pointers answers, and nothing is read for them.
 
 `PATCH /v1/trees/{id}` sets one register per call — `{visibility}`, `{guide}` or `{title}` — each the
-owner's alone. A body naming more than one is refused `400`, and a body that is not one JSON object
+owner's alone, and answers `204`; a guide or a title set in the tree's live room whose save failed
+answers `202` with `{saved: false, code: "held-unsaved", message}` — applied, on every open page,
+and being saved again by the server, so sending it again is not needed; a server restart before the
+save succeeds would lose it. A body naming more than one is refused `400`, and a body that is not one JSON object
 `400 invalid json body`. A guide past 5000 characters, not valid UTF-8 or carrying a NUL is refused
 `400` with the admission's sentence, and an empty one clears it, as one of only spaces, tabs and line
 breaks does (stored as `""`); a real guide keeps its leading and trailing spaces. A title carrying a
@@ -638,9 +667,9 @@ those steps, per tree in tree id order:
 
 - `removed: [{treeId, nodeIds}]`, always present: the steps were deleted and saved.
 - `unsaved: [treeId]`, present only when it names a tree: the steps were deleted in the tree's room
-  and sent to its open pages, and the save then failed. They are gone now, and the room's next save,
-  which the next edit of that tree or the room's idle close makes, keeps them gone; should the server
-  restart before it, they come back, without the caller's marks the delete cleared.
+  and sent to its open pages, and the save then failed. They are gone now, and the registry retries
+  the save until it lands (a save that fails, Runtime); should the server restart before it
+  does, they come back, without the caller's marks the delete cleared.
 - `incomplete: [treeId]`, present only when it names a tree: nothing was deleted there — its room
   could not be opened, the marks not cleared, or the eight seconds ran out before it was reached — and
   the steps stay. Each points nowhere: it reads as an ordinary step, `get_diagnostics` lists it in
@@ -680,7 +709,7 @@ answer, with the title and guide registers when the vector does not cover their 
 that cannot write the tree, and the delta's `reach` is that same verdict: `writer` for a connection
 that can, `reader` for any other) ·
 `progress` (intent `graft` on subscribe, echo otherwise) ·
-`subgraphAck {treeId, frameId, seq?}` · `progressAck {treeId, frameId, refused?}` ·
+`subgraphAck {treeId, frameId, seq?, unsaved?}` · `progressAck {treeId, frameId, refused?}` ·
 `skew {treeId, frameId, serverNow}` · `reject {treeId, code, reason, frameId?}` · `presence` ·
 `peer` · `subtree {treeId, seq, step, subtree: {id, depth}}`.
 
@@ -727,8 +756,10 @@ Limits and rules:
   `treeId` and `frameId` its readable head names; no part of it is applied.
 - A guide register of only spaces, tabs and line breaks is refused as `bad-frame`: its sender
   stamped that text, so it cannot be stored as `""`, and a client sends `""` for no guide.
-- A `subgraph` frame whose save fails is answered `server-error` with its `frameId`, and one whose
-  tree's row went away under the live room `no-such-tree`.
+- A `subgraph` frame whose save fails is acked with its seq and `unsaved: true`: it has landed in
+  the room and been broadcast, the registry retries the save, and the sender does not send it
+  again. One whose room cannot be opened is answered `server-error` with its `frameId`, and one
+  whose tree's row went away under the live room `no-such-tree`.
 
 ## Persistence
 

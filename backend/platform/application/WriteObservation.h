@@ -43,6 +43,9 @@ void reportCurrentUnknownWriteFailure();
 void finishCurrentWriteRefusal(const std::string& code);
 // The write in progress landed nothing: outcome `unchanged`, an expected one that completes at the level `ok` takes.
 void finishCurrentWriteUnchanged();
+// The write in progress completes as `outcome` when its door finishes it, whatever the door then calls it, unless it
+// fails: for a consequence met beneath the door, which every door's line must tell alike.
+void settleCurrentWriteAs(const std::string& outcome);
 void markCurrentWrite();
 
 class WriteObservation;
@@ -66,6 +69,7 @@ public:
   WriteObservation(const WriteObservation&) = delete;
   WriteObservation& operator=(const WriteObservation&) = delete;
   void finish(std::string outcome = "ok");
+  void settleAs(std::string outcome) { settledOutcome_ = std::move(outcome); }
   void skip();
   void ownInfo();
   void wrote();
@@ -92,6 +96,7 @@ private:
   std::atomic<bool> finished_{false};
   std::atomic<bool> failed_{false};
   std::string failedOutcome_ = "failed";
+  std::string settledOutcome_;
 };
 
 template<class Run>

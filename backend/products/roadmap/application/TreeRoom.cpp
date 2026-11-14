@@ -50,6 +50,7 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   if (!guideTook) landed.guide.reset();
   if (!titleTook && !guideTook && landed.graph.empty() && landed.legend.empty()) return std::nullopt;
   markDirty(landed.graph, landed.legend);
+  unsaved_ = true;
   ++head_;
   // One op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
   // double-counts. A frame with no feed-worthy deed (headline) queues nothing.
@@ -83,6 +84,7 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
   appliedOpIds_.insert(frameId);
   VersionVector before = frontier(graph_.exportState(), legend_.exportState());
   for (const Command& command : commands) merge(graph_, legend_, command, stamp);
+  unsaved_ = true;
   ++head_;
 
   Subgraph produced = deltaBetween(graph_.exportState(), legend_.exportState(), before);
@@ -158,6 +160,7 @@ std::pair<GraphState, LegendState> TreeRoom::dirtyState() const {
 }
 
 void TreeRoom::markClean() {
+  unsaved_ = false;
   dirtyNodes_.clear();
   dirtyEdges_.clear();
   dirtyKinds_.clear();
