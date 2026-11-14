@@ -916,7 +916,7 @@ TEST(pg_get_diagnostics_tells_the_owner_a_loop_of_trees_and_a_dangling_pointer_a
 
   Cascade tookDown;
   tookDown.removed[kTree] = {NodeId{"down"}};
-  CHECK(treeRegistry.remove(kFork, kSam) == (std::variant<Cascade, TreeRegistry::RemovalRefusal>{tookDown}));
+  CHECK(treeRegistry.remove(kFork, kSam) == (std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot>{tookDown}));
   CHECK_EQ(test::body(call(kTree, kSam, "get_diagnostics", "{}")),
            parse(R"({"cycles":[],"dangling":[],"selfEdges":[],"smells":[{"kind":"empty-legend"}],"maskedWork":[],"treeLoops":[],
                "danglingPointers":[{"node":"gone","treeId":"t_pgtest_never_planted"}]})"));
@@ -1230,7 +1230,7 @@ TEST(pg_removing_a_tree_takes_the_step_that_opens_it_with_its_edge_and_mark_and_
 
   Cascade tookGo;
   tookGo.removed[kTree] = {NodeId{"go"}};
-  CHECK(treeRegistry.remove(kFork, kSam) == (std::variant<Cascade, TreeRegistry::RemovalRefusal>{tookGo}));
+  CHECK(treeRegistry.remove(kFork, kSam) == (std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot>{tookGo}));
   registry.stop();
 
   PgLease conn{*pgTestPool()};
@@ -1838,14 +1838,14 @@ TEST(pg_a_create_racing_the_removal_of_its_parent_lands_in_one_order_or_the_othe
       go.wait();
       return forest.create(kParent, "rig", kChild);
     });
-    std::future<std::variant<Cascade, TreeRegistry::RemovalRefusal>> removing =
+    std::future<std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot>> removing =
         std::async(std::launch::async, [&forest, go] {
           go.wait();
           return forest.registry.remove(kParent, kAda);
         });
     start.set_value();
     const SubtreeAnswer answer = creating.get();
-    CHECK(removing.get() == (std::variant<Cascade, TreeRegistry::RemovalRefusal>{Cascade{}}));
+    CHECK(removing.get() == (std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot>{Cascade{}}));
 
     CHECK_FALSE(forest.trees.loadAccess(kParent).has_value());
     CHECK_FALSE(forest.rooms.accessOf(kChild).has_value());
@@ -1904,7 +1904,7 @@ TEST(pg_a_subtree_admits_whom_its_root_admits_and_no_one_once_its_root_is_remove
     live = forest.rooms.open(kChild);
   }
   REQUIRE(live != nullptr);
-  CHECK(forest.registry.remove(kParent, kAda) == (std::variant<Cascade, TreeRegistry::RemovalRefusal>{Cascade{}}));
+  CHECK(forest.registry.remove(kParent, kAda) == (std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot>{Cascade{}}));
   CHECK_FALSE(forest.rooms.accessOf(kChild).has_value());       // live
   CHECK_FALSE(forest.rooms.accessOf(kGrandchild).has_value());  // closed
   CHECK_FALSE(live->readableBy(kAda));
@@ -2121,10 +2121,10 @@ TEST(pg_a_grandchild_is_named_and_placed_through_its_parents_and_listed_beside_i
   CHECK(*place == (Place{"rig", Hlc{}, kParent, OwningStep{kChild, nid("rig")},
                          {PathStep{kParent, nid("sail"), "Planted"}, PathStep{kChild, nid("rig"), "Learn to sail"}}, 2}));
   CHECK(trees.placeOf(kParent) == (std::optional<Place>(Place{"Planted", Hlc{}, kParent, std::nullopt, {}, 0})));
-  CHECK(trees.loadAccess(kGrandchild)->parent == (std::optional<OwningStep>(OwningStep{kChild, nid("rig")})));
+  CHECK(trees.loadAccess(kGrandchild)->access.parent() == (std::optional<OwningStep>(OwningStep{kChild, nid("rig")})));
   const std::optional<StoredTree> child = trees.load(kChild);
   REQUIRE(child.has_value());
-  CHECK_EQ(child->depth, 1);
+  CHECK(child->path == (std::vector<OwningStep>{OwningStep{kParent, nid("sail")}}));
   CHECK(child->subtrees == (std::map<NodeId, TreeId>{{nid("rig"), kGrandchild}}));
 
   std::map<TreeId, OwnedTree> owned;

@@ -1467,7 +1467,7 @@ TEST(ws_deleting_a_tree_drops_its_readers_and_refuses_a_fresh_one) {
   CHECK_FALSE(frameType(reader->sent[0]) == "reject");
   CHECK(h.rooms.isOpen(TreeId{"t_pub"}));
 
-  CHECK(h.trees_registry.remove(TreeId{"t_pub"}, owner) == (std::variant<Cascade, TreeRegistry::RemovalRefusal>{Cascade{}}));
+  CHECK(h.trees_registry.remove(TreeId{"t_pub"}, owner) == (std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot>{Cascade{}}));
 
   REQUIRE_EQ(reader->sent.size(), 2u);
   CHECK_EQ(rejectCode(reader->sent[1]), std::string("no-such-tree"));
@@ -2152,7 +2152,7 @@ TEST(ws_removing_a_tree_sends_a_page_open_on_a_tree_that_opened_it_the_delete_of
 
   Cascade went;
   went.removed[TreeId{"t_main"}] = {NodeId{"idea"}};
-  CHECK(h.trees_registry.remove(TreeId{"t_sub"}, owner) == (std::variant<Cascade, TreeRegistry::RemovalRefusal>{went}));
+  CHECK(h.trees_registry.remove(TreeId{"t_sub"}, owner) == (std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot>{went}));
 
   REQUIRE_EQ(page->sent.size(), 1u);
   const Json::Value live = parse(page->sent[0]);

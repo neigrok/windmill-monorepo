@@ -227,20 +227,27 @@ struct FakeTreeRepository : TreeRepository {
     return it->second;
   }
   bool accessReadsFail = false;  // loadAccess throws, the way a dropped connection does
-  // The same facts the real repository reads off the root's row, projected off the stored trees.
-  std::optional<TreeAccess> loadAccess(const TreeId& tree) override {
+  // Runs inside loadAccess once it has read the rows, before it answers: a write made here is one the answer misses.
+  std::function<void()> afterAccessRead;
+  // One entry per loadAccess read: the tree it asked after.
+  std::vector<TreeId> accessReads;
+  // The same facts the real repository reads off the root's row and the tree's path, projected off the stored trees.
+  std::optional<StoredAccess> loadAccess(const TreeId& tree) override {
+    accessReads.push_back(tree);
     if (accessReadsFail) throw std::runtime_error("connection reset mid-read");
     const std::optional<StoredTree> stored = placed(tree);
     if (!stored) return std::nullopt;
-    return TreeAccess{stored->owner, stored->visibility, stored->root, stored->parent};
+    const StoredAccess access{TreeAccess{stored->owner, stored->visibility, stored->root, stored->path}, stands(tree)};
+    if (afterAccessRead) afterAccessRead();
+    return access;
   }
-  // The row as the real repository answers it: with its place and the standing subtree each step owns, a subtree read
-  // by its root's owner and visibility, and nothing while it or its root does not stand.
+  // The row as the real repository answers it: with its place and the subtree each step owns, a subtree read by its
+  // root's owner and visibility, and nothing while it or its root's row does not stand, whatever its branch.
   std::optional<StoredTree> placed(const TreeId& tree) const {
     std::optional<StoredTree> stored = row(tree);
     if (!stored) return std::nullopt;
     stored->root = rootOf(tree);
-    stored->depth = depthOf(tree);
+    stored->path = pathOf(tree);
     stored->subtrees = ownedBy(tree);
     const auto subtree = subtrees.find(tree.str());
     if (subtree == subtrees.end()) return stored;
@@ -248,10 +255,28 @@ struct FakeTreeRepository : TreeRepository {
     if (!root) return std::nullopt;
     stored->owner = root->owner;
     stored->visibility = root->visibility;
-    stored->parent = subtree->second.parent;
     return stored;
   }
-  // The standing subtree each step of `tree` owns, by step.
+  // The owning steps from `tree`'s root down to it, root first.
+  std::vector<OwningStep> pathOf(const TreeId& tree) const {
+    std::vector<OwningStep> path;
+    for (auto subtree = subtrees.find(tree.str()); subtree != subtrees.end();
+         subtree = subtrees.find(subtree->second.parent.tree.str()))
+      path.insert(path.begin(), subtree->second.parent);
+    return path;
+  }
+  // Whether `step` is present in its tree's stored rows.
+  bool present(const OwningStep& step) const {
+    const auto tree = byId.find(step.tree.str());
+    return tree != byId.end() && LooseGraph(tree->second.state).hasNode(step.step);
+  }
+  // The real statements' branch condition: the row and its root's stand, and every owning step on its path is present.
+  bool stands(const TreeId& tree) const {
+    if (!placed(tree)) return false;
+    const std::vector<OwningStep> path = pathOf(tree);
+    return std::all_of(path.begin(), path.end(), [this](const OwningStep& step) { return present(step); });
+  }
+  // The subtree each step of `tree` owns, by step, whether or not the step is present.
   std::map<NodeId, TreeId> ownedBy(const TreeId& tree) const {
     std::map<NodeId, TreeId> owned;
     for (const auto& [id, subtree] : subtrees)
@@ -277,16 +302,44 @@ struct FakeTreeRepository : TreeRepository {
     return data;
   }
   bool placeReadsFail = false;  // placeOf throws, the way a dropped connection does
-  // The real statement's walk: up the parents of a standing tree, each named as every read names it.
+  // The real statement's walk: up the parents of a tree whose branch stands, each named as every read names it.
   std::optional<Place> placeOf(const TreeId& tree) override {
     if (placeReadsFail) throw std::runtime_error("connection reset mid-read");
-    const std::optional<StoredTree> stored = placed(tree);
-    if (!stored) return std::nullopt;
+    if (!stands(tree)) return std::nullopt;
+    const StoredTree stored = *placed(tree);
     const Lww<std::string> name = nameOf(tree);
-    Place place{name.value, name.stamp, stored->root, stored->parent, {}, stored->depth};
-    for (std::optional<OwningStep> above = stored->parent; above; above = placed(above->tree)->parent)
-      place.path.insert(place.path.begin(), PathStep{above->tree, above->step, nameOf(above->tree).value});
+    const std::optional<OwningStep> parent =
+        stored.path.empty() ? std::nullopt : std::optional<OwningStep>(stored.path.back());
+    Place place{name.value, name.stamp, stored.root, parent, {}, static_cast<int>(stored.path.size())};
+    for (const OwningStep& step : stored.path) place.path.push_back(PathStep{step.tree, step.step, nameOf(step.tree).value});
     return place;
+  }
+  // The real statement's walk: down the root's subtrees, every owning step absent from its tree's rows.
+  std::set<OwningStep> absentStepsUnder(const TreeId& root) override {
+    std::set<OwningStep> absent;
+    for (const auto& [id, subtree] : subtrees)
+      if (row(TreeId{id}) && rootOf(TreeId{id}) == root && !present(subtree.parent)) absent.insert(subtree.parent);
+    return absent;
+  }
+  bool sizeReadsFail = false;  // branchSizes throws, the way a dropped connection does
+  // The real statement's walk: down each standing tree's present owning steps, counting the subtrees and every step.
+  std::map<TreeId, BranchSize> branchSizes(const std::set<TreeId>& trees) override {
+    if (sizeReadsFail) throw std::runtime_error("connection reset mid-read");
+    std::map<TreeId, BranchSize> sizes;
+    const std::function<BranchSize(const TreeId&)> branchOf = [&](const TreeId& tree) {
+      const LooseGraph graph(byId.at(tree.str()).state);
+      BranchSize branch{0, static_cast<int>(graph.presentNodeCount())};
+      for (const auto& [step, subtree] : ownedBy(tree)) {
+        if (!graph.hasNode(step)) continue;
+        const BranchSize below = branchOf(subtree);
+        branch.subtrees += 1 + below.subtrees;
+        branch.steps += below.steps;
+      }
+      return branch;
+    };
+    for (const TreeId& tree : trees)
+      if (row(tree)) sizes.emplace(tree, branchOf(tree));
+    return sizes;
   }
   // Projected off the row the delete left behind: only a deleted id answers, and only when it had an owner.
   std::optional<UserId> retiredOwner(const TreeId& tree) override {
@@ -351,13 +404,15 @@ struct FakeTreeRepository : TreeRepository {
   std::vector<OwnedTree> listOwnedBy(const UserId& owner) override {
     std::vector<OwnedTree> owned;
     for (const auto& [id, stored] : byId) {
-      if (!placed(TreeId{id})) continue;  // the row, or its root, does not stand
+      if (!stands(TreeId{id})) continue;  // the row, its root or an owning step on its path does not stand
       if (!stored.owner || *stored.owner != owner) continue;
       TreeData data = documentOf(TreeId{id});
       data.title = stored.title.value;  // the real list reads the column, which a subtree never writes
       std::uint64_t ms = updatedAt.count(id) ? updatedAt.at(id) : 0;
+      const std::vector<OwningStep> path = pathOf(TreeId{id});
       // The planting time rides the stored tree, unlike updated_at, which this fake keeps in its own map.
-      owned.push_back(OwnedTree{std::move(data), stored.createdAt, ms, placed(TreeId{id})->parent});
+      owned.push_back(OwnedTree{std::move(data), stored.createdAt, ms,
+                                path.empty() ? std::nullopt : std::optional<OwningStep>(path.back())});
     }
     return owned;
   }
@@ -427,7 +482,7 @@ struct FakeTreeRepository : TreeRepository {
       const TreeId tree = reached.back();
       reached.pop_back();
       const std::optional<StoredTree> stored = placed(tree);
-      if (trees.count(tree) || !stored || stored->owner != std::optional<UserId>(owner)) continue;
+      if (trees.count(tree) || !stands(tree) || stored->owner != std::optional<UserId>(owner)) continue;
       const OpenedTree& walked =
           trees.emplace(tree, OpenedTree(documentOf(tree), marks_ ? marks_->load(tree, owner) : Progress{})).first->second;
       for (const auto& [target, pointers] : walked.pointers) reached.push_back(target);
@@ -443,12 +498,13 @@ struct FakeTreeRepository : TreeRepository {
     if (duringAboveRead) duringAboveRead();
     std::map<TreeId, TreeAbove> above;
     const std::optional<StoredTree> asked = placed(tree);
-    if (!asked || asked->owner != std::optional<UserId>(owner)) return above;
+    if (!stands(tree) || asked->owner != std::optional<UserId>(owner)) return above;
     // What lies directly below a tree: the subtrees it owns, and each root its steps that own none point at.
     const auto below = [&](const TreeId& opener) {
       const std::map<NodeId, TreeId> owned = ownedBy(opener);
       std::set<TreeId> under;
-      for (const auto& [step, subtree] : owned) under.insert(subtree);
+      for (const auto& [step, subtree] : owned)
+        if (stands(subtree)) under.insert(subtree);
       for (const auto& [step, target] : LooseGraph(byId.at(opener.str()).state).pointers())
         if (!owned.count(step) && !subtrees.count(target.str())) under.insert(target);
       return under;
@@ -458,7 +514,7 @@ struct FakeTreeRepository : TreeRepository {
       std::set<TreeId> next;
       for (const auto& [id, stored] : byId) {
         const TreeId opener{id};
-        if (opener == tree || above.count(opener) || !placed(opener) || stored.owner != std::optional<UserId>(owner))
+        if (opener == tree || above.count(opener) || !stands(opener) || stored.owner != std::optional<UserId>(owner))
           continue;
         const std::set<TreeId> under = below(opener);
         if (std::none_of(level.begin(), level.end(), [&](const TreeId& lower) { return under.count(lower) > 0; }))
@@ -484,7 +540,10 @@ struct FakeTreeRepository : TreeRepository {
     }
     return opening;
   }
-  void softDelete(const TreeId& tree) override { deletedIds.insert(tree.str()); }
+  // The real statement's rule: a root's row alone.
+  void softDelete(const TreeId& tree) override {
+    if (!subtrees.count(tree.str())) deletedIds.insert(tree.str());
+  }
   void rename(const TreeId& tree, const Lww<std::string>& title) override {
     auto it = byId.find(tree.str());
     if (it == byId.end() || deletedIds.count(tree.str())) return;
@@ -498,13 +557,24 @@ struct FakeTreeRepository : TreeRepository {
     if (!row(tree) || subtrees.count(tree.str())) return;
     byId[tree.str()].visibility = visibility;
   }
-  void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-            const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
-            bool guideInherited, const UserId& owner) override {
-    if (byId.count(newTree.str())) throw DuplicateTree{};  // the same unique index as create
-    // A fork is born private, like every fresh tree.
-    byId[newTree.str()] = StoredTree{state, legend, title, 0, owner, Visibility::private_, 0, guide, guideInherited};
-    forkedFrom[newTree.str()] = source.str();
+  // One entry per fork: the copies it stored.
+  std::vector<std::vector<TreeCopy>> forks;
+  // The real transaction's rules: every copy lands or none does, each subtree copy under its copied parent.
+  void fork(const std::vector<TreeCopy>& copies, const UserId& owner) override {
+    for (const TreeCopy& copy : copies)
+      if (byId.count(copy.id.str())) throw DuplicateTree{};  // the same unique index as create
+    forks.push_back(copies);
+    for (const TreeCopy& copy : copies) {
+      // A fork is born private, like every fresh tree.
+      byId[copy.id.str()] = StoredTree{copy.state, copy.legend, copy.title, 0, owner, Visibility::private_, 0,
+                                       copy.guide, copy.guideInherited};
+      if (!copy.parent) {
+        forkedFrom[copy.id.str()] = copy.source.str();
+        continue;
+      }
+      subtrees[copy.id.str()] =
+          Subtree{copy.id, rootOf(copy.parent->tree), *copy.parent, depthOf(copy.parent->tree) + 1, 0};
+    }
   }
 
   // Each subtree by its id; a tree absent here is a root.

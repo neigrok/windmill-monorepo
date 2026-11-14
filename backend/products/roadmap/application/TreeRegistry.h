@@ -33,8 +33,8 @@ public:
 
   // Plant under a client-minted id, create-if-absent under the tree's strand. `existedYours` is the
   // idempotent resume; `retired` is the caller's own soft-deleted id; `taken` is only ever somebody
-  // else's.
-  enum class Creation { created, existedYours, retired, taken };
+  // else's; `notARoot` is the id of a subtree of the caller's, standing or hidden, which no create plants.
+  enum class Creation { created, existedYours, retired, taken, notARoot };
   Creation create(const UserId& owner, const TreeId& id, const TreeData& initial);
 
   // What a caller may ask of the subtree it creates: an id it minted, and the kinds of its legend. Each is optional: a
@@ -75,18 +75,23 @@ public:
   // Where `tree` sits and its name (TreeRepository::placeOf), off the stored rows.
   std::optional<Place> placeOf(const TreeId& tree);
 
+  // What each of `trees` would take with it (TreeRepository::branchSizes), off the stored rows: what a deletion's
+  // answer counts.
+  std::map<TreeId, BranchSize> branchSizes(const std::set<TreeId>& trees);
+
   // Each refusal names both write refusals of Access.h (an enum cannot hold another), because an
   // unowned tree is nobody's, not somebody else's.
   // `cascadeUnavailable`: the trees whose steps open the tree could not be read, so nothing was removed.
   enum class RemovalRefusal { notFound, notYours, nobodysTree, cascadeUnavailable };
-  // The read of the caller's trees whose steps open the tree, with no strand held, refused whole when it fails → owner
-  // check → soft-delete → retire the room, under the tree's strand. Then, with that strand released, those steps go with
+  // The read of the caller's trees whose steps open the tree, with no strand held, refused whole when it fails → read gate
+  // (absent, private-denied and a hidden branch alike) → owner check → a root's alone, a subtree answering NotARoot with
+  // its owning step → soft-delete → retire the room, under the tree's strand; every branch under the root goes with it. Then, with that strand released, those steps go with
   // the tree: each tree, in id order and under its own strand alone, has them deleted as delete_node with prune deletes
   // nodes (NodeEdits), the caller's marks on them cleared, and is answered removed, unsaved or incomplete (Cascade).
   // The read and every tree's statements wait for a lock at most kCascadeLockWait, and all of it ends kCascadeTime after
   // the read began: a tree not reached by then is incomplete. Each tree edited writes one `roadmap.tree.remove.cascade`
   // line, and the removal one `roadmap_tree_remove_cascade` line of counts.
-  std::variant<Cascade, RemovalRefusal> remove(const TreeId& tree, const UserId& caller);
+  std::variant<Cascade, RemovalRefusal, NotARoot> remove(const TreeId& tree, const UserId& caller);
   static constexpr std::chrono::milliseconds kCascadeLockWait{1'000};
   static constexpr std::chrono::milliseconds kCascadeTime{8'000};
 

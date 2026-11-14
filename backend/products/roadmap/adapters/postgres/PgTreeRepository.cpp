@@ -32,10 +32,19 @@ std::string treeNameColumn(std::string_view tree) {
          "WHERE owning.tree_id = " + t + ".parent_tree AND owning.node_id = " + t + ".parent_step), '') END";
 }
 
-std::string rootStandsCondition(std::string_view tree) {
+std::string branchStandsCondition(std::string_view tree) {
   const std::string t{tree};
-  return "CASE WHEN " + t + ".parent_tree IS NULL THEN true "
-         "ELSE EXISTS (SELECT 1 FROM trees root WHERE root.id = " + t + ".root_tree AND root.deleted_at IS NULL) END";
+  // One walk up the parents through trees_pkey, the root's row last, and each owning step on the way through
+  // tree_nodes_pkey: a subtree at depth 8 reads 9 rows of trees and 8 of tree_nodes. Its plan is priced far past what
+  // it costs, which the pool's `jit = off` keeps from being compiled (backend/CLAUDE.md).
+  return "CASE WHEN " + t + ".parent_tree IS NULL THEN true ELSE NOT EXISTS ("
+         "WITH RECURSIVE up(parent_tree, parent_step, gone) AS ("
+         "  SELECT " + t + ".parent_tree, " + t + ".parent_step, false "
+         "  UNION ALL "
+         "  SELECT p.parent_tree, p.parent_step, p.deleted_at IS NOT NULL FROM up JOIN trees p ON p.id = up.parent_tree) "
+         "SELECT 1 FROM up WHERE gone OR (parent_tree IS NOT NULL AND NOT EXISTS ("
+         "  SELECT 1 FROM tree_nodes s WHERE s.tree_id = up.parent_tree AND s.node_id = up.parent_step AND s.present))"
+         ") END";
 }
 
 std::string ownedSubtreeJoin(std::string_view step) {
@@ -160,6 +169,26 @@ GraphState graphRows(pqxx::work& txn, const TreeId& tree) {
   return state;
 }
 
+// The owning steps from `tree`'s root down to it, root first, each with whether its step's row is present: one walk up
+// the parents through trees_pkey, each step read through tree_nodes_pkey. None for a root.
+std::vector<std::pair<OwningStep, bool>> pathRows(pqxx::work& txn, const TreeId& tree) {
+  pqxx::result rows = txn.exec_params(
+      "WITH RECURSIVE up(parent_tree, parent_step, depth) AS ("
+      "  SELECT t.parent_tree, t.parent_step, t.depth FROM trees t WHERE t.id = $1"
+      "  UNION ALL"
+      "  SELECT p.parent_tree, p.parent_step, p.depth FROM up u JOIN trees p ON p.id = u.parent_tree"
+      ") "
+      "SELECT u.parent_tree, u.parent_step, EXISTS (SELECT 1 FROM tree_nodes s WHERE s.tree_id = u.parent_tree "
+      "AND s.node_id = u.parent_step AND s.present) AS present FROM up u WHERE u.parent_tree IS NOT NULL "
+      "ORDER BY u.depth",
+      tree.str());
+  std::vector<std::pair<OwningStep, bool>> path;
+  for (const auto& row : rows)
+    path.emplace_back(OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}},
+                      row["present"].as<bool>());
+  return path;
+}
+
 LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
   LegendState legend;
   pqxx::result kinds = txn.exec_params(
@@ -189,25 +218,76 @@ LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
 
 PgTreeRepository::PgTreeRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
-std::optional<TreeAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
-  // Two columns of the root's row, no lattice: "may this caller read it?" costs two primary-key lookups.
+std::optional<StoredAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
+  // Two columns of the root's row, no lattice: "may this caller read it?" costs two primary-key lookups, and for a
+  // subtree one walk up its path.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT r.owner_id::text AS owner_id, r.visibility, r.id AS root, t.parent_tree, t.parent_step "
+      "SELECT r.owner_id::text AS owner_id, r.visibility, r.id AS root, t.parent_tree IS NOT NULL AS subtree "
       "FROM trees t JOIN trees r ON r.id = t.root_tree "
       "WHERE t.id = $1 AND t.deleted_at IS NULL AND r.deleted_at IS NULL",
       tree.str());
   if (rows.empty()) return std::nullopt;
 
   const auto& row = rows[0];
-  TreeAccess access;
-  if (!row["owner_id"].is_null()) access.owner = UserId{row["owner_id"].as<std::string>()};
-  access.visibility = parseVisibility(row["visibility"].as<std::string>());
-  access.root = TreeId{text(row, "root")};
-  if (!row["parent_tree"].is_null())
-    access.parent = OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}};
-  return access;
+  StoredAccess stored;
+  if (!row["owner_id"].is_null()) stored.access.owner = UserId{row["owner_id"].as<std::string>()};
+  stored.access.visibility = parseVisibility(row["visibility"].as<std::string>());
+  stored.access.root = TreeId{text(row, "root")};
+  if (!row["subtree"].as<bool>()) return stored;
+  for (const auto& [step, present] : pathRows(txn, tree)) {
+    stored.access.path.push_back(step);
+    stored.stands = stored.stands && present;
+  }
+  return stored;
+}
+
+std::set<OwningStep> PgTreeRepository::absentStepsUnder(const TreeId& root) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  // Down the root's subtrees through trees_parent_step, which leads with the parent, each owning step through
+  // tree_nodes_pkey: its cost follows the root's own subtrees.
+  pqxx::result rows = txn.exec_params(
+      "WITH RECURSIVE forest(id, parent_tree, parent_step) AS ("
+      "  SELECT c.id, c.parent_tree, c.parent_step FROM trees c WHERE c.parent_tree = $1 AND c.deleted_at IS NULL"
+      "  UNION ALL"
+      "  SELECT c.id, c.parent_tree, c.parent_step FROM forest f "
+      "  JOIN trees c ON c.parent_tree = f.id AND c.deleted_at IS NULL"
+      ") "
+      "SELECT f.parent_tree, f.parent_step FROM forest f WHERE NOT EXISTS (SELECT 1 FROM tree_nodes s "
+      "WHERE s.tree_id = f.parent_tree AND s.node_id = f.parent_step AND s.present)",
+      root.str());
+  std::set<OwningStep> absent;
+  for (const auto& row : rows) absent.insert(OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}});
+  return absent;
+}
+
+std::map<TreeId, BranchSize> PgTreeRepository::branchSizes(const std::set<TreeId>& trees) {
+  if (trees.empty()) return {};
+  Json::Value ids(Json::arrayValue);
+  for (const TreeId& tree : trees) ids.append(tree.str());
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  // Down each tree's present owning steps through trees_parent_step, each tree's present steps counted by
+  // tree_nodes_pkey.
+  pqxx::result rows = txn.exec_params(
+      "WITH RECURSIVE branch(top, id) AS ("
+      "  SELECT t.id, t.id FROM trees t "
+      "  WHERE t.id IN (SELECT jsonb_array_elements_text($1::jsonb)) AND t.deleted_at IS NULL"
+      "  UNION ALL"
+      "  SELECT b.top, c.id FROM branch b JOIN trees c ON c.parent_tree = b.id AND c.deleted_at IS NULL "
+      "  WHERE EXISTS (SELECT 1 FROM tree_nodes s WHERE s.tree_id = c.parent_tree AND s.node_id = c.parent_step "
+      "                AND s.present)"
+      ") "
+      "SELECT b.top, (count(*) - 1)::int AS subtrees, "
+      "sum((SELECT count(*) FROM tree_nodes n WHERE n.tree_id = b.id AND n.present))::int AS steps "
+      "FROM branch b GROUP BY b.top",
+      dump(ids));
+  std::map<TreeId, BranchSize> sizes;
+  for (const auto& row : rows)
+    sizes.emplace(TreeId{text(row, "top")}, BranchSize{row["subtrees"].as<int>(), row["steps"].as<int>()});
+  return sizes;
 }
 
 std::optional<Place> PgTreeRepository::placeOf(const TreeId& tree) {
@@ -225,10 +305,15 @@ std::optional<Place> PgTreeRepository::placeOf(const TreeId& tree) {
       "SELECT u.id, " + treeNameColumn("u") + " AS name, "
       "CASE WHEN u.parent_tree IS NULL THEN u.title_hlc ELSE coalesce((SELECT owning.label_hlc FROM tree_nodes owning "
       "WHERE owning.tree_id = u.parent_tree AND owning.node_id = u.parent_step), '') END AS name_hlc, "
+      "u.parent_tree IS NULL OR EXISTS (SELECT 1 FROM tree_nodes owning WHERE owning.tree_id = u.parent_tree "
+      "AND owning.node_id = u.parent_step AND owning.present) AS hangs, "
       "u.parent_tree, u.parent_step, u.depth, u.deleted FROM up u ORDER BY u.depth",
       tree.str());
-  // A tree stands while its own row and its root's do: the first row is the root, the last the tree.
+  // A tree stands while its own row and its root's do, and every owning step on its path is present: the first row is
+  // the root, the last the tree.
   if (rows.empty() || rows[0]["deleted"].as<bool>() || rows[rows.size() - 1]["deleted"].as<bool>()) return std::nullopt;
+  for (const auto& row : rows)
+    if (!row["hangs"].as<bool>()) return std::nullopt;
 
   const auto& own = rows[rows.size() - 1];
   Place place;
@@ -284,10 +369,11 @@ ForkLineage PgTreeRepository::loadForkLineage(const TreeId& tree) {
 std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // A subtree is read by its root's owner and visibility, and stands only while its root does.
+  // A subtree is read by its root's owner and visibility, and is there only while its root is. Whether its branch stands
+  // is the access's question, not the content's.
   pqxx::result rows = txn.exec_params(
       "SELECT t.title, t.title_hlc, t.guide, t.guide_hlc, t.guide_inherited, t.head_seq, t.document::text, "
-      "r.owner_id::text AS owner_id, r.visibility, t.root_tree, t.parent_tree, t.parent_step, t.depth, "
+      "r.owner_id::text AS owner_id, r.visibility, t.root_tree, t.parent_tree, "
       "(extract(epoch from t.created_at) * 1000)::bigint AS created_ms "
       "FROM trees t JOIN trees r ON r.id = t.root_tree "
       "WHERE t.id = $1 AND t.deleted_at IS NULL AND r.deleted_at IS NULL",
@@ -310,20 +396,21 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   for (const auto& owned : txn.exec_params(
            "SELECT parent_step, id FROM trees WHERE parent_tree = $1 AND deleted_at IS NULL", tree.str()))
     subtrees.emplace(NodeId{text(owned, "parent_step")}, TreeId{text(owned, "id")});
+  std::vector<OwningStep> path;
+  if (!row["parent_tree"].is_null())
+    for (const auto& [step, present] : pathRows(txn, tree)) path.push_back(step);
   txn.commit();
 
   std::optional<UserId> owner;
   if (!row["owner_id"].is_null()) owner = UserId{row["owner_id"].as<std::string>()};
   Lww<std::string> title{row["title"].as<std::string>(), roadmapStamp(row["title_hlc"].as<std::string>())};
   Lww<std::string> guide{row["guide"].as<std::string>(), roadmapStamp(row["guide_hlc"].as<std::string>())};
-  std::optional<OwningStep> parent;
-  if (!row["parent_tree"].is_null()) parent = OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}};
   return StoredTree{std::move(state), std::move(legend), std::move(title),
                     static_cast<Seq>(row["head_seq"].as<long long>()), std::move(owner),
                     parseVisibility(row["visibility"].as<std::string>()),
                     static_cast<std::uint64_t>(row["created_ms"].as<long long>()), std::move(guide),
-                    row["guide_inherited"].as<bool>(), TreeId{text(row, "root_tree")}, std::move(parent),
-                    row["depth"].as<int>(), std::move(subtrees)};
+                    row["guide_inherited"].as<bool>(), TreeId{text(row, "root_tree")}, std::move(path),
+                    std::move(subtrees)};
 }
 
 bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
@@ -376,12 +463,12 @@ void PgTreeRepository::create(const TreeId& tree, const GraphState& state, const
 std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // A subtree stands while its root does.
+  // A subtree stands while its branch does.
   pqxx::result rows = txn.exec_params(
       "SELECT t.id, t.title, t.document::text, t.parent_tree, t.parent_step, "
       "(extract(epoch from t.created_at) * 1000)::bigint AS created_ms, "
       "(extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms "
-      "FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND " + rootStandsCondition("t"),
+      "FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND " + branchStandsCondition("t"),
       owner.str());
 
   std::vector<OwnedTree> owned;
@@ -490,10 +577,10 @@ std::map<TreeId, std::string> PgTreeRepository::titlesOwnedBy(const UserId& owne
 std::string PgTreeRepository::openedFromStatement() {
   // One statement: the counts and the marks are one snapshot, and no node row leaves the database. A step opens the
   // subtree it owns, found through trees_parent_step, else the tree its pointer names; a tree stands while its own row
-  // and its root's do, the root read only for a subtree.
+  // does and its branch stands, the path read only for a subtree.
   const std::string opens = stepOpensColumn("n");
   const std::string owned = ownedSubtreeJoin("n") + " ";
-  const std::string rootStands = rootStandsCondition("t");
+  const std::string rootStands = branchStandsCondition("t");
   return
       "WITH RECURSIVE reached(id, title, parent_tree, parent_step) AS ("
       "  SELECT t.id, t.title, t.parent_tree, t.parent_step FROM trees t "
@@ -572,10 +659,10 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
 
 std::string PgTreeRepository::guidedTreesAboveStatement() {
   // Keyed on the owner's own standing trees, so its cost does not grow with the pointers other accounts plant at one. A
-  // subtree stands while its root does, which is read for a subtree alone.
+  // subtree stands while its branch does, which is read for a subtree alone.
   return "WITH RECURSIVE owned(id, guided, parent_tree) AS MATERIALIZED ("
          "  SELECT t.id, t.guide <> '', t.parent_tree FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL "
-         "  AND " + rootStandsCondition("t") +
+         "  AND " + branchStandsCondition("t") +
          "), "
          // What lies directly below each tree: the subtrees it owns, off the rows already read, and each root its steps
          // point at. The LATERAL runs once per owned tree, so each tree's pointers are read by its key whatever the
@@ -694,7 +781,8 @@ void PgTreeRepository::eachAccountsTrees(const std::function<void(const UserId&,
 void PgTreeRepository::softDelete(const TreeId& tree) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  txn.exec_params("UPDATE trees SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL", tree.str());
+  txn.exec_params("UPDATE trees SET deleted_at = now() WHERE id = $1 AND parent_tree IS NULL AND deleted_at IS NULL",
+                  tree.str());
   txn.commit();
 }
 
@@ -721,26 +809,34 @@ void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) 
   txn.commit();
 }
 
-void PgTreeRepository::fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-                           const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
-                           bool guideInherited, const UserId& owner) {
+void PgTreeRepository::fork(const std::vector<TreeCopy>& copies, const UserId& owner) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   if (txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR KEY SHARE", owner.str()).empty())
     throw std::runtime_error("account no longer exists");
-  try {
-    txn.exec_params(
-        "INSERT INTO trees (id, title, title_hlc, title_ms, title_counter, guide, guide_hlc, guide_ms, guide_counter, "
-        "guide_inherited, head_seq, forked_from, owner_id) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11, $12::uuid)",
-        newTree.str(), title.value, toString(title.stamp), static_cast<long long>(title.stamp.physicalMs),
-        static_cast<long long>(title.stamp.counter), guide.value, toString(guide.stamp),
-        static_cast<long long>(guide.stamp.physicalMs), static_cast<long long>(guide.stamp.counter), guideInherited,
-        source.str(), owner.str());
-  } catch (const pqxx::unique_violation&) {
-    throw DuplicateTree{};
+  // Parent first, so trees_place finds each subtree copy's parent among the rows this transaction wrote and takes its
+  // root, depth and owner from it.
+  for (const TreeCopy& copy : copies) {
+    const std::optional<std::string> source = copy.parent ? std::nullopt : std::optional<std::string>{copy.source.str()};
+    const std::optional<std::string> parentTree =
+        copy.parent ? std::optional<std::string>{copy.parent->tree.str()} : std::nullopt;
+    const std::optional<std::string> parentStep =
+        copy.parent ? std::optional<std::string>{copy.parent->step.str()} : std::nullopt;
+    try {
+      txn.exec_params(
+          "INSERT INTO trees (id, title, title_hlc, title_ms, title_counter, guide, guide_hlc, guide_ms, guide_counter, "
+          "guide_inherited, head_seq, forked_from, owner_id, parent_tree, parent_step) "
+          "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11, $12::uuid, $13, $14)",
+          copy.id.str(), copy.title.value, toString(copy.title.stamp),
+          static_cast<long long>(copy.title.stamp.physicalMs), static_cast<long long>(copy.title.stamp.counter),
+          copy.guide.value, toString(copy.guide.stamp), static_cast<long long>(copy.guide.stamp.physicalMs),
+          static_cast<long long>(copy.guide.stamp.counter), copy.guideInherited, source, owner.str(), parentTree,
+          parentStep);
+    } catch (const pqxx::unique_violation&) {
+      throw DuplicateTree{};
+    }
+    upsertSlice(txn, copy.id, copy.state, copy.legend);
   }
-  upsertSlice(txn, newTree, state, legend);
   txn.commit();
 }
 

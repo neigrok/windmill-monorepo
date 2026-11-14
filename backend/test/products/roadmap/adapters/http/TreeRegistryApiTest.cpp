@@ -72,7 +72,7 @@ void retire(TreeRegistryApi& api, const std::string& id, const std::string& sess
   drogon::HttpResponsePtr captured;
   api.deleteTree(request, [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
   CHECK_EQ(captured->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(parse(std::string(captured->body())), parse(R"({"removed":[]})"));
+  CHECK_EQ(parse(std::string(captured->body())), parse(R"({"removed":[],"branch":{"subtrees":0,"steps":0}})"));
 }
 
 Json::Value titled(const std::string& title) {
@@ -364,15 +364,17 @@ TEST(patch_visibility_owner_flip_returns_204_and_reshares) {
 TEST(patch_visibility_of_a_subtree_is_refused_409_not_a_root_naming_where_it_hangs) {
   Harness h;
   UserId me = h.signIn("s-live", "sam@example.com");
-  h.trees.byId["t_root"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};
+  LooseGraph root;
+  root.createNode(nid("rig"), "Rig", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  h.trees.byId["t_root"] = StoredTree{root.exportState(), LegendState{}, {"Mine", {}}, 0, me};
   h.trees.byId["t_sub"] = StoredTree{GraphState{}, LegendState{}, {"", {}}, 0, me};
   h.trees.subtrees["t_sub"] = Subtree{tid("t_sub"), tid("t_root"), OwningStep{tid("t_root"), nid("rig")}, 1, 0};
 
   drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t_sub");
 
   CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
-  CHECK_EQ(bodyOf(response), parse(R"({"code":"not-a-root","error":"this tree hangs from step \"rig\" of t_root and is )"
-                                   R"(shared as its root t_root is: set the root's visibility",)"
+  CHECK_EQ(bodyOf(response), parse(R"({"code":"not-a-root","error":"this tree hangs from step \"rig\" of t_root under )"
+                                   R"(the root t_root: it is shared as its root is, so set the root's visibility",)"
                                    R"("parent":{"tree":"t_root","step":"rig"},"root":"t_root"})"));
   CHECK(h.trees.byId["t_root"].visibility == Visibility::private_);
   CHECK(h.trees.byId["t_sub"].visibility == Visibility::private_);
@@ -662,19 +664,20 @@ TEST(list_rows_carry_their_openers_and_delete_answers_the_steps_that_went_with_t
 
   const drogon::HttpResponsePtr removed = remove("t_target");
   CHECK_EQ(removed->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(removed), parse(R"({"removed":[{"treeId":"t_a","nodeIds":["a1"]},{"treeId":"t_b","nodeIds":["b1","b2"]}]})"));
+  CHECK_EQ(bodyOf(removed), parse(R"({"removed":[{"treeId":"t_a","nodeIds":["a1"]},{"treeId":"t_b","nodeIds":["b1","b2"]}],
+                                     "branch":{"subtrees":0,"steps":1}})"));
 
   h.trees.latticeLoadsFailFor.insert("t_c");
   const drogon::HttpResponsePtr kept = remove("t_two");
   CHECK_EQ(kept->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(kept), parse(R"({"removed":[],"incomplete":["t_c"]})"));
+  CHECK_EQ(bodyOf(kept), parse(R"({"removed":[],"incomplete":["t_c"],"branch":{"subtrees":0,"steps":1}})"));
 
   plant("t_three", {{"x1", ""}});
   plant("t_d", {{"d1", "t_three"}});
   h.trees.duringSave = [](const TreeId&) { throw std::runtime_error("the write was refused"); };
   const drogon::HttpResponsePtr unsaved = remove("t_three");
   CHECK_EQ(unsaved->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(unsaved), parse(R"({"removed":[],"unsaved":["t_d"]})"));
+  CHECK_EQ(bodyOf(unsaved), parse(R"({"removed":[],"unsaved":["t_d"],"branch":{"subtrees":0,"steps":1}})"));
   h.trees.duringSave = nullptr;
 
   plant("t_four", {{"y1", ""}});

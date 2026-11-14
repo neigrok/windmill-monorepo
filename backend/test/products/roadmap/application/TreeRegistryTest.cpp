@@ -23,7 +23,7 @@
 using namespace wm;
 using namespace wm::fake;
 
-using Removal = std::variant<Cascade, TreeRegistry::RemovalRefusal>;
+using Removal = std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot>;
 using VisibilityAnswer = std::variant<TreeRegistry::VisibilityChange, NotARoot>;
 
 struct Setup {
@@ -1058,7 +1058,7 @@ TEST(create_subtree_stores_an_empty_child_under_the_step_and_a_retry_answers_it_
   CHECK(s.rooms.open(tid("t_p"))->pendingOps().empty());
   // Its own visibility column holds private, and it is read by its root's.
   CHECK(s.rooms.accessOf(child.id) ==
-        (std::optional<TreeAccess>(TreeAccess{me, Visibility::unlisted, tid("t_p"), OwningStep{tid("t_p"), nid("rig")}})));
+        (std::optional<TreeAccess>(TreeAccess{me, Visibility::unlisted, tid("t_p"), {OwningStep{tid("t_p"), nid("rig")}}})));
 
   // The reply was lost: the same call, with the same proposed id or none, answers the same child and writes nothing.
   CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1")) ==
@@ -1098,6 +1098,7 @@ TEST(two_creates_on_one_step_at_once_make_one_child_one_row_and_one_event) {
     CHECK(found == (SubtreeCreation{false, made.subtree, 1}));
     CHECK_EQ(s.trees.subtrees.size(), 1u);
     CHECK_EQ(s.bus.subtreeBroadcasts.size(), 1u);
+    CHECK_FALSE(s.rooms.accessOf(tid("t_00000000000000c1")).has_value());
   }
 }
 
@@ -1246,12 +1247,12 @@ TEST(create_subtree_that_would_sit_at_depth_nine_is_refused_and_one_at_depth_eig
   const UserId me = uid("me");
   seedParent(s, "t_root", me, {spec("x", NodeColor::sky)});
   seedParent(s, "t_p", me);
-  s.trees.subtrees["t_p"] = Subtree{tid("t_p"), tid("t_root"), OwningStep{tid("t_up"), nid("x")}, kMaxTreeDepth, 0};
+  s.trees.subtrees["t_p"] = Subtree{tid("t_p"), tid("t_root"), OwningStep{tid("t_root"), nid("x")}, kMaxTreeDepth, 0};
   checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), me, SubtreeRefusal::depthLimit);
   s.trees.subtrees.clear();
 
   seedParent(s, "t_q", me);
-  s.trees.subtrees["t_q"] = Subtree{tid("t_q"), tid("t_root"), OwningStep{tid("t_up"), nid("x")}, kMaxTreeDepth - 1, 0};
+  s.trees.subtrees["t_q"] = Subtree{tid("t_q"), tid("t_root"), OwningStep{tid("t_root"), nid("x")}, kMaxTreeDepth - 1, 0};
   const SubtreeAnswer answer = s.registry.createSubtree(tid("t_q"), nid("rig"), me);
   REQUIRE(std::holds_alternative<SubtreeCreation>(answer));
   CHECK(std::get<SubtreeCreation>(answer).subtree ==
@@ -1285,8 +1286,8 @@ TEST(create_subtree_under_a_step_whose_pointer_leads_nowhere_creates_it) {
   CHECK_EQ(s.bus.subtreeBroadcasts.size(), 3u);
 }
 
-// Both run under the parent's strand, so one of two orders holds: the child is made and then its step deleted, or the
-// step is deleted and the create refused. Never a child made under a step already gone.
+// Both run under the parent's strand, so one of two orders holds: the child is made and then its step deleted, which
+// hides it, or the step is deleted and the create refused. Never a child made under a step already gone.
 TEST(create_subtree_racing_the_deletion_of_its_step_lands_in_one_order_or_the_other) {
   for (int round = 0; round < 100; ++round) {
     Setup s;
@@ -1296,12 +1297,13 @@ TEST(create_subtree_racing_the_deletion_of_its_step_lands_in_one_order_or_the_ot
     const std::shared_future<void> go = start.get_future().share();
     std::future<SubtreeAnswer> creating = std::async(std::launch::async, [&s, &me, go] {
       go.wait();
-      return s.registry.createSubtree(tid("t_p"), nid("rig"), me);
+      return s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1"));
     });
     std::future<void> deleting = std::async(std::launch::async, [&s, &me, go] {
       go.wait();
       std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
-      s.edits.deleteNodes(*s.rooms.open(tid("t_p")), tid("t_p"), {nid("rig")}, DanglingEdges::removed, me);
+      s.edits.deleteNodes(*s.rooms.open(tid("t_p")), tid("t_p"), {nid("rig")}, DanglingEdges::removed, me,
+                          {tid("t_00000000000000c1")});
     });
     start.set_value();
     const SubtreeAnswer answer = creating.get();
@@ -1553,7 +1555,7 @@ TEST(renaming_a_subtree_writes_its_owning_steps_label_in_the_parent_and_never_it
   CHECK(s.registry.rename(child, uid("stranger"), "Mine now") == TreeRegistry::Renaming::notYours);
   {
     std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
-    s.rooms.open(tid("t_p"))->applyCommand(DeleteNode{nid("rig")}, s.clock.nowMs(), me);
+    s.rooms.open(tid("t_p"))->applyCommands({DeleteNode{nid("rig")}}, s.clock.nowMs(), me, {child});
     REQUIRE(s.rooms.persist(tid("t_p")) == Saved::saved);
   }
   CHECK(s.registry.rename(child, me, "Rig again") == TreeRegistry::Renaming::notFound);

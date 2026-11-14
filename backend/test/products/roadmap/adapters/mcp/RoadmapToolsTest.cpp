@@ -358,7 +358,7 @@ TEST(mcp_delete_tree_soft_deletes_and_drops_it_from_the_list) {
   Harness h;
   ToolResult deleted = h.call("delete_tree", Json::Value(Json::objectValue));
   CHECK_FALSE(deleted.isError);
-  CHECK_EQ(body(deleted), parse(R"({"deleted":true,"id":"t","removed":[]})"));
+  CHECK_EQ(body(deleted), parse(R"({"deleted":true,"id":"t","removed":[],"branch":{"subtrees":0,"steps":0}})"));
 
   const Json::Value listed = body(h.tools.callTool("list_trees", Json::Value(Json::objectValue), h.actor));
   CHECK_EQ(listed["trees"].size(), 0u);
@@ -376,7 +376,7 @@ TEST(mcp_delete_tree_takes_the_steps_of_your_other_trees_that_open_it_and_names_
 
   CHECK_EQ(body(h.call("delete_tree", kNoArgs)),
            parse(R"({"deleted":true,"id":"t","removed":[{"treeId":"t_a","nodeIds":["to-t"]},{"treeId":"t_b","nodeIds":["to-t"]}],
-                     "incomplete":["t_c"]})"));
+                     "incomplete":["t_c"],"branch":{"subtrees":0,"steps":0}})"));
 
   Json::Value read = parse(R"({"fields":["id"]})");
   read["treeId"] = "t_b";
@@ -405,7 +405,7 @@ TEST(mcp_delete_tree_names_an_unsaved_tree_and_refuses_with_nothing_removed_when
   h.trees.duringSave = [](const TreeId& tree) {
     if (tree == TreeId{"t_a"}) throw std::runtime_error("the write was refused");
   };
-  CHECK_EQ(body(h.call("delete_tree", kNoArgs)), parse(R"({"deleted":true,"id":"t","removed":[],"unsaved":["t_a"]})"));
+  CHECK_EQ(body(h.call("delete_tree", kNoArgs)), parse(R"({"deleted":true,"id":"t","removed":[],"unsaved":["t_a"],"branch":{"subtrees":0,"steps":0}})"));
 }
 
 // delete_node whose tree's row goes away under its room before the save answers as for an absent tree: the room went
@@ -2390,8 +2390,8 @@ TEST(mcp_import_subgraph_takes_no_title_and_never_touches_the_trees) {
   CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
   const Json::Value titled = parse(R"({"treeId":"t","title":"Renamed","nodes":[{"id":"a","label":"A"}]})");
   CHECK_EQ(message(gate.callTool("import_subgraph", titled, h.actor)),
-           std::string("import_subgraph: unknown argument \"title\". This tool takes: dryRun, expectedSeq, kinds, nodes, "
-                       "prerequisiteMode, progress, tombstone, treeId."));
+           std::string("import_subgraph: unknown argument \"title\". This tool takes: branches, dryRun, expectedSeq, kinds, "
+                       "nodes, prerequisiteMode, progress, tombstone, treeId."));
   CHECK_EQ(body(h.call("get_tree", kNoArgs))["tree"]["nodes"].size(), 0u);
 
   CHECK_FALSE(h.call("import_subgraph", titled).isError);

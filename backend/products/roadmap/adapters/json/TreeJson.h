@@ -45,6 +45,14 @@ Json::Value toJson(const std::vector<OpeningSteps>& openers);
 // `removed`, one {treeId, nodeIds} per tree whose steps were deleted and saved, and the ids in `unsaved` and
 // `incomplete`, each present only when it holds a tree.
 Json::Value toJson(const Cascade& cascade);
+// What a tree's removal takes (BranchSize), as `branch` of a GET /v1/trees row and of a removal's answer:
+// {subtrees, steps}.
+Json::Value toJson(const BranchSize& branch);
+// One owning step a write would remove unconfirmed: {step, subtree, steps, subtrees}, the counts of the subtree's own
+// branch, the subtree's steps among them, and left out when they could not be read.
+Json::Value toJson(const UnconfirmedBranch& branch, const std::optional<BranchSize>& size);
+// A root's change aimed at a subtree, beside the door's own sentence: {code: "not-a-root", parent: {tree, step}, root}.
+Json::Value toJson(const NotARoot& refusal);
 // `opens` of GET /v1/trees/{id}, by node id; `loop` marks an opening whose tree is among `leadingBack`.
 Json::Value toJson(const std::map<NodeId, Opening>& openings, const std::set<TreeId>& leadingBack);
 // `guides` of GET /v1/trees/{id}/guides and of MCP get_tree, in the order given: one {treeId, title, text, yours} each.

@@ -13,7 +13,7 @@ using namespace wm::fake;
 namespace {
 
 TreeRoom makeRoom(FakeBus& bus) {
-  return TreeRoom(tid(), {"Title", {}}, {}, false, LooseGraph{}, Legend{}, 0, tid(), std::nullopt, 0, {},
+  return TreeRoom(tid(), {"Title", {}}, {}, false, LooseGraph{}, Legend{}, 0, tid(), {}, {},
                   std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, bus);
 }
 
@@ -52,7 +52,7 @@ TEST(room_next_stamp_dominates_the_loaded_document_state) {
   Hlc old{8000, 2, "old"};
   loaded.createNode(nid("seed"), "S", "i", NodeColor::sky, old);
   FakeBus bus;
-  TreeRoom room(tid(), {"T", {}}, {}, false, std::move(loaded), Legend{}, 0, tid(), std::nullopt, 0, {},
+  TreeRoom room(tid(), {"T", {}}, {}, false, std::move(loaded), Legend{}, 0, tid(), {}, {},
                 std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, bus);
 
   Hlc next = room.nextStamp(10);  // wall clock behind the persisted stamp
@@ -647,9 +647,9 @@ TEST(room_hands_its_pointers_to_a_caller_who_can_write_the_tree_and_to_nobody_el
   graph.createNode(nid("idea"), "Idea", "", NodeColor::sky, at(1));
   graph.createNode(nid("plain"), "Plain", "", NodeColor::sky, at(2));
   graph.setOpens(nid("idea"), tid("t_sub"), at(3));
-  const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), std::nullopt, 0, {},
+  const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {}, {},
                        std::make_shared<RootAccess>(uid("owner"), Visibility::public_), 0, bus);
-  const TreeRoom nobodys(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), std::nullopt, 0, {},
+  const TreeRoom nobodys(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {}, {},
                          std::make_shared<RootAccess>(std::nullopt, Visibility::public_), 0, bus);
 
   CHECK(owned.pointersFor(uid("owner")) == (std::map<NodeId, TreeId>{{nid("idea"), tid("t_sub")}}));
@@ -671,7 +671,7 @@ TEST(room_reads_the_subtree_a_step_owns_as_the_tree_it_opens_whatever_its_pointe
   graph.setOpens(nid("sail"), tid("t_old"), at(5));
   graph.setOpens(nid("idea"), tid("t_other"), at(6));
   graph.deleteNode(nid("gone"), at(7));
-  TreeRoom room(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), std::nullopt, 0,
+  TreeRoom room(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {},
                 {{nid("sail"), tid("t_s")}, {nid("gone"), tid("t_g")}},
                 std::make_shared<RootAccess>(uid("owner"), Visibility::public_), 0, bus);
 
@@ -696,7 +696,8 @@ TEST(room_sends_a_subtree_no_title_register_of_its_own_and_a_root_its_own) {
   FakeBus bus;
   const auto roomWith = [&bus](const std::optional<OwningStep>& parent) {
     return TreeRoom(tid("t_s"), {"Its own register", at(9, "r_old")}, {}, false, LooseGraph{}, Legend{}, 0, tid("t_a"),
-                    parent, parent ? 1 : 0, {}, std::make_shared<RootAccess>(uid("owner"), Visibility::private_), 0, bus);
+                    parent ? std::vector<OwningStep>{*parent} : std::vector<OwningStep>{}, {},
+                    std::make_shared<RootAccess>(uid("owner"), Visibility::private_), 0, bus);
   };
   const Subgraph subtree = roomWith(OwningStep{tid("t_a"), nid("sail")}).deltaSince(VersionVector{});
   CHECK_FALSE(subtree.title.has_value());

@@ -466,7 +466,8 @@ TEST(registry_a_subtree_is_read_by_its_roots_access_which_a_change_to_the_root_r
   const TreeRoom& open = *registry.open(tid("c"));
   const auto visibilityOf = [&registry](const char* tree) { return registry.accessOf(tid(tree))->visibility; };
   CHECK(registry.accessOf(tid("g")) ==
-        std::optional<TreeAccess>(TreeAccess{uid("owner"), Visibility::private_, tid("t"), OwningStep{tid("c"), nid("seed")}}));
+        std::optional<TreeAccess>(TreeAccess{uid("owner"), Visibility::private_, tid("t"),
+                                                       {OwningStep{tid("t"), nid("seed")}, OwningStep{tid("c"), nid("seed")}}}));
 
   std::vector<Visibility> duringTheWrite;
   repo.duringVisibilitySet = [&] { duringTheWrite.push_back(visibilityOf("c")); };

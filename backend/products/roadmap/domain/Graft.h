@@ -34,7 +34,8 @@ enum class KindRegister { label, description };
 // carried every register, and an empty value is carried like any other. `nodeKinds` names the legend
 // kind the document files a node under; resolveKinds turns it into the node's colour and keeps it, so a
 // re-hue never repaints a node the batch filed (repaintOf).
-// `omittedPrerequisites` names the nodes the document sent without a prerequisites list.
+// `omittedPrerequisites` names the nodes the document sent without a prerequisites list. `branches` names the
+// subtrees the graft knowingly takes with the owning steps it tombstones (SPEC.md, Model, Subtrees).
 struct Graft {
   TreeData document;
   PrerequisiteMode prerequisites = PrerequisiteMode::merge;
@@ -43,6 +44,7 @@ struct Graft {
   std::map<KindId, std::set<KindRegister>> omittedKindRegisters;
   std::set<NodeId> omittedPrerequisites;
   std::map<NodeId, KindId> nodeKinds;
+  std::set<TreeId> branches;
 
   // Whether the document spelled out `reg` for the node.
   bool carries(const NodeId& node, NodeRegister reg) const {

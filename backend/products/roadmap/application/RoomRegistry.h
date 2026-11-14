@@ -65,8 +65,10 @@ inline constexpr char kHeldEarlierSentence[] =
 // Owns the live TreeRooms, one per tree being viewed or edited. Idle ones are persisted and closed
 // on its own heartbeat — a room is a cache of the row, not a residence. Every live room of one root's
 // trees shares that root's RootAccess, which is made and changed under the root's lock alone: the
-// open that makes it reads the root's row under it, and a change of the root's visibility or its
-// removal writes the row under it, so no live room ever answers a reader its root's row does not.
+// open that makes it reads the root's row and its absent owning steps under it, and a change of the
+// root's visibility or its removal writes the row under it, so no live room ever answers a reader its
+// root's row does not. Each room records its own owning steps in it as its writes land, so a branch
+// hides the moment the step that owns it is deleted, on every gate, and shows again with its revive.
 class RoomRegistry {
 public:
   // When a held room's save is tried again: `retry` runs once, `delay` from now. The registry's own heartbeat thread
@@ -96,9 +98,15 @@ public:
   TreeRoom* open(const TreeId& id);
 
   // Answers WITHOUT materializing a room. Every path that may refuse asks this BEFORE open(), which
-  // drags the whole lattice off disk and pins it. A tree of any depth is answered its root's access:
-  // the live RootAccess while any room of the root's trees is open, else the root's row.
+  // drags the whole lattice off disk and pins it. A tree of any depth is answered its root's access, and
+  // nothing while its branch does not stand: the live RootAccess while any room of the root's trees is
+  // open, else the stored rows. A live room answers from memory alone. A closed subtree's stored answer
+  // is taken under its root's lock with no access live — when the store holds every write of the root's
+  // trees — so a parent room that saved a deletion and closed since the first read is read again.
   std::optional<TreeAccess> accessOf(const TreeId& id);
+  // A write that reached `tree`'s rows without its room (PUT) leaves its owning steps as the store holds them: the live
+  // access of its root, if any, takes them from there.
+  void retakeOwningSteps(const TreeId& tree);
 
   // Save, then land the queued op rows, then close; a room with nothing unsaved closes with no save. A row
   // that fails to land after the save is dropped with the room — logged, never surfaced — since the lattice
@@ -157,9 +165,11 @@ private:
   // One report for the registry, with the number of rooms held, under a request of its own.
   void reportHeld(std::size_t rooms, const std::exception& failure, const char* outcome);
   void land(const TreeId& id, TreeRoom& room);
-  // The access every live room of `root`'s trees shares, made from the root's row when none is live. Called under the
-  // root's lock; nullptr when the root does not stand.
+  // The access every live room of `root`'s trees shares, made from the root's row and its absent owning steps when none is
+  // live. Called under the root's lock; nullptr when the root does not stand.
   std::shared_ptr<RootAccess> shareRootAccess(const TreeId& root);
+  // Every live room below `step` is told its access changed: the step's branch hid or showed.
+  void announceBelow(const TreeId& root, const OwningStep& step);
   // The live one, or nullptr. Caller holds mutex_.
   std::shared_ptr<RootAccess> liveRootAccess(const TreeId& root);
   // The live rooms of `root`'s trees, the root's own among them.
