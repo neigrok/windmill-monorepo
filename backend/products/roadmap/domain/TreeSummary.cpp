@@ -39,8 +39,16 @@ std::uint64_t lastActiveAt(std::uint64_t updatedAt, std::uint64_t lastMarkedAt) 
 }
 
 OpenedTrees openedAmong(const std::vector<LoadedTree>& loaded) {
+  std::map<TreeId, std::map<NodeId, TreeId>> owned;  // the subtree each step owns, by the tree it is in
+  for (const LoadedTree& tree : loaded)
+    if (tree.parent) owned[tree.parent->tree].emplace(tree.parent->step, tree.data.id);
   std::map<TreeId, OpenedTree> standing;
-  for (const LoadedTree& tree : loaded) standing.emplace(tree.data.id, OpenedTree(tree.data, tree.progress));
+  for (const LoadedTree& tree : loaded) {
+    const auto steps = owned.find(tree.data.id);
+    standing.emplace(tree.data.id, OpenedTree(tree.data, tree.progress,
+                                              steps == owned.end() ? std::map<NodeId, TreeId>{} : steps->second,
+                                              tree.parent));
+  }
   return OpenedTrees(std::move(standing));
 }
 

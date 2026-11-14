@@ -1,6 +1,7 @@
 #pragma once
 
 #include "products/roadmap/domain/Ids.h"
+#include "products/roadmap/domain/Subtree.h"
 #include "products/roadmap/domain/Tree.h"
 
 #include <cstddef>
@@ -34,17 +35,22 @@ struct Pointers {
   bool operator==(const Pointers&) const = default;
 };
 
-// One tree as completeness reads it; `marked` counts the reader's marks on nodes that hold no pointer, and `latest`
-// is the latest of them.
+// One tree as completeness reads it: where it hangs (`parent`, none for a root), its present nodes, the reader's marks
+// on those that open no tree (`marked`, the latest of them `latest`) and what the others open, by the tree they open —
+// `subtrees` for the steps that own one, each opening its own, and `pointers` for every other step that holds one.
 struct OpenedTree {
   std::string title;
+  std::optional<OwningStep> parent;
   int total = 0;
   int marked = 0;
   LatestMark latest;
+  std::map<TreeId, Pointers> subtrees;
   std::map<TreeId, Pointers> pointers;
 
   OpenedTree() = default;
-  OpenedTree(const TreeData& tree, const Progress& marks);
+  // `owned` is the subtree each step of `tree` owns: such a step opens it, whatever the tree its node names.
+  OpenedTree(const TreeData& tree, const Progress& marks, const std::map<NodeId, TreeId>& owned,
+             std::optional<OwningStep> parent);
   bool operator==(const OpenedTree&) const = default;
 };
 
@@ -152,17 +158,23 @@ inline constexpr char kOpensATree[] = "opens-a-tree";
 // One owner's standing trees under the owner's marks, judged once by the rule in SPEC.md (Model, `OpenedTrees`).
 class OpenedTrees {
 public:
-  // A pointer is valid when it names one of `standing`.
+  // A step opens the subtree it owns while it is among `standing`, and a pointer leads where pointsAt says.
   explicit OpenedTrees(std::map<TreeId, OpenedTree> standing);
 
-  // The nodes among `pointers` whose pointer is valid: each follows its tree and takes no mark of its own.
-  std::set<NodeId> following(const std::map<NodeId, TreeId>& pointers) const;
-  // `marks` on a tree, with each node that holds a valid pointer following its tree; only `completed` is filled.
-  Progress followed(const std::map<NodeId, TreeId>& pointers, const Progress& marks) const;
+  // Whether a pointer at `target` is valid: it names one of the owner's standing trees that has no parent. A subtree is
+  // opened by its owning step alone (SPEC.md, Model, Legacy pointers).
+  bool pointsAt(const TreeId& target) const;
+  // Whether `step` opens `target`: the step owns that subtree, or its pointer is valid.
+  bool opens(const OwningStep& step, const TreeId& target) const;
+  // The nodes of `tree` among `pointers`, the tree each step opens, that open it: each follows its tree and takes no
+  // mark of its own.
+  std::set<NodeId> following(const TreeId& tree, const std::map<NodeId, TreeId>& pointers) const;
+  // `marks` on `tree`, with each node that opens a tree following it; only `completed` is filled.
+  Progress followed(const TreeId& tree, const std::map<NodeId, TreeId>& pointers, const Progress& marks) const;
   Progress followed(const TreeData& tree, const Progress& marks) const;
-  // What a pointer at `tree` comes to.
+  // What `tree` comes to, opened: `missing` when it is not among the standing trees.
   Opening opening(const TreeId& tree) const;
-  // One entry per node of `tree` that holds a pointer.
+  // One entry per node of `tree` that holds a pointer: `missing` for one that opens nothing.
   std::map<NodeId, Opening> openings(const TreeData& tree) const;
   // The latest mark in what completed `tree`: of the reader's marks on its nodes that follow no tree and, for each
   // tree its nodes follow, of what completed that one. Unset for a tree that is not complete.
@@ -186,7 +198,8 @@ public:
 
 private:
   std::map<TreeId, OpenedTree> standing_;
-  std::map<TreeId, std::vector<TreeId>> openers_;
+  // The trees whose steps open each tree, in id order, each with how many of its steps do.
+  std::map<TreeId, std::vector<OpeningSteps>> openers_;
   std::map<TreeId, int> pending_;
   std::map<TreeId, LatestMark> complete_;
   std::size_t walked_ = 0;
@@ -197,12 +210,12 @@ private:
 std::map<NodeId, OwnedSubtree> ownedSubtrees(const std::map<NodeId, TreeId>& subtrees,
                                              const std::optional<OpenedTrees>& opened);
 
-// An owner's stored `marks` on a tree as a caller who cannot write it is shown them: the owner's derived completion,
-// and nothing of the trees its nodes open. A node whose pointer is valid has a row only while its tree is complete
-// for the owner: complete, as its stored mark when that says so under a stamp, else at the later of the tree's
-// `completedAt` and the stamp its pointer was set under, so its time never predates the pointer. Every other row is
-// the stored one. Without `opened` — the trees were not read — no node that holds a pointer has a row.
-Progress readerView(const Progress& marks, const std::map<NodeId, StampedPointer>& pointers,
+// An owner's stored `marks` on `tree` as a caller who cannot write it is shown them: the owner's derived completion,
+// and nothing of the trees its nodes open. A node that opens a tree has a row only while that tree is complete for the
+// owner: complete, as its stored mark when that says so under a stamp, else at the later of the tree's `completedAt`
+// and the stamp its pointer was set under, so its time never predates the pointer. Every other row is the stored one.
+// Without `opened` — the trees were not read — no node that holds a pointer has a row.
+Progress readerView(const TreeId& tree, const Progress& marks, const std::map<NodeId, StampedPointer>& pointers,
                     const std::optional<OpenedTrees>& opened);
 
 }

@@ -298,6 +298,30 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     // the genesis stamp, which every live edit outranks.
     const Hlc plantedAt = existing ? genesis_ : Hlc{clock_->nowMs(), 0, std::string{TreeRoom::kServerActor}};
     GraphState state = LooseGraph(*data, plantedAt).exportState();
+    // A step that owns a subtree keeps the pointer its row holds (SPEC.md, Model, Legacy pointers). A document cannot
+    // tell an empty pointer from one it leaves out, so only a step it names another tree on than the one its row holds
+    // is answered refused, in the document's order.
+    std::vector<NodeId> refused;
+    if (existing) {
+      std::map<NodeId, NodeStateEntry> owning;  // each owning step's stored row
+      std::map<NodeId, TreeId> held;           // and the pointer it holds
+      for (const NodeStateEntry& stored : existing->state.nodes) {
+        if (!existing->subtrees.count(stored.id)) continue;
+        owning.emplace(stored.id, stored);
+        held.emplace(stored.id, stored.opens);
+      }
+      std::vector<std::pair<NodeId, TreeId>> sent;
+      for (const NodeSpec& node : data->nodes)
+        if (!node.opens.empty()) sent.emplace_back(node.id, node.opens);
+      refused = refusedPointers(sent, existing->subtrees, held);
+      for (NodeStateEntry& node : state.nodes) {
+        if (!existing->subtrees.count(node.id)) continue;
+        const auto stored = owning.find(node.id);
+        node.opens = stored == owning.end() ? TreeId{} : stored->second.opens;
+        node.opensAt = stored == owning.end() ? Hlc{} : stored->second.opensAt;
+      }
+      countCurrentWriteRefused(refused.size());
+    }
 
     LegendState legend;
     if (!data->kinds.empty()) legend = Legend(data->kinds, genesis_).exportState();
@@ -321,12 +345,19 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
       registry_->settleOwningSteps(access->root);
     }
 
-    // A document never sets the guide, so the answer states the one the tree holds.
-    if (existing) data->guide = existing->guide.value;
+    // A document never sets the guide, so the answer states the one the tree holds, and each step that owns a subtree
+    // opens it, as every read answers.
+    if (existing) {
+      data->guide = existing->guide.value;
+      for (NodeSpec& node : data->nodes)
+        if (const auto subtree = existing->subtrees.find(node.id); subtree != existing->subtrees.end())
+          node.opens = subtree->second;
+    }
     data->kinds = Legend(legend).kinds();
     Json::Value body(Json::objectValue);
     body["seq"] = static_cast<Json::Int64>(existing ? existing->head : 0);
     body["data"] = toJson(*data);
+    if (!refused.empty()) body["refused"] = refusedPointersJson(refused);
     return jsonResponse(body);
   }();
   callback(reply);

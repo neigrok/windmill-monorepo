@@ -30,7 +30,8 @@ enum class KindRegister { label, description };
 // registers the document did not spell out: the graft leaves those alone, so a node or kind the tree
 // already holds keeps its value and a new one lands with the default. `opens` is the exception on a
 // node the graft brings back from a delete: left out, it is cleared, so a revived node opens only the
-// tree the document names. An id absent from its map
+// tree the document names — but for a step that owns a subtree, which the room lands no pointer on. An id absent from
+// its map
 // carried every register, and an empty value is carried like any other. `nodeKinds` names the legend
 // kind the document files a node under; resolveKinds turns it into the node's colour and keeps it, so a
 // re-hue never repaints a node the batch filed (repaintOf).

@@ -397,9 +397,8 @@ TEST(pg_a_save_onto_a_soft_deleted_tree_writes_nothing_and_answers_false) {
   CHECK_EQ(row[0]["nodes"].as<long long>(), 0LL);
 }
 
-// What a node may open and what a read may name: only the owner's trees that stand, whatever the ids
-// asked after, in one read.
-TEST(pg_titles_owned_by_answers_the_owners_standing_trees_alone_for_every_id_asked_in_one_call) {
+// What a node's pointer may be judged at: only the owner's trees that stand, whatever the ids asked after, in one read.
+TEST(pg_pointer_targets_answers_the_owners_standing_trees_alone_for_every_id_asked_in_one_call) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   const TreeId oddlyNamed{std::string("t_pgtest_opens,\"odd\" {id}")};
@@ -429,11 +428,10 @@ TEST(pg_titles_owned_by_answers_the_owners_standing_trees_alone_for_every_id_ask
   }
   const std::set<TreeId> asked{kTree, oddlyNamed, retired, theirs, nobodys, absent};
 
-  CHECK_EQ(trees.titlesOwnedBy(kSam, asked),
-           (std::map<TreeId, std::string>{{kTree, "Sam's first"}, {oddlyNamed, "Sam's \"second\", with commas"}}));
-  CHECK_EQ(trees.titlesOwnedBy(kEve, asked), (std::map<TreeId, std::string>{{theirs, "Eve's"}}));
-  CHECK_EQ(trees.titlesOwnedBy(kSam, {theirs, nobodys, retired, absent}), (std::map<TreeId, std::string>{}));
-  CHECK_EQ(trees.titlesOwnedBy(kSam, {}), (std::map<TreeId, std::string>{}));
+  CHECK(trees.pointerTargets(kSam, asked) == (std::map<TreeId, OpenedTree>{{kTree, {}}, {oddlyNamed, {}}}));
+  CHECK(trees.pointerTargets(kEve, asked) == (std::map<TreeId, OpenedTree>{{theirs, {}}}));
+  CHECK(trees.pointerTargets(kSam, {theirs, nobodys, retired, absent}).empty());
+  CHECK(trees.pointerTargets(kSam, {}).empty());
   clear();
 }
 
@@ -461,7 +459,7 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
     return held;
   };
   const ToolCaller sam{kSam, ToolScope::everything()};
-  Json::Value created = parse(R"({"label":"Sail trim"})");
+  Json::Value created = parse(R"({"id":"sail-trim","label":"Sail trim"})");
   created["treeId"] = kTree.str();
   {
     RoomRegistry registry(trees, log, bus);
@@ -1170,9 +1168,10 @@ TEST(pg_a_strangers_flood_of_pointers_at_a_tree_changes_no_answer_and_the_walk_s
   clear();
 }
 
-// The statement a removal asks: the owner's other standing trees with a present step that opens the tree, standing or
-// not, and nothing for a tree that is not theirs. It is keyed on the owner's trees, so the pointers another account
-// plants at the tree are neither answered nor read, and each tree's steps are read through tree_nodes_pointers_idx.
+// The statement a removal asks: the owner's other standing trees with a present step whose pointer names the tree, and
+// nothing for a tree a pointer is not valid at — someone else's, one that does not stand, or a subtree. It is keyed on the
+// owner's trees, so the pointers another account plants at the tree are neither answered nor read, and each tree's steps
+// are read through tree_nodes_pointers_idx.
 TEST(pg_trees_opening_answers_the_owners_other_trees_whose_present_steps_open_a_tree_and_reads_no_one_elses_pointers) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1215,14 +1214,21 @@ TEST(pg_trees_opening_answers_the_owners_other_trees_whose_present_steps_open_a_
   }
   plant("theirs", kEve, {"target"});
   plant("eves", kEve, {});
+  plant("owning", kSam, {"", "owning_sub"});
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO trees (id, head_seq, parent_tree, parent_step) VALUES ($1, 0, $2, 's0')",
+                    id("owning_sub").str(), id("owning").str());
+    txn.commit();
+  }
 
   const std::vector<TreeId> openers{id("one"), id("two")};
   CHECK(trees.treesOpening(kSam, id("target")) == openers);
   CHECK(trees.treesOpening(kEve, id("target")) == std::vector<TreeId>{});
   CHECK(trees.treesOpening(kSam, id("eves")) == std::vector<TreeId>{});
   CHECK(trees.treesOpening(kSam, id("absent")) == std::vector<TreeId>{});
-  trees.softDelete(id("target"));
-  CHECK(trees.treesOpening(kSam, id("target")) == openers);
+  CHECK(trees.treesOpening(kSam, id("owning_sub")) == std::vector<TreeId>{});
 
   // What each table gave the statement, filtered rows included, with sequential scans off so a table of a few pages
   // is not rightly read whole; and every index it read tree_nodes through.
@@ -1277,6 +1283,8 @@ TEST(pg_trees_opening_answers_the_owners_other_trees_whose_present_steps_open_a_
   const Read after = explain();
   CHECK(after.rows == before.rows);
   CHECK(after.nodeIndexes == before.nodeIndexes);
+  trees.softDelete(id("target"));
+  CHECK(trees.treesOpening(kSam, id("target")) == std::vector<TreeId>{});
   clear();
 }
 
@@ -1738,6 +1746,68 @@ TEST(pg_a_step_whose_pointer_opens_a_standing_tree_of_its_owner_is_refused_and_o
   for (const char* step : {"foreign", "deleted", "absent"})
     CHECK(std::get<SubtreeCreation>(forest.create(kParent, step)).created);
   CHECK_EQ(childrenOf(kParent), 3L);
+}
+
+// One fixture pins the statements that judge a pointer inside Postgres to OpenedTrees, which judges the rest (SPEC.md,
+// Model, Legacy pointers): of a standing root, a standing subtree, a hidden one, a deleted root, someone else's root and
+// an absent id, a pointer is valid at the root alone — for completion, the MCP check, the guides above, the read a
+// removal makes and createSubtree's step-opens-a-tree alike.
+TEST(pg_every_read_judges_a_pointer_valid_at_a_standing_root_of_the_owners_alone_as_opened_trees_does) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  const TreeId pointing{std::string("t_5ab0000000000005")};
+  const TreeId absent{std::string("t_5ab0000000000009")};
+  forest.plant(kOther, kAda, {{"o", nullptr}});
+  forest.plant(kBeas, kBea, {});
+  forest.plant(kGone, kAda, {});
+  forest.trees.softDelete(kGone);
+  forest.plant(kParent, kAda, {{"sail", nullptr}, {"swim", nullptr}});
+  REQUIRE(std::get<SubtreeCreation>(forest.create(kParent, "sail", kChild)).created);
+  REQUIRE(std::get<SubtreeCreation>(forest.create(kParent, "swim", kGrandchild)).created);
+  {
+    std::unique_lock<std::mutex> strand(forest.rooms.strandFor(kParent));
+    forest.rooms.open(kParent)->applyCommands({DeleteNode{nid("swim")}}, forest.clock.nowMs(), kAda, {kGrandchild});
+    PendingSave saving = forest.rooms.persist(kParent);
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
+  }
+  const std::map<NodeId, TreeId> pointers{{nid("root"), kOther},       {nid("subtree"), kChild}, {nid("hidden"), kGrandchild},
+                                          {nid("deleted"), kGone},     {nid("foreign"), kBeas},  {nid("absent"), absent}};
+  std::vector<std::pair<const char*, const char*>> steps;
+  for (const auto& [step, target] : pointers) steps.emplace_back(step.str().c_str(), target.str().c_str());
+  forest.plant(pointing, kAda, steps);
+  for (const TreeId& guided : {pointing, kParent})
+    REQUIRE(std::holds_alternative<TreeRegistry::Described>(forest.registry.setGuide(guided, kAda, "Work it.")));
+
+  const OpenedTrees followed(forest.trees.openedFrom(kAda, treesOpenedBy(pointers)));
+  CHECK(followed.following(pointing, pointers) == std::set<NodeId>{nid("root")});
+  const OpenedTrees targets(forest.trees.pointerTargets(kAda, treesOpenedBy(pointers)));
+  for (const auto& [step, target] : pointers) {
+    CHECK_EQ(followed.pointsAt(target), target == kOther);
+    CHECK_EQ(targets.pointsAt(target), target == kOther);
+  }
+  CHECK_FALSE(targets.opening(kChild).missing);
+  CHECK(forest.trees.treesOpening(kAda, kOther) == std::vector<TreeId>{pointing});
+  for (const TreeId& target : {kChild, kGrandchild, kGone, kBeas, absent})
+    CHECK(forest.trees.treesOpening(kAda, target).empty());
+  CHECK(forest.trees.guidedTreesAbove(kAda, kOther) == (std::map<TreeId, TreeAbove>{{pointing, {1, "Planted", "Work it.", false}}}));
+  CHECK(forest.trees.guidedTreesAbove(kAda, kChild) == (std::map<TreeId, TreeAbove>{{kParent, {1, "Planted", "Work it.", false}}}));
+  CHECK(forest.create(pointing, "root") == SubtreeAnswer{SubtreeRefusal::stepOpensATree});
+  for (const char* step : {"subtree", "hidden", "deleted", "foreign", "absent"})
+    CHECK(std::get<SubtreeCreation>(forest.create(pointing, step)).created);
+
+  // The create that revives a deleted owning step may echo its own subtree, hidden at the time: it passes and lands.
+  RoadmapTools tools{forest.rooms, forest.progress, forest.clock, forest.registry, forest.edits, "https://app.example"};
+  Json::Value echo = parse(R"({"id":"swim","label":"Swim"})");
+  echo["treeId"] = kParent.str();
+  echo["opens"] = kGrandchild.str();
+  const ToolResult revived = tools.callTool("create_node", echo, ToolCaller{kAda, ToolScope::everything()});
+  CHECK_FALSE(revived.isError);
+  CHECK_FALSE(test::body(revived).isMember("opensRefused"));
+  std::lock_guard<std::mutex> strand(forest.rooms.strandFor(kParent));
+  CHECK(forest.rooms.open(kParent)->subtrees() ==
+        (std::map<NodeId, TreeId>{{nid("sail"), kChild}, {nid("swim"), kGrandchild}}));
 }
 
 // The store holds the place whatever writes it: an insert naming a parent is given that parent's root, owner and depth,

@@ -256,6 +256,33 @@ TEST(WriteObservation_auth_refresh_housekeeping_is_debug_and_does_not_claim_requ
   CHECK_EQ(recording.lines[1].requestId, recording.lines[2].requestId);
 }
 
+// A write that refused parts of itself and applied the rest says how many on its line, whatever its outcome; one that
+// refused none carries no such key.
+TEST(WriteObservation_a_write_that_refused_parts_of_itself_counts_them_on_its_line) {
+  Recording recording;
+  {
+    wm::WriteObservation write("roadmap.ws.subgraph", "roadmap", "websocket");
+    wm::WriteContext context(write);
+    wm::countCurrentWriteRefused(2);
+    wm::countCurrentWriteRefused(1);
+    write.finish();
+  }
+  wm::WriteObservation plain("roadmap.ws.subgraph", "roadmap", "websocket");
+  plain.finish("unchanged");
+  REQUIRE_EQ(recording.lines.size(), 2u);
+  CHECK_EQ(recording.lines[0].refused, 3u);
+  CHECK_EQ(recording.lines[1].refused, 0u);
+  Json::CharReaderBuilder builder;
+  const auto reader = std::unique_ptr<Json::CharReader>(builder.newCharReader());
+  for (const auto& [line, refused] : {std::pair{0, Json::Value(3)}, {1, Json::Value()}}) {
+    const std::string json = wm::writeCompletionJson(recording.lines[line]);
+    Json::Value parsed;
+    std::string errors;
+    REQUIRE(reader->parse(json.data(), json.data() + json.size(), &parsed, &errors));
+    CHECK_EQ(parsed["refused"], refused);
+  }
+}
+
 TEST(WriteObservation_duration_is_numeric_with_at_most_two_serialized_decimal_places) {
   Recording recording;
   wm::WriteObservation observation("journal.save", "journal", "rest");
