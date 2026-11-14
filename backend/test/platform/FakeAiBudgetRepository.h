@@ -68,6 +68,19 @@ struct FakeAiBudgetRepository : AiBudgetRepository {
     return change(id, AiBudgetState::Settled, actual);
   }
   AiBudgetResult release(const std::string& id) override { return change(id, AiBudgetState::Released); }
+  std::vector<AiBudgetReservation> releaseLapsed(long long atMs, int limit,
+                                                 const std::optional<AiBudgetSubject>& subject) override {
+    std::vector<AiBudgetReservation> released;
+    for (auto& [id, reservation] : reservations) {
+      if (static_cast<int>(released.size()) == limit) break;
+      const auto bound = bindings.find(reservation.subject.id);
+      const bool occupies = !subject || reservation.subject == *subject ||
+          (reservation.subject.kind == AiBudgetSubjectKind::Device && bound != bindings.end() &&
+           subject->kind == AiBudgetSubjectKind::Account && bound->second == subject->id);
+      if (occupies && releaseLapsedAiBudget(reservation, atMs) == AiBudgetCode::Ok) released.push_back(reservation);
+    }
+    return released;
+  }
   AiBudgetResult reconcileOverrun(const std::string&) override { return {AiBudgetCode::InvalidState, {}}; }
   AiBudgetGrantResult fund(const AiBudgetGrant& grant, const AiBudgetLimits&) override {
     if (failFund) throw std::runtime_error("private billing content");

@@ -33,7 +33,9 @@ drogon::HttpResponsePtr allowanceRefusal(const AiBudgetView& allowance) {
   body["error"] = capacity ? "a take needs more AI allowance than you have left"
       : individual ? "your AI allowance is fully used or reserved"
       : allowance.code == AiBudgetCode::FundingRequired ? "your plan has no funded AI allowance for this period"
-      : allowance.code == AiBudgetCode::ConcurrencyExhausted ? "another AI request is still in progress"
+      : allowance.code == AiBudgetCode::ConcurrencyExhausted
+          ? "your earlier AI requests hold every slot you have; each frees when its cost is confirmed, at most 10 "
+            "minutes after it began"
       : "talk's AI allowance is unavailable right now";
   body["allowance"] = aiAllowanceJson(allowance);
   return jsonResponse(body, individual ? drogon::k429TooManyRequests : drogon::k503ServiceUnavailable);

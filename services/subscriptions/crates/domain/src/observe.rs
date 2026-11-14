@@ -35,10 +35,17 @@ pub enum AccountHint {
     Erased,
 }
 
+// A claim door's caller (§4), as the caller resolved it against the erased accounts, and when it claimed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Claim {
-    pub account_id: AccountId,
+    pub claimant: Claimant,
     pub at: Instant,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Claimant {
+    Live(AccountId),
+    Erased,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -172,6 +179,7 @@ closed_names! {
 
     pub enum Refusal {
         BoundToAnotherAccount = "bound_to_another_account",
+        AccountErased = "account_erased",
     }
 }
 
@@ -259,9 +267,20 @@ pub fn observe(
     )?;
     let first_bound = held_binding.is_none() && subscription.binding.is_some();
 
+    let moved_from = match (&held_binding, &subscription.binding) {
+        (Some(before), Some(after)) if before.account_id != after.account_id => {
+            Some(&before.account_id)
+        }
+        _ => None,
+    };
     let stated_periods = stated_periods.into_iter().zip(period_ids).collect();
-    let (period_changes, period_events) =
-        record_periods(&held_periods, stated_periods, observed_at, first_bound);
+    let (period_changes, period_events) = record_periods(
+        &held_periods,
+        stated_periods,
+        observed_at,
+        first_bound,
+        moved_from,
+    );
 
     let lifecycle = lifecycle_events(
         held.as_ref().map(|held| &held.status),
@@ -295,14 +314,22 @@ pub fn observe(
         )],
         _ => Vec::new(),
     };
+    let told_under = |kind: &EventKind| {
+        kind.period()
+            .and_then(|period| period.left_with.clone())
+            .or_else(|| account_id.clone())
+    };
     let events = going_on
         .into_iter()
         .map(|moment| event(moment, account_id.clone()))
         .chain(binding_events)
+        .chain(period_events.into_iter().map(|moment| {
+            let account_id = told_under(&moment.0);
+            event(moment, account_id)
+        }))
         .chain(
-            period_events
+            ending
                 .into_iter()
-                .chain(ending)
                 .map(|moment| event(moment, account_id.clone())),
         )
         .collect();
@@ -357,7 +384,8 @@ impl Cancellation {
     }
 }
 
-// §4: a hint binds a purchase its buyer owns, a new purchase moves an ended lineage (R-11), a claim binds the rest.
+// §4: a hint binds a purchase its buyer owns, a new purchase moves an ended lineage (R-11), a claim binds the rest;
+// an erased account claims nothing.
 fn bind(
     held: Option<Binding>,
     ownership: Ownership,
@@ -386,27 +414,32 @@ fn bind(
     let Some(claim) = &accounts.claim else {
         return Ok(binding);
     };
+    let Claimant::Live(claimant) = &claim.claimant else {
+        return Err(Refusal::AccountErased);
+    };
     match (binding, &accounts.hint) {
-        (Some(binding), _) if binding.account_id == claim.account_id => Ok(Some(binding)),
+        (Some(binding), _) if binding.account_id == *claimant => Ok(Some(binding)),
         (Some(_), _) => Err(Refusal::BoundToAnotherAccount),
-        (None, AccountHint::Live(hinted)) if *hinted != claim.account_id => {
+        (None, AccountHint::Live(hinted)) if hinted != claimant => {
             Err(Refusal::BoundToAnotherAccount)
         }
         (None, _) if ownership == Ownership::Shared => Ok(None),
         (None, _) => Ok(Some(Binding {
-            account_id: claim.account_id.clone(),
+            account_id: claimant.clone(),
             bound_at: claim.at,
             bound_by: BoundBy::Claim,
         })),
     }
 }
 
-// INV-7 and INV-13: write what the ledger lacks, restate what a statement supersedes, one event per period.
+// INV-7 and INV-13: write what the ledger lacks, restate what a statement supersedes, leave the periods a move takes
+// from an account with that account (R-11), one event per period.
 fn record_periods(
     held: &[Period],
     stated: Vec<(ObservedPeriod, PeriodId)>,
     observed_at: Instant,
     first_bound: bool,
+    moved_from: Option<&AccountId>,
 ) -> (Vec<PeriodChange>, Vec<(EventKind, Instant)>) {
     let mut periods = held.to_vec();
     let mut changes = Vec::new();
@@ -424,6 +457,7 @@ fn record_periods(
                     offer_kind: stated.offer_kind,
                     refunded_at: stated.refunded_at,
                     observed_at,
+                    left_with: None,
                 };
                 changes.push(PeriodChange::Written(period.clone()));
                 periods.push(period);
@@ -436,6 +470,22 @@ fn record_periods(
                 changes.push(PeriodChange::Restated(period.clone()));
             }
             Some(_) => {}
+        }
+    }
+    if let Some(moved_from) = moved_from {
+        let left_behind = periods.iter_mut().filter(|period| {
+            period.left_with.is_none() && held.iter().any(|before| before.id == period.id)
+        });
+        for period in left_behind {
+            period.left_with = Some(moved_from.clone());
+            let restated = changes.iter_mut().find_map(|change| match change {
+                PeriodChange::Restated(restated) if restated.id == period.id => Some(restated),
+                _ => None,
+            });
+            match restated {
+                Some(restated) => restated.left_with = Some(moved_from.clone()),
+                None => changes.push(PeriodChange::Restated(period.clone())),
+            }
         }
     }
 

@@ -146,7 +146,7 @@ TEST(pg_ai_installation_binding_preserves_lifetime_spend_holds_and_account_erasu
     txn.commit();
   }
   fake::FakeClock clock;
-  clock.now = 1'792'281'600'000;
+  clock.now = AiBudgetPeriod::at(1'792'281'600'000)->endMs - 300'000;
   const AiBudgetLimits limits;
   PgAiBudgetRepository budgetRows{pgTestPool()};
   auto budgets = std::make_shared<AiBudgetService>(budgetRows, [=] { return limits; }, [&] { return clock.now; });
@@ -206,4 +206,10 @@ TEST(pg_ai_installation_binding_preserves_lifetime_spend_holds_and_account_erasu
   CHECK_EQ(nextMonth.usedNanos, 0);
   CHECK_EQ(nextMonth.heldNanos, 15'000'000);
   CHECK_EQ(nextMonth.remainingNanos, 485'000'000);
+  clock.now += kAiBudgetHoldLifetimeMs;
+  const auto lapsed = budgets->view({{AiBudgetSubjectKind::Account, account.str()}, AiBudgetTier::LoggedIn});
+  CHECK_EQ(lapsed.usedNanos, 0);
+  CHECK_EQ(lapsed.heldNanos, 0);
+  CHECK_EQ(lapsed.remainingNanos, 500'000'000);
+  CHECK_EQ(lapsed.code, AiBudgetCode::Ok);
 }

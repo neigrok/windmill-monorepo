@@ -118,7 +118,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-01T10:00:05Z"
+              "observedAt": "2027-01-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -146,7 +147,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-01T10:00:05Z"
+              "observedAt": "2027-01-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -231,7 +233,9 @@
         "live": "account-ada"
       },
       "claim": {
-        "accountId": "account-ada",
+        "claimant": {
+          "live": "account-ada"
+        },
         "at": "2027-01-03T12:00:00Z"
       },
       "expect": {
@@ -290,7 +294,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-03T11:59:58Z"
+              "observedAt": "2027-01-03T11:59:58Z",
+              "leftWith": null
             }
           }
         ],
@@ -376,7 +381,9 @@
         "live": "account-ada"
       },
       "claim": {
-        "accountId": "account-bo",
+        "claimant": {
+          "live": "account-bo"
+        },
         "at": "2027-01-04T12:00:00Z"
       },
       "expect": {

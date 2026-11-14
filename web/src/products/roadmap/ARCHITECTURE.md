@@ -16,7 +16,7 @@ point for the component showcase.
 | `room/` | What the room holds: the load, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band and who holds the roadmap |
 | `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
-| `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, below the head on phones) and the note it opens |
+| `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, in the owner’s Roadmap sheet on phones, below the head for phone readers) and the note it opens |
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
 | `step/` | The step page and modal, workspace, composer and its picker, the tree picker and its choices, and the step's address |
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
@@ -355,8 +355,8 @@ the reply without the tree's own entry, since the room holds that guide and a sa
 shared-reader mode, the demo, a device with nobody signed in, a tree that lives only on this device and a lapsed session
 make no read and are shown nothing from above. The guides from above live in memory alone. Leaving the tree aborts the
 read and drops what it brought, as the holder going does, so a return reads again and nothing read earlier stands in
-the meantime. A pending or failed read keeps parent status unknown; the wide entry and viewer say so while retaining
-the tree's own guide. The phone keeps its own guide standing. A failed read reports once as
+the meantime. A pending or failed read keeps parent status unknown; the entry and viewer say so while retaining
+the tree's own guide and any usable inherited context. A failed read reports once as
 `roadmap-guides-load` under one tag, `reason`: `unavailable` where the server could not read the trees above, `server`
 for any other 5xx, `network` for a request lost while visible and online, and `shape` for a 200 that is not the
 contract's, one that is not JSON among them (`readFailureReason`; `guidesAbove` says whether an answer is shaped). What is well formed in such an
@@ -373,15 +373,22 @@ text, or “? ·” before its first line, and the accessible name and tooltip s
 The tooltip is the concise Guide or Author’s note title, the confirmed parent count, or the unknown-status label;
 own-only and confirmed-parent accessible names retain the own excerpt. These entries open reading. Only a
 confirmed-empty owner's entry offers dashed Add guide and opens writing directly;
-a reader never gets Add. Readers with an own guide retain Author's note as the accessible name. Phones keep their
-row below the head, beneath the device line when present, with up to three lines and a count beside the heading.
-`GuideNote` opens a modal window 24px inside the viewport from 744px and a bottom sheet on phones. The wide viewer
+a reader never gets Add. Readers with an own guide retain Author's note as the accessible name. On phones an owner
+opens Guide from the Roadmap sheet: a single 48px row says Add guide when confirmed empty, Guide for own text,
+Guide · +N from above for confirmed inheritance, or Guide · ? for unknown parent status. Readers keep their
+Author’s note row below the head and a read-only bottom sheet.
+`GuideNote` opens a modal window 24px inside the viewport from 744px. The owner phone page fills the screen below
+the 52px Shell, with a 72px heading, flexible body and keyboard-aware actions. Its Roadmap sheet stays mounted,
+hidden and inert beneath it. Close returns focus to that sheet’s Guide row. If a band, view or role change removes
+the sheet, the connected wide entry or roadmap title takes focus instead. The wide viewer
 keeps “Parent Guide status has not been confirmed.” visible while parent status is unknown, below the own text when
-present; without own text an owner may Add guide beneath the notice. A reader cannot add or edit.
+present; on the owner phone it precedes the text. Without own text an owner may Add guide beneath the notice. Unknown
+parent status always opens reading first, with no count or retry action. A reader cannot add or edit.
 Both reading and writing hold the window and make the room beneath inert. The guides from above stand first in it,
 farthest first, each under its tree's name and in the
 secondary ink, then this tree's own under its name, and the whole stack scrolls inside the note. They are plain text
-with no caret and no tint; a tree with no guide of its own has Add guide as its block and no pencil. This tree's text
+with no caret and no tint; a tree with no guide of its own has Add guide as its block. On an owner phone with confirmed inherited guides,
+the header pencil also opens the current tree’s blank editor; unknown parent status has no pencil without own text. This tree's text
 is one mounted element with or without guides above it, so guides that answer while it is read move nothing: the
 line read stays where it was, with its selection. The note's focus rests on this tree's text; under guides from above
 that start that text below the fold it rests on the stack, ringed when a key brought it, which scrolls from the
@@ -394,15 +401,17 @@ line of text they are not drawn; on phones the editor holds this tree's guide al
 its save never hold them. The owner presses the prose, the hint beside this tree's name or the pencil, or Enter, and
 writes in the same frame from where the press landed
 (`caretPositionFromPoint`, or Safari's `caretRangeFromPoint`); a press outside asks to leave. The desktop field fills
-the modal's body and gives inherited guides their room while keeping the draft visible where it fits; on phones the
-field grows with the draft and the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
-the guide, which closes the note unless guides from above remain to read or wide parent status remains unknown. While a save is in flight the frame holds:
+the modal's body and gives inherited guides their room while keeping the draft visible where it fits; on owner phones the
+field fills the available body and the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
+the guide, which closes the note unless guides from above remain to read or parent status remains unknown. While a save is in flight the frame holds:
 the field is read-only and nothing leaves until it settles. A save by someone who is no longer the owner writes through
 no door and is refused. While the note holds
 the window, Escape, ⌘↩ and Tab work wherever focus stands; ⌘↩ presses Save or Try again and no other act, and a held
 key is one press. The note keeps its draft, and the focus a stop held, across a change of band, and closes
-when the tree changes or the guide stops being shown. Leaving a draft returns to where writing began (the note read, or the tree for a guide begun from Add guide),
-at once when nothing changed and through Discard draft? when something did. Closing hands focus back to the entry.
+when the tree changes or the route excludes Guide. A role change retains the active draft and its recovery state;
+a save after ownership is lost is refused. Leaving a draft returns to where writing began (the note read, or the
+entry for a guide begun from confirmed-empty Add guide), at once when nothing changed and through Discard draft?
+when something did. A first Save from direct Add returns to the entry too. Closing hands focus back to the entry.
 A remote clear while parent status is unknown moves focus from removed prose to Add guide for the owner or Close
 for a reader. Escape dismisses a shown entry tooltip before the room handles another Escape. The
 status line above the field on desktop and in the footer on phones: a guide changed elsewhere mid-edit says so and

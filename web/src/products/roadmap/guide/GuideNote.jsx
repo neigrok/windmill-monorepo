@@ -1,7 +1,3 @@
-// The guide open (17.02–17.17, 17.18–17.19h, 17.21–17.23, 17.26, 17.29, 17.31–17.38, 28.30, 28.31, 28.33):
-// a window from 744px and a bottom sheet on phones. It reads until its owner presses the prose or the pencil, then writes in
-// the same frame. The guides above the tree stand before its own, farthest first, and are only ever read here.
-
 import React, { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { AlertCircle, BookOpen, Check, ChevronRight, Pencil, Plus, X } from 'lucide-react';
@@ -54,7 +50,7 @@ export function GuideNote({ guide, band }) {
   const text = withLineFeeds(guide.text);
   const written = hasGuide(guide.text);
   const stacked = above.length > 0;
-  const unknown = !phone && guide.aboveUnread;
+  const unknown = guide.aboveUnread;
   const openTree = useContext(TreeDoor);
   const [draft, setDraft] = useState(() => (opening ? new GuideDraft(guide.text) : null));
   const [caret, setCaret] = useState(() => (opening ? { offset: opening.offset, scroll: 0 } : null));
@@ -94,6 +90,7 @@ export function GuideNote({ guide, band }) {
   const lossId = useId();
   const viewport = useComposerViewport(phone);
   const writing = draft !== null;
+  const fullScreen = phone && (owner || writing);
   const savable = writing && draft.changed && draft.fits;
   const standing = line && RECOVERY_LINES[line.says];
   const copied = line?.says === 'copied';
@@ -112,7 +109,7 @@ export function GuideNote({ guide, band }) {
     frame.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'ease-out', fill: 'forwards' }).finished.then(guide.close);
   };
 
-  // Leaving the draft returns to where writing began: the note read, or the tree for a guide begun from Add guide.
+  // Leaving returns to reading, or to the entry for a draft begun from confirmed-empty Add guide.
   const leave = () => {
     setDiscarding(false);
     setLine(null);
@@ -254,7 +251,7 @@ export function GuideNote({ guide, band }) {
     if (!writing && !written && above.length === 0 && !unknown) guide.close();
   }, [writing, written, above, unknown]);
 
-  // The phone field grows with its draft; in the window it reserves the draft's height before the inherited context.
+  // The field reserves the draft’s height; the phone page flexes it into the remaining body.
   useLayoutEffect(() => {
     const box = field.current;
     if (!box) return undefined;
@@ -316,7 +313,7 @@ export function GuideNote({ guide, band }) {
       const line = parseFloat(getComputedStyle(prose.current ?? add.current).lineHeight);
       const shown = frame.getBoundingClientRect();
       if (own.top + line > shown.bottom || own.bottom - line < shown.top) {
-        frame.scrollTop += ownHead.current.getBoundingClientRect().top - shown.top - parseFloat(getComputedStyle(frame).paddingTop);
+        frame.scrollTop += (ownHead.current ?? prose.current ?? add.current).getBoundingClientRect().top - shown.top - parseFloat(getComputedStyle(frame).paddingTop);
       }
     }
     resumeAt.current = null;
@@ -392,12 +389,18 @@ export function GuideNote({ guide, band }) {
     return () => observer.disconnect();
   }, [writing]);
 
-  // Closing hands focus back to the guide's entry on the tree, unless it already went somewhere else. A changed draft
-  // the room closed over, because the tree or the route moved on, is a draft discarded.
+  // A room change discards a changed draft; closing restores the connected entry or roadmap title.
   useEffect(() => () => {
     if (!settled.current && held.current?.changed) track('roadmap_guide', { step: 'discard' });
     requestAnimationFrame(() => {
-      if (document.activeElement === document.body) guide.entry.current?.focus({ preventScroll: true });
+      if (document.activeElement !== document.body && document.activeElement?.isConnected && !document.activeElement.closest('[inert]')) return;
+      const target = [
+        guide.entry.current,
+        document.querySelector('.st-roadmap-title'),
+        document.querySelector('.st-roadmap-switcher button'),
+        document.querySelector('.st-roadmap-identity'),
+      ].find((element) => element?.isConnected && !element.closest('[inert]'));
+      target?.focus({ preventScroll: true });
     });
   }, []);
 
@@ -410,6 +413,7 @@ export function GuideNote({ guide, band }) {
   const paperClasses = ['st-guide-paper'];
   if (entering) paperClasses.push('is-entering');
   if (phone) paperClasses.push('st-guide-paper--phone');
+  if (fullScreen) paperClasses.push('st-guide-paper--owner-phone');
   if (writing) paperClasses.push('st-guide-paper--writing');
   // The footer's last button: the standing line's act, else Save, which waits for a change that fits. Done keeps the
   // draft and returns to the refusal it was copied under; leaving it is Cancel's to ask.
@@ -497,8 +501,10 @@ export function GuideNote({ guide, band }) {
 
   const addGuide = owner && (stacked || unknown) && (
     <button ref={add} type="button" className="st-guide-add" onClick={() => begin('add', 0)}>
-      <Plus size={unknown && !stacked ? 20 : 18} strokeWidth={unknown && !stacked ? 2 : 1.67} aria-hidden />
+      {fullScreen ? <BookOpen size={20} strokeWidth={2} aria-hidden />
+        : <Plus size={unknown && !stacked ? 20 : 18} strokeWidth={unknown && !stacked ? 2 : 1.67} aria-hidden />}
       <span>{GUIDE.add}</span>
+      {fullScreen && <ChevronRight size={20} strokeWidth={2} aria-hidden />}
     </button>
   );
 
@@ -520,7 +526,7 @@ export function GuideNote({ guide, band }) {
             ? { group, index: [...paper.current.querySelectorAll(`${group} button`)].indexOf(event.target) }
             : { element: event.target, role };
         }}>
-        {phone && <span className="st-guide-grabber" aria-hidden />}
+        {phone && !fullScreen && <span className="st-guide-grabber" aria-hidden />}
         <header className="st-guide-heading">
           {!phone && <BookOpen size={20} strokeWidth={1.67} aria-hidden />}
           <div className="st-guide-identity">
@@ -532,15 +538,15 @@ export function GuideNote({ guide, band }) {
               <p><span>{guide.roadmapTitle}</span></p>
             </>}
           </div>
-          {phone && !writing && owner && written && (
-            <button type="button" className="st-guide-pencil" aria-label={t('roadmap.guide.edit')}
+          {phone && !writing && owner && (written || (stacked && !unknown)) && (
+            <button type="button" className="st-guide-pencil" aria-label={written ? t('roadmap.guide.edit') : GUIDE.add}
               onClick={() => begin('pencil', text.length)}>
-              <Pencil size={18} strokeWidth={1.67} aria-hidden />
+              <Pencil size={fullScreen ? 20 : 18} strokeWidth={1.67} aria-hidden />
             </button>
           )}
           {(!phone || !writing) && (
             <button type="button" className="st-guide-close" aria-label={LABELS.close} onClick={requestLeave}>
-              <X size={18} strokeWidth={1.67} aria-hidden />
+              <X size={fullScreen ? 20 : 18} strokeWidth={1.67} aria-hidden />
             </button>
           )}
         </header>
@@ -553,11 +559,11 @@ export function GuideNote({ guide, band }) {
             <div ref={stack} className={stacked ? `st-guide-stack${ringed ? ' is-ringed' : ''}` : 'st-guide-alone'}
               {...(stacked ? { tabIndex: 0, role: 'region', 'aria-labelledby': titleId } : {})}
               onFocus={(event) => { if (event.target === event.currentTarget) setRinged(lastPress.current === 'key'); }}>
-              {!written && parentStatus}
+              {(!written || fullScreen) && parentStatus}
               {stacked && fromAbove}
-              {stacked && ownName}
+              {stacked && (written || !fullScreen) && ownName}
               {written ? ownGuide : unknown && !stacked ? <div className="st-guide-parent-add">{addGuide}</div> : addGuide}
-              {written && parentStatus}
+              {written && !fullScreen && parentStatus}
             </div>
           )}
           {contextual && (
@@ -650,7 +656,7 @@ export function GuideNote({ guide, band }) {
   );
 
   return createPortal(
-    <div ref={layer} className={`st-guide-layer${phone ? ' st-guide-layer--phone' : ''}${entering ? ' is-entering' : ''}`} style={viewport.style}>
+    <div ref={layer} className={`st-guide-layer${phone ? ' st-guide-layer--phone' : ''}${fullScreen ? ' st-guide-layer--owner-phone' : ''}${entering ? ' is-entering' : ''}`} style={viewport.style}>
       {/* A double tap's second click belongs to the press that opened the sheet, so it does not close it. */}
       <div className="st-guide-backdrop" aria-hidden onClick={(event) => { if (event.detail < 2) requestLeave(); }} />
       {note}

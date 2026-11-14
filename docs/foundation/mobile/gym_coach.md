@@ -599,7 +599,8 @@ additional safeguard.
 
 A principal may have one unresolved free call or two unresolved paid calls. Reservations,
 dispatched calls and uncertain calls all occupy slots. A vendor error answered before the message
-started consumed nothing and settles at zero; only a send the vendor may have taken stays uncertain.
+started consumed nothing and settles at zero; only a send the vendor may have taken stays uncertain,
+until its hold lapses and is released at zero 10 minutes after admission.
 The backend enforces this across processes, tier changes and permanent device binding. Product burst
 protection remains separate. A process runs two model calls at once; a turn holds that capacity only
 while its round streams, never while it waits on its phone, and at most 64 turns are alive in a
