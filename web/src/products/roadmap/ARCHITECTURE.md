@@ -238,11 +238,11 @@ session adds what it is told since the load (`SyncSession.subtrees()`, step → 
 says a step has just come to own a new, so empty, subtree, and each subscribe answer's `subtrees` is the server's word on
 which steps own one. A subtree the load did not read stands unread until the room reads the tree again, as for a
 pointer, which only a room the server answers as the tree's writer does: what a reader is told of a subtree waits on the
-owner's trees being followed, so a reader's room waits for its next load. A room that is not the owner's takes only the
-subtrees of what it reads. Such a step completes with its subtree, takes no hand mark and wears the tree's marks on every surface the pointer's opening does, with the subtree's
-own words where the board draws them: Open subtree for Open tree, and on the step page and modal, where Complete sat, how
-far it is (*No steps yet*, *1 of 1 done*) beside Open subtree. A reader gets that band too. The step page has no Tree
-section for it: its pointer takes no write, so nothing is attached, changed or detached there.
+owner's trees being followed, so a reader's room waits for its next load. Such a step completes with its subtree, takes
+no hand mark and wears the tree's marks on every surface the pointer's opening does, with the subtree's own words where
+the board draws them: Open subtree for Open tree, and on the step page and modal, where Complete sat, how far it is
+(*No steps yet*, *1 of 1 done*) beside Open subtree. A reader gets that band too. The step page has no Tree section for
+it: its pointer takes no write, so nothing is attached, changed or detached there.
 
 The doors lead into a subtree for anyone who reads the roadmap, holder or not (`useTreeVisit` with `visitor`: a room that
 reads a tree that is not its own, demo aside): on the app's address for the app's rooms, on the share's (`#/t/<id>`)
@@ -884,8 +884,8 @@ session takes a pointer out of any write on it before the write is made, Undo an
 ack says the server refused (`subgraphAck.refused`, `owns-a-subtree`), goes back to that confirmed value, the one register
 a lattice steps back (`TreeLattice.restorePointer`), and leaves the act that wrote it. One still in flight when the step
 comes to own a subtree waits for its ack, as the server may have stored it before the subtree came. Saves join, so the
-device's record can keep the refused stamp; the next subscribe answer puts it back before anything is sent. The server hides the pointer from a
-caller who cannot write the tree, so only a writer's answer speaks for pointers: `SyncSession.reach` is the subscribe
+device's record can keep the refused stamp; the next subscribe answer puts it back before anything is sent. The server
+hides the pointer from a caller who cannot write the tree, so only a writer's answer speaks for pointers: `SyncSession.reach` is the subscribe
 answer's `reach`, and a `sign-in-required` or `no-such-tree` refusal turns it to `reader`. A writer's full graft is the
 server's word on pointers, an older or empty one included. A reader's, or an answer with no `reach`, leaves confirmed the
 pointers the server confirmed before (`TreeLattice.pointers` carries them across the rebuilt baseline); while the session
@@ -925,8 +925,8 @@ separate confirmed baseline. Socket send failures preserve pending writes and re
 A server frame whose notification fails reports `roadmap-sync-notify`; one that cannot be parsed or joined reports
 `roadmap-sync-frame` once per session, a subscribe answer whose `subtrees` holds an entry with no step or id among them,
 and so does a `subtree` frame that names no step or subtree, or a step the tree has never held, which takes its seq and
-keeps nothing; a stored lane that cannot be read reports `roadmap-sync-restore` once, and the graft
-fills it. Invalid progress rows are skipped individually and report `roadmap-sync-progress-mark` with only the
+keeps nothing; a stored lane that cannot be read reports `roadmap-sync-restore` once, and the graft fills it. Invalid
+progress rows are skipped individually and report `roadmap-sync-progress-mark` with only the
 progress lane tag; valid marks in the same server frame, stored record or legacy drain still join. A socket with no inbound frame for ten seconds, online and in view, reports `roadmap-sync-socket` once; any frame
 clears the count, including a refusal, so a signed-out device tree stays quiet.
 
