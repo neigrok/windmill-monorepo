@@ -108,7 +108,10 @@ It changes through only two paths:
 2. An acknowledgement joins the frontier derived from that frame's retained writes.
 
 Live broadcasts and echoes never advance this vector. On reconnect, the server computes
-`deltaBetween(state, vector)` from the room's current lattice. An empty vector gets full state.
+`deltaBetween(state, vector)` from the room's current lattice, and adds, whole, every node, edge,
+kind and tree register that landed on the server past `lastSeq`, the last seq this browser applied
+([SPEC, Model](../backend/SPEC.md)). An empty vector gets full state. `lastSeq` is a position with
+no gap: a live frame joins only as the next seq, and the subscribe response's seq replaces it.
 The browser joins the response, adopts its coverage and seq, then flushes each register whose stamp
 is greater than its confirmed baseline's stamp, excluding the same register and stamp already in
 flight. Status counts the same unconfirmed registers. Actor frontiers cannot confirm individual
@@ -155,8 +158,9 @@ it. What this leaves: a writer that goes away after some frames of an act have l
 the act half-applied until it returns — after the first frame of a re-hue the kind wears its new hue
 and the steps still to follow hold the old one — and a peer that re-hues the same kind in that window
 moves only the steps it can see wearing it, so the steps the first writer paints afterwards end
-outside the kind. And a write that lands after a later-stamped write of the same replica — a refused
-or held bank retried late — is not sent to a replica that grafted in between and was away.
+outside the kind. A write that lands after a later-stamped write of the same replica — a refused
+or held bank retried late — reaches a replica that subscribed in between and was away by the
+position it reconnects with, not by its vector, which is already past the write's stamp.
 
 The server drops the connection of a message past its limit without a word, and so may a proxy in
 between. The judgement is of one frame, the lane's first, whatever is queued behind it: lost

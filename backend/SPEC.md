@@ -417,6 +417,23 @@ legend)` folds a full state into one, and `frontier(frame)` every stamp one fram
 and guide included; `deltaBetween(graph, legend, since)` returns the slice a peer at `since` lacks,
 with covered fields masked back to "no information", carrying the sender's full frontier as
 coverage. `TreeRoom::deltaSince(since)` adds the title and guide registers the peer does not cover.
+
+A vector describes a writer only while that writer's writes land in stamp order, and a write can
+land late: a refused or held write the web sends again keeps the stamp it was made under, which may
+be below one of its replica's the room already holds. A peer whose vector is past that stamp would
+never be sent it. So the room keeps, for each node, edge and kind and for the title and the guide,
+the seq at which it last changed on the server — its land seq (`LandSeqs`, `domain/Subgraph.h`) —
+set to a write's seq for exactly what that write landed, at both doors that move the head
+(`joinSubgraph`, `applyCommands`); a tombstone is an entry like any other. A peer that says the last
+seq it applied is sent, beside what its vector lacks, every entry and tree register that landed past
+that seq, whole and unmasked (`deltaSince(since, position)`, `deltaBetween(…, late)`). Land seqs are
+saved with the rows (`land_seq` on `tree_nodes`, `tree_edges`, `tree_kinds`; `title_land_seq` and
+`guide_land_seq` on `trees`): each row a save writes takes the head of that save, never an earlier
+one than it holds, which is no earlier than the seq it landed at, so a room opened from the rows may
+send an entry a peer already has and never misses one. A row stored before these columns holds 0,
+as the rows a tree is born or forked with do: 0 is past no position, and the vector alone cuts
+those. A `PUT`, which writes rows with no room at an unchanged head, gives its rows that head: they
+are past no position a peer at that head holds, and reach it by the vector or not at all.
 A frame's `title` or `guide` is null or absent for no information, or `{v, at}` with a string `v` and a
 set stamp `at`; any other shape makes the frame `bad-frame`, so no value is coerced or read as a clear.
 
@@ -928,12 +945,18 @@ sweep is closed unless `REMINDERS_ADMIN_TOKEN` is set.
 credential is presented at the upgrade; every write re-proves the session, throttled to one lookup
 a minute, and a revoked session narrows to a guest in place. Visibility is re-asked per frame.
 
-Client → server: `ping` · `subscribe {treeId, vector}` · `subgraph` (a serialized `Subgraph`, with
+Client → server: `ping` · `subscribe {treeId, vector, lastSeq?}` · `subgraph` (a serialized `Subgraph`, with
 `branches: [subtreeId]` naming the subtrees it takes with the owning steps it deletes) ·
 `progress {treeId, frameId, marks[{node, status, at}]}` · `presence {treeId, …}`.
 
+A subscribe's `lastSeq` is the last seq the subscriber applied. When it is a non-negative whole
+number the delta also holds, whole, everything that landed past it (Model, land seqs); absent, or
+anything else, the vector alone cuts the delta and the subscribe is not refused for it. An empty
+vector is answered the whole state either way.
+
 Server → client: `pong` · `subgraph` (intent `delta` carrying `seq` and `reach` as the subscribe
-answer, with the title and guide registers when the vector does not cover their stamps; intent
+answer, with the title and guide registers when the vector does not cover their stamps or they
+landed past `lastSeq`; intent
 `live` for a peer's broadcast, with no `reach`; either is the frame's `readerView` for a connection
 that cannot write the tree, and the delta's `reach` is that same verdict: `writer` for a connection
 that can, `reader` for any other) ·
@@ -1025,10 +1048,10 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 
 | Table | Holds |
 | --- | --- |
-| `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb; the tree's place: `parent_tree`, `parent_step`, `root_tree`, `depth` |
-| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open, and whether they open a given one |
-| `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
-| `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp |
+| `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `title_land_seq` and `guide_land_seq` (Model, land seqs), `forked_from`, `deleted_at`, `document` jsonb; the tree's place: `parent_tree`, `parent_step`, `root_tree`, `depth` |
+| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, `present` and `land_seq` (Model, land seqs); `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open, and whether they open a given one |
+| `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc`, `land_seq` |
+| `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp, and `land_seq` |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |
 | `node_progress` | per-user private overlay — status, `out_of_order`, `hlc`, `stamp_ms`, `stamp_counter` |
 | `tree_og_images` / `tree_og_videos` | the share card PNG and loop, inline `bytea`, one row per tree |

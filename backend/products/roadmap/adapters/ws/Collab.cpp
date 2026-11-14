@@ -194,6 +194,10 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
     send(bus_, conn, rejectFrame(treeId, kBadFrame, "this frame could not be read"));
     return;
   }
+  // The last seq the subscriber applied, when it says one: it is then sent what landed past it too, whatever its vector
+  // covers. Anything but a non-negative whole number is no position, and the vector alone cuts the delta.
+  const std::optional<Seq> lastSeq =
+      request["lastSeq"].isUInt64() ? std::optional<Seq>(request["lastSeq"].asUInt64()) : std::nullopt;
 
   // The delta, the head it reports and the view it was cut to are read under the strand; the places of the delta and
   // the progress graft in the connection's send order are taken there too, with the join, and each frame is written
@@ -234,7 +238,7 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
         return;
       }
       presence_.join(conn, TreeId{treeId});
-      delta = room->deltaSince(clientVector);
+      delta = room->deltaSince(clientVector, lastSeq);
       head = room->head();
       subtree = room->parent().has_value();
       depth = room->depth();

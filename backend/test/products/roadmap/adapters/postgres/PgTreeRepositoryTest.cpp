@@ -161,6 +161,76 @@ TEST(pg_a_guide_survives_a_restart_and_a_stale_save_cannot_revert_it) {
   CHECK_EQ(restarted.load(kTree)->title.value, std::string("Sam's tree"));
 }
 
+// A row is written with the land seq its save gives it, the head of that save, and keeps a later one: so a room
+// reopened from the rows still sends a write that landed late to a subscriber whose position is before it. A row a tree
+// was born with holds 0, which is past no position: the seq rule sends it to nobody.
+TEST(pg_land_seqs_survive_a_save_a_close_and_a_reopen_and_a_row_at_land_seq_0_is_sent_by_no_position) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  const auto frame = [](const char* id, GraphState graph, LegendState legend = {}) {
+    Subgraph subgraph;
+    subgraph.frameId = id;
+    subgraph.graph = std::move(graph);
+    subgraph.legend = std::move(legend);
+    return subgraph;
+  };
+  const Hlc early{1'700'000'000'100, 0, "r_a"};
+  const Hlc late{1'700'000'000'200, 0, "r_a"};
+  const Hlc later{1'700'000'000'300, 0, "r_a"};
+  NodeStateEntry born{.id = NodeId{"born"}, .createdAt = Hlc{1'700'000'000'050, 0, "r_a"}};
+  NodeStateEntry n{.id = NodeId{"n"}, .createdAt = early};
+  const NodeStateEntry m{.id = NodeId{"m"}, .createdAt = later};
+  const EdgeStateEntry edge{Edge{NodeId{"born"}, NodeId{"n"}}, early, {}};
+  const KindStateEntry kind{.id = KindId{"k"}, .createdAt = early, .hue = NodeColor::plum, .hueAt = early};
+  VersionVector covered;
+  {
+    PgTreeRepository trees{pgTestPool()};
+    PgOpLog log{pgTestPool()};
+    FakeBus bus;
+    RoomRegistry registry(trees, log, bus);
+    trees.create(kTree, GraphState{{born}, {}}, LegendState{}, "Sam's tree", kSam);
+    Subgraph first = frame("f-first", GraphState{{n}, {edge}}, LegendState{{kind}});
+    first.guide = Lww<std::string>{"Rig first.", early};
+    registry.open(kTree)->joinSubgraph(first, kSam);
+    REQUIRE(registry.persist(kTree).wait() == Saved::saved);
+    registry.open(kTree)->joinSubgraph(frame("f-later", GraphState{{m}, {}}), kSam);
+    REQUIRE(registry.persist(kTree).wait() == Saved::saved);
+    covered = *registry.open(kTree)->deltaSince(VersionVector{}).coverage;  // a subscriber's answer, at seq 2
+
+    n.label = "N late";
+    n.labelAt = late;
+    registry.open(kTree)->joinSubgraph(frame("f-late", GraphState{{NodeStateEntry{.id = n.id, .label = n.label, .labelAt = late}}, {}}),
+                                       kSam);
+    REQUIRE(registry.persist(kTree).wait() == Saved::saved);
+    REQUIRE(registry.evict(kTree));
+  }
+
+  PgTreeRepository restarted{pgTestPool()};
+  PgOpLog log{pgTestPool()};
+  FakeBus bus;
+  RoomRegistry registry(restarted, log, bus);
+  LandSeqs stored;
+  stored.nodes = {{n.id, 3}, {m.id, 2}};
+  stored.edges = {{edge.edge, 1}};
+  stored.kinds = {{kind.id, 1}};
+  stored.guide = 1;
+  CHECK(restarted.load(kTree)->landed == stored);
+
+  const TreeRoom& room = *registry.open(kTree);
+  CHECK(room.deltaSince(covered).graph == GraphState{});
+  CHECK(room.deltaSince(covered, 2).graph == (GraphState{{n}, {}}));
+  CHECK(room.deltaSince(covered, 3).graph == GraphState{});
+  // From the very start of the stream every row that landed at a seq is sent, and the one the tree was born with is not.
+  const Subgraph fromTheStart = room.deltaSince(covered, 0);
+  CHECK_EQ(fromTheStart.graph.nodes.size(), 2u);
+  CHECK(std::none_of(fromTheStart.graph.nodes.begin(), fromTheStart.graph.nodes.end(),
+                     [&](const NodeStateEntry& node) { return node.id == born.id; }));
+  CHECK(fromTheStart.graph.edges == std::vector<EdgeStateEntry>{edge});
+  CHECK(fromTheStart.legend == (LegendState{{kind}}));
+  CHECK(fromTheStart.guide == std::optional<Lww<std::string>>(Lww<std::string>{"Rig first.", early}));
+  CHECK_FALSE(fromTheStart.title.has_value());
+}
+
 TEST(pg_opens_survives_a_restart_with_its_stamp_and_only_a_later_write_of_it_changes_the_row) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

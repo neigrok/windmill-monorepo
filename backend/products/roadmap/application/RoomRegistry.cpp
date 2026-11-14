@@ -119,6 +119,7 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
   auto room = std::make_unique<TreeRoom>(id, stored->title, stored->guide, stored->guideInherited,
                                          std::move(graph), std::move(legend), stored->head, stored->root,
                                          stored->path, stored->subtrees, std::move(access), stored->createdAt, bus_);
+  room->restoreLandSeqs(stored->landed);
   room->takeHeadPast(past.lastSeq);
   room->observe(past.greatestStamp);
   // The room's first save moves the stored head past those rows, and nothing then shows the tree was ever behind:

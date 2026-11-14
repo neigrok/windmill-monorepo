@@ -380,6 +380,105 @@ TEST(room_queues_its_op_rows_in_seq_order_and_the_ones_that_landed_leave_from_th
   CHECK(room.pendingOps().empty());
 }
 
+// A frame of replica `r_a`'s: the registers given, as its lattice sends a write.
+static Subgraph frameOf(const char* frameId, GraphState graph, LegendState legend = {}) {
+  Subgraph frame;
+  frame.treeId = tid();
+  frame.frameId = frameId;
+  frame.actor = "r_a";
+  frame.graph = std::move(graph);
+  frame.legend = std::move(legend);
+  return frame;
+}
+
+// A delete that lands late — a node's, an edge's removal, a kind's — reaches a subscriber that was away, as a late
+// field does: each tombstone is a row with a land seq of its own. The subscriber's vector is past every stamp of the
+// late frame, so the vector alone sends none of them; its position sends all three whole, and nothing else.
+TEST(a_late_delete_reaches_a_subscriber_that_was_away) {
+  FakeBus bus;
+  TreeRoom room = makeRoom(bus);
+  const Hlc early{100, 0, "r_a"};
+  const Hlc late{200, 0, "r_a"};
+  const Hlc later{300, 0, "r_a"};
+  NodeStateEntry n{.id = nid("n"), .createdAt = early};
+  NodeStateEntry p{.id = nid("p"), .createdAt = early};
+  EdgeStateEntry edge{Edge{nid("n"), nid("p")}, early, {}};
+  KindStateEntry kind{.id = KindId{"k"}, .createdAt = early, .hue = NodeColor::plum, .hueAt = early};
+  REQUIRE(room.joinSubgraph(frameOf("f-born", GraphState{{n, p}, {edge}}, LegendState{{kind}}), uid()) == std::optional<Seq>(1));
+  REQUIRE(room.joinSubgraph(frameOf("f-later", GraphState{{NodeStateEntry{.id = nid("m"), .createdAt = later}}, {}}), uid()) ==
+          std::optional<Seq>(2));
+  const VersionVector covered = *room.deltaSince(VersionVector{}).coverage;  // the subscriber's answer, at seq 2
+
+  REQUIRE(room.joinSubgraph(frameOf("f-late", GraphState{{NodeStateEntry{.id = nid("n"), .deletedAt = late}},
+                                                         {EdgeStateEntry{edge.edge, {}, late}}},
+                                    LegendState{{KindStateEntry{.id = KindId{"k"}, .deletedAt = late}}}),
+                            uid()) == std::optional<Seq>(3));
+  n.deletedAt = late;
+  edge.removedAt = late;
+  kind.deletedAt = late;
+
+  const Subgraph byVector = room.deltaSince(covered);
+  CHECK(byVector.graph == GraphState{});
+  CHECK(byVector.legend == LegendState{});
+
+  const Subgraph byPosition = room.deltaSince(covered, 2);
+  CHECK(byPosition.graph == (GraphState{{n}, {edge}}));
+  CHECK(byPosition.legend == (LegendState{{kind}}));
+
+  const Subgraph atTheHead = room.deltaSince(covered, 3);
+  CHECK(atTheHead.graph == GraphState{});
+  CHECK(atTheHead.legend == LegendState{});
+}
+
+// The tree's own registers land at a seq as its entries do: a title or a guide that lands late, under a stamp the
+// subscriber's vector is past, is sent to one that was away, and the register that did not land late is not.
+TEST(a_title_or_a_guide_that_lands_late_reaches_a_subscriber_that_was_away) {
+  for (const bool lateTitle : {true, false}) {
+    FakeBus bus;
+    TreeRoom room = makeRoom(bus);
+    const Lww<std::string> first{"first", Hlc{100, 0, "r_a"}};
+    const Lww<std::string> late{"late", Hlc{200, 0, "r_a"}};
+    Subgraph born = frameOf("f-born", {});
+    born.title = first;
+    born.guide = first;
+    REQUIRE(room.joinSubgraph(born, uid()) == std::optional<Seq>(1));
+    REQUIRE(room.joinSubgraph(frameOf("f-later", GraphState{{NodeStateEntry{.id = nid("m"), .createdAt = Hlc{300, 0, "r_a"}}}, {}}),
+                              uid()) == std::optional<Seq>(2));
+    const VersionVector covered = *room.deltaSince(VersionVector{}).coverage;
+
+    Subgraph landing = frameOf("f-late", {});
+    (lateTitle ? landing.title : landing.guide) = late;
+    REQUIRE(room.joinSubgraph(landing, uid()) == std::optional<Seq>(3));
+
+    const Subgraph byVector = room.deltaSince(covered);
+    CHECK_FALSE(byVector.title.has_value());
+    CHECK_FALSE(byVector.guide.has_value());
+    const Subgraph byPosition = room.deltaSince(covered, 2);
+    CHECK(byPosition.title == (lateTitle ? std::optional<Lww<std::string>>(late) : std::nullopt));
+    CHECK(byPosition.guide == (lateTitle ? std::nullopt : std::optional<Lww<std::string>>(late)));
+    CHECK(byPosition.graph == GraphState{});
+  }
+}
+
+// A command lands at a seq as a frame does: what a server write changed is sent whole to a subscriber whose position is
+// before it, whatever its vector covers, and only that.
+TEST(what_a_command_changed_lands_at_its_seq_and_what_it_left_alone_does_not) {
+  FakeBus bus;
+  TreeRoom room = makeRoom(bus);
+  apply(room, createNode("a"), 1);
+  apply(room, createNode("b"), 2);
+  const VersionVector covered = *room.deltaSince(VersionVector{}).coverage;
+  apply(room, RenameNode{nid("a"), "A again"}, 3);
+  const VersionVector everything = *room.deltaSince(VersionVector{}).coverage;
+
+  const Subgraph missed = room.deltaSince(everything, 2);
+  REQUIRE_EQ(missed.graph.nodes.size(), 1u);
+  CHECK(missed.graph.nodes[0] == *LooseGraph(room.exportState()).exportNode(nid("a")));
+  CHECK(room.deltaSince(everything, 3).graph == GraphState{});
+  CHECK(room.deltaSince(covered).graph.nodes.size() == 1u);  // the vector's half still masks to the register it lacks
+  CHECK(room.deltaSince(covered).graph.nodes[0].createdAt == Hlc{});
+}
+
 TEST(room_snapshot_carries_the_legend) {
   FakeBus bus;
   TreeRoom room = makeRoom(bus);

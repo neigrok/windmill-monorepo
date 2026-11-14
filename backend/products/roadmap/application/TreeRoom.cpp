@@ -112,6 +112,9 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   unsaved_ = true;
   ++writes_;
   ++head_;
+  landSeqs_.land(landed.graph, landed.legend, head_);
+  if (titleTook) landSeqs_.title = head_;
+  if (guideTook) landSeqs_.guide = head_;
   // One op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
   // double-counts. A frame with no feed-worthy deed (headline) queues nothing.
   if (std::optional<Command> deed = headline(landed.graph, landed.legend, graph_, legend_))
@@ -161,6 +164,7 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
   const Command deed = commands.size() == 1 ? commands.front() : Command{Batch{commands}};
   pendingOps_.push_back(AppliedOp{head_, frameId, deed, stamp, actor});
   markDirty(produced.graph, produced.legend);  // the broadcast delta is exactly the write's footprint
+  landSeqs_.land(produced.graph, produced.legend, head_);
   recordOwningSteps();
   bus_.broadcastSubgraph(id_, head_, produced);
   return head_;
@@ -293,14 +297,16 @@ TreeData TreeRoom::snapshot() const {
   return data;
 }
 
-Subgraph TreeRoom::deltaSince(const VersionVector& since) const {
-  Subgraph delta = deltaBetween(graph_.exportState(), legend_.exportState(), since);
+Subgraph TreeRoom::deltaSince(const VersionVector& since, std::optional<Seq> position) const {
+  const auto landedPast = [&position](Seq landSeq) { return position && landSeq > *position; };
+  Subgraph delta = deltaBetween(graph_.exportState(), legend_.exportState(), since,
+                                position ? landSeqs_.past(*position) : Landed{});
   delta.treeId = id_;
   if (path_.empty()) {
-    if (!since.covers(title_.stamp)) delta.title = title_;
+    if (!since.covers(title_.stamp) || landedPast(landSeqs_.title)) delta.title = title_;
     delta.coverage->observe(title_.stamp);
   }
-  if (!since.covers(guide_.stamp)) delta.guide = guide_;
+  if (!since.covers(guide_.stamp) || landedPast(landSeqs_.guide)) delta.guide = guide_;
   delta.coverage->observe(guide_.stamp);
   return delta;
 }

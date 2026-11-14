@@ -66,9 +66,37 @@ VersionVector frontier(const GraphState& graph, const LegendState& legend);
 // Every stamp one frame carries: its graph, its legend and the tree registers it sets.
 VersionVector frontier(const Subgraph& frame);
 
+// The entries a peer is sent whole whatever its vector covers.
+struct Landed {
+  std::set<NodeId> nodes;
+  std::set<Edge> edges;
+  std::set<KindId> kinds;
+};
+
+// The seq at which each node, edge and kind, and each of the tree's own registers, last changed on the server: its land
+// seq. A vector describes a writer only while that writer's writes land in stamp order, and a write can land late,
+// under a stamp below one of its writer's already held. It still lands at a new seq, so a peer that says the last seq
+// it applied is also sent everything that landed past it. An entry with none here landed at 0, which is past no
+// position: a row stored before land seqs were kept is cut by the vector alone.
+struct LandSeqs {
+  std::map<NodeId, Seq> nodes;
+  std::map<Edge, Seq> edges;
+  std::map<KindId, Seq> kinds;
+  Seq title = 0;
+  Seq guide = 0;
+  bool operator==(const LandSeqs&) const = default;
+
+  // Everything of `graph` and `legend` landed at `seq`.
+  void land(const GraphState& graph, const LegendState& legend, Seq seq);
+  // The entries that landed past `position`.
+  Landed past(Seq position) const;
+};
+
 // The subgraph a peer at `since` is missing: every entry stamped beyond the vector, with
-// already-covered fields masked back to "no information". Its coverage is the sender's full frontier.
-Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const VersionVector& since);
+// already-covered fields masked back to "no information", and every entry of `late` whole. Its coverage is the sender's
+// full frontier.
+Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const VersionVector& since,
+                      const Landed& late = {});
 
 // What a caller who cannot write a tree receives of its nodes: none says which tree it opens, because
 // a tree id is the read capability of an unlisted tree. A lattice entry left without a stamp is dropped.

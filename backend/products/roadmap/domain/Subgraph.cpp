@@ -102,13 +102,36 @@ bool Subgraph::carriesNoStamp() const {
   return frontier(*this).marks.empty();
 }
 
-Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const VersionVector& since) {
+void LandSeqs::land(const GraphState& graph, const LegendState& legend, Seq seq) {
+  for (const NodeStateEntry& node : graph.nodes) nodes[node.id] = seq;
+  for (const EdgeStateEntry& edge : graph.edges) edges[edge.edge] = seq;
+  for (const KindStateEntry& kind : legend.kinds) kinds[kind.id] = seq;
+}
+
+Landed LandSeqs::past(Seq position) const {
+  Landed late;
+  for (const auto& [node, seq] : nodes)
+    if (seq > position) late.nodes.insert(node);
+  for (const auto& [edge, seq] : edges)
+    if (seq > position) late.edges.insert(edge);
+  for (const auto& [kind, seq] : kinds)
+    if (seq > position) late.kinds.insert(kind);
+  return late;
+}
+
+Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const VersionVector& since,
+                      const Landed& late) {
   Subgraph delta;
   delta.intent = SubgraphIntent::delta;
   for (const NodeStateEntry& node : graph.nodes) {
-    if (nodeUncovered(node, since)) delta.graph.nodes.push_back(maskNode(node, since));
+    if (late.nodes.count(node.id)) delta.graph.nodes.push_back(node);
+    else if (nodeUncovered(node, since)) delta.graph.nodes.push_back(maskNode(node, since));
   }
   for (const EdgeStateEntry& edge : graph.edges) {
+    if (late.edges.count(edge.edge)) {
+      delta.graph.edges.push_back(edge);
+      continue;
+    }
     if (since.covers(edge.addedAt) && since.covers(edge.removedAt)) continue;
     EdgeStateEntry masked{edge.edge, {}, {}};
     if (!since.covers(edge.addedAt)) masked.addedAt = edge.addedAt;
@@ -116,7 +139,8 @@ Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const 
     delta.graph.edges.push_back(masked);
   }
   for (const KindStateEntry& kind : legend.kinds) {
-    if (kindUncovered(kind, since)) delta.legend.kinds.push_back(maskKind(kind, since));
+    if (late.kinds.count(kind.id)) delta.legend.kinds.push_back(kind);
+    else if (kindUncovered(kind, since)) delta.legend.kinds.push_back(maskKind(kind, since));
   }
   delta.coverage = frontier(graph, legend);
   return delta;

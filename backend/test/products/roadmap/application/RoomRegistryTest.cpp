@@ -270,6 +270,44 @@ TEST(registry_a_room_behind_its_log_mints_past_the_greatest_stamp_of_those_rows_
   CHECK_EQ(told.reports[1], std::string("mcp.roadmap_update_nodes roadmap mcp failed ") + typeid(std::runtime_error).name());
 }
 
+// Land seqs are saved with the rows and taken back as a room opens: a write that landed late in one room is still sent
+// to a subscriber whose position is before it by the room that opens after it closed.
+TEST(registry_land_seqs_survive_a_save_a_close_and_a_reopen) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();  // head 7, and a seed row that landed at no seq
+  RoomRegistry registry(repo, log, bus);
+  const auto landing = [&](const char* frameId, NodeStateEntry node) {
+    Subgraph frame;
+    frame.frameId = frameId;
+    frame.graph.nodes = {std::move(node)};
+    PendingSave saving = Saved::saved;
+    {
+      std::lock_guard<std::mutex> strand(registry.strandFor(tid()));
+      REQUIRE(registry.open(tid())->joinSubgraph(frame, uid()).has_value());
+      saving = registry.persist(tid());
+    }
+    REQUIRE(saving.wait() == Saved::saved);
+  };
+  NodeStateEntry n{.id = nid("n"), .createdAt = Hlc{100, 0, "r_a"}};
+  landing("f-n", n);                                                        // seq 8
+  landing("f-m", NodeStateEntry{.id = nid("m"), .createdAt = Hlc{300, 0, "r_a"}});  // seq 9
+  const VersionVector covered = *registry.open(tid())->deltaSince(VersionVector{}).coverage;
+  n.label = "N late";
+  n.labelAt = Hlc{200, 0, "r_a"};
+  landing("f-late", NodeStateEntry{.id = nid("n"), .label = n.label, .labelAt = n.labelAt});  // seq 10
+  REQUIRE(registry.evict(tid()));
+
+  LandSeqs stored;
+  stored.nodes = {{nid("n"), 10}, {nid("m"), 9}};
+  CHECK(repo.byId["t"].landed == stored);
+  const TreeRoom& reopened = *registry.open(tid());
+  CHECK(reopened.deltaSince(covered).graph == GraphState{});
+  CHECK(reopened.deltaSince(covered, 9).graph == (GraphState{{n}, {}}));
+  CHECK(reopened.deltaSince(covered, 10).graph == GraphState{});
+}
+
 TEST(registry_persist_snapshots_full_state_without_evicting) {
   FakeTreeRepository repo;
   FakeOpLog log;

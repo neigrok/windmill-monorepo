@@ -7,6 +7,7 @@
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/OpenedTrees.h"
+#include "products/roadmap/domain/Subgraph.h"
 #include "products/roadmap/domain/Subtree.h"
 #include "products/roadmap/domain/Tree.h"
 
@@ -50,6 +51,9 @@ struct StoredTree {
   TreeId root;
   std::vector<OwningStep> path;
   std::map<NodeId, TreeId> subtrees;
+  // The land seq each row holds, the ones at 0 left out: a row is saved with the head of the save that wrote it,
+  // which is no earlier than the seq it landed at.
+  LandSeqs landed;
   bool operator==(const StoredTree&) const = default;
 };
 
