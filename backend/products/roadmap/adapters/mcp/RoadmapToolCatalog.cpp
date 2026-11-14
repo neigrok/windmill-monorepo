@@ -162,6 +162,14 @@ ToolDeclaration tool(const char* name, Access access, const char* description, J
   return declaration;
 }
 
+// Every tool but the two that work the registry names the tree it works on.
+ToolDeclaration treeTool(const char* name, Access access, const char* description, Json::Value properties,
+                         std::vector<const char*> required) {
+  properties["treeId"] = typed("string");
+  required.insert(required.begin(), "treeId");
+  return tool(name, access, description, std::move(properties), required);
+}
+
 }
 
 std::vector<ToolDeclaration> roadmapToolCatalog() {
@@ -169,13 +177,12 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
 
   {
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["nodeIds"] = listOf(typed("string"));
     p["fields"] = fields(nodeVocabulary());
-    ToolDeclaration declaration = tool("get_nodes", Access::read,
+    ToolDeclaration declaration = treeTool("get_nodes", Access::read,
         "Read nodes by exact id, in the order asked. Use it when you know the ids; get_tree pages the whole roadmap "
         "and find_nodes searches it.",
-        p, {"treeId", "nodeIds"});
+        p, {"nodeIds"});
     Json::Value answered(Json::objectValue);
     answered["treeId"] = typed("string");
     answered["seq"] = typed("integer");
@@ -199,14 +206,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     row["status"] = status();
     row["outOfOrder"] = outOfOrder();
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["updates"] = listOf(object(row, {"nodeId"}));
     p["expectedSeq"] = expectedSeq();
     p["dryRun"] = typed("boolean");
-    ToolDeclaration declaration = tool("update_nodes", Access::write,
+    ToolDeclaration declaration = treeTool("update_nodes", Access::write,
         "Edit existing nodes and set your own progress marks on them, many rows in one call. A field sent replaces "
         "what the node holds and a field left out stays; `appendDescription` and `addLinks` add to it instead.",
-        p, {"treeId", "updates"});
+        p, {"updates"});
 
     // One object for both rows, a recorded mark and a refused one, rather than a oneOf that not every client reads.
     Json::Value mark(Json::objectValue);
@@ -234,15 +240,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     edge["to"] = typed("string");
     const Json::Value edges = listOf(object(edge, {"from", "to"}));
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["add"] = edges;
     p["remove"] = edges;
     p["expectedSeq"] = expectedSeq();
     p["dryRun"] = typed("boolean");
-    ToolDeclaration declaration = tool("change_edges", Access::write,
+    ToolDeclaration declaration = treeTool("change_edges", Access::write,
         "Add and remove prerequisite edges between existing nodes in one step: an edge runs `from` a prerequisite `to` "
         "the node it unlocks. To move an edge, remove the old one and add the new one in the same call.",
-        p, {"treeId"});
+        p, {});
 
     Json::Value receipt = batchReceipt();
     for (const char* changed : {"addedEdges", "removedEdges"}) {
@@ -268,59 +273,52 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         Json::Value(Json::objectValue), {}));
   }
   {
-    Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
-    tools.push_back(tool("delete_tree", Access::del,
+    tools.push_back(treeTool("delete_tree", Access::del,
         "Delete a roadmap you own, every subtree under it, and the steps of your other roadmaps that open it. This "
         "cannot be undone.",
-        p, {"treeId"}));
+        Json::Value(Json::objectValue), {}));
   }
   {
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["fields"] = fields(nodeVocabulary());
     p["kindFields"] = listOf(oneOf(kindVocabulary().names()));
     p["includeEdges"] = typed("boolean");
     p["includeGuides"] = typed("boolean");
     p["limit"] = limit();
     p["cursor"] = cursor();
-    tools.push_back(tool("get_tree", Access::read,
+    tools.push_back(treeTool("get_tree", Access::read,
         "Read a roadmap: its title, guides, legend and a page of its nodes, with the `seq` it stands at. Call it "
         "before editing to learn node ids, and read the guides before working the tree.",
-        p, {"treeId"}));
+        p, {}));
   }
   {
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["title"] = title();
     p["guide"] = typed("string", "The whole guide, replacing the one the roadmap has; \"\" clears it.");
-    tools.push_back(tool("update_tree", Access::write,
+    tools.push_back(treeTool("update_tree", Access::write,
         "Rename a roadmap with `title`, set its guide with `guide`, or both. The guide is a plain-text note on what "
         "the roadmap is and how to work it, shown to everyone who reads it.",
-        p, {"treeId"}));
+        p, {}));
   }
   {
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["includePointers"] = typed(
         "boolean", "On a roadmap you own, also report loops and dead ends among the trees its nodes open.");
-    tools.push_back(tool("get_diagnostics", Access::read,
+    tools.push_back(treeTool("get_diagnostics", Access::read,
         "Report what is wrong with a roadmap's graph: cycles, dangling edges, self-edges and smells. Edits that break "
         "the graph are accepted, so read this after structural edits and repair what it lists.",
-        p, {"treeId"}));
+        p, {}));
   }
   {
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["fields"] = fields(progressVocabulary());
-    tools.push_back(tool("get_progress", Access::read,
+    tools.push_back(treeTool("get_progress", Access::read,
         "Read your own progress on a roadmap: the ids of the nodes you have completed. For progress beside each node, "
         "ask get_tree or find_nodes for the `status` or `state` field.",
-        p, {"treeId"}));
+        p, {}));
   }
   {
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["color"] = oneOf(kHues);
     p["kind"] = kind();
     p["query"] = typed("string", "Text to find in a node's id, label or description, in any case.");
@@ -328,15 +326,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["fields"] = fields(nodeVocabulary());
     p["limit"] = limit();
     p["cursor"] = cursor();
-    tools.push_back(tool("find_nodes", Access::read,
+    tools.push_back(treeTool("find_nodes", Access::read,
         "Search a roadmap's nodes by hue, kind, state or text, best match first; every filter set must match. "
         "`state: \"available\"` answers what you can work on now. Use it to find nodes without reading the whole "
         "roadmap.",
-        p, {"treeId"}));
+        p, {}));
   }
   {
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["id"] = typed("string", "The id to give the node; made from the label when left out.");
     p["label"] = typed("string");
     p["icon"] = icon();
@@ -347,54 +344,50 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["description"] = typed("string");
     p["links"] = links();
     p["opens"] = opens();
-    tools.push_back(tool("create_node", Access::write,
+    tools.push_back(treeTool("create_node", Access::write,
         "Add one node to a roadmap. For many nodes, or nodes with edges among them, import_subgraph does it in one "
         "call.",
-        p, {"treeId", "label"}));
+        p, {"label"}));
   }
   {
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["nodeId"] = typed("string");
     p["id"] = deprecatedNodeHandle();
     p["nodeIds"] = listOf(typed("string"));
     p["prune"] = typed("boolean", "Also remove every edge that touches a deleted node.");
     p["branches"] = branches();
-    tools.push_back(tool("delete_node", Access::del,
+    tools.push_back(treeTool("delete_node", Access::del,
         "Delete one node with `nodeId` or several with `nodeIds`; your marks on them are cleared. Edges that touch "
         "them stay, dangling, unless `prune` is true, and a step that owns a subtree hides that subtree with it.",
-        p, {"treeId"}));
+        p, {}));
   }
   {
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["id"] = typed("string");
     p["hue"] = oneOf(kHues);
     p["label"] = typed("string");
     p["description"] = typed("string");
-    tools.push_back(tool("add_kind", Access::write,
+    tools.push_back(treeTool("add_kind", Access::write,
         "Add a kind to a roadmap's legend: a named hue that nodes are filed under. update_kind changes one later.",
-        p, {"treeId", "id", "hue"}));
+        p, {"id", "hue"}));
   }
   {
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["id"] = typed("string");
     p["kindId"] = typed("string", "Alias of `id`.");
-    tools.push_back(tool("remove_kind", Access::del,
+    tools.push_back(treeTool("remove_kind", Access::del,
         "Remove a kind from a roadmap's legend, once no node wears its hue.",
-        p, {"treeId", "id"}));
+        p, {"id"}));
   }
   {
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["id"] = typed("string");
     p["label"] = typed("string");
     p["description"] = typed("string");
     p["hue"] = oneOf(kHues);
-    tools.push_back(tool("update_kind", Access::write,
+    tools.push_back(treeTool("update_kind", Access::write,
         "Change a legend kind's label, description or hue. A new hue repaints every node that wears the old one.",
-        p, {"treeId", "id"}));
+        p, {"id"}));
   }
   {
     Json::Value node(Json::objectValue);
@@ -416,7 +409,6 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     mark["status"] = status();
     mark["outOfOrder"] = outOfOrder();
     Json::Value p(Json::objectValue);
-    p["treeId"] = typed("string");
     p["nodes"] = listOf(object(node, {"id"}), "Nodes as get_tree returns them.");
     p["kinds"] = legendKinds();
     p["progress"] = listOf(object(mark, {"nodeId", "status"}));
@@ -428,11 +420,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["branches"] = branches();
     p["expectedSeq"] = expectedSeq();
     p["dryRun"] = typed("boolean");
-    tools.push_back(tool("import_subgraph", Access::write,
+    tools.push_back(treeTool("import_subgraph", Access::write,
         "Create or update many nodes, their prerequisite edges and legend kinds in one step, matched by id. A field "
         "sent replaces what the roadmap holds and a field left out keeps it; only `tombstone` and `prerequisiteMode` "
         "\"replace\" remove anything.",
-        p, {"treeId", "nodes"}));
+        p, {"nodes"}));
   }
 
   return tools;

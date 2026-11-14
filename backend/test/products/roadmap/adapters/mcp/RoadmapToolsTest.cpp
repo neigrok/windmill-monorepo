@@ -420,12 +420,20 @@ TEST(mcp_delete_node_whose_trees_row_went_away_before_its_save_answers_no_such_t
   CHECK_FALSE(h.registry.isOpen(TreeId{"t"}));
 }
 
+// Someone else's tree the caller can read is refused as theirs; one the caller cannot read answers as an absent one.
 TEST(mcp_delete_tree_refuses_a_tree_you_dont_own_and_an_unknown_one) {
   Harness h;
   h.trees.byId["other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Other", {}}, 0, uid("someone")};
+  h.trees.byId["shared"] = h.trees.byId["other"];
+  h.trees.byId["shared"].visibility = Visibility::unlisted;
 
-  CHECK(h.tools.callTool("delete_tree", with("treeId", "other"), h.actor).isError);
-  CHECK(h.tools.callTool("delete_tree", with("treeId", "ghost"), h.actor).isError);
+  CHECK_EQ(message(h.tools.callTool("delete_tree", with("treeId", "shared"), h.actor)),
+           std::string("delete_tree: this tree belongs to another account. Call list_trees to see the roadmaps you own."));
+  CHECK_EQ(message(h.tools.callTool("delete_tree", with("treeId", "other"), h.actor)),
+           std::string("delete_tree: no such tree \"other\""));
+  CHECK_EQ(message(h.tools.callTool("delete_tree", with("treeId", "ghost"), h.actor)),
+           std::string("delete_tree: no such tree \"ghost\""));
+  CHECK_EQ(h.trees.byId.size(), 3u);
 }
 
 TEST(mcp_create_node_wires_prerequisites_description_and_links) {
