@@ -649,16 +649,15 @@ lengths alone. `/health` asks for none, for the image's `HEALTHCHECK`.
 | Route | Answer |
 |---|---|
 | `GET /internal/v1/feed?after=<seq>&limit=<n>` | 200, `Ledger::feed(after, limit)` as `feed.json` shows a page. Both are required, `after` from 0 and `limit` from 1 to 500; any other query is 400 `{"code":"invalid_query"}` |
-| `GET /internal/v1/accounts/{accountId}` | 200, `Ledger::account` as `{entitlement, subscriptions}`: the entitlement as `entitlement.json` shows it, and each subscription bound to the account with the entitlement's fields of it, then `environment`, `boundAt`, `boundBy`, `periods` as the feed carries a period, and `events`, each `{seq, type, occurredAt, recordedAt, accountId, period}`. An id that is no UUID is 400 `{"code":"invalid_account_id"}`; an account the ledger holds nothing of answers its empty entitlement and `[]` |
+| `GET /internal/v1/accounts/{accountId}` | 200, `Ledger::account` as `account.json` shows it: `{entitlement, subscriptions}`, the entitlement, and each subscription bound to the account with the entitlement's fields of it, then `environment`, `boundAt`, `boundBy`, `periods` as the feed carries a period, and `events`, each `{seq, type, occurredAt, recordedAt, accountId, period}`. An id that is no UUID is 400 `{"code":"invalid_account_id"}`; an account the ledger holds nothing of answers its empty entitlement and `[]` |
 
 A read the ledger does not answer is 503 `{"code":"unavailable"}` and an Issue under `feed.read` or
 `account.read` ([Logs and Sentry](#logs-and-sentry)); the backend's follower reads again. The wire shapes
 are `internal/responses.rs`, each written from the ledger's own types. `crates/server/tests/contract.rs`
-serves every page of `feed.json` and every entitlement of `entitlement.json` from the ledger's types and
-compares the bodies byte for byte, key order included. It also tells the feed's story through `Ledger::apply`
-up to the sandbox renewal, seq 13, and checks those pages and three account reads against the fixtures: at
-seq 14 the fixture's refund turns renewal off without the `renewal_turned_off` that `observe` records
-(§3.4), and the erasure at seq 26 has no step in the domain yet.
+serves every example of `feed.json`, `entitlement.json` and `account.json` from the ledger's types and
+compares the bodies byte for byte, key order included. It also tells the feed's story through `Ledger::apply`,
+every transaction up to seq 26, and checks the pages that hold it and the three account reads of it
+against the fixtures; the erasure at seq 27 has no step in the domain yet.
 
 ### Logs and Sentry
 

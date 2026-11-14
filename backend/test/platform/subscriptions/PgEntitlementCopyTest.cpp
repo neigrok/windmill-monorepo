@@ -73,17 +73,17 @@ TEST(pg_entitlement_copy_never_takes_a_row_back_to_an_older_entry_but_a_rebuild_
   PgEntitlementCopy copy{pgTestPool()};
   CHECK_EQ(copy.cursor(), FeedCursor{});
 
-  consume(copy, "account_erased", {26});
+  consume(copy, "account_erased", {27});
   consume(copy, "from_zero", {3});
-  CHECK_EQ(rowsAsText(), std::string("3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=26 production=-\n"));
+  CHECK_EQ(rowsAsText(), std::string("3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=27 production=-\n"));
   CHECK_EQ(copy.find(UserId{"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"})->body, entitlementExample("never_subscribed"));
 
   // A rebuild that never commits leaves the old copy whole.
   {
     const auto txn = copy.begin(FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 3}, true);
-    CHECK_EQ(rowsAsText(), std::string("3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=26 production=-\n"));
+    CHECK_EQ(rowsAsText(), std::string("3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=27 production=-\n"));
   }
-  CHECK_EQ(rowsAsText(), std::string("3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=26 production=-\n"));
+  CHECK_EQ(rowsAsText(), std::string("3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=27 production=-\n"));
   CHECK_EQ(copy.cursor(), FeedCursor{});
 
   {

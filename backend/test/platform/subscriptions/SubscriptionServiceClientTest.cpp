@@ -102,7 +102,7 @@ TEST(subscription_service_client_reads_a_feed_page_after_the_cursor_with_its_bea
 
   const FeedPage read = client.page(6, 500);
   CHECK_EQ(read.epoch, std::string("c09a3ab3-2732-4415-ba88-825ff868cf13"));
-  CHECK_EQ(read.latestSeq, Seq{26});
+  CHECK_EQ(read.latestSeq, Seq{27});
   REQUIRE_EQ(read.entries.size(), std::size_t{6});
   CHECK_EQ(read.entries.back().seq, Seq{13});
   CHECK_EQ(read.entries.back().entitlement->body, entitlementExample("sandbox_active"));

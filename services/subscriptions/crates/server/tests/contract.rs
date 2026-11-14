@@ -1,5 +1,5 @@
-// The internal doors against the wire's golden fixtures, packages/api-contract/subscriptions: each body is the
-// fixture's, byte for byte, key order included.
+// The internal doors against the wire's golden fixtures, packages/api-contract/subscriptions: feed.json, entitlement.json
+// and account.json. Each body is the fixture's, byte for byte, key order included.
 
 use std::env;
 use std::panic::{AssertUnwindSafe, resume_unwind};
@@ -21,8 +21,8 @@ use server::internal::Reads;
 use server::listeners::{Bounds, Listener, Readiness};
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
 use storage::{
-    AccountClaim, AccountRecord, Applied, FeedEntry, FeedPage, Ledger, Observed, StorageError,
-    SubscriptionRecord,
+    AccountClaim, AccountRecord, Applied, FeedEntry, FeedPage, Ledger, Observed, RecordedEvent,
+    StorageError, SubscriptionRecord,
 };
 use tower::ServiceExt;
 use url::Url;
@@ -132,79 +132,52 @@ async fn every_page_of_the_feed_is_the_contracts() {
 }
 
 #[tokio::test]
-async fn every_entitlement_is_the_contracts_and_the_account_read_lists_what_it_folds() {
+async fn every_entitlement_is_the_contracts() {
     for example in fixture("entitlement.json")["examples"].as_array().unwrap() {
         let body = &example["body"];
-        let entitlement = entitlement(body);
-        let mut held: Vec<Subscription> = [&entitlement.production, &entitlement.sandbox]
-            .into_iter()
-            .flat_map(|block| block.governing.iter().chain(&block.others))
-            .cloned()
-            .collect();
-        held.sort_by(|one, other| one.id.cmp(&other.id));
+        let account_id = body["accountId"].as_str().unwrap();
         let ledger = OneAccount {
-            account_id: Uuid::parse_str(body["accountId"].as_str().unwrap()).unwrap(),
+            account_id: Uuid::parse_str(account_id).unwrap(),
             record: AccountRecord {
-                entitlement,
-                subscriptions: held
-                    .iter()
-                    .map(|subscription| SubscriptionRecord {
-                        subscription: subscription.clone(),
-                        periods: Vec::new(),
-                        events: Vec::new(),
-                    })
-                    .collect(),
+                entitlement: entitlement(body),
+                subscriptions: Vec::new(),
             },
         };
-        let mut listed: Vec<(&str, Value)> = ["production", "sandbox"]
-            .into_iter()
-            .flat_map(|environment| {
-                let block = &body[environment];
-                [&block["governing"]]
-                    .into_iter()
-                    .chain(block["others"].as_array().unwrap())
-                    .filter(|shown| !shown.is_null())
-                    .map(move |shown| {
-                        let mut bound = shown.clone();
-                        let fields = bound.as_object_mut().unwrap();
-                        fields.insert("environment".to_owned(), json!(environment));
-                        fields.insert("boundAt".to_owned(), shown["startedAt"].clone());
-                        fields.insert("boundBy".to_owned(), json!("purchase"));
-                        fields.insert("periods".to_owned(), json!([]));
-                        fields.insert("events".to_owned(), json!([]));
-                        (shown["subscriptionId"].as_str().unwrap(), bound)
-                    })
-            })
-            .collect();
-        listed.sort_by_key(|(id, _)| *id);
-        let subscriptions: Vec<Value> = listed.into_iter().map(|(_, bound)| bound).collect();
 
-        let served = read(
-            ledger,
-            &format!(
-                "/internal/v1/accounts/{}",
-                body["accountId"].as_str().unwrap()
-            ),
-        )
-        .await;
+        let served = read(ledger, &format!("/internal/v1/accounts/{account_id}")).await;
 
         assert_eq!(
             served,
-            json!({ "entitlement": body, "subscriptions": subscriptions }).to_string(),
+            json!({ "entitlement": body, "subscriptions": [] }).to_string(),
             "{}",
             example["name"]
         );
     }
 }
 
-// The feed's story told through Ledger::apply up to seq 13, where it parts from the domain's: the fixture's refund turns
-// renewal off without the renewal_turned_off observe records. Ids are minted at random, so each is read as the
-// fixture's before the bodies are compared; the ledger's clock is set to each transaction's recordedAt.
+#[tokio::test]
+async fn every_account_read_is_the_contracts() {
+    for example in fixture("account.json")["examples"].as_array().unwrap() {
+        let account_id = example["request"]["accountId"].as_str().unwrap();
+        let ledger = OneAccount {
+            account_id: Uuid::parse_str(account_id).unwrap(),
+            record: account_record(&example["body"]),
+        };
+
+        let served = read(ledger, &format!("/internal/v1/accounts/{account_id}")).await;
+
+        assert_eq!(served, example["body"].to_string(), "{}", example["name"]);
+    }
+}
+
+// The feed's story told through Ledger::apply, every transaction of it up to the erasure at seq 27, which has no step
+// in the domain yet. Ids are minted at random, so each is read as the fixture's before the bodies are compared; the
+// ledger's clock is set to each transaction's recordedAt.
 #[tokio::test]
 #[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
-async fn the_ledger_tells_the_contracts_story_through_the_sandbox_renewal() {
+async fn the_ledger_tells_the_contracts_story_up_to_the_erasure() {
     let feed = fixture("feed.json");
-    let entitlements = fixture("entitlement.json");
+    let accounts = fixture("account.json");
     let pages = feed["examples"].as_array().unwrap();
     let entry = |seq: i64| {
         pages
@@ -214,26 +187,73 @@ async fn the_ledger_tells_the_contracts_story_through_the_sandbox_renewal() {
             .unwrap()
             .clone()
     };
-    let example = |name: &str| {
-        entitlements["examples"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|example| example["name"] == json!(name))
-            .unwrap()["body"]
-            .clone()
-    };
     let account = |seq: i64| Uuid::parse_str(entry(seq)["accountId"].as_str().unwrap()).unwrap();
     let (buyer, claimant, tester) = (account(1), account(6), account(9));
-    let epoch = feed["examples"][0]["body"]["epoch"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let minute = 60_000;
-    let (t0, end1) = (1_796_292_000_000, 1_798_970_400_000);
-    let (unhinted, unhinted_end, claimed) =
-        (1_796_472_000_000, 1_799_150_400_000, 1_796_547_600_000);
+    let epoch = pages[0]["body"]["epoch"].as_str().unwrap().to_owned();
+    let (minute, hour) = (60_000, 3_600_000);
+    let (t0, end1, end2, end3) = (
+        1_796_292_000_000,
+        1_798_970_400_000,
+        1_801_648_800_000,
+        1_805_724_000_000,
+    );
+    let (grace_ends, recovered) = (1_803_031_200_000, 1_803_304_800_000);
+    let (p2_refunded, p2_refund_reversed, turned_off) =
+        (1_803_898_800_000, 1_804_608_000_000, 1_804_708_800_000);
+    let (unhinted, unhinted_end, claimed, q1_refunded) = (
+        1_796_472_000_000,
+        1_799_150_400_000,
+        1_796_547_600_000,
+        1_797_780_600_000,
+    );
     let sandbox = 1_796_742_000_000;
+    let active = State::Active {
+        pause_scheduled_for: None,
+    };
+    let ended = |at: i64, reason| Ending {
+        at: Instant::from_epoch_millis(at),
+        reason,
+    };
+    let bought = Statement {
+        lineage: "buyer",
+        environment: Environment::Production,
+        started_at: t0,
+        observed_at: t0,
+        state: active.clone(),
+        current_period: (t0, end1),
+        auto_renew: true,
+        cancel_requested_at: None,
+        period: ("buyer-1", (t0, end1), None),
+    };
+    let renewed = Statement {
+        observed_at: end1 - hour,
+        current_period: (end1, end2),
+        period: ("buyer-2", (end1, end2), None),
+        ..bought.clone()
+    };
+    let recovering = Statement {
+        observed_at: recovered,
+        current_period: (recovered, end3),
+        period: ("buyer-3", (recovered, end3), None),
+        ..bought.clone()
+    };
+    let unhinted_bought = Statement {
+        lineage: "unhinted",
+        started_at: unhinted,
+        observed_at: unhinted,
+        current_period: (unhinted, unhinted_end),
+        period: ("unhinted-1", (unhinted, unhinted_end), None),
+        ..bought.clone()
+    };
+    let sandbox_bought = Statement {
+        lineage: "sandbox",
+        environment: Environment::Sandbox,
+        started_at: sandbox,
+        observed_at: sandbox,
+        current_period: (sandbox, sandbox + 5 * minute),
+        period: ("sandbox-1", (sandbox, sandbox + 5 * minute), None),
+        ..bought.clone()
+    };
 
     with_empty_database(async |url| {
         let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
@@ -247,24 +267,39 @@ async fn the_ledger_tells_the_contracts_story_through_the_sandbox_renewal() {
             .await
             .unwrap();
         let mut renamed: Vec<(String, String)> = Vec::new();
-        let mut tell = async |recorded_at: i64, observed: Observed, named: &[(i64, &str)]| {
+        let mut tell = async |recorded_at: i64,
+                              statement: Statement<'_>,
+                              hint: Option<Uuid>,
+                              claim: Option<AccountClaim>,
+                              named: &[(i64, &str)]| {
             control
                 .execute(AssertSqlSafe(format!("update story_clock set at = {recorded_at}")))
                 .await
                 .unwrap();
+            let observed = Observed {
+                observation: statement.into(),
+                hint,
+                claim,
+                pulled_at: None,
+            };
             let Applied::Recorded { change, .. } = ledger.apply(observed).await.unwrap() else {
                 panic!("the story's apply recorded nothing");
             };
             for (seq, served) in named {
                 let told = entry(*seq);
                 let (served, told) = match *served {
-                    "subscription" => (change.subscription.id.as_str().to_owned(), told["subscriptionId"].clone()),
+                    "subscription" => (
+                        change.subscription.id.as_str().to_owned(),
+                        told["subscriptionId"].clone(),
+                    ),
                     transaction => (
                         change
                             .periods
                             .iter()
                             .find_map(|period| match period {
-                                PeriodChange::Written(period) if period.transaction.as_str() == transaction => {
+                                PeriodChange::Written(period)
+                                    if period.transaction.as_str() == transaction =>
+                                {
                                     Some(period.id.as_str().to_owned())
                                 }
                                 _ => None,
@@ -277,98 +312,87 @@ async fn the_ledger_tells_the_contracts_story_through_the_sandbox_renewal() {
             }
         };
 
-        tell(
-            t0 + 4_000,
-            Observed {
-                observation: month("buyer", Environment::Production, "buyer-1", t0, t0, (t0, end1)),
-                hint: Some(buyer),
-                claim: None,
-                pulled_at: None,
-            },
-            &[(1, "subscription"), (3, "buyer-1")],
-        )
-        .await;
-        tell(
-            unhinted + 3_000,
-            Observed {
-                observation: month(
-                    "unhinted",
-                    Environment::Production,
-                    "unhinted-1",
-                    unhinted,
-                    unhinted,
-                    (unhinted, unhinted_end),
-                ),
-                hint: None,
-                claim: None,
-                pulled_at: None,
-            },
-            &[(4, "subscription"), (5, "unhinted-1")],
-        )
-        .await;
-        tell(
-            claimed,
-            Observed {
-                observation: month(
-                    "unhinted",
-                    Environment::Production,
-                    "unhinted-1",
-                    claimed,
-                    unhinted,
-                    (unhinted, unhinted_end),
-                ),
-                hint: None,
-                claim: Some(AccountClaim {
-                    account_id: claimant,
-                    at: Instant::from_epoch_millis(claimed),
-                }),
-                pulled_at: Some(Instant::from_epoch_millis(claimed)),
-            },
-            &[],
-        )
-        .await;
+        let buyer_hint = Some(buyer);
+        tell(t0 + 4_000, bought.clone(), buyer_hint, None, &[(1, "subscription"), (3, "buyer-1")]).await;
+        tell(unhinted + 3_000, unhinted_bought.clone(), None, None, &[(4, "subscription"), (5, "unhinted-1")])
+            .await;
+        let claim = AccountClaim {
+            account_id: claimant,
+            at: Instant::from_epoch_millis(claimed),
+        };
+        let claimed_state = Statement {
+            observed_at: claimed,
+            ..unhinted_bought.clone()
+        };
+        tell(claimed, claimed_state, None, Some(claim), &[]).await;
         PgConnection::connect(&url)
             .await
             .unwrap()
             .execute("update ledger set latest_seq = latest_seq + 1")
             .await
             .unwrap();
-        tell(
-            sandbox + 2_000,
-            Observed {
-                observation: month(
-                    "sandbox",
-                    Environment::Sandbox,
-                    "sandbox-1",
-                    sandbox,
-                    sandbox,
-                    (sandbox, sandbox + 5 * minute),
-                ),
-                hint: Some(tester),
-                claim: None,
-                pulled_at: None,
+        let tester_hint = Some(tester);
+        tell(sandbox + 2_000, sandbox_bought.clone(), tester_hint, None, &[(9, "subscription"), (11, "sandbox-1")])
+            .await;
+        let sandbox_renewed = Statement {
+            observed_at: sandbox + 5 * minute,
+            current_period: (sandbox + 5 * minute, sandbox + 10 * minute),
+            period: ("sandbox-2", (sandbox + 5 * minute, sandbox + 10 * minute), None),
+            ..sandbox_bought.clone()
+        };
+        tell(sandbox + 5 * minute + 2_000, sandbox_renewed, tester_hint, None, &[(13, "sandbox-2")]).await;
+        let refunded = Statement {
+            observed_at: q1_refunded,
+            state: State::Revoked(ended(q1_refunded, EndReason::Refunded)),
+            auto_renew: false,
+            period: ("unhinted-1", (unhinted, unhinted_end), Some(q1_refunded)),
+            ..unhinted_bought.clone()
+        };
+        tell(q1_refunded + 2_000, refunded, None, None, &[]).await;
+        tell(end1 - hour + 10_000, renewed.clone(), buyer_hint, None, &[(18, "buyer-2")]).await;
+        let grace = Statement {
+            observed_at: end2,
+            state: State::Grace {
+                payment_failed_at: Instant::from_epoch_millis(end2),
+                grace_ends_at: Instant::from_epoch_millis(grace_ends),
             },
-            &[(9, "subscription"), (11, "sandbox-1")],
-        )
-        .await;
-        tell(
-            sandbox + 5 * minute + 2_000,
-            Observed {
-                observation: month(
-                    "sandbox",
-                    Environment::Sandbox,
-                    "sandbox-2",
-                    sandbox + 5 * minute,
-                    sandbox,
-                    (sandbox + 5 * minute, sandbox + 10 * minute),
-                ),
-                hint: Some(tester),
-                claim: None,
-                pulled_at: None,
+            ..renewed.clone()
+        };
+        tell(end2 + 3_000, grace, buyer_hint, None, &[]).await;
+        let on_hold = Statement {
+            observed_at: grace_ends,
+            state: State::OnHold {
+                payment_failed_at: Instant::from_epoch_millis(end2),
             },
-            &[(13, "sandbox-2")],
-        )
-        .await;
+            ..renewed.clone()
+        };
+        tell(grace_ends + 3_000, on_hold, buyer_hint, None, &[]).await;
+        tell(recovered + 3_000, recovering.clone(), buyer_hint, None, &[(22, "buyer-3")]).await;
+        let earlier_refunded = Statement {
+            observed_at: p2_refunded,
+            period: ("buyer-2", (end1, end2), Some(p2_refunded)),
+            ..recovering.clone()
+        };
+        tell(p2_refunded + 2_000, earlier_refunded, buyer_hint, None, &[]).await;
+        let refund_reversed = Statement {
+            observed_at: p2_refund_reversed,
+            period: ("buyer-2", (end1, end2), None),
+            ..recovering.clone()
+        };
+        tell(p2_refund_reversed + 2_000, refund_reversed, buyer_hint, None, &[]).await;
+        let renewal_off = Statement {
+            observed_at: turned_off,
+            auto_renew: false,
+            cancel_requested_at: Some(turned_off),
+            ..recovering.clone()
+        };
+        tell(turned_off + 2_000, renewal_off.clone(), buyer_hint, None, &[]).await;
+        let expired = Statement {
+            observed_at: end3,
+            state: State::Expired(ended(end3, EndReason::Cancelled)),
+            ..renewal_off
+        };
+        tell(end3 + 4_000, expired, buyer_hint, None, &[]).await;
         let as_told = |served: String| {
             renamed
                 .iter()
@@ -376,60 +400,37 @@ async fn the_ledger_tells_the_contracts_story_through_the_sandbox_renewal() {
         };
 
         let mut told_pages = Vec::new();
-        for name in ["from_zero", "claimed_then_sandbox"] {
+        for name in [
+            "from_zero",
+            "claimed_then_sandbox",
+            "refunded_then_renewed",
+            "payment_trouble",
+            "older_period_refunded",
+        ] {
             let example = pages.iter().find(|example| example["name"] == json!(name)).unwrap();
-            let (after, limit) = (example["request"]["after"].clone(), example["request"]["limit"].clone());
+            let (after, limit) = (&example["request"]["after"], &example["request"]["limit"]);
             let served = read(ledger.clone(), &format!("/internal/v1/feed?after={after}&limit={limit}")).await;
             let mut told: Value = serde_json::from_str(&as_told(served)).unwrap();
-            assert_eq!(told["latestSeq"], json!(13), "{name}");
+            assert_eq!(told["latestSeq"], json!(26), "{name}");
             told["latestSeq"] = example["body"]["latestSeq"].clone();
-            told_pages.push((name, told.to_string(), example["body"].to_string()));
+            told_pages.push((told.to_string(), example["body"].to_string()));
         }
         let mut told_accounts = Vec::new();
-        for account in [buyer, claimant, tester] {
+        for (name, account) in [("expired", buyer), ("claimed_then_refunded", claimant), ("sandbox", tester)] {
             let served = read(ledger.clone(), &format!("/internal/v1/accounts/{account}")).await;
-            told_accounts.push(as_told(served));
+            let contract = accounts["examples"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|example| example["name"] == json!(name))
+                .unwrap()["body"]
+                .to_string();
+            told_accounts.push((as_told(served), contract));
         }
 
-        for (name, told, contract) in told_pages {
-            assert_eq!(told, contract, "{name}");
+        for (told, contract) in told_pages.into_iter().chain(told_accounts) {
+            assert_eq!(told, contract);
         }
-        let events = |seqs: &[i64]| -> Value {
-            seqs.iter()
-                .map(|seq| {
-                    let entry = entry(*seq);
-                    json!({
-                        "seq": entry["seq"],
-                        "type": entry["type"],
-                        "occurredAt": entry["occurredAt"],
-                        "recordedAt": entry["recordedAt"],
-                        "accountId": entry["accountId"],
-                        "period": entry["period"],
-                    })
-                })
-                .collect()
-        };
-        let bound = |entitlement: &Value, environment: &str, binding: (i64, &str), periods: &[i64], seqs: &[i64]| {
-            let mut bound = entitlement[environment]["governing"].clone();
-            let fields = bound.as_object_mut().unwrap();
-            fields.insert("environment".to_owned(), json!(environment));
-            fields.insert("boundAt".to_owned(), json!(binding.0));
-            fields.insert("boundBy".to_owned(), json!(binding.1));
-            fields.insert(
-                "periods".to_owned(),
-                periods.iter().map(|seq| entry(*seq)["period"].clone()).collect(),
-            );
-            fields.insert("events".to_owned(), events(seqs));
-            json!({ "entitlement": entitlement, "subscriptions": [bound] }).to_string()
-        };
-        assert_eq!(
-            told_accounts,
-            [
-                bound(&example("active"), "production", (t0, "purchase"), &[3], &[1, 2, 3]),
-                bound(&entry(7)["entitlement"], "production", (claimed, "claim"), &[7], &[4, 5, 6, 7]),
-                bound(&example("sandbox_active"), "sandbox", (sandbox, "purchase"), &[11, 13], &[9, 10, 11, 12, 13]),
-            ]
-        );
         ledger.close().await;
     })
     .await;
@@ -461,58 +462,68 @@ async fn with_empty_database(test: impl AsyncFnOnce(String)) {
     }
 }
 
-// A month of Windmill One, active and renewing at $12.00, as the store states it at `observed_at`: its one period is
-// the one in force, paid by `transaction`.
-fn month(
-    lineage: &str,
+// What a store states about a lineage at one instant, as the story needs it: one product at $12.00, and the one
+// period the statement names.
+#[derive(Clone)]
+struct Statement<'a> {
+    lineage: &'a str,
     environment: Environment,
-    transaction: &str,
-    observed_at: i64,
     started_at: i64,
-    (start, end): (i64, i64),
-) -> Observation {
-    let span = Span {
-        start: Instant::from_epoch_millis(start),
-        end: Instant::from_epoch_millis(end),
-    };
-    let price = Money::new("12.00", "USD").unwrap();
-    Observation {
-        lineage: Lineage {
-            store: Store::AppStore,
-            environment,
-            store_subscription_id: StoreSubscriptionId::new(lineage),
-        },
-        observed_at: Instant::from_epoch_millis(observed_at),
-        ownership: Ownership::Purchased,
-        status: Status {
-            plan: Plan::WindmillOne,
-            product_id: ProductId::new("works.windmill.app.one.monthly"),
-            billing_interval: BillingInterval::new("P1M"),
-            started_at: Instant::from_epoch_millis(started_at),
-            state: State::Active {
-                pause_scheduled_for: None,
+    observed_at: i64,
+    state: State,
+    current_period: (i64, i64),
+    auto_renew: bool,
+    cancel_requested_at: Option<i64>,
+    period: (&'a str, (i64, i64), Option<i64>),
+}
+
+impl From<Statement<'_>> for Observation {
+    fn from(statement: Statement<'_>) -> Observation {
+        let span = |(start, end): (i64, i64)| Span {
+            start: Instant::from_epoch_millis(start),
+            end: Instant::from_epoch_millis(end),
+        };
+        let current_period = span(statement.current_period);
+        let (transaction, stretch, refunded_at) = statement.period;
+        let price = Money::new("12.00", "USD").unwrap();
+        Observation {
+            lineage: Lineage {
+                store: Store::AppStore,
+                environment: statement.environment,
+                store_subscription_id: StoreSubscriptionId::new(statement.lineage),
             },
-            current_period: span,
-            renewal: Renewal {
-                auto_renew: true,
-                next_charge: Some(NextCharge {
-                    at: span.end,
-                    price: price.clone(),
-                }),
-                next_product_id: None,
-                cancel_requested_at: None,
+            observed_at: Instant::from_epoch_millis(statement.observed_at),
+            ownership: Ownership::Purchased,
+            status: Status {
+                plan: Plan::WindmillOne,
+                product_id: ProductId::new("works.windmill.app.one.monthly"),
+                billing_interval: BillingInterval::new("P1M"),
+                started_at: Instant::from_epoch_millis(statement.started_at),
+                state: statement.state,
+                current_period,
+                renewal: Renewal {
+                    auto_renew: statement.auto_renew,
+                    next_charge: Some(NextCharge {
+                        at: current_period.end,
+                        price: price.clone(),
+                    }),
+                    next_product_id: None,
+                    cancel_requested_at: statement
+                        .cancel_requested_at
+                        .map(Instant::from_epoch_millis),
+                },
+                offer: None,
+                price: price.clone(),
+                storefront: None,
             },
-            offer: None,
-            price: price.clone(),
-            storefront: None,
-        },
-        periods: vec![ObservedPeriod {
-            transaction: StoreTransactionId::new(transaction),
-            span,
-            price,
-            offer_kind: None,
-            refunded_at: None,
-        }],
+            periods: vec![ObservedPeriod {
+                transaction: StoreTransactionId::new(transaction),
+                span: span(stretch),
+                price,
+                offer_kind: None,
+                refunded_at: refunded_at.map(Instant::from_epoch_millis),
+            }],
+        }
     }
 }
 
@@ -532,6 +543,24 @@ fn page(wire: &Value) -> FeedPage {
 }
 
 fn feed_entry(wire: &Value) -> FeedEntry {
+    let RecordedEvent {
+        seq,
+        recorded_at,
+        event,
+    } = recorded_event(wire, wire["subscriptionId"].as_str().unwrap());
+    FeedEntry {
+        seq,
+        recorded_at,
+        event,
+        store: Store::from_name(wire["store"].as_str().unwrap()).unwrap(),
+        environment: Environment::from_name(wire["environment"].as_str().unwrap()).unwrap(),
+        offer_kind: offer_kind(&wire["offerKind"]),
+        entitlement: (!wire["entitlement"].is_null()).then(|| entitlement(&wire["entitlement"])),
+    }
+}
+
+// An event of the feed or of an account read, of the subscription it belongs to.
+fn recorded_event(wire: &Value, subscription_id: &str) -> RecordedEvent {
     let occurred_at = instant(&wire["occurredAt"]).unwrap();
     let period = (!wire["period"].is_null()).then(|| period(&wire["period"], occurred_at));
     let kind = match (wire["type"].as_str().unwrap(), period) {
@@ -548,21 +577,55 @@ fn feed_entry(wire: &Value) -> FeedEntry {
         ("revoked", None) => EventKind::Revoked,
         ("bound", None) => EventKind::Bound,
         ("unbound", None) => EventKind::Unbound,
-        (other, _) => panic!("the feed fixture tells a {other} this test does not read"),
+        (other, _) => panic!("a fixture tells a {other} this test does not read"),
     };
-    FeedEntry {
+    RecordedEvent {
         seq: wire["seq"].as_i64().unwrap(),
         recorded_at: instant(&wire["recordedAt"]).unwrap(),
         event: Event {
             kind,
             occurred_at,
-            subscription_id: SubscriptionId::new(wire["subscriptionId"].as_str().unwrap()),
+            subscription_id: SubscriptionId::new(subscription_id),
             account_id: wire["accountId"].as_str().map(AccountId::new),
         },
-        store: Store::from_name(wire["store"].as_str().unwrap()).unwrap(),
-        environment: Environment::from_name(wire["environment"].as_str().unwrap()).unwrap(),
-        offer_kind: offer_kind(&wire["offerKind"]),
-        entitlement: (!wire["entitlement"].is_null()).then(|| entitlement(&wire["entitlement"])),
+    }
+}
+
+fn account_record(wire: &Value) -> AccountRecord {
+    let account_id = AccountId::new(wire["entitlement"]["accountId"].as_str().unwrap());
+    let subscriptions = wire["subscriptions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|listed| {
+            let id = listed["subscriptionId"].as_str().unwrap();
+            let binding = Binding {
+                account_id: account_id.clone(),
+                bound_at: instant(&listed["boundAt"]).unwrap(),
+                bound_by: BoundBy::from_name(listed["boundBy"].as_str().unwrap()).unwrap(),
+            };
+            let environment =
+                Environment::from_name(listed["environment"].as_str().unwrap()).unwrap();
+            SubscriptionRecord {
+                subscription: subscription(listed, environment, binding),
+                periods: listed["periods"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|shown| period(shown, instant(&shown["start"]).unwrap()))
+                    .collect(),
+                events: listed["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|told| recorded_event(told, id))
+                    .collect(),
+            }
+        })
+        .collect();
+    AccountRecord {
+        entitlement: entitlement(&wire["entitlement"]),
+        subscriptions,
     }
 }
 
@@ -576,14 +639,21 @@ fn entitlement(wire: &Value) -> AccountEntitlement {
                 .into_iter()
                 .chain(block["others"].as_array().unwrap())
                 .filter(|shown| !shown.is_null())
-                .map(|shown| subscription(shown, environment, &account_id))
+                .map(|shown| {
+                    let binding = Binding {
+                        account_id: account_id.clone(),
+                        bound_at: instant(&shown["startedAt"]).unwrap(),
+                        bound_by: BoundBy::Purchase,
+                    };
+                    subscription(shown, environment, binding)
+                })
                 .collect::<Vec<_>>()
         })
         .collect();
     AccountEntitlement::of(account_id, held)
 }
 
-fn subscription(wire: &Value, environment: Environment, account_id: &AccountId) -> Subscription {
+fn subscription(wire: &Value, environment: Environment, binding: Binding) -> Subscription {
     let id = wire["subscriptionId"].as_str().unwrap();
     let started_at = instant(&wire["startedAt"]).unwrap();
     let next_charge = instant(&wire["nextChargeAt"]).map(|at| NextCharge {
@@ -620,11 +690,7 @@ fn subscription(wire: &Value, environment: Environment, account_id: &AccountId) 
             environment,
             store_subscription_id: StoreSubscriptionId::new(id),
         },
-        binding: Some(Binding {
-            account_id: account_id.clone(),
-            bound_at: started_at,
-            bound_by: BoundBy::Purchase,
-        }),
+        binding: Some(binding),
         status: Status {
             plan: Plan::WindmillOne,
             product_id: ProductId::new("works.windmill.app.one.monthly"),
