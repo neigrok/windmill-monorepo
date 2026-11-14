@@ -14,13 +14,15 @@ pilot uses Roadmap on the web. Keep both pilots running while preparing the publ
 
 ## Public iPhone release in early December 2026
 
-December 1–5 is an internal working window. The founder owns the public listing and records these steps
-separately, so an invite or announcement can always point to something the reader can use.
+December 1–5 is an internal working window, not a committed date. The release carries Windmill One and
+waits until Apple has approved its subscription with the app version and the owner has opened the paid
+line. The founder owns the public listing and records these steps separately, so an invite or announcement
+can always point to something the reader can use.
 
 | When | What to prepare or verify |
 |---|---|
 | November 12–18 | Choose intended storefronts. Outline the Roadmap story and collect support and privacy links, reviewer instructions and sign-in details where required. Record who can submit the build and who will check the live listing. [Listing brief](05-aso-and-featuring.md) · [App submission](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-app/) |
-| Before submission | On the candidate iPhone build, mark a Roadmap step complete, close the app, reopen the tree and verify that the same step is still marked complete. Check the Journal and Gym actions named in the listing. Capture the build number and screenshots with founder-owned example data. Coordinate any subscription submission with the owner’s chosen sales channel. [Windmill One readiness](04-gym-demo-and-checkout.md) |
+| Before submission | On the candidate iPhone build, mark a Roadmap step complete, close the app, reopen the tree and verify that the same step is still marked complete. Check the Journal and Gym actions named in the listing. Capture the build number and screenshots with founder-owned example data. Submit the Windmill One subscription with this version; Apple reviews a first subscription only together with an app version. [Windmill One readiness](04-gym-demo-and-checkout.md) |
 | At review | The release workflow uploads the archive to App Store Connect and checks TestFlight availability. Select the candidate for public App Review, submit the matching materials, track the review decision and record the release option for that version. [Release workflow](../../../.github/workflows/ios-release.yml) · [Apple release options](https://developer.apple.com/help/app-store-connect/manage-your-apps-availability/select-an-app-store-version-release-option/) |
 | On public availability | Open the public product page in each storefront named in the announcement. Download the app on a supported iPhone without TestFlight, verify the version, then repeat the completion and reopen check before announcing native Roadmap. Record storefront, URL, date, version and result. Publish each store link after its download passes. |
 

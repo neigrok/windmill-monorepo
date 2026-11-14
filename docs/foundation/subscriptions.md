@@ -5,10 +5,11 @@ invariants (`INV-n`) and rulings (`R-n`) are numbered so reviews, code and roadm
 
 ## §0 Status and scope
 
-**Status:** Specified, not built. No code under `services/subscriptions/` exists. Windmill One cannot be
-bought on any surface. The C++ backend mirrors Paddle subscriptions (`backend/platform/adapters/paddle`)
-and `Entitlements::hasWindmillOne` reads that mirror; this document specifies what replaces it. The
-build order and its owner gates live in the Windmill One roadmap tree, which the dogfood tree
+**Status:** Specified, not built. `services/subscriptions/` holds the Rust workspace with its four crates
+empty; nothing runs and nothing is deployed. Windmill One cannot be bought on any surface. The C++
+backend mirrors Paddle subscriptions (`backend/platform/adapters/paddle`) and
+`Entitlements::hasWindmillOne` reads that mirror; this document specifies what replaces it. The build
+order and its owner gates live in the Windmill One roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `windmill-one-subscription-service`.
 
 **Scope:** One service owns every fact about a paid Windmill One subscription: which store sold it,
@@ -317,7 +318,7 @@ One worker, hourly:
 ```text
 services/subscriptions/
   Cargo.toml              the workspace
-  ARCHITECTURE.md         what is built, once something is
+  ARCHITECTURE.md         what is built, the dependency rule and how it is checked
   crates/
     domain/               D-1…D-9, observe, grantsAccess, the entitlement fold; no I/O, no async
     app_store/            signature verification, notification and transaction decoding into
