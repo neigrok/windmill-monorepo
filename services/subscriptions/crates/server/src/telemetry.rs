@@ -13,8 +13,7 @@ use tracing_subscriber::registry::LookupSpan;
 
 use crate::config::Config;
 
-// Every line the service writes is one JSON object: the line's fields at the top level and, while a
-// request is being answered, that request's span under `span`.
+// One JSON object per line: its fields on top and, inside a request, the request's span as `span`.
 pub fn json_lines<S, W>(writer: W) -> impl Layer<S>
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
@@ -29,9 +28,7 @@ where
         .with_writer(writer)
 }
 
-// Lines go to stdout from WINDMILL_LOG_LEVEL up. The service's own lines, never a vendor's, also go to
-// Sentry as Logs from SENTRY_LOG_LEVEL up; a line at error level creates no Issue. Issues come only from
-// explicit reports, such as the panic hook below.
+// Stdout takes lines from WINDMILL_LOG_LEVEL; Sentry Logs, the service's own from SENTRY_LOG_LEVEL.
 pub fn start(config: &Config) -> ClientInitGuard {
     let own_lines = Targets::new()
         .with_target("server", config.sentry_log_level)
@@ -50,8 +47,7 @@ pub fn start(config: &Config) -> ClientInitGuard {
         tracing::warn!("sentry disabled: SENTRY_DSN is not set");
     }
 
-    // Replaces the default hook, which prints the panic message. A message carries whatever the code
-    // formatted into it, so neither the line nor the report includes it: the location and the stack do.
+    // The one source of Issues: location and stack, never the message, which may hold anything.
     std::panic::set_hook(Box::new(|panic| {
         let location = panic.location().map_or_else(
             || "unknown".to_owned(),

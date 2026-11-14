@@ -12,8 +12,8 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
 
-// Docker kills a container ten seconds after SIGTERM; requests in flight get most of that to finish.
-const DRAIN_BOUND: Duration = Duration::from_secs(8);
+// Docker kills 10 s after SIGTERM: 7 s for requests in flight, up to 2 s for Sentry's last flush.
+const DRAIN_BOUND: Duration = Duration::from_secs(7);
 
 fn main() -> ExitCode {
     let config = match Config::from_environment(|variable| env::var(variable).ok()) {
@@ -63,7 +63,8 @@ async fn serve(config: Config) -> ExitCode {
         let socket = match TcpListener::bind(address).await {
             Ok(socket) => socket,
             Err(error) => {
-                tracing::error!(listener = listener.label(), %address, error = ?error.kind(), "listener refused");
+                let kind = error.kind();
+                tracing::error!(listener = listener.label(), %address, ?kind, "listener refused");
                 return ExitCode::FAILURE;
             }
         };

@@ -1,6 +1,4 @@
-// Its own test binary, so no other test runs beside it: tracing caches whether a line is enabled where
-// it first fires, and a request answered on another test's thread, with no subscriber, would cache the
-// request line as disabled before this test's capture saw it.
+// Its own binary: tracing caches a line as off where it first fires; a parallel test would hide it.
 
 use std::io;
 use std::sync::{Arc, Mutex};

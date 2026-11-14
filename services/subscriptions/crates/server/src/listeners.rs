@@ -17,9 +17,7 @@ use uuid::Uuid;
 
 use crate::config::Config;
 
-// The service listens on two ports and the proxy forwards only to the public one, so an internal route
-// cannot be exposed by a path rule (spec §5). Each listener builds its own router: a route the internal
-// listener answers does not exist on the public one.
+// Two ports, so no path rule can expose an internal route (spec §5): one router per listener.
 #[derive(Clone, Copy, Debug)]
 pub enum Listener {
     Public,
@@ -76,9 +74,7 @@ static KNOWN_METHODS: [Method; 9] = [
     Method::TRACE,
 ];
 
-// Every request on either listener passes here: it gets its own Sentry scope and a span carrying its
-// route, a panic in its handler answers 500 instead of dropping the connection, and it ends in one log
-// line. The line names the route template, never the raw path, and reads no header or body.
+// Each request: its own Sentry scope and span, a 500 if its handler panics, one line at the end.
 async fn observe(State(listener): State<Listener>, request: Request, next: Next) -> Response {
     let started = Instant::now();
     let method = KNOWN_METHODS
@@ -124,8 +120,7 @@ async fn observe(State(listener): State<Listener>, request: Request, next: Next)
     let status = outcome.as_u16();
     let duration_ms = (started.elapsed().as_secs_f64() * 100_000.0).round() / 100.0;
     let listener = listener.label();
-    // tracing fixes a line's level where the line is written, so the one request line is written once
-    // here and placed at each level below.
+    // tracing fixes a line's level at the call, so the request line is written once, placed below.
     macro_rules! request_line {
         ($level:ident) => {
             tracing::$level!(

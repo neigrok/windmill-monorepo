@@ -1,7 +1,7 @@
 name: Subscriptions CI
 
 # The Windmill One subscription service (services/subscriptions): the crates' dependency rule,
-# formatting, Clippy with warnings denied and the tests.
+# formatting, Clippy with warnings denied and the tests, then the image built and driven once.
 
 on:
   push:
@@ -55,3 +55,43 @@ jobs:
 
       - name: Tests
         run: cargo test --locked
+
+  # The image from services/subscriptions/Dockerfile, built for Linux in release mode and run once: it
+  # becomes healthy, both listeners answer ready, the public one answers no internal path, and SIGTERM
+  # stops it with exit code 0.
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build the image
+        uses: docker/build-push-action@v7
+        with:
+          context: services/subscriptions
+          load: true
+          tags: windmill-subscriptions:ci
+          build-args: SENTRY_RELEASE=${{ github.sha }}
+          cache-from: type=gha,scope=subscriptions
+          cache-to: type=gha,scope=subscriptions,mode=max
+
+      - name: Drive the container
+        run: |
+          docker run -d --name subscriptions -p 8082:8082 -p 8083:8083 -e SENTRY_ENVIRONMENT=ci windmill-subscriptions:ci
+          for attempt in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' subscriptions)" = healthy ] && break
+            sleep 1
+          done
+          test "$(docker inspect -f '{{.State.Health.Status}}' subscriptions)" = healthy
+          test "$(curl -fsS http://127.0.0.1:8082/health)" = '{"status":"ready"}'
+          test "$(curl -fsS http://127.0.0.1:8083/health)" = '{"status":"ready"}'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/internal/v1/feed)" = 404
+          docker stop subscriptions
+          test "$(docker inspect -f '{{.State.ExitCode}}' subscriptions)" = 0
+          docker logs subscriptions | grep -q '"message":"stopped"'
+
+      - name: The container's log
+        if: always()
+        run: docker logs subscriptions || true

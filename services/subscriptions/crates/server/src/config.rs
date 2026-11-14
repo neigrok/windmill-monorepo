@@ -71,7 +71,7 @@ impl<F: Fn(&str) -> Option<String>> Variables<F> {
     }
 }
 
-// Names the variable and never its value: a value may be a secret, such as the key inside SENTRY_DSN.
+// Names the variable, never its value: a value may be a secret, such as the key in SENTRY_DSN.
 #[derive(Debug, PartialEq)]
 pub struct ConfigError {
     pub variable: &'static str,
