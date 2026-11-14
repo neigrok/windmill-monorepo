@@ -36,11 +36,11 @@ for (const engine of [chromium, webkit]) {
           modal: await note.getAttribute('aria-modal'),
           tree: await stepInert(page),
           cardShown: await page.locator('.st-guide-card').evaluate((button) => getComputedStyle(button).visibility),
-          left: opened.x - resting.x,
-          top: opened.y - resting.y,
           width: opened.width,
           focus: await focusedName(page),
-        }, { modal: null, tree: false, cardShown: 'hidden', left: -4, top: -16, width: 642, focus: 'st-guide-prose st-guide-prose--owner' });
+        }, { modal: null, tree: false, cardShown: 'hidden', width: 642, focus: 'st-guide-prose st-guide-prose--owner' });
+        assert.ok(Math.abs(opened.x - resting.x + 4) <= 0.25, `note left offset: ${opened.x - resting.x}px`);
+        assert.ok(Math.abs(opened.y - resting.y + 16) <= 0.25, `note top offset: ${opened.y - resting.y}px`);
 
         const from = await linePoint(page, 0, 'start');
         await page.mouse.move(from.x, from.y);
@@ -62,6 +62,28 @@ for (const engine of [chromium, webkit]) {
           { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' },
           { step: 'edit', via: 'click' },
         ]);
+      });
+    } finally { await page.close(); }
+  });
+
+  test(`${engine.name()}: a held card press opens the note at the card's resting position`, async () => {
+    const page = await open({ guide: GUIDE }, { engine });
+    try {
+      await withBrowserErrors(page, async () => {
+        const card = page.getByRole('button', { name: 'Guide: One step a week.' });
+        await card.hover();
+        await settled(page);
+        const resting = await card.boundingBox();
+        await page.mouse.down();
+        await page.waitForFunction(() => new DOMMatrix(getComputedStyle(document.querySelector('.st-guide-card')).transform).a < 0.98);
+        await page.mouse.up();
+        const note = page.getByRole('dialog', { name: 'Guide', exact: true });
+        await note.waitFor();
+        await settled(page);
+        const opened = await note.boundingBox();
+        assert.ok(Math.abs(opened.x - resting.x + 4) <= 0.25, `note left offset: ${opened.x - resting.x}px`);
+        assert.ok(Math.abs(opened.y - resting.y + 16) <= 0.25, `note top offset: ${opened.y - resting.y}px`);
+        assert.equal(await focusedName(page), 'st-guide-prose st-guide-prose--owner');
       });
     } finally { await page.close(); }
   });
