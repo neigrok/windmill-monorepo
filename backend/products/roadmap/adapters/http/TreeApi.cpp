@@ -9,8 +9,6 @@
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Guides.h"
-#include "products/roadmap/domain/Legend.h"
-#include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/OpenedTrees.h"
 
 #include <algorithm>
@@ -19,11 +17,10 @@
 namespace wm {
 
 TreeApi::TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
-                 std::shared_ptr<OwnerProgress> progress, std::shared_ptr<OpLog> ops, Hlc genesis,
-                 std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork, std::shared_ptr<Clock> clock)
+                 std::shared_ptr<OwnerProgress> progress, std::shared_ptr<OpLog> ops, std::shared_ptr<AuthService> auth,
+                 std::shared_ptr<ForkService> fork)
     : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)),
-      ops_(std::move(ops)), genesis_(std::move(genesis)), auth_(std::move(auth)), fork_(std::move(fork)),
-      clock_(std::move(clock)) {}
+      ops_(std::move(ops)), auth_(std::move(auth)), fork_(std::move(fork)) {}
 
 std::optional<UserId> TreeApi::callerOf(const drogon::HttpRequestPtr& req) const {
   return wm::callerOf(req, *auth_);
@@ -212,155 +209,6 @@ void TreeApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& c
     body["pointerDiagnosticsUnavailable"] = true;
   }
   callback(jsonResponse(body));
-}
-
-void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
-  std::optional<UserId> caller = callerOf(req);
-  if (!caller) {
-    callback(error(drogon::k401Unauthorized, "sign in to edit"));
-    return;
-  }
-  std::shared_ptr<Json::Value> json = req->getJsonObject();
-  // jsoncpp throws on a keyed read of an array or a scalar, so a non-object root is refused first.
-  if (!json || !json->isObject()) {
-    callback(error(drogon::k400BadRequest, "invalid json body"));
-    return;
-  }
-  std::optional<TreeData> data = treeFromJson(*json, TreeId{treeId});
-  if (!data) {
-    callback(error(drogon::k400BadRequest, "invalid json body"));
-    return;
-  }
-  if (std::optional<Admission> refusal = admit(*data)) {
-    const bool tooLarge = refusal->verdict == Admission::Verdict::tooLarge;
-    callback(error(tooLarge ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest, refusal->reason));
-    return;
-  }
-  // Judged on the two authorization columns alone, and nothing touched until they say yes: an eviction above this
-  // gate would close the live room of whatever id a stranger names. A hidden branch's tree answers as absent here, as
-  // on every gate.
-  std::optional<TreeAccess> access;
-  const auto gateRefusal = [&]() -> drogon::HttpResponsePtr {
-    access = registry_->accessOf(TreeId{treeId});
-    // Unreadable answers "no such tree": a refusal must never state that a private id is taken.
-    if (access && !canRead(caller, access->owner, access->visibility))
-      return error(drogon::k404NotFound, "no such tree");
-    if (access) {
-      if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))
-        return error(drogon::k403Forbidden, sentenceOf(*refusal), codeOf(*refusal));
-    }
-
-    // A live room the gate did not answer is a hidden branch's tree: it is left as it is.
-    if (!access && registry_->isOpen(TreeId{treeId})) return error(drogon::k404NotFound, "no such tree");
-
-    // A PUT to an id no row holds CREATES the tree, so it must be well-formed; an existing tree
-    // keeps whatever id it has.
-    if (!access && !wellFormedTreeId(treeId))
-      return error(drogon::k400BadRequest, "id must be t_ followed by 16 lowercase hex characters", "bad-id");
-    return nullptr;
-  };
-  const auto savePending = [] {
-    return error(drogon::k503ServiceUnavailable, "an earlier edit of this tree is still being saved — try again",
-                 "save-pending");
-  };
-  // Flush and close any live room before the strand is taken, since its save runs off the strand. A room whose save
-  // is held stays open with edits the row lacks, and a document written beneath it would never reach its pages: the
-  // PUT waits for the save.
-  if (drogon::HttpResponsePtr refusal = gateRefusal()) {
-    callback(refusal);
-    return;
-  }
-  if (!registry_->evict(TreeId{treeId})) {
-    callback(savePending());
-    return;
-  }
-  // The decision itself runs under the tree's strand, judged again there; the callback fires outside the lock.
-  drogon::HttpResponsePtr reply = [&]() -> drogon::HttpResponsePtr {
-    std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
-    if (drogon::HttpResponsePtr refusal = gateRefusal()) return refusal;
-    // A room opened since the flush is closed here, with no statement, when the row holds all of it; one a write has
-    // landed in is not, and the PUT waits as it does for a held one. THEN the row that flush wrote is read: reading
-    // it earlier rewinds head_seq under the op log.
-    if (!registry_->close(TreeId{treeId})) return savePending();
-    std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
-    // A row the gate did not answer is a hidden branch's tree, which a PUT neither writes nor plants over.
-    if (existing && !access) return error(drogon::k404NotFound, "no such tree");
-
-    // A save GROWS the stored lattice, so the ceiling is read off what the tree would HOLD.
-    if (existing) {
-      if (std::optional<Admission> refusal = admit(LooseGraph(existing->state), *data)) {
-        const bool tooLarge = refusal->verdict == Admission::Verdict::tooLarge;
-        return error(tooLarge ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest, refusal->reason);
-      }
-    }
-
-    // A document that creates the tree adds its steps now. One joined into a standing tree takes
-    // the genesis stamp, which every live edit outranks.
-    const Hlc plantedAt = existing ? genesis_ : Hlc{clock_->nowMs(), 0, std::string{TreeRoom::kServerActor}};
-    GraphState state = LooseGraph(*data, plantedAt).exportState();
-    // A step that owns a subtree keeps the pointer its row holds (SPEC.md, Model, Legacy pointers). A document cannot
-    // tell an empty pointer from one it leaves out, so only a step it names another tree on than the one its row holds
-    // is answered refused, in the document's order.
-    std::vector<NodeId> refused;
-    if (existing) {
-      std::map<NodeId, NodeStateEntry> owning;  // each owning step's stored row
-      std::map<NodeId, TreeId> held;           // and the pointer it holds
-      for (const NodeStateEntry& stored : existing->state.nodes) {
-        if (!existing->subtrees.count(stored.id)) continue;
-        owning.emplace(stored.id, stored);
-        held.emplace(stored.id, stored.opens);
-      }
-      std::vector<std::pair<NodeId, TreeId>> sent;
-      for (const NodeSpec& node : data->nodes)
-        if (!node.opens.empty()) sent.emplace_back(node.id, node.opens);
-      refused = refusedPointers(sent, existing->subtrees, held);
-      for (NodeStateEntry& node : state.nodes) {
-        if (!existing->subtrees.count(node.id)) continue;
-        const auto stored = owning.find(node.id);
-        node.opens = stored == owning.end() ? TreeId{} : stored->second.opens;
-        node.opensAt = stored == owning.end() ? Hlc{} : stored->second.opensAt;
-      }
-      countCurrentWriteRefused(refused.size());
-    }
-
-    LegendState legend;
-    if (!data->kinds.empty()) legend = Legend(data->kinds, genesis_).exportState();
-    else if (existing) legend = existing->legend;
-    else legend = Legend::seededDefaults(genesis_).exportState();
-
-    if (!existing) {
-      try {
-        trees_->create(TreeId{treeId}, state, legend, data->title, *caller);
-      } catch (const DuplicateTree&) {
-        // Lost an insert race, or a soft-deleted row still holds the id.
-        return error(drogon::k409Conflict, "a tree with that id already exists");
-      }
-    } else {
-      // Minted past the stored register so it clears the repository's LWW guard.
-      HlcClock mint{std::string{TreeRoom::kServerActor}};
-      mint.observe(existing->title.stamp);
-      trees_->save(TreeId{treeId}, state, legend, Lww<std::string>{data->title, mint.tick(0)},
-                   existing->guide, existing->head);
-      // The steps it carries are present now, an owning step it revives among them: its subtree shows again.
-      registry_->settleOwningSteps(access->root);
-    }
-
-    // A document never sets the guide, so the answer states the one the tree holds, and each step that owns a subtree
-    // opens it, as every read answers.
-    if (existing) {
-      data->guide = existing->guide.value;
-      for (NodeSpec& node : data->nodes)
-        if (const auto subtree = existing->subtrees.find(node.id); subtree != existing->subtrees.end())
-          node.opens = subtree->second;
-    }
-    data->kinds = Legend(legend).kinds();
-    Json::Value body(Json::objectValue);
-    body["seq"] = static_cast<Json::Int64>(existing ? existing->head : 0);
-    body["data"] = toJson(*data);
-    if (!refused.empty()) body["refused"] = refusedPointersJson(refused);
-    return jsonResponse(body);
-  }();
-  callback(reply);
 }
 
 void TreeApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
