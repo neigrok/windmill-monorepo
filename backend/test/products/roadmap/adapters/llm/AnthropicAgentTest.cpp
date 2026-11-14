@@ -268,8 +268,9 @@ TEST(drive_agent_counts_only_successful_mutations_as_edits) {
 
 // A write that answers `unchanged` changed nothing: a step of the run that neither failed nor counts as an edit.
 // Through a tend's scoped host over the real tools: an import that re-sends what the tree holds is no edit of the run,
-// unless it carries a mark the caller does not hold yet, since `unchanged` speaks for the graft and each progress row
-// for its own mark. update_nodes is counted by the same read, so a mark it repeats is no edit either.
+// unless it carries a mark the caller does not hold yet: `unchanged` says the whole call changed nothing, and each
+// progress row answers for its own mark. update_nodes is counted by the same read, so a mark it repeats is no edit
+// either.
 TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_sets_a_new_mark) {
   test::Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}]})")).isError);
@@ -290,7 +291,7 @@ TEST(drive_agent_counts_an_echoed_import_as_no_edit_unless_it_sets_a_new_mark) {
   CHECK_EQ(editsOf("import_subgraph", marked), 0);
   CHECK_EQ(editsOf("import_subgraph", R"({"nodes":[{"id":"a","label":"B"}]})"), 1);
 
-  // update_nodes answers as an import does: `unchanged` for its tree batch, and a row per mark.
+  // update_nodes answers as an import does: `unchanged` when the whole call changed nothing, and a row per mark.
   CHECK_EQ(editsOf("update_nodes", R"({"updates":[{"nodeId":"a","status":"none"}]})"), 1);
   CHECK_EQ(editsOf("update_nodes", R"({"updates":[{"nodeId":"a","status":"none"}]})"), 0);
   CHECK_EQ(editsOf("update_nodes", R"({"updates":[{"nodeId":"a","label":"B","status":"none"}]})"), 0);
