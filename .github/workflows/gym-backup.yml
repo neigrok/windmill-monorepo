@@ -1,4 +1,4 @@
-name: Gym and journal production backup
+name: Production backup
 
 on:
   workflow_dispatch:
@@ -35,17 +35,35 @@ jobs:
             umask 077
             mkdir -p backups
             chmod 700 backups
-            backup="backups/products-$(date -u +%Y%m%dT%H%M%SZ)-$$.dump"
-            partial="$backup.partial"
-            checksum_partial="$backup.sha256.partial"
-            trap 'rm -f "$partial" "$checksum_partial"' EXIT
+            stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+            trap 'rm -f backups/*-"$stamp".dump.partial backups/*-"$stamp".dump.sha256.partial' EXIT
             docker compose exec -T db sh -ec \
-              'pg_dump --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --format=custom' > "$partial"
-            test -s "$partial"
-            docker compose exec -T db pg_restore --list < "$partial" > /dev/null
-            mv "$partial" "$backup"
-            sha256sum "$backup" > "$checksum_partial"
-            mv "$checksum_partial" "$backup.sha256"
+              'pg_dump --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --format=custom' \
+              > "backups/products-$stamp.dump.partial"
+            keep products "$(docker compose exec -T db printenv POSTGRES_DB)"
+            # The subscription ledger exists once a deploy has run with its password set, and is dumped as
+            # its own role: pg_hba.conf turns the backend's role away from it.
+            if grep -q '^SUBSCRIPTIONS_DB_PASSWORD=.' .env; then
+              docker compose exec -T db pg_dump --username=windmill_subscriptions \
+                --dbname=windmill_subscriptions --format=custom > "backups/subscriptions-$stamp.dump.partial"
+              keep subscriptions windmill_subscriptions
+            else
+              printf 'SKIP subscriptions backup: SUBSCRIPTIONS_DB_PASSWORD is not set, so windmill_subscriptions is not provisioned\n'
+            fi
+          }
+          # Keeps backups/<name>-<stamp>.dump.partial once pg_restore reads it back as a dump of <database>,
+          # beside its sha256.
+          keep() {
+            local backup="backups/$1-$stamp.dump" contents
+            test -s "$backup.partial"
+            contents=$(docker compose exec -T db pg_restore --list < "$backup.partial")
+            grep -qxF ";     dbname: $2" <<< "$contents" || {
+              printf 'FAIL backup: %s does not read back as a dump of %s\n' "$backup" "$2" >&2
+              return 1
+            }
+            mv "$backup.partial" "$backup"
+            sha256sum "$backup" > "$backup.sha256.partial"
+            mv "$backup.sha256.partial" "$backup.sha256"
             printf 'PASS backup verified: %s/%s\n' "$PWD" "$backup"
             printf 'bytes: %s\n' "$(wc -c < "$backup")"
             cat "$backup.sha256"

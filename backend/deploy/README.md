@@ -30,6 +30,7 @@ the last merge that touched the web and re-run it if it was cancelled.
  │       │          ─▶  /srv/windmill-web (the rsynced SPA, file_server)     │
  │       │              embedder :8081  (journal echo vectors; model mount)  │
  │       │              migrate (one-shot: applies db/schema.sql)            │
+ │       │              subscriptions-db (one-shot: the subscription db)     │
  │       │              db     :5432   postgres 16  (volume: pgdata)         │
  └───────┴──────────────────────────────────────────────────────────────────┘
    only :80/:443 are exposed, and only to Cloudflare's ranges
@@ -48,6 +49,8 @@ the last merge that touched the web and re-run it if it was cancelled.
 | Count how the roadmap's pointers between trees meet one owned subtree per step (by hand, never during a deploy; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
 | Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
 | TLS + reverse proxy | `deploy/Caddyfile` |
+| The subscription service's database, its role and its `pg_hba.conf` rules (the `subscriptions-db` one-shot) | `deploy/subscriptions-db/` |
+| The subscription service beside this stack, for a local rehearsal only | `deploy/docker-compose.subscriptions.yml` |
 | Env keys the deploy renders | `deploy/.env.example` |
 
 ## One-time VPS bootstrap
@@ -153,8 +156,10 @@ must be public.
   the engine tables and current user data.
 - **Native Apple sign-in**: the identity-token exchange defaults off (`APPLE_NATIVE_ENABLED=0`);
   [AUTH.md](../AUTH.md) names its audience and app configuration.
-- **Backup**: the dispatch-only `gym-backup.yml` writes a custom-format dump of the whole database to
-  `~/windmill/backups/` on the VPS, checks that `pg_restore` can list it, and records its sha256.
+- **Backup**: the dispatch-only `gym-backup.yml` writes a custom-format dump of the products database,
+  and of the subscription database once it is provisioned ([below](#the-subscription-database)), to
+  `~/windmill/backups/` on the VPS, checks that `pg_restore --list` names each one's database, and
+  records each sha256.
   Dumps made before the cutover-copy purge retain those copies. The repository defines no scheduled
   database backup or backup rotation; this workflow keeps each dump until it is removed manually.
   The cutover evidence purge does not touch this directory. Host-managed cron jobs and provider
@@ -294,6 +299,100 @@ These guarantees require both the updated server and updated clients. Older clie
 dependent delete before replaying its source; older servers can acknowledge an absent delete
 without preserving its death or lack a successful command's durable replay receipt. Epoch rotation
 alone cannot correct those implementations.
+
+## The subscription database
+
+The subscription service ([ARCHITECTURE.md](../../services/subscriptions/ARCHITECTURE.md)) keeps its
+ledger in `windmill_subscriptions`, a database of its own in this cluster, owned by a role of the same
+name. No `subscriptions` container runs in production yet. The `subscriptions-db` one-shot
+(`deploy/subscriptions-db/provision.sh`) provisions the database on every `docker compose up`, so on
+every deploy and against the existing volume, as `migrate` applies the schema:
+
+1. It puts the rules in `deploy/subscriptions-db/pg_hba.conf` at the head of the cluster's
+   `pg_hba.conf`, between lines starting `# BEGIN windmill_subscriptions` and
+   `# END windmill_subscriptions` that each run replaces. When the file does not parse, the previous
+   one goes back and the run fails. It reloads Postgres and waits until a connection as `windmill` to
+   `windmill_subscriptions` is refused. To write the file it mounts the `pgdata` volume and runs as the
+   cluster's OS user; it never starts a Postgres.
+2. It creates the role and the database where they are missing, sets the role's password to
+   `SUBSCRIPTIONS_DB_PASSWORD`, makes the role the database's owner and revokes the database from
+   `PUBLIC`. A changed secret is the role's password from the next deploy on.
+3. It signs in as the role, and checks that the backend's database refuses the role.
+
+It ends in one line, `PASS subscriptions database: …` with `rules installed` or `rules unchanged`, or
+`FAIL subscriptions database: <what failed>` on stderr with exit code 1. Nothing depends on it, so it
+cannot hold up the backend, and a deploy does not read its outcome: `docker compose logs
+subscriptions-db` shows the line and `docker compose ps -a subscriptions-db` its exit code.
+
+While the GitHub secret `SUBSCRIPTIONS_DB_PASSWORD` does not exist, the render writes it empty and the
+one-shot prints `SKIP subscriptions database: SUBSCRIPTIONS_DB_PASSWORD is not set, so nothing was
+provisioned`, exits 0 and touches nothing: no rule, role or database. To provision it, generate the
+password as hex, so it sits in a `postgres://` URL unescaped, save it as that secret, and deploy:
+
+```sh
+openssl rand -hex 32
+```
+
+On the host, `docker compose logs subscriptions-db` then shows `PASS … (rules installed)`, and
+`docker compose exec -T db psql -U windmill windmill_subscriptions -c 'select 1'` fails with
+`pg_hba.conf rejects connection`. Deleting the secret afterwards stops the provisioning and leaves the
+rules, the role, its password and the database as they are.
+
+- **What the rules hold**: a `pg_hba.conf` rule binds `windmill` although it is the cluster's
+  superuser, so no connection as the backend's role reaches the database, from its container or from
+  the cluster's own socket. They cannot stop that superuser from reaching it another way when it sets
+  out to: by changing the role's password, or by reading the cluster's files or running a program
+  from SQL. Only a backend that does not run as a superuser closes that.
+- **DB shell**: `docker compose exec db psql -U windmill_subscriptions windmill_subscriptions`. The
+  container's socket trusts every role but `windmill` on this database.
+- **Backup**: `gym-backup.yml` dumps it as its own role to `backups/subscriptions-<stamp>.dump` once
+  `.env` holds a `SUBSCRIPTIONS_DB_PASSWORD`, and fails when `pg_restore --list` does not name
+  `windmill_subscriptions`. Without the password it prints `SKIP subscriptions backup`.
+
+### Restore the subscription database
+
+Verify the dump's recorded sha256 and its `pg_restore --list` first. A restored ledger takes a new
+epoch, every time, so that a reader's cursor from before the restore means nothing after it (spec
+§5.2). From `~/windmill`, with nothing connected to the database:
+
+```sh
+set -eu
+RESTORE_DUMP="$PWD/backups/<backup>.dump"
+docker compose exec -T db dropdb -U windmill windmill_subscriptions
+docker compose run --rm -T subscriptions-db
+docker compose exec -T db pg_restore -U windmill_subscriptions -d windmill_subscriptions \
+  --single-transaction --exit-on-error --no-owner --no-acl < "$RESTORE_DUMP"
+docker compose exec -T db psql -U windmill_subscriptions -d windmill_subscriptions -XAtq \
+  -v ON_ERROR_STOP=1 -c 'update ledger set epoch = gen_random_uuid() returning epoch'
+```
+
+`subscriptions-db` recreates the database empty, owned by its role and behind its rules; the last line
+prints the new epoch.
+
+### Rehearse it locally
+
+`deploy/docker-compose.subscriptions.yml` adds the service to this stack, built from
+`services/subscriptions`. From the repository root, with Docker running:
+
+```sh
+REHEARSAL_ENV=$(mktemp)
+printf 'POSTGRES_PASSWORD=%s\nSUBSCRIPTIONS_DB_PASSWORD=%s\nDOMAIN_API=api.localhost\nACME_EMAIL=ops@example.invalid\n' \
+  "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" > "$REHEARSAL_ENV"
+rehearse() {
+  docker compose -p subscriptions-rehearsal --env-file "$REHEARSAL_ENV" \
+    -f backend/deploy/docker-compose.yml -f backend/deploy/docker-compose.subscriptions.yml "$@"
+}
+rehearse up -d --build --wait subscriptions
+rehearse logs subscriptions-db subscriptions
+rehearse exec -T subscriptions curl -s localhost:8083/health
+rehearse exec -T db psql -U windmill windmill_subscriptions -c 'select 1'
+rehearse down -v
+rm "$REHEARSAL_ENV"
+```
+
+`up` starts only `db`, `subscriptions-db` and the service: a fresh volume, the rules installed, the
+service migrating the empty ledger and answering `{"status":"ready"}`. The `psql` line is refused.
+An empty `SUBSCRIPTIONS_DB_PASSWORD` in the file shows the production path while the secret is absent.
 
 ## Resum the scope digests
 

@@ -1,7 +1,7 @@
-# Windmill backend, one VPS. Postgres holds the data, a one-shot applies the schema,
-# the two service binaries run from the same published image, and Caddy terminates TLS
-# and reverse-proxies both. Only Caddy is exposed to the internet; everything else talks
-# over the private compose network by service name.
+# Windmill backend, one VPS. Postgres holds the data, a one-shot applies the schema, another
+# provisions the subscription service's database, the two service binaries run from the same
+# published image, and Caddy terminates TLS and reverse-proxies both. Only Caddy is exposed to the
+# internet; everything else talks over the private compose network by service name.
 #
 # Values come from ./.env (rendered by the deploy workflow from GitHub secrets/vars).
 
@@ -33,6 +33,31 @@ services:
       PGCONNECT_TIMEOUT: "10"
     command: ["psql", "postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill",
               "-Xq", "-v", "ON_ERROR_STOP=1", "-f", "/app/db/schema.sql"]
+
+  # The subscription service's database, windmill_subscriptions, and its role of the same name
+  # (services/subscriptions/ARCHITECTURE.md): created, given SUBSCRIPTIONS_DB_PASSWORD and closed to the
+  # backend's role by pg_hba.conf rules, on every `up` (subscriptions-db/provision.sh). It rewrites
+  # pg_hba.conf, so it mounts the cluster's volume and runs as the cluster's OS user; it never starts a
+  # Postgres of its own. Nothing here depends on it, so it can never hold up the backend. Unset or empty
+  # SUBSCRIPTIONS_DB_PASSWORD → it logs SKIP, exits 0 and changes nothing.
+  subscriptions-db:
+    image: postgres:16
+    restart: "no"
+    user: postgres
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: windmill
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: postgres
+      PGCONNECT_TIMEOUT: "10"
+      SUBSCRIPTIONS_DB_PASSWORD: ${SUBSCRIPTIONS_DB_PASSWORD:-}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./subscriptions-db:/subscriptions-db:ro
+    command: ["bash", "/subscriptions-db/provision.sh"]
 
   server:
     image: ${SERVER_IMAGE:-ghcr.io/neigrok/windmill-monorepo:${IMAGE_TAG:-latest}}
