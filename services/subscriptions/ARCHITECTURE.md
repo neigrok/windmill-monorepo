@@ -66,7 +66,8 @@ subscription leaves it out, since no single observation can state it (INV-6).
 `cancelRequestedAt` follows its own statements, as a period's refund time does. A statement that
 renewal is on, or off since a stated instant, gives it; the newest such statement wins whatever the
 order of arrival, renewal on outranking a turn-off stated at the same instant, and the subscription
-keeps that statement's stamp as `cancellation_observed_at`. A statement that renewal is off without
+keeps that statement's stamp as `cancellation_observed_at`. Statements stamped alike therefore order
+by their content with the cancel time aside (INV-6). A statement that renewal is off without
 saying since when, as most of the App Store's are, leaves the cancel time as it stands, and a turn-off
 that arrives after a newer statement fills it in and records `updated`.
 
@@ -235,16 +236,17 @@ transaction's period, refunded or not, so the state is pulled rather than inferr
 | `RESCIND_CONSENT` | `parental_consent` |
 | Any other type, or a subtype Apple does not document for its type | `unknown_type` |
 
-A transaction can also make a mapped type unsupported: `one_time_charge` when its `type` is not
-`Auto-Renewable Subscription`, `commitment_plan` when its `billingPlanType` is `MONTHLY`,
-`unknown_product` for any product but Windmill One's. A payload that lacks what Apple documents for
-it is `incomplete`; one that contradicts itself, a renewal info of another lineage, `inconsistent`;
-one with a value Apple does not document (a status, ownership, offer or revocation type, a negative
-price) `unknown_value`. An expiration intent Apple does not document is no such value: it reads as the
-end reason `unknown`.
+A transaction can also make a mapped type unsupported: `one_time_charge` when its `type` is a
+consumable, a non-consumable or a non-renewing subscription, `commitment_plan` when its
+`billingPlanType` is `MONTHLY`, `unknown_product` for any product but Windmill One's. A payload that
+lacks what Apple documents for it is `incomplete`; one that contradicts itself, a renewal info of
+another lineage, `inconsistent`; one with a value Apple does not document `unknown_value`: a status,
+a renewal status, an ownership, product, billing plan, offer or revocation type, a negative price or
+a currency that is not ISO 4217. An expiration intent Apple does not document is no such value: it
+reads as the end reason `unknown`.
 
 The verifier refuses `UNCLAIM_SEATS` and `EXTERNAL_PURCHASE_TOKEN` at rule 11, since neither carries
-a `data` object, so neither reaches `decode` today and the door answers them 4xx.
+a `data` object, so neither reaches the inbox; `decode` maps them all the same.
 
 ### Fields
 
@@ -273,14 +275,15 @@ a `data` object, so neither reaches `decode` today and the door answers them 4xx
 | `storefront` | `storefront` |
 
 An `expired` subscription ends with its last period in every statement of it, since Apple states no
-instant for the end of billing retry; `paymentFailedAt` is that period's end for the same reason.
+instant for the end of billing retry; `paymentFailedAt` is that period's end, since no statement
+after the failure says when it failed.
 
 `Decoded` and `PeriodStatement` carry the account token as `AccountToken` and implement no `Debug`.
 The crate logs nothing; the door logs the outcome's code.
 
-The vectors in `tests/vectors/app_store/` pin one outcome for every type and subtype above, and for
-each branch of the fields; `crates/app_store/tests/decoding.rs` runs them, and folds a cancel time
-through the expiry that cannot state it.
+The vectors in `tests/vectors/app_store/` pin one outcome for every type and subtype above, every
+row of the fields and every guard on Apple's payload; `crates/app_store/tests/decoding.rs` runs them,
+and folds a cancel time through the expiry that cannot state it.
 
 ### Waits on the sandbox
 

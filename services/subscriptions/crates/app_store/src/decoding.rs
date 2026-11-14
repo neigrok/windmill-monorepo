@@ -97,8 +97,10 @@ pub fn decode_claim(transaction: &TransactionInfo) -> Result<PeriodStatement, Un
 }
 
 fn read(notification: &Notification) -> Result<Decoded, Unsupported> {
-    let subtype = notification.subtype.as_deref();
-    let states_cancel_time = match (notification.notification_type.as_str(), subtype) {
+    let states_cancel_time = match (
+        notification.notification_type.as_str(),
+        notification.subtype.as_deref(),
+    ) {
         (
             "DID_CHANGE_RENEWAL_STATUS",
             None | Some("AUTO_RENEW_ENABLED" | "AUTO_RENEW_DISABLED"),
