@@ -177,8 +177,8 @@
 
 # Transitional alias: the previous separate API hostname, still proxying everything but the store
 # doors to the same server so the currently-deployed frontend build keeps working until it is
-# rebuilt same-origin. Retire
-# once no client references it. (The old mcp.$DOMAIN subdomain is gone — MCP lives at /mcp now.)
+# rebuilt same-origin. Retire once no client references it. (The old mcp.$DOMAIN subdomain is
+# gone — MCP lives at /mcp now.)
 {$DOMAIN_API} {
 	import cloudflare_only
 	header {

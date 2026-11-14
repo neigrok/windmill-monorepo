@@ -277,7 +277,7 @@ class DeployProductionTest(unittest.TestCase):
             PROVISIONED + "\n" + DEPLOYED, ""))
         self.assertEqual((self.work / ".env").read_text(), "IMAGE_TAG=" + "b" * 40 +
                          "\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
-                                        "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\n")
+                         "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\n")
         commands = self.state()["commands"]
         metadata_read = next(command for command in commands if command[:2] == ["run", "--rm"])
         self.assertEqual(metadata_read, ["run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL",

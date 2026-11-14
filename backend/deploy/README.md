@@ -146,9 +146,10 @@ must be public.
 - **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. The
   server, `embedder-<sha>` and `subscriptions-<sha>` images must exist, and the server image must contain
   its compatibility manifest. An image built before Backend CI published the subscription service has no
-  `subscriptions-<sha>` beside it, so a rollback to it is refused at the pull, before anything changes. Only the image goes back: the run renders `.env`
-  and ships `docker-compose.yml`, the Caddyfile and `deploy-production.sh` from the branch it is
-  dispatched on (`main` only), and `migrate` applies the selected image's own `db/schema.sql`.
+  `subscriptions-<sha>` beside it, so a rollback to it is refused at the pull, before anything changes.
+  Only the images go back: the run renders `.env` and ships `docker-compose.yml`, the Caddyfile and
+  `deploy-production.sh` from the branch it is dispatched on (`main` only), and `migrate` applies the
+  selected image's own `db/schema.sql`.
   A lower minimum is a compatibility change too and requires exact manual acknowledgement. That
   acknowledgement does not make old binaries safe for data written under newer rules.
 - **Rollback floor**: the oldest image that is safe to run is the first one built from a commit
