@@ -31,6 +31,7 @@
 #include "platform/adapters/http/McpKeyApi.h"
 #include "platform/adapters/http/OAuthApi.h"
 #include "platform/adapters/http/RateLimiter.h"
+#include "platform/adapters/http/ReplyWait.h"
 #include "products/roadmap/adapters/llm/AnthropicAgent.h"
 #include "products/roadmap/adapters/llm/AnthropicComposer.h"
 #include "platform/adapters/mcp/CompositeToolHost.h"
@@ -1293,6 +1294,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // to the handler. The tree socket's frames set it; the sync live channel's messages are far smaller.
   app.setClientMaxWebSocketMessageSize(kMaxSocketMessageBytes);
   app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
+  // A connection waiting on its reply is idle to the framework, and is dropped with the reply at this limit (ReplyWait.h).
+  app.setIdleConnectionTimeout(kIdleConnectionLimit);
   const char* listenHostEnv = std::getenv("WINDMILL_HOST");
   const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";
   app.addListener(listenHost, port);
