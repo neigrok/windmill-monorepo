@@ -1,7 +1,6 @@
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 
 #include "products/roadmap/adapters/mcp/ReadShape.h"
-#include "products/roadmap/domain/Command.h"
 
 #include <set>
 #include <string>
@@ -114,13 +113,6 @@ Json::Value limit() {
 }
 
 Json::Value cursor() { return typed("string", "The `nextCursor` of the page before."); }
-
-// No refusal names the cap of a roadmap's name, so the cap is published: update_tree cuts a longer one.
-Json::Value title() {
-  Json::Value schema = typed("string");
-  schema["maxLength"] = static_cast<Json::UInt64>(kMaxTitleChars);
-  return schema;
-}
 
 // What update_nodes and change_edges both answer; each adds its own keys.
 Json::Value batchReceipt() {
@@ -261,7 +253,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   }
   {
     Json::Value p(Json::objectValue);
-    p["title"] = title();
+    p["title"] = typed("string");
     p["kinds"] = legendKinds();
     tools.push_back(tool("create_tree", Access::write,
         "Create an empty roadmap that you own. Send `kinds` to plant your own legend in place of the default one.",
@@ -293,7 +285,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   }
   {
     Json::Value p(Json::objectValue);
-    p["title"] = title();
+    p["title"] = typed("string");
     p["guide"] = typed("string", "The whole guide, replacing the one the roadmap has; \"\" clears it.");
     tools.push_back(treeTool("update_tree", Access::write,
         "Rename a roadmap with `title`, set its guide with `guide`, or both. The guide is a plain-text note on what "

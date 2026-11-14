@@ -249,6 +249,26 @@ TEST(fork_rejects_a_malformed_requested_id_before_touching_the_source) {
   CHECK(h.trees->forkedFrom.empty());
 }
 
+// The name a fork is asked to carry is held to the cap a title is, in the words a document's title is refused in.
+TEST(fork_refuses_a_requested_title_past_its_cap_and_copies_nothing) {
+  Harness h;
+  h.signIn("s-live");
+  h.seedSource("t_src", "Learn to sail");
+  Json::Value named(Json::objectValue);
+  named["title"] = std::string(250, 'x');
+
+  drogon::HttpResponsePtr response = sendFork(h.api, forkRequest(named, "s-live"), "t_src");
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"the title would be 250 characters, 50 over the 200 cap"})"));
+  CHECK_EQ(h.trees->byId.size(), 1u);
+  CHECK(h.trees->forkedFrom.empty());
+
+  named["title"] = std::string(200, 'x');
+  response = sendFork(h.api, forkRequest(named, "s-live"), "t_src");
+  CHECK_EQ(response->getStatusCode(), drogon::k201Created);
+  CHECK_EQ(bodyOf(response)["data"]["title"].asString(), std::string(200, 'x'));
+}
+
 TEST(fork_accepts_a_well_formed_requested_id) {
   Harness h;
   UserId me = h.signIn("s-live");
