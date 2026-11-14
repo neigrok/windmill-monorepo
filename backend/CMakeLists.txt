@@ -56,6 +56,10 @@ add_library(windmill_platform
   platform/ai_installations/AiInstallations.cpp
   platform/ai_installations/PgAiInstallations.cpp
   platform/ai_installations/AiInstallationApi.cpp
+  platform/subscriptions/Feed.cpp
+  platform/subscriptions/FeedFollower.cpp
+  platform/subscriptions/PgEntitlementCopy.cpp
+  platform/subscriptions/SubscriptionServiceClient.cpp
   platform/domain/AiFuse.cpp
   platform/domain/AiUsage.cpp
   platform/domain/AiBudget.cpp
@@ -252,6 +256,7 @@ add_executable(windmill_domain_tests
   test/platform/domain/MailTest.cpp
   test/platform/domain/MailArmingTest.cpp
   test/platform/domain/OAuthTest.cpp
+  test/platform/subscriptions/FeedTest.cpp
   test/platform/application/AuthServiceTest.cpp
   test/platform/application/AppleLinkingTest.cpp
   test/platform/application/EntitlementsTest.cpp
@@ -341,7 +346,8 @@ target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CONTRACT_DIR="$
   WM_GYM_TURNS_DIR="${WM_API_CONTRACT_DIR}/gym/turns" WM_GYM_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/gym/domain"
   WM_ROADMAP_ADDRESSES="${WM_API_CONTRACT_DIR}/roadmap-addresses.json"
   WM_ROADMAP_LINK_URLS="${WM_API_CONTRACT_DIR}/roadmap-link-urls.json"
-  WM_ROADMAP_SOCKET="${WM_API_CONTRACT_DIR}/roadmap-socket.json")
+  WM_ROADMAP_SOCKET="${WM_API_CONTRACT_DIR}/roadmap-socket.json"
+  WM_SUBSCRIPTIONS_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/subscriptions")
 
 enable_testing()
 add_test(NAME domain COMMAND windmill_domain_tests)
@@ -619,6 +625,9 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/http/McpKeyApiTest.cpp
   test/platform/ai_installations/AiInstallationApiTest.cpp
   test/platform/ai_installations/PgAiInstallationsTest.cpp
+  test/platform/subscriptions/FeedFollowerTest.cpp
+  test/platform/subscriptions/PgEntitlementCopyTest.cpp
+  test/platform/subscriptions/SubscriptionServiceClientTest.cpp
   test/platform/adapters/http/AiAllowanceApiTest.cpp
   test/platform/adapters/json/AiBudgetJsonTest.cpp
   test/platform/adapters/json/JsonTextTest.cpp
@@ -713,5 +722,6 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
 target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_product_sync)
 # The gym door harness re-plants the catalog seed exactly as the schema writes it.
 target_compile_definitions(windmill_adapters_tests PRIVATE WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql"
-  WM_GYM_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/gym/domain")
+  WM_GYM_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/gym/domain"
+  WM_SUBSCRIPTIONS_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/subscriptions")
 add_test(NAME adapters COMMAND windmill_adapters_tests)
