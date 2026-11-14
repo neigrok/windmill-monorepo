@@ -348,6 +348,11 @@ add_test(NAME domain COMMAND windmill_domain_tests)
 # The production edge forwards every credential line as received (engine.md §9.1): its Caddyfile rewrites none of them.
 add_test(NAME deploy COMMAND ${CMAKE_COMMAND} -DCADDYFILE=${CMAKE_SOURCE_DIR}/deploy/Caddyfile
                              -P ${CMAKE_SOURCE_DIR}/test/deploy/caddyfile_forwards_credentials.cmake)
+# The time a deploy gives the server to stop is longer than the server may take (deploy/README.md).
+add_test(NAME deploy_stop_grace COMMAND ${CMAKE_COMMAND} -DCOMPOSE=${CMAKE_SOURCE_DIR}/deploy/docker-compose.yml
+                                        -DREGISTRY=${CMAKE_SOURCE_DIR}/products/roadmap/application/RoomRegistry.h
+                                        -DPOOL=${CMAKE_SOURCE_DIR}/platform/adapters/postgres/PgPool.h
+                                        -P ${CMAKE_SOURCE_DIR}/test/deploy/server_stop_grace_covers_the_save_budget.cmake)
 
 # The adapters, folded straight into windmill_platform / windmill_roadmap / windmill_journal / windmill_gym, so a
 # product is one library with its vendor edges in it.

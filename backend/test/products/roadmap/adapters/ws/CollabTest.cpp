@@ -623,6 +623,50 @@ TEST(a_late_landing_and_an_answer_that_carries_late_entries_each_leave_one_line_
                                            "roadmap_subscribe_late_entries entries=1"}));
 }
 
+// Once the server is told to stop, the tree socket takes no write: a frame that arrives lands nothing and is answered
+// nothing, so the tab that sent it keeps it and sends it to the next server, and a socket that opens is closed.
+TEST(ws_a_frame_that_arrives_once_the_server_is_stopping_lands_nothing_and_is_not_answered) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_stop", owner, Visibility::private_);
+  const auto tab = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), tab);
+  h.collab.onMessage(tab, subscribeFrame("t_stop"));
+  const std::size_t answered = tab->sent.size();
+  const StoredTree before = h.trees.byId["t_stop"];
+
+  h.rooms.beginStopping();
+  h.collab.onMessage(tab, registerFrame("t_stop", "f-late", R"({"id":"n","createdAt":"100:0:r_a","label":"After the signal","labelAt":"100:0:r_a"})"));
+  h.collab.onMessage(tab, subscribeFrame("t_stop"));
+
+  CHECK_EQ(tab->sent.size(), answered);
+  CHECK_EQ(h.rooms.open(TreeId{"t_stop"})->head(), Seq{0});
+  CHECK(h.trees.byId["t_stop"] == before);
+
+  const auto late = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), late);
+  CHECK_FALSE(late->open);
+  CHECK(late->sent.empty());
+}
+
+// As the server is told to stop every tree socket is closed, subscribed or not, so a tab learns at once that what it
+// has not been acked goes to the next server.
+TEST(ws_every_tree_socket_is_closed_as_the_server_is_told_to_stop) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_stop", owner, Visibility::private_);
+  const auto subscribed = std::make_shared<FakeSocket>();
+  const auto idle = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), subscribed);
+  h.collab.onOpen(h.upgrade(""), idle);
+  h.collab.onMessage(subscribed, subscribeFrame("t_stop"));
+
+  h.bus.closeEvery();
+
+  CHECK_FALSE(subscribed->open);
+  CHECK_FALSE(idle->open);
+}
+
 TEST(ws_subscribe_to_an_absent_tree_is_rejected) {
   Harness h;
   auto conn = std::make_shared<FakeSocket>();

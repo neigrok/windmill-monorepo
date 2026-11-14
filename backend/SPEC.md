@@ -669,11 +669,25 @@ Rules:
   — since what the room holds is not saved. A held room is not closed by the sweep, and a `PUT`
   over one is refused `503 save-pending` until the save lands, as it is over a room an edit landed
   in while the `PUT` was flushing it. Only a room with something unsaved
-  is ever held: one with nothing to save closes with no statement sent. As the registry stops —
-  and one that goes away has stopped (`~RoomRegistry`) — it tries each held room once more, the
-  wait for a retry or a write in mid-save and all of those saves within `kShutdownSaveBudget` together (5 s,
-  `StatementLimits`), and reports the rooms it could not save as lost. A held write is lost only that way; marks a call stored beside it —
-  `update_nodes` rows, the marks `delete_node` clears — are stored already.
+  is ever held: one with nothing to save closes with no statement sent. A held write is lost only
+  when the server stops before its save lands; marks a call stored beside it — `update_nodes` rows,
+  the marks `delete_node` clears — are stored already.
+- The server stops in one order, within one budget. At the signal (`SIGTERM`, `SIGINT`) every door
+  stops taking writes at once: a new HTTP request on the listener — REST, MCP, the sync engine's
+  `/v1/sync/*` — is answered `503` with code `restarting` and its connection closed; the tree socket
+  takes no frame, the ones a connection had already sent among them, answers none and opens no
+  connection; and every tree socket is closed as a server going away (close code 1001), so a tab
+  keeps what it was not acked and sends it to the next server. A request being served at the signal
+  is answered as it would be, its save included; a frame being saved at the signal is saved and its
+  ack not delivered. The budget, `kShutdownSaveBudget` (5 s), begins at the signal
+  (`RoomRegistry::beginStopping`) and every save from then on shares it (`StatementLimits`): the
+  ones a write still waits for, and the last try `RoomRegistry::stop` gives each room that holds a
+  write the store does not, held or not — and a registry that simply goes away has stopped
+  (`~RoomRegistry`). A save asked for after the budget is refused at once. The rooms still unsaved
+  then are reported lost, in one line of their number, and the process exits. One thing is outside
+  the budget: a statement already running at the signal keeps its own limit (5 s,
+  `PgPool::kStatementTimeout`). The deploy gives the server longer than both to stop
+  (`deploy/README.md`).
 - `open()` loads the stored lattice and nothing else: a room is its snapshot, and the op log is the
   history the Activity feed reads, never a second source of a tree's state. An op row states one
   deed of its frame — one node of an import, one kind of a re-hue of several — so merging it back

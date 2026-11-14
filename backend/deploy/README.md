@@ -166,6 +166,26 @@ must be public.
   `clean` also prunes images and build cache and, where the deploy user has passwordless sudo, trims the
   systemd journal to 200 MB. Neither touches volumes, containers or `~/windmill/backups`.
 
+## What a deploy does to the running server
+
+`docker compose up -d` replaces the server's container: Docker sends it `SIGTERM`, waits
+`stop_grace_period`, then sends `SIGKILL`. Two numbers decide whether the server gets to finish, and
+they are kept together:
+
+| What | Value | Where |
+| --- | --- | --- |
+| The server's budget for every save still to run after the signal | 5 s | `RoomRegistry::kShutdownSaveBudget` |
+| The time Docker gives the container to stop | 15 s | `stop_grace_period` of `server` in `docker-compose.yml` |
+
+At the signal the server takes no new write on any door, saves what is in flight and what its rooms
+still hold within the 5 s, logs `roadmap_tree_save outcome=lost-at-shutdown rooms=N` for the rooms it
+could not save, and exits (`SPEC.md`, "The server stops in one order"). The 15 s is those 5 s, 5 s
+more for one statement that was already running at the signal and keeps its own limit
+(`PgPool::kStatementTimeout`), and the rest of shutdown, which measures under a second, rounded up.
+Compose's own default, were the line removed, is 10 s. A server killed at the end of the grace
+period loses what it had acked and not stored without the `lost-at-shutdown` line, so the first
+number may be raised only with the second; the `deploy_stop_grace` check in ctest holds them apart.
+
 ## Coordinated client cutoff
 
 The repository registry is schema 12 / minimum 11. Every schema in that interval carries explicit gym

@@ -129,6 +129,7 @@
 #include <drogon/drogon.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cctype>
 #include <cstdlib>
@@ -773,6 +774,19 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto composeGlobal = std::make_shared<RateLimiter>(0.5, 20.0);         // global LLM spend ceiling
   auto tendPerIp = std::make_shared<RateLimiter>(5.0 / 600.0, 3.0);   // ~5 runs / 10 min / client
   auto tendGlobal = std::make_shared<RateLimiter>(0.2, 8.0);          // global agent-spend ceiling
+  // A server told to stop serves no new request, of any product and any door on this listener: the answer says to
+  // try again, and the connection is closed so the next try reaches the next server. A request already being served
+  // is answered as it would be. Ahead of the rate limiter, so a refusal here spends nobody's allowance.
+  const auto stopping = std::make_shared<std::atomic<bool>>(false);
+  app.registerSyncAdvice([stopping, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+    if (!stopping->load()) return nullptr;
+    const auto resp = error(drogon::k503ServiceUnavailable, "the server is restarting — try again", "restarting");
+    resp->setCloseConnection(true);
+    writeCors(req, resp);
+    finishWriteRequest(req, resp);
+    return resp;
+  });
+
   app.registerSyncAdvice(
       [apiLimiter, magicPerIp, magicGlobal, codePerIp, composePerIp, composeGlobal, tendPerIp,
        tendGlobal, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
@@ -1240,6 +1254,23 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* listenHostEnv = std::getenv("WINDMILL_HOST");
   const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";
   app.addListener(listenHost, port);
+  // The signal to stop, in this order. Every door stops taking writes at once: the listener's requests are refused
+  // (above), the tree socket takes no frame and opens no connection (Collab asks the registry), and the registry's one
+  // budget for every save still to run begins (RoomRegistry::beginStopping). Then, on the main loop, every tree socket
+  // is closed, so a tab keeps what it was not acked for the next server, and the framework stops its loops: each
+  // finishes the request it is serving, whose save runs within the budget. The registry's last tries and the count of
+  // what was lost follow as the lifetime stops, within what the budget has left. The handler itself runs in the
+  // signal's context, so it only sets two numbers and queues the rest, as the framework's own does.
+  const auto stop = [stopping, registry, bus] {
+    stopping->store(true);
+    registry->beginStopping();
+    drogon::app().getLoop()->queueInLoop([bus] {
+      bus->closeEvery();
+      drogon::app().quit();
+    });
+  };
+  app.setTermSignalHandler(stop);
+  app.setIntSignalHandler(stop);
   app.setThreadNum(ioThreads).run();
   return 0;
 }

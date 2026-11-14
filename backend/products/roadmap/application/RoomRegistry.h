@@ -8,6 +8,7 @@
 #include "products/roadmap/ports/TreeRepository.h"
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -124,15 +125,22 @@ public:
   // room's own hold is two lines, its beginning and its end, under an id minted for that hold.
   static constexpr std::chrono::milliseconds kFirstRetry{1000};
   static constexpr std::chrono::milliseconds kRetryCeiling{60000};
-  // All the time the saves tried at shutdown may take together: under a container's stop grace.
+  // All the time every save may take together once the process is told to stop: the ones a write still waits for and
+  // each room's last try. The deploy gives the container longer than this to stop (deploy/README.md).
   static constexpr std::chrono::milliseconds kShutdownSaveBudget{5000};
 
   RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus, RetryTimer retryTimer = {});
   // A registry that goes away has stopped: whatever owns one need not remember to.
   ~RoomRegistry();
-  // Stops the heartbeat, so no retry runs after it, then tries each held room's save once more, the wait for a retry
-  // or a write in mid-save and all of those saves within kShutdownSaveBudget together. The rooms still held after
-  // that are lost with the process: one line and one report say how many.
+  // The process was told to stop: the budget begins, once. From here every save runs within what is left of it — a
+  // statement waits and runs no later than its end, and a save asked for after it is refused at once — and a door that
+  // asks `stopping` takes no more writes. Safe to call from a signal handler: it reads a clock and sets one number.
+  void beginStopping();
+  bool stopping() const { return stopDeadlineMs_ != 0; }
+  // Stops the heartbeat, so no retry runs after it, then tries once more the save of each room that holds a write the
+  // store does not — held or not — the wait for a retry or a write in mid-save and all of those saves within what is
+  // left of the budget (it begins here if nobody told the registry earlier). The rooms still unsaved after that are
+  // lost with the process: one line and one report say how many.
   void stop();
 
   // nullptr means no such tree; a throw means infrastructure failure, whose detail must be logged
@@ -281,6 +289,7 @@ private:
   std::map<TreeId, std::weak_ptr<RootAccess>> roots_;
   std::size_t sweepsHeld_ = 0;  // sweeps running that found a room held
   bool stopped_ = false;
+  std::atomic<std::uint64_t> stopDeadlineMs_{0};  // when the budget ends, on the steady clock; 0 while the server runs
   std::function<void(const TreeId&)> accessChanged_;
   std::array<std::mutex, kStrandStripes> strands_;
   std::array<std::mutex, kStrandStripes> rootLocks_;

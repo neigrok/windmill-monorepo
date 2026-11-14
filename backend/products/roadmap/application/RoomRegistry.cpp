@@ -25,13 +25,16 @@ struct RoomsHeldUnsaved : std::exception {
   const char* what() const noexcept override { return "rooms are held with a save that keeps failing"; }
 };
 
-// Time that only moves forward, for the budget of the saves tried at shutdown.
+// Time that only moves forward, for the budget every save shares once the process is told to stop.
 struct SteadyClock : Clock {
   std::uint64_t nowMs() override {
     return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
   }
 };
+
+// Made as the program loads, so reading it from a signal handler initializes nothing.
+SteadyClock steadyClock;
 
 // The door a registry's own line is told at: the one of the call it serves, or the background for the timer's and a
 // sweep's.
@@ -52,25 +55,29 @@ RoomRegistry::RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus, R
 
 RoomRegistry::~RoomRegistry() { stop(); }
 
+void RoomRegistry::beginStopping() {
+  std::uint64_t running = 0;
+  stopDeadlineMs_.compare_exchange_strong(
+      running, steadyClock.nowMs() + static_cast<std::uint64_t>(kShutdownSaveBudget.count()));
+}
+
 void RoomRegistry::stop() {
-  // One budget for all of stopping: it starts before the heartbeat is joined, since a retry may be in the middle of a
-  // save that hangs. A statement waits and runs no later than its end, and a save asked for after it is refused at
-  // once (StatementLimits), so a store that hangs cannot hold the process past it.
-  SteadyClock clock;
-  const std::uint64_t deadline = clock.nowMs() + static_cast<std::uint64_t>(kShutdownSaveBudget.count());
+  // One budget for all of stopping, begun when the process was told to stop: a retry may be in the middle of a save
+  // that hangs as the heartbeat is joined, and a save asked for after the budget is refused at once (save), so a store
+  // that hangs cannot hold the process past it.
+  beginStopping();
+  const std::uint64_t deadline = stopDeadlineMs_;
   heartbeat_.stop();
-  std::vector<std::pair<TreeId, std::shared_ptr<SaveLine>>> held;
+  std::vector<std::pair<TreeId, std::shared_ptr<SaveLine>>> unsaved;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stopped_) return;
     stopped_ = true;
     for (const auto& [id, live] : rooms_)
-      if (live.held) held.emplace_back(id, live.line);
+      if (live.held || live.saving || live.room->holdsUnsavedWrites()) unsaved.emplace_back(id, live.line);
   }
-  if (held.empty()) return;
-  const StatementLimits limits{kShutdownSaveBudget, clock, deadline};
   std::size_t lost = 0;
-  for (const auto& [id, line] : held) {
+  for (const auto& [id, line] : unsaved) {
     // A write in mid-save holds the gate: it is waited for no longer than the budget either.
     std::unique_lock<std::timed_mutex> gate(
         line->gate, std::chrono::steady_clock::time_point{std::chrono::milliseconds{deadline}});
@@ -390,7 +397,9 @@ Saved RoomRegistry::save(const TreeId& id, const std::shared_ptr<SaveLine>& line
   }
   // I/O under the gate alone: no strand, no map lock. The lattice lands first and the op rows after, so a crash
   // between the two leaves a lattice at `head` with no row at `head` — the feed misses one deed — never a row the
-  // lattice cannot back.
+  // lattice cannot back. Once the process is told to stop, both run within what is left of the one budget.
+  std::optional<StatementLimits> untilStopped;
+  if (const std::uint64_t deadline = stopDeadlineMs_) untilStopped.emplace(kShutdownSaveBudget, steadyClock, deadline);
   bool rowStands = false;
   try {
     rowStands = repo_.save(id, state, legend, title, guide, head, landSeqs);

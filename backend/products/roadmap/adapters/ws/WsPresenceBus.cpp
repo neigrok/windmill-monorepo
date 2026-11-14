@@ -238,6 +238,18 @@ void WsPresenceBus::resweepAll() {
   for (const TreeId& tree : trees) admitted(tree);
 }
 
+void WsPresenceBus::closeEvery() {
+  std::vector<std::pair<drogon::WebSocketConnectionPtr, std::shared_ptr<Lane>>> open;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& [conn, entry] : connections_) open.emplace_back(conn, entry.lane);
+  }
+  for (const auto& [conn, lane] : open) {
+    if (!lane->loop) conn->shutdown(drogon::CloseCode::kEndpointGone);
+    else lane->loop->queueInLoop([conn = conn] { conn->shutdown(drogon::CloseCode::kEndpointGone); });
+  }
+}
+
 std::vector<drogon::WebSocketConnectionPtr> WsPresenceBus::connections() const {
   std::lock_guard<std::mutex> lock(mutex_);
   std::set<drogon::WebSocketConnectionPtr> distinct;
