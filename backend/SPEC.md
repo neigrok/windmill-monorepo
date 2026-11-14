@@ -362,20 +362,30 @@ rejected for structure. Validity is a read model, not a gate.
   A step that owns a subtree opens it whatever its register holds, and the register takes no write on
   any write path — a socket frame, a command, a graft, a `PUT` — an echo of its own subtree and the
   clear a create or a revive synthesizes included (`TreeRoom` on its write paths, `withoutOwnedPointers`;
-  the `PUT` handler on the rows it replaces), so no value, stale or late, changes the step's child. A pointer a write sends such a step that is not its own
-  subtree's id, an empty one included, is refused `owns-a-subtree` for that step alone
-  (`refusedPointers`), and the rest of the write applies: the socket acks it in `subgraphAck.refused`
-  (WebSocket surface), MCP `create_node`, `update_nodes` and `import_subgraph` in `opensRefused`
-  with `opensError`, dry runs too (`adapters/mcp/README.md`), and `PUT` in `refused` (HTTP surface).
-  Each names the step and nothing of its subtree, and only a caller who can write the tree is told:
-  every other caller's write meets the write gate first, as ever. A socket frame or an MCP call whose
-  whole word was such a pointer lands nothing, takes no seq and completes under `owns-a-subtree`, a
-  line and never an Issue; any other completes as it would without the refused pointer.
-  MCP judges a new pointer's target before it writes anything: one at a subtree of the caller's whose
-  branch stands is refused whole as `opens-a-subtree`, in words that say its owning step opens it and
-  `list_trees` lists the roots a step may open; one at a tree that is absent, hidden or someone else's
-  is refused `opens-not-yours`, in one sentence for all three; an owning step's echo of its own subtree
-  passes and lands nothing.
+  the `PUT` handler on the rows it replaces), so no value, stale or late, changes the step's child.
+
+  A pointer a write sends such a step is refused `owns-a-subtree` for that step alone when it would
+  have changed the step's register and names another tree than the step's subtree, an empty one
+  included (`TreeRoom::refusedPointers`): a frame's whose stamp the join would take, and a server-stamped
+  write's — MCP, `PUT` — naming a value the register does not hold (`refusedPointers`). So a pointer the
+  register holds under that stamp, one an older stamp loses to, the value the register already holds and
+  an echo of the subtree are no refusal, and a retried frame, which the room has joined before, is
+  answered as the duplicate it is. The rest of the write applies: the socket acks the refused steps in
+  `subgraphAck.refused` (WebSocket surface), MCP `create_node`, `update_nodes` and `import_subgraph` in
+  `opensRefused` with `opensError`, dry runs too (`adapters/mcp/README.md`), and `PUT` in `refused`
+  (HTTP surface), each in the order the write sent them. Each names the step and nothing of its subtree,
+  and only a caller who can write the tree is told: every other caller's write meets the write gate first,
+  as ever. A socket frame or an MCP call whose whole word was such a pointer lands nothing, takes no seq
+  and completes under `owns-a-subtree`, a line and never an Issue; a dry run of one writes nothing and
+  completes `ok`; any other write completes as it would without the refused pointer. Every write line but
+  a dry run's counts the refused pointers as `refused` (`OBSERVABILITY.md`).
+
+  MCP judges a new pointer's target before it writes anything. An owning step's echo of its own subtree,
+  present or deleted, as the step's room holds it, passes first and lands nothing, so the create or the
+  import that revives the step may carry it. A pointer at any other subtree of the caller's whose branch
+  stands is refused whole as `opens-a-subtree`, in words that say its owning step opens it and
+  `list_trees` lists the roots a step may open; one at a tree that is absent, hidden or someone else's is
+  refused `opens-not-yours`, in one sentence for all three.
 
   So a pointer whose target becomes a subtree reads as leading nowhere from then on, with no rewrite; a
   step comes to own a subtree only while its pointer leads nowhere, and its register is frozen from
@@ -745,9 +755,10 @@ creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stor
 and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
 and read as unknown creation time. A PUT tombstones nothing: a step it leaves out is untouched, and a
 deleted owning step it carries is revived, its subtree shown again (Model, Subtrees). A step that owns
-a subtree keeps the pointer its row holds (Model, Legacy pointers): one the document names that is not
-the step's own subtree's id is answered in `refused: [{node, field: "opens", code: "owns-a-subtree"}]`,
-one entry per step in step order, beside `seq` and `data`, and the step's other fields land. A document
+a subtree keeps the pointer its row holds (Model, Legacy pointers): one the document names that is
+neither the step's own subtree's id nor the pointer its row holds is answered in `refused: [{node,
+field: "opens", code: "owns-a-subtree"}]`, one entry per step in the document's order, beside `seq` and
+`data`, and the step's other fields land. A document
 cannot tell an empty pointer from one it leaves out, so neither is refused. The answer's `data` reads
 each step that owns a subtree opening it, as every read does, and `refused` is absent when it would be
 empty. A PUT aimed at
@@ -951,12 +962,14 @@ it opens is and takes no mark (`OpenedTrees`, Model). It names the node and noth
 tree. A mark that lost to a later stored stamp is not refused and is not listed. The frame is not
 rejected: its other marks are recorded, echoed and acknowledged.
 
-`subgraphAck.refused` is present only when the frame wrote a pointer on a step that owns a subtree that
-is not that subtree's id, an empty one included: an array of `{node, field, code}`, one per such step in
-step order, `field` `opens` and `code` `owns-a-subtree` (Model, Legacy pointers). It names the step and
-nothing of its subtree, and goes to the frame's sender alone. That register was not stored and is not
-broadcast; every other register of the frame landed as the ack says, and `seq` is absent when nothing
-else did. An echo of the step's own subtree is not refused and lands nothing.
+`subgraphAck.refused` is present only when the frame would have changed the pointer of a step that owns
+a subtree — a stamp past the one the step's register holds, naming another tree than the subtree, an
+empty one included — and the room has not joined that frame before: an array of `{node, field, code}`,
+one per such step in the frame's order, `field` `opens` and `code` `owns-a-subtree` (Model, Legacy
+pointers). It names the step and nothing of its subtree, and goes to the frame's sender alone. That
+register was not stored and is not broadcast; every other register of the frame landed as the ack says,
+and `seq` is absent when nothing else did. An echo of the step's own subtree, a pointer the register
+holds under that stamp or loses to, and a retried frame are not refused.
 
 Reject codes are a stable wire contract — branch on `code`, never on `reason`:
 `no-such-tree` · `server-error` · `sign-in-required` · `tree-too-large` · `bad-frame` ·

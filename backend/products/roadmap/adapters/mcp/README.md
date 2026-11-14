@@ -103,7 +103,8 @@ each missing one named in `no node in this tree is named "x"`, the sentence `del
   an `update_nodes` row accepts only `nodeId`.
 - `id` — the id **proposed** for a NEW thing: `create_node`, `add_kind`, `import_subgraph`'s
   `nodes[].id` and `kinds[].id`. `create_node` refuses `nodeId` outright, `add_kind` refuses
-  `kindId`.
+  `kindId`. A `create_node` that names no id is given one from its label that the tree has never
+  held, present or deleted, so only a create naming a deleted node's id brings that node back.
 - Legend kinds publish `id` for the kind that exists too, and all six `*_kind` tools spell it
   alike. `kindId` is the silent alias there.
 
@@ -444,8 +445,8 @@ A node may point at another tree: `opens` holds that tree's id.
   one, in words that say the step that owns it opens it and `list_trees` lists the roots a node may
   open, under the outcome `opens-a-subtree`. A tree that is not there, a deleted one, a hidden
   subtree and someone else's are refused in one sentence, so the refusal confirms no id, under the
-  outcome `opens-not-yours`. A step that owns a subtree passes with its own subtree's id, an echo
-  that lands nothing. A node may open the tree it is in while that tree is a root. The read is made
+  outcome `opens-not-yours`. A step that owns a subtree, present or deleted, passes with its own
+  subtree's id before that read, an echo that lands nothing, so the call that revives it may carry it. A node may open the tree it is in while that tree is a root. The read is made
   under the strand of the tree being written, not the target's, so the door refuses a pointer at a
   tree that does not stand *when it checks*: an edit racing that tree's removal can leave the step pointing at it after
   the removal has taken the steps that opened it. Such a step points nowhere: it reads as an ordinary
@@ -493,13 +494,15 @@ A node may point at another tree: `opens` holds that tree's id.
   exactly as a node with a valid pointer: `opens` names the subtree, titled by the step's own label,
   `state`, the `state` filter and `list_trees`' `done` follow it, an empty subtree is unfinished, and
   the step takes no mark. Its `opens` takes no write either (`SPEC.md`, Model, Legacy pointers): an
-  `opens` a call sends it that is not its own subtree's id, `""` included, is refused for that step
-  alone and the rest of the call applies — `create_node` reviving the deleted step, `update_nodes` and
-  `import_subgraph`, a `dryRun` of either too. The receipt lists each such step in `opensRefused` and
-  says in `opensError` that their `opens` was left as it was and that another roadmap is opened from a
-  step that owns no subtree; a row whose only change was that `opens` is among `unchangedNodeIds`, and
-  a call whose whole write was such a pointer answers `unchanged` and completes under the outcome
-  `owns-a-subtree`. A pointer at a subtree from any other step leads nowhere. `list_trees` lists
+  `opens` a call sends it that would change its register — a value the register does not hold, other
+  than the step's own subtree's id, `""` included — is refused for that step alone and the rest of the
+  call applies: `create_node` on the step or reviving it, `update_nodes` and `import_subgraph`, a
+  `dryRun` of either too. The receipt lists each such step in `opensRefused`, in the order the call
+  sent them, and says in `opensError` that their `opens` was left as it was and that another roadmap is
+  opened from a step that owns no subtree; a row whose only change was that `opens` is among
+  `unchangedNodeIds`. A call whose whole write was such a pointer answers `unchanged` and completes under
+  the outcome `owns-a-subtree`, and its `dryRun` completes `ok`; every line but a dry run's counts the
+  refused pointers as `refused`. A pointer at a subtree from any other step leads nowhere. `list_trees` lists
   roots alone. `update_tree` with a
   `title` aimed at a subtree renames its owning step in the parent, the subtree's name, and answers
   the subtree's own `seq`, its head when only the title moved; a `guide` sent beside it lands in the

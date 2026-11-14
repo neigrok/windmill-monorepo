@@ -284,9 +284,10 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
       row["opens"] = cappedStr("Id of a tree you own that has no parent, which this node opens — the node is "
                                "complete for you when that tree is; empty string clears it. One naming "
                                "a tree that is not yours, or a subtree, refuses the whole batch. A step that owns a "
-                               "subtree keeps its own: one sent there is listed in opensRefused, and the rest lands. "
-                               "A tree that leads back to this one lands, and `introducedDiagnostics` names the loop "
-                               "after the graph's errors, within its five lines: a tree on a loop never completes.",
+                               "subtree keeps its own: one sent there that would change it is listed in opensRefused, "
+                               "and the rest lands. A tree that leads back to this one lands, and "
+                               "`introducedDiagnostics` names the loop after the graph's errors, within its five "
+                               "lines: a tree on a loop never completes.",
                                kMaxIdLength);
       p["updates"] = objArray("1..200 distinct existing nodes, each with at least one field or a mark.", row, {"nodeId"});
       p["updates"]["minItems"] = 1;
@@ -635,10 +636,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                            "the receipt's `introducedDiagnostics` names the loop after the graph's errors, within its "
                            "five lines: a tree on a loop never completes. Omit, or pass \"\", and the node opens "
                            "none, whatever a deleted node under the same id opened, unless that node is a step that "
-                           "owns a subtree: it comes back opening its subtree, and an `opens` sent there is listed "
-                           "in opensRefused.",
+                           "owns a subtree: it comes back opening its subtree, and an `opens` sent there that would "
+                           "change its own is listed in opensRefused.",
                            kMaxIdLength);
-    p["id"] = cappedStr("Optional id to PROPOSE for the new node; minted from the label if omitted. "
+    p["id"] = cappedStr("Optional id to PROPOSE for the new node; minted from the label if omitted, never one the tree "
+                        "has held, so only naming a deleted node's id brings it back. "
                         "(`nodeId` names a node that already exists and is not accepted here.)",
                         kMaxIdLength);
     tools.push_back(tool("create_node", Access::write,
@@ -755,8 +757,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     nodeFields["opens"] = cappedStr("Optional id of a tree you own that has no parent, which this node opens — the "
                                     "id as a string, which is the `treeId` inside the `opens` get_tree answers. \"\" "
                                     "clears it, and one naming a tree that is not yours, or a subtree, refuses the "
-                                    "whole import. A step that owns a subtree keeps its own: one sent there is "
-                                    "listed in opensRefused, and the rest lands. Left out, a node the tree holds "
+                                    "whole import. A step that owns a subtree keeps its own: one sent there that "
+                                    "would change it is listed in opensRefused, and the rest lands. Left out, a node the tree holds "
                                     "keeps the tree it opens, and a node this import brings back from a delete opens "
                                     "none, or its subtree when it owns one. A tree that leads back to this one "
                                     "lands, and `introducedDiagnostics` names the loop after the graph's errors, "
