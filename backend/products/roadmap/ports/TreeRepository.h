@@ -184,10 +184,11 @@ struct TreeRepository {
   // it and a root under each tree whose present steps point at it, never `tree` itself. Nothing when `tree` does not
   // stand or is not `owner`'s.
   virtual std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree) = 0;
-  // `owner`'s standing trees other than `tree` that hold a present step whose pointer leads to `tree`, in id order, ids
-  // compared as bytes: nothing when the pointer is not valid (OpenedTrees::pointsAt), so nothing for a subtree, a tree
-  // that does not stand or one that is not `owner`'s, and a step that owns a subtree opens that subtree alone. The read
-  // is keyed on the owner's own trees, so it does not grow with the pointers other accounts plant at `tree`.
+  // `owner`'s standing trees other than `tree` that hold a present step whose pointer names `tree`, in id order, ids
+  // compared as bytes; nothing when a pointer at `tree` is not valid (OpenedTrees::pointsAt): for a subtree, a tree that
+  // does not stand or one that is not `owner`'s. It reads each step's own register, so a step that owns a subtree is
+  // read by the pointer it holds, which the removal's own read of the tree's room then passes over. The read is keyed on
+  // the owner's own trees, so it does not grow with the pointers other accounts plant at `tree`.
   virtual std::vector<TreeId> treesOpening(const UserId& owner, const TreeId& tree) = 0;
   // Retire a root by stamping deleted_at; every read filters it, and every tree under it, out afterwards. A subtree's
   // row is never retired: it goes and comes back with its owning step.

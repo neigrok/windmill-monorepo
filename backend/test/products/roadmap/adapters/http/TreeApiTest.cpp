@@ -1459,6 +1459,41 @@ TEST(put_by_the_owner_overwrites_the_document_and_keeps_the_owner) {
   CHECK_EQ(ids, (std::vector<std::string>{"mast", "root"}));
 }
 
+// A step that owns a subtree keeps the pointer its row holds (SPEC.md, Model, Legacy pointers): a document that names
+// another tree there is answered with that step's `opens` refused, and every other field it carries lands. A document
+// cannot tell an empty pointer from one it leaves out, so neither is refused, and nor is an echo of the step's subtree.
+// The answer reads each owning step opening its subtree, as every read does.
+TEST(put_keeps_the_pointer_of_a_step_that_owns_a_subtree_and_answers_another_one_refused) {
+  Harness h;
+  const UserId me = h.signIn("s-me");
+  h.seedForest(me, Visibility::private_);
+  const auto opensIn = [&](const char* step) {
+    const std::optional<NodeStateEntry> held = LooseGraph(h.trees->byId["t_a"].state).exportNode(NodeId{step});
+    return std::make_pair(held->opens.str(), held->opensAt);
+  };
+  Json::Value doc = parse(R"({"title":"My year","nodes":[{"id":"sail","label":"Sail far","opens":"t_b"},
+                                                       {"id":"coast","label":"Sail the coast","opens":"t_b"}]})");
+
+  const drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_a", doc);
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(response)["refused"], parse(R"([{"node":"sail","field":"opens","code":"owns-a-subtree"}])"));
+  CHECK_EQ(bodyOf(response)["data"]["nodes"][0]["opens"], Json::Value("t_s"));
+  CHECK(opensIn("sail") == (std::pair<std::string, Hlc>{"", Hlc{}}));
+  CHECK(opensIn("coast") == (std::pair<std::string, Hlc>{"t_b", Hlc{1, 0, "genesis"}}));
+  CHECK_EQ(LooseGraph(h.trees->byId["t_a"].state).nodeView(NodeId{"sail"})->label, std::string("Sail far"));
+
+  for (const char* sent : {R"({"id":"sail","label":"Sail far","opens":"t_s"})", R"({"id":"sail","label":"Sail far"})",
+                           R"({"id":"sail","label":"Sail far","opens":""})"}) {
+    Json::Value again(Json::objectValue);
+    again["title"] = "My year";
+    again["nodes"].append(parse(sent));
+    const drogon::HttpResponsePtr kept = sendPut(h.api, "s-me", "t_a", again);
+    CHECK_EQ(kept->getStatusCode(), drogon::k200OK);
+    CHECK_FALSE(bodyOf(kept).isMember("refused"));
+    CHECK(opensIn("sail") == (std::pair<std::string, Hlc>{"", Hlc{}}));
+  }
+}
+
 TEST(put_to_a_malformed_id_is_400_bad_id_and_creates_nothing) {
   Harness h;
   h.signIn("s-me");

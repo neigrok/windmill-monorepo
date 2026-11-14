@@ -8987,3 +8987,119 @@ TEST(mcp_delete_tree_counts_the_branch_only_once_the_removal_passed_its_gates) {
   CHECK_EQ(body(h.call("delete_tree", kNoArgs))["branch"], parse(R"({"subtrees":0,"steps":0})"));
   CHECK_EQ(h.trees.sizeReads.size(), 1u);
 }
+
+// A step that owns a subtree takes no pointer (SPEC.md, Model, Legacy pointers). Every tool that writes one — update_nodes,
+// import_subgraph, create_node reviving the step — answers it in `opensRefused` with what to do in `opensError`, keeps the
+// step's register as it was and applies the rest of the call; a dry run says so too. A call whose whole word was such a
+// pointer completes under `owns-a-subtree`. An echo of the step's own subtree, and a call that sends none, are no refusal.
+TEST(mcp_a_pointer_sent_a_step_that_owns_a_subtree_is_refused_by_register_and_the_rest_of_the_call_applies) {
+  Harness h;
+  h.trees.byId["t_other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Side quest", {}}, 0, h.caller};
+  CHECK_FALSE(h.call("create_node", node("sail", "Sail")).isError);
+  CHECK_FALSE(h.call("create_node", node("idea", "Idea")).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  const auto registerOfSail = [&] { return LooseGraph(h.trees.byId["t"].state).exportNode(NodeId{"sail"})->opens.str(); };
+  const Json::Value refusedSail = parse(R"(["sail"])");
+  const Json::Value sentence(
+      "Some steps own a subtree, which each opens whatever its opens holds: their opens was left as it was and the rest "
+      "of the call applied — those ids are listed in opensRefused. To open another roadmap from this tree, set opens on "
+      "a step that owns no subtree.");
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<std::string> outcomes;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.operation.rfind("mcp.", 0) == 0) outcomes.push_back(line.operation + " " + line.outcome);
+  });
+  const auto through = [&](const char* tool, const std::string& arguments) {
+    const ToolResult result = gate.callTool(tool, parse(arguments), h.actor);
+    CHECK_FALSE(result.isError);
+    return result.isError ? Json::Value(message(result)) : body(result);
+  };
+
+  const Json::Value previewed =
+      through("roadmap_update_nodes", R"({"treeId":"t","updates":[{"nodeId":"sail","opens":"t_other"}],"dryRun":true})");
+  CHECK_EQ(previewed["opensRefused"], refusedSail);
+  CHECK_EQ(previewed["opensError"], sentence);
+  CHECK_EQ(previewed["unchangedNodeIds"], refusedSail);
+  CHECK(previewed["unchanged"].asBool());
+
+  const Json::Value updated = through(
+      "roadmap_update_nodes",
+      R"({"treeId":"t","updates":[{"nodeId":"sail","label":"Sail on","opens":"t_other"},{"nodeId":"idea","opens":"t_other"}]})");
+  CHECK_EQ(updated["opensRefused"], refusedSail);
+  CHECK_EQ(updated["changedNodeIds"], parse(R"(["sail","idea"])"));
+  CHECK_EQ(registerOfSail(), std::string(""));
+  CHECK_EQ(LooseGraph(h.trees.byId["t"].state).nodeView(NodeId{"sail"})->label, std::string("Sail on"));
+  CHECK_EQ(LooseGraph(h.trees.byId["t"].state).nodeView(NodeId{"idea"})->opens, TreeId{"t_other"});
+
+  CHECK_EQ(through("roadmap_update_nodes", R"({"treeId":"t","updates":[{"nodeId":"sail","opens":""}]})")["opensRefused"],
+           refusedSail);
+  const Json::Value echoed =
+      through("roadmap_update_nodes", R"({"treeId":"t","updates":[{"nodeId":"sail","opens":"t_00000000000000c1"}]})");
+  CHECK_FALSE(echoed.isMember("opensRefused"));
+  CHECK(echoed["unchanged"].asBool());
+
+  const Json::Value grafted = through("roadmap_import_subgraph", R"({"treeId":"t","nodes":[{"id":"sail","opens":"t_other"}]})");
+  CHECK_EQ(grafted["opensRefused"], refusedSail);
+  CHECK(grafted["unchanged"].asBool());
+  const Json::Value graftPreviewed =
+      through("roadmap_import_subgraph", R"({"treeId":"t","nodes":[{"id":"sail","opens":"t_other"}],"dryRun":true})");
+  CHECK_EQ(graftPreviewed["opensRefused"], refusedSail);
+  CHECK(graftPreviewed["unchanged"].asBool());
+  CHECK_EQ(registerOfSail(), std::string(""));
+
+  CHECK_FALSE(gate.callTool("roadmap_delete_node", parse(R"({"treeId":"t","nodeId":"sail","branches":["t_00000000000000c1"]})"),
+                            h.actor).isError);
+  const Json::Value revived =
+      through("roadmap_create_node", R"({"treeId":"t","id":"sail","label":"Sail","opens":"t_other"})");
+  CHECK_EQ(revived["opensRefused"], refusedSail);
+  CHECK_EQ(registerOfSail(), std::string(""));
+  {
+    std::lock_guard<std::mutex> strand(h.registry.strandFor(TreeId{"t"}));
+    CHECK(h.registry.open(TreeId{"t"})->subtrees() == (std::map<NodeId, TreeId>{{NodeId{"sail"}, sailing}}));
+  }
+  CHECK_FALSE(through("roadmap_create_node", R"({"treeId":"t","id":"plain","label":"Plain"})").isMember("opensRefused"));
+  installWriteSink({});
+
+  CHECK_EQ(outcomes, (std::vector<std::string>{
+                         "mcp.roadmap_update_nodes ok", "mcp.roadmap_update_nodes ok",
+                         "mcp.roadmap_update_nodes owns-a-subtree", "mcp.roadmap_update_nodes ok",
+                         "mcp.roadmap_import_subgraph owns-a-subtree", "mcp.roadmap_import_subgraph ok",
+                         "mcp.roadmap_delete_node ok", "mcp.roadmap_create_node ok", "mcp.roadmap_create_node ok"}));
+}
+
+// A new pointer at a subtree leads nowhere, so MCP refuses it whole, nothing written, telling the caller the subtree is
+// theirs and opened by its owning step. A subtree whose branch is hidden, like someone else's tree, is answered as a
+// tree that is not theirs. The owning step's echo of its own subtree passes.
+TEST(mcp_a_new_pointer_at_a_subtree_is_refused_whole_as_opens_a_subtree) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Sail")).isError);
+  CHECK_FALSE(h.call("create_node", node("idea", "Idea")).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  const GraphState before = h.trees.byId["t"].state;
+
+  for (const char* arguments : {R"({"updates":[{"nodeId":"idea","opens":"t_00000000000000c1"}]})",
+                                R"({"nodes":[{"id":"idea","opens":"t_00000000000000c1"}],"dryRun":true})",
+                                R"({"id":"twin","label":"Twin","opens":"t_00000000000000c1"})"}) {
+    const Json::Value args = parse(arguments);
+    const char* tool = args.isMember("updates") ? "update_nodes" : args.isMember("nodes") ? "import_subgraph" : "create_node";
+    const ToolResult refused = h.call(tool, args);
+    CHECK(refused.isError);
+    CHECK_EQ(refused.outcomeCode, std::string("opens-a-subtree"));
+    const std::string path = args.isMember("updates") ? "updates[0].opens" : args.isMember("nodes") ? "nodes[0].opens" : "opens";
+    CHECK_EQ(message(refused), tool + std::string(": ") + path +
+                                   " names \"t_00000000000000c1\", a subtree of one of your roadmaps, which only the "
+                                      "step that owns it opens — a node opens a roadmap that has no parent: list_trees "
+                                      "lists them");
+  }
+  CHECK(h.trees.byId["t"].state == before);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"sail","opens":"t_00000000000000c1"})"))).isError);
+
+  CHECK_FALSE(h.call("delete_node", parse(R"({"nodeId":"sail","branches":["t_00000000000000c1"]})")).isError);
+  const ToolResult hidden = h.call("update_nodes", asUpdate(parse(R"({"nodeId":"idea","opens":"t_00000000000000c1"})")));
+  CHECK(hidden.isError);
+  CHECK_EQ(hidden.outcomeCode, std::string("opens-not-yours"));
+}

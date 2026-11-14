@@ -724,13 +724,10 @@ std::map<TreeId, TreeAbove> PgTreeRepository::guidedTreesAbove(const UserId& own
 std::string PgTreeRepository::treesOpeningStatement() {
   // Keyed on the owner's own trees. The LATERAL runs once per standing one and stops at its first node that opens $2, so
   // each tree's pointers are read by its key on tree_nodes_pointers_idx, which serves only a scan that states its
-  // predicate, and never through tree_nodes_opens_idx, where other accounts' pointers at $2 sit too. A step that owns a
-  // subtree opens it, whatever its pointer names.
+  // predicate, and never through tree_nodes_opens_idx, where other accounts' pointers at $2 sit too.
   return "SELECT t.id FROM trees t "
          "CROSS JOIN LATERAL (SELECT 1 FROM tree_nodes n "
-         "                    WHERE n.tree_id = t.id AND n.present AND n.opens <> '' AND n.opens = $2 "
-         "                      AND NOT EXISTS (SELECT 1 FROM trees owning WHERE owning.parent_tree = n.tree_id "
-         "                                      AND owning.parent_step = n.node_id AND owning.deleted_at IS NULL) LIMIT 1) o "
+         "                    WHERE n.tree_id = t.id AND n.present AND n.opens <> '' AND n.opens = $2 LIMIT 1) o "
          "WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND t.id <> $2 "
          "  AND EXISTS (SELECT 1 FROM trees opened WHERE opened.id = $2 AND " +
          pointerTargetCondition("opened", "$1::uuid") + ") "

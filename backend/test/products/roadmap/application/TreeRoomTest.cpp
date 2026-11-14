@@ -780,3 +780,66 @@ TEST(room_records_its_owning_steps_in_the_roots_access_before_the_write_is_told)
   access->setStanding(false);
   CHECK_FALSE(access->admits({}));
 }
+
+// A step that owns a subtree takes no pointer on any write path — a frame, a command, a graft — whatever the write names,
+// an echo of its subtree included, while every other register the write carries lands. The room names the pointers a
+// write sent that it refuses, and a write whose whole word was such a pointer lands nothing and takes no seq.
+TEST(room_lands_no_pointer_on_a_step_that_owns_a_subtree_on_any_write_path_and_names_the_ones_it_refuses) {
+  FakeBus bus;
+  LooseGraph graph;
+  graph.createNode(nid("sail"), "Sail", "", NodeColor::sky, at(1));
+  graph.createNode(nid("idea"), "Idea", "", NodeColor::sky, at(1));
+  graph.createNode(nid("gone"), "Gone", "", NodeColor::sky, at(1));
+  graph.setOpens(nid("sail"), tid("t_stale"), at(2));
+  graph.deleteNode(nid("gone"), at(3));
+  TreeRoom room(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {},
+                {{nid("sail"), tid("t_s")}, {nid("gone"), tid("t_g")}},
+                std::make_shared<RootAccess>(uid("owner"), Visibility::private_), 0, bus);
+  const auto registerOf = [&room](const char* step) {
+    const LooseGraph held(room.exportState());
+    const std::optional<NodeStateEntry> entry = held.exportNode(nid(step));
+    return std::make_pair(entry->opens, entry->opensAt);
+  };
+  const std::pair<TreeId, Hlc> stale{tid("t_stale"), at(2)};
+
+  CHECK(room.refusedPointers({{nid("sail"), tid("t_s")}, {nid("idea"), tid("t_x")}, {nid("gone"), TreeId{}}}) ==
+        std::vector<NodeId>{nid("gone")});
+  CHECK(room.refusedPointers({{nid("sail"), tid("t_x")}}) == std::vector<NodeId>{nid("sail")});
+
+  Subgraph frame;
+  frame.frameId = "f1";
+  frame.graph.nodes.push_back(
+      NodeStateEntry{.id = nid("sail"), .label = "Sail on", .labelAt = at(10, "web"), .opens = tid("t_x"), .opensAt = at(10, "web")});
+  frame.graph.nodes.push_back(NodeStateEntry{.id = nid("idea"), .opens = tid("t_x"), .opensAt = at(10, "web")});
+  CHECK(room.joinSubgraph(frame, uid("owner")) == std::optional<Seq>(1));
+  CHECK(registerOf("sail") == stale);
+  CHECK(registerOf("idea") == (std::pair<TreeId, Hlc>{tid("t_x"), at(10, "web")}));
+  CHECK_EQ(*room.labelOf(nid("sail")), std::string("Sail on"));
+  CHECK(bus.subgraphBroadcasts.back().subgraph.graph.nodes ==
+        (std::vector<NodeStateEntry>{NodeStateEntry{.id = nid("sail"), .label = "Sail on", .labelAt = at(10, "web")},
+                                     NodeStateEntry{.id = nid("idea"), .opens = tid("t_x"), .opensAt = at(10, "web")}}));
+
+  Subgraph echo;
+  echo.frameId = "f2";
+  echo.graph.nodes.push_back(NodeStateEntry{.id = nid("sail"), .opens = tid("t_s"), .opensAt = at(11, "web")});
+  CHECK(room.joinSubgraph(echo, uid("owner")) == std::nullopt);
+  CHECK(registerOf("sail") == stale);
+
+  room.applyCommands({AnnotateNode{nid("sail"), std::string("why"), std::nullopt, std::nullopt, std::nullopt, TreeId{}},
+                      CreateNode{nid("gone"), "Gone", "", NodeColor::sky, {}, {}, {}, tid("t_x")}},
+                     20, uid("owner"));
+  CHECK(registerOf("sail") == stale);
+  CHECK(registerOf("gone") == (std::pair<TreeId, Hlc>{TreeId{}, Hlc{}}));
+  CHECK(room.hasNode(nid("gone")));
+  CHECK(room.subtrees() == (std::map<NodeId, TreeId>{{nid("gone"), tid("t_g")}, {nid("sail"), tid("t_s")}}));
+
+  Graft graft;
+  graft.document.nodes.push_back(NodeSpec{.id = nid("sail"), .label = "Sail on", .opens = tid("t_x")});
+  graft.omittedNodeRegisters[nid("sail")] = {NodeRegister::icon,   NodeRegister::color,       NodeRegister::order,
+                                             NodeRegister::status, NodeRegister::description, NodeRegister::links};
+  CHECK(room.graftLandsNothing(graft, 30));
+  const Seq head = room.head();
+  CHECK(room.importTree(graft, 30, uid("owner")) == std::nullopt);
+  CHECK_EQ(room.head(), head);
+  CHECK(registerOf("sail") == stale);
+}

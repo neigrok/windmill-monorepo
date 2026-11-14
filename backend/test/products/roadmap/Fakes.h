@@ -549,8 +549,8 @@ struct FakeTreeRepository : TreeRepository {
     }
     return nearestGuided(above, kMaxGuides);
   }
-  // The real statement's rules: this owner's standing trees other than `tree`, each once, in id order, and only for a
-  // `tree` a pointer is valid at: a standing root of this owner's. A step that owns a subtree opens that one alone.
+  // The real statement's rules: this owner's standing trees other than `tree`, each once, in id order, by each step's own
+  // register, and only for a `tree` a pointer is valid at: a standing root of this owner's.
   std::vector<TreeId> treesOpening(const UserId& owner, const TreeId& tree) override {
     openingReads.push_back(tree);
     if (openingReadsFail) throw std::runtime_error("connection reset mid-read");
@@ -559,9 +559,7 @@ struct FakeTreeRepository : TreeRepository {
     if (!opened || subtrees.count(tree.str()) || opened->owner != std::optional<UserId>(owner)) return opening;
     for (const auto& [id, stored] : byId) {
       if (id == tree.str() || deletedIds.count(id) || stored.owner != std::optional<UserId>(owner)) continue;
-      std::map<NodeId, TreeId> pointers = LooseGraph(stored.state).pointers();
-      for (const auto& [step, subtree] : ownedBy(TreeId{id})) pointers.erase(step);
-      if (treesOpenedBy(pointers).count(tree)) opening.emplace_back(id);
+      if (treesOpenedBy(LooseGraph(stored.state).pointers()).count(tree)) opening.emplace_back(id);
     }
     return opening;
   }
