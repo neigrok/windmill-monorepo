@@ -382,8 +382,11 @@ One worker, hourly:
 
 ## §8 App Store adapter
 
-- Products: one subscription group, *Windmill One*, holding one monthly auto-renewable product.
-  Family Sharing is off. (R-1)
+- Products: one subscription group, *Windmill One*, holding one monthly auto-renewable product,
+  `works.windmill.app.one.monthly`. Family Sharing is off. (R-1)
+- Multiseat purchases are off for the product, so no organization or group buys seats of it. The
+  sandbox allows seats whatever that setting says: a transaction for more than one seat is treated
+  as its buyer's one subscription, and an assigned seat binds to no one (§4). (R-10)
 - Purchase on iOS uses StoreKit 2 with `appAccountToken` set to the account id. The app shows a buy
   control only to a signed-in account, and only as INV-12 allows. (R-2) A TestFlight or Xcode build
   buys in sandbox, so it also needs `allowlisted` (INV-12).
@@ -464,7 +467,7 @@ The backend's role cannot read it.
 
 ## §11 Rulings
 
-The owner's rulings. R-1 to R-7 and R-9 are settled; R-8 is open, and its row holds what this
+The owner's rulings. R-1 to R-7, R-9 and R-10 are settled; R-8 is open, and its row holds what this
 document assumes until it is ruled.
 
 | | Question | Ruling |
@@ -478,3 +481,4 @@ document assumes until it is ruled.
 | R-7 | A failed renewal | The 16-day Billing Grace Period is enabled. Access continues in `grace`; no new allowance is funded until the charge succeeds. |
 | R-8 | Two live subscriptions on one account | Open. Assumed: both are recorded; access is one; the account screen says the person is charged twice and where to cancel. Applies already to two Apple Accounts bound to one Windmill account, and to every second store. |
 | R-9 | A subscription whose account hint names an erased account | Binds to the account that claims it; the erased account no longer exists. R-3 still refuses a claim against a live account. |
+| R-10 | Selling more than one seat of the subscription | No. Multiseat purchases are off in App Store Connect, which keeps the product out of Apple Business and Apple School Manager. A seat someone else paid for entitles no one. |
