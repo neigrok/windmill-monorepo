@@ -88,6 +88,7 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
   Visibility visibility = Visibility::private_;
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{id}));
+    WriteObservation observation{"roadmap.share.read", "roadmap", "share"};
     try {
       // Authorize on the stored row BEFORE opening: this door is anonymous, so opening first would
       // let a stranger pull the lattice of any id they guess off disk and into memory.
@@ -97,21 +98,23 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
         if (room) {
           readable = true;
           subtree = room->parent().has_value();
-          title = room->title().value;
+          if (!subtree) title = room->title().value;  // a subtree's own register is read by nothing
           steps = room->snapshot().nodes.size();
           visibility = room->visibility();
         }
       }
-    } catch (const std::exception&) {
-    // An infrastructure failure leaves it unreadable, so the shell is served verbatim.
+      observation.skip();  // a read that does not fail leaves no completion line
+    } catch (const std::exception& failure) {
+      // An infrastructure failure leaves it unreadable, so the shell is served verbatim, and is reported.
+      observation.fail(failure);
     }
   }
 
   // Taken OUTSIDE the room strand, and only for a readable tree. A subtree is named by its owning step's label, read
   // through its parent; a tree that went away meanwhile, or a read that failed, leaves the shell verbatim, the failure
-  // reported as the tree read's.
+  // reported as the place read's.
   if (readable && subtree) {
-    WriteObservation observation{"roadmap.tree.read", "roadmap", "rest"};
+    WriteObservation observation{"roadmap.tree.place", "roadmap", "share"};
     try {
       const std::optional<Place> place = trees_->placeOf(TreeId{id});
       readable = place.has_value();

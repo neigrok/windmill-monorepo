@@ -203,8 +203,10 @@ struct FakeTreeRepository : TreeRepository {
     if (it == byId.end()) return std::nullopt;
     return it->second;
   }
+  bool accessReadsFail = false;  // loadAccess throws, the way a dropped connection does
   // The same facts the real repository reads off the root's row, projected off the stored trees.
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override {
+    if (accessReadsFail) throw std::runtime_error("connection reset mid-read");
     const std::optional<StoredTree> stored = placed(tree);
     if (!stored) return std::nullopt;
     return TreeAccess{stored->owner, stored->visibility, stored->root, stored->parent};
@@ -326,7 +328,7 @@ struct FakeTreeRepository : TreeRepository {
   std::vector<OwnedTree> listOwnedBy(const UserId& owner) override {
     std::vector<OwnedTree> owned;
     for (const auto& [id, stored] : byId) {
-      if (deletedIds.count(id)) continue;
+      if (!placed(TreeId{id})) continue;  // the row, or its root, does not stand
       if (!stored.owner || *stored.owner != owner) continue;
       TreeData data = documentOf(TreeId{id});
       data.title = stored.title.value;  // the real list reads the column, which a subtree never writes

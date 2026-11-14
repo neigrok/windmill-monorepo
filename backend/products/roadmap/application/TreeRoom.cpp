@@ -131,7 +131,7 @@ std::optional<std::string> TreeRoom::validate(const Command& command) const {
 
 void TreeRoom::appendSubtree(const NodeId& step, const Subtree& subtree) {
   ++head_;
-  subtrees_[step] = subtree.id;
+  ownSubtree(step, subtree.id);
   bus_.broadcastSubtree(id_, head_, step, subtree);
 }
 
@@ -212,9 +212,11 @@ TreeData TreeRoom::snapshot() const {
 Subgraph TreeRoom::deltaSince(const VersionVector& since) const {
   Subgraph delta = deltaBetween(graph_.exportState(), legend_.exportState(), since);
   delta.treeId = id_;
-  if (!since.covers(title_.stamp)) delta.title = title_;
+  if (!parent_) {
+    if (!since.covers(title_.stamp)) delta.title = title_;
+    delta.coverage->observe(title_.stamp);
+  }
   if (!since.covers(guide_.stamp)) delta.guide = guide_;
-  delta.coverage->observe(title_.stamp);
   delta.coverage->observe(guide_.stamp);
   return delta;
 }

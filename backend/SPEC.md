@@ -220,15 +220,21 @@ rejected for structure. Validity is a read model, not a gate.
   A subtree reads as one step of its parent:
 
   - **Name.** A subtree's name is its owning step's label, read through on every read that names
-    it — the tree read, a `path`, the share page and its metadata, the subscribe answer's title, a
-    pointer's `opens` title and the guides — off the stored rows (`TreeRepository::placeOf`, and
-    `treeNameColumn` in a statement). Renaming a subtree (`PATCH /v1/trees/{id} {title}`, MCP
-    `update_tree {title}`) writes that label in the parent's room, under the parent's strand, as an
-    ordinary label write of the step (`RenameNode`, one seq of the parent's stream, broadcast and
-    logged as any other); its own title register is never written. A rename the step's label already
-    holds lands nothing, and a step gone from its parent answers as an absent tree. MCP `update_tree`
-    sending a title and a guide lands the title in the parent and then the guide in the subtree's own
-    room, and answers the seq of the subtree's own stream, its head when only the title moved.
+    it — the tree read, a `path`, the guides read and every guide's title, the share page and its
+    metadata, the subscribe answer's title, a pointer's `opens` title and MCP `get_tree`'s `title` —
+    off the stored rows (`TreeRepository::placeOf`, and `treeNameColumn` in a statement). A read of
+    the name that fails answers as the read's own failure does, and never with another name: the
+    tree and guides reads `404`, the share page the shell unchanged, the subscribe a `server-error`
+    reject, and `get_tree` a failed call. Its own title register is read by nothing: no read answers
+    it and the subscribe answer neither sends nor covers it. A rename never writes it; the socket's
+    `subgraph` frame and `PUT /v1/trees/{subtree}` still do. Renaming a subtree (`PATCH
+    /v1/trees/{id} {title}`, MCP `update_tree {title}`) writes that label in the parent's room, under
+    the parent's strand, as an ordinary label write of the step (`RenameNode`, one seq of the parent's
+    stream, broadcast and logged as any other). A rename the step's label already holds lands nothing,
+    and a step gone from its parent answers as an absent tree. MCP `update_tree` sending a title and a
+    guide lands the title in the parent and then the guide in the subtree's own room, so a guide that
+    fails leaves the label landed, and answers the seq of the subtree's own stream, its head when
+    only the title moved.
   - **Place.** A tree read answers `root`, `parent: {tree, step} | null`, `path: [{tree, step,
     title}]` — the trees above it, root first, each with its step the way passes through and its
     name — and `depth`, to anyone who may read it; a root answers `parent: null`, `path: []` and
@@ -242,8 +248,9 @@ rejected for structure. Validity is a read model, not a gate.
     however deep, so an empty one is unfinished and a leaf reopened reopens every owning step above
     it; nothing of it is stored. The subscribe answer lists the subtree each step owns (WebSocket
     surface), which heals a `subtree` frame a client missed.
-  - **Lists show roots only.** A subtree is no row of `GET /v1/trees`, MCP `list_trees` or the gallery;
-    it counts in its parent as the one step that owns it.
+  - **Lists show roots only.** A subtree is no row of `GET /v1/trees`, MCP `list_trees`, the gallery or
+    reminder readiness; it counts in its parent as the one step that owns it, and a reminder names
+    that step by its label.
   - **Links.** `GET /v1/trees/{subtree}` and `/t/{subtree}` open a subtree by its own id for anyone who
     may read its root, the share page indexed as its root is.
 
@@ -257,7 +264,8 @@ rejected for structure. Validity is a read model, not a gate.
   the step is present (`step-gone`); then reads the stored site (`TreeRepository::subtreeSite`),
   and a parent's room whose head is behind the stored one takes it. A step that already owns a
   subtree answers it, `created: false`, and writes nothing, so a retry after a lost reply and a
-  create that lost a race both find the one child. Otherwise it is refused when the child would sit
+  create that lost a race both find the one child; a parent's room that missed it records it, with
+  no seq. Otherwise it is refused when the child would sit
   deeper than the cap (`depth-limit`) and when the step's pointer is valid as `OpenedTrees` judges
   one, at a standing tree of the same owner, the parent itself included (`step-opens-a-tree`); a
   pointer that leads nowhere does not stop it. A `proposedId` that is a well-formed tree id and
@@ -591,7 +599,9 @@ A caller who can write the tree is answered the guides of their trees above it, 
 and the tree's own last, read off the stored rows after the tree's strand is released; when the
 trees above cannot be read they are answered `503 guides-unavailable`. Any other caller who can
 read the tree is answered its own guide alone when it has one, `yours: false`, and nothing is read
-for them. An absent tree and one the caller may not read answer the `404` the tree route gives.
+for them but a subtree's name: a subtree's own entry is named by its owning step's label, read for
+any caller (Model, Subtrees). An absent tree and one the caller may not read answer the `404` the
+tree route gives.
 The tree route carries no guides and never makes that read.
 
 `GET /v1/trees/{id}/diagnostics` answers the graph's diagnostics, `{cycles, dangling, selfEdges,
@@ -729,9 +739,10 @@ subtree, read under the strand with the delta, so a client that missed a `subtre
 next subscribe; it goes to readers and writers alike and is absent when the steps own none. It is
 told, never a register: no client writes it and no join reads it. A subtree's own subscribe answer
 carries its name, its owning step's label under that label's stamp, as the `title` register whatever
-the vector covers; the name is read off the stored rows after the strand is released, its stamp is the
-parent's and is never folded into the answer's coverage, and a read that fails sends the answer
-without it.
+the vector covers; the name is read off the stored rows after the strand is released, and its stamp is
+the parent's and is never folded into the answer's coverage. The subtree's own title register is
+neither sent nor covered. A read of the name that fails is answered by a `server-error` reject, as a
+failed join is, and the client asks again.
 
 `progressAck.refused` is present only when the frame carried a mark that was refused: an array of
 `{node, code}`, one per refused mark in the frame's order. The one code is `opens-a-tree` — the node

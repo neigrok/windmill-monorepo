@@ -376,11 +376,12 @@ void PgTreeRepository::create(const TreeId& tree, const GraphState& state, const
 std::vector<OwnedTree> PgTreeRepository::listOwnedBy(const UserId& owner) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  // A subtree stands while its root does.
   pqxx::result rows = txn.exec_params(
-      "SELECT id, title, document::text, parent_tree, parent_step, "
-      "(extract(epoch from created_at) * 1000)::bigint AS created_ms, "
-      "(extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
-      "FROM trees WHERE owner_id = $1::uuid AND deleted_at IS NULL",
+      "SELECT t.id, t.title, t.document::text, t.parent_tree, t.parent_step, "
+      "(extract(epoch from t.created_at) * 1000)::bigint AS created_ms, "
+      "(extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms "
+      "FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND " + rootStandsCondition("t"),
       owner.str());
 
   std::vector<OwnedTree> owned;

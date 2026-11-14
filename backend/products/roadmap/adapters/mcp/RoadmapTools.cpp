@@ -295,11 +295,13 @@ std::map<NodeColor, KindId> kindByHue(const std::vector<Kind>& kinds) {
 }
 
 // What a read takes from the room while it holds the tree's strand; every repository read comes after it lets go.
+// `subtree` says the tree hangs from a step, so its name is that step's label, read through its parent.
 struct RoomRead {
   TreeData data;
   Seq head = 0;
   std::optional<UserId> owner;
   bool guideInherited = false;
+  bool subtree = false;
 };
 
 // Nothing for an absent tree and for one the caller may not read, which answer in the same words.
@@ -307,7 +309,7 @@ std::optional<RoomRead> readRoom(RoomRegistry& registry, const TreeId& tree, con
   std::lock_guard<std::mutex> lock(registry.strandFor(tree));
   TreeRoom* room = registry.open(tree);
   if (!room || !room->readableBy(caller)) return std::nullopt;
-  return RoomRead{room->snapshot(), room->head(), room->owner(), room->guideInherited()};
+  return RoomRead{room->snapshot(), room->head(), room->owner(), room->guideInherited(), room->parent().has_value()};
 }
 
 // The tree as the caller opens it on the web: in the app when it is theirs, on its share page otherwise.
@@ -361,8 +363,25 @@ std::size_t liveEdgeCount(const TreeData& data) {
 ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, ProgressService& progress, const std::string& origin,
                     const TreeId& tree, const Json::Value& args, const std::optional<UserId>& caller) {
   // Byte-identical to the absent message, or the id is an existence oracle.
-  const std::optional<RoomRead> read = readRoom(registry, tree, caller);
+  std::optional<RoomRead> read = readRoom(registry, tree, caller);
   if (!read) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+  // A subtree is named by its owning step's label, read through its parent once the strand is released; a read that
+  // fails fails the call rather than answer another name.
+  if (read->subtree) {
+    std::optional<Place> place;
+    WriteObservation observation{"roadmap.tree.place", "roadmap", "mcp"};
+    try {
+      place = trees.placeOf(tree);
+      observation.skip();
+    } catch (const std::bad_alloc&) {
+      throw;
+    } catch (const std::exception& failure) {
+      observation.fail(failure);
+      return ToolResult::failure("the name of this tree could not be read just now; read it again.");
+    }
+    if (!place) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    read->data.title = place->title;
+  }
 
   std::string error;
   std::optional<NodeFields> nodeFields =

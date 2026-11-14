@@ -2545,7 +2545,9 @@ TEST(ws_a_subscribers_progress_graft_is_sent_before_the_echo_of_a_mark_made_afte
 
 // The subscribe answer lists the subtree each step owns, to the tree's writer and its readers alike, and carries no
 // such key when the steps own none: what heals a `subtree` frame missed while away. A subtree's own answer names it by
-// its owning step's label, whatever the vector covers, and leaves that stamp out of its coverage.
+// its owning step's label, whatever the vector covers, and leaves that stamp out of its coverage; its own title
+// register, which the socket and a posted document still write, is never sent. A name that cannot be read fails the
+// subscribe as a failed join does, under the place read's own Issue, and the client asks again.
 TEST(ws_the_subscribe_answer_lists_the_subtrees_steps_own_and_names_a_subtree_by_its_owning_step) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
@@ -2564,14 +2566,25 @@ TEST(ws_the_subscribe_answer_lists_the_subtrees_steps_own_and_names_a_subtree_by
   CHECK_EQ(subscribed("s-owner", "t_p")["subtrees"], listed);
   CHECK_EQ(subscribed("", "t_p")["subtrees"], listed);
 
+  h.trees.byId["t_00000000000000c1"].title = Lww<std::string>{"Its own register", Hlc{900, 0, "r_old"}};
   const Json::Value child = subscribed("", "t_00000000000000c1");
   CHECK_EQ(child["title"], parse(R"({"v":"Plain","at":"101:0:r_seed"})"));
   CHECK_FALSE(child.isMember("subtrees"));
   CHECK_FALSE(child["coverage"].isMember("r_seed"));
+  CHECK_FALSE(child["coverage"].isMember("r_old"));
 
-  // A name that cannot be read leaves the answer without it, and the client with the name it holds.
+  Observed observed;
   h.trees.placeReadsFail = true;
-  const Json::Value unnamed = subscribed("", "t_00000000000000c1");
-  CHECK(unnamed["title"].isNull());
-  CHECK_EQ(unnamed["seq"], child["seq"]);
+  auto unnamed = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), unnamed);
+  h.collab.onMessage(unnamed, subscribeFrame("t_00000000000000c1"));
+  CHECK_EQ(countOfType(*unnamed, "subgraph"), 0u);
+  CHECK_EQ(lastFrameOfType(*unnamed, "reject"),
+           parse(R"({"t":"reject","treeId":"t_00000000000000c1","code":"server-error",)"
+                 R"("reason":"the server could not open this tree"})"));
+  for (const std::string& text : unnamed->sent) CHECK_EQ(text.find("Its own register"), std::string::npos);
+  REQUIRE_EQ(observed.completions.size(), 1u);
+  CHECK_EQ(observed.completions[0].operation + " " + observed.completions[0].door + " " + observed.completions[0].outcome,
+           std::string("roadmap.tree.place websocket failed"));
+  CHECK_EQ(observed.issues, (std::vector<std::string>{"roadmap.tree.place"}));
 }

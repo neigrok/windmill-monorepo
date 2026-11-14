@@ -110,9 +110,10 @@ std::variant<SubtreeCreation, SubtreeRefusal, Admission> TreeRegistry::createSub
         rooms_.retire(parent);  // the row went away under its live room, so the room goes too
         return refuse(SubtreeRefusal::noSuchTree);
       }
-      // A create whose commit's answer was lost stored a head this room may not hold.
+      // A create whose commit's answer was lost stored a head, and a subtree, this room may not hold.
       room->catchUp(site->head);
       if (site->owned) {
+        room->ownSubtree(step, site->owned->id);
         observation.finish("unchanged");
         return SubtreeCreation{false, *site->owned, room->head()};
       }
@@ -179,6 +180,8 @@ std::map<TreeId, OpenedTree> TreeRegistry::openedFrom(const UserId& owner, const
 std::map<TreeId, TreeAbove> TreeRegistry::guidedTreesAbove(const UserId& owner, const TreeId& tree) {
   return trees_.guidedTreesAbove(owner, tree);
 }
+
+std::optional<Place> TreeRegistry::placeOf(const TreeId& tree) { return trees_.placeOf(tree); }
 
 std::variant<Cascade, TreeRegistry::RemovalRefusal> TreeRegistry::remove(const TreeId& tree, const UserId& caller) {
   // The steps that open the tree are read first, with no strand held: a removal that cannot read them removes nothing,
@@ -315,11 +318,11 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
     return Renaming::renamed;
   }
 
-  // The strand serializes the rename against the tree's socket frames, so the owner check, the title
-  // op and the persist form one uninterrupted step.
+  // The strand serializes the rename against the tree's socket frames, so the gates, the title op and the persist form
+  // one uninterrupted step. A tree the caller may not read answers as an absent one, never as someone else's.
   std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
   std::optional<StoredTree> stored = trees_.load(tree);
-  if (!stored) return Renaming::notFound;
+  if (!stored || !canRead(caller, stored->owner, stored->visibility)) return Renaming::notFound;
   if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
     return *refusal == WriteRefusal::nobodysTree ? Renaming::nobodysTree : Renaming::notYours;
   if (!rooms_.rename(tree, trimmed, clock_.nowMs(), stored->title.stamp)) return Renaming::notFound;
@@ -406,10 +409,11 @@ std::variant<Seq, TreeRegistry::GuideRefusal, Admission> TreeRegistry::setGuide(
 std::variant<TreeRegistry::VisibilityChange, NotARoot> TreeRegistry::setVisibility(const TreeId& tree,
                                                                                     const UserId& caller,
                                                                                     Visibility visibility) {
-  // The strand serializes the reshare against the tree's socket frames.
+  // The strand serializes the reshare against the tree's socket frames. A tree the caller may not read answers as an
+  // absent one, never as someone else's.
   std::lock_guard<std::mutex> strand(rooms_.strandFor(tree));
   std::optional<StoredTree> stored = trees_.load(tree);
-  if (!stored) return VisibilityChange::notFound;
+  if (!stored || !canRead(caller, stored->owner, stored->visibility)) return VisibilityChange::notFound;
   if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
     return *refusal == WriteRefusal::nobodysTree ? VisibilityChange::nobodysTree : VisibilityChange::notYours;
   if (stored->parent) return NotARoot{*stored->parent, stored->root};

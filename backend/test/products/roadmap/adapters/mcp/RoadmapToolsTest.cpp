@@ -8671,3 +8671,43 @@ TEST(mcp_update_tree_renames_a_subtree_through_its_owning_step_which_takes_no_ma
   CHECK_EQ(marked["progressRefused"], parse(R"(["sail"])"));
   CHECK(h.progressRepo.load(TreeId{"t"}, h.caller).marks.empty());
 }
+
+// get_tree names a subtree by its owning step's label, its `title` and its own entry among `guides` alike, to its writer
+// and to every reader: its own title register, which the socket and a posted document still write, is read by nothing.
+// A name that cannot be read fails the call, under the place read's own Issue, rather than answer another name.
+TEST(mcp_get_tree_names_a_subtree_by_its_owning_step_to_every_reader) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Learn to sail")).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::unlisted) ==
+          (std::variant<TreeRegistry::VisibilityChange, NotARoot>{TreeRegistry::VisibilityChange::changed}));
+  REQUIRE(std::holds_alternative<Seq>(h.treeRegistry.setGuide(sailing, h.caller, "Rig first.")));
+  h.trees.byId[sailing.str()].title = Lww<std::string>{"Its own register", Hlc{3, 0, "r_old"}};
+  Json::Value read(Json::objectValue);
+  read["treeId"] = sailing.str();
+  const auto treeAs = [&](const UserId& who) {
+    const ToolResult result = h.tools.callTool("get_tree", read, ToolCaller{who, ToolScope::everything()});
+    return result.isError ? Json::Value(message(result)) : body(result)["tree"];
+  };
+
+  const Json::Value mine = treeAs(h.caller);
+  CHECK_EQ(mine["title"], Json::Value("Learn to sail"));
+  CHECK_EQ(mine["guides"], parse(R"([{"treeId":"t_00000000000000c1","title":"Learn to sail","text":"Rig first.","yours":true}])"));
+  const Json::Value theirs = treeAs(uid("reader"));
+  CHECK_EQ(theirs["title"], Json::Value("Learn to sail"));
+  CHECK_EQ(theirs["guides"],
+           parse(R"([{"treeId":"t_00000000000000c1","title":"Learn to sail","text":"Rig first.","yours":false}])"));
+
+  std::vector<std::string> failed;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.outcome == "failed") failed.push_back(line.operation + " " + line.door);
+  });
+  h.trees.placeReadsFail = true;
+  const Json::Value unnamed = treeAs(h.caller);
+  installWriteSink({});
+  CHECK(unnamed.isString());
+  CHECK_EQ(dump(unnamed).find("Its own register"), std::string::npos);
+  CHECK_EQ(failed, (std::vector<std::string>{"roadmap.tree.place mcp"}));
+}

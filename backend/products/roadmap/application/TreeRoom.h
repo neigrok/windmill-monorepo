@@ -144,8 +144,12 @@ public:
   // next seq is past every seq stored.
   void catchUp(Seq storedHead) { head_ = std::max(head_, storedHead); }
   // A subtree created under `step` and stored with this tree's head at nextSeq(): the stream takes that seq, the step owns
-  // it from here on and every subscriber is told. It changes no register, dirties nothing and queues no op row.
+  // it from here on (ownSubtree) and every subscriber is told. It changes no register, dirties nothing and queues no op
+  // row.
   void appendSubtree(const NodeId& step, const Subtree& subtree);
+  // `step` owns `subtree` from here on, in every projection the room makes: what the stored rows say, which a room that
+  // missed the subtree's creation takes. It takes no seq and tells no one.
+  void ownSubtree(const NodeId& step, const TreeId& subtree) { subtrees_[step] = subtree; }
 
   // Advances head + dedup set; does not re-persist or re-broadcast.
   void replay(const AppliedOp& op);
@@ -178,7 +182,8 @@ public:
   GraphState exportState() const;
   LegendState exportLegend() const;
   // What a peer at `since` is missing — graph, legend, title and guide — covering the room's whole
-  // frontier.
+  // frontier. A subtree's own title register is read by nothing (SPEC.md, Model, Subtrees), so it is neither sent nor
+  // covered: its subscriber is sent its owning step's label beside the delta.
   Subgraph deltaSince(const VersionVector& since) const;
 
   // Exports only the entries dirtied since the last markClean(); replay() flips the room all-dirty.

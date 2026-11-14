@@ -301,12 +301,15 @@ TEST(rename_retitles_an_owned_tree_trimmed_and_the_list_shows_it) {
   CHECK_EQ(s.bus.subgraphBroadcasts.size(), 0u);
 }
 
+// A tree the caller may not read is answered as an absent one, never as someone else's.
 TEST(rename_refuses_a_non_owner_and_an_unknown_tree) {
   Setup s;
   seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});
 
-  CHECK(s.registry.rename(tid("t"), uid("intruder"), "Mine now") == TreeRegistry::Renaming::notYours);
+  CHECK(s.registry.rename(tid("t"), uid("intruder"), "Mine now") == TreeRegistry::Renaming::notFound);
   CHECK(s.registry.rename(tid("ghost"), uid("owner"), "Anything") == TreeRegistry::Renaming::notFound);
+  s.trees.byId["t"].visibility = Visibility::unlisted;
+  CHECK(s.registry.rename(tid("t"), uid("intruder"), "Mine now") == TreeRegistry::Renaming::notYours);
   s.trees.byId["t"].owner = std::nullopt;
   CHECK(s.registry.rename(tid("t"), uid("intruder"), "Mine now") == TreeRegistry::Renaming::nobodysTree);
   CHECK_EQ(s.trees.byId["t"].title.value, std::string("t"));
@@ -428,18 +431,22 @@ TEST(set_visibility_reshares_an_owned_tree_and_the_column_reflects_it) {
   CHECK(s.trees.byId["t"].visibility == Visibility::private_);
 }
 
+// A tree the caller may not read is answered as an absent one, never as someone else's.
 TEST(set_visibility_refuses_a_non_owner_and_an_unknown_tree) {
   Setup s;
   seed(s.trees, "t", uid("owner"), 100, {spec("a", NodeColor::sky)});
 
   CHECK(s.registry.setVisibility(tid("t"), uid("intruder"), Visibility::public_) ==
-        VisibilityAnswer{TreeRegistry::VisibilityChange::notYours});
+        VisibilityAnswer{TreeRegistry::VisibilityChange::notFound});
   CHECK(s.registry.setVisibility(tid("ghost"), uid("owner"), Visibility::public_) ==
         VisibilityAnswer{TreeRegistry::VisibilityChange::notFound});
+  s.trees.byId["t"].visibility = Visibility::unlisted;
+  CHECK(s.registry.setVisibility(tid("t"), uid("intruder"), Visibility::public_) ==
+        VisibilityAnswer{TreeRegistry::VisibilityChange::notYours});
   s.trees.byId["t"].owner = std::nullopt;
   CHECK(s.registry.setVisibility(tid("t"), uid("intruder"), Visibility::public_) ==
         VisibilityAnswer{TreeRegistry::VisibilityChange::nobodysTree});
-  CHECK(s.trees.byId["t"].visibility == Visibility::private_);
+  CHECK(s.trees.byId["t"].visibility == Visibility::unlisted);
 }
 
 TEST(set_visibility_flips_a_live_rooms_cache_at_once) {
@@ -1407,7 +1414,7 @@ TEST(set_visibility_of_a_subtree_is_refused_not_a_root_and_changes_nothing) {
   CHECK(s.trees.byId["t_d1"].visibility == Visibility::private_);
   CHECK(s.rooms.accessOf(tid("t_d1"))->visibility == Visibility::private_);
   CHECK(s.registry.setVisibility(tid("t_d1"), uid("intruder"), Visibility::public_) ==
-        VisibilityAnswer{TreeRegistry::VisibilityChange::notYours});
+        VisibilityAnswer{TreeRegistry::VisibilityChange::notFound});
 }
 
 // A subtree is read by its root, live or closed: what the root's visibility admits, and nothing once the root is
@@ -1509,4 +1516,45 @@ TEST(renaming_a_subtree_writes_its_owning_steps_label_in_the_parent_and_never_it
   }
   CHECK(s.registry.rename(child, me, "Rig again") == TreeRegistry::Renaming::notFound);
   CHECK_EQ(labelIn(s.trees, "t_p", "rig"), std::string("Rig it"));
+}
+
+// A create whose commit landed but whose answer was lost is retried, and the retry, finding the child, records it in
+// the live parent room: from then on every projection the room makes reads the step as opening it, so its read carries
+// the subtree and a hand mark on the step is refused, with no eviction and no seq taken.
+TEST(a_retry_after_a_lost_commit_answer_records_the_subtree_in_the_live_parent_room) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  const TreeId child{"t_00000000000000c1"};
+  s.trees.duringSubtreeCreate = [&] {
+    s.trees.duringSubtreeCreate = nullptr;
+    REQUIRE(std::holds_alternative<Subtree>(
+        s.trees.createSubtree(child, OwningStep{tid("t_p"), nid("rig")}, LegendState{}, 1)));
+    throw std::runtime_error("connection lost after commit");
+  };
+  bool threw = false;
+  try {
+    s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1"));
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+  REQUIRE(threw);
+
+  const SubtreeAnswer retried = s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1"));
+  REQUIRE(std::holds_alternative<SubtreeCreation>(retried));
+  CHECK_FALSE(std::get<SubtreeCreation>(retried).created);
+  std::map<NodeId, TreeId> pointers;
+  {
+    std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    const TreeRoom* room = s.rooms.open(tid("t_p"));
+    CHECK(room->subtrees() == (std::map<NodeId, TreeId>{{nid("rig"), child}}));
+    CHECK_EQ(room->head(), Seq{1});
+    pointers = room->pointersFor(me);
+  }
+  CHECK(pointers == (std::map<NodeId, TreeId>{{nid("rig"), child}}));
+  const ProgressReceipt receipt = s.marks.mark(tid("t_p"), pointers, me,
+                                               {ProgressWrite{nid("rig"), ProgressStatus::complete, {}, Hlc{50, 0, "r_a"}}},
+                                               StampedBy::replica, 50);
+  CHECK(receipt.outcomes.at(0).refused);
+  CHECK(s.bus.subtreeBroadcasts.empty());
 }

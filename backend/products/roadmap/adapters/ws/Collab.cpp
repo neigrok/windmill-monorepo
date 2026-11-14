@@ -238,16 +238,18 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
   }
   if (reach == Reach::reader) delta.graph = readerView(std::move(delta.graph));
   // A subtree's name is its owning step's label, read through its parent OUTSIDE the strand and sent whatever the
-  // vector covers, never folded into the coverage: the stamp is the parent's. A read that fails sends the delta without
-  // it, and the client keeps the name it holds.
+  // vector covers, never folded into the coverage: the stamp is the parent's. A read that fails fails the subscribe as a
+  // failed join does, and the client asks again; the subtree's own title register is never sent in its place.
   if (subtree) {
-    WriteObservation observation{"roadmap.tree.read", "roadmap", "websocket"};
+    WriteObservation observation{"roadmap.tree.place", "roadmap", "websocket"};
     try {
       const std::optional<Place> place = trees_.placeOf(TreeId{treeId});
       if (place && place->titleAt.isSet()) delta.title = Lww<std::string>{place->title, place->titleAt};
       observation.skip();
     } catch (const std::exception& failure) {
       observation.fail(failure);
+      send(conn, rejectFrame(treeId, kServerError, "the server could not open this tree"));
+      return;
     }
   }
   delta.frameId = "delta-" + std::to_string(head);

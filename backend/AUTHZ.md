@@ -90,6 +90,10 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   nobody's to write**: the seeded demo tree (`t_9e407a96b5330ebe`, `owner_id NULL`, `public`) is
   world-readable and editable by no one. Every write path runs `canRead` first, so a refusal never
   confirms that a private id names something; a readable tree the caller does not own answers `403`.
+  Three doors do not hold to it yet: the share card uploads (`PUT /v1/trees/{id}/og-image` and
+  `/og-video`) answer a signed-in caller `403` on someone else's private tree, and a create under a
+  client-minted id (`POST /v1/trees`, a fork's requested id) answers `409` when that id is another
+  account's tree, private or not.
 - **Forks** require read access to the source and create a new tree owned by the recipient; they do
   not require write access to the source.
 - **Progress marks** (WS `progress`, an MCP `status` row) are not document writes and are not

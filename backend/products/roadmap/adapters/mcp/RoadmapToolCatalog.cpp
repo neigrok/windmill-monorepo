@@ -479,7 +479,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                            kMaxGuideChars);
     tools.push_back(tool("update_tree", Access::write,
         "Rename a roadmap with `title`, set its guide with `guide`, or both: send at least one; each is set "
-        "only when sent, and the two together land in one step or not at all. The title is trimmed and "
+        "only when sent, and the two together land in one step or not at all. A subtree is named by the step "
+        "that owns it: its title renames that step in its parent first, and its guide lands after, so a guide "
+        "that fails leaves the new name in place. The title is trimmed and "
         "cut to 200 characters; a blank one is refused, and one equal to the name the tree has is not "
         "written and answers `unchanged: true`. A guide is written whenever it is sent, even as the tree "
         "holds it, which is how a fork's owner makes an inherited guide theirs. The guide is one plain-text "

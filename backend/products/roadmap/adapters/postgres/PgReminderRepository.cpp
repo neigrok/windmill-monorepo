@@ -109,9 +109,9 @@ std::vector<DueUser> PgReminderRepository::dueNow(std::uint64_t nowMs, int limit
 std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // Every standing tree of theirs, subtrees named as every read names them; a subtree stands while its root does.
+  // Every standing tree of theirs, each subtree with the step it hangs from; a subtree stands while its root does.
   pqxx::result trees = txn.exec_params(
-      "SELECT t.id, " + treeNameColumn("t") + " AS title, (extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms "
+      "SELECT t.id, t.title, t.parent_tree, t.parent_step, (extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms "
       "FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND " + rootStandsCondition("t") + " ORDER BY t.id",
       user.str());
   // A step that owns a standing subtree opens it, whatever its pointer holds.
@@ -161,6 +161,8 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
     tree.updatedAt = static_cast<std::uint64_t>(row["updated_ms"].as<long long>());
     tree.progress = overlays[id];
     tree.lastMarkedAt = markedAt[id];
+    if (!row["parent_tree"].is_null())
+      tree.parent = OwningStep{TreeId{row["parent_tree"].as<std::string>()}, NodeId{row["parent_step"].as<std::string>()}};
     loaded.push_back(std::move(tree));
   }
   return readinessOf(loaded);

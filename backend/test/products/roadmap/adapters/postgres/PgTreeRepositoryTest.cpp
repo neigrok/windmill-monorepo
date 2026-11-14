@@ -2043,7 +2043,7 @@ TEST(pg_a_grandchild_is_named_and_placed_through_its_parents_and_listed_beside_i
 
 // The owner's walk follows each step into the subtree it owns, whatever the step's pointer holds: the step is done once
 // every step below it is, however deep, and open again when a leaf below reopens; an empty subtree is unfinished.
-// Reminder readiness judges the account the same way and names a subtree by its owning step's label.
+// Reminder readiness judges the account the same way, and answers its roots alone.
 TEST(pg_the_owners_walk_follows_each_step_into_the_subtree_it_owns_whatever_its_pointer_holds) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   resetSubtrees();
@@ -2084,8 +2084,7 @@ TEST(pg_the_owners_walk_follows_each_step_into_the_subtree_it_owns_whatever_its_
   std::map<TreeId, std::string> readiness;
   for (const TreeReadiness& tree : PgReminderRepository{pgTestPool()}.readinessFor(kAda))
     readiness[tree.id] = tree.title + " " + std::to_string(tree.done) + "/" + std::to_string(tree.total);
-  CHECK(readiness == (std::map<TreeId, std::string>{{kOther, "Planted 0/1"}, {kParent, "Planted 1/2"},
-                                                    {kChild, "sail 2/2"}, {kGrandchild, "rig 1/1"}, {empty, "empty 0/0"}}));
+  CHECK(readiness == (std::map<TreeId, std::string>{{kOther, "Planted 0/1"}, {kParent, "Planted 1/2"}}));
 
   markAs(kGrandchild, "bowline", ProgressStatus::none);
   CHECK(openingOf(kChild) == (Opening{kChild, false, "sail", false, 1, 2}));
@@ -2120,4 +2119,26 @@ TEST(pg_the_trees_above_a_subtree_are_its_ancestors_and_a_root_keeps_the_trees_t
         (std::map<TreeId, TreeAbove>{{kParent, {1, "Planted", "Parent.", false}}, {kOther, {2, "Planted", "Other.", false}}}));
   CHECK(trees.guidedTreesAbove(kAda, kParent) == (std::map<TreeId, TreeAbove>{{kOther, {1, "Planted", "Other.", false}}}));
   CHECK(trees.guidedTreesAbove(kAda, kOther).empty());
+}
+
+// A subtree stands only while its root does, in the owner's list as in every other read: once its root is removed it is
+// no tree of theirs to judge, and a pointer at it leads nowhere, as the walk a tree read makes says.
+TEST(pg_the_owners_list_leaves_out_the_subtree_of_a_removed_root) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kAda, {{"sail", nullptr}});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kParent, "sail", kChild)));
+  forest.plant(kOther, kAda, {{"to-child", kChild.str().c_str()}});
+  PgTreeRepository trees{pgTestPool()};
+  const auto listed = [&] {
+    std::set<TreeId> ids;
+    for (const OwnedTree& tree : trees.listOwnedBy(kAda)) ids.insert(tree.data.id);
+    return ids;
+  };
+  CHECK(listed() == (std::set<TreeId>{kParent, kChild, kOther}));
+
+  REQUIRE(std::holds_alternative<Cascade>(forest.registry.remove(kParent, kAda)));
+  CHECK(listed() == (std::set<TreeId>{kOther}));
+  CHECK(trees.openedFrom(kAda, {kChild}).empty());
 }

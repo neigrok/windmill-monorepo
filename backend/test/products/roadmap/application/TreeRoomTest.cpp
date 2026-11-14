@@ -773,3 +773,19 @@ TEST(room_reads_the_subtree_a_step_owns_as_the_tree_it_opens_whatever_its_pointe
   CHECK(room.subtrees() == (std::map<NodeId, TreeId>{{nid("rig"), tid("t_r")}, {nid("sail"), tid("t_s")}}));
   CHECK(room.pointers().at(nid("rig")) == tid("t_r"));
 }
+
+// A subtree is named by its owning step's label, which a subscriber is sent beside the delta: its own title register,
+// which the socket and a posted document still write, is never sent nor counted in the delta's coverage. A root's is.
+TEST(room_sends_a_subtree_no_title_register_of_its_own_and_a_root_its_own) {
+  FakeBus bus;
+  const auto roomWith = [&bus](const std::optional<OwningStep>& parent) {
+    return TreeRoom(tid("t_s"), {"Its own register", at(9, "r_old")}, {}, false, LooseGraph{}, Legend{}, 0, tid("t_a"),
+                    parent, parent ? 1 : 0, {}, std::make_shared<RootAccess>(uid("owner"), Visibility::private_), 0, bus);
+  };
+  const Subgraph subtree = roomWith(OwningStep{tid("t_a"), nid("sail")}).deltaSince(VersionVector{});
+  CHECK_FALSE(subtree.title.has_value());
+  CHECK_FALSE(subtree.coverage->marks.count("r_old"));
+  const Subgraph root = roomWith(std::nullopt).deltaSince(VersionVector{});
+  CHECK(root.title == (std::optional<Lww<std::string>>(Lww<std::string>{"Its own register", at(9, "r_old")})));
+  CHECK(root.coverage->marks.count("r_old"));
+}

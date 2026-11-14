@@ -51,6 +51,18 @@ bool TreeApi::readRoom(const std::string& treeId, const std::optional<UserId>& c
   }
 }
 
+std::optional<Place> TreeApi::placeOf(const TreeId& tree) {
+  WriteObservation observation{"roadmap.tree.place", "roadmap", "rest"};
+  try {
+    std::optional<Place> place = trees_->placeOf(tree);
+    observation.skip();
+    return place;
+  } catch (const std::exception& failure) {
+    observation.fail(failure);
+    return std::nullopt;
+  }
+}
+
 void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
   std::optional<UserId> caller = callerOf(req);
   Json::Value body(Json::objectValue);
@@ -84,18 +96,10 @@ void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     return;
   }
   // A subtree's name and its way down are read through its parents, and a failure answers as the room read's does.
+  if (!place) place = placeOf(TreeId{treeId});
   if (!place) {
-    WriteObservation observation{"roadmap.tree.read", "roadmap", "rest"};
-    try {
-      place = trees_->placeOf(TreeId{treeId});
-      observation.skip();
-    } catch (const std::exception& failure) {
-      observation.fail(failure);
-    }
-    if (!place) {
-      callback(error(drogon::k404NotFound, "no such tree"));
-      return;
-    }
+    callback(error(drogon::k404NotFound, "no such tree"));
+    return;
   }
   data.title = place->title;
   const Json::Value where = toJson(*place);
@@ -135,13 +139,24 @@ void TreeApi::getGuides(const drogon::HttpRequestPtr& req, HttpCallback&& callba
   const std::optional<UserId> caller = callerOf(req);
   Guide own;
   bool mine = false;
+  bool subtree = false;
   if (!readRoom(treeId, caller, [&](TreeRoom& room) {
         mine = canWrite(caller, room.owner());
+        subtree = room.parent().has_value();
         // A guide is the caller's own only on a tree they can write, and not when a fork copied it from someone else's.
         own = Guide{TreeId{treeId}, room.title().value, room.guide().value, mine && !room.guideInherited()};
       })) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
+  }
+  // A subtree is named by its owning step's label, read through its parent as the tree read reads it.
+  if (subtree) {
+    const std::optional<Place> place = placeOf(TreeId{treeId});
+    if (!place) {
+      callback(error(drogon::k404NotFound, "no such tree"));
+      return;
+    }
+    own.title = place->title;
   }
   Json::Value body(Json::objectValue);
   if (!mine) {

@@ -1867,7 +1867,8 @@ TEST(get_tree_tells_every_reader_what_a_step_owning_a_subtree_comes_to_for_the_o
 }
 
 // A subtree's name and place are read once its strand is released: a read that fails answers as an absent tree does,
-// under one Issue named for the tree read, and a root, whose place is its own, makes no such read.
+// the tree read and the guides read alike, each under one Issue of the place read's own, and a root, whose place is its
+// own, makes no such read.
 TEST(get_tree_of_a_subtree_whose_place_cannot_be_read_answers_404_under_one_issue) {
   struct Failures : FailureReporter {
     std::vector<std::string> reports;
@@ -1885,12 +1886,36 @@ TEST(get_tree_of_a_subtree_whose_place_cannot_be_read_answers_404_under_one_issu
   h.trees->placeReadsFail = true;
 
   const drogon::HttpResponsePtr subtree = sendGetTree(h.api, "", "t_s");
+  const drogon::HttpResponsePtr guides = sendGetGuides(h.api, "s-owner", "t_s");
   const drogon::HttpResponsePtr root = sendGetTree(h.api, "", "t_a");
+  const drogon::HttpResponsePtr rootGuides = sendGetGuides(h.api, "", "t_a");
   installWriteReporter(nullptr);
 
+  const std::string absent{sendGetTree(h.api, "", "t_absent")->getBody()};
   CHECK_EQ(subtree->getStatusCode(), drogon::k404NotFound);
-  CHECK_EQ(std::string(subtree->getBody()), std::string(sendGetTree(h.api, "", "t_absent")->getBody()));
+  CHECK_EQ(std::string(subtree->getBody()), absent);
+  CHECK_EQ(guides->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(std::string(guides->getBody()), absent);
   CHECK_EQ(root->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(failures->reports,
-           (std::vector<std::string>{"roadmap.tree.read roadmap rest failed " + std::string(typeid(std::runtime_error).name())}));
+  CHECK_EQ(rootGuides->getStatusCode(), drogon::k200OK);
+  const std::string failed = "roadmap.tree.place roadmap rest failed " + std::string(typeid(std::runtime_error).name());
+  CHECK_EQ(failures->reports, (std::vector<std::string>{failed, failed}));
+}
+
+// A subtree is named by its owning step's label on the guides read too, its writer's and its readers' alike: its own
+// title register, which the socket and a posted document still write, is read by nothing.
+TEST(get_guides_names_a_subtree_by_its_owning_step_and_never_by_its_own_title_register) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedForest(owner, Visibility::unlisted);
+  h.trees->byId["t_a"].guide = Lww<std::string>{"Plan the year.", Hlc{2, 0, "seed"}};
+  h.trees->byId["t_s"].guide = Lww<std::string>{"Rig first.", Hlc{2, 0, "seed"}};
+  h.trees->byId["t_s"].title = Lww<std::string>{"Its own register", Hlc{3, 0, "r_old"}};
+
+  CHECK_EQ(bodyOf(sendGetGuides(h.api, "s-owner", "t_s")),
+           parse(R"({"guides":[{"treeId":"t_a","title":"My year","text":"Plan the year.","yours":true},)"
+                 R"({"treeId":"t_s","title":"Learn to sail","text":"Rig first.","yours":true}]})"));
+  CHECK_EQ(bodyOf(sendGetGuides(h.api, "", "t_s")),
+           parse(R"({"guides":[{"treeId":"t_s","title":"Learn to sail","text":"Rig first.","yours":false}]})"));
+  CHECK_EQ(bodyOf(sendGetTree(h.api, "", "t_s"))["data"]["title"], Json::Value("Learn to sail"));
 }

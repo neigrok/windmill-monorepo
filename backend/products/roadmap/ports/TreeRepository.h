@@ -126,7 +126,7 @@ struct TreeRepository {
   // Insert a brand-new tree. Throws DuplicateTree on an id collision (never overwrites a tree).
   virtual void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
                       const std::string& title, const UserId& owner) = 0;
-  // Every standing tree of `owner`'s, subtrees included; ordering is the domain's.
+  // Every standing tree of `owner`'s, subtrees included while their root stands; ordering is the domain's.
   virtual std::vector<OwnedTree> listOwnedBy(const UserId& owner) = 0;
   // Public roots only, filtered by this query; unowned, soft-deleted and subtrees are never returned.
   virtual std::vector<ListedTree> listPublic() = 0;

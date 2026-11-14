@@ -44,7 +44,7 @@ public:
     std::optional<std::vector<Kind>> kinds;
   };
   // A subtree under `step` of `parent` (SPEC.md, Model, Subtrees), keyed by the pair, so a retry or a lost race answers
-  // the subtree the step already owns, `created` false, and writes nothing. The kinds are judged first, as create_tree
+  // the subtree the step already owns, `created` false, writes nothing and records it in the parent's live room. The kinds are judged first, as create_tree
   // judges them (admitBornKinds). Then, under the parent's strand, so it is serialised with every other write to the
   // parent, a step's deletion among them: read gate → write gate → the step stands → the stored site → the subtree the
   // step owns → depth → the step's legacy pointer → the child stored with its legend and the parent's next seq in one
@@ -72,6 +72,9 @@ public:
   // the stored rows.
   std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree);
 
+  // Where `tree` sits and its name (TreeRepository::placeOf), off the stored rows.
+  std::optional<Place> placeOf(const TreeId& tree);
+
   // Each refusal names both write refusals of Access.h (an enum cannot hold another), because an
   // unowned tree is nobody's, not somebody else's.
   // `cascadeUnavailable`: the trees whose steps open the tree could not be read, so nothing was removed.
@@ -87,7 +90,7 @@ public:
   static constexpr std::chrono::milliseconds kCascadeLockWait{1'000};
   static constexpr std::chrono::milliseconds kCascadeTime{8'000};
 
-  // trim → refuse a blank, text that is not valid UTF-8 and a NUL → owner check → apply through
+  // trim → refuse a blank, text that is not valid UTF-8 and a NUL → read gate → owner check → apply through
   // RoomRegistry. A tree whose row went away under its live room answers notFound. A subtree's title is its owning
   // step's label, so it lands there (relabel).
   enum class Renaming { renamed, notFound, notYours, nobodysTree, blankTitle, malformedTitle, nulInTitle };
@@ -98,11 +101,13 @@ public:
   static const char* sentenceOf(Renaming refusal);
 
   // A title, a guide, or both, each set only when sent: rename's title rule and the guide's admission judge both
-  // before either lands → read gate → owner check → one frame through the tree's room, durable before it answers
-  // the seq it took. A title equal to the one the tree has is left out, and a call left with nothing to set lands
-  // nothing and answers the head, `unchanged`. A tree whose row went away under its live room answers notFound. A
-  // subtree's title lands first, as its owning step's label in its parent (relabel), and its guide after it in its own
-  // room: the seq answered is of its own stream, its head when only the title moved, and `unchanged` says neither did.
+  // before either lands. A root's: read gate → owner check → one frame through the tree's room, durable before it
+  // answers the seq it took, so the two land together or neither does. A title equal to the one the tree has is left
+  // out, and a call left with nothing to set lands nothing and answers the head, `unchanged`. A tree whose row went
+  // away under its live room answers notFound. A subtree's title is its owning step's label: it lands first, in its
+  // parent's room (relabel), and the guide after it, in its own, so a guide that fails then leaves the label landed.
+  // The seq answered is of the subtree's own stream, its head when only the title moved, and `unchanged` says neither
+  // moved.
   struct Description {
     std::optional<std::string> title;
     std::optional<std::string> guide;
@@ -121,9 +126,9 @@ public:
   enum class GuideRefusal { notFound, notYours, nobodysTree };
   std::variant<Seq, GuideRefusal, Admission> setGuide(const TreeId& tree, const UserId& caller, const std::string& guide);
 
-  // owner check → a root's alone, a subtree answering NotARoot with its owning step → set read visibility through
-  // RoomRegistry: the durable column write plus the live access of every room of the root's trees, so a just-shared
-  // tree stops 404-ing at once.
+  // read gate → owner check → a root's alone, a subtree answering NotARoot with its owning step → set read visibility
+  // through RoomRegistry: the durable column write plus the live access of every room of the root's trees, so a
+  // just-shared tree stops 404-ing at once.
   enum class VisibilityChange { changed, notFound, notYours, nobodysTree };
   std::variant<VisibilityChange, NotARoot> setVisibility(const TreeId& tree, const UserId& caller,
                                                          Visibility visibility);
