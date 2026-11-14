@@ -530,7 +530,7 @@ test('Chromium: a first guide the server refuses can be copied whole from the no
     await page.getByRole('button', { name: 'Cancel' }).click();
     await page.getByRole('button', { name: 'Discard', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'detached' });
-    await page.waitForFunction(() => document.activeElement.matches('.st-guide-card[aria-label="Add guide"]'));
+    await page.waitForFunction(() => document.activeElement.matches('.st-guide-entry[aria-label="Add guide"]'));
     assert.deepEqual((await events(page)).slice(2), [
       { step: 'save', outcome: 'failed', length: '1-500', reason: 'refused' },
       { step: 'copy', outcome: 'copied' },

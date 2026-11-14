@@ -15,7 +15,7 @@ hostTest('Chromium: at 1440px the Guide opens as a modal from the Graph and the 
   try {
     const add = page.getByRole('button', { name: 'Add guide', exact: true });
     await add.waitFor();
-    assert.equal(await page.locator('.st-roadmap-identity .st-guide-card, .st-roadmap-identity [aria-label^="Guide"]').count(), 0);
+    assert.equal(await page.locator('.st-roadmap-identity .st-guide-entry').count(), 1);
     await add.click();
     await page.getByRole('dialog', { name: 'Add guide' }).waitFor();
     await page.keyboard.type('One step a week.\nA step is done on the water.');
@@ -23,8 +23,8 @@ hostTest('Chromium: at 1440px the Guide opens as a modal from the Graph and the 
     const card = page.getByRole('button', { name: 'Guide: One step a week.' });
     await card.waitFor();
     assert.equal(await page.evaluate(() => window.session.lattice.guide), 'One step a week.\nA step is done on the water.');
-    const [row, onGraph] = [await box(page, '.st-roadmap-identity'), await box(page, '.st-guide-card')];
-    assert.deepEqual({ left: onGraph.left, under: onGraph.top - row.bottom, width: onGraph.width }, { left: 28, under: 38, width: 414 });
+    const [row, onGraph] = [await box(page, '.st-roadmap-identity'), await box(page, '.st-guide-entry')];
+    assert.deepEqual({ inRow: onGraph.top >= row.top && onGraph.bottom <= row.bottom, width: onGraph.width }, { inRow: true, width: 320 });
 
     await card.click();
     const note = page.getByRole('dialog', { name: 'Guide' });
@@ -37,30 +37,30 @@ hostTest('Chromium: at 1440px the Guide opens as a modal from the Graph and the 
 
     await page.getByRole('button', { name: 'Board', exact: true }).click();
     await page.locator('.st-board-card').first().waitFor();
-    const onBoard = await box(page, '.st-guide-card');
-    assert.equal(await page.locator('.st-guide-card').count(), 1);
+    const onBoard = await box(page, '.st-guide-entry');
+    assert.equal(await page.locator('.st-guide-entry').count(), 1);
     assert.deepEqual(await page.evaluate((guide) => [...document.querySelectorAll('.st-board-card, .st-board-filter-strip, .st-board-sort-button')]
       .filter((element) => {
         const other = element.getBoundingClientRect();
         return other.left < guide.right && other.right > guide.left && other.top < guide.bottom && other.bottom > guide.top;
       }).map((element) => element.className), onBoard), []);
-    assert.equal(onBoard.top >= row.bottom, true);
+    assert.deepEqual(onBoard, onGraph);
     await card.click();
     await note.waitFor();
     const overBoard = await box(page, '.st-guide-paper');
     assert.deepEqual([overBoard.left, overBoard.top, overBoard.width], [24, 24, 1392]);
     assert.deepEqual(await guideEvents(page), [
-      { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' },
+      { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' },
       { step: 'edit', via: 'add' },
       { step: 'save', outcome: 'saved', length: '1-500' },
-      { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' },
-      { step: 'open', door: 'card', view: 'board', role: 'owner', above: 'none' },
+      { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' },
+      { step: 'open', door: 'row', view: 'board', role: 'owner', above: 'none' },
     ]);
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await note.waitFor({ state: 'detached' });
-    await page.waitForFunction(() => document.activeElement.matches('.st-guide-card'));
+    await page.waitForFunction(() => document.activeElement.matches('.st-guide-entry'));
     await card.click();
-    assert.deepEqual((await guideEvents(page)).at(-1), { step: 'open', door: 'card', view: 'board', role: 'owner', above: 'none' });
+    assert.deepEqual((await guideEvents(page)).at(-1), { step: 'open', door: 'row', view: 'board', role: 'owner', above: 'none' });
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
@@ -203,7 +203,7 @@ hostTest('Chromium: a reader on the app route sees the author\'s note on the tre
     try {
       await shared.page.evaluate(() => window.session.setGuide('One step a week.'));
       await shared.page.waitForFunction(() => window.session.lattice.guide === 'One step a week.');
-      assert.equal(await shared.page.locator('.st-guide-row, .st-guide-card').count(), 0);
+      assert.equal(await shared.page.locator('.st-guide-row, .st-guide-entry').count(), 0);
       assert.deepEqual(shared.errors, []);
     } finally { await shared.page.close(); }
   }
@@ -222,36 +222,31 @@ hostTest('Chromium: the note keeps its draft when the window crosses 744px in th
     await page.setViewportSize({ width: 1024, height: 800 });
     await page.locator('.st-guide-paper:not(.st-guide-paper--phone)').waitFor();
     assert.equal(await page.locator('.st-guide-field').inputValue(), 'One step a week. Written');
-    assert.deepEqual(await guideEvents(page), [{ step: 'open', door: 'card', view: 'board', role: 'owner', above: 'none' }, { step: 'edit', via: 'pencil' }]);
+    assert.deepEqual(await guideEvents(page), [{ step: 'open', door: 'row', view: 'board', role: 'owner', above: 'none' }, { step: 'edit', via: 'pencil' }]);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: opening the Guide modal keeps the Graph camera framed around the card', async () => {
+hostTest('Chromium: the Guide leaves the Graph camera full-width beneath the measured identity row', async () => {
   const { page, errors } = await openHost({ width: 1440, height: 960 });
   try {
     await page.evaluate(() => window.session.setGuide('One step a week.'));
-    await page.getByRole('button', { name: 'Guide: One step a week.' }).waitFor();
-    const row = await box(page, '.st-roadmap-identity');
-    const held = (selector) => page.locator(selector).evaluate((element) => {
-      const room = document.querySelector('.st-root').getBoundingClientRect();
-      const { left, top, width, height } = element.getBoundingClientRect();
-      return { left: left - room.left, top: top - room.top, width, height };
-    });
-    const card = await held('.st-guide-card');
-    await page.waitForFunction((height) => window.cameraInsets.left === 466 && window.cameraInsets.blocks.find((block) => block.top !== undefined)?.height === height, card.height);
-    assert.deepEqual(await page.evaluate(() => ({ left: window.cameraInsets.left, guide: window.cameraInsets.blocks.find((block) => block.top !== undefined), last: Object.keys(window.cameraInsets.blocks.at(-1)).sort() })),
-      { left: 466, guide: card, last: ['bottom', 'height', 'right', 'width'] });
-    assert.equal(card.top, row.bottom + 38);
-    await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
-    assert.deepEqual(await page.evaluate(() => ({ left: window.cameraInsets.left, guide: window.cameraInsets.blocks.find((block) => block.top !== undefined) })), { left: 466, guide: card });
-    await page.getByRole('button', { name: 'Close', exact: true }).click();
-    await page.waitForFunction(() => window.cameraInsets.left === 466);
+    const entry = page.getByRole('button', { name: 'Guide: One step a week.' });
+    await entry.waitFor();
+    await page.waitForFunction(() => window.cameraInsets.top === document.querySelector('.st-roadmap-identity').offsetHeight);
+    const before = await page.evaluate(() => window.cameraInsets);
+    assert.equal(before.left, 24);
+    assert.equal(before.blocks.some((block) => block.top !== undefined), false);
+    await entry.click();
+    assert.deepEqual(await page.evaluate(() => window.cameraInsets), before);
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog', { name: 'Guide' }).waitFor({ state: 'detached' });
+    assert.deepEqual(await page.evaluate(() => window.cameraInsets), before);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: a refusal on the desktop Graph seats the guide card below it, and the modal covers the room', async () => {
+hostTest('Chromium: a Graph refusal stays below the identity Guide, and the modal covers both', async () => {
   const { page, errors } = await openHost({ width: 1440, height: 960, shell: true });
   try {
     await page.evaluate(() => {
@@ -263,8 +258,7 @@ hostTest('Chromium: a refusal on the desktop Graph seats the guide card below it
     });
     await page.getByRole('alert').waitFor();
     const refusal = await box(page, '.st-graph-refusal');
-    await page.waitForFunction((bottom) => document.querySelector('.st-guide-card').getBoundingClientRect().top >= bottom, refusal.bottom);
-    assert.equal((await box(page, '.st-guide-card')).top, refusal.bottom + 38);
+    assert.equal((await box(page, '.st-guide-entry')).bottom <= refusal.top, true);
     await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
     assert.equal((await box(page, '.st-guide-paper')).top, 24);
     assert.equal(await page.locator('.st-graph-refusal').evaluate((element) => Boolean(element.closest('[inert]'))), true);
@@ -272,17 +266,51 @@ hostTest('Chromium: a refusal on the desktop Graph seats the guide card below it
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: at 744px the guide\'s card ends clear of an open step panel', async () => {
+hostTest('Chromium: at 744px opening a step panel leaves the Guide in the identity row', async () => {
   const { page, errors } = await openHost({ width: 744, height: 1024 });
   try {
     await page.evaluate(() => window.session.setGuide('One step a week.'));
     await page.getByRole('button', { name: 'Guide: One step a week.' }).waitFor();
-    assert.equal((await box(page, '.st-guide-card')).width, 414);
+    const before = await box(page, '.st-guide-entry');
+    assert.equal(before.width, 44);
     await page.evaluate(() => window.scene.select('wind'));
     await page.locator('.st-detail-panel--open').waitFor();
-    await page.waitForFunction(() => document.querySelector('.st-guide-card').getBoundingClientRect().width < 414);
-    const [card, panel] = [await box(page, '.st-guide-card'), await box(page, '.st-detail-panel--open')];
-    assert.deepEqual({ left: card.left, clear: card.right <= panel.left, width: card.width }, { left: 28, clear: true, width: 744 - 28 - 368 });
+    const panel = await box(page, '.st-detail-panel--open');
+    assert.deepEqual(await box(page, '.st-guide-entry'), before);
+    assert.equal(before.bottom <= panel.top, true);
+    assert.equal(await page.locator('.st-guide-entry').count(), 1);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: the one Guide entry follows the identity breakpoints and stays above Board content in either theme', async () => {
+  const { page, errors } = await openHost({ width: 1440, height: 960, shell: true, surface: 'board' });
+  try {
+    await page.evaluate(() => window.session.setGuide('One step a week, on weekend sails with Maya.\nKinds: Learn and Build.'));
+    for (const theme of ['light', 'dark']) for (const width of [743, 744, 1023, 1024, 1279, 1280, 1440]) {
+      await page.evaluate((value) => {
+        document.documentElement.setAttribute('data-theme', value);
+        document.querySelectorAll('[data-theme]').forEach((element) => element.setAttribute('data-theme', value));
+      }, theme);
+      await page.setViewportSize({ width, height: 960 });
+      const selector = width < 744 ? '.st-guide-row' : '.st-guide-entry';
+      await page.locator(selector).waitFor();
+      assert.equal(await page.locator('.st-guide-row, .st-guide-entry').count(), 1);
+      const guide = await box(page, selector);
+      if (width < 744) {
+        assert.equal(await page.locator('.st-roadmap-identity .st-guide-row').count(), 0);
+        continue;
+      }
+      assert.equal(await page.locator('.st-roadmap-identity .st-guide-entry').count(), 1);
+      const cap = width < 1024 ? 44 : width < 1280 ? 200 : 320;
+      assert.equal(guide.width <= cap, true, `${theme} ${width}: ${guide.width} <= ${cap}`);
+      const strip = await box(page, '.st-board-strip');
+      assert.equal(guide.bottom <= strip.top, true);
+      assert.equal(await page.locator('.st-roadmap-identity').evaluate((row) => row.scrollWidth <= row.clientWidth), true);
+      if (process.env.GUIDE_ARTIFACT_DIR && [744, 1024, 1440].includes(width)) {
+        await page.screenshot({ path: `${process.env.GUIDE_ARTIFACT_DIR}/board-${width}-${theme}.png` });
+      }
+    }
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

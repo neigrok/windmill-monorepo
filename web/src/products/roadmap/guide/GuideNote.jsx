@@ -54,6 +54,7 @@ export function GuideNote({ guide, band }) {
   const text = withLineFeeds(guide.text);
   const written = hasGuide(guide.text);
   const stacked = above.length > 0;
+  const unknown = !phone && guide.aboveUnread;
   const openTree = useContext(TreeDoor);
   const [draft, setDraft] = useState(() => (opening ? new GuideDraft(guide.text) : null));
   const [caret, setCaret] = useState(() => (opening ? { offset: opening.offset, scroll: 0 } : null));
@@ -150,6 +151,7 @@ export function GuideNote({ guide, band }) {
   // says the press landed in the text: under guides from above its line is then brought into view, as the field
   // stands lower and shorter than the text did.
   const begin = (via, offset, landed = false) => {
+    if (!owner) return;
     track('roadmap_guide', { step: 'edit', via });
     resumeAt.current = stacked ? stack.current.scrollTop : null;
     const scroll = proseScroll();
@@ -247,11 +249,10 @@ export function GuideNote({ guide, band }) {
   useLayoutEffect(() => coverBeneath(layer.current), []);
   useCoveredLayer(paper, discarding);
 
-  // A guide that holds no words under no guide from above has nothing to read: one cleared here or elsewhere closes
-  // the note.
+  // Confirmed-empty guides close the viewer; unknown parent status remains readable.
   useEffect(() => {
-    if (!writing && !written && above.length === 0) guide.close();
-  }, [writing, written, above]);
+    if (!writing && !written && above.length === 0 && !unknown) guide.close();
+  }, [writing, written, above, unknown]);
 
   // The phone field grows with its draft; in the window it reserves the draft's height before the inherited context.
   useLayoutEffect(() => {
@@ -298,7 +299,8 @@ export function GuideNote({ guide, band }) {
   // keyboard, Enter does nothing there, and Tab walks the names above and then the text.
   const rest = () => {
     const own = prose.current ?? add.current;
-    if (!stacked || !own) return own;
+    if (!own) return paper.current?.querySelector('.st-guide-close');
+    if (!stacked) return own;
     const firstLine = own.getBoundingClientRect().top + parseFloat(getComputedStyle(own).lineHeight);
     return firstLine <= stack.current.getBoundingClientRect().bottom ? own : stack.current;
   };
@@ -484,13 +486,24 @@ export function GuideNote({ guide, band }) {
     <p ref={ownHead} className="st-guide-own">
       <BookOpen size={14} strokeWidth={1.67} absoluteStrokeWidth aria-hidden />
       <span>{t('roadmap.guide.thisTree', { tree: guide.roadmapTitle })}</span>
-      {!writing && written && (
+      {!writing && owner && written && (
         <span className="st-guide-hint" onClick={() => begin(phone ? 'tap' : 'click', text.length)}>
           <Pencil size={14} strokeWidth={1.67} absoluteStrokeWidth aria-hidden />
           {phone ? t('roadmap.guide.tapToEdit') : t('roadmap.guide.clickToEdit')}
         </span>
       )}
     </p>
+  );
+
+  const addGuide = owner && (stacked || unknown) && (
+    <button ref={add} type="button" className="st-guide-add" onClick={() => begin('add', 0)}>
+      <Plus size={unknown && !stacked ? 20 : 18} strokeWidth={unknown && !stacked ? 2 : 1.67} aria-hidden />
+      <span>{GUIDE.add}</span>
+    </button>
+  );
+
+  const parentStatus = unknown && (
+    <p className="st-guide-parent-status" role="status">{t('roadmap.guide.parentUnknownNotice')}</p>
   );
 
   const note = (
@@ -540,14 +553,11 @@ export function GuideNote({ guide, band }) {
             <div ref={stack} className={stacked ? `st-guide-stack${ringed ? ' is-ringed' : ''}` : 'st-guide-alone'}
               {...(stacked ? { tabIndex: 0, role: 'region', 'aria-labelledby': titleId } : {})}
               onFocus={(event) => { if (event.target === event.currentTarget) setRinged(lastPress.current === 'key'); }}>
+              {!written && parentStatus}
               {stacked && fromAbove}
               {stacked && ownName}
-              {written || !stacked ? ownGuide : (
-                <button ref={add} type="button" className="st-guide-add" onClick={() => begin('add', 0)}>
-                  <Plus size={18} strokeWidth={1.67} aria-hidden />
-                  <span>{GUIDE.add}</span>
-                </button>
-              )}
+              {written ? ownGuide : unknown && !stacked ? <div className="st-guide-parent-add">{addGuide}</div> : addGuide}
+              {written && parentStatus}
             </div>
           )}
           {contextual && (
