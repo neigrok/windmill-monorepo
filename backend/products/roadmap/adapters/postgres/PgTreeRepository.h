@@ -79,7 +79,6 @@ public:
   std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree) override;
   std::vector<TreeId> treesOpening(const UserId& owner, const TreeId& tree) override;
   void softDelete(const TreeId& tree) override;
-  void rename(const TreeId& tree, const Lww<std::string>& title) override;
   void setVisibility(const TreeId& tree, Visibility visibility) override;
   void fork(const std::vector<TreeCopy>& copies, const UserId& owner) override;
   std::optional<SubtreeSite> subtreeSite(const TreeId& parent, const NodeId& step, const std::optional<TreeId>& opened,

@@ -478,24 +478,6 @@ Saved RoomRegistry::hold(const TreeId& id, const std::shared_ptr<SaveLine>& line
   return Saved::held;
 }
 
-PendingSave RoomRegistry::rename(const TreeId& id, const std::string& title, std::uint64_t nowMs,
-                                 const Hlc& persistedStamp) {
-  TreeRoom* room = nullptr;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = rooms_.find(id);
-    if (it != rooms_.end()) room = it->second.room.get();
-  }
-  if (!room) {
-    HlcClock clock{std::string{TreeRoom::kServerActor}};
-    clock.observe(persistedStamp);  // the receive rule: the mint always dominates the row
-    repo_.rename(id, Lww<std::string>{title, clock.tick(nowMs)});
-    return Saved::saved;
-  }
-  room->rename(title, nowMs);  // joins + broadcasts under the caller-held strand
-  return persist(id);          // durable before the response, like the socket's ack — or held
-}
-
 void RoomRegistry::setVisibility(const TreeId& root, Visibility visibility) {
   {
     std::lock_guard<std::mutex> rootLock(rootLockFor(root));

@@ -815,19 +815,6 @@ void PgTreeRepository::softDelete(const TreeId& tree) {
   txn.commit();
 }
 
-void PgTreeRepository::rename(const TreeId& tree, const Lww<std::string>& title) {
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  txn.exec_params(  // the same LWW guard as save(): only a dominating stamp lands
-      "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5, "
-      "updated_at = now() WHERE id = $1 AND deleted_at IS NULL "
-      "AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
-      "> (title_ms, title_counter, title_hlc COLLATE \"C\")",
-      tree.str(), title.value, toString(title.stamp),
-      static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter));
-  txn.commit();
-}
-
 void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};

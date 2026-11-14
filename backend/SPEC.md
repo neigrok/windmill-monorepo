@@ -435,6 +435,13 @@ one writer that can lower it: it replaces the rows it carries under the genesis 
 opened after one may judge by a floor below a mark some peer still holds, and a write late against
 that mark alone reaches that peer by its vector or not at all.
 
+Every write the server stamps is minted by the tree's room, past every stamp the tree holds, so it
+is never late: a command, an import, and a rename or a guide, for which the room is opened when
+none is live. A `PUT` is the one exception. It writes rows with no room: the steps it carries under
+the genesis stamp, and its title one tick past the stored title's stamp alone. Either can be at or
+below a mark a peer holds, and a `PUT` records no land seq, so a peer whose vector is past what a
+`PUT` wrote is not sent it until it subscribes with an empty vector, as a reloaded page does.
+
 The node, edge, kind or tree register of a late register takes the write's seq as its land seq
 (`LandSeqs`) as its frame lands (`joinSubgraph`); a tombstone is an entry like any other, and
 everything else keeps the land seq it had. A command and an import are stamped by the server past
@@ -641,7 +648,7 @@ Rules:
   lattice is stored before the op rows are appended, so the log never runs ahead of the lattice. A
   save onto a row that is gone or soft-deleted writes nothing, retires the room and answers `gone`,
   as it does to a write whose room was retired before its save ran; the socket's `subgraph` frame,
-  the guide and a live rename then answer as for an absent tree.
+  the guide and a rename then answer as for an absent tree.
 - A save that fails undoes nothing and throws nothing (`Saved::held`): every open page has already
   been sent the write, so the room keeps it, dirty and with its op rows queued, and the registry
   holds the room and retries the save until the store takes it, on its own timer: 1 s after the
@@ -849,8 +856,8 @@ are absent when that is nothing, and a path that is cut does not end with the tr
 bytes a tree without pointers answers, and nothing is read for them.
 
 `PATCH /v1/trees/{id}` sets one register per call — `{visibility}`, `{guide}` or `{title}` — each the
-owner's alone, and answers `204`; a guide or a title set in the tree's live room whose save failed
-answers `202` with `{saved: false, code: "held-unsaved", message}` — applied, on every open page,
+owner's alone, and answers `204`; a guide and a title are written through the tree's room, opened for
+them when none is live, and one whose save failed answers `202` with `{saved: false, code: "held-unsaved", message}` — applied, on every open page,
 and being saved again by the server, so sending it again is not needed; a server restart before the
 save succeeds would lose it. A body naming more than one is refused `400`, and a body that is not one JSON object
 `400 invalid json body`. A guide past 5000 characters, not valid UTF-8 or carrying a NUL is refused

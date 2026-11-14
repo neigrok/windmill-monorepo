@@ -326,7 +326,8 @@ TEST(pg_a_fork_plants_the_title_and_guide_at_its_planting_stamp_for_the_new_owne
   CHECK(copy->owner == std::optional<UserId>(kEve));
 
   // A later rename of the fork is minted past the planting stamp, so the column takes it.
-  registry.rename(kFork, "Eve's voyage", 1'700'000'000'000, copy->title.stamp);
+  registry.open(kFork)->rename("Eve's voyage", 1'700'000'000'000);
+  REQUIRE(registry.persist(kFork).wait() == Saved::saved);
   CHECK(trees.load(kFork)->title == (Lww<std::string>{"Eve's voyage", Hlc{1'700'000'000'000, 2, "srv"}}));
 }
 

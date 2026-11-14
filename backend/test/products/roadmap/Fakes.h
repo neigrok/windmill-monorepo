@@ -609,11 +609,6 @@ struct FakeTreeRepository : TreeRepository {
   void softDelete(const TreeId& tree) override {
     if (!subtrees.count(tree.str())) deletedIds.insert(tree.str());
   }
-  void rename(const TreeId& tree, const Lww<std::string>& title) override {
-    auto it = byId.find(tree.str());
-    if (it == byId.end() || deletedIds.count(tree.str())) return;
-    if (title.stamp > it->second.title.stamp) it->second.title = title;  // the same LWW guard as save
-  }
   // Runs inside setVisibility before the row changes, the way a slow or refused statement holds its caller; it may throw.
   std::function<void()> duringVisibilitySet;
   // The real statement's rule: a standing root's row alone.

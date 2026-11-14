@@ -196,9 +196,6 @@ struct TreeRepository {
   // Retire a root by stamping deleted_at; every read filters it, and every tree under it, out afterwards. A subtree's
   // row is never retired: it goes and comes back with its owning step.
   virtual void softDelete(const TreeId& tree) = 0;
-  // The closed-room seam only — a live room's title reaches the column through save(). Lands only
-  // under a stamp dominating the stored one.
-  virtual void rename(const TreeId& tree, const Lww<std::string>& title) = 0;
   // The owner check is the caller's, not this write's. A root's alone: a subtree's is its root's and is never set, and a
   // soft-deleted root is left alone.
   virtual void setVisibility(const TreeId& tree, Visibility visibility) = 0;

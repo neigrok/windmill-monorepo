@@ -847,7 +847,8 @@ TEST(registry_a_save_that_finds_the_row_gone_answers_gone_and_retires_the_room_w
 
   CHECK(registry.persist(tid()).wait() == Saved::gone);
   CHECK_FALSE(registry.isOpen(tid()));
-  CHECK(registry.rename(tid("u"), "Ghost title", 12, Hlc{}).wait() == Saved::gone);
+  registry.open(tid("u"))->rename("Ghost title", 12);
+  CHECK(registry.persist(tid("u")).wait() == Saved::gone);
   CHECK_FALSE(registry.isOpen(tid("u")));
   CHECK_EQ(announced, (std::vector<std::string>{"t", "u"}));
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
