@@ -17,7 +17,7 @@ namespace wm {
 
 // Admission bounds, enforced by validate() for a single command and admit() for a graph that
 // arrives whole, and told by the refusal past each: the MCP catalogue publishes none in a schema
-// but a title's (adapters/mcp/README.md, What the catalogue says). Every length is
+// (adapters/mcp/README.md, What the catalogue says). Every length is
 // counted in characters — Unicode code points, by codePointCount() — never bytes.
 constexpr std::size_t kMaxIdLength = 128;                // node / tree id
 constexpr std::size_t kMaxNodeLabelLength = 200;         // node display label
@@ -28,7 +28,7 @@ constexpr std::size_t kMaxLinkLabelLength = 200;         // a link's display tex
 constexpr std::size_t kMaxLinkUrlLength = 2048;          // a link's url
 constexpr std::size_t kMaxNodes = 10000;                 // present nodes admitted per tree
 constexpr std::size_t kMaxEdges = 20000;                 // present edges admitted per tree
-constexpr std::size_t kMaxTitleChars = 200;              // a roadmap's name (TreeRegistry truncates)
+constexpr std::size_t kMaxTitleChars = 200;              // a roadmap's name (a rename cuts to it; other doors refuse)
 constexpr std::size_t kMaxGuideChars = 5000;             // a roadmap's guide: what it is, how to work it
 constexpr std::size_t kMaxKinds = 6;                     // legend kinds per tree (one per hue)
 constexpr std::size_t kMaxKindLabelLength = 24;          // a legend kind's label

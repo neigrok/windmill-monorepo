@@ -349,6 +349,11 @@ void TreeApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     callback(error(drogon::k400BadRequest, "id must be t_ followed by 16 lowercase hex characters", "bad-id"));
     return;
   }
+  // The name the copy is asked to carry is held to the bounds a document's title is, before the source is touched.
+  if (std::optional<Admission> refusal = admitTitle(title)) {
+    callback(error(drogon::k400BadRequest, refusal->reason));
+    return;
+  }
 
   ForkService::Result forked = fork_->fork(TreeId{treeId}, newId, title, *caller);
   if (forked.outcome == ForkService::Outcome::noSource) {
