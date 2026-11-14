@@ -61,6 +61,9 @@ export function GuideEntry({ guide, band, view }) {
     );
   }
 
+  const tooltipLabel = unknown ? t('roadmap.guide.parentUnknownLabel')
+    : above > 0 ? t('roadmap.guide.parentsLabel', { label: GUIDE.title, count: above }) : title;
+  const tooltipShown = tooltip && !guide.opened;
   const label = unknown ? t('roadmap.guide.parentUnknownLabel')
     : above > 0 ? t('roadmap.guide.parentsLabel', { label: written ? name : GUIDE.title, count: above }) : name;
   const line = unknown ? (written ? t('roadmap.guide.unknownExcerpt', { excerpt: firstLine }) : t('roadmap.guide.unknown'))
@@ -70,9 +73,14 @@ export function GuideEntry({ guide, band, view }) {
   return (
     <div onMouseEnter={() => setTooltip(true)} onMouseLeave={() => setTooltip(false)}
       onFocus={() => setTooltip(true)} onBlur={() => setTooltip(false)}
-      onKeyDown={(event) => { if (event.key === 'Escape') setTooltip(false); }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || !tooltipShown) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setTooltip(false);
+      }}
       className={`st-guide-entry-seat${band === 'tablet' ? ' st-guide-entry-seat--compact' : ''}`}>
-      <Tooltip label={label} side="bottom" open={tooltip && !guide.opened}>
+      <Tooltip label={tooltipLabel} side="bottom" open={tooltipShown}>
         <button ref={guide.entry} type="button" className={`st-guide-entry${reads ? '' : ' st-guide-entry--add'}`}
           aria-label={label} aria-haspopup="dialog" aria-expanded={Boolean(guide.opened)} onClick={open}>
           <Glyph size={20} strokeWidth={2} aria-hidden />

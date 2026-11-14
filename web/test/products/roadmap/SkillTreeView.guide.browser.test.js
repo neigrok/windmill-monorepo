@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import { chromium, webkit } from 'playwright';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
 import { ANONYMOUS_OWNER } from '../../../src/products/roadmap/copy.js';
 
-startRoadmapHost();
+startRoadmapHost({ browserTypes: { chromium, webkit } });
 
 const guideEvents = (page) => page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_guide').map(({ props }) => props));
 const box = (page, selector) => page.locator(selector).evaluate((element) => {
@@ -314,3 +315,49 @@ hostTest('Chromium: the one Guide entry follows the identity breakpoints and sta
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+for (const browserName of ['chromium', 'webkit']) {
+  hostTest(`${browserName}: tooltip Escape keeps the Graph selection until a second Escape`, async () => {
+    const { page, errors } = await openHost({ browserName, width: 1440, height: 960, shell: true });
+    try {
+      await page.evaluate(() => {
+        window.session.setGuide('One step a week.');
+        window.scene.options.onMarqueeSelect(['wind', 'dock'], false);
+      });
+      const selection = page.locator('.st-selection-bar');
+      await selection.waitFor();
+      const before = await selection.textContent();
+      for (let press = 0; press < 20 && !await page.locator('.st-guide-entry').evaluate((entry) => entry === document.activeElement); press += 1) {
+        await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+      }
+      await page.getByRole('tooltip').waitFor();
+      await page.keyboard.press('Escape');
+      assert.equal(await page.getByRole('tooltip').count(), 0);
+      assert.equal(await selection.count(), 1);
+      assert.equal(await selection.textContent(), before);
+      assert.equal(await page.locator('.st-guide-entry').evaluate((entry) => entry === document.activeElement), true);
+      await page.keyboard.press('Escape');
+      await selection.waitFor({ state: 'detached' });
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+
+  hostTest(`${browserName}: the Guide tooltip keeps a long first line inside the tablet viewport`, async () => {
+    const { page, errors } = await openHost({ browserName, width: 744, height: 960, longTitle: true, shell: true });
+    try {
+      const text = 'A long first-line guide that remains a valid note and must stay legible when it is displayed as a tooltip. '.repeat(5);
+      await page.evaluate((guide) => window.session.setGuide(guide), text);
+      for (let press = 0; press < 20 && !await page.locator('.st-guide-entry').evaluate((entry) => entry === document.activeElement); press += 1) {
+        await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+      }
+      const tooltip = page.getByRole('tooltip');
+      await tooltip.waitFor();
+      assert.deepEqual(await tooltip.evaluate((tip) => {
+        const bounds = tip.getBoundingClientRect();
+        return { text: tip.textContent, inside: bounds.left >= 0 && bounds.right <= innerWidth };
+      }), { text: 'Guide', inside: true });
+      assert.equal(await page.locator('.st-guide-entry').getAttribute('aria-label'), `Guide: ${text.trim()}`);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}

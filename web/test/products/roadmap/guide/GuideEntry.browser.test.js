@@ -154,3 +154,68 @@ test('a remote Guide arrival flashes the wide entry once, while reduced motion a
     } finally { await page.close(); }
   }
 });
+
+for (const engine of [chromium, webkit]) {
+  test(`${engine.name()}: a remote clear in the unknown viewer keeps keyboard focus inside the modal`, async () => {
+    for (const owner of [true, false]) for (const focusClose of [false, true]) {
+      const page = await open({ guide: GUIDE, aboveUnread: true, guideOwner: owner }, { engine, reducedMotion: 'reduce' });
+      try {
+        for (let press = 0; press < 4; press += 1) await page.keyboard.press(engine === webkit ? 'Alt+Tab' : 'Tab');
+        await page.keyboard.press('Enter');
+        const note = page.getByRole('dialog', { name: owner ? 'Guide' : 'Author’s note', exact: true });
+        await note.waitFor();
+        assert.equal(await page.locator('.st-guide-prose').evaluate((prose) => prose === document.activeElement), true);
+        if (focusClose) await page.keyboard.press('Shift+Tab');
+        await page.evaluate(() => window.setElsewhere(''));
+        await page.locator('.st-guide-prose').waitFor({ state: 'detached' });
+        assert.equal(await note.evaluate((dialog) => dialog.contains(document.activeElement)), true);
+        const target = note.getByRole('button', { name: owner && !focusClose ? 'Add guide' : 'Close', exact: true });
+        assert.equal(await target.evaluate((button) => button === document.activeElement), true);
+        assert.equal(await page.getByRole('status').textContent(), 'Parent Guide status has not been confirmed.');
+        await page.keyboard.press('Escape');
+        await note.waitFor({ state: 'detached' });
+        await page.waitForFunction(() => document.activeElement.matches('.st-guide-entry'));
+      } finally { await page.close(); }
+    }
+  });
+
+  test(`${engine.name()}: concise Guide tooltips name the reader, confirmed parent count, unknown status or Add`, async () => {
+    for (const [options, label] of [
+      [{ role: 'reader' }, 'Author’s note'],
+      [{ above: [{ treeId: 'life', title: 'Life', text: 'Health first.' }] }, 'Guide · 1 guide from above'],
+      [{ above: [{ treeId: 'life', title: 'Life', text: 'Health first.' }, { treeId: 'year', title: 'Year', text: 'Learn to sail.' }] }, 'Guide · 2 guides from above'],
+      [{ aboveUnread: true }, 'Guide · parent status unknown'],
+      [{ guide: '' }, 'Add guide'],
+    ]) {
+      const page = await open({ guide: GUIDE, ...options, band: 'tablet' }, { engine, width: 744, reducedMotion: 'reduce' });
+      try {
+        for (let press = 0; press < 4; press += 1) await page.keyboard.press(engine === webkit ? 'Alt+Tab' : 'Tab');
+        assert.deepEqual(await page.getByRole('tooltip').evaluate((tooltip) => {
+          const bounds = tooltip.getBoundingClientRect();
+          return { text: tooltip.textContent, inside: bounds.left >= 0 && bounds.right <= innerWidth };
+        }), { text: label, inside: true });
+      } finally { await page.close(); }
+    }
+  });
+
+  test(`${engine.name()}: remote Guide changes preserve the active draft and its discard confirmation focus`, async () => {
+    const page = await open({ guide: GUIDE, aboveUnread: true }, { engine, reducedMotion: 'reduce' });
+    try {
+      for (let press = 0; press < 4; press += 1) await page.keyboard.press(engine === webkit ? 'Alt+Tab' : 'Tab');
+      await page.keyboard.press('Enter');
+      await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
+      await page.keyboard.press('Enter');
+      await field(page).waitFor();
+      await page.keyboard.type(' Local draft.');
+      await page.evaluate(() => window.setElsewhere(''));
+      assert.equal(await field(page).evaluate((draft) => draft === document.activeElement), true);
+      assert.equal(await field(page).inputValue(), `${GUIDE} Local draft.`);
+      await page.keyboard.press('Escape');
+      const confirmation = page.getByRole('alertdialog', { name: 'Discard draft?' });
+      await confirmation.waitFor();
+      await page.evaluate(() => window.setElsewhere('A replacement guide.'));
+      assert.equal(await confirmation.evaluate((dialog) => dialog.contains(document.activeElement)), true);
+      assert.equal(await field(page).inputValue(), `${GUIDE} Local draft.`);
+    } finally { await page.close(); }
+  });
+}

@@ -325,7 +325,7 @@ export function GuideNote({ guide, band }) {
 
   // Guides from above that answer while the note reads stand over this tree's text and move nothing: the text stays
   // mounted with its selection, and the stack scrolls on by what now stands above it. Where they go, the focus the
-  // stack held falls to the page, and the text takes it.
+  // stack or own text held falls to the page, and the next reading control takes it.
   useLayoutEffect(() => {
     const own = prose.current;
     if (stacked && !wasStacked.current && !writing && own) {
@@ -334,8 +334,8 @@ export function GuideNote({ guide, band }) {
       frame.scrollTop = standsAt + scrolledAlone.current;
     }
     wasStacked.current = stacked;
-    if (!writing && document.activeElement === document.body) rest()?.focus({ preventScroll: true });
-  }, [stacked]);
+    if (!writing && !discarding && document.activeElement === document.body) rest()?.focus({ preventScroll: true });
+  }, [stacked, written]);
 
   // While the guide is written from 744px the guides from above take what the window leaves once the field has its
   // height. Where that cannot hold one name and one line of text they are not drawn.

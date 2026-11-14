@@ -351,7 +351,9 @@ from 1280px. At 744–1023 the 44px-high control holds a 20px book icon and, whe
 or an unknown marker inside the same focus ring. Known inherited-only entries say “2 guides from above”; a guide of
 its own adds “+2 above ·” before its first line. Pending or failed parent reads show “Guide · unknown” without own
 text, or “? ·” before its first line, and the accessible name and tooltip say “Guide · parent status unknown”.
-These entries open reading. Only a confirmed-empty owner's entry offers dashed Add guide and opens writing directly;
+The tooltip is the concise Guide or Author’s note title, the confirmed parent count, or the unknown-status label;
+own-only and confirmed-parent accessible names retain the own excerpt. These entries open reading. Only a
+confirmed-empty owner's entry offers dashed Add guide and opens writing directly;
 a reader never gets Add. Readers with an own guide retain Author's note as the accessible name. Phones keep their
 row below the head, beneath the device line when present, with up to three lines and a count beside the heading.
 `GuideNote` opens a modal window 24px inside the viewport from 744px and a bottom sheet on phones. The wide viewer
@@ -381,7 +383,9 @@ no door and is refused. While the note holds
 the window, Escape, ⌘↩ and Tab work wherever focus stands; ⌘↩ presses Save or Try again and no other act, and a held
 key is one press. The note keeps its draft, and the focus a stop held, across a change of band, and closes
 when the tree changes or the guide stops being shown. Leaving a draft returns to where writing began (the note read, or the tree for a guide begun from Add guide),
-at once when nothing changed and through Discard draft? when something did. Closing hands focus back to the entry. The
+at once when nothing changed and through Discard draft? when something did. Closing hands focus back to the entry.
+A remote clear while parent status is unknown moves focus from removed prose to Add guide for the owner or Close
+for a reader. Escape dismisses a shown entry tooltip before the room handles another Escape. The
 status line above the field on desktop and in the footer on phones: a guide changed elsewhere mid-edit says so and
 offers Load latest, which replaces the draft, so Cancel then leaves at once; on phones the line also says what Save
 replaces, and it waits while a save is in flight. A save no door took keeps the draft and leaves one line
