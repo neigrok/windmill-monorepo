@@ -46,14 +46,21 @@ namespace {
 struct FakeSocket : drogon::WebSocketConnection {
   std::vector<std::string> sent;
   bool open = true;
+  bool reading = true;  // a peer that reads takes every byte sent off the socket; one that does not takes none
+  std::size_t written = 0;
   trantor::InetAddress addr;
 
   void send(const char* msg, uint64_t len, const drogon::WebSocketMessageType) override {
     sent.emplace_back(msg, len);
+    if (reading) written += wireBytes(len);
   }
   void send(std::string_view msg, const drogon::WebSocketMessageType) override {
     sent.emplace_back(msg);
+    if (reading) written += wireBytes(msg.size());
   }
+  // What a text frame takes on the wire from a server: its payload after a header of two, four or ten bytes.
+  static std::size_t wireBytes(std::size_t payload) { return payload + (payload < 126 ? 2 : payload < 65'536 ? 4 : 10); }
+  std::size_t bytesSent() const override { return written; }
   void sendJson(const Json::Value&, const drogon::WebSocketMessageType) override {}
   const trantor::InetAddress& localAddr() const override { return addr; }
   const trantor::InetAddress& peerAddr() const override { return addr; }
@@ -69,7 +76,8 @@ struct Harness {
   FakeProgressRepository progressRepo;
   FakeTreeRepository trees{progressRepo};
   FakeOpLog ops;
-  WsPresenceBus bus;
+  std::chrono::steady_clock::time_point busNow{};  // the clock the bus judges a connection by, moved by a test
+  WsPresenceBus bus{[this] { return busNow; }};
   HeldRetries retries;
   RoomRegistry rooms{trees, ops, bus, retries.timer()};
   ProgressService progress{progressRepo, trees};
@@ -82,7 +90,7 @@ struct Harness {
   FakeAccountFootprint footprint;
   FakeSessionRevocations revocations;
   AuthService auth{authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works"};
-  PresenceHub presence;
+  PresenceHub presence{bus};
   NodeEdits edits{rooms, progress, bus, clock};
   TreeRegistry trees_registry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, rooms, edits, clock};
   Collab collab{rooms, trees, ops, bus, progress, auth, presence, clock, {"https://windmill.works"}};
@@ -2646,6 +2654,333 @@ TEST(ws_a_subscriber_is_sent_its_delta_and_then_its_graft_each_in_its_own_place_
     if (frame["t"] == "progress") frames.push_back("progress " + frame.get("intent", "echo").asString());
   }
   CHECK_EQ(frames, (std::vector<std::string>{"subgraph delta", "progress graft", "subgraph live", "progress echo"}));
+}
+
+// What a connection has not taken is known to the byte and by kind: every frame handed is entered with its bytes on the
+// wire, and the bytes the connection has written leave it oldest frame first, a frame part-written included.
+TEST(what_a_connection_has_not_written_is_what_it_was_handed_less_what_it_wrote_oldest_frame_first) {
+  const std::chrono::steady_clock::time_point at{};
+  Outbound outbound;
+  CHECK(!outbound.handing(100, FrameKind::first, 5'000, at).has_value());  // 5,000 bytes written before any frame of ours
+  CHECK(!outbound.handing(50, FrameKind::live, 5'000, at).has_value());
+  CHECK(!outbound.handing(10, FrameKind::reply, 5'000, at).has_value());
+  CHECK(!outbound.handing(7, FrameKind::presence, 5'000, at).has_value());
+  CHECK_EQ(outbound.pendingBytes(), std::size_t{167});
+  CHECK_EQ(outbound.pendingLiveBytes(), std::size_t{50});
+
+  CHECK(!outbound.judged(5'120, at).has_value());  // the first frame and twenty bytes of the live one
+  CHECK_EQ(outbound.pendingBytes(), std::size_t{47});
+  CHECK_EQ(outbound.pendingLiveBytes(), std::size_t{30});
+  CHECK(!outbound.judged(5'155, at).has_value());  // the rest of the live one and half the reply
+  CHECK_EQ(outbound.pendingBytes(), std::size_t{12});
+  CHECK_EQ(outbound.pendingLiveBytes(), std::size_t{0});
+  CHECK(!outbound.judged(5'170, at).has_value());  // everything, and three bytes of a ping the framework sent itself
+  CHECK_EQ(outbound.pendingBytes(), std::size_t{0});
+  CHECK(!outbound.handing(40, FrameKind::live, 5'170, at).has_value());
+  CHECK_EQ(outbound.pendingBytes(), std::size_t{40});
+}
+
+// Rule `stalled`: something is pending and not one byte was written for kStalledAfter. A connection owed nothing is
+// never stalled however long it is quiet, the wait begins when a frame is handed to one owed nothing, and a peer that
+// keeps taking bytes, however few, is never stalled whatever it is owed.
+TEST(a_connection_is_stalled_once_something_is_pending_and_it_wrote_nothing_for_the_time_and_never_while_it_writes) {
+  const std::chrono::steady_clock::time_point start{};
+  const auto after = [&](std::chrono::milliseconds wait) { return start + wait; };
+  const std::chrono::milliseconds limit = Outbound::kStalledAfter;
+  const std::size_t mib = 1024 * 1024;
+
+  Outbound quiet;
+  CHECK(!quiet.handing(1'024, FrameKind::reply, 0, after(limit * 0)).has_value());
+  CHECK(!quiet.judged(1'024, after(limit * 1)).has_value());
+  CHECK(!quiet.judged(1'024, after(limit * 100)).has_value());  // owed nothing for a hundred times the wait
+  CHECK(!quiet.handing(1'024, FrameKind::reply, 1'024, after(limit * 100)).has_value());
+  CHECK(!quiet.judged(1'024, after(limit * 101)).has_value());  // the wait began with that frame
+  CHECK(quiet.judged(1'024, after(limit * 101 + std::chrono::milliseconds(1))) ==
+        (std::optional<Outbound::Dropped>(Outbound::Dropped{Outbound::Rule::stalled, 1'024, limit + std::chrono::milliseconds(1)})));
+  CHECK(quiet.dropped());
+
+  // A delta of 80 MiB to a peer that takes one byte just inside every wait: never stalled.
+  Outbound slow;
+  CHECK(!slow.handing(80 * mib, FrameKind::first, 0, after(limit * 0)).has_value());
+  for (int wait = 1; wait <= 500; ++wait)
+    CHECK(!slow.judged(static_cast<std::size_t>(wait), after((limit - std::chrono::milliseconds(1)) * wait)).has_value());
+  CHECK(!slow.dropped());
+
+  // The same delta to a peer that stops: dropped by the judgement that follows the wait, a frame handed or none.
+  Outbound stopped;
+  CHECK(!stopped.handing(80 * mib, FrameKind::first, 0, after(limit * 0)).has_value());
+  CHECK(!stopped.handing(1'024, FrameKind::live, 0, after(limit)).has_value());
+  CHECK(stopped.handing(1'024, FrameKind::live, 0, after(limit + std::chrono::milliseconds(1))) ==
+        (std::optional<Outbound::Dropped>(
+            Outbound::Dropped{Outbound::Rule::stalled, 80 * mib + 1'024, limit + std::chrono::milliseconds(1)})));
+}
+
+// Rule `behind`: more than kLiveBacklogBytes of live frames are pending and no first frame is. A reader that takes
+// bytes all the while but half as fast as the tree broadcasts is dropped once it is that far behind; a subscription's
+// first frames, replies and presence frames are entered and never count toward it, so two large deltas back to back
+// are not a drop; and live frames that wait behind a first frame are a backlog only once that frame is written.
+TEST(a_reader_too_far_behind_the_live_frames_is_dropped_as_behind_and_no_other_kind_of_frame_counts_toward_it) {
+  const std::chrono::steady_clock::time_point start{};
+  const std::size_t mib = 1024 * 1024;
+
+  Outbound reader;
+  std::optional<Outbound::Dropped> drop;
+  int handed = 0;
+  std::size_t written = 0;
+  while (!drop && handed < 100) {
+    drop = reader.handing(mib, FrameKind::live, written, start + std::chrono::seconds(handed));
+    written += mib / 2;  // it writes half of each frame before the next: never stalled, always further behind
+    ++handed;
+  }
+  // 33 frames handed and half of each written: 16.5 MiB of live frames pending as the 34th comes.
+  CHECK_EQ(handed, 34);
+  CHECK(drop == (std::optional<Outbound::Dropped>(Outbound::Dropped{Outbound::Rule::behind, 16 * mib + mib / 2, std::chrono::milliseconds{0}})));
+
+  Outbound subscriber;
+  const auto at = start;
+  CHECK(!subscriber.handing(20 * mib, FrameKind::first, 0, at).has_value());
+  CHECK(!subscriber.handing(mib, FrameKind::first, 0, at).has_value());
+  CHECK(!subscriber.handing(20 * mib, FrameKind::first, 0, at).has_value());  // the same tree again, back to back
+  CHECK(!subscriber.handing(mib, FrameKind::first, 0, at).has_value());
+  for (int frame = 0; frame < 20; ++frame) CHECK(!subscriber.handing(mib, FrameKind::reply, 0, at).has_value());
+  for (int frame = 0; frame < 20; ++frame) CHECK(!subscriber.handing(mib, FrameKind::presence, 0, at).has_value());
+  CHECK_EQ(subscriber.pendingBytes(), 82 * mib);
+  CHECK_EQ(subscriber.pendingLiveBytes(), std::size_t{0});
+  for (int frame = 0; frame < 16; ++frame) CHECK(!subscriber.handing(mib, FrameKind::live, 0, at).has_value());
+  CHECK(!subscriber.handing(mib, FrameKind::live, 0, at).has_value());  // past the bound, behind deltas not yet written
+  CHECK(!subscriber.judged(42 * mib - 1, at).has_value());  // one byte of the last first frame still pending
+  CHECK_EQ(subscriber.pendingLiveBytes(), 17 * mib);
+  CHECK(subscriber.judged(42 * mib, at) ==
+        (std::optional<Outbound::Dropped>(Outbound::Dropped{Outbound::Rule::behind, 57 * mib, std::chrono::milliseconds{0}})));
+
+  // A delta of 80 MiB taken at 100 KiB a second under 52 KiB a second of broadcasts: 16 MiB of live frames wait behind
+  // it long before it is written, and the reader is left to finish it.
+  Outbound loading;
+  CHECK(!loading.handing(80 * mib, FrameKind::first, 0, start).has_value());
+  for (int second = 1; second <= 800; ++second)
+    CHECK(!loading.handing(52 * 1024, FrameKind::live, static_cast<std::size_t>(second - 1) * 100 * 1024, start + std::chrono::seconds(second)).has_value());
+  CHECK(loading.pendingLiveBytes() > 2 * Outbound::kLiveBacklogBytes);
+  CHECK(!loading.dropped());
+
+  // The same broadcasts after a delta the connection wrote at once: the bound holds from the first live frame.
+  Outbound loaded;
+  CHECK(!loaded.handing(mib, FrameKind::first, 0, at).has_value());
+  for (int frame = 0; frame < 16; ++frame) CHECK(!loaded.handing(mib, FrameKind::live, mib, at).has_value());
+  CHECK(!loaded.handing(1, FrameKind::live, mib, at).has_value());  // exactly the bound is not past it
+  CHECK(loaded.handing(mib, FrameKind::live, mib, at) ==
+        (std::optional<Outbound::Dropped>(Outbound::Dropped{Outbound::Rule::behind, 16 * mib + 1, std::chrono::milliseconds{0}})));
+}
+
+// Rule `ceiling`: more than kPendingCeilingBytes of any kind are pending. A peer that subscribes again and again
+// without reading is dropped by it; one frame alone, even one past the ceiling, is handed to a connection owed nothing.
+TEST(a_peer_that_subscribes_again_and_again_without_reading_is_dropped_at_the_ceiling_and_one_frame_alone_never_is) {
+  const std::chrono::steady_clock::time_point at{};
+  const std::size_t delta = Outbound::kPendingCeilingBytes / 4 + 1;
+
+  Outbound hoarder;
+  for (int subscribe = 0; subscribe < 4; ++subscribe) CHECK(!hoarder.handing(delta, FrameKind::first, 0, at).has_value());
+  CHECK(hoarder.handing(delta, FrameKind::first, 0, at) ==
+        (std::optional<Outbound::Dropped>(Outbound::Dropped{Outbound::Rule::ceiling, 4 * delta, std::chrono::milliseconds{0}})));
+
+  Outbound owedNothing;
+  CHECK(!owedNothing.handing(Outbound::kPendingCeilingBytes * 2, FrameKind::first, 0, at).has_value());
+  CHECK(!owedNothing.dropped());
+}
+
+// A subscriber that takes nothing while its tree is written is dropped once the broadcasts it has not taken pass the
+// live backlog: its connection is closed and handed nothing more, one line says so with the rule and a size bucket and
+// no name of anything, and the subscriber beside it that reads is sent every frame.
+TEST(a_subscriber_that_takes_nothing_is_dropped_as_behind_under_broadcasts_and_the_one_beside_it_is_sent_every_frame) {
+  WsPresenceBus bus;
+  const TreeId tree{"t"};
+  const auto stalled = std::make_shared<FakeSocket>();
+  stalled->reading = false;
+  const auto healthy = std::make_shared<FakeSocket>();
+  bus.subscribe(tree, stalled, UserId{"u"});
+  bus.subscribe(tree, healthy, UserId{"u"});
+  Subgraph heavy;
+  heavy.treeId = tree;
+  for (int step = 0; step < 70; ++step)
+    heavy.graph.nodes.push_back(NodeStateEntry{.id = NodeId{"step-" + std::to_string(step)}, .description = std::string(15'000, 'd'),
+                                               .descriptionAt = Hlc{5, 0, "r_w"}});
+
+  std::vector<std::string> told;
+  {
+    Observed observed;
+    for (Seq seq = 1; seq <= 40; ++seq) bus.broadcastSubgraph(tree, seq, heavy);
+    for (const std::string& line : observed.lines)
+      if (line.find("roadmap_ws_subscriber_dropped") != std::string::npos)
+        told.push_back(line.substr(line.find("roadmap_ws_subscriber_dropped"), line.find(" idle_ms=") - line.find("roadmap_ws_subscriber_dropped")));
+  }
+
+  CHECK_EQ(healthy->sent.size(), std::size_t{40});
+  CHECK(healthy->open);
+  CHECK_FALSE(stalled->open);
+  CHECK(stalled->sent.size() > 14 && stalled->sent.size() < 20);
+  CHECK_EQ(told, (std::vector<std::string>{"roadmap_ws_subscriber_dropped door=websocket rule=behind queued=under-64m"}));
+}
+
+// A fast client that subscribes to a large tree twice back to back is sent both deltas: frames handed within one turn
+// of its loop cannot show a write, and a subscription's first frames are no backlog.
+TEST(two_large_deltas_handed_back_to_back_with_no_write_between_are_both_delivered) {
+  WsPresenceBus bus;
+  const auto conn = std::make_shared<FakeSocket>();
+  conn->reading = false;  // nothing is written before the handler that queued them all returns
+  const std::string delta(20 * 1024 * 1024, 'd');
+
+  WsPresenceBus::FirstFrames first = bus.subscribe(TreeId{"t"}, conn, UserId{"u"});
+  first.delta.send(delta);
+  first.graft.send("{}");
+  WsPresenceBus::FirstFrames again = bus.subscribe(TreeId{"t"}, conn, UserId{"u"});
+  again.delta.send(delta);
+  again.graft.send("{}");
+
+  CHECK_EQ(conn->sent.size(), std::size_t{4});
+  CHECK(conn->open);
+}
+
+// A peer that stops reading on a tree nobody writes is handed nothing more, so no hand-over would ever judge it: the
+// timer's pass does, and drops it once it has written nothing for the wait. The peer beside it that read its delta, and
+// one that was opened and is owed nothing, stay.
+TEST(a_peer_that_reads_nothing_on_a_quiet_tree_is_dropped_by_the_timer_as_stalled_and_one_owed_nothing_stays) {
+  std::chrono::steady_clock::time_point now{};
+  WsPresenceBus bus{[&] { return now; }};
+  const auto silent = std::make_shared<FakeSocket>();
+  silent->reading = false;
+  const auto reader = std::make_shared<FakeSocket>();
+  const auto idle = std::make_shared<FakeSocket>();
+  const std::string delta(80 * 1024 * 1024, 'd');
+  bus.subscribe(TreeId{"t"}, silent, UserId{"u"}).delta.send(delta);
+  bus.subscribe(TreeId{"t"}, reader, UserId{"u"}).delta.send(delta);
+  bus.open(idle);
+
+  std::vector<std::string> told;
+  {
+    Observed observed;
+    now += Outbound::kStalledAfter;
+    bus.dropStalled();
+    CHECK(silent->open);  // not yet past the wait
+    now += std::chrono::milliseconds(1);
+    bus.dropStalled();
+    bus.dropStalled();
+    for (const std::string& line : observed.lines)
+      if (line.find("roadmap_ws_subscriber_dropped") != std::string::npos)
+        told.push_back(line.substr(line.find("roadmap_ws_subscriber_dropped"), line.find(" - ") - line.find("roadmap_ws_subscriber_dropped")));
+  }
+  CHECK_FALSE(silent->open);
+  CHECK(reader->open);
+  CHECK(idle->open);
+  CHECK_EQ(told, (std::vector<std::string>{"roadmap_ws_subscriber_dropped door=websocket rule=stalled queued=over-64m idle_ms=" +
+                                           std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(Outbound::kStalledAfter).count() + 1)}));
+}
+
+// Every frame the server sends a connection is entered in what it has been handed, a reply and a presence frame as a
+// broadcast is: a peer that reads nothing and is owed only pongs, and one owed only another member's cursor, are each
+// dropped as stalled by the timer, with no tree written.
+TEST(ws_replies_and_presence_frames_are_entered_in_what_a_connection_is_owed) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seed("t_priv", owner, Visibility::private_);
+  h.seed("t_other", owner, Visibility::private_);
+  auto pinger = std::make_shared<FakeSocket>();
+  auto watcher = std::make_shared<FakeSocket>();
+  auto mover = std::make_shared<FakeSocket>();
+  for (const auto& conn : {pinger, watcher, mover}) h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onMessage(pinger, subscribeFrame("t_other"));
+  h.collab.onMessage(watcher, subscribeFrame("t_priv"));
+  h.collab.onMessage(mover, subscribeFrame("t_priv"));
+  const std::size_t pingerTook = pinger->sent.size();
+  const std::size_t watcherTook = watcher->sent.size();
+  pinger->reading = false;
+  watcher->reading = false;
+
+  std::vector<std::string> told;
+  {
+    Observed observed;
+    for (int ping = 0; ping < 3; ++ping) h.collab.onMessage(pinger, R"({"t":"ping"})");
+    Json::Value cursor(Json::objectValue);
+    cursor["t"] = "presence";
+    cursor["treeId"] = "t_priv";
+    cursor["cursor"]["x"] = 1.0;
+    cursor["cursor"]["y"] = 2.0;
+    h.collab.onMessage(mover, dump(cursor));
+    h.presence.flush();
+    REQUIRE_EQ(pinger->sent.size(), pingerTook + 3);
+    CHECK_EQ(frameType(pinger->sent.back()), std::string("pong"));
+    REQUIRE_EQ(watcher->sent.size(), watcherTook + 1);
+    CHECK_EQ(frameType(watcher->sent.back()), std::string("presence"));
+
+    h.busNow += Outbound::kStalledAfter + std::chrono::milliseconds(1);
+    h.bus.dropStalled();
+    for (const std::string& line : observed.lines)
+      if (line.find("roadmap_ws_subscriber_dropped") != std::string::npos)
+        told.push_back(line.substr(line.find("roadmap_ws_subscriber_dropped"), line.find(" idle_ms=") - line.find("roadmap_ws_subscriber_dropped")));
+  }
+  CHECK_FALSE(pinger->open);
+  CHECK_FALSE(watcher->open);
+  CHECK(mover->open);
+  CHECK_EQ(told, (std::vector<std::string>(2, "roadmap_ws_subscriber_dropped door=websocket rule=stalled queued=under-1m")));
+}
+
+// A reply is entered as a reply at the door, whatever it weighs: a peer that reads nothing and is owed more than the
+// live backlog in refusals alone has no live frame pending, so it is not behind and is sent the next reply.
+TEST(ws_replies_a_peer_has_not_taken_are_no_live_backlog_however_much_they_weigh) {
+  Harness h;
+  h.signIn("s-owner", "owner@example.com");
+  auto peer = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), peer);
+  peer->reading = false;
+
+  const std::string absent(Outbound::kLiveBacklogBytes / 16, 't');  // the refusal names the tree twice
+  for (int refusal = 0; refusal < 10; ++refusal) h.collab.onMessage(peer, subscribeFrame(absent));
+  h.collab.onMessage(peer, R"({"t":"ping"})");
+
+  std::size_t owed = 0;
+  for (const std::string& frame : peer->sent) owed += frame.size();
+  CHECK(owed > Outbound::kLiveBacklogBytes);
+  CHECK(peer->open);
+  REQUIRE_EQ(peer->sent.size(), std::size_t{11});
+  CHECK_EQ(frameType(peer->sent.back()), std::string("pong"));
+}
+
+// One drop is one line. More than kWaveDrops of them within kWaveWindow is one report under a static name, with the
+// count per rule and nothing else, and no second one while the window lasts.
+TEST(a_wave_of_dropped_connections_is_one_report_a_window_with_the_count_per_rule) {
+  std::chrono::steady_clock::time_point now{};
+  DropWatch watch{[&] { return now; }};
+  const Outbound::Dropped stalled{Outbound::Rule::stalled, 1'024, std::chrono::milliseconds{1}};
+  const Outbound::Dropped behind{Outbound::Rule::behind, 1'024, std::chrono::milliseconds{1}};
+  const auto waves = [](const Observed& observed) {
+    std::vector<std::string> lines;
+    for (const std::string& line : observed.lines)
+      if (line.find("roadmap_ws_drop_wave") != std::string::npos)
+        lines.push_back(line.substr(line.find("roadmap_ws_drop_wave"), line.find(" request_id=") - line.find("roadmap_ws_drop_wave")));
+    return lines;
+  };
+
+  Observed observed;
+  for (std::size_t drop = 0; drop < DropWatch::kWaveDrops; ++drop) watch.dropped(drop < 3 ? behind : stalled);
+  CHECK(waves(observed).empty());
+  CHECK(observed.issues.empty());
+  watch.dropped(stalled);
+  CHECK_EQ(waves(observed), (std::vector<std::string>{"roadmap_ws_drop_wave stalled=8 behind=3 ceiling=0 window_s=300"}));
+  CHECK_EQ(observed.issues, std::vector<std::string>{"roadmap.ws.drop_wave"});
+  for (int drop = 0; drop < 50; ++drop) watch.dropped(stalled);
+  CHECK_EQ(observed.issues.size(), std::size_t{1});
+
+  // The window over and the drops still coming: the next report counts only the drops of its own window.
+  now += DropWatch::kWaveWindow + std::chrono::seconds(1);
+  for (std::size_t drop = 0; drop <= DropWatch::kWaveDrops; ++drop) watch.dropped(behind);
+  CHECK_EQ(waves(observed).back(), std::string("roadmap_ws_drop_wave stalled=0 behind=11 ceiling=0 window_s=300"));
+  CHECK_EQ(observed.issues.size(), std::size_t{2});
+
+  // A few drops spread over an hour are no wave.
+  DropWatch calm{[&] { return now; }};
+  for (int drop = 0; drop < 60; ++drop) {
+    now += std::chrono::minutes(1);
+    calm.dropped(stalled);
+  }
+  CHECK_EQ(observed.issues.size(), std::size_t{2});
 }
 
 

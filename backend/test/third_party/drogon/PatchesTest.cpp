@@ -16,7 +16,7 @@
 // connection keeps none of the earlier one's (0001); a response writes its raw Set-Cookie header first and then a
 // cookie per name, domain and path (0002); a request whose field lines or framing RFC 9112 calls invalid is refused
 // and never handed over (0003), while one Transfer-Encoding line naming a coding the parser does not decode stays
-// upstream's 501.
+// upstream's 501; a WebSocket connection says how many bytes it has written to its socket (0004).
 
 using wm::test::DrogonLoopback;
 
@@ -160,4 +160,30 @@ TEST(a_response_finds_and_removes_its_cookies_by_name_in_every_scope) {
   response->removeCookie("wm_session");
   CHECK_EQ(response->cookies().size(), std::size_t{1});
   CHECK_EQ(response->getCookie("theme").value(), std::string("dark"));
+}
+
+
+// 0004: bytesSent() is what the connection has written to its socket, not what it was handed. While the peer reads
+// nothing, messages past what the socket's buffers take stay queued and the count stands short of them, a message
+// half-written included; once the peer has read them all, the count covers every byte it received.
+TEST(a_websocket_connection_counts_the_bytes_it_has_written_not_the_bytes_it_was_handed) {
+  DrogonLoopback::Connection client;
+  const drogon::WebSocketConnectionPtr server = client.upgrade();
+  const std::size_t messages = 256;
+  const std::string message(64 * 1024, 'm');
+  const auto written = [&server] {
+    std::promise<std::size_t> counted;
+    drogon::app().getIOLoop(0)->queueInLoop([&] { counted.set_value(server->bytesSent()); });
+    return counted.get_future().get();
+  };
+  const std::size_t before = written();
+
+  for (std::size_t sent = 0; sent < messages; ++sent) server->send(message, drogon::WebSocketMessageType::Binary);
+  const std::size_t handed = messages * message.size();
+  const std::size_t stalled = written() - before;
+  CHECK(stalled > 0);
+  CHECK(stalled < handed);
+
+  const std::size_t taken = client.take(handed);
+  CHECK(written() - before >= taken);
 }
