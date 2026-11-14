@@ -1,3 +1,4 @@
+use std::fmt;
 use std::ops::Add;
 use std::time::Duration;
 
@@ -52,6 +53,25 @@ impl Money {
         })
     }
 
+    // An exact amount in units of 10^-exponent, with the currency's ISO 4217 minor units; a further digit is never rounded away.
+    pub fn from_units(units: u64, exponent: u32, currency: &str) -> Option<Money> {
+        let minor_units = match currency {
+            "BIF" | "CLP" | "DJF" | "GNF" | "ISK" | "JPY" | "KMF" | "KRW" | "PYG" | "RWF"
+            | "UGX" | "UYI" | "VND" | "VUV" | "XAF" | "XOF" | "XPF" => 0,
+            "BHD" | "IQD" | "JOD" | "KWD" | "LYD" | "OMR" | "TND" => 3,
+            "CLF" | "UYW" => 4,
+            _ => 2,
+        };
+        let exponent = usize::try_from(exponent).ok()?;
+        let digits = format!("{units:0>width$}", width = exponent + 1);
+        let (whole, fraction) = digits.split_at(digits.len() - exponent);
+        let fraction = format!("{:0<minor_units$}", fraction.trim_end_matches('0'));
+        if fraction.is_empty() {
+            return Money::new(whole, currency);
+        }
+        Money::new(&format!("{whole}.{fraction}"), currency)
+    }
+
     pub fn amount(&self) -> &str {
         &self.amount
     }
@@ -63,7 +83,7 @@ impl Money {
 
 macro_rules! text_values {
     ($($name:ident),+ $(,)?) => {$(
-        #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $name(String);
 
         impl $name {
@@ -88,6 +108,38 @@ text_values!(
     BillingInterval,
     Storefront,
 );
+
+macro_rules! shown_in_debug {
+    ($($name:ident),+ $(,)?) => {$(
+        impl fmt::Debug for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.debug_tuple(stringify!($name)).field(&self.0).finish()
+            }
+        }
+    )+};
+}
+
+// §10: a store's ids name a purchase and stay out of every log line and panic message.
+macro_rules! redacted_in_debug {
+    ($($name:ident),+ $(,)?) => {$(
+        impl fmt::Debug for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str(concat!(stringify!($name), "(redacted)"))
+            }
+        }
+    )+};
+}
+
+shown_in_debug!(
+    SubscriptionId,
+    PeriodId,
+    AccountId,
+    ProductId,
+    BillingInterval,
+    Storefront,
+);
+
+redacted_in_debug!(StoreSubscriptionId, StoreTransactionId);
 
 macro_rules! closed_names {
     ($(pub enum $name:ident { $($variant:ident = $text:literal),+ $(,)? })+) => {$(

@@ -1,0 +1,15 @@
+{
+  "note": "UNCLAIM_SEATS: Apple unclaimed seats of a group subscription. Windmill sells no seats (R-10): unsupported, nothing changes.",
+  "notification": {
+    "notificationType": "UNCLAIM_SEATS",
+    "subtype": null,
+    "signedDate": 1803132000000,
+    "environment": "Production",
+    "status": null,
+    "transaction": null,
+    "renewalInfo": null
+  },
+  "expect": {
+    "unsupported": "seats"
+  }
+}

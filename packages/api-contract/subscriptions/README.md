@@ -22,7 +22,8 @@ and the spec's rules. Subscriptions CI (`.github/workflows/subscriptions.yml`) r
 `python3 check.py` on every change here. Both need only Python 3's standard library.
 
 - Every key is always present: an absent value is `null`, an empty list `[]`.
-- Instants are epoch milliseconds; amounts are decimal strings with an ISO 4217 currency.
+- Instants are epoch milliseconds; amounts are decimal strings with an ISO 4217 currency, written
+  with that currency's minor units: `12.00` USD, `1800` JPY, `3.990` KWD.
 - Ids and the feed's `epoch` are UUIDs. No fixture holds a store transaction id, a signed payload, an
   account hint or an email.
 - The `entitlement.json` examples are entitlements the feed carries (`active` is the one at `seq` 3,

@@ -1,0 +1,78 @@
+{
+  "note": "REFUND of the first month's transaction while the second is in force: the transaction is not the latest (its expiresDate is not the renewalDate), so only its period is stated, refunded, and the caller pulls the status (\u00a78).",
+  "notification": {
+    "notificationType": "REFUND",
+    "subtype": null,
+    "signedDate": 1802260801000,
+    "environment": "Production",
+    "status": 1,
+    "transaction": {
+      "transactionId": "2000000100000001",
+      "originalTransactionId": "2000000100000001",
+      "webOrderLineItemId": "2000000100000101",
+      "bundleId": "works.windmill.app",
+      "productId": "works.windmill.app.one.monthly",
+      "subscriptionGroupIdentifier": "21540000",
+      "purchaseDate": 1798797600000,
+      "originalPurchaseDate": 1798797600000,
+      "expiresDate": 1801476000000,
+      "quantity": 1,
+      "type": "Auto-Renewable Subscription",
+      "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
+      "inAppOwnershipType": "PURCHASED",
+      "signedDate": 1802260801000,
+      "environment": "Production",
+      "transactionReason": "PURCHASE",
+      "storefront": "USA",
+      "storefrontId": "143441",
+      "price": 12000,
+      "currency": "USD",
+      "appTransactionId": "704512345678901234",
+      "billingPlanType": "BILLED_UPFRONT",
+      "revocationDate": 1802260800000,
+      "revocationReason": 0,
+      "revocationType": "REFUND_FULL",
+      "revocationPercentage": 100000
+    },
+    "renewalInfo": {
+      "originalTransactionId": "2000000100000001",
+      "productId": "works.windmill.app.one.monthly",
+      "autoRenewProductId": "works.windmill.app.one.monthly",
+      "autoRenewStatus": 1,
+      "isInBillingRetryPeriod": false,
+      "renewalDate": 1803895200000,
+      "renewalPrice": 12000,
+      "currency": "USD",
+      "recentSubscriptionStartDate": 1798797600000,
+      "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
+      "appTransactionId": "704512345678901234",
+      "signedDate": 1802260801000,
+      "environment": "Production"
+    }
+  },
+  "expect": {
+    "awaitsStatus": {
+      "lineage": {
+        "store": "app_store",
+        "environment": "production",
+        "storeSubscriptionId": "2000000100000001"
+      },
+      "observedAt": "2027-02-10T12:00:01Z",
+      "ownership": "purchased",
+      "period": {
+        "transaction": "2000000100000001",
+        "start": "2027-01-01T10:00:00Z",
+        "end": "2027-02-01T10:00:00Z",
+        "price": {
+          "amount": "12.00",
+          "currency": "USD"
+        },
+        "offerKind": null,
+        "refundedAt": "2027-02-10T12:00:00Z"
+      },
+      "accountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
+      "cancelRequestedAt": null
+    },
+    "awaiting": "earlier_transaction"
+  }
+}

@@ -38,7 +38,11 @@ ENTRY_FIELDS = ["seq", "type", "occurredAt", "recordedAt", "subscriptionId", "ac
 PERIOD_FIELDS = ["id", "start", "end", "price", "offerKind", "refundedAt"]
 
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-AMOUNT = re.compile(r"^\d+\.\d\d$")
+# ISO 4217 minor units where they are not two; an amount carries exactly its currency's.
+MINOR_UNITS = {**dict.fromkeys(["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "UYI",
+                                "VND", "VUV", "XAF", "XOF", "XPF"], 0),
+               **dict.fromkeys(["BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"], 3),
+               **dict.fromkeys(["CLF", "UYW"], 4)}
 JWS = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 
 FILES = ["entitlement.json", "subscription.json", "feed.json", "app-store-claim.json", "internal-app-store-claim.json"]
@@ -54,9 +58,15 @@ def named(file):
     return {example["name"]: example for example in loaded[file]["examples"]}
 
 
+def amount_pattern(currency):
+    minor_units = MINOR_UNITS.get(currency, 2)
+    return r"^\d+$" if minor_units == 0 else rf"^\d+\.\d{{{minor_units}}}$"
+
+
 def check_money(money, where):
-    check(set(money) == {"amount", "currency"} and AMOUNT.match(money["amount"])
-          and re.match(r"^[A-Z]{3}$", money["currency"]), f"{where}: a decimal string amount with an ISO 4217 currency")
+    check(set(money) == {"amount", "currency"} and re.match(r"^[A-Z]{3}$", money["currency"])
+          and re.match(amount_pattern(money["currency"]), money["amount"]),
+          f"{where}: a decimal string amount in its ISO 4217 currency's minor units")
 
 
 def access_until(subscription, environment):

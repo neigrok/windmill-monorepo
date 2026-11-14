@@ -1,0 +1,15 @@
+{
+  "note": "RENEWAL_EXTENSION SUMMARY: a summary of an extension for all subscribers, with no data about any one subscription. Silent.",
+  "notification": {
+    "notificationType": "RENEWAL_EXTENSION",
+    "subtype": "SUMMARY",
+    "signedDate": 1803132000000,
+    "environment": "Production",
+    "status": null,
+    "transaction": null,
+    "renewalInfo": null
+  },
+  "expect": {
+    "silent": "renewal_extension_summary"
+  }
+}

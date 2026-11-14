@@ -1,0 +1,51 @@
+{
+  "note": "A claim of the first purchase: its period, stamped at the transaction's own signing; the state comes from the store's status, which the claim door pulls.",
+  "claim": {
+    "transactionId": "2000000100000001",
+    "originalTransactionId": "2000000100000001",
+    "webOrderLineItemId": "2000000100000101",
+    "bundleId": "works.windmill.app",
+    "productId": "works.windmill.app.one.monthly",
+    "subscriptionGroupIdentifier": "21540000",
+    "purchaseDate": 1798797600000,
+    "originalPurchaseDate": 1798797600000,
+    "expiresDate": 1801476000000,
+    "quantity": 1,
+    "type": "Auto-Renewable Subscription",
+    "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
+    "inAppOwnershipType": "PURCHASED",
+    "signedDate": 1798797607000,
+    "environment": "Production",
+    "transactionReason": "PURCHASE",
+    "storefront": "USA",
+    "storefrontId": "143441",
+    "price": 12000,
+    "currency": "USD",
+    "appTransactionId": "704512345678901234",
+    "billingPlanType": "BILLED_UPFRONT"
+  },
+  "expect": {
+    "periodStatement": {
+      "lineage": {
+        "store": "app_store",
+        "environment": "production",
+        "storeSubscriptionId": "2000000100000001"
+      },
+      "observedAt": "2027-01-01T10:00:07Z",
+      "ownership": "purchased",
+      "period": {
+        "transaction": "2000000100000001",
+        "start": "2027-01-01T10:00:00Z",
+        "end": "2027-02-01T10:00:00Z",
+        "price": {
+          "amount": "12.00",
+          "currency": "USD"
+        },
+        "offerKind": null,
+        "refundedAt": null
+      },
+      "accountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
+      "cancelRequestedAt": null
+    }
+  }
+}

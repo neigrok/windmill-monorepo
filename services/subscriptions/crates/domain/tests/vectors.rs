@@ -323,7 +323,7 @@ fn status(value: &Value) -> Status {
         },
         offer,
         price: money(field(value, "price")),
-        storefront: Storefront::new(text(value, "storefront")),
+        storefront: optional_text(value, "storefront").map(Storefront::new),
     }
 }
 
@@ -388,7 +388,7 @@ fn subscription_json(subscription: &Subscription) -> Value {
         "offerKind": status.offer.as_ref().map(|offer| offer.kind.name()),
         "offerEndsAt": optional_iso(status.offer.as_ref().and_then(|offer| offer.ends_at)),
         "price": money_json(&status.price),
-        "storefront": status.storefront.as_str(),
+        "storefront": status.storefront.as_ref().map(Storefront::as_str),
         "observedAt": iso(subscription.observed_at),
     });
     for (key, value) in state_fields(&status.state) {
