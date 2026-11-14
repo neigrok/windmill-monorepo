@@ -327,6 +327,7 @@ fn read(notification: &Notification) -> Result<Decoded, Unsupported> {
             next_product_id: renewal_info
                 .auto_renew_product_id
                 .as_deref()
+                .and_then(storable)
                 .filter(|next| *next != transaction.product_id)
                 .map(ProductId::new),
             cancel_requested_at,
@@ -435,7 +436,8 @@ impl Purchase {
                     verification::Environment::Sandbox => Environment::Sandbox,
                 },
                 store_subscription_id: StoreSubscriptionId::new(
-                    transaction.original_transaction_id.expose(),
+                    storable(transaction.original_transaction_id.expose())
+                        .ok_or(Unsupported::Incomplete)?,
                 ),
             },
             observed_at,
@@ -448,9 +450,15 @@ impl Purchase {
                     .original_purchase_date
                     .unwrap_or(transaction.purchase_date),
             ),
-            storefront: transaction.storefront.as_deref().map(Storefront::new),
+            storefront: transaction
+                .storefront
+                .as_deref()
+                .and_then(storable)
+                .map(Storefront::new),
             period: ObservedPeriod {
-                transaction: StoreTransactionId::new(transaction.transaction_id.expose()),
+                transaction: StoreTransactionId::new(
+                    storable(transaction.transaction_id.expose()).ok_or(Unsupported::Incomplete)?,
+                ),
                 span: Span {
                     start: Instant::from_epoch_millis(transaction.purchase_date),
                     end: Instant::from_epoch_millis(expires_at),
@@ -474,6 +482,12 @@ impl Purchase {
             cancel_requested_at,
         }
     }
+}
+
+// Text the ledger can keep: Postgres text holds no NUL. An id holding one refuses the payload as incomplete, and a
+// descriptive field holding one reads as not known.
+fn storable(text: &str) -> Option<&str> {
+    (!text.contains('\0')).then_some(text)
 }
 
 // Apple states prices in milliunits of an ISO 4217 currency, whose code it may write in any case.

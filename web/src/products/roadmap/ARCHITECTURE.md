@@ -12,11 +12,11 @@ point for the component showcase.
 |---|---|
 | `SkillTreeView.jsx` | The room's composition: it wires the hooks in `room/` and mounts every surface below |
 | `i18n/`, `copy.js`, `resume.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the newest roadmap as the home card and the landing offer it back; the static-name Sentry report |
-| `OpeningMarks.jsx` | The marks of a step that opens a tree: one glyph and one bar for the Board, the step, the Graph's chrome and a node's centre |
-| `room/` | What the room holds: the load, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band and who holds the roadmap |
-| `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries. Independent of React and WebGL |
+| `OpeningMarks.jsx` | The marks of a step that opens a tree, its subtree or the tree its pointer names: one glyph and one bar for the Board, the step, the Graph's chrome and a node's centre |
+| `room/` | What the room holds: the load and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band and who holds the roadmap |
+| `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to and where a tree sits among the trees, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
-| `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, below the head on phones) and the note it opens |
+| `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, in the owner’s Roadmap sheet on phones, below the head for phone readers) and the note it opens |
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
 | `step/` | The step page and modal, workspace, composer and its picker, the tree picker and its choices, and the step's address |
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
@@ -144,12 +144,13 @@ have no Board presentation and are absent; their undrawn states are in the
 
 ## A step that opens a tree
 
-A step can point at another tree of its owner's. The pointer is the node register `opens`; what it comes to is an
-`Opening` (`model/Opening.js`): the opened tree's title, whether it is complete, done of total and whether it leads back,
-or that nothing of the owner's stands at the other end. `GET /v1/trees/{id}` answers the openings to the owner, the
+A step opens a tree two ways: it owns a subtree (below), or it points at another tree of its owner's. The pointer is the
+node register `opens`; what either comes to is an `Opening` (`model/Opening.js`): the opened tree's title, whether it is
+complete, done of total and whether it leads back, or that nothing of the owner's stands at the other end. A step that
+owns a subtree opens it whatever its pointer holds (`Opening.owned`, `owned: true`). `GET /v1/trees/{id}` answers the openings to the owner, the
 repository builds them, and `useRoomLoad` stands them on every projection it hands on (`Openings.onto`), so each such
-step carries its `opening` through every tree built from it. Only the owner's room does: a reader, a shared address and
-the demo see ordinary steps. A tree that lives only on this device is answered by the device instead (below). Until the session has joined the server's state the load is the newer word: a step it
+step carries its `opening` through every tree built from it. Only the owner's room stands pointers: a reader, a shared
+address and the demo see a step that points at a tree as an ordinary one. A tree that lives only on this device is answered by the device instead (below). Until the session has joined the server's state the load is the newer word: a step it
 named opens that tree and a step it did not opens none, whatever an older copy on the device holds. From then on the
 projection's pointer decides, and one the load read nothing of is `unread`. A pointer this device wrote and the server
 has not confirmed (`SyncSession.ownPointers`) stands over the load before the join too, as any own write does. A tree
@@ -211,8 +212,9 @@ says whether a door can lead there. A dangling one (`Not found`) and a step that
 door on any surface: the pill has no chevron and opens the step, the Tree row is not a button, and no Open tree, swipe
 or toast action is offered. Such a step keeps its tree's mark and its loop's words.
 
-`room/useTreeVisit.js` goes in and comes back. Going in pushes `#/app/<treeId>`; the entry of the tree gone into names the
-roadmap the person came from, and the entry they left keeps the step they went through. Both are history state, never
+`room/useTreeVisit.js` goes in and comes back. Going in pushes `#/app/<treeId>`, or the share's `#/t/<treeId>` for a
+subtree gone into from a share; the entry of the tree gone into names the roadmap the person came from, and the entry
+they left keeps the step they went through, and whether that step owns the tree (a subtree's visit, above). Both are history state, never
 tree data, so a direct link has no way back, a chain pops one tree per press and the browser's Back reads what the chip
 reads. A history entry outlives a sign-out, so it holds ids and a view and no title. The room acts on it only for its
 holder (`useRoomHolder` in `room/useRoomAuthority.js`, the one answer to who holds the room, `{ place }`): on a tree
@@ -223,8 +225,9 @@ stands on the cached account, which is not one) (`place: 'account'`). The way ba
 the roadmap it leads to for that holder, under the title the index keeps: as that account's (`LocalTreeRegistry.owned`),
 or as a tree that lives only here (`onDevice`); `open` writes that row for the roadmap it leaves before it navigates, as
 its session may not have stored anything yet. Without a holder there is no way back, no carried view or step, no door
-into a tree and no event. So on a tree the server keeps, a lapsed session, its copy on a device with nobody signed in
-and a start with no connection, and anywhere a reader, keep the tree's mark and go nowhere; on a tree that lives only on
+into a tree by a pointer and no event; a subtree's are anyone's who reads it (A subtree, below). So on a tree the server
+keeps, a lapsed session, its copy on a device with nobody signed in and a start with no connection, and anywhere a reader,
+keep a pointer's tree mark and go nowhere; on a tree that lives only on
 this device the person at it holds it through a lapse. An arrival is settled as the room
 opens: the step and the view leave the entry, which keeps the roadmap it was reached from, so a reload shows the way
 back and is otherwise an ordinary visit. The identity row shows the way back as a chip in its first slot from 744px, and
@@ -238,6 +241,41 @@ One door leads up. The guide's note names the trees whose guides stand above thi
 that tree by the door `guide`. No step here opens it, so `open` is given the tree and the entry left names no step:
 the tree gone into shows the way back, and coming back restores the view, selects nothing and is said once, as any
 return is.
+
+### A subtree
+
+A subtree is a tree one step of another tree owns (`backend/SPEC.md`, Model, Subtrees). Where a tree sits is a `TreePlace`
+(`model/Opening.js`) the tree read answers anyone who may read it: its root, its parent and the step there that owns it,
+the path of steps from its root down, each with its tree's name, and its depth. `HttpTreeRepository.loadTree` refuses a
+read that does not say it, as a read that is not a tree (`roadmap-tree-load`); a copy from the device says nothing of it,
+so the room takes such a tree for a root. `useRoomLoad` hands it on as `treePlace`.
+
+The subtree a step owns stands on the step for every role, owner, reader, shared address and demotion alike: the node
+read's `subtree: {id, done, total, state}` (`Openings.fromWire`), or `{id}` alone where the owner's trees could not be
+followed, which stands unread. A room that is not its owner's takes the subtrees and no pointer (`subtreesAlone`). The
+session adds what it is told since the load (`SyncSession.subtrees()`, step → `{id, depth, fresh}`): a `subtree` frame
+says a step has just come to own a new, so empty, subtree, and each subscribe answer's `subtrees` is the server's word on
+which steps own one. A subtree the load did not read stands unread until the room reads the tree again, as for a
+pointer, which only a room the server answers as the tree's writer does: what a reader is told of a subtree waits on the
+owner's trees being followed, so a reader's room waits for its next load. Such a step completes with its subtree, takes
+no hand mark and wears the tree's marks on every surface the pointer's opening does, with the subtree's own words where
+the board draws them: Open subtree for Open tree, and on the step page and modal, where Complete sat, how far it is
+(*No steps yet*, *1 of 1 done*) beside Open subtree. A reader gets that band too. The step page has no Tree section for
+it: its pointer takes no write, so nothing is attached, changed or detached there.
+
+The doors lead into a subtree for anyone who reads the roadmap, holder or not (`useTreeVisit` with `visitor`: a room that
+reads a tree that is not its own, demo aside): on the app's address for the app's rooms, on the share's (`#/t/<id>`)
+for a share's. The entries record that the step owns the tree gone into (`subtree`), and the subtree's way back is where
+it sits: the chip names its parent (`TreePlace.up`), and its press goes back through the history where the person came
+down that step, else up to the parent with that step open, arrived at as a return through it is. So a link to a
+subtree leads up to its owning step. Going in emits `roadmap_subtree_open` and coming back up `roadmap_subtree_back`,
+each with `role`.
+
+Inside a subtree the room offers no switcher, no roadmap sheet, no Share and no Fork, and a milestone offers no share:
+a subtree is shared and forked as its root is. Its name is its owning step's label, which only the parent's room writes:
+its session never stamps the title register (`renameTree` answers false), so a rename takes `PATCH /v1/trees/{id}`,
+and it keeps no row of the device's index, which lists roots. The share dialog of a root whose steps own subtrees says in
+each of its sentences that whoever reads the root reads them too.
 
 ### Attaching, changing and detaching
 
@@ -355,8 +393,8 @@ the reply without the tree's own entry, since the room holds that guide and a sa
 shared-reader mode, the demo, a device with nobody signed in, a tree that lives only on this device and a lapsed session
 make no read and are shown nothing from above. The guides from above live in memory alone. Leaving the tree aborts the
 read and drops what it brought, as the holder going does, so a return reads again and nothing read earlier stands in
-the meantime. A pending or failed read keeps parent status unknown; the wide entry and viewer say so while retaining
-the tree's own guide. The phone keeps its own guide standing. A failed read reports once as
+the meantime. A pending or failed read keeps parent status unknown; the entry and viewer say so while retaining
+the tree's own guide and any usable inherited context. A failed read reports once as
 `roadmap-guides-load` under one tag, `reason`: `unavailable` where the server could not read the trees above, `server`
 for any other 5xx, `network` for a request lost while visible and online, and `shape` for a 200 that is not the
 contract's, one that is not JSON among them (`readFailureReason`; `guidesAbove` says whether an answer is shaped). What is well formed in such an
@@ -373,15 +411,22 @@ text, or “? ·” before its first line, and the accessible name and tooltip s
 The tooltip is the concise Guide or Author’s note title, the confirmed parent count, or the unknown-status label;
 own-only and confirmed-parent accessible names retain the own excerpt. These entries open reading. Only a
 confirmed-empty owner's entry offers dashed Add guide and opens writing directly;
-a reader never gets Add. Readers with an own guide retain Author's note as the accessible name. Phones keep their
-row below the head, beneath the device line when present, with up to three lines and a count beside the heading.
-`GuideNote` opens a modal window 24px inside the viewport from 744px and a bottom sheet on phones. The wide viewer
+a reader never gets Add. Readers with an own guide retain Author's note as the accessible name. On phones an owner
+opens Guide from the Roadmap sheet: a single 48px row says Add guide when confirmed empty, Guide for own text,
+Guide · +N from above for confirmed inheritance, or Guide · ? for unknown parent status. Readers keep their
+Author’s note row below the head and a read-only bottom sheet.
+`GuideNote` opens a modal window 24px inside the viewport from 744px. The owner phone page fills the screen below
+the 52px Shell, with a 72px heading, flexible body and keyboard-aware actions. Its Roadmap sheet stays mounted,
+hidden and inert beneath it. Close returns focus to that sheet’s Guide row. If a band, view or role change removes
+the sheet, the connected wide entry or roadmap title takes focus instead. The wide viewer
 keeps “Parent Guide status has not been confirmed.” visible while parent status is unknown, below the own text when
-present; without own text an owner may Add guide beneath the notice. A reader cannot add or edit.
+present; on the owner phone it precedes the text. Without own text an owner may Add guide beneath the notice. Unknown
+parent status always opens reading first, with no count or retry action. A reader cannot add or edit.
 Both reading and writing hold the window and make the room beneath inert. The guides from above stand first in it,
 farthest first, each under its tree's name and in the
 secondary ink, then this tree's own under its name, and the whole stack scrolls inside the note. They are plain text
-with no caret and no tint; a tree with no guide of its own has Add guide as its block and no pencil. This tree's text
+with no caret and no tint; a tree with no guide of its own has Add guide as its block. On an owner phone with confirmed inherited guides,
+the header pencil also opens the current tree’s blank editor; unknown parent status has no pencil without own text. This tree's text
 is one mounted element with or without guides above it, so guides that answer while it is read move nothing: the
 line read stays where it was, with its selection. The note's focus rests on this tree's text; under guides from above
 that start that text below the fold it rests on the stack, ringed when a key brought it, which scrolls from the
@@ -394,15 +439,17 @@ line of text they are not drawn; on phones the editor holds this tree's guide al
 its save never hold them. The owner presses the prose, the hint beside this tree's name or the pencil, or Enter, and
 writes in the same frame from where the press landed
 (`caretPositionFromPoint`, or Safari's `caretRangeFromPoint`); a press outside asks to leave. The desktop field fills
-the modal's body and gives inherited guides their room while keeping the draft visible where it fits; on phones the
-field grows with the draft and the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
-the guide, which closes the note unless guides from above remain to read or wide parent status remains unknown. While a save is in flight the frame holds:
+the modal's body and gives inherited guides their room while keeping the draft visible where it fits; on owner phones the
+field fills the available body and the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
+the guide, which closes the note unless guides from above remain to read or parent status remains unknown. While a save is in flight the frame holds:
 the field is read-only and nothing leaves until it settles. A save by someone who is no longer the owner writes through
 no door and is refused. While the note holds
 the window, Escape, ⌘↩ and Tab work wherever focus stands; ⌘↩ presses Save or Try again and no other act, and a held
 key is one press. The note keeps its draft, and the focus a stop held, across a change of band, and closes
-when the tree changes or the guide stops being shown. Leaving a draft returns to where writing began (the note read, or the tree for a guide begun from Add guide),
-at once when nothing changed and through Discard draft? when something did. Closing hands focus back to the entry.
+when the tree changes or the route excludes Guide. A role change retains the active draft and its recovery state;
+a save after ownership is lost is refused. Leaving a draft returns to where writing began (the note read, or the
+entry for a guide begun from confirmed-empty Add guide), at once when nothing changed and through Discard draft?
+when something did. A first Save from direct Add returns to the entry too. Closing hands focus back to the entry.
 A remote clear while parent status is unknown moves focus from removed prose to Add guide for the owner or Close
 for a reader. Escape dismisses a shown entry tooltip before the room handles another Escape. The
 status line above the field on desktop and in the footer on phones: a guide changed elsewhere mid-edit says so and
@@ -868,8 +915,14 @@ acknowledgements and durability limits.
 
 **Registers.** A node's last-writer-wins registers are one list (`NODE_REGISTERS` in `sync/lattice.js`) that the join's
 clock, the frontier, the frame and Undo all read. `opens`, the tree a step opens, is one of them: joined by its stamp,
-stored, owed to the server until confirmed and restored by Undo like the rest. The server hides the pointer from a
-caller who cannot write the tree, so only a writer's answer speaks for pointers: `SyncSession.reach` is the subscribe
+stored, owed to the server until confirmed and restored by Undo like the rest. A step that owns a subtree takes none: the
+session takes a pointer out of any write on it before the write is made, Undo and Redo included
+(`withoutPointersOf`), and never owes its mark. A pointer it holds above what the server confirmed, unsent, or one an
+ack says the server refused (`subgraphAck.refused`, `owns-a-subtree`), goes back to that confirmed value, the one register
+a lattice steps back (`TreeLattice.restorePointer`), and leaves the act that wrote it. One still in flight when the step
+comes to own a subtree waits for its ack, as the server may have stored it before the subtree came. Saves join, so the
+device's record can keep the refused stamp; the next subscribe answer puts it back before anything is sent. The server
+hides the pointer from a caller who cannot write the tree, so only a writer's answer speaks for pointers: `SyncSession.reach` is the subscribe
 answer's `reach`, and a `sign-in-required` or `no-such-tree` refusal turns it to `reader`. A writer's full graft is the
 server's word on pointers, an older or empty one included. A reader's, or an answer with no `reach`, leaves confirmed the
 pointers the server confirmed before (`TreeLattice.pointers` carries them across the rebuilt baseline); while the session
@@ -907,8 +960,10 @@ dispatches keep their receipt, and persistence or transport failures mark durabi
 failures still throw. A progress mark's save reports the same way. The receive path stores the lattice and its
 separate confirmed baseline. Socket send failures preserve pending writes and reconnect for a fresh graft.
 A server frame whose notification fails reports `roadmap-sync-notify`; one that cannot be parsed or joined reports
-`roadmap-sync-frame` once per session; a stored lane that cannot be read reports `roadmap-sync-restore` once, and the graft
-fills it. Invalid progress rows are skipped individually and report `roadmap-sync-progress-mark` with only the
+`roadmap-sync-frame` once per session, a subscribe answer whose `subtrees` holds an entry with no step or id among them,
+and so does a `subtree` frame that names no step or subtree, or a step the tree has never held, which takes its seq and
+keeps nothing; a stored lane that cannot be read reports `roadmap-sync-restore` once, and the graft fills it. Invalid
+progress rows are skipped individually and report `roadmap-sync-progress-mark` with only the
 progress lane tag; valid marks in the same server frame, stored record or legacy drain still join. A socket with no inbound frame for ten seconds, online and in view, reports `roadmap-sync-socket` once; any frame
 clears the count, including a refusal, so a signed-out device tree stays quiet.
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/Ids.h"
 
@@ -138,14 +139,17 @@ inline void withoutOwnedPointers(GraphState& graph, const std::map<NodeId, TreeI
   std::erase_if(graph.nodes, [](const NodeStateEntry& node) { return node == NodeStateEntry{.id = node.id}; });
 }
 
-// Why a subtree was not created. Each is expected: a line, never an Issue. savePending: the parent's room holds a
-// write its store has not taken, and the create would move the stored head past it; it lifts when that save lands.
-enum class SubtreeRefusal { noSuchTree, notWriter, stepGone, depthLimit, stepOpensATree, savePending };
+// Why a subtree was not created. Each is expected: a line, never an Issue. notYours and nobodysTree are every write
+// door's refusal of a caller who may read the parent but not write it (`WriteRefusal`). savePending: the parent's room
+// holds a write its store has not taken, and the create would move the stored head past it; it lifts when that save
+// lands.
+enum class SubtreeRefusal { noSuchTree, notYours, nobodysTree, stepGone, depthLimit, stepOpensATree, savePending };
 
 inline const char* codeOf(SubtreeRefusal refusal) {
   switch (refusal) {
     case SubtreeRefusal::noSuchTree: return "no-such-tree";
-    case SubtreeRefusal::notWriter: return "not-writer";
+    case SubtreeRefusal::notYours: return codeOf(WriteRefusal::notYours);
+    case SubtreeRefusal::nobodysTree: return codeOf(WriteRefusal::nobodysTree);
     case SubtreeRefusal::stepGone: return "step-gone";
     case SubtreeRefusal::depthLimit: return "depth-limit";
     case SubtreeRefusal::stepOpensATree: return "step-opens-a-tree";

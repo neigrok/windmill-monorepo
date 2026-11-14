@@ -103,7 +103,7 @@ export function useRoomGuide({ treeId, tree, who, holder, deviceLine, sessionRef
   const above = asked?.above ?? NONE_ABOVE;
   const aboveUnread = asked !== null && !asked.shaped;
 
-  const shown = Boolean(tree) && !who.shared && !who.demo && (who.owner || (who.reader && hasGuide(text)));
+  const shown = Boolean(tree) && !who.shared && !who.demo && (who.owner || (who.reader && (hasGuide(text) || opened !== null)));
   const roadmapTitle = tree?.title?.trim() || t('roadmap.common.untitled');
   // The note closes when the tree changes or the guide stops being shown, so it never stands open without an open.
   useEffect(() => setOpened(null), [treeId, shown]);

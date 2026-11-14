@@ -523,8 +523,8 @@ A node may point at another tree: `opens` holds that tree's id.
   as any node's does. Their mark on it is recorded and answered byte for byte as on a node that
   opens nothing, with `prerequisitesMet` judged on their own marks. A node whose pointer is not
   valid is ordinary for its owner too.
-- **A step that owns a subtree.** No door creates a subtree yet (`SPEC.md`, Model, Subtrees). A step
-  that owns one opens it, whatever its `opens` holds, so for its owner it is answered and judged
+- **A step that owns a subtree.** MCP creates none; `PUT /v1/trees/{tree}/steps/{step}/subtree` does
+  (`SPEC.md`, Model, Subtrees). A step that owns one opens it, whatever its `opens` holds, so for its owner it is answered and judged
   exactly as a node with a valid pointer: `opens` names the subtree, titled by the step's own label,
   `state`, the `state` filter and `list_trees`' `done` follow it, an empty subtree is unfinished, and
   the step takes no mark. Its `opens` takes no write either (`SPEC.md`, Model, Legacy pointers): an
