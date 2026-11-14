@@ -1,0 +1,222 @@
+{
+  "examples": [
+    {
+      "name": "active",
+      "body": {
+        "plan": "windmill_one",
+        "accessUntil": 1799056800000,
+        "environment": "production",
+        "governing": {
+          "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+          "store": "app_store",
+          "state": "active",
+          "startedAt": 1796292000000,
+          "currentPeriod": {
+            "start": 1796292000000,
+            "end": 1798970400000
+          },
+          "autoRenew": true,
+          "nextChargeAt": 1798970400000,
+          "nextCharge": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "cancelRequestedAt": null,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "endedAt": null,
+          "endReason": null
+        },
+        "others": [],
+        "manage": {
+          "store": "app_store",
+          "url": "https://apps.apple.com/account/subscriptions"
+        },
+        "purchasable": []
+      }
+    },
+    {
+      "name": "cancelled_access_continues",
+      "body": {
+        "plan": "windmill_one",
+        "accessUntil": 1798970400000,
+        "environment": "production",
+        "governing": {
+          "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+          "store": "app_store",
+          "state": "active",
+          "startedAt": 1796292000000,
+          "currentPeriod": {
+            "start": 1796292000000,
+            "end": 1798970400000
+          },
+          "autoRenew": false,
+          "nextChargeAt": null,
+          "nextCharge": null,
+          "cancelRequestedAt": 1797791400000,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "endedAt": null,
+          "endReason": null
+        },
+        "others": [],
+        "manage": {
+          "store": "app_store",
+          "url": "https://apps.apple.com/account/subscriptions"
+        },
+        "purchasable": []
+      }
+    },
+    {
+      "name": "grace",
+      "body": {
+        "plan": "windmill_one",
+        "accessUntil": 1800352800000,
+        "environment": "production",
+        "governing": {
+          "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+          "store": "app_store",
+          "state": "grace",
+          "startedAt": 1796292000000,
+          "currentPeriod": {
+            "start": 1796292000000,
+            "end": 1798970400000
+          },
+          "autoRenew": true,
+          "nextChargeAt": null,
+          "nextCharge": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": 1798970400000,
+          "graceEndsAt": 1800352800000,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "endedAt": null,
+          "endReason": null
+        },
+        "others": [],
+        "manage": {
+          "store": "app_store",
+          "url": "https://apps.apple.com/account/subscriptions"
+        },
+        "purchasable": []
+      }
+    },
+    {
+      "name": "on_hold_line_open",
+      "body": {
+        "plan": null,
+        "accessUntil": null,
+        "environment": "production",
+        "governing": {
+          "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+          "store": "app_store",
+          "state": "on_hold",
+          "startedAt": 1796292000000,
+          "currentPeriod": {
+            "start": 1796292000000,
+            "end": 1798970400000
+          },
+          "autoRenew": true,
+          "nextChargeAt": null,
+          "nextCharge": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": 1798970400000,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "endedAt": null,
+          "endReason": null
+        },
+        "others": [],
+        "manage": {
+          "store": "app_store",
+          "url": "https://apps.apple.com/account/subscriptions"
+        },
+        "purchasable": [
+          "app_store"
+        ]
+      }
+    },
+    {
+      "name": "expired_line_open",
+      "body": {
+        "plan": null,
+        "accessUntil": null,
+        "environment": "production",
+        "governing": {
+          "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+          "store": "app_store",
+          "state": "expired",
+          "startedAt": 1796292000000,
+          "currentPeriod": {
+            "start": 1796292000000,
+            "end": 1798970400000
+          },
+          "autoRenew": false,
+          "nextChargeAt": null,
+          "nextCharge": null,
+          "cancelRequestedAt": 1797791400000,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "endedAt": 1798970400000,
+          "endReason": "cancelled"
+        },
+        "others": [],
+        "manage": {
+          "store": "app_store",
+          "url": "https://apps.apple.com/account/subscriptions"
+        },
+        "purchasable": [
+          "app_store"
+        ]
+      }
+    },
+    {
+      "name": "never_subscribed_line_open",
+      "body": {
+        "plan": null,
+        "accessUntil": null,
+        "environment": null,
+        "governing": null,
+        "others": [],
+        "manage": null,
+        "purchasable": [
+          "app_store"
+        ]
+      }
+    },
+    {
+      "name": "never_subscribed_line_closed",
+      "body": {
+        "plan": null,
+        "accessUntil": null,
+        "environment": null,
+        "governing": null,
+        "others": [],
+        "manage": null,
+        "purchasable": []
+      }
+    }
+  ]
+}

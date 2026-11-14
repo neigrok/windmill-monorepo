@@ -70,7 +70,7 @@ It is written in Rust. It runs as its own container on the production host besid
 | | `accessUntil` | The instant paid access ends unless the store says otherwise (§3.3). Null when the state grants none. |
 | | `endedAt`, `endReason` | Set in `expired` and `revoked`: `cancelled`, `billing`, `price_change_declined`, `product_unavailable`, `replaced`, `refunded`, `chargeback`, `sharing_removed`, `unknown`. |
 | Renewal | `autoRenew` | Whether the store will charge again. |
-| | `nextChargeAt`, `nextCharge` | When and how much (`amount`, `currency`) the store will charge next. Null when `autoRenew` is false, and in `paused`, `expired` and `revoked`. |
+| | `nextChargeAt`, `nextCharge` | When and how much (`amount`, `currency`) the store will charge next. Null when `autoRenew` is false, and in `grace`, `on_hold`, `paused`, `expired` and `revoked`, where the store states no next charge. |
 | | `nextProductId` | A plan change that takes effect at renewal. |
 | Cancellation | `cancelRequestedAt` | When the customer turned renewal off. Cleared if they turn it back on. |
 | Payment trouble | `paymentFailedAt`, `graceEndsAt` | When a renewal charge first failed, and until when the store keeps access open. |
@@ -125,11 +125,17 @@ The domain has one write: `observe(subscription | none, observation) → (subscr
 
 Events: `started`, `renewed`, `renewal_turned_off`, `renewal_turned_on`, `payment_failed`,
 `payment_recovered`, `pause_scheduled`, `paused`, `resumed`, `plan_change_scheduled`, `plan_changed`,
-`period_extended`, `expired`, `revoked`, `revocation_reversed`, `bound`, `unbound`. Each carries
-`seq`, `type`, `occurredAt` (the store's time), `recordedAt`, `subscriptionId` and `accountId`.
+`period_extended`, `expired`, `revoked`, `revocation_reversed`, `bound`, `unbound`, and the two period
+events `period_recorded` and `period_refunded`. Each carries `seq`, `type`, `occurredAt` (the store's
+time), `recordedAt`, `subscriptionId` and `accountId`; a period event also carries its period.
 
 - **INV-8.** Events are appended under one lock, so `seq` order is commit order and a reader that has
   seen `seq = n` has seen every event below it.
+- **INV-13.** Every period is recorded by one `period_recorded` when it is written and one
+  `period_refunded` when its refund time is set, whatever state events the same observation records
+  or does not. Binding a subscription records `period_recorded` again for each of its periods under
+  the new account, so a period written while the subscription was unbound still reaches its account.
+  Lifecycle events never carry a period; period events are the only ones that do.
 
 ### §3.5 What each store supplies
 
@@ -194,51 +200,47 @@ Reached only on the container network, with a bearer secret the backend holds.
 
 | Route | Purpose |
 |---|---|
-| `GET /internal/v1/feed?after=<seq>&limit=<n>` | Events after `seq`, each with the account's entitlement after it and the period it created or refunded. |
+| `GET /internal/v1/feed?after=<seq>&limit=<n>` | Events after `seq` in `seq` order, and `latestSeq`, the newest event the ledger holds. |
 | `GET /internal/v1/accounts/{accountId}` | The entitlement, every bound subscription, their periods and events. |
 | `POST /internal/v1/app-store/claims` | `{accountId, signedTransaction}` → the entitlement, or a refusal (§4). |
 | `POST /internal/v1/subscriptions/{id}/refresh` | Pull this subscription's state from its store now. |
 | `DELETE /internal/v1/accounts/{accountId}` | Unbind everything the account holds (§6.4). |
 
-`EntitlementResponse`:
+The shapes are golden fixtures in
+[`packages/api-contract/subscriptions`](../../packages/api-contract/subscriptions/README.md), one example
+per state a reader must handle; the service and the backend each check themselves against them.
 
-```json
-{
-  "accountId": "…",
-  "plan": "windmill_one",
-  "accessUntil": 1796083200000,
-  "environment": "production",
-  "governing": {
-    "subscriptionId": "…", "store": "app_store", "state": "active",
-    "startedAt": 1793491200000, "currentPeriod": {"start": 1793491200000, "end": 1796083200000},
-    "autoRenew": true, "nextChargeAt": 1796083200000, "nextCharge": {"amount": "12.00", "currency": "USD"},
-    "cancelRequestedAt": null, "paymentFailedAt": null, "graceEndsAt": null,
-    "pauseScheduledFor": null, "pausedAt": null, "resumesAt": null,
-    "offerKind": null, "offerEndsAt": null, "endedAt": null, "endReason": null
-  },
-  "others": []
-}
-```
+`EntitlementResponse` is `{accountId, plan, accessUntil, environment, governing, others}`. `plan` and
+`accessUntil` are null for an account with no access. `governing` carries the subscription's
+lifecycle, renewal, cancellation, payment-trouble, pause, offer and end fields of §3.1, and
+`environment` is its environment. It is the access-granting production subscription with the latest
+`accessUntil`, else the access-granting sandbox one with the latest, else the one that ended last, so a
+sandbox purchase never hides a production one from §6.2. `others` lists every other subscription that
+is not `expired` or `revoked`, in the same shape, so a client can say that a person is being charged
+twice.
 
-`plan` and `accessUntil` are null for an account with no access. `governing` is the access-granting
-subscription with the latest `accessUntil`, or else the one that ended last; `others` lists every
-other subscription that is not `expired` or `revoked`, in the same shape, so a client can say that a
-person is being charged twice.
+A feed entry is one event (§3.4) with the subscription's `store`, `environment` and `offerKind`,
+`period` on a period event (`{id, start, end, price, offerKind, refundedAt}`, `id` being the service's
+own), and `entitlement`, the account's `EntitlementResponse` after the transaction that recorded the
+event, null exactly when the event names no account.
 
 ### §5.3 What a person's device calls
 
 Devices never call this service. The backend authenticates the caller and serves:
 
 - `GET /v1/subscription` → `SubscriptionResponse`: the entitlement above without `accountId`, plus
-  `manage` (`{"store": "app_store", "url": "https://apps.apple.com/account/subscriptions"}`) and
-  `purchasable`, the stores this account may buy through now. It is answered from the backend's own
-  copy (§6.1).
+  `manage` (`{"store": "app_store", "url": "https://apps.apple.com/account/subscriptions"}`, the
+  governing subscription's store, null when there is none) and `purchasable`, the stores this account
+  may buy through now. It is answered from the backend's own copy (§6.1).
 - **INV-12.** A surface offers a buy control for a store only when `purchasable` names it.
   `purchasable` is empty while the account has access, and a store is listed only while the backend's
   configuration opens the paid line on it. Every store is closed by default, so opening the line is
   one switch the owner sets and can unset.
 - `POST /v1/subscription/app-store/claims` with `AppStoreClaimRequest` `{signedTransaction}`, forwarded
-  to §5.2 with the caller's account id.
+  to §5.2 with the caller's account id. It answers 200 with the `SubscriptionResponse` after the claim,
+  or `{code}`: 409 `bound_to_another_account`, 400 `invalid_transaction` for a transaction that does not
+  verify, 503 `subscriptions_unavailable` when the service cannot be reached, on which a device keeps
+  the transaction unfinished and claims it again later.
 
 ## §6 The backend's half
 
@@ -261,11 +263,12 @@ allowlisted account as owner access does. (R-6)
 
 ### §6.3 Funding the AI allowance
 
-Subscription state alone funds nothing. A feed entry carrying a production period with a positive
-captured price creates one grant for that period through `AiBudgetService::fund`, with the store
-transaction as its reference, so a replayed entry is a no-op. A period with a refund time closes the
-remaining capacity of its grant at that time; spent capacity is not recovered. A `grace` or free-trial
-period carries no payment and funds nothing. (R-4, R-5)
+Subscription state alone funds nothing. A `period_recorded` entry for a bound production period with a
+positive captured price creates one grant for that period through `AiBudgetService::fund`, with the
+period's `id` as its reference, so a replayed or re-recorded entry is a no-op and no store id reaches
+the backend. A `period_refunded` entry closes the remaining capacity of its grant at the refund time;
+spent capacity is not recovered. `grace` adds no period, and a free-trial period carries no payment, so
+neither funds anything. (R-4, R-5)
 
 ### §6.4 Account erasure
 
