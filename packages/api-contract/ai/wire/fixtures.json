@@ -18,11 +18,209 @@
       "transcription": false
     }
   },
+  "allowances": {
+    "anonymous": {
+      "tier": "anonymous",
+      "period": "lifetime",
+      "limit": "0.25",
+      "used": "0",
+      "reserved": "0",
+      "remaining": "0.25",
+      "resetsAt": null,
+      "budgetResetsAt": null,
+      "code": "ok",
+      "capabilities": {
+        "text": {
+          "large": "medium",
+          "medium": "medium",
+          "small": "small"
+        },
+        "transcription": false
+      }
+    },
+    "free": {
+      "tier": "free",
+      "period": "calendar_month_utc",
+      "limit": "0.5",
+      "used": "0.01",
+      "reserved": "0.02",
+      "remaining": "0.47",
+      "resetsAt": 1801440000000,
+      "budgetResetsAt": null,
+      "code": "ok",
+      "capabilities": {
+        "text": {
+          "large": "large",
+          "medium": "medium",
+          "small": "small"
+        },
+        "transcription": false
+      }
+    },
+    "one_subscription": {
+      "tier": "one",
+      "period": "billing_period",
+      "limit": "7",
+      "used": "0.1",
+      "reserved": "0.2",
+      "remaining": "6.7",
+      "resetsAt": 1802592000000,
+      "budgetResetsAt": null,
+      "code": "ok",
+      "capabilities": {
+        "text": {
+          "large": "large",
+          "medium": "medium",
+          "small": "small"
+        },
+        "transcription": true
+      }
+    },
+    "one_owner": {
+      "tier": "one",
+      "period": "calendar_month_utc",
+      "limit": "7",
+      "used": "0",
+      "reserved": "0",
+      "remaining": "7",
+      "resetsAt": 1801440000000,
+      "budgetResetsAt": null,
+      "code": "ok",
+      "capabilities": {
+        "text": {
+          "large": "large",
+          "medium": "medium",
+          "small": "small"
+        },
+        "transcription": true
+      }
+    },
+    "one_without_grant": {
+      "tier": "free",
+      "period": "calendar_month_utc",
+      "limit": "0.5",
+      "used": "0",
+      "reserved": "0",
+      "remaining": "0.5",
+      "resetsAt": 1801440000000,
+      "budgetResetsAt": null,
+      "code": "ok",
+      "capabilities": {
+        "text": {
+          "large": "large",
+          "medium": "medium",
+          "small": "small"
+        },
+        "transcription": false
+      }
+    },
+    "subject_exhausted": {
+      "tier": "free",
+      "period": "calendar_month_utc",
+      "limit": "0.5",
+      "used": "0.5",
+      "reserved": "0",
+      "remaining": "0",
+      "resetsAt": 1801440000000,
+      "budgetResetsAt": 1801440000000,
+      "code": "subject_exhausted",
+      "capabilities": {
+        "text": {
+          "large": "large",
+          "medium": "medium",
+          "small": "small"
+        },
+        "transcription": false
+      }
+    },
+    "free_month_exhausted": {
+      "tier": "free",
+      "period": "calendar_month_utc",
+      "limit": "0.5",
+      "used": "0",
+      "reserved": "0",
+      "remaining": "0.5",
+      "resetsAt": 1801440000000,
+      "budgetResetsAt": 1801440000000,
+      "code": "free_month_exhausted",
+      "capabilities": {
+        "text": {
+          "large": "large",
+          "medium": "medium",
+          "small": "small"
+        },
+        "transcription": false
+      }
+    },
+    "free_day_exhausted": {
+      "tier": "free",
+      "period": "calendar_month_utc",
+      "limit": "0.5",
+      "used": "0",
+      "reserved": "0",
+      "remaining": "0.5",
+      "resetsAt": 1801440000000,
+      "budgetResetsAt": 1800057600000,
+      "code": "free_day_exhausted",
+      "capabilities": {
+        "text": {
+          "large": "large",
+          "medium": "medium",
+          "small": "small"
+        },
+        "transcription": false
+      }
+    },
+    "concurrency_exhausted": {
+      "tier": "free",
+      "period": "calendar_month_utc",
+      "limit": "0.5",
+      "used": "0",
+      "reserved": "0.002",
+      "remaining": "0.498",
+      "resetsAt": 1801440000000,
+      "budgetResetsAt": null,
+      "code": "concurrency_exhausted",
+      "capabilities": {
+        "text": {
+          "large": "large",
+          "medium": "medium",
+          "small": "small"
+        },
+        "transcription": false
+      }
+    }
+  },
   "refusals": [
     {
       "status": 400,
       "body": {
         "code": "invalid_request",
+        "allowance": {
+          "tier": "free",
+          "period": "calendar_month_utc",
+          "limit": "0.5",
+          "used": "0.01",
+          "reserved": "0.02",
+          "remaining": "0.47",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": false
+          }
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "code": "provider_rejected",
         "allowance": {
           "tier": "free",
           "period": "calendar_month_utc",
@@ -410,8 +608,171 @@
         "code": "accounting_unavailable",
         "allowance": null
       }
+    },
+    {
+      "status": 503,
+      "body": {
+        "code": "provider_unavailable",
+        "allowance": {
+          "tier": "free",
+          "period": "calendar_month_utc",
+          "limit": "0.5",
+          "used": "0.01",
+          "reserved": "0.02",
+          "remaining": "0.47",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": false
+          }
+        }
+      }
     }
   ],
+  "prestreamRefusals": {
+    "provider_rejected": {
+      "status": 400,
+      "body": {
+        "code": "provider_rejected",
+        "allowance": {
+          "tier": "one",
+          "period": "calendar_month_utc",
+          "limit": "7",
+          "used": "0",
+          "reserved": "0",
+          "remaining": "7",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": true
+          }
+        }
+      }
+    },
+    "provider_unavailable": {
+      "status": 503,
+      "body": {
+        "code": "provider_unavailable",
+        "allowance": {
+          "tier": "one",
+          "period": "calendar_month_utc",
+          "limit": "7",
+          "used": "0",
+          "reserved": "0",
+          "remaining": "7",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": true
+          }
+        }
+      }
+    }
+  },
+  "textRequest": {
+    "model": "large",
+    "system": [
+      "Help me plan a small next step."
+    ],
+    "tools": [
+      {
+        "name": "read",
+        "description": "Read the current item.",
+        "input": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "What can I do next?"
+          },
+          {
+            "image": {
+              "mediaType": "image/png",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aSh0AAAAASUVORK5CYII="
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "parts": [
+          {
+            "text": "I will read the item."
+          },
+          {
+            "toolCall": {
+              "id": "tool-1",
+              "name": "read",
+              "input": {
+                "id": "item-1"
+              }
+            }
+          }
+        ],
+        "carry": "wm-carry.v1.opaque"
+      },
+      {
+        "role": "tool",
+        "results": [
+          {
+            "id": "tool-1",
+            "content": "The item is ready.",
+            "isError": false
+          }
+        ]
+      }
+    ],
+    "output": {
+      "maxTokens": 2000,
+      "minTokens": 1024,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "effort": "high",
+    "cache": true
+  },
   "calls": [
     {
       "callId": "abcdefghijklmnopqrstuv",
@@ -512,16 +873,16 @@
               "text": "Hello"
             }
           ],
-          "carry": "sealed"
+          "carry": "wm-carry.v1.<opaque>"
         },
-        "charged": "0.001",
+        "charged": "0.000015",
         "allowance": {
-          "tier": "free",
+          "tier": "one",
           "period": "calendar_month_utc",
-          "limit": "0.5",
-          "used": "0.01",
-          "reserved": "0.02",
-          "remaining": "0.47",
+          "limit": "7",
+          "used": "0.000015",
+          "reserved": "0",
+          "remaining": "6.999985",
           "resetsAt": 1801440000000,
           "budgetResetsAt": null,
           "code": "ok",
@@ -531,7 +892,7 @@
               "medium": "medium",
               "small": "small"
             },
-            "transcription": false
+            "transcription": true
           }
         }
       }
@@ -540,14 +901,14 @@
       "event": "failed",
       "data": {
         "code": "provider_failed",
-        "charged": "0.002",
+        "charged": "0.000575",
         "allowance": {
-          "tier": "free",
+          "tier": "one",
           "period": "calendar_month_utc",
-          "limit": "0.5",
-          "used": "0.01",
-          "reserved": "0.02",
-          "remaining": "0.47",
+          "limit": "7",
+          "used": "0.000575",
+          "reserved": "0",
+          "remaining": "6.999425",
           "resetsAt": 1801440000000,
           "budgetResetsAt": null,
           "code": "ok",
@@ -557,17 +918,276 @@
               "medium": "medium",
               "small": "small"
             },
-            "transcription": false
+            "transcription": true
           }
         }
       }
     }
   ],
+  "textTerminals": {
+    "completed": {
+      "event": "ended",
+      "data": {
+        "stop": "completed",
+        "message": {
+          "role": "assistant",
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ],
+          "carry": "wm-carry.v1.<opaque>"
+        },
+        "charged": "0.000015",
+        "allowance": {
+          "tier": "one",
+          "period": "calendar_month_utc",
+          "limit": "7",
+          "used": "0.000015",
+          "reserved": "0",
+          "remaining": "6.999985",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": true
+          }
+        }
+      }
+    },
+    "tool_calls": {
+      "event": "ended",
+      "data": {
+        "stop": "tool_calls",
+        "message": {
+          "role": "assistant",
+          "parts": [
+            {
+              "toolCall": {
+                "id": "tool-1",
+                "name": "read",
+                "input": {}
+              }
+            }
+          ],
+          "carry": "wm-carry.v1.<opaque>"
+        },
+        "charged": "0.000015",
+        "allowance": {
+          "tier": "one",
+          "period": "calendar_month_utc",
+          "limit": "7",
+          "used": "0.000015",
+          "reserved": "0",
+          "remaining": "6.999985",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": true
+          }
+        }
+      }
+    },
+    "truncated": {
+      "event": "ended",
+      "data": {
+        "stop": "truncated",
+        "message": {
+          "role": "assistant",
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ],
+          "carry": "wm-carry.v1.<opaque>"
+        },
+        "charged": "0.000015",
+        "allowance": {
+          "tier": "one",
+          "period": "calendar_month_utc",
+          "limit": "7",
+          "used": "0.000015",
+          "reserved": "0",
+          "remaining": "6.999985",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": true
+          }
+        }
+      }
+    },
+    "declined": {
+      "event": "ended",
+      "data": {
+        "stop": "declined",
+        "message": {
+          "role": "assistant",
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ],
+          "carry": "wm-carry.v1.<opaque>"
+        },
+        "charged": "0.000015",
+        "allowance": {
+          "tier": "one",
+          "period": "calendar_month_utc",
+          "limit": "7",
+          "used": "0.000015",
+          "reserved": "0",
+          "remaining": "6.999985",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": true
+          }
+        }
+      }
+    },
+    "provider_rejected": {
+      "event": "failed",
+      "data": {
+        "code": "provider_rejected",
+        "charged": "0",
+        "allowance": {
+          "tier": "one",
+          "period": "calendar_month_utc",
+          "limit": "7",
+          "used": "0",
+          "reserved": "0",
+          "remaining": "7",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": true
+          }
+        }
+      }
+    },
+    "provider_unavailable": {
+      "event": "failed",
+      "data": {
+        "code": "provider_unavailable",
+        "charged": "0",
+        "allowance": {
+          "tier": "one",
+          "period": "calendar_month_utc",
+          "limit": "7",
+          "used": "0",
+          "reserved": "0",
+          "remaining": "7",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": true
+          }
+        }
+      }
+    },
+    "provider_failed": {
+      "event": "failed",
+      "data": {
+        "code": "provider_failed",
+        "charged": "0.000575",
+        "allowance": {
+          "tier": "one",
+          "period": "calendar_month_utc",
+          "limit": "7",
+          "used": "0.000575",
+          "reserved": "0",
+          "remaining": "6.999425",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": true
+          }
+        }
+      }
+    },
+    "null_charged": {
+      "event": "ended",
+      "data": {
+        "stop": "completed",
+        "message": {
+          "role": "assistant",
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ],
+          "carry": "wm-carry.v1.<opaque>"
+        },
+        "charged": null,
+        "allowance": {
+          "tier": "one",
+          "period": "calendar_month_utc",
+          "limit": "7",
+          "used": "0",
+          "reserved": "0.000575",
+          "remaining": "6.999425",
+          "resetsAt": 1801440000000,
+          "budgetResetsAt": null,
+          "code": "ok",
+          "capabilities": {
+            "text": {
+              "large": "large",
+              "medium": "medium",
+              "small": "small"
+            },
+            "transcription": true
+          }
+        }
+      }
+    }
+  },
   "liveEvents": [
     {
       "type": "started",
       "callId": "abcdefghijklmnopqrstuv",
-      "remainingSeconds": 60
+      "remainingSeconds": 24705
     },
     {
       "type": "text",
@@ -587,12 +1207,411 @@
       "seconds": 1,
       "charged": "0.000283334",
       "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    {
+      "type": "failed",
+      "code": "provider_failed",
+      "text": "Hello",
+      "seconds": 1,
+      "charged": "0.000283334",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    }
+  ],
+  "liveFrames": [
+    {
+      "type": "context",
+      "keywords": [
+        "Windmill",
+        "next step"
+      ]
+    },
+    {
+      "type": "commit"
+    },
+    {
+      "type": "end"
+    }
+  ],
+  "liveTerminals": {
+    "completed": {
+      "type": "ended",
+      "stop": "completed",
+      "code": null,
+      "text": "Hello",
+      "seconds": 1,
+      "charged": "0.000283334",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    "subject_exhausted": {
+      "type": "ended",
+      "stop": "cut",
+      "code": "subject_exhausted",
+      "text": "Hello",
+      "seconds": 1,
+      "charged": "0.000283334",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    "funding_required": {
+      "type": "ended",
+      "stop": "cut",
+      "code": "funding_required",
+      "text": "Hello",
+      "seconds": 1,
+      "charged": "0.000283334",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    "paused": {
+      "type": "ended",
+      "stop": "cut",
+      "code": "paused",
+      "text": "Hello",
+      "seconds": 1,
+      "charged": "0.000283334",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    "session_limit": {
+      "type": "ended",
+      "stop": "cut",
+      "code": "session_limit",
+      "text": "Hello",
+      "seconds": 1,
+      "charged": "0.000283334",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    "idle": {
+      "type": "ended",
+      "stop": "cut",
+      "code": "idle",
+      "text": "Hello",
+      "seconds": 1,
+      "charged": "0.000283334",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    "went_away": {
+      "type": "ended",
+      "stop": "cut",
+      "code": "went_away",
+      "text": "Hello",
+      "seconds": 1,
+      "charged": "0.000283334",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    "restarting": {
+      "type": "ended",
+      "stop": "cut",
+      "code": "restarting",
+      "text": "Hello",
+      "seconds": 1,
+      "charged": "0.000283334",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    "provider_failed": {
+      "type": "failed",
+      "code": "provider_failed",
+      "text": "Hello",
+      "seconds": 1,
+      "charged": "0.000283334",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    "accounting_unavailable": {
+      "type": "failed",
+      "code": "accounting_unavailable",
+      "text": "Hello",
+      "seconds": 1,
+      "charged": "0.000283334",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    "invalid_request": {
+      "type": "failed",
+      "code": "invalid_request",
+      "text": "Hello",
+      "seconds": 1,
+      "charged": "0.000283334",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0.000283334",
+        "reserved": "0",
+        "remaining": "6.999716666",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    "provider_unavailable": {
+      "type": "failed",
+      "code": "provider_unavailable",
+      "text": "",
+      "seconds": 0,
+      "charged": "0",
+      "allowance": {
+        "tier": "one",
+        "period": "calendar_month_utc",
+        "limit": "7",
+        "used": "0",
+        "reserved": "0",
+        "remaining": "7",
+        "resetsAt": 1801440000000,
+        "budgetResetsAt": null,
+        "code": "ok",
+        "capabilities": {
+          "text": {
+            "large": "large",
+            "medium": "medium",
+            "small": "small"
+          },
+          "transcription": true
+        }
+      }
+    },
+    "null_charged": {
+      "type": "failed",
+      "code": "provider_failed",
+      "text": "Hello",
+      "seconds": 1,
+      "charged": null,
+      "allowance": null
+    }
+  },
+  "liveFirstFailures": {
+    "funding_required": {
+      "type": "failed",
+      "code": "funding_required",
+      "text": "",
+      "seconds": 0,
+      "charged": null,
+      "allowance": {
         "tier": "free",
         "period": "calendar_month_utc",
         "limit": "0.5",
-        "used": "0.01",
-        "reserved": "0.02",
-        "remaining": "0.47",
+        "used": "0",
+        "reserved": "0",
+        "remaining": "0.5",
         "resetsAt": 1801440000000,
         "budgetResetsAt": null,
         "code": "ok",
@@ -606,19 +1625,19 @@
         }
       }
     },
-    {
+    "provider_unavailable": {
       "type": "failed",
-      "code": "provider_failed",
-      "text": "Hello",
-      "seconds": 1,
-      "charged": "0.000283334",
+      "code": "provider_unavailable",
+      "text": "",
+      "seconds": 0,
+      "charged": null,
       "allowance": {
-        "tier": "free",
+        "tier": "one",
         "period": "calendar_month_utc",
-        "limit": "0.5",
-        "used": "0.01",
-        "reserved": "0.02",
-        "remaining": "0.47",
+        "limit": "7",
+        "used": "0",
+        "reserved": "0",
+        "remaining": "7",
         "resetsAt": 1801440000000,
         "budgetResetsAt": null,
         "code": "ok",
@@ -628,11 +1647,19 @@
             "medium": "medium",
             "small": "small"
           },
-          "transcription": false
+          "transcription": true
         }
       }
+    },
+    "accounting_unavailable": {
+      "type": "failed",
+      "code": "accounting_unavailable",
+      "text": "",
+      "seconds": 0,
+      "charged": null,
+      "allowance": null
     }
-  ],
+  },
   "internalRequests": {
     "fund": {
       "accountId": "account-vector",
@@ -645,8 +1672,376 @@
     "close": {
       "closedAt": 1800000001000
     },
+    "reopen": null,
     "correct": {
       "charged": "0.001"
     }
+  },
+  "internalCalls": {
+    "settled": {
+      "id": 41,
+      "principal": {
+        "kind": "account",
+        "id": "account-vector"
+      },
+      "callId": "abcdefghijklmnopqrstuv",
+      "capability": "text",
+      "tier": "free",
+      "requested": "small",
+      "served": "small",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "priceVersion": "2026-11-15",
+      "label": "other",
+      "client": "web",
+      "state": "settled",
+      "reservation": "0.002",
+      "charged": "0.0002325",
+      "originalCharge": null,
+      "maxTokens": 100,
+      "usage": {
+        "input": 10,
+        "output": 20,
+        "cacheWrite": 30,
+        "cacheWrite1h": 40,
+        "cacheRead": 50
+      },
+      "audioBytes": 0,
+      "audioSeconds": 0,
+      "turns": 0,
+      "slices": 0,
+      "providerRequestId": "req_vector",
+      "stop": "completed",
+      "code": null,
+      "createdAt": 1800000000000,
+      "endedAt": 1800000001000
+    },
+    "corrected": {
+      "id": 41,
+      "principal": {
+        "kind": "account",
+        "id": "account-vector"
+      },
+      "callId": "abcdefghijklmnopqrstuv",
+      "capability": "text",
+      "tier": "free",
+      "requested": "small",
+      "served": "small",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "priceVersion": "2026-11-15",
+      "label": "other",
+      "client": "web",
+      "state": "assumed",
+      "reservation": "0.002",
+      "charged": "0.001",
+      "originalCharge": "0.002",
+      "maxTokens": 100,
+      "usage": null,
+      "audioBytes": 0,
+      "audioSeconds": 0,
+      "turns": 0,
+      "slices": 0,
+      "providerRequestId": "req_vector",
+      "stop": null,
+      "code": "provider_failed",
+      "createdAt": 1800000000000,
+      "endedAt": 1800000001000
+    },
+    "transcription": {
+      "id": 42,
+      "principal": {
+        "kind": "account",
+        "id": "account-vector"
+      },
+      "callId": "abcdefghijklmnopqrstuv",
+      "capability": "transcription",
+      "tier": "one",
+      "requested": "small",
+      "served": "small",
+      "provider": "openai",
+      "model": "gpt-live-transcribe",
+      "priceVersion": "2026-11-15",
+      "label": "other",
+      "client": "web",
+      "state": "settled",
+      "reservation": "0.017",
+      "charged": "0.000283334",
+      "originalCharge": null,
+      "maxTokens": null,
+      "usage": null,
+      "audioBytes": 48000,
+      "audioSeconds": 1,
+      "turns": 1,
+      "slices": 1,
+      "providerRequestId": "req_vector",
+      "stop": "completed",
+      "code": null,
+      "createdAt": 1800000000000,
+      "endedAt": 1800000001000
+    }
+  },
+  "internalPrincipal": {
+    "budgets": [
+      {
+        "id": 1,
+        "kind": "account_month",
+        "period": {
+          "start": 1798761600000,
+          "end": 1801440000000
+        },
+        "limit": "0.5",
+        "spent": "0.01",
+        "held": "0.02"
+      },
+      {
+        "id": 2,
+        "kind": "grant",
+        "period": {
+          "start": 1800000000000,
+          "end": 1802592000000
+        },
+        "limit": "7",
+        "spent": "0.1",
+        "held": "0.2"
+      }
+    ],
+    "grants": [
+      {
+        "id": 2,
+        "reference": "period-vector",
+        "accountId": "account-vector",
+        "source": "subscription",
+        "period": {
+          "start": 1800000000000,
+          "end": 1802592000000
+        },
+        "closedAt": null,
+        "amount": "7",
+        "spent": "0.1",
+        "held": "0.2"
+      }
+    ],
+    "installations": [
+      "installation-vector"
+    ],
+    "nextBeforeId": null,
+    "calls": [
+      {
+        "id": 41,
+        "principal": {
+          "kind": "account",
+          "id": "account-vector"
+        },
+        "callId": "abcdefghijklmnopqrstuv",
+        "capability": "text",
+        "tier": "free",
+        "requested": "small",
+        "served": "small",
+        "provider": "anthropic",
+        "model": "claude-haiku-4-5",
+        "priceVersion": "2026-11-15",
+        "label": "other",
+        "client": "web",
+        "state": "settled",
+        "reservation": "0.002",
+        "charged": "0.0002325",
+        "originalCharge": null,
+        "maxTokens": 100,
+        "usage": {
+          "input": 10,
+          "output": 20,
+          "cacheWrite": 30,
+          "cacheWrite1h": 40,
+          "cacheRead": 50
+        },
+        "audioBytes": 0,
+        "audioSeconds": 0,
+        "turns": 0,
+        "slices": 0,
+        "providerRequestId": "req_vector",
+        "stop": "completed",
+        "code": null,
+        "createdAt": 1800000000000,
+        "endedAt": 1800000001000
+      }
+    ]
+  },
+  "internalPages": {
+    "first": {
+      "calls": [
+        {
+          "id": 43,
+          "principal": {
+            "kind": "account",
+            "id": "account-vector"
+          },
+          "callId": "0000000000000000000043",
+          "capability": "text",
+          "tier": "free",
+          "requested": "small",
+          "served": "small",
+          "provider": "anthropic",
+          "model": "claude-haiku-4-5",
+          "priceVersion": "2026-11-15",
+          "label": "other",
+          "client": "web",
+          "state": "settled",
+          "reservation": "0.002",
+          "charged": "0.0002325",
+          "originalCharge": null,
+          "maxTokens": 100,
+          "usage": {
+            "input": 10,
+            "output": 20,
+            "cacheWrite": 30,
+            "cacheWrite1h": 40,
+            "cacheRead": 50
+          },
+          "audioBytes": 0,
+          "audioSeconds": 0,
+          "turns": 0,
+          "slices": 0,
+          "providerRequestId": "req_vector",
+          "stop": "completed",
+          "code": null,
+          "createdAt": 1800000000000,
+          "endedAt": 1800000001000
+        },
+        {
+          "id": 42,
+          "principal": {
+            "kind": "account",
+            "id": "account-vector"
+          },
+          "callId": "0000000000000000000042",
+          "capability": "text",
+          "tier": "free",
+          "requested": "small",
+          "served": "small",
+          "provider": "anthropic",
+          "model": "claude-haiku-4-5",
+          "priceVersion": "2026-11-15",
+          "label": "other",
+          "client": "web",
+          "state": "settled",
+          "reservation": "0.002",
+          "charged": "0.0002325",
+          "originalCharge": null,
+          "maxTokens": 100,
+          "usage": {
+            "input": 10,
+            "output": 20,
+            "cacheWrite": 30,
+            "cacheWrite1h": 40,
+            "cacheRead": 50
+          },
+          "audioBytes": 0,
+          "audioSeconds": 0,
+          "turns": 0,
+          "slices": 0,
+          "providerRequestId": "req_vector",
+          "stop": "completed",
+          "code": null,
+          "createdAt": 1800000000000,
+          "endedAt": 1800000001000
+        }
+      ],
+      "nextBeforeId": 42
+    },
+    "last": {
+      "calls": [
+        {
+          "id": 41,
+          "principal": {
+            "kind": "account",
+            "id": "account-vector"
+          },
+          "callId": "abcdefghijklmnopqrstuv",
+          "capability": "text",
+          "tier": "free",
+          "requested": "small",
+          "served": "small",
+          "provider": "anthropic",
+          "model": "claude-haiku-4-5",
+          "priceVersion": "2026-11-15",
+          "label": "other",
+          "client": "web",
+          "state": "settled",
+          "reservation": "0.002",
+          "charged": "0.0002325",
+          "originalCharge": null,
+          "maxTokens": 100,
+          "usage": {
+            "input": 10,
+            "output": 20,
+            "cacheWrite": 30,
+            "cacheWrite1h": 40,
+            "cacheRead": 50
+          },
+          "audioBytes": 0,
+          "audioSeconds": 0,
+          "turns": 0,
+          "slices": 0,
+          "providerRequestId": "req_vector",
+          "stop": "completed",
+          "code": null,
+          "createdAt": 1800000000000,
+          "endedAt": 1800000001000
+        }
+      ],
+      "nextBeforeId": null
+    },
+    "empty": {
+      "calls": [],
+      "nextBeforeId": null
+    }
+  },
+  "corrections": {
+    "corrected": {
+      "state": "assumed",
+      "charged": "0.001",
+      "replay": false
+    },
+    "replayed": {
+      "state": "assumed",
+      "charged": "0.001",
+      "replay": true
+    }
+  },
+  "shared": {
+    "budgets": [
+      {
+        "id": 3,
+        "kind": "free_month",
+        "period": {
+          "start": 1798761600000,
+          "end": 1801440000000
+        },
+        "limit": "100",
+        "spent": "50",
+        "held": "1"
+      }
+    ],
+    "fuses": [
+      {
+        "provider": "anthropic",
+        "spent": "20.000000001",
+        "limit": "20",
+        "paused": true
+      },
+      {
+        "provider": "openai",
+        "spent": "0",
+        "limit": "20",
+        "paused": false
+      },
+      {
+        "provider": "azure",
+        "spent": "0",
+        "limit": "20",
+        "paused": false
+      }
+    ]
   }
 }
