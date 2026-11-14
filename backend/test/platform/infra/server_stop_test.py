@@ -146,6 +146,12 @@ class ServerStopTest(unittest.TestCase):
                  f"return new; end $$; create trigger {name} before {event} on {table} for each row when ({when}) "
                  f"execute function {name}()")
 
+    def refuse(self, table, when):
+        name = f"wm_stop_{self.tag}_{len(self.triggers)}"
+        self.triggers.append((table, name))
+        self.sql(f"create function {name}() returns trigger language plpgsql as $$ begin raise exception 'refused'; end $$; "
+                 f"create trigger {name} before update on {table} for each row when ({when}) execute function {name}()")
+
     def hold(self, statement, seconds):
         holder = subprocess.Popen(["psql", self.database, "-XAtq", "-c", f"begin; {statement}; select pg_sleep({seconds}); rollback;"],
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -200,6 +206,19 @@ class ServerStopTest(unittest.TestCase):
         self.assert_clean_exit(code, took, BUDGET + EXIT_FLUSH)
         self.assertEqual(re.findall(r"roadmap_tree_save outcome=lost-at-shutdown rooms=(\d+)", self.logged()), ["1"])
         self.assertEqual(self.sql(f"select label from tree_nodes where tree_id = '{tree}' and node_id = 'a'"), "a")
+
+    def test_a_stop_that_loses_a_room_to_a_store_that_refuses_ends_by_itself_and_exits_0(self):
+        tree = self.tree(["a"])
+        self.refuse("trees", f"new.id = '{tree}'")
+        held = self.tool("update_nodes", {"treeId": tree, "updates": [{"nodeId": "a", "label": "held"}]})
+        self.assertIs(held.get("saved"), False)
+
+        code, took = self.stop(2.0)
+
+        self.assert_clean_exit(code, took, 2.0)
+        log = self.logged()
+        self.assertEqual(re.findall(r"roadmap_tree_save outcome=lost-at-shutdown rooms=(\d+)", log), ["1"])
+        self.assertNotIn("cut-at-deadline", log)
 
     def test_a_stop_with_a_request_still_running_exits_by_the_deadline_and_that_request_is_not_answered(self):
         tree = self.tree(["a", "b", "c"])
