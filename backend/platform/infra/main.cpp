@@ -5,6 +5,7 @@
 #include "platform/adapters/postgres/PgAccountFootprint.h"
 #include "platform/adapters/paddle/BillingApi.h"
 #include "platform/application/AiBudgetAlerts.h"
+#include "platform/application/AiBudgetHoldSweep.h"
 #include "platform/ai_installations/AiInstallationApi.h"
 #include "platform/ai_installations/PgAiInstallations.h"
 #include "products/gym/onboarding/PgOnboardingRepository.h"
@@ -31,6 +32,7 @@
 #include "platform/adapters/http/McpKeyApi.h"
 #include "platform/adapters/http/OAuthApi.h"
 #include "platform/adapters/http/RateLimiter.h"
+#include "platform/adapters/http/ReplyWait.h"
 #include "products/roadmap/adapters/llm/AnthropicAgent.h"
 #include "products/roadmap/adapters/llm/AnthropicComposer.h"
 #include "platform/adapters/mcp/CompositeToolHost.h"
@@ -112,6 +114,9 @@
 #include "platform/infra/AppOrigin.h"
 #include "platform/infra/SyncProducts.h"
 #include "products/gym/routes.h"
+#include "platform/subscriptions/FeedFollower.h"
+#include "platform/subscriptions/PgEntitlementCopy.h"
+#include "platform/subscriptions/SubscriptionServiceClient.h"
 
 #include "platform/adapters/http/SyncApi.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
@@ -335,6 +340,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                 {"org_members", "user_id"},
                 {"feedback", "user_id"},
                 {"paddle_subscriptions", "user_id"},  // platform
+                {"account_entitlements", "account_id"},
                 {"mcp_keys", "user_id"},              // platform
                 {"oauth_grants", "user_id"},          // platform
                 {"oauth_codes", "user_id"},
@@ -484,6 +490,28 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
   installWriteReporter(sentry);
 
+  // The subscription service's feed, followed into the backend's own copy of every Windmill One entitlement
+  // (docs/foundation/subscriptions.md §6.1). Off while neither variable is set; one without the other refuses to start.
+  std::optional<subscriptions::ServiceAddress> subscriptionService;
+  try {
+    subscriptionService = subscriptions::ServiceAddress::from(std::getenv("SUBSCRIPTIONS_INTERNAL_URL"),
+                                                              std::getenv("SUBSCRIPTIONS_INTERNAL_TOKEN"));
+  } catch (const std::invalid_argument& missing) {
+    std::fprintf(stderr, "refusing to start: %s\n", missing.what());
+    return 1;
+  }
+  if (subscriptionService) {
+    auto subscriptionFeed = std::make_shared<subscriptions::SubscriptionServiceClient>(*subscriptionService);
+    auto entitlementCopy = std::make_shared<subscriptions::PgEntitlementCopy>(pool);
+    auto feedFollower = std::make_shared<subscriptions::FeedFollower>(*subscriptionFeed, *entitlementCopy,
+                                                                      subscriptions::FurtherConsumers{}, *sentry);
+    lifetime.watch(subscriptionFeed);
+    lifetime.watch(feedFollower, subscriptionFeed, entitlementCopy, sentry);
+    feedFollower->start();
+  } else {
+    LOG_INFO << "subscriptions: the feed follower is off (SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN unset)";
+  }
+
   std::shared_ptr<AiBudgetAlerts> aiBudgetAlerts;
   if (aiBudgets) {
     const char* alertEmailEnv = std::getenv("AI_ALLOWANCE_ALERT_EMAIL");
@@ -495,6 +523,9 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     aiBudgetAlerts = std::make_shared<AiBudgetAlerts>(aiBudgets, emailSender, systemClock, *alertEmail);
     lifetime.watch(aiBudgetAlerts, aiBudgets, aiBudgetRepo, emailSender, resendClient, systemClock);
     aiBudgetAlerts->start();
+    auto aiBudgetHoldSweep = std::make_shared<AiBudgetHoldSweep>(aiBudgets);
+    lifetime.watch(aiBudgetHoldSweep, aiBudgets, aiBudgetRepo, systemClock);
+    aiBudgetHoldSweep->start();
   }
 
   std::shared_ptr<AiCallBudget> aiCallBudget;
@@ -1293,6 +1324,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // to the handler. The tree socket's frames set it; the sync live channel's messages are far smaller.
   app.setClientMaxWebSocketMessageSize(kMaxSocketMessageBytes);
   app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
+  // A connection waiting on its reply is idle to the framework, and is dropped with the reply at this limit (ReplyWait.h).
+  app.setIdleConnectionTimeout(kIdleConnectionLimit);
   const char* listenHostEnv = std::getenv("WINDMILL_HOST");
   const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";
   app.addListener(listenHost, port);

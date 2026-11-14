@@ -207,6 +207,7 @@ INSERT INTO sync_results (replica, n, digest) VALUES ('erase-replica', 1, decode
 INSERT INTO sync_requests (account, request_id, digest, state, started_at) VALUES ('SAM', 'erase-request', decode(repeat('00', 32), 'hex'), 'done', 1);
 INSERT INTO paddle_customers (customer_id, email) VALUES ('ctm_erase', 'erase-sam-pgtest@example.com');
 INSERT INTO paddle_subscriptions (subscription_id, customer_id, user_id, status) VALUES ('sub_erase', 'ctm_erase', 'SAM', 'active');
+INSERT INTO account_entitlements (account_id, entitlement, seq) VALUES ('SAM', '{}', 1);
 INSERT INTO journal_page (user_id, day, body) VALUES ('SAM', '2026-01-01', 'Sam'), ('EVE', '2026-01-01', 'Eve');
 INSERT INTO journal_page_revision (user_id, day, body) VALUES ('SAM', '2026-01-01', 'old');
 INSERT INTO journal_sync_state (user_id) VALUES ('SAM');

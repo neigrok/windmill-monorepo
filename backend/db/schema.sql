@@ -626,6 +626,19 @@ do $$ begin
   end if;
 end $$;
 
+-- The state a released hold left: a `reserved` one was never sent, a `dispatched` or `uncertain` one lapsed unconfirmed
+-- and whatever the vendor billed for it is Windmill's.
+alter table ai_budget_reservations add column if not exists released_from text
+  check (released_from in ('reserved', 'dispatched', 'uncertain'));
+do $$ begin
+  if not exists (select 1 from pg_constraint
+      where conrelid = 'ai_budget_reservations'::regclass and conname = 'ai_budget_released_from') then
+    update ai_budget_reservations set released_from = 'reserved' where state = 'released' and released_from is null;
+    alter table ai_budget_reservations add constraint ai_budget_released_from
+      check ((state = 'released') = (released_from is not null));
+  end if;
+end $$;
+
 create table if not exists ai_budget_alerts (
   id                 text primary key default gen_random_uuid()::text,
   scope              text not null check (scope in ('free_month', 'free_day', 'anonymous_lifetime', 'account_month', 'funded_period')),
@@ -758,6 +771,29 @@ alter table paddle_subscriptions add column if not exists occurred_at timestampt
 -- falls back to the email match when it is null.
 alter table paddle_subscriptions add column if not exists user_id uuid;
 create index if not exists paddle_subscriptions_user on paddle_subscriptions (user_id);
+
+-- ── Windmill One entitlements (platform/subscriptions, docs/foundation/subscriptions.md §6.1) ──────────
+-- The backend's own copy of each account's entitlement, as the subscription service's feed last stated it: each
+-- environment's accessUntil (epoch ms, null when that environment grants none), which access reads, and the whole
+-- EntitlementResponse, which surfaces show. It is json, not jsonb, which refuses a \u0000 the feed may carry: any
+-- body the follower accepts is storable. `seq` is the feed entry that wrote the row; no entry takes it back to an
+-- older one. A rebuild from zero replaces every row in one transaction.
+create table if not exists account_entitlements (
+  account_id              uuid primary key references users(id) on delete cascade,
+  production_access_until bigint,
+  sandbox_access_until    bigint,
+  entitlement             json not null,
+  seq                     bigint not null
+);
+
+-- Where the copy stands in the feed: the ledger's epoch and the last seq applied, moved in the same transaction as the
+-- rows a page wrote. A null epoch is a copy that never read the feed.
+create table if not exists subscription_feed_cursor (
+  one   boolean primary key default true check (one),
+  epoch text,
+  seq   bigint not null default 0
+);
+insert into subscription_feed_cursor (one) values (true) on conflict (one) do nothing;
 
 -- ── Roadmap (products/roadmap), continued ────────────────────────────────────────────────────
 

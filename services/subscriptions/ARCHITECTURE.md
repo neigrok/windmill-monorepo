@@ -12,9 +12,10 @@ chain only tests trust ([App Store test signer](#app-store-test-signer)); `stora
 the service's own database: it migrates it, keeps what the stores sent, applies observations in one
 transaction each and reads the feed ([Storage](#storage)); `subscriptions`, the server binary,
 opens the ledger before it listens, answers health on both of its listeners, logs every request and
-reports to Sentry ([Server](#server)). The service does not run in production. The production compose
-provisions its database once `SUBSCRIPTIONS_DB_PASSWORD` is set, and does nothing until then
-([deploy README](../../backend/deploy/README.md#the-subscription-database)).
+reports to Sentry ([Server](#server)). It runs in production with no store connected: the public
+listener answers `GET /health` and 404s every other path, every path under `/v1/stores/` included, until
+the App Store door lands. Backend CI publishes its image beside the server's, and every deploy provisions
+its database and starts it ([deploy README](../../backend/deploy/README.md#the-subscription-service)).
 
 ## Crates
 
@@ -602,7 +603,8 @@ opens writes `ledger open` with its `epoch`.
 
 The image listens on 8082 (public) and 8083 (internal), beside the backend's 8080 and the embedder's
 8081, and speaks HTTP/1.1. Each listener builds its own router, so a route on the internal listener
-does not exist on the public one and answers 404 there.
+does not exist on the public one and answers 404 there. In production Caddy forwards `/v1/stores/*` to
+the public port and nothing else, and the internal port is reached only on the compose network.
 
 | Listener | Route | Answer |
 |---|---|---|
@@ -671,9 +673,11 @@ SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0
   SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
 ```
 
-The image builds from this directory and sets both addresses itself. A container reaches the host's
-Postgres over TCP, so it needs a URL with a host and a role that may sign in over it; the deploy
-README's [rehearsal](../../backend/deploy/README.md#rehearse-it-locally) runs it beside its database:
+The image builds from this directory and sets both addresses itself; `SENTRY_RELEASE`, a build
+argument, is the commit Backend CI builds it from. A container reaches the host's Postgres over TCP,
+so it needs a URL with a host and a role that may sign in over it; the deploy README
+[runs the production compose](../../backend/deploy/README.md#run-it-locally) with a local image beside
+its database:
 
 ```sh
 docker build --build-arg SENTRY_RELEASE="$(git rev-parse HEAD)" -t windmill-subscriptions .
@@ -688,7 +692,8 @@ The `Dockerfile` builds on the `rust` image of the same release and fails when t
 ## Checks
 
 `.github/workflows/subscriptions.yml` runs these on every change under `services/subscriptions/`
-other than Markdown, and on changes to the workflow. Locally, from `services/subscriptions/`:
+other than Markdown, and on changes to the workflow. Backend CI calls it as well, and publishes the
+image only once it passes. Locally, from `services/subscriptions/`:
 
 ```sh
 ./check-dependencies.sh

@@ -25,25 +25,25 @@ export function ShortcutsDialog({ open, onClose, readOnly = false, owner = !read
 
   return (
     <Dialog open={open} onClose={onClose} title={board ? SHORTCUTS_TITLE : t('roadmap.shortcuts.keyboardShortcuts')} width={600} preserveOutsideFocus
-      padding={board ? 'calc(var(--space-6) + var(--space-1))' : undefined}>
-      {!board && <div className="st-sc-toolbar">
+      className="st-shortcuts-dialog" closeButtonSize={44} padding="var(--st-sc-padding)" focusableBody
+      header={!board && <div className="st-sc-toolbar">
         <div className="st-sc-toggle" role="group" aria-label={t('roadmap.shortcuts.platform')}>
           <button type="button" aria-pressed={platform === 'mac'} onClick={() => setPlatform('mac')}>{t('roadmap.shortcuts.mac')}</button>
           <button type="button" aria-pressed={platform === 'windows'} onClick={() => setPlatform('windows')}>{t('roadmap.shortcuts.windows')}</button>
         </div>
-      </div>}
+      </div>}>
 
-      <div className={board ? 'st-sc-grid st-sc-grid--board' : 'st-sc-grid'}>
+      <div className="st-sc-grid">
         {visibleGroups(readOnly, view, owner, graphAvailable).map((group) => (
           <section className="st-sc-group" key={group.id}>
             <h3 className="st-sc-heading">{group.title}</h3>
             <ul className="st-sc-list">
               {group.rows.map((row) => (
-                <li className="st-sc-row" key={row.label}>
+                <li className={`st-sc-row${row.chords.length > 1 ? ' st-sc-row--alternatives' : ''}`} key={row.label}>
                   <span className="st-sc-label">{row.label}</span>
                   <span className="st-sc-keys">
                     {row.chords.map((chord, chordIndex) => (
-                      <React.Fragment key={chordIndex}>
+                      <span className="st-sc-alternative" key={chordIndex}>
                         {chordIndex > 0 && <span className="st-sc-or">{t('roadmap.shortcuts.or')}</span>}
                         <span className="st-sc-chord">
                           {chord.map((token, tokenIndex) =>
@@ -52,7 +52,7 @@ export function ShortcutsDialog({ open, onClose, readOnly = false, owner = !read
                               : <GesturePill key={tokenIndex}>{token.label}</GesturePill>
                           )}
                         </span>
-                      </React.Fragment>
+                      </span>
                     ))}
                   </span>
                 </li>

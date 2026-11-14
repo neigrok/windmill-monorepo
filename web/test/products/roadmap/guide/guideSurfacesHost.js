@@ -21,6 +21,7 @@ import '/src/styles/global.css';
 import '/src/products/roadmap/skilltree.css';
 import '/src/products/roadmap/board/board.css';
 import '/src/products/roadmap/sync/sync-notices.css';
+import { RoadmapIdentity } from '/src/products/roadmap/identity/RoadmapIdentity.jsx';
 import { GuideEntry } from '/src/products/roadmap/guide/GuideEntry.jsx';
 import { GuideNote } from '/src/products/roadmap/guide/GuideNote.jsx';
 import { useRoomGuide } from '/src/products/roadmap/guide/useGuide.js';
@@ -47,7 +48,9 @@ window.mount = (options = {}) => {
     const { band, owner, holder } = room;
     const phone = band === 'phone';
     const who = { owner, reader: !owner, shared: room.shared, demo: false, phone };
-    const guide = useRoomGuide({ treeId: 'sail', tree, who, holder, deviceLine: options.device ? { text: 'device' } : null, sessionRef });
+    const heldGuide = useRoomGuide({ treeId: 'sail', tree, who, holder, deviceLine: options.device ? { text: 'device' } : null, sessionRef });
+    const guide = heldGuide && (options.above === undefined && options.aboveUnread === undefined && options.guideOwner === undefined ? heldGuide
+      : { ...heldGuide, owner: options.guideOwner ?? heldGuide.owner, above: options.above ?? heldGuide.above, aboveUnread: options.aboveUnread ?? heldGuide.aboveUnread });
     // Once committed, whether the room has taken an answer of the guides above: what it holds from above is no longer
     // what it held as it mounted.
     const mountedAbove = useRef(guide?.above);
@@ -58,7 +61,7 @@ window.mount = (options = {}) => {
       React.createElement('button', { type: 'button', id: 'step', style: { position: 'absolute', right: 24, bottom: 24 } }, 'Read the wind'),
       phone
         ? React.createElement('div', { className: 'st-board st-board--phone', style: { paddingTop: 112 } }, entry)
-        : React.createElement('div', { className: 'st-graph-guide', style: { top: 64 } }, entry),
+        : React.createElement(RoadmapIdentity, { band, view: 'tree', role: owner ? 'owner' : 'reader', title: 'Learn to sail', progress: { done: 3, total: 8 }, onSwitchView: () => {}, guide: entry }),
       guide?.opened && React.createElement(GuideNote, { guide, band, view: 'graph' })));
   }
   flushSync(() => root.render(React.createElement(Room)));

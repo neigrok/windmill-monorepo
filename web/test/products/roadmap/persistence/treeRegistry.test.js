@@ -46,6 +46,13 @@ test('listServerTrees — the account’s server rows newest first, and a list t
   assert.deepEqual(await listServerTrees(), { authoritative: false, status: 200, rows: [] });
 });
 
+test('listServerTrees rejects absent and malformed rows instead of claiming an empty account', async () => {
+  for (const body of [{}, [], { trees: [null] }, { trees: [{ title: 'Unknown ID' }] }, { trees: [{ id: 't_odd', title: {} }] }, { trees: [{ id: 't_same' }, { id: 't_same' }] }]) {
+    stubFetch(() => ({ ok: true, status: 200, json: async () => body }));
+    assert.deepEqual(await listServerTrees(), { rows: [], authoritative: false, status: 200 });
+  }
+});
+
 test('readTreeCard — a roadmap someone else shares, one of the person’s own, and none they can read', async () => {
   const calls = stubFetch(() => ({ ok: true, status: 200, json: async () => ({ mine: false, data: { title: 'Reefing course', nodes: [{ id: 'a' }, { id: 'b' }] } }) }));
   assert.deepEqual(await readTreeCard('t_reef'), { id: 't_reef', title: 'Reefing course', author: null, steps: 2, mine: false });
