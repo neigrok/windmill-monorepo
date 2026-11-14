@@ -286,14 +286,16 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     // is answered refused, in the document's order.
     std::vector<NodeId> refused;
     if (existing) {
-      std::map<NodeId, NodeStateEntry> owning;
-      for (const NodeStateEntry& stored : existing->state.nodes)
-        if (existing->subtrees.count(stored.id)) owning.emplace(stored.id, stored);
+      std::map<NodeId, NodeStateEntry> owning;  // each owning step's stored row
+      std::map<NodeId, TreeId> held;           // and the pointer it holds
+      for (const NodeStateEntry& stored : existing->state.nodes) {
+        if (!existing->subtrees.count(stored.id)) continue;
+        owning.emplace(stored.id, stored);
+        held.emplace(stored.id, stored.opens);
+      }
       std::vector<std::pair<NodeId, TreeId>> sent;
       for (const NodeSpec& node : data->nodes)
         if (!node.opens.empty()) sent.emplace_back(node.id, node.opens);
-      std::map<NodeId, TreeId> held;
-      for (const auto& [step, stored] : owning) held.emplace(step, stored.opens);
       refused = refusedPointers(sent, existing->subtrees, held);
       for (NodeStateEntry& node : state.nodes) {
         if (!existing->subtrees.count(node.id)) continue;

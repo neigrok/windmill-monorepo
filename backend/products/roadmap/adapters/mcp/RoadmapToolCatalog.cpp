@@ -758,11 +758,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
                                     "id as a string, which is the `treeId` inside the `opens` get_tree answers. \"\" "
                                     "clears it, and one naming a tree that is not yours, or a subtree, refuses the "
                                     "whole import. A step that owns a subtree keeps its own: one sent there that "
-                                    "would change it is listed in opensRefused, and the rest lands. Left out, a node the tree holds "
-                                    "keeps the tree it opens, and a node this import brings back from a delete opens "
-                                    "none, or its subtree when it owns one. A tree that leads back to this one "
-                                    "lands, and `introducedDiagnostics` names the loop after the graph's errors, "
-                                    "within its five lines: a tree on a loop never completes.",
+                                    "would change it is listed in opensRefused, and the rest lands. Left out, a node "
+                                    "the tree holds keeps the tree it opens, and a node this import brings back from a "
+                                    "delete opens none, or its subtree when it owns one. A tree that leads back to "
+                                    "this one lands, and `introducedDiagnostics` names the loop after the graph's "
+                                    "errors, within its five lines: a tree on a loop never completes.",
                                     kMaxIdLength);
 
 

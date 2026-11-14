@@ -446,7 +446,8 @@ A node may point at another tree: `opens` holds that tree's id.
   open, under the outcome `opens-a-subtree`. A tree that is not there, a deleted one, a hidden
   subtree and someone else's are refused in one sentence, so the refusal confirms no id, under the
   outcome `opens-not-yours`. A step that owns a subtree, present or deleted, passes with its own
-  subtree's id before that read, an echo that lands nothing, so the call that revives it may carry it. A node may open the tree it is in while that tree is a root. The read is made
+  subtree's id before that read, an echo that lands nothing, so the call that revives it may carry it.
+  A node may open the tree it is in while that tree is a root. The read is made
   under the strand of the tree being written, not the target's, so the door refuses a pointer at a
   tree that does not stand *when it checks*: an edit racing that tree's removal can leave the step pointing at it after
   the removal has taken the steps that opened it. Such a step points nowhere: it reads as an ordinary
@@ -502,9 +503,8 @@ A node may point at another tree: `opens` holds that tree's id.
   opened from a step that owns no subtree; a row whose only change was that `opens` is among
   `unchangedNodeIds`. A call whose whole write was such a pointer answers `unchanged` and completes under
   the outcome `owns-a-subtree`, and its `dryRun` completes `ok`; every line but a dry run's counts the
-  refused pointers as `refused`. A pointer at a subtree from any other step leads nowhere. `list_trees` lists
-  roots alone. `update_tree` with a
-  `title` aimed at a subtree renames its owning step in the parent, the subtree's name, and answers
+  refused pointers as `refused`. A pointer at a subtree from any other step leads nowhere.
+  `list_trees` lists roots alone. `update_tree` with a `title` aimed at a subtree renames its owning step in the parent, the subtree's name, and answers
   the subtree's own `seq`, its head when only the title moved; a `guide` sent beside it lands in the
   subtree's own room after it, so a guide that fails leaves the new name in place. A rename whose save
   in the parent is held answers `saved: false` (A save that fails); until that save lands, every read
