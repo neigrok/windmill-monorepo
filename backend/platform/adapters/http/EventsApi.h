@@ -1,6 +1,5 @@
 #pragma once
 
-#include "platform/adapters/amplitude/AmplitudeClient.h"
 #include "platform/application/AuthService.h"
 #include "platform/ports/EventRepository.h"
 #include "platform/ports/FailureReporter.h"
@@ -22,7 +21,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 class EventsApi {
 public:
   EventsApi(std::shared_ptr<EventRepository> events, std::shared_ptr<AuthService> auth,
-            std::shared_ptr<AmplitudeClient> amplitude = nullptr,
+            std::shared_ptr<EventForwarder> amplitude = nullptr,
             std::shared_ptr<FailureReporter> failures = nullptr);
 
   void ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // POST /v1/events
@@ -30,7 +29,7 @@ public:
 private:
   std::shared_ptr<EventRepository> events_;
   std::shared_ptr<AuthService> auth_;
-  std::shared_ptr<AmplitudeClient> amplitude_;
+  std::shared_ptr<EventForwarder> amplitude_;
   std::shared_ptr<FailureReporter> failures_;
 };
 

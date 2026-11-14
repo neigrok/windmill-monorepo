@@ -27,15 +27,15 @@ public:
 
   const FeedCursor& cursor() const override { return cursor_; }
 
-  void commit() override {
+  pqxx::work& sql() { return work_; }
+
+private:
+  void persist() override {
     work_.exec("UPDATE subscription_feed_cursor SET epoch = $1, seq = $2",
                pqxx::params{target().epoch, static_cast<std::int64_t>(target().seq)});
     work_.commit();
   }
 
-  pqxx::work& sql() { return work_; }
-
-private:
   PgLease lease_;
   pqxx::work work_;  // declared after the lease, so it destructs first and can still roll back
   FeedCursor cursor_;

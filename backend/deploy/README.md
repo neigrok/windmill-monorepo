@@ -536,7 +536,10 @@ stdout did not take the counts.
 The server follows the subscription service's feed into `account_entitlements`, its own copy of every
 account's entitlement ([subscriptions.md](../../docs/foundation/subscriptions.md) §6.1), once
 `SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are both set. With neither it logs at
-start that the follower is off; with one alone it refuses to start, naming the other.
+start that the follower is off; with one alone it refuses to start, naming the other. The same pages
+record the subscription lifecycle events into `events` and forward them to Amplitude
+([OBSERVABILITY.md](../OBSERVABILITY.md)); a key in `server_event_keys` is an event recorded, so a page
+read again or a rebuild after a restore records none twice.
 
 **A page the backend cannot apply stops the copy for every account, by design.** A page applies whole
 or not at all, and the follower skips no entry, since a skipped entry would leave someone's paid state

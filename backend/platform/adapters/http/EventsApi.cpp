@@ -80,7 +80,7 @@ std::optional<FunnelEvent> eventOf(const Json::Value& entry, const std::string& 
 }
 
 EventsApi::EventsApi(std::shared_ptr<EventRepository> events, std::shared_ptr<AuthService> auth,
-                     std::shared_ptr<AmplitudeClient> amplitude,
+                     std::shared_ptr<EventForwarder> amplitude,
                      std::shared_ptr<FailureReporter> failures)
     : events_(std::move(events)), auth_(std::move(auth)), amplitude_(std::move(amplitude)),
       failures_(std::move(failures)) {}
@@ -116,19 +116,6 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     if (event) accepted.push_back(std::move(*event));
   }
   if (!accepted.empty()) {
-    const auto reportFailure = [&](const std::string& where, const std::exception& exception) {
-      if (!currentWriteRequestId().empty()) {
-        reportCurrentWriteFailure(exception);
-        return;
-      }
-      LOG_ERROR << "event batch failed at " << where;
-      if (!failures_) return;
-      try {
-        failures_->report("telemetry", where, "event batch could not be delivered");
-      } catch (const std::exception&) {
-        LOG_ERROR << "event failure report dropped";
-      }
-    };
     try {
       if (events_->countInLastDay(sessionKey.asString()) >= kMaxEventsPerSessionDay) {
         callback(error(drogon::k429TooManyRequests, "this session has beaconed enough for today"));
@@ -136,18 +123,20 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
       }
       events_->append(sessionKey.asString(), caller, accepted);
     } catch (const std::exception& failure) {
-      reportFailure("events.persist", failure);
+      if (!currentWriteRequestId().empty()) {
+        reportCurrentWriteFailure(failure);
+      } else {
+        LOG_ERROR << "event batch failed at events.persist";
+        try {
+          if (failures_) failures_->report("telemetry", "events.persist", "event batch could not be delivered");
+        } catch (const std::exception&) {
+          LOG_ERROR << "event failure report dropped";
+        }
+      }
       callback(error(drogon::k500InternalServerError, "events not recorded"));
       return;
     }
-    // The batch is already persisted, so a throw here must not turn a stored 202 into a 500.
-    if (amplitude_) {
-      try {
-        amplitude_->forward(sessionKey.asString(), caller, accepted);
-      } catch (const std::exception& failure) {
-        reportFailure("amplitude.forward", failure);
-      }
-    }
+    if (amplitude_) amplitude_->forward(sessionKey.asString(), caller, accepted);
   }
 
   Json::Value body(Json::objectValue);
