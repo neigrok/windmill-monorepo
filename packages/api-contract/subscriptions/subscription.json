@@ -4,6 +4,7 @@
       "name": "active",
       "body": {
         "environment": "production",
+        "allowlisted": false,
         "plan": "windmill_one",
         "accessUntil": 1799056800000,
         "governing": {
@@ -39,13 +40,15 @@
           "store": "app_store",
           "url": "https://apps.apple.com/account/subscriptions"
         },
-        "purchasable": []
+        "purchasable": [],
+        "offer": null
       }
     },
     {
       "name": "cancelled_access_continues",
       "body": {
         "environment": "production",
+        "allowlisted": false,
         "plan": "windmill_one",
         "accessUntil": 1805724000000,
         "governing": {
@@ -78,13 +81,15 @@
           "store": "app_store",
           "url": "https://apps.apple.com/account/subscriptions"
         },
-        "purchasable": []
+        "purchasable": [],
+        "offer": null
       }
     },
     {
       "name": "grace",
       "body": {
         "environment": "production",
+        "allowlisted": false,
         "plan": "windmill_one",
         "accessUntil": 1803031200000,
         "governing": {
@@ -117,13 +122,15 @@
           "store": "app_store",
           "url": "https://apps.apple.com/account/subscriptions"
         },
-        "purchasable": []
+        "purchasable": [],
+        "offer": null
       }
     },
     {
       "name": "on_hold",
       "body": {
         "environment": "production",
+        "allowlisted": false,
         "plan": null,
         "accessUntil": null,
         "governing": {
@@ -156,13 +163,15 @@
           "store": "app_store",
           "url": "https://apps.apple.com/account/subscriptions"
         },
-        "purchasable": []
+        "purchasable": [],
+        "offer": null
       }
     },
     {
       "name": "expired_line_open",
       "body": {
         "environment": "production",
+        "allowlisted": false,
         "plan": null,
         "accessUntil": null,
         "governing": {
@@ -197,13 +206,20 @@
         },
         "purchasable": [
           "app_store"
-        ]
+        ],
+        "offer": {
+          "aiAllowance": {
+            "amount": "7.00",
+            "currency": "USD"
+          }
+        }
       }
     },
     {
       "name": "revoked_line_open",
       "body": {
         "environment": "production",
+        "allowlisted": false,
         "plan": null,
         "accessUntil": null,
         "governing": {
@@ -238,13 +254,20 @@
         },
         "purchasable": [
           "app_store"
-        ]
+        ],
+        "offer": {
+          "aiAllowance": {
+            "amount": "7.00",
+            "currency": "USD"
+          }
+        }
       }
     },
     {
       "name": "never_subscribed_line_open",
       "body": {
         "environment": "production",
+        "allowlisted": false,
         "plan": null,
         "accessUntil": null,
         "governing": null,
@@ -252,25 +275,55 @@
         "manage": null,
         "purchasable": [
           "app_store"
-        ]
+        ],
+        "offer": {
+          "aiAllowance": {
+            "amount": "7.00",
+            "currency": "USD"
+          }
+        }
+      }
+    },
+    {
+      "name": "allowlisted_never_subscribed_line_open",
+      "body": {
+        "environment": "production",
+        "allowlisted": true,
+        "plan": null,
+        "accessUntil": null,
+        "governing": null,
+        "others": [],
+        "manage": null,
+        "purchasable": [
+          "app_store"
+        ],
+        "offer": {
+          "aiAllowance": {
+            "amount": "7.00",
+            "currency": "USD"
+          }
+        }
       }
     },
     {
       "name": "never_subscribed_line_closed",
       "body": {
         "environment": "production",
+        "allowlisted": false,
         "plan": null,
         "accessUntil": null,
         "governing": null,
         "others": [],
         "manage": null,
-        "purchasable": []
+        "purchasable": [],
+        "offer": null
       }
     },
     {
       "name": "charged_twice",
       "body": {
         "environment": "production",
+        "allowlisted": false,
         "plan": "windmill_one",
         "accessUntil": 1799654400000,
         "governing": {
@@ -335,13 +388,15 @@
           "store": "app_store",
           "url": "https://apps.apple.com/account/subscriptions"
         },
-        "purchasable": []
+        "purchasable": [],
+        "offer": null
       }
     },
     {
       "name": "sandbox_allowlisted",
       "body": {
         "environment": "sandbox",
+        "allowlisted": true,
         "plan": "windmill_one",
         "accessUntil": 1799766300000,
         "governing": {
@@ -377,13 +432,15 @@
           "store": "app_store",
           "url": "https://apps.apple.com/account/subscriptions"
         },
-        "purchasable": []
+        "purchasable": [],
+        "offer": null
       }
     },
     {
       "name": "sandbox_not_allowlisted_line_open",
       "body": {
         "environment": "production",
+        "allowlisted": false,
         "plan": null,
         "accessUntil": null,
         "governing": {
@@ -418,7 +475,13 @@
         },
         "purchasable": [
           "app_store"
-        ]
+        ],
+        "offer": {
+          "aiAllowance": {
+            "amount": "7.00",
+            "currency": "USD"
+          }
+        }
       }
     }
   ]

@@ -267,20 +267,27 @@ it recorded any. It refuses with `{code}`: 409 `bound_to_another_account`, 400 `
 Devices never call this service. The backend authenticates the caller and serves:
 
 - `GET /v1/subscription` → `SubscriptionResponse`, answered from the backend's own copy (§6.1): one
-  `Entitlement` of the account (§5.2), with `environment`, naming which one it is; `manage`
+  `Entitlement` of the account (§5.2), with `environment`, naming which one it is; `allowlisted`,
+  whether the account is on the sandbox allowlist, so its sandbox purchases count (§6.2); `manage`
   (`{"store": "app_store", "url": "https://apps.apple.com/account/subscriptions"}`, the governing
-  subscription's store, null when there is none); and `purchasable`, the stores this account may buy
-  through now. The `Entitlement` shown is the production one, unless the account is on the sandbox
-  allowlist (§6.2) and its sandbox `Entitlement` grants access while its production one does not. An
-  account off the allowlist never sees its sandbox `Entitlement`. An owner's `Entitlement` is chosen
-  the same way.
+  subscription's store, null when there is none); `purchasable`, the stores this account may buy
+  through now; and `offer`. The `Entitlement` shown is the production one, unless the account is on
+  the sandbox allowlist and its sandbox `Entitlement` grants access while its production one does
+  not. An account off the allowlist never sees its sandbox `Entitlement`. An owner's `Entitlement` is
+  chosen the same way.
+- `offer` is what a month of Windmill One funds, which the buy sheet shows:
+  `{"aiAllowance": {"amount": "7.00", "currency": "USD"}}`, read from the backend's configuration
+  (`AI_ONE_PERIOD_USD`, [USD AI allowances](../../backend/AI_ALLOWANCES.md)). It is non-null exactly
+  when `purchasable` is non-empty. The free allowance is neither sent nor shown beside it.
 - **INV-12.** A surface offers a buy control for a store only when `purchasable` names it.
   `purchasable` is empty while the account has Windmill One (§6.1, owners included), and while the
   `Entitlement` shown holds any subscription that is not `expired` or `revoked` (in `grace`, `on_hold`
   or `paused`, or with a cancellation pending), so no surface offers one account a second live
   subscription. Otherwise a store is listed only while the backend's configuration opens the paid line
   on it. Every store is closed by default, so opening the line is one switch the owner sets and can
-  unset.
+  unset. An app whose purchases land in sandbox (a TestFlight or Xcode build) offers a buy control
+  only when `allowlisted` is true as well, so no one buys a sandbox subscription that counts for
+  nothing.
 - `POST /v1/subscription/app-store/claims` with `AppStoreClaimRequest` `{signedTransaction}`, forwarded
   to §5.2 with the caller's account id. On the service's 200 the door asks the follower to reach the
   answer's `seq` (§6.1), waits for it at most 5 s, and answers 200 with the `SubscriptionResponse`
@@ -349,11 +356,16 @@ period's `id`, so no store id reaches the backend. (R-4, R-5)
 
 ### §6.4 Account erasure
 
-Erasing an account calls `DELETE /internal/v1/accounts/{accountId}`: the service records the account
-as erased, so a hint naming it never binds again (§4), its subscriptions are unbound and its
-entitlement ends. The periods and events stay, keyed by store ids that name no person. The store
-goes on charging until the customer cancels there, so the erasure flow MUST say so before it
-proceeds, and name where to cancel.
+`DELETE /v1/me` closes an account with a 30-day grace in which a sign-in brings it back whole; from
+`closesMs` the close is final, and the account is erased by the first sign-in that meets it or by
+`ClosedAccountSweep` ([accounts](../../backend/AUTH.md)). Until then its subscriptions stay bound, so
+an account that comes back finds them as it left them. The erasure of a finally closed account calls
+`DELETE /internal/v1/accounts/{accountId}`: the service records the account as erased, so a hint
+naming it never binds again (§4), its subscriptions are unbound and its entitlement ends. The backend
+records that call in the erasure's own transaction and repeats it until the service answers, so a
+service outage never leaves a subscription bound to an erased account. The periods and events stay,
+keyed by store ids that name no person. The store goes on charging until the customer cancels there,
+so the close flow MUST say so before it proceeds, and name where to cancel.
 
 ## §7 The sweep
 
@@ -373,7 +385,8 @@ One worker, hourly:
 - Products: one subscription group, *Windmill One*, holding one monthly auto-renewable product.
   Family Sharing is off. (R-1)
 - Purchase on iOS uses StoreKit 2 with `appAccountToken` set to the account id. The app shows a buy
-  control only to a signed-in account, and only as INV-12 allows. (R-2)
+  control only to a signed-in account, and only as INV-12 allows. (R-2) A TestFlight or Xcode build
+  buys in sandbox, so it also needs `allowlisted` (INV-12).
 - After a verified purchase or a restore, the app posts the transaction's signed representation to
   the claim door and finishes the transaction as §5.3 says.
 - A period's bounds are the dates its transaction states for the stretch it pays for (D-4), not the
@@ -463,5 +476,5 @@ document assumes until it is ruled.
 | R-5 | A refund | Access and the remaining funded allowance end when the store reports it. Spent allowance is not recovered. |
 | R-6 | Sandbox purchases against production | Entitle allowlisted accounts only (§6.2). |
 | R-7 | A failed renewal | The 16-day Billing Grace Period is enabled. Access continues in `grace`; no new allowance is funded until the charge succeeds. |
-| R-8 | Two live subscriptions on one account | Open. Assumed: both are recorded; access is one; the account screen says the person is charged twice and where to cancel. Applies once a second store sells. |
+| R-8 | Two live subscriptions on one account | Open. Assumed: both are recorded; access is one; the account screen says the person is charged twice and where to cancel. Applies already to two Apple Accounts bound to one Windmill account, and to every second store. |
 | R-9 | A subscription whose account hint names an erased account | Binds to the account that claims it; the erased account no longer exists. R-3 still refuses a claim against a live account. |

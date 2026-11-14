@@ -8,6 +8,7 @@
       "status": 200,
       "body": {
         "environment": "production",
+        "allowlisted": false,
         "plan": "windmill_one",
         "accessUntil": 1799236800000,
         "governing": {
@@ -43,7 +44,8 @@
           "store": "app_store",
           "url": "https://apps.apple.com/account/subscriptions"
         },
-        "purchasable": []
+        "purchasable": [],
+        "offer": null
       }
     },
     {
@@ -51,6 +53,7 @@
       "status": 200,
       "body": {
         "environment": "production",
+        "allowlisted": false,
         "plan": "windmill_one",
         "accessUntil": 1799236800000,
         "governing": {
@@ -86,7 +89,8 @@
           "store": "app_store",
           "url": "https://apps.apple.com/account/subscriptions"
         },
-        "purchasable": []
+        "purchasable": [],
+        "offer": null
       }
     },
     {
