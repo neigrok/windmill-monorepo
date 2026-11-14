@@ -342,7 +342,9 @@ test('Chromium: an owner with no guide adds one from the card, an untouched Add 
       assert.deepEqual(await page.evaluate(() => window.writes), ['Written on the dock.', '']);
       assert.deepEqual(await events(page), [
         { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'add' },
+        { step: 'cancel' },
         { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'add' },
+        { step: 'cancel' },
         { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'add' },
         { step: 'save', outcome: 'saved', length: '1-500' },
         { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'pencil' },
@@ -439,6 +441,7 @@ test('Chromium: a phone owner with no guide adds the first from the Add guide ro
       assert.deepEqual(await page.evaluate(() => window.writes), ['Maya and I take the dinghy out on Sundays.']);
       assert.deepEqual(await events(page), [
         { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'add' },
+        { step: 'cancel' },
         { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'add' },
         { step: 'save', outcome: 'saved', length: '1-500' },
       ]);

@@ -128,6 +128,7 @@ export function GuideNote({ guide, band }) {
       setDiscarding(true);
       return;
     }
+    if (draft) track('roadmap_guide', { step: 'cancel' });
     leave();
   };
 
@@ -260,7 +261,8 @@ export function GuideNote({ guide, band }) {
       box.style.height = 'auto';
       if (!phone) {
         const status = body.current.querySelector('.st-guide-status');
-        const room = body.current.clientHeight - (status ? status.offsetHeight + 12 : 0);
+        const padding = parseFloat(getComputedStyle(body.current).paddingTop);
+        const room = Math.max(0, body.current.clientHeight - padding - (status ? status.offsetHeight + 12 : 0));
         const draftHeight = caretFoot(box, box.value.length) + box.offsetHeight - box.clientHeight;
         box.style.minHeight = `${Math.min(room, Math.max(64, draftHeight))}px`;
         return;
@@ -271,7 +273,7 @@ export function GuideNote({ guide, band }) {
     fit();
     window.addEventListener('resize', fit);
     return () => window.removeEventListener('resize', fit);
-  }, [draft?.text, phone]);
+  }, [draft?.text, phone, guide.text, line]);
 
   // Writing starts where reading stood: the caret where the press landed, the field scrolled as far as the prose was.
   useLayoutEffect(() => {
@@ -337,7 +339,8 @@ export function GuideNote({ guide, band }) {
     if (!contextual) return undefined;
     const fit = () => {
       const fieldHeight = Math.max(parseFloat(getComputedStyle(field.current).minHeight), caretFoot(field.current, field.current.value.length));
-      const room = body.current.clientHeight - fieldHeight - parseFloat(getComputedStyle(body.current).rowGap);
+      const bodyStyle = getComputedStyle(body.current);
+      const room = body.current.clientHeight - parseFloat(bodyStyle.paddingTop) - fieldHeight - parseFloat(bodyStyle.rowGap);
       setCrowded(room < LEAST_CONTEXT);
     };
     fit();
@@ -348,7 +351,7 @@ export function GuideNote({ guide, band }) {
       observer.disconnect();
       window.removeEventListener('resize', fit);
     };
-  }, [contextual]);
+  }, [contextual, draft?.text]);
 
   useLayoutEffect(() => {
     if (discarding) confirmation.current.focus({ preventScroll: true });
@@ -359,8 +362,11 @@ export function GuideNote({ guide, band }) {
   // the stop in the same place takes it.
   useLayoutEffect(() => {
     if (document.activeElement !== document.body || !stop.current) return;
-    const { group, index, element } = stop.current;
-    const next = group ? paper.current.querySelectorAll(`${group} button`)[index] : element;
+    const { group, index, element, role } = stop.current;
+    const next = group ? paper.current.querySelectorAll(`${group} button`)[index]
+      : element?.isConnected ? element
+      : role === 'close' ? paper.current.querySelector('.st-guide-close, .st-guide-cancel')
+      : role === 'edit' ? paper.current.querySelector('.st-guide-pencil, .st-guide-edit') : null;
     if (next?.isConnected) next.focus({ preventScroll: true });
   }, [phone]);
 
@@ -490,11 +496,13 @@ export function GuideNote({ guide, band }) {
         aria-labelledby={phone ? titleId : undefined} aria-label={phone ? undefined : title} tabIndex={-1}
         onAnimationEnd={() => setEntering(false)}
         onFocus={(event) => {
+          const role = event.target.classList.contains('st-guide-close') ? 'close'
+            : event.target.matches('.st-guide-pencil, .st-guide-edit') ? 'edit' : null;
           const group = event.target.closest('.st-guide-actions') ? '.st-guide-actions'
             : event.target.closest('.st-guide-status') ? '.st-guide-status' : null;
           stop.current = group
             ? { group, index: [...paper.current.querySelectorAll(`${group} button`)].indexOf(event.target) }
-            : { element: event.target };
+            : { element: event.target, role };
         }}>
         {phone && <span className="st-guide-grabber" aria-hidden />}
         <header className="st-guide-heading">

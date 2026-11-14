@@ -258,6 +258,7 @@ for (const engine of [chromium, webkit]) {
         assert.deepEqual(await page.evaluate(() => window.writes), [`${ELSEWHERE} Written`]);
         assert.deepEqual((await events(page)).slice(2), [
           { step: 'loadLatest' },
+          { step: 'cancel' },
           { step: 'edit', via: 'pencil' },
           { step: 'save', outcome: 'saved', length: '1-500' },
           { step: 'conflict' },

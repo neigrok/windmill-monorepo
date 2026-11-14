@@ -113,6 +113,7 @@ hostTest('Chromium: on a phone a guide the session receives mid-edit is said in 
       { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' },
       { step: 'edit', via: 'pencil' },
       { step: 'loadLatest' },
+      { step: 'cancel' },
     ]);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }

@@ -150,7 +150,7 @@ test('Chromium: the name over a guide from above goes into its tree by the guide
       await note.waitFor();
       await note.getByRole('button', { name: 'Edit guide' }).click();
       assert.deepEqual(await caretState(page), { start: GUIDE.length, end: GUIDE.length, focused: true });
-      assert.deepEqual((await events(page)).slice(1), [{ step: 'edit', via: 'click' }, { step: 'edit', via: 'pencil' }]);
+      assert.deepEqual((await events(page)).slice(1), [{ step: 'edit', via: 'click' }, { step: 'cancel' }, { step: 'edit', via: 'pencil' }]);
     });
   } finally { await page.close(); }
 });
@@ -197,7 +197,7 @@ test('Chromium: a tree with no guide of its own under guides from above reads th
       assert.equal((await stackOf(page)).at(-1), 'add: Add guide');
       assert.deepEqual(await events(page), [
         { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'some' },
-        { step: 'edit', via: 'add' }, { step: 'edit', via: 'add' },
+        { step: 'edit', via: 'add' }, { step: 'cancel' }, { step: 'edit', via: 'add' },
         { step: 'save', outcome: 'saved', length: '1-500' },
         { step: 'edit', via: 'pencil' },
         { step: 'save', outcome: 'cleared', length: '0' },
@@ -243,7 +243,7 @@ test('Chromium: on a phone the row counts the guides from above, the sheet reads
       await page.getByRole('button', { name: 'Cancel' }).click();
       await sheet.waitFor();
       assert.equal(await page.locator('.st-guide-from').count(), 2);
-      assert.deepEqual(await events(page), [{ step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'some' }, { step: 'edit', via: 'tap' }]);
+      assert.deepEqual(await events(page), [{ step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'some' }, { step: 'edit', via: 'tap' }, { step: 'cancel' }]);
     });
   } finally { await page.close(); }
 });

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium, webkit } from 'playwright';
-import { GUIDE, hostGuideSurfaces, open, settled, stepInert } from './guideSurfacesHost.js';
+import { GUIDE, events, hostGuideSurfaces, open, settled, stepInert } from './guideSurfacesHost.js';
 
 hostGuideSurfaces({ cache: 'guide-modal-window-test' });
 
@@ -34,4 +34,65 @@ for (const engine of [chromium, webkit]) {
       });
     }
   }
+
+  test(`${engine.name()}: disappearing Close and Edit controls hand focus to their counterparts across 744px`, async () => {
+    const editing = await open({ guide: GUIDE, band: 'desktop' }, { engine, width: 1024, height: 800, reducedMotion: 'reduce' });
+    try {
+      await editing.getByRole('button', { name: 'Guide: One step a week.' }).click();
+      await editing.getByRole('button', { name: 'Edit guide' }).click();
+      await editing.getByRole('button', { name: 'Close', exact: true }).focus();
+      await editing.setViewportSize({ width: 390, height: 844 });
+      await editing.evaluate(() => window.setRoom({ band: 'phone' }));
+      await editing.waitForFunction(() => document.activeElement.matches('.st-guide-cancel'));
+      assert.equal(await editing.getByRole('dialog', { name: 'Edit guide' }).evaluate((dialog) => dialog.contains(document.activeElement)), true);
+    } finally { await editing.close(); }
+
+    const reading = await open({ guide: GUIDE, band: 'phone' }, { engine, width: 390, height: 844, reducedMotion: 'reduce' });
+    try {
+      await reading.getByRole('button', { name: 'Guide: One step a week.' }).click();
+      await reading.getByRole('button', { name: 'Edit guide' }).focus();
+      await reading.setViewportSize({ width: 1024, height: 800 });
+      await reading.evaluate(() => window.setRoom({ band: 'desktop' }));
+      await reading.waitForFunction(() => document.activeElement.matches('.st-guide-edit'));
+      assert.equal(await reading.getByRole('dialog', { name: 'Guide', exact: true }).evaluate((dialog) => dialog.contains(document.activeElement)), true);
+    } finally { await reading.close(); }
+  });
+
+  test(`${engine.name()}: leaving an unchanged edit emits one content-free cancellation`, async () => {
+    for (const door of ['close', 'cancel', 'escape', 'backdrop']) {
+      const page = await open({ guide: GUIDE }, { engine, reducedMotion: 'reduce' });
+      try {
+        await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+        await page.getByRole('button', { name: 'Edit guide' }).click();
+        if (door === 'close') await page.getByRole('button', { name: 'Close', exact: true }).click();
+        if (door === 'cancel') await page.getByRole('button', { name: 'Cancel' }).click();
+        if (door === 'escape') await page.keyboard.press('Escape');
+        if (door === 'backdrop') await page.mouse.click(10, 10);
+        await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
+        assert.deepEqual(await events(page), [
+          { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' },
+          { step: 'edit', via: 'pencil' },
+          { step: 'cancel' },
+        ], door);
+      } finally { await page.close(); }
+    }
+  });
 }
+
+test('a short tablet window keeps the draft and footer actions separate and reachable', async () => {
+  const page = await open({ guide: GUIDE, band: 'tablet' }, { width: 744, height: 280, reducedMotion: 'reduce' });
+  try {
+    await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
+    await page.getByRole('button', { name: 'Edit guide' }).click();
+    const field = page.locator('.st-guide-field');
+    await field.fill(`${GUIDE} Written`);
+    assert.deepEqual(await page.locator('.st-guide-paper').evaluate((paper) => {
+      const [draft, footer, save] = ['.st-guide-field', '.st-guide-footer', '.st-guide-actions > :last-child']
+        .map((selector) => paper.querySelector(selector).getBoundingClientRect());
+      const frame = paper.getBoundingClientRect();
+      return { separated: draft.bottom <= footer.top, reachable: save.bottom <= frame.bottom, scrolls: paper.querySelector('.st-guide-field').scrollHeight > paper.querySelector('.st-guide-field').clientHeight };
+    }), { separated: true, reachable: true, scrolls: true });
+    await page.getByRole('button', { name: 'Save' }).click();
+    assert.deepEqual(await page.evaluate(() => window.writes), [`${GUIDE} Written`]);
+  } finally { await page.close(); }
+});
