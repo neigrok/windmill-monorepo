@@ -47,7 +47,8 @@ It is written in Rust. It runs as its own container on the production host besid
 - **D-4 Period.** One stretch `[start, end)` the customer paid for or was granted, as the store states
   it, with the store transaction that created it, its price and currency, and its refund time while the
   store has taken the money back. A renewal's period starts where the previous one ends, not at the
-  instant the store charged it, so the periods of one subscription never overlap.
+  instant the store charged it, so the periods a store states for one subscription do not overlap; one
+  that does is written as stated all the same, since a period is its store transaction (INV-7).
 - **D-5 Observation.** A verified statement by a store of one subscription's whole state at one
   instant (`observedAt`, the store's own stamp). Every adapter produces observations and nothing else.
 - **D-6 Event.** A normalized fact recorded when an observation changes a subscription. Events are
@@ -67,7 +68,7 @@ It is written in Rust. It runs as its own container on the production host besid
 | Identity | `id` | The service's own UUID. |
 | | `store`, `environment`, `storeSubscriptionId` | D-1, D-2, D-3. Unique together. |
 | | `plan`, `productId`, `billingInterval` | D-9, the store's SKU, and an ISO 8601 duration (`P1M`). |
-| Binding | `accountId`, `boundAt`, `boundBy` | D-7. `boundBy` is `purchase` or `claim`. Null until bound. |
+| Binding | `accountId`, `boundAt`, `boundBy` | D-7. `boundBy` is `purchase` or `claim`. Null until bound. `boundAt` is `startedAt` for a binding at purchase, whichever observation carries the hint, and the claim's instant for a claim. |
 | Lifecycle | `state` | §3.2. |
 | | `startedAt` | The first purchase of this lineage. |
 | | `currentPeriod` | The start and end of the period in force (D-4). |
@@ -118,17 +119,22 @@ same lineage, which returns the subscription to `active` and records `started` a
 
 ### §3.4 Observation and events
 
-The domain has one write: `observe(subscription | none, observation) → (subscription, events)`.
+The domain has one write, `observe`. It takes what the ledger holds for one lineage (the subscription
+or none, and its periods), one observation, the observation's account hint as resolved against the
+erased accounts, and a claim if a claim door calls; it returns the subscription, the periods to write
+and the events to append, or a refusal (§4).
 
 - **INV-4 Idempotent.** Applying an observation twice changes nothing and records nothing.
 - **INV-5 Stale-safe.** An observation older than the record's `observedAt` changes no field of the
-  subscription. It still adds a period the ledger lacks, and its statement of a period's refund time
-  applies when it is newer than the statement that last set or cleared that refund time.
+  subscription but its binding (§4). It still adds a period the ledger lacks, and its statement of a
+  period's refund time applies when it is newer than the newest statement of that period the ledger
+  has applied.
 - **INV-6 Convergent.** For any order of any set of observations, the resulting subscription equals the
   one the newest observation alone produces, and the resulting set of periods is the union, each
   period's refund time as its newest statement gives it.
 - **INV-7.** A period is identified by its store transaction and written once. Afterwards only its
   refund time changes: set when the store takes the money back, cleared when the store reverses that.
+  A period keeps the `observedAt` of the newest statement of it applied.
 
 Events: `started`, `renewed`, `renewal_turned_off`, `renewal_turned_on`, `payment_failed`,
 `payment_recovered`, `pause_scheduled`, `paused`, `resumed`, `plan_change_scheduled`, `plan_changed`,
@@ -136,6 +142,26 @@ Events: `started`, `renewed`, `renewal_turned_off`, `renewal_turned_on`, `paymen
 three period events `period_recorded`, `period_refunded` and `period_refund_reversed`. Each carries
 `seq`, `type`, `occurredAt` (the store's time), `recordedAt`, `subscriptionId` and `accountId`; a period
 event also carries its period.
+
+An observation's events read in story order: its state events, then `bound`, then its period events by
+their periods' starts, and `expired` or `revoked` last. A state event is recorded when the newest status
+changes as below, and occurs at the observation's `observedAt` unless another instant is named:
+
+- `started`: the lineage is new, at `startedAt`; or it leaves `expired`, or leaves `revoked` with a new
+  period in force, at that period's start. The events after it compare the stated status with an
+  `active`, renewing subscription in the same period.
+- A new period in force records the one event that names how it came: `renewed` after `active`,
+  `payment_recovered` after `grace` or `on_hold`, `resumed` after `paused`. Turning `active` from those
+  states records `payment_recovered` or `resumed` with or without a new period.
+- `revocation_reversed`: it leaves `revoked` without a new period in force.
+- `plan_changed`: the product changes. `period_extended`: the period in force keeps its start and ends
+  later.
+- `payment_failed`: it enters `grace` or `on_hold` from a state that is neither, at `paymentFailedAt`.
+- `renewal_turned_off`, at `cancelRequestedAt` when stated, and `renewal_turned_on`: `autoRenew` changes.
+- `plan_change_scheduled`, `pause_scheduled`: `nextProductId` or `pauseScheduledFor` is set to a new value.
+- `paused`, `expired`, `revoked`: it enters that state, at `pausedAt` or `endedAt`.
+- `bound` occurs at `boundAt` and `period_refunded` at the refund time; the other period events occur at
+  `observedAt`.
 
 - **INV-8.** Events are appended under one lock, so `seq` order is commit order and a reader that has
   seen `seq = n` has seen every event below it. `seq` increases and may skip numbers.

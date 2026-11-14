@@ -32,6 +32,37 @@ Every crate inherits `[workspace.lints]`, which forbids `unsafe` code.
 or build dependency between the crates is not one of the five edges above, or when `domain` has a
 normal or build dependency outside its allowlist.
 
+## Domain
+
+`domain` holds every rule about a subscription's lifecycle, as pure functions of values: no I/O, no
+clock, no randomness. Its files, by kind:
+
+| File | Holds |
+|---|---|
+| `values.rs` | Instants (epoch milliseconds), spans, money, the text ids and the closed names: `Store`, `Environment`, `Plan` |
+| `subscription.rs` | The record: `Subscription`, its `Status` as the newest observation stated it, a `State` that carries only its own facts, `Period`, and access (`access_until`, `grants_access`) |
+| `observe.rs` | `Observation`, what a caller hands `observe`, the `Change` it returns, `Event` and `Refusal` |
+| `entitlement.rs` | `AccountEntitlement`, one `Entitlement` block per environment, folded from the ledger alone |
+
+The action that applies an observation calls `observe` once:
+
+1. Load the lineage's `Ledger`: its subscription, if any, and its periods.
+2. Resolve the observation's account hint against the erased accounts into an `AccountHint`, and pass
+   the claim when a claim door calls.
+3. Mint `NewIds` for the observation: a subscription id and one period id for each period it states.
+   `observe` uses the ones it needs.
+4. Persist the returned `Change` in one transaction: the subscription, each written or restated
+   period, and the events in order, which the ledger stamps with `seq` and `recordedAt`. A `Refusal`
+   persists nothing.
+5. After the commit, write `hint_for_store`, when present, to the store as the account hint.
+
+`verifiedAt` is the sweep's bookkeeping: storage stamps it when it applies a pull, and the domain's
+subscription leaves it out, since no single observation can state it (INV-6).
+
+`tests/vectors/` holds the lifecycle stories every implementation of the domain passes, and
+`crates/domain/tests/vectors.rs` runs them. `crates/domain/tests/observe.rs` holds the property tests
+of INV-4, INV-5 and INV-6.
+
 ## Toolchain
 
 `rust-toolchain.toml` pins Rust 1.99.1 with rustfmt and Clippy; `rustup toolchain install`, run in
