@@ -824,12 +824,13 @@ under the same lock, the narrower first: making the root private shuts its open 
 row says so, and opening it opens them after. Each owning step is recorded by its own tree's room as
 every write lands, under that tree's strand and before the write is told to anyone
 (`TreeRoom::joinSubgraph`, `applyCommands`), so a branch hides the moment its step's deletion lands
-and shows with its revive, saved or not. A room records its owning steps as it opens too, from the
-stored rows no other room of its tree can have written past. The live rooms below a step whose
-presence changed are told, and the socket drops the readers they may no longer keep. A closed
-subtree the stored rows admit is read again under its root's lock with no access live, so a parent
-room that saves a deletion and closes between the first read and that check admits nobody; one they
-hide is answered hidden at once, at worst missing a revive saved since, which is narrower, never wider.
+and shows with its revive, saved or not. A room records its owning steps as it opens too: the stored
+rows may name a subtree whose create the tree's last room missed, the commit's answer lost, and that
+room recorded no write of its step. The live rooms below a step whose presence changed are told, and
+the socket drops the readers they may no longer keep. A closed subtree the stored rows admit is read
+again under its root's lock with no access live, so a parent room that saves a deletion and closes
+between the first read and that check admits nobody; one they hide is answered hidden at once, at
+worst missing a revive saved since, which is narrower, never wider.
 No tree ever admits a reader its root and its path do not. A visibility change aimed at a subtree is
 refused `not-a-root` (`PATCH /v1/trees/{id}`, `409`, naming the step it hangs from and its root).
 
@@ -866,9 +867,9 @@ Registered in `products/roadmap/routes.cpp`.
 Single edits have no REST endpoint — they ride the socket. A whole document is taken by `POST
 /v1/trees` alone, which creates a tree and never writes one that stands: an id the caller already
 owns answers `existed` with its row untouched. A document is grafted into a standing tree through
-its room, by MCP `import_subgraph` or a socket frame. No route takes `PUT` on a tree: it is answered
-as any method a path has no handler for, the framework's own `404 Not Found`, and writes nothing and
-no log line. Inbound models are suffixed `Request`, outbound `Response`.
+its room, by MCP `import_subgraph` or a socket frame. `PUT /v1/trees/{id}` has no handler: it is
+answered the framework's own `404 Not Found`, and writes nothing and no log line. Inbound models are
+suffixed `Request`, outbound `Response`.
 
 `GET /v1/trees/{id}` answers `{seq, data, state, createdAt, visibility, mine, root, parent, path,
 depth}`, the last four where the tree sits and `data.title` its name (Model, Subtrees); a subtree's

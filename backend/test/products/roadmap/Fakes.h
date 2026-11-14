@@ -645,6 +645,7 @@ struct FakeTreeRepository : TreeRepository {
   std::map<std::string, Subtree> subtrees;
   // Runs inside createSubtree before anything lands, the way a refused or dropped statement holds its caller; it may throw.
   std::function<void()> duringSubtreeCreate;
+  bool subtreeAnswerLost = false;  // createSubtree stores the child and then throws, once, the way a lost commit answer does
   TreeId rootOf(const TreeId& tree) const {
     const auto subtree = subtrees.find(tree.str());
     return subtree == subtrees.end() ? tree : subtree->second.root;
@@ -684,6 +685,10 @@ struct FakeTreeRepository : TreeRepository {
     byId[child.str()] = StoredTree{GraphState{}, legend, {}, 0, stored->owner, Visibility::private_};
     subtrees[child.str()] = created;
     byId[parent.tree.str()].head = parentSeq;
+    if (subtreeAnswerLost) {
+      subtreeAnswerLost = false;
+      throw std::runtime_error("the commit's answer was lost");
+    }
     return created;
   }
 

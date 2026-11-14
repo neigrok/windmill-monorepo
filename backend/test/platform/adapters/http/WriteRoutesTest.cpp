@@ -516,8 +516,7 @@ TEST(main_sets_the_socket_message_limit_from_the_roadmap_contracts_constant) {
   CHECK(std::regex_search(main, std::regex(R"(app\.setClientMaxWebSocketMessageSize\s*\(\s*kMaxSocketMessageBytes\s*\))")));
 }
 
-// A tree's document is written through its room alone, so no handler takes PUT on a tree: the framework answers it as
-// it answers any method a path has no handler for, with no write route to observe it.
+// A tree's document is written through its room alone, so `/v1/trees/{id}` registers no handler for PUT.
 TEST(roadmap_registers_no_handler_for_put_on_a_tree) {
   const std::string routes = sourceText(backendPath() / "products/roadmap/routes.cpp");
   const std::regex registration(R"re("/v1/trees/\{id\}",[\s\S]*?\{drogon::(\w+)\}\))re");

@@ -74,8 +74,8 @@ TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bo
   loaded.observe(guide_.stamp);
   for (const auto& [actor, mark] : loaded.marks) clock_.observe(mark);
   held_ = HeldStamps{std::move(loaded)};
-  // The room opens as its stored rows stand, which no other room of the tree's can have written past: its owning steps
-  // are recorded as they are.
+  // The stored rows may name a subtree whose create this tree's last room missed, the commit's answer lost, and whose
+  // step that room recorded no write of: each owning step is recorded as this room's graph holds it.
   recordOwningSteps();
 }
 
