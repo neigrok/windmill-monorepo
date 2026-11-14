@@ -17,6 +17,7 @@ uploads/
 deploy/*
 !deploy/Caddyfile
 !deploy/deploy-production.sh
+!deploy/docker-compose.yml
 !deploy/sync_compatibility.py
 *.md
 !products/gym/ARCHITECTURE.md
