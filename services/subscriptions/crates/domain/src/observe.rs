@@ -363,7 +363,9 @@ fn record_periods(
         (one.span.start, &one.transaction).cmp(&(other.span.start, &other.transaction))
     });
     for period in periods {
-        let before = held.iter().find(|held| held.id == period.id);
+        let before = held
+            .iter()
+            .find(|held| held.transaction == period.transaction);
         if before.is_none() || binds {
             events.push((EventKind::PeriodRecorded(period.clone()), observed_at));
         }
