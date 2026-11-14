@@ -142,8 +142,9 @@ struct TreeRepository {
   // Every owning step under `root`, at any depth, whose step is not present in its tree's stored rows: what the live
   // access of the root's trees starts from.
   virtual std::set<OwningStep> absentStepsUnder(const TreeId& root) = 0;
-  // Of each tree among `trees` whose row stands, its branch off the stored rows (BranchSize): the subtrees reached down
-  // present owning steps, and the present steps of the tree and of each of them.
+  // Of each tree among `trees` that has a row, its branch off the stored rows (BranchSize): the subtrees reached down
+  // present owning steps, and the present steps of the tree and of each of them. A removed root's branch is counted
+  // as it stood, which is what its removal's answer repeats.
   virtual std::map<TreeId, BranchSize> branchSizes(const std::set<TreeId>& trees) = 0;
   // Where `tree` sits as a read answers it (Place), off the stored rows: one walk up its parents, each subtree named by
   // its owning step's label. nullopt when its own row or its root's is deleted. Whether its branch stands is

@@ -1565,18 +1565,6 @@ ToolResult listRegistry(TreeRegistry& registry, const std::string& origin, const
 }
 
 ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& caller) {
-  // What the removal takes, read before it, so the answer counts what went; a read that fails leaves the count out.
-  std::optional<BranchSize> branch;
-  {
-    WriteObservation counting{"roadmap.tree.branch", "roadmap", currentWriteDoor()};
-    try {
-      const std::map<TreeId, BranchSize> sizes = registry.branchSizes({tree});
-      if (const auto size = sizes.find(tree); size != sizes.end()) branch = size->second;
-      counting.skip();
-    } catch (const std::exception& failure) {
-      counting.fail(failure);
-    }
-  }
   const std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot> removed = registry.remove(tree, caller);
   if (const NotARoot* refusal = std::get_if<NotARoot>(&removed))
     return ToolResult::failure("this tree is a subtree: it hangs from step \"" + refusal->owningStep.step.str() +
@@ -1598,7 +1586,16 @@ ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& 
   Json::Value out = toJson(std::get<Cascade>(removed));
   out["deleted"] = true;
   out["id"] = tree.str();
-  if (branch) out["branch"] = toJson(*branch);
+  // What the removal took, counted once it passed every gate, so a refused call costs no count; left out when the count
+  // cannot be read.
+  WriteObservation counting{"roadmap.tree.branch", "roadmap", currentWriteDoor()};
+  try {
+    const std::map<TreeId, BranchSize> sizes = registry.branchSizes({tree});
+    if (const auto size = sizes.find(tree); size != sizes.end()) out["branch"] = toJson(size->second);
+    counting.skip();
+  } catch (const std::exception& failure) {
+    counting.fail(failure);
+  }
   return ToolResult::json(out);
 }
 

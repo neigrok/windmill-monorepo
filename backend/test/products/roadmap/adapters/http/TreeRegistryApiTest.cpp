@@ -832,3 +832,35 @@ TEST(a_subtree_is_never_deleted_or_planted_by_its_id_and_a_roots_row_counts_its_
   CHECK_EQ(bodyOf(removed), parse(R"({"removed":[],"branch":{"subtrees":1,"steps":3}})"));
   CHECK_FALSE(h.rooms.accessOf(tid("t_00000000000000c1")).has_value());
 }
+
+// What a removal takes is counted once the removal has passed every gate, so a refused DELETE costs no count: an
+// absent id, a private tree of someone else's and a subtree's id read no branch, and the owner's removal is answered
+// what went.
+TEST(delete_counts_the_branch_only_once_the_removal_passed_its_gates) {
+  Harness h;
+  const UserId me = h.signIn("s-live", "sam@example.com");
+  h.signIn("s-stranger", "stranger@example.com");
+  LooseGraph root;
+  root.createNode(nid("rig"), "Rig", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  h.trees.byId["t_root"] = StoredTree{root.exportState(), LegendState{}, {"Mine", {}}, 0, me};
+  h.trees.byId["t_00000000000000c1"] = StoredTree{GraphState{}, LegendState{}, {"", {}}, 0, me};
+  h.trees.subtrees["t_00000000000000c1"] =
+      Subtree{tid("t_00000000000000c1"), tid("t_root"), OwningStep{tid("t_root"), nid("rig")}, 1, 0};
+  const auto remove = [&](const char* session, const std::string& id) {
+    auto made = drogon::HttpRequest::newHttpRequest();
+    made->setMethod(drogon::Delete);
+    made->addCookie("wm_session", session);
+    drogon::HttpResponsePtr captured;
+    h.api.deleteTree(made, [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
+    return captured;
+  };
+
+  CHECK_EQ(remove("s-stranger", "t_root")->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(remove("s-stranger", "t_9999999999999999")->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(remove("s-live", "t_00000000000000c1")->getStatusCode(), drogon::k409Conflict);
+  CHECK(h.trees.sizeReads.empty());
+
+  const drogon::HttpResponsePtr removed = remove("s-live", "t_root");
+  CHECK_EQ(bodyOf(removed), parse(R"({"removed":[],"branch":{"subtrees":1,"steps":1}})"));
+  CHECK(h.trees.sizeReads == (std::vector<std::set<TreeId>>{{tid("t_root")}}));
+}

@@ -333,8 +333,11 @@ struct FakeTreeRepository : TreeRepository {
     return absent;
   }
   bool sizeReadsFail = false;  // branchSizes throws, the way a dropped connection does
-  // The real statement's walk: down each standing tree's present owning steps, counting the subtrees and every step.
+  // One entry per branchSizes read: the trees it counted.
+  std::vector<std::set<TreeId>> sizeReads;
+  // The real statement's walk: down each tree's present owning steps, counting the subtrees and every step.
   std::map<TreeId, BranchSize> branchSizes(const std::set<TreeId>& trees) override {
+    sizeReads.push_back(trees);
     if (sizeReadsFail) throw std::runtime_error("connection reset mid-read");
     std::map<TreeId, BranchSize> sizes;
     const std::function<BranchSize(const TreeId&)> branchOf = [&](const TreeId& tree) {
@@ -349,7 +352,7 @@ struct FakeTreeRepository : TreeRepository {
       return branch;
     };
     for (const TreeId& tree : trees)
-      if (row(tree)) sizes.emplace(tree, branchOf(tree));
+      if (byId.count(tree.str())) sizes.emplace(tree, branchOf(tree));
     return sizes;
   }
   // Projected off the row the delete left behind: only a deleted id answers, and only when it had an owner.

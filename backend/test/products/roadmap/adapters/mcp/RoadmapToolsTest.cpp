@@ -8975,3 +8975,15 @@ TEST(mcp_get_tree_answers_a_subtree_whose_revive_is_held_unsaved) {
   REQUIRE(!read.isError);
   CHECK_EQ(body(read)["tree"]["title"].asString(), std::string("Rig"));
 }
+
+// delete_tree counts what a removal takes only once the removal passed its gates: a call refused reads no branch.
+TEST(mcp_delete_tree_counts_the_branch_only_once_the_removal_passed_its_gates) {
+  Harness h;
+  h.plant("t_eve", uid("eve"), "", {});
+  Json::Value theirs(Json::objectValue);
+  theirs["treeId"] = "t_eve";
+  CHECK(h.tools.callTool("delete_tree", theirs, ToolCaller{h.caller, ToolScope::everything()}).isError);
+  CHECK(h.trees.sizeReads.empty());
+  CHECK_EQ(body(h.call("delete_tree", kNoArgs))["branch"], parse(R"({"subtrees":0,"steps":0})"));
+  CHECK_EQ(h.trees.sizeReads.size(), 1u);
+}

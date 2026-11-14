@@ -232,18 +232,6 @@ void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k401Unauthorized, "sign in to delete a tree"));
     return;
   }
-  // What the removal takes, read before it, so the answer counts what went; a read that fails leaves the count out.
-  std::optional<BranchSize> branch;
-  {
-    WriteObservation counting{"roadmap.tree.branch", "roadmap", "rest"};
-    try {
-      const std::map<TreeId, BranchSize> sizes = registry_->branchSizes({TreeId{treeId}});
-      if (const auto size = sizes.find(TreeId{treeId}); size != sizes.end()) branch = size->second;
-      counting.skip();
-    } catch (const std::exception& failure) {
-      counting.fail(failure);
-    }
-  }
   const std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot> removed =
       registry_->remove(TreeId{treeId}, *caller);
   if (const NotARoot* refusal = std::get_if<NotARoot>(&removed)) {
@@ -269,9 +257,17 @@ void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
-  // What became of the steps of the caller's other trees that opened it, and what the removal took.
+  // What became of the steps of the caller's other trees that opened it, and what the removal took: counted once the
+  // removal passed every gate, so a refused one costs no count, and left out when the count cannot be read.
   Json::Value body = toJson(std::get<Cascade>(removed));
-  if (branch) body["branch"] = toJson(*branch);
+  WriteObservation counting{"roadmap.tree.branch", "roadmap", "rest"};
+  try {
+    const std::map<TreeId, BranchSize> sizes = registry_->branchSizes({TreeId{treeId}});
+    if (const auto size = sizes.find(TreeId{treeId}); size != sizes.end()) body["branch"] = toJson(size->second);
+    counting.skip();
+  } catch (const std::exception& failure) {
+    counting.fail(failure);
+  }
   callback(jsonResponse(body));
 }
 

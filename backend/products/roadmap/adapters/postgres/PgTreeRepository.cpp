@@ -275,8 +275,7 @@ std::map<TreeId, BranchSize> PgTreeRepository::branchSizes(const std::set<TreeId
   // tree_nodes_pkey.
   pqxx::result rows = txn.exec_params(
       "WITH RECURSIVE branch(top, id) AS ("
-      "  SELECT t.id, t.id FROM trees t "
-      "  WHERE t.id IN (SELECT jsonb_array_elements_text($1::jsonb)) AND t.deleted_at IS NULL"
+      "  SELECT t.id, t.id FROM trees t WHERE t.id IN (SELECT jsonb_array_elements_text($1::jsonb))"
       "  UNION ALL"
       "  SELECT b.top, c.id FROM branch b JOIN trees c ON c.parent_tree = b.id AND c.deleted_at IS NULL "
       "  WHERE EXISTS (SELECT 1 FROM tree_nodes s WHERE s.tree_id = c.parent_tree AND s.node_id = c.parent_step "

@@ -794,9 +794,10 @@ MCP `list_trees` answers the same rows without `openers`, each with its `url`.
 `DELETE /v1/trees/{id}` removes a root, and with it every branch under it and the steps that open it
 in the caller's other trees: an opened tree goes as a node does. A removal is final. Aimed at a
 subtree it is refused `409` `not-a-root`, `{code, error, parent: {tree, step}, root}`, to its owner,
-and nothing is removed: a subtree goes and comes back with its owning step. What the removal takes,
-`TreeRepository::branchSizes` of the tree, is read first, and the answer carries it as `branch:
-{subtrees, steps}`, left out when that read fails, which is reported and refuses nothing. First, with no strand held, the caller's standing trees
+and nothing is removed: a subtree goes and comes back with its owning step. What the removal took,
+`TreeRepository::branchSizes` of the removed root, is read once the removal has passed every gate —
+a refused removal reads nothing more than the gates do — and the answer carries it as `branch:
+{subtrees, steps}`, left out when that read fails, which is reported and undoes nothing. First, with no strand held, the caller's standing trees
 other than this one that hold a present step opening it are read in one statement
 (`TreeRepository::treesOpening`, keyed on the caller's own trees and reading each one's steps through
 `tree_nodes_pointers_idx`, so pointers other accounts plant at the tree are never read; for a tree
