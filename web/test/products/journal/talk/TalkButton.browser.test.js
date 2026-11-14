@@ -28,7 +28,8 @@ window.mount = (theme) => createRoot(document.getElementById('fixture')).render(
 const auth = `
 import { useSyncExternalStore } from 'react';
 const listeners = new Set();
-window.account = { status: 'signed-in', user: { id: 'u_1' } };
+window.authRefreshes = 0;
+window.account = { status: 'signed-in', user: { id: 'u_1' }, refresh: async () => { window.authRefreshes += 1; } };
 window.signIn = (status) => { window.account = { ...window.account, status }; listeners.forEach((listener) => listener()); };
 export const useAuth = () => useSyncExternalStore(
   (listener) => { listeners.add(listener); return () => listeners.delete(listener); }, () => window.account);
@@ -289,11 +290,15 @@ test('a busy allowance offers Try again, which sends the kept take once more and
   ]);
 });
 
+// The server is the authority on the session: its 401 asks for sign-in even while the account still reads signed in,
+// and has the account check itself.
 test('signed out mid-take, the face opens the sign-in door and, signed back in, offers the send again', async (t) => {
   const talk = await room(t, { takes: [{ status: 401, body: { error: 'sign in to talk' } }] });
 
   await talk.talk(5);
   await talk.page.locator('.journal-talk-take').waitFor();
+  assert.deepEqual((await talk.shown()).acts, ['Sign in', 'Download recording']);
+  assert.equal(await talk.page.evaluate(() => window.authRefreshes), 1);
   await talk.page.evaluate(() => window.signIn('signed-out'));
   assert.deepEqual((await talk.shown()).acts, ['Sign in', 'Download recording']);
   await talk.page.getByRole('button', { name: 'Sign in' }).click();

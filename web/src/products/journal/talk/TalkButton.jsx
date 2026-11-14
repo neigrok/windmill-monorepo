@@ -41,6 +41,9 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
   const [take, setTake] = useState(null);           // the refused take this tab holds
   const [discarded, setDiscarded] = useState(null); // a take × let go, back with Undo until its hold ends
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false);
+  // The server said the session is gone, which the account's own state may not know yet: the face asks for sign-in
+  // until the account comes back signed in.
+  const [signInNeeded, setSignInNeeded] = useState(false);
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
   const discardTimer = useRef(null);
@@ -50,7 +53,8 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
   const renews = useRef(Promise.resolve(false));
   const mounted = useRef(false);
   const latest = useRef({});
-  const { status } = useAuth();
+  const lastStatus = useRef(null);
+  const { status, refresh: recheckAccount } = useAuth();
   const { loading: entLoading, windmillOne, refresh } = useEntitlements();
   latest.current = { take, discarded, close: () => close() };
 
@@ -65,6 +69,11 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
       latest.current.discarded?.release();
     };
   }, []);
+
+  useEffect(() => {
+    if (status === 'signed-in' && lastStatus.current !== null && lastStatus.current !== 'signed-in') setSignInNeeded(false);
+    lastStatus.current = status;
+  }, [status]);
 
   // Escape closes the sheet, as pressing the tool again does.
   useEffect(() => {
@@ -120,9 +129,11 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
     }
   };
 
-  // A refused take stays, under the face that says why. A lapsed subscription re-syncs, so the mic re-locks.
+  // A refused take stays, under the face that says why. A lapsed session or subscription re-syncs, so the account
+  // learns what the server said and the mic re-locks.
   const hold = async (kept, error) => {
     const refused = Refusal.ofAnswer(error, { renews: await renews.current });
+    if (error?.status === 401) { setSignInNeeded(true); recheckAccount?.().catch(() => {}); }
     if (error?.status === 403) refresh();
     if (refused.until !== null) remembered.current = refused;
     setTake(kept);
@@ -265,7 +276,7 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
               refusal={refusal}
               take={take}
               discarded={Boolean(discarded)}
-              acts={refusal.acts({ holding: Boolean(take), signedIn: status === 'signed-in' })}
+              acts={refusal.acts({ holding: Boolean(take), signedIn: status === 'signed-in' && !signInNeeded })}
               online={online}
               on={acts}
               onDiscard={discard}
