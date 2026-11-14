@@ -49,8 +49,8 @@ bool isSessionKey(const std::string& key) {
   return true;
 }
 
-// One beacon entry, or nullopt for a malformed one — a bad entry drops alone, never its siblings.
-// Props must stay a flat object within the 1KB budget.
+// One beacon entry, or nullopt for a malformed one or one naming an event only the server records — a bad entry drops
+// alone, never its siblings. Props must stay a flat object within the 1KB budget.
 std::optional<FunnelEvent> eventOf(const Json::Value& entry, const std::string& platform) {
   if (!entry.isObject()) return std::nullopt;
   const Json::Value& name = entry["name"];
@@ -58,6 +58,7 @@ std::optional<FunnelEvent> eventOf(const Json::Value& entry, const std::string& 
   const Json::Value& props = entry["props"];
   const Json::Value& id = entry["id"];
   if (!name.isString() || !isSnakeName(name.asString())) return std::nullopt;
+  if (kServerOriginEvents.count(name.asString())) return std::nullopt;
   if (!clientMs.isNumeric()) return std::nullopt;
   const double ms = clientMs.asDouble();
   if (!std::isfinite(ms) || ms < 0 || ms > 4.0e12) return std::nullopt;  // a sane epoch-ms, not inf/garbage
@@ -97,6 +98,10 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
   const Json::Value& entries = root["events"];
   if (!sessionKey.isString() || !isSessionKey(sessionKey.asString()) || !entries.isArray()) {
     callback(error(drogon::k400BadRequest, "a beacon batch is {sessionKey, events: [...]}"));
+    return;
+  }
+  if (isServerOriginDevice(sessionKey.asString())) {
+    callback(error(drogon::k400BadRequest, "this session key is the server's own"));
     return;
   }
   const Json::Value& platform = root["platform"];

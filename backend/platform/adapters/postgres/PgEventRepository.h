@@ -17,8 +17,8 @@ public:
               const std::vector<FunnelEvent>& events) override;
   int countInLastDay(const std::string& sessionKey) override;
 
-  // The server's own event, written in `txn` once under its key, which outlives the row through retention and the
-  // account's erasure. An account this backend holds takes the event without its device key; one it no longer holds
+  // The server's own event, written in `txn` once under its key, which the row carries and which outlives the row
+  // through retention and the account's erasure. An account this backend holds takes the event without its device key; one it no longer holds
   // leaves the event no one's, under the device key. The event as stored, for the forwarder, or nothing when its key
   // was recorded before.
   std::optional<ServerEvent> recordOnce(pqxx::work& txn, const ServerEvent& event);

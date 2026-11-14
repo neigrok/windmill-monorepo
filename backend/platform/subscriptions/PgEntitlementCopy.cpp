@@ -22,7 +22,10 @@ public:
   PgPageTxn(PgPool& pool, const FeedCursor& target, bool rebuilding)
       : PageTxn(target, rebuilding), lease_(pool), work_(*lease_),
         cursor_(cursorFrom(work_.exec(std::string(kCursorRow) + " FOR UPDATE"))) {
-    if (rebuilding) work_.exec("DELETE FROM account_entitlements");
+    if (!rebuilding) return;
+    // The accounts before the rows the rebuild empties, the order an erasure takes them in.
+    work_.exec("SELECT 1 FROM users WHERE id IN (SELECT account_id FROM account_entitlements) FOR KEY SHARE");
+    work_.exec("DELETE FROM account_entitlements");
   }
 
   const FeedCursor& cursor() const override { return cursor_; }
@@ -66,7 +69,7 @@ void PgEntitlementCopy::consume(PageTxn& page, const FeedEntry& entry) {
   sqlOf(page).exec(
       "INSERT INTO account_entitlements "
       "(account_id, production_access_until, sandbox_access_until, entitlement, seq) "
-      "SELECT $1::uuid, $2, $3, $4::json, $5 WHERE EXISTS (SELECT 1 FROM users WHERE id = $1::uuid) "
+      "SELECT $1::uuid, $2, $3, $4::json, $5 WHERE EXISTS (SELECT 1 FROM users WHERE id = $1::uuid FOR KEY SHARE) "
       "ON CONFLICT (account_id) DO UPDATE SET production_access_until = excluded.production_access_until, "
       "sandbox_access_until = excluded.sandbox_access_until, entitlement = excluded.entitlement, seq = excluded.seq "
       "WHERE account_entitlements.seq < excluded.seq",

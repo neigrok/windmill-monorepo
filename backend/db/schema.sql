@@ -455,6 +455,8 @@ create table if not exists events (
   name        text not null,
   props       jsonb
 );
+-- The key an event the server recorded itself is recorded once under (server_event_keys); null for a client's.
+alter table events add column if not exists server_key text;
 create index if not exists events_name_ts on events (name, ts);
 -- The per-session ingest bound must stay a range scan over one session, never a scan of the stream.
 create index if not exists events_session_ts on events (session_key, ts);

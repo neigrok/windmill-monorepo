@@ -53,8 +53,9 @@ std::optional<ServerEvent> PgEventRepository::recordOnce(pqxx::work& txn, const 
   const pqxx::result stored = txn.exec(
       "WITH recorded AS (INSERT INTO server_event_keys (key) VALUES ($1) ON CONFLICT (key) DO NOTHING RETURNING key), "
       "held AS (SELECT id FROM users WHERE id = $4::uuid FOR KEY SHARE) "
-      "INSERT INTO events (client_ms, session_key, user_id, name, props) "
-      "SELECT $2, CASE WHEN held.id IS NULL THEN $3 END, held.id, $5, $6::jsonb FROM recorded LEFT JOIN held ON true "
+      "INSERT INTO events (client_ms, session_key, user_id, name, props, server_key) "
+      "SELECT $2, CASE WHEN held.id IS NULL THEN $3 END, held.id, $5, $6::jsonb, recorded.key "
+      "FROM recorded LEFT JOIN held ON true "
       "RETURNING coalesce(session_key, ''), user_id::text",
       pqxx::params{event.event.id, event.event.clientMs, event.sessionKey, user, event.event.name, event.event.props});
   if (stored.empty()) return std::nullopt;

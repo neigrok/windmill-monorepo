@@ -295,6 +295,36 @@ TEST(events_a_stored_batch_reaches_the_forwarder_as_stored_and_one_not_stored_ne
   CHECK_EQ(h.forwards->batches.size(), std::size_t{1});
 }
 
+TEST(events_a_client_batch_names_no_event_and_no_device_key_only_the_server_records) {
+  Harness h;
+  Json::Value events(Json::arrayValue);
+  for (const std::string& name : kServerOriginEvents) {
+    Json::Value forged = entry(name, 1000);
+    forged["id"] = "6927e7ab1d4daf287bbe9eaf1cb62da8";
+    forged["props"]["store"] = "app_store";
+    events.append(forged);
+  }
+  events.append(entry("app_started", 2000));
+
+  const auto response = send(h.api, post(batch("browser-abc", events)));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"accepted":1})"));
+  REQUIRE_EQ(h.repo->appended.size(), 1u);
+  REQUIRE_EQ(h.repo->appended[0].events.size(), 1u);
+  CHECK_EQ(h.repo->appended[0].events[0].name, std::string("app_started"));
+  CHECK_EQ(h.forwards->batches.size(), std::size_t{1});
+
+  // A batch under a device key the server's own events are told under is refused whole.
+  for (const char* deviceKey : {"subscription-3060389043f8b1972136c93d7e63ae88", "subscription-", "windmill-backend"}) {
+    const auto refused = send(h.api, post(batch(deviceKey, events)));
+    CHECK_EQ(refused->getStatusCode(), drogon::k400BadRequest);
+    CHECK_EQ(dump(bodyOf(refused)), std::string(R"({"error":"this session key is the server's own"})"));
+  }
+  CHECK_EQ(h.repo->appended.size(), 1u);
+  CHECK_EQ(h.forwards->batches.size(), std::size_t{1});
+}
+
 TEST(events_storage_failure_reports_once_without_private_properties_even_if_reporting_throws) {
   Harness h;
   h.repo->failAppend = true;

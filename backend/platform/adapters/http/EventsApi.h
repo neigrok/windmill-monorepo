@@ -15,7 +15,8 @@ namespace wm {
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
 // The funnel telemetry intake: anonymous and signed-in beacons alike POST small event batches. A
-// malformed entry is dropped without rejecting its siblings. Accepted events also forward to
+// malformed entry, or one naming an event only the server records, is dropped without rejecting its
+// siblings; a batch under a device key the server's own events use is refused whole. Accepted events also forward to
 // Amplitude (nullptr when unconfigured). The intake is anonymous, so it is bounded: 50 events a
 // call, 1KB of props each, and a ceiling on what one client session may write in a day (429 past it).
 class EventsApi {

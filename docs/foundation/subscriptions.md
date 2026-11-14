@@ -539,7 +539,7 @@ The backend's role cannot read it.
   The follower records them as product events in the store the `/v1/events` intake writes and
   forwards from: `subscription_started`, `subscription_renewed`, `subscription_renewal_turned_off`,
   `subscription_payment_failed`, `subscription_expired`, `subscription_revoked`, each with `store`,
-  `environment` and `offerKind`. The intake takes client batches; the follower records each event
+  `environment` and `offer_kind`. The intake takes client batches; the follower records each event
   through the store's server-origin write once (`PgEventRepository::recordOnce`), whatever page or
   rebuild reads it again.
 - Each device emits the steps a person takes: the buy control shown, purchase started, purchase

@@ -35,9 +35,9 @@ ServerEvent lifecycleEvent(const FeedEntry& entry, const std::string& name) {
   Json::Value props(Json::objectValue);
   props["store"] = entry.store;
   props["environment"] = entry.environment;
-  props["offerKind"] = entry.offerKind ? *entry.offerKind : std::string(unnamedOffer ? "unknown" : "none");
+  props["offer_kind"] = entry.offerKind ? *entry.offerKind : std::string(unnamedOffer ? "unknown" : "none");
   const std::string key = digest(entry.subscriptionId + " " + name + " " + std::to_string(entry.occurredAt));
-  return ServerEvent{"subscription-" + digest(entry.subscriptionId), entry.accountId,
+  return ServerEvent{kSubscriptionDevicePrefix + digest(entry.subscriptionId), entry.accountId,
                      FunnelEvent{name, entry.occurredAt, dump(props), key}};
 }
 }
