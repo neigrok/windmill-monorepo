@@ -25,6 +25,10 @@
 .st-board-skeleton-filter > :nth-child(4) { width: 97px; }
 .st-board-skeleton-filter > :nth-child(5) { width: 61px; }
 
+.st-board-skeleton-deck {
+  --st-board-rail: var(--surface-sunken);
+}
+
 /* ---- Skeleton card: a still card outline, with no motion, at the desktop's card radius from 744px. ---- */
 .st-board-skeleton-card {
   flex-shrink: 0;

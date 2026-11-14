@@ -414,6 +414,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             view={boardActive ? 'board' : 'tree'}
             role={who.role}
             title={boardAwaitsRoadmap ? undefined : tree?.title}
+            loading={boardAwaitsRoadmap && !loadError}
             back={treeVisit.from === null ? null : { title: treeVisit.from.title, onBack: treeVisit.back }}
             switcher={owner && !phone && !boardAwaitsRoadmap ? <TreeSwitcher {...verbs.switcher} /> : null}
             progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
