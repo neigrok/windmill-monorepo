@@ -13,7 +13,7 @@ using namespace wm::fake;
 namespace {
 
 TreeRoom makeRoom(FakeBus& bus) {
-  return TreeRoom(tid(), {"Title", {}}, {}, false, LooseGraph{}, Legend{}, 0, tid(), std::nullopt, 0, {},
+  return TreeRoom(tid(), {"Title", {}}, {}, false, LooseGraph{}, Legend{}, 0, tid(), {}, {},
                   std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, bus);
 }
 
@@ -52,7 +52,7 @@ TEST(room_next_stamp_dominates_the_loaded_document_state) {
   Hlc old{8000, 2, "old"};
   loaded.createNode(nid("seed"), "S", "i", NodeColor::sky, old);
   FakeBus bus;
-  TreeRoom room(tid(), {"T", {}}, {}, false, std::move(loaded), Legend{}, 0, tid(), std::nullopt, 0, {},
+  TreeRoom room(tid(), {"T", {}}, {}, false, std::move(loaded), Legend{}, 0, tid(), {}, {},
                 std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, bus);
 
   Hlc next = room.nextStamp(10);  // wall clock behind the persisted stamp
@@ -647,9 +647,9 @@ TEST(room_hands_its_pointers_to_a_caller_who_can_write_the_tree_and_to_nobody_el
   graph.createNode(nid("idea"), "Idea", "", NodeColor::sky, at(1));
   graph.createNode(nid("plain"), "Plain", "", NodeColor::sky, at(2));
   graph.setOpens(nid("idea"), tid("t_sub"), at(3));
-  const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), std::nullopt, 0, {},
+  const TreeRoom owned(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {}, {},
                        std::make_shared<RootAccess>(uid("owner"), Visibility::public_), 0, bus);
-  const TreeRoom nobodys(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), std::nullopt, 0, {},
+  const TreeRoom nobodys(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {}, {},
                          std::make_shared<RootAccess>(std::nullopt, Visibility::public_), 0, bus);
 
   CHECK(owned.pointersFor(uid("owner")) == (std::map<NodeId, TreeId>{{nid("idea"), tid("t_sub")}}));
@@ -671,7 +671,7 @@ TEST(room_reads_the_subtree_a_step_owns_as_the_tree_it_opens_whatever_its_pointe
   graph.setOpens(nid("sail"), tid("t_old"), at(5));
   graph.setOpens(nid("idea"), tid("t_other"), at(6));
   graph.deleteNode(nid("gone"), at(7));
-  TreeRoom room(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), std::nullopt, 0,
+  TreeRoom room(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {},
                 {{nid("sail"), tid("t_s")}, {nid("gone"), tid("t_g")}},
                 std::make_shared<RootAccess>(uid("owner"), Visibility::public_), 0, bus);
 
@@ -696,7 +696,8 @@ TEST(room_sends_a_subtree_no_title_register_of_its_own_and_a_root_its_own) {
   FakeBus bus;
   const auto roomWith = [&bus](const std::optional<OwningStep>& parent) {
     return TreeRoom(tid("t_s"), {"Its own register", at(9, "r_old")}, {}, false, LooseGraph{}, Legend{}, 0, tid("t_a"),
-                    parent, parent ? 1 : 0, {}, std::make_shared<RootAccess>(uid("owner"), Visibility::private_), 0, bus);
+                    parent ? std::vector<OwningStep>{*parent} : std::vector<OwningStep>{}, {},
+                    std::make_shared<RootAccess>(uid("owner"), Visibility::private_), 0, bus);
   };
   const Subgraph subtree = roomWith(OwningStep{tid("t_a"), nid("sail")}).deltaSince(VersionVector{});
   CHECK_FALSE(subtree.title.has_value());
@@ -704,4 +705,78 @@ TEST(room_sends_a_subtree_no_title_register_of_its_own_and_a_root_its_own) {
   const Subgraph root = roomWith(std::nullopt).deltaSince(VersionVector{});
   CHECK(root.title == (std::optional<Lww<std::string>>(Lww<std::string>{"Its own register", at(9, "r_old")})));
   CHECK(root.coverage->marks.count("r_old"));
+}
+
+// A deletion of an owning step names its subtree, whatever door it comes through: the room tells each door which steps
+// a write would take unnamed — a frame by what its join deletes, a graft by its tombstones, a deletion by the steps it
+// names — and a write that would land one anyway is a fault, refused with nothing landed and nobody told.
+TEST(room_names_the_owning_steps_a_write_would_remove_unconfirmed_and_never_lands_one) {
+  FakeBus bus;
+  LooseGraph graph;
+  graph.createNode(nid("sail"), "Sail", "", NodeColor::sky, at(1));
+  graph.createNode(nid("plain"), "Plain", "", NodeColor::sky, at(1));
+  TreeRoom room(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {}, {{nid("sail"), tid("t_s")}},
+                std::make_shared<RootAccess>(uid("owner"), Visibility::private_), 0, bus);
+
+  Subgraph frame;
+  frame.frameId = "f1";
+  frame.graph.nodes.push_back(NodeStateEntry{.id = nid("sail"), .deletedAt = at(5, "web")});
+  frame.graph.nodes.push_back(NodeStateEntry{.id = nid("plain"), .deletedAt = at(5, "web")});
+  CHECK(room.unconfirmedBranches(frame) == (std::vector<UnconfirmedBranch>{{nid("sail"), tid("t_s")}}));
+  Graft graft;
+  graft.tombstones = {nid("sail")};
+  CHECK(room.unconfirmedBranches(graft) == (std::vector<UnconfirmedBranch>{{nid("sail"), tid("t_s")}}));
+  CHECK(room.unconfirmedBranches({nid("sail"), nid("plain")}, {}) ==
+        (std::vector<UnconfirmedBranch>{{nid("sail"), tid("t_s")}}));
+
+  const auto aFault = [](const auto& write) {
+    try {
+      write();
+    } catch (const std::logic_error&) {
+      return true;
+    }
+    return false;
+  };
+  CHECK(aFault([&] { room.joinSubgraph(frame, uid("owner")); }));
+  CHECK(aFault([&] { room.importTree(graft, 10, uid("owner")); }));
+  CHECK(aFault([&] { room.applyCommands({DeleteNode{nid("sail")}}, 10, uid("owner")); }));
+  CHECK(room.hasNode(nid("sail")));
+  CHECK(room.hasNode(nid("plain")));
+  CHECK_EQ(room.head(), Seq{0});
+  CHECK(bus.subgraphBroadcasts.empty());
+
+  frame.branches = {tid("t_s")};
+  graft.branches = {tid("t_s")};
+  CHECK(room.unconfirmedBranches(frame).empty());
+  CHECK(room.unconfirmedBranches(graft).empty());
+  CHECK(room.joinSubgraph(frame, uid("owner")) == std::optional<Seq>(1));
+  CHECK_FALSE(room.hasNode(nid("sail")));
+  CHECK(bus.subgraphBroadcasts.back().subgraph.branches.empty());  // a confirmation, never sent on
+}
+
+// Every write records the room's owning steps in the root's access before it is told, so the access answers a deleted
+// step's branch as absent before any subscriber hears of the delete, and a revive's as standing; each change is told
+// once.
+TEST(room_records_its_owning_steps_in_the_roots_access_before_the_write_is_told) {
+  FakeBus bus;
+  LooseGraph graph;
+  graph.createNode(nid("sail"), "Sail", "", NodeColor::sky, at(1));
+  std::vector<OwningStep> moved;
+  const auto access = std::make_shared<RootAccess>(uid("owner"), Visibility::private_, std::set<OwningStep>{},
+                                                   [&moved](const OwningStep& step) { moved.push_back(step); });
+  TreeRoom room(tid(), {"Title", {}}, {}, false, graph, Legend{}, 0, tid(), {}, {{nid("sail"), tid("t_s")}}, access, 0,
+                bus);
+  const std::vector<OwningStep> below{OwningStep{tid(), nid("sail")}};
+  CHECK(access->admits(below));
+
+  room.applyCommands({DeleteNode{nid("sail")}}, 10, uid("owner"), {tid("t_s")});
+  CHECK_FALSE(access->admits(below));
+  CHECK(access->admits({}));
+  room.applyCommand(RenameNode{nid("sail"), "Still gone"}, 11, uid("owner"));
+  room.applyCommand(CreateNode{nid("sail"), "Sail", "", NodeColor::sky}, 12, uid("owner"));
+  CHECK(access->admits(below));
+  CHECK(moved == (std::vector<OwningStep>{OwningStep{tid(), nid("sail")}, OwningStep{tid(), nid("sail")}}));
+
+  access->setStanding(false);
+  CHECK_FALSE(access->admits({}));
 }

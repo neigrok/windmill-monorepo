@@ -28,8 +28,8 @@ TEST(log_privacy_keeps_audited_write_vendor_and_database_completion_lines) {
   CHECK_EQ(privacySafeLogBody("vendor openai transcribe 200 10.5ms", "VendorCall.cpp:91"),
            std::string("vendor openai transcribe 200 10.5ms"));
   CHECK_EQ(privacySafeLogBody(completion, "PgAiUsageRepository.cpp:61"), completion);
-  CHECK_EQ(privacySafeLogBody("roadmap_ws_subscriber_dropped door=websocket queued=over-16m idle_ms=0", "WsPresenceBus.cpp:20"),
-           std::string("roadmap_ws_subscriber_dropped door=websocket queued=over-16m idle_ms=0"));
+  CHECK_EQ(privacySafeLogBody("roadmap_ws_subscriber_dropped door=websocket rule=behind queued=under-64m idle_ms=0", "WsPresenceBus.cpp:20"),
+           std::string("roadmap_ws_subscriber_dropped door=websocket rule=behind queued=under-64m idle_ms=0"));
   CHECK_EQ(privacySafeLogBody("closed accounts: erased 2 past their grace", "ClosedAccountSweep.h:29"),
            std::string("closed accounts: erased 2 past their grace"));
   const std::string admission = "ai_output_admission input_nanos=60000000 output_token_nanos=25000 "
@@ -42,6 +42,8 @@ TEST(log_privacy_keeps_audited_write_vendor_and_database_completion_lines) {
   const std::string cascade = "roadmap_tree_remove_cascade door=rest trees=4 steps=3 edges=1 marks=1 removed=2 unsaved=1 "
       "incomplete=1 duration_ms=1203 request_id=0123456789abcdef0123456789abcdef";
   CHECK_EQ(privacySafeLogBody(cascade, "TreeRegistry.cpp:161"), cascade);
+  const std::string fork = "roadmap_tree_fork trees=100 duration_ms=179 request_id=0123456789abcdef0123456789abcdef";
+  CHECK_EQ(privacySafeLogBody(fork, "ForkService.cpp:83"), fork);
 }
 
 TEST(log_privacy_redacts_capabilities_and_secret_query_strings_in_full) {

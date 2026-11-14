@@ -154,6 +154,34 @@ TEST(registry_lists_roots_alone_and_counts_a_step_that_owns_a_subtree_done_when_
   CHECK_EQ(rows(), (std::vector<std::string>{"t_a 1/3"}));
 }
 
+// A root's row counts what its removal takes: every subtree reached down its present owning steps, at any depth, and the
+// steps of the root and of each of them. A subtree whose owning step is absent is no part of it.
+TEST(registry_rows_count_the_branch_a_roots_removal_takes) {
+  const auto owning = [](const char* id, const char* subtree) {
+    NodeSpec node = spec(id, NodeColor::sky, {});
+    node.opens = TreeId{std::string(subtree)};
+    return node;
+  };
+  const auto under = [](const char* tree, const char* step) {
+    return std::optional<OwningStep>(OwningStep{TreeId{std::string(tree)}, nid(step)});
+  };
+  std::vector<LoadedTree> loaded;
+  loaded.push_back({tree("t_a", {owning("sail", "t_s"), owning("swim", "t_w"), spec("coast", NodeColor::sky, {})}),
+                    0, 2, Progress{}, 0});
+  loaded.push_back({tree("t_s", {owning("rig", "t_r"), spec("knot", NodeColor::sky, {})}), 0, 3, Progress{}, 0,
+                    under("t_a", "sail")});
+  loaded.push_back({tree("t_r", {spec("bowline", NodeColor::sky, {})}), 0, 4, Progress{}, 0, under("t_s", "rig")});
+  loaded.push_back({tree("t_w", {}), 0, 5, Progress{}, 0, under("t_a", "swim")});
+  loaded.push_back({tree("t_gone", {spec("lost", NodeColor::sky, {})}), 0, 6, Progress{}, 0, under("t_a", "dive")});
+  loaded.push_back({tree("t_b", {spec("alone", NodeColor::sky, {})}), 0, 1, Progress{}, 0});
+
+  std::vector<std::string> branches;
+  for (const TreeSummary& summary : registrySummaries(loaded))
+    branches.push_back(summary.id.str() + " " + std::to_string(summary.branch.subtrees) + " subtrees, " +
+                       std::to_string(summary.branch.steps) + " steps");
+  CHECK_EQ(branches, (std::vector<std::string>{"t_a 3 subtrees, 6 steps", "t_b 0 subtrees, 1 steps"}));
+}
+
 TEST(registry_counts_a_chain_of_twenty_trees_as_done_from_the_mark_at_its_end) {
   const auto name = [](int k) { return std::string(k < 10 ? "t0" : "t") + std::to_string(k); };
   std::vector<LoadedTree> loaded;

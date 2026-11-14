@@ -109,10 +109,10 @@ std::vector<DueUser> PgReminderRepository::dueNow(std::uint64_t nowMs, int limit
 std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  // Every standing tree of theirs, each subtree with the step it hangs from; a subtree stands while its root does.
+  // Every standing tree of theirs, each subtree with the step it hangs from; a subtree stands while its branch does.
   pqxx::result trees = txn.exec_params(
       "SELECT t.id, t.title, t.parent_tree, t.parent_step, (extract(epoch from t.updated_at) * 1000)::bigint AS updated_ms "
-      "FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND " + rootStandsCondition("t") + " ORDER BY t.id",
+      "FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND " + branchStandsCondition("t") + " ORDER BY t.id",
       user.str());
   // A step that owns a standing subtree opens it, whatever its pointer holds.
   const std::string steps =

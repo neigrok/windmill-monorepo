@@ -708,6 +708,49 @@ std::string quotedList(const std::vector<std::string>& ids) {
   return out;
 }
 
+// The subtrees a call names in `branches` (SPEC.md, Model, Subtrees): a list of at most `cap` tree ids.
+std::variant<std::set<TreeId>, std::string> branchesOf(const Json::Value& args, std::size_t cap) {
+  if (std::optional<std::string> bad = optionalStrings(args["branches"], "branches", kMaxIdLength)) return *bad;
+  if (args["branches"].size() > cap)
+    return "branches has " + std::to_string(args["branches"].size()) + " items, max " + std::to_string(cap);
+  std::set<TreeId> branches;
+  for (const Json::Value& branch : args["branches"]) branches.emplace(branch.asString());
+  return branches;
+}
+
+// A call that would remove owning steps without naming their subtrees is refused whole, every branch named with its
+// size, read off the stored rows once the strand is released; a read that fails leaves the sizes out, is reported, and
+// the refusal still goes.
+ToolResult branchesUnconfirmed(TreeRegistry& trees, const std::vector<UnconfirmedBranch>& unconfirmed) {
+  std::set<TreeId> subtrees;
+  for (const UnconfirmedBranch& branch : unconfirmed) subtrees.insert(branch.subtree);
+  std::map<TreeId, BranchSize> sizes;
+  WriteObservation counting{"roadmap.tree.branch", "roadmap", currentWriteDoor()};
+  try {
+    sizes = trees.branchSizes(subtrees);
+    counting.skip();
+  } catch (const std::exception& failure) {
+    counting.fail(failure);
+  }
+  std::string named;
+  std::vector<std::string> ids;
+  for (const UnconfirmedBranch& branch : unconfirmed) {
+    named += named.empty() ? "" : "; ";
+    named += "step \"" + branch.step.str() + "\" owns the subtree \"" + branch.subtree.str() + "\"";
+    const auto counted = [](int n, const char* noun) { return std::to_string(n) + " " + noun + (n == 1 ? "" : "s"); };
+    if (const auto size = sizes.find(branch.subtree); size != sizes.end())
+      named += size->second.subtrees == 0
+                   ? ", holding " + counted(size->second.steps, "step")
+                   : ", holding " + counted(size->second.steps, "step") + " across it and the " +
+                         counted(size->second.subtrees, "subtree") + " under it";
+    ids.push_back(branch.subtree.str());
+  }
+  return ToolResult::failure(named + ". Deleting a step that owns a subtree hides that subtree and everything under it "
+                                     "until the step is revived; pass branches: [" + quotedList(ids) +
+                                 "] to take them with their steps. Nothing was deleted.",
+                             kBranchUnconfirmed);
+}
+
 // One mark as the caller asked for it. `outOfOrder` is their word that completing the node before
 // its prerequisites is meant; it lands on the row beside the status.
 struct RequestedMark {
@@ -1221,7 +1264,11 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
   const bool replace = args["prerequisiteMode"].asString() == "replace";
   graft.prerequisites = replace ? PrerequisiteMode::replace : PrerequisiteMode::merge;
   for (const Json::Value& id : args["tombstone"]) graft.tombstones.emplace_back(id.asString());
+  std::variant<std::set<TreeId>, std::string> named = branchesOf(args, kMaxTombstones);
+  if (const std::string* bad = std::get_if<std::string>(&named)) return ToolResult::failure(*bad);
+  graft.branches = std::get<std::set<TreeId>>(std::move(named));
   const bool dryRun = args["dryRun"].asBool();
+  std::vector<UnconfirmedBranch> unconfirmed;  // answered once the strand is released, each with its size
 
   std::optional<PointerEdit> pointerEdit;
   ToolResult grafted = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
@@ -1238,6 +1285,9 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     if (!missing.empty())
       return ToolResult::failure("tombstone names " + quotedList(missing) +
                                  ", which this tree does not hold. " + kNodeHandle.hint);
+    // A tombstoned step that owns a subtree goes only when `branches` names that subtree, dry run or not.
+    if (unconfirmed = room.unconfirmedBranches(graft); !unconfirmed.empty())
+      return ToolResult::failure("", kBranchUnconfirmed);
 
     // The links each node sends, judged against the ones its record holds, before the caps weigh what would land.
     std::variant<Graft, std::string> shown = room.resolveLinks(std::move(graft));
@@ -1345,6 +1395,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     answerDiagnostics(before, after, out);
     return ToolResult::json(out);
   });
+  if (!unconfirmed.empty()) return branchesUnconfirmed(trees, unconfirmed);
   grafted = withClosedLoops(trees, actor, tree, pointerEdit, grafted);
   if (grafted.isError || dryRun || carried.empty()) return grafted;
   // The rows a call carries land by one path, and a refusal of theirs is told in the receipt either way: a graft that
@@ -1420,16 +1471,20 @@ std::optional<std::string> deleteTargets(const Json::Value& args, std::vector<No
 
 // Every id is checked before any is applied, and the deletions — with the edges they dangle, when asked — land through
 // NodeEdits as one frame under one seq: the tree is never seen between them.
-ToolResult deleteNodes(RoomRegistry& registry, NodeEdits& edits, const TreeId& tree, const Json::Value& args,
-                       const UserId& actor) {
+ToolResult deleteNodes(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& edits, const TreeId& tree,
+                       const Json::Value& args, const UserId& actor) {
   std::vector<NodeId> targets;
   if (std::optional<std::string> bad = deleteTargets(args, targets)) return ToolResult::failure(*bad);
+  std::variant<std::set<TreeId>, std::string> named = branchesOf(args, kMaxDeleteNodeIds);
+  if (const std::string* bad = std::get_if<std::string>(&named)) return ToolResult::failure(*bad);
+  const std::set<TreeId> branches = std::get<std::set<TreeId>>(std::move(named));
   if (!args["prune"].isNull() && !args["prune"].isBool())
     return ToolResult::failure("argument \"prune\" must be a boolean, got " + typeName(args["prune"]));
   const DanglingEdges dangling = args["prune"].asBool() ? DanglingEdges::removed : DanglingEdges::kept;
   const bool single = args["nodeIds"].isNull();
 
-  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+  std::vector<UnconfirmedBranch> unconfirmed;  // answered once the strand is released, each with its size
+  ToolResult deletion = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     if (!room.readableBy(actor))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
@@ -1443,8 +1498,12 @@ ToolResult deleteNodes(RoomRegistry& registry, NodeEdits& edits, const TreeId& t
                                  " — nothing was deleted. " + kNodeHandle.hint);
 
     const TreeDiagnostics before = room.diagnose();
-    const std::variant<DeletedNodes, std::string> deleted = edits.deleteNodes(room, tree, targets, dangling, actor);
+    const auto deleted = edits.deleteNodes(room, tree, targets, dangling, actor, branches);
     if (const std::string* refusal = std::get_if<std::string>(&deleted)) return ToolResult::failure(*refusal);
+    if (const auto* unnamed = std::get_if<std::vector<UnconfirmedBranch>>(&deleted)) {
+      unconfirmed = *unnamed;
+      return ToolResult::failure("", kBranchUnconfirmed);
+    }
     const DeletedNodes& landed = std::get<DeletedNodes>(deleted);
     // The tree's row went away under its room, which went with it: the tree is answered as absent.
     if (landed.saved == Saved::gone) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
@@ -1465,6 +1524,8 @@ ToolResult deleteNodes(RoomRegistry& registry, NodeEdits& edits, const TreeId& t
     out["pruned"] = pruned;
     return ToolResult::json(out);
   });
+  if (!unconfirmed.empty()) return branchesUnconfirmed(trees, unconfirmed);
+  return deletion;
 }
 
 // A tree is born with the legend the call sends, whole and in its order, or with the default one when
@@ -1504,7 +1565,14 @@ ToolResult listRegistry(TreeRegistry& registry, const std::string& origin, const
 }
 
 ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& caller) {
-  const std::variant<Cascade, TreeRegistry::RemovalRefusal> removed = registry.remove(tree, caller);
+  const std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot> removed = registry.remove(tree, caller);
+  if (const NotARoot* refusal = std::get_if<NotARoot>(&removed))
+    return ToolResult::failure("this tree is a subtree: it hangs from step \"" + refusal->owningStep.step.str() +
+                                   "\" of \"" + refusal->owningStep.tree.str() + "\" under the roadmap \"" +
+                                   refusal->root.str() + "\", and goes and comes back with that step. Delete the step "
+                                   "with delete_node, naming this tree in its branches, and revive the step to bring "
+                                   "it back.",
+                               kNotARoot);
   if (const TreeRegistry::RemovalRefusal* refusal = std::get_if<TreeRegistry::RemovalRefusal>(&removed)) {
     if (*refusal == TreeRegistry::RemovalRefusal::notYours)
       return ToolResult::failure(writeRefusalSentence(WriteRefusal::notYours));
@@ -1518,6 +1586,16 @@ ToolResult removeTree(TreeRegistry& registry, const TreeId& tree, const UserId& 
   Json::Value out = toJson(std::get<Cascade>(removed));
   out["deleted"] = true;
   out["id"] = tree.str();
+  // What the removal took, counted once it passed every gate, so a refused call costs no count; left out when the count
+  // cannot be read.
+  WriteObservation counting{"roadmap.tree.branch", "roadmap", currentWriteDoor()};
+  try {
+    const std::map<TreeId, BranchSize> sizes = registry.branchSizes({tree});
+    if (const auto size = sizes.find(tree); size != sizes.end()) out["branch"] = toJson(size->second);
+    counting.skip();
+  } catch (const std::exception& failure) {
+    counting.fail(failure);
+  }
   return ToolResult::json(out);
 }
 
@@ -1617,7 +1695,7 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
   if (name == "import_subgraph")
     return importSubgraph(registry_, treeRegistry_, edits_, tree, arguments, clock_, actor);
   if (name == "delete_node")
-    return deleteNodes(registry_, edits_, tree, arguments, caller);
+    return deleteNodes(registry_, treeRegistry_, edits_, tree, arguments, caller);
   if (name == "update_kind")
     return updateKind(registry_, tree, arguments, clock_, caller);
 

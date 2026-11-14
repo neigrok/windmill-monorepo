@@ -19,9 +19,9 @@ drogon::HttpResponsePtr genericCard() {
 }
 }
 
-OgImageApi::OgImageApi(std::shared_ptr<OgImageRepository> images, std::shared_ptr<TreeRepository> trees,
+OgImageApi::OgImageApi(std::shared_ptr<OgImageRepository> images, std::shared_ptr<RoomRegistry> rooms,
                        std::shared_ptr<AuthService> auth)
-    : images_(std::move(images)), trees_(std::move(trees)), auth_(std::move(auth)) {}
+    : images_(std::move(images)), rooms_(std::move(rooms)), auth_(std::move(auth)) {}
 
 void OgImageApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
   const std::optional<UserId> caller = callerOf(req, *auth_);
@@ -29,8 +29,9 @@ void OgImageApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& call
     callback(error(drogon::k401Unauthorized, "sign in to update the share image"));
     return;
   }
-  const std::optional<StoredTree> tree = trees_->load(TreeId{id});
-  if (!tree) {
+  // The access gate every door shares: an absent tree, one the caller may not read and a hidden branch's answer alike.
+  const std::optional<TreeAccess> tree = rooms_->accessOf(TreeId{id});
+  if (!tree || !canRead(caller, tree->owner, tree->visibility)) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
@@ -58,9 +59,9 @@ void OgImageApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& call
 }
 
 void OgImageApi::getImage(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
-  // Anyone may request an unfurl card: read the two access columns, never the whole lattice.
+  // Anyone may request an unfurl card: ask the access gate, never the whole lattice.
   const std::optional<UserId> caller = callerOf(req, *auth_);
-  const std::optional<TreeAccess> tree = trees_->loadAccess(TreeId{id});
+  const std::optional<TreeAccess> tree = rooms_->accessOf(TreeId{id});
   if (!tree || !canRead(caller, tree->owner, tree->visibility)) {
     callback(genericCard());  // absent and private-denied are indistinguishable from having no card
     return;

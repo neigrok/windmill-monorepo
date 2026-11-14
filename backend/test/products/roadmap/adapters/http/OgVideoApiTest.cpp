@@ -20,6 +20,10 @@ const std::string WEBM = std::string("\x1a\x45\xdf\xa3", 4) + "fake-webm-loop-by
 
 struct Harness {
   std::shared_ptr<FakeTreeRepository> trees = std::make_shared<FakeTreeRepository>();
+  FakeOpLog ops;
+  FakeBus bus;
+  // The gate both doors ask, over the trees above.
+  std::shared_ptr<RoomRegistry> rooms = std::make_shared<RoomRegistry>(*trees, ops, bus);
   std::shared_ptr<FakeOgVideoRepository> videos = std::make_shared<FakeOgVideoRepository>();
   FakeTokens tokens;
   FakeClock clock;
@@ -32,7 +36,7 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
 
-  OgVideoApi make() { return OgVideoApi{videos, trees, auth}; }
+  OgVideoApi make() { return OgVideoApi{videos, rooms, auth}; }
 
   UserId signIn(const std::string& sessionSecret, const std::string& emailAddr = "sam@example.com") {
     User user = authRepo.createUser(Email{emailAddr}, "sam");

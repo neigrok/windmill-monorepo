@@ -2,7 +2,7 @@
 
 #include "platform/application/AuthService.h"
 #include "products/roadmap/ports/OgImageRepository.h"
-#include "products/roadmap/ports/TreeRepository.h"
+#include "products/roadmap/application/RoomRegistry.h"
 
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
@@ -19,7 +19,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // redirects to the generic card rather than 404.
 class OgImageApi {
 public:
-  OgImageApi(std::shared_ptr<OgImageRepository> images, std::shared_ptr<TreeRepository> trees,
+  OgImageApi(std::shared_ptr<OgImageRepository> images, std::shared_ptr<RoomRegistry> rooms,
              std::shared_ptr<AuthService> auth);
 
   void putImage(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id);
@@ -27,7 +27,7 @@ public:
 
 private:
   std::shared_ptr<OgImageRepository> images_;
-  std::shared_ptr<TreeRepository> trees_;
+  std::shared_ptr<RoomRegistry> rooms_;
   std::shared_ptr<AuthService> auth_;
 };
 

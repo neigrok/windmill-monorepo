@@ -35,6 +35,8 @@ std::optional<UserId> TreeApi::callerOf(const drogon::HttpRequestPtr& req) const
 bool TreeApi::readRoom(const std::string& treeId, const std::optional<UserId>& caller,
                        const std::function<void(TreeRoom&)>& read) {
   WriteObservation observation{"roadmap.tree.read", "roadmap", "rest"};
+  // The reads made for it are of its request: a failure one of them reports is the request's one Issue.
+  WriteContext context{observation};
   std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
   try {
     // Authorize on the stored row BEFORE materializing a room: open() pins the whole lattice in
@@ -238,8 +240,9 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   drogon::HttpResponsePtr reply = [&]() -> drogon::HttpResponsePtr {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
     // Judge on the two authorization columns alone and touch nothing until they say yes: an
-    // eviction above this gate would close the live room of whatever id a stranger names.
-    std::optional<TreeAccess> access = trees_->loadAccess(TreeId{treeId});
+    // eviction above this gate would close the live room of whatever id a stranger names. A hidden
+    // branch's tree answers as absent here, as on every gate.
+    std::optional<TreeAccess> access = registry_->accessOf(TreeId{treeId});
     // Unreadable answers "no such tree": a refusal must never state that a private id is taken.
     if (access && !canRead(caller, access->owner, access->visibility))
       return error(drogon::k404NotFound, "no such tree");
@@ -247,6 +250,9 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
       if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))
         return error(drogon::k403Forbidden, sentenceOf(*refusal), codeOf(*refusal));
     }
+
+    // A live room the gate did not answer is a hidden branch's tree: it is left as it is.
+    if (!access && registry_->isOpen(TreeId{treeId})) return error(drogon::k404NotFound, "no such tree");
 
     // A PUT to an id no row holds CREATES the tree, so it must be well-formed; an existing tree
     // keeps whatever id it has.
@@ -260,6 +266,8 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
       return error(drogon::k503ServiceUnavailable, "an earlier edit of this tree is still being saved — try again",
                    "save-pending");
     std::optional<StoredTree> existing = trees_->load(TreeId{treeId});
+    // A row the gate did not answer is a hidden branch's tree, which a PUT neither writes nor plants over.
+    if (existing && !access) return error(drogon::k404NotFound, "no such tree");
 
     // A save GROWS the stored lattice, so the ceiling is read off what the tree would HOLD.
     if (existing) {
@@ -292,6 +300,8 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
       mint.observe(existing->title.stamp);
       trees_->save(TreeId{treeId}, state, legend, Lww<std::string>{data->title, mint.tick(0)},
                    existing->guide, existing->head);
+      // The steps it carries are present now, an owning step it revives among them: its subtree shows again.
+      registry_->settleOwningSteps(access->root);
     }
 
     // A document never sets the guide, so the answer states the one the tree holds.
@@ -330,6 +340,11 @@ void TreeApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
   }
   if (forked.outcome == ForkService::Outcome::conflict) {
     callback(error(drogon::k409Conflict, "a tree with that id already exists"));
+    return;
+  }
+  if (forked.outcome == ForkService::Outcome::notARoot) {
+    callback(jsonResponse(toJson(*forked.notARoot, "a subtree is copied with its root, so fork the root"),
+                          drogon::k409Conflict));
     return;
   }
 

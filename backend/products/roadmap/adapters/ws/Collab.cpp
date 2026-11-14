@@ -223,6 +223,16 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       // Join under the strand, so no broadcast slips between the delta and the subscription, and the delta goes out
       // ahead of every broadcast made after it.
       first = bus_.subscribe(TreeId{treeId}, conn, principal.user);
+      // The gate was asked before the room opened, and an owning step's delete may have hidden the tree since, telling
+      // the live rooms below before this one was among them. Asked again now that the subscription has joined, a hide
+      // lands either before this check, which refuses it, or after, when its announce reaches the subscription.
+      const std::optional<UserId> reader =
+          principal.authenticated ? std::optional<UserId>(principal.user) : std::nullopt;
+      if (!room->readableBy(reader)) {
+        bus_.unsubscribe(TreeId{treeId}, conn);
+        send(bus_, conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
+        return;
+      }
       presence_.join(conn, TreeId{treeId});
       delta = room->deltaSince(clientVector);
       head = room->head();
@@ -279,6 +289,32 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
   // `graft`, not an echo: the receiver may re-baseline its coverage on it, and an empty graft still ships.
   graft["intent"] = "graft";
   first->graft.send(dump(graft));
+}
+
+// The whole frame refused: nothing of it lands. Each branch is named with its size, read off the stored rows with no
+// strand held; a read that fails leaves the sizes out and is reported, and the refusal still goes. The first branch is
+// also the reject's own `subtree`, `steps` and `subtrees`.
+Json::Value Collab::branchUnconfirmed(const std::string& treeId, const std::vector<UnconfirmedBranch>& unconfirmed) {
+  std::set<TreeId> subtrees;
+  for (const UnconfirmedBranch& branch : unconfirmed) subtrees.insert(branch.subtree);
+  std::map<TreeId, BranchSize> sizes;
+  WriteObservation counting{"roadmap.tree.branch", "roadmap", "websocket"};
+  try {
+    sizes = trees_.branchSizes(subtrees);
+    counting.skip();
+  } catch (const std::exception& failure) {
+    counting.fail(failure);
+  }
+  Json::Value reject = rejectFrame(treeId, kBranchUnconfirmed,
+                                   "this frame deletes a step that owns a subtree it does not name: send the subtree's "
+                                   "id in branches to take it with the step");
+  for (const UnconfirmedBranch& branch : unconfirmed) {
+    const auto size = sizes.find(branch.subtree);
+    reject["branches"].append(toJson(branch, size == sizes.end() ? std::nullopt : std::optional(size->second)));
+  }
+  for (const char* key : {"subtree", "steps", "subtrees"})
+    if (reject["branches"][0].isMember(key)) reject[key] = reject["branches"][0][key];
+  return reject;
 }
 
 // Every write re-proves the session, throttled to one lookup a minute.
@@ -357,6 +393,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   std::optional<Seq> seq;
   bool heldUnsaved = false;  // the frame landed in the room, whose save failed and is being retried
   std::optional<Json::Value> reject;  // absent while the write is still admissible
+  std::vector<UnconfirmedBranch> unconfirmed;  // owning steps the frame would delete without naming their subtrees
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
@@ -379,6 +416,8 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
         // joinSubgraph never refuses: the whole-tree ceilings (domain/Command.h) are enforced here.
         reject = rejectFrame(treeId, admission->verdict == Admission::Verdict::tooLarge ? kTreeTooLarge : kBadFrame,
                              admission->reason);
+      } else if (unconfirmed = room->unconfirmedBranches(incoming); !unconfirmed.empty()) {
+        // Answered once the strand is released, with each branch's size.
       } else {
         seq = room->joinSubgraph(incoming, principal.user);
         // Persist before the ack, so the ack attests durability or says what it cannot. A row gone under its live room
@@ -398,6 +437,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
       reject = rejectFrame(treeId, kServerError, "the server could not save this edit");
     }
   }
+  if (!unconfirmed.empty()) reject = branchUnconfirmed(treeId, unconfirmed);
   if (reject) {
     (*reject)["frameId"] = frameId;
     refuseFrame(bus_, conn, *reject);

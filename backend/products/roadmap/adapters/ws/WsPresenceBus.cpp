@@ -180,6 +180,11 @@ WsPresenceBus::FirstFrames WsPresenceBus::subscribe(const TreeId& tree, const dr
   return FirstFrames{PlaceInOrder{conn, entry.lane}, PlaceInOrder{conn, entry.lane}};
 }
 
+void WsPresenceBus::unsubscribe(const TreeId& tree, const drogon::WebSocketConnectionPtr& conn) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (auto it = subscribers_.find(tree.str()); it != subscribers_.end()) it->second.erase(conn);
+}
+
 void WsPresenceBus::drop(const drogon::WebSocketConnectionPtr& conn) {
   std::lock_guard<std::mutex> lock(mutex_);
   for (auto& [tree, conns] : subscribers_) conns.erase(conn);

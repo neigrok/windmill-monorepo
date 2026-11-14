@@ -103,6 +103,16 @@ Subgraph subgraphFromJson(const Json::Value& root) {
   subgraph.title = registerFromJson(root["title"]);
   subgraph.guide = registerFromJson(root["guide"]);
 
+  // The subtrees the frame knowingly takes with the owning steps it deletes; a frame that names them in any other shape
+  // is not one this server reads.
+  if (root.isMember("branches")) {
+    if (!root["branches"].isArray()) throw std::invalid_argument("branches is a list of tree ids");
+    for (const Json::Value& branch : root["branches"]) {
+      if (!branch.isString()) throw std::invalid_argument("branches is a list of tree ids");
+      subgraph.branches.insert(TreeId{branch.asString()});
+    }
+  }
+
   if (root.isMember("coverage") && root["coverage"].isObject()) subgraph.coverage = versionVectorFromJson(root["coverage"]);
 
   return subgraph;

@@ -24,9 +24,9 @@ std::optional<std::string> detectMime(std::string_view body) {
 }
 }
 
-OgVideoApi::OgVideoApi(std::shared_ptr<OgVideoRepository> videos, std::shared_ptr<TreeRepository> trees,
+OgVideoApi::OgVideoApi(std::shared_ptr<OgVideoRepository> videos, std::shared_ptr<RoomRegistry> rooms,
                        std::shared_ptr<AuthService> auth)
-    : videos_(std::move(videos)), trees_(std::move(trees)), auth_(std::move(auth)) {}
+    : videos_(std::move(videos)), rooms_(std::move(rooms)), auth_(std::move(auth)) {}
 
 void OgVideoApi::putVideo(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
   const std::optional<UserId> caller = callerOf(req, *auth_);
@@ -34,8 +34,9 @@ void OgVideoApi::putVideo(const drogon::HttpRequestPtr& req, HttpCallback&& call
     callback(error(drogon::k401Unauthorized, "sign in to update the share video"));
     return;
   }
-  const std::optional<StoredTree> tree = trees_->load(TreeId{id});
-  if (!tree) {
+  // The access gate every door shares: an absent tree, one the caller may not read and a hidden branch's answer alike.
+  const std::optional<TreeAccess> tree = rooms_->accessOf(TreeId{id});
+  if (!tree || !canRead(caller, tree->owner, tree->visibility)) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
@@ -62,9 +63,9 @@ void OgVideoApi::putVideo(const drogon::HttpRequestPtr& req, HttpCallback&& call
 }
 
 void OgVideoApi::getVideo(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
-  // Anyone may request a share video: read the two access columns, never the whole lattice.
+  // Anyone may request a share video: ask the access gate, never the whole lattice.
   const std::optional<UserId> caller = callerOf(req, *auth_);
-  const std::optional<TreeAccess> tree = trees_->loadAccess(TreeId{id});
+  const std::optional<TreeAccess> tree = rooms_->accessOf(TreeId{id});
   if (!tree || !canRead(caller, tree->owner, tree->visibility)) {
     callback(error(drogon::k404NotFound, "no such video"));
     return;

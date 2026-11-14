@@ -21,6 +21,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace wm {
 
@@ -57,6 +58,8 @@ private:
   // runs it under the tree's strand, so it must not touch the database.
   Reach reachOf(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree);
   void subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame);
+  // The reject of a frame that deletes owning steps without naming their subtrees, each branch with its size.
+  Json::Value branchUnconfirmed(const std::string& treeId, const std::vector<UnconfirmedBranch>& unconfirmed);
   void progress(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& frame);
   bool overRate(const drogon::WebSocketConnectionPtr& conn);
 

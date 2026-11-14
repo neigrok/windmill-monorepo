@@ -7,6 +7,7 @@
 
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -38,7 +39,9 @@ struct Gesture {
 
 // The one envelope every sync scenario shares: a partial, stamped slice of a tree's lattice.
 // Absent sections/entries/fields mean "no information". `coverage` is present only on a `delta`.
-// `title` and `guide` are the tree's own registers, beside its graph and legend.
+// `title` and `guide` are the tree's own registers, beside its graph and legend. `branches` names the subtrees the frame
+// knowingly takes with the owning steps it deletes: a confirmation for the server alone, never a register, never joined
+// and never sent on.
 struct Subgraph {
   TreeId treeId;
   std::string frameId;
@@ -50,6 +53,7 @@ struct Subgraph {
   LegendState legend;
   std::vector<Gesture> gestures;
   std::optional<VersionVector> coverage;
+  std::set<TreeId> branches;
   bool operator==(const Subgraph&) const = default;
 
   // Whether no entry and no tree register of this frame carries a set stamp. Such a frame can land nothing in any
