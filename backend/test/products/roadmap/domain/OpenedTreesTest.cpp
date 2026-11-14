@@ -46,7 +46,7 @@ OpenedTrees opened(const std::vector<TreeData>& trees, const std::map<std::strin
   std::map<TreeId, OpenedTree> standing;
   for (const TreeData& data : trees) {
     const auto own = marked.find(data.id.str());
-    standing.emplace(data.id, OpenedTree(data, own == marked.end() ? Progress{} : own->second));
+    standing.emplace(data.id, OpenedTree(data, own == marked.end() ? Progress{} : own->second, {}, std::nullopt));
   }
   return OpenedTrees(std::move(standing));
 }
@@ -68,7 +68,7 @@ TEST(an_opened_tree_counts_its_nodes_the_marks_on_plain_ones_and_its_pointers_by
   const TreeData data = tree("a", {step("plain-done"), step("plain"), step("first-done", "b"), step("second", "b"),
                                    step("other", "c")});
 
-  const OpenedTree counted(data, marks({"plain-done", "first-done", "ghost"}));
+  const OpenedTree counted(data, marks({"plain-done", "first-done", "ghost"}), {}, std::nullopt);
 
   OpenedTree expected;
   expected.title = "Tree a";
@@ -97,9 +97,9 @@ TEST(the_nodes_that_follow_a_tree_are_those_whose_pointer_names_a_standing_tree)
   const TreeData sub = tree("sub", {step("s")});
   const std::map<NodeId, TreeId> pointers{{nid("idea"), tid("sub")}, {nid("lost"), tid("gone")}, {nid("again"), tid("root")}};
 
-  CHECK(opened({root, sub}).following(pointers) == (std::set<NodeId>{nid("again"), nid("idea")}));
-  CHECK(opened({sub}).following(pointers) == std::set<NodeId>{nid("idea")});
-  CHECK(opened({}).following(pointers) == std::set<NodeId>{});
+  CHECK(opened({root, sub}).following(tid("root"), pointers) == (std::set<NodeId>{nid("again"), nid("idea")}));
+  CHECK(opened({sub}).following(tid("root"), pointers) == std::set<NodeId>{nid("idea")});
+  CHECK(opened({}).following(tid("root"), pointers) == std::set<NodeId>{});
 }
 
 // A door's mark is judged off the pointers alone, and comes to what a read of the whole tree comes to.
@@ -112,8 +112,8 @@ TEST(the_completed_set_followed_from_a_trees_pointers_is_the_one_followed_from_t
 
   const OpenedTrees standing = opened({root, sub, half}, {{"sub", marks({"s"})}});
 
-  CHECK(standing.followed(pointers, marked).completed == (std::set<NodeId>{nid("done"), nid("lost"), nid("plain")}));
-  CHECK(standing.followed(root, marked).completed == standing.followed(pointers, marked).completed);
+  CHECK(standing.followed(tid("root"), pointers, marked).completed == (std::set<NodeId>{nid("done"), nid("lost"), nid("plain")}));
+  CHECK(standing.followed(root, marked).completed == standing.followed(tid("root"), pointers, marked).completed);
 }
 
 TEST(two_trees_that_open_each_other_are_never_complete) {
@@ -781,7 +781,7 @@ TEST(a_reader_is_shown_a_node_that_opens_a_tree_complete_while_that_tree_is_and_
   shown.record(nid("done-cleared"), ProgressMark{ProgressStatus::complete, Hlc{700, 0, "tablet"}, 705, false});
   shown.record(nid("done-unstamped"), ProgressMark{ProgressStatus::complete, Hlc{700, 0, "tablet"}, 705, false});
   shown.record(nid("done-set-later"), ProgressMark{ProgressStatus::complete, Hlc{800, 1, "laptop"}, 800, false});
-  CHECK(readerView(stored, pointers, standing) == shown);
+  CHECK(readerView(tid("root"), stored, pointers, standing) == shown);
 }
 
 // A mark with no stamp was written before stamps existed and says nothing about when: it counts toward a tree's
@@ -803,7 +803,7 @@ TEST(a_mark_with_no_stamp_completes_a_tree_but_never_says_when) {
 
   Progress shown;
   shown.record(nid("to-bare"), ProgressMark{ProgressStatus::complete, Hlc{300, 4, "laptop"}, 300});
-  CHECK(readerView(Progress{}, {{nid("to-bare"), {tid("bare"), Hlc{300, 4, "laptop"}}}}, standing) == shown);
+  CHECK(readerView(tid("root"), Progress{}, {{nid("to-bare"), {tid("bare"), Hlc{300, 4, "laptop"}}}}, standing) == shown);
 }
 
 // What completed a tree is the marks on its nodes that follow no tree and whatever completed each tree its nodes
@@ -838,7 +838,7 @@ TEST(a_tree_completed_at_the_latest_mark_in_what_completed_it_however_deep_that_
 
   Progress shown;
   shown.record(nid("to-mid"), ProgressMark{ProgressStatus::complete, Hlc{800, 0, "phone"}, 805});
-  CHECK(readerView(Progress{}, {{nid("to-mid"), {tid("mid"), Hlc{50, 0, "laptop"}}}}, deepest) == shown);
+  CHECK(readerView(tid("root"), Progress{}, {{nid("to-mid"), {tid("mid"), Hlc{50, 0, "laptop"}}}}, deepest) == shown);
 }
 
 TEST(a_reader_is_shown_the_stored_row_of_every_node_that_follows_no_tree) {
@@ -852,8 +852,8 @@ TEST(a_reader_is_shown_the_stored_row_of_every_node_that_follows_no_tree) {
   stored.record(nid("cleared"), ProgressMark{ProgressStatus::none, Hlc{903, 0, "phone"}, 953});
   stored.record(nid("left-the-tree"), ProgressMark{ProgressStatus::complete, Hlc{904, 0, "phone"}, 954});
 
-  CHECK(readerView(stored, pointers, standing) == stored);
-  CHECK(readerView(stored, {}, OpenedTrees({})) == stored);
+  CHECK(readerView(tid("root"), stored, pointers, standing) == stored);
+  CHECK(readerView(tid("root"), stored, {}, OpenedTrees({})) == stored);
 }
 
 // One rule decides completeness for the owner and for the owner's readers: a chain completes, a loop never does.
@@ -873,10 +873,10 @@ TEST(a_reader_is_shown_as_complete_exactly_the_nodes_the_owners_followed_set_hol
   for (const char* marked : {"loop", "half", "lost", "plain"})
     stored.record(nid(marked), ProgressMark{ProgressStatus::complete, Hlc{900, 0, "phone"}, 950});
 
-  const Progress shown = readerView(stored, stamped, standing);
+  const Progress shown = readerView(tid("root"), stored, stamped, standing);
 
   CHECK(shown.completed == (std::set<NodeId>{nid("chain"), nid("lost"), nid("plain")}));
-  CHECK(shown.completed == standing.followed(pointers, stored).completed);
+  CHECK(shown.completed == standing.followed(tid("root"), pointers, stored).completed);
   CHECK(shown.cleared == std::set<NodeId>{});
 }
 
@@ -892,5 +892,75 @@ TEST(a_reader_is_shown_no_row_for_a_node_that_holds_a_pointer_when_the_owners_tr
 
   Progress shown;
   shown.record(nid("plain"), ProgressMark{ProgressStatus::complete, Hlc{902, 0, "phone"}, 952, true});
-  CHECK(readerView(stored, pointers, std::nullopt) == shown);
+  CHECK(readerView(tid("root"), stored, pointers, std::nullopt) == shown);
+}
+
+// A tree that has a parent is never a valid pointer's target (SPEC.md, Model, Legacy pointers): its owning step alone opens
+// it. A sibling step of the same parent, and a step of another root, pointing at it are ordinary steps whose marks count,
+// whose pointer is answered missing and listed dangling, and which the completeness pass does not follow. A pointer at a
+// root stays valid.
+TEST(a_pointer_at_a_subtree_leads_nowhere_and_only_the_step_that_owns_it_opens_it) {
+  const TreeData root = tree("root", {step("sail", "sub"), step("peek", "sub"), step("plain")});
+  const TreeData other = tree("other", {step("far", "sub"), step("home", "root")});
+  const TreeData sub = tree("sub", {step("s")});
+  const OwningStep sail{tid("root"), nid("sail")};
+  const Progress onRoot = marks({"peek", "plain", "sail"});
+  const Progress onOther = marks({"far"});
+  const OpenedTree counted(root, onRoot, {{nid("sail"), tid("sub")}}, std::nullopt);
+  std::map<TreeId, OpenedTree> standing{{tid("root"), counted},
+                                        {tid("other"), OpenedTree(other, onOther, {}, std::nullopt)},
+                                        {tid("sub"), OpenedTree(sub, marks({"s"}), {}, sail)}};
+  const OpenedTrees judged(standing);
+
+  OpenedTree expected;
+  expected.title = "Tree root";
+  expected.total = 3;
+  expected.marked = 1;
+  expected.subtrees = {{tid("sub"), {1, 1}}};
+  expected.pointers = {{tid("sub"), {1, 1}}};
+  CHECK(counted == expected);
+  CHECK(judged.pointsAt(tid("root")));
+  CHECK(!judged.pointsAt(tid("sub")));
+  CHECK(!judged.pointsAt(tid("absent")));
+  CHECK(judged.opens(sail, tid("sub")));
+  CHECK(!judged.opens(OwningStep{tid("root"), nid("peek")}, tid("sub")));
+  CHECK(!judged.opens(OwningStep{tid("other"), nid("far")}, tid("sub")));
+  CHECK(judged.opens(OwningStep{tid("other"), nid("home")}, tid("root")));
+
+  CHECK(judged.following(tid("root"), pointersOf(root)) == std::set<NodeId>{nid("sail")});
+  CHECK(judged.openings(root) == (std::map<NodeId, Opening>{{nid("sail"), {tid("sub"), false, "Tree sub", true, 1, 1}},
+                                                            {nid("peek"), {tid("sub"), true}}}));
+  CHECK(judged.followed(root, onRoot).completed == (std::set<NodeId>{nid("peek"), nid("plain"), nid("sail")}));
+  CHECK(judged.followed(other, onOther).completed == (std::set<NodeId>{nid("far"), nid("home")}));
+  CHECK(judged.openersOf(tid("sub")) == (std::vector<OpeningSteps>{{tid("root"), 1}}));
+  CHECK(judged.openersOf(tid("root")) == (std::vector<OpeningSteps>{{tid("other"), 1}}));
+  CHECK(judged.diagnose(tid("root"), pointersOf(root)) ==
+        (PointerDiagnostics{{}, 0, {{nid("peek"), tid("sub")}}, 0}));
+  CHECK(judged.diagnose(tid("other"), pointersOf(other)) ==
+        (PointerDiagnostics{{}, 0, {{nid("far"), tid("sub")}}, 0}));
+  CHECK(judged.loops().empty());
+
+  // A reader is shown the ordinary steps' stored marks, and the owning step's row while its subtree is complete.
+  Progress stored;
+  stored.record(nid("peek"), ProgressMark{ProgressStatus::complete, Hlc{900, 0, "phone"}, 950});
+  Progress shown = stored;
+  shown.record(nid("sail"), ProgressMark{ProgressStatus::complete, Hlc{}, 0});
+  CHECK(readerView(tid("root"), stored, {{nid("sail"), {tid("sub"), Hlc{}}}, {nid("peek"), {tid("sub"), Hlc{800, 0, "phone"}}}},
+                   judged) == shown);
+}
+
+// Point 1 judges a pointer by its target alone: a subtree's step that points at a root opens it, and a root whose owning
+// step reaches a subtree that points back at it is on a loop, which never completes.
+TEST(a_subtree_step_pointing_at_a_root_opens_it_and_closes_a_loop_through_ownership) {
+  const TreeData root = tree("root", {step("sail", "sub"), step("plain")});
+  const TreeData sub = tree("sub", {step("back", "root"), step("s")});
+  const OwningStep sail{tid("root"), nid("sail")};
+  const OpenedTrees judged({{tid("root"), OpenedTree(root, marks({"plain"}), {{nid("sail"), tid("sub")}}, std::nullopt)},
+                            {tid("sub"), OpenedTree(sub, marks({"back", "s"}), {}, sail)}});
+
+  CHECK(judged.following(tid("sub"), pointersOf(sub)) == std::set<NodeId>{nid("back")});
+  CHECK(judged.loops() == (std::vector<std::set<TreeId>>{{tid("root"), tid("sub")}}));
+  CHECK(judged.diagnose(tid("root"), pointersOf(root)) ==
+        (PointerDiagnostics{{{nid("sail"), {on("sub"), on("root")}, 0}}, 0, {}, 0}));
+  CHECK(judged.followed(root, marks({"plain"})).completed == std::set<NodeId>{nid("plain")});
 }

@@ -78,7 +78,12 @@ subscribes again from an empty vector, because a reader's coverage counts pointe
 The server broadcasts admitted writes with `intent: live` and `seq`. A persisted write receives
 `subgraphAck {treeId, frameId, seq?}`; one that landed and was broadcast but whose save failed
 receives the same ack with `unsaved: true`, and the server retries the save, so the client confirms
-the frame and does not resend it. A frame that lands nothing — a duplicate, one whose every
+the frame and does not resend it. A frame whose `opens` on a step that owns a subtree would have landed —
+a stamp past the one the step's register holds — naming another tree than that subtree is acknowledged
+with `refused: [{node, field: "opens", code: "owns-a-subtree"}]`, one per such step in the frame's order:
+that register was not stored, every other register of the frame landed, and `seq` is absent when nothing
+else did ([the model](../backend/SPEC.md#model), Legacy pointers). A retried frame is answered as the
+duplicate it is. The browser confirms such a frame as it confirms any other. A frame that lands nothing — a duplicate, one whose every
 stamp the server holds already, or one that carries no stamp a register keeps — is acknowledged
 without a seq, so its sender's gestures are confirmed, and is not saved, logged or broadcast. A frame
 that carries no stamp asks for no write: anyone who may read the tree is acknowledged so, a reader and
@@ -108,7 +113,11 @@ It changes through only two paths:
 2. An acknowledgement joins the frontier derived from that frame's retained writes.
 
 Live broadcasts and echoes never advance this vector. On reconnect, the server computes
-`deltaBetween(state, vector)` from the room's current lattice. An empty vector gets full state.
+`deltaBetween(state, vector)` from the room's current lattice, and adds, whole, every node, edge,
+kind and tree register that landed late on the server — under a stamp at or below one the room
+already held — past `lastSeq`, the last seq this browser applied ([SPEC, Model](../backend/SPEC.md)).
+An empty vector gets full state. `lastSeq` is a position with
+no gap: a live frame joins only as the next seq, and the subscribe response's seq replaces it.
 The browser joins the response, adopts its coverage and seq, then flushes each register whose stamp
 is greater than its confirmed baseline's stamp, excluding the same register and stamp already in
 flight. Status counts the same unconfirmed registers. Actor frontiers cannot confirm individual
@@ -155,8 +164,9 @@ it. What this leaves: a writer that goes away after some frames of an act have l
 the act half-applied until it returns — after the first frame of a re-hue the kind wears its new hue
 and the steps still to follow hold the old one — and a peer that re-hues the same kind in that window
 moves only the steps it can see wearing it, so the steps the first writer paints afterwards end
-outside the kind. And a write that lands after a later-stamped write of the same replica — a refused
-or held bank retried late — is not sent to a replica that grafted in between and was away.
+outside the kind. A write that lands after a later-stamped write of the same replica — a refused
+or held bank retried late — reaches a replica that subscribed in between and was away by the
+position it reconnects with, not by its vector, which is already past the write's stamp.
 
 The server drops the connection of a message past its limit without a word, and so may a proxy in
 between. The judgement is of one frame, the lane's first, whatever is queued behind it: lost

@@ -90,7 +90,8 @@ public:
   // nullopt means the frame lands nothing — a duplicate, or one whose every stamp the room already
   // holds — so it takes no seq, dirties nothing and is told to no one. Admits nothing on its own —
   // every door that can refuse asks admit() and unconfirmedBranches() first; a frame that removes an owning step its
-  // `branches` do not name is a fault (std::logic_error), refused before anything lands. Every owning step the frame
+  // `branches` do not name is a fault (std::logic_error), refused before anything lands. A pointer it writes on a step
+  // that owns a subtree is left out of what lands, as on every write path (refusedPointers). Every owning step the frame
   // leaves present or absent is recorded in the root's access before the frame is told.
   std::optional<Seq> joinSubgraph(const Subgraph& incoming, const UserId& actor);
 
@@ -115,7 +116,22 @@ public:
   // Whether importTree(incoming) at `nowMs` would land nothing, read off a copy of the room clock so
   // nothing moves: the preview a dry run answers.
   bool graftLandsNothing(const Graft& incoming, std::uint64_t nowMs) const {
-    return graftFrame(graph_, legend_, incoming, HlcClock(clock_).tick(nowMs)).landsNothing();
+    GraftFrame frame = graftFrame(graph_, legend_, incoming, HlcClock(clock_).tick(nowMs));
+    withoutOwnedPointers(frame.graph, subtrees_);
+    return frame.landsNothing();
+  }
+  // Every write path lands no pointer on a step that owns a subtree, so a door answers each pointer that would otherwise
+  // have changed the step's register `owns-a-subtree`, and the rest of its write applies. Of a frame's, in its order: one
+  // whose stamp the join would take, naming another tree than the subtree. A frame this room has joined before is a
+  // duplicate, answered as one, with nothing judged anew.
+  std::vector<NodeId> refusedPointers(const Subgraph& incoming) const;
+  // Of the pointers a write the server stamps sends, each a step and the tree it names, in the order sent: one naming a
+  // tree the register does not hold, nor the subtree (wm::refusedPointers).
+  std::vector<NodeId> refusedPointers(const std::vector<std::pair<NodeId, TreeId>>& sent) const;
+  // Whether `step`, present or deleted, owns `subtree`: a pointer it is sent naming it is an echo, which lands nothing.
+  bool owns(const NodeId& step, const TreeId& subtree) const {
+    const auto owned = subtrees_.find(step);
+    return owned != subtrees_.end() && owned->second == subtree;
   }
 
   // A node write's kind read off this room's own legend, under the strand the write then takes, so a
@@ -183,7 +199,7 @@ public:
   std::optional<std::string> validate(const Command& command) const;
 
   std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(const std::vector<NodePatch>& updates) const {
-    return wm::planNodePatches(graph_, legend_, updates);
+    return wm::planNodePatches(graph_, legend_, updates, subtrees_);
   }
   std::variant<EdgeChangePlan, std::string> planEdgeChanges(const EdgeChanges& changes) const {
     return wm::planEdgeChanges(graph_, changes);
@@ -233,9 +249,20 @@ public:
   GraphState exportState() const;
   LegendState exportLegend() const;
   // What a peer at `since` is missing — graph, legend, title and guide — covering the room's whole
-  // frontier. A subtree's own title register is read by nothing (SPEC.md, Model, Subtrees), so it is neither sent nor
-  // covered: its subscriber is sent its owning step's label beside the delta.
-  Subgraph deltaSince(const VersionVector& since) const;
+  // frontier. A peer that says the last seq it applied, `position`, is also sent, whole, every entry and tree register
+  // that landed late past it (LandSeqs): under a stamp the vector may already be past. A subtree's own title register
+  // is read by nothing (SPEC.md, Model, Subtrees), so it is neither sent nor covered: its subscriber is sent its
+  // owning step's label beside the delta.
+  Subgraph deltaSince(const VersionVector& since, std::optional<Seq> position = std::nullopt) const;
+  // How many entries and tree registers of `deltaSince(since, position)` are there, or whole, for their land seq alone:
+  // the ones the vector would have masked or left out.
+  std::size_t lateEntriesFor(const VersionVector& since, Seq position) const;
+  // The seq at which each entry and tree register last landed late; a save stores the ones of the rows it writes.
+  const LandSeqs& landSeqs() const { return landSeqs_; }
+  // The land seqs the stored rows hold, as the room opens.
+  void restoreLandSeqs(LandSeqs stored) { landSeqs_ = std::move(stored); }
+  // The stamps the room has held, by which a register that lands is judged late.
+  const HeldStamps& held() const { return held_; }
 
   // Exports only the entries dirtied since the last markClean(). The caller holds the strand for each; a save that
   // lets it go between the two cleans only when writes() reads as it did at the export.
@@ -248,6 +275,7 @@ public:
   // The node's live prerequisites (incoming DAG edges); empty if the node is absent.
   std::vector<NodeId> prerequisitesOf(const NodeId& node) const;
   bool hasNode(const NodeId& node) const;  // present: created, not tombstoned
+  bool hasHeld(const NodeId& node) const;  // present or tombstoned: an id the tree has held
   // A present node's label; none for a node the tree does not hold.
   std::optional<std::string> labelOf(const NodeId& node) const;
   bool hasEdge(const NodeId& from, const NodeId& to) const;
@@ -307,6 +335,8 @@ private:
   std::vector<AppliedOp> pendingOps_;
   PresenceBus& bus_;
   HlcClock clock_;
+  LandSeqs landSeqs_;
+  HeldStamps held_;
   bool unsaved_ = false;  // a write has landed since the store last took the room
   std::uint64_t writes_ = 0;
   std::set<NodeId> dirtyNodes_;

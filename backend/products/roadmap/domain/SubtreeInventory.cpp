@@ -94,7 +94,8 @@ SubtreeInventory& SubtreeInventory::operator+=(const SubtreeInventory& other) {
 }
 
 SubtreeInventory inventory(const AccountTrees& account) {
-  // The account's trees as OpenedTrees reads them, for their pointers alone: no title, no node count and no marks.
+  // The account's trees as OpenedTrees reads them, for their pointers alone: no title, no node count, no marks and no
+  // place, so each is read as a root.
   std::map<TreeId, OpenedTree> standing;
   for (const auto& [tree, pointers] : account.standing) {
     OpenedTree& read = standing[tree];

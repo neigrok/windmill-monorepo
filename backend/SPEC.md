@@ -19,27 +19,29 @@ rejected for structure. Validity is a read model, not a gate.
 - `opens` — a node's pointer at another tree: that tree's id, or empty for none. A document node
   carries it as `opens` and omits it when empty; a lattice entry carries `opens` and `opensAt`. The
   room, the socket and `PUT` hold a write to the id length and to nothing about its target, so a
-  pointer may name a tree that is absent, deleted or someone else's. The MCP door is stricter: every
-  non-empty `opens` a `create_node`, `update_nodes` or `import_subgraph` call carries must name a
-  tree that stands and is the caller's (`TreeRepository::titlesOwnedBy`, one read for
-  the whole call), or the call is refused with nothing written, in one sentence for a tree that is
-  not there and for someone else's. That read is made before the tree's strand is taken, so an edit
-  racing the target's removal can still set a pointer at it, which then points nowhere. A node may
-  open the tree it is in. A tree id is the read capability of an unlisted tree, so only a caller who
+  pointer may name a tree that is absent, deleted, someone else's or a subtree. The MCP door is
+  stricter: every non-empty `opens` a `create_node`, `update_nodes` or `import_subgraph` call carries
+  must be valid (Legacy pointers), judged on one read for the whole call
+  (`TreeRepository::pointerTargets`), or the call is refused with nothing written (Legacy pointers).
+  That read is made under the strand of the tree being written, not the target's, so an edit racing the
+  target's removal can still set a pointer at it, which then points nowhere. A node may open the tree it is in. A tree id is the read capability of an unlisted tree, so only a caller who
   can write the tree receives the pointer: `readerView` (`domain/Subgraph.h`) is what every other
   reader gets from `GET /v1/trees/{id}` (`data` and `state`), the subscribe delta and a live frame —
   a document node without `opens`, a
   lattice entry with `opens` empty and `opensAt` unset, and no entry for a node the frame then says
   nothing about. MCP `get_tree`, `get_nodes` and `find_nodes` answer it when `fields` names `opens`,
-  as `opens: {treeId, title, state}`, to a caller who can write the tree and only while the opened
-  tree stands and is theirs; the key is omitted otherwise. A step that owns a subtree opens that
-  subtree in every read, whatever this register holds (Subtrees).
+  as `opens: {treeId, title, state}`, to a caller who can write the tree and only while the node
+  opens that tree — its pointer is valid, or it owns that subtree; the key is omitted otherwise. A step that owns a
+  subtree opens that subtree in every read, whatever this register holds (Subtrees), and the register
+  takes no write (Legacy pointers).
 - `OpenedTrees` (`domain/OpenedTrees.h`) — an owner's standing trees under the owner's marks, judged
-  once. A pointer is valid when its target stands and belongs to the owner of the tree the node is
-  in. A step that owns a subtree opens it, whatever its pointer holds, in every projection a read
-  makes of a document — the room's (`TreeRoom::snapshot`, `pointers`), the stored rows'
-  (`TreeRepository` lists, `openedFrom`'s walk) and reminder readiness — and that subtree is valid
-  while its branch stands (Subtrees), so completion carries forward through ownership by this one rule. For a caller who can write the tree, a node with a valid pointer is complete exactly when the
+  once, each with where it hangs. A pointer is valid when its target is a root that stands and belongs
+  to the owner of the tree the node is in (`pointsAt`, Legacy pointers). A step that owns a subtree
+  opens it, whatever its pointer holds, in every projection a read makes of a document — the room's
+  (`TreeRoom::snapshot`, `pointers`), the stored rows' (`TreeRepository` lists, `openedFrom`'s walk)
+  and reminder readiness — and that subtree is opened while its branch stands (Subtrees): `opens`
+  judges a step's link, the subtree it owns or a valid pointer, and every projection below asks it, so
+  completion carries forward through ownership by this one rule. For a caller who can write the tree, a node with a valid pointer is complete exactly when the
   opened tree is complete for them, whatever its own prerequisites, as a mark made out of order is;
   until then it is locked or available by its prerequisites, and a mark stored on it is kept and
   ignored. A tree is complete for a reader when it holds at least one node and every node is
@@ -128,11 +130,12 @@ rejected for structure. Validity is a read model, not a gate.
   `progress[]` of an `import_subgraph`, a socket `progress` frame) only its nodes that open a tree,
   and each asks `TreeRepository::openedFrom(owner, opened)` for each tree it opens that stands and
   is the owner's and every such tree their steps open — the subtree a step owns, found through
-  `trees_parent_step`, else the tree its pointer names, a subtree standing while its branch does, its
-  path read for a subtree alone: one statement over `trees`,
+  `trees_parent_step`, else the tree its pointer names while that pointer is valid, a subtree standing
+  while its branch does, its path read for a subtree alone: one statement over `trees`,
   `tree_nodes` and the owner's `node_progress` that reaches each tree once and answers, per tree and
-  tree it opens, how many present nodes open it, how many of those the owner marked and the latest
-  of those marks, beside the tree's title and its nodes that open none. Each reached tree's nodes
+  tree it opens, how many present nodes open it — the step that owns it apart from the steps whose
+  pointer names it — how many of those the owner marked and the latest of those marks, beside the
+  tree's title, where it hangs and its nodes that open none. Each reached tree's nodes
   are read through `tree_nodes_pkey`, and the owner's marks on it through an index that leads with
   both the tree and the reader (`node_progress_pkey`, or `node_progress_user_tree`, whichever the
   planner takes), so the cost follows the trees reached and the owner's marks on them, and not the
@@ -330,9 +333,10 @@ rejected for structure. Validity is a read model, not a gate.
   subtree answers it, `created: false`, and writes nothing, so a retry after a lost reply and a
   create that lost a race both find the one child; a parent's room that missed it records it, with
   no seq. Otherwise it is refused when the child would sit
-  deeper than the cap (`depth-limit`) and when the step's pointer is valid as `OpenedTrees` judges
-  one, at a standing tree of the same owner, the parent itself included (`step-opens-a-tree`); a
-  pointer that leads nowhere does not stop it. A `proposedId` that is a well-formed tree id and
+  deeper than the cap (`depth-limit`) and when the step's pointer is valid (Legacy pointers): at a
+  standing root of the same owner's, the parent itself included when it is a root
+  (`step-opens-a-tree`). A pointer that leads nowhere — at a subtree, a deleted or absent tree, or
+  someone else's — does not stop it. A `proposedId` that is a well-formed tree id and
   names no row, standing or deleted, anyone's, is kept, and any other is replaced by a minted id.
   The child is stored with its legend, and the parent's head moved to its next seq, in one
   transaction (`TreeRepository::createSubtree`) that holds the owner's account as `create` does: an
@@ -346,6 +350,53 @@ rejected for structure. Validity is a read model, not a gate.
   the child, at or past the seq the child took. A failure before the transaction commits leaves no
   row, no seq and no event; one after it, in telling the subscribers, leaves the child and its seq
   taken, and a retry answers that child.
+
+- Legacy pointers — until the owner's conversion runs, a step may still hold the pointer register
+  `opens` beside the ownership links, and one rule judges every read of it. A pointer is valid only at a
+  root that stands and is the owner's of the tree the step is in: `OpenedTrees::pointsAt` in memory, and
+  on the stored rows the condition every statement that decides inside Postgres shares
+  (`pointerTargetCondition`, `adapters/postgres/PgTreeRepository.h`), the two pinned to each other on
+  one fixture by a Postgres case. A tree that has a parent is never a valid target: a pointer at a
+  subtree leads nowhere for every caller and on every projection — completion and `state`, the
+  `opens` answers, the registry counts and openers, reminder readiness, the owner's overlay a reader is
+  shown, the guides above, the read a root's removal makes and `createSubtree`'s `step-opens-a-tree` —
+  and its step is an ordinary step, whose own mark counts and whose pointer `danglingPointers` lists.
+  The rule judges the target alone: a step of a subtree whose pointer names a root opens that root, and
+  a loop it closes through ownership is one (`treeLoops`).
+
+  A step that owns a subtree opens it whatever its register holds, and the register takes no write on
+  any write path — a socket frame, a command, a graft, a `PUT` — an echo of its own subtree and the
+  clear a create or a revive synthesizes included (`TreeRoom` on its write paths, `withoutOwnedPointers`;
+  the `PUT` handler on the rows it replaces), so no value, stale or late, changes the step's child.
+
+  A pointer a write sends such a step is refused `owns-a-subtree` for that step alone when it would
+  have changed the step's register and names another tree than the step's subtree, an empty one
+  included (`TreeRoom::refusedPointers`): a frame's whose stamp the join would take, and a server-stamped
+  write's — MCP, `PUT` — naming a value the register does not hold (`refusedPointers`). So a pointer the
+  register holds under that stamp, one an older stamp loses to, the value the register already holds and
+  an echo of the subtree are no refusal, and a retried frame, which the room has joined before, is
+  answered as the duplicate it is. The rest of the write applies: the socket acks the refused steps in
+  `subgraphAck.refused` (WebSocket surface), MCP `create_node`, `update_nodes` and `import_subgraph` in
+  `opensRefused` with `opensError`, dry runs too (`adapters/mcp/README.md`), and `PUT` in `refused`
+  (HTTP surface), each in the order the write sent them. Each names the step and nothing of its subtree,
+  and only a caller who can write the tree is told: every other caller's write meets the write gate first,
+  as ever. A socket frame or an MCP call whose whole word was such a pointer lands nothing, takes no seq
+  and completes under `owns-a-subtree`, a line and never an Issue; a dry run of one writes nothing and
+  completes `ok`; any other write completes as it would without the refused pointer. Every write line but
+  a dry run's counts the refused pointers as `refused` (`OBSERVABILITY.md`).
+
+  MCP judges a new pointer's target before it writes anything. An owning step's echo of its own subtree,
+  present or deleted, as the step's room holds it, passes first and lands nothing, so the create or the
+  import that revives the step may carry it. A pointer at any other subtree of the caller's whose branch
+  stands is refused whole as `opens-a-subtree`, in words that say its owning step opens it and
+  `list_trees` lists the roots a step may open; one at a tree that is absent, hidden or someone else's is
+  refused `opens-not-yours`, in one sentence for all three.
+
+  So a pointer whose target becomes a subtree reads as leading nowhere from then on, with no rewrite; a
+  step comes to own a subtree only while its pointer leads nowhere, and its register is frozen from
+  then on; a revive, a replay and a late write from a stale tab or a released client meet the same
+  rules; and a fork keeps or clears the register as Runtime says, the copy's pointers judged by the same
+  rule and the copy's owning steps opening their copied subtrees.
 
 Derived read models:
 
@@ -417,6 +468,43 @@ legend)` folds a full state into one, and `frontier(frame)` every stamp one fram
 and guide included; `deltaBetween(graph, legend, since)` returns the slice a peer at `since` lacks,
 with covered fields masked back to "no information", carrying the sender's full frontier as
 coverage. `TreeRoom::deltaSince(since)` adds the title and guide registers the peer does not cover.
+
+A vector describes a writer only while that writer's writes land in stamp order, and a write can
+land late: a refused or held write the web sends again keeps the stamp it was made under, which may
+be below one of its replica's the room already holds. A peer whose vector is past that stamp would
+never be sent it. A vector hides a register from a peer only when the peer's mark for the
+register's actor is at or past its stamp, and a peer's marks come from the room's coverage and its
+own acks, so they never pass what the room has held. So a register is late when it lands at or below
+what the room held for it before the write (`HeldStamps`, `domain/Subgraph.h`): the greatest stamp
+per actor, kept in the room and joined with each register as it lands — it costs what a write
+landed, never the size of the tree, and unlike the coverage a scan reports it keeps an actor's mark
+once another actor has written over the register that carried it — and, for a room opened from the
+rows, which has forgotten such marks, the greatest stamp of any actor those rows hold, its floor.
+The floor stands for everything the tree ever held because a register is replaced only by a greater
+stamp and a tombstone stays a row, so the greatest stamp in a tree never goes down. A `PUT` is the
+one writer that can lower it: it replaces the rows it carries under the genesis stamp, so a room
+opened after one may judge by a floor below a mark some peer still holds, and a write late against
+that mark alone reaches that peer by its vector or not at all.
+
+Every write the server stamps is minted by the tree's room, past every stamp the tree holds, so it
+is never late: a command, an import, and a rename or a guide, for which the room is opened when
+none is live. A `PUT` is the one exception. It writes rows with no room: the steps it carries under
+the genesis stamp, and its title one tick past the stored title's stamp alone. Either can be at or
+below a mark a peer holds, and a `PUT` records no land seq, so a peer whose vector is past what a
+`PUT` wrote is not sent it until it subscribes with an empty vector, as a reloaded page does.
+
+The node, edge, kind or tree register of a late register takes the write's seq as its land seq
+(`LandSeqs`) as its frame lands (`joinSubgraph`); a tombstone is an entry like any other, and
+everything else keeps the land seq it had. A command and an import are stamped by the server past
+everything the room holds, so they are never late — `applyCommands` only adds its stamps to what the
+room has held — and neither is a frame whose stamps are past its actor's: those take no land seq and
+are cut by the vector alone, to the registers a peer lacks. A peer that says the last seq it applied is sent, beside what its
+vector lacks, every entry and tree register whose land seq is past that seq, whole and unmasked
+(`deltaSince(since, position)`, `deltaBetween(…, late)`). Land seqs are saved with the rows
+(`land_seq` on `tree_nodes`, `tree_edges`, `tree_kinds`; `title_land_seq` and `guide_land_seq` on
+`trees`), each exactly as the room holds it, and a save never lowers one. Every other row holds 0 —
+one stored before these columns, one a tree is born or forked with, one a `PUT` wrote, one that
+never landed late — which is past no position.
 A frame's `title` or `guide` is null or absent for no information, or `{v, at}` with a string `v` and a
 set stamp `at`; any other shape makes the frame `bad-frame`, so no value is coerced or read as a clear.
 
@@ -498,7 +586,8 @@ names no tree, so a created node opens the tree its call names and no other, on 
 held too; a stored `CreateNode` row without the field decodes as unset. An `import_subgraph` graft
 (`graftState`) holds a node it brings back from a delete to the same rule: `opens` left out of the
 batch is cleared there, where every other register left out keeps what the node held, and on a node
-the tree holds a left-out `opens` stays as it stands. The activity feed projects
+the tree holds a left-out `opens` stays as it stands. Neither clear reaches a step that owns a subtree,
+whose pointer takes no write (Model, Legacy pointers). The activity feed projects
 neither the pointer nor `AnnotateNode`.
 `TreeRoom::applyCommands` lands several as one frame under one seq and queues them as one `Batch`
 op, so the feed tells the whole edit; an empty list mints nothing.
@@ -548,7 +637,7 @@ committed before its connection dropped lands once. Only a room closing — `evi
 ### Bounds
 
 Declared once in `domain/Command.h`. The MCP surface tells a cap in the refusal past it and publishes
-none in a tool's schema but a title's `maxLength` (`adapters/mcp/README.md`). Every length
+none in a tool's schema (`adapters/mcp/README.md`). Every length
 is counted in characters — Unicode code points, `codePointCount` — never bytes, and a refusal
 names each field over its cap and by how much. Text that is not valid UTF-8 (an overlong form, a
 surrogate, a code point past U+10FFFF, a lone or missing continuation byte) is refused at the same
@@ -572,6 +661,11 @@ and one `import_subgraph` call carries at most 6 MB of description text, under t
 | tree title | 200 characters |
 | tree guide | 5000 characters |
 | legend kinds | 6 (label 24, description 80 characters) |
+
+A title past its cap is refused wherever one is planted or copied: a posted document, a socket frame,
+MCP `create_tree` and `update_tree`, and the `title` a fork is asked to carry. `PATCH /v1/trees/{id}`
+alone cuts one to the cap, since a rename trims and truncates (`TreeRegistry::titleFrom`). A tree that
+already holds a longer title keeps it and reads as it is.
 
 `validate()` judges a single command; `admit()` judges arrivals that mint no command — a posted
 document, an MCP graft, a client lattice frame. `admit` returns `Admission{verdict ∈ {tooLarge,
@@ -612,7 +706,7 @@ Rules:
   lattice is stored before the op rows are appended, so the log never runs ahead of the lattice. A
   save onto a row that is gone or soft-deleted writes nothing, retires the room and answers `gone`,
   as it does to a write whose room was retired before its save ran; the socket's `subgraph` frame,
-  the guide and a live rename then answer as for an absent tree.
+  the guide and a rename then answer as for an absent tree.
 - A save that fails undoes nothing and throws nothing (`Saved::held`): every open page has already
   been sent the write, so the room keeps it, dirty and with its op rows queued, and the registry
   holds the room and retries the save until the store takes it, on its own timer: 1 s after the
@@ -767,7 +861,14 @@ document and joins it as one write. A PUT that creates the tree stamps its steps
 creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stored row of every step
 and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
 and read as unknown creation time. A PUT tombstones nothing: a step it leaves out is untouched, and a
-deleted owning step it carries is revived, its subtree shown again (Model, Subtrees). A PUT aimed at
+deleted owning step it carries is revived, its subtree shown again (Model, Subtrees). A step that owns
+a subtree keeps the pointer its row holds (Model, Legacy pointers): one the document names that is
+neither the step's own subtree's id nor the pointer its row holds is answered in `refused: [{node,
+field: "opens", code: "owns-a-subtree"}]`, one entry per step in the document's order, beside `seq` and
+`data`, and the step's other fields land. A document
+cannot tell an empty pointer from one it leaves out, so neither is refused. The answer's `data` reads
+each step that owns a subtree opening it, as every read does, and `refused` is absent when it would be
+empty. A PUT aimed at
 a tree whose branch is hidden answers `404 no such tree` and writes nothing, where one aimed at an
 absent well-formed id creates the tree; one aimed at a tree the caller may not read answers `404`
 too, as AUTHZ says of this door. The PUT flushes and closes the tree's live room before it takes
@@ -820,8 +921,8 @@ are absent when that is nothing, and a path that is cut does not end with the tr
 bytes a tree without pointers answers, and nothing is read for them.
 
 `PATCH /v1/trees/{id}` sets one register per call — `{visibility}`, `{guide}` or `{title}` — each the
-owner's alone, and answers `204`; a guide or a title set in the tree's live room whose save failed
-answers `202` with `{saved: false, code: "held-unsaved", message}` — applied, on every open page,
+owner's alone, and answers `204`; a guide and a title are written through the tree's room, opened for
+them when none is live, and one whose save failed answers `202` with `{saved: false, code: "held-unsaved", message}` — applied, on every open page,
 and being saved again by the server, so sending it again is not needed; a server restart before the
 save succeeds would lose it. A body naming more than one is refused `400`, and a body that is not one JSON object
 `400 invalid json body`. A guide past 5000 characters, not valid UTF-8 or carrying a NUL is refused
@@ -855,7 +956,8 @@ the genesis stamp, byte-equal to a device-born tree's. Retrying an owned existin
 returns `409 id-taken`; the caller's deleted ID returns `409 id-retired`, and the id of a subtree of
 the caller's `409 not-a-root`. A client must not retry that deleted tree under a fresh ID.
 
-`POST /v1/trees/{id}/fork` answers `201 {seq, data}`, the root copy's document (Runtime). A source
+`POST /v1/trees/{id}/fork` answers `201 {seq, data}`, the root copy's document (Runtime). A requested
+`title` past 200 characters is refused `400` with the admission's sentence, and nothing is copied. A source
 that is absent, hidden or not the caller's to read answers `404`; a subtree's id is refused `409`
 `not-a-root`, `{code, error, parent: {tree, step}, root}`.
 
@@ -876,10 +978,13 @@ and nothing is removed: a subtree goes and comes back with its owning step. What
 `TreeRepository::branchSizes` of the removed root, is read once the removal has passed every gate —
 a refused removal reads nothing more than the gates do — and the answer carries it as `branch:
 {subtrees, steps}`, left out when that read fails, which is reported and undoes nothing. First, with no strand held, the caller's standing trees
-other than this one that hold a present step opening it are read in one statement
+other than this one that hold a present step whose pointer names it are read in one statement
 (`TreeRepository::treesOpening`, keyed on the caller's own trees and reading each one's steps through
 `tree_nodes_pointers_idx`, so pointers other accounts plant at the tree are never read; for a tree
-that is not the caller's it answers none). When that read fails nothing is removed and the delete is
+a pointer is not valid at — one that is not the caller's, does not stand or is a subtree — it answers
+none). Each step is read by its own register, so a tree whose step owns a subtree and still names the
+removed root there is read too, and the cascade deletes no such step: in the tree's room it opens its
+subtree. When that read fails nothing is removed and the delete is
 refused `503` with code `cascade-unavailable`, which the caller may retry. Then, under the tree's
 strand, the read gate, the owner check, the soft-delete and the room's retirement run in that order;
 a step pointed at the tree between the read and the soft-delete is not among those read, and points
@@ -929,17 +1034,23 @@ sweep is closed unless `REMINDERS_ADMIN_TOKEN` is set.
 credential is presented at the upgrade; every write re-proves the session, throttled to one lookup
 a minute, and a revoked session narrows to a guest in place. Visibility is re-asked per frame.
 
-Client → server: `ping` · `subscribe {treeId, vector}` · `subgraph` (a serialized `Subgraph`, with
+Client → server: `ping` · `subscribe {treeId, vector, lastSeq?}` · `subgraph` (a serialized `Subgraph`, with
 `branches: [subtreeId]` naming the subtrees it takes with the owning steps it deletes) ·
 `progress {treeId, frameId, marks[{node, status, at}]}` · `presence {treeId, …}`.
 
+A subscribe's `lastSeq` is the last seq the subscriber applied. When it is a non-negative whole
+number the delta also holds, whole, everything that landed late past it (Model, land seqs); absent, or
+anything else, the vector alone cuts the delta and the subscribe is not refused for it. An empty
+vector is answered the whole state either way.
+
 Server → client: `pong` · `subgraph` (intent `delta` carrying `seq` and `reach` as the subscribe
-answer, with the title and guide registers when the vector does not cover their stamps; intent
+answer, with the title and guide registers when the vector does not cover their stamps or they
+landed late past `lastSeq`; intent
 `live` for a peer's broadcast, with no `reach`; either is the frame's `readerView` for a connection
 that cannot write the tree, and the delta's `reach` is that same verdict: `writer` for a connection
 that can, `reader` for any other) ·
 `progress` (intent `graft` on subscribe, echo otherwise) ·
-`subgraphAck {treeId, frameId, seq?, unsaved?}` · `progressAck {treeId, frameId, refused?}` ·
+`subgraphAck {treeId, frameId, seq?, unsaved?, refused?}` · `progressAck {treeId, frameId, refused?}` ·
 `skew {treeId, frameId, serverNow}` · `reject {treeId, code, reason, frameId?}` · `presence` ·
 `peer` · `subtree {treeId, seq, step, subtree: {id, depth}}`.
 
@@ -965,6 +1076,15 @@ holds a valid pointer and the connection can write the tree, so the node is comp
 it opens is and takes no mark (`OpenedTrees`, Model). It names the node and nothing of the opened
 tree. A mark that lost to a later stored stamp is not refused and is not listed. The frame is not
 rejected: its other marks are recorded, echoed and acknowledged.
+
+`subgraphAck.refused` is present only when the frame would have changed the pointer of a step that owns
+a subtree — a stamp past the one the step's register holds, naming another tree than the subtree, an
+empty one included — and the room has not joined that frame before: an array of `{node, field, code}`,
+one per such step in the frame's order, `field` `opens` and `code` `owns-a-subtree` (Model, Legacy
+pointers). It names the step and nothing of its subtree, and goes to the frame's sender alone. That
+register was not stored and is not broadcast; every other register of the frame landed as the ack says,
+and `seq` is absent when nothing else did. An echo of the step's own subtree, a pointer the register
+holds under that stamp or loses to, and a retried frame are not refused.
 
 Reject codes are a stable wire contract — branch on `code`, never on `reason`:
 `no-such-tree` · `server-error` · `sign-in-required` · `tree-too-large` · `bad-frame` ·
@@ -1026,10 +1146,10 @@ PostgreSQL; `db/schema.sql` is the one file, applied in order and idempotent.
 
 | Table | Holds |
 | --- | --- |
-| `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `forked_from`, `deleted_at`, `document` jsonb; the tree's place: `parent_tree`, `parent_step`, `root_tree`, `depth` |
-| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, and `present`; `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open, and whether they open a given one |
-| `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc` |
-| `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp |
+| `trees` | title and guide (each LWW: `<register>_hlc` plus the `<register>_ms`/`<register>_counter` numeric split), `guide_inherited`, `owner_id`, `visibility`, `head_seq`, `title_land_seq` and `guide_land_seq` (Model, land seqs), `forked_from`, `deleted_at`, `document` jsonb; the tree's place: `parent_tree`, `parent_step`, `root_tree`, `depth` |
+| `tree_nodes` | one row per node: `created_hlc`/`deleted_hlc` plus each register and its `_hlc`, `present` and `land_seq` (Model, land seqs); `tree_nodes_opens_idx` finds the present nodes that open a given tree, and `tree_nodes_pointers_idx` the trees a given tree's present nodes open, and whether they open a given one |
+| `tree_edges` | one row per `(from_id, to_id)`: `added_hlc`, `removed_hlc`, `land_seq` |
+| `tree_kinds` | one row per legend kind: hue, label, description, rank, each with its stamp, and `land_seq` |
 | `tree_ops` | append-only log — `(tree_id, seq)` pk, `unique (tree_id, op_id)` for idempotency |
 | `node_progress` | per-user private overlay — status, `out_of_order`, `hlc`, `stamp_ms`, `stamp_counter` |
 | `tree_og_images` / `tree_og_videos` | the share card PNG and loop, inline `bytea`, one row per tree |
@@ -1087,7 +1207,8 @@ in `tree_nodes`, read through `tree_nodes_pointers_idx`, in a `READ ONLY` transa
 it a thousand rows at a time, ordered by account, so the tool holds one account at a time. A step
 counts when it is present in a standing tree of an account. Deleted steps, every step of a deleted
 tree and every tree nobody owns are left out. `inventory` (`domain/SubtreeInventory.h`) judges each
-account alone by the validity rule `OpenedTrees` holds (Model), and the accounts' counts are summed:
+account alone by the validity rule `OpenedTrees` holds (Model) over the pointers alone, each standing
+tree read as a root since the read takes no owning step, and the accounts' counts are summed:
 
 - `trees` — the standing trees, and the account's deleted trees a counted step still names.
 - `roots` — standing trees no valid pointer opens. Another account's step is never a valid pointer, so

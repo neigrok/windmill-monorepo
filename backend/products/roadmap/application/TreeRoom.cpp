@@ -1,5 +1,7 @@
 #include "products/roadmap/application/TreeRoom.h"
 
+#include "platform/application/WriteObservation.h"
+
 #include <trantor/utils/Logger.h>
 
 #include <algorithm>
@@ -20,6 +22,19 @@ std::vector<NodeId> deletedBy(const std::vector<Command>& commands, const LooseG
     }
   }
   return deleted;
+}
+
+// `commands` with no pointer written on a step of `owned`, the subtree each step owns, a batch's members among them: such
+// a step's pointer takes no write (SPEC.md, Model, Legacy pointers).
+std::vector<Command> withoutOwnedPointers(std::vector<Command> commands, const std::map<NodeId, TreeId>& owned) {
+  for (Command& command : commands) {
+    if (CreateNode* created = std::get_if<CreateNode>(&command); created && owned.count(created->id))
+      created->opens.reset();
+    if (AnnotateNode* annotated = std::get_if<AnnotateNode>(&command); annotated && owned.count(annotated->id))
+      annotated->opens.reset();
+    if (Batch* batch = std::get_if<Batch>(&command)) batch->commands = withoutOwnedPointers(std::move(batch->commands), owned);
+  }
+  return commands;
 }
 }
 
@@ -71,11 +86,11 @@ TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bo
       clock_(std::string{kServerActor}) {
   // Fold every stamp the loaded document already carries — the graph frontier and the title and guide
   // registers — so a fresh mint after restart is always ahead of anything persisted.
-  for (const auto& [actor, mark] : frontier(graph_.exportState(), legend_.exportState()).marks) {
-    clock_.observe(mark);
-  }
-  clock_.observe(title_.stamp);
-  clock_.observe(guide_.stamp);
+  VersionVector loaded = frontier(graph_.exportState(), legend_.exportState());
+  loaded.observe(title_.stamp);
+  loaded.observe(guide_.stamp);
+  for (const auto& [actor, mark] : loaded.marks) clock_.observe(mark);
+  held_ = HeldStamps{std::move(loaded)};
   // The room opens as its stored rows stand, which no other room of the tree's can have written past: its owning steps
   // are recorded as they are, so an access that missed a write without a room learns them here.
   recordOwningSteps();
@@ -100,10 +115,13 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
     guideInherited_ = false;  // the guide that won is a write of this tree's, not its source's
   }
   // What the room took of the frame: the frame as sent, each entry cut to the registers that landed. A register the
-  // room already holds changed nothing, so it marks no row to save, names no deed and is not sent on.
+  // room already holds changed nothing, so it marks no row to save, names no deed and is not sent on, and a step that
+  // owns a subtree takes no pointer.
+  GraphState arriving = incoming.graph;
+  withoutOwnedPointers(arriving, subtrees_);
   Subgraph landed = incoming;
   landed.branches.clear();  // a confirmation for this server, never sent on
-  landed.graph = graph_.join(incoming.graph);
+  landed.graph = graph_.join(arriving);
   landed.legend = legend_.join(incoming.legend);
   if (!titleTook) landed.title.reset();
   if (!guideTook) landed.guide.reset();
@@ -112,6 +130,20 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   unsaved_ = true;
   ++writes_;
   ++head_;
+  std::size_t lateRegisters = landSeqs_.landLate(landed.graph, landed.legend, held_, head_);
+  if (titleTook && held_.holds(title_.stamp)) {
+    landSeqs_.title = head_;
+    ++lateRegisters;
+  }
+  if (guideTook && held_.holds(guide_.stamp)) {
+    landSeqs_.guide = head_;
+    ++lateRegisters;
+  }
+  held_.marks.join(frontier(landed));
+  if (lateRegisters > 0) {
+    const std::string door = currentWriteDoor();
+    LOG_INFO << "roadmap_late_landing door=" << (door.empty() ? "background" : door) << " registers=" << lateRegisters;
+  }
   // One op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
   // double-counts. A frame with no feed-worthy deed (headline) queues nothing.
   if (std::optional<Command> deed = headline(landed.graph, landed.legend, graph_, legend_))
@@ -142,11 +174,12 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
                             const std::set<TreeId>& branches) {
   if (commands.empty()) return head_;  // nothing to apply mints no seq, logs no op, broadcasts nothing
   insistConfirmed(deletedBy(commands, graph_), branches);
+  const std::vector<Command> landing = withoutOwnedPointers(commands, subtrees_);
   Hlc stamp = clock_.tick(nowMs);  // one stamp for the whole frame, as a graft takes one
   std::string frameId = "srv-" + toString(stamp);  // unique: the clock mints monotone stamps
   appliedOpIds_.insert(frameId);
   VersionVector before = frontier(graph_.exportState(), legend_.exportState());
-  for (const Command& command : commands) merge(graph_, legend_, command, stamp);
+  for (const Command& command : landing) merge(graph_, legend_, command, stamp);
   unsaved_ = true;
   ++writes_;
   ++head_;
@@ -158,9 +191,10 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
   produced.intent = SubgraphIntent::live;
   // The op row is the whole frame: a lone command as itself, a batch as one Batch, so the feed
   // tells all of what this call did.
-  const Command deed = commands.size() == 1 ? commands.front() : Command{Batch{commands}};
+  const Command deed = landing.size() == 1 ? landing.front() : Command{Batch{landing}};
   pendingOps_.push_back(AppliedOp{head_, frameId, deed, stamp, actor});
   markDirty(produced.graph, produced.legend);  // the broadcast delta is exactly the write's footprint
+  held_.marks.join(frontier(produced));  // minted past everything held, so nothing of it is late
   recordOwningSteps();
   bus_.broadcastSubgraph(id_, head_, produced);
   return head_;
@@ -169,6 +203,7 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
 std::optional<Seq> TreeRoom::importTree(const Graft& incoming, std::uint64_t nowMs, const UserId& actor) {
   Hlc at = clock_.tick(nowMs);  // one dominating stamp for the whole graft: the upsert and every removal
   GraftFrame landed = graftFrame(graph_, legend_, incoming, at);
+  withoutOwnedPointers(landed.graph, subtrees_);
   if (landed.landsNothing()) return std::nullopt;
   Subgraph frame;
   frame.treeId = id_;
@@ -293,16 +328,29 @@ TreeData TreeRoom::snapshot() const {
   return data;
 }
 
-Subgraph TreeRoom::deltaSince(const VersionVector& since) const {
-  Subgraph delta = deltaBetween(graph_.exportState(), legend_.exportState(), since);
+Subgraph TreeRoom::deltaSince(const VersionVector& since, std::optional<Seq> position) const {
+  const auto landedPast = [&position](Seq landSeq) { return position && landSeq > *position; };
+  Subgraph delta = deltaBetween(graph_.exportState(), legend_.exportState(), since,
+                                position ? landSeqs_.past(*position) : Landed{});
   delta.treeId = id_;
   if (path_.empty()) {
-    if (!since.covers(title_.stamp)) delta.title = title_;
+    if (!since.covers(title_.stamp) || landedPast(landSeqs_.title)) delta.title = title_;
     delta.coverage->observe(title_.stamp);
   }
-  if (!since.covers(guide_.stamp)) delta.guide = guide_;
+  if (!since.covers(guide_.stamp) || landedPast(landSeqs_.guide)) delta.guide = guide_;
   delta.coverage->observe(guide_.stamp);
   return delta;
+}
+
+std::size_t TreeRoom::lateEntriesFor(const VersionVector& since, Seq position) const {
+  const Landed late = landSeqs_.past(position);
+  std::size_t entries = 0;
+  if (!late.nodes.empty() || !late.edges.empty() || !late.kinds.empty())
+    entries = hiddenBy(since, graph_.exportState(), legend_.exportState(), late);
+  // A register that holds a land seq was written, so its stamp is set.
+  if (path_.empty() && landSeqs_.title > position && since.covers(title_.stamp)) ++entries;
+  if (landSeqs_.guide > position && since.covers(guide_.stamp)) ++entries;
+  return entries;
 }
 
 std::map<NodeId, TreeId> TreeRoom::pointersFor(const std::optional<UserId>& caller) const {
@@ -317,6 +365,29 @@ std::vector<NodeId> TreeRoom::prerequisitesOf(const NodeId& node) const {
 
 bool TreeRoom::hasNode(const NodeId& node) const {
   return graph_.hasNode(node);
+}
+
+bool TreeRoom::hasHeld(const NodeId& node) const {
+  return graph_.lifeOf(node).has_value();
+}
+
+std::vector<NodeId> TreeRoom::refusedPointers(const Subgraph& incoming) const {
+  if (appliedOpIds_.count(incoming.frameId)) return {};
+  std::vector<NodeId> refused;
+  for (const NodeStateEntry& node : incoming.graph.nodes) {
+    const auto subtree = subtrees_.find(node.id);
+    if (subtree == subtrees_.end() || node.opens == subtree->second) continue;
+    const std::optional<NodeStateEntry> held = graph_.exportNode(node.id);
+    if (node.opensAt > (held ? held->opensAt : Hlc{})) refused.push_back(node.id);
+  }
+  return refused;
+}
+
+std::vector<NodeId> TreeRoom::refusedPointers(const std::vector<std::pair<NodeId, TreeId>>& sent) const {
+  std::map<NodeId, TreeId> held;
+  for (const auto& [step, subtree] : subtrees_)
+    if (const std::optional<NodeStateEntry> entry = graph_.exportNode(step)) held.emplace(step, entry->opens);
+  return wm::refusedPointers(sent, subtrees_, held);
 }
 
 std::optional<std::string> TreeRoom::labelOf(const NodeId& node) const {

@@ -192,8 +192,8 @@ std::vector<TreeSummary> TreeRegistry::list(const UserId& owner) {
   return registrySummaries(loaded);
 }
 
-std::map<TreeId, std::string> TreeRegistry::titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) {
-  return trees_.titlesOwnedBy(owner, trees);
+std::map<TreeId, OpenedTree> TreeRegistry::pointerTargets(const UserId& owner, const std::set<TreeId>& trees) {
+  return trees_.pointerTargets(owner, trees);
 }
 
 std::map<TreeId, OpenedTree> TreeRegistry::openedFrom(const UserId& owner, const std::set<TreeId>& opened,
@@ -349,33 +349,10 @@ std::variant<std::string, TreeRegistry::Renaming> TreeRegistry::titleFrom(const 
 
 TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& caller,
                                             const std::string& title) {
-  std::variant<std::string, Renaming> landed = titleFrom(title);
-  if (const Renaming* refusal = std::get_if<Renaming>(&landed)) return *refusal;
-  const std::string& trimmed = std::get<std::string>(landed);
-
-  // Where a tree hangs never changes, so it is read before a strand is taken.
-  if (const std::optional<TreeAccess> hanging = rooms_.accessOf(tree); hanging && hanging->parent()) {
-    const std::variant<Described, Renaming> relabelled = relabel(*hanging->parent(), caller, trimmed);
-    if (const Renaming* refusal = std::get_if<Renaming>(&relabelled)) return *refusal;
-    return std::get<Described>(relabelled).saved == Saved::held ? Renaming::renamedUnsaved : Renaming::renamed;
-  }
-
-  // The strand serializes the rename against the tree's socket frames, so the gates and the title op form one
-  // uninterrupted step; the save is waited for with the strand let go. A tree the caller may not read answers as an
-  // absent one, never as someone else's.
-  std::unique_lock<std::mutex> strand(rooms_.strandFor(tree));
-  const std::optional<TreeAccess> access = rooms_.accessOf(tree);
-  if (!access || !canRead(caller, access->owner, access->visibility)) return Renaming::notFound;
-  if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))
-    return *refusal == WriteRefusal::nobodysTree ? Renaming::nobodysTree : Renaming::notYours;
-  // The stored title's stamp, which a rename of a closed tree's column is minted past.
-  const std::optional<StoredTree> stored = trees_.load(tree);
-  if (!stored) return Renaming::notFound;
-  PendingSave saving = rooms_.rename(tree, trimmed, clock_.nowMs(), stored->title.stamp);
-  strand.unlock();
-  const Saved saved = saving.wait();
-  if (saved == Saved::gone) return Renaming::notFound;  // the row went away under its live room, which went with it
-  return saved == Saved::held ? Renaming::renamedUnsaved : Renaming::renamed;
+  const auto described = describe(tree, caller, Description{title, std::nullopt});
+  if (const Renaming* refusal = std::get_if<Renaming>(&described)) return *refusal;
+  // A description with no guide is never refused admission.
+  return std::get<Described>(described).saved == Saved::held ? Renaming::renamedUnsaved : Renaming::renamed;
 }
 
 std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission> TreeRegistry::describe(

@@ -194,6 +194,10 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
     send(bus_, conn, rejectFrame(treeId, kBadFrame, "this frame could not be read"));
     return;
   }
+  // The last seq the subscriber applied, when it says one: it is then sent what landed late past it too, whatever its vector
+  // covers. Anything but a non-negative whole number is no position, and the vector alone cuts the delta.
+  const std::optional<Seq> lastSeq =
+      request["lastSeq"].isUInt64() ? std::optional<Seq>(request["lastSeq"].asUInt64()) : std::nullopt;
 
   // The delta, the head it reports and the view it was cut to are read under the strand; the places of the delta and
   // the progress graft in the connection's send order are taken there too, with the join, and each frame is written
@@ -234,7 +238,9 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
         return;
       }
       presence_.join(conn, TreeId{treeId});
-      delta = room->deltaSince(clientVector);
+      delta = room->deltaSince(clientVector, lastSeq);
+      if (const std::size_t late = lastSeq ? room->lateEntriesFor(clientVector, *lastSeq) : 0; late > 0)
+        LOG_INFO << "roadmap_subscribe_late_entries entries=" << late;
       head = room->head();
       subtree = room->parent().has_value();
       depth = room->depth();
@@ -394,6 +400,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   PendingSave saving = Saved::saved;
   std::optional<Json::Value> reject;  // absent while the write is still admissible
   std::vector<UnconfirmedBranch> unconfirmed;  // owning steps the frame would delete without naming their subtrees
+  std::vector<NodeId> refused;  // steps owning a subtree the frame sent a pointer that is not an echo of it
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
@@ -419,6 +426,8 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
       } else if (unconfirmed = room->unconfirmedBranches(incoming); !unconfirmed.empty()) {
         // Answered once the strand is released, with each branch's size.
       } else {
+        // A pointer the frame would write on a step that owns a subtree is answered refused, and the join lands none.
+        refused = room->refusedPointers(incoming);
         seq = room->joinSubgraph(incoming, principal.user);
         saving = seq ? registry_.persist(TreeId{treeId}) : PendingSave{registry_.standing(TreeId{treeId})};
       }
@@ -446,9 +455,13 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   ack["t"] = "subgraphAck";
   ack["treeId"] = treeId;
   ack["frameId"] = frameId;
+  countCurrentWriteRefused(refused.size());
   if (seq) ack["seq"] = static_cast<Json::Int64>(*seq);
+  else if (!refused.empty()) finishCurrentWriteRefusal(kOwnsASubtree);
   else finishCurrentWriteUnchanged();
   if (saved == Saved::held) ack["unsaved"] = true;
+  // Names each step alone, never the subtree it owns: the rest of the frame landed, and the step still opens its subtree.
+  if (!refused.empty()) ack["refused"] = refusedPointersJson(refused);
   send(bus_, conn, ack);
 }
 

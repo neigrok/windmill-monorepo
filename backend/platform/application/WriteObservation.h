@@ -24,6 +24,9 @@ struct WriteCompletion {
   std::string requestId;
   double durationMs;
   WriteSeverity severity = WriteSeverity::debug;
+  // How many parts of the write its door refused while the rest applied, whatever the outcome: on the line as `refused`
+  // when there are any, and left off when there are none.
+  std::uint64_t refused = 0;
 };
 std::string writeCompletionJson(const WriteCompletion& completion);
 
@@ -46,6 +49,8 @@ void finishCurrentWriteUnchanged();
 // The write in progress completes as `outcome` when its door finishes it, whatever the door then calls it, unless it
 // fails: for a consequence met beneath the door, which every door's line must tell alike.
 void settleCurrentWriteAs(const std::string& outcome);
+// The write in progress refused `count` parts of itself and applied the rest: its line counts them.
+void countCurrentWriteRefused(std::uint64_t count);
 void markCurrentWrite();
 
 class WriteObservation;
@@ -70,6 +75,7 @@ public:
   WriteObservation& operator=(const WriteObservation&) = delete;
   void finish(std::string outcome = "ok");
   void settleAs(std::string outcome) { settledOutcome_ = std::move(outcome); }
+  void countRefused(std::uint64_t count) { completion_.refused += count; }
   void skip();
   void ownInfo();
   void wrote();

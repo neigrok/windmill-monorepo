@@ -154,6 +154,32 @@ TEST(registry_lists_roots_alone_and_counts_a_step_that_owns_a_subtree_done_when_
   CHECK_EQ(rows(), (std::vector<std::string>{"t_a 1/3"}));
 }
 
+// A step pointing at another root's subtree is an ordinary step there: its own mark counts, the subtree it names gives it
+// nothing, and that root is named among no tree's openers by it.
+TEST(registry_counts_a_step_pointing_at_a_subtree_by_its_own_mark) {
+  NodeSpec sail = spec("sail", NodeColor::sky, {});
+  sail.opens = TreeId{std::string("t_s")};
+  NodeSpec far = spec("far", NodeColor::sky, {});
+  far.opens = TreeId{std::string("t_s")};
+  NodeSpec unmarked = spec("unmarked", NodeColor::sky, {});
+  unmarked.opens = TreeId{std::string("t_s")};
+  Progress onOther;
+  onOther.completed = {nid("far")};
+  Progress onSail;
+  onSail.completed = {nid("knot")};
+  std::vector<LoadedTree> loaded;
+  loaded.push_back({tree("t_a", {sail}), 0, 2, Progress{}, 0});
+  loaded.push_back({tree("t_b", {far, unmarked}), 0, 1, onOther, 0});
+  loaded.push_back({tree("t_s", {spec("knot", NodeColor::sky, {})}), 0, 3, onSail, 0,
+                    OwningStep{TreeId{std::string("t_a")}, nid("sail")}});
+
+  std::vector<std::string> rows;
+  for (const TreeSummary& summary : registrySummaries(loaded))
+    rows.push_back(summary.id.str() + " " + std::to_string(summary.stats.done) + "/" +
+                   std::to_string(summary.stats.total) + " openers " + std::to_string(summary.openers.size()));
+  CHECK_EQ(rows, (std::vector<std::string>{"t_a 1/1 openers 0", "t_b 1/2 openers 0"}));
+}
+
 // A root's row counts what its removal takes: every subtree reached down its present owning steps, at any depth, and the
 // steps of the root and of each of them. A subtree whose owning step is absent is no part of it.
 TEST(registry_rows_count_the_branch_a_roots_removal_takes) {

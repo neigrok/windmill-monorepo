@@ -119,8 +119,8 @@ struct SubtreeInventory {
   bool operator==(const SubtreeInventory&) const = default;
 };
 
-// One account's inventory, judged by the rule `OpenedTrees` holds: a pointer is valid when it names a standing tree of
-// the same account.
+// One account's inventory, judged by the rule `OpenedTrees` holds over the pointers alone, each standing tree read as a
+// root: a pointer is valid when it names a standing tree of the same account.
 SubtreeInventory inventory(const AccountTrees& account);
 
 }

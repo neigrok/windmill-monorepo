@@ -984,7 +984,7 @@ TEST(node_patch_plan_preserves_omitted_fields_and_retries_without_commands) {
   second.nodeId = nid("b");
   second.description = "New description";
   second.links = std::vector<Link>{{"Reference", "https://example.com"}};
-  const auto result = planNodePatches(graph, legend, {first, second});
+  const auto result = planNodePatches(graph, legend, {first, second}, {});
   REQUIRE(std::holds_alternative<NodePatchPlan>(result));
   const NodePatchPlan& plan = std::get<NodePatchPlan>(result);
   CHECK_EQ(plan.changedNodeIds, (std::vector<NodeId>{nid("a"), nid("b")}));
@@ -992,7 +992,7 @@ TEST(node_patch_plan_preserves_omitted_fields_and_retries_without_commands) {
   CHECK_EQ(graph.nodeView(nid("a"))->label, std::string("New A"));
   CHECK_EQ(graph.nodeView(nid("a"))->icon, std::string("x"));
   CHECK_EQ(graph.nodeView(nid("b"))->prerequisites, (std::vector<NodeId>{nid("a")}));
-  const auto retry = planNodePatches(graph, legend, {first, second});
+  const auto retry = planNodePatches(graph, legend, {first, second}, {});
   REQUIRE(std::holds_alternative<NodePatchPlan>(retry));
   CHECK(std::get<NodePatchPlan>(retry).batch.commands.empty());
   CHECK(std::get<NodePatchPlan>(retry).changedNodeIds.empty());
@@ -1007,14 +1007,14 @@ TEST(node_patch_plan_rejects_invalid_last_row_duplicates_and_empty_patches) {
   NodePatch last;
   last.nodeId = nid("b");
   last.description = std::string(kMaxNodeDescriptionLength + 1, 'x');
-  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, last})));
+  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, last}, {})));
   CHECK_EQ(graph.nodeView(nid("a"))->label, std::string("A"));
-  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, first})));
-  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {NodePatch{nid("a")}})));
+  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, first}, {})));
+  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {NodePatch{nid("a")}}, {})));
   last.description = std::string("bad\0text", 8);
-  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, last})));
+  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, last}, {})));
   last.nodeId = nid("missing");
-  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, last})));
+  CHECK(std::holds_alternative<std::string>(planNodePatches(graph, legend, {first, last}, {})));
 }
 
 // What a node edit lands on the node it names: only the fields that differ, or nothing at all.
@@ -1059,14 +1059,14 @@ TEST(node_patch_plan_hands_back_the_kind_refusal_of_the_row_that_named_the_kind)
   named.nodeId = nid("b");
   named.hue = HueChoice{std::nullopt, kid("ownr")};
 
-  const auto unknown = planNodePatches(graph, legend, {first, named});
+  const auto unknown = planNodePatches(graph, legend, {first, named}, {});
   REQUIRE(std::holds_alternative<KindRefusal>(unknown));
   CHECK((std::get<KindRefusal>(unknown) ==
          KindRefusal{KindRefusal::Reason::unknownKind,
                      "updates[1].kind \"ownr\" is not a kind of this tree; its legend holds \"owner\""}));
 
   named.hue = HueChoice{NodeColor::sky, kid("owner")};
-  const auto mismatch = planNodePatches(graph, legend, {first, named});
+  const auto mismatch = planNodePatches(graph, legend, {first, named}, {});
   REQUIRE(std::holds_alternative<KindRefusal>(mismatch));
   CHECK((std::get<KindRefusal>(mismatch) ==
          KindRefusal{KindRefusal::Reason::hueMismatch, "updates[1].kind \"owner\" wears gold, but updates[1].color is "
@@ -1230,14 +1230,14 @@ TEST(node_patch_plan_sets_and_clears_the_tree_a_node_opens_and_plans_nothing_for
   NodePatch pointed;
   pointed.nodeId = nid("a");
   pointed.opens = tid("t_sub");
-  const auto set = planNodePatches(graph, legend, {pointed});
+  const auto set = planNodePatches(graph, legend, {pointed}, {});
   REQUIRE(std::holds_alternative<NodePatchPlan>(set));
   CHECK_EQ(std::get<NodePatchPlan>(set).changedNodeIds, std::vector<NodeId>{nid("a")});
   merge(graph, legend, std::get<NodePatchPlan>(set).batch, at(10));
   CHECK_EQ(graph.nodeView(nid("a"))->opens, tid("t_sub"));
   CHECK_EQ(graph.nodeView(nid("a"))->label, std::string("A"));
 
-  const auto again = planNodePatches(graph, legend, {pointed});
+  const auto again = planNodePatches(graph, legend, {pointed}, {});
   REQUIRE(std::holds_alternative<NodePatchPlan>(again));
   CHECK(std::get<NodePatchPlan>(again).batch.commands.empty());
   CHECK(std::get<NodePatchPlan>(again).changedNodeIds.empty());
@@ -1245,11 +1245,46 @@ TEST(node_patch_plan_sets_and_clears_the_tree_a_node_opens_and_plans_nothing_for
   NodePatch cleared;
   cleared.nodeId = nid("a");
   cleared.opens = TreeId{};
-  const auto clear = planNodePatches(graph, legend, {cleared});
+  const auto clear = planNodePatches(graph, legend, {cleared}, {});
   REQUIRE(std::holds_alternative<NodePatchPlan>(clear));
   CHECK_EQ(std::get<NodePatchPlan>(clear).changedNodeIds, std::vector<NodeId>{nid("a")});
   merge(graph, legend, std::get<NodePatchPlan>(clear).batch, at(11));
   CHECK_EQ(graph.nodeView(nid("a"))->opens, TreeId{});
+}
+
+// A step that owns a subtree takes no pointer: a row's opens there plans nothing, whatever it names, and the row's other
+// fields plan as ever; a row carrying opens alone is still a row that sets a field.
+TEST(node_patch_plan_plans_no_pointer_on_a_step_that_owns_a_subtree_and_the_rest_of_its_row_as_ever) {
+  LooseGraph graph = seeded();
+  Legend legend;
+  const std::map<NodeId, TreeId> owned{{nid("a"), tid("t_sub")}};
+  NodePatch relabelled;
+  relabelled.nodeId = nid("a");
+  relabelled.label = "Sail";
+  relabelled.opens = tid("t_other");
+  NodePatch pointedOnly;
+  pointedOnly.nodeId = nid("b");
+  pointedOnly.opens = tid("t_other");
+
+  const auto plan = planNodePatches(graph, legend, {relabelled}, owned);
+  REQUIRE(std::holds_alternative<NodePatchPlan>(plan));
+  const std::vector<Command>& planned = std::get<NodePatchPlan>(plan).batch.commands;
+  REQUIRE_EQ(planned.size(), 1u);
+  REQUIRE(std::holds_alternative<RenameNode>(planned.front()));
+  CHECK_EQ(std::get<RenameNode>(planned.front()).label, std::string("Sail"));
+  CHECK_EQ(std::get<NodePatchPlan>(plan).changedNodeIds, std::vector<NodeId>{nid("a")});
+
+  NodePatch echoed;
+  echoed.nodeId = nid("a");
+  echoed.opens = tid("t_sub");
+  const auto echo = planNodePatches(graph, legend, {echoed}, owned);
+  REQUIRE(std::holds_alternative<NodePatchPlan>(echo));
+  CHECK(std::get<NodePatchPlan>(echo).landsNothing());
+  CHECK(std::get<NodePatchPlan>(echo).changedNodeIds.empty());
+
+  const auto elsewhere = planNodePatches(graph, legend, {pointedOnly}, owned);
+  REQUIRE(std::holds_alternative<NodePatchPlan>(elsewhere));
+  CHECK_EQ(std::get<NodePatchPlan>(elsewhere).changedNodeIds, std::vector<NodeId>{nid("b")});
 }
 
 TEST(an_opens_past_the_id_cap_is_refused_naming_the_field_and_one_at_the_cap_passes) {
@@ -1274,12 +1309,12 @@ TEST(an_opens_past_the_id_cap_is_refused_naming_the_field_and_one_at_the_cap_pas
   NodePatch patch;
   patch.nodeId = nid("a");
   patch.opens = overCap;
-  const auto plan = planNodePatches(g, legend, {patch});
+  const auto plan = planNodePatches(g, legend, {patch}, {});
   REQUIRE(std::holds_alternative<std::string>(plan));
   CHECK_EQ(std::get<std::string>(plan), *refusal);
 
   patch.opens = TreeId{std::string("t\0x", 3)};
-  const auto nul = planNodePatches(g, legend, {patch});
+  const auto nul = planNodePatches(g, legend, {patch}, {});
   REQUIRE(std::holds_alternative<std::string>(nul));
   CHECK_EQ(std::get<std::string>(nul), std::string("node \"a\": opens cannot contain a NUL character"));
   annotated.opens = TreeId{std::string("t\0x", 3)};
