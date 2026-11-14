@@ -873,8 +873,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   ControlBar or Next up shelf. Their Web Mobile and Web boards (the [flow index](../index.md#roadmap--web)'s *02 · Find and edit in List*,
   *List vocabulary*, the phone owner sheets in *04 · Edit and complete steps* (Web Mobile 04.01–04.05, 04.08), and the Next up states in *05 · Progress and feedback*) still stand in Figma. The designer deletes them and their
   index rows in the 🚀 pass.
-- **Board · loading strip.** 02.09 (374:5067) draws five sunken chip placeholders between the identity row and the columns. The build
-  draws none, so its columns start higher.
 - **Board · modal and the Shell.** The step modal frames (03.01 184:1693, 03.07 379:18290, 05.06 399:37361) draw the scrim over the Shared
   Shell and centre the modal on the whole viewport, 80px from the top. The build leaves the Shell clear and centres the modal beneath it,
   106px from the top.
