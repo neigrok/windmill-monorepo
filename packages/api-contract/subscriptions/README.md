@@ -15,6 +15,12 @@ Each file holds `examples`, a list of `{name, body}`; the feed adds each page's 
 `limit`), and the claim files add the one `request` and each answer's `status`. A name is a state a
 reader must handle; a test names the example it checks.
 
+`generate.py` writes every file from one modelled ledger, so a change is made there, never in the JSON:
+regenerate with `python3 generate.py`, and `python3 check.py` must pass. `check.py` holds the shapes
+and the spec's rules. Subscriptions CI (`.github/workflows/subscriptions.yml`) runs
+`python3 generate.py --check`, which fails when a file is not what the generator writes, and
+`python3 check.py` on every change here. Both need only Python 3's standard library.
+
 - Every key is always present: an absent value is `null`, an empty list `[]`.
 - Instants are epoch milliseconds; amounts are decimal strings with an ISO 4217 currency.
 - Ids and the feed's `epoch` are UUIDs. No fixture holds a store transaction id, a signed payload, an

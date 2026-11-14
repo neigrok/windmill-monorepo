@@ -5,7 +5,16 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64 = "0.23.1"
 domain = { path = "../domain" }
+ring = "0.17.14"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+x509-parser = "0.18.1"
+
+[dev-dependencies]
+rcgen = "0.14.10"
+time = "0.3.55"
 
 [lints]
 workspace = true

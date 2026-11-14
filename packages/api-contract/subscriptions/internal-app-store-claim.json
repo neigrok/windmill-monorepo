@@ -27,7 +27,7 @@
               "autoRenew": true,
               "nextChargeAt": 1799150400000,
               "nextCharge": {
-                "amount": "11.99",
+                "amount": "12.00",
                 "currency": "USD"
               },
               "nextProductId": null,
@@ -76,7 +76,7 @@
               "autoRenew": true,
               "nextChargeAt": 1799150400000,
               "nextCharge": {
-                "amount": "11.99",
+                "amount": "12.00",
                 "currency": "USD"
               },
               "nextProductId": null,

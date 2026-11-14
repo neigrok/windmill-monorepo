@@ -32,8 +32,8 @@ function acting(state, action, run) {
 }
 
 // The columns' grammar with every count unknown and no spinner: the column titles over cards still to come.
-export function BoardSkeleton({ phone }) {
-  if (phone) {
+export function BoardSkeleton({ band }) {
+  if (band === 'phone') {
     return (
       <div className="st-board-phone" aria-busy="true" tabIndex={-1}>
         <div className="st-board-phone-panes">
@@ -47,17 +47,36 @@ export function BoardSkeleton({ phone }) {
     );
   }
   return (
-    <div className="st-board-columns" aria-busy="true" tabIndex={-1}>
-      {COLUMNS.map((column) => (
-        <section key={column} className={`st-board-columns-column st-board-columns-column--${column}`} tabIndex={-1}>
-          <h2 className={`st-board-columns-heading st-board-columns-heading--${column}`}>
-            {column === 'upNext' && <span className="st-board-columns-accent" aria-hidden />}
-            <span className="st-board-columns-title">{COLUMN_TITLES[column]}</span>
-          </h2>
-          {Array.from({ length: SKELETON_CARDS[column] }, (_, index) => <SkeletonCard key={index} size="plain" />)}
-        </section>
-      ))}
-    </div>
+    <>
+      <div className="st-board-skeleton-filter" aria-hidden>
+        {Array.from({ length: 5 }, (_, index) => <span key={index} />)}
+      </div>
+      <div className="st-board-columns" aria-busy="true" tabIndex={-1}>
+        {COLUMNS.map((column) => {
+          if (band === 'tablet' && column === 'done') return (
+            <section key={column} className="st-board-columns-rail st-board-columns-rail--done">
+              <h2 className="st-board-columns-heading"><span className="st-board-columns-title">{COLUMN_TITLES.done}</span></h2>
+              <div className="st-board-columns-deck st-board-skeleton-deck" aria-hidden>
+                {[2, 1, 0].map((behind) => (
+                  <span key={behind} className={`st-board-columns-deck-layer st-board-columns-deck-layer--behind-${behind}`}>
+                    <span className="st-board-columns-deck-card"><span className="st-board-columns-deck-rail" /></span>
+                  </span>
+                ))}
+              </div>
+            </section>
+          );
+          return (
+            <section key={column} className={`st-board-columns-column st-board-columns-column--${column}`} tabIndex={-1}>
+              <h2 className={`st-board-columns-heading st-board-columns-heading--${column}`}>
+                {column === 'upNext' && <span className="st-board-columns-accent" aria-hidden />}
+                <span className="st-board-columns-title">{COLUMN_TITLES[column]}</span>
+              </h2>
+              {Array.from({ length: SKELETON_CARDS[column] }, (_, index) => <SkeletonCard key={index} size="plain" />)}
+            </section>
+          );
+        })}
+      </div>
+    </>
   );
 }
 

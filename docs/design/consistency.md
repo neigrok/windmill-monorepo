@@ -788,11 +788,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · Roadmap complete for a reader.** The Board shows a reader the title alone, plus the crown and a secondary Fork offer on
   phones. Proposed, awaiting the owner: *All 8 steps done* / *Fork it to walk these steps yourself.*, with Fork primary on phones
   (25.03, 15.03).
-- **Board · states at 744px.** At 744–1023px the build uses the desktop loading, load-error and empty frames, with three skeleton
-  columns side by side rather than the tablet's rail. Proposed, awaiting the owner: 15.04–15.06; load error and empty have no columns,
-  so no rail.
+- **Board · states at 744px.** At 744–1023px the build uses the desktop load-error and empty frames. The owner approved
+  15.05–15.06; both await implementation, and neither has columns or a rail.
 - **Board · New step on an empty phone roadmap.** An owner's empty roadmap reaches the Board on phone, tablet and desktop. Its New
-  step opens the composer (185:2149, 226:1055); the tablet uses the desktop empty-state structure pending 15.06.
+  step opens the composer (185:2149, 226:1055); the tablet uses the desktop empty-state structure pending implementation of approved 15.06.
 - **Board · composer and picker at 744px.** At 744–1023px the owner-approved picker is a page inside
   the 600px composer dialog: back chevron, Prerequisites, *for <draft>*, search, chips, results, Cancel
   and Apply. The implementation uses this page layout. The canon is ✅ 744 09.02–09.04: 470:23411,
@@ -831,10 +830,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · planted summary and welcome-back recap without WebGL2.** Both presentations belong to the scene: the planted roadmap's
   summary follows its arrival, and the welcome-back recap names progress since the previous visit. Without WebGL2 neither appears
   on the Board. No approved frame draws either Board presentation; the follow-up is to draw both on the applicable bands.
-- **Board · the topbar before a roadmap loads.** Before the load answers, or after it fails, the build knows no name, so it shows none
-  rather than *Untitled roadmap*, and it offers no Share. It shows the switch while loading, but not after a failed load: the Graph's
+- **Board · the topbar before a roadmap loads.** Before the load answers, the tablet Board shows a still name skeleton; other bands
+  show no name. After a failure the build shows no name and offers no Share. It shows the switch while loading, but not after a failed load: the Graph's
   load error veils the topbar, so the switch would lead where a pointer cannot come back from. Proposed, awaiting the owner: a still name
-  skeleton with no chevron while loading (15.08), and *Your roadmaps* with its chevron after a failed load (15.09). The switch returns to
+  skeleton with no chevron while loading outside the tablet Board (15.08), and *Your roadmaps* with its chevron after a failed load (15.09). The switch returns to
   the load error once the Graph's load error leaves the topbar reachable.
 - **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and field focus. G4 retains the phone Graph
   camera group under the row. Proposed, awaiting the owner: 25.11, 25.12.
@@ -873,8 +872,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   ControlBar or Next up shelf. Their Web Mobile and Web boards (the [flow index](../index.md#roadmap--web)'s *02 · Find and edit in List*,
   *List vocabulary*, the phone owner sheets in *04 · Edit and complete steps* (Web Mobile 04.01–04.05, 04.08), and the Next up states in *05 · Progress and feedback*) still stand in Figma. The designer deletes them and their
   index rows in the 🚀 pass.
-- **Board · loading strip.** 02.09 (374:5067) draws five sunken chip placeholders between the identity row and the columns. The build
-  draws none, so its columns start higher.
 - **Board · modal and the Shell.** The step modal frames (03.01 184:1693, 03.07 379:18290, 05.06 399:37361) draw the scrim over the Shared
   Shell and centre the modal on the whole viewport, 80px from the top. The build leaves the Shell clear and centres the modal beneath it,
   106px from the top.

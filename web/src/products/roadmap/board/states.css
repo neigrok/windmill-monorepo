@@ -5,6 +5,30 @@
   outline: none;
 }
 
+/* 02.09's still filter placeholders, with the Board's 12px gap completing the 16px below them. */
+.st-board-skeleton-filter {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  overflow: hidden;
+  margin-bottom: var(--space-1);
+}
+.st-board-skeleton-filter > span {
+  flex: 0 0 auto;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+}
+.st-board-skeleton-filter > :nth-child(1) { width: 62px; }
+.st-board-skeleton-filter > :nth-child(2) { width: 71px; }
+.st-board-skeleton-filter > :nth-child(3) { width: 73px; }
+.st-board-skeleton-filter > :nth-child(4) { width: 97px; }
+.st-board-skeleton-filter > :nth-child(5) { width: 61px; }
+
+.st-board-skeleton-deck {
+  --st-board-rail: var(--surface-sunken);
+}
+
 /* ---- Skeleton card: a still card outline, with no motion, at the desktop's card radius from 744px. ---- */
 .st-board-skeleton-card {
   flex-shrink: 0;

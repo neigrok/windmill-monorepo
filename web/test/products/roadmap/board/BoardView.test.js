@@ -123,13 +123,13 @@ window.openBoard = (nodes, completed, breakpoint) => {
   }
   createRoot(document.getElementById('root')).render(React.createElement(Room));
 };
-window.openState = ({ nodes, completed = [], breakpoint, loading = false, failed = false, owner = true }) => {
+window.openState = ({ nodes, completed = [], breakpoint, loading = false, failed = false, owner = true, topInset = 0 }) => {
   const tree = nodes === null ? null : new SkillTree({ id: 'sail', title: 'Learn to sail', nodes });
   const call = (name) => () => (window.calls ??= []).push(name);
   createRoot(document.getElementById('root')).render(
     React.createElement('div', { className: 'st-view-layer--board is-active', style: { height: '100vh' } },
       React.createElement(BoardView, { tree, completed: new Set(completed), completedAt: {}, loading, failed, selectedId: null,
-        onSelect: () => {}, breakpoint, active: true,
+        onSelect: () => {}, breakpoint, topInset, active: true,
         onRetry: call('retry'), onShare: owner ? call('share') : undefined, onNewStep: owner ? call('newStep') : undefined })));
 };
 window.openReload = (nodes, completed) => {
@@ -511,6 +511,84 @@ test('Chromium: on the phone Roadmap complete takes the Up next pane without its
   }
 });
 
+test('Chromium: Board loading shows the still filter placeholders above the columns from 744px', async () => {
+  await ready;
+  const errors = [];
+  for (const [width, breakpoint] of [[1440, 'desktop'], [744, 'tablet'], [390, 'phone']]) {
+    const page = await openStatePage({ width, height: 900 }, { nodes: null, loading: true, breakpoint, topInset: 116 }, errors);
+    try {
+      const layout = await page.evaluate(() => {
+        const strip = document.querySelector('.st-board-skeleton-filter');
+        if (!strip) return null;
+        const chips = [...strip.children];
+        const box = strip.getBoundingClientRect();
+        const columns = document.querySelector('.st-board-columns').getBoundingClientRect();
+        return {
+          hidden: strip.getAttribute('aria-hidden'),
+          focusable: strip.querySelectorAll('button, a, input, [tabindex]').length,
+          dimensions: chips.map((chip) => [chip.getBoundingClientRect().width, chip.getBoundingClientRect().height]),
+          gaps: chips.slice(1).map((chip, index) => chip.getBoundingClientRect().left - chips[index].getBoundingClientRect().right),
+          left: box.left,
+          top: box.top,
+          gap: columns.top - box.bottom,
+          still: chips.every((chip) => getComputedStyle(chip).animationName === 'none'),
+          colors: chips.map((chip) => getComputedStyle(chip).backgroundColor),
+          sunken: getComputedStyle(document.querySelector('.st-board-skeleton-line')).backgroundColor,
+        };
+      });
+      if (breakpoint === 'phone') {
+        assert.equal(layout, null);
+      } else {
+        assert.notEqual(layout, null, 'the loading filter strip is present');
+        assert.deepEqual(layout, {
+          hidden: 'true', focusable: 0,
+          dimensions: [[62, 36], [71, 36], [73, 36], [97, 36], [61, 36]],
+          gaps: [6, 6, 6, 6], left: 24, top: 120, gap: 16, still: true,
+          colors: Array(5).fill(layout.sunken), sunken: layout.sunken,
+        });
+        await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+        assert.deepEqual(await page.evaluate(() => {
+          const color = getComputedStyle(document.querySelector('.st-board-skeleton-line')).backgroundColor;
+          return [...document.querySelector('.st-board-skeleton-filter').children].map((chip) => getComputedStyle(chip).backgroundColor === color);
+        }), [true, true, true, true, true]);
+      }
+    } finally {
+      await page.close();
+    }
+  }
+  assert.deepEqual(errors, []);
+});
+
+test('Chromium: tablet loading folds Done to a still, inert rail', async () => {
+  await ready;
+  const errors = [];
+  for (const [width, breakpoint] of [[744, 'tablet'], [1023, 'tablet'], [1024, 'desktop']]) {
+    const page = await openStatePage({ width, height: 900 }, { nodes: null, loading: true, breakpoint }, errors);
+    try {
+      const actual = await page.evaluate(() => {
+        const rail = document.querySelector('.st-board-columns-rail--done');
+        const columns = document.querySelector('.st-board-columns');
+        return {
+          busy: columns.getAttribute('aria-busy'),
+          full: columns.querySelectorAll('.st-board-columns-column').length,
+          rail: rail !== null,
+          width: rail && Math.round(rail.getBoundingClientRect().width),
+          title: rail?.querySelector('.st-board-columns-title')?.textContent ?? null,
+          cards: rail?.querySelectorAll('.st-board-columns-deck-card').length ?? 0,
+          controls: rail?.querySelectorAll('button, a, input, [tabindex]').length ?? 0,
+          still: rail ? rail.getAnimations({ subtree: true }).length === 0 : true,
+        };
+      });
+      assert.deepEqual(actual, breakpoint === 'tablet'
+        ? { busy: 'true', full: 2, rail: true, width: width === 744 ? 136 : 168, title: 'Done', cards: 3, controls: 0, still: true }
+        : { busy: 'true', full: 3, rail: false, width: null, title: null, cards: 0, controls: 0, still: true });
+    } finally {
+      await page.close();
+    }
+  }
+  assert.deepEqual(errors, []);
+});
+
 test('Chromium: skeleton cards hold still on every band (02.09): from 744 radius 20, height 72, lines 180×14 and up to 240×10; the phone keeps its card', async () => {
   await ready;
   const errors = [];
@@ -540,7 +618,7 @@ test('Chromium: skeleton cards hold still on every band (02.09): from 744 radius
   const desktop = { cards: 8, moving: 0, radius: '20px', height: 72, border: '1px', title: [180, 14], detail: [240, 10] };
   assert.deepEqual(await measure({ width: 1440, height: 900 }, 'desktop'), desktop);
   assert.deepEqual(await measure({ width: 1440, height: 900 }, 'desktop', { reducedMotion: 'reduce' }), desktop);
-  assert.deepEqual(await measure({ width: 744, height: 900 }, 'tablet'), { cards: 8, moving: 0, radius: '20px', height: 72, border: '1px', title: [159, 14], detail: [159, 10] });
+  assert.deepEqual(await measure({ width: 744, height: 900 }, 'tablet'), { cards: 5, moving: 0, radius: '20px', height: 72, border: '1px', title: [180, 14], detail: [202, 10] });
   assert.deepEqual(await measure({ width: 390, height: 844 }, 'phone'), { cards: 3, moving: 0, radius: '16px', height: 72, border: '1px', title: [180, 14], detail: [240, 10] });
   assert.deepEqual(errors, []);
 });

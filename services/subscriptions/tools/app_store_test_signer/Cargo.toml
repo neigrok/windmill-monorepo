@@ -1,0 +1,18 @@
+[package]
+name = "app_store_test_signer"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = "0.23.1"
+ring = "0.17.14"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+uuid = { version = "1.18.1", features = ["v4"] }
+
+[dev-dependencies]
+app_store = { path = "../../crates/app_store" }
+
+[lints]
+workspace = true

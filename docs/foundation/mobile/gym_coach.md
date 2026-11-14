@@ -587,9 +587,7 @@ the account or for the installation.
 Claude reservations use local per-request approximate token counts and the full output cap sent to the provider.
 Anonymous onboarding uses one bounded model call with public exercises and no account tools.
 Approximation does not guarantee that a request fits. Full actual cost is recorded; an overrun
-creates debt only when original funding cannot cover it. Voice also needs supported audio
-accounting and complete audio/text pricing. This spec does not promise that either unsupported
-edge is available.
+creates debt only when original funding cannot cover it.
 
 ### §7.3 Shared capacity and owner alerts
 
