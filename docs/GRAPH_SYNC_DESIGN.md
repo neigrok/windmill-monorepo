@@ -78,7 +78,12 @@ subscribes again from an empty vector, because a reader's coverage counts pointe
 The server broadcasts admitted writes with `intent: live` and `seq`. A persisted write receives
 `subgraphAck {treeId, frameId, seq?}`; one that landed and was broadcast but whose save failed
 receives the same ack with `unsaved: true`, and the server retries the save, so the client confirms
-the frame and does not resend it. A frame that lands nothing — a duplicate, one whose every
+the frame and does not resend it. A frame whose `opens` on a step that owns a subtree would have landed —
+a stamp past the one the step's register holds — naming another tree than that subtree is acknowledged
+with `refused: [{node, field: "opens", code: "owns-a-subtree"}]`, one per such step in the frame's order:
+that register was not stored, every other register of the frame landed, and `seq` is absent when nothing
+else did ([the model](../backend/SPEC.md#model), Legacy pointers). A retried frame is answered as the
+duplicate it is. The browser confirms such a frame as it confirms any other. A frame that lands nothing — a duplicate, one whose every
 stamp the server holds already, or one that carries no stamp a register keeps — is acknowledged
 without a seq, so its sender's gestures are confirmed, and is not saved, logged or broadcast. A frame
 that carries no stamp asks for no write: anyone who may read the tree is acknowledged so, a reader and

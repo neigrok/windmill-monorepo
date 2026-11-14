@@ -3390,3 +3390,91 @@ TEST(ws_a_subscribe_racing_the_delete_of_its_owning_step_is_refused_once_joined)
   const std::vector<drogon::WebSocketConnectionPtr> subscribed = h.bus.connections();
   CHECK(std::find(subscribed.begin(), subscribed.end(), reader) == subscribed.end());
 }
+
+// A step that owns a subtree takes no pointer (SPEC.md, Model, Legacy pointers): a frame that writes one there is acked
+// with that step's `opens` refused `owns-a-subtree`, naming the step alone, and every other register of the frame lands
+// and is told without it. A frame whose whole word is such a pointer takes no seq and completes under the refusal; an echo
+// of the step's own subtree is no refusal and lands nothing.
+TEST(ws_a_pointer_written_on_a_step_that_owns_a_subtree_is_refused_by_register_and_the_rest_of_the_frame_lands) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedSteps("t_p", owner, Visibility::private_, "");
+  const TreeId child{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {child, std::nullopt})));
+  auto writer = std::make_shared<FakeSocket>();
+  auto watcher = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), writer);
+  h.collab.onOpen(h.upgrade("s-owner"), watcher);
+  h.collab.onMessage(watcher, subscribeFrame("t_p"));
+  watcher->sent.clear();
+  const auto opensOf = [&](const char* step) {
+    std::lock_guard<std::mutex> lock(h.rooms.strandFor(TreeId{"t_p"}));
+    return LooseGraph(h.rooms.open(TreeId{"t_p"})->exportState()).exportNode(NodeId{step})->opens.str();
+  };
+
+  Json::Value mixed = parse(registerFrame("t_p", "f1",
+                                          R"({"id":"plain","label":"Plain on","labelAt":"300:0:web",)"
+                                          R"("opens":"t_00000000000000f2","opensAt":"300:0:web"})"));
+  mixed["nodes"].append(parse(R"({"id":"idea","opens":"t_00000000000000f3","opensAt":"300:0:web"})"));
+  Observed observed;
+  h.collab.onMessage(writer, dump(mixed));
+  h.collab.onMessage(writer, registerFrame("t_p", "f2", R"({"id":"plain","opens":"","opensAt":"301:0:web"})"));
+  h.collab.onMessage(writer, registerFrame("t_p", "f3", R"({"id":"plain","opens":"t_00000000000000c1","opensAt":"302:0:web"})"));
+
+  std::vector<Json::Value> acks;
+  for (const std::string& text : writer->sent) acks.push_back(parse(text));
+  CHECK_EQ(acks, (std::vector<Json::Value>{
+                     parse(R"({"t":"subgraphAck","treeId":"t_p","frameId":"f1","seq":2,)"
+                           R"("refused":[{"node":"plain","field":"opens","code":"owns-a-subtree"}]})"),
+                     parse(R"({"t":"subgraphAck","treeId":"t_p","frameId":"f2",)"
+                           R"("refused":[{"node":"plain","field":"opens","code":"owns-a-subtree"}]})"),
+                     parse(R"({"t":"subgraphAck","treeId":"t_p","frameId":"f3"})")}));
+  std::vector<std::string> outcomes;
+  for (const WriteCompletion& completion : observed.completions)
+    outcomes.push_back(completion.outcome + " " + std::to_string(completion.refused));
+  CHECK_EQ(outcomes, (std::vector<std::string>{"ok 1", "owns-a-subtree 1", "unchanged 0"}));
+  CHECK(observed.issues.empty());
+  REQUIRE_EQ(watcher->sent.size(), 1u);
+  CHECK_EQ(parse(watcher->sent[0])["nodes"],
+           toJson(GraphState{{NodeStateEntry{.id = NodeId{"plain"}, .label = "Plain on", .labelAt = Hlc{300, 0, "web"}},
+                              NodeStateEntry{.id = NodeId{"idea"}, .opens = TreeId{"t_00000000000000f3"},
+                                             .opensAt = Hlc{300, 0, "web"}}},
+                             {}})["nodes"]);
+  CHECK_EQ(opensOf("plain"), std::string(""));
+  CHECK_EQ(opensOf("idea"), std::string("t_00000000000000f3"));
+  std::lock_guard<std::mutex> lock(h.rooms.strandFor(TreeId{"t_p"}));
+  CHECK(h.rooms.open(TreeId{"t_p"})->pointers().at(NodeId{"plain"}) == child);
+}
+
+// A refusal judges what the frame would change, not its text: a retried frame answers as the duplicate it is, and a
+// pointer the owning step's register already holds under that stamp, or one an older stamp would lose to, changes
+// nothing, so none is refused and each frame completes `unchanged`.
+TEST(ws_a_retried_frame_and_a_pointer_that_would_change_nothing_are_no_refusal_on_an_owning_step) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedSteps("t_p", owner, Visibility::private_, "");
+  auto writer = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), writer);
+  const std::string first =
+      registerFrame("t_p", "f1", R"({"id":"plain","label":"Plain on","labelAt":"300:0:web","opens":"","opensAt":"300:0:web"})");
+  h.collab.onMessage(writer, first);
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {TreeId{"t_00000000000000c1"}, std::nullopt})));
+  writer->sent.clear();
+
+  Observed observed;
+  h.collab.onMessage(writer, first);
+  h.collab.onMessage(writer, registerFrame("t_p", "f2", R"({"id":"plain","opens":"","opensAt":"300:0:web"})"));
+  h.collab.onMessage(writer, registerFrame("t_p", "f3", R"({"id":"plain","opens":"t_00000000000000f2","opensAt":"299:0:web"})"));
+
+  std::vector<Json::Value> acks;
+  for (const std::string& text : writer->sent) acks.push_back(parse(text));
+  CHECK_EQ(acks, (std::vector<Json::Value>{parse(R"({"t":"subgraphAck","treeId":"t_p","frameId":"f1"})"),
+                                           parse(R"({"t":"subgraphAck","treeId":"t_p","frameId":"f2"})"),
+                                           parse(R"({"t":"subgraphAck","treeId":"t_p","frameId":"f3"})")}));
+  std::vector<std::string> outcomes;
+  for (const WriteCompletion& completion : observed.completions)
+    outcomes.push_back(completion.outcome + " " + std::to_string(completion.refused));
+  CHECK_EQ(outcomes, (std::vector<std::string>{"unchanged 0", "unchanged 0", "unchanged 0"}));
+}

@@ -774,7 +774,7 @@ TEST(list_names_for_each_tree_the_owners_other_trees_whose_steps_open_it_and_rea
   CHECK(openers == (std::map<std::string, std::vector<OpeningSteps>>{
                        {"t_target", {{tid("t_a"), 1}, {tid("t_b"), 2}}}, {"t_a", {}}, {"t_b", {}}, {"t_lonely", {}}}));
   CHECK(s.trees.openedReads.empty());
-  CHECK(s.trees.titleReads.empty());
+  CHECK(s.trees.targetReads.empty());
   CHECK(s.trees.aboveReads.empty());
   CHECK(s.trees.openingReads.empty());
 }
@@ -1366,22 +1366,28 @@ TEST(create_subtree_under_a_step_whose_pointer_opens_a_standing_tree_of_the_owne
   checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), me, SubtreeRefusal::stepOpensATree);
 }
 
-// A pointer at a deleted tree, at someone else's, or at no tree at all leads nowhere, so the step may own a subtree.
+// A pointer at a deleted tree, at someone else's, at no tree at all, or at a subtree — the owner's own, standing — leads
+// nowhere, so the step may own a subtree.
 TEST(create_subtree_under_a_step_whose_pointer_leads_nowhere_creates_it) {
   Setup s;
   const UserId me = uid("me");
-  seedParent(s, "t_p", me, {opening("deleted", "t_gone"), opening("foreign", "t_eves"), opening("absent", "t_never")});
+  seedParent(s, "t_p", me, {opening("deleted", "t_gone"), opening("foreign", "t_eves"), opening("absent", "t_never"),
+                            spec("sail", NodeColor::sky)});
   seed(s.trees, "t_gone", me, 100, {});
   s.trees.deletedIds.insert("t_gone");
   seed(s.trees, "t_eves", uid("eve"), 100, {});
+  const SubtreeAnswer sailing = s.registry.createSubtree(tid("t_p"), nid("sail"), me);
+  REQUIRE(std::holds_alternative<SubtreeCreation>(sailing));
+  seedParent(s, "t_q", me, {opening("subtree", std::get<SubtreeCreation>(sailing).subtree.id.str().c_str())});
 
-  for (const char* step : {"deleted", "foreign", "absent"}) {
-    const SubtreeAnswer answer = s.registry.createSubtree(tid("t_p"), nid(step), me);
+  for (const auto& [parent, step] : std::vector<std::pair<const char*, const char*>>{
+           {"t_p", "deleted"}, {"t_p", "foreign"}, {"t_p", "absent"}, {"t_q", "subtree"}}) {
+    const SubtreeAnswer answer = s.registry.createSubtree(tid(parent), nid(step), me);
     REQUIRE(std::holds_alternative<SubtreeCreation>(answer));
     CHECK(std::get<SubtreeCreation>(answer).created);
   }
-  CHECK_EQ(s.trees.subtrees.size(), 3u);
-  CHECK_EQ(s.bus.subtreeBroadcasts.size(), 3u);
+  CHECK_EQ(s.trees.subtrees.size(), 5u);
+  CHECK_EQ(s.bus.subtreeBroadcasts.size(), 5u);
 }
 
 // Both run under the parent's strand, so one of two orders holds: the child is made and then its step deleted, which

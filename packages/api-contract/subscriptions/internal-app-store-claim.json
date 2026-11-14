@@ -1,0 +1,120 @@
+{
+  "request": {
+    "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+    "signedTransaction": "<the JWS representation StoreKit 2 returns for the verified transaction>"
+  },
+  "examples": [
+    {
+      "name": "bound_to_caller",
+      "status": 200,
+      "body": {
+        "seq": 7,
+        "entitlement": {
+          "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+          "production": {
+            "plan": "windmill_one",
+            "accessUntil": 1799236800000,
+            "governing": {
+              "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+              "store": "app_store",
+              "state": "active",
+              "startedAt": 1796472000000,
+              "currentPeriod": {
+                "start": 1796472000000,
+                "end": 1799150400000
+              },
+              "accessUntil": 1799236800000,
+              "autoRenew": true,
+              "nextChargeAt": 1799150400000,
+              "nextCharge": {
+                "amount": "12.00",
+                "currency": "USD"
+              },
+              "nextProductId": null,
+              "cancelRequestedAt": null,
+              "paymentFailedAt": null,
+              "graceEndsAt": null,
+              "pauseScheduledFor": null,
+              "pausedAt": null,
+              "resumesAt": null,
+              "offerKind": null,
+              "offerEndsAt": null,
+              "endedAt": null,
+              "endReason": null
+            },
+            "others": []
+          },
+          "sandbox": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": null,
+            "others": []
+          }
+        }
+      }
+    },
+    {
+      "name": "already_bound_to_caller",
+      "status": 200,
+      "body": {
+        "seq": 7,
+        "entitlement": {
+          "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+          "production": {
+            "plan": "windmill_one",
+            "accessUntil": 1799236800000,
+            "governing": {
+              "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+              "store": "app_store",
+              "state": "active",
+              "startedAt": 1796472000000,
+              "currentPeriod": {
+                "start": 1796472000000,
+                "end": 1799150400000
+              },
+              "accessUntil": 1799236800000,
+              "autoRenew": true,
+              "nextChargeAt": 1799150400000,
+              "nextCharge": {
+                "amount": "12.00",
+                "currency": "USD"
+              },
+              "nextProductId": null,
+              "cancelRequestedAt": null,
+              "paymentFailedAt": null,
+              "graceEndsAt": null,
+              "pauseScheduledFor": null,
+              "pausedAt": null,
+              "resumesAt": null,
+              "offerKind": null,
+              "offerEndsAt": null,
+              "endedAt": null,
+              "endReason": null
+            },
+            "others": []
+          },
+          "sandbox": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": null,
+            "others": []
+          }
+        }
+      }
+    },
+    {
+      "name": "bound_to_another_account",
+      "status": 409,
+      "body": {
+        "code": "bound_to_another_account"
+      }
+    },
+    {
+      "name": "transaction_not_verified",
+      "status": 400,
+      "body": {
+        "code": "invalid_transaction"
+      }
+    }
+  ]
+}

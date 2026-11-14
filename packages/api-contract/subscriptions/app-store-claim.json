@@ -1,0 +1,118 @@
+{
+  "request": {
+    "signedTransaction": "<the JWS representation StoreKit 2 returns for the verified transaction>"
+  },
+  "examples": [
+    {
+      "name": "bound_to_caller",
+      "status": 200,
+      "body": {
+        "environment": "production",
+        "allowlisted": false,
+        "plan": "windmill_one",
+        "accessUntil": 1799236800000,
+        "governing": {
+          "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+          "store": "app_store",
+          "state": "active",
+          "startedAt": 1796472000000,
+          "currentPeriod": {
+            "start": 1796472000000,
+            "end": 1799150400000
+          },
+          "accessUntil": 1799236800000,
+          "autoRenew": true,
+          "nextChargeAt": 1799150400000,
+          "nextCharge": {
+            "amount": "12.00",
+            "currency": "USD"
+          },
+          "nextProductId": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "endedAt": null,
+          "endReason": null
+        },
+        "others": [],
+        "manage": {
+          "store": "app_store",
+          "url": "https://apps.apple.com/account/subscriptions"
+        },
+        "purchasable": [],
+        "offer": null
+      }
+    },
+    {
+      "name": "already_bound_to_caller",
+      "status": 200,
+      "body": {
+        "environment": "production",
+        "allowlisted": false,
+        "plan": "windmill_one",
+        "accessUntil": 1799236800000,
+        "governing": {
+          "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+          "store": "app_store",
+          "state": "active",
+          "startedAt": 1796472000000,
+          "currentPeriod": {
+            "start": 1796472000000,
+            "end": 1799150400000
+          },
+          "accessUntil": 1799236800000,
+          "autoRenew": true,
+          "nextChargeAt": 1799150400000,
+          "nextCharge": {
+            "amount": "12.00",
+            "currency": "USD"
+          },
+          "nextProductId": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "endedAt": null,
+          "endReason": null
+        },
+        "others": [],
+        "manage": {
+          "store": "app_store",
+          "url": "https://apps.apple.com/account/subscriptions"
+        },
+        "purchasable": [],
+        "offer": null
+      }
+    },
+    {
+      "name": "bound_to_another_account",
+      "status": 409,
+      "body": {
+        "code": "bound_to_another_account"
+      }
+    },
+    {
+      "name": "transaction_not_verified",
+      "status": 400,
+      "body": {
+        "code": "invalid_transaction"
+      }
+    },
+    {
+      "name": "service_unavailable",
+      "status": 503,
+      "body": {
+        "code": "subscriptions_unavailable"
+      }
+    }
+  ]
+}

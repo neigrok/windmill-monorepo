@@ -249,6 +249,26 @@ TEST(fork_rejects_a_malformed_requested_id_before_touching_the_source) {
   CHECK(h.trees->forkedFrom.empty());
 }
 
+// The name a fork is asked to carry is held to the cap a title is, in the words a document's title is refused in.
+TEST(fork_refuses_a_requested_title_past_its_cap_and_copies_nothing) {
+  Harness h;
+  h.signIn("s-live");
+  h.seedSource("t_src", "Learn to sail");
+  Json::Value named(Json::objectValue);
+  named["title"] = std::string(250, 'x');
+
+  drogon::HttpResponsePtr response = sendFork(h.api, forkRequest(named, "s-live"), "t_src");
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"the title would be 250 characters, 50 over the 200 cap"})"));
+  CHECK_EQ(h.trees->byId.size(), 1u);
+  CHECK(h.trees->forkedFrom.empty());
+
+  named["title"] = std::string(200, 'x');
+  response = sendFork(h.api, forkRequest(named, "s-live"), "t_src");
+  CHECK_EQ(response->getStatusCode(), drogon::k201Created);
+  CHECK_EQ(bodyOf(response)["data"]["title"].asString(), std::string(200, 'x'));
+}
+
 TEST(fork_accepts_a_well_formed_requested_id) {
   Harness h;
   UserId me = h.signIn("s-live");
@@ -1457,6 +1477,55 @@ TEST(put_by_the_owner_overwrites_the_document_and_keeps_the_owner) {
   std::vector<std::string> ids = storedNodeIds(*h.trees, "t_00000000000000cc");
   std::sort(ids.begin(), ids.end());
   CHECK_EQ(ids, (std::vector<std::string>{"mast", "root"}));
+}
+
+// A step that owns a subtree keeps the pointer its row holds (SPEC.md, Model, Legacy pointers): a document that names
+// another tree there is answered with that step's `opens` refused, and every other field it carries lands. A document
+// cannot tell an empty pointer from one it leaves out, so neither is refused, and nor is an echo of the step's subtree.
+// The answer reads each owning step opening its subtree, as every read does.
+TEST(put_keeps_the_pointer_of_a_step_that_owns_a_subtree_and_answers_another_one_refused) {
+  Harness h;
+  const UserId me = h.signIn("s-me");
+  h.seedForest(me, Visibility::private_);
+  const auto opensIn = [&](const char* step) {
+    const std::optional<NodeStateEntry> held = LooseGraph(h.trees->byId["t_a"].state).exportNode(NodeId{step});
+    return std::make_pair(held->opens.str(), held->opensAt);
+  };
+  Json::Value doc = parse(R"({"title":"My year","nodes":[{"id":"sail","label":"Sail far","opens":"t_b"},
+                                                       {"id":"coast","label":"Sail the coast","opens":"t_b"}]})");
+  // The door's write line, as the REST host opens one around each write: it counts the refused pointers.
+  std::vector<std::uint64_t> refusedOnTheLine;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.operation == "roadmap.PUT.v1.trees.id") refusedOnTheLine.push_back(line.refused);
+  });
+  const auto put = [&](const Json::Value& sent) {
+    WriteObservation door{"roadmap.PUT.v1.trees.id", "roadmap", "rest"};
+    WriteContext context{door};
+    const drogon::HttpResponsePtr answered = sendPut(h.api, "s-me", "t_a", sent);
+    door.finish();
+    return answered;
+  };
+
+  const drogon::HttpResponsePtr response = put(doc);
+  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(response)["refused"], parse(R"([{"node":"sail","field":"opens","code":"owns-a-subtree"}])"));
+  CHECK_EQ(bodyOf(response)["data"]["nodes"][0]["opens"], Json::Value("t_s"));
+  CHECK(opensIn("sail") == (std::pair<std::string, Hlc>{"", Hlc{}}));
+  CHECK(opensIn("coast") == (std::pair<std::string, Hlc>{"t_b", Hlc{1, 0, "genesis"}}));
+  CHECK_EQ(LooseGraph(h.trees->byId["t_a"].state).nodeView(NodeId{"sail"})->label, std::string("Sail far"));
+
+  for (const char* sent : {R"({"id":"sail","label":"Sail far","opens":"t_s"})", R"({"id":"sail","label":"Sail far"})",
+                           R"({"id":"sail","label":"Sail far","opens":""})"}) {
+    Json::Value again(Json::objectValue);
+    again["title"] = "My year";
+    again["nodes"].append(parse(sent));
+    const drogon::HttpResponsePtr kept = put(again);
+    CHECK_EQ(kept->getStatusCode(), drogon::k200OK);
+    CHECK_FALSE(bodyOf(kept).isMember("refused"));
+    CHECK(opensIn("sail") == (std::pair<std::string, Hlc>{"", Hlc{}}));
+  }
+  installWriteSink({});
+  CHECK_EQ(refusedOnTheLine, (std::vector<std::uint64_t>{1, 0, 0, 0}));
 }
 
 TEST(put_to_a_malformed_id_is_400_bad_id_and_creates_nothing) {

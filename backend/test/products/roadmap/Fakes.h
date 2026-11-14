@@ -223,8 +223,8 @@ struct FakeTreeRepository : TreeRepository {
   std::set<std::string> deletedIds;
   // One entry per save call: how many node rows the slice carried.
   std::vector<std::size_t> savedNodeCounts;
-  // One entry per titlesOwnedBy read: the ids it asked after.
-  std::vector<std::set<TreeId>> titleReads;
+  // One entry per pointerTargets read: the ids it asked after.
+  std::vector<std::set<TreeId>> targetReads;
   // One entry per openedFrom read: the trees it started from.
   std::vector<std::set<TreeId>> openedReads;
   bool latticeLoadsFail = false;  // load throws, the way a dropped connection does; loadAccess still answers
@@ -519,17 +519,18 @@ struct FakeTreeRepository : TreeRepository {
     }
     return sources;
   }
-  // The same three rules the real query filters on: the row stands, it has an owner, and the owner is this one.
+  // The real query's rules: the tree stands, it has an owner and the owner is this one, each answered with where it hangs.
   // Asked for no tree it reads nothing, as the real repository sends no query.
-  std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) override {
+  std::map<TreeId, OpenedTree> pointerTargets(const UserId& owner, const std::set<TreeId>& trees) override {
     if (trees.empty()) return {};
-    titleReads.push_back(trees);
-    std::map<TreeId, std::string> titles;
+    targetReads.push_back(trees);
+    std::map<TreeId, OpenedTree> targets;
     for (const TreeId& tree : trees) {
-      const std::optional<StoredTree> stored = row(tree);
-      if (stored && stored->owner == std::optional<UserId>(owner)) titles.emplace(tree, stored->title.value);
+      if (!stands(tree) || placed(tree)->owner != std::optional<UserId>(owner)) continue;
+      const std::vector<OwningStep> path = pathOf(tree);
+      targets[tree].parent = path.empty() ? std::nullopt : std::optional<OwningStep>(path.back());
     }
-    return titles;
+    return targets;
   }
   // The real statement's rules: this owner's standing trees only, each once, wherever the pointers of `opened` lead.
   std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened,
@@ -548,9 +549,15 @@ struct FakeTreeRepository : TreeRepository {
       reached.pop_back();
       const std::optional<StoredTree> stored = placed(tree);
       if (trees.count(tree) || !stands(tree) || stored->owner != std::optional<UserId>(owner)) continue;
+      const std::vector<OwningStep> path = pathOf(tree);
       const OpenedTree& walked =
-          trees.emplace(tree, OpenedTree(documentOf(tree), marks_ ? marks_->load(tree, owner) : Progress{})).first->second;
-      for (const auto& [target, pointers] : walked.pointers) reached.push_back(target);
+          trees.emplace(tree, OpenedTree(documentOf(tree), marks_ ? marks_->load(tree, owner) : Progress{}, ownedBy(tree),
+                                         path.empty() ? std::nullopt : std::optional<OwningStep>(path.back())))
+              .first->second;
+      for (const auto& [subtree, steps] : walked.subtrees) reached.push_back(subtree);
+      // A pointer is followed only where it is valid: at a root.
+      for (const auto& [target, steps] : walked.pointers)
+        if (!subtrees.count(target.str())) reached.push_back(target);
     }
     return trees;
   }
@@ -591,14 +598,14 @@ struct FakeTreeRepository : TreeRepository {
     }
     return nearestGuided(above, kMaxGuides);
   }
-  // The real statement's rules: this owner's standing trees other than `tree`, each once, in id order, and only for a
-  // `tree` of this owner's, whether or not it stands.
+  // The real statement's rules: this owner's standing trees other than `tree`, each once, in id order, by each step's own
+  // register, and only for a `tree` a pointer is valid at: a standing root of this owner's.
   std::vector<TreeId> treesOpening(const UserId& owner, const TreeId& tree) override {
     openingReads.push_back(tree);
     if (openingReadsFail) throw std::runtime_error("connection reset mid-read");
     std::vector<TreeId> opening;
-    const auto opened = byId.find(tree.str());
-    if (opened == byId.end() || opened->second.owner != std::optional<UserId>(owner)) return opening;
+    const std::optional<StoredTree> opened = row(tree);
+    if (!opened || subtrees.count(tree.str()) || opened->owner != std::optional<UserId>(owner)) return opening;
     for (const auto& [id, stored] : byId) {
       if (id == tree.str() || deletedIds.count(id) || stored.owner != std::optional<UserId>(owner)) continue;
       if (treesOpenedBy(LooseGraph(stored.state).pointers()).count(tree)) opening.emplace_back(id);
@@ -649,7 +656,7 @@ struct FakeTreeRepository : TreeRepository {
     const auto subtree = subtrees.find(tree.str());
     return subtree == subtrees.end() ? 0 : subtree->second.depth;
   }
-  // The real statement's rules: the subtree the pair holds standing or deleted, a pointer valid only at a standing tree of
+  // The real statement's rules: the subtree the pair holds standing or deleted, a pointer valid only at a standing root of
   // the parent's owner, and a proposed id taken by any row.
   std::optional<SubtreeSite> subtreeSite(const TreeId& parent, const NodeId& step, const std::optional<TreeId>& opened,
                                          const std::optional<TreeId>& proposed) override {
@@ -662,7 +669,7 @@ struct FakeTreeRepository : TreeRepository {
         site.owned->seq = byId.at(id).head;
       }
     const std::optional<StoredTree> target = opened ? row(*opened) : std::nullopt;
-    site.opensATree = target && target->owner && target->owner == stored->owner;
+    site.opensATree = target && !subtrees.count(opened->str()) && target->owner && target->owner == stored->owner;
     site.proposedTaken = proposed && byId.count(proposed->str()) > 0;
     return site;
   }

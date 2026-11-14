@@ -78,7 +78,9 @@ function BoardView({
   const consumedSelect = useRef(null);
   const revealFocus = useRef(null);
   const phone = breakpoint === 'phone';
-  const topGap = phone && (deviceLine || guide) ? '0px' : 'var(--space-3)';
+  const topGap = phone && (deviceLine || guide) ? '0px'
+    : !phone && frame === 'loading' && !guide && !refusal ? 'var(--space-1)'
+      : 'var(--space-3)';
   const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef });
   const board = motion.board;
   const canSelect = selectionOpen && nextBoard !== null;

@@ -5,8 +5,8 @@ invariants (`INV-n`) and rulings (`R-n`) are numbered so reviews, code and roadm
 
 ## §0 Status and scope
 
-**Status:** Specified, not built. `services/subscriptions/` holds the Rust workspace with its four crates
-empty; nothing runs and nothing is deployed. Windmill One cannot be bought on any surface. The C++
+**Status:** Being built; nothing is deployed. What exists is in
+[`services/subscriptions/ARCHITECTURE.md`](../../services/subscriptions/ARCHITECTURE.md). Windmill One cannot be bought on any surface. The C++
 backend mirrors Paddle subscriptions (`backend/platform/adapters/paddle`) and
 `Entitlements::hasWindmillOne` reads that mirror; this document specifies what replaces it. The build
 order and its owner gates live in the Windmill One roadmap tree, which the dogfood tree
@@ -44,15 +44,19 @@ It is written in Rust. It runs as its own container on the production host besid
 - **D-2 Environment.** `production` or `sandbox`, as the store states it. Every record carries it.
 - **D-3 Subscription.** One store subscription lineage for one plan: an App Store
   `originalTransactionId`, a Play purchase-token lineage, a Paddle `sub_…`.
-- **D-4 Period.** One stretch `[start, end)` the customer paid for or was granted, with the store
-  transaction that created it, its price and currency, and its refund time if the store took it back.
+- **D-4 Period.** One stretch `[start, end)` the customer paid for or was granted, as the store states
+  it, with the store transaction that created it, its price and currency, and its refund time while the
+  store has taken the money back. A renewal's period starts where the previous one ends, not at the
+  instant the store charged it, so the periods a store states for one subscription do not overlap; one
+  that does is written as stated all the same, since a period is its store transaction (INV-7).
 - **D-5 Observation.** A verified statement by a store of one subscription's whole state at one
   instant (`observedAt`, the store's own stamp). Every adapter produces observations and nothing else.
 - **D-6 Event.** A normalized fact recorded when an observation changes a subscription. Events are
   append-only and ordered by `seq`.
 - **D-7 Binding.** The link from a subscription to one Windmill account.
-- **D-8 Entitlement.** The per-account answer derived from its bound subscriptions: whether the
-  account holds Windmill One, until when, and the subscription that governs it.
+- **D-8 Entitlement.** The per-account answer derived from its bound subscriptions, one per
+  environment: whether the account holds Windmill One there, until when, and the subscription that
+  governs it.
 - **D-9 Plan.** What was bought. One value exists: `windmill_one`.
 
 ## §3 The model
@@ -64,14 +68,14 @@ It is written in Rust. It runs as its own container on the production host besid
 | Identity | `id` | The service's own UUID. |
 | | `store`, `environment`, `storeSubscriptionId` | D-1, D-2, D-3. Unique together. |
 | | `plan`, `productId`, `billingInterval` | D-9, the store's SKU, and an ISO 8601 duration (`P1M`). |
-| Binding | `accountId`, `boundAt`, `boundBy` | D-7. `boundBy` is `purchase` or `claim`. Null until bound. |
+| Binding | `accountId`, `boundAt`, `boundBy` | D-7. `boundBy` is `purchase` or `claim`. Null until bound. `boundAt` is `startedAt` for a binding at purchase, whichever observation carries the hint; the new purchase's start when a purchase moves an ended lineage (R-11); and the claim's instant for a claim. |
 | Lifecycle | `state` | §3.2. |
 | | `startedAt` | The first purchase of this lineage. |
-| | `currentPeriod` | The start and end of the period in force. |
+| | `currentPeriod` | The start and end of the period in force (D-4). |
 | | `accessUntil` | The instant paid access ends unless the store says otherwise (§3.3). Null when the state grants none. |
 | | `endedAt`, `endReason` | Set in `expired` and `revoked`: `cancelled`, `billing`, `price_change_declined`, `product_unavailable`, `replaced`, `refunded`, `chargeback`, `sharing_removed`, `unknown`. |
 | Renewal | `autoRenew` | Whether the store will charge again. |
-| | `nextChargeAt`, `nextCharge` | When and how much (`amount`, `currency`) the store will charge next. Null when `autoRenew` is false, and in `paused`, `expired` and `revoked`. |
+| | `nextChargeAt`, `nextCharge` | When and how much (`amount`, `currency`) the store will charge next. Null when `autoRenew` is false, and in `grace`, `on_hold`, `paused`, `expired` and `revoked`, where the store states no next charge. |
 | | `nextProductId` | A plan change that takes effect at renewal. |
 | Cancellation | `cancelRequestedAt` | When the customer turned renewal off. Cleared if they turn it back on. |
 | Payment trouble | `paymentFailedAt`, `graceEndsAt` | When a renewal charge first failed, and until when the store keeps access open. |
@@ -108,29 +112,81 @@ same lineage, which returns the subscription to `active` and records `started` a
 - `RENEWAL_SLACK` is 24 hours in production and zero in sandbox. A store charges a renewal before the
   period ends and reports the result; the slack bounds how long a customer whose renewal went through
   can wait on a late report. A paying customer never loses access to this service's downtime shorter
-  than the slack, and a failed renewal the service has not heard of costs at most the slack.
+  than the slack, and a failed renewal the service has not heard of gives away at most the slack of
+  access. The slack extends access only; periods fund the AI allowance (§6.3).
 - **INV-3.** Access ends by the clock alone. No delivery, sweep or process has to run for an
   entitlement to lapse.
 
 ### §3.4 Observation and events
 
-The domain has one write: `observe(subscription | none, observation) → (subscription, events)`.
+The domain has one write, `observe`. It takes what the ledger holds for one lineage (the subscription
+or none, and its periods), one observation with the ids the caller minted for what it may write, the
+observation's account hint as resolved against the erased accounts, and a claim if a claim door calls;
+it returns the subscription, the periods to write and the events to append, or a refusal (§4).
 
 - **INV-4 Idempotent.** Applying an observation twice changes nothing and records nothing.
-- **INV-5 Stale-safe.** An observation older than the record's `observedAt` changes no field of the
-  subscription. It still adds a period the ledger lacks, and still records a refund on a period.
-- **INV-6 Convergent.** For any order of any set of observations, the resulting subscription equals the
-  one the newest observation alone produces, and the resulting set of periods is the union.
-- **INV-7.** A period is identified by its store transaction and written once; only its refund time
-  changes afterwards.
+- **INV-5 Stale-safe.** An observation the record's newest statement supersedes changes no field of
+  the subscription but its binding (§4). It still adds a period the ledger lacks, and its statement of a
+  period's refund time applies when it supersedes the newest statement of that period the ledger has
+  applied.
+- **INV-6 Convergent.** For any order of any set of observations, the resulting subscription, its
+  binding aside (§4), equals the one the newest observation alone produces, and the resulting set of
+  periods is the union, each period's refund time as its newest statement gives it and its stretch as
+  INV-7 keeps it. One statement supersedes another when its `observedAt` is later or, at the same
+  instant, when its content orders after the other's in one fixed order over every stated field, so
+  statements stamped alike converge too; a period's refund statements order by stamp, then refund time.
+- **INV-7.** A period is identified by its store transaction and written once: its stretch, price and
+  offer are those of the statement that wrote it, and a later statement of the same transaction with
+  another stretch changes none of them, so the stretch is the one exception to INV-6's order. A
+  store's extension of the period in force shows in the status's `currentPeriod` (`period_extended`).
+  Afterwards only its refund time changes: set when the store takes the money back, cleared when the
+  store reverses that. A period keeps the `observedAt` of the newest statement of it applied.
 
 Events: `started`, `renewed`, `renewal_turned_off`, `renewal_turned_on`, `payment_failed`,
 `payment_recovered`, `pause_scheduled`, `paused`, `resumed`, `plan_change_scheduled`, `plan_changed`,
-`period_extended`, `expired`, `revoked`, `revocation_reversed`, `bound`, `unbound`. Each carries
-`seq`, `type`, `occurredAt` (the store's time), `recordedAt`, `subscriptionId` and `accountId`.
+`period_extended`, `expired`, `revoked`, `revocation_reversed`, `updated`, `bound`, `unbound`, and the
+three period events `period_recorded`, `period_refunded` and `period_refund_reversed`. Each carries
+`seq`, `type`, `occurredAt` (the store's time), `recordedAt`, `subscriptionId` and `accountId`; a period
+event also carries its period.
+
+An observation's events read in story order: its state events, then `unbound` and `bound`, then its
+period events by their periods' starts, and `expired` or `revoked` last. A state event is recorded
+when the newest status changes as below, and occurs at the observation's `observedAt` unless another
+instant is named:
+
+- `started`: the lineage is new, at `startedAt`; or it leaves `expired`, or leaves `revoked` with a new
+  period in force, at that period's start. A new period in force is one that starts later. The events
+  after it compare the stated status with an `active`, renewing subscription in the same period.
+- A new period in force records the one event that names how it came: `renewed` after `active`,
+  `payment_recovered` after `grace` or `on_hold`, `resumed` after `paused`. Turning `active` from those
+  states records `payment_recovered` or `resumed` with or without a new period.
+- `revocation_reversed`: it leaves `revoked` without a new period in force.
+- `plan_changed`: the product changes. `period_extended`: the period in force keeps its start and ends
+  later.
+- `payment_failed`: it enters `grace` or `on_hold` from a state that is neither, at `paymentFailedAt`.
+- `renewal_turned_off`, at `cancelRequestedAt` when stated, and `renewal_turned_on`: `autoRenew` changes.
+- `plan_change_scheduled`, `pause_scheduled`: `nextProductId` or `pauseScheduledFor` is set to a new
+  value.
+- `paused`, `expired`, `revoked`: it enters that state, at `pausedAt` or `endedAt`.
+- `unbound` and `bound` occur at `boundAt` and `period_refunded` at the refund time; the other period
+  events occur at `observedAt`.
 
 - **INV-8.** Events are appended under one lock, so `seq` order is commit order and a reader that has
-  seen `seq = n` has seen every event below it.
+  seen `seq = n` has seen every event below it. `seq` increases and may skip numbers.
+- **INV-13.** An observation records at most one period event for each period, whatever state events
+  it records or does not. `period_recorded` when it writes the period, carrying its refund time as
+  stated, so a period first heard of refunded records `period_recorded` alone; otherwise
+  `period_refunded` when its refund time is set and `period_refund_reversed` when it is cleared.
+  Binding an unbound subscription records `period_recorded` again under the account for each period it
+  holds, carrying its refund time as it stands, and that event stands for any change the same
+  observation makes to the period; so a period written while the subscription was unbound still
+  reaches its account, and one written by the binding observation is recorded once. A purchase that
+  moves an ended lineage to another account (R-11) records no period again: the periods before it stay
+  recorded under the account that paid for them. Lifecycle events never carry a period; period events
+  are the only ones that do.
+- **INV-14.** An observation that changes a field the entitlement carries (§5.2) records at least one
+  event. When no event above names the change, as with `grace` turning `on_hold`, a new price or a
+  redeemed offer, it records `updated`.
 
 ### §3.5 What each store supplies
 
@@ -142,28 +198,40 @@ Events: `started`, `renewed`, `renewal_turned_off`, `renewal_turned_on`, `paymen
 | `grace` | billing grace period | grace period | `past_due` |
 | `on_hold` | billing retry without grace | account hold | — |
 | `paused` | — | paused | `paused` |
-| `revoked` | refund, revoke | revoked, voided purchase | refund or chargeback adjustment |
+| `revoked` | revoked status | revoked, voided purchase | refund or chargeback adjustment |
 | Cancel pending | `autoRenewStatus = 0` | cancelled, not yet expired | `scheduled_change: cancel` |
 
 A cell with a dash is a state that store never reports.
+
+A refund states a fact about the period its transaction paid for: it sets that period's refund time
+(INV-7), and a reversed refund clears it. The subscription's state in the same observation is the one
+the store states for the subscription, never inferred from the refund, so a refund of an earlier
+period leaves a running subscription `active` (§8).
 
 ## §4 Binding
 
 - **INV-9.** A subscription binds to at most one account. A binding ends only by account erasure
   (§6.4) or an operator transfer, and both record an event.
 - **At purchase.** The app passes the signed-in account's id as the store's account hint. The first
-  verified observation carrying a hint that names a live account binds the subscription to it.
-- **By claim.** The app posts the store's signed transaction through the backend (§5.2). The service
+  verified observation carrying a hint binds the subscription to the account it names. First means
+  first applied, so the binding follows arrival and INV-6 leaves it aside. A hint that names an erased
+  account (§6.4) counts as no hint.
+- **By claim.** The app posts the store's signed transaction through the backend (§5.3). The service
   verifies it and binds an unbound subscription to the caller. A claim for a subscription already
   bound to the caller succeeds without change. A claim for one bound to another account, or whose
-  account hint names another account, is refused with `bound_to_another_account`.
-- A later observation whose hint differs never rebinds.
+  account hint names another account that is not erased, is refused with `bound_to_another_account`
+  (R-3). A claim for an unbound subscription whose hint names an erased account binds it to the
+  caller (R-9).
+- A later observation whose hint differs never rebinds, except a new purchase (R-11): an observation
+  that takes the subscription out of `expired` or `revoked` (§3.2) with a hint naming another live
+  account moves it to that account, recording `unbound` under the old account and `bound` under the
+  new one, at the new purchase's start. A claim or restore that pays nothing never moves it (R-3).
 - An unbound subscription is recorded in full and entitles no one.
 - Only a purchase its buyer owns binds. A subscription the store reports as shared or assigned to
   the device's Apple account is recorded and entitles no one.
-- When a claim binds a subscription that carried no hint, the service writes the account id to the
-  store as the hint (the App Store's Set App Account Token), so the store's later statements name
-  the account.
+- When a claim binds a subscription whose hint is absent or names an erased account, the service
+  writes the caller's id to the store as the hint (the App Store's Set App Account Token), so the
+  store's later statements name the account.
 
 ## §5 Doors
 
@@ -195,85 +263,154 @@ Reached only on the container network, with a bearer secret the backend holds.
 
 | Route | Purpose |
 |---|---|
-| `GET /internal/v1/feed?after=<seq>&limit=<n>` | Events after `seq`, each with the account's entitlement after it and the period it created or refunded. |
+| `GET /internal/v1/feed?after=<seq>&limit=<n>` | A page of at most `limit` events after `seq`, in `seq` order; `limit` is at most 500. |
 | `GET /internal/v1/accounts/{accountId}` | The entitlement, every bound subscription, their periods and events. |
-| `POST /internal/v1/app-store/claims` | `{accountId, signedTransaction}` → the entitlement, or a refusal (§4). |
+| `POST /internal/v1/app-store/claims` | `{accountId, signedTransaction}` → `{seq, entitlement}`, or a refusal (§4). |
 | `POST /internal/v1/subscriptions/{id}/refresh` | Pull this subscription's state from its store now. |
-| `DELETE /internal/v1/accounts/{accountId}` | Unbind everything the account holds (§6.4). |
+| `DELETE /internal/v1/accounts/{accountId}` | Record the account as erased and unbind everything it holds (§6.4). |
 
-`EntitlementResponse`:
+The shapes are golden fixtures in
+[`packages/api-contract/subscriptions`](../../packages/api-contract/subscriptions/README.md), one example
+per state a reader must handle; the service and the backend each check themselves against them.
 
-```json
-{
-  "accountId": "…",
-  "plan": "windmill_one",
-  "accessUntil": 1796083200000,
-  "environment": "production",
-  "governing": {
-    "subscriptionId": "…", "store": "app_store", "state": "active",
-    "startedAt": 1793491200000, "currentPeriod": {"start": 1793491200000, "end": 1796083200000},
-    "autoRenew": true, "nextChargeAt": 1796083200000, "nextCharge": {"amount": "12.00", "currency": "USD"},
-    "cancelRequestedAt": null, "paymentFailedAt": null, "graceEndsAt": null,
-    "pauseScheduledFor": null, "pausedAt": null, "resumesAt": null,
-    "offerKind": null, "offerEndsAt": null, "endedAt": null, "endReason": null
-  },
-  "others": []
-}
-```
+`EntitlementResponse` is `{accountId, production, sandbox}`: one `Entitlement` for each environment
+(D-2). An `Entitlement` is `{plan, accessUntil, governing, others}`, folded over the account's
+subscriptions in that environment alone:
 
-`plan` and `accessUntil` are null for an account with no access. `governing` is the access-granting
-subscription with the latest `accessUntil`, or else the one that ended last; `others` lists every
-other subscription that is not `expired` or `revoked`, in the same shape, so a client can say that a
-person is being charged twice.
+- `governing` is the subscription whose state grants access (its `accessUntil` is not null) with the
+  latest `accessUntil`; when none grants access, the one with the latest `observedAt`. Ties go to the
+  smaller `subscriptionId`. It is null when the account holds no subscription in that environment.
+- `plan` and `accessUntil` are the governing subscription's, null when it grants no access.
+- `others` lists every other subscription that is not `expired` or `revoked`, ordered by
+  `subscriptionId`, so a client can say that a person is being charged twice.
+- `governing` and each entry of `others` carry `subscriptionId`, `store`, `state`, `startedAt`,
+  `currentPeriod` (`{start, end}`), `accessUntil`, `autoRenew`, `nextChargeAt`, `nextCharge`
+  (`{amount, currency}`), `nextProductId`, `cancelRequestedAt`, `paymentFailedAt`, `graceEndsAt`,
+  `pauseScheduledFor`, `pausedAt`, `resumesAt`, `offerKind`, `offerEndsAt`, `endedAt` and `endReason`,
+  as §3.1 defines them.
+
+A feed page is `{epoch, entries, latestSeq}`. `epoch` is a UUID minted when the ledger is created and
+replaced when the ledger is restored from a backup, so a cursor means something only within its
+epoch (§6.1). `latestSeq` is the newest event the ledger holds. A page may end inside the entries of
+one transaction; each entry carries the entitlement after its transaction, so a reader that stops
+there holds a correct copy.
+
+A feed entry is one event (§3.4) with the subscription's `store`, `environment` and `offerKind`,
+`period` on a period event (`{id, start, end, price, offerKind, refundedAt}`, `id` being the service's
+own), and `entitlement`, the account's `EntitlementResponse` after the transaction that recorded the
+event, null exactly when the event names no account.
+
+The internal claim answers 200 with `{seq, entitlement}`: the caller's `EntitlementResponse` after the
+claim, and the `seq` of the claimed subscription's newest event, which is the claim's last event when
+it recorded any. It refuses with `{code}`: 409 `bound_to_another_account`, 400 `invalid_transaction`.
 
 ### §5.3 What a person's device calls
 
 Devices never call this service. The backend authenticates the caller and serves:
 
-- `GET /v1/subscription` → `SubscriptionResponse`: the entitlement above without `accountId`, plus
-  `manage` (`{"store": "app_store", "url": "https://apps.apple.com/account/subscriptions"}`) and
-  `purchasable`, the stores this account may buy through now. It is answered from the backend's own
-  copy (§6.1).
+- `GET /v1/subscription` → `SubscriptionResponse`, answered from the backend's own copy (§6.1): one
+  `Entitlement` of the account (§5.2), with `environment`, naming which one it is; `allowlisted`,
+  whether the account is on the sandbox allowlist, so its sandbox purchases count (§6.2); `manage`
+  (`{"store": "app_store", "url": "https://apps.apple.com/account/subscriptions"}`, the governing
+  subscription's store, null when there is none); `purchasable`, the stores this account may buy
+  through now; and `offer`. The `Entitlement` shown is the production one, unless the account is on
+  the sandbox allowlist and its sandbox `Entitlement` grants access while its production one does
+  not. An account off the allowlist never sees its sandbox `Entitlement`. An owner's `Entitlement` is
+  chosen the same way.
+- `offer` is what a month of Windmill One funds, which the buy sheet shows:
+  `{"aiAllowance": {"amount": "7.00", "currency": "USD"}}`, read from the backend's configuration
+  (`AI_ONE_PERIOD_USD`, [USD AI allowances](../../backend/AI_ALLOWANCES.md)). It is non-null exactly
+  when `purchasable` is non-empty. The free allowance is neither sent nor shown beside it.
 - **INV-12.** A surface offers a buy control for a store only when `purchasable` names it.
-  `purchasable` is empty while the account has access, and a store is listed only while the backend's
-  configuration opens the paid line on it. Every store is closed by default, so opening the line is
-  one switch the owner sets and can unset.
+  `purchasable` is empty while the account has Windmill One (§6.1, owners included), and while the
+  `Entitlement` shown holds any subscription that is not `expired` or `revoked` (in `grace`, `on_hold`
+  or `paused`, or with a cancellation pending), so no surface offers one account a second live
+  subscription. Otherwise a store is listed only while the backend's configuration opens the paid line
+  on it. Every store is closed by default, so opening the line is one switch the owner sets and can
+  unset. An app whose purchases land in sandbox (a TestFlight or Xcode build) offers a buy control
+  only when `allowlisted` is true as well, so no one buys a sandbox subscription that counts for
+  nothing.
 - `POST /v1/subscription/app-store/claims` with `AppStoreClaimRequest` `{signedTransaction}`, forwarded
-  to §5.2 with the caller's account id.
+  to §5.2 with the caller's account id. On the service's 200 the door asks the follower to reach the
+  answer's `seq` (§6.1), waits for it at most 5 s, and answers 200 with the `SubscriptionResponse`
+  from the copy; a wait that runs out answers from the copy as it stands. Otherwise it answers
+  `{code}`: 409 `bound_to_another_account`, 400 `invalid_transaction` for a transaction that does not
+  verify, 503 `subscriptions_unavailable` when the service cannot be reached.
+- A device finishes the transaction on 200 and 409. On 400 and 503 it keeps the transaction
+  unfinished and claims it again at its next launch. A 400 for a transaction StoreKit verified is
+  reported to Sentry by the device.
 
 ## §6 The backend's half
 
 ### §6.1 Following the feed
 
-A backend worker reads `/internal/v1/feed` from its stored cursor and, in one transaction per batch,
-replaces each named account's row in `account_entitlements`, applies funding (§6.3) and advances the
-cursor. `Entitlements::hasWindmillOne` is `isOwner(email) || now < row.accessUntil`.
+A backend worker reads `/internal/v1/feed` from its stored epoch and cursor. For each page, in one
+transaction, it replaces each named account's row in `account_entitlements` with the entry's
+`EntitlementResponse`, both environments included, applies funding (§6.3) and advances the cursor.
+Once it reaches `latestSeq` it reads again at most 5 s later, or at once when the claim door asks for
+a `seq` it has not reached (§5.3).
 
+- `Entitlements::hasWindmillOne` is `isOwner(email) || now < production.accessUntil ||
+  (allowlisted(account) && now < sandbox.accessUntil)` over the account's row (§6.2).
+- A funding call (§6.3) answers `Ok` or `Replay`, and the entry is done; or `Conflict`, an expected
+  refusal: it is logged under `subscription.fund` with code `conflict` and reported to Sentry as a
+  warning, since paid money is left unfunded, and the page commits with the cursor past it. Any other
+  failure rolls the page back and is reported to Sentry as an error, and the page is read again.
+- A page whose `epoch` differs from the stored one, or whose `latestSeq` is below the cursor, means the
+  ledger was restored. The follower reports it to Sentry and rebuilds the copy from zero under the new
+  epoch (INV-11).
 - **INV-10.** No request path of the backend calls this service to decide access. With the service
   down, every entitlement keeps answering from the copy and lapses on time (INV-3).
-- **INV-11.** The copy is rebuilt whole by reading the feed from zero.
+- **INV-11.** The copy is rebuilt whole by reading the feed from zero. The old copy answers until the
+  rebuilt one replaces it, and an account the feed no longer names keeps no row.
 
 ### §6.2 Sandbox
 
 A sandbox subscription costs its buyer nothing. In production it entitles an account only when that
 account is on the backend's sandbox allowlist (the team's testers and the account given to App
-Review); for every other account it is recorded and grants nothing. A sandbox period funds an
-allowlisted account as owner access does. (R-6)
+Review). For every other account it is recorded in the copy's sandbox `Entitlement`, grants nothing
+(§6.1) and is never shown (§5.3). A sandbox period funds no grant; an allowlisted account it entitles
+is funded as owner access is. (R-6)
 
 ### §6.3 Funding the AI allowance
 
-Subscription state alone funds nothing. A feed entry carrying a production period with a positive
-captured price creates one grant for that period through `AiBudgetService::fund`, with the store
-transaction as its reference, so a replayed entry is a no-op. A period with a refund time closes the
-remaining capacity of its grant at that time; spent capacity is not recovered. A `grace` or free-trial
-period carries no payment and funds nothing. (R-4, R-5)
+Subscription state alone funds nothing; the period events of the feed do. A grant's reference is its
+period's `id`, so no store id reaches the backend. (R-4, R-5)
+
+- A `period_recorded` entry that names an account, for a production period with a positive captured
+  price and no `refundedAt`, funds one grant spanning the period through `AiBudgetService::fund`. Any
+  other `period_recorded` funds nothing: `grace` adds no period, a free-trial period carries no
+  payment, and a refunded period was paid back.
+- `fund` answers `Replay` to a period it already funded for that account, whatever the grant's
+  `closedAt`, so a rebuild (INV-11) funds nothing twice. It answers `Conflict` to a period already
+  funded for another account (an operator transfer, or erasure and a claim by another account), which
+  is not funded again, and to a period that overlaps a grant the account holds. §6.1 says what the
+  follower does with each answer.
+- A `period_refunded` entry closes the grant whose reference is the period's `id`: its `closedAt`
+  becomes `min(end, refundedAt)`. A closed grant funds nothing after `closedAt` and counts toward the
+  overlap rule only until `closedAt`; spent capacity is not recovered. A close for a grant that does
+  not exist changes nothing.
+- A `period_refund_reversed` entry reopens that grant by clearing its `closedAt`. A reopen that would
+  overlap another grant of the account answers `Conflict` and leaves the grant closed. For a period
+  with no grant, as one first heard of refunded, it funds the period as a `period_recorded` entry
+  would; `fund` is idempotent, so the funded grants are the same in whatever order the store's
+  statements arrived.
+- An account that holds Windmill One through a subscription and has no funded grant in force, as in
+  `grace`, in the renewal slack or after a `Conflict`, is admitted under the free signed-in
+  allowance.
 
 ### §6.4 Account erasure
 
-Erasing an account calls `DELETE /internal/v1/accounts/{accountId}`: its subscriptions are unbound and
-its entitlement ends. The periods and events stay, keyed by store ids that name no person. The store
-goes on charging until the customer cancels there, so the erasure flow MUST say so before it
-proceeds, and name where to cancel.
+`DELETE /v1/me` closes an account with a 30-day grace in which a sign-in brings it back whole; from
+`closesMs` the close is final, and the account is erased by the first sign-in that meets it or by
+`ClosedAccountSweep` ([accounts](../../backend/AUTH.md)). Until then its subscriptions stay bound, so
+an account that comes back finds them as it left them. The erasure of a finally closed account calls
+`DELETE /internal/v1/accounts/{accountId}`: the service records the account as erased, so a hint
+naming it never binds again (§4), its subscriptions are unbound and its entitlement ends. The backend
+records that call in the erasure's own transaction and repeats it until the service answers, so a
+service outage never leaves a subscription bound to an erased account. The periods and events stay,
+keyed by store ids that name no person. The store goes on charging until the customer cancels there,
+so the close flow MUST say so before it proceeds, and name where to cancel.
 
 ## §7 The sweep
 
@@ -290,20 +427,32 @@ One worker, hourly:
 
 ## §8 App Store adapter
 
-- Products: one subscription group, *Windmill One*, holding one monthly auto-renewable product.
-  Family Sharing is off. (R-1)
+- Products: one subscription group, *Windmill One*, holding one monthly auto-renewable product,
+  `works.windmill.app.one.monthly`. Family Sharing is off. (R-1)
+- Multiseat purchases are off for the product, so no organization or group buys seats of it. The
+  sandbox allows seats whatever that setting says: a transaction for more than one seat is treated
+  as its buyer's one subscription, and an assigned seat binds to no one (§4). (R-10)
 - Purchase on iOS uses StoreKit 2 with `appAccountToken` set to the account id. The app shows a buy
-  control only to a signed-in account whose entitlement grants no access. (R-2)
+  control only to a signed-in account, and only as INV-12 allows. (R-2) A TestFlight or Xcode build
+  buys in sandbox, so it also needs `allowlisted` (INV-12).
 - After a verified purchase or a restore, the app posts the transaction's signed representation to
-  the claim door and finishes the transaction once the door answers.
+  the claim door and finishes the transaction as §5.3 says.
+- A period's bounds are the dates its transaction states for the stretch it pays for (D-4), not the
+  instant Apple charged it. Which transaction fields carry them waits on confirmation against sandbox
+  in m3-verify-sandbox-lifecycle.
+- A `REFUND` or `REVOKE` notification states a fact about the transaction it carries: it sets that
+  period's refund time, and `REFUND_REVERSED` clears it. The subscription's state in that observation
+  comes from the notification's renewal info; when the refunded transaction is not the subscription's
+  latest, the adapter pulls the subscription's status instead of inferring the state. Both wait on
+  confirmation in m3-decode and m3-verify-sandbox-lifecycle.
 - What the app shows about a subscription comes from `GET /v1/subscription`, never from the device's
   own StoreKit state, so every surface agrees.
 - Server reads use the App Store Server API with an in-app purchase key: subscription statuses,
   transaction history, notification history (180 days in production, 30 in sandbox) and the test
   notification. The environment of a call is the one the verified transaction states.
-- A signed transaction whose environment is `Xcode` or `LocalTesting` is not signed by Apple. The
-  claim door refuses it unless the deployment is configured with a test root, which production never
-  is.
+- A signed payload whose environment is `Xcode` or `LocalTesting` is not signed by Apple, and every
+  deployment refuses it. Local and CI testing sign `Sandbox` payloads under a test root that only
+  their own deployment trusts.
 - A notification type the adapter does not map is kept in the inbox, logged as `unsupported` and
   reported; it changes nothing.
 - The transaction's `price` and `currency` are what the plan screen shows and what decides whether a
@@ -345,8 +494,12 @@ The backend's role cannot read it.
   `sweep.inbox`, `sweep.due`, `sweep.drift`, `sweep.history`.
 - Unexpected failures report to Sentry under those names. A signature that does not verify is a
   logged refusal, not an Issue. `drift` reports as a warning.
-- The backend's follower logs `subscription.follow` per batch and reports a cursor that has not
-  advanced while the service reports newer events.
+- The backend's follower logs `subscription.follow` per page and `subscription.fund` per funding call
+  with its outcome (`ok`, `replay`) or refusal code (`conflict`, reported as a warning). It reports a
+  cursor that has not advanced while the service reports newer events, and a page whose epoch or
+  `latestSeq` starts a rebuild (§6.1).
+- The backend's claim door logs `subscription.claim` with its outcome or refusal code; a wait for the
+  follower that runs out is logged as `copy_behind`.
 - A renewal, a failed charge and a refund happen with no device present, so no client can emit them.
   The follower records them as product events in the store the `/v1/events` intake writes and
   forwards from: `subscription_started`, `subscription_renewed`, `subscription_renewal_turned_off`,
@@ -359,16 +512,19 @@ The backend's role cannot read it.
 
 ## §11 Rulings
 
-The owner's rulings. R-1 to R-7 are settled; R-8 is open, and its row holds what this document
-assumes until it is ruled.
+The owner's rulings. R-1 to R-7 and R-9 to R-11 are settled; R-8 is open, and its row holds what this
+document assumes until it is ruled.
 
 | | Question | Ruling |
 |---|---|---|
-| R-1 | Price, period and sharing on the App Store | One monthly product at the App Store price point nearest $12. No annual product. Family Sharing off. Windmill enrols in the App Store Small Business Program. |
+| R-1 | Price, period and sharing on the App Store | One monthly product at the App Store price point $12.00. No annual product. Family Sharing off. Windmill enrols in the App Store Small Business Program. |
 | R-2 | Must a person sign in to buy? | Yes. Windmill One belongs to an account. Everything free stays usable signed out. |
 | R-3 | A purchase restored under a different Windmill account | Refused, naming that it belongs to another account. No silent transfer. |
 | R-4 | A free trial | None. The free monthly allowance is the trial, and an unpaid period funds nothing. |
 | R-5 | A refund | Access and the remaining funded allowance end when the store reports it. Spent allowance is not recovered. |
 | R-6 | Sandbox purchases against production | Entitle allowlisted accounts only (§6.2). |
 | R-7 | A failed renewal | The 16-day Billing Grace Period is enabled. Access continues in `grace`; no new allowance is funded until the charge succeeds. |
-| R-8 | Two live subscriptions on one account | Open. Assumed: both are recorded; access is one; the account screen says the person is charged twice and where to cancel. Applies once a second store sells. |
+| R-8 | Two live subscriptions on one account | Open. Assumed: both are recorded; access is one; the account screen says the person is charged twice and where to cancel. Applies already to two Apple Accounts bound to one Windmill account, and to every second store. |
+| R-9 | A subscription whose account hint names an erased account | Binds to the account that claims it; the erased account no longer exists. R-3 still refuses a claim against a live account. |
+| R-10 | Selling more than one seat of the subscription | No. Multiseat purchases are off in App Store Connect, which keeps the product out of Apple Business and Apple School Manager. A seat someone else paid for entitles no one. |
+| R-11 | An ended subscription bought again under another Windmill account | It moves to the account that paid: `unbound` under the old account, then `bound` under the new one at the new purchase's start. Periods from that purchase on go to the new account; earlier ones stay recorded under the old one. A restore or claim that pays nothing is still refused (R-3). |

@@ -10,6 +10,13 @@ authoritative registry schema, the test-only `probe` product, the reference mode
 and the golden corpus every engine implementation passes for its role. [sync/README.md](sync/README.md)
 has the layout and commands; [sync/corpus/README.md](sync/corpus/README.md) the vector shapes.
 
+## `subscriptions/`
+
+Windmill One's wire shapes ([subscriptions.md](../../docs/foundation/subscriptions.md) §5): golden
+fixtures of the entitlement, the feed, both claim doors and `GET /v1/subscription`.
+[subscriptions/README.md](subscriptions/README.md) lists the files, who writes and reads each, their rules,
+and the generator and checker that keep them.
+
 ## `gym/catalog.json`
 
 The gym ability catalog ([gym_coach.md](../../docs/foundation/mobile/gym_coach.md) §3.1, Appendix C):
