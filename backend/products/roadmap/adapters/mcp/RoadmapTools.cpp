@@ -787,11 +787,15 @@ struct MarkedBatch {
   Json::Value skipped{Json::arrayValue};  // ids naming no node in the tree
   Json::Value refused{Json::arrayValue};  // ids of nodes that follow the tree they open and took no mark
   bool cameToARefusal = false;            // no mark was recorded and at least one was refused
+  bool changed = false;                   // a row recorded a mark the caller did not hold
 
   // The marks as a write that carries them beside its tree edit answers them — an import's `progress[]`, update_nodes'
-  // marks: a row each in `progress`, and the ids skipped or refused listed, each said in `progressError`.
+  // marks: a row each in `progress`, and the ids skipped or refused listed, each said in `progressError`. `unchanged`
+  // says the whole call changed nothing, so a receipt whose tree edit landed nothing stops saying it beside a row that
+  // recorded a mark.
   void answerOnto(Json::Value& receipt) const {
     receipt["progress"] = results;
+    if (changed) receipt.removeMember("unchanged");
     if (!skipped.empty()) {
       receipt["progressSkipped"] = skipped;
       fellShort(receipt, "Some requested progress names nodes absent after the graft; those ids are listed in "
@@ -855,6 +859,7 @@ std::variant<MarkedBatch, std::string> applyProgressBatch(
     // nobody acknowledged.
     if (outcome.outOfOrder) row["acknowledged"] = true;
     if (outcome.unchanged) row["unchanged"] = true;
+    batch.changed = batch.changed || !outcome.unchanged;
     batch.results.append(row);
   }
   return batch;
@@ -1066,9 +1071,14 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
         landsNothing = plan.landsNothing();
         changed.insert(plan.changedNodeIds.begin(), plan.changedNodeIds.end());
       }
-      out["changedNodeIds"] = Json::Value(Json::arrayValue);
-      out["unchangedNodeIds"] = Json::Value(Json::arrayValue);
-      for (const NodeId& node : rows) out[changed.count(node) ? "changedNodeIds" : "unchangedNodeIds"].append(node.str());
+      // The rows that sent a tree field, by whether it changed the node. A call of marks alone sent none, and its
+      // receipt carries neither list.
+      if (!patches.empty()) {
+        out["changedNodeIds"] = Json::Value(Json::arrayValue);
+        out["unchangedNodeIds"] = Json::Value(Json::arrayValue);
+        for (const NodePatch& patch : patches)
+          out[changed.count(patch.nodeId) ? "changedNodeIds" : "unchangedNodeIds"].append(patch.nodeId.str());
+      }
     } else {
       const auto result = room.planEdgeChanges(edges);
       if (const auto* error = std::get_if<std::string>(&result)) {
@@ -1093,10 +1103,13 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       }
       out["unchangedEdges"] = static_cast<Json::UInt64>(edges.add.size() + edges.remove.size() - plan.added.size() - plan.removed.size());
     }
+    // What the receipt says of the tree is said of a batch the call sent: a call of marks alone sent none.
+    const bool marksAlone = nodes && patches.empty();
     out["dryRun"] = dryRun;
     out["applied"] = !dryRun;
     out["seq"] = static_cast<Json::Int64>(room.head());
-    if (landsNothing) out["unchanged"] = true;
+    // A dry run previews the tree batch and no mark, so one of marks alone has nothing to call unchanged.
+    if (landsNothing && !(dryRun && marksAlone)) out["unchanged"] = true;
     if (!dryRun) {
       // A batch that lands nothing writes nothing — no seq, no op row, no frame, no save — as a single-node edit does.
       std::optional<std::map<NodeId, TreeId>> pointersBefore;
@@ -1111,7 +1124,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       }
       const TreeDiagnostics after = room.diagnose();
       if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
-      answerDiagnostics(before, after, out);
+      if (!marksAlone) answerDiagnostics(before, after, out);
     }
     return ToolResult::json(out);
   });
@@ -1131,6 +1144,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       const MarkedBatch& batch = std::get<MarkedBatch>(applied);
       batch.answerOnto(receipt);
       cameToARefusal = batch.cameToARefusal;
+      if (cameToARefusal) receipt["applied"] = false;  // nothing the call asked for was taken
     } else {
       // A tree op has landed whatever becomes of the marks: a failure of theirs is told in the reply and reported under
       // its own name, at the call's door, not as the call's failure.

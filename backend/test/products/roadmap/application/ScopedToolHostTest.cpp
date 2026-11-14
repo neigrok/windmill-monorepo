@@ -537,15 +537,14 @@ TEST(scoped_tool_host_refuses_a_tends_mark_on_a_node_that_opens_a_tree_in_a_sent
     CHECK(text.find("t_sub") == std::string::npos);
     CHECK(text.find("Deep dive") == std::string::npos);
   }
-  CHECK_EQ(test::body(marksAlone), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
-    "introducedDiagnostics":[],"progress":[)" + refused + R"(,{"nodeId":"a","status":"complete","prerequisitesMet":true}],)" +
-                                         fellShort + R"(,"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea","a"]})"));
-  CHECK_EQ(test::body(refusedAlone), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
-    "introducedDiagnostics":[],"progress":[)" + refused + "]," + fellShort +
-                                           R"(,"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea"]})"));
+  CHECK_EQ(test::body(marksAlone), parse(R"({"applied":true,"dryRun":false,"progress":[)" + refused +
+                                         R"(,{"nodeId":"a","status":"complete","prerequisitesMet":true}],)" + fellShort +
+                                         R"(,"seq":1,"treeId":"t"})"));
+  CHECK_EQ(test::body(refusedAlone), parse(R"({"applied":false,"dryRun":false,"progress":[)" + refused + "]," + fellShort +
+                                           R"(,"seq":1,"treeId":"t","unchanged":true})"));
   CHECK_EQ(test::body(besideAnEdit), parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,
     "introducedDiagnostics":[],"progress":[)" + refused + "]," + fellShort +
-                                           R"(,"seq":2,"treeId":"t","unchangedNodeIds":["idea"]})"));
+                                           R"(,"seq":2,"treeId":"t","unchangedNodeIds":[]})"));
   CHECK_EQ(test::body(h.call("get_progress", test::kNoArgs)), parse(R"({"completed":["a"],"outOfOrder":[]})"));
   std::vector<std::string> observed;
   for (const WriteCompletion& completion : completions)
