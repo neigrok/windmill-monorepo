@@ -1,0 +1,41 @@
+version = "2026-11-15"
+
+[[models]]
+provider = "anthropic"
+model = "claude-opus-5"
+tokens = { input = "0.000005", output = "0.000025", cache_write = "0.00000625", cache_write_1h = "0.000010", cache_read = "0.0000005" }
+audio_billing_verified = false
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+checked_at = "2026-11-15"
+
+[[models]]
+provider = "anthropic"
+model = "claude-sonnet-5"
+tokens = { input = "0.000002", output = "0.000010", cache_write = "0.0000025", cache_write_1h = "0.000004", cache_read = "0.0000002" }
+audio_billing_verified = false
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+checked_at = "2026-11-15"
+
+[[models]]
+provider = "anthropic"
+model = "claude-haiku-4-5"
+tokens = { input = "0.000001", output = "0.000005", cache_write = "0.00000125", cache_write_1h = "0.000002", cache_read = "0.0000001" }
+audio_billing_verified = false
+source = "https://platform.claude.com/docs/en/about-claude/pricing"
+checked_at = "2026-11-15"
+
+[[models]]
+provider = "openai"
+model = "gpt-live-transcribe"
+audio_per_minute = "0.017"
+audio_billing_verified = false
+source = "https://developers.openai.com/api/docs/models/gpt-live-transcribe"
+checked_at = "2026-11-15"
+
+[[models]]
+provider = "azure"
+model = "gpt-live-transcribe"
+audio_per_minute = "0.017"
+audio_billing_verified = false
+source = "https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service/"
+checked_at = "2026-11-14"

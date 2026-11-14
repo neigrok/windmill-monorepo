@@ -1,0 +1,439 @@
+use ai_domain::*;
+
+fn price() -> ModelPrice {
+    ModelPrice {
+        provider: Provider::Anthropic,
+        model: "test".to_owned(),
+        tokens: Some(TokenRates {
+            input: NanoUsd::new(2000).unwrap(),
+            output: NanoUsd::new(10000).unwrap(),
+            cache_write: NanoUsd::new(2500).unwrap(),
+            cache_write_1h: NanoUsd::new(4000).unwrap(),
+            cache_read: NanoUsd::new(200).unwrap(),
+        }),
+        long_prompt: Some((
+            200_000,
+            TokenRates {
+                input: NanoUsd::new(4000).unwrap(),
+                output: NanoUsd::new(15000).unwrap(),
+                cache_write: NanoUsd::new(5000).unwrap(),
+                cache_write_1h: NanoUsd::new(8000).unwrap(),
+                cache_read: NanoUsd::new(400).unwrap(),
+            },
+        )),
+        audio_per_minute: Some(NanoUsd::new(17_000_000).unwrap()),
+        audio_billing_verified: false,
+        source: "test".to_owned(),
+        checked_at: "2026-11-15".to_owned(),
+    }
+}
+
+fn grant(id: i64, start: i64, end: i64, source: GrantSource) -> Grant {
+    Grant {
+        id,
+        reference: format!("reference_{id}"),
+        account_id: "account".to_owned(),
+        source,
+        period: Period::new(start, end).unwrap(),
+        closed_at: None,
+        amount: NanoUsd::new(7_000_000_000).unwrap(),
+        spent: NanoUsd::ZERO,
+        held: NanoUsd::ZERO,
+    }
+}
+
+fn call(capability: Capability) -> Call {
+    Call {
+        id: 1,
+        principal: Principal::Account("account".to_owned()),
+        caller_id: CallerId::new("test_call_identifier_0001".to_owned()).unwrap(),
+        capability,
+        tier: Tier::One,
+        requested: ModelClass::Medium,
+        route: ModelRoute {
+            provider: Provider::Anthropic,
+            model: "test".to_owned(),
+            served: ModelClass::Medium,
+        },
+        price_version: "test".to_owned(),
+        label: "other".to_owned(),
+        client: Client::Web,
+        state: CallState::Dispatched,
+        reservation: NanoUsd::new(17_000_000).unwrap(),
+        charged: None,
+        original_charge: None,
+        max_tokens: Some(100),
+        usage: None,
+        audio_bytes: 0,
+        audio_seconds: 0,
+        turns: 0,
+        slices: 1,
+        provider_request_id: None,
+        stop: None,
+        code: None,
+        created_at: 0,
+        ended_at: None,
+    }
+}
+
+#[test]
+fn exact_money_and_checked_boundaries() {
+    for (source, nanos, decimal) in [
+        ("0", 0, "0"),
+        ("0.000000001", 1, "0.000000001"),
+        ("7.000000000", 7_000_000_000, "7"),
+        ("9223372036.854775807", i64::MAX, "9223372036.854775807"),
+    ] {
+        let money = NanoUsd::from_usd(source).unwrap();
+        assert_eq!((money.nanos(), money.usd()), (nanos, decimal.to_owned()));
+        assert_eq!(NanoUsd::from_usd(&money.usd()), Ok(money));
+    }
+    for invalid in [
+        "",
+        "-1",
+        "+1",
+        "1e3",
+        ".1",
+        "1.",
+        "0.0000000001",
+        "9223372036.854775808",
+        "NaN",
+        " 1",
+    ] {
+        assert_eq!(NanoUsd::from_usd(invalid), Err(StaticCode::InvalidRequest));
+    }
+    assert_eq!(
+        NanoUsd::new(i64::MAX)
+            .unwrap()
+            .checked_add(NanoUsd::new(1).unwrap()),
+        Err(StaticCode::InvalidRequest)
+    );
+    assert_eq!(
+        NanoUsd::new(17_000_000)
+            .unwrap()
+            .ratio_ceil(1, 60)
+            .unwrap()
+            .usd(),
+        "0.000283334"
+    );
+}
+
+#[test]
+fn calendar_boundaries_are_utc_and_leap_safe() {
+    assert_eq!(
+        Period::month(0).unwrap(),
+        Period {
+            start: 0,
+            end: 2_678_400_000
+        }
+    );
+    assert_eq!(
+        Period::month(1_709_251_200_000).unwrap(),
+        Period {
+            start: 1_709_251_200_000,
+            end: 1_711_929_600_000
+        }
+    );
+    let february = Period::month(1_706_745_600_000).unwrap();
+    assert_eq!(february.end - february.start, 29 * 86_400_000);
+    assert_eq!(
+        Period::day(86_400_000).unwrap(),
+        Period {
+            start: 86_400_000,
+            end: 172_800_000
+        }
+    );
+    assert_eq!(Period::month(i64::MAX), Err(StaticCode::InvalidRequest));
+}
+
+#[test]
+fn admission_chooses_largest_cap_and_preserves_refusal_order() {
+    let request = TextBudget {
+        input_tokens: 100,
+        max_tokens: 1000,
+        min_tokens: Some(100),
+        cache: true,
+    };
+    let budgets = [
+        (
+            NanoUsd::new(3_000_000).unwrap(),
+            StaticCode::SubjectExhausted,
+        ),
+        (
+            NanoUsd::new(2_000_000).unwrap(),
+            StaticCode::FreeMonthExhausted,
+        ),
+        (
+            NanoUsd::new(1_500_000).unwrap(),
+            StaticCode::FreeDayExhausted,
+        ),
+    ];
+    let (cap, reserve) = price().reserve_text(request, 16000, &budgets).unwrap();
+    assert_eq!((cap, reserve.usd()), (108, "0.001495".to_owned()));
+    assert_eq!(
+        price().reserve_text(
+            TextBudget {
+                min_tokens: Some(109),
+                ..request
+            },
+            16000,
+            &budgets
+        ),
+        Err(StaticCode::FreeDayExhausted)
+    );
+    assert_eq!(
+        price().reserve_text(
+            request,
+            16000,
+            &[
+                (NanoUsd::ZERO, StaticCode::SubjectExhausted),
+                (NanoUsd::ZERO, StaticCode::FreeMonthExhausted)
+            ]
+        ),
+        Err(StaticCode::SubjectExhausted)
+    );
+    assert_eq!(
+        price().reserve_text(
+            TextBudget {
+                input_tokens: u64::MAX,
+                ..request
+            },
+            16000,
+            &budgets
+        ),
+        Err(StaticCode::InvalidRequest)
+    );
+    assert_eq!(
+        price().reserve_text(
+            TextBudget {
+                max_tokens: 2001,
+                min_tokens: Some(2001),
+                ..request
+            },
+            2000,
+            &budgets
+        ),
+        Err(StaticCode::InvalidRequest)
+    );
+}
+
+#[test]
+fn prices_every_usage_category_and_long_prompt_independently() {
+    assert_eq!(
+        price()
+            .text_cost(TokenUsage {
+                input: 10,
+                output: 20,
+                cache_write: 30,
+                cache_write_1h: 40,
+                cache_read: 50
+            })
+            .unwrap()
+            .usd(),
+        "0.000465"
+    );
+    assert_eq!(
+        price()
+            .text_cost(TokenUsage {
+                input: 200_001,
+                output: 1,
+                ..TokenUsage::default()
+            })
+            .unwrap()
+            .usd(),
+        "0.800019"
+    );
+}
+
+#[test]
+fn grants_are_idempotent_and_only_same_source_overlaps_conflict() {
+    let existing = grant(1, 100, 200, GrantSource::Subscription);
+    let request = Fund {
+        reference: existing.reference.clone(),
+        account_id: "account".to_owned(),
+        plan: Plan::One,
+        period: existing.period,
+    };
+    assert_eq!(
+        request.decide(Some(&existing), &[]),
+        Ok(GrantOutcome::Replay)
+    );
+    assert_eq!(
+        Fund {
+            account_id: "other".to_owned(),
+            ..request
+        }
+        .decide(Some(&existing), &[]),
+        Ok(GrantOutcome::Conflict)
+    );
+    let request = Fund {
+        reference: "second".to_owned(),
+        account_id: "account".to_owned(),
+        plan: Plan::One,
+        period: Period::new(150, 250).unwrap(),
+    };
+    assert_eq!(
+        request.decide(None, &[existing.clone()]),
+        Ok(GrantOutcome::Conflict)
+    );
+    assert_eq!(
+        request.decide(None, &[grant(2, 100, 300, GrantSource::Owner)]),
+        Ok(GrantOutcome::Ok)
+    );
+    let mut closed = existing.clone();
+    closed.closed_at = Some(existing.close_at(150).unwrap());
+    assert_eq!(closed.close_at(180), Ok(150));
+    assert_eq!(
+        request.decide(None, &[closed.clone()]),
+        Ok(GrantOutcome::Ok)
+    );
+    assert_eq!(
+        closed.reopen_outcome(&[grant(3, 150, 250, GrantSource::Subscription)]),
+        GrantOutcome::Conflict
+    );
+    assert_eq!(
+        closed.reopen_outcome(&[grant(3, 150, 250, GrantSource::Owner)]),
+        GrantOutcome::Ok
+    );
+    assert_eq!(
+        (
+            owner_grant(false, false, 24, 25),
+            owner_grant(false, false, 25, 25),
+            owner_grant(true, false, 25, 25)
+        ),
+        (
+            OwnerGrantDecision::Fund,
+            OwnerGrantDecision::Cap,
+            OwnerGrantDecision::Existing
+        )
+    );
+}
+
+#[test]
+fn settlement_releases_hold_and_records_whole_excess() {
+    let mut call = call(Capability::Text);
+    call.reservation = NanoUsd::new(100).unwrap();
+    let change = call
+        .settlement(
+            Charge::Usage(TokenUsage {
+                input: 1,
+                ..TokenUsage::default()
+            }),
+            &price(),
+            NanoUsd::ZERO,
+            call.reservation,
+        )
+        .unwrap();
+    assert_eq!(
+        (
+            change.state,
+            change.cost.nanos(),
+            change.spent_delta,
+            change.held_delta,
+            change.excess.nanos()
+        ),
+        (CallState::Settled, 2000, 2000, -100, 1900)
+    );
+    let change = call
+        .settlement(Charge::Assumed, &price(), NanoUsd::ZERO, call.reservation)
+        .unwrap();
+    assert_eq!(
+        (
+            change.state,
+            change.cost.nanos(),
+            change.spent_delta,
+            change.held_delta
+        ),
+        (CallState::Assumed, 100, 100, -100)
+    );
+    call.state = CallState::Reserved;
+    assert!(matches!(
+        call.settlement(Charge::Assumed, &price(), NanoUsd::ZERO, call.reservation),
+        Err(StaticCode::Conflict)
+    ));
+    assert_eq!(
+        call.settlement(
+            Charge::Unconsumed,
+            &price(),
+            NanoUsd::ZERO,
+            call.reservation
+        )
+        .unwrap()
+        .cost,
+        NanoUsd::ZERO
+    );
+}
+
+#[test]
+fn live_slices_price_rounded_turns_and_move_only_incremental_cost() {
+    assert_eq!(rounded_audio_seconds(&[48_002, 48_002, 0]), Ok(4));
+    let mut call = call(Capability::Transcription);
+    let progress = LiveProgress {
+        slice: 2,
+        audio_bytes: 48_002 * 30,
+        audio_seconds: 60,
+        turns: 30,
+    };
+    let slice = progress
+        .reserve(
+            &call,
+            &price(),
+            NanoUsd::ZERO,
+            call.reservation,
+            true,
+            false,
+            &[NanoUsd::new(1_000_000_000).unwrap()],
+        )
+        .unwrap();
+    assert_eq!(
+        (
+            slice.reservation.nanos(),
+            slice.cost.nanos(),
+            slice.spent_delta,
+            slice.held_delta
+        ),
+        (34_000_000, 17_000_000, 17_000_000, 0)
+    );
+    call.slices = 2;
+    call.reservation = slice.reservation;
+    call.audio_bytes = progress.audio_bytes;
+    call.audio_seconds = 60;
+    call.turns = 30;
+    assert!(progress.is_replay(&call));
+    let change = call
+        .settlement(
+            Charge::Audio {
+                bytes: 48_002 * 31,
+                seconds: 62,
+                turns: 31,
+            },
+            &price(),
+            slice.cost,
+            slice.held,
+        )
+        .unwrap();
+    assert_eq!(
+        (change.cost.nanos(), change.spent_delta, change.held_delta),
+        (17_566_667, 566_667, -17_000_000)
+    );
+    assert!(matches!(
+        LiveProgress {
+            slice: 3,
+            ..progress
+        }
+        .reserve(
+            &call,
+            &price(),
+            slice.cost,
+            slice.held,
+            false,
+            false,
+            &[NanoUsd::new(1_000_000_000).unwrap()]
+        ),
+        Err(StaticCode::FundingRequired)
+    ));
+    assert_eq!(
+        validate_audio(48_002, 3, 1),
+        Err(StaticCode::InvalidRequest)
+    );
+}
