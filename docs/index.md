@@ -26,7 +26,7 @@ human approval or claim every branch was exercised. Native graph lighting is a s
 | 07 · Roadmap settings | [162:282](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-282) | — | Shared product specimens: export, gated reminders and AI assistance |
 | 08 · AI assistance | [185:151](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-151) | [166:230](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=166-230) | Eligible owner → mobile request input; view/share doors have independent eligibility |
 | 09 · Settings branches | [184:1307](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1307) | [185:1359](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1359) | Reminder schedule/suppression and AI allowance/history; conditional gates |
-| 10 · Keyboard shortcuts | [185:2501](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2501) | [188:662](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=188-662) | Mac/Windows; owner/reader; current responsive layout |
+| 12 · Keyboard shortcuts | [12.01–12.16](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1109-534) | [12.05–12.10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1109-1221), [12.14–12.16](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1111-707) | Graph Mac/Windows and detected-platform Board; owner/reader; responsive reference and compact-height scroll |
 
 [List vocabulary](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=16-3) on Components
 draws a retired surface and goes in the 🚀 pass. The [mobile owner editor](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=158-121)
