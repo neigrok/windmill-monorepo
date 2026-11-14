@@ -1079,7 +1079,15 @@ TEST(coach_stop_preserves_partial_text_and_routine_draft_and_replays_without_a_n
     service.ask(h.user, "sam@example.com", {thread, "Create my routine", "req_stop0001", {}, "", true}, [&](AskReply answer) { reply.set_value(answer); });
     return future.get();
   };
+  std::vector<WriteCompletion> runs;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.operation == "ask.run") runs.push_back(line);
+  });
   const auto stopped = ask();
+  installWriteSink({});
+  REQUIRE_EQ(runs.size(), 1u);
+  CHECK_EQ(runs[0].outcome, std::string("stopped"));
+  CHECK(runs[0].severity == WriteSeverity::info);
   REQUIRE(stopped.generation.has_value());
   CHECK_EQ(stopped.generation->status, std::string("stopped"));
   CHECK_EQ(stopped.generation->answer, std::string("Your new routine is ready. Next"));

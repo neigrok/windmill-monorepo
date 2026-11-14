@@ -119,6 +119,13 @@ def check_entitlement(e, environment, where):
                 governing["accessUntil"] == other["accessUntil"]
                 and governing["subscriptionId"] < other["subscriptionId"])),
                 f"{where}: governing grants access longest, ties to the smaller id (§5.2)")
+        if governing["accessUntil"] is None:
+            told = lambda s: max(at for at in (s["startedAt"], s["paymentFailedAt"], s["pausedAt"], s["endedAt"])
+                                 if at is not None)
+            check(told(governing) > told(other) or (
+                told(governing) == told(other) and governing["subscriptionId"] < other["subscriptionId"]),
+                f"{where}: with no access, governing last started, failed a payment, paused or ended, ties to the "
+                f"smaller id (§5.2)")
     ids = [other["subscriptionId"] for other in e["others"]]
     check(ids == sorted(ids) and governing["subscriptionId"] not in ids,
           f"{where}: others ordered by subscriptionId, governing not among them")

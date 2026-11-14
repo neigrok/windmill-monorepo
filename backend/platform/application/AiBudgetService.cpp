@@ -2,7 +2,10 @@
 
 #include "platform/application/WriteObservation.h"
 
+#include <trantor/utils/Logger.h>
+
 #include <limits>
+#include <map>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -10,18 +13,28 @@
 namespace wm {
 namespace {
 
+constexpr int kReleaseBatch = 20;
+// A sweep pass lets go of at most 200 holds, so a backlog is worked down a minute at a time and a pass never runs
+// past a stopping process's deadline.
+constexpr int kSweepBatches = 10;
+
 template<class Run>
-auto observeAiBudgetWrite(const std::string& operation, Run&& run) {
-  WriteObservation observation{operation, "platform", "ai"};
+auto observeAiBudgetWrite(const std::string& operation, Run&& run, const std::string& door = "ai") {
+  WriteObservation observation{operation, "platform", door};
   WriteContext context{observation};
   try {
     auto result = std::forward<Run>(run)();
-    const AiBudgetCode code = [&] {
-      if constexpr (std::is_same_v<decltype(result), AiBudgetCode>) return result;
-      else if constexpr (std::is_same_v<decltype(result), std::vector<AiBudgetAlert>>) return AiBudgetCode::Ok;
-      else return result.code;
-    }();
-    observation.finish(code == AiBudgetCode::Replay ? "ok" : std::string(aiBudgetCodeName(code)));
+    if constexpr (std::is_same_v<decltype(result), std::vector<AiBudgetReservation>>) {
+      if (result.empty()) observation.skip();
+      else observation.finish();
+    } else {
+      const AiBudgetCode code = [&] {
+        if constexpr (std::is_same_v<decltype(result), AiBudgetCode>) return result;
+        else if constexpr (std::is_same_v<decltype(result), std::vector<AiBudgetAlert>>) return AiBudgetCode::Ok;
+        else return result.code;
+      }();
+      observation.finish(code == AiBudgetCode::Replay ? "ok" : std::string(aiBudgetCodeName(code)));
+    }
     return result;
   } catch (const std::exception& error) {
     observation.fail(error);
@@ -41,7 +54,7 @@ AiBudgetService::AiBudgetService(AiBudgetRepository& repository,
   if (!limits_ || !clock_) throw std::invalid_argument("missing_ai_budget_dependency");
 }
 
-AiBudgetView AiBudgetService::view(const AiBudgetPrincipal& principal) const {
+AiBudgetView AiBudgetService::view(const AiBudgetPrincipal& principal) {
   WriteObservation observation{"ai.budget.view", "platform", "ai"};
   WriteContext context{observation};
   const auto before = observation.writeCount();
@@ -55,6 +68,7 @@ AiBudgetView AiBudgetService::view(const AiBudgetPrincipal& principal) const {
       observation.finish("invalid");
       return result;
     }
+    releaseLapsed(principal.subject, atMs, "ai", [] { return true; });
     const auto snapshot = repository_.snapshot(principal, atMs, limits);
     const auto result = aiBudgetView(principal, atMs, limits, snapshot);
     if (observation.writeCount() == before) observation.skip();
@@ -74,6 +88,7 @@ AiBudgetResult AiBudgetService::reserve(const std::string& id, const AiBudgetPri
   return observeAiBudgetWrite("ai.budget.reserve", [&] {
     const AiBudgetRequest request{id, principal, amountNanos, clock_(), outputBudget};
     if (!request.valid()) return AiBudgetResult{AiBudgetCode::Invalid};
+    releaseLapsed(principal.subject, request.atMs, "ai", [] { return true; });
     return repository_.reserve(request, limits_());
   });
 }
@@ -104,6 +119,50 @@ AiBudgetResult AiBudgetService::release(const std::string& id) {
     if (!validAiBudgetId(id)) return AiBudgetResult{AiBudgetCode::Invalid};
     return repository_.release(id);
   });
+}
+
+int AiBudgetService::releaseLapsed(const std::function<bool()>& stopping) {
+  int batches = 0;
+  return releaseLapsed(std::nullopt, clock_(), "background",
+                       [&] { return batches++ < kSweepBatches && !(stopping && stopping()); });
+}
+
+int AiBudgetService::releaseLapsed(const std::optional<AiBudgetSubject>& subject, long long atMs,
+                                   const std::string& door, const std::function<bool()>& anotherBatch) {
+  struct Left {
+    int holds = 0;
+    long long nanos = 0;
+  };
+  std::map<std::string, Left> left{{"reserved", {}}, {"dispatched", {}}, {"uncertain", {}}};
+  const std::string requestId = freshWriteRequestId();
+  int released = 0;
+  while (anotherBatch()) {
+    const auto holds = observeAiBudgetWrite("ai.budget.release_lapsed", [&] {
+      return repository_.releaseLapsed(atMs, kReleaseBatch, subject);
+    }, door);
+    for (const auto& hold : holds) {
+      const std::string was(aiBudgetStateName(*hold.releasedFrom));
+      ++left[was].holds;
+      left[was].nanos += hold.amountNanos;
+      const long long ageMs = atMs - hold.admittedAtMs;
+      LOG_WARN << "ai_hold_released operation=ai.budget.release_lapsed door=" << door << " outcome=" << was
+               << " age=" << (ageMs < 3'600'000 ? "under_1h" : ageMs < 86'400'000 ? "under_1d" : "over_1d")
+               << " request_id=" << requestId;
+    }
+    released += static_cast<int>(holds.size());
+    if (static_cast<int>(holds.size()) < kReleaseBatch) break;
+  }
+  if (released == 0) return 0;
+  std::string tally = "ai_hold_lapses operation=ai.budget.release_lapsed door=" + door +
+      " released=" + std::to_string(released);
+  std::map<std::string, std::string> tags;
+  for (const auto& [was, count] : left) {
+    tally += " " + was + "=" + std::to_string(count.holds) + " " + was + "_nanos=" + std::to_string(count.nanos);
+    tags[was] = std::to_string(count.holds);
+  }
+  LOG_WARN << tally << " request_id=" << requestId;
+  reportWriteWarning("ai.budget.release_lapsed", "platform", door, "released", requestId, tags);
+  return released;
 }
 
 AiBudgetResult AiBudgetService::reconcileOverrun(const std::string& id) {

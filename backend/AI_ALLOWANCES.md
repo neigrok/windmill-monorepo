@@ -82,10 +82,10 @@ when the funding price is configured.
 ## Admission and accounting
 
 `AiBudgetService` owns boundary observations; `PgAiBudgetRepository` serializes reservation,
-concurrency, funding, binding and threshold writes. A free reservation requires sufficient
+concurrency, funding, binding, lapse and threshold writes. A free reservation requires sufficient
 individual, free-month and free-day capacity. A paid reservation requires a live grant with enough
 capacity. In-flight reservations, dispatched calls and uncertain calls occupy the principal's
-concurrency slots across tier changes and device binding.
+concurrency slots across tier changes and device binding until they settle or lapse.
 
 Every Claude round estimates input tokens from its actual request and reserves the estimated input
 cost plus the full output cap sent to the provider; a Talk take reserves its model's ceiling
@@ -114,9 +114,36 @@ can clear that liability while retaining actual spend. Periods and grants remain
 month or grant does not fund an old call. Historical debt and in-flight calls continue to affect
 admission after a new funded period begins. Replaying settlement changes and reports nothing.
 
-An ambiguous send, partial stream, missing usage or accounting failure retains its reservation.
-A restart never releases such a call automatically. Only an undispatched reservation may be
-released without known usage.
+A round this server stops on purpose — Coach's Stop, a phone turn's stop, a stopping server — is
+not ambiguous. It settles at once at what it used, and its slot frees at once: the input the
+vendor reported when the message began, plus the output streamed so far. The output is the
+vendor's own count when one arrived, or, when larger, the stream counted as the request estimate
+counts input: a token per three UTF-8 bytes the model wrote (text, thinking, a tool's name and
+input), rounded up, and three a content block (`AnthropicStream.h`). A round stopped before its
+message began settles at its input estimate. Neither ever settles above its hold. A thinking block
+the vendor summarises may count fewer tokens than it billed.
+
+An ambiguous send, a stream the connection cut short, missing usage or accounting failure keeps
+its reservation as `uncertain`, and a call a restart cut off stays `dispatched`. A hold whose cost
+is still unconfirmed 10 minutes after its admission (`kAiBudgetHoldLifetimeMs`, `AiBudget.h`)
+lapses: the ledger releases it at zero, frees its slot and its held amount in every budget, and
+keeps the record with its reserved amount and the state it left (`released_from`: `reserved`,
+`dispatched` or `uncertain`). Windmill absorbs whatever the vendor billed for a lapsed call. Every
+vendor call this server makes has a deadline well inside that bound; the longest is 300 s. Each
+admission and each allowance read first releases its own principal's lapsed holds, those of the
+devices bound to an account included, so a lapsed hold never refuses the next call or shows as
+reserved; `AiBudgetHoldSweep` releases every principal's each minute, at most 200 a pass, so the
+shared free pools stop counting one within a minute of its lapse. A settlement or uncertainty that
+arrives after the release changes nothing. An undispatched reservation may also be released at
+once.
+
+Concurrency never exceeds a principal's slots: a lapsed hold holds its slot until it is released.
+What Windmill can absorb is bounded per principal by its slots × 6 lapses an hour × the
+reservation of each lapsed round, its largest estimated cost. Service-wide only the $20 process-hour
+fuse bounds it, and the fuse is charged only for rounds that returned usage, so it sees part of it.
+Each release logs the count and the reserved amount it let go by the state each hold left; the
+`dispatched` and `uncertain` amounts bound what Windmill absorbed, and a `reserved` hold was never
+sent (OBSERVABILITY.md).
 
 Budget occupancy includes settled cost plus held reservations. Crossings of 50%, 80% and 95% are
 written to a durable outbox in the same transaction as their budget change. Each scope, budget
@@ -149,10 +176,11 @@ measures: the reply's `usage` object (`type: "tokens"`, `input_tokens`, `output_
 vendor billed, and settles the take at that cost, with an unfunded excess kept as overrun debt as
 for any round. A transcript that comes back without usable token usage was heard, and settles at
 the $0.06 ceiling. An error status from the vendor, or a request that never reached a connection or
-TLS session, consumed nothing and settles at zero. A timeout (300 s, `OpenAiTranscriber.cpp`), a
-connection dropped mid-exchange or an unreadable reply keeps the whole hold as uncertain. Stopping
-the server lets takes still with the vendor answer and settle for up to 5 s, inside Docker's 10 s
-stop timeout; one still out after that keeps its dispatched hold.
+TLS session, consumed nothing and settles at zero. A timeout (50 s, `kVendorReplyWait` in
+`platform/adapters/http/ReplyWait.h`), a connection dropped mid-exchange or an unreadable reply keeps
+the whole hold as uncertain until it lapses. Stopping the server lets takes still with the vendor
+answer and settle for up to 5 s, inside Docker's 10 s stop timeout; one still out after that keeps
+its dispatched hold until it lapses.
 
 Talk requires Windmill One, checked before any audio is read, and its admission refuses any
 principal below Windmill One as `funding_required`, so a take draws only on a funded grant and
@@ -190,8 +218,8 @@ There is no universal full-context reservation.
 This is approximate admission, not a hard spending ceiling. Actual usage replaces the estimate at
 settlement. Available original funding absorbs a covered underestimate; an unfunded overrun
 creates debt that blocks further admission until reconciled. Missing or ambiguous usage retains
-the hold. A positive remaining balance still does not promise that a particular request can fit.
-For example, an Opus 5 request with an 8,000-token output cap reserves $0.20 for output alone,
+the hold until it lapses. A positive remaining balance still does not promise that a particular
+request can fit. For example, an Opus 5 request with an 8,000-token output cap reserves $0.20 for output alone,
 more than the balance of an allowance with $0.10 left.
 Anonymous previews use Sonnet 5 with a bounded input, one provider request and an affordable
 output cap, and an anonymous phone turn runs every round on Sonnet 5 the same way. Signed-in Coach,
@@ -261,6 +289,10 @@ the exhausted free day/month or individual period, so a daily free-pool pause is
 an individual monthly reset. It does not guarantee that unresolved holds will be released then.
 Neither endpoint nor telemetry exposes aggregate budget amounts.
 
+`concurrency_exhausted` means the principal's earlier calls hold every slot it has, whether they
+are still running or their cost is not yet confirmed. Coach and Talk say so and that each slot frees
+when its cost is confirmed, at most 10 minutes after its call began.
+
 Coach JSON and SSE preserve expected allowance refusal codes and metadata. A request too large
 for positive remaining capacity is distinguished from a fully used allowance by the allowance
 object: a turn's refusal body and the `error` frame of a turn an allowance code ended both carry it,
@@ -289,8 +321,8 @@ request quotas. Enabling the durable ledger does not invent reservations for ear
   bound that exposure. Do not claim reset-proof identity.
 - Keep per-round token estimation separate from exact USD settlement. Check estimates against
   actual usage; let original funding absorb covered variance while retaining unfunded overrun
-  debt and ambiguous holds. Do not promise a hard cost ceiling. Choose model/output settings that
-  can fit the intended tier.
+  debt and ambiguous holds until they lapse. Do not promise a hard cost ceiling. Choose model/output
+  settings that can fit the intended tier.
 - The account, Coach and tending clients need exact USD, held amounts, distinct allowance periods
   and bounded refusal recovery. Figma still contains question and credit figures.
 - Subscription and owner grants share one ledger. Nonoverlap is enforced within each source, and

@@ -226,6 +226,7 @@ fn written(stated: &ObservedPeriod, observed_at: Instant) -> Period {
         offer_kind: stated.offer_kind,
         refunded_at: stated.refunded_at,
         observed_at,
+        left_with: None,
     }
 }
 

@@ -1,123 +1,100 @@
-/* The guide (17.02–17.39, 28.29–28.33): a note on the tree. At rest it is a card on the canvas from 744px and a row
-   under the head on phones; open, it is a window from 744px and a bottom sheet on phones, reading or writing
-   in one frame. A save no door took leaves one line with its act where the footer says who reads the guide. The guides
-   of the trees above stand before the tree's own, each under its tree's name. */
-
-/* ---- At rest from 744px: the card. ---- */
-.st-guide-card {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+/* The wide Guide shares the identity row; phones keep the row below the head. */
+.st-guide-entry-seat {
+  flex: 0 1 320px;
+  min-width: 44px;
+  max-width: 320px;
+}
+.st-guide-entry-seat > span {
+  width: 100%;
+  min-width: 0;
+}
+.st-guide-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   box-sizing: border-box;
-  width: 414px;
-  max-width: 100%;
-  padding: 24px 26px;
-  border: 1px solid var(--border-default);
-  border-radius: 18px;
-  background: var(--surface-card);
-  box-shadow: var(--shadow-md);
-  color: var(--text-primary);
-  font-family: var(--font-body);
+  width: 100%;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-secondary);
+  font: 600 14px/20px var(--font-body);
   text-align: left;
   cursor: pointer;
 }
-.st-guide-card,
-.st-guide-row {
-  transition: background-color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
-}
-.st-guide-card:hover {
-  background: var(--surface-hover);
-}
-.st-guide-row:hover {
-  background: var(--color-brand-soft);
-}
-.st-guide-card:active,
-.st-guide-row:active {
-  transform: scale(0.97);
-}
-.st-guide-card:focus-visible,
-.st-guide-row:focus-visible {
-  outline: 2px solid var(--color-brand);
-  outline-offset: -2px;
-}
-.st-guide-card-heading {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.st-guide-tab {
-  display: flex;
+.st-guide-entry > svg {
   flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 46px;
-  border-radius: var(--radius-md);
-  background: var(--surface-sunken);
-  color: var(--text-secondary);
 }
-.st-guide-card-title {
-  flex: 1;
+.st-guide-entry-excerpt {
   min-width: 0;
-  font: 700 28px/34px var(--font-display);
-}
-.st-guide-card-excerpt {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  font: 400 23px/32px var(--font-body);
-  overflow-wrap: anywhere;
-}
-.st-guide-card-above {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  color: var(--text-secondary);
-  font: 700 13px/19px var(--font-body);
-}
-.st-guide-card-above > svg {
-  flex-shrink: 0;
-  margin-top: 2.5px;
-}
-/* The line is one line, as 28.29 draws it, and never loses its count, whatever the font measures. The sentence's own
-   words are items that never shrink, their spaces kept; each title starts from nothing, grows to its own width where
-   the line has room, and gives way with an ellipsis where it has not. Words too wide for the line together wrap
-   rather than go. */
-.st-guide-card-above > span {
-  display: flex;
-  flex: 1;
-  flex-wrap: wrap;
-  align-items: baseline;
-  min-width: 0;
-  white-space: pre;
-}
-.st-guide-card-tree {
-  flex: 1 1 0;
-  min-width: 0;
-  max-width: max-content;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.st-guide-rule {
-  flex-shrink: 0;
-  height: 1px;
-  background: var(--border-default);
-  opacity: 0.65;
+.st-guide-entry--add {
+  width: auto;
+  padding: 0 14px 0 12px;
+  border: 1.5px dashed var(--border-strong);
 }
-.st-guide-card-read {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.st-guide-entry-seat:has(.st-guide-entry--add) {
+  flex: 0 0 auto;
+}
+.st-guide-entry-seat--compact {
+  flex: 0 0 auto;
+}
+.st-guide-entry-seat--compact .st-guide-entry {
+  justify-content: center;
+  padding: 0 10px;
+}
+.st-guide-entry-seat--compact .st-guide-entry:has(.st-guide-entry-count) {
+  padding: 0 2px 0 12px;
   gap: 10px;
-  color: var(--text-link);
-  font: 700 16px/22px var(--font-body);
 }
-.st-guide-card-arrow {
-  color: var(--text-link);
-  font: 700 22px/26px var(--font-body);
+.st-guide-entry-seat--compact .st-guide-entry:focus-visible {
+  border-radius: 8px;
+  outline-color: var(--field-focus-edge);
+}
+.st-guide-entry-count {
+  min-width: 24px;
+  box-sizing: border-box;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  font: 800 14px/20px var(--font-body);
+  text-align: center;
+}
+.st-guide-entry[aria-expanded="true"] {
+  color: var(--color-brand);
+}
+.st-guide-entry:hover,
+.st-guide-entry[aria-expanded="true"],
+.st-guide-row:hover {
+  background: var(--color-brand-soft);
+}
+.st-guide-entry,
+.st-guide-row {
+  transition: background-color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
+}
+.st-guide-entry:active,
+.st-guide-row:active {
+  transform: scale(0.97);
+}
+.st-guide-entry:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+.st-guide-row:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+}
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .st-guide-entry-seat {
+    flex-basis: 200px;
+    max-width: 200px;
+  }
 }
 
 /* ---- At rest on phones: the row. ---- */
@@ -171,17 +148,7 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- Where the entry sits: over the Graph's canvas from 744px and in the Board's flow; on phones under the head,
-   flush beneath the device line when the tree carries one. ---- */
-.st-graph-guide {
-  position: absolute;
-  left: 28px;
-  margin-top: 38px;
-  pointer-events: auto;
-}
-.st-board--columns > .st-guide-card {
-  flex-shrink: 0;
-}
+/* The phone row stays flush beneath the device line. */
 .st-roadmap-device-nudge > .st-guide-row {
   width: calc(100% - var(--space-8));
   margin: 2px var(--space-4) 0;
@@ -537,6 +504,32 @@ button.st-guide-from-name {
   font: 700 16px/22px var(--font-body);
   cursor: pointer;
 }
+
+.st-guide-parent-status {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: min(592px, 100%);
+  margin: 0;
+  padding: 4px 16px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+  font: 600 14px/20px var(--font-body);
+}
+.st-guide-parent-add {
+  width: min(592px, 100%);
+  margin-top: 20px;
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-parent-add .st-guide-add {
+  width: auto;
+  min-height: 44px;
+  padding: 0 14px 0 12px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font: 600 14px/20px var(--font-body);
+}
+
 /* While the guide is written the guides from above stay over the field, dimmed, and scroll by themselves; this tree's
    name stays on the field. Where the window is short they give up their height before the field gives up any, and
    are not drawn where what is left holds less than one name and one line. */
@@ -891,6 +884,111 @@ button.st-guide-from-name {
   background: var(--surface-card);
 }
 
+/* Owner phones keep the Roadmap sheet beneath a full page below the Shell. */
+.st-guide-sheet-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px 0 16px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+.st-guide-sheet-entry > span {
+  flex: 1;
+  color: var(--text-primary);
+  font: 700 15px/20px var(--font-body);
+}
+.st-guide-sheet-entry > svg {
+  flex-shrink: 0;
+}
+.st-guide-sheet-entry:hover {
+  background: var(--surface-hover);
+}
+.st-guide-sheet-entry:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+}
+.st-guide-layer--owner-phone {
+  box-sizing: border-box;
+  padding-top: calc(52px + env(safe-area-inset-top, 0px));
+}
+.st-guide-layer--owner-phone > .st-guide-backdrop {
+  display: none;
+}
+.st-guide-paper--owner-phone {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  max-height: none;
+  padding: 0 0 env(safe-area-inset-bottom, 0px);
+  border-radius: 0;
+  overflow: hidden;
+}
+.st-guide-paper--owner-phone.st-guide-paper--writing {
+  overflow-y: auto;
+}
+.st-guide-paper--owner-phone > .st-guide-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.st-guide-paper--owner-phone > .st-guide-body > :is(.st-guide-alone, .st-guide-stack) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  padding: 6px 22px 12px;
+}
+.st-guide-paper--owner-phone > .st-guide-body > .st-guide-alone > .st-guide-prose,
+.st-guide-paper--owner-phone .st-guide-stack > .st-guide-prose {
+  margin: 0;
+  padding: 0;
+}
+.st-guide-paper--owner-phone .st-guide-parent-status {
+  padding: 4px 4px 4px 16px;
+  overflow-wrap: anywhere;
+}
+.st-guide-paper--owner-phone .st-guide-parent-add {
+  margin: 0;
+}
+.st-guide-paper--owner-phone .st-guide-add {
+  flex-shrink: 0;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px 0 16px;
+  color: var(--text-secondary);
+  font: 700 15px/20px var(--font-body);
+  text-align: left;
+}
+.st-guide-paper--owner-phone .st-guide-add > span {
+  flex: 1;
+  color: var(--text-primary);
+}
+.st-guide-paper--owner-phone .st-guide-add > svg {
+  flex-shrink: 0;
+}
+.st-guide-paper--owner-phone > .st-guide-body > .st-guide-field {
+  flex: 1;
+  min-height: 0;
+}
+.st-guide-paper--owner-phone .st-guide-save {
+  background: #884321;
+  color: #fff;
+}
+
 /* ---- Discard draft?: a card over the note from 744px, a sheet at the foot of the phone. ---- */
 .st-guide-discard {
   position: absolute;
@@ -1001,7 +1099,7 @@ button.st-guide-from-name {
   .st-guide-discard {
     animation: none;
   }
-  .st-guide-card,
+  .st-guide-entry,
   .st-guide-row {
     transition: none;
   }

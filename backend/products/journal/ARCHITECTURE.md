@@ -318,15 +318,17 @@ right now` (code `voice_unavailable`), `no audio`, `that take is too long to tra
 busy right now` (code `voice_busy`) and `talk has had its turn for today`. The allowance step answers
 `talk has had its turn for now` with allowances off; with them on, `your AI allowance is fully used
 or reserved`, `a take needs more AI allowance than you have left`, `your plan has no funded AI
-allowance for this period`, `another AI request is still in progress` or `talk's AI allowance is
-unavailable right now`, and `talk's AI allowance could not be checked right now` (code
-`ai_accounting_unavailable`) when the ledger cannot be asked. Vendor failure is 502 `the transcriber
-could not answer`. A successful empty transcript is still 200 `{text:""}`; failure and silence remain
-distinct.
+allowance for this period`, `your earlier AI requests hold every slot you have; each frees when its
+cost is confirmed, at most 10 minutes after it began` or `talk's AI allowance is unavailable right
+now`, and `talk's AI allowance could not be checked right now` (code `ai_accounting_unavailable`)
+when the ledger cannot be asked. Vendor failure is 502 `the transcriber could not answer`. A
+successful empty transcript is still 200 `{text:""}`; failure and silence remain distinct.
 
 The handler does not wait on the vendor: it hands its callback to the transcriber and returns, and
 the reply is written from the transcriber's loop, after the take's charge is settled, under the
-route's request id. The vendor gets 300 s to answer, and stopping the transcriber lets takes still
+route's request id. The vendor gets 50 s to answer (`kVendorReplyWait`, `platform/adapters/http/ReplyWait.h`):
+the server drops a connection that has waited 60 s on its reply, and Cloudflare answers 524 after 125 s, so a
+take the vendor is too slow for still reaches the person as its 502. Stopping the transcriber lets takes still
 with it settle for up to 5 s before its loop ends. `VoiceRation` is in memory and best-effort; the
 money is held by the account's AI allowance and the process fuse (`platform/domain/AiFuse.h`).
 

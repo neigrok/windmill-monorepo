@@ -3,6 +3,9 @@
 
 #include "test/testing.h"
 
+#include <trantor/utils/Logger.h>
+
+#include <cstdio>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -29,6 +32,7 @@ struct BudgetRepository : AiBudgetRepository {
   std::tuple<long long, int, long long> claim;
   std::pair<std::string, std::string> delivery;
   long long retryAtMs = 0;
+  std::vector<std::tuple<long long, int, std::optional<AiBudgetSubject>>> lapseSweeps;
 
   AiBudgetSnapshot snapshot(const AiBudgetPrincipal& principal, long long atMs, const AiBudgetLimits&) override {
     ++calls;
@@ -71,6 +75,20 @@ struct BudgetRepository : AiBudgetRepository {
   AiBudgetResult markUncertain(const std::string& id) override { return transition(id, AiBudgetState::Uncertain); }
   AiBudgetResult settle(const std::string& id, long long actual) override { return transition(id, AiBudgetState::Settled, actual); }
   AiBudgetResult release(const std::string& id) override { return transition(id, AiBudgetState::Released); }
+  std::vector<AiBudgetReservation> releaseLapsed(long long atMs, int limit,
+                                                 const std::optional<AiBudgetSubject>& subject) override {
+    ++calls;
+    lapseSweeps.emplace_back(atMs, limit, subject);
+    if (fail) throw std::runtime_error("private_database_address");
+    std::vector<AiBudgetReservation> released;
+    for (auto& [id, reservation] : rows) {
+      if (static_cast<int>(released.size()) == limit) break;
+      if (subject && reservation.subject != *subject) continue;
+      if (releaseLapsedAiBudget(reservation, atMs) == AiBudgetCode::Ok) released.push_back(reservation);
+    }
+    if (!released.empty()) markCurrentWrite();
+    return released;
+  }
   AiBudgetResult reconcileOverrun(const std::string& id) override {
     ++calls;
     const auto found = rows.find(id);
@@ -116,19 +134,43 @@ struct BudgetRepository : AiBudgetRepository {
 
 struct BudgetFailures : FailureReporter {
   std::vector<std::string> reports;
+  std::vector<std::string> warnings;
   void report(const std::string& kind, const std::string& where, const std::string& detail) override {
     reports.push_back(kind + " " + where + " " + detail);
+  }
+  void reportWarning(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string& requestId,
+                     const std::map<std::string, std::string>& tags) override {
+    std::string warning = operation + " " + product + " " + door + " " + outcome + " " + requestId;
+    for (const auto& [name, value] : tags) warning += " " + name + "=" + value;
+    warnings.push_back(warning);
   }
 };
 
 struct BudgetObservations {
   std::shared_ptr<BudgetFailures> failures = std::make_shared<BudgetFailures>();
   std::vector<WriteCompletion> lines;
+  std::vector<std::string> releaseLines;
+  trantor::Logger::LogLevel level = trantor::Logger::logLevel();
   BudgetObservations() {
     installWriteReporter(failures);
     installWriteSink([this](const WriteCompletion& line) { lines.push_back(line); });
+    trantor::Logger::setLogLevel(trantor::Logger::kInfo);
+    trantor::Logger::setOutputFunction(
+        [this](const char* message, std::uint64_t length) {
+          const std::string line(message, length);
+          const std::size_t start = line.find("ai_hold_");
+          if (start != std::string::npos) releaseLines.push_back(line.substr(start, line.rfind(" - ") - start));
+        },
+        [] {});
   }
-  ~BudgetObservations() { installWriteSink({}); installWriteReporter({}); }
+  ~BudgetObservations() {
+    installWriteSink({});
+    installWriteReporter({});
+    trantor::Logger::setOutputFunction([](const char* message, std::uint64_t length) { fwrite(message, 1, length, stdout); },
+                                       [] { fflush(stdout); });
+    trantor::Logger::setLogLevel(level);
+  }
 };
 
 }
@@ -177,7 +219,7 @@ TEST(ai_budget_service_rejects_malformed_admission_funding_and_binding_before_io
 
 TEST(ai_budget_service_replays_original_admission_after_month_and_tier_change) {
   BudgetRepository repository;
-  long long now = 0;
+  long long now = AiBudgetPeriod::at(0)->endMs - 60'000;
   AiBudgetService service{repository, [] { return AiBudgetLimits{}; }, [&] { return now; }};
   const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn};
   const auto first = service.reserve("call", principal, 10);
@@ -232,14 +274,134 @@ TEST(ai_budget_service_reports_read_and_write_failures_without_database_messages
       else service.reserve("call", principal, 10);
     } catch (const std::runtime_error&) { threw = true; }
     CHECK(threw);
-    REQUIRE_EQ(observations.lines.size(), std::size_t{1});
-    const auto& line = observations.lines[0];
-    CHECK_EQ(line.operation, read ? "ai.budget.view" : "ai.budget.reserve");
-    CHECK_EQ(line.outcome, "failed");
+    std::vector<std::string> outcomes;
+    for (const auto& line : observations.lines) {
+      outcomes.push_back(line.operation + " " + line.outcome);
+      CHECK_EQ(line.requestId, observations.lines[0].requestId);
+    }
+    CHECK_EQ(outcomes, (std::vector<std::string>{"ai.budget.release_lapsed failed",
+                                                  read ? "ai.budget.view failed" : "ai.budget.reserve failed"}));
     REQUIRE_EQ(observations.failures->reports.size(), std::size_t{1});
-    CHECK_EQ(observations.failures->reports[0], "platform " + line.operation +
-             " door=ai outcome=failed request_id=" + line.requestId + " exception_type=" + typeid(std::runtime_error).name());
+    const auto& first = observations.lines[0];
+    CHECK_EQ(observations.failures->reports[0], "platform " + first.operation +
+             " door=ai outcome=failed request_id=" + first.requestId + " exception_type=" + typeid(std::runtime_error).name());
+    CHECK(observations.failures->warnings.empty());
   }
+}
+
+TEST(ai_budget_service_admission_and_reads_release_their_principals_lapsed_holds_and_the_sweep_everyone_elses) {
+  BudgetObservations observations;
+  BudgetRepository repository;
+  const long long admitted = 1'767'225'600'000;
+  long long now = admitted;
+  AiBudgetService service{repository, [] { return AiBudgetLimits{}; }, [&] { return now; }};
+  const AiBudgetPrincipal account{{AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn};
+  const AiBudgetPrincipal other{{AiBudgetSubjectKind::Account, "other"}, AiBudgetTier::LoggedIn};
+  CHECK_EQ(service.reserve("unsent", account, 10).code, AiBudgetCode::Ok);
+  CHECK_EQ(service.reserve("lost", account, 10).code, AiBudgetCode::Ok);
+  CHECK_EQ(service.markDispatched("lost").code, AiBudgetCode::Ok);
+  now = admitted + 60'000;
+  CHECK_EQ(service.reserve("timed-out", account, 10).code, AiBudgetCode::Ok);
+  CHECK_EQ(service.markDispatched("timed-out").code, AiBudgetCode::Ok);
+  CHECK_EQ(service.markUncertain("timed-out").code, AiBudgetCode::Ok);
+  CHECK_EQ(service.reserve("elsewhere", other, 10).code, AiBudgetCode::Ok);
+  CHECK_EQ(service.markDispatched("elsewhere").code, AiBudgetCode::Ok);
+  CHECK(observations.releaseLines.empty());
+
+  now = admitted + kAiBudgetHoldLifetimeMs - 1;
+  CHECK_EQ(service.releaseLapsed(), 0);
+  CHECK_EQ(service.reserve("early", account, 10).code, AiBudgetCode::Ok);
+  for (const auto* id : {"unsent", "lost", "timed-out", "elsewhere"}) CHECK(repository.rows.at(id).unresolved());
+
+  observations.lines.clear();
+  now = admitted + kAiBudgetHoldLifetimeMs;
+  CHECK_EQ(service.reserve("next", account, 10).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.rows.at("unsent").releasedFrom, std::optional<AiBudgetState>{AiBudgetState::Reserved});
+  CHECK_EQ(repository.rows.at("lost").releasedFrom, std::optional<AiBudgetState>{AiBudgetState::Dispatched});
+  for (const auto* id : {"unsent", "lost"}) {
+    CHECK_EQ(repository.rows.at(id).state, AiBudgetState::Released);
+    CHECK_FALSE(repository.rows.at(id).actualNanos);
+  }
+  for (const auto* id : {"timed-out", "elsewhere", "early", "next"}) CHECK(repository.rows.at(id).unresolved());
+  CHECK_EQ(std::get<0>(repository.lapseSweeps.back()), now);
+  CHECK_EQ(std::get<1>(repository.lapseSweeps.back()), 20);
+  CHECK_EQ(std::get<2>(repository.lapseSweeps.back()), std::optional<AiBudgetSubject>{account.subject});
+  std::vector<std::string> outcomes;
+  for (const auto& line : observations.lines) outcomes.push_back(line.operation + " " + line.door + " " + line.outcome);
+  CHECK_EQ(outcomes, (std::vector<std::string>{"ai.budget.release_lapsed ai ok", "ai.budget.reserve ai ok"}));
+  REQUIRE_EQ(observations.releaseLines.size(), std::size_t{3});
+  const std::string released = observations.releaseLines[2].substr(observations.releaseLines[2].rfind('=') + 1);
+  CHECK_EQ(released.size(), std::size_t{32});
+  CHECK(released != observations.lines[0].requestId);
+  CHECK_EQ(observations.releaseLines, (std::vector<std::string>{
+      "ai_hold_released operation=ai.budget.release_lapsed door=ai outcome=dispatched age=under_1h request_id=" + released,
+      "ai_hold_released operation=ai.budget.release_lapsed door=ai outcome=reserved age=under_1h request_id=" + released,
+      "ai_hold_lapses operation=ai.budget.release_lapsed door=ai released=2 dispatched=1 dispatched_nanos=10 "
+      "reserved=1 reserved_nanos=10 uncertain=0 uncertain_nanos=0 request_id=" + released}));
+  CHECK_EQ(observations.failures->warnings, (std::vector<std::string>{
+      "ai.budget.release_lapsed platform ai released " + released + " dispatched=1 reserved=1 uncertain=0"}));
+  CHECK_EQ(service.settle("lost", 8).code, AiBudgetCode::InvalidState);
+  CHECK_EQ(repository.rows.at("lost").state, AiBudgetState::Released);
+
+  observations.lines.clear();
+  now = admitted + 60'000 + kAiBudgetHoldLifetimeMs;
+  CHECK_EQ(service.view(other).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.rows.at("elsewhere").releasedFrom, std::optional<AiBudgetState>{AiBudgetState::Dispatched});
+  CHECK(repository.rows.at("timed-out").unresolved());
+  outcomes.clear();
+  for (const auto& line : observations.lines) outcomes.push_back(line.operation + " " + line.door + " " + line.outcome);
+  CHECK_EQ(outcomes, (std::vector<std::string>{"ai.budget.release_lapsed ai ok", "ai.budget.view ai ok"}));
+  REQUIRE_EQ(observations.releaseLines.size(), std::size_t{5});
+  CHECK(observations.releaseLines[3].find("ai_hold_released operation=ai.budget.release_lapsed door=ai outcome=dispatched "
+                                         "age=under_1h ") == 0);
+  CHECK(observations.releaseLines[4].find("ai_hold_lapses operation=ai.budget.release_lapsed door=ai released=1 "
+                                         "dispatched=1 dispatched_nanos=10 reserved=0 ") == 0);
+  CHECK_EQ(observations.failures->warnings.size(), std::size_t{2});
+
+  observations.lines.clear();
+  now = admitted + 2 * kAiBudgetHoldLifetimeMs + 86'400'000;
+  CHECK_EQ(service.releaseLapsed(), 3);
+  for (const auto* id : {"timed-out", "early", "next"}) CHECK_EQ(repository.rows.at(id).state, AiBudgetState::Released);
+  CHECK_EQ(std::get<2>(repository.lapseSweeps.back()), std::optional<AiBudgetSubject>{});
+  REQUIRE_EQ(observations.lines.size(), std::size_t{1});
+  CHECK_EQ(observations.lines[0].operation + " " + observations.lines[0].door, "ai.budget.release_lapsed background");
+  REQUIRE_EQ(observations.releaseLines.size(), std::size_t{9});
+  CHECK(observations.releaseLines[7].find("door=background outcome=uncertain age=over_1d ") != std::string::npos);
+  const std::string swept = observations.releaseLines[8].substr(observations.releaseLines[8].rfind('=') + 1);
+  CHECK_EQ(observations.releaseLines[8], "ai_hold_lapses operation=ai.budget.release_lapsed door=background released=3 "
+           "dispatched=0 dispatched_nanos=0 reserved=2 reserved_nanos=20 uncertain=1 uncertain_nanos=10 request_id=" + swept);
+  REQUIRE_EQ(observations.failures->warnings.size(), std::size_t{3});
+  CHECK_EQ(observations.failures->warnings[2],
+           "ai.budget.release_lapsed platform background released " + swept + " dispatched=0 reserved=2 uncertain=1");
+  CHECK(observations.failures->reports.empty());
+  observations.lines.clear();
+  CHECK_EQ(service.releaseLapsed(), 0);
+  CHECK(observations.lines.empty());
+}
+
+TEST(ai_budget_service_sweep_pass_releases_at_most_two_hundred_holds_and_no_batch_once_stopping) {
+  BudgetObservations observations;
+  BudgetRepository repository;
+  const long long admitted = 1'767'225'600'000;
+  long long now = admitted;
+  AiBudgetService service{repository, [] { return AiBudgetLimits{}; }, [&] { return now; }};
+  for (int index = 0; index < 250; ++index) {
+    const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, "account-" + std::to_string(index)},
+                                      AiBudgetTier::LoggedIn};
+    REQUIRE_EQ(service.reserve("hold-" + std::to_string(index), principal, 10).code, AiBudgetCode::Ok);
+  }
+  now = admitted + kAiBudgetHoldLifetimeMs;
+  CHECK_EQ(service.releaseLapsed([] { return true; }), 0);
+  int asked = 0;
+  CHECK_EQ(service.releaseLapsed([&] { return ++asked > 1; }), 20);
+  CHECK_EQ(service.releaseLapsed(), 200);
+  CHECK_EQ(service.releaseLapsed(), 30);
+  CHECK_EQ(service.releaseLapsed(), 0);
+  for (const auto& [id, hold] : repository.rows) CHECK_EQ(hold.state, AiBudgetState::Released);
+  REQUIRE_EQ(observations.failures->warnings.size(), std::size_t{3});
+  CHECK(observations.failures->warnings[1].find(" released ") != std::string::npos);
+  CHECK(observations.failures->warnings[1].find(" reserved=200 ") != std::string::npos);
+  CHECK(observations.failures->reports.empty());
 }
 
 TEST(ai_budget_service_observes_owner_grant_side_effects_but_skips_successful_read_logs) {
