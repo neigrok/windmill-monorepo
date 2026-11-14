@@ -40,6 +40,8 @@ TEST(log_privacy_keeps_audited_write_vendor_and_database_completion_lines) {
   const std::string cascade = "roadmap_tree_remove_cascade door=rest trees=4 steps=3 edges=1 marks=1 removed=2 unsaved=1 "
       "incomplete=1 duration_ms=1203 request_id=0123456789abcdef0123456789abcdef";
   CHECK_EQ(privacySafeLogBody(cascade, "TreeRegistry.cpp:161"), cascade);
+  const std::string fork = "roadmap_tree_fork trees=100 duration_ms=179 request_id=0123456789abcdef0123456789abcdef";
+  CHECK_EQ(privacySafeLogBody(fork, "ForkService.cpp:83"), fork);
 }
 
 TEST(log_privacy_redacts_capabilities_and_secret_query_strings_in_full) {

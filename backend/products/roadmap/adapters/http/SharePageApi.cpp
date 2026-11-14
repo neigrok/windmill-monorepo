@@ -89,6 +89,8 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
   {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{id}));
     WriteObservation observation{"roadmap.share.read", "roadmap", "share"};
+    // The reads made for it are of its request: a failure one of them reports is the request's one Issue.
+    WriteContext context{observation};
     try {
       // Authorize on the stored row BEFORE opening: this door is anonymous, so opening first would
       // let a stranger pull the lattice of any id they guess off disk and into memory.

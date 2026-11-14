@@ -2,17 +2,21 @@
 
 #include "products/roadmap/domain/Ids.h"
 
+#include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
 namespace wm {
 
-// The step that owns a subtree, in the subtree's parent tree.
+// The step that owns a subtree, in the subtree's parent tree. A tree's path is the owning steps from its root down to
+// it, root first: none for a root, one per level for a subtree, so its last entry is the step it hangs from. A subtree
+// stands while its root stands and every owning step on its path is present (SPEC.md, Model, Subtrees).
 struct OwningStep {
   TreeId tree;
   NodeId step;
-  bool operator==(const OwningStep&) const = default;
+  auto operator<=>(const OwningStep&) const = default;
 };
 
 // How deep a subtree may sit: a root is at 0, a subtree of it at 1.
@@ -60,12 +64,44 @@ struct SubtreeCreation {
   bool operator==(const SubtreeCreation&) const = default;
 };
 
-// A change that only a root takes, aimed at a subtree: refused `not-a-root`, naming where the subtree hangs and its root.
+// A change that only a root takes — a visibility change, a removal, a fork, a create at its id — aimed at a subtree:
+// refused `not-a-root`, naming where the subtree hangs and its root.
 struct NotARoot {
   OwningStep owningStep;
   TreeId root;
   bool operator==(const NotARoot&) const = default;
 };
+inline constexpr char kNotARoot[] = "not-a-root";
+
+// What a tree's branch holds: the standing subtrees under it, and the present steps of the tree and of those subtrees.
+struct BranchSize {
+  int subtrees = 0;
+  int steps = 0;
+  bool operator==(const BranchSize&) const = default;
+};
+
+// An owning step a write would remove without naming its subtree among the write's `branches`, so a client that never
+// saw the subtree cannot hide it: refused `branch-unconfirmed`, whatever the subtree holds.
+struct UnconfirmedBranch {
+  NodeId step;
+  TreeId subtree;
+  bool operator==(const UnconfirmedBranch&) const = default;
+};
+inline constexpr char kBranchUnconfirmed[] = "branch-unconfirmed";
+
+// Of the present steps a write removes, each that owns a subtree (`owned`, by step) the write's `branches` do not name,
+// in step order.
+inline std::vector<UnconfirmedBranch> unconfirmedBranches(const std::vector<NodeId>& removed,
+                                                          const std::map<NodeId, TreeId>& owned,
+                                                          const std::set<TreeId>& branches) {
+  std::map<NodeId, TreeId> unconfirmed;
+  for (const NodeId& step : removed)
+    if (const auto subtree = owned.find(step); subtree != owned.end() && !branches.count(subtree->second))
+      unconfirmed.emplace(step, subtree->second);
+  std::vector<UnconfirmedBranch> named;
+  for (const auto& [step, subtree] : unconfirmed) named.push_back(UnconfirmedBranch{step, subtree});
+  return named;
+}
 
 // Why a subtree was not created. Each is expected: a line, never an Issue. savePending: the parent's room holds a
 // write its store has not taken, and the create would move the stored head past it; it lifts when that save lands.

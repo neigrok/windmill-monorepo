@@ -156,6 +156,21 @@ bool LooseGraph::hasNode(const NodeId& id) const {
   return it != nodes_.end() && it->second.life.present();
 }
 
+std::vector<NodeId> LooseGraph::removedBy(const GraphState& incoming) const {
+  // Every entry for a node folded into its present life first, so two entries for one node are judged together.
+  std::map<NodeId, ElementSet> joined;
+  for (const NodeStateEntry& node : incoming.nodes) {
+    if (!hasNode(node.id)) continue;
+    ElementSet& life = joined.try_emplace(node.id, nodes_.at(node.id).life).first->second;
+    life.add(node.createdAt);
+    life.remove(node.deletedAt);
+  }
+  std::vector<NodeId> removed;
+  for (const auto& [id, life] : joined)
+    if (!life.present()) removed.push_back(id);
+  return removed;
+}
+
 bool LooseGraph::isTombstoned(const NodeId& id) const {
   auto it = nodes_.find(id);
   return it != nodes_.end() && it->second.life.addedAt.isSet() && !it->second.life.present();

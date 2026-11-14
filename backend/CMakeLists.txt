@@ -284,6 +284,7 @@ add_executable(windmill_domain_tests
   test/products/roadmap/domain/GuidesTest.cpp
   test/products/roadmap/domain/OpenedTreesTest.cpp
   test/products/roadmap/domain/SubtreeInventoryTest.cpp
+  test/products/roadmap/domain/SubtreeTest.cpp
   test/products/roadmap/domain/TreeSummaryTest.cpp
   test/products/roadmap/domain/GalleryTest.cpp
   test/products/roadmap/domain/TendingTest.cpp

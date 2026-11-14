@@ -84,6 +84,8 @@ public:
     PlaceInOrder graft;
   };
   FirstFrames subscribe(const TreeId& tree, const drogon::WebSocketConnectionPtr& conn, const UserId& user);
+  // The connection's subscription to this tree alone ends; what its subscription remembered stays until it closes.
+  void unsubscribe(const TreeId& tree, const drogon::WebSocketConnectionPtr& conn);
   void drop(const drogon::WebSocketConnectionPtr& conn);
 
   // What a subscription may still receive of this tree. Every fan-out passes through it, and a

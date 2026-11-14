@@ -44,8 +44,33 @@ OpenedTrees openedAmong(const std::vector<LoadedTree>& loaded) {
   return OpenedTrees(std::move(standing));
 }
 
+namespace {
+
+// The subtrees each tree of `loaded` owns, by step.
+using Owned = std::map<TreeId, std::map<NodeId, const LoadedTree*>>;
+
+// `tree` with every subtree reached down its present owning steps: how many subtrees, and how many steps in all.
+BranchSize branchOf(const LoadedTree& tree, const Owned& owned) {
+  BranchSize branch{0, static_cast<int>(tree.data.nodes.size())};
+  const auto steps = owned.find(tree.data.id);
+  if (steps == owned.end()) return branch;
+  for (const NodeSpec& node : tree.data.nodes) {
+    const auto subtree = steps->second.find(node.id);
+    if (subtree == steps->second.end()) continue;
+    const BranchSize below = branchOf(*subtree->second, owned);
+    branch.subtrees += 1 + below.subtrees;
+    branch.steps += below.steps;
+  }
+  return branch;
+}
+
+}
+
 std::vector<TreeSummary> registrySummaries(const std::vector<LoadedTree>& loaded) {
   const OpenedTrees opened = openedAmong(loaded);
+  Owned owned;
+  for (const LoadedTree& tree : loaded)
+    if (tree.parent) owned[tree.parent->tree].emplace(tree.parent->step, &tree);
   std::vector<TreeSummary> summaries;
   summaries.reserve(loaded.size());
   for (const LoadedTree& tree : loaded) {
@@ -57,6 +82,7 @@ std::vector<TreeSummary> registrySummaries(const std::vector<LoadedTree>& loaded
     summary.updatedAt = lastActiveAt(tree.updatedAt, tree.lastMarkedAt);
     summary.stats = treeStats(tree.data, opened.followed(tree.data, tree.progress));
     summary.openers = opened.openersOf(tree.data.id);
+    summary.branch = branchOf(tree, owned);
     summaries.push_back(std::move(summary));
   }
   std::sort(summaries.begin(), summaries.end(), [](const TreeSummary& a, const TreeSummary& b) {

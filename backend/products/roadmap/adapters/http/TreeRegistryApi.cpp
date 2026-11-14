@@ -2,11 +2,13 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "platform/application/WriteObservation.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/Access.h"
 
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <utility>
 #include <variant>
@@ -92,6 +94,11 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k409Conflict, "that id names a roadmap you deleted", "id-retired"));
     return;
   }
+  // A subtree of the caller's, which no create plants. Only ever sent to the account that owns it.
+  if (outcome == TreeRegistry::Creation::notARoot) {
+    callback(error(drogon::k409Conflict, "that id names a subtree of one of your roadmaps, not a roadmap", kNotARoot));
+    return;
+  }
   Json::Value body(Json::objectValue);
   body["treeId"] = requestedId;
   body["existed"] = outcome == TreeRegistry::Creation::existedYours;
@@ -108,6 +115,7 @@ void TreeRegistryApi::listTrees(const drogon::HttpRequestPtr& req, HttpCallback&
   for (const TreeSummary& summary : registry_->list(*caller)) {
     Json::Value row = toJson(summary);
     row["openers"] = toJson(summary.openers);
+    row["branch"] = toJson(summary.branch);
     trees.append(row);
   }
   Json::Value body(Json::objectValue);
@@ -145,15 +153,8 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
     const std::variant<TreeRegistry::VisibilityChange, NotARoot> answer =
         registry_->setVisibility(TreeId{treeId}, *caller, parseVisibility(requested));
     if (const NotARoot* refusal = std::get_if<NotARoot>(&answer)) {
-      Json::Value body(Json::objectValue);
-      body["error"] = "this tree hangs from step \"" + refusal->owningStep.step.str() + "\" of " +
-                      refusal->owningStep.tree.str() + " and is shared as its root " + refusal->root.str() +
-                      " is: set the root's visibility";
-      body["code"] = "not-a-root";
-      body["parent"]["tree"] = refusal->owningStep.tree.str();
-      body["parent"]["step"] = refusal->owningStep.step.str();
-      body["root"] = refusal->root.str();
-      callback(jsonResponse(body, drogon::k409Conflict));
+      callback(jsonResponse(toJson(*refusal, "it is shared as its root is, so set the root's visibility"),
+                            drogon::k409Conflict));
       return;
     }
     const TreeRegistry::VisibilityChange outcome = std::get<TreeRegistry::VisibilityChange>(answer);
@@ -231,7 +232,13 @@ void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k401Unauthorized, "sign in to delete a tree"));
     return;
   }
-  const std::variant<Cascade, TreeRegistry::RemovalRefusal> removed = registry_->remove(TreeId{treeId}, *caller);
+  const std::variant<Cascade, TreeRegistry::RemovalRefusal, NotARoot> removed =
+      registry_->remove(TreeId{treeId}, *caller);
+  if (const NotARoot* refusal = std::get_if<NotARoot>(&removed)) {
+    const std::string remedy = "it goes with that step: delete the step, and its Undo brings the subtree back";
+    callback(jsonResponse(toJson(*refusal, remedy), drogon::k409Conflict));
+    return;
+  }
   if (const TreeRegistry::RemovalRefusal* refusal = std::get_if<TreeRegistry::RemovalRefusal>(&removed)) {
     if (*refusal == TreeRegistry::RemovalRefusal::notYours) {
       callback(forbidden(WriteRefusal::notYours));
@@ -250,8 +257,18 @@ void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
-  // What became of the steps of the caller's other trees that opened it.
-  callback(jsonResponse(toJson(std::get<Cascade>(removed))));
+  // What became of the steps of the caller's other trees that opened it, and what the removal took: counted once the
+  // removal passed every gate, so a refused one costs no count, and left out when the count cannot be read.
+  Json::Value body = toJson(std::get<Cascade>(removed));
+  WriteObservation counting{"roadmap.tree.branch", "roadmap", "rest"};
+  try {
+    const std::map<TreeId, BranchSize> sizes = registry_->branchSizes({TreeId{treeId}});
+    if (const auto size = sizes.find(TreeId{treeId}); size != sizes.end()) body["branch"] = toJson(size->second);
+    counting.skip();
+  } catch (const std::exception& failure) {
+    counting.fail(failure);
+  }
+  callback(jsonResponse(body));
 }
 
 }

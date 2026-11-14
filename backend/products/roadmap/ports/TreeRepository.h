@@ -35,8 +35,8 @@ struct FollowTimedOut : std::exception {
 // An unset title or guide stamp means the create-time baseline, never written since; an empty
 // owner means a legacy row nobody may write. `guideInherited` marks a guide a fork copied from someone
 // else's tree: its author's words, until a guide of the owner's lands over it. A subtree's `owner` and
-// `visibility` are its root's, and `parent` is set on a subtree alone. `subtrees` names the standing subtree each
-// step owns, by step, whether or not the step is present.
+// `visibility` are its root's, and `path` its owning steps from the root down, empty for a root. `subtrees` names the
+// subtree each step owns, by step, whether or not the step is present.
 struct StoredTree {
   GraphState state;
   LegendState legend;
@@ -48,8 +48,7 @@ struct StoredTree {
   Lww<std::string> guide;
   bool guideInherited = false;
   TreeId root;
-  std::optional<OwningStep> parent;
-  int depth = 0;
+  std::vector<OwningStep> path;
   std::map<NodeId, TreeId> subtrees;
   bool operator==(const StoredTree&) const = default;
 };
@@ -75,13 +74,39 @@ struct ListedTree {
 };
 
 // The two facts an access decision needs, without the whole-lattice cost of load(): the root's, for a tree of any depth,
-// and the root they were read from, with the step the tree hangs from, none for a root.
+// and the root they were read from, with the tree's path of owning steps, empty for a root.
 struct TreeAccess {
   std::optional<UserId> owner;
   Visibility visibility = Visibility::private_;
   TreeId root;
-  std::optional<OwningStep> parent;
+  std::vector<OwningStep> path;
+  // The step the tree hangs from, none for a root.
+  std::optional<OwningStep> parent() const {
+    if (path.empty()) return std::nullopt;
+    return path.back();
+  }
   bool operator==(const TreeAccess&) const = default;
+};
+
+// A tree's access as its stored rows hold it, and whether they say its branch stands: every owning step on its path
+// present. Only a tree whose own row and root's row stand has one.
+struct StoredAccess {
+  TreeAccess access;
+  bool stands = true;
+  bool operator==(const StoredAccess&) const = default;
+};
+
+// One tree of a fork as it is copied: the copy's id, the tree it copies, the copied tree it hangs from with the same
+// step (none for the root), and the state, legend, title and guide it is born with.
+struct TreeCopy {
+  TreeId id;
+  TreeId source;
+  std::optional<OwningStep> parent;
+  GraphState state;
+  LegendState legend;
+  Lww<std::string> title;
+  Lww<std::string> guide;
+  bool guideInherited = false;
 };
 
 // What creating a subtree under one step of a standing tree reads off the stored rows: that tree's root, depth and head,
@@ -108,11 +133,23 @@ struct ForkLineage {
 
 struct TreeRepository {
   virtual ~TreeRepository() = default;
-  // A subtree whose root does not stand answers nullopt, as a tree that does not stand does.
+  // The tree's content, whether or not its branch stands: who may read it is RoomRegistry::accessOf's to answer. A
+  // subtree whose root's row is deleted answers nullopt, as a tree whose own row is does.
   virtual std::optional<StoredTree> load(const TreeId& tree) = 0;
-  virtual std::optional<TreeAccess> loadAccess(const TreeId& tree) = 0;
+  // The tree's access off the stored rows, with whether its branch stands there; nullopt when its own row or its root's
+  // is deleted.
+  virtual std::optional<StoredAccess> loadAccess(const TreeId& tree) = 0;
+  // Every owning step under `root`, at any depth, whose step is not present in its tree's stored rows: what the live
+  // access of the root's trees starts from.
+  virtual std::set<OwningStep> absentStepsUnder(const TreeId& root) = 0;
+  // Of each tree among `trees` that has a row, its branch off the stored rows (BranchSize): the subtrees reached down
+  // present owning steps, and the present steps of the tree and of each of them. A removed root's branch is counted
+  // as it stood, which is what its removal's answer repeats.
+  virtual std::map<TreeId, BranchSize> branchSizes(const std::set<TreeId>& trees) = 0;
   // Where `tree` sits as a read answers it (Place), off the stored rows: one walk up its parents, each subtree named by
-  // its owning step's label. nullopt when it does not stand, or its root does not.
+  // its owning step's label. nullopt when its own row or its root's is deleted. Whether its branch stands is
+  // RoomRegistry::accessOf's to answer, asked first by every door that reads a place, so a branch a live room has shown
+  // again reads by its place before that room's save lands.
   virtual std::optional<Place> placeOf(const TreeId& tree) = 0;
   // Who owned a row that outlived its delete; a live row (or none) answers nullopt.
   virtual std::optional<UserId> retiredOwner(const TreeId& tree) = 0;
@@ -126,7 +163,7 @@ struct TreeRepository {
   // Insert a brand-new tree. Throws DuplicateTree on an id collision (never overwrites a tree).
   virtual void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
                       const std::string& title, const UserId& owner) = 0;
-  // Every standing tree of `owner`'s, subtrees included while their root stands; ordering is the domain's.
+  // Every standing tree of `owner`'s, subtrees included while their branch stands; ordering is the domain's.
   virtual std::vector<OwnedTree> listOwnedBy(const UserId& owner) = 0;
   // Public roots only, filtered by this query; unowned, soft-deleted and subtrees are never returned.
   virtual std::vector<ListedTree> listPublic() = 0;
@@ -151,7 +188,8 @@ struct TreeRepository {
   // its tree is gone. The read is keyed on the owner's own trees, so it does not grow with the pointers other accounts
   // plant at `tree`.
   virtual std::vector<TreeId> treesOpening(const UserId& owner, const TreeId& tree) = 0;
-  // Retire a tree by stamping deleted_at; every read filters it out afterwards.
+  // Retire a root by stamping deleted_at; every read filters it, and every tree under it, out afterwards. A subtree's
+  // row is never retired: it goes and comes back with its owning step.
   virtual void softDelete(const TreeId& tree) = 0;
   // The closed-room seam only — a live room's title reaches the column through save(). Lands only
   // under a stamp dominating the stored one.
@@ -159,12 +197,11 @@ struct TreeRepository {
   // The owner check is the caller's, not this write's. A root's alone: a subtree's is its root's and is never set, and a
   // soft-deleted root is left alone.
   virtual void setVisibility(const TreeId& tree, Visibility visibility) = 0;
-  // Verbatim copy of `source`'s document; the copy starts a fresh op log at head 0, its title and
-  // guide under the stamps given and the guide marked `guideInherited` as the caller rules. Throws
-  // DuplicateTree on an id collision.
-  virtual void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-                    const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
-                    bool guideInherited, const UserId& owner) = 0;
+  // A fork's copies, the root first and each subtree after the copy it hangs from, stored in one transaction that holds
+  // `owner`'s account: each a fresh tree at head 0 under its title and guide as given, a subtree's place taken from its
+  // copied parent. The root copy alone records the tree it was forked from. Throws DuplicateTree on an id collision,
+  // storing nothing.
+  virtual void fork(const std::vector<TreeCopy>& copies, const UserId& owner) = 0;
   // Where a subtree under `step` of `parent` would sit (SubtreeSite), `opened` the tree the step's pointer names and
   // `proposed` the id the caller asks for. nullopt when `parent` does not stand.
   virtual std::optional<SubtreeSite> subtreeSite(const TreeId& parent, const NodeId& step,

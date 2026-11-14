@@ -1,7 +1,5 @@
 #pragma once
 
-#include <algorithm>
-
 #include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/Crdt.h"
@@ -19,8 +17,10 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
@@ -30,23 +30,45 @@
 
 namespace wm {
 
-// What every tree under one root is read by: the root's owner, its visibility, and whether it stands. A subtree has no
-// access of its own (SPEC.md, Authorization), so each live room of the root's trees shares this one, which RoomRegistry
-// keeps beside the root and changes, under the root's lock, as the root's row changes. It is read without a strand.
+// What every tree under one root is read by: the root's owner, its visibility, whether it stands, and the owning steps
+// under it that are absent. A subtree has no access of its own (SPEC.md, Authorization), so each live room of the root's
+// trees shares this one, which RoomRegistry keeps beside the root: it is made from the stored rows under the root's
+// lock, its owner, visibility and standing change there as the root's row does, and each owning step is recorded by
+// the room of the tree that holds it, under that tree's strand, as every write lands. It is read without a strand.
 class RootAccess {
 public:
-  RootAccess(std::optional<UserId> owner, Visibility visibility)
-      : owner_(std::move(owner)), visibility_(visibility) {}
+  // Told each owning step whose presence a record changed.
+  using StepMoved = std::function<void(const OwningStep&)>;
+
+  RootAccess(std::optional<UserId> owner, Visibility visibility, std::set<OwningStep> absent = {},
+             StepMoved moved = {})
+      : owner_(std::move(owner)), visibility_(visibility), absent_(std::move(absent)), moved_(std::move(moved)) {}
   const std::optional<UserId>& owner() const { return owner_; }
   Visibility visibility() const { return visibility_.load(); }
   bool stands() const { return stands_.load(); }
   void setVisibility(Visibility visibility) { visibility_.store(visibility); }
   void setStanding(bool stands) { stands_.store(stands); }
+  // Whether a tree at `path` stands: the root stands and no owning step on the way is absent.
+  bool admits(const std::vector<OwningStep>& path) const;
+  // Whether `step`, an owning step under the root, is present. A change is told to the StepMoved given.
+  void record(const OwningStep& step, bool present);
+  // The owning steps of every tree under the root but those in `live` as the store holds them, `absent` being every
+  // absent one it holds under the root: what a write that reached a tree's rows without its room leaves. Answers the
+  // steps whose presence changed, for the caller to tell once it holds no lock, and the access is settled from here on.
+  std::vector<OwningStep> settle(const std::set<OwningStep>& absent, const std::set<TreeId>& live);
+  // Whether the access is known to hold every closed tree's owning steps as the store does. Unsettled, it is narrower
+  // than the store, never wider: a write without a room only revives owning steps.
+  bool settled() const { return settled_.load(); }
+  void unsettle() { settled_.store(false); }
 
 private:
   const std::optional<UserId> owner_;
   std::atomic<Visibility> visibility_;
   std::atomic<bool> stands_{true};
+  std::atomic<bool> settled_{true};
+  mutable std::mutex mutex_;
+  std::set<OwningStep> absent_;
+  const StepMoved moved_;
 };
 
 // The authority for one tree, on a single strand: one thread mutates its state at a time. It joins
@@ -56,25 +78,34 @@ public:
   // The HLC actor stamped on every server-minted write; authorship itself lives in AppliedOp.actor.
   static constexpr std::string_view kServerActor{"srv"};
 
-  // `access` is the root's, shared by every live room of its trees; `root` names it, and is `id` for a root. `parent` is
-  // the step a subtree hangs from, none for a root, and `subtrees` the standing subtree each step owns, by step.
+  // `access` is the root's, shared by every live room of its trees; `root` names it, and is `id` for a root. `path` is the
+  // tree's owning steps from the root down, empty for a root, and `subtrees` the subtree each step owns, by step.
   TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bool guideInherited, LooseGraph graph,
-           Legend legend, Seq head, TreeId root, std::optional<OwningStep> parent, int depth,
-           std::map<NodeId, TreeId> subtrees, std::shared_ptr<RootAccess> access, std::uint64_t createdAt,
-           PresenceBus& bus);
+           Legend legend, Seq head, TreeId root, std::vector<OwningStep> path, std::map<NodeId, TreeId> subtrees,
+           std::shared_ptr<RootAccess> access, std::uint64_t createdAt, PresenceBus& bus);
 
   // Dedupe on the frame's id, fold its stamps into the clock, join graph + legend + title + guide,
   // assign the next seq, and queue its headline deed under `actor` for the op log, mark the rows to save and
   // broadcast — all three as what landed, each entry cut to the registers that took, not the frame as sent.
   // nullopt means the frame lands nothing — a duplicate, or one whose every stamp the room already
   // holds — so it takes no seq, dirties nothing and is told to no one. Admits nothing on its own —
-  // every door that can refuse asks admit() first.
+  // every door that can refuse asks admit() and unconfirmedBranches() first; a frame that removes an owning step its
+  // `branches` do not name is a fault (std::logic_error), refused before anything lands. Every owning step the frame
+  // leaves present or absent is recorded in the root's access before the frame is told.
   std::optional<Seq> joinSubgraph(const Subgraph& incoming, const UserId& actor);
 
   // Why joining this arrival would breach the tree's caps, or nullopt. Asked against THIS room's
   // live state, not against the arrival alone. The frame overload asks graph, legend, title and guide.
   std::optional<Admission> admit(const Subgraph& incoming) const;
   std::optional<Admission> admit(const Graft& incoming) const { return wm::admit(graph_, incoming); }
+
+  // The owning steps a write would remove without naming their subtrees (wm::unconfirmedBranches), read off this room's
+  // live state under the strand the write then takes: a frame's by what its join would delete, a graft's by its
+  // tombstones, a deletion's by the steps it names.
+  std::vector<UnconfirmedBranch> unconfirmedBranches(const Subgraph& incoming) const;
+  std::vector<UnconfirmedBranch> unconfirmedBranches(const Graft& incoming) const;
+  std::vector<UnconfirmedBranch> unconfirmedBranches(const std::vector<NodeId>& deleting,
+                                                     const std::set<TreeId>& branches) const;
 
   // What importTree(incoming) would do beyond the upsert — the edges it keeps, replaces or
   // tombstones — read off this room's live state, changing nothing.
@@ -114,8 +145,10 @@ public:
   Seq applyCommand(const Command& command, std::uint64_t nowMs, const UserId& actor);
   // Several commands as ONE edit: one stamp, one frame, one seq, one op row (a Batch, so the log
   // tells the whole edit), so a reader never sees the tree between them. An empty list is a
-  // no-op answering the current head. Admits nothing on its own.
-  Seq applyCommands(const std::vector<Command>& commands, std::uint64_t nowMs, const UserId& actor);
+  // no-op answering the current head. Admits nothing on its own; deleting an owning step whose subtree `branches` does
+  // not name is a fault, refused before anything lands, as a frame's is.
+  Seq applyCommands(const std::vector<Command>& commands, std::uint64_t nowMs, const UserId& actor,
+                    const std::set<TreeId>& branches = {});
 
   // Stamped from the room clock, so a by-id collision is an upsert; the graft's tombstones and
   // replaced edges are removed at that same stamp, in the same frame. An empty `kinds` leaves the
@@ -163,7 +196,7 @@ public:
   void appendSubtree(const NodeId& step, const Subtree& subtree);
   // `step` owns `subtree` from here on, in every projection the room makes: what the stored rows say, which a room that
   // missed the subtree's creation takes. It takes no seq and tells no one.
-  void ownSubtree(const NodeId& step, const TreeId& subtree) { subtrees_[step] = subtree; }
+  void ownSubtree(const NodeId& step, const TreeId& subtree);
 
   // The op rows this room's writes minted and no save has yet landed, in seq order. A row leaves
   // the queue only through landPendingOps, which RoomRegistry calls AFTER the lattice is saved at
@@ -227,17 +260,29 @@ public:
   const std::optional<UserId>& owner() const { return access_->owner(); }
   Visibility visibility() const { return access_->visibility(); }
   const TreeId& root() const { return root_; }
-  // Where the tree hangs: the step that owns it, none for a root, and how deep it sits.
-  const std::optional<OwningStep>& parent() const { return parent_; }
-  int depth() const { return depth_; }
+  // Where the tree hangs: its owning steps from the root down, the step that owns it (none for a root), and how deep it
+  // sits. Fixed when the tree is created, so read without the strand.
+  const std::vector<OwningStep>& path() const { return path_; }
+  std::optional<OwningStep> parent() const {
+    if (path_.empty()) return std::nullopt;
+    return path_.back();
+  }
+  int depth() const { return static_cast<int>(path_.size()); }
   const std::shared_ptr<RootAccess>& rootAccess() const { return access_; }
-  // The read gate a door asks of a live room: the root stands and `caller` may read it.
+  // Whether the tree stands: its root stands and every owning step on its path is present, as the root's access holds
+  // them.
+  bool stands() const { return access_->admits(path_); }
+  // The read gate a door asks of a live room: the tree stands and `caller` may read its root.
   bool readableBy(const std::optional<UserId>& caller) const {
-    return access_->stands() && canRead(caller, access_->owner(), access_->visibility());
+    return stands() && canRead(caller, access_->owner(), access_->visibility());
   }
 
 private:
   void markDirty(const GraphState& graph, const LegendState& legend);
+  // A write that would remove an owning step `branches` do not name is a door's fault, never a landing.
+  void insistConfirmed(const std::vector<NodeId>& removed, const std::set<TreeId>& branches) const;
+  // Each owning step's presence, as the graph now holds it, recorded in the root's access.
+  void recordOwningSteps();
 
   TreeId id_;
   Lww<std::string> title_;
@@ -247,8 +292,7 @@ private:
   Legend legend_;
   Seq head_;
   TreeId root_;
-  std::optional<OwningStep> parent_;
-  int depth_;
+  std::vector<OwningStep> path_;
   std::map<NodeId, TreeId> subtrees_;
   std::shared_ptr<RootAccess> access_;
   std::uint64_t createdAt_;

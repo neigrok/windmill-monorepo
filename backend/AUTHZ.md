@@ -90,12 +90,13 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   nobody's to write**: the seeded demo tree (`t_9e407a96b5330ebe`, `owner_id NULL`, `public`) is
   world-readable and editable by no one. Every write path runs `canRead` first, so a refusal never
   confirms that a private id names something; a readable tree the caller does not own answers `403`.
-  Three doors do not hold to it yet: the share card uploads (`PUT /v1/trees/{id}/og-image` and
-  `/og-video`) answer a signed-in caller `403` on someone else's private tree, and a create under a
-  client-minted id (`POST /v1/trees`, a fork's requested id) answers `409` when that id is another
-  account's tree, private or not.
-- **Forks** require read access to the source and create a new tree owned by the recipient; they do
-  not require write access to the source.
+  Two doors do not hold to it yet. A create under a client-minted id (`POST /v1/trees`, a fork's
+  requested id) answers `409` when that id is another account's tree, private or not, or a hidden
+  subtree's. `PUT /v1/trees/{id}` answers `404` on another account's private tree, and on a hidden
+  subtree, where it creates the tree at an id no row holds.
+- **Forks** require read access to the source and create new trees owned by the recipient — the root
+  and its standing branch — and do not require write access to the source. A subtree is never forked
+  alone.
 - **Progress marks** (WS `progress`, an MCP `status` row) are not document writes and are not
   owner-gated. They gate on `canRead` alone, and each caller writes only their own per-user overlay
   (`node_progress` is keyed by `user_id`). Any signed-in reader may mark any tree they can read — the
@@ -111,14 +112,22 @@ where `trees_place` (`db/schema.sql`) writes the parent's owner whatever the sta
 is no `UPDATE` of that column anywhere, so a row with `owner_id IS NULL` is unwritable through every
 surface and can be repaired only by hand in SQL.
 
-**A subtree's access is its root's** (`SPEC.md`, Model, Subtrees): every gate above answers a tree
-with a parent from its root's row — the root's owner and visibility, and absent while the root is
-deleted — or, for a live room, from the access every live room of the root's trees shares, which
-narrows before the root's row and widens after it. A subtree's own `visibility` column is not read.
-So whoever may read a tree may read every subtree under it and every tree above it, which is why the
-`subtree` frame, the subscribe answer's `subtrees` and a node read's `subtree` go to a tree's readers
-with the subtrees' ids, why a tree read answers its readers the `path` down from its root, and why a
-visibility change aimed at a subtree is refused `not-a-root`. Pointers stay the writer's alone.
+**A subtree's access is its root's** (`SPEC.md`, Model, Subtrees, and Authorization): every gate
+above answers a tree with a parent from its root's row — the root's owner and visibility, and absent
+while the root is deleted — and its path: absent, to its owner and every reader alike, while an owning
+step on the way down from the root is deleted. For a live room it answers from the access every live
+room of the root's trees shares, which narrows before the root's row and widens after it, and which
+each parent room tells, as its writes land, which of its owning steps are present, so a deleted step
+hides its branch on every gate at once and its revive shows it again. A subtree's own `visibility`
+column is not read. So whoever may read a tree may read every standing subtree under it and every tree
+above it, which is why the `subtree` frame, the subscribe answer's `subtrees` and a node read's
+`subtree` go to a tree's readers with the subtrees' ids, and why a tree read answers its readers the
+`path` down from its root. A change only a root takes — a visibility change, a removal, a fork, a
+create at its id — aimed at a subtree is refused `not-a-root`, after the read gate, so it tells only
+someone who may read the subtree where it hangs; a hidden subtree answers it as an absent tree, but
+for the two create-at-id doors above, which answer it `404` (`PUT`) and `409` (`POST /v1/trees`). A
+deletion of an owning step names its subtree (`branches`) or is refused `branch-unconfirmed` after the
+write gate. Pointers stay the writer's alone.
 
 ## Per surface
 
@@ -156,13 +165,17 @@ context.
 
 **Read authorization is re-decided, not granted once.** `Collab::reachOf` is the single verdict —
 `canRead`, then `canWrite`, against the tree's *current* access facts, answering nothing, the
-reader's view or the whole frame — and four things run it: `subscribe`; every
+reader's view or the whole frame — and four things run it: `subscribe`, which asks the room's gate
+again once the subscription has joined, so a branch hidden while its room opened refuses it; every
 fan-out on `WsPresenceBus` (a refused connection is dropped from that tree and told "no such tree");
-`RoomRegistry::setVisibility` and `RoomRegistry::retire`, so a share flip and a deletion land on the
+`RoomRegistry::setVisibility`, `RoomRegistry::retire` and an owning step's change of presence, which
+tells each live room below the step, so a share flip, a deletion and a branch's hide land on the
 event; and `Collab::reproveReaders`, a 15 s sweep over every open subscription, which is the only
-road for the two revocations no event carries — a session revoked on a tree nobody is editing, and
-presence, since `PresenceHub::flush` fans cursors and selections straight to its roster at 20 Hz and
-never touches the bus.
+road for the revocations no event carries — a session revoked on a tree nobody is editing; presence,
+since `PresenceHub::flush` fans cursors and selections straight to its roster at 20 Hz and never
+touches the bus; and a subscription to a tree whose room had closed when its root went private or its
+branch hid. Such a reader is sent nothing of the tree meanwhile, since only a live room makes a
+frame, and is told "no such tree" within the 15 s.
 
 **`reachOf` never goes to the database.** A fan-out runs it under the tree's strand, and re-proving N
 sessions there costs one serial lookup per subscriber per minute with the strand held. The re-proof
@@ -172,7 +185,8 @@ of that sweeper.
 
 `subscribe`, the write frame, the progress mark, `TreeApi::readRoom` and both `ForkService` entries
 (`fork`, and `describe`, the unauthenticated magic-link invite) decide on `RoomRegistry::accessOf` —
-the stored `owner` + `visibility` row — **before** `open()` builds a room: a caller about to be
+the stored `owner` + `visibility` row and the tree's path, or a live room's shared access — **before**
+`open()` builds a room: a caller about to be
 refused must not be the reason a whole lattice is loaded, since with a bounded room table that load
 evicts a room somebody is using.
 
@@ -209,6 +223,14 @@ wires OAuth and personal MCP keys, so an empty shared token still requires one o
   a session is near its expiry.
 - **MCP read tools open the room before the access check.** `RoadmapTools::withRoom` builds the room,
   then the lambda runs `canRead`; threading the caller into `withRoom` is its own change.
+- **A standing subtree's refusal takes one read longer than an absent id's.** A closed subtree whose
+  stored rows admit it is read again under its root's lock, which keeps a parent room that saved a
+  deletion and closed meanwhile from admitting anyone (`RoomRegistry::accessOf`). So a stranger's `404`
+  on a private standing subtree costs one more primary-key walk than an absent id's: measured on a
+  local Postgres at about 4.3 ms against 3.4 ms for `GET /v1/trees/{id}`, and 4.4 ms against 2.6 ms for
+  the share page, the unfurl card and a fork, enough to tell that a private id names a standing
+  subtree. A hidden subtree answers in the one statement an absent id does (3.5 ms against 3.4 ms), and
+  any tree whose root has a live room answers from memory, faster than either.
 - **No CI guard against a published port.** Nothing in `.github/workflows/` fails if `db`, `server` or
   `embedder` gains a `ports:` mapping or `network_mode: host`. Only `caddy` publishes ports
   (`deploy/docker-compose.yml`), and only convention keeps it that way.

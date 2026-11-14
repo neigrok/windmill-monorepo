@@ -58,6 +58,8 @@ public:
   void removeEdge(const NodeId& from, const NodeId& to, const Hlc& at);
 
   bool hasNode(const NodeId& id) const;
+  // The present nodes that joining `incoming` would leave deleted, in id order, read without joining it.
+  std::vector<NodeId> removedBy(const GraphState& incoming) const;
   // A node that was created and then deleted — its record and every field survive, so it can
   // be resurrected. Distinct from a never-seen id (a pure dangling reference), which cannot.
   bool isTombstoned(const NodeId& id) const;
