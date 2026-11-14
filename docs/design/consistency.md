@@ -773,10 +773,11 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · Roadmap complete for a reader.** The Board shows a reader the title alone, plus the crown and a secondary Fork offer on
   phones. Proposed, awaiting the owner: *All 8 steps done* / *Fork it to walk these steps yourself.*, with Fork primary on phones
   (25.03, 15.03).
-- **Board · states at 744px.** At 744–1023px the build uses the desktop load-error and empty frames. The owner approved
-  15.05–15.06; both await implementation, and neither has columns or a rail.
-- **Board · New step on an empty phone roadmap.** An owner's empty roadmap reaches the Board on phone, tablet and desktop. Its New
-  step opens the composer (185:2149, 226:1055); the tablet uses the desktop empty-state structure pending implementation of approved 15.06.
+- **Board · states at 744px.** At 744–1023px the empty Board begins directly below the identity row, matching approved
+  33.01–33.03 with no filter strip, columns or rail. Populated controls begin at y116 and columns/Activity at y172 in the
+  744×960 reference, matching 34.01–34.03. Load-error centering remains tracked in the Roadmap alignment subtree.
+- **Board · New step on an empty roadmap.** An owner's empty roadmap reaches the Board on phone, tablet and desktop. Its New
+  step opens the composer (185:2149, 226:1055); the tablet keeps both the identity action and centered primary action in 33.01–33.03.
 - **Board · composer and picker at 744px.** At 744–1023px the owner-approved picker is a page inside
   the 600px composer dialog: back chevron, Prerequisites, *for <draft>*, search, chips, results, Cancel
   and Apply. The implementation uses this page layout. The canon is ✅ 744 09.02–09.04: 470:23411,
