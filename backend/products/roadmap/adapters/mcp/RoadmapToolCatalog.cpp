@@ -1,7 +1,6 @@
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 
 #include "products/roadmap/adapters/mcp/ReadShape.h"
-#include "products/roadmap/domain/Command.h"
 
 #include <set>
 #include <string>
@@ -59,7 +58,11 @@ Json::Value kind() { return typed("string", "A legend kind's id, standing for th
 
 Json::Value icon() { return typed("string", "An icon name or an emoji; \"\" for none."); }
 
-Json::Value opens() { return typed("string", "The id of a tree you own for this node to open; \"\" for none."); }
+Json::Value opens() {
+  return typed("string",
+               "The id of a top-level roadmap of yours for this node to open; \"\" for none. A step that owns a "
+               "subtree keeps its own.");
+}
 
 Json::Value prerequisites() {
   return listOf(typed("string"), "Ids of the nodes that must be complete before this one unlocks.");
@@ -114,13 +117,6 @@ Json::Value limit() {
 }
 
 Json::Value cursor() { return typed("string", "The `nextCursor` of the page before."); }
-
-// No refusal names the cap of a roadmap's name, so the cap is published: update_tree cuts a longer one.
-Json::Value title() {
-  Json::Value schema = typed("string");
-  schema["maxLength"] = static_cast<Json::UInt64>(kMaxTitleChars);
-  return schema;
-}
 
 // What update_nodes and change_edges both answer; each adds its own keys.
 Json::Value batchReceipt() {
@@ -227,6 +223,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     answered["progressRefused"] = listOf(typed("string"));
     answered["progressApplied"] = typed("boolean");
     answered["progressError"] = typed("string");
+    answered["opensRefused"] = listOf(typed("string"));
+    answered["opensError"] = typed("string");
     for (const char* partition : {"changedNodeIds", "unchangedNodeIds"}) {
       answered[partition] = listOf(typed("string"));
       receipt["required"].append(partition);
@@ -261,7 +259,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   }
   {
     Json::Value p(Json::objectValue);
-    p["title"] = title();
+    p["title"] = typed("string");
     p["kinds"] = legendKinds();
     tools.push_back(tool("create_tree", Access::write,
         "Create an empty roadmap that you own. Send `kinds` to plant your own legend in place of the default one.",
@@ -293,7 +291,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
   }
   {
     Json::Value p(Json::objectValue);
-    p["title"] = title();
+    p["title"] = typed("string");
     p["guide"] = typed("string", "The whole guide, replacing the one the roadmap has; \"\" clears it.");
     tools.push_back(treeTool("update_tree", Access::write,
         "Rename a roadmap with `title`, set its guide with `guide`, or both. The guide is a plain-text note on what "

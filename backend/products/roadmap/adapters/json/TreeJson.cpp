@@ -189,6 +189,18 @@ Json::Value toJson(const NotARoot& refusal, const std::string& remedy) {
   return body;
 }
 
+Json::Value refusedPointersJson(const std::vector<NodeId>& steps) {
+  Json::Value refused(Json::arrayValue);
+  for (const NodeId& step : steps) {
+    Json::Value refusal(Json::objectValue);
+    refusal["node"] = step.str();
+    refusal["field"] = "opens";
+    refusal["code"] = kOwnsASubtree;
+    refused.append(refusal);
+  }
+  return refused;
+}
+
 Json::Value toJson(const std::map<NodeId, Opening>& openings, const std::set<TreeId>& leadingBack) {
   Json::Value opens(Json::objectValue);
   for (const auto& [node, opening] : openings) {

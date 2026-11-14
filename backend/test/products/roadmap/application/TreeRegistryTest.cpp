@@ -299,7 +299,7 @@ TEST(rename_retitles_an_owned_tree_trimmed_and_the_list_shows_it) {
   std::vector<TreeSummary> rows = s.registry.list(me);
   REQUIRE_EQ(rows.size(), 1u);
   CHECK_EQ(rows[0].title, std::string("Autumn plans"));
-  CHECK_EQ(s.bus.subgraphBroadcasts.size(), 0u);
+  CHECK(s.rooms.isOpen(tid("t")));  // written through the tree's room, opened for it
 }
 
 // A tree the caller may not read is answered as an absent one, never as someone else's.
@@ -415,6 +415,37 @@ TEST(a_renames_stamp_survives_eviction_and_an_older_stamped_write_after_reload_l
   CHECK(s.registry.rename(tid("t"), me, "Renamed again") == TreeRegistry::Renaming::renamed);
   CHECK(reloaded.title() == (Lww<std::string>{"Renamed again", Hlc{1'700'000'000'000, 1, "srv"}}));
   CHECK(s.trees.byId["t"].title == (Lww<std::string>{"Renamed again", Hlc{1'700'000'000'000, 1, "srv"}}));
+}
+
+// A rename is stamped by the tree's room, past every stamp the tree holds, whether a room was open or not. A server
+// stamp can be ahead of the wall clock — a command minted past a replica's fast clock — and a tab's vector holds it: a
+// rename made after the room closed is still past it, so the tab is sent the rename on its return.
+TEST(a_rename_made_while_no_room_is_open_reaches_a_tab_whose_vector_holds_a_server_stamp_ahead_of_the_clock) {
+  Setup s;
+  UserId me = uid("me");
+  seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
+  TreeRoom& room = *s.rooms.open(tid("t"));
+  const std::uint64_t ahead = s.clock.nowMs() + 200'000;
+  Subgraph fast;
+  fast.treeId = tid("t");
+  fast.frameId = "f-fast";
+  fast.actor = "r_phone";
+  fast.graph.nodes.push_back(NodeStateEntry{.id = nid("a"), .label = "From a fast clock", .labelAt = Hlc{ahead, 0, "r_phone"}});
+  REQUIRE(room.joinSubgraph(fast, me).has_value());
+  room.applyCommand(SetNodeColor{nid("a"), NodeColor::plum}, s.clock.nowMs(), me);
+  const VersionVector tabHolds = *room.deltaSince(VersionVector{}).coverage;
+  const Seq tabApplied = room.head();
+  REQUIRE(tabHolds.covers(Hlc{ahead, 1, "srv"}));
+  REQUIRE(s.rooms.persist(tid("t")).wait() == Saved::saved);
+  REQUIRE(s.rooms.evict(tid("t")));
+
+  CHECK(s.registry.rename(tid("t"), me, "Renamed with no room open") == TreeRegistry::Renaming::renamed);
+
+  const Lww<std::string> renamed{"Renamed with no room open", Hlc{ahead, 2, "srv"}};
+  CHECK(s.trees.byId["t"].title == renamed);
+  const Subgraph returned = s.rooms.open(tid("t"))->deltaSince(tabHolds, tabApplied);
+  REQUIRE(returned.title.has_value());
+  CHECK(*returned.title == renamed);
 }
 
 TEST(set_visibility_reshares_an_owned_tree_and_the_column_reflects_it) {
@@ -743,7 +774,7 @@ TEST(list_names_for_each_tree_the_owners_other_trees_whose_steps_open_it_and_rea
   CHECK(openers == (std::map<std::string, std::vector<OpeningSteps>>{
                        {"t_target", {{tid("t_a"), 1}, {tid("t_b"), 2}}}, {"t_a", {}}, {"t_b", {}}, {"t_lonely", {}}}));
   CHECK(s.trees.openedReads.empty());
-  CHECK(s.trees.titleReads.empty());
+  CHECK(s.trees.targetReads.empty());
   CHECK(s.trees.aboveReads.empty());
   CHECK(s.trees.openingReads.empty());
 }
@@ -1335,22 +1366,28 @@ TEST(create_subtree_under_a_step_whose_pointer_opens_a_standing_tree_of_the_owne
   checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), me, SubtreeRefusal::stepOpensATree);
 }
 
-// A pointer at a deleted tree, at someone else's, or at no tree at all leads nowhere, so the step may own a subtree.
+// A pointer at a deleted tree, at someone else's, at no tree at all, or at a subtree — the owner's own, standing — leads
+// nowhere, so the step may own a subtree.
 TEST(create_subtree_under_a_step_whose_pointer_leads_nowhere_creates_it) {
   Setup s;
   const UserId me = uid("me");
-  seedParent(s, "t_p", me, {opening("deleted", "t_gone"), opening("foreign", "t_eves"), opening("absent", "t_never")});
+  seedParent(s, "t_p", me, {opening("deleted", "t_gone"), opening("foreign", "t_eves"), opening("absent", "t_never"),
+                            spec("sail", NodeColor::sky)});
   seed(s.trees, "t_gone", me, 100, {});
   s.trees.deletedIds.insert("t_gone");
   seed(s.trees, "t_eves", uid("eve"), 100, {});
+  const SubtreeAnswer sailing = s.registry.createSubtree(tid("t_p"), nid("sail"), me);
+  REQUIRE(std::holds_alternative<SubtreeCreation>(sailing));
+  seedParent(s, "t_q", me, {opening("subtree", std::get<SubtreeCreation>(sailing).subtree.id.str().c_str())});
 
-  for (const char* step : {"deleted", "foreign", "absent"}) {
-    const SubtreeAnswer answer = s.registry.createSubtree(tid("t_p"), nid(step), me);
+  for (const auto& [parent, step] : std::vector<std::pair<const char*, const char*>>{
+           {"t_p", "deleted"}, {"t_p", "foreign"}, {"t_p", "absent"}, {"t_q", "subtree"}}) {
+    const SubtreeAnswer answer = s.registry.createSubtree(tid(parent), nid(step), me);
     REQUIRE(std::holds_alternative<SubtreeCreation>(answer));
     CHECK(std::get<SubtreeCreation>(answer).created);
   }
-  CHECK_EQ(s.trees.subtrees.size(), 3u);
-  CHECK_EQ(s.bus.subtreeBroadcasts.size(), 3u);
+  CHECK_EQ(s.trees.subtrees.size(), 5u);
+  CHECK_EQ(s.bus.subtreeBroadcasts.size(), 5u);
 }
 
 // Both run under the parent's strand, so one of two orders holds: the child is made and then its step deleted, which

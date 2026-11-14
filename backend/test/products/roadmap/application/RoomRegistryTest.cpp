@@ -76,9 +76,10 @@ struct RecordingTreeRepository : FakeTreeRepository {
   std::vector<std::string>& journal;
   explicit RecordingTreeRepository(std::vector<std::string>& j) : journal(j) {}
   bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) override {
+            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head,
+            const LandSeqs& landed = {}) override {
     journal.push_back("save@" + std::to_string(head));
-    return FakeTreeRepository::save(tree, state, legend, title, guide, head);
+    return FakeTreeRepository::save(tree, state, legend, title, guide, head, landed);
   }
 };
 
@@ -268,6 +269,45 @@ TEST(registry_a_room_behind_its_log_mints_past_the_greatest_stamp_of_those_rows_
   REQUIRE_EQ(told.reports.size(), 2u);
   CHECK_EQ(told.reports[0].rfind("roadmap.room.open_behind_log roadmap mcp snapshot-behind-log ", 0), std::size_t{0});
   CHECK_EQ(told.reports[1], std::string("mcp.roadmap_update_nodes roadmap mcp failed ") + typeid(std::runtime_error).name());
+}
+
+// Land seqs are saved with the rows, each exactly as the room held it, and taken back as a room opens: a write that
+// landed late in one room is still sent to a subscriber whose position is before it by the room that opens after it
+// closed. The rows that landed in the ordinary way are saved with none.
+TEST(registry_land_seqs_survive_a_save_a_close_and_a_reopen) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();  // head 7, and a seed row that landed at no seq
+  RoomRegistry registry(repo, log, bus);
+  const auto landing = [&](const char* frameId, NodeStateEntry node) {
+    Subgraph frame;
+    frame.frameId = frameId;
+    frame.graph.nodes = {std::move(node)};
+    PendingSave saving = Saved::saved;
+    {
+      std::lock_guard<std::mutex> strand(registry.strandFor(tid()));
+      REQUIRE(registry.open(tid())->joinSubgraph(frame, uid()).has_value());
+      saving = registry.persist(tid());
+    }
+    REQUIRE(saving.wait() == Saved::saved);
+  };
+  NodeStateEntry n{.id = nid("n"), .createdAt = Hlc{100, 0, "r_a"}};
+  landing("f-n", n);                                                        // seq 8
+  landing("f-m", NodeStateEntry{.id = nid("m"), .createdAt = Hlc{300, 0, "r_a"}});  // seq 9
+  const VersionVector covered = *registry.open(tid())->deltaSince(VersionVector{}).coverage;
+  n.label = "N late";
+  n.labelAt = Hlc{200, 0, "r_a"};
+  landing("f-late", NodeStateEntry{.id = nid("n"), .label = n.label, .labelAt = n.labelAt});  // seq 10
+  REQUIRE(registry.evict(tid()));
+
+  LandSeqs stored;
+  stored.nodes = {{nid("n"), 10}};
+  CHECK(repo.byId["t"].landed == stored);
+  const TreeRoom& reopened = *registry.open(tid());
+  CHECK(reopened.deltaSince(covered).graph == GraphState{});
+  CHECK(reopened.deltaSince(covered, 9).graph == (GraphState{{n}, {}}));
+  CHECK(reopened.deltaSince(covered, 10).graph == GraphState{});
 }
 
 TEST(registry_persist_snapshots_full_state_without_evicting) {
@@ -807,7 +847,8 @@ TEST(registry_a_save_that_finds_the_row_gone_answers_gone_and_retires_the_room_w
 
   CHECK(registry.persist(tid()).wait() == Saved::gone);
   CHECK_FALSE(registry.isOpen(tid()));
-  CHECK(registry.rename(tid("u"), "Ghost title", 12, Hlc{}).wait() == Saved::gone);
+  registry.open(tid("u"))->rename("Ghost title", 12);
+  CHECK(registry.persist(tid("u")).wait() == Saved::gone);
   CHECK_FALSE(registry.isOpen(tid("u")));
   CHECK_EQ(announced, (std::vector<std::string>{"t", "u"}));
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);

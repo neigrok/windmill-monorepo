@@ -396,7 +396,8 @@ std::optional<Command> changedPart(const NodeSpec& node, const Command& command)
 }
 
 std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
-    const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates) {
+    const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates,
+    const std::map<NodeId, TreeId>& owned) {
   if (updates.empty() || updates.size() > kMaxPatchNodes)
     return "updates must contain 1 to " + std::to_string(kMaxPatchNodes) + " node patches";
 
@@ -437,12 +438,12 @@ std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
       links = std::get<std::vector<Link>>(std::move(shown));
     }
 
+    const std::optional<TreeId> opens = owned.count(patch.nodeId) ? std::nullopt : patch.opens;
     std::vector<Command> candidates;
     if (patch.label) candidates.push_back(RenameNode{patch.nodeId, *patch.label});
     if (color) candidates.push_back(SetNodeColor{patch.nodeId, *color});
-    if (patch.description || patch.appendDescription || patch.icon || links || patch.opens)
-      candidates.push_back(
-          AnnotateNode{patch.nodeId, patch.description, links, patch.icon, patch.appendDescription, patch.opens});
+    if (patch.description || patch.appendDescription || patch.icon || links || opens)
+      candidates.push_back(AnnotateNode{patch.nodeId, patch.description, links, patch.icon, patch.appendDescription, opens});
 
     const std::size_t before = plan.batch.commands.size();
     for (const Command& command : candidates) {
