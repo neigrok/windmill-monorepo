@@ -2955,6 +2955,27 @@ TEST(ws_replies_and_presence_frames_are_entered_in_what_a_connection_is_owed) {
   CHECK_EQ(told, (std::vector<std::string>(2, "roadmap_ws_subscriber_dropped door=websocket rule=stalled queued=under-1m")));
 }
 
+// A reply is entered as a reply at the door, whatever it weighs: a peer that reads nothing and is owed more than the
+// live backlog in refusals alone has no live frame pending, so it is not behind and is sent the next reply.
+TEST(ws_replies_a_peer_has_not_taken_are_no_live_backlog_however_much_they_weigh) {
+  Harness h;
+  h.signIn("s-owner", "owner@example.com");
+  auto peer = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), peer);
+  peer->reading = false;
+
+  const std::string absent(Outbound::kLiveBacklogBytes / 16, 't');  // the refusal names the tree twice
+  for (int refusal = 0; refusal < 10; ++refusal) h.collab.onMessage(peer, subscribeFrame(absent));
+  h.collab.onMessage(peer, R"({"t":"ping"})");
+
+  std::size_t owed = 0;
+  for (const std::string& frame : peer->sent) owed += frame.size();
+  CHECK(owed > Outbound::kLiveBacklogBytes);
+  CHECK(peer->open);
+  REQUIRE_EQ(peer->sent.size(), std::size_t{11});
+  CHECK_EQ(frameType(peer->sent.back()), std::string("pong"));
+}
+
 // One drop is one line. More than kWaveDrops of them within kWaveWindow is one report under a static name, with the
 // count per rule and nothing else, and no second one while the window lasts.
 TEST(a_wave_of_dropped_connections_is_one_report_a_window_with_the_count_per_rule) {
