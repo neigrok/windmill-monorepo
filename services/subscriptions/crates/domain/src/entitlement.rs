@@ -33,15 +33,23 @@ pub struct Entitlement {
 }
 
 impl Entitlement {
-    // §5.2: governing grants access the longest, else was observed last, ties to the smaller id; others by id.
+    // §5.2: governing grants access the longest, else last started, failed a payment, paused or ended, ties to the
+    // smaller id; others by id. Each of those instants changes only with an event, so governing moves only with one.
     fn of(mut subscriptions: Vec<Subscription>) -> Entitlement {
         let precedence = |subscription: &Subscription| match subscription.access_until() {
             Some(access_until) => (true, access_until, Reverse(subscription.id.clone())),
-            None => (
-                false,
-                subscription.observed_at,
-                Reverse(subscription.id.clone()),
-            ),
+            None => {
+                let state = &subscription.status.state;
+                let last_told = [
+                    state.payment_failed_at(),
+                    state.paused_at(),
+                    state.ending().map(|ending| ending.at),
+                ]
+                .into_iter()
+                .flatten()
+                .fold(subscription.status.started_at, Instant::max);
+                (false, last_told, Reverse(subscription.id.clone()))
+            }
         };
         let governing = (0..subscriptions.len())
             .max_by_key(|index| precedence(&subscriptions[*index]))

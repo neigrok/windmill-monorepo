@@ -5,7 +5,7 @@ use std::panic::{AssertUnwindSafe, resume_unwind};
 use std::path::{Path, PathBuf};
 
 use domain::{
-    AccountEntitlement, AccountHint, AccountId, Accounts, BillingInterval, Change, Claim,
+    AccountEntitlement, AccountHint, AccountId, Accounts, BillingInterval, Change, Claim, Claimant,
     EndReason, Ending, Environment, Instant, Lineage, Money, NextCharge, Observation,
     ObservedPeriod, Offer, OfferKind, Ownership, PeriodChange, PeriodId, Plan, ProductId, Renewal,
     Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId, Storefront, Subscription,
@@ -14,7 +14,9 @@ use domain::{
 use futures_util::FutureExt;
 use serde_json::Value;
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
-use storage::{AccountClaim, Applied, FeedEntry, Ledger, Notification, Observed, Receipt};
+use storage::{
+    AccountClaim, Applied, FeedEntry, Ledger, Notification, Observed, Receipt, StoreHint,
+};
 use url::Url;
 use uuid::Uuid;
 
@@ -74,6 +76,7 @@ async fn tell(path: &Path, url: &str) {
     let erased = Uuid::new_v4();
     ledger.record_erasure(erased).await.unwrap();
     let mut held: HashMap<Lineage, domain::Ledger> = HashMap::new();
+    let mut newest: HashMap<SubscriptionId, i64> = HashMap::new();
     let mut told: Vec<FeedEntry> = Vec::new();
 
     for (index, step) in story["steps"].as_array().unwrap().iter().enumerate() {
@@ -93,16 +96,28 @@ async fn tell(path: &Path, url: &str) {
                 )
             }
         };
-        let claim = (!step["claim"].is_null()).then(|| AccountClaim {
-            account_id: *accounts
-                .entry(text(&step["claim"], "accountId").to_owned())
-                .or_insert_with(Uuid::new_v4),
-            at: instant(&step["claim"]["at"]),
-        });
-        let pure_claim = claim.as_ref().map(|claim| Claim {
-            account_id: AccountId::new(claim.account_id.to_string()),
-            at: claim.at,
-        });
+        let (claim, pure_claim) = match &step["claim"] {
+            Value::Null => (None, None),
+            claim => {
+                let at = instant(&claim["at"]);
+                let (account_id, claimant) = match &claim["claimant"] {
+                    Value::String(claimant) if claimant == "erased" => (erased, Claimant::Erased),
+                    live => {
+                        let account_id = *accounts
+                            .entry(text(live, "live").to_owned())
+                            .or_insert_with(Uuid::new_v4);
+                        (
+                            account_id,
+                            Claimant::Live(AccountId::new(account_id.to_string())),
+                        )
+                    }
+                };
+                (
+                    Some(AccountClaim { account_id, at }),
+                    Some(Claim { claimant, at }),
+                )
+            }
+        };
         let observed = Observed {
             observation: observation.clone(),
             hint,
@@ -145,8 +160,23 @@ async fn tell(path: &Path, url: &str) {
         );
 
         match (applied, pure) {
-            (Applied::Recorded { change, seqs }, Ok(pure)) => {
+            (
+                Applied::Recorded {
+                    change,
+                    seqs,
+                    newest_seq,
+                },
+                Ok(pure),
+            ) => {
                 assert_eq!(*change, pure, "{place}");
+                let subscription_id = change.subscription.id.clone();
+                let newest_before = newest.get(&subscription_id).copied().unwrap_or(0);
+                assert_eq!(
+                    newest_seq,
+                    seqs.last().copied().unwrap_or(newest_before),
+                    "{place}"
+                );
+                newest.insert(subscription_id, newest_seq);
                 held.insert(lineage.clone(), after(before, &change));
                 let subscriptions: Vec<Subscription> = held
                     .values()
@@ -248,6 +278,7 @@ async fn an_observation_applied_again_writes_nothing() {
                     hint_for_store: None,
                 }),
                 seqs: Vec::new(),
+                newest_seq: 2,
             }
         );
         assert_eq!(row_versions(&mut connection).await, written);
@@ -291,6 +322,80 @@ async fn a_pull_stamps_the_newest_time_the_service_read_the_store() {
             verified_at,
             [Some(1_000), Some(1_000), Some(1_000), Some(2_000)]
         );
+        ledger.close().await;
+    })
+    .await;
+}
+
+#[tokio::test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn a_claim_retried_after_it_committed_answers_its_seq_and_its_store_hint_stays_owed_until_cleared()
+ {
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let (claimant, someone_else) = (Uuid::new_v4(), Uuid::new_v4());
+        let claim = || Observed {
+            observation: renewing("claimed", 0),
+            hint: None,
+            claim: Some(AccountClaim {
+                account_id: claimant,
+                at: Instant::from_epoch_millis(1_798_765_200_000),
+            }),
+            pulled_at: None,
+        };
+        let purchase = Observed {
+            observation: renewing("claimed", 0),
+            hint: None,
+            claim: None,
+            pulled_at: None,
+        };
+
+        ledger.apply(purchase).await.unwrap();
+        let claimed = ledger.apply(claim()).await.unwrap();
+        let retried = ledger.apply(claim()).await.unwrap();
+        let owed = ledger.store_hints(10).await.unwrap();
+        let mut to_someone_else = owed[0].clone();
+        to_someone_else.account_id = AccountId::new(someone_else.to_string());
+        ledger.clear_store_hint(&to_someone_else).await.unwrap();
+        let still_owed = ledger.store_hints(10).await.unwrap();
+        ledger.clear_store_hint(&owed[0]).await.unwrap();
+        let cleared = ledger.store_hints(10).await.unwrap();
+
+        let Applied::Recorded {
+            change,
+            seqs,
+            newest_seq,
+        } = claimed
+        else {
+            panic!("the claim answered {claimed:?}")
+        };
+        let claimant = AccountId::new(claimant.to_string());
+        assert_eq!(
+            (seqs, newest_seq, change.hint_for_store.clone()),
+            (vec![3, 4], 4, Some(claimant.clone()))
+        );
+        assert_eq!(
+            retried,
+            Applied::Recorded {
+                change: Box::new(Change {
+                    subscription: change.subscription.clone(),
+                    periods: Vec::new(),
+                    events: Vec::new(),
+                    hint_for_store: None,
+                }),
+                seqs: Vec::new(),
+                newest_seq: 4,
+            }
+        );
+        assert_eq!(
+            owed,
+            [StoreHint {
+                subscription_id: change.subscription.id.clone(),
+                lineage: change.subscription.lineage.clone(),
+                account_id: claimant,
+            }]
+        );
+        assert_eq!((still_owed, cleared), (owed, Vec::new()));
         ledger.close().await;
     })
     .await;

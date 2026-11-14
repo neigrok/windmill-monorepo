@@ -58,7 +58,8 @@ create table subscriptions (
 create index subscriptions_of_account on subscriptions (account_id) where account_id is not null;
 
 -- D-4: one row per store transaction of a lineage. Its stretch, price and offer are its first statement's;
--- only its refund time and the stamp of the newest statement of it change afterwards (INV-7).
+-- afterwards only its refund time and the stamp of the newest statement of it change (INV-7), and left_with, the
+-- account that paid for it, once a new purchase moves its subscription to another (R-11).
 create table periods (
     id uuid primary key,
     subscription_id uuid not null references subscriptions,
@@ -70,5 +71,6 @@ create table periods (
     offer_kind text check (offer_kind in ('free_trial', 'introductory', 'promotional', 'offer_code', 'win_back')),
     refunded_at bigint,
     observed_at bigint not null,
+    left_with uuid,
     unique (subscription_id, store_transaction_id)
 );

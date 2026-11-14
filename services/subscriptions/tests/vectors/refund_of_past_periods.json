@@ -118,7 +118,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-01T10:00:05Z"
+              "observedAt": "2027-01-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -153,7 +154,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-01T10:00:05Z"
+              "observedAt": "2027-01-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -278,7 +280,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-02-01T09:00:00Z"
+              "observedAt": "2027-02-01T09:00:00Z",
+              "leftWith": null
             }
           }
         ],
@@ -306,7 +309,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-02-01T09:00:00Z"
+              "observedAt": "2027-02-01T09:00:00Z",
+              "leftWith": null
             }
           }
         ],
@@ -431,7 +435,8 @@
               },
               "offerKind": null,
               "refundedAt": "2027-02-10T12:00:00Z",
-              "observedAt": "2027-02-10T12:00:00Z"
+              "observedAt": "2027-02-10T12:00:00Z",
+              "leftWith": null
             }
           }
         ],
@@ -452,7 +457,8 @@
               },
               "offerKind": null,
               "refundedAt": "2027-02-10T12:00:00Z",
-              "observedAt": "2027-02-10T12:00:00Z"
+              "observedAt": "2027-02-10T12:00:00Z",
+              "leftWith": null
             }
           }
         ],
@@ -587,7 +593,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-03-01T10:00:02Z"
+              "observedAt": "2027-03-01T10:00:02Z",
+              "leftWith": null
             }
           }
         ],
@@ -722,7 +729,8 @@
               },
               "offerKind": null,
               "refundedAt": "2027-03-05T09:00:00Z",
-              "observedAt": "2027-03-05T09:00:00Z"
+              "observedAt": "2027-03-05T09:00:00Z",
+              "leftWith": null
             }
           }
         ],
@@ -743,7 +751,8 @@
               },
               "offerKind": null,
               "refundedAt": "2027-03-05T09:00:00Z",
-              "observedAt": "2027-03-05T09:00:00Z"
+              "observedAt": "2027-03-05T09:00:00Z",
+              "leftWith": null
             }
           },
           {
@@ -869,7 +878,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-03-12T09:00:00Z"
+              "observedAt": "2027-03-12T09:00:00Z",
+              "leftWith": null
             }
           }
         ],
@@ -897,7 +907,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-03-12T09:00:00Z"
+              "observedAt": "2027-03-12T09:00:00Z",
+              "leftWith": null
             }
           },
           {

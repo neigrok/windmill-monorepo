@@ -71,13 +71,13 @@ const STAMP_VERIFIED: &str =
     "update subscriptions set verified_at = greatest(verified_at, $2) where id = $1::uuid";
 
 const SELECT_PERIODS: &str = "select id, store_transaction_id, starts_at, ends_at, price_amount, \
-     price_currency, offer_kind, refunded_at, observed_at from periods where subscription_id = $1::uuid \
-     order by starts_at, store_transaction_id collate \"C\"";
+     price_currency, offer_kind, refunded_at, observed_at, left_with from periods \
+     where subscription_id = $1::uuid order by starts_at, store_transaction_id collate \"C\"";
 const INSERT_PERIOD: &str = "insert into periods (id, store_transaction_id, starts_at, ends_at, \
-     price_amount, price_currency, offer_kind, refunded_at, observed_at, subscription_id) \
-     values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10::uuid)";
-const RESTATE_PERIOD: &str =
-    "update periods set refunded_at = $2, observed_at = $3 where id = $1::uuid";
+     price_amount, price_currency, offer_kind, refunded_at, observed_at, left_with, subscription_id) \
+     values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10::uuid, $11::uuid)";
+const RESTATE_PERIOD: &str = "update periods set refunded_at = $2, observed_at = $3, left_with = $4::uuid \
+     where id = $1::uuid";
 
 impl Ledger {
     // What the ledger holds for one lineage: its subscription, if any, and its periods, read in one snapshot.
@@ -166,6 +166,7 @@ pub(crate) async fn save(
                     .bind(period.id.as_str())
                     .bind(period.refunded_at.map(Instant::epoch_millis))
                     .bind(period.observed_at.epoch_millis())
+                    .bind(period.left_with.as_ref().map(AccountId::as_str))
                     .execute(&mut *connection)
                     .await?;
             }
@@ -272,8 +273,9 @@ pub(crate) fn bind_subscription<'q>(
         .bind(cancellation_observed_at.map(Instant::epoch_millis))
 }
 
-// Binds a period, or none, to nine parameters in the order of the periods table: id, store transaction, start,
-// end, price amount and currency, offer kind, refund time and the stamp of its newest statement.
+// Binds a period, or none, to ten parameters in the order of the periods table: id, store transaction, start, end,
+// price amount and currency, offer kind, refund time, the stamp of its newest statement and the account it stays
+// with; the last is cast from text to uuid.
 pub(crate) fn bind_period<'q>(query: PgQuery<'q>, period: Option<&Period>) -> PgQuery<'q> {
     query
         .bind(period.map(|period| period.id.as_str()))
@@ -293,6 +295,7 @@ pub(crate) fn bind_period<'q>(query: PgQuery<'q>, period: Option<&Period>) -> Pg
                 .map(Instant::epoch_millis),
         )
         .bind(period.map(|period| period.observed_at.epoch_millis()))
+        .bind(period.and_then(|period| period.left_with.as_ref().map(AccountId::as_str)))
 }
 
 #[derive(FromRow)]
@@ -441,6 +444,7 @@ pub(crate) struct PeriodRow {
     pub(crate) offer_kind: Option<String>,
     pub(crate) refunded_at: Option<i64>,
     pub(crate) observed_at: i64,
+    pub(crate) left_with: Option<Uuid>,
 }
 
 impl TryFrom<PeriodRow> for Period {
@@ -462,6 +466,9 @@ impl TryFrom<PeriodRow> for Period {
                 .transpose()?,
             refunded_at: row.refunded_at.map(Instant::from_epoch_millis),
             observed_at: Instant::from_epoch_millis(row.observed_at),
+            left_with: row
+                .left_with
+                .map(|account_id| AccountId::new(account_id.to_string())),
         })
     }
 }

@@ -50,9 +50,14 @@ async fn a_notification_received_twice_is_kept_once() {
 
         let receipts = [
             ledger.receive(first.clone()).await.unwrap(),
-            ledger.receive(resent).await.unwrap(),
+            ledger.receive(resent.clone()).await.unwrap(),
             ledger.receive(another_store.clone()).await.unwrap(),
         ];
+        let Receipt::Kept(first_kept) = &receipts[0] else {
+            panic!("receipts {receipts:?}")
+        };
+        ledger.settle(first_kept, "test").await.unwrap();
+        let resent_once_settled = ledger.receive(resent).await.unwrap();
 
         let kept: Vec<Notification> = ledger
             .unsettled(10)
@@ -62,15 +67,19 @@ async fn a_notification_received_twice_is_kept_once() {
             .map(|kept| kept.notification().clone())
             .collect();
         let [
-            Receipt::Kept(first_kept),
-            Receipt::Duplicate,
+            Receipt::Kept(_),
+            Receipt::Duplicate(Some(redelivered)),
             Receipt::Kept(_),
         ] = &receipts
         else {
             panic!("receipts {receipts:?}")
         };
-        assert_eq!(first_kept.notification(), &first);
-        assert_eq!(kept, [first, another_store]);
+        assert_eq!(
+            (first_kept.notification(), redelivered.notification()),
+            (&first, &first)
+        );
+        assert_eq!(resent_once_settled, Receipt::Duplicate(None));
+        assert_eq!(kept, [another_store]);
         assert_eq!(
             format!("{:?}", first_kept.notification()),
             "Notification { store: AppStore, id: \"n-1\", environment: Production, \
@@ -192,6 +201,88 @@ async fn a_notification_with_nothing_to_apply_is_settled_with_what_it_was() {
         assert_eq!(settled, [("n-test".to_owned(), Some("test".to_owned()))]);
         assert_eq!(ledger.unsettled(10).await.unwrap(), []);
         assert_eq!(ledger.feed(0, 100).await.unwrap().latest_seq, 0);
+        ledger.close().await;
+    })
+    .await;
+}
+
+#[tokio::test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn a_notification_no_retry_can_apply_waits_behind_the_rest_and_is_settled_failed_at_its_fifth_attempt()
+ {
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let mut connection = PgConnection::connect(&url).await.unwrap();
+        let Receipt::Kept(poisoned) = ledger
+            .receive(notification(
+                Store::AppStore,
+                "a-poison",
+                "a storefront Postgres refuses",
+            ))
+            .await
+            .unwrap()
+        else {
+            panic!("the poisoned notification was not kept")
+        };
+        let Receipt::Kept(good) = ledger
+            .receive(notification(Store::AppStore, "b-good", "a renewal"))
+            .await
+            .unwrap()
+        else {
+            panic!("the good notification was not kept")
+        };
+        let mut poison = renewal();
+        poison.status.storefront = Some(Storefront::new("US\u{0}"));
+
+        let first = ledger
+            .apply_notification(&poisoned, observed(poison.clone()))
+            .await;
+        let waits_for: i64 = sqlx::query_scalar(
+            "select next_attempt_at - now_millis() from inbox where notification_id = 'a-poison'",
+        )
+        .fetch_one(&mut connection)
+        .await
+        .unwrap();
+        let head = ledger.unsettled(1).await.unwrap();
+        let mut later = Vec::new();
+        for _ in 0..4 {
+            later.push(
+                ledger
+                    .apply_notification(&poisoned, observed(poison.clone()))
+                    .await,
+            );
+        }
+        let once_more = ledger
+            .apply_notification(&poisoned, observed(poison.clone()))
+            .await
+            .unwrap();
+        let rows: Vec<(String, i32, Option<String>)> = sqlx::query_as(
+            "select notification_id, attempts, outcome from inbox order by notification_id",
+        )
+        .fetch_all(&mut connection)
+        .await
+        .unwrap();
+
+        let refused = || -> Result<Applied, StorageError> {
+            Err(StorageError::Database {
+                sqlstate: Some("22021".to_owned()),
+            })
+        };
+        assert_eq!(first, refused());
+        assert!(
+            (3_590_000..=3_600_000).contains(&waits_for),
+            "waits {waits_for} ms"
+        );
+        assert_eq!(head, [good]);
+        assert_eq!(later, (0..4).map(|_| refused()).collect::<Vec<_>>());
+        assert_eq!(once_more, Applied::AlreadySettled);
+        assert_eq!(
+            rows,
+            [
+                ("a-poison".to_owned(), 5, Some("failed".to_owned())),
+                ("b-good".to_owned(), 0, None),
+            ]
+        );
         ledger.close().await;
     })
     .await;

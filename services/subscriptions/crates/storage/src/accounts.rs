@@ -1,8 +1,8 @@
-use domain::{AccountEntitlement, AccountHint, AccountId};
+use domain::{AccountEntitlement, AccountId};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::ledger::{Ledger, StorageError};
+use crate::ledger::{Ledger, StorageError, commit};
 use crate::subscriptions;
 
 // Each account has one lock. A write that may bind a subscription to the account holds it shared, and recording
@@ -22,7 +22,7 @@ const RECORD_ERASURE: &str =
 impl Ledger {
     // §6.4: records the account as erased, so a hint naming it counts as no hint from now on (§4).
     pub async fn record_erasure(&self, account_id: Uuid) -> Result<(), StorageError> {
-        let mut transaction = self.pool.begin().await?;
+        let mut transaction = self.begin_write().await?;
         sqlx::query(HOLD_ACCOUNT_ALONE)
             .bind(account_id)
             .execute(&mut *transaction)
@@ -31,8 +31,7 @@ impl Ledger {
             .bind(account_id)
             .execute(&mut *transaction)
             .await?;
-        transaction.commit().await?;
-        Ok(())
+        commit(transaction).await
     }
 
     // D-8: the account's entitlement as the ledger holds it now.
@@ -44,34 +43,22 @@ impl Ledger {
     }
 }
 
-// Holds the account's lock shared until the transaction ends.
-pub(crate) async fn hold(
+// §4: the account an observation's hint or a claim names, unless the backend erased it. Its lock stays held shared
+// until the transaction ends, so the answer holds as long.
+pub(crate) async fn live(
     connection: &mut PgConnection,
     account_id: Uuid,
-) -> Result<(), StorageError> {
+) -> Result<Option<AccountId>, StorageError> {
     sqlx::query(HOLD_ACCOUNT)
         .bind(account_id)
-        .execute(connection)
+        .execute(&mut *connection)
         .await?;
-    Ok(())
-}
-
-// §4: an observation's hint names a live account, an erased one, or none. The account stays held, so the answer
-// holds until the transaction ends.
-pub(crate) async fn resolve(
-    connection: &mut PgConnection,
-    hint: Option<Uuid>,
-) -> Result<AccountHint, StorageError> {
-    let Some(account_id) = hint else {
-        return Ok(AccountHint::Absent);
-    };
-    hold(connection, account_id).await?;
     let erased: bool = sqlx::query_scalar(IS_ERASED)
         .bind(account_id)
         .fetch_one(connection)
         .await?;
     if erased {
-        return Ok(AccountHint::Erased);
+        return Ok(None);
     }
-    Ok(AccountHint::Live(AccountId::new(account_id.to_string())))
+    Ok(Some(AccountId::new(account_id.to_string())))
 }

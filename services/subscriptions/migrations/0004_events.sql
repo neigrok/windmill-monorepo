@@ -29,11 +29,15 @@ create table events (
         'free_trial', 'introductory', 'promotional', 'offer_code', 'win_back')),
     period_refunded_at bigint,
     period_observed_at bigint,
+    period_left_with uuid,
     check (num_nulls(period_id, period_store_transaction_id, period_starts_at, period_ends_at, period_price_amount,
                      period_price_currency, period_observed_at)
            = case when type in ('period_recorded', 'period_refunded', 'period_refund_reversed') then 0 else 7 end),
-    check (period_id is not null or num_nulls(period_offer_kind, period_refunded_at) = 2)
+    check (period_id is not null or num_nulls(period_offer_kind, period_refunded_at, period_left_with) = 3)
 );
+
+-- A subscription's newest event, which a claim answers with however often it is retried (§5.2).
+create index events_of_subscription on events (subscription_id, seq);
 
 -- The subscriptions an event's entitlement folds over: its account's, as they stood after the transaction that
 -- recorded the event (spec §5.2). An event that names no account has none.

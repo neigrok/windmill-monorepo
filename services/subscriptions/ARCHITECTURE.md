@@ -52,7 +52,7 @@ clock, no randomness. Its files, by kind:
 
 | File | Holds |
 |---|---|
-| `values.rs` | Instants (epoch milliseconds), spans, money, the text ids and the closed names: `Store`, `Environment`, `Plan`. `Money::from_units` writes an amount a store counts in units (Apple's milliunits) with its currency's ISO 4217 minor units, keeping any digit beyond them. A store's ids, `StoreSubscriptionId` and `StoreTransactionId`, print as `(redacted)` in `Debug`, so no log line or panic message formats one (spec §10) |
+| `values.rs` | Instants (epoch milliseconds), spans, money, the text ids and the closed names: `Store`, `Environment`, `Plan`. `Money::from_units` writes an amount a store counts in units (Apple's milliunits) with its currency's ISO 4217 minor units, keeping any digit beyond them. A store's ids, `StoreSubscriptionId` and `StoreTransactionId`, and `AccountId`, the account a store's hint names, print as `(redacted)` in `Debug`, so no log line or panic message formats one (spec §10) |
 | `subscription.rs` | The record: `Subscription`, its `Status` as the newest observation stated it, a `State` that carries only its own facts, `Period`, and access (`access_until`, `grants_access`) |
 | `observe.rs` | `Observation`, what a caller hands `observe`, the `Change` it returns, `Event` and `Refusal` |
 | `entitlement.rs` | `AccountEntitlement`, one `Entitlement` block per environment, folded from the ledger alone |
@@ -81,8 +81,12 @@ saying since when, as most of the App Store's are, leaves the cancel time as it 
 that arrives after a newer statement fills it in and records `updated`.
 
 `observe` records `unbound` only when a new purchase moves an ended lineage to another account
-(R-11). Account erasure (§6.4) unbinds every subscription an account holds and records `unbound` for
-each; the domain has no step for it yet, and the erasure node adds one beside `observe`.
+(R-11). That move leaves each period the ledger holds with the account that paid for it, in the
+period's `left_with`, so a later event of the period, as its refund, is told under that account; a
+period without `left_with` follows its subscription's binding. Account erasure (§6.4) unbinds every
+subscription an account holds and records `unbound` for each; the domain has no step for it yet, and
+the erasure node adds one beside `observe`. A claim by an erased account, resolved by the caller as
+`Claimant::Erased`, is refused with `account_erased` before any other rule of §4.
 
 Known limits:
 
@@ -265,8 +269,10 @@ notification unsupported: `incomplete` when the notification's `signedDate`, its
 transaction's `expiresDate`, `price` or `currency`, the `status`, the `autoRenewStatus`, or the
 `gracePeriodExpiresDate` of a grace is missing; `unknown_value` when the status or `autoRenewStatus`
 is a value Apple does not document, the price is negative or the currency no ISO 4217 code in any
-case; `inconsistent` when the renewal info is another lineage's. Every other field degrades, so a
-refund or an expiry is never dropped for a field access does not depend on:
+case; `inconsistent` when the renewal info is another lineage's; and `incomplete` also when the
+`originalTransactionId` or the `transactionId` holds NUL, which no text the ledger keeps can hold.
+Every other field degrades, so a refund or an expiry is never dropped for a field access does not
+depend on:
 
 | Field Apple leaves out or names in a way it does not document | Reads as |
 |---|---|
@@ -274,7 +280,8 @@ refund or an expiry is never dropped for a field access does not depend on:
 | `type` | Nothing: Windmill One's product id says what was sold |
 | `billingPlanType` other than `MONTHLY` | Nothing |
 | `originalPurchaseDate` | `startedAt` is the transaction's `purchaseDate` |
-| `storefront` | `storefront` null |
+| `storefront`, or one holding NUL | `storefront` null |
+| `autoRenewProductId` holding NUL | `nextProductId` null |
 | `renewalPrice` or the renewal info's `currency`, or an amount they do not make | `nextCharge` null |
 | `offerType`, or `offerType` 1 without `offerDiscountType` | No offer kind |
 | `revocationType` Apple does not document (one left out reads by ownership, below) | End reason `unknown`; the period is refunded only by a `REFUND` |
@@ -425,8 +432,9 @@ backed up and restored is in the
 [deploy README](../../backend/deploy/README.md#the-subscription-database).
 
 `storage::Ledger::open` connects and brings the schema up to the newest migration before it returns,
-so no `Ledger` exists over an older schema. It holds at most 8 connections, gives a connection 5 s to
-open, and `Ledger::check` gives the database 2 s to answer.
+so no `Ledger` exists over an older schema. It holds at most 8 connections and gives a connection 5 s to
+open. `Ledger::check` gives the database 2 s to answer, on a connection of its own, so writers waiting
+on a lock with every connection of the pool never cost the health check its answer.
 
 ### Migrations
 
@@ -443,8 +451,9 @@ therefore does not start.
 | `0001_ledger.sql` | `ledger`: one row, whose `epoch` (a UUID) is minted when the ledger is created and replaced when it is restored (spec §5.2) |
 | `0002_inbox.sql` | `now_millis()`, the database's clock in epoch milliseconds, and `inbox` |
 | `0003_subscriptions.sql` | `subscriptions` and `periods` |
-| `0004_events.sql` | `ledger.latest_seq`, `events` and `entitlement_subscriptions` |
+| `0004_events.sql` | `ledger.latest_seq`, `events`, their index by subscription and `entitlement_subscriptions` |
 | `0005_erased_accounts.sql` | `erased_accounts` |
+| `0006_store_hints.sql` | `store_hints` |
 
 ### Records
 
@@ -458,12 +467,13 @@ redacted (spec §10).
 
 | Table | Holds |
 |---|---|
-| `inbox` | Each notification a store door kept, keyed by `(store, notification_id)`, with its environment and the signed payload as received. `settled_at` and `outcome` are set together, once: `applied`, a refusal's code, or the code a door settles a notification with when it states nothing to apply |
+| `inbox` | Each notification a store door kept, keyed by `(store, notification_id)`, with its environment and the signed payload as received. `settled_at` and `outcome` are set together, once: `applied`, a refusal's code, the code a door settles a notification with when it states nothing to apply, or `failed`. `attempts` counts the applies that failed for a reason a retry cannot change, and `next_attempt_at` is when the next may run |
 | `subscriptions` | One row per lineage, unique by `(store, environment, store_subscription_id)`: every field of the domain's `Subscription`, and `verified_at` |
-| `periods` | One row per store transaction of a lineage. Only `refunded_at` and `observed_at` change after it is written (INV-7) |
+| `periods` | One row per store transaction of a lineage. Only `refunded_at`, `observed_at` and `left_with`, the account that paid for it once a new purchase moved its subscription (R-11), change after it is written (INV-7) |
 | `events` | Append-only, keyed by `seq`. Each row keeps its subscription's store, environment and offer kind as the transaction that recorded it left them, and a period event its period as the event states it, so the feed reads no other table's current state |
 | `entitlement_subscriptions` | For each event that names an account, that account's subscriptions as the transaction left them: what the event's entitlement folds over |
 | `erased_accounts` | The accounts the backend erased (§6.4) |
+| `store_hints` | The account hints the ledger owes the stores, each with its lineage: written in the transaction that binds a subscription by claim, cleared once the store has taken it (§4) |
 
 ### Writing
 
@@ -471,11 +481,12 @@ redacted (spec §10).
 
 | Method | What it does |
 |---|---|
-| `receive(notification)` | Keeps a verified notification and answers `Receipt::Kept` with a `KeptNotification`, or `Receipt::Duplicate`, changing nothing, when the inbox holds one by that store's id already (spec §5.1 step 3) |
-| `apply_notification(kept, observed)` | Applies the observation a kept notification states and settles the notification in the same transaction. A notification settled already answers `AlreadySettled`, so the door and every retry of the sweep together apply it once |
+| `receive(notification)` | Keeps a verified notification and answers `Receipt::Kept` with a `KeptNotification`. When the inbox holds one by that store's id already it changes nothing and answers `Receipt::Duplicate`, carrying the `KeptNotification` while it is not settled, so the door can apply a redelivery at once (spec §5.1 step 3) |
+| `apply_notification(kept, observed)` | Applies the observation a kept notification states and settles the notification in the same transaction. A notification settled already answers `AlreadySettled`, so the door and every retry of the sweep together apply it once. An apply that fails for a reason a retry cannot change (a value the database refuses, SQLSTATE classes 22, 23 and 42, or a row it cannot read) counts against the notification, which then waits 1, 2, 4 and 8 hours before the next attempt and is settled `failed` at the fifth |
 | `apply(observed)` | Applies the observation of a claim or a pull |
 | `settle(kept, code)` | Settles a notification that states nothing to apply with the code of what it was; a settled notification keeps its first outcome |
-| `unsettled(limit)` | The kept notifications not yet settled, the longest kept first: the sweep's first step (§7) |
+| `unsettled(limit)` | The kept notifications not yet settled and not waiting after a failed attempt, the longest kept first: the sweep's first step (§7) |
+| `store_hints(limit)`, `clear_store_hint(hint)` | The account hints owed to the stores, the longest owed first, and clearing one once its store took it; a hint owed since to another account stays |
 | `record_erasure(account)` | Records the account as erased; recording it again changes nothing. It unbinds nothing: the domain has no step for unbinding ([Domain](#domain)) |
 
 Only the ledger makes a `KeptNotification`, so nothing applies a notification the inbox does not hold.
@@ -484,26 +495,37 @@ door reads a store's token that is not one as no hint; the claim, when a claim d
 `pulled_at`, when the service read the state from the store's API. `verified_at` is the newest
 `pulled_at` applied.
 
-An apply is one transaction, the action of [Domain](#domain):
+A write begins `read committed` whatever the database's default, since the seq lock needs each statement
+to see what committed before it, and waits at most 5 s for any lock (`lock_timeout`): a door's request
+has 5 s in all and a lock is held for milliseconds, so a longer wait means its holder stalled, and the
+write answers `busy` rather than hold a connection behind it. An apply is one transaction, the action of
+[Domain](#domain):
 
-1. Hold the claiming account and the hinted account, each a shared advisory lock, and resolve the hint:
+1. Hold the claiming account and the hinted account, each a shared advisory lock, and resolve each:
    erased when `erased_accounts` names the account, live otherwise.
 2. Lock the lineage with an advisory lock keyed by it, which also covers a lineage nothing has written
    yet, lock its row `for no key update`, and load its `domain::Ledger`.
 3. Mint a subscription id and one period id per stated period, random UUIDs, and call `observe`. A
    `Refusal` writes nothing.
-4. Write the subscription when it differs from the one held, each period written or restated, and
-   `verified_at` when the state was pulled. A replay writes no row (INV-4).
+4. Write the subscription when it differs from the one held, each period written or restated,
+   `verified_at` when the state was pulled, and the hint owed to the store when the change binds by
+   claim. A replay writes no row (INV-4).
 5. Take the events' seqs under the seq lock ([below](#the-seq-lock)), read the subscriptions of each
    account the events name, and append each event with its account's.
 6. For a notification, settle its inbox row. Commit.
 
-`Applied::Recorded` holds the `Change` and the seq of each of its events; after the commit the caller
-writes `hint_for_store` to the store. Locks are taken in one order, accounts, then lineage, then seq,
-and recording an erasure holds its account's lock alone, so no binding to an account commits beside its
-erasure. The row lock is `for no key update` because a transaction holding the seq lock inserts
-entitlement rows whose foreign key takes a key-share lock on each subscription of the account, which
-`for update` refuses: the two transactions would deadlock.
+`Applied::Recorded` holds the `Change`, the seq of each of its events, and `newest_seq`, the seq of the
+subscription's newest event once the transaction commits, read under the lineage's lock when the change
+records none. A claim retried after its answer was lost replays, and answers the same `newest_seq` and
+`{seq, entitlement}` (§5.2); the hint it owes the store stays in `store_hints` until the sweep has
+written it. A commit whose answer never arrives fails as `outcome_unknown`, never `unreachable`, since
+the transaction may have committed.
+
+Locks are taken in one order, accounts, then lineage, then seq, and recording an erasure holds its
+account's lock alone, so no binding to an account commits beside its erasure. The row lock is
+`for no key update` because a transaction holding the seq lock inserts entitlement rows whose foreign
+key takes a key-share lock on each subscription of the account, which `for update` refuses: the two
+transactions would deadlock.
 
 ### The seq lock
 
@@ -533,6 +555,8 @@ server's message is never kept, because it can quote a statement or a value.
 | Code | When |
 |---|---|
 | `unreachable` | no connection within its bound: nothing listens, the network refused or TLS failed |
+| `busy` | after start, no connection within 5 s, because every connection is in use or the database opened no new one, or a write waited longer than 5 s for a lock (`55P03`); the health check, on a connection of its own, tells a busy ledger from an unreachable one |
+| `outcome_unknown` | a commit's answer never arrived: the transaction may have committed, and a retry shows which |
 | `refused` | the server would not let the role in: a `pg_hba.conf` rule (`28000`), a wrong password (`28P01`), no such database (`3D000`) |
 | `migration` | the schema could not be brought up to the binary's, or the database holds a migration the binary does not |
 | `unreadable` | a row this build cannot read: a name outside its closed set, or a fact its state requires missing |

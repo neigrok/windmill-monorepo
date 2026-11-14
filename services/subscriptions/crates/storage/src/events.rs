@@ -21,8 +21,9 @@ const TAKE_SEQS: &str =
 const INSERT_EVENT: &str = "insert into events (seq, type, occurred_at, recorded_at, subscription_id, \
      account_id, store, environment, subscription_offer_kind, period_id, period_store_transaction_id, \
      period_starts_at, period_ends_at, period_price_amount, period_price_currency, period_offer_kind, \
-     period_refunded_at, period_observed_at) \
-     values ($1, $2, $3, $4, $5::uuid, $6::uuid, $7, $8, $9, $10::uuid, $11, $12, $13, $14, $15, $16, $17, $18)";
+     period_refunded_at, period_observed_at, period_left_with) \
+     values ($1, $2, $3, $4, $5::uuid, $6::uuid, $7, $8, $9, $10::uuid, $11, $12, $13, $14, $15, $16, $17, $18, \
+     $19::uuid)";
 const INSERT_ENTITLEMENT_SUBSCRIPTION: &str = concat!(
     "insert into entitlement_subscriptions (",
     subscription_columns!(),
@@ -31,11 +32,14 @@ const INSERT_ENTITLEMENT_SUBSCRIPTION: &str = concat!(
     ", $35)"
 );
 
+const NEWEST_SEQ: &str =
+    "select coalesce(max(seq), 0) from events where subscription_id = $1::uuid";
+
 const SELECT_LEDGER: &str = "select epoch, latest_seq from ledger";
 const SELECT_EVENTS: &str = "select seq, type, occurred_at, recorded_at, subscription_id, account_id, store, \
      environment, subscription_offer_kind, period_id, period_store_transaction_id, period_starts_at, \
      period_ends_at, period_price_amount, period_price_currency, period_offer_kind, period_refunded_at, \
-     period_observed_at from events where seq > $1 order by seq limit $2";
+     period_observed_at, period_left_with from events where seq > $1 order by seq limit $2";
 const SELECT_ENTITLEMENT_SUBSCRIPTIONS: &str = concat!(
     "select seq, ",
     subscription_columns!(),
@@ -172,6 +176,18 @@ pub(crate) async fn append(
     Ok(seqs)
 }
 
+// The seq of the subscription's newest event, 0 before its first. Read under its lineage's lock, it stays the
+// newest until the transaction ends.
+pub(crate) async fn newest_seq(
+    connection: &mut PgConnection,
+    subscription_id: &SubscriptionId,
+) -> Result<i64, StorageError> {
+    Ok(sqlx::query_scalar(NEWEST_SEQ)
+        .bind(subscription_id.as_str())
+        .fetch_one(connection)
+        .await?)
+}
+
 #[derive(FromRow)]
 struct EventRow {
     seq: i64,
@@ -193,6 +209,7 @@ struct EventRow {
     period_offer_kind: Option<String>,
     period_refunded_at: Option<i64>,
     period_observed_at: Option<i64>,
+    period_left_with: Option<Uuid>,
 }
 
 impl EventRow {
@@ -211,6 +228,7 @@ impl EventRow {
                 offer_kind: self.period_offer_kind,
                 refunded_at: self.period_refunded_at,
                 observed_at: self.period_observed_at.ok_or_else(unreadable)?,
+                left_with: self.period_left_with,
             })?),
         };
         let account_id = self

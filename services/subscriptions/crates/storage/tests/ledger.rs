@@ -1,9 +1,15 @@
 use std::env;
 use std::panic::{AssertUnwindSafe, resume_unwind};
+use std::time::Duration;
 
+use domain::{
+    BillingInterval, Environment, Instant, Lineage, Money, NextCharge, Observation, ObservedPeriod,
+    Ownership, Plan, ProductId, Renewal, Span, State, Status, Store, StoreSubscriptionId,
+    StoreTransactionId, Storefront,
+};
 use futures_util::FutureExt;
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
-use storage::{DatabaseUrl, Ledger, MalformedDatabaseUrl, StorageError};
+use storage::{Applied, DatabaseUrl, Ledger, MalformedDatabaseUrl, Observed, StorageError};
 use url::Url;
 use uuid::Uuid;
 
@@ -60,6 +66,7 @@ async fn an_empty_database_is_migrated_and_given_one_epoch_that_opening_again_ke
                 (3, "subscriptions".to_owned(), true),
                 (4, "events".to_owned(), true),
                 (5, "erased accounts".to_owned(), true),
+                (6, "store hints".to_owned(), true),
             ]
         );
         let second_row = connection
@@ -141,6 +148,173 @@ async fn a_ledger_answers_its_check_until_it_is_closed() {
         );
     })
     .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn a_write_runs_read_committed_whatever_the_database_s_default() {
+    with_empty_database(async |url| {
+        let mut control = PgConnection::connect(&url).await.unwrap();
+        let name = Url::parse(&url)
+            .unwrap()
+            .path()
+            .trim_start_matches('/')
+            .to_owned();
+        control
+            .execute(AssertSqlSafe(format!(
+                "alter database {name} set default_transaction_isolation = 'repeatable read'"
+            )))
+            .await
+            .unwrap();
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let mut holder = PgConnection::connect(&url).await.unwrap();
+        holder
+            .execute("begin; select latest_seq from ledger for update")
+            .await
+            .unwrap();
+
+        let writer = tokio::spawn({
+            let ledger = ledger.clone();
+            async move { ledger.apply(purchase("after the holder")).await }
+        });
+        until("the writer waits for the seq lock", async || {
+            waiting(&mut control).await == 1
+        })
+        .await;
+        holder
+            .execute("update ledger set latest_seq = latest_seq + 1; commit")
+            .await
+            .unwrap();
+        let written = within("the writer's answer", writer).await.unwrap();
+
+        let Ok(Applied::Recorded { seqs, .. }) = written else {
+            panic!("under a repeatable read default the writer answered {written:?}")
+        };
+        assert_eq!(seqs, [2, 3]);
+        ledger.close().await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn a_stalled_seq_lock_costs_its_writers_a_busy_answer_and_never_the_health_check() {
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let mut control = PgConnection::connect(&url).await.unwrap();
+        let mut holder = PgConnection::connect(&url).await.unwrap();
+        holder
+            .execute("begin; select latest_seq from ledger for update")
+            .await
+            .unwrap();
+
+        let writers: Vec<_> = (0..8)
+            .map(|index| {
+                let ledger = ledger.clone();
+                tokio::spawn(async move { ledger.apply(purchase(&format!("w{index}"))).await })
+            })
+            .collect();
+        until(
+            "every connection of the pool waits for the seq lock",
+            async || waiting(&mut control).await == 8,
+        )
+        .await;
+        let check = within("the health check", ledger.check()).await;
+        let ninth = within("a ninth write", ledger.apply(purchase("w9"))).await;
+        let mut answers = Vec::new();
+        for writer in writers {
+            answers.push(within("a stalled writer's answer", writer).await.unwrap());
+        }
+        holder.execute("rollback").await.unwrap();
+
+        assert_eq!(check, Ok(()));
+        assert_eq!(ninth, Err(StorageError::Busy));
+        assert_eq!(
+            answers,
+            (0..8).map(|_| Err(StorageError::Busy)).collect::<Vec<_>>()
+        );
+        ledger.close().await;
+    })
+    .await;
+}
+
+// How many of the database's connections wait on a lock.
+async fn waiting(control: &mut PgConnection) -> i64 {
+    sqlx::query_scalar(
+        "select count(*) from pg_stat_activity \
+         where datname = current_database() and wait_event_type = 'Lock'",
+    )
+    .fetch_one(control)
+    .await
+    .unwrap()
+}
+
+async fn within<T>(what: &str, answer: impl Future<Output = T>) -> T {
+    tokio::time::timeout(Duration::from_secs(20), answer)
+        .await
+        .unwrap_or_else(|_| panic!("{what}: not within 20 s"))
+}
+
+async fn until(what: &str, mut ready: impl AsyncFnMut() -> bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while !ready().await {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "{what}: not within 10 s"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+// A first month of Windmill One, bought with no hint.
+fn purchase(lineage: &str) -> Observed {
+    let start = Instant::from_epoch_millis(1_798_761_600_000);
+    let end = Instant::from_epoch_millis(1_801_353_600_000);
+    let price = Money::new("12.00", "USD").unwrap();
+    let observation = Observation {
+        lineage: Lineage {
+            store: Store::AppStore,
+            environment: Environment::Production,
+            store_subscription_id: StoreSubscriptionId::new(lineage),
+        },
+        observed_at: start,
+        ownership: Ownership::Purchased,
+        status: Status {
+            plan: Plan::WindmillOne,
+            product_id: ProductId::new("works.windmill.app.one.monthly"),
+            billing_interval: BillingInterval::new("P1M"),
+            started_at: start,
+            state: State::Active {
+                pause_scheduled_for: None,
+            },
+            current_period: Span { start, end },
+            renewal: Renewal {
+                auto_renew: true,
+                next_charge: Some(NextCharge {
+                    at: end,
+                    price: price.clone(),
+                }),
+                next_product_id: None,
+                cancel_requested_at: None,
+            },
+            offer: None,
+            price: price.clone(),
+            storefront: Some(Storefront::new("USA")),
+        },
+        periods: vec![ObservedPeriod {
+            transaction: StoreTransactionId::new(format!("{lineage}-1")),
+            span: Span { start, end },
+            price,
+            offer_kind: None,
+            refunded_at: None,
+        }],
+    };
+    Observed {
+        observation,
+        hint: None,
+        claim: None,
+        pulled_at: None,
+    }
 }
 
 #[test]

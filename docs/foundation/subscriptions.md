@@ -193,8 +193,8 @@ instant is named:
   observation makes to the period; so a period written while the subscription was unbound still
   reaches its account, and one written by the binding observation is recorded once. A purchase that
   moves an ended lineage to another account (R-11) records no period again: the periods before it stay
-  recorded under the account that paid for them. Lifecycle events never carry a period; period events
-  are the only ones that do.
+  recorded under the account that paid for them, and a later event of one of them, as its refund, names
+  that account. Lifecycle events never carry a period; period events are the only ones that do.
 - **INV-14.** An observation that changes a field the entitlement carries (§5.2) records at least one
   event. When no event above names the change, as with `grace` turning `on_hold`, a new price or a
   redeemed offer, it records `updated`.
@@ -232,7 +232,8 @@ period leaves a running subscription `active` (§8).
   bound to the caller succeeds without change. A claim for one bound to another account, or whose
   account hint names another account that is not erased, is refused with `bound_to_another_account`
   (R-3). A claim for an unbound subscription whose hint names an erased account binds it to the
-  caller (R-9).
+  caller (R-9). A claim by an account the backend erased (§6.4) is refused with `account_erased`,
+  whatever the subscription's binding.
 - A later observation whose hint differs never rebinds, except a new purchase (R-11): an observation
   that takes the subscription out of `expired` or `revoked` (§3.2) with a hint naming another live
   account moves it to that account, recording `unbound` under the old account and `bound` under the
@@ -258,7 +259,8 @@ environments; the environment is read from the verified payload. The door is a f
 2. Verify the signed payload and the signed transaction and renewal info inside it: each certificate
    chain to the pinned Apple root certificates, each signature, that the bundle id is
    `works.windmill.app`, and that the environment is `Production` or `Sandbox`.
-3. Insert the signed payload into the inbox keyed by the notification's UUID. A duplicate answers 200.
+3. Insert the signed payload into the inbox keyed by the notification's UUID. A duplicate already
+   settled answers 200; one not yet settled goes on to step 4.
 4. Build the observation and apply it (§3.4) in one transaction with its periods, events and binding,
    which also settles the inbox row, so a notification is applied once however often it is retried.
 5. Answer 200.
@@ -290,8 +292,10 @@ per state a reader must handle; the service and the backend each check themselve
 subscriptions in that environment alone:
 
 - `governing` is the subscription whose state grants access (its `accessUntil` is not null) with the
-  latest `accessUntil`; when none grants access, the one with the latest `observedAt`. Ties go to the
-  smaller `subscriptionId`. It is null when the account holds no subscription in that environment.
+  latest `accessUntil`; when none grants access, the one whose latest of `startedAt`,
+  `paymentFailedAt`, `pausedAt` and `endedAt` is the latest. Each of those instants changes only with
+  an event (INV-14), so `governing` never moves without one. Ties go to the smaller `subscriptionId`.
+  It is null when the account holds no subscription in that environment.
 - `plan` and `accessUntil` are the governing subscription's, null when it grants no access.
 - `others` lists every other subscription that is not `expired` or `revoked`, ordered by
   `subscriptionId`, so a client can say that a person is being charged twice.
@@ -315,7 +319,8 @@ no account.
 
 The internal claim answers 200 with `{seq, entitlement}`: the caller's `EntitlementResponse` after the
 claim, and the `seq` of the claimed subscription's newest event, which is the claim's last event when
-it recorded any. It refuses with `{code}`: 409 `bound_to_another_account`, 400 `invalid_transaction`.
+it recorded any; a claim retried after its answer was lost answers the same `seq`. It refuses with
+`{code}`: 409 `bound_to_another_account`, 409 `account_erased`, 400 `invalid_transaction`.
 
 ### §5.3 What a person's device calls
 
@@ -431,7 +436,9 @@ One worker, hourly:
 
 1. Apply every inbox row not yet settled. A row settles in the transaction that applies it, or with its
    code when it states nothing to apply, as Apple's test notification or a type the adapter does not
-   map (§8).
+   map (§8). An apply that fails for a reason a retry cannot change, such as a value the database
+   refuses, makes the row wait 1, 2, 4, then 8 hours before its next attempt, so it holds up no row
+   behind it, and its fifth such failure settles it `failed`, which the sweep reports.
 2. Pull the store's state for every subscription whose `accessUntil` falls within the next hour or
    has passed while its state still grants access or is `on_hold`.
 3. Pull every subscription not `expired` or `revoked` whose `verifiedAt` is older than seven days. A

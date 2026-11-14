@@ -111,7 +111,7 @@ async fn concurrent_applies_record_every_event_once_in_commit_order() {
         let mut recorded = Vec::new();
         for apply in applies {
             match tokio::time::timeout(Duration::from_secs(30), apply).await {
-                Ok(Ok(Applied::Recorded { change, seqs })) => recorded.push((seqs, *change)),
+                Ok(Ok(Applied::Recorded { change, seqs, .. })) => recorded.push((seqs, *change)),
                 other => panic!("an apply answered {other:?}"),
             }
         }
@@ -156,6 +156,47 @@ async fn concurrent_applies_record_every_event_once_in_commit_order() {
         }
         assert_eq!(entries, told);
         ledger.close().await;
+    })
+    .await;
+}
+
+#[tokio::test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn an_entitlement_row_is_held_to_every_check_a_subscription_is() {
+    with_empty_database(async |url| {
+        Ledger::open(&url.parse().unwrap())
+            .await
+            .unwrap()
+            .close()
+            .await;
+        let mut connection = PgConnection::connect(&url).await.unwrap();
+        let mut held_to = async |table: &str| -> (Vec<String>, Vec<(String, String, String)>) {
+            let checks = sqlx::query_scalar(
+                "select pg_get_constraintdef(oid) from pg_constraint \
+                 where conrelid = $1::regclass and contype = 'c' order by 1",
+            )
+            .bind(table)
+            .fetch_all(&mut connection)
+            .await
+            .unwrap();
+            let columns = sqlx::query_as(
+                "select column_name::text, data_type::text, is_nullable::text \
+                 from information_schema.columns \
+                 where table_name = $1 and column_name not in ('seq', 'verified_at') \
+                 order by ordinal_position",
+            )
+            .bind(table)
+            .fetch_all(&mut connection)
+            .await
+            .unwrap();
+            (checks, columns)
+        };
+
+        let subscriptions = held_to("subscriptions").await;
+        let entitlement_subscriptions = held_to("entitlement_subscriptions").await;
+
+        assert_eq!(subscriptions.0.len(), 15);
+        assert_eq!(entitlement_subscriptions, subscriptions);
     })
     .await;
 }
