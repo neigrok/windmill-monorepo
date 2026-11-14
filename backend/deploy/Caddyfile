@@ -4,13 +4,24 @@
 # (test/e2e/deployment_conformance.mjs checks it through this file).
 #
 # Single origin: the app and its own backend share $DOMAIN_APP —
-# the SPA is served statically, /v1/stores/* goes to the subscription service's public port, and
+# the SPA is served statically, store and AI doors go to their services' public ports, and
 # the rest of /v1, /mcp, /oauth and the OAuth well-knowns are path-routed to windmill_server
 # (REST + collab socket + MCP, one process). $DOMAIN_API is kept as a transitional alias while the
 # deployed frontend build is flipped to same-origin; retire it once nothing points at it.
-# test/deploy/caddyfile_routes_test.py drives this file against stand-ins for both upstreams.
+# test/deploy/caddyfile_routes_test.py drives this file against stand-ins for each upstream.
 {
 	email {$ACME_EMAIL}
+	# Runtime errors can contain requests too; remove the whole request before encoding every log.
+	log default {
+		format filter {
+			wrap json
+			fields {
+				request delete
+				headers delete
+				resp_headers delete
+			}
+		}
+	}
 }
 
 # Refuse origin traffic that didn't arrive through Cloudflare, so the rate limiter's trust in
@@ -68,6 +79,18 @@
 	}
 }
 
+# Only public AI routes reach port 8084. Browser passes in the WebSocket subprotocol stay intact.
+(ai_doors) {
+	@ai path /v1/calls/* /v1/allowance
+	handle @ai {
+		reverse_proxy ai:8084 {
+			header_up -Cookie
+			header_up -X-Windmill-Installation
+			flush_interval -1
+		}
+	}
+}
+
 # The single origin: static SPA + same-origin backend (so there is no CORS between them). The
 # frontend (windmill repo) is a Vite SPA rsync'd into ./web by its own deploy; everything under
 # the backend paths is reverse-proxied to windmill_server on the same host.
@@ -81,6 +104,7 @@
 		Content-Security-Policy "frame-ancestors 'none'"
 	}
 	import store_doors
+	import ai_doors
 
 	# The app's own backend: REST + /v1/socket (WebSocket), MCP, the OAuth authorization-server
 	# endpoints, the OAuth discovery documents, the /t/:id share pages (served with per-tree
@@ -175,7 +199,7 @@
 	}
 }
 
-# Transitional alias: the previous separate API hostname, still proxying everything but the store
+# Transitional alias: the previous separate API hostname, still proxying everything but store and AI
 # doors to the same server so the currently-deployed frontend build keeps working until it is
 # rebuilt same-origin. Retire once no client references it. (The old mcp.$DOMAIN subdomain is
 # gone — MCP lives at /mcp now.)
@@ -194,6 +218,7 @@
 		X-Robots-Tag "noindex"
 	}
 	import store_doors
+	import ai_doors
 	# A 404 on /robots.txt reads as "crawl everything" — and this host has no file server to answer
 	# it, so it 404s. Answer it here, in the only words this hostname has for a crawler.
 	handle /robots.txt {

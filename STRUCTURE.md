@@ -40,6 +40,8 @@ packages/
   api-contract/             shared wire contracts, executable golden fixtures and the JS sync core/client
 services/
   embedder/                 HTTP sidecar for journal passage vectors
+  ai/                       Rust workspace for AI admission, provider calls and allowance accounting:
+                            domain, providers, storage, server; test-only pass signer
   subscriptions/            Rust workspace of the Windmill One subscription service: the crates domain,
                             app_store, storage and server, and the test-only App Store payload signer
 tools/                     standalone operational tools
@@ -74,12 +76,13 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 
 | Workflow | Responsibility |
 |---|---|
-| `backend.yml` | build and run C++ tests in Docker, then the Postgres cases, the pattern fuzz and the sync deployment conformance (directly and through the production Caddyfile) in that image against a Postgres service; publish server and embedder images |
+| `backend.yml` | build and run C++ tests in Docker, Postgres cases, pattern fuzz and sync deployment conformance; require both ledger services' checks before publishing server, embedder, subscriptions and AI images |
 | `web.yml` | install, test and build web; rsync trusted builds to the VPS |
 | `ios.yml` | parallel packages/builds, App unit tests and three class-based UI shards; Sync, Domain and SyncTestingSurface tests, engine/SyncProbe simulator builds, and App Debug/Release builds with Xcode 26.3 |
 | `ios-release.yml` | archive the app and upload it to App Store Connect, dispatched by hand |
 | `android.yml` | build and test; tags and versioned dispatches produce unpublished signing inputs |
 | `embedder.yml` | check pinned vectors and the sidecar HTTP process |
+| `ai.yml` | dependency boundaries, formatting, Clippy, fixture and Postgres tests; hardened image smoke and AI database isolation |
 | `subscriptions.yml` | check the subscription service's crate dependency rule, formatting, Clippy with warnings denied and tests; build its image and run it; check its wire fixtures are what `generate.py` writes and pass `check.py` |
 | `tools.yml` | run the Lift importer suite |
 | `contract.yml` | check the sync corpus is what the JS reference generates; run the reference's tests and a fixed-seed replay fuzz |
@@ -122,7 +125,8 @@ contents. Native acceptance and a same-key update check precede publication. See
   [The subscription service](docs/foundation/subscriptions.md) for Windmill One is being built; what
   exists is in its [ARCHITECTURE.md](services/subscriptions/ARCHITECTURE.md).
   [The AI service](docs/foundation/ai-service.md), which takes over the AI allowance ledger and every
-  provider call, is specified and not built.
+  provider call, is implemented under `services/ai`; its [architecture](services/ai/ARCHITECTURE.md) names the
+  running boundaries. Existing feature callers remain in the backend until their integrations move.
 - [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
   model loop the web uses. [The iOS app](apps/ios/App/README.md) also documents
   signed-in routine onboarding.

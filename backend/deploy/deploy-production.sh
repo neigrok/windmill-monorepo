@@ -16,6 +16,52 @@ if [[ ! -d subscriptions-db.next ]]; then
   printf 'FAIL candidate subscriptions-db folder is missing\n' >&2
   exit 1
 fi
+if [[ ! -d ai-db.next ]]; then
+  printf 'FAIL candidate ai-db folder is missing\n' >&2
+  exit 1
+fi
+# Validate before pruning, pulling, changing HBA, or promoting any live file.
+python3 - rendered.env <<'PYAI'
+import base64
+import json
+import re
+import sys
+
+def refuse():
+    raise SystemExit("FAIL AI service configuration is missing or invalid")
+
+values = {}
+for line in open(sys.argv[1]):
+    key, separator, value = line.rstrip("\n").partition("=")
+    if separator:
+        if key in values or "\r" in value:
+            refuse()
+        values[key] = value
+if not re.fullmatch(r"[0-9a-f]{64}", values.get("AI_DB_PASSWORD", "")):
+    refuse()
+carry = values.get("AI_CARRY_KEY", "")
+if not re.fullmatch(r"[A-Za-z0-9_-]{43}", carry):
+    refuse()
+try:
+    raw = base64.urlsafe_b64decode(carry + "=")
+    if len(raw) != 32 or base64.urlsafe_b64encode(raw).decode().rstrip("=") != carry:
+        refuse()
+    keys = json.loads(values.get("AI_PASS_KEYS") or "{}")
+    if not isinstance(keys, dict):
+        refuse()
+    for kid, key in keys.items():
+        if not re.fullmatch(r"[a-z0-9-]{1,32}", kid) or kid.startswith("test-") or not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", key):
+            refuse()
+        if len(base64.urlsafe_b64decode(key + "=")) != 32:
+            refuse()
+except (ValueError, TypeError):
+    refuse()
+secrets = [values.get(key, "") for key in ("AI_FUNDING_SECRET", "AI_OPERATOR_SECRET")]
+if any(not re.fullmatch(r"[A-Za-z0-9_-]{32,256}", secret) for secret in secrets) or len(set([carry, *secrets])) != 3:
+    refuse()
+if any("$" in value for key, value in values.items() if key.startswith("AI_")):
+    refuse()
+PYAI
 candidate_env=.env.next
 verification=$(mktemp -d)
 trap 'rm -f "$candidate_env"; rm -rf "$verification"' EXIT
@@ -31,12 +77,11 @@ else
 fi
 candidate=(docker compose --env-file "$candidate_env" -f docker-compose.next.yml)
 "${candidate[@]}" config -q
-# Every service but the subscription one is the backend. It is pulled and brought up first and on its own, so
-# nothing about the subscription service, its image, its database or its health, keeps the backend from deploying.
+# The backend starts before either ledger service; their runtime health cannot hold it back.
 services=$("${candidate[@]}" config --services)
 backend=()
 while read -r service; do
-  [[ "$service" == subscriptions ]] || backend+=("$service")
+  [[ "$service" == subscriptions || "$service" == ai || "$service" == ai-db ]] || backend+=("$service")
 done <<< "$services"
 # Images no container uses come back from their registry on demand; pruning them before the pull keeps the
 # disk to the live images plus the candidate. Volumes are never pruned.
@@ -70,12 +115,36 @@ sed '/^SUBSCRIPTIONS_IMAGE=/d' "$candidate_env" > "$verification/candidate.env"
 printf 'SUBSCRIPTIONS_IMAGE=%s\n' "$subscriptions_id" >> "$verification/candidate.env"
 mv "$verification/candidate.env" "$candidate_env"
 
+if "${candidate[@]}" pull ai; then
+  ai_image=$("${candidate[@]}" config --format json |
+    python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["ai"]["image"])')
+  ai_id=$(docker image inspect --format '{{.Id}}' "$ai_image")
+  if [[ ! "$ai_id" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+    printf 'FAIL candidate AI image has no immutable content ID\n' >&2
+    exit 1
+  fi
+else
+  ai_id=
+  [[ ! -f .env ]] || ai_id=$(sed -n 's/^AI_IMAGE=//p' .env)
+  if [[ ! "$ai_id" =~ ^sha256:[a-f0-9]{64}$ ]] ||
+     ! docker image inspect --format '{{.Id}}' "$ai_id" > /dev/null 2>&1; then
+    printf 'FAIL no AI service image could be pulled for this commit, and none runs here to keep\n' >&2
+    exit 1
+  fi
+  printf 'NOTE AI service: no image could be pulled for this commit, so it keeps the one it runs, %s\n' "$ai_id"
+fi
+sed '/^AI_IMAGE=/d' "$candidate_env" > "$verification/candidate.env"
+printf 'AI_IMAGE=%s\n' "$ai_id" >> "$verification/candidate.env"
+mv "$verification/candidate.env" "$candidate_env"
+
 # The inspected images and sync minimum are approved before any migration or container changes.
 [[ ! -f .env ]] || cp .env .env.bak
 mv "$candidate_env" .env
 mv docker-compose.next.yml docker-compose.yml
 rm -rf subscriptions-db
 mv subscriptions-db.next subscriptions-db
+rm -rf ai-db
+mv ai-db.next ai-db
 if cmp -s Caddyfile.next Caddyfile; then
   rm Caddyfile.next
 else
@@ -88,7 +157,7 @@ if docker compose exec -T caddy cat /etc/caddy/Caddyfile > "$verification/Caddyf
    cmp -s Caddyfile "$verification/Caddyfile.before"; then
   caddy_changed=0
 fi
-# The subscription service waits on its database's provisioning and starts last, below.
+# The ledger services wait for provisioning and start after backend verification, below.
 docker compose up -d --pull never "${backend[@]}"
 # A single-file bind mount retains its inode across mv. Recreate to bind the new file.
 if [[ "$caddy_changed" == 1 ]]; then
@@ -212,4 +281,44 @@ if [[ "$(docker inspect --format '{{.Image}}' "$subscriptions")" != "$(sed -n 's
   exit 1
 fi
 printf 'PASS subscription service: healthy on its pinned image\n'
+# This HBA writer starts only after subscriptions-db has finished. AI failure leaves the backend serving.
+if ! docker compose up -d --no-deps --pull never ai-db; then
+  printf 'FAIL AI database provisioning did not start; the backend is deployed and serving\n' >&2
+  exit 1
+fi
+ai_provision=$(docker compose ps -aq ai-db)
+if [[ -z "$ai_provision" ]]; then
+  printf 'FAIL AI database provisioning did not run; the backend is deployed and serving\n' >&2
+  exit 1
+fi
+for ((attempt=0; attempt<60; attempt++)); do
+  outcome=$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$ai_provision")
+  [[ "$outcome" == exited* ]] && break
+  sleep 1
+done
+docker compose logs --no-log-prefix --tail 1 ai-db
+if [[ "$outcome" != 'exited 0' ]]; then
+  printf 'FAIL AI database provisioning did not succeed; the backend is deployed and serving\n' >&2
+  exit 1
+fi
+# Compose waits for the old process's 720-second grace before replacing it.
+if ! docker compose up -d --no-deps --pull never ai; then
+  printf 'FAIL AI service did not start; the backend is deployed and serving\n' >&2
+  exit 1
+fi
+ai_container=$(docker compose ps -aq ai)
+for ((attempt=0; attempt<60; attempt++)); do
+  health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$ai_container")
+  [[ "$health" == healthy || "$health" == unhealthy ]] && break
+  sleep 1
+done
+if [[ "$health" != healthy ]]; then
+  printf 'FAIL AI service was %s after %s s; the backend is deployed and serving\n' "$health" "$attempt" >&2
+  exit 1
+fi
+if [[ "$(docker inspect --format '{{.Image}}' "$ai_container")" != "$(sed -n 's/^AI_IMAGE=//p' .env)" ]]; then
+  printf 'FAIL running AI service image differs from intended image; the backend is deployed and serving\n' >&2
+  exit 1
+fi
+printf 'PASS AI service: healthy on its pinned image\n'
 printf 'PASS deployed: immutable image, sync compatibility, process environment and Caddy verified; DB password preserved\n'

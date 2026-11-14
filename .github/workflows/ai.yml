@@ -1,0 +1,144 @@
+name: AI CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/ai/**'
+      - 'packages/api-contract/ai/**'
+      - 'backend/deploy/ai-db/**'
+      - 'backend/test/deploy/ai_*'
+      - '.github/workflows/ai.yml'
+      - '!services/ai/**/*.md'
+      - '!packages/api-contract/ai/**/*.md'
+  pull_request:
+    paths:
+      - 'services/ai/**'
+      - 'packages/api-contract/ai/**'
+      - 'backend/deploy/ai-db/**'
+      - 'backend/test/deploy/ai_*'
+      - '.github/workflows/ai.yml'
+      - '!services/ai/**/*.md'
+      - '!packages/api-contract/ai/**/*.md'
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-ai-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: services/ai
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: [5432:5432]
+        options: >-
+          --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      AI_TEST_DATABASE_URL: postgresql://postgres:ci@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/ai
+      - name: Dependency boundaries and shutdown envelope
+        run: |
+          ./check-dependencies.sh
+          python3 ../../backend/test/deploy/ai_infrastructure_test.py -v
+      - name: Formatting
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Tests including isolated Postgres databases
+        run: cargo test --locked
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the image
+        uses: docker/build-push-action@v7
+        with:
+          context: services/ai
+          load: true
+          tags: windmill-ai:ci
+          build-args: SENTRY_RELEASE=${{ github.sha }}
+          cache-from: type=gha,scope=ai
+          cache-to: type=gha,scope=ai,mode=max
+      - name: Start an isolated ledger
+        run: |
+          docker network create ai-ci
+          docker run -d --name ai-ledger --network ai-ci -e POSTGRES_PASSWORD=ci postgres:16
+          for _ in $(seq 1 30); do
+            docker exec ai-ledger pg_isready -U postgres && break
+            sleep 1
+          done
+          docker exec ai-ledger psql -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE windmill_ai LOGIN PASSWORD 'ci'"
+          docker exec ai-ledger psql -U postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE windmill_ai OWNER windmill_ai'
+      - name: Verify listeners, dark admission, hardening and graceful exit
+        run: |
+          docker run -d --name ai --network ai-ci --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --ulimit core=0:0 --cap-drop ALL --security-opt no-new-privileges --stop-timeout 720 \
+            -p 8084:8084 -p 8085:8085 -e AI_ENVIRONMENT=production -e AI_PASS_KEYS='{}' \
+            -e AI_DATABASE_URL=postgresql://windmill_ai:ci@ai-ledger:5432/windmill_ai \
+            -e AI_CARRY_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \
+            -e AI_FUNDING_SECRET=ci-funding-secret-000000000000000000000000 \
+            -e AI_OPERATOR_SECRET=ci-operator-secret-00000000000000000000000 \
+            windmill-ai:ci
+          for _ in $(seq 1 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' ai)" = healthy ] && break
+            sleep 1
+          done
+          test "$(docker inspect -f '{{.State.Health.Status}}' ai)" = healthy
+          test "$(curl -fsS http://127.0.0.1:8084/health)" = '{"status":"ready"}'
+          test "$(curl -fsS http://127.0.0.1:8085/health)" = '{"status":"ready"}'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8084/v1/allowance)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8084/internal/v1/budgets)" = 404
+          docker exec ai sh -c 'test "$(ulimit -c)" = 0'
+          docker stop --time 30 ai
+          test "$(docker inspect -f '{{.State.ExitCode}}' ai)" = 0
+      - name: Container logs
+        if: always()
+        run: |
+          docker logs ai || true
+          docker logs ai-ledger || true
+      - name: Remove isolated containers
+        if: always()
+        run: |
+          docker rm -f ai ai-ledger || true
+          docker network rm ai-ci || true
+
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Pass and wire fixtures match their generators
+        run: |
+          python3 ../../packages/api-contract/ai/passes/generate.py --check
+          python3 ../../packages/api-contract/ai/wire/generate.py --check
+          python3 ../../packages/api-contract/ai/check.py
+
+  database-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: HBA writes preserve backend and subscription access
+        run: python3 ../../backend/test/deploy/ai_db_test.py -v

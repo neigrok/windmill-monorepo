@@ -17,6 +17,8 @@ import unittest
 SCRIPT = Path(__file__).resolve().parents[2] / "deploy/deploy-production.sh"
 PROVISIONED = "PASS subscriptions database: windmill_subscriptions provisioned, refused to the backend role (rules unchanged)"
 DEPLOYED = ("PASS subscription service: healthy on its pinned image\n"
+            "PASS AI database: windmill_ai provisioned, refused to other roles (rules unchanged)\n"
+            "PASS AI service: healthy on its pinned image\n"
             "PASS deployed: immutable image, sync compatibility, process environment and Caddy verified; DB password preserved\n")
 BACKEND_UP = ["compose", "up", "-d", "--pull", "never", "db", "migrate", "subscriptions-db", "server", "embedder", "caddy"]
 SUBSCRIPTIONS_UP = ["compose", "up", "-d", "--no-deps", "--pull", "never", "subscriptions"]
@@ -42,6 +44,8 @@ def compose(state, arguments):
         return 1 if state.get("composeUnavailable") else 0, ""
     if command == ["config", "-q"]:
         return 1 if state.get("failAt") == "config" else 0, ""
+    if command == ["pull", "ai"]:
+        return 1 if state.get("aiImageMissing") else 0, ""
     if command == ["pull", "subscriptions"]:
         return 1 if state.get("subscriptionsImageMissing") else 0, ""
     if command[0] == "pull":
@@ -51,11 +55,22 @@ def compose(state, arguments):
         return 0, json.dumps({"services": {"server": server_config(environment),
             "migrate": {"image": state.get("migrationImage", server_config(environment)["image"])},
             "subscriptions": {"image": env.get("SUBSCRIPTIONS_IMAGE",
-                                               "ghcr.io/neigrok/windmill-monorepo:subscriptions-" + env["IMAGE_TAG"])}}})
+                                               "ghcr.io/neigrok/windmill-monorepo:subscriptions-" + env["IMAGE_TAG"])},
+            "ai": {"image": env.get("AI_IMAGE", "ghcr.io/neigrok/windmill-monorepo:ai-" + env["IMAGE_TAG"])}}})
     if command == ["config", "--services"]:
-        return 0, "db\nmigrate\nsubscriptions-db\nserver\nembedder\nsubscriptions\ncaddy\n"
+        return 0, "db\nmigrate\nsubscriptions-db\nai-db\nserver\nembedder\nsubscriptions\nai\ncaddy\n"
     if command == ["ps", "-q", "server"]:
         return 0, "server-container"
+    if command == ["ps", "-aq", "ai-db"]:
+        return 0, "ai-provisioning-container"
+    if command == ["ps", "-aq", "ai"]:
+        return 0, "ai-container"
+    if command == ["logs", "--no-log-prefix", "--tail", "1", "ai-db"]:
+        return 0, "PASS AI database: windmill_ai provisioned, refused to other roles (rules unchanged)\n"
+    if command == ["up", "-d", "--no-deps", "--pull", "never", "ai"]:
+        return 1 if state.get("aiUpFails") else 0, ""
+    if command == ["up", "-d", "--no-deps", "--pull", "never", "ai-db"]:
+        return 1 if state.get("aiProvisionUpFails") else 0, ""
     if command == ["ps", "-aq", "subscriptions-db"]:
         return 0, "provisioning-container"
     if command == ["ps", "-aq", "subscriptions"]:
@@ -124,6 +139,15 @@ def docker_shim(arguments):
     if arguments[:3] == ["inspect", "--format", '{"image":{{json .Config.Image}},"id":{{json .Image}}}']:
         status, output = 0, json.dumps({"image": state.get("serverImage", server_config()["image"]),
                                       "id": state.get("serverImageId", "sha256:" + "a" * 64)})
+    elif arguments == ["inspect", "--format", "{{.State.Status}} {{.State.ExitCode}}", "ai-provisioning-container"]:
+        status, output = 0, state.get("aiProvisioningOutcome", "exited 0")
+    elif arguments == ["inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}", "ai-container"]:
+        health = state.get("aiHealth", ["healthy"])
+        status, output = 0, health.pop(0) if len(health) > 1 else health[0]
+    elif arguments == ["inspect", "--format", "{{.Image}}", "ai-container"]:
+        status, output = 0, state.get("aiRunningId", "sha256:" + "d" * 64)
+    elif arguments[:4] == ["image", "inspect", "--format", "{{.Id}}"] and ":ai-" in arguments[4]:
+        status, output = 0, state.get("aiImageId", "sha256:" + "d" * 64)
     elif arguments == ["inspect", "--format", "{{.State.Status}} {{.State.ExitCode}}", "provisioning-container"]:
         status, output = 0, state.get("provisioningOutcome", "exited 0")
     elif arguments == ["inspect", "--format",
@@ -164,6 +188,10 @@ class DeployProductionTest(unittest.TestCase):
         (self.work / "Caddyfile").write_text("# live Caddyfile\n")
         (self.work / "subscriptions-db").mkdir()
         (self.work / "subscriptions-db/provision.sh").write_text("# live provisioning\n")
+        (self.work / "ai-db").mkdir()
+        (self.work / "ai-db/provision.sh").write_text("# live AI provisioning\n")
+        self.ai_env = ("AI_DB_PASSWORD=" + "c" * 64 + "\nAI_PASS_KEYS={}\nAI_CARRY_KEY=" + "A" * 43 +
+                       "\nAI_FUNDING_SECRET=" + "f" * 32 + "\nAI_OPERATOR_SECRET=" + "o" * 32 + "\n")
         self.upload_candidate()
         self.state_path = root / "docker-state.json"
         self.state_path.write_text(json.dumps({"commands": [], "caddyMount": "# live Caddyfile\n",
@@ -181,11 +209,13 @@ class DeployProductionTest(unittest.TestCase):
         self.temporary.mkdir()
 
     def upload_candidate(self):
-        (self.work / "rendered.env").write_text("IMAGE_TAG=new\nPOSTGRES_PASSWORD=rendered-secret\nDOMAIN_APP=example.test\n")
+        (self.work / "rendered.env").write_text("IMAGE_TAG=new\nPOSTGRES_PASSWORD=rendered-secret\nDOMAIN_APP=example.test\n" + self.ai_env)
         (self.work / "docker-compose.next.yml").write_text("# candidate compose\n")
         (self.work / "Caddyfile.next").write_text("# candidate Caddyfile\n")
         (self.work / "subscriptions-db.next").mkdir(exist_ok=True)
         (self.work / "subscriptions-db.next/provision.sh").write_text("# candidate provisioning\n")
+        (self.work / "ai-db.next").mkdir(exist_ok=True)
+        (self.work / "ai-db.next/provision.sh").write_text("# candidate AI provisioning\n")
         (self.work / "sync-cutover.json").write_text(json.dumps({
             "mode": "automatic", "oldMinimum": "", "newMinimum": "", "imageId": ""}) + "\n")
 
@@ -210,22 +240,68 @@ class DeployProductionTest(unittest.TestCase):
         result = self.deploy()
         self.assertEqual((result.returncode, result.stdout, result.stderr),
                          (0, PROVISIONED + "\n" + DEPLOYED, ""))
-        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
-                                        "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\n",
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
+                                        "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
+                                        "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
                                         "Caddyfile": "# candidate Caddyfile\n"})
         state = self.state()
         self.assertEqual([command for command in state.pop("commands") if command[:2] == ["compose", "up"]], [
             BACKEND_UP,
             ["compose", "up", "-d", "--no-deps", "--force-recreate", "--pull", "never", "caddy"],
-            SUBSCRIPTIONS_UP])
+            SUBSCRIPTIONS_UP,
+            ["compose", "up", "-d", "--no-deps", "--pull", "never", "ai-db"],
+            ["compose", "up", "-d", "--no-deps", "--pull", "never", "ai"]])
         self.assertEqual(state, {"caddyMount": "# candidate Caddyfile\n",
                                  "caddyActive": {"file": "# candidate Caddyfile\n"}, "promoted": True})
         self.assertEqual(list(self.temporary.iterdir()), [])
 
+    def test_ai_image_is_pinned_before_promotion_and_starts_after_both_prior_services(self):
+        result = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        commands = self.state()["commands"]
+        pin = commands.index(["image", "inspect", "--format", "{{.Id}}", "ghcr.io/neigrok/windmill-monorepo:ai-new"])
+        self.assertLess(pin, commands.index(BACKEND_UP))
+        ai_db = ["compose", "up", "-d", "--no-deps", "--pull", "never", "ai-db"]
+        ai = ["compose", "up", "-d", "--no-deps", "--pull", "never", "ai"]
+        self.assertLess(commands.index(SUBSCRIPTIONS_UP), commands.index(ai_db))
+        self.assertLess(commands.index(ai_db), commands.index(ai))
+
+    def test_ai_configuration_and_missing_image_refuse_before_live_mutation(self):
+        for key in ("AI_DB_PASSWORD", "AI_CARRY_KEY", "AI_FUNDING_SECRET", "AI_OPERATOR_SECRET"):
+            self.upload_candidate()
+            path = self.work / "rendered.env"
+            path.write_text("\n".join(line for line in path.read_text().splitlines() if not line.startswith(key + "=")) + "\n")
+            self.assert_preflight_refusal("AI service configuration is missing or invalid")
+        self.upload_candidate()
+        self.state(aiImageMissing=True)
+        self.assert_preflight_refusal("no AI service image could be pulled for this commit, and none runs here to keep")
+        self.state(aiImageMissing=False, aiImageId="PRIVATE_AI_IMAGE")
+        self.assert_preflight_refusal("candidate AI image has no immutable content ID")
+
+    def test_ai_failures_leave_the_verified_backend_serving(self):
+        for failure in ({"aiProvisioningOutcome": "exited 1"}, {"aiUpFails": True}, {"aiHealth": ["unhealthy"]}, {"aiRunningId": "sha256:" + "e" * 64}):
+            self.upload_candidate()
+            self.state(commands=[], aiProvisioningOutcome="exited 0", aiUpFails=False, aiHealth=["healthy"], aiRunningId="sha256:" + "d" * 64)
+            self.state(**failure)
+            result = self.deploy()
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("the backend is deployed and serving", result.stderr)
+            self.assertIn(BACKEND_UP, self.state()["commands"])
+            self.assertIn(SUBSCRIPTIONS_UP, self.state()["commands"])
+            self.assertNotIn("PRIVATE", result.stdout + result.stderr)
+
+    def test_ai_image_absent_on_rollback_keeps_the_live_immutable_image(self):
+        with (self.work / ".env").open("a") as file:
+            file.write("AI_IMAGE=sha256:" + "e" * 64 + "\n")
+        self.state(aiImageMissing=True, aiRunningId="sha256:" + "e" * 64)
+        result = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("AI_IMAGE=sha256:" + "e" * 64 + "\n", (self.work / ".env").read_text())
+
     def approve(self, old, new, image_id=None):
-        (self.work / "rendered.env").write_text("IMAGE_TAG=" + "b" * 40 + "\nPOSTGRES_PASSWORD=rendered-secret\nDOMAIN_APP=example.test\n")
+        (self.work / "rendered.env").write_text("IMAGE_TAG=" + "b" * 40 + "\nPOSTGRES_PASSWORD=rendered-secret\nDOMAIN_APP=example.test\n" + self.ai_env)
         (self.work / "sync-cutover.json").write_text(json.dumps({
             "mode": "manual", "oldMinimum": str(old), "newMinimum": str(new),
             "imageId": image_id or "sha256:" + "a" * 64}) + "\n")
@@ -284,8 +360,8 @@ class DeployProductionTest(unittest.TestCase):
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0,
             PROVISIONED + "\n" + DEPLOYED, ""))
         self.assertEqual((self.work / ".env").read_text(), "IMAGE_TAG=" + "b" * 40 +
-                         "\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
-                         "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\n")
+                         "\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
+                         "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n")
         commands = self.state()["commands"]
         metadata_read = next(command for command in commands if command[:2] == ["run", "--rm"])
         self.assertEqual(metadata_read, ["run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL",
@@ -341,10 +417,11 @@ class DeployProductionTest(unittest.TestCase):
         (self.work / "Caddyfile.next").write_text("# live Caddyfile\n")
         result = self.deploy()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
-                                        "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\n",
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
+                                        "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
+                                        "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
                                         "Caddyfile": "# live Caddyfile\n"})
         self.assertNotIn("--force-recreate", [argument for command in self.state()["commands"] for argument in command])
 
@@ -388,23 +465,25 @@ class DeployProductionTest(unittest.TestCase):
         self.state(killAt="up")
         killed = self.deploy()
         self.assertEqual(killed.returncode, -signal.SIGKILL)
-        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
-                                        "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\n",
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
+                                        "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                         ".env.bak": "IMAGE_TAG=old\nPOSTGRES_PASSWORD=live-secret\n",
-                                        "rendered.env": "IMAGE_TAG=new\nPOSTGRES_PASSWORD=rendered-secret\nDOMAIN_APP=example.test\n",
+                                        "rendered.env": "IMAGE_TAG=new\nPOSTGRES_PASSWORD=rendered-secret\nDOMAIN_APP=example.test\n" + self.ai_env,
                                         "sync-cutover.json": json.dumps({"mode": "automatic", "oldMinimum": "", "newMinimum": "", "imageId": ""}) + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
+                                        "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
                                         "Caddyfile": "# candidate Caddyfile\n"})
         self.assertEqual(self.state()["caddyMount"], "# live Caddyfile\n")
         self.upload_candidate()
         self.state(commands=[])
         retried = self.deploy()
         self.assertEqual(retried.returncode, 0, retried.stderr)
-        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
-                                        "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\n",
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
+                                        "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
+                                        "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
                                         "Caddyfile": "# candidate Caddyfile\n"})
         state = self.state()
         self.assertIn(["compose", "up", "-d", "--no-deps", "--force-recreate", "--pull", "never", "caddy"], state["commands"])
@@ -418,10 +497,11 @@ class DeployProductionTest(unittest.TestCase):
         self.assertEqual((result.returncode, result.stdout, result.stderr), (1,
             "FAIL subscriptions database: the role or the database could not be created\n",
             "FAIL subscription database provisioning exited with code 1; the backend is deployed and serving\n"))
-        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
-                                        "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\n",
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
+                                        "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
+                                        "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
                                         "Caddyfile": "# candidate Caddyfile\n"})
         self.assertIn(BACKEND_UP, self.state()["commands"])
         self.assertNotIn(SUBSCRIPTIONS_UP, self.state()["commands"])
@@ -437,7 +517,7 @@ class DeployProductionTest(unittest.TestCase):
         self.assertLess(max(provisioning, last_probe), commands.index(SUBSCRIPTIONS_UP))
         health = ["inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}",
                   "subscriptions-container"]
-        self.assertEqual(commands[commands.index(SUBSCRIPTIONS_UP):], [
+        self.assertEqual(commands[commands.index(SUBSCRIPTIONS_UP):commands.index(SUBSCRIPTIONS_UP) + 4], [
             SUBSCRIPTIONS_UP, ["compose", "ps", "-aq", "subscriptions"], health,
             ["inspect", "--format", "{{.Image}}", "subscriptions-container"]])
 
@@ -456,10 +536,11 @@ class DeployProductionTest(unittest.TestCase):
                 result = self.deploy()
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (1, PROVISIONED + "\n",
                                  "FAIL " + failure + "; the backend is deployed and serving\n"))
-                self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret"
-                                                "\nSERVER_IMAGE=sha256:" + "a" * 64 + "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\n",
+                self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret"
+                                                "\nSERVER_IMAGE=sha256:" + "a" * 64 + "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                                 "docker-compose.yml": "# candidate compose\n",
                                                 "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
+                                        "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
                                                 "Caddyfile": "# candidate Caddyfile\n"})
                 commands = self.state()["commands"]
                 self.assertIn(BACKEND_UP, commands)
@@ -475,10 +556,11 @@ class DeployProductionTest(unittest.TestCase):
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0,
             "NOTE subscription service: no image could be pulled for this commit, so it keeps the one it runs, " + live +
             "\n" + PROVISIONED + "\n" + DEPLOYED, ""))
-        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret"
-                                        "\nSERVER_IMAGE=sha256:" + "a" * 64 + "\nSUBSCRIPTIONS_IMAGE=" + live + "\n",
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret"
+                                        "\nSERVER_IMAGE=sha256:" + "a" * 64 + "\nSUBSCRIPTIONS_IMAGE=" + live + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
+                                        "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
                                         "Caddyfile": "# candidate Caddyfile\n"})
         commands = self.state()["commands"]
         self.assertLess(commands.index(["image", "inspect", "--format", "{{.Id}}", live]), commands.index(BACKEND_UP))
@@ -831,13 +913,14 @@ class DeployWorkflowTest(unittest.TestCase):
         start = text.index("          missing=\n")
         guard = textwrap.dedent(text[start:text.index('          if [ "$AI_INSTALLATIONS_ENABLED"', start)])
         unset = ("Refusing to render — these required values are unset: SUBSCRIPTIONS_DB_PASSWORD\n"
-                 "Set them (variables for the domains/email/sender, the POSTGRES_PASSWORD and SUBSCRIPTIONS_DB_PASSWORD"
-                 " secrets) and re-run.\n"
+                 "Set them (variables for the domains/email/sender, the database passwords and AI service secrets) and re-run.\n"
                  "(CF_IPS is not configured anywhere — if it is listed, both the live fetch and the compose fallback came"
                  " back empty.)\n")
         malformed = "Refusing to render — SUBSCRIPTIONS_DB_PASSWORD must be 64 lowercase hex characters (openssl rand -hex 32).\n"
         required = {key: "configured" for key in ("DOMAIN_APP", "DOMAIN_API", "ACME_EMAIL", "POSTGRES_PASSWORD",
                                                   "RESEND_FROM", "CF_IPS")}
+        required.update({"AI_DB_PASSWORD": "c" * 64, "AI_PASS_KEYS": "{}", "AI_CARRY_KEY": "A" * 43,
+                         "AI_FUNDING_SECRET": "f" * 32, "AI_OPERATOR_SECRET": "o" * 32})
         for value, outcome in (("", (1, unset)), ("0123456789abcdef" * 4, (0, "")), ("A" * 64, (1, malformed)),
                                ("a" * 63, (1, malformed)), ("a" * 64 + "\n", (1, malformed)),
                                ("private canary@host/db", (1, malformed))):

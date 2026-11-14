@@ -1,16 +1,24 @@
 # engine.md §9.1: the edge forwards every Authorization and Cookie line as received, and every Set-Cookie line back.
 # Run: cmake -DCADDYFILE=<path> -P caddyfile_forwards_credentials.cmake. It fails when a line of the Caddyfile, outside
-# a comment, names one of those fields (as `Cookie`, `-Cookie`, `+Cookie` or `>Cookie`), or rewrites fields by a
-# pattern that could reach them.
+# a comment, rewrites those fields. The AI snippet alone removes Cookie: AI accepts its own pass only.
 if(NOT EXISTS "${CADDYFILE}")
   message(FATAL_ERROR "No Caddyfile at ${CADDYFILE}")
 endif()
 file(STRINGS "${CADDYFILE}" lines)
 set(proxies 0)
 set(offending "")
+set(ai_door FALSE)
 foreach(line IN LISTS lines)
   string(REGEX REPLACE "#.*$" "" code "${line}")
   string(TOLOWER "${code}" code)
+  if(code MATCHES "^\\(ai_doors\\)[ \t]*\\{")
+    set(ai_door TRUE)
+  elseif(code MATCHES "^\\}")
+    set(ai_door FALSE)
+  endif()
+  if(ai_door AND code MATCHES "^[ \t]*header_up[ \t]+-cookie[ \t]*$")
+    continue()
+  endif()
   if(code MATCHES "^[ \t]*reverse_proxy[ \t]")
     math(EXPR proxies "${proxies} + 1")
   endif()
@@ -35,4 +43,4 @@ endif()
 if(offending)
   message(FATAL_ERROR "${CADDYFILE} touches a credential field on its way through the edge:${offending}")
 endif()
-message(STATUS "${CADDYFILE}: ${proxies} reverse_proxy blocks, none touching Authorization, Cookie or Set-Cookie")
+message(STATUS "${CADDYFILE}: ${proxies} reverse_proxy blocks preserve credentials; AI alone removes Cookie")

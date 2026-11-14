@@ -63,6 +63,16 @@ jobs:
           # The password of windmill_subscriptions, the subscription service's database role: the
           # subscriptions-db one-shot sets it and the service signs in with it (backend/deploy/README.md).
           SUBSCRIPTIONS_DB_PASSWORD: ${{ secrets.SUBSCRIPTIONS_DB_PASSWORD }}
+          AI_DB_PASSWORD: ${{ secrets.AI_DB_PASSWORD }}
+          AI_PASS_KEYS: ${{ vars.AI_PASS_KEYS || '{}' }}
+          AI_CARRY_KEY: ${{ secrets.AI_CARRY_KEY }}
+          AI_FUNDING_SECRET: ${{ secrets.AI_FUNDING_SECRET }}
+          AI_OPERATOR_SECRET: ${{ secrets.AI_OPERATOR_SECRET }}
+          AI_ANTHROPIC_KEY: ${{ secrets.AI_ANTHROPIC_KEY }}
+          AI_OPENAI_KEY: ${{ secrets.AI_OPENAI_KEY }}
+          AI_AZURE_KEY: ${{ secrets.AI_AZURE_KEY }}
+          AI_AZURE_URL: ${{ vars.AI_AZURE_URL }}
+          AI_AZURE_DEPLOYMENT: ${{ vars.AI_AZURE_DEPLOYMENT }}
           DOMAIN_APP: ${{ vars.DOMAIN_APP }}
           DOMAIN_API: ${{ vars.DOMAIN_API }}
           ACME_EMAIL: ${{ vars.ACME_EMAIL }}
@@ -172,12 +182,12 @@ jobs:
           # RESEND_FROM is guarded because its compose fallback `onboarding@resend.dev` is Resend's
           # shared test sender: it delivers to the account owner and to nobody else.
           missing=
-          for key in DOMAIN_APP DOMAIN_API ACME_EMAIL POSTGRES_PASSWORD SUBSCRIPTIONS_DB_PASSWORD RESEND_FROM CF_IPS; do
+          for key in DOMAIN_APP DOMAIN_API ACME_EMAIL POSTGRES_PASSWORD SUBSCRIPTIONS_DB_PASSWORD AI_DB_PASSWORD AI_CARRY_KEY AI_FUNDING_SECRET AI_OPERATOR_SECRET RESEND_FROM CF_IPS; do
             [ -n "${!key}" ] || missing="$missing $key"
           done
           if [ -n "$missing" ]; then
             echo "Refusing to render — these required values are unset:$missing"
-            echo "Set them (variables for the domains/email/sender, the POSTGRES_PASSWORD and SUBSCRIPTIONS_DB_PASSWORD secrets) and re-run."
+            echo "Set them (variables for the domains/email/sender, the database passwords and AI service secrets) and re-run."
             echo "(CF_IPS is not configured anywhere — if it is listed, both the live fetch and the compose fallback came back empty.)"
             exit 1
           fi
@@ -187,6 +197,40 @@ jobs:
             echo "Refusing to render — SUBSCRIPTIONS_DB_PASSWORD must be 64 lowercase hex characters (openssl rand -hex 32)."
             exit 1
           fi
+
+          python3 - <<'PYAI'
+          import base64
+          import json
+          import os
+          import re
+          def refuse():
+              raise SystemExit("Refusing to render — AI database, carry, public keys or internal secrets are invalid.")
+          if not re.fullmatch(r"[0-9a-f]{64}", os.environ.get("AI_DB_PASSWORD", "")):
+              refuse()
+          carry = os.environ.get("AI_CARRY_KEY", "")
+          if not re.fullmatch(r"[A-Za-z0-9_-]{43}", carry):
+              refuse()
+          try:
+              raw = base64.urlsafe_b64decode(carry + "=")
+              if len(raw) != 32 or base64.urlsafe_b64encode(raw).decode().rstrip("=") != carry:
+                  refuse()
+              keys = json.loads(os.environ.get("AI_PASS_KEYS") or "{}")
+              if not isinstance(keys, dict):
+                  refuse()
+              for kid, key in keys.items():
+                  if not re.fullmatch(r"[a-z0-9-]{1,32}", kid) or kid.startswith("test-") or not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", key):
+                      refuse()
+                  if len(base64.urlsafe_b64decode(key + "=")) != 32:
+                      refuse()
+          except (ValueError, TypeError):
+              refuse()
+          secrets = [os.environ.get(key, "") for key in ("AI_FUNDING_SECRET", "AI_OPERATOR_SECRET")]
+          if any(not re.fullmatch(r"[A-Za-z0-9_-]{32,256}", value) for value in secrets) or len(set([carry, *secrets])) != 3:
+              refuse()
+          for key, value in os.environ.items():
+              if key.startswith("AI_") and any(character in value for character in "\r\n$"):
+                  refuse()
+          PYAI
 
           if [ "$AI_INSTALLATIONS_ENABLED" = true ] || [ "$AI_INSTALLATIONS_ENABLED" = 1 ]; then
             if { [ "$AI_ALLOWANCES_ENABLED" != true ] && [ "$AI_ALLOWANCES_ENABLED" != 1 ]; } || [ "${#AI_INSTALLATION_IP_HMAC_KEY}" -lt 32 ]; then
@@ -199,7 +243,9 @@ jobs:
           : > rendered.env
           {
             printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG:-latest}"
-            for key in POSTGRES_PASSWORD SUBSCRIPTIONS_DB_PASSWORD DOMAIN_APP DOMAIN_API ACME_EMAIL CF_IPS \
+            for key in POSTGRES_PASSWORD SUBSCRIPTIONS_DB_PASSWORD AI_DB_PASSWORD AI_PASS_KEYS AI_CARRY_KEY \
+                       AI_FUNDING_SECRET AI_OPERATOR_SECRET AI_ANTHROPIC_KEY AI_OPENAI_KEY AI_AZURE_KEY \
+                       AI_AZURE_URL AI_AZURE_DEPLOYMENT DOMAIN_APP DOMAIN_API ACME_EMAIL CF_IPS \
                        RESEND_API_KEY RESEND_FROM RESEND_WEBHOOK_SECRET ANTHROPIC_API_KEY OPENAI_API_KEY \
                        TENDING_ENABLED COACH_MAX_OUTPUT_TOKENS AI_ALLOWANCES_ENABLED AI_ANONYMOUS_LIFETIME_USD \
                        AI_LOGGED_IN_MONTHLY_USD AI_ONE_PERIOD_USD AI_FREE_MONTHLY_USD \
@@ -227,12 +273,14 @@ jobs:
           SSH="ssh -i deploy_key -p ${PORT} -o StrictHostKeyChecking=accept-new"
 
           # A folder left by a refused candidate would take the next copy inside it, so it goes first.
-          $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill && rm -rf ~/windmill/subscriptions-db.next'
+          $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill && rm -rf ~/windmill/subscriptions-db.next ~/windmill/ai-db.next'
           scp -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \
             backend/deploy/deploy-production.sh backend/deploy/sync_compatibility.py sync-cutover.json rendered.env \
             "$SSH_USER@$SSH_HOST:windmill/"
           scp -r -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \
             backend/deploy/subscriptions-db "$SSH_USER@$SSH_HOST:windmill/subscriptions-db.next"
+          scp -r -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \
+            backend/deploy/ai-db "$SSH_USER@$SSH_HOST:windmill/ai-db.next"
           scp -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \
             backend/deploy/docker-compose.yml "$SSH_USER@$SSH_HOST:windmill/docker-compose.next.yml"
           scp -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \

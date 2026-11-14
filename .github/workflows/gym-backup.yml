@@ -57,6 +57,19 @@ jobs:
             else
               printf 'SKIP subscriptions backup: windmill_subscriptions does not exist\n'
             fi
+            ledger=$(docker compose exec -T db sh -ec 'psql -XAtq --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' \
+              <<< "select 1 from pg_database where datname = 'windmill_ai'")
+            if [ "$ledger" = 1 ]; then
+              PGPASSWORD=$(sed -n 's/^AI_DB_PASSWORD=//p' .env) \
+                docker compose exec -T -e PGPASSWORD db pg_dump --username=windmill_ai \
+                --dbname=windmill_ai --format=custom > "backups/ai-$stamp.dump.partial" || {
+                printf 'FAIL backup: windmill_ai could not be dumped with its own role\n' >&2
+                return 1
+              }
+              keep ai windmill_ai
+            else
+              printf 'SKIP AI backup: windmill_ai does not exist\n'
+            fi
           }
           # Keeps backups/<name>-<stamp>.dump.partial once pg_restore reads it back as a dump of <database>,
           # beside its sha256.
