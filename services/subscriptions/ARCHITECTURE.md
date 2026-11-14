@@ -8,8 +8,9 @@ The Rust workspace, its four crates and one tool exist. `domain` models the subs
 the stores' observations into it ([Domain](#domain)); `app_store` verifies App Store signed payloads
 ([below](#app-store-signature-verification)) and decodes them into observations
 ([App Store decoding](#app-store-decoding)), and the tool `app_store_test_signer` signs them under a
-chain only tests trust ([App Store test signer](#app-store-test-signer)); `storage` opens the ledger,
-the service's own database, and migrates it ([Storage](#storage)); `subscriptions`, the server binary,
+chain only tests trust ([App Store test signer](#app-store-test-signer)); `storage` keeps the ledger,
+the service's own database: it migrates it, keeps what the stores sent, applies observations in one
+transaction each and reads the feed ([Storage](#storage)); `subscriptions`, the server binary,
 opens the ledger before it listens, answers health on both of its listeners, logs every request and
 reports to Sentry ([Server](#server)). The service does not run in production. The production compose
 provisions its database once `SUBSCRIPTIONS_DB_PASSWORD` is set, and does nothing until then
@@ -56,7 +57,7 @@ clock, no randomness. Its files, by kind:
 | `observe.rs` | `Observation`, what a caller hands `observe`, the `Change` it returns, `Event` and `Refusal` |
 | `entitlement.rs` | `AccountEntitlement`, one `Entitlement` block per environment, folded from the ledger alone |
 
-The action that applies an observation calls `observe` once:
+The action that applies an observation, `storage`'s apply ([Writing](#writing)), calls `observe` once:
 
 1. Load the lineage's `Ledger`: its subscription, if any, and its periods.
 2. Resolve the observation's account hint against the erased accounts into an `AccountHint`, and pass
@@ -440,6 +441,89 @@ therefore does not start.
 | Migration | What it creates |
 |---|---|
 | `0001_ledger.sql` | `ledger`: one row, whose `epoch` (a UUID) is minted when the ledger is created and replaced when it is restored (spec §5.2) |
+| `0002_inbox.sql` | `now_millis()`, the database's clock in epoch milliseconds, and `inbox` |
+| `0003_subscriptions.sql` | `subscriptions` and `periods` |
+| `0004_events.sql` | `ledger.latest_seq`, `events` and `entitlement_subscriptions` |
+| `0005_erased_accounts.sql` | `erased_accounts` |
+
+### Records
+
+Every instant is epoch milliseconds, the unit the domain and every wire count in; the ledger's own
+stamps (`received_at`, `settled_at`, `recorded_at`, `erased_at`) are the database's clock, read through
+`now_millis()`. Ids are `uuid`. Each closed name is checked against the domain's set, a state's facts
+are present exactly in that state (§3.2), and an amount is a decimal string beside its ISO 4217 code,
+so the database holds no value the domain cannot read back. Store ids are kept plain, because the App
+Store Server API is called with the original transaction id; the domain types that carry them print
+redacted (spec §10).
+
+| Table | Holds |
+|---|---|
+| `inbox` | Each notification a store door kept, keyed by `(store, notification_id)`, with its environment and the signed payload as received. `settled_at` and `outcome` are set together, once: `applied`, a refusal's code, or the code a door settles a notification with when it states nothing to apply |
+| `subscriptions` | One row per lineage, unique by `(store, environment, store_subscription_id)`: every field of the domain's `Subscription`, and `verified_at` |
+| `periods` | One row per store transaction of a lineage. Only `refunded_at` and `observed_at` change after it is written (INV-7) |
+| `events` | Append-only, keyed by `seq`. Each row keeps its subscription's store, environment and offer kind as the transaction that recorded it left them, and a period event its period as the event states it, so the feed reads no other table's current state |
+| `entitlement_subscriptions` | For each event that names an account, that account's subscriptions as the transaction left them: what the event's entitlement folds over |
+| `erased_accounts` | The accounts the backend erased (§6.4) |
+
+### Writing
+
+`Ledger`'s write methods are what the doors and the sweep call:
+
+| Method | What it does |
+|---|---|
+| `receive(notification)` | Keeps a verified notification and answers `Receipt::Kept` with a `KeptNotification`, or `Receipt::Duplicate`, changing nothing, when the inbox holds one by that store's id already (spec §5.1 step 3) |
+| `apply_notification(kept, observed)` | Applies the observation a kept notification states and settles the notification in the same transaction. A notification settled already answers `AlreadySettled`, so the door and every retry of the sweep together apply it once |
+| `apply(observed)` | Applies the observation of a claim or a pull |
+| `settle(kept, code)` | Settles a notification that states nothing to apply with the code of what it was; a settled notification keeps its first outcome |
+| `unsettled(limit)` | The kept notifications not yet settled, the longest kept first: the sweep's first step (§7) |
+| `record_erasure(account)` | Records the account as erased; recording it again changes nothing. It unbinds nothing: the domain has no step for unbinding ([Domain](#domain)) |
+
+Only the ledger makes a `KeptNotification`, so nothing applies a notification the inbox does not hold.
+`Observed` is what a caller hands over: the observation; the account its hint names, as a UUID, so a
+door reads a store's token that is not one as no hint; the claim, when a claim door calls; and
+`pulled_at`, when the service read the state from the store's API. `verified_at` is the newest
+`pulled_at` applied.
+
+An apply is one transaction, the action of [Domain](#domain):
+
+1. Hold the claiming account and the hinted account, each a shared advisory lock, and resolve the hint:
+   erased when `erased_accounts` names the account, live otherwise.
+2. Lock the lineage with an advisory lock keyed by it, which also covers a lineage nothing has written
+   yet, lock its row `for no key update`, and load its `domain::Ledger`.
+3. Mint a subscription id and one period id per stated period, random UUIDs, and call `observe`. A
+   `Refusal` writes nothing.
+4. Write the subscription when it differs from the one held, each period written or restated, and
+   `verified_at` when the state was pulled. A replay writes no row (INV-4).
+5. Take the events' seqs under the seq lock ([below](#the-seq-lock)), read the subscriptions of each
+   account the events name, and append each event with its account's.
+6. For a notification, settle its inbox row. Commit.
+
+`Applied::Recorded` holds the `Change` and the seq of each of its events; after the commit the caller
+writes `hint_for_store` to the store. Locks are taken in one order, accounts, then lineage, then seq,
+and recording an erasure holds its account's lock alone, so no binding to an account commits beside its
+erasure. The row lock is `for no key update` because a transaction holding the seq lock inserts
+entitlement rows whose foreign key takes a key-share lock on each subscription of the account, which
+`for update` refuses: the two transactions would deadlock.
+
+### The seq lock
+
+A transaction takes its events' seqs by updating the `ledger` row, `latest_seq = latest_seq + n`, and
+holds that row's lock until it commits. No transaction takes a seq while another that took one has not
+committed, so seq order is commit order and a reader that has seen `seq = n` has seen every event below
+it (INV-8). The seq and the lock are one statement, and `events.seq` has no default, so no event can
+take a seq without the lock, as one could beside an advisory lock around a sequence. A rolled-back
+transaction rolls the counter back with it, so the ledger leaves no gap of its own; readers still allow
+one (§5.2). `recordedAt` is the database's clock read in the same statement, one instant for the
+transaction's events, rising with seq as long as the clock does. Each account's subscriptions are read
+after the lock is taken, so they include every transaction committed before.
+
+### Reading
+
+| Method | What it answers |
+|---|---|
+| `feed(after, limit)` | A `FeedPage`, `{epoch, entries, latest_seq}`, read in one repeatable-read snapshot: at most `limit` events after the seq `after`, in seq order. A `FeedEntry` holds the domain's `Event`, its `seq` and `recorded_at`, the subscription's store, environment and offer kind, and the entitlement, `AccountEntitlement::of` the account over the subscriptions stored with the event, absent exactly when the event names no account (§5.2) |
+| `lineage(lineage)` | What the ledger holds for one lineage: its subscription, if any, and its periods |
+| `entitlement(account)` | The account's entitlement as the ledger holds it now |
 
 ### Failures
 
@@ -451,7 +535,8 @@ server's message is never kept, because it can quote a statement or a value.
 | `unreachable` | no connection within its bound: nothing listens, the network refused or TLS failed |
 | `refused` | the server would not let the role in: a `pg_hba.conf` rule (`28000`), a wrong password (`28P01`), no such database (`3D000`) |
 | `migration` | the schema could not be brought up to the binary's, or the database holds a migration the binary does not |
-| `database` | anything else the database answered |
+| `unreadable` | a row this build cannot read: a name outside its closed set, or a fact its state requires missing |
+| `database` | anything else the database answered, such as a deadlock (`40P01`) or a connection the server ended (`57P01`) |
 
 `storage::DatabaseUrl` reads a `postgres://` or `postgresql://` URL. Its query may carry only `host`
 (a host or a unix socket directory), `port`, `user`, `dbname` and `sslmode`: the driver logs any other
@@ -590,7 +675,7 @@ cargo test --locked
 
 `check-dependencies.sh` needs `jq` and runs from any directory.
 
-The tests that need Postgres, in `crates/storage/tests/ledger.rs`, run only where
+The tests that need Postgres, in `crates/storage/tests/`, run only where
 `SUBSCRIPTIONS_TEST_DATABASE_URL` names a database whose role may create databases; each test creates
 an empty one beside it and drops it after. Without the variable they are compiled as ignored, so the
 summary counts them as not run. Against the local Homebrew Postgres:

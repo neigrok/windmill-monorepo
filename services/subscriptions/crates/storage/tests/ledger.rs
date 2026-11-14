@@ -52,7 +52,16 @@ async fn an_empty_database_is_migrated_and_given_one_epoch_that_opening_again_ke
         .fetch_all(&mut connection)
         .await
         .unwrap();
-        assert_eq!(migrations, [(1, "ledger".to_owned(), true)]);
+        assert_eq!(
+            migrations,
+            [
+                (1, "ledger".to_owned(), true),
+                (2, "inbox".to_owned(), true),
+                (3, "subscriptions".to_owned(), true),
+                (4, "events".to_owned(), true),
+                (5, "erased accounts".to_owned(), true),
+            ]
+        );
         let second_row = connection
             .execute("insert into ledger (epoch) values (gen_random_uuid())")
             .await
@@ -92,14 +101,14 @@ async fn a_database_whose_migrations_are_not_this_build_s_is_refused() {
         connection
             .execute(
                 "insert into _sqlx_migrations (version, description, success, checksum, \
-                 execution_time) values (2, 'from a newer build', true, '\\x00', 0)",
+                 execution_time) values (9999, 'from a newer build', true, '\\x00', 0)",
             )
             .await
             .unwrap();
         let newer = Ledger::open(&url.parse().unwrap()).await.err().unwrap();
         connection
             .execute(
-                "delete from _sqlx_migrations where version = 2; \
+                "delete from _sqlx_migrations where version = 9999; \
                  update _sqlx_migrations set checksum = '\\x00' where version = 1",
             )
             .await

@@ -156,8 +156,9 @@ Events: `started`, `renewed`, `renewal_turned_off`, `renewal_turned_on`, `paymen
 `payment_recovered`, `pause_scheduled`, `paused`, `resumed`, `plan_change_scheduled`, `plan_changed`,
 `period_extended`, `expired`, `revoked`, `revocation_reversed`, `updated`, `bound`, `unbound`, and the
 three period events `period_recorded`, `period_refunded` and `period_refund_reversed`. Each carries
-`seq`, `type`, `occurredAt` (the store's time), `recordedAt`, `subscriptionId` and `accountId`; a period
-event also carries its period.
+`seq`, `type`, `occurredAt` (the store's time), `recordedAt` (the ledger's time when the transaction that
+recorded it took its seqs), `subscriptionId` and `accountId`; a period event also carries its period as
+that event states it.
 
 An observation's events read in story order: its state events, then `unbound` and `bound`, then its
 period events by their periods' starts, and `expired` or `revoked` last. A state event is recorded
@@ -258,11 +259,12 @@ environments; the environment is read from the verified payload. The door is a f
    chain to the pinned Apple root certificates, each signature, that the bundle id is
    `works.windmill.app`, and that the environment is `Production` or `Sandbox`.
 3. Insert the signed payload into the inbox keyed by the notification's UUID. A duplicate answers 200.
-4. Build the observation and apply it (§3.4) in one transaction with its periods, events and binding.
+4. Build the observation and apply it (§3.4) in one transaction with its periods, events and binding,
+   which also settles the inbox row, so a notification is applied once however often it is retried.
 5. Answer 200.
 
 A failure at 1–2 answers 4xx and stores nothing. Once step 3 commits the door answers 200 whatever
-step 4 does: an unprocessed inbox row is retried by the sweep (§7), so recovery never waits on the
+step 4 does: an unsettled inbox row is retried by the sweep (§7), so recovery never waits on the
 store's redelivery schedule. Apple redelivers a production notification five times over a week and a
 sandbox notification never. Later stores add `/v1/stores/play-store/notifications` and
 `/v1/stores/paddle/notifications` with the same shape.
@@ -305,10 +307,11 @@ epoch (§6.1). `latestSeq` is the newest event the ledger holds. A page may end 
 one transaction; each entry carries the entitlement after its transaction, so a reader that stops
 there holds a correct copy.
 
-A feed entry is one event (§3.4) with the subscription's `store`, `environment` and `offerKind`,
-`period` on a period event (`{id, start, end, price, offerKind, refundedAt}`, `id` being the service's
-own), and `entitlement`, the account's `EntitlementResponse` after the transaction that recorded the
-event, null exactly when the event names no account.
+A feed entry is one event (§3.4) with the subscription's `store`, `environment` and `offerKind` after
+the transaction that recorded the event, `period` on a period event (`{id, start, end, price,
+offerKind, refundedAt}`, `id` being the service's own), and `entitlement`, the account's
+`EntitlementResponse` after the transaction that recorded the event, null exactly when the event names
+no account.
 
 The internal claim answers 200 with `{seq, entitlement}`: the caller's `EntitlementResponse` after the
 claim, and the `seq` of the claimed subscription's newest event, which is the claim's last event when
@@ -426,7 +429,9 @@ so the close flow MUST say so before it proceeds, and name where to cancel.
 
 One worker, hourly:
 
-1. Process inbox rows not yet applied.
+1. Apply every inbox row not yet settled. A row settles in the transaction that applies it, or with its
+   code when it states nothing to apply, as Apple's test notification or a type the adapter does not
+   map (§8).
 2. Pull the store's state for every subscription whose `accessUntil` falls within the next hour or
    has passed while its state still grants access or is `on_hold`.
 3. Pull every subscription not `expired` or `revoked` whose `verifiedAt` is older than seven days. A
@@ -466,12 +471,12 @@ One worker, hourly:
 - A signed payload whose environment is `Xcode` or `LocalTesting` is not signed by Apple, and every
   deployment refuses it. Local and CI testing sign `Sandbox` payloads under a test root that only
   their own deployment trusts.
-- A notification type the adapter does not map is kept in the inbox, logged as `unsupported` and
-  reported; it changes nothing. Within a mapped type, only a field that decides access or money (the
-  status, the transaction's dates, `gracePeriodExpiresDate`, `autoRenewStatus`, the product, the price
-  and its currency) can make a notification unsupported. A descriptive field the adapter cannot read
-  reads as unknown, and an ownership it cannot read binds to no one, so a refund or an expiry is never
-  dropped for a field access does not depend on.
+- A notification type the adapter does not map is kept in the inbox, settled with its code, logged as
+  `unsupported` and reported; it changes nothing. Within a mapped type, only a field that decides
+  access or money (the status, the transaction's dates, `gracePeriodExpiresDate`, `autoRenewStatus`,
+  the product, the price and its currency) can make a notification unsupported. A descriptive field
+  the adapter cannot read reads as unknown, and an ownership it cannot read binds to no one, so a
+  refund or an expiry is never dropped for a field access does not depend on.
 - The transaction's `price` and `currency` are what the plan screen shows and what decides whether a
   period was paid. Revenue is read from Apple's sales reports, not from them.
 - Billing Grace Period is enabled in App Store Connect for production and sandbox. (R-7)

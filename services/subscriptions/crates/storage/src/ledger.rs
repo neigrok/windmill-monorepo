@@ -21,7 +21,7 @@ const CHECK_BOUND: Duration = Duration::from_secs(2);
 // about a paid subscription; a `Ledger` exists only once its schema is this build's.
 #[derive(Clone)]
 pub struct Ledger {
-    pool: PgPool,
+    pub(crate) pool: PgPool,
 }
 
 impl Ledger {
@@ -116,6 +116,8 @@ pub enum StorageError {
     // The schema could not be brought up to this build's newest migration, or the database holds a
     // migration this build does not have.
     Migration { sqlstate: Option<String> },
+    // A row this build cannot read: a name outside its closed set, or a fact its state requires missing.
+    Unreadable,
     // Anything else the database answered.
     Database { sqlstate: Option<String> },
 }
@@ -126,13 +128,14 @@ impl StorageError {
             StorageError::Unreachable => "unreachable",
             StorageError::Refused { .. } => "refused",
             StorageError::Migration { .. } => "migration",
+            StorageError::Unreadable => "unreadable",
             StorageError::Database { .. } => "database",
         }
     }
 
     pub fn sqlstate(&self) -> Option<&str> {
         match self {
-            StorageError::Unreachable => None,
+            StorageError::Unreachable | StorageError::Unreadable => None,
             StorageError::Refused { sqlstate } => Some(sqlstate),
             StorageError::Migration { sqlstate } | StorageError::Database { sqlstate } => {
                 sqlstate.as_deref()
@@ -149,6 +152,7 @@ impl From<sqlx::Error> for StorageError {
             | sqlx::Error::PoolTimedOut
             | sqlx::Error::PoolClosed => StorageError::Unreachable,
             sqlx::Error::Migrate(error) => StorageError::from(*error),
+            sqlx::Error::ColumnDecode { .. } | sqlx::Error::Decode(_) => StorageError::Unreadable,
             sqlx::Error::Database(error) => match error.code() {
                 // Class 28 is invalid authorization; 3D000 names a database that does not exist.
                 Some(sqlstate) if sqlstate.starts_with("28") || sqlstate == "3D000" => {
