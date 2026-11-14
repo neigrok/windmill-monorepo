@@ -12,8 +12,8 @@ A file is `{story, steps}`. Every key of a step is always present, with `null` o
 | `note` | What the step tells. |
 | `observation` | D-5: `lineage`, `observedAt`, `ownership` (`purchased` or `shared`), `status` with the stated fields of §3.1 flat, and `periods`, the store transactions it states. |
 | `hint` | The observation's account hint as the caller resolved it (§4): `"absent"`, `"erased"` or `{"live": accountId}`. |
-| `claim` | `null`, or `{accountId, at}` for a claim door call. |
-| `expect` | `{"refusal": code}`, or the change: the `subscription` (§3.1, with `accessUntil` and the binding), the `periods` it writes (`written`) or restates (`restated`), its `events` in order and `hintForStore`. |
+| `claim` | `null`, or `{claimant, at}` for a claim door call, the claimant as the caller resolved it against the erased accounts: `"erased"` or `{"live": accountId}`. |
+| `expect` | `{"refusal": code}`, or the change: the `subscription` (§3.1, with `accessUntil` and the binding), the `periods` it writes (`written`) or restates (`restated`), each with `leftWith`, the account it stays with once a new purchase moved its subscription (R-11), its `events` in order and `hintForStore`. |
 | `entitlements` | Each account's entitlement folded over every subscription the story holds after the step: a `production` and a `sandbox` block of `{plan, accessUntil, governing, others}`, naming subscriptions by id. |
 
 Instants are written as UTC ISO 8601 (`2027-01-01T10:00:00Z`); the domain counts epoch milliseconds. A

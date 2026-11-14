@@ -133,18 +133,8 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const No
       n["opens"] = opens;
     }
   }
-  if (fields.count(NodeField::subtree)) {
-    if (const auto owned = context.subtrees.find(node.id); owned != context.subtrees.end()) {
-      Json::Value subtree(Json::objectValue);
-      subtree["id"] = owned->second.id.str();
-      if (const std::optional<Opening>& opening = owned->second.opening) {
-        subtree["done"] = opening->done;
-        subtree["total"] = opening->total;
-        subtree["state"] = opening->complete ? "complete" : "open";
-      }
-      n["subtree"] = subtree;
-    }
-  }
+  if (fields.count(NodeField::subtree))
+    if (const auto owned = context.subtrees.find(node.id); owned != context.subtrees.end()) n["subtree"] = toJson(owned->second);
   if (fields.count(NodeField::url)) n["url"] = stepAddress(context.web.value(), node.id);
   return n;
 }

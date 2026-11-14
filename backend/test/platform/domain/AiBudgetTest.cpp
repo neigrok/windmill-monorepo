@@ -324,6 +324,7 @@ TEST(ai_budget_release_is_only_for_unsent_calls_and_overrun_reconciliation_keeps
                                   *AiBudgetPeriod::at(0), 10};
   auto unsent = reservation;
   CHECK_EQ(transitionAiBudget(unsent, AiBudgetState::Released), AiBudgetCode::Ok);
+  CHECK_EQ(unsent.releasedFrom, std::optional<AiBudgetState>{AiBudgetState::Reserved});
   CHECK_EQ(transitionAiBudget(unsent, AiBudgetState::Released), AiBudgetCode::Replay);
   CHECK_EQ(transitionAiBudget(unsent, AiBudgetState::Dispatched), AiBudgetCode::InvalidState);
   CHECK_EQ(reconcileAiBudgetOverrun(reservation), AiBudgetCode::InvalidState);
@@ -333,6 +334,58 @@ TEST(ai_budget_release_is_only_for_unsent_calls_and_overrun_reconciliation_keeps
   CHECK_EQ(reconcileAiBudgetOverrun(reservation), AiBudgetCode::Replay);
   CHECK_EQ(reservation.actualNanos, std::optional<long long>{12});
   CHECK_EQ(transitionAiBudget(reservation, AiBudgetState::Settled, 12), AiBudgetCode::Replay);
+}
+
+TEST(ai_budget_unconfirmed_hold_lapses_ten_minutes_after_admission_and_is_released_at_zero_for_good) {
+  const long long admitted = 1'767'225'600'000;
+  for (const auto left : {AiBudgetState::Reserved, AiBudgetState::Dispatched, AiBudgetState::Uncertain}) {
+    AiBudgetReservation hold{"call", {AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn,
+                             *AiBudgetPeriod::at(admitted), 10};
+    hold.admittedAtMs = admitted;
+    if (left != AiBudgetState::Reserved) CHECK_EQ(transitionAiBudget(hold, AiBudgetState::Dispatched), AiBudgetCode::Ok);
+    if (left == AiBudgetState::Uncertain) CHECK_EQ(transitionAiBudget(hold, AiBudgetState::Uncertain), AiBudgetCode::Ok);
+    const auto young = hold;
+    CHECK_FALSE(hold.lapsedAt(admitted + kAiBudgetHoldLifetimeMs - 1));
+    CHECK_EQ(releaseLapsedAiBudget(hold, admitted + kAiBudgetHoldLifetimeMs - 1), AiBudgetCode::InvalidState);
+    CHECK_EQ(hold.state, left);
+    CHECK_FALSE(hold.releasedFrom);
+    CHECK(hold.lapsedAt(admitted + kAiBudgetHoldLifetimeMs));
+    CHECK_EQ(releaseLapsedAiBudget(hold, admitted + kAiBudgetHoldLifetimeMs), AiBudgetCode::Ok);
+    CHECK_EQ(hold.state, AiBudgetState::Released);
+    CHECK_EQ(hold.releasedFrom, std::optional<AiBudgetState>{left});
+    CHECK_FALSE(hold.actualNanos);
+    CHECK_EQ(hold.amountNanos, young.amountNanos);
+    CHECK(hold.valid());
+    CHECK_FALSE(hold.unresolved());
+    CHECK_FALSE(hold.lapsedAt(admitted + kAiBudgetHoldLifetimeMs));
+    CHECK_EQ(releaseLapsedAiBudget(hold, admitted + 2 * kAiBudgetHoldLifetimeMs), AiBudgetCode::Replay);
+    CHECK_EQ(transitionAiBudget(hold, AiBudgetState::Settled, 4), AiBudgetCode::InvalidState);
+    CHECK_EQ(transitionAiBudget(hold, AiBudgetState::Uncertain), AiBudgetCode::InvalidState);
+    CHECK_EQ(transitionAiBudget(hold, AiBudgetState::Dispatched), AiBudgetCode::InvalidState);
+    CHECK_EQ(hold.state, AiBudgetState::Released);
+    CHECK_EQ(hold.releasedFrom, std::optional<AiBudgetState>{left});
+    CHECK_FALSE(hold.actualNanos);
+  }
+  AiBudgetReservation settled{"call", {AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn,
+                              *AiBudgetPeriod::at(admitted), 10};
+  settled.admittedAtMs = admitted;
+  CHECK_EQ(transitionAiBudget(settled, AiBudgetState::Dispatched), AiBudgetCode::Ok);
+  CHECK_EQ(transitionAiBudget(settled, AiBudgetState::Settled, 4), AiBudgetCode::Ok);
+  CHECK_FALSE(settled.lapsedAt(admitted + 2 * kAiBudgetHoldLifetimeMs));
+  CHECK_EQ(releaseLapsedAiBudget(settled, admitted + 2 * kAiBudgetHoldLifetimeMs), AiBudgetCode::InvalidState);
+  CHECK_EQ(settled.state, AiBudgetState::Settled);
+  CHECK_EQ(settled.actualNanos, std::optional<long long>{4});
+  auto unrecorded = settled;
+  unrecorded.state = AiBudgetState::Released;
+  unrecorded.actualNanos.reset();
+  CHECK_FALSE(unrecorded.valid());
+  for (const auto from : {AiBudgetState::Settled, AiBudgetState::Released}) {
+    unrecorded.releasedFrom = from;
+    CHECK_FALSE(unrecorded.valid());
+  }
+  settled.releasedFrom = AiBudgetState::Dispatched;
+  CHECK_FALSE(settled.valid());
+  CHECK_EQ(releaseLapsedAiBudget(settled, admitted + 2 * kAiBudgetHoldLifetimeMs), AiBudgetCode::Invalid);
 }
 
 TEST(ai_budget_replay_pins_original_attribution_across_tier_and_period_changes) {

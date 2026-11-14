@@ -112,7 +112,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-05-01T10:00:05Z"
+              "observedAt": "2027-05-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -154,7 +155,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-05-01T10:00:05Z"
+              "observedAt": "2027-05-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],

@@ -313,7 +313,7 @@ TEST(voice_with_allowances_on_answers_a_refused_admission_under_the_code_that_re
   capacity["allowance"]["code"] = "subject_exhausted";
   capacity["allowance"]["budgetResetsAtMs"] = Json::Int64(grant.period.endMs);
   Json::Value busy = parse(R"({"code":"concurrency_exhausted","reason":"unavailable",
-      "error":"another AI request is still in progress"})");
+      "error":"your earlier AI requests hold every slot you have; each frees when its cost is confirmed, at most 10 minutes after it began"})");
   busy["allowance"] = allowance;
   busy["allowance"]["code"] = "concurrency_exhausted";
   for (const Case& scenario : std::vector<Case>{

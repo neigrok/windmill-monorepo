@@ -9415,8 +9415,8 @@ TEST(mcp_create_subtree_judges_its_kinds_as_create_tree_does) {
 
 // Each refusal of create_subtree is answered in words under its code, with nothing created, nothing told and the
 // create's own line at door mcp: a tree the caller may not read as an absent one, another account's tree it may read
-// as not theirs, a step the tree does not hold, a tree as deep as a subtree may sit, a step that opens another roadmap
-// of theirs, and a parent whose save is held.
+// and a tree nobody owns as create_node answers them, a step the tree does not hold, a tree as deep as a subtree may
+// sit, a step that opens another roadmap of theirs, and a parent whose save is held.
 TEST(mcp_create_subtree_refuses_in_words_under_each_code_and_creates_nothing) {
   Harness h;
   CHECK_FALSE(h.call("create_node", node("sail", "Learn to sail")).isError);
@@ -9426,6 +9426,9 @@ TEST(mcp_create_subtree_refuses_in_words_under_each_code_and_creates_nothing) {
   h.plant("t_eve", uid("eve"), "", {"t_eve"});
   h.plant("t_shared", uid("eve"), "", {"t_eve"});
   h.trees.byId["t_shared"].visibility = Visibility::unlisted;
+  h.plant("t_nobody", uid("eve"), "", {"t_eve"});
+  h.trees.byId["t_nobody"].owner = std::nullopt;
+  h.trees.byId["t_nobody"].visibility = Visibility::public_;
   TreeId deepest{"t"};
   for (int depth = 1; depth <= kMaxTreeDepth; ++depth) {
     Json::Value step = node("down", "Down");
@@ -9453,8 +9456,8 @@ TEST(mcp_create_subtree_refuses_in_words_under_each_code_and_creates_nothing) {
     return refused.outcomeCode + ": " + message(refused);
   };
   std::vector<std::string> answered = {refusal("t_ghost", "sail"), refusal("t_eve", "to-t_eve"),
-                                       refusal("t_shared", "to-t_eve"), refusal("t", "ghost"),
-                                       refusal(deepest.str(), "down"), refusal("t", "away")};
+                                       refusal("t_shared", "to-t_eve"), refusal("t_nobody", "to-t_eve"),
+                                       refusal("t", "ghost"), refusal(deepest.str(), "down"), refusal("t", "away")};
   h.trees.savesFail = true;
   CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"sail","label":"Sail"})"))).isError);
   answered.push_back(refusal("t", "sail"));
@@ -9463,8 +9466,11 @@ TEST(mcp_create_subtree_refuses_in_words_under_each_code_and_creates_nothing) {
   CHECK_EQ(answered, (std::vector<std::string>{
                          "no-such-tree: create_subtree: no such tree \"t_ghost\"",
                          "no-such-tree: create_subtree: no such tree \"t_eve\"",
-                         "not-writer: create_subtree: only the roadmap's owner can add a subtree to its steps. "
-                         "Call list_trees to see the roadmaps you own.",
+                         "not-yours: create_subtree: this tree belongs to another account. Call list_trees to see the "
+                         "roadmaps you own.",
+                         "nobodys-tree: create_subtree: no account owns this tree, so it cannot be edited. You can still "
+                         "read it with get_tree, and copy it into a roadmap of your own with create_tree then "
+                         "import_subgraph.",
                          "step-gone: create_subtree: no node in this tree is named \"ghost\". Call get_tree with "
                          "fields [\"id\",\"label\"] to list the ids this tree has.",
                          "depth-limit: create_subtree: subtrees go at most 8 levels below their roadmap, and this "
@@ -9474,7 +9480,8 @@ TEST(mcp_create_subtree_refuses_in_words_under_each_code_and_creates_nothing) {
                          "save-pending: create_subtree: this roadmap's last change is still being saved: try again. "
                          "Nothing was created."}));
   std::vector<std::string> expected;
-  for (const char* code : {"no-such-tree", "no-such-tree", "not-writer", "step-gone", "depth-limit", "step-opens-a-tree"}) {
+  for (const char* code : {"no-such-tree", "no-such-tree", "not-yours", "nobodys-tree", "step-gone", "depth-limit",
+                           "step-opens-a-tree"}) {
     expected.push_back(std::string("roadmap.subtree.create mcp ") + code);
     expected.push_back(std::string("mcp.roadmap_create_subtree mcp ") + code);
   }
@@ -9484,6 +9491,14 @@ TEST(mcp_create_subtree_refuses_in_words_under_each_code_and_creates_nothing) {
   CHECK_EQ(lines, expected);
   CHECK_EQ(h.trees.byId.size(), trees);
   CHECK_EQ(h.bus.subtreeBroadcasts.size(), told);
+  for (const char* tree : {"t_shared", "t_nobody"}) {
+    Json::Value node = parse(R"({"id":"twin","label":"Twin"})");
+    node["treeId"] = tree;
+    const std::string created = message(h.tools.callTool("create_node", node, h.actor));
+    const std::string refused = refusal(tree, "to-t_eve");
+    CHECK_EQ(refused.substr(refused.find("create_subtree: ") + std::string("create_subtree: ").size()),
+             created.substr(std::string("create_node: ").size()));
+  }
 }
 
 // A grant without write does not see create_subtree, and its call is refused at the gate with nothing created.

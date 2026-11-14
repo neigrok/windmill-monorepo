@@ -102,6 +102,8 @@ bool AnthropicMessageStream::event(const std::string& data) {
     const auto& block = event["content_block"];
     for (const auto& field : {"text", "thinking", "signature"})
       if (block.isMember(field) && !block[field].isString()) return false;
+    for (const auto& field : {"text", "thinking", "name"})
+      if (block[field].isString()) written_ += block[field].asString().size();
     message_["content"].append(block);
     arguments_.emplace_back();
     blockClosed_.push_back(false);
@@ -124,12 +126,17 @@ bool AnthropicMessageStream::event(const std::string& data) {
   if (deltaType == "input_json_delta") {
     if (block["type"].asString() != "tool_use" || !delta["partial_json"].isString()) return false;
     arguments_[index] += delta["partial_json"].asString();
+    written_ += delta["partial_json"].asString().size();
   }
-  if (deltaType == "thinking_delta" && delta["thinking"].isString()) block["thinking"] = block.get("thinking", "").asString() + delta["thinking"].asString();
+  if (deltaType == "thinking_delta" && delta["thinking"].isString()) {
+    block["thinking"] = block.get("thinking", "").asString() + delta["thinking"].asString();
+    written_ += delta["thinking"].asString().size();
+  }
   if (deltaType == "signature_delta" && delta["signature"].isString()) block["signature"] = block.get("signature", "").asString() + delta["signature"].asString();
   if (deltaType == "text_delta") {
     if (block["type"].asString() != "text" || !delta["text"].isString()) return false;
     block["text"] = block.get("text", "").asString() + delta["text"].asString();
+    written_ += delta["text"].asString().size();
     std::string visible;
     for (const auto& part : message_["content"])
       if (part.get("type", "").asString() == "text") {
@@ -143,8 +150,14 @@ bool AnthropicMessageStream::event(const std::string& data) {
 
 std::optional<Json::Value> AnthropicMessageStream::finish(const std::string& interruption) {
   if (!message_.isObject()) return std::nullopt;
-  if (!complete_ || invalid_) message_["stop_reason"] = interruption;
-  if (!finalUsage_ && message_["usage"].isObject()) message_["usage"].removeMember("output_tokens");
+  if (complete_ && !invalid_) {
+    if (!finalUsage_ && message_["usage"].isObject()) message_["usage"].removeMember("output_tokens");
+    return message_;
+  }
+  message_["stop_reason"] = interruption;
+  const auto streamed = static_cast<Json::Int64>((written_ + 2) / 3 + 3 * message_["content"].size());
+  const Json::Int64 counted = finalUsage_ ? message_["usage"]["output_tokens"].asInt64() : 0;
+  message_["usage"]["output_tokens"] = std::max(counted, streamed);
   return message_;
 }
 
@@ -230,7 +243,7 @@ ModelRound streamAnthropicMessage(
   if (message && (result != CURLE_OK || status < 200 || status >= 300))
     (*message)["stop_reason"] = transfer.stopped ? "cancelled" : "transport_error";
   const bool unconsumed = !message && !details["messageStarted"].asBool() && status >= 400;
-  return ModelRound{std::move(message), unconsumed};
+  return ModelRound{std::move(message), unconsumed, transfer.stopped};
 }
 
 }

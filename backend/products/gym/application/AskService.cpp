@@ -578,6 +578,7 @@ void AskService::ask(const UserId& caller, const std::string& email, AskRequest 
     observation->finish(reply.refusal == AskRefusal::aiBudget && reply.allowance
                         ? std::string(aiBudgetCodeName(reply.allowance->code)) :
                         reply.refusal != AskRefusal::none ? askOutcome(reply.refusal) :
+                        reply.generation && reply.generation->status == "stopped" ? "stopped" :
                         !reply.answer.outcomeCode.empty() ? reply.answer.outcomeCode : reply.answer.ok || (reply.generation && reply.generation->status == "running") ? "ok" : "failed");
     done(std::move(reply));
   };

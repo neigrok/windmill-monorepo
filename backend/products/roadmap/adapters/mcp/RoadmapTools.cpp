@@ -1711,12 +1711,13 @@ ToolResult createTree(TreeRegistry& trees, const std::string& origin, const User
 }
 
 // The words each refusal of a subtree's create is answered in, under its code; an absent tree's are every read's, so a
-// tree the caller may not read is answered as one that is not there.
+// tree the caller may not read is answered as one that is not there, and one they may read and not write as every write
+// tool answers it.
 std::string subtreeRefusalSentence(SubtreeRefusal refusal, const TreeId& tree, const NodeId& step) {
   switch (refusal) {
     case SubtreeRefusal::noSuchTree: return "no such tree \"" + tree.str() + "\"";
-    case SubtreeRefusal::notWriter:
-      return "only the roadmap's owner can add a subtree to its steps. Call list_trees to see the roadmaps you own.";
+    case SubtreeRefusal::notYours: return writeRefusalSentence(WriteRefusal::notYours);
+    case SubtreeRefusal::nobodysTree: return writeRefusalSentence(WriteRefusal::nobodysTree);
     case SubtreeRefusal::stepGone:
       return "no node in this tree is named " + quotedList({step.str()}) + ". " + kNodeHandle.hint;
     case SubtreeRefusal::depthLimit:
@@ -1741,9 +1742,8 @@ ToolResult createSubtree(TreeRegistry& trees, const TreeId& tree, const Json::Va
   if (std::optional<std::string> bad = checkKinds(args["kinds"], kMaxKinds)) return ToolResult::failure(*bad);
   TreeRegistry::SubtreeRequest request;
   if (args["kinds"].isArray()) {
-    const std::optional<TreeData> sent = treeFromJson(args, TreeId{});
-    if (!sent) return ToolResult::failure("this subtree's kinds carry a field of the wrong type");
-    request.kinds = sent->kinds;
+    request.kinds = kindsFromJson(args["kinds"]);
+    if (!request.kinds) return ToolResult::failure("this subtree's kinds carry a field of the wrong type");
   }
 
   const std::variant<SubtreeCreation, SubtreeRefusal, Admission> answer =
@@ -1753,16 +1753,9 @@ ToolResult createSubtree(TreeRegistry& trees, const TreeId& tree, const Json::Va
   if (const SubtreeRefusal* refusal = std::get_if<SubtreeRefusal>(&answer))
     return ToolResult::failure(subtreeRefusalSentence(*refusal, tree, NodeId{step}), codeOf(*refusal));
   const SubtreeCreation& creation = std::get<SubtreeCreation>(answer);
-  Json::Value subtree(Json::objectValue);
-  subtree["id"] = creation.subtree.id.str();
-  subtree["root"] = creation.subtree.root.str();
-  subtree["parent"]["tree"] = creation.subtree.parent.tree.str();
-  subtree["parent"]["step"] = creation.subtree.parent.step.str();
-  subtree["depth"] = creation.subtree.depth;
-  Json::Value out(Json::objectValue);
-  out["created"] = creation.created;
-  out["subtree"] = subtree;
-  out["parentSeq"] = static_cast<Json::Int64>(creation.parentSeq);
+  // The REST door's answer, but for the subtree's own seq, which an agent reads off get_tree as it reads any tree's.
+  Json::Value out = toJson(creation);
+  out["subtree"].removeMember("seq");
   if (!creation.created && request.kinds)
     out["kindsError"] = "This step already owns this subtree, which keeps the legend it was created with: the kinds sent "
                         "were not planted. Change its legend with add_kind, update_kind and remove_kind.";

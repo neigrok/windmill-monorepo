@@ -220,10 +220,10 @@ rejected for structure. Validity is a read model, not a gate.
   below; Authorization). The place is written once, when the tree is created, and
   never changed, and a subtree is always a new tree under a standing one: a subtree has one parent,
   never moves, never closes a loop and is never another account's. A step owns at most one subtree.
-  The store enforces all of it whatever writes it (Persistence). MCP `create_subtree` creates one under a step,
-  through `TreeRegistry::createSubtree`: keyed by the step, so a retry answers the subtree it already owns
-  `created: false`, and born with the legend the call sends or the default one, never a copy of the parent's
-  (`adapters/mcp/README.md`, A step's subtree).
+  The store enforces all of it whatever writes it (Persistence). `PUT /v1/trees/{tree}/steps/{step}/subtree` (HTTP
+  surface) and MCP `create_subtree` create one, through `TreeRegistry::createSubtree` (below): keyed by the step, so a
+  retry answers the subtree it already owns `created: false`, and born with the legend the call sends or the default
+  one, never a copy of the parent's (`adapters/mcp/README.md`, A step's subtree).
 
   A subtree reads as one step of its parent:
 
@@ -329,9 +329,10 @@ rejected for structure. Validity is a read model, not a gate.
   refusals and words) and a refusal writes nothing. The rest runs under the parent's strand, so it
   is serialised with every other write to the parent, a step's deletion among them. In order it
   checks that the caller may read the parent (`no-such-tree` for an absent, deleted or
-  private-denied tree, or one whose root is deleted, alike) and write it (`not-writer`), and that
-  the step is present (`step-gone`). The create stores the parent's head at the room's next seq, in
-  its own transaction, so it runs only over a room that is flushed (`RoomRegistry::flushed`): every
+  private-denied tree, or one whose root is deleted, alike) and write it (`not-yours`, or
+  `nobodys-tree` for a tree no account owns, as every write door refuses it), and that the step is
+  present (`step-gone`). The create stores the parent's head at the room's next seq, in its own
+  transaction, so it runs only over a room that is flushed (`RoomRegistry::flushed`): every
   write the room holds is stored and no save of it is running. A head stored past writes that are
   not would leave no gap to show them lost, and a save still running would write an older head over
   the create's. A parent whose save failed and is being retried (Runtime) refuses the create as
@@ -861,6 +862,7 @@ Registered in `products/roadmap/routes.cpp`.
 | --- | --- |
 | POST · GET | `/v1/trees` |
 | GET · PATCH · DELETE | `/v1/trees/{id}` |
+| PUT | `/v1/trees/{tree}/steps/{step}/subtree` |
 | POST | `/v1/trees/{id}/fork` |
 | GET | `/v1/trees/{id}/progress` |
 | GET | `/v1/trees/{id}/guides` |
@@ -968,6 +970,21 @@ the genesis stamp, byte-equal to a device-born tree's. Retrying an owned existin
 returns `409 id-taken`; the caller's deleted ID returns `409 id-retired`, and the id of a subtree of
 the caller's `409 not-a-root`. A client must not retry that deleted tree under a fresh ID.
 
+`PUT /v1/trees/{tree}/steps/{step}/subtree` creates the subtree a step owns, `{proposedId?, kinds?}`, through
+`TreeRegistry::createSubtree` (Model, Subtrees), the caller's session its only credential. It answers `201` with
+`{created: true, subtree: {id, root, parent: {tree, step}, depth, seq}, parentSeq}` when it created the subtree, and `200`
+with `created: false` and the parent's head when the step already owned one, a retry after a lost answer among them,
+having written nothing. `proposedId` is kept where it is a well-formed tree id no row holds and replaced by a minted one
+otherwise; `kinds` is the legend the subtree is born with, judged as `POST /v1/trees` judges its kinds, and without it the
+subtree gets the default legend: the server never copies the parent's. A body that is not one JSON object, a
+`proposedId` that is not a string and `kinds` that is not a list of kinds whose fields are strings answer `400`; kinds the
+admission refuses answer `400` `kinds-refused` with its sentence (`413` past the count). The registry's refusals answer
+with their code and nothing written: `404 no-such-tree` (an absent, hidden or unreadable tree, alike), `403` in
+`PATCH`'s code and words (`not-yours`, or `nobodys-tree` for a tree no account owns), `409 step-gone`, `409 depth-limit`,
+`409 step-opens-a-tree` (the step's pointer is valid, Legacy pointers) and
+`503 save-pending` (the parent's save is being retried; the same request creates once it lands). No signed-out caller
+reaches the registry (`401`).
+
 `POST /v1/trees/{id}/fork` answers `201 {seq, data}`, the root copy's document (Runtime). A requested
 `title` past 200 characters is refused `400` with the admission's sentence, and nothing is copied. A source
 that is absent, hidden or not the caller's to read answers `404`; a subtree's id is refused `409`
@@ -1068,9 +1085,9 @@ that can, `reader` for any other) ·
 
 `subtree` says a subtree was created under `step` (Model, Subtrees). It takes the tree's next seq and
 goes to every subscriber, reader and writer alike, carrying the same bytes: whoever may read the tree
-may read its subtrees, whose access is its root's. MCP `create_subtree` sends one for each subtree it
-creates. The web client takes its seq as it takes a live frame's (`docs/GRAPH_SYNC_DESIGN.md`) and
-changes nothing else.
+may read its subtrees, whose access is its root's. Both doors that create a subtree, REST's and MCP's, send one for
+each subtree they create. The web client takes its seq as it takes a live frame's (`docs/GRAPH_SYNC_DESIGN.md`) and
+stands the new subtree, empty, on its step.
 
 The subscribe answer carries `subtrees: [{step, id, depth}]`, one per present step that owns a
 subtree, read under the strand with the delta, so a client that missed a `subtree` frame heals on its

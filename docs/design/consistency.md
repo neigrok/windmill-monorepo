@@ -159,7 +159,10 @@ for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colo
   states in USD. Replace remaining drawing question/credit
   figures with server-backed USD and period labels. Customer usage drawings must show
   held/uncertain usage, free daily-pool pauses, individual exhaustion, request-capacity refusals
-  and concurrency. Anonymous lifetime allowance has no reset; One billing periods can cross a
+  and concurrency. A hold whose cost is never confirmed is released at zero 10 minutes after its call
+  began, so a concurrency refusal is never permanent. The backend's sentence is "Your earlier AI
+  requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after
+  it began."; the native Coach strings ("Another AI request is still in progress") do not say so yet. Anonymous lifetime allowance has no reset; One billing periods can cross a
   calendar boundary. All hosted AI, including background Echoes, consumes the individual budget.
   Signing in binds the device and includes its current-month anonymous spend in free usage.
   Server-issued installation credentials are implemented; customer USD screens remain unbuilt.
@@ -593,9 +596,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   builds Save, the field edge, rings and the caret on `--color-brand` and the link on `--text-link`; Save's white label
   is 3.92:1 where the board's is 7.31:1. The device tree's footer line is built and not drawn. 17.36 draws Save solid
   on an empty draft while 17.22 *Before typing* draws it off; web
-  keeps it off, as it does after *Load latest*, where 17.33 draws Save solid on a draft equal to the guide. 17.38 and
-  17.39 omit the device line that 17.29 draws; web shows it above the row. 17.32 draws a 513 px sheet over the
-  keyboard where 17.23 draws 451; web keeps 17.23's cap, so the field gives up the notice's height.
+  keeps it off, as it does after *Load latest*, where 17.33 draws Save solid on a draft equal to the guide.
+  Owner phone geometry follows 38/42’s full page and flexible body below the Shell. The device footer and current
+  recovery behavior remain in the owner editor; phone readers retain the 17 read-only sheet.
   The recovery boards ([three save failures](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=858-75016),
   [17.31–17.32](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69845)) type three tints no token holds:
   `#fcf0e8` under the desktop failure line, `#fbf3eb` under the phone's and `#f7f3e6` under the phone's *Guide changed
@@ -635,9 +638,14 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   tree loops back or has no steps keeps the loop's or the empty tree's line. The tablet band and C on a card whose tree
   loops back (*Won’t complete by itself*) or is not found (*Can’t complete yet*) follow the desktop boards. Under guides
   from above, the wide entry follows [39 · Inherited Guide](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1143-75474):
-  a known parent count or unknown marker in the identity row. The phone retains its count beside the heading. The note
-  reads parents farthest first, then this tree's text or the owner's Add guide. Wide unknown status keeps its notice
-  and any own text visible; phone reads keep the own text without that notice. While the guide is written from 744px
+  a known parent count or unknown marker in the identity row. Owner phones follow
+  [38 · Guide from the Roadmap sheet](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1130-100932)
+  and [42 · Unknown parent Guide](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1178-28969): the
+  sheet’s 48px Guide row opens a full page below the Shell and keeps its focus return. Confirmed inherited-only
+  reading offers both Add guide and the header pencil for the current tree’s blank Guide. Unknown parent status
+  shows Guide · ? in the sheet and a neutral notice above readable own text or Add guide, including at 320px.
+  The note reads parents farthest first, then this tree’s text or the owner’s Add guide. Parent status stays unknown
+  while pending or failed, with usable inherited entries retained and no new retry action. While the guide is written from 744px
   the chevrons over the guides from above are drawn as on 28.31 and do not act:
   leaving a draft is Cancel's to ask. The hint beside this tree's name (*Click to edit*, *Tap to edit*) writes from
   the end of the guide, as the pencil does. Where the window leaves the guides from above less than one name and one
@@ -726,6 +734,42 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   that open it in 2 of your other trees*); a tree deleted in the open menu leaves the other rows' lines, as its steps
   went with it. The line's graph glyph is the Board / Icon component scaled to 14 px on the boards, a 1.17 px stroke;
   web draws it as every tree glyph, at 1.67 px.
+- **Section 29 · drawn on surfaces the web does not have (29.03, 29.04, 29.06–29.09, 29.16–29.21, 29.29–29.31,
+  29.35–29.37, 29.46–29.62, 29.66–29.68 and the laptop frames).** The boards stand every step on the full-page step
+  editor of 19 beside a Coach rail from 744px and a Coach field on phones, which the roadmap room does not show. The web
+  has the step modal and page: a step that owns a subtree shows, where Complete sat, how far its subtree is (*No steps
+  yet*, *0 of 1 done*, *1 of 1 done*) beside Open subtree, for its owner and for a reader, whose step otherwise has no
+  band (29.16, 29.52); it has no Tree section. 29.10's *Remove step…* on the row is the step's own Delete in its menu
+  and the Graph's dock.
+- **Section 29 · words the web keeps.** The boards say *New node*, *No nodes yet* with *Add first node*, *Mark
+  unfinished*, *Remove step…*, *Keep step* and *Remove branch*; the web keeps *New step*, *Your first step* with New
+  step, *Reset* and *Delete* where it has those surfaces, and takes the subtree's own words from the boards: *Open
+  subtree* and *No steps yet*. A C on an owning step's card raises section 28's toast, *Completes with its
+  tree*, with Open subtree.
+- **Section 29 · an empty subtree on the Graph (29.02, 29.05, 29.34, 29.63, 29.65; laptop 29.02, 29.05).** The boards
+  open an owner's empty subtree on the Graph with *No nodes yet* and *Add first node*. The web opens an owner's empty
+  roadmap on the Board (`initialView`, rule 1), with *Your first step* and New step, whichever view the step was
+  pressed from, as it does for a tree a pointer opens.
+- **Section 29 · the share line (29.14).** The dialog keeps its title *Share roadmap* where 29.14 and 29b.03 have
+  *Share My year*. For a roadmap whose steps own subtrees each sentence says who reads it in 29b.03's words, which follow
+  canon's publishing disclosure: publishing, *Publishing makes My year public: anyone can view and fork it, subtrees
+  included, and it can appear in the public gallery.*; published, *My year is public: …*; unlisted, to a reader, *Anyone
+  with this link can view and fork My year, subtrees included.* The owner of an unlisted roadmap is offered Publish, under
+  the publishing sentence. 29.14's *readable* and *Anyone with the shared link can open them* leave out the fork and the
+  gallery.
+- **Section 29 · built and not drawn.** An owning step's Board card is section 28's card for a step that opens a tree:
+  the pill with done of total and its bar, or *No steps*, with no title beside it since the subtree is named by the
+  step; a press on it goes in. Inside a subtree the room offers no switcher, roadmap sheet, Share, Fork or milestone
+  share offer, and renames nothing: its name is its owning step's label. A subtree reached by a link shows the same way
+  back, and its press opens the owning step on its parent. A reader whose follow of the owner's trees failed gets an
+  owning step's mark and Open subtree with nothing said of how far it is. A subtree opened with no connection shows
+  *Couldn't load this roadmap*: a subtree keeps no row of the device's index, so its room has no device copy to open
+  (`subtree-device`). Section 29's device frames (29.22–29.28, 29.32, 29.33, 29.38,
+  29.42–29.45, 29.53, 29.54, 29.61, 29.64, 29.67) belong with the device store and are not built.
+- **Section 29b against the build (29b.01, 29b.03).** 29b.03 draws Share inside a subtree, speaking for its root
+  (*Share My year*, with *Learn to sail is part of My year and is shared with it.* first); the room offers no Share
+  inside a subtree. 29b.01 has a C on an owning step's card say *Completes with its subtree*; the build says section 28's
+  *Completes with its tree*, with Open subtree.
 - **Phone step page · 20.01 against the build.** 🚀 20.01 (397:28208) draws the counts and chevrons short of the right
   edge, a two-colour identity rail and no Shell row; the build runs them to the edge under the Shell row.
 - **Tree switcher · delete row.** Rename and delete show on hover only, so a touch tablet from 744 px has no clear way

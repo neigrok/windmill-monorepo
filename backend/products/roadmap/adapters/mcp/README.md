@@ -530,7 +530,8 @@ A node may point at another tree: `opens` holds that tree's id.
   prerequisites as any node's does. Their mark on it is recorded and answered byte for byte as on a node that opens
   nothing, with `prerequisitesMet` judged on their own marks. A node whose pointer is not valid is ordinary for its owner
   too. A step that owns a subtree is not ordinary for anyone (A step's subtree).
-- **A step that owns a subtree.** `create_subtree` gives a step one (see A step's subtree). A step
+- **A step that owns a subtree.** `create_subtree` gives a step one here, and `PUT /v1/trees/{tree}/steps/{step}/subtree`
+  on REST (see A step's subtree; `SPEC.md`, Model, Subtrees). A step
   that owns one opens it, whatever its `opens` holds, so for its owner it is answered and judged
   exactly as a node with a valid pointer: `opens` names the subtree, titled by the step's own label,
   `state`, the `state` filter and `list_trees`' `done` follow it, an empty subtree is unfinished, and
@@ -643,7 +644,8 @@ A step can own a subtree: a tree of its own, owned by that step of its parent, w
 most 8 levels below its root (`SPEC.md`, Model, Subtrees).
 
 - **Create.** `create_subtree {treeId, nodeId, kinds?}`, under the write grant, calls `TreeRegistry::createSubtree`
-  for the step `nodeId` of `treeId`. It takes no id for the subtree: the registry mints one. `kinds` is checked as
+  for the step `nodeId` of `treeId`, the operation REST's `PUT /v1/trees/{tree}/steps/{step}/subtree` calls too
+  (`SPEC.md`, HTTP surface); the two answer one shape, MCP's without the subtree's own `seq`. It takes no id for the subtree: the registry mints one. `kinds` is checked as
   `create_tree`'s — `checkKinds` at the door, then `admitBornKinds` in the registry — and is the legend the subtree is
   born with; without it the subtree gets the default legend. The server never copies the parent's legend, so the tool's
   description tells the agent to send the parent's `kinds` to inherit it, and that a retry keeps the first legend. It
@@ -652,7 +654,8 @@ most 8 levels below its root (`SPEC.md`, Model, Subtrees).
   and the parent's head, having written nothing, so a retry after a lost reply is safe; one that sent `kinds` adds
   `kindsError`, which says the subtree keeps the legend it was created with. Each refusal is answered in words, with
   nothing created and nothing told, under its code: `no-such-tree` in the absent-tree sentence, for a tree the caller may
-  not read as for one that is not there; `not-writer` for a tree they may read and do not own; `step-gone` in the
+  not read as for one that is not there; `not-yours` and `nobodys-tree` for a tree they may read and do not own, in the words every write tool
+  answers them (`writeRefusalFor`); `step-gone` in the
   sentence `update_nodes` gives a missing node; `depth-limit`; `step-opens-a-tree` for a step whose pointer is valid, to
   be cleared first; `save-pending` while the parent's save is held, after which the same call creates; and
   `kinds-refused` with the admission's sentence. The store creates under a root that stands alone: it holds the root's
