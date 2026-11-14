@@ -10,40 +10,34 @@ use ring::signature::{ECDSA_P256_SHA256_FIXED, UnparsedPublicKey};
 use serde::de::DeserializeOwned;
 
 use chain::TrustedRoots;
-pub use payloads::{Environment, Notification, RenewalInfo, TransactionInfo};
+pub use payloads::{
+    AccountToken, Environment, Notification, RenewalInfo, TransactionId, TransactionInfo,
+};
 use payloads::{JwsHeader, NotificationPayload, SigningDate};
 
 const APPLE_ROOT_CA_G3: &[u8] = include_bytes!("../roots/AppleRootCA-G3.cer");
 const WINDMILL_BUNDLE_ID: &str = "works.windmill.app";
+const CLOCK_SKEW_MILLIS: i64 = 60_000;
 
 pub struct SignedDataVerifier {
     roots: TrustedRoots,
-    environments: Vec<Environment>,
     bundle_id: String,
     clock: Box<dyn Fn() -> SystemTime + Send + Sync>,
 }
 
 impl SignedDataVerifier {
     pub fn windmill(clock: impl Fn() -> SystemTime + Send + Sync + 'static) -> Self {
-        let environments = [Environment::Production, Environment::Sandbox];
-        Self::new(
-            &[APPLE_ROOT_CA_G3],
-            &environments,
-            WINDMILL_BUNDLE_ID,
-            clock,
-        )
-        .expect("Apple Root CA - G3 is a certificate with a P-384 key")
+        Self::new(&[APPLE_ROOT_CA_G3], WINDMILL_BUNDLE_ID, clock)
+            .expect("Apple Root CA - G3 is a certificate with a P-384 key")
     }
 
     pub fn new(
         roots: &[&[u8]],
-        environments: &[Environment],
         bundle_id: &str,
         clock: impl Fn() -> SystemTime + Send + Sync + 'static,
     ) -> Result<Self, InvalidRoots> {
         Ok(Self {
             roots: TrustedRoots::new(roots)?,
-            environments: environments.to_vec(),
             bundle_id: bundle_id.to_owned(),
             clock: Box::new(clock),
         })
@@ -52,7 +46,9 @@ impl SignedDataVerifier {
     pub fn verify_notification(&self, signed_payload: &str) -> Result<Notification, Refusal> {
         let notification: NotificationPayload = self.verify_signed(signed_payload)?;
         let app = notification.app().ok_or(Refusal::BundleId)?;
-        self.check_app(&app.bundle_id, app.environment)?;
+        if app.bundle_id != self.bundle_id {
+            return Err(Refusal::BundleId);
+        }
         let environment = app.environment;
 
         let data = notification.data.as_ref();
@@ -91,18 +87,10 @@ impl SignedDataVerifier {
 
     pub fn verify_transaction(&self, signed_transaction: &str) -> Result<TransactionInfo, Refusal> {
         let transaction: TransactionInfo = self.verify_signed(signed_transaction)?;
-        self.check_app(&transaction.bundle_id, transaction.environment)?;
-        Ok(transaction)
-    }
-
-    fn check_app(&self, bundle_id: &str, environment: Environment) -> Result<(), Refusal> {
-        if bundle_id != self.bundle_id {
+        if transaction.bundle_id != self.bundle_id {
             return Err(Refusal::BundleId);
         }
-        if !self.environments.contains(&environment) {
-            return Err(Refusal::Environment);
-        }
-        Ok(())
+        Ok(transaction)
     }
 
     fn verify_signed<T: DeserializeOwned>(&self, jws: &str) -> Result<T, Refusal> {
@@ -116,12 +104,13 @@ impl SignedDataVerifier {
 
         let payload = decode_segment(payload)?;
         let SigningDate { signed_date } = decode_json(&payload)?;
-        let signed_at = match signed_date {
-            Some(signed_date) => signed_date,
-            None => (self.clock)()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |since| since.as_millis() as i64),
-        };
+        let now = (self.clock)()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_millis() as i64);
+        let signed_at = signed_date.unwrap_or(now);
+        if signed_at > now.saturating_add(CLOCK_SKEW_MILLIS) {
+            return Err(Refusal::SignedInFuture);
+        }
         let leaf_key = self.roots.verify_chain(&header.x5c, signed_at)?;
 
         UnparsedPublicKey::new(&ECDSA_P256_SHA256_FIXED, leaf_key)
@@ -145,6 +134,7 @@ fn decode_json<T: DeserializeOwned>(json: &[u8]) -> Result<T, Refusal> {
 pub enum Refusal {
     Malformed,
     Algorithm,
+    SignedInFuture,
     ChainLength,
     Certificate,
     Untrusted,
@@ -160,6 +150,7 @@ impl Refusal {
         match self {
             Refusal::Malformed => "malformed",
             Refusal::Algorithm => "algorithm",
+            Refusal::SignedInFuture => "signed_in_future",
             Refusal::ChainLength => "chain_length",
             Refusal::Certificate => "certificate",
             Refusal::Untrusted => "untrusted_chain",
@@ -192,3 +183,38 @@ impl fmt::Display for InvalidRoots {
 }
 
 impl std::error::Error for InvalidRoots {}
+
+#[cfg(test)]
+mod tests {
+    use std::time::SystemTime;
+
+    use super::{Environment, RenewalInfo, SignedDataVerifier, TransactionId};
+
+    #[test]
+    fn a_renewal_info_apple_signed_for_another_app_passes_the_chain_and_signature_under_the_pinned_root()
+     {
+        let signed =
+            include_str!("../../../tests/fixtures/app_store/go-iap-renewal-info.jws").trim();
+
+        let verified =
+            SignedDataVerifier::windmill(SystemTime::now).verify_signed::<RenewalInfo>(signed);
+
+        let expected = RenewalInfo {
+            original_transaction_id: TransactionId::new("2000000335310644"),
+            product_id: Some("co.ringalarm.swtich.quarterly2".to_owned()),
+            auto_renew_product_id: Some("co.ringalarm.swtich.quarterly2".to_owned()),
+            auto_renew_status: Some(1),
+            expiration_intent: None,
+            is_in_billing_retry_period: None,
+            grace_period_expires_date: None,
+            price_increase_status: None,
+            renewal_date: None,
+            renewal_price: None,
+            currency: None,
+            offer_type: None,
+            signed_date: Some(1_684_822_778_492),
+            environment: Environment::Sandbox,
+        };
+        assert!(verified == Ok(expected), "refused: {:?}", verified.err());
+    }
+}

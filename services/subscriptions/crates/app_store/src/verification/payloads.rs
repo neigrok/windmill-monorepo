@@ -4,8 +4,34 @@ use serde::Deserialize;
 pub enum Environment {
     Production,
     Sandbox,
-    Xcode,
-    LocalTesting,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Deserialize)]
+#[serde(transparent)]
+pub struct TransactionId(String);
+
+impl TransactionId {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Deserialize)]
+#[serde(transparent)]
+pub struct AccountToken(String);
+
+impl AccountToken {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
 }
 
 #[derive(PartialEq)]
@@ -23,8 +49,8 @@ pub struct Notification {
 #[derive(PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransactionInfo {
-    pub transaction_id: String,
-    pub original_transaction_id: String,
+    pub transaction_id: TransactionId,
+    pub original_transaction_id: TransactionId,
     pub bundle_id: String,
     pub product_id: String,
     #[serde(rename = "type")]
@@ -37,7 +63,7 @@ pub struct TransactionInfo {
     pub storefront: Option<String>,
     pub price: Option<i64>,
     pub currency: Option<String>,
-    pub app_account_token: Option<String>,
+    pub app_account_token: Option<AccountToken>,
     pub in_app_ownership_type: Option<String>,
     pub transaction_reason: Option<String>,
     pub offer_type: Option<i32>,
@@ -50,7 +76,7 @@ pub struct TransactionInfo {
 #[derive(PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenewalInfo {
-    pub original_transaction_id: String,
+    pub original_transaction_id: TransactionId,
     pub product_id: Option<String>,
     pub auto_renew_product_id: Option<String>,
     pub auto_renew_status: Option<i32>,

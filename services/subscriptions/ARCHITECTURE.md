@@ -42,37 +42,46 @@ with a `Refusal`, whose `code()` is the only thing a log line carries about it.
 
 | # | Rule | Refusal code |
 |---|---|---|
-| 1 | Compact JWS; header and payload decode as JSON of Apple's shape | `malformed` |
+| 1 | Compact JWS whose header decodes as JSON | `malformed` |
 | 2 | Header `alg` is `ES256` | `algorithm` |
-| 3 | Header `x5c` holds exactly three certificates (leaf, intermediate, root) | `chain_length` |
-| 4 | Leaf and intermediate are base64 DER certificates with nothing trailing | `certificate` |
-| 5 | A pinned root issued the intermediate, and the intermediate, a CA, issued the leaf: issuer name equals the issuer's subject, and the ECDSA signature (P-256 or P-384, SHA-256 or SHA-384) verifies under the issuer's key. `x5c[2]` is not read; the pinned root stands in its place | `untrusted_chain` |
-| 6 | The leaf carries Apple's receipt-signing extension `1.2.840.113635.100.6.11.1`, the intermediate Apple's WWDR extension `1.2.840.113635.100.6.2.1` | `apple_marker` |
-| 7 | Leaf, intermediate and root are each inside their validity at the payload's `signedDate`, or at the clock's time when the payload states none | `certificate_validity` |
-| 8 | The ES256 signature verifies under the leaf's P-256 key | `signature` |
-| 9 | `bundleId` is the expected one. A notification states it in `data`, `summary` or `appData`; a renewal info states none | `bundle_id` |
-| 10 | `environment` is one the verifier accepts, and a nested transaction or renewal info states its notification's environment | `environment` |
+| 3 | `signedDate` is no later than the clock's time plus 60 seconds; a payload stating none is taken as signed at the clock's time | `signed_in_future` |
+| 4 | Header `x5c` holds exactly three certificates (leaf, intermediate, root) | `chain_length` |
+| 5 | Leaf and intermediate are base64 DER certificates with nothing trailing, and the leaf's key is `id-ecPublicKey` on P-256 | `certificate` |
+| 6 | A pinned root issued the intermediate, and the intermediate, a CA, issued the leaf: issuer name equals the issuer's subject, and the ECDSA signature (P-256 or P-384, SHA-256 or SHA-384) verifies under the issuer's key. `x5c[2]` is not read; the pinned root stands in its place | `untrusted_chain` |
+| 7 | The leaf carries Apple's receipt-signing extension `1.2.840.113635.100.6.11.1`, the intermediate Apple's WWDR extension `1.2.840.113635.100.6.2.1` | `apple_marker` |
+| 8 | Leaf, intermediate and root are each inside their validity at the signing time of rule 3 | `certificate_validity` |
+| 9 | The ES256 signature verifies under the leaf's key | `signature` |
+| 10 | The payload decodes into Apple's fields, with `environment` `Production` or `Sandbox`. `Xcode` and `LocalTesting` cannot be represented, so a payload stating them is refused here | `malformed` |
+| 11 | `bundleId` is the expected one. A notification states it in `data`, `summary` or `appData`; a renewal info states none | `bundle_id` |
+| 12 | A nested transaction or renewal info states its notification's environment | `environment` |
 
-Only then is the payload decoded into Apple's fields: `Notification`, `TransactionInfo` and
-`RenewalInfo`. These types implement no `Debug`, so no log line or panic message can format a
-transaction id or an account token.
+Rules 1 to 9 read nothing of the payload but `signedDate`. The decoded types are `Notification`,
+`TransactionInfo` and `RenewalInfo`, and none implements `Debug`. Transaction ids and original
+transaction ids are `TransactionId`, and the app account token is `AccountToken`. Neither type
+implements `Debug` or `Display`; code reads them only through `expose()`, so no log line or panic
+message can format one. A notification's UUID stays a plain string: it names a notification, not a
+purchase or a person, and spec §5.1 keys the inbox by it.
 
-`SignedDataVerifier::windmill(clock)` is the production configuration: the pinned Apple root, the
-bundle id `works.windmill.app`, and the environments `Production` and `Sandbox`.
-`SignedDataVerifier::new(roots, environments, bundle_id, clock)` takes any of them; the tests in
-`crates/app_store/tests/verification.rs` sign under a chain they generate. `windmill` never accepts
-`Xcode` or `LocalTesting`; only a verifier built with `new` can, and spec §8 allows that only with a
-test root.
+Validity is judged at `signedDate`, and nothing checks revocation. A payload signed under a leaf
+whose key had leaked could therefore be backdated into that leaf's validity. Each door must bound
+the age of the payloads it accepts, and the claim door must re-read the subscription's state from the
+App Store Server API rather than trust the transaction it is handed.
+
+`SignedDataVerifier::windmill(clock)` is the production configuration: the pinned Apple root and the
+bundle id `works.windmill.app`. `SignedDataVerifier::new(roots, bundle_id, clock)` takes other roots
+and another bundle id; the tests in `crates/app_store/tests/` sign under chains they generate. No
+verifier accepts `Xcode` or `LocalTesting` (spec §8).
 
 ### Where the rules come from
 
 The rules follow Apple's App Store Server Library: Python `e5ffded5c`, Java `6bce52abe`, Node
 `b71d9c70a`, Swift `d4a93113d`.
 
-- Rules 3–7 follow Node `jws_verification.ts`: `verifyJWT`, `verifyCertificateChainWithoutCaching`
+- Rules 4–8 follow Node `jws_verification.ts`: `verifyJWT`, `verifyCertificateChainWithoutCaching`
   and `checkDates`. The OIDs match Swift's `AppStoreOIDPolicy` in `ChainVerifier.swift` and Java's
-  `AppleExtensionCertPathChecker.java`.
-- The date in rule 7 is what all four libraries use with online checks off:
+  `AppleExtensionCertPathChecker.java`. The P-256 leaf key matches Swift's `ChainVerifier.verify`,
+  which refuses a leaf whose key does not convert to `P256.Signing.PublicKey`.
+- The date in rule 8 is what all four libraries use with online checks off:
   - Swift `ChainVerifier.verify` (`validationTime`)
   - Java `SignedDataVerifier.decodeSignedObject`
   - Python `SignedDataVerifier._decode_signed_object`
@@ -82,21 +91,23 @@ The rules follow Apple's App Store Server Library: Python `e5ffded5c`, Java `6bc
   bounds are inclusive and allow no clock skew, and they cover all three certificates, as Swift's
   `RFC5280Policy` checks them (`ExpiryPolicy.swift` in swift-certificates). Node allows 60 seconds
   either side.
+- Rule 3 is this service's own: none of Apple's libraries refuses a future `signedDate`. Its
+  60-second allowance is Node's `MAX_SKEW`.
 - Rule 2 follows Swift's `EXPECTED_ALGORITHM`, Java's `decodeSignedObject` and Python's
   `_decode_signed_object`.
-- Rules 9–10 follow `verifyAndDecodeNotification`, `verifyAndDecodeTransaction` and
+- Rules 10–12 follow `verifyAndDecodeNotification`, `verifyAndDecodeTransaction` and
   `verifyAndDecodeRenewalInfo` in each library.
 
 Where this verifier differs from Apple's:
 
 - **Online checks.** Apple's optional online mode adds OCSP and checks validity at the current time.
   This verifier makes no network call.
-- **Environments.** It accepts a set of environments where Apple's verifier takes exactly one. It
-  therefore requires nested payloads to state their notification's environment, which a
+- **Environments.** It accepts both `Production` and `Sandbox`, where Apple's verifier takes exactly
+  one. It therefore requires nested payloads to state their notification's environment, which a
   one-environment verifier guarantees by construction.
-- **Xcode and LocalTesting.** For these environments Apple's libraries skip verification. This
-  verifier always verifies the chain. A real StoreKit-testing payload carries one self-signed
-  certificate, so it is refused with `chain_length`.
+- **Xcode and LocalTesting.** For these environments Apple's libraries skip verification. Here they
+  cannot be represented. A real StoreKit-testing payload is refused as `malformed` at rule 3, because
+  its dates are fractional.
 - **App Apple ID.** It does not compare `appAppleId`, which Apple's libraries check on production
   notifications. The bundle id, under Apple's signature, already names the app.
 - **External purchase.** A notification carrying only `externalPurchaseToken` is refused with

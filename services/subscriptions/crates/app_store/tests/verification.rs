@@ -1,7 +1,8 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use app_store::verification::{
-    Environment, Notification, Refusal, RenewalInfo, SignedDataVerifier, TransactionInfo,
+    AccountToken, Environment, Notification, Refusal, RenewalInfo, SignedDataVerifier,
+    TransactionId, TransactionInfo,
 };
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
@@ -133,9 +134,9 @@ impl TestChain {
         jws("ES256", &self.x5c(), &self.leaf_key, payload)
     }
 
-    fn verifier(&self, environments: &[Environment]) -> SignedDataVerifier {
-        SignedDataVerifier::new(&[&self.root], environments, "works.windmill.app", || {
-            UNIX_EPOCH + Duration::from_millis(1_793_491_200_000)
+    fn verifier(&self) -> SignedDataVerifier {
+        SignedDataVerifier::new(&[&self.root], "works.windmill.app", || {
+            UNIX_EPOCH + Duration::from_millis(1_793_491_260_000)
         })
         .unwrap()
     }
@@ -206,9 +207,7 @@ fn a_notification_signed_under_the_trusted_root_verifies_with_the_transaction_an
         }
     }));
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_notification(&notification);
+    let verified = chain.verifier().verify_notification(&notification);
 
     let expected = Notification {
         notification_uuid: "0b4d6a52-8c1e-4f7a-a3b9-5d2e8f1c6a07".to_owned(),
@@ -218,8 +217,8 @@ fn a_notification_signed_under_the_trusted_root_verifies_with_the_transaction_an
         environment: Environment::Sandbox,
         status: Some(1),
         transaction: Some(TransactionInfo {
-            transaction_id: "2000000000000002".to_owned(),
-            original_transaction_id: "2000000000000001".to_owned(),
+            transaction_id: TransactionId::new("2000000000000002"),
+            original_transaction_id: TransactionId::new("2000000000000001"),
             bundle_id: "works.windmill.app".to_owned(),
             product_id: "works.windmill.one.monthly".to_owned(),
             product_type: Some("Auto-Renewable Subscription".to_owned()),
@@ -231,7 +230,7 @@ fn a_notification_signed_under_the_trusted_root_verifies_with_the_transaction_an
             storefront: Some("USA".to_owned()),
             price: Some(11_990),
             currency: Some("USD".to_owned()),
-            app_account_token: Some("6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84".to_owned()),
+            app_account_token: Some(AccountToken::new("6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84")),
             in_app_ownership_type: Some("PURCHASED".to_owned()),
             transaction_reason: Some("RENEWAL".to_owned()),
             offer_type: None,
@@ -241,7 +240,7 @@ fn a_notification_signed_under_the_trusted_root_verifies_with_the_transaction_an
             revocation_reason: None,
         }),
         renewal_info: Some(RenewalInfo {
-            original_transaction_id: "2000000000000001".to_owned(),
+            original_transaction_id: TransactionId::new("2000000000000001"),
             product_id: Some("works.windmill.one.monthly".to_owned()),
             auto_renew_product_id: Some("works.windmill.one.monthly".to_owned()),
             auto_renew_status: Some(1),
@@ -279,13 +278,11 @@ fn a_transaction_a_phone_hands_over_verifies_on_its_own() {
         "revocationReason": 0
     }));
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_transaction(&transaction);
+    let verified = chain.verifier().verify_transaction(&transaction);
 
     let expected = TransactionInfo {
-        transaction_id: "2000000000000001".to_owned(),
-        original_transaction_id: "2000000000000001".to_owned(),
+        transaction_id: TransactionId::new("2000000000000001"),
+        original_transaction_id: TransactionId::new("2000000000000001"),
         bundle_id: "works.windmill.app".to_owned(),
         product_id: "works.windmill.one.monthly".to_owned(),
         product_type: Some("Auto-Renewable Subscription".to_owned()),
@@ -312,7 +309,7 @@ fn a_transaction_a_phone_hands_over_verifies_on_its_own() {
 #[test]
 fn a_payload_with_one_altered_byte_is_refused() {
     let chain = TestChain::issue(ChainShape::default());
-    let verifier = chain.verifier(&[Environment::Production, Environment::Sandbox]);
+    let verifier = chain.verifier();
     let signed = chain.sign(&json!({
         "transactionId": "2000000000000001",
         "originalTransactionId": "2000000000000001",
@@ -354,9 +351,7 @@ fn a_payload_signed_under_a_foreign_chain_is_refused() {
         "environment": "Production"
     }));
 
-    let verified = trusted
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_transaction(&transaction);
+    let verified = trusted.verifier().verify_transaction(&transaction);
 
     assert_eq!(verified.err(), Some(Refusal::Untrusted));
 }
@@ -380,9 +375,7 @@ fn a_leaf_issued_under_another_intermediate_is_refused() {
         }),
     );
 
-    let verified = trusted
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_transaction(&transaction);
+    let verified = trusted.verifier().verify_transaction(&transaction);
 
     assert_eq!(verified.err(), Some(Refusal::Untrusted));
 }
@@ -403,9 +396,7 @@ fn a_leaf_naming_another_issuer_is_refused_though_the_intermediates_key_signed_i
         "environment": "Production"
     }));
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_transaction(&transaction);
+    let verified = chain.verifier().verify_transaction(&transaction);
 
     assert_eq!(verified.err(), Some(Refusal::Untrusted));
 }
@@ -423,9 +414,7 @@ fn a_payload_whose_leaf_had_expired_when_it_was_signed_is_refused() {
         "data": { "bundleId": "works.windmill.app", "environment": "Production" }
     }));
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_notification(&notification);
+    let verified = chain.verifier().verify_notification(&notification);
 
     assert_eq!(verified.err(), Some(Refusal::Validity));
 }
@@ -450,17 +439,16 @@ fn a_payload_signed_after_its_intermediate_or_root_expired_is_refused() {
         ..ChainShape::default()
     });
 
-    let environments = [Environment::Production, Environment::Sandbox];
     assert_eq!(
         expired_intermediate
-            .verifier(&environments)
+            .verifier()
             .verify_transaction(&expired_intermediate.sign(&transaction))
             .err(),
         Some(Refusal::Validity)
     );
     assert_eq!(
         expired_root
-            .verifier(&environments)
+            .verifier()
             .verify_transaction(&expired_root.sign(&transaction))
             .err(),
         Some(Refusal::Validity)
@@ -482,12 +470,9 @@ fn without_a_signing_date_the_clock_decides_whether_the_leaf_is_valid() {
         "environment": "Production"
     }));
     let verifier_at = |millis: u64| {
-        SignedDataVerifier::new(
-            &[&chain.root],
-            &[Environment::Production, Environment::Sandbox],
-            "works.windmill.app",
-            move || UNIX_EPOCH + Duration::from_millis(millis),
-        )
+        SignedDataVerifier::new(&[&chain.root], "works.windmill.app", move || {
+            UNIX_EPOCH + Duration::from_millis(millis)
+        })
         .unwrap()
     };
 
@@ -514,38 +499,71 @@ fn a_payload_for_another_bundle_id_is_refused() {
         "data": { "bundleId": "com.example.other", "environment": "Production" }
     }));
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_notification(&notification);
+    let verified = chain.verifier().verify_notification(&notification);
 
     assert_eq!(verified.err(), Some(Refusal::BundleId));
 }
 
 #[test]
-fn a_payload_whose_environment_is_xcode_is_refused_unless_the_verifier_accepts_xcode() {
+fn a_payload_whose_environment_is_xcode_or_local_testing_is_refused_even_when_its_signature_holds()
+{
     let chain = TestChain::issue(ChainShape::default());
-    let transaction = chain.sign(&json!({
-        "transactionId": "2000000000000001",
-        "originalTransactionId": "2000000000000001",
-        "bundleId": "works.windmill.app",
-        "productId": "works.windmill.one.monthly",
-        "purchaseDate": 1_790_812_800_000_i64,
-        "signedDate": 1_793_491_260_000_i64,
-        "environment": "Xcode"
-    }));
+    let transaction_in = |environment: &str| {
+        chain.sign(&json!({
+            "transactionId": "2000000000000001",
+            "originalTransactionId": "2000000000000001",
+            "bundleId": "works.windmill.app",
+            "productId": "works.windmill.one.monthly",
+            "purchaseDate": 1_790_812_800_000_i64,
+            "signedDate": 1_793_491_260_000_i64,
+            "environment": environment
+        }))
+    };
+    let verifier = chain.verifier();
 
-    let production = chain.verifier(&[Environment::Production, Environment::Sandbox]);
-    let local = chain.verifier(&[
-        Environment::Production,
-        Environment::Sandbox,
-        Environment::Xcode,
-    ]);
+    let outcomes = [
+        verifier
+            .verify_transaction(&transaction_in("Sandbox"))
+            .err(),
+        verifier.verify_transaction(&transaction_in("Xcode")).err(),
+        verifier
+            .verify_transaction(&transaction_in("LocalTesting"))
+            .err(),
+    ];
 
     assert_eq!(
-        production.verify_transaction(&transaction).err(),
-        Some(Refusal::Environment)
+        outcomes,
+        [None, Some(Refusal::Malformed), Some(Refusal::Malformed)]
     );
-    assert!(local.verify_transaction(&transaction).is_ok());
+}
+
+#[test]
+fn a_payload_signed_later_than_the_clock_allows_is_refused() {
+    let chain = TestChain::issue(ChainShape::default());
+    let transaction_signed_at = |signed_date: i64| {
+        chain.sign(&json!({
+            "transactionId": "2000000000000001",
+            "originalTransactionId": "2000000000000001",
+            "bundleId": "works.windmill.app",
+            "productId": "works.windmill.one.monthly",
+            "purchaseDate": 1_790_812_800_000_i64,
+            "signedDate": signed_date,
+            "environment": "Production"
+        }))
+    };
+    let verifier = chain.verifier();
+
+    let within_a_minute = verifier
+        .verify_transaction(&transaction_signed_at(1_793_491_320_000))
+        .err();
+    let past_a_minute = verifier
+        .verify_transaction(&transaction_signed_at(1_793_491_320_001))
+        .err();
+
+    assert_eq!(
+        (within_a_minute, past_a_minute),
+        (None, Some(Refusal::SignedInFuture))
+    );
 }
 
 #[test]
@@ -577,9 +595,7 @@ fn a_nested_transaction_with_a_bad_signature_is_refused_inside_a_good_notificati
         }
     }));
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_notification(&notification);
+    let verified = chain.verifier().verify_notification(&notification);
 
     assert_eq!(verified.err(), Some(Refusal::Signature));
 }
@@ -611,9 +627,7 @@ fn a_nested_renewal_info_with_a_bad_signature_is_refused_inside_a_good_notificat
         }
     }));
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_notification(&notification);
+    let verified = chain.verifier().verify_notification(&notification);
 
     assert_eq!(verified.err(), Some(Refusal::Signature));
 }
@@ -641,9 +655,7 @@ fn a_nested_transaction_from_another_environment_is_refused() {
         }
     }));
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_notification(&notification);
+    let verified = chain.verifier().verify_notification(&notification);
 
     assert_eq!(verified.err(), Some(Refusal::Environment));
 }
@@ -665,9 +677,7 @@ fn a_summary_notification_names_its_app_in_the_summary() {
         }
     }));
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_notification(&notification);
+    let verified = chain.verifier().verify_notification(&notification);
 
     let expected = Notification {
         notification_uuid: "0b4d6a52-8c1e-4f7a-a3b9-5d2e8f1c6a07".to_owned(),
@@ -700,9 +710,7 @@ fn a_chain_missing_the_intermediate_is_refused() {
         }),
     );
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_transaction(&transaction);
+    let verified = chain.verifier().verify_transaction(&transaction);
 
     assert_eq!(verified.err(), Some(Refusal::ChainLength));
 }
@@ -723,9 +731,7 @@ fn a_leaf_without_apples_receipt_signing_marker_is_refused() {
         "environment": "Production"
     }));
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_transaction(&transaction);
+    let verified = chain.verifier().verify_transaction(&transaction);
 
     assert_eq!(verified.err(), Some(Refusal::AppleMarker));
 }
@@ -746,9 +752,7 @@ fn an_intermediate_without_apples_developer_relations_marker_is_refused() {
         "environment": "Production"
     }));
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_transaction(&transaction);
+    let verified = chain.verifier().verify_transaction(&transaction);
 
     assert_eq!(verified.err(), Some(Refusal::AppleMarker));
 }
@@ -769,9 +773,7 @@ fn an_intermediate_that_is_not_a_certificate_authority_is_refused() {
         "environment": "Production"
     }));
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_transaction(&transaction);
+    let verified = chain.verifier().verify_transaction(&transaction);
 
     assert_eq!(verified.err(), Some(Refusal::Untrusted));
 }
@@ -794,9 +796,7 @@ fn a_header_naming_another_algorithm_is_refused() {
         }),
     );
 
-    let verified = chain
-        .verifier(&[Environment::Production, Environment::Sandbox])
-        .verify_transaction(&transaction);
+    let verified = chain.verifier().verify_transaction(&transaction);
 
     assert_eq!(verified.err(), Some(Refusal::Algorithm));
 }
@@ -843,7 +843,8 @@ fn apples_real_chain_passes_every_certificate_check_while_its_leaf_is_valid() {
         );
         format!("{header}.{payload}.{}", URL_SAFE_NO_PAD.encode([0_u8; 64]))
     };
-    let verifier = SignedDataVerifier::windmill(SystemTime::now);
+    let verifier =
+        SignedDataVerifier::windmill(|| UNIX_EPOCH + Duration::from_millis(1_830_297_600_000));
 
     assert_eq!(
         verifier

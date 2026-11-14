@@ -41,7 +41,15 @@ pub(super) struct TrustedRoots(Vec<Vec<u8>>);
 
 impl TrustedRoots {
     pub(super) fn new(certificates: &[&[u8]]) -> Result<Self, InvalidRoots> {
-        let usable = |der: &&[u8]| parse(der).is_some_and(|root| curve(&root).is_some());
+        let usable = |der: &&[u8]| {
+            parse(der).is_some_and(|root| {
+                curve(&root).is_some_and(|root_curve| {
+                    CERTIFICATE_SIGNATURES
+                        .iter()
+                        .any(|(_, curve, _)| *curve == root_curve)
+                })
+            })
+        };
         if certificates.is_empty() || !certificates.iter().all(usable) {
             return Err(InvalidRoots);
         }
@@ -58,6 +66,9 @@ impl TrustedRoots {
             .map_err(|_| Refusal::Certificate)?;
         let leaf = parse(&leaf_der).ok_or(Refusal::Certificate)?;
         let intermediate = parse(&intermediate_der).ok_or(Refusal::Certificate)?;
+        if !curve(&leaf).is_some_and(|leaf_curve| leaf_curve == OID_EC_P256) {
+            return Err(Refusal::Certificate);
+        }
 
         let roots: Vec<X509Certificate> = self.0.iter().filter_map(|der| parse(der)).collect();
         let root = roots
