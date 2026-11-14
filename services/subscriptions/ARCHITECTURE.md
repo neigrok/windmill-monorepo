@@ -10,11 +10,12 @@ the stores' observations into it ([Domain](#domain)); `app_store` verifies App S
 ([App Store decoding](#app-store-decoding)), and the tool `app_store_test_signer` signs them under a
 chain only tests trust ([App Store test signer](#app-store-test-signer)); `storage` keeps the ledger,
 the service's own database: it migrates it, keeps what the stores sent, applies observations in one
-transaction each and reads the feed ([Storage](#storage)); `subscriptions`, the server binary,
-opens the ledger before it listens, answers health on both of its listeners, logs every request and
-reports to Sentry ([Server](#server)). It runs in production with no store connected: the public
-listener answers `GET /health` and 404s every other path, every path under `/v1/stores/` included, until
-the App Store door lands. Backend CI publishes its image beside the server's, and every deploy provisions
+transaction each and reads the feed and each account ([Storage](#storage)); `subscriptions`, the server
+binary, opens the ledger before it listens, answers health on both of its listeners, serves the backend
+the feed and the account read behind a bearer secret on the internal one, logs every request and reports
+to Sentry ([Server](#server)). It runs in production with no store connected: the public listener answers
+`GET /health` and 404s every other path, every path under `/v1/stores/` included, until the App Store door
+lands. Backend CI publishes its image beside the server's, and every deploy provisions
 its database and starts it ([deploy README](../../backend/deploy/README.md#the-subscription-service)).
 
 ## Crates
@@ -547,6 +548,7 @@ after the lock is taken, so they include every transaction committed before.
 | `feed(after, limit)` | A `FeedPage`, `{epoch, entries, latest_seq}`, read in one repeatable-read snapshot: at most `limit` events after the seq `after`, in seq order. A `FeedEntry` holds the domain's `Event`, its `seq` and `recorded_at`, the subscription's store, environment and offer kind, and the entitlement, `AccountEntitlement::of` the account over the subscriptions stored with the event, absent exactly when the event names no account (§5.2) |
 | `lineage(lineage)` | What the ledger holds for one lineage: its subscription, if any, and its periods |
 | `entitlement(account)` | The account's entitlement as the ledger holds it now |
+| `account(account)` | An `AccountRecord`, read in one repeatable-read snapshot: each subscription bound to the account, ordered by id, with its periods by start and every event of it in seq order as a `RecordedEvent` (`seq`, `recorded_at`, the domain's `Event`), whichever account the event was told under; and the entitlement folded over those subscriptions |
 
 ### Failures
 
@@ -570,20 +572,20 @@ repeats it.
 
 ## Server
 
-`crates/server` holds three modules, `config`, `listeners` and `telemetry`, and the binary
+`crates/server` holds four modules, `config`, `internal`, `listeners` and `telemetry`, and the binary
 `subscriptions`, whose `main.rs` reads the configuration, starts telemetry, opens the ledger and serves
 both listeners until a signal.
 
 ### Configuration
 
-Read once at start. An empty value counts as unset. A missing required value, a malformed value or a
-refused combination stops the start with exit code 1 and one log line naming the variable, never its
-value.
+Read once at start. An empty value counts as unset. A missing required value, a malformed value, an
+address naming a host that does not resolve or a refused combination stops the start with exit code 1 and
+one log line naming the variable, never its value.
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `SUBSCRIPTIONS_PUBLIC_ADDRESS` | yes | Socket address of the public listener, such as `0.0.0.0:8082` |
-| `SUBSCRIPTIONS_INTERNAL_ADDRESS` | yes | Socket address of the internal listener, such as `0.0.0.0:8083` |
+| `SUBSCRIPTIONS_PUBLIC_ADDRESS` | yes | Socket address of the public listener, such as `0.0.0.0:8082`, or a host and port whose name resolves at start; of several addresses, as `localhost` has, it binds the first IPv4 |
+| `SUBSCRIPTIONS_INTERNAL_ADDRESS` | yes | The same for the internal listener, such as `0.0.0.0:8083`; production names `subscriptions-internal:8083`, the service's alias on the one compose network the backend shares with it, so the listener binds that network alone |
 | `SUBSCRIPTIONS_DATABASE_URL` | yes | The ledger's database, as a `storage::DatabaseUrl` ([Storage](#failures)), such as `postgresql://windmill_subscriptions:<password>@db:5432/windmill_subscriptions` |
 | `SENTRY_ENVIRONMENT` | yes | The deployment's name, such as `production`; Sentry files every report and log under it |
 | `SENTRY_DSN` | no | Where Sentry reports go; unset turns Sentry off, logged once at start |
@@ -591,6 +593,7 @@ value.
 | `WINDMILL_LOG_LEVEL` | no | The lowest level written to stdout: `trace`, `debug`, `info` (default), `warn`, `error` or `fatal`, in any case, the words the backend reads; `fatal` reads as `error`. sqlx's own lines stay at `warn` or above, because below it they carry the server's raw error text |
 | `SENTRY_LOG_LEVEL` | no | The same words: the lowest level of the service's own lines sent to Sentry as Logs; default `info` |
 | `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` | no | `true` adds `GET /debug/panic` to the internal listener; refused unless `SENTRY_ENVIRONMENT`, trimmed and in any case, is `local`, `development`, `test` or `ci` |
+| `SUBSCRIPTIONS_INTERNAL_TOKEN` | no | The bearer secret of the internal doors ([below](#internal-doors)), the one the backend sends: at least 32 characters, none a space or a control character; production's is 64 lowercase hex. Unset, every internal door answers 401; the `starting` line says whether it is set |
 
 ### Start
 
@@ -604,12 +607,14 @@ opens writes `ledger open` with its `epoch`.
 The image listens on 8082 (public) and 8083 (internal), beside the backend's 8080 and the embedder's
 8081, and speaks HTTP/1.1. Each listener builds its own router, so a route on the internal listener
 does not exist on the public one and answers 404 there. In production Caddy forwards `/v1/stores/*` to
-the public port and nothing else, and the internal port is reached only on the compose network.
+the public port and nothing else, and the internal listener binds the service's address on
+`internal-doors`, a compose network only the backend shares, so no other container reaches it.
 
 | Listener | Route | Answer |
 |---|---|---|
 | public | `GET /health` | 200 `{"status":"ready"}` while the ledger answers `Ledger::check`, else 503 `{"status":"unavailable"}` |
-| internal | `GET /health` | the same; the image's `HEALTHCHECK` asks it |
+| internal | `GET /health` | the same; the image's `HEALTHCHECK` asks it, at the address `SUBSCRIPTIONS_INTERNAL_ADDRESS` names |
+| internal | `GET /internal/v1/feed`, `GET /internal/v1/accounts/{accountId}` | the backend's reads, behind the bearer secret ([below](#internal-doors)) |
 | internal | `GET /debug/panic` | panics, only while `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` is `true` |
 
 `listeners::Bounds` holds what a client may take on either listener:
@@ -625,7 +630,30 @@ outlive its request, such as the App Store notification door, spawns that work a
 own.
 
 Both listeners answer health the same way because every door reads or writes the ledger. The routers
-take what they ask as a `listeners::Readiness`, which `Ledger` is, so a test hands them a fake.
+take what they ask of it as traits, `listeners::Readiness` and `internal::Reads`, which `Ledger` is, so a
+test hands them a fake.
+
+### Internal doors
+
+`internal` holds the backend's doors (spec §5.2); the internal router merges them, so none exists on the
+public listener. Each is behind the bearer secret: a request without `Authorization: Bearer <secret>`,
+with another secret, or reaching a service started without one answers 401 `{"code":"unauthorized"}` with
+`WWW-Authenticate: Bearer`, and says nothing of which. The secret is compared in time that depends on the
+lengths alone. `/health` asks for none, for the image's `HEALTHCHECK`.
+
+| Route | Answer |
+|---|---|
+| `GET /internal/v1/feed?after=<seq>&limit=<n>` | 200, `Ledger::feed(after, limit)` as `feed.json` shows a page. Both are required, `after` from 0 and `limit` from 1 to 500; any other query is 400 `{"code":"invalid_query"}` |
+| `GET /internal/v1/accounts/{accountId}` | 200, `Ledger::account` as `{entitlement, subscriptions}`: the entitlement as `entitlement.json` shows it, and each subscription bound to the account with the entitlement's fields of it, then `environment`, `boundAt`, `boundBy`, `periods` as the feed carries a period, and `events`, each `{seq, type, occurredAt, recordedAt, accountId, period}`. An id that is no UUID is 400 `{"code":"invalid_account_id"}`; an account the ledger holds nothing of answers its empty entitlement and `[]` |
+
+A read the ledger does not answer is 503 `{"code":"unavailable"}` and an Issue under `feed.read` or
+`account.read` ([Logs and Sentry](#logs-and-sentry)); the backend's follower reads again. The wire shapes
+are `internal/responses.rs`, each written from the ledger's own types. `crates/server/tests/contract.rs`
+serves every page of `feed.json` and every entitlement of `entitlement.json` from the ledger's types and
+compares the bodies byte for byte, key order included. It also tells the feed's story through `Ledger::apply`
+up to the sandbox renewal, seq 13, and checks those pages and three account reads against the fixtures: at
+seq 14 the fixture's refund turns renewal off without the `renewal_turned_off` that `observe` records
+(§3.4), and the erasure at seq 26 has no step in the domain yet.
 
 SIGTERM or SIGINT stops both listeners from accepting. Each open connection then finishes its request
 within the bounds above, and the ledger's connections close once no request holds one, for at most
@@ -639,14 +667,19 @@ Every line on stdout is one JSON object. Each request writes one line when it en
 `unmatched`), `status`, `outcome`, `duration_ms` and `request_id`. `outcome` is `answered`,
 `panicked`, `timed_out`, or `cancelled` when the client left first; a cancelled line has no `status`.
 The line reads no header, body or raw path. A 5xx line is at `error`, a 4xx or cancelled line at
-`warn`, a ready health answer at `debug` and anything else at `info`:
+`warn`, a ready health answer and an answered feed read at `debug`, since a probe and the backend's
+follower ask every few seconds forever, and anything else at `info`:
 
 ```json
 {"timestamp":"2026-11-14T10:58:01.163207Z","level":"ERROR","message":"request","listener":"internal","method":"GET","route":"/debug/panic","status":500,"outcome":"panicked","duration_ms":4.3,"request_id":"8244ce4ef07341ff85532a1d8dfc7cf9"}
 ```
 
 A health check the ledger does not answer also writes `ledger did not answer` at `warn`, with
-`operation` `ledger.check`, the failure's `code` and `sqlstate`, inside the request's span.
+`operation` `ledger.check`, the failure's `code` and `sqlstate`, inside the request's span. Each read an
+internal door has the ledger answer writes `feed.read` or `account.read`, inside the request's span, with
+`operation`, `outcome` `ok` and its `entries` or `subscriptions`; a feed page without entries writes it at
+`debug`, any other at `info`. A refused request writes its request line alone. No line names an account,
+the query or the secret.
 
 Lines from every crate of the workspace (`telemetry::SERVICE_CRATES`) also go to Sentry as Logs; a
 vendor's lines stay on stdout. A line at `error` creates no Issue. Issues come from explicit
@@ -655,7 +688,7 @@ reports, each logged with the event's `sentry_event_id` (absent while Sentry is 
 - `telemetry::report_failure` reports an unexpected failure of a named operation (spec §10). Its
   message is the operation, such as `ledger.open`; its tags are `operation`, `code` and, from the
   database, `sqlstate`; one Issue gathers each operation and code. Its line is `<operation> failed`
-  at `error`. `ledger.open` is the one operation so far.
+  at `error`. The operations are `ledger.open`, `feed.read` and `account.read`.
 - A panic after start is reported with its location and stack and without its message, and logged as
   `panic`. The stack ends at
 the panicking frame, and the service's crates are its in-app frames. A panic inside a request also
@@ -672,6 +705,10 @@ SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0
   SUBSCRIPTIONS_DATABASE_URL="postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions" \
   SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
 ```
+
+Its internal doors answer 401 until `SUBSCRIPTIONS_INTERNAL_TOKEN` names a secret, such as
+`openssl rand -hex 32` makes. The backend follows the feed once its `.env` holds the same secret and
+`SUBSCRIPTIONS_INTERNAL_URL=http://127.0.0.1:8083`.
 
 The image builds from this directory and sets both addresses itself; `SENTRY_RELEASE`, a build
 argument, is the commit Backend CI builds it from. A container reaches the host's Postgres over TCP,
@@ -704,7 +741,7 @@ cargo test --locked
 
 `check-dependencies.sh` needs `jq` and runs from any directory.
 
-The tests that need Postgres, in `crates/storage/tests/`, run only where
+The tests that need Postgres, in `crates/storage/tests/` and `crates/server/tests/`, run only where
 `SUBSCRIPTIONS_TEST_DATABASE_URL` names a database whose role may create databases; each test creates
 an empty one beside it and drops it after. Without the variable they are compiled as ignored, so the
 summary counts them as not run. Against the local Homebrew Postgres:

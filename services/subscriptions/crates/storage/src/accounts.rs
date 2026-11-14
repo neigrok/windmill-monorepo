@@ -1,7 +1,8 @@
-use domain::{AccountEntitlement, AccountId};
+use domain::{AccountEntitlement, AccountId, Period, Subscription};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
+use crate::events::{self, RecordedEvent};
 use crate::ledger::{Ledger, StorageError, commit};
 use crate::subscriptions;
 
@@ -18,6 +19,21 @@ const HOLD_ACCOUNT_ALONE: &str = concat!("select pg_advisory_xact_lock(", accoun
 const IS_ERASED: &str = "select exists (select from erased_accounts where account_id = $1::uuid)";
 const RECORD_ERASURE: &str =
     "insert into erased_accounts (account_id) values ($1::uuid) on conflict do nothing";
+
+// §5.2: what the ledger holds for one account: its entitlement, and every subscription bound to it with its periods
+// and events.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccountRecord {
+    pub entitlement: AccountEntitlement,
+    pub subscriptions: Vec<SubscriptionRecord>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubscriptionRecord {
+    pub subscription: Subscription,
+    pub periods: Vec<Period>,
+    pub events: Vec<RecordedEvent>,
+}
 
 impl Ledger {
     // §6.4: records the account as erased, so a hint naming it counts as no hint from now on (§4).
@@ -40,6 +56,31 @@ impl Ledger {
         let mut connection = self.pool.acquire().await?;
         let subscriptions = subscriptions::bound_to(&mut connection, &account_id).await?;
         Ok(AccountEntitlement::of(account_id, subscriptions))
+    }
+
+    // The account as the ledger holds it now, read in one snapshot: its subscriptions ordered by id, each with its
+    // periods by start and its events in seq order, and the entitlement folded over them.
+    pub async fn account(&self, account_id: Uuid) -> Result<AccountRecord, StorageError> {
+        let account_id = AccountId::new(account_id.to_string());
+        let mut transaction = self
+            .pool
+            .begin_with("begin isolation level repeatable read, read only")
+            .await?;
+        let mut held = subscriptions::bound_to(&mut transaction, &account_id).await?;
+        held.sort_by(|one, other| one.id.cmp(&other.id));
+        let mut records = Vec::new();
+        for subscription in &held {
+            records.push(SubscriptionRecord {
+                subscription: subscription.clone(),
+                periods: subscriptions::periods_of(&mut transaction, &subscription.id).await?,
+                events: events::recorded_for(&mut transaction, &subscription.id).await?,
+            });
+        }
+        transaction.commit().await?;
+        Ok(AccountRecord {
+            entitlement: AccountEntitlement::of(account_id, held),
+            subscriptions: records,
+        })
     }
 }
 

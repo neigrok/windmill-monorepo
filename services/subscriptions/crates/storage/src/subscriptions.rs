@@ -122,17 +122,23 @@ async fn load(
         return Ok(domain::Ledger::default());
     };
     let subscription = Subscription::try_from(row)?;
-    let periods: Vec<PeriodRow> = sqlx::query_as(SELECT_PERIODS)
-        .bind(subscription.id.as_str())
-        .fetch_all(&mut *connection)
-        .await?;
+    let periods = periods_of(connection, &subscription.id).await?;
     Ok(domain::Ledger {
         subscription: Some(subscription),
-        periods: periods
-            .into_iter()
-            .map(Period::try_from)
-            .collect::<Result<_, _>>()?,
+        periods,
     })
+}
+
+// The subscription's periods, by start.
+pub(crate) async fn periods_of(
+    connection: &mut PgConnection,
+    subscription_id: &SubscriptionId,
+) -> Result<Vec<Period>, StorageError> {
+    let rows: Vec<PeriodRow> = sqlx::query_as(SELECT_PERIODS)
+        .bind(subscription_id.as_str())
+        .fetch_all(connection)
+        .await?;
+    rows.into_iter().map(Period::try_from).collect()
 }
 
 // Writes what a change makes of its lineage: the subscription when it differs from the one held, and each period

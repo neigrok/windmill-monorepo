@@ -4,12 +4,13 @@ use std::time::Duration;
 
 use domain::{
     AccountEntitlement, AccountId, BillingInterval, Binding, BoundBy, Environment, Instant,
-    Lineage, Money, NextCharge, Observation, ObservedPeriod, Ownership, Plan, ProductId, Renewal,
-    Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId, Storefront, Subscription,
+    Lineage, Money, NextCharge, Observation, ObservedPeriod, Ownership, PeriodChange, Plan,
+    ProductId, Renewal, Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId,
+    Storefront, Subscription,
 };
 use futures_util::FutureExt;
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
-use storage::{Applied, Ledger, Observed};
+use storage::{AccountRecord, Applied, Ledger, Observed, RecordedEvent, SubscriptionRecord};
 use url::Url;
 use uuid::Uuid;
 
@@ -134,6 +135,84 @@ async fn an_erasure_waits_for_an_apply_that_binds_its_account() {
         assert_eq!(
             bound.binding.map(|binding| binding.account_id),
             Some(AccountId::new(account.to_string()))
+        );
+        ledger.close().await;
+    })
+    .await;
+}
+
+#[tokio::test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn an_account_read_holds_each_subscription_bound_to_it_with_its_periods_and_events() {
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let (account, another) = (Uuid::new_v4(), Uuid::new_v4());
+        let mut bought = Vec::new();
+        for (lineage, hint) in [
+            ("first", Some(account)),
+            ("theirs", Some(another)),
+            ("unbound", None),
+            ("second", Some(account)),
+        ] {
+            bought.push(apply(&ledger, lineage, hint).await);
+        }
+        let recorded_at: Vec<Instant> = ledger
+            .feed(0, 100)
+            .await
+            .unwrap()
+            .entries
+            .iter()
+            .map(|entry| entry.recorded_at)
+            .collect();
+
+        let read = ledger.account(account).await.unwrap();
+
+        let mut held: Vec<SubscriptionRecord> = [&bought[0], &bought[3]]
+            .into_iter()
+            .map(|applied| {
+                let Applied::Recorded { change, seqs, .. } = applied else {
+                    panic!("the apply answered {applied:?}");
+                };
+                SubscriptionRecord {
+                    subscription: change.subscription.clone(),
+                    periods: change
+                        .periods
+                        .iter()
+                        .map(|written| match written {
+                            PeriodChange::Written(period) => period.clone(),
+                            PeriodChange::Restated(period) => {
+                                panic!("a purchase restated {period:?}")
+                            }
+                        })
+                        .collect(),
+                    events: seqs
+                        .iter()
+                        .zip(&change.events)
+                        .map(|(seq, event)| RecordedEvent {
+                            seq: *seq,
+                            recorded_at: recorded_at[*seq as usize - 1],
+                            event: event.clone(),
+                        })
+                        .collect(),
+                }
+            })
+            .collect();
+        held.sort_by(|one, other| one.subscription.id.cmp(&other.subscription.id));
+        assert_eq!(
+            read,
+            AccountRecord {
+                entitlement: AccountEntitlement::of(
+                    AccountId::new(account.to_string()),
+                    held.iter()
+                        .map(|record| record.subscription.clone())
+                        .collect(),
+                ),
+                subscriptions: held,
+            }
+        );
+        assert_eq!(
+            ledger.account(Uuid::new_v4()).await.unwrap().subscriptions,
+            Vec::new()
         );
         ledger.close().await;
     })

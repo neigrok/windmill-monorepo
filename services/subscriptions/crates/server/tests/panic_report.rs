@@ -3,10 +3,12 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use server::config::Config;
+use server::internal::Reads;
 use server::listeners::{Bounds, Listener, Readiness};
 use server::telemetry::{SERVICE_CRATES, report_panics};
-use storage::StorageError;
+use storage::{AccountRecord, FeedPage, StorageError};
 use tower::ServiceExt;
+use uuid::Uuid;
 
 // Answers ready, as a ledger that answers does.
 #[derive(Clone)]
@@ -15,6 +17,17 @@ struct Answering;
 impl Readiness for Answering {
     async fn ready(&self) -> Result<(), StorageError> {
         Ok(())
+    }
+}
+
+// Health asks nothing else of the ledger.
+impl Reads for Answering {
+    async fn feed(&self, _after: i64, _limit: i64) -> Result<FeedPage, StorageError> {
+        unreachable!("a health answer reads no feed")
+    }
+
+    async fn account(&self, _account_id: Uuid) -> Result<AccountRecord, StorageError> {
+        unreachable!("a health answer reads no account")
     }
 }
 

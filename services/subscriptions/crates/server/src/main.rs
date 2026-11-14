@@ -37,6 +37,7 @@ fn main() -> ExitCode {
         environment = config.environment,
         release = config.release.as_deref(),
         panic_route_enabled = config.panic_route_enabled,
+        internal_token_set = config.internal_token.is_some(),
         "starting"
     );
     match Runtime::new() {

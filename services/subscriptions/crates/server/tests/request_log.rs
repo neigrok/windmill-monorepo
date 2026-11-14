@@ -10,11 +10,13 @@ use axum::http::Request;
 use axum::routing::get;
 use serde_json::{Value, json};
 use server::config::Config;
+use server::internal::Reads;
 use server::listeners::{Bounds, Listener, Readiness};
 use server::telemetry::json_lines;
-use storage::StorageError;
+use storage::{AccountRecord, FeedPage, StorageError};
 use tower::ServiceExt;
 use tracing_subscriber::prelude::*;
+use uuid::Uuid;
 
 // Answers ready, as a ledger that answers does.
 #[derive(Clone)]
@@ -26,6 +28,17 @@ impl Readiness for Answering {
     }
 }
 
+// Health asks nothing else of the ledger.
+impl Reads for Answering {
+    async fn feed(&self, _after: i64, _limit: i64) -> Result<FeedPage, StorageError> {
+        unreachable!("a health answer reads no feed")
+    }
+
+    async fn account(&self, _account_id: Uuid) -> Result<AccountRecord, StorageError> {
+        unreachable!("a health answer reads no account")
+    }
+}
+
 // Answers as a ledger that cannot be reached does.
 #[derive(Clone)]
 struct Silent;
@@ -33,6 +46,16 @@ struct Silent;
 impl Readiness for Silent {
     async fn ready(&self) -> Result<(), StorageError> {
         Err(StorageError::Unreachable)
+    }
+}
+
+impl Reads for Silent {
+    async fn feed(&self, _after: i64, _limit: i64) -> Result<FeedPage, StorageError> {
+        unreachable!("a health answer reads no feed")
+    }
+
+    async fn account(&self, _account_id: Uuid) -> Result<AccountRecord, StorageError> {
+        unreachable!("a health answer reads no account")
     }
 }
 
