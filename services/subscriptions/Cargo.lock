@@ -50,6 +50,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "app_store_test_signer"
+version = "0.0.0"
+dependencies = [
+ "app_store",
+ "base64",
+ "ring",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "asn1-rs"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

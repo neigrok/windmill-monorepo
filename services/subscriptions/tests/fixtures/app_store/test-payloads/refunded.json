@@ -1,0 +1,41 @@
+{
+  "notification": {
+    "notificationType": "REFUND",
+    "data": {
+      "status": 5,
+      "signedTransactionInfo": {
+        "transactionId": "2000000000000002",
+        "originalTransactionId": "2000000000000001",
+        "webOrderLineItemId": "2000000000000102",
+        "productId": "works.windmill.app.one.monthly",
+        "subscriptionGroupIdentifier": "21000001",
+        "type": "Auto-Renewable Subscription",
+        "purchaseDate": "now-10d",
+        "originalPurchaseDate": "now-40d",
+        "expiresDate": "now+20d",
+        "quantity": 1,
+        "storefront": "USA",
+        "storefrontId": "143441",
+        "price": 11990,
+        "currency": "USD",
+        "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
+        "inAppOwnershipType": "PURCHASED",
+        "transactionReason": "RENEWAL",
+        "revocationDate": "now",
+        "revocationReason": 0
+      },
+      "signedRenewalInfo": {
+        "originalTransactionId": "2000000000000001",
+        "productId": "works.windmill.app.one.monthly",
+        "autoRenewProductId": "works.windmill.app.one.monthly",
+        "autoRenewStatus": 0,
+        "isInBillingRetryPeriod": false,
+        "renewalDate": "now+20d",
+        "renewalPrice": 11990,
+        "currency": "USD",
+        "recentSubscriptionStartDate": "now-40d",
+        "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84"
+      }
+    }
+  }
+}

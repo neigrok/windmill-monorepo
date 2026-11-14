@@ -1,6 +1,9 @@
 # App Store fixtures
 
-Material recorded from Apple that the `app_store` crate's tests read.
+The files in this folder are material recorded from Apple that the `app_store` crate's tests read.
+Its two subfolders are Windmill's own test material for `app_store_test_signer`, and Apple signed
+none of it: [`test-chain/`](test-chain/README.md), a chain only non-production configurations trust,
+and [`test-payloads/`](test-payloads/README.md), descriptions of payloads to sign under it.
 
 | File | What it is | Where it comes from |
 |---|---|---|
