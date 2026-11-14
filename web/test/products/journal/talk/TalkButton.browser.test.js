@@ -16,13 +16,14 @@ import '/src/products/journal/journal.css';
 import { TalkButton } from '/src/products/journal/talk/TalkButton.jsx';
 window.written = [];
 window.signInDoors = 0;
-window.mount = (theme) => createRoot(document.getElementById('fixture')).render(
+// Under StrictMode, as main.jsx renders the app: every effect mounts, unmounts and mounts again.
+window.mount = (theme) => createRoot(document.getElementById('fixture')).render(React.createElement(React.StrictMode, null,
   React.createElement('div', { className: 'journal-root', 'data-theme': theme, 'data-brand': 'journal' },
     React.createElement('div', { className: 'journal-tools' },
       React.createElement(TalkButton, {
         onTranscript: (text) => window.written.push(text),
         onNeedSignIn: () => { window.signInDoors += 1; },
-      }))));
+      })))));
 `;
 const auth = `
 import { useSyncExternalStore } from 'react';

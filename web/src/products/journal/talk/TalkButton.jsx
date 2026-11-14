@@ -48,18 +48,22 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
   const remembered = useRef(null);
   // Whether the plan renews, read when the sheet opens and asked only when a refusal would name a date.
   const renews = useRef(Promise.resolve(false));
+  const mounted = useRef(false);
   const latest = useRef({});
   const { status } = useAuth();
   const { loading: entLoading, windmillOne, refresh } = useEntitlements();
-  latest.current = { ...latest.current, take, discarded, close: () => close() };
+  latest.current = { take, discarded, close: () => close() };
 
   // Leaving the page must never leave the mic hot, nor hold a take's memory past the page.
-  useEffect(() => () => {
-    latest.current.gone = true;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    clearTimeout(discardTimer.current);
-    latest.current.take?.release();
-    latest.current.discarded?.release();
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      clearTimeout(discardTimer.current);
+      latest.current.take?.release();
+      latest.current.discarded?.release();
+    };
   }, []);
 
   // Escape closes the sheet, as pressing the tool again does.
@@ -176,7 +180,7 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
       return;
     }
     // A microphone granted after the room has gone is released at once, never left hot.
-    if (latest.current.gone) { stream.getTracks().forEach((track) => track.stop()); return; }
+    if (!mounted.current) { stream.getTracks().forEach((track) => track.stop()); return; }
     record(stream);
   };
 
