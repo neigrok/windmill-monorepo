@@ -166,6 +166,33 @@ must be public.
   `clean` also prunes images and build cache and, where the deploy user has passwordless sudo, trims the
   systemd journal to 200 MB. Neither touches volumes, containers or `~/windmill/backups`.
 
+## What a deploy does to the running server
+
+`docker compose up -d` replaces the server's container: Docker sends it `SIGTERM`, waits
+`stop_grace_period`, then sends `SIGKILL`. Two numbers decide whether the server gets to finish, and
+they are kept together:
+
+| What | Value | Where |
+| --- | --- | --- |
+| The server's deadline for everything still running after the signal | 5 s | `RoomRegistry::kShutdownSaveBudget` |
+| The time Docker gives the container to stop | 10 s | `stop_grace_period` of `server` in `docker-compose.yml` |
+
+At the signal the server takes no new write on any door: a new connection is refused, an open one
+is closed once the request on it has been answered, and a request that still reaches it is answered
+a bare `503`. It saves what is in flight and what its rooms still hold. A stop that is over inside
+the 5 s ends by itself. One that is not is cut there, whatever is still running: the server logs
+`server_stop outcome=cut-at-deadline`, then `roadmap_tree_save outcome=lost-at-shutdown rooms=N` for
+the rooms that hold a write the store does not. Either way it writes out its log and its failure
+reports within 3 s more (`ProcessStop::kExitFlushLimit`), leaving reports it cannot send by then,
+and exits 0 (`SPEC.md`, "The server stops in one order").
+The 10 s is that deadline, the 3 s, and room to spare, rounded up; a stop cut at the deadline
+with no report left to send measures 5.0 to 5.1 s. Compose's own default, were the line removed, is also 10 s, and stating it
+is what keeps the two numbers together: a server killed at the end of the grace period loses what it
+had acked and not stored without the `lost-at-shutdown` line, so the deadline may be raised only
+with the grace period, and the `deploy_stop_grace` check in ctest fails when the grace no longer
+covers both. The first deploy that carries a new `stop_grace_period` stops the old container under
+the grace that container was created with, so a changed value holds from the deploy after.
+
 ## Coordinated client cutoff
 
 The repository registry is schema 12 / minimum 11. Every schema in that interval carries explicit gym

@@ -39,7 +39,9 @@ public:
     });
   }
 
-  void stop() {
+  // `stopsOver` runs once every stop has, before the finish: whoever watches the stops learns there that they are
+  // over while the log still takes a line.
+  void stop(const std::function<void()>& stopsOver = {}) {
     if (std::exchange(stopped_, true)) return;
     for (auto stop = stops_.rbegin(); stop != stops_.rend(); ++stop) {
       try { (*stop)(); }
@@ -52,6 +54,7 @@ public:
       }
     }
     stops_.clear();
+    if (stopsOver) stopsOver();
     try { finish_(); }
     catch (...) {}
   }

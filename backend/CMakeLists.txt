@@ -87,6 +87,7 @@ add_library(windmill_platform
   platform/application/WriteObservation.cpp
   platform/application/StatementLimits.cpp
   platform/application/WorkerPool.cpp
+  platform/application/ProcessStop.cpp
   platform/application/sync/SyncCatalog.cpp
   platform/application/sync/Admission.cpp
   platform/application/sync/ServerCall.cpp
@@ -262,6 +263,7 @@ add_executable(windmill_domain_tests
   test/platform/application/McpKeyServiceTest.cpp
   test/platform/application/MailSweepTest.cpp
   test/platform/application/WorkerPoolTest.cpp
+  test/platform/application/ProcessStopTest.cpp
   test/platform/application/sync/SyncCatalogTest.cpp
   test/platform/application/sync/AdmissionTest.cpp
   test/platform/application/sync/ServerCallTest.cpp
@@ -348,6 +350,11 @@ add_test(NAME domain COMMAND windmill_domain_tests)
 # The production edge forwards every credential line as received (engine.md §9.1): its Caddyfile rewrites none of them.
 add_test(NAME deploy COMMAND ${CMAKE_COMMAND} -DCADDYFILE=${CMAKE_SOURCE_DIR}/deploy/Caddyfile
                              -P ${CMAKE_SOURCE_DIR}/test/deploy/caddyfile_forwards_credentials.cmake)
+# The time a deploy gives the server to stop is longer than the server may take (deploy/README.md).
+add_test(NAME deploy_stop_grace COMMAND ${CMAKE_COMMAND} -DCOMPOSE=${CMAKE_SOURCE_DIR}/deploy/docker-compose.yml
+                                        -DREGISTRY=${CMAKE_SOURCE_DIR}/products/roadmap/application/RoomRegistry.h
+                                        -DSTOP=${CMAKE_SOURCE_DIR}/platform/application/ProcessStop.h
+                                        -P ${CMAKE_SOURCE_DIR}/test/deploy/server_stop_grace_covers_the_save_budget.cmake)
 
 # The adapters, folded straight into windmill_platform / windmill_roadmap / windmill_journal / windmill_gym, so a
 # product is one library with its vendor edges in it.
@@ -535,6 +542,11 @@ add_test(NAME subtree_inventory COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/platform/infra/subtree_inventory_test.py $<TARGET_FILE:windmill_subtree_inventory>
   ${CMAKE_SOURCE_DIR}/db/schema.sql)
 set_tests_properties(subtree_inventory PROPERTIES TIMEOUT 120)
+# The real server told to stop, under WM_PG_TEST: its exit code, the deadline it exits by, and what it took after the
+# signal (SPEC.md, "The server stops in one order").
+add_test(NAME server_stop COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/test/platform/infra/server_stop_test.py $<TARGET_FILE:windmill_server>)
+set_tests_properties(server_stop PROPERTIES TIMEOUT 900 RUN_SERIAL TRUE)
 add_test(NAME auth_differential COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/e2e/auth_differential_test.py)
 add_test(NAME anonymous_coach COMMAND ${Python3_EXECUTABLE}

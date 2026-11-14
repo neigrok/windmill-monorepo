@@ -205,19 +205,24 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four C++ suites and seven script checks
+ctest --test-dir build --output-on-failure       # four C++ suites and nine script checks
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
 `domain`, `mcp`, `sync` and `adapters` are the C++ suites. `deploy` checks that the production
-Caddyfile forwards every credential line as received, `deploy_production` runs
+Caddyfile forwards every credential line as received, `deploy_stop_grace` that the time the compose
+file gives the server to stop covers the server's own deadline and exit flush, `deploy_production` runs
 `deploy/deploy-production.sh` against a modeled Docker host, `auth_differential` tests the
 authentication differential's comparator (`test/e2e/README.md`), `anonymous_coach` runs the unit
 tests of the Coach end-to-end helpers (`anonymous_coach_test.py`, `gym_http_test.py`), and
 `log_lifecycle` drives `windmill_mcp`'s log shutdown at stdin EOF, on a fatal signal and with stalled
 stderr. `sync_epoch` checks the restore tool's refusals and bounded logging; under `WM_PG_TEST` it also
 checks committed rotation, concurrent retries, rollback and lock timeouts using `psql`.
-`subtree_inventory` checks the subtree inventory tool's refusals; under `WM_PG_TEST` it builds
+`server_stop` runs only under `WM_PG_TEST`: it starts `windmill_server` on a free port over
+`DATABASE_URL` and tells it to stop — with a room it cannot save, with a request still running, in
+the middle of a burst of socket frames, with a second request read behind one being served and with
+a sync pull a worker answers late — and checks its exit code, the deadline it exits by, what landed
+after the signal and its log. `subtree_inventory` checks the subtree inventory tool's refusals; under `WM_PG_TEST` it builds
 databases of its own beside `DATABASE_URL`'s, which the role must be allowed to create, and checks the
 counts the tool prints, that they name no tree, account or title, that the tool writes nothing, and that
 it counts a chain of 200,001 trees to its end.
@@ -242,7 +247,7 @@ psql -h /tmp -d wm_rest_test -v ON_ERROR_STOP=1 -f db/schema.sql
 psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" \
-  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory)$' -V
+  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory|server_stop)$' -V
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product
