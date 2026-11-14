@@ -9,6 +9,7 @@ prefix with emoji all layers you create ✅ Ready for dev, 🚧 In progress, �
 
 use figma-expert skill before doing anything
 group user journeys into sections with numbered frames
+Before declaring an interaction missing or proposing another entry, inspect the approved source frame's prototype reactions and handoff notes. Record the source frame link, trigger, destination frame link and gesture exceptions in the handoff; resolve conflicting notes before drawing a replacement. A screen's appearance alone does not establish its navigation.
 You should use figma as main place for work via MCP and figma skill
 Maintain the structure:
  Windmill (team)

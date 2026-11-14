@@ -13,14 +13,13 @@ roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node 
 
 **Scope:** One service makes every hosted AI call Windmill pays for. It decides who may make a call
 and what the call may cost, sends it to the provider, streams the answer back and settles the money.
-It serves three capabilities: text (a model round), transcription (speech to text) and speech (text
-to speech).
+It serves two capabilities: text (a model round) and transcription (live speech to text).
 
-**Out of scope:** Prompts, tools, agent loops and conversations belong to whoever calls. Identity and
-entitlement stay with the backend; what an account bought stays with the
-[subscription service](subscriptions.md). How each existing feature moves onto this service is not
-designed here: §12 holds the decisions those moves start from, and each move is designed once the
-service is built.
+**Out of scope:** Text to speech; Windmill has none. Prompts, tools, agent loops and conversations
+belong to whoever calls. Identity and entitlement stay with the backend; what an account bought
+stays with the [subscription service](subscriptions.md). How each existing feature moves onto this
+service is not designed here: §12 holds the decisions those moves start from, and each move is
+designed once the service is built.
 
 ## §1 Why a separate service
 
@@ -51,15 +50,15 @@ check.
 - **D-4 Tier.** The row of the tier table (§3) a call is admitted under: `anonymous` for an
   installation; `one` for an account whose plan is `one` while a grant is in force for it, an owner
   grant included (§3); `free` for every other account.
-- **D-5 Capability.** What a call asks a provider to do: `text`, `transcription` or `speech`.
+- **D-5 Capability.** What a call asks a provider to do: `text` or `transcription`.
 - **D-6 Model class.** The name a caller uses for a text model: `large`, `medium` or `small`. The tier
   table maps a class to a provider's model, so no caller names a provider or a model id.
 - **D-7 Call.** One request the service sends to a provider, or one live session it holds with
   one, for one principal. Its caller names it
   with a `callId`; the service gives it an `id` of its own that is unique across principals.
 - **D-8 Price book.** The provider's list price of every model the tier table names, as data: each
-  rate explicitly, by token, by second of audio or by character as the provider bills it, with the
-  page and the date it was read on, under a version every call records.
+  rate explicitly, by token or by minute of audio as the provider bills it, with the page and the
+  date it was read on, under a version every call records.
 - **D-9 Allowance.** A principal's own budget for one period: an installation's for its lifetime, a
   free account's for a UTC calendar month.
 - **D-10 Free pool.** A budget every `anonymous` and `free` call shares: one for the UTC calendar
@@ -86,7 +85,7 @@ tiers, so adding a tier adds a row and a plan value and no code.
 | Calls started a minute | 30 | 30 | 60 |
 | Text classes served | `medium` (also for `large`), `small` | `large`, `medium`, `small` | `large`, `medium`, `small` |
 | Output ceiling of a text call | 2,000 tokens | 16,000 tokens | 16,000 tokens |
-| Transcription, speech | no | no | yes |
+| Transcription | no | no | yes |
 
 The amounts, the calls in flight and the anonymous row's model are the backend's policy as it stands
 ([USD AI allowances](../../backend/AI_ALLOWANCES.md)); `large` is `claude-opus-5`, `medium` is
@@ -96,16 +95,16 @@ ceilings, the calls a minute and `OWNER_GRANTS_MAX` are set here. (R-4)
 - A class a tier serves as another is not refused: the call runs on the class served, and its answer
   says which.
 - An account whose plan is `one` with no grant in force, as in a payment grace period, is `free` in
-  every respect. A capability its tier lacks refuses it as `funding_required`, so transcription and
-  speech never draw on a free pool. (R-5)
+  every respect. A capability its tier lacks refuses it as `funding_required`, so transcription
+  never draws on a free pool. (R-5)
 - A pass that states `ownerGrant` (§4) opens an owner grant. Whenever the service resolves such an
   account's tier, for a call or for `GET /v1/allowance`, and the account has no grant in force, it
   first funds one grant of the `one` amount for the current UTC calendar month, source `owner`, in a
   transaction of its own. An account receives at most one a month, and at most `OWNER_GRANTS_MAX`
   accounts receive one in a month; beyond that the account stays `free` and the refusal to fund is
   reported, so a fault in whoever signs passes cannot mint unbounded capacity.
-- The table also lists the labels a caller may give its calls (§6.1), and for each voice capability
-  the model and its settings: the delay of live transcription, the voices and formats of speech.
+- The table also lists the labels a caller may give its calls (§6.1), and for transcription the
+  model and its delay setting.
 - **INV-1.** Every model the tier table names has a rate in the price book for every count its
   provider can report, or the service refuses to start. No call is priced by a guess.
 
@@ -219,7 +218,6 @@ A call's reservation (D-12) is computed before admission:
 - **Transcription.** A live session reserves one `LIVE_SLICE` of audio at the model's rate, and one
   more before it forwards audio beyond what it has reserved. Each further slice passes checks 5 to 7
   below against the budgets the call is pinned to; one that does not fit ends the session (§6.6).
-- **Speech.** The reservation is the ceiling §8.2 gives for the model.
 
 Admission is one database transaction that locks the principal's budgets and every shared budget the
 call draws on. It refuses with the first code that applies:
@@ -349,7 +347,6 @@ the pass as `Authorization: Bearer <pass>`, the WebSocket as §6.6 says, and ans
 |---|---|---|
 | `PUT /v1/calls/{callId}/text` | `TextRequest` (§6.2) | an event stream (§6.2) |
 | `GET /v1/calls/{callId}/transcription` | a WebSocket carrying audio (§6.6) | transcript events (§6.6) |
-| `PUT /v1/calls/{callId}/speech` | `{text, voice, format}` | the audio bytes, streamed |
 | `GET /v1/calls/{callId}` | | `{callId, capability, state, stop, code, served, charged, endedAt}` |
 | `GET /v1/calls/{callId}/result` | | the call's answer again, while it lingers (§6.4) |
 | `GET /v1/allowance` | | `AllowanceResponse` (§6.3) |
@@ -426,9 +423,6 @@ the service sends a comment line after every `HEARTBEAT` without one.
   `provider_unavailable` when it was unreachable or busy, and `provider_failed` when the provider
   began and its answer did not arrive whole, or it stopped for a reason §8 does not map.
 
-A speech answer is the audio bytes. It carries no money: `GET /v1/calls/{callId}` says what it cost
-and whether it ended whole. Its shape is provisional until a model is chosen (R-6).
-
 An answer that breaks, or arrives without a `code`, as an answer cut by the network edge does, means
 one thing to a caller: ask for the same `callId` again (§6.4).
 
@@ -449,7 +443,6 @@ never on the status.
 | 410 | `result_gone` |
 | 413 | `too_large` |
 | 429 | `subject_exhausted`, `free_month_exhausted`, `free_day_exhausted`, `concurrency_exhausted`, `rate_limited` |
-| 502 | `provider_rejected`, `provider_unavailable`, `provider_failed`, on a speech call that failed before its first byte |
 | 503 | `busy`, `paused`, `accounting_unavailable` |
 
 `AllowanceResponse` is `{tier, period, limit, used, reserved, remaining, resetsAt, budgetResetsAt,
@@ -460,8 +453,8 @@ code, capabilities}`:
 - `code` is `ok`, or the refusal a call would meet now. `budgetResetsAt` is when the budget that code
   names returns: the end of the UTC day or month for a free pool, the end of the principal's own
   period for its own budget, and null for every other code.
-- `capabilities` is `{text: {large, medium, small}, transcription, speech}`: for each class, the
-  class that would serve it, and for each voice capability whether the tier has it.
+- `capabilities` is `{text: {large, medium, small}, transcription}`: for each class, the class that
+  would serve it, and whether the tier has transcription.
 - A positive `remaining` does not promise that a given call fits; its reservation may be larger.
 - No answer states a shared budget's amounts. The output cap admission chose is the one thing a
   caller can infer from: it is never more than the budgets held.
@@ -476,8 +469,8 @@ does.
   same capability, and with `conflict` otherwise. Its body is not read, and the rate and the fuse do
   not stand in its way.
 - `GET /v1/calls/{callId}/result` answers the call's result in its original form: the event stream
-  from `?after=<id>` on, or the audio. While the call is still running, the stream continues live. A
-  call has one live reader: a new one takes the place of the last.
+  from `?after=<id>` on. While the call is still running, the stream continues live. A call has one
+  live reader: a new one takes the place of the last.
 - A result lingers in memory for `RESULT_LINGER` after its call ends. Each principal's lingering
   results are bounded by `LINGER_PER_PRINCIPAL` and all of them by `LINGER_TOTAL`, oldest first out,
   so one principal cannot push out another's. After that, and after a restart, the answer is 410
@@ -528,7 +521,7 @@ connection does not open fetches a new pass and tries once more. An admitted cal
 | From the caller | Meaning |
 |---|---|
 | a binary frame | Audio: 16-bit little-endian PCM, mono, 24 kHz, a whole number of samples, at most `MAX_AUDIO_FRAME` |
-| `{"type": "context", "languages": […], "keywords": […]}` | Before the first audio: the languages expected and words likely to be said |
+| `{"type": "context", "keywords": […]}` | Before the first audio: words likely to be said |
 | `{"type": "commit"}` | The person paused: finish this turn |
 | `{"type": "end"}` | The session is over |
 
@@ -671,21 +664,18 @@ principal.
   `provider_rejected`, every other as `provider_unavailable`. A 401, 402 or 403 from the provider is
   reported at once, since the key or the account is at fault.
 
-### §8.2 Voice: OpenAI
+### §8.2 Transcription: OpenAI, with Azure as the fallback
 
-Transcription runs live on `gpt-live-transcribe`; the speech model is not chosen (R-6). The provider
-is retiring the models in use today. Read on OpenAI's documentation on 2026-11-14:
+Transcription runs live on `gpt-live-transcribe`, called at OpenAI. No language is named to it: the
+model decides what it hears (R-6). Read on OpenAI's documentation on 2026-11-14:
 
 | Model | Door | Billed by | Shutdown |
 |---|---|---|---|
 | `gpt-live-transcribe` (this service) | a Realtime transcription session | audio duration: $0.017 a minute | none published |
-| `gpt-transcribe` | `/v1/audio/transcriptions`, for a finished recording | audio duration: $0.0045 a minute | none published |
-| `gpt-4o-transcribe` (Journal Talk today) | `/v1/audio/transcriptions` | tokens: $2.50 per 1M input, $10.00 per 1M output | 2027-02-26 |
-| `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` | `/v1/audio/speech` | characters, or text tokens in and audio tokens out | 2027-01-06, all of them |
+| `gpt-4o-transcribe` (Journal Talk today) | `/v1/audio/transcriptions`, for a finished recording | tokens: $2.50 per 1M input, $10.00 per 1M output | 2027-02-26 |
 
-The provider names its Realtime API as the replacement for the speech door. It documents no
-idempotency key for the file doors, no way to read one past request's cost, and nothing on what a
-request costs when its caller disconnects (INV-7, INV-8).
+The provider documents no idempotency key, no way to read one past request's cost, and nothing on
+what a request costs when its caller disconnects (INV-7, INV-8).
 
 Transcription, as the provider documents it:
 
@@ -704,14 +694,33 @@ Transcription, as the provider documents it:
   provider's actual rule is read from a bill and recorded in the price book before the door serves
   a person, and the charge then follows it.
 - The session accepts no compressed audio, so a caller sends about 48 kB a second.
+- A list of expected languages is an optional hint, and the adapter sends none. The provider's pages
+  do not say how well a language nobody announced, or a change of language within a session, is
+  recognised; that is found out by speaking to it (R-6).
 - The provider recommends, and does not require, an identifier of the end user on a session; the
   adapter sends none. It keeps what a Realtime session carried for 30 days for abuse monitoring and
   does not train on it. Zero data retention exists for the account and is not arranged (R-11).
 
-Speech is not built anywhere in Windmill. The rule its adapter follows: the reservation is the most
-the chosen model can bill for the request's text, read from its documentation into the price book;
-the call settles from the provider's usage statement when it gives one, and ends `assumed` when audio
-was produced and no statement came.
+The fallback is Azure (R-6). Read on Microsoft's documentation on 2026-11-14:
+
+- Microsoft hosts the same model, `gpt-live-transcribe`, as a Realtime transcription session at
+  `wss://<resource>.openai.azure.com/openai/v1/realtime?intent=transcription`. Its Realtime API
+  "follows the OpenAI Realtime API specification"; the stated difference is that a session names a
+  deployment and not a model. The fallback is therefore the same adapter with another address, key
+  header and deployment name, and the door of §6.6 does not change.
+- The price is the same, $1.02 an hour of audio, billed by duration, and a language is an optional
+  hint there too.
+- Microsoft does not give what a session carried to OpenAI and does not train on it. A sample may be
+  stored for a person to review for abuse; the period is not stated, and turning that off needs
+  Microsoft's approval.
+- No retirement date is published for the model there. It is offered as a global deployment from
+  eight regions.
+- Azure's own speech recognition cannot be the fallback while no language is named: without one it
+  assumes English, and its language identification chooses among at most ten languages somebody
+  lists.
+
+The service calls one provider at a time, the one the tier table names. Moving to the fallback is a
+change of that table made by hand; the service does not fail over by itself.
 
 ## §9 Structure
 
@@ -763,7 +772,7 @@ Configuration, with the values the service ships with:
 
 | Name | Value | Name | Value |
 |---|---|---|---|
-| `PASS_MAX_LIFETIME` | 10 min | `CALL_TIMEOUT` | text 600 s; speech 300 s |
+| `PASS_MAX_LIFETIME` | 10 min | `CALL_TIMEOUT` | 600 s |
 | `PASS_SKEW` | 60 s | `DRAIN` | 660 s; container stop grace 720 s |
 | `PASS_MAX_LENGTH` | 2,048 characters | `HEARTBEAT` | 15 s |
 | `HEADER_DEADLINE`, `BODY_DEADLINE` | 10 s, 60 s | `RESULT_LINGER` | 10 min |
@@ -780,11 +789,11 @@ Configuration, with the values the service ships with:
 ## §10 Observability
 
 - Every call logs one structured line when it ends, and so does every request refused after the
-  pass verified, but for the two counted below: operation `call.text`, `call.transcription` or
-  `call.speech`, the service's call `id` when the call was admitted, the caller's `label`, `client`,
-  the deployment, tier, class asked and served, end state or refusal code, `stop`, duration, the
-  reservation, the provider's counts or the seconds of audio forwarded, its HTTP status, its error
-  type mapped to a fixed list, and the cost.
+  pass verified, but for the two counted below: operation `call.text` or `call.transcription`, the
+  service's call `id` when the call was admitted, the caller's `label`, `client`, the deployment,
+  tier, class asked and served, end state or refusal code, `stop`, duration, the reservation, the
+  provider's counts or the seconds of audio forwarded, its HTTP status, its error type mapped to a
+  fixed list, and the cost.
 - A request refused before or at the pass, and one refused as `rate_limited` or `busy`, is counted by
   code; a line with the counts is written at most once a second.
 - The internal doors log `grant.fund`, `grant.close`, `grant.reopen` and `call.correct` with their
@@ -816,7 +825,7 @@ Configuration, with the values the service ships with:
 | The database | Every new call is refused as `accounting_unavailable`. A call in flight is read to its end and settled when the database returns, or ended `assumed`. |
 | The provider's counting door | Text reservations fall back to one token a byte and grow severalfold, so a call near the end of a budget is refused that would have fitted. |
 | This service, restarted | New calls are refused as `busy` until the calls in flight finish, at most `DRAIN` (§7). Live sessions are cut. Lingering answers are lost. |
-| This service, down | Coach, Talk and speech stop. Sync, the journal and the log are untouched. |
+| This service, down | Coach and Talk stop. Sync, the journal and the log are untouched. |
 | The network edge cutting a long answer | The call goes on; its caller asks for the `callId` again (§6.4). |
 | A live session's connection cut | The service commits what it forwarded and settles. The transcript so far lingers for the caller to fetch (§6.6). |
 | The service's clock behind the issuer's by more than `PASS_SKEW` | Every fresh pass is refused as `pass_expired`. Ahead of it, passes end early. |
@@ -840,10 +849,10 @@ designed when the service is built, one integration at a time.
 - **I-4 Tending becomes roadmap Coach.** Roadmap's server-side agent retires. In the browser, roadmap
   Coach runs its tools through the backend. The backend's tool door, `/mcp`, takes an OAuth token or
   an MCP key and no browser session, so this move includes a door a session can call.
-- **I-5 Voice.** Journal Talk streams the microphone to the live transcription door, detecting the
-  person's pauses on the device, and journal read-aloud calls the speech door. Both run from the
-  device and are part of Windmill One. Where Talk is offered, the product tells the person that
-  their speech is sent to the provider and kept there for 30 days (R-11).
+- **I-5 Talk.** Journal Talk streams the microphone to the live transcription door from the device,
+  detecting the person's pauses there and naming no language. It is part of Windmill One. Where Talk
+  is offered, the product tells the person that their speech is sent to the provider and kept there
+  for 30 days (R-11).
 - **I-6 Work nobody waits on.** When the backend has AI work for an account with no device present,
   it calls the same doors with a pass it signs for that account. The queue of that work stays in the
   backend, and a refusal or an unreachable service leaves the work due. Such a call takes one of the
@@ -865,8 +874,7 @@ designed when the service is built, one integration at a time.
 
 ## §13 Rulings
 
-The owner's rulings. All are settled but the speech half of R-6, whose row holds what this document
-assumes until it is ruled.
+The owner's rulings. All are settled.
 
 | | Question | Ruling |
 |---|---|---|
@@ -874,13 +882,13 @@ assumes until it is ruled.
 | R-2 | Who hears that a shared budget is nearly spent | Free-pool crossings and the fuse report to Sentry, where an alert rule writes to the owner. A person's own budget raises no report. (2026-11-14) |
 | R-3 | The ledger rows the backend holds at cutover | Dropped. No subscription has been sold, so no paid grant is lost; each installation's lifetime spend and each account's month start again. (2026-11-14) |
 | R-4 | The amounts and limits of each tier | One table with a row a tier, holding the backend's amounts as they stand. The output ceilings, the calls a minute and `OWNER_GRANTS_MAX` are values this document sets. (2026-11-14) |
-| R-5 | Who may use transcription and speech | Windmill One only, from a grant. (2026-11-14) |
-| R-6 | The models that serve transcription and speech | Transcription is live, word by word, on `gpt-live-transcribe`. (2026-11-14) The speech model is open, and nothing is assumed for it: every model on the provider's speech door shuts down on 2027-01-06, so speech is built after a model, and possibly another provider, is chosen (§8.2). |
+| R-5 | Who may use transcription | Windmill One only, from a grant. (2026-11-14) |
+| R-6 | The model that serves transcription | Live, word by word, on `gpt-live-transcribe` at OpenAI, with no language named: the model decides what it hears. The fallback is Azure, which hosts the same model (§8.2). (2026-11-14) |
 | R-7 | Whose prompts the service accepts | Any. It enforces money rules only. (2026-11-14) |
 | R-8 | A call the provider billed above its reservation | The whole cost is spent and reported, and nobody is locked out. (2026-11-14) |
 | R-9 | How long a call's row is kept | 90 days, after which only the budgets' sums remain. (2026-11-14) |
 | R-10 | Whether installations and free accounts share one daily pool | Shared. The tier table can give each its own. (2026-11-14) |
-| R-11 | Whether the voice provider may keep what a session carried | Zero data retention is not arranged; the owner cannot arrange it. What a Talk session carried is kept at the provider for 30 days for abuse monitoring and is not used for training, as its data page said on 2026-11-14. The product says so wherever Talk is offered (I-5). (2026-11-14) |
+| R-11 | Whether the transcription provider may keep what a session carried | Zero data retention is not arranged; the owner cannot arrange it. What a Talk session carried is kept at the provider for 30 days for abuse monitoring and is not used for training, as its data page said on 2026-11-14. The product says so wherever Talk is offered (I-5). (2026-11-14) |
 
 What this service does differently from the backend's ledger, beyond moving it:
 

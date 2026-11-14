@@ -175,10 +175,11 @@ measures: the reply's `usage` object (`type: "tokens"`, `input_tokens`, `output_
 vendor billed, and settles the take at that cost, with an unfunded excess kept as overrun debt as
 for any round. A transcript that comes back without usable token usage was heard, and settles at
 the $0.06 ceiling. An error status from the vendor, or a request that never reached a connection or
-TLS session, consumed nothing and settles at zero. A timeout (300 s, `OpenAiTranscriber.cpp`), a
-connection dropped mid-exchange or an unreadable reply keeps the whole hold as uncertain until it
-lapses. Stopping the server lets takes still with the vendor answer and settle for up to 5 s, inside
-Docker's 10 s stop timeout; one still out after that keeps its dispatched hold until it lapses.
+TLS session, consumed nothing and settles at zero. A timeout (50 s, `kVendorReplyWait` in
+`platform/adapters/http/ReplyWait.h`), a connection dropped mid-exchange or an unreadable reply keeps
+the whole hold as uncertain until it lapses. Stopping the server lets takes still with the vendor
+answer and settle for up to 5 s, inside Docker's 10 s stop timeout; one still out after that keeps
+its dispatched hold until it lapses.
 
 Talk requires Windmill One, checked before any audio is read, and its admission refuses any
 principal below Windmill One as `funding_required`, so a take draws only on a funded grant and
