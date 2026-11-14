@@ -99,7 +99,7 @@ for (const engine of [chromium, webkit]) {
     } finally { await page.close(); }
   });
 
-  test(`${engine.name()}: a tap on the phone sheet's text writes in the same sheet with the caret where the finger landed`, async () => {
+  test(`${engine.name()}: a tap on the phone page's text writes in the same page with the caret where the finger landed`, async () => {
     const page = await open({ guide: GUIDE, band: 'phone' }, { engine, width: 390, height: 844 });
     try {
       await withBrowserErrors(page, async () => {
@@ -385,7 +385,7 @@ test('Chromium: a reader sees the author\'s note on the tree, a reader of a tree
   }
 });
 
-test('Chromium: on a phone Cancel leaves a clean edit for the sheet it began in, a changed one asks from the foot, and the count takes the audience line', async () => {
+test('Chromium: on a phone Cancel leaves a clean edit for the reading page, a changed one asks from the foot, and the count takes the audience line', async () => {
   const page = await open({ guide: GUIDE, band: 'phone', device: true }, { width: 390, height: 844 });
   try {
     await withBrowserErrors(page, async () => {
@@ -405,9 +405,9 @@ test('Chromium: on a phone Cancel leaves a clean edit for the sheet it began in,
       assert.deepEqual(await editor.evaluate((sheet) => {
         const box = sheet.getBoundingClientRect();
         const footer = sheet.querySelector('.st-guide-footer').getBoundingClientRect();
-        return { foot: window.innerHeight - box.bottom, footerAtFoot: box.bottom - footer.bottom, belowHead: box.top > 100 };
+        return { foot: window.innerHeight - box.bottom, footerAtFoot: box.bottom - footer.bottom, belowHead: box.top === 52 };
       }), { foot: 0, footerAtFoot: 0, belowHead: true });
-      await page.locator('.st-guide-backdrop').click({ position: { x: 20, y: 20 } });
+      await page.keyboard.press('Escape');
       const question = page.getByRole('alertdialog', { name: 'Discard draft?' });
       await question.waitFor();
       assert.deepEqual(await question.evaluate((sheet) => {
@@ -726,14 +726,14 @@ test('Chromium: the crossfade is for a guide set elsewhere alone: not for openin
   } finally { await page.close(); }
 });
 
-test('Chromium: a double tap on the phone\'s row opens the sheet and leaves it open', async () => {
+test('Chromium: a double tap on the phone\'s entry opens the page and leaves it open', async () => {
   const page = await open({ guide: GUIDE, band: 'phone' }, { width: 390, height: 844 });
   try {
     await withBrowserErrors(page, async () => {
       await page.getByRole('button', { name: 'Guide: One step a week.' }).dblclick();
       await settled(page);
       assert.equal(await page.getByRole('dialog', { name: 'Guide', exact: true }).count(), 1);
-      await page.locator('.st-guide-backdrop').click({ position: { x: 20, y: 20 } });
+      await page.keyboard.press('Escape');
       await page.getByRole('dialog').waitFor({ state: 'detached' });
     });
   } finally { await page.close(); }
@@ -776,7 +776,7 @@ test('Chromium: the note dissolves in over 160ms and Discard draft? over 120ms, 
         const style = getComputedStyle(shown);
         const box = shown.getBoundingClientRect();
         return [style.outlineStyle, style.outlineWidth, style.outlineOffset, style.borderRadius, box.left, window.innerWidth - box.right];
-      }), ['solid', '2px', '-2px', '5px', 18, 18]);
+      }), ['solid', '2px', '-2px', '5px', 22, 22]);
     });
   } finally { await phone.close(); }
 });
