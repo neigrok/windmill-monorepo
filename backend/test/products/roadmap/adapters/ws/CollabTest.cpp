@@ -2555,3 +2555,50 @@ TEST(ws_a_subscribers_progress_graft_is_sent_before_the_echo_of_a_mark_made_afte
   }
   CHECK_EQ(progress, (std::vector<std::string>{"graft", "echo"}));
 }
+
+// A subscriber's first frames each go out in their own place: the delta is the first structure frame it is sent and
+// the graft the first progress frame, the delta before the graft, with a broadcast and an echo handed over meanwhile
+// after both. Here another writer's frame and another tab's mark arrive while the marks are being read, which is after
+// the delta was written and before the graft is.
+TEST(ws_a_subscriber_is_sent_its_delta_and_then_its_graft_each_in_its_own_place_ahead_of_what_arrives_meanwhile) {
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedSteps("t_main", owner, Visibility::private_, "");
+  trantor::EventLoopThread own("subscriber");
+  trantor::EventLoopThread other("another-tab");
+  own.run();
+  other.run();
+  const auto conn = std::make_shared<LoopSocket>();
+  conn->loop = own.getLoop();
+  bool arrived = false;
+  h.progressRepo.afterRead = [&] {
+    if (arrived) return;
+    arrived = true;
+    std::promise<void> handedOver;
+    other.getLoop()->queueInLoop([&] {
+      h.bus.broadcastSubgraph(TreeId{"t_main"}, 1, Subgraph{});
+      Progress later;
+      later.record(NodeId{"plain"}, ProgressMark{ProgressStatus::complete, Hlc{500, 0, "r_tab"}, 500, false});
+      h.bus.broadcastProgress(TreeId{"t_main"}, owner, later);
+      handedOver.set_value();
+    });
+    handedOver.get_future().wait();
+  };
+  std::promise<void> sent;
+  own.getLoop()->queueInLoop([&] {
+    h.collab.onOpen(h.upgrade("s-owner"), conn);
+    h.collab.onMessage(conn, subscribeFrame("t_main"));
+    own.getLoop()->queueInLoop([&] { sent.set_value(); });
+  });
+  REQUIRE(sent.get_future().wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+
+  REQUIRE(arrived);
+  std::vector<std::string> frames;
+  for (const std::string& text : conn->sent) {
+    const Json::Value frame = parse(text);
+    if (frame["t"] == "subgraph") frames.push_back("subgraph " + frame["intent"].asString());
+    if (frame["t"] == "progress") frames.push_back("progress " + frame.get("intent", "echo").asString());
+  }
+  CHECK_EQ(frames, (std::vector<std::string>{"subgraph delta", "progress graft", "subgraph live", "progress echo"}));
+}
+
