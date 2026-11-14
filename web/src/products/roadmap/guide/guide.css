@@ -984,6 +984,10 @@ button.st-guide-from-name {
   flex: 1;
   min-height: 0;
 }
+.st-guide-paper--owner-phone .st-guide-save {
+  background: #884321;
+  color: #fff;
+}
 
 /* ---- Discard draft?: a card over the note from 744px, a sheet at the foot of the phone. ---- */
 .st-guide-discard {
