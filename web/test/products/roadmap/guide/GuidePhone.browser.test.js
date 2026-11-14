@@ -145,15 +145,18 @@ for (const engine of [chromium, webkit]) {
       await field(page).fill('Keep this unfinished draft.');
       await page.setViewportSize({ width: 744, height: 844 });
       await page.evaluate(() => window.setRoom({ band: 'tablet' }));
+      await page.locator('.st-roadmap-identity--tablet').waitFor({ state: 'attached' });
       assert.equal(await page.locator('.st-board-sheet').count(), 0);
       assert.equal(await field(page).inputValue(), 'Keep this unfinished draft.');
       await page.evaluate(() => window.setRoom({ owner: false }));
+      await page.locator('.st-roadmap-identity[data-role="reader"]').waitFor({ state: 'attached' });
       assert.equal(await field(page).inputValue(), 'Keep this unfinished draft.');
       await page.getByRole('button', { name: 'Save', exact: true }).click();
       assert.equal(await page.getByRole('alert').textContent(), 'The server refused this save. Copy your draft to keep it.');
       assert.deepEqual(await page.evaluate(() => window.writes), []);
       await page.setViewportSize({ width: 390, height: 844 });
       await page.evaluate(() => window.setRoom({ band: 'phone' }));
+      await page.locator('.st-roadmap-identity--phone').waitFor({ state: 'attached' });
       assert.equal(await field(page).inputValue(), 'Keep this unfinished draft.');
       assert.equal(await page.getByRole('button', { name: 'Copy draft', exact: true }).count(), 1);
       await page.getByRole('button', { name: 'Cancel', exact: true }).click();
