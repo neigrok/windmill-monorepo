@@ -270,8 +270,12 @@ rejected for structure. Validity is a read model, not a gate.
     Undo — shows it again, whether or not the parent's save has landed (Authorization). Every door asks
     the gate (`RoomRegistry::accessOf`, or a live room's `readableBy`) before it reads anything of a
     tree, and what it reads past the gate — the tree's place and name (`placeOf`) among it — does not
-    judge standing again. A tree whose branch is hidden answers a read as an absent tree does; the
-    doors that create at an id answer as each says (Not a root; HTTP surface). A new write aimed at a
+    judge standing again. A tree whose branch is hidden answers every read, and every write but a
+    create at its id, as an absent tree does. The two doors that create at an id cannot: an absent id
+    is one they create at, and a hidden tree's row is there. `PUT /v1/trees/{id}` answers a hidden
+    tree's well-formed id `404`, where it creates at an absent one, and `POST /v1/trees` with its id
+    answers `409` — `not-a-root` to its owner, `id-taken` to anyone else — where it creates at an
+    absent one (HTTP surface). A new write aimed at a
     hidden tree is refused as one aimed at an absent tree — `no-such-tree` on the socket — and writes
     nothing; only a write the gate admitted before the delete landed — a frame in flight, a held save,
     a server-origin edit such as a removal's cascade — applies, and stays hidden. The refusal turns a
@@ -285,8 +289,8 @@ rejected for structure. Validity is a read model, not a gate.
   - **Not a root.** Nothing deletes, restores or forks a subtree by its own id. `DELETE
     /v1/trees/{subtree}`, MCP `delete_tree`, a fork (`POST /v1/trees/{subtree}/fork`, a signup's
     fork) and a visibility change are refused `not-a-root`, naming the step it hangs from and its
-    root, to a caller who may read it; `POST /v1/trees` with a subtree's id is refused `not-a-root` to
-    its owner and is never answered `existed`. No door restores a tree: a root's deletion is final,
+    root, to a caller who may read it; `POST /v1/trees` with a subtree's id, standing or hidden, is
+    refused `not-a-root` to its owner, `id-taken` to anyone else, and is never answered `existed`. No door restores a tree: a root's deletion is final,
     and a subtree comes back only with its owning step's revive.
   - **The guarded delete.** A write that deletes an owning step names the subtree it takes in
     `branches: [subtreeId]`: the socket's `subgraph` frame, MCP `delete_node` and `import_subgraph`'s
@@ -699,7 +703,9 @@ creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stor
 and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
 and read as unknown creation time. A PUT tombstones nothing: a step it leaves out is untouched, and a
 deleted owning step it carries is revived, its subtree shown again (Model, Subtrees). A PUT aimed at
-a tree whose branch is hidden answers as one aimed at an absent tree does, and writes nothing. A PUT
+a tree whose branch is hidden answers `404 no such tree` and writes nothing, where one aimed at an
+absent well-formed id creates the tree; one aimed at a tree the caller may not read answers `404`
+too, as AUTHZ says of this door. A PUT
 over a tree whose live room holds a save that failed is refused `503 save-pending` with nothing
 written, until that save lands. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
 
