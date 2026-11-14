@@ -1,0 +1,52 @@
+{
+  "note": "DID_CHANGE_RENEWAL_PREF UPGRADE: an upgrade takes effect at once with a transaction for the other product. Windmill sells one product, so that transaction is for a product it does not sell: unsupported, nothing changes.",
+  "notification": {
+    "notificationType": "DID_CHANGE_RENEWAL_PREF",
+    "subtype": "UPGRADE",
+    "signedDate": 1802692803000,
+    "environment": "Production",
+    "status": 1,
+    "transaction": {
+      "transactionId": "2000000100000004",
+      "originalTransactionId": "2000000100000001",
+      "webOrderLineItemId": "2000000100000102",
+      "bundleId": "works.windmill.app",
+      "productId": "works.windmill.app.one.monthly.plus",
+      "subscriptionGroupIdentifier": "21540000",
+      "purchaseDate": 1802692800000,
+      "originalPurchaseDate": 1798797600000,
+      "expiresDate": 1805112000000,
+      "quantity": 1,
+      "type": "Auto-Renewable Subscription",
+      "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
+      "inAppOwnershipType": "PURCHASED",
+      "signedDate": 1802692803000,
+      "environment": "Production",
+      "transactionReason": "PURCHASE",
+      "storefront": "USA",
+      "storefrontId": "143441",
+      "price": 18000,
+      "currency": "USD",
+      "appTransactionId": "704512345678901234",
+      "billingPlanType": "BILLED_UPFRONT"
+    },
+    "renewalInfo": {
+      "originalTransactionId": "2000000100000001",
+      "productId": "works.windmill.app.one.monthly.plus",
+      "autoRenewProductId": "works.windmill.app.one.monthly.plus",
+      "autoRenewStatus": 1,
+      "isInBillingRetryPeriod": false,
+      "renewalDate": 1805112000000,
+      "renewalPrice": 18000,
+      "currency": "USD",
+      "recentSubscriptionStartDate": 1798797600000,
+      "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
+      "appTransactionId": "704512345678901234",
+      "signedDate": 1802692803000,
+      "environment": "Production"
+    }
+  },
+  "expect": {
+    "unsupported": "unknown_product"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "note": "RESCIND_CONSENT: a parent withdrew consent for a child's use of the app. It states nothing about a subscription and Windmill does not handle it: unsupported, nothing changes.",
+  "notification": {
+    "notificationType": "RESCIND_CONSENT",
+    "subtype": null,
+    "signedDate": 1803132000000,
+    "environment": "Production",
+    "status": null,
+    "transaction": null,
+    "renewalInfo": null
+  },
+  "expect": {
+    "unsupported": "parental_consent"
+  }
+}

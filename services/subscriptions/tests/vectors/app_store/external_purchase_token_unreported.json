@@ -1,0 +1,15 @@
+{
+  "note": "EXTERNAL_PURCHASE_TOKEN UNREPORTED: a token of the External Purchase API, which Windmill does not use. Unsupported, nothing changes.",
+  "notification": {
+    "notificationType": "EXTERNAL_PURCHASE_TOKEN",
+    "subtype": "UNREPORTED",
+    "signedDate": 1803132000000,
+    "environment": "Production",
+    "status": null,
+    "transaction": null,
+    "renewalInfo": null
+  },
+  "expect": {
+    "unsupported": "external_purchase"
+  }
+}

@@ -68,9 +68,11 @@ pub struct TransactionInfo {
     pub transaction_reason: Option<String>,
     pub offer_type: Option<i32>,
     pub offer_discount_type: Option<String>,
+    pub billing_plan_type: Option<String>,
     pub is_upgraded: Option<bool>,
     pub revocation_date: Option<i64>,
     pub revocation_reason: Option<i32>,
+    pub revocation_type: Option<String>,
 }
 
 #[derive(PartialEq, Deserialize)]

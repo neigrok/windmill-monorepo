@@ -6,7 +6,8 @@ dependency rule are in [STRUCTURE.md](../../STRUCTURE.md); this file holds the s
 
 The Rust workspace and its four crates exist. `domain` models the subscription and folds the stores'
 observations into it ([Domain](#domain)); `app_store` verifies App Store signed payloads
-([below](#app-store-signature-verification)); `subscriptions`, the server binary, answers health on
+([below](#app-store-signature-verification)) and decodes them into observations
+([App Store decoding](#app-store-decoding)); `subscriptions`, the server binary, answers health on
 both of its listeners, logs every request and reports to Sentry ([Server](#server)); `storage` is
 empty. Nothing is deployed.
 
@@ -197,6 +198,127 @@ The community crate `app-store-server-library` was not used. It ports Apple's li
 but it validates the chain with `x509-validator`, a crate its author first published in 2026 that
 has no audit. The check this service rests on would sit in that crate. It also brings an App Store
 Server API client, `chrono`, `serde_with` and `uuid`, which the verifier does not need.
+
+## App Store decoding
+
+`app_store::decoding` is the one place Apple's vocabulary is translated; nothing behind it knows a
+notification type. `decode(&Notification)` reads a verified notification, and
+`decode_claim(&TransactionInfo)` a transaction a phone hands to the claim door. Both are pure: no
+I/O, no clock. `decode` answers one `Decoded`:
+
+| Outcome | What it holds | What the caller does |
+|---|---|---|
+| `Observation` | An `Observation` of the subscription's whole state, and the transaction's `appAccountToken` as an `AccountToken` | Resolves the token against the erased accounts into the `AccountHint`, then applies it with `observe` |
+| `AwaitsStatus` | A `PeriodStatement`: the lineage, `observedAt`, ownership, the account token and the one period the transaction states | Pulls the subscription's status from the App Store Server API, then applies the period with its own stamp |
+| `Silent` | `test` or `renewal_extension_summary`: Apple states nothing about any subscription | Logs the code |
+| `Unsupported` | A code: what Windmill does not sell or a payload it cannot read | Keeps the notification in the inbox, logs `unsupported` with the code, reports it; nothing changes |
+
+`decode_claim` answers a `PeriodStatement` stamped at the transaction's own `signedDate`, or
+`Unsupported`; the claim door takes the state from a pull, never from the transaction (above).
+
+Only the subscription's latest transaction states its state, and a transaction is the latest when
+its `expiresDate` is the renewal info's `renewalDate`. A notification about another transaction, a
+`REFUND`, `REVOKE` or `REFUND_REVERSED` of an earlier month, answers `AwaitsStatus` with that
+transaction's period, refunded or not, so the state is pulled rather than inferred (spec §8).
+
+### Types and subtypes
+
+| `notificationType`, `subtype` | Outcome |
+|---|---|
+| `SUBSCRIBED` `INITIAL_BUY`, `RESUBSCRIBE`; `DID_RENEW`, `DID_RENEW` `BILLING_RECOVERY`; `DID_CHANGE_RENEWAL_PREF`, with `UPGRADE` or `DOWNGRADE`; `OFFER_REDEEMED`, with `UPGRADE` or `DOWNGRADE`; `DID_FAIL_TO_RENEW`, with `GRACE_PERIOD`; `GRACE_PERIOD_EXPIRED`; `EXPIRED`, with `VOLUNTARY`, `BILLING_RETRY`, `PRICE_INCREASE` or `PRODUCT_NOT_FOR_SALE`; `PRICE_INCREASE` `PENDING`, `ACCEPTED`; `REFUND`; `REFUND_REVERSED`; `REFUND_DECLINED`; `REVOKE`; `CONSUMPTION_REQUEST`; `RENEWAL_EXTENDED`; `RENEWAL_EXTENSION` `FAILURE` | The observation its data states, or `AwaitsStatus` |
+| `DID_CHANGE_RENEWAL_STATUS`, with `AUTO_RENEW_ENABLED`, `AUTO_RENEW_DISABLED` or none | The same, and the cancel time |
+| `TEST`; `RENEWAL_EXTENSION` `SUMMARY` | `Silent` |
+| `DID_CHANGE_RENEWAL_PREF` `INCREASE_QUANTITY`, `DECREASE_QUANTITY`; `REFUND` `SEATS`; `UNCLAIM_SEATS` | `seats` |
+| `ONE_TIME_CHARGE` | `one_time_charge` |
+| `EXTERNAL_PURCHASE_TOKEN` `CREATED`, `ACTIVE_TOKEN_REMINDER`, `UNREPORTED` | `external_purchase` |
+| `METADATA_UPDATE`, `MIGRATION`, `PRICE_CHANGE`, the Advanced Commerce API's | `advanced_commerce` |
+| `RESCIND_CONSENT` | `parental_consent` |
+| Any other type, or a subtype Apple does not document for its type | `unknown_type` |
+
+A transaction can also make a mapped type unsupported: `one_time_charge` when its `type` is not
+`Auto-Renewable Subscription`, `commitment_plan` when its `billingPlanType` is `MONTHLY`,
+`unknown_product` for any product but Windmill One's. A payload that lacks what Apple documents for
+it is `incomplete`; one that contradicts itself, a renewal info of another lineage, `inconsistent`;
+one with a value Apple does not document (a status, ownership, offer or revocation type, a negative
+price) `unknown_value`. An expiration intent Apple does not document is no such value: it reads as the
+end reason `unknown`.
+
+The verifier refuses `UNCLAIM_SEATS` and `EXTERNAL_PURCHASE_TOKEN` at rule 11, since neither carries
+a `data` object, so neither reaches `decode` today and the door answers them 4xx.
+
+### Fields
+
+| Domain | From Apple |
+|---|---|
+| Lineage | `app_store`, the verified payload's `environment`, the transaction's `originalTransactionId` |
+| `observedAt` | The notification's `signedDate`; for a claim, the transaction's |
+| Ownership | `inAppOwnershipType`: `PURCHASED` is `purchased`; `FAMILY_SHARED` and `ASSIGNED` are `shared`, which binds to no one (§4) |
+| Account hint | The transaction's `appAccountToken`, a candidate the caller resolves |
+| `plan`, `billingInterval` | `productId` `works.windmill.app.one.monthly` is `windmill_one`, `P1M` |
+| `productId`, `startedAt` | The transaction's `productId` and `originalPurchaseDate` |
+| `currentPeriod`, and the period | `[purchaseDate, expiresDate)` of the transaction, keyed by its `transactionId`, at its price and offer |
+| `state` | `status`: 1 `active`, 2 `expired`, 3 `on_hold`, 4 `grace`, 5 `revoked` |
+| `paymentFailedAt` | The end of the period that did not renew |
+| `graceEndsAt` | `gracePeriodExpiresDate` |
+| `endedAt`, `endReason` in `expired` | The end of the last period; `expirationIntent` 1 `cancelled`, 2 `billing`, 3 `price_change_declined`, 4 `product_unavailable`, otherwise `unknown` |
+| `endedAt`, `endReason` in `revoked` | `revocationDate`; `revocationType` `REFUND_FULL` or `REFUND_PRORATED` is `refunded`, `FAMILY_REVOKE` or `ASSIGNMENT_REVOKE` `sharing_removed`, and with none stated a purchase is `refunded` and a shared one `sharing_removed` |
+| A period's `refundedAt` | `revocationDate` of a revocation that is `refunded`; none when the transaction states none, as after `REFUND_REVERSED` |
+| `autoRenew` | `autoRenewStatus` 1 or 0 |
+| `nextChargeAt`, `nextCharge` | The period's end; `renewalPrice` and the renewal info's `currency`. `observe` drops it unless the subscription is active and renewing |
+| `nextProductId` | `autoRenewProductId` when it is not the transaction's `productId` |
+| `cancelRequestedAt` | The `signedDate` of `DID_CHANGE_RENEWAL_STATUS` whose renewal info has renewal off. No other notification and no status pull says when, so they state none and the domain keeps the time ([Domain](#domain)) |
+| `offerKind` | `offerType` 1 with `offerDiscountType` `FREE_TRIAL` is `free_trial`, with `PAY_AS_YOU_GO` or `PAY_UP_FRONT` `introductory`; 2 `promotional`; 3 `offer_code`; 4 `win_back`; 5, a retention offer, `promotional`, since the domain names no retention kind |
+| `offerEndsAt` | The period's end, unless renewal is on and the renewal info states the same `offerType` for the next period, when it is not known yet |
+| `price` | `price` in milliunits and `currency`, with two decimals and a third only when Apple states one: 12000 USD is `12.00`, 1800000 JPY `1800.00` |
+| `storefront` | `storefront` |
+
+An `expired` subscription ends with its last period in every statement of it, since Apple states no
+instant for the end of billing retry; `paymentFailedAt` is that period's end for the same reason.
+
+`Decoded` and `PeriodStatement` carry the account token as `AccountToken` and implement no `Debug`.
+The crate logs nothing; the door logs the outcome's code.
+
+The vectors in `tests/vectors/app_store/` pin one outcome for every type and subtype above, and for
+each branch of the fields; `crates/app_store/tests/decoding.rs` runs them, and folds a cancel time
+through the expiry that cannot state it.
+
+### Waits on the sandbox
+
+m3-verify-sandbox-lifecycle confirms these against payloads Apple signs:
+
+- A renewal's `purchaseDate` is the previous period's end, not the instant Apple charged it (D-4).
+  Should it be the charge, a period's start has to come from the previous transaction's
+  `expiresDate`.
+- A `REFUND` of an earlier month carries that month's transaction with its `revocationDate` and
+  `status` 1, and a `REFUND` of the latest carries `status` 5.
+- `renewalDate` equals the latest transaction's `expiresDate` to the millisecond, also after
+  `RENEWAL_EXTENDED`, which states the extended `expiresDate` on the latest transaction. If it does
+  not, every notification answers `AwaitsStatus`.
+- The renewal info's `offerType` is the next renewal's offer.
+- `revocationType` is stated on a refunded transaction.
+
+### Where the mapping comes from
+
+Apple's App Store Server Notifications reference, read on 2026-11-14:
+[notificationType](https://developer.apple.com/documentation/appstoreservernotifications/notificationtype),
+[subtype](https://developer.apple.com/documentation/appstoreservernotifications/subtype),
+[status](https://developer.apple.com/documentation/appstoreservernotifications/status),
+[responseBodyV2DecodedPayload](https://developer.apple.com/documentation/appstoreservernotifications/responsebodyv2decodedpayload),
+[data](https://developer.apple.com/documentation/appstoreservernotifications/data),
+[JWSTransactionDecodedPayload](https://developer.apple.com/documentation/appstoreservernotifications/jwstransactiondecodedpayload),
+[JWSRenewalInfoDecodedPayload](https://developer.apple.com/documentation/appstoreservernotifications/jwsrenewalinfodecodedpayload),
+[expirationIntent](https://developer.apple.com/documentation/appstoreservernotifications/expirationintent),
+[revocationType](https://developer.apple.com/documentation/appstoreservernotifications/revocationtype),
+[inAppOwnershipType](https://developer.apple.com/documentation/appstoreservernotifications/inappownershiptype),
+[offerType](https://developer.apple.com/documentation/appstoreservernotifications/offertype),
+[offerDiscountType](https://developer.apple.com/documentation/appstoreservernotifications/offerdiscounttype),
+[autoRenewStatus](https://developer.apple.com/documentation/appstoreservernotifications/autorenewstatus),
+[billingPlanType](https://developer.apple.com/documentation/appstoreservernotifications/billingplantype),
+[price](https://developer.apple.com/documentation/appstoreservernotifications/price),
+[renewalPrice](https://developer.apple.com/documentation/appstoreservernotifications/renewalprice),
+[renewalDate](https://developer.apple.com/documentation/appstoreservernotifications/renewaldate),
+[gracePeriodExpiresDate](https://developer.apple.com/documentation/appstoreservernotifications/graceperiodexpiresdate),
+[signedDate](https://developer.apple.com/documentation/appstoreservernotifications/signeddate).
 
 ## Server
 

@@ -235,9 +235,11 @@ fn a_notification_signed_under_the_trusted_root_verifies_with_the_transaction_an
             transaction_reason: Some("RENEWAL".to_owned()),
             offer_type: None,
             offer_discount_type: None,
+            billing_plan_type: None,
             is_upgraded: Some(false),
             revocation_date: None,
             revocation_reason: None,
+            revocation_type: None,
         }),
         renewal_info: Some(RenewalInfo {
             original_transaction_id: TransactionId::new("2000000000000001"),
@@ -299,9 +301,11 @@ fn a_transaction_a_phone_hands_over_verifies_on_its_own() {
         transaction_reason: None,
         offer_type: Some(1),
         offer_discount_type: Some("FREE_TRIAL".to_owned()),
+        billing_plan_type: None,
         is_upgraded: None,
         revocation_date: Some(1_791_000_000_000),
         revocation_reason: Some(0),
+        revocation_type: None,
     };
     assert!(verified == Ok(expected), "refused: {:?}", verified.err());
 }
