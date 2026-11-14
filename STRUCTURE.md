@@ -116,6 +116,8 @@ contents. Native acceptance and a same-key update check precede publication. See
   domain is declared on, built in Swift (`apps/ios/Domain`) and Kotlin (`apps/android/domain-kit`); and
   [phone-hosted Coach abilities](docs/foundation/mobile/gym_coach.md), specified for both phones.
   Both phones implement phone-hosted turns.
+  [The subscription service](docs/foundation/subscriptions.md) for Windmill One is specified and not
+  built.
 - [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
   model loop the web uses. [The iOS app](apps/ios/App/README.md) also documents
   signed-in routine onboarding.
