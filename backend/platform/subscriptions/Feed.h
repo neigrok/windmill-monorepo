@@ -36,9 +36,17 @@ struct Price {
   bool operator==(const Price&) const = default;
 };
 
+// A word the contract does not name yet, in an entry that still applies: the follower reports it, and never stops on it.
+struct UnknownWord {
+  std::string field;  // type, store, offerKind or period.offerKind
+  std::string word;
+  bool operator==(const UnknownWord&) const = default;
+};
+
 // D-4: one stretch [start, end) paid for or granted, as a period event carries it; `id` is the service's own.
 struct Period {
-  explicit Period(const Json::Value& period);
+  // An offer the contract does not name reads as none, and joins `unknownWords`.
+  Period(const Json::Value& period, std::vector<UnknownWord>& unknownWords);
 
   std::string id;
   std::int64_t start = 0;
@@ -49,21 +57,24 @@ struct Period {
 };
 
 // One event of the ledger (§3.4, §5.2) and, when it names an account, that account's entitlement after the event's
-// transaction. Every word field is one of the contract's closed set.
+// transaction. Only what decides access stops a page: `environment` and the shape. An event type, store or offer the
+// contract does not name yet is carried, applied to the copy and listed in `unknownWords`.
 struct FeedEntry {
   explicit FeedEntry(const Json::Value& entry);
 
   Seq seq = 0;
   std::string type;
+  bool knownType = true;  // false for an event the contract does not name: consumers after the copy skip it
   std::int64_t occurredAt = 0;
   std::int64_t recordedAt = 0;
   std::string subscriptionId;
   std::optional<UserId> accountId;
-  std::string store;
+  std::string store;  // D-1, or "unknown"
   std::string environment;
   std::optional<std::string> offerKind;
-  std::optional<Period> period;                    // exactly on period_recorded, period_refunded, period_refund_reversed
+  std::optional<Period> period;  // exactly on the three period events; ignored on an event the contract does not name
   std::optional<EntitlementResponse> entitlement;  // exactly when accountId is
+  std::vector<UnknownWord> unknownWords;
 };
 
 // A page of `GET /internal/v1/feed`: entries in ascending seq, the ledger's epoch and the newest seq it holds.

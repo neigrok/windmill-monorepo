@@ -8,7 +8,7 @@
 namespace wm::subscriptions {
 
 namespace {
-// The contract's closed vocabularies: §3.4's events, D-1's stores, D-2's environments and §3.1's offers.
+// The contract's vocabularies: §3.4's events, D-1's stores, D-2's environments and §3.1's offers.
 const std::set<std::string> kEventTypes{
     "started", "renewed", "renewal_turned_off", "renewal_turned_on", "payment_failed", "payment_recovered",
     "pause_scheduled", "paused", "resumed", "plan_change_scheduled", "plan_changed", "period_extended", "expired",
@@ -36,9 +36,14 @@ std::string oneOf(const std::set<std::string>& words, const Json::Value& value) 
   return word;
 }
 
-std::optional<std::string> oneOfOrNull(const std::set<std::string>& words, const Json::Value& value) {
+// A word the contract does not name yet reads as none, and is listed under its field.
+std::optional<std::string> offerOrNone(const Json::Value& value, const char* fieldName,
+                                       std::vector<UnknownWord>& unknownWords) {
   if (value.isNull()) return std::nullopt;
-  return oneOf(words, value);
+  std::string word = text(value);
+  if (kOfferKinds.count(word)) return word;
+  unknownWords.push_back({fieldName, std::move(word)});
+  return std::nullopt;
 }
 
 std::string uuid(const Json::Value& value) {
@@ -85,20 +90,27 @@ EntitlementResponse::EntitlementResponse(Json::Value response)
       sandboxAccessUntil(instantOrNull(field(field(response, "sandbox"), "accessUntil"))),
       body(std::move(response)) {}
 
-Period::Period(const Json::Value& period)
+Period::Period(const Json::Value& period, std::vector<UnknownWord>& unknownWords)
     : id(uuid(field(period, "id"))), start(instant(field(period, "start"))), end(instant(field(period, "end"))),
-      price(priceOrNull(field(period, "price"))), offerKind(oneOfOrNull(kOfferKinds, field(period, "offerKind"))),
+      price(priceOrNull(field(period, "price"))),
+      offerKind(offerOrNone(field(period, "offerKind"), "period.offerKind", unknownWords)),
       refundedAt(instantOrNull(field(period, "refundedAt"))) {}
 
 FeedEntry::FeedEntry(const Json::Value& entry)
-    : seq(seqOf(field(entry, "seq"))), type(oneOf(kEventTypes, field(entry, "type"))),
+    : seq(seqOf(field(entry, "seq"))), type(text(field(entry, "type"))), knownType(kEventTypes.count(type) > 0),
       occurredAt(instant(field(entry, "occurredAt"))), recordedAt(instant(field(entry, "recordedAt"))),
-      subscriptionId(uuid(field(entry, "subscriptionId"))), store(oneOf(kStores, field(entry, "store"))),
-      environment(oneOf(kEnvironments, field(entry, "environment"))),
-      offerKind(oneOfOrNull(kOfferKinds, field(entry, "offerKind"))) {
+      subscriptionId(uuid(field(entry, "subscriptionId"))), store(text(field(entry, "store"))),
+      environment(oneOf(kEnvironments, field(entry, "environment"))) {
+  if (!knownType) unknownWords.push_back({"type", type});
+  if (!kStores.count(store)) {
+    unknownWords.push_back({"store", store});
+    store = "unknown";
+  }
+  offerKind = offerOrNone(field(entry, "offerKind"), "offerKind", unknownWords);
+
   const Json::Value& stretch = field(entry, "period");
-  if (stretch.isNull() == (kPeriodEvents.count(type) > 0)) throw FeedUnavailable("malformed");
-  if (!stretch.isNull()) period.emplace(stretch);
+  if (knownType && stretch.isNull() == (kPeriodEvents.count(type) > 0)) throw FeedUnavailable("malformed");
+  if (knownType && !stretch.isNull()) period.emplace(stretch, unknownWords);
 
   const Json::Value& account = field(entry, "accountId");
   const Json::Value& after = field(entry, "entitlement");

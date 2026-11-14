@@ -15,7 +15,8 @@ namespace wm::subscriptions {
 FeedFollower::FeedFollower(SubscriptionFeed& feed, EntitlementCopy& copy, FurtherConsumers further,
                            FailureReporter& reporter, FollowerTiming timing, Now now)
     : feed_(feed), copy_(copy), inPage_{copy}, beside_(std::move(further.beside)), timing_(timing),
-      now_(std::move(now)), restores_(reporter, "subscription.follow.restored", std::chrono::minutes(5), now_),
+      now_(std::move(now)), reporter_(reporter),
+      restores_(reporter, "subscription.follow.restored", std::chrono::minutes(5), now_),
       stalls_(reporter, "subscription.follow.stalled", std::chrono::minutes(5), now_), lastProgress_(now_()) {
   inPage_.insert(inPage_.end(), further.inPage.begin(), further.inPage.end());
 }
@@ -48,6 +49,7 @@ FollowStep FeedFollower::follow() {
     from = copy_.cursor();
     const FeedPage page = feed_.page(from.seq, timing_.pageLimit);
     latestSeq_ = page.latestSeq;
+    noticeUnknownWords(page);
     if (const auto cause = from.restoreIn(page)) return rebuild(from, *cause, observation);
     if (!page.entries.empty()) return apply(from, page.entries, from.past(page), false, observation);
     confirm(from.seq);
@@ -106,6 +108,7 @@ FollowStep FeedFollower::rebuild(const FeedCursor& from, const std::string& caus
   FeedCursor rebuilt;
   for (bool whole = false; !whole;) {
     FeedPage page = feed_.page(rebuilt.seq, timing_.pageLimit);
+    noticeUnknownWords(page);
     rebuilt = rebuilt.past(page);
     latestSeq_ = page.latestSeq;
     whole = rebuilt.caughtUpWith(page);
@@ -123,6 +126,21 @@ bool FeedFollower::reach(Seq seq, std::chrono::milliseconds wait) {
   wake_.notify_all();
   moved_.wait_for(lock, wait, [&] { return held() || stopping_; });
   return held();
+}
+
+void FeedFollower::noticeUnknownWords(const FeedPage& page) {
+  for (const FeedEntry& entry : page.entries)
+    for (const UnknownWord& unknown : entry.unknownWords) {
+      // The word is the service's label, bounded here so nothing else rides on the line.
+      const bool word = !unknown.word.empty() && unknown.word.size() <= 64 &&
+                        std::all_of(unknown.word.begin(), unknown.word.end(),
+                                    [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'; });
+      const std::string label = unknown.field + "=" + (word ? unknown.word : std::string("(not a word)"));
+      if (!unknownWordsSeen_.insert(label).second) continue;
+      LOG_WARN << "subscription follow: the feed names a word the backend does not know (" << label << ")";
+      WriteContext own{freshWriteRequestId()};
+      reporter_.report("platform", "subscription.follow.unknown_word", label);
+    }
 }
 
 void FeedFollower::confirm(Seq seq) {

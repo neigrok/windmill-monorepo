@@ -11,6 +11,7 @@
 #include <functional>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -73,6 +74,8 @@ private:
   FollowStep rebuild(const FeedCursor& from, const std::string& cause, WriteObservation& observation);
   // The read in progress saw the ledger's epoch and left the copy at `seq`.
   void confirm(Seq seq);
+  // A word the contract does not name yet: one WARN line and one report per word per process, never a stop.
+  void noticeUnknownWords(const FeedPage& page);
   void watchForStall(FollowStep step, const FeedCursor& from, const std::string& answer);
   void run();
 
@@ -82,11 +85,13 @@ private:
   std::vector<std::reference_wrapper<FeedEntrySideConsumer>> beside_;
   const FollowerTiming timing_;
   const Now now_;
+  FailureReporter& reporter_;
   FailureWindow restores_;
   FailureWindow stalls_;
 
   std::chrono::steady_clock::time_point lastProgress_;
   std::optional<Seq> latestSeq_;
+  std::set<std::string> unknownWordsSeen_;
 
   std::mutex mutex_;
   std::condition_variable wake_;

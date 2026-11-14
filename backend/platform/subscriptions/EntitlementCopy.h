@@ -28,6 +28,7 @@ private:
 
 // What the backend does with each entry, in order: the copy first, then each further consumer (§6.1). A consumer that
 // throws rolls the page back to be read again, and a rebuild reads every entry again: every consumer is idempotent.
+// An entry whose event the contract does not name arrives with `knownType` false; only the copy applies it.
 // This kind writes through the page's transaction.
 struct FeedEntryConsumer {
   virtual ~FeedEntryConsumer() = default;

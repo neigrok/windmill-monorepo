@@ -374,7 +374,11 @@ wrong. A page with an entry the contract does not describe, one that does not co
 one the service refuses is read again every 30 s and never applied. Every row stays as the last page
 left it: access still lapses on time, since each row holds the instant it ends (INV-3), but no
 renewal, refund or purchase reaches the copy. The way out is a fix on the service's side; nothing on
-the backend's side moves the cursor past such a page.
+the backend's side moves the cursor past such a page. Only what decides access stops it: the shape of a
+page and an entry's `environment`. A word the contract does not name yet, an event type, a store or an
+offer, does not: the entry still reaches the copy, later consumers skip an event they do not know, and
+the follower writes `subscription follow: the feed names a word the backend does not know (type=…)`
+and files one `subscription.follow.unknown_word` Issue per word per process. Teach the backend the word.
 
 To see the cause, read the server's log, which Sentry Logs also holds: each attempt writes
 `subscription follow: the feed is unavailable (<answer>)`, and once the cursor has not moved for 60 s

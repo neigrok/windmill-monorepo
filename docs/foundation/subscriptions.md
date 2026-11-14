@@ -366,6 +366,11 @@ rebuilt before a claim is answered from the copy.
 - A page whose `epoch` differs from the stored one, or whose `latestSeq` is below the cursor, means the
   ledger was restored. The follower reports it to Sentry and rebuilds the copy from zero under the new
   epoch (INV-11).
+- A page the follower cannot apply, as one whose entry the contract does not describe, stops the copy
+  until the service is fixed, since the follower skips no entry; every entitlement still lapses on time
+  (INV-3). Only what decides access stops it: a page's shape and an entry's `environment`. An event
+  type, store or offer the contract does not name yet is carried: the entry applies to the copy, the
+  consumers after it skip an event they do not know, and the follower reports the word.
 - **INV-10.** No request path of the backend calls this service to decide access. With the service
   down, every entitlement keeps answering from the copy and lapses on time (INV-3).
 - **INV-11.** The copy is rebuilt whole by reading the feed from zero to the `latestSeq` its pages

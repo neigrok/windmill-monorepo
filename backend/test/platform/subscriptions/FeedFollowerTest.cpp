@@ -585,3 +585,43 @@ TEST(pg_subscription_follow_a_malformed_entry_holds_the_copy_where_it_stands_and
   CHECK_EQ(copyAsText(), std::string("cursor -/0\n"));
   CHECK_EQ(reports.lines, (std::vector<std::string>{"platform subscription.follow.stalled cause=unavailable answer=malformed"}));
 }
+
+TEST(pg_subscription_follow_a_word_the_contract_does_not_name_yet_reaches_the_copy_and_is_reported_once) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
+  freshCopy();
+  Json::Value first = contractExample("feed.json", "from_zero")["body"];
+  first["entries"][1]["store"] = "Galaxy Store";
+  first["entries"][3]["offerKind"] = "half_price";
+  first["entries"][5]["type"] = "gifted";
+  Json::Value second = contractExample("feed.json", "claimed_then_sandbox")["body"];
+  second["entries"][0]["type"] = "gifted";
+  FakeFeed feed;
+  feed.serve(0, first);
+  feed.serve(6, second);
+  PgEntitlementCopy copy{pgTestPool()};
+
+  struct Seen : FeedEntryConsumer {
+    std::vector<std::string> seen;
+    void consume(PageTxn&, const FeedEntry& entry) override {
+      seen.push_back(std::to_string(entry.seq) + (entry.knownType ? "" : " unknown"));
+    }
+  } further;
+  Reports reports;
+  FollowLines lines;
+  FeedFollower follower{feed, copy, FurtherConsumers{.inPage = {further}}, reports};
+  CHECK_EQ(nameOf(follower.follow()), std::string("applied"));
+  // The unknown event at 6 is the last to name 9387ec65: the copy took its entitlement all the same.
+  CHECK_EQ(copyAsText(), std::string(
+      "cursor c09a3ab3-2732-4415-ba88-825ff868cf13/6\n"
+      "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=3 production=1799056800000 sandbox=-\n"
+      "9387ec65-ab17-4b8c-b145-fd0d622966db seq=6 production=1799236800000 sandbox=-\n"));
+  CHECK_EQ(nameOf(follower.follow()), std::string("applied"));
+
+  CHECK_EQ(further.seen, (std::vector<std::string>{"1", "2", "3", "4", "5", "6 unknown", "7 unknown", "9", "10", "11",
+                                                   "12", "13"}));
+  CHECK_EQ(reports.lines, (std::vector<std::string>{"platform subscription.follow.unknown_word store=(not a word)",
+                                                    "platform subscription.follow.unknown_word offerKind=half_price",
+                                                    "platform subscription.follow.unknown_word type=gifted"}));
+  CHECK_FALSE(lines.sharesARequestWith(reports.requestIds));
+  CHECK_EQ(lines.taken(), (std::vector<std::string>{"ok/info platform background", "ok/info platform background"}));
+}

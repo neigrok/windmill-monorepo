@@ -171,6 +171,37 @@ TEST(subscription_feed_entries_carry_every_field_the_contract_gives_an_event) {
   CHECK_FALSE(period.period->price.has_value());
 }
 
+TEST(subscription_feed_a_word_the_contract_does_not_name_yet_is_carried_and_listed_never_refused) {
+  Json::Value body = contractExample("feed.json", "from_zero")["body"];
+  body["entries"][0]["type"] = "gifted";
+  body["entries"][0]["period"] = body["entries"][2]["period"];
+  body["entries"][1]["store"] = "galaxy_store";
+  body["entries"][3]["offerKind"] = "half_price";
+  body["entries"][4]["period"]["offerKind"] = "gift";
+  const FeedPage page{body};
+
+  std::string read;
+  for (const FeedEntry& entry : page.entries) {
+    read += std::to_string(entry.seq) + " " + entry.type + (entry.knownType ? "" : " (unknown)") + " store=" + entry.store +
+            " offer=" + (entry.offerKind ? *entry.offerKind : "-") + " period=" +
+            (entry.period ? entry.period->id.substr(0, 8) + " offer=" + (entry.period->offerKind ? *entry.period->offerKind : "-") : "-") +
+            " entitlement=" + (entry.entitlement ? "yes" : "no") + " words=";
+    for (const UnknownWord& unknown : entry.unknownWords) read += unknown.field + ":" + unknown.word + " ";
+    read += "\n";
+  }
+  CHECK_EQ(read, std::string(
+      "1 gifted (unknown) store=app_store offer=- period=- entitlement=yes words=type:gifted \n"
+      "2 bound store=unknown offer=- period=- entitlement=yes words=store:galaxy_store \n"
+      "3 period_recorded store=app_store offer=- period=e2b8f0a4 offer=- entitlement=yes words=\n"
+      "4 started store=app_store offer=- period=- entitlement=no words=offerKind:half_price \n"
+      "5 period_recorded store=app_store offer=- period=8f04068f offer=- entitlement=no words=period.offerKind:gift \n"
+      "6 bound store=app_store offer=- period=- entitlement=yes words=\n"));
+
+  // What decides access still refuses the page: an environment the contract does not name.
+  body["entries"][0]["environment"] = "staging";
+  CHECK_EQ(answerOf([&] { FeedPage{body}; }), std::string("malformed"));
+}
+
 TEST(subscription_feed_cursor_sees_a_restored_ledger_by_its_epoch_or_by_a_ledger_that_ends_below_it) {
   const FeedCursor following{"c09a3ab3-2732-4415-ba88-825ff868cf13", 26};
   CHECK_EQ(following.restoreIn(recorded("ledger_restored")), std::optional<std::string>("epoch"));
@@ -214,10 +245,7 @@ TEST(subscription_feed_reads_a_body_the_contract_does_not_describe_as_malformed)
       {"no sandbox", [](Json::Value& body) { body["entries"][0]["entitlement"].removeMember("sandbox"); }},
       {"accessUntil in words", [](Json::Value& body) { body["entries"][0]["entitlement"]["production"]["accessUntil"] = "soon"; }},
       {"no accessUntil", [](Json::Value& body) { body["entries"][0]["entitlement"]["production"].removeMember("accessUntil"); }},
-      {"an event the contract does not name", [](Json::Value& body) { body["entries"][0]["type"] = "gifted"; }},
-      {"another store", [](Json::Value& body) { body["entries"][0]["store"] = "galaxy_store"; }},
       {"another environment", [](Json::Value& body) { body["entries"][0]["environment"] = "staging"; }},
-      {"another offer", [](Json::Value& body) { body["entries"][0]["offerKind"] = "half_price"; }},
       {"occurredAt in words", [](Json::Value& body) { body["entries"][0]["occurredAt"] = "today"; }},
       {"no recordedAt", [](Json::Value& body) { body["entries"][0].removeMember("recordedAt"); }},
       {"a subscription that is not a uuid", [](Json::Value& body) { body["entries"][0]["subscriptionId"] = "sub_1"; }},
@@ -228,7 +256,6 @@ TEST(subscription_feed_reads_a_body_the_contract_does_not_describe_as_malformed)
       {"an amount that is not decimal", [](Json::Value& body) { body["entries"][2]["period"]["price"]["amount"] = "12,00"; }},
       {"an amount with no digits after the point", [](Json::Value& body) { body["entries"][2]["period"]["price"]["amount"] = "12."; }},
       {"a currency in lower case", [](Json::Value& body) { body["entries"][2]["period"]["price"]["currency"] = "usd"; }},
-      {"a period offer the contract does not name", [](Json::Value& body) { body["entries"][2]["period"]["offerKind"] = "gift"; }},
       {"refundedAt in words", [](Json::Value& body) { body["entries"][2]["period"]["refundedAt"] = "yesterday"; }},
   };
   std::string answers;
@@ -253,10 +280,7 @@ TEST(subscription_feed_reads_a_body_the_contract_does_not_describe_as_malformed)
       "no sandbox: malformed\n"
       "accessUntil in words: malformed\n"
       "no accessUntil: malformed\n"
-      "an event the contract does not name: malformed\n"
-      "another store: malformed\n"
       "another environment: malformed\n"
-      "another offer: malformed\n"
       "occurredAt in words: malformed\n"
       "no recordedAt: malformed\n"
       "a subscription that is not a uuid: malformed\n"
@@ -267,7 +291,6 @@ TEST(subscription_feed_reads_a_body_the_contract_does_not_describe_as_malformed)
       "an amount that is not decimal: malformed\n"
       "an amount with no digits after the point: malformed\n"
       "a currency in lower case: malformed\n"
-      "a period offer the contract does not name: malformed\n"
       "refundedAt in words: malformed\n"));
   CHECK_EQ(answerOf([&] { FeedPage{page}; }), std::string("read"));
 }
