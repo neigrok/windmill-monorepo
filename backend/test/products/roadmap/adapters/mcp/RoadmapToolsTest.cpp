@@ -8920,8 +8920,8 @@ TEST(mcp_a_step_that_owns_a_subtree_is_deleted_only_with_its_subtree_named_and_t
   };
   REQUIRE(!on("create_node", child, parse(R"({"id":"knot","label":"Knot","color":"sky"})")).isError);
 
-  const std::string unnamed = "step \"rig\" owns the subtree \"t_00000000000000c1\", holding 1 steps with 0 subtrees "
-                              "under it. Deleting a step that owns a subtree hides that subtree and everything under it "
+  const std::string unnamed = "step \"rig\" owns the subtree \"t_00000000000000c1\", holding 1 step. Deleting a step "
+                              "that owns a subtree hides that subtree and everything under it "
                               "until the step is revived; pass branches: [\"t_00000000000000c1\"] to take them with their "
                               "steps. Nothing was deleted.";
   const ToolResult refused = h.call("delete_node", parse(R"({"nodeIds":["plain","rig"]})"));

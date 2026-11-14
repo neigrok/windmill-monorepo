@@ -737,9 +737,12 @@ ToolResult branchesUnconfirmed(TreeRegistry& trees, const std::vector<Unconfirme
   for (const UnconfirmedBranch& branch : unconfirmed) {
     named += named.empty() ? "" : "; ";
     named += "step \"" + branch.step.str() + "\" owns the subtree \"" + branch.subtree.str() + "\"";
+    const auto counted = [](int n, const char* noun) { return std::to_string(n) + " " + noun + (n == 1 ? "" : "s"); };
     if (const auto size = sizes.find(branch.subtree); size != sizes.end())
-      named += ", holding " + std::to_string(size->second.steps) + " steps with " +
-               std::to_string(size->second.subtrees) + " subtrees under it";
+      named += size->second.subtrees == 0
+                   ? ", holding " + counted(size->second.steps, "step")
+                   : ", holding " + counted(size->second.steps, "step") + " across it and the " +
+                         counted(size->second.subtrees, "subtree") + " under it";
     ids.push_back(branch.subtree.str());
   }
   return ToolResult::failure(named + ". Deleting a step that owns a subtree hides that subtree and everything under it "
