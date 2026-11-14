@@ -90,7 +90,7 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/internal/v1/feed)" = 404
           docker stop subscriptions
           test "$(docker inspect -f '{{.State.ExitCode}}' subscriptions)" = 0
-          docker logs subscriptions | grep -q '"message":"stopped"'
+          docker logs subscriptions | grep '"message":"stopped"'
 
       - name: The container's log
         if: always()
