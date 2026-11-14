@@ -277,7 +277,7 @@ services:
     stop_grace_period: 720s
     read_only: true
     tmpfs:
-      - /tmp:size=16m,mode=1777
+      - /tmp:noexec,nosuid,size=16m,mode=1777
     ulimits:
       core:
         soft: 0
