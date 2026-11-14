@@ -358,15 +358,16 @@ The backend's role cannot read it.
 
 ## §11 Rulings
 
-Each is the owner's. The recommendation is what this document assumes until ruled.
+The owner's rulings. R-1 to R-7 are settled; R-8 is open, and its row holds what this document
+assumes until it is ruled.
 
-| | Question | Recommendation |
+| | Question | Ruling |
 |---|---|---|
-| R-1 | Price, period and sharing on the App Store | One monthly product at the App Store price point nearest $12; no annual product; Family Sharing off; enrol in the App Store Small Business Program. |
+| R-1 | Price, period and sharing on the App Store | One monthly product at the App Store price point nearest $12. No annual product. Family Sharing off. Windmill enrols in the App Store Small Business Program. |
 | R-2 | Must a person sign in to buy? | Yes. Windmill One belongs to an account. Everything free stays usable signed out. |
 | R-3 | A purchase restored under a different Windmill account | Refused, naming that it belongs to another account. No silent transfer. |
 | R-4 | A free trial | None. The free monthly allowance is the trial, and an unpaid period funds nothing. |
 | R-5 | A refund | Access and the remaining funded allowance end when the store reports it. Spent allowance is not recovered. |
 | R-6 | Sandbox purchases against production | Entitle allowlisted accounts only (§6.2). |
-| R-7 | A failed renewal | Enable the 16-day Billing Grace Period. Access continues in `grace`; no new allowance is funded until the charge succeeds. |
-| R-8 | Two live subscriptions on one account | Both are recorded; access is one; the account screen says the person is charged twice and where to cancel. Applies once a second store sells. |
+| R-7 | A failed renewal | The 16-day Billing Grace Period is enabled. Access continues in `grace`; no new allowance is funded until the charge succeeds. |
+| R-8 | Two live subscriptions on one account | Open. Assumed: both are recorded; access is one; the account screen says the person is charged twice and where to cancel. Applies once a second store sells. |
