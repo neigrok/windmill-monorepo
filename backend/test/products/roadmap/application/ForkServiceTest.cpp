@@ -369,3 +369,72 @@ TEST(the_signup_seam_reports_a_failed_fork_as_an_issue_and_a_missing_source_as_n
   CHECK_FALSE(signup.plant("t_src", uid("me")).has_value());
   CHECK_EQ(reporter.failures->operations, std::vector<std::string>{"roadmap.signup.fork"});
 }
+
+// A fork copies the root and its standing branch in one store: every subtree reached down a present owning step, at any
+// depth, gets a copy with a minted id hung from the copy of its parent under the same step, so the fork shares no child
+// with its source. A subtree whose owning step is deleted is hidden and not copied. Each copy keeps its own guide, by
+// the inherited rule, and starts unlit. A subtree is never forked alone.
+TEST(fork_copies_the_roots_standing_branch_under_fresh_ids_and_never_a_subtree_alone) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+  const auto plant = [&h](const char* id, const char* parent, const char* step, int depth,
+                          const std::vector<const char*>& steps) {
+    TreeData data;
+    for (const char* name : steps) {
+      NodeSpec node;
+      node.id = nid(name);
+      node.label = name;
+      node.status = "complete";
+      data.nodes.push_back(node);
+    }
+    h.trees.byId[id] = StoredTree{LooseGraph(data, Hlc{1, 0, "seed"}).exportState(), LegendState{}, {"", {}}, 0,
+                                  uid("owner"), Visibility::private_, 0, Lww<std::string>{"Knots first", Hlc{2, 0, "seed"}}};
+    h.trees.subtrees[id] = Subtree{TreeId{std::string(id)}, tid("t_src"), OwningStep{tid(parent), nid(step)}, depth, 0};
+  };
+  plant("t_s", "t_src", "root", 1, {"knot"});
+  plant("t_g", "t_s", "knot", 2, {"bowline", "hitch"});
+  plant("t_h", "t_src", "gone", 1, {"hidden"});
+  LooseGraph source(h.trees.byId["t_src"].state);
+  source.createNode(nid("gone"), "Gone", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  source.deleteNode(nid("gone"), Hlc{3, 0, "seed"});
+  h.trees.byId["t_src"].state = source.exportState();
+
+  CHECK(h.service.fork(tid("t_s"), "", "", uid("me")).notARoot ==
+        (std::optional<NotARoot>(NotARoot{OwningStep{tid("t_src"), nid("root")}, tid("t_src")})));
+  CHECK(h.trees.forks.empty());
+
+  const ForkService::Result result = h.service.fork(tid("t_src"), "", "", uid("me"));
+  REQUIRE(result.outcome == ForkService::Outcome::forked);
+  REQUIRE_EQ(h.trees.forks.size(), 1u);
+  std::vector<std::string> copied;
+  for (const TreeCopy& copy : h.trees.forks.front()) {
+    std::string row = copy.id.str() + " of " + copy.source.str();
+    if (copy.parent) row += " under " + copy.parent->tree.str() + "/" + copy.parent->step.str();
+    if (copy.guideInherited) row += ", inherited";
+    for (const NodeStateEntry& node : copy.state.nodes)
+      if (node.status) row += ", lit";
+    copied.push_back(row);
+  }
+  CHECK_EQ(copied, (std::vector<std::string>{"t_d1 of t_src", "t_d2 of t_s under t_d1/root, inherited",
+                                             "t_d3 of t_g under t_d2/knot, inherited"}));
+  CHECK(h.trees.subtrees["t_d2"].parent == (OwningStep{tid("t_d1"), nid("root")}));
+  CHECK(h.trees.subtrees["t_d3"].parent == (OwningStep{tid("t_d2"), nid("knot")}));
+  CHECK(h.trees.subtrees["t_s"].parent == (OwningStep{tid("t_src"), nid("root")}));  // the source keeps its own
+  CHECK(h.trees.forkedFrom == (std::map<std::string, std::string>{{"t_d1", "t_src"}}));
+  CHECK(h.rooms.accessOf(tid("t_d3"))->owner == std::optional<UserId>(uid("me")));
+}
+
+// A subtree's own title register is read by nothing — its name is its owning step's label — so a fork copies none of
+// it into the forker's account: the copy's title is empty and unstamped, and the copied step's label names it.
+TEST(fork_copies_no_subtrees_own_title_register) {
+  Harness h;
+  h.seedSource("t_src", "Learn to sail");
+  h.trees.byId["t_s"] = StoredTree{GraphState{}, LegendState{}, {"Its own register", Hlc{9, 0, "r_old"}}, 0,
+                                   uid("owner"), Visibility::private_};
+  h.trees.subtrees["t_s"] = Subtree{tid("t_s"), tid("t_src"), OwningStep{tid("t_src"), nid("root")}, 1, 0};
+
+  REQUIRE(h.service.fork(tid("t_src"), "", "", uid("me")).outcome == ForkService::Outcome::forked);
+  REQUIRE_EQ(h.trees.forks.back().size(), 2u);
+  CHECK(h.trees.forks.back()[1].title == Lww<std::string>{});
+  CHECK_EQ(h.trees.nameOf(tid("t_d2")).value, std::string("Root"));
+}

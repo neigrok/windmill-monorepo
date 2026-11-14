@@ -118,8 +118,7 @@ TreeRoom* RoomRegistry::open(const TreeId& id) {
   Legend legend(stored->legend);    // empty for legacy trees; the client derives then
   auto room = std::make_unique<TreeRoom>(id, stored->title, stored->guide, stored->guideInherited,
                                          std::move(graph), std::move(legend), stored->head, stored->root,
-                                         stored->parent, stored->depth, stored->subtrees, std::move(access),
-                                         stored->createdAt, bus_);
+                                         stored->path, stored->subtrees, std::move(access), stored->createdAt, bus_);
   room->takeHeadPast(past.lastSeq);
   room->observe(past.greatestStamp);
   // The room's first save moves the stored head past those rows, and nothing then shows the tree was ever behind:
@@ -145,21 +144,68 @@ std::optional<TreeAccess> RoomRegistry::accessOf(const TreeId& id) {
     auto it = rooms_.find(id);
     if (it != rooms_.end()) {
       const TreeRoom& room = *it->second.room;
-      if (!room.rootAccess()->stands()) return std::nullopt;
-      return TreeAccess{room.owner(), room.visibility(), room.root(), room.parent()};
+      if (!room.stands()) return std::nullopt;
+      return TreeAccess{room.owner(), room.visibility(), room.root(), room.path()};
     }
   }
-  const std::optional<TreeAccess> stored = repo_.loadAccess(id);  // the root's row, no lattice
+  const std::optional<StoredAccess> stored = repo_.loadAccess(id);  // the root's row and the tree's path, no lattice
   if (!stored) return std::nullopt;
-  // A live room of the same root answers for it: its access changes before its row narrows and after it widens.
-  std::lock_guard<std::mutex> lock(mutex_);
-  const std::shared_ptr<RootAccess> live = liveRootAccess(stored->root);
-  if (!live) return stored;
-  if (!live->stands()) return std::nullopt;
-  return TreeAccess{live->owner(), live->visibility(), stored->root, stored->parent};
+  const TreeAccess& read = stored->access;
+  // A live room of the same root answers for it: its access changes before its row narrows and after it widens, and it
+  // holds every owning step as the rooms hold them, saved or not.
+  std::lock_guard<std::mutex> rootLock(rootLockFor(read.root));
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (const std::shared_ptr<RootAccess> live = liveRootAccess(read.root)) {
+      if (!live->admits(read.path)) return std::nullopt;
+      return TreeAccess{live->owner(), live->visibility(), read.root, read.path};
+    }
+  }
+  if (read.path.empty()) return read;
+  // A stored answer that hides the tree is answered as it is: at worst a revive saved since the first read is missed,
+  // which is narrower, never wider. One that admits it is read again, now that no room of the root is live and none can
+  // open while the root's lock is held, so the store holds every write of its trees: a parent room that held a deletion
+  // may have saved and closed since the first read.
+  if (!stored->stands) return std::nullopt;
+  const std::optional<StoredAccess> settled = repo_.loadAccess(id);
+  if (!settled || !settled->stands) return std::nullopt;
+  return settled->access;
 }
 
-Saved RoomRegistry::settle(const TreeId& id) {
+void RoomRegistry::settleOwningSteps(const TreeId& root) {
+  std::shared_ptr<RootAccess> live;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    live = liveRootAccess(root);
+  }
+  if (live) settle(root, *live);
+}
+
+void RoomRegistry::settle(const TreeId& root, RootAccess& live) {
+  std::vector<OwningStep> moved;
+  {
+    // Under the root's lock no tree of the root's can finish opening, so each one without a live room holds as the store
+    // says, and a room that opens after records its own steps as it opens.
+    std::lock_guard<std::mutex> rootLock(rootLockFor(root));
+    WriteObservation standing{"roadmap.tree.standing", "roadmap", doorNow()};
+    try {
+      const std::set<OwningStep> absent = repo_.absentStepsUnder(root);
+      const std::vector<TreeId> rooms = roomsUnder(root);
+      moved = live.settle(absent, std::set<TreeId>(rooms.begin(), rooms.end()));
+      standing.skip();
+    } catch (const std::bad_alloc&) {
+      throw;
+    } catch (const std::exception& failure) {
+      standing.fail(failure);
+      live.unsettle();
+      return;
+    }
+  }
+  // Told with no lock held: whoever listens asks accessOf again, which may take the root's lock.
+  for (const OwningStep& step : moved) announceBelow(root, step);
+}
+
+Saved RoomRegistry::flush(const TreeId& id) {
   std::shared_ptr<SaveLine> line;
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -174,12 +220,12 @@ Saved RoomRegistry::settle(const TreeId& id) {
 bool RoomRegistry::evict(const TreeId& id) {
   // A held room stays for its retry, which alone tries its save, and a room whose save fails here stays, held. A tree
   // whose row is gone takes its room's edits and op rows with it.
-  if (settle(id) == Saved::held) return false;
+  if (flush(id) == Saved::held) return false;
   std::lock_guard<std::mutex> strand(strandFor(id));
   return close(id);
 }
 
-bool RoomRegistry::settled(const TreeId& id) const {
+bool RoomRegistry::flushed(const TreeId& id) const {
   std::lock_guard<std::mutex> lock(mutex_);
   const auto it = rooms_.find(id);
   if (it == rooms_.end()) return true;
@@ -187,7 +233,7 @@ bool RoomRegistry::settled(const TreeId& id) const {
 }
 
 bool RoomRegistry::close(const TreeId& id) {
-  if (!settled(id)) return false;
+  if (!flushed(id)) return false;
   std::lock_guard<std::mutex> lock(mutex_);
   rooms_.erase(id);  // a row that did not land is dropped here, and the room's teardown says so
   return true;
@@ -260,6 +306,15 @@ void RoomRegistry::sweep(std::chrono::steady_clock::duration idleFor) {
   // Never under the map lock, and under no strand: each room's save runs off its own.
   for (const TreeId& id : closing) evict(id);
   if (!closing.empty()) LOG_INFO << "swept " << closing.size() << " rooms, " << openRooms() << " still open";
+  // Each live access a write without a room left unsettled takes the store's owning steps again.
+  std::vector<std::pair<TreeId, std::shared_ptr<RootAccess>>> unsettled;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& [root, weak] : roots_)
+      if (const std::shared_ptr<RootAccess> live = weak.lock(); live && !live->settled())
+        unsettled.emplace_back(root, live);
+  }
+  for (const auto& [root, live] : unsettled) settle(root, *live);
   // The registry's own report of rooms that stay held: one a ceiling, however many rooms there are.
   std::size_t held = 0;
   {
@@ -287,7 +342,7 @@ PendingSave RoomRegistry::persist(const TreeId& id) {
 }
 
 Saved PendingSave::wait() {
-  if (!line_) return settled_;
+  if (!line_) return answered_;
   std::lock_guard<std::timed_mutex> gate(line_->gate);
   const Saved saved = registry_->save(tree_, line_, RoomRegistry::Asked::byAWrite);
   // An earlier save stored this write: one that failed since, or found the row gone, was of a later write, whose own
@@ -491,13 +546,37 @@ std::shared_ptr<RootAccess> RoomRegistry::shareRootAccess(const TreeId& root) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (std::shared_ptr<RootAccess> live = liveRootAccess(root)) return live;
   }
-  // Read under the root's lock, which every change to the root's access holds, so it cannot be stale.
-  const std::optional<TreeAccess> stored = repo_.loadAccess(root);
+  // Read under the root's lock, which every change to the root's access holds, and with no room of the root's trees
+  // live, so the store holds every write of theirs: it cannot be stale.
+  const std::optional<StoredAccess> stored = repo_.loadAccess(root);
   if (!stored) return nullptr;
-  auto access = std::make_shared<RootAccess>(stored->owner, stored->visibility);
+  std::set<OwningStep> absent;
+  WriteObservation standing{"roadmap.tree.standing", "roadmap", doorNow()};
+  try {
+    absent = repo_.absentStepsUnder(root);
+    standing.skip();
+  } catch (const std::exception& failure) {
+    standing.fail(failure);
+    throw;
+  }
+  auto access = std::make_shared<RootAccess>(stored->access.owner, stored->access.visibility, std::move(absent),
+                                             [this, root](const OwningStep& step) { announceBelow(root, step); });
   std::lock_guard<std::mutex> lock(mutex_);
   roots_[root] = access;
   return access;
+}
+
+void RoomRegistry::announceBelow(const TreeId& root, const OwningStep& step) {
+  if (!accessChanged_) return;
+  std::vector<TreeId> below;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& [id, live] : rooms_) {
+      const std::vector<OwningStep>& path = live.room->path();
+      if (live.room->root() == root && std::find(path.begin(), path.end(), step) != path.end()) below.push_back(id);
+    }
+  }
+  for (const TreeId& tree : below) accessChanged_(tree);
 }
 
 std::shared_ptr<RootAccess> RoomRegistry::liveRootAccess(const TreeId& root) {

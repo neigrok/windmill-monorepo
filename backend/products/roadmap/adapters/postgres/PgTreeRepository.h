@@ -25,9 +25,9 @@ AccountErasure roadmapAccountErasure();
 // A tree's name, for a `trees` row or a row carrying its title, parent_tree and parent_step: a root's own title, a
 // subtree's owning step's label, read off that step's row through tree_nodes_pkey.
 std::string treeNameColumn(std::string_view tree);
-// That a `trees` row stands with its root: the root's row, read through trees_pkey for a subtree alone, is not deleted.
-// The row's own deleted_at is the statement's to test.
-std::string rootStandsCondition(std::string_view tree);
+// That a `trees` row's branch stands: for a subtree alone, its root's row is not deleted and every owning step on its
+// path is present, read in one walk up its parents. The row's own deleted_at is the statement's to test.
+std::string branchStandsCondition(std::string_view tree);
 // What a present `tree_nodes` row opens: the standing subtree its step owns, which ownedSubtreeJoin joins through
 // trees_parent_step as `owned`, else the tree its pointer names.
 std::string ownedSubtreeJoin(std::string_view step);
@@ -43,6 +43,8 @@ public:
   // What guidedTreesAbove runs, over (owner, tree, levels, guides kept): named so its Postgres test can ask the plan
   // what it reads.
   static std::string guidedTreesAboveStatement();
+  // The statement behind loadAccess, with the tree as $1: a row per tree from the root down to it.
+  static const char* accessStatement();
   // The statement behind openedFrom, with the owner as $1 and the trees it starts from as $2, a JSON array of ids.
   static std::string openedFromStatement();
   // The statement behind treesOpening, with the owner as $1 and the opened tree as $2.
@@ -57,7 +59,9 @@ public:
   void eachAccountsTrees(const std::function<void(const UserId&, const AccountTrees&)>& visit);
 
   std::optional<StoredTree> load(const TreeId& tree) override;
-  std::optional<TreeAccess> loadAccess(const TreeId& tree) override;
+  std::optional<StoredAccess> loadAccess(const TreeId& tree) override;
+  std::set<OwningStep> absentStepsUnder(const TreeId& root) override;
+  std::map<TreeId, BranchSize> branchSizes(const std::set<TreeId>& trees) override;
   std::optional<Place> placeOf(const TreeId& tree) override;
   std::optional<UserId> retiredOwner(const TreeId& tree) override;
   ForkLineage loadForkLineage(const TreeId& tree) override;
@@ -76,9 +80,7 @@ public:
   void softDelete(const TreeId& tree) override;
   void rename(const TreeId& tree, const Lww<std::string>& title) override;
   void setVisibility(const TreeId& tree, Visibility visibility) override;
-  void fork(const TreeId& newTree, const TreeId& source, const GraphState& state,
-            const LegendState& legend, const Lww<std::string>& title, const Lww<std::string>& guide,
-            bool guideInherited, const UserId& owner) override;
+  void fork(const std::vector<TreeCopy>& copies, const UserId& owner) override;
   std::optional<SubtreeSite> subtreeSite(const TreeId& parent, const NodeId& step, const std::optional<TreeId>& opened,
                                          const std::optional<TreeId>& proposed) override;
   std::variant<Subtree, SubtreeConflict> createSubtree(const TreeId& child, const OwningStep& parent,

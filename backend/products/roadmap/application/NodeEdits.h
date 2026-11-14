@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <map>
+#include <set>
 #include <string>
 #include <variant>
 #include <vector>
@@ -54,15 +55,16 @@ public:
   std::size_t clearMarksOn(TreeRoom& room, const TreeId& tree, const UserId& actor, const std::vector<NodeId>& removed);
 
   // `nodes` deleted from the room as ONE op under one seq, with the edges touching them when `edges` says so, so the tree
-  // is never seen between them: each command checked first, a refusal answered with nothing written; then the actor's
-  // marks on the nodes cleared, before the delete lands, so a progress store that fails fails the deletion with nothing
-  // deleted and a retry does the whole of it; then the op applied, broadcast to the tree's open pages, and its save
-  // asked for. Called under the tree's strand with its room open; the save is the caller's to wait on with the strand
-  // let go. Answered gone there, the room is retired and the caller holds none. A save that fails is answered held:
-  // the op applied, the room's head has moved, and the registry's retry lands the delete.
-  std::variant<DeletedNodes, std::string> deleteNodes(TreeRoom& room, const TreeId& tree,
-                                                      const std::vector<NodeId>& nodes, DanglingEdges edges,
-                                                      const UserId& actor);
+  // is never seen between them: each command checked first, a refusal answered with nothing written; then each owning
+  // step among the nodes whose subtree `branches` does not name, answered as the unconfirmed branches with nothing
+  // written; then the actor's marks on the nodes cleared, before the delete lands, so a progress store that fails fails
+  // the deletion with nothing deleted and a retry does the whole of it; then the op applied, broadcast to the tree's open
+  // pages, and its save asked for. Called under the tree's strand with its room open; the save is the caller's to wait
+  // on with the strand let go. Answered gone there, the room is retired and the caller holds none. A save that fails
+  // is answered held: the op applied, the room's head has moved, and the registry's retry lands the delete.
+  std::variant<DeletedNodes, std::string, std::vector<UnconfirmedBranch>> deleteNodes(
+      TreeRoom& room, const TreeId& tree, const std::vector<NodeId>& nodes, DanglingEdges edges, const UserId& actor,
+      const std::set<TreeId>& branches = {});
 
 private:
   RoomRegistry& rooms_;

@@ -34,18 +34,20 @@ std::size_t NodeEdits::clearMarksOn(TreeRoom& room, const TreeId& tree, const Us
                     [](const ProgressOutcome& outcome) { return outcome.applied && !outcome.unchanged; }));
 }
 
-std::variant<DeletedNodes, std::string> NodeEdits::deleteNodes(TreeRoom& room, const TreeId& tree,
-                                                               const std::vector<NodeId>& nodes, DanglingEdges edges,
-                                                               const UserId& actor) {
+std::variant<DeletedNodes, std::string, std::vector<UnconfirmedBranch>> NodeEdits::deleteNodes(
+    TreeRoom& room, const TreeId& tree, const std::vector<NodeId>& nodes, DanglingEdges edges, const UserId& actor,
+    const std::set<TreeId>& branches) {
   std::vector<Command> commands;
   for (const NodeId& node : nodes) commands.push_back(DeleteNode{node});
   const std::vector<Edge> dangled = edges == DanglingEdges::removed ? room.edgesTouching(nodes) : std::vector<Edge>{};
   for (const Edge& edge : dangled) commands.push_back(RemoveEdge{edge.from, edge.to});
   for (const Command& command : commands)
     if (std::optional<std::string> reason = room.validate(command)) return *reason;
+  if (std::vector<UnconfirmedBranch> unconfirmed = room.unconfirmedBranches(nodes, branches); !unconfirmed.empty())
+    return unconfirmed;
 
   const std::size_t cleared = clearMarksOn(room, tree, actor, nodes);
-  const Seq seq = room.applyCommands(commands, clock_.nowMs(), actor);
+  const Seq seq = room.applyCommands(commands, clock_.nowMs(), actor, branches);
   return DeletedNodes{seq, dangled.size(), cleared, rooms_.persist(tree)};
 }
 

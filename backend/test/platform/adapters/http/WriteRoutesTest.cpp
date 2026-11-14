@@ -192,6 +192,8 @@ TEST(write_http_expected_refusals_never_create_issues_and_unsafe_codes_are_disca
            std::string("save-pending"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "save-pending"), "gym.write"),
            std::string("failed"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k409Conflict, "private", "not-a-root"), "roadmap.DELETE.v1.trees.id"),
+           std::string("not-a-root"));
 }
 
 TEST(write_http_coach_routine_confirmation_refusals_log_their_codes) {

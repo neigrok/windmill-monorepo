@@ -34,6 +34,7 @@ struct TreeSummary {
   std::uint64_t updatedAt = 0;  // epoch ms; lastActiveAt — a structural edit or a progress mark
   TreeStats stats;
   std::vector<OpeningSteps> openers;  // the owner's other trees whose steps open this one (OpenedTrees::openersOf)
+  BranchSize branch;                  // what removing the tree takes: its standing subtrees and every step of the branch
 };
 
 // Each step of `data` opens the subtree it owns, whatever its pointer holds (SPEC.md, Model, Subtrees).
@@ -52,6 +53,7 @@ OpenedTrees openedAmong(const std::vector<LoadedTree>& loaded);
 // One row per root of `loaded`, ordered newest-forward-change first, ties broken by id: a subtree is no row, and counts
 // in its parent as the one step that owns it. Each row's updatedAt is the freshest of its two timestamps. Every
 // tree of `loaded` is judged, and the openers come from `loaded` alone, so every tree in them stands and is the owner's.
+// Each row's branch is counted down the present steps that own subtrees, among the trees `loaded` holds.
 std::vector<TreeSummary> registrySummaries(const std::vector<LoadedTree>& loaded);
 
 }

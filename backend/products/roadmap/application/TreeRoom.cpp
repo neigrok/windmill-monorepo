@@ -2,7 +2,59 @@
 
 #include <trantor/utils/Logger.h>
 
+#include <algorithm>
+#include <stdexcept>
+
 namespace wm {
+
+namespace {
+// The present nodes `commands` delete, a batch's among them.
+std::vector<NodeId> deletedBy(const std::vector<Command>& commands, const LooseGraph& graph) {
+  std::vector<NodeId> deleted;
+  for (const Command& command : commands) {
+    if (const DeleteNode* deletion = std::get_if<DeleteNode>(&command); deletion && graph.hasNode(deletion->id))
+      deleted.push_back(deletion->id);
+    if (const Batch* batch = std::get_if<Batch>(&command)) {
+      const std::vector<NodeId> inner = deletedBy(batch->commands, graph);
+      deleted.insert(deleted.end(), inner.begin(), inner.end());
+    }
+  }
+  return deleted;
+}
+}
+
+bool RootAccess::admits(const std::vector<OwningStep>& path) const {
+  if (!stands()) return false;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return std::none_of(path.begin(), path.end(), [this](const OwningStep& step) { return absent_.count(step) > 0; });
+}
+
+void RootAccess::record(const OwningStep& step, bool present) {
+  bool moved = false;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    moved = present ? absent_.erase(step) > 0 : absent_.insert(step).second;
+  }
+  // Told with no lock held: whoever listens asks this access again.
+  if (moved && moved_) moved_(step);
+}
+
+std::vector<OwningStep> RootAccess::settle(const std::set<OwningStep>& absent, const std::set<TreeId>& live) {
+  std::vector<OwningStep> moved;
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (auto held = absent_.begin(); held != absent_.end();) {
+    if (live.count(held->tree) || absent.count(*held)) {
+      ++held;
+      continue;
+    }
+    moved.push_back(*held);
+    held = absent_.erase(held);
+  }
+  for (const OwningStep& step : absent)
+    if (!live.count(step.tree) && absent_.insert(step).second) moved.push_back(step);
+  settled_.store(true);
+  return moved;
+}
 
 TreeRoom::~TreeRoom() {
   if (pendingOps_.empty()) return;
@@ -10,13 +62,13 @@ TreeRoom::~TreeRoom() {
 }
 
 TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bool guideInherited, LooseGraph graph,
-                   Legend legend, Seq head, TreeId root, std::optional<OwningStep> parent, int depth,
+                   Legend legend, Seq head, TreeId root, std::vector<OwningStep> path,
                    std::map<NodeId, TreeId> subtrees, std::shared_ptr<RootAccess> access, std::uint64_t createdAt,
                    PresenceBus& bus)
     : id_(std::move(id)), title_(std::move(title)), guide_(std::move(guide)), guideInherited_(guideInherited),
-      graph_(std::move(graph)), legend_(std::move(legend)), head_(head), root_(std::move(root)),
-      parent_(std::move(parent)), depth_(depth), subtrees_(std::move(subtrees)), access_(std::move(access)),
-      createdAt_(createdAt), bus_(bus), clock_(std::string{kServerActor}) {
+      graph_(std::move(graph)), legend_(std::move(legend)), head_(head), root_(std::move(root)), path_(std::move(path)),
+      subtrees_(std::move(subtrees)), access_(std::move(access)), createdAt_(createdAt), bus_(bus),
+      clock_(std::string{kServerActor}) {
   // Fold every stamp the loaded document already carries — the graph frontier and the title and guide
   // registers — so a fresh mint after restart is always ahead of anything persisted.
   for (const auto& [actor, mark] : frontier(graph_.exportState(), legend_.exportState()).marks) {
@@ -24,6 +76,9 @@ TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bo
   }
   clock_.observe(title_.stamp);
   clock_.observe(guide_.stamp);
+  // The room opens as its stored rows stand, which no other room of the tree's can have written past: its owning steps
+  // are recorded as they are, so an access that missed a write without a room learns them here.
+  recordOwningSteps();
 }
 
 Hlc TreeRoom::nextStamp(std::uint64_t nowMs) {
@@ -31,6 +86,7 @@ Hlc TreeRoom::nextStamp(std::uint64_t nowMs) {
 }
 
 std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId& actor) {
+  insistConfirmed(graph_.removedBy(incoming.graph), incoming.branches);
   if (!appliedOpIds_.insert(incoming.frameId).second) return std::nullopt;
   Hlc stamp;
   for (const auto& [_, mark] : frontier(incoming).marks) {
@@ -46,6 +102,7 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   // What the room took of the frame: the frame as sent, each entry cut to the registers that landed. A register the
   // room already holds changed nothing, so it marks no row to save, names no deed and is not sent on.
   Subgraph landed = incoming;
+  landed.branches.clear();  // a confirmation for this server, never sent on
   landed.graph = graph_.join(incoming.graph);
   landed.legend = legend_.join(incoming.legend);
   if (!titleTook) landed.title.reset();
@@ -59,6 +116,7 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   // double-counts. A frame with no feed-worthy deed (headline) queues nothing.
   if (std::optional<Command> deed = headline(landed.graph, landed.legend, graph_, legend_))
     pendingOps_.push_back(AppliedOp{head_, incoming.frameId, *deed, stamp, actor});
+  recordOwningSteps();
   bus_.broadcastSubgraph(id_, head_, landed);
   return head_;
 }
@@ -80,8 +138,10 @@ Seq TreeRoom::applyCommand(const Command& command, std::uint64_t nowMs, const Us
   return applyCommands({command}, nowMs, actor);
 }
 
-Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t nowMs, const UserId& actor) {
+Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t nowMs, const UserId& actor,
+                            const std::set<TreeId>& branches) {
   if (commands.empty()) return head_;  // nothing to apply mints no seq, logs no op, broadcasts nothing
+  insistConfirmed(deletedBy(commands, graph_), branches);
   Hlc stamp = clock_.tick(nowMs);  // one stamp for the whole frame, as a graft takes one
   std::string frameId = "srv-" + toString(stamp);  // unique: the clock mints monotone stamps
   appliedOpIds_.insert(frameId);
@@ -101,6 +161,7 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
   const Command deed = commands.size() == 1 ? commands.front() : Command{Batch{commands}};
   pendingOps_.push_back(AppliedOp{head_, frameId, deed, stamp, actor});
   markDirty(produced.graph, produced.legend);  // the broadcast delta is exactly the write's footprint
+  recordOwningSteps();
   bus_.broadcastSubgraph(id_, head_, produced);
   return head_;
 }
@@ -116,6 +177,7 @@ std::optional<Seq> TreeRoom::importTree(const Graft& incoming, std::uint64_t now
   frame.intent = SubgraphIntent::graft;
   frame.graph = std::move(landed.graph);
   frame.legend = std::move(landed.legend);
+  frame.branches = incoming.branches;
   return joinSubgraph(frame, actor).value_or(head_);
 }
 
@@ -131,6 +193,36 @@ std::optional<Admission> TreeRoom::admit(const Subgraph& incoming) const {
 
 std::optional<std::string> TreeRoom::validate(const Command& command) const {
   return wm::validate(graph_, legend_, command);
+}
+
+std::vector<UnconfirmedBranch> TreeRoom::unconfirmedBranches(const Subgraph& incoming) const {
+  return wm::unconfirmedBranches(graph_.removedBy(incoming.graph), subtrees_, incoming.branches);
+}
+
+std::vector<UnconfirmedBranch> TreeRoom::unconfirmedBranches(const Graft& incoming) const {
+  return wm::unconfirmedBranches(footprintOf(incoming).tombstonedNodes, subtrees_, incoming.branches);
+}
+
+std::vector<UnconfirmedBranch> TreeRoom::unconfirmedBranches(const std::vector<NodeId>& deleting,
+                                                             const std::set<TreeId>& branches) const {
+  std::vector<NodeId> present;
+  for (const NodeId& node : deleting)
+    if (graph_.hasNode(node)) present.push_back(node);
+  return wm::unconfirmedBranches(present, subtrees_, branches);
+}
+
+void TreeRoom::insistConfirmed(const std::vector<NodeId>& removed, const std::set<TreeId>& branches) const {
+  if (!wm::unconfirmedBranches(removed, subtrees_, branches).empty())
+    throw std::logic_error("a write would remove an owning step whose subtree it does not name");
+}
+
+void TreeRoom::recordOwningSteps() {
+  for (const auto& [step, subtree] : subtrees_) access_->record(OwningStep{id_, step}, graph_.hasNode(step));
+}
+
+void TreeRoom::ownSubtree(const NodeId& step, const TreeId& subtree) {
+  subtrees_[step] = subtree;
+  access_->record(OwningStep{id_, step}, graph_.hasNode(step));
 }
 
 void TreeRoom::appendSubtree(const NodeId& step, const Subtree& subtree) {
@@ -204,7 +296,7 @@ TreeData TreeRoom::snapshot() const {
 Subgraph TreeRoom::deltaSince(const VersionVector& since) const {
   Subgraph delta = deltaBetween(graph_.exportState(), legend_.exportState(), since);
   delta.treeId = id_;
-  if (!parent_) {
+  if (path_.empty()) {
     if (!since.covers(title_.stamp)) delta.title = title_;
     delta.coverage->observe(title_.stamp);
   }

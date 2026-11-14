@@ -72,7 +72,7 @@ void retire(TreeRegistryApi& api, const std::string& id, const std::string& sess
   drogon::HttpResponsePtr captured;
   api.deleteTree(request, [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
   CHECK_EQ(captured->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(parse(std::string(captured->body())), parse(R"({"removed":[]})"));
+  CHECK_EQ(parse(std::string(captured->body())), parse(R"({"removed":[],"branch":{"subtrees":0,"steps":0}})"));
 }
 
 Json::Value titled(const std::string& title) {
@@ -364,15 +364,17 @@ TEST(patch_visibility_owner_flip_returns_204_and_reshares) {
 TEST(patch_visibility_of_a_subtree_is_refused_409_not_a_root_naming_where_it_hangs) {
   Harness h;
   UserId me = h.signIn("s-live", "sam@example.com");
-  h.trees.byId["t_root"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};
+  LooseGraph root;
+  root.createNode(nid("rig"), "Rig", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  h.trees.byId["t_root"] = StoredTree{root.exportState(), LegendState{}, {"Mine", {}}, 0, me};
   h.trees.byId["t_sub"] = StoredTree{GraphState{}, LegendState{}, {"", {}}, 0, me};
   h.trees.subtrees["t_sub"] = Subtree{tid("t_sub"), tid("t_root"), OwningStep{tid("t_root"), nid("rig")}, 1, 0};
 
   drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t_sub");
 
   CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
-  CHECK_EQ(bodyOf(response), parse(R"({"code":"not-a-root","error":"this tree hangs from step \"rig\" of t_root and is )"
-                                   R"(shared as its root t_root is: set the root's visibility",)"
+  CHECK_EQ(bodyOf(response), parse(R"({"code":"not-a-root","error":"this tree hangs from step \"rig\" of t_root under )"
+                                   R"(the root t_root: it is shared as its root is, so set the root's visibility",)"
                                    R"("parent":{"tree":"t_root","step":"rig"},"root":"t_root"})"));
   CHECK(h.trees.byId["t_root"].visibility == Visibility::private_);
   CHECK(h.trees.byId["t_sub"].visibility == Visibility::private_);
@@ -662,19 +664,20 @@ TEST(list_rows_carry_their_openers_and_delete_answers_the_steps_that_went_with_t
 
   const drogon::HttpResponsePtr removed = remove("t_target");
   CHECK_EQ(removed->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(removed), parse(R"({"removed":[{"treeId":"t_a","nodeIds":["a1"]},{"treeId":"t_b","nodeIds":["b1","b2"]}]})"));
+  CHECK_EQ(bodyOf(removed), parse(R"({"removed":[{"treeId":"t_a","nodeIds":["a1"]},{"treeId":"t_b","nodeIds":["b1","b2"]}],
+                                     "branch":{"subtrees":0,"steps":1}})"));
 
   h.trees.latticeLoadsFailFor.insert("t_c");
   const drogon::HttpResponsePtr kept = remove("t_two");
   CHECK_EQ(kept->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(kept), parse(R"({"removed":[],"incomplete":["t_c"]})"));
+  CHECK_EQ(bodyOf(kept), parse(R"({"removed":[],"incomplete":["t_c"],"branch":{"subtrees":0,"steps":1}})"));
 
   plant("t_three", {{"x1", ""}});
   plant("t_d", {{"d1", "t_three"}});
   h.trees.duringSave = [](const TreeId&) { throw std::runtime_error("the write was refused"); };
   const drogon::HttpResponsePtr unsaved = remove("t_three");
   CHECK_EQ(unsaved->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(unsaved), parse(R"({"removed":[],"unsaved":["t_d"]})"));
+  CHECK_EQ(bodyOf(unsaved), parse(R"({"removed":[],"unsaved":["t_d"],"branch":{"subtrees":0,"steps":1}})"));
   h.trees.duringSave = nullptr;
 
   plant("t_four", {{"y1", ""}});
@@ -781,4 +784,87 @@ TEST(patch_from_a_stranger_answers_a_private_tree_as_an_absent_one_at_every_dept
   CHECK(h.trees.byId["t_a"].visibility == Visibility::private_);
   CHECK_EQ(sendPatch(h.api, patch(titled("My year"), "s-live"), "t_a")->getStatusCode(), drogon::k204NoContent);
   CHECK_EQ(sendPatch(h.api, patch(shareTo("unlisted"), "s-live"), "t_a")->getStatusCode(), drogon::k204NoContent);
+}
+
+// A subtree is never removed or planted by its own id: DELETE aimed at one is refused 409 `not-a-root` to its owner,
+// naming the step it hangs from, and POST /v1/trees with its id is refused 409 `not-a-root`, never answered `existed`.
+// A root's list row counts what its removal takes, and the DELETE answers the same count.
+TEST(a_subtree_is_never_deleted_or_planted_by_its_id_and_a_roots_row_counts_its_branch) {
+  Harness h;
+  const UserId me = h.signIn("s-live", "sam@example.com");
+  LooseGraph root;
+  root.createNode(nid("rig"), "Rig", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  root.createNode(nid("sail"), "Sail", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  LooseGraph child;
+  child.createNode(nid("knot"), "Knot", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  h.trees.byId["t_root"] = StoredTree{root.exportState(), LegendState{}, {"Mine", {}}, 0, me};
+  h.trees.byId["t_00000000000000c1"] = StoredTree{child.exportState(), LegendState{}, {"", {}}, 0, me};
+  h.trees.subtrees["t_00000000000000c1"] =
+      Subtree{tid("t_00000000000000c1"), tid("t_root"), OwningStep{tid("t_root"), nid("rig")}, 1, 0};
+  const auto request = [](drogon::HttpMethod method) {
+    auto made = drogon::HttpRequest::newHttpRequest();
+    made->setMethod(method);
+    made->addCookie("wm_session", "s-live");
+    return made;
+  };
+  const auto remove = [&](const std::string& id) {
+    drogon::HttpResponsePtr captured;
+    h.api.deleteTree(request(drogon::Delete), [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
+    return captured;
+  };
+
+  drogon::HttpResponsePtr listed;
+  h.api.listTrees(request(drogon::Get), [&](const drogon::HttpResponsePtr& response) { listed = response; });
+  REQUIRE_EQ(bodyOf(listed)["trees"].size(), 1u);
+  CHECK_EQ(bodyOf(listed)["trees"][0]["branch"], parse(R"({"subtrees":1,"steps":3})"));
+
+  const drogon::HttpResponsePtr refused = remove("t_00000000000000c1");
+  CHECK_EQ(refused->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(bodyOf(refused), parse(R"({"code":"not-a-root","parent":{"tree":"t_root","step":"rig"},"root":"t_root",)"
+                                  R"("error":"this tree hangs from step \"rig\" of t_root under the root t_root: it goes )"
+                                  R"(with that step: delete the step, and its Undo brings the subtree back"})"));
+  Json::Value planted(Json::objectValue);
+  planted["id"] = "t_00000000000000c1";
+  const drogon::HttpResponsePtr claimed = create(h.api, post(planted, "s-live"));
+  CHECK_EQ(claimed->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ(bodyOf(claimed), parse(R"({"error":"that id names a subtree of one of your roadmaps, not a roadmap",)"
+                                  R"("code":"not-a-root"})"));
+  CHECK_FALSE(h.trees.deletedIds.count("t_00000000000000c1"));
+
+  const drogon::HttpResponsePtr removed = remove("t_root");
+  CHECK_EQ(removed->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(removed), parse(R"({"removed":[],"branch":{"subtrees":1,"steps":3}})"));
+  CHECK_FALSE(h.rooms.accessOf(tid("t_00000000000000c1")).has_value());
+}
+
+// What a removal takes is counted once the removal has passed every gate, so a refused DELETE costs no count: an
+// absent id, a private tree of someone else's and a subtree's id read no branch, and the owner's removal is answered
+// what went.
+TEST(delete_counts_the_branch_only_once_the_removal_passed_its_gates) {
+  Harness h;
+  const UserId me = h.signIn("s-live", "sam@example.com");
+  h.signIn("s-stranger", "stranger@example.com");
+  LooseGraph root;
+  root.createNode(nid("rig"), "Rig", "", NodeColor::sky, Hlc{1, 0, "seed"});
+  h.trees.byId["t_root"] = StoredTree{root.exportState(), LegendState{}, {"Mine", {}}, 0, me};
+  h.trees.byId["t_00000000000000c1"] = StoredTree{GraphState{}, LegendState{}, {"", {}}, 0, me};
+  h.trees.subtrees["t_00000000000000c1"] =
+      Subtree{tid("t_00000000000000c1"), tid("t_root"), OwningStep{tid("t_root"), nid("rig")}, 1, 0};
+  const auto remove = [&](const char* session, const std::string& id) {
+    auto made = drogon::HttpRequest::newHttpRequest();
+    made->setMethod(drogon::Delete);
+    made->addCookie("wm_session", session);
+    drogon::HttpResponsePtr captured;
+    h.api.deleteTree(made, [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
+    return captured;
+  };
+
+  CHECK_EQ(remove("s-stranger", "t_root")->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(remove("s-stranger", "t_9999999999999999")->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(remove("s-live", "t_00000000000000c1")->getStatusCode(), drogon::k409Conflict);
+  CHECK(h.trees.sizeReads.empty());
+
+  const drogon::HttpResponsePtr removed = remove("s-live", "t_root");
+  CHECK_EQ(bodyOf(removed), parse(R"({"removed":[],"branch":{"subtrees":1,"steps":1}})"));
+  CHECK(h.trees.sizeReads == (std::vector<std::set<TreeId>>{{tid("t_root")}}));
 }

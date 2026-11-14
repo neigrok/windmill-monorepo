@@ -463,3 +463,25 @@ TEST(the_pointers_of_a_graph_are_the_trees_its_present_nodes_open_and_no_others)
 
   CHECK(g.pointers() == (std::map<NodeId, TreeId>{{nid("opens"), TreeId{"t_sailing"}}}));
 }
+
+// What a join would delete, read without joining: a present node whose arriving deletion outranks every creation, the
+// frame's own included, and never a node already deleted, one the frame revives or one it only edits.
+TEST(removed_by_names_the_present_nodes_a_join_would_delete) {
+  LooseGraph graph;
+  graph.createNode(nid("kept"), "Kept", "i", NodeColor::sky, at(1));
+  graph.createNode(nid("gone"), "Gone", "i", NodeColor::sky, at(1));
+  graph.createNode(nid("revived"), "Revived", "i", NodeColor::sky, at(1));
+  graph.createNode(nid("edited"), "Edited", "i", NodeColor::sky, at(1));
+  graph.createNode(nid("dead"), "Dead", "i", NodeColor::sky, at(1));
+  graph.deleteNode(nid("dead"), at(2));
+
+  GraphState incoming;
+  incoming.nodes.push_back(NodeStateEntry{.id = nid("gone"), .deletedAt = at(5)});
+  incoming.nodes.push_back(NodeStateEntry{.id = nid("revived"), .deletedAt = at(5)});
+  incoming.nodes.push_back(NodeStateEntry{.id = nid("revived"), .createdAt = at(6)});
+  incoming.nodes.push_back(NodeStateEntry{.id = nid("edited"), .label = "New", .labelAt = at(5)});
+  incoming.nodes.push_back(NodeStateEntry{.id = nid("dead"), .deletedAt = at(7)});
+  incoming.nodes.push_back(NodeStateEntry{.id = nid("never"), .deletedAt = at(7)});
+  CHECK(graph.removedBy(incoming) == (std::vector<NodeId>{nid("gone")}));
+  CHECK(graph.hasNode(nid("gone")));
+}

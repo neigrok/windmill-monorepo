@@ -86,7 +86,7 @@ class RoomRegistry;
 class PendingSave {
 public:
   // Nothing to wait for: a call that changed nothing, or a tree with no live room, is answered as it stands.
-  PendingSave(Saved settled) : settled_(settled) {}
+  PendingSave(Saved answered) : answered_(answered) {}
   Saved wait();
 
 private:
@@ -97,14 +97,16 @@ private:
   TreeId tree_{""};
   std::shared_ptr<SaveLine> line_;
   Seq seq_ = 0;
-  Saved settled_ = Saved::saved;
+  Saved answered_ = Saved::saved;
 };
 
 // Owns the live TreeRooms, one per tree being viewed or edited. Idle ones are persisted and closed
 // on its own heartbeat — a room is a cache of the row, not a residence. Every live room of one root's
 // trees shares that root's RootAccess, which is made and changed under the root's lock alone: the
-// open that makes it reads the root's row under it, and a change of the root's visibility or its
-// removal writes the row under it, so no live room ever answers a reader its root's row does not.
+// open that makes it reads the root's row and its absent owning steps under it, and a change of the
+// root's visibility or its removal writes the row under it, so no live room ever answers a reader its
+// root's row does not. Each room records its own owning steps in it as its writes land, so a branch
+// hides the moment the step that owns it is deleted, on every gate, and shows again with its revive.
 //
 // A room's save runs off its strand. Under the strand the save copies what the room holds unsaved and lets go; it
 // stores the copy, then its op rows; under the strand again it clears the room's marks only if no write landed
@@ -139,9 +141,19 @@ public:
   TreeRoom* open(const TreeId& id);
 
   // Answers WITHOUT materializing a room. Every path that may refuse asks this BEFORE open(), which
-  // drags the whole lattice off disk and pins it. A tree of any depth is answered its root's access:
-  // the live RootAccess while any room of the root's trees is open, else the root's row.
+  // drags the whole lattice off disk and pins it. A tree of any depth is answered its root's access, and
+  // nothing while its branch does not stand: the live RootAccess while any room of the root's trees is
+  // open, else the stored rows. A live room answers from memory alone. A closed subtree the stored rows
+  // admit is read again under its root's lock with no access live — when the store holds every write of
+  // the root's trees — so a parent room that saved a deletion and closed since the first read admits
+  // nobody; one they hide is answered hidden at once.
   std::optional<TreeAccess> accessOf(const TreeId& id);
+  // A write that reached a tree's rows without its room (PUT) may have revived owning steps the live access of its root
+  // holds absent: the access, if there is one, takes every closed tree's owning steps under `root` from the store again.
+  // A read of the store that fails is reported as `roadmap.tree.standing` and throws nothing: the access is left
+  // unsettled — narrower than the store, never wider — and the sweep settles it, as a room's open records its own
+  // steps.
+  void settleOwningSteps(const TreeId& root);
 
   // Save, then land the queued op rows, then close; a room with nothing unsaved closes with no save. A row
   // that fails to land after the save is dropped with the room — logged, never surfaced — since the lattice
@@ -153,12 +165,12 @@ public:
   // the tree's row itself and holds no write of its own in the room (a write waits on what persist answers). `held`
   // for a room that is held, or whose save fails here: a held room's save is the timer's, and costs no statement.
   // The caller holds no strand.
-  Saved settle(const TreeId& id);
+  Saved flush(const TreeId& id);
   // Whether the store holds every write of the tree's room and no save of it is running, so nothing the registry does
   // is writing, or about to write, the tree's row: what a caller that writes the row itself asks before it does. A
-  // tree with no live room is settled. Caller holds the strand.
-  bool settled(const TreeId& id) const;
-  // Closes a settled room, with no statement; false, and the room stays, when it is not settled. Caller holds the
+  // tree with no live room is flushed. Caller holds the strand.
+  bool flushed(const TreeId& id) const;
+  // Closes a flushed room, with no statement; false, and the room stays, when it is not flushed. Caller holds the
   // strand.
   bool close(const TreeId& id);
 
@@ -222,9 +234,15 @@ private:
   void reportHeld(std::size_t rooms, const std::exception& failure, const char* outcome);
   // Appends the rows in order and answers how many landed: the first failure stops it.
   std::size_t land(const TreeId& id, const std::vector<AppliedOp>& rows);
-  // The access every live room of `root`'s trees shares, made from the root's row when none is live. Called under the
-  // root's lock; nullptr when the root does not stand.
+  // The access every live room of `root`'s trees shares, made from the root's row and its absent owning steps when none is
+  // live. Called under the root's lock; nullptr when the root does not stand.
   std::shared_ptr<RootAccess> shareRootAccess(const TreeId& root);
+  // Every live room below `step` is told its access changed: the step's branch hid or showed.
+  void announceBelow(const TreeId& root, const OwningStep& step);
+  // `live` takes the store's owning steps for every tree under `root` that has no live room, under the root's lock, and
+  // the rooms below each step that moved are told once it is released. A read of the store that fails is reported as
+  // `roadmap.tree.standing` and leaves `live` unsettled.
+  void settle(const TreeId& root, RootAccess& live);
   // The live one, or nullptr. Caller holds mutex_.
   std::shared_ptr<RootAccess> liveRootAccess(const TreeId& root);
   // The live rooms of `root`'s trees, the root's own among them.

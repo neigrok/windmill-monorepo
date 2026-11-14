@@ -34,8 +34,8 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
 
   auto api = std::make_shared<TreeApi>(deps.registry, deps.trees, deps.ownerProgress, deps.oplog,
                                        deps.genesis, deps.authService, deps.forkService, deps.clock);
-  auto ogImageApi = std::make_shared<OgImageApi>(deps.ogImages, deps.trees, deps.authService);
-  auto ogVideoApi = std::make_shared<OgVideoApi>(deps.ogVideos, deps.trees, deps.authService);
+  auto ogImageApi = std::make_shared<OgImageApi>(deps.ogImages, deps.registry, deps.authService);
+  auto ogVideoApi = std::make_shared<OgVideoApi>(deps.ogVideos, deps.registry, deps.authService);
   auto sharePageApi =
       std::make_shared<SharePageApi>(deps.registry, deps.trees, deps.authService, deps.ogVideos, deps.webRoot,
                                      deps.appBaseUrl);
@@ -47,10 +47,13 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
   auto composeApi = std::make_shared<ComposeApi>(deps.composer);
 
   // Presence coalescing: flush buffered cursors/selections to subscribers at 20 Hz (§12),
-  // once the event loop is up. One timer drains every tree, latest-wins per actor.
+  // once the event loop is up. One timer drains every tree, latest-wins per actor. A second judges every open
+  // tree-socket connection for one that has stopped taking what it is sent.
   auto presence = deps.presence;
-  app.registerBeginningAdvice([presence]() {
+  auto bus = deps.bus;
+  app.registerBeginningAdvice([presence, bus]() {
     drogon::app().getLoop()->runEvery(0.05, [presence]() { presence->flush(); });
+    drogon::app().getLoop()->runEvery(WsPresenceBus::kJudgeEverySeconds, [bus]() { bus->dropStalled(); });
   });
 
   routes.registerHandler(

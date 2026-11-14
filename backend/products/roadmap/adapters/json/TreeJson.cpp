@@ -161,6 +161,34 @@ Json::Value toJson(const Cascade& cascade) {
   return body;
 }
 
+Json::Value toJson(const BranchSize& branch) {
+  Json::Value body(Json::objectValue);
+  body["subtrees"] = branch.subtrees;
+  body["steps"] = branch.steps;
+  return body;
+}
+
+Json::Value toJson(const UnconfirmedBranch& branch, const std::optional<BranchSize>& size) {
+  Json::Value body(Json::objectValue);
+  body["step"] = branch.step.str();
+  body["subtree"] = branch.subtree.str();
+  if (!size) return body;
+  body["steps"] = size->steps;
+  body["subtrees"] = size->subtrees;
+  return body;
+}
+
+Json::Value toJson(const NotARoot& refusal, const std::string& remedy) {
+  Json::Value body(Json::objectValue);
+  body["code"] = kNotARoot;
+  body["error"] = "this tree hangs from step \"" + refusal.owningStep.step.str() + "\" of " +
+                  refusal.owningStep.tree.str() + " under the root " + refusal.root.str() + ": " + remedy;
+  body["parent"]["tree"] = refusal.owningStep.tree.str();
+  body["parent"]["step"] = refusal.owningStep.step.str();
+  body["root"] = refusal.root.str();
+  return body;
+}
+
 Json::Value toJson(const std::map<NodeId, Opening>& openings, const std::set<TreeId>& leadingBack) {
   Json::Value opens(Json::objectValue);
   for (const auto& [node, opening] : openings) {

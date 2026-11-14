@@ -43,16 +43,16 @@ UserId actorOf(const drogon::WebSocketConnectionPtr& conn) {
 
 // A frame sent to a connection says nothing of the write in progress: while a write is served, frames go to other
 // connections too — a reject to a reader a fan-out drops, to a page open on a tree a removal retires. It is queued on
-// the loop that serves the frame, the connection's own for a reply, as a broadcast is (sendInOrder): the ack of a
-// write goes out after the broadcast of that write, which the handler queued before it.
-void send(const drogon::WebSocketConnectionPtr& conn, const Json::Value& frame) {
-  sendInOrder(trantor::EventLoop::getEventLoopOfCurrentThread(), conn, std::make_shared<const std::string>(dump(frame)));
+// the connection's own loop, as a broadcast is (WsPresenceBus::send), and entered in what the connection has been
+// handed as a reply: the ack of a write goes out after the broadcast of that write, which the handler queued before it.
+void send(WsPresenceBus& bus, const drogon::WebSocketConnectionPtr& conn, const Json::Value& frame) {
+  bus.send(conn, std::make_shared<const std::string>(dump(frame)), FrameKind::reply);
 }
 
 // The refusal of the frame being served, a `reject` or a `skew`: it finishes that frame's write under its code.
-void refuseFrame(const drogon::WebSocketConnectionPtr& conn, const Json::Value& refusal) {
+void refuseFrame(WsPresenceBus& bus, const drogon::WebSocketConnectionPtr& conn, const Json::Value& refusal) {
   finishCurrentWriteRefusal(refusal["t"] == "skew" ? std::string("clock-ahead") : refusal["code"].asString());
-  send(conn, refusal);
+  send(bus, conn, refusal);
 }
 
 Json::Value rejectFrame(const std::string& treeId, const char* code, const std::string& reason) {
@@ -66,10 +66,10 @@ Json::Value rejectFrame(const std::string& treeId, const char* code, const std::
 
 // A frame whose text is not one whole JSON value is refused whole, answered by whatever its readable
 // head names, so the client can settle the frame it sent.
-void refuseUnreadable(const drogon::WebSocketConnectionPtr& conn, const Json::Value& head) {
+void refuseUnreadable(WsPresenceBus& bus, const drogon::WebSocketConnectionPtr& conn, const Json::Value& head) {
   Json::Value reject = rejectFrame(head.get("treeId", "").asString(), kBadFrame, "this frame could not be read");
   if (head["frameId"].isString()) reject["frameId"] = head["frameId"];
-  refuseFrame(conn, reject);
+  refuseFrame(bus, conn, reject);
 }
 }
 
@@ -88,7 +88,7 @@ Collab::Collab(RoomRegistry& registry, TreeRepository& trees, OpLog& ops, WsPres
     const Reach reach = reachOf(conn, tree);
     if (reach != Reach::none) return reach;
     presence_.leave(conn, tree);
-    send(conn, rejectFrame(tree.str(), kNoSuchTree, "no such tree \"" + tree.str() + "\""));
+    send(bus_, conn, rejectFrame(tree.str(), kNoSuchTree, "no such tree \"" + tree.str() + "\""));
     return Reach::none;
   });
   registry_.whenAccessChanges([this](const TreeId& tree) { bus_.resweep(tree); });
@@ -124,6 +124,7 @@ void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketCo
         std::make_shared<Principal>(UserId{"u" + std::to_string(++actorSeq_)}, false, "", "", 0));
   }
 
+  bus_.open(conn);
   std::lock_guard<std::mutex> lock(wsMutex_);
   wsRate_[conn.get()] = WsRate{kWsBurst, std::chrono::steady_clock::now()};
 }
@@ -166,15 +167,15 @@ void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::st
       WriteObservation observation(type == "subgraph" ? "roadmap.ws.subgraph" : "roadmap.ws.progress", "roadmap", "websocket");
       WriteContext context(observation);
       try {
-        if (!whole) refuseUnreadable(conn, frame);
+        if (!whole) refuseUnreadable(bus_, conn, frame);
         else if (type == "subgraph") subgraphFrame(conn, treeId, frame);
         else progress(conn, treeId, frame);
         observation.finish();
       } catch (const std::exception& error) { observation.fail(error); throw; }
       return;
     }
-    if (!whole) return refuseUnreadable(conn, frame);
-    if (type == "ping") { Json::Value pong(Json::objectValue); pong["t"] = "pong"; send(conn, pong); return; }
+    if (!whole) return refuseUnreadable(bus_, conn, frame);
+    if (type == "ping") { Json::Value pong(Json::objectValue); pong["t"] = "pong"; send(bus_, conn, pong); return; }
     if (type == "subscribe") return subscribe(conn, treeId, frame);
     if (type == "presence") { presence_.update(conn, TreeId{treeId}, frame); return; }
   } catch (const std::exception& error) {
@@ -190,7 +191,7 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
   try {
     clientVector = versionVectorFromJson(request["vector"]);
   } catch (const std::exception&) {
-    send(conn, rejectFrame(treeId, kBadFrame, "this frame could not be read"));
+    send(bus_, conn, rejectFrame(treeId, kBadFrame, "this frame could not be read"));
     return;
   }
 
@@ -211,17 +212,27 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       stillAuthorized(conn);
       reach = reachOf(conn, TreeId{treeId});
       if (reach == Reach::none) {
-        send(conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
+        send(bus_, conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
         return;
       }
       TreeRoom* room = registry_.open(TreeId{treeId});
       if (!room) {
-        send(conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
+        send(bus_, conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
         return;
       }
       // Join under the strand, so no broadcast slips between the delta and the subscription, and the delta goes out
       // ahead of every broadcast made after it.
       first = bus_.subscribe(TreeId{treeId}, conn, principal.user);
+      // The gate was asked before the room opened, and an owning step's delete may have hidden the tree since, telling
+      // the live rooms below before this one was among them. Asked again now that the subscription has joined, a hide
+      // lands either before this check, which refuses it, or after, when its announce reaches the subscription.
+      const std::optional<UserId> reader =
+          principal.authenticated ? std::optional<UserId>(principal.user) : std::nullopt;
+      if (!room->readableBy(reader)) {
+        bus_.unsubscribe(TreeId{treeId}, conn);
+        send(bus_, conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
+        return;
+      }
       presence_.join(conn, TreeId{treeId});
       delta = room->deltaSince(clientVector);
       head = room->head();
@@ -232,7 +243,7 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       // An infrastructure failure is never the socket's to relay.
       reportCurrentWriteFailure(error);
       LOG_ERROR << "collab join failed";
-      send(conn, rejectFrame(treeId, kServerError, "the server could not open this tree"));
+      send(bus_, conn, rejectFrame(treeId, kServerError, "the server could not open this tree"));
       return;
     }
   }
@@ -248,7 +259,7 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       observation.skip();
     } catch (const std::exception& failure) {
       observation.fail(failure);
-      send(conn, rejectFrame(treeId, kServerError, "the server could not open this tree"));
+      send(bus_, conn, rejectFrame(treeId, kServerError, "the server could not open this tree"));
       return;
     }
   }
@@ -278,6 +289,32 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
   // `graft`, not an echo: the receiver may re-baseline its coverage on it, and an empty graft still ships.
   graft["intent"] = "graft";
   first->graft.send(dump(graft));
+}
+
+// The whole frame refused: nothing of it lands. Each branch is named with its size, read off the stored rows with no
+// strand held; a read that fails leaves the sizes out and is reported, and the refusal still goes. The first branch is
+// also the reject's own `subtree`, `steps` and `subtrees`.
+Json::Value Collab::branchUnconfirmed(const std::string& treeId, const std::vector<UnconfirmedBranch>& unconfirmed) {
+  std::set<TreeId> subtrees;
+  for (const UnconfirmedBranch& branch : unconfirmed) subtrees.insert(branch.subtree);
+  std::map<TreeId, BranchSize> sizes;
+  WriteObservation counting{"roadmap.tree.branch", "roadmap", "websocket"};
+  try {
+    sizes = trees_.branchSizes(subtrees);
+    counting.skip();
+  } catch (const std::exception& failure) {
+    counting.fail(failure);
+  }
+  Json::Value reject = rejectFrame(treeId, kBranchUnconfirmed,
+                                   "this frame deletes a step that owns a subtree it does not name: send the subtree's "
+                                   "id in branches to take it with the step");
+  for (const UnconfirmedBranch& branch : unconfirmed) {
+    const auto size = sizes.find(branch.subtree);
+    reject["branches"].append(toJson(branch, size == sizes.end() ? std::nullopt : std::optional(size->second)));
+  }
+  for (const char* key : {"subtree", "steps", "subtrees"})
+    if (reject["branches"][0].isMember(key)) reject[key] = reject["branches"][0][key];
+  return reject;
 }
 
 // Every write re-proves the session, throttled to one lookup a minute.
@@ -327,13 +364,13 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   if (!signedIn && !asksNoWrite) {
     Json::Value reject = rejectFrame(treeId, kSignInRequired, "sign in to edit");
     reject["frameId"] = frameId;
-    refuseFrame(conn, reject);
+    refuseFrame(bus_, conn, reject);
     return;
   }
   if (!decoded) {
     Json::Value reject = rejectFrame(treeId, kBadFrame, "this frame could not be read");
     reject["frameId"] = frameId;
-    refuseFrame(conn, reject);
+    refuseFrame(bus_, conn, reject);
     return;
   }
   Subgraph& incoming = *decoded;
@@ -348,7 +385,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
       skew["treeId"] = treeId;
       skew["frameId"] = frameId;
       skew["serverNow"] = static_cast<Json::Int64>(nowMs);
-      refuseFrame(conn, skew);
+      refuseFrame(bus_, conn, skew);
       return;
     }
   }
@@ -356,6 +393,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   std::optional<Seq> seq;
   PendingSave saving = Saved::saved;
   std::optional<Json::Value> reject;  // absent while the write is still admissible
+  std::vector<UnconfirmedBranch> unconfirmed;  // owning steps the frame would delete without naming their subtrees
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
@@ -378,6 +416,8 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
         // joinSubgraph never refuses: the whole-tree ceilings (domain/Command.h) are enforced here.
         reject = rejectFrame(treeId, admission->verdict == Admission::Verdict::tooLarge ? kTreeTooLarge : kBadFrame,
                              admission->reason);
+      } else if (unconfirmed = room->unconfirmedBranches(incoming); !unconfirmed.empty()) {
+        // Answered once the strand is released, with each branch's size.
       } else {
         seq = room->joinSubgraph(incoming, principal.user);
         saving = seq ? registry_.persist(TreeId{treeId}) : PendingSave{registry_.standing(TreeId{treeId})};
@@ -395,9 +435,10 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   // resend.
   const Saved saved = saving.wait();
   if (saved == Saved::gone) reject = rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\"");
+  if (!unconfirmed.empty()) reject = branchUnconfirmed(treeId, unconfirmed);
   if (reject) {
     (*reject)["frameId"] = frameId;
-    refuseFrame(conn, *reject);
+    refuseFrame(bus_, conn, *reject);
     return;
   }
 
@@ -408,7 +449,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   if (seq) ack["seq"] = static_cast<Json::Int64>(*seq);
   else finishCurrentWriteUnchanged();
   if (saved == Saved::held) ack["unsaved"] = true;
-  send(conn, ack);
+  send(bus_, conn, ack);
 }
 
 // The private per-user lane: joins no op log, and is echoed only to the same account's other
@@ -424,7 +465,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
   auto refuse = [&](const char* code, const std::string& reason) {
     Json::Value reject = rejectFrame(treeId, code, reason);
     reject["frameId"] = frameId;
-    refuseFrame(conn, reject);
+    refuseFrame(bus_, conn, reject);
   };
 
   // A lapsed session is told, never dropped; an unacked frame re-flushes on its own.
@@ -453,7 +494,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
       skew["treeId"] = treeId;
       skew["frameId"] = frameId;
       skew["serverNow"] = static_cast<Json::Int64>(nowMs);
-      refuseFrame(conn, skew);
+      refuseFrame(bus_, conn, skew);
       return;
     }
     writes.push_back(ProgressWrite{node, *status, {}, *at});
@@ -496,7 +537,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
   ack["frameId"] = frameId;
   if (!refused.empty()) ack["refused"] = refused;
   if (receipt.cameToARefusal()) finishCurrentWriteRefusal(kOpensATree);
-  send(conn, ack);
+  send(bus_, conn, ack);
 }
 
 }

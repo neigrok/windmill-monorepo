@@ -474,7 +474,8 @@ TEST(registry_a_subtree_is_read_by_its_roots_access_which_a_change_to_the_root_r
   const TreeRoom& open = *registry.open(tid("c"));
   const auto visibilityOf = [&registry](const char* tree) { return registry.accessOf(tid(tree))->visibility; };
   CHECK(registry.accessOf(tid("g")) ==
-        std::optional<TreeAccess>(TreeAccess{uid("owner"), Visibility::private_, tid("t"), OwningStep{tid("c"), nid("seed")}}));
+        std::optional<TreeAccess>(TreeAccess{uid("owner"), Visibility::private_, tid("t"),
+                                                       {OwningStep{tid("t"), nid("seed")}, OwningStep{tid("c"), nid("seed")}}}));
 
   std::vector<Visibility> duringTheWrite;
   repo.duringVisibilitySet = [&] { duringTheWrite.push_back(visibilityOf("c")); };
@@ -505,6 +506,213 @@ TEST(registry_a_subtree_is_read_by_its_roots_access_which_a_change_to_the_root_r
   CHECK_FALSE(registry.accessOf(tid("g")).has_value());
   CHECK_FALSE(open.readableBy(uid("owner")));
   CHECK(announced == (std::vector<std::string>{"t", "c"}));
+}
+
+// A root `t` whose step `seed` owns the subtree `c`, whose step `seed` owns `g`: a branch two deep.
+void plantBranch(FakeTreeRepository& repo) {
+  repo.byId["t"] = oneNodeTree();
+  repo.byId["t"].owner = uid("owner");
+  repo.byId["t"].visibility = Visibility::unlisted;
+  repo.byId["c"] = oneNodeTree();
+  repo.byId["g"] = oneNodeTree();
+  repo.subtrees["c"] = Subtree{tid("c"), tid("t"), OwningStep{tid("t"), nid("seed")}, 1, 0};
+  repo.subtrees["g"] = Subtree{tid("g"), tid("t"), OwningStep{tid("c"), nid("seed")}, 2, 0};
+}
+
+// What every gate a door asks answers of `tree` for a reader: the registry's access, and a live room's own gate.
+bool admitted(RoomRegistry& registry, const char* tree) {
+  const std::optional<TreeAccess> access = registry.accessOf(tid(tree));
+  return access && canRead(uid("reader"), access->owner, access->visibility);
+}
+
+// Deleting an owning step hides its branch the moment it lands in the parent's room, before any save: every gate, a
+// live room's and a closed tree's, the deeper tree's too, answers the branch as absent to its owner and to a reader,
+// even while the parent's save is held; and the live rooms below are told.
+TEST(registry_a_deleted_owning_step_hides_its_branch_on_every_gate_before_its_save_lands) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  HeldRetries retries;
+  plantBranch(repo);
+  RoomRegistry registry(repo, log, bus, retries.timer());
+  std::vector<std::string> announced;
+  registry.whenAccessChanges([&](const TreeId& id) { announced.push_back(id.str()); });
+  const TreeRoom& child = *registry.open(tid("c"));
+  CHECK(admitted(registry, "c"));
+  CHECK(admitted(registry, "g"));
+
+  repo.savesFail = true;
+  {
+    std::unique_lock<std::mutex> strand(registry.strandFor(tid("t")));
+    registry.open(tid("t"))->applyCommands({DeleteNode{nid("seed")}}, 20, uid("owner"), {tid("c")});
+    PendingSave saving = registry.persist(tid("t"));
+    strand.unlock();
+    CHECK(saving.wait() == Saved::held);
+  }
+  CHECK(LooseGraph(repo.byId["t"].state).hasNode(nid("seed")));  // the store has not taken the delete
+  CHECK_FALSE(registry.accessOf(tid("c")).has_value());
+  CHECK_FALSE(registry.accessOf(tid("g")).has_value());
+  CHECK_FALSE(child.readableBy(uid("owner")));
+  CHECK_FALSE(child.readableBy(uid("reader")));
+  CHECK(admitted(registry, "t"));
+  CHECK(announced == (std::vector<std::string>{"c"}));
+}
+
+// A save runs off the strand, and a room is still never closed with a write its store lacks: so a tree with no live
+// room is one whose stored rows hold every write it took, which is what a gate reads them for. While the delete of an
+// owning step is with the store, the rows still show the step, the room that holds the delete cannot be closed, and its
+// branch is hidden by the live access; once the save lands and the room closes, the stored rows hide it.
+TEST(registry_a_branch_stays_hidden_while_the_delete_of_its_owning_step_is_being_saved_and_once_its_room_has_closed) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  plantBranch(repo);
+  RoomRegistry registry(repo, log, bus);
+  HangingStore store;
+  repo.duringSave = store.duringSave();
+  PendingSave deletion = Saved::saved;
+  {
+    std::lock_guard<std::mutex> strand(registry.strandFor(tid("t")));
+    registry.open(tid("t"))->applyCommands({DeleteNode{nid("seed")}}, 20, uid("owner"), {tid("c")});
+    deletion = registry.persist(tid("t"));
+  }
+  std::future<Saved> saving = std::async(std::launch::async, [&] { return deletion.wait(); });
+  REQUIRE(store.reachedBy(1, std::chrono::seconds(10)));
+
+  const bool storedWhileSaving = !LooseGraph(repo.byId["t"].state).hasNode(nid("seed"));
+  const bool hiddenWhileSaving = !registry.accessOf(tid("c")).has_value() && !registry.accessOf(tid("g")).has_value();
+  bool closedWhileSaving = false;
+  {
+    std::lock_guard<std::mutex> strand(registry.strandFor(tid("t")));
+    closedWhileSaving = registry.close(tid("t"));
+  }
+  store.letGoOfIt();
+  CHECK_FALSE(storedWhileSaving);
+  CHECK(hiddenWhileSaving);
+  CHECK_FALSE(closedWhileSaving);
+  CHECK(saving.get() == Saved::saved);
+
+  CHECK(registry.evict(tid("t")));
+  CHECK_EQ(registry.openRooms(), std::size_t{0});  // no access is live: every gate reads the stored rows
+  CHECK_FALSE(LooseGraph(repo.byId["t"].state).hasNode(nid("seed")));
+  CHECK_FALSE(registry.accessOf(tid("c")).has_value());
+  CHECK_FALSE(registry.accessOf(tid("g")).has_value());
+  CHECK(admitted(registry, "t"));
+}
+
+// A revived owning step — the delete's Undo — shows its branch again at once, before its save lands, on every gate.
+TEST(registry_a_revived_owning_step_shows_its_branch_again_before_its_save_lands) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  HeldRetries retries;
+  plantBranch(repo);
+  LooseGraph deleted(repo.byId["c"].state);
+  deleted.deleteNode(nid("seed"), at(5));
+  repo.byId["c"].state = deleted.exportState();
+  RoomRegistry registry(repo, log, bus, retries.timer());
+  CHECK_FALSE(registry.accessOf(tid("g")).has_value());
+  const TreeRoom& root = *registry.open(tid("t"));
+  CHECK_FALSE(registry.accessOf(tid("g")).has_value());  // the live access starts from the stored rows
+
+  repo.savesFail = true;
+  {
+    std::unique_lock<std::mutex> strand(registry.strandFor(tid("c")));
+    registry.open(tid("c"))->applyCommand(createNode("seed"), 30, uid("owner"));
+    PendingSave saving = registry.persist(tid("c"));
+    strand.unlock();
+    CHECK(saving.wait() == Saved::held);
+  }
+  CHECK_FALSE(LooseGraph(repo.byId["c"].state).hasNode(nid("seed")));
+  CHECK(admitted(registry, "g"));
+  CHECK(root.readableBy(uid("reader")));
+}
+
+// A closed subtree's access read while its parent's room holds an unsaved deletion is read again, under the root's lock,
+// once no room of the root is live: a parent room that saves the delete and closes between the read and the check
+// admits nobody.
+TEST(registry_a_parent_room_closing_mid_check_admits_nobody) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  HeldRetries retries;
+  plantBranch(repo);
+  RoomRegistry registry(repo, log, bus, retries.timer());
+  repo.savesFail = true;
+  {
+    std::unique_lock<std::mutex> strand(registry.strandFor(tid("t")));
+    registry.open(tid("t"))->applyCommands({DeleteNode{nid("seed")}}, 20, uid("owner"), {tid("c")});
+    PendingSave saving = registry.persist(tid("t"));
+    strand.unlock();
+    CHECK(saving.wait() == Saved::held);
+  }
+  // Between the first read, which finds the step still stored, and the check of the live access, the parent's save
+  // lands and its room closes, taking the root's live access with it.
+  repo.afterAccessRead = [&] {
+    repo.savesFail = false;
+    retries.set.back().run();
+    CHECK(registry.evict(tid("t")));  // under no strand: its save runs off it
+    repo.afterAccessRead = nullptr;  // last: this clears the closure running it
+  };
+  repo.accessReads.clear();
+  CHECK_FALSE(registry.accessOf(tid("g")).has_value());
+  CHECK_FALSE(registry.isOpen(tid("t")));
+  CHECK(repo.accessReads == (std::vector<TreeId>{tid("g"), tid("g")}));
+}
+
+// Opening a room makes its root's live access, which reads the absent owning steps under the root. That read failing is
+// a failure of its own, reported as `roadmap.tree.standing` at the opening's door with the one Issue of its request, and
+// the open fails: no room, and no access made from half of what the store holds.
+TEST(registry_a_standing_read_that_fails_as_a_room_opens_reports_as_itself) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  plantBranch(repo);
+  RoomRegistry registry(repo, log, bus);
+  repo.absentReadsFail = true;
+  Told told;
+  bool failed = false;
+  {
+    WriteObservation request{"roadmap.ws.subgraph", "roadmap", "websocket"};
+    WriteContext context{request};
+    try {
+      std::lock_guard<std::mutex> strand(registry.strandFor(tid("c")));
+      registry.open(tid("c"));
+    } catch (const std::runtime_error&) {
+      failed = true;
+    }
+    request.fail(std::runtime_error("the frame failed"));
+  }
+  CHECK(failed);
+  CHECK_FALSE(registry.isOpen(tid("c")));
+  CHECK(told.lines == (std::vector<std::string>{"roadmap.tree.standing roadmap websocket failed",
+                                                "roadmap.ws.subgraph roadmap websocket failed"}));
+  CHECK(told.reports == (std::vector<std::string>{std::string("roadmap.tree.standing roadmap websocket failed ") +
+                                                  typeid(std::runtime_error).name()}));
+
+  repo.absentReadsFail = false;
+  std::lock_guard<std::mutex> strand(registry.strandFor(tid("c")));
+  CHECK(registry.open(tid("c")) != nullptr);
+}
+
+// A closed subtree's access is one read of the store when that read hides it, as an absent id's is: only an answer that
+// admits the tree is read again under the root's lock.
+TEST(registry_a_closed_subtree_the_store_hides_is_answered_in_one_read) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  plantBranch(repo);
+  RoomRegistry registry(repo, log, bus);
+  CHECK(registry.accessOf(tid("g")).has_value());
+  CHECK(repo.accessReads == (std::vector<TreeId>{tid("g"), tid("g")}));
+
+  LooseGraph deleted(repo.byId["c"].state);
+  deleted.deleteNode(nid("seed"), at(5));
+  repo.byId["c"].state = deleted.exportState();
+  repo.accessReads.clear();
+  CHECK_FALSE(registry.accessOf(tid("g")).has_value());
+  CHECK_FALSE(registry.accessOf(tid("absent")).has_value());
+  CHECK(repo.accessReads == (std::vector<TreeId>{tid("g"), tid("absent")}));
 }
 
 // A retirement drops the room WITHOUT persisting it, and announces so readers are re-decided.
@@ -1008,12 +1216,12 @@ TEST(registry_a_save_runs_with_the_strand_let_go_so_a_read_and_a_write_of_the_tr
   CHECK(saving.get() == Saved::saved);
 
   // The store took "a" at the head it was copied at, and its row after. "b" landed while it did: its marks stay, the
-  // room is not settled, and its own save stores it with its row.
+  // room is not flushed, and its own save stores it with its row.
   CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
   CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
   REQUIRE_EQ(log.byTree["t"].size(), 1u);
   CHECK_EQ(log.byTree["t"][0].seq, static_cast<Seq>(8));
-  CHECK_FALSE(registry.settled(tid()));
+  CHECK_FALSE(registry.flushed(tid()));
   REQUIRE_EQ(registry.open(tid())->pendingOps().size(), 1u);
   CHECK_EQ(registry.open(tid())->pendingOps()[0].seq, static_cast<Seq>(9));
 
@@ -1022,7 +1230,7 @@ TEST(registry_a_save_runs_with_the_strand_let_go_so_a_read_and_a_write_of_the_tr
   CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(9));
   REQUIRE_EQ(log.byTree["t"].size(), 2u);
   CHECK_EQ(log.byTree["t"][1].seq, static_cast<Seq>(9));
-  CHECK(registry.settled(tid()));
+  CHECK(registry.flushed(tid()));
 }
 
 TEST(registry_two_saves_of_one_tree_never_pass_each_other_and_each_op_row_lands_after_the_save_that_covers_it) {
@@ -1050,7 +1258,7 @@ TEST(registry_two_saves_of_one_tree_never_pass_each_other_and_each_op_row_lands_
   CHECK_EQ(journal, (std::vector<std::string>{"save@8", "append@8", "save@9", "append@9"}));
   CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(9));
   CHECK_EQ(nodeCount(repo.byId["t"].state), 3u);
-  CHECK(registry.settled(tid()));
+  CHECK(registry.flushed(tid()));
 }
 
 TEST(registry_writes_that_queue_behind_a_save_that_fails_share_its_answer_and_only_a_later_write_is_tried_again) {
@@ -1151,7 +1359,7 @@ TEST(registry_a_write_whose_room_closed_is_answered_saved_and_one_whose_room_was
   CHECK_EQ(nodeCount(repo.byId["u"].state), 1u);
 }
 
-TEST(registry_a_room_is_settled_only_with_every_write_stored_and_no_save_running_and_only_a_settled_one_closes) {
+TEST(registry_a_room_is_flushed_only_with_every_write_stored_and_no_save_running_and_only_a_flushed_one_closes) {
   FakeTreeRepository repo;
   FakeOpLog log;
   FakeBus bus;
@@ -1162,26 +1370,26 @@ TEST(registry_a_room_is_settled_only_with_every_write_stored_and_no_save_running
     return registry.close(tid());
   };
 
-  CHECK(registry.settled(tid()));  // no live room: nothing of the registry's is writing the row
+  CHECK(registry.flushed(tid()));  // no live room: nothing of the registry's is writing the row
   PendingSave write = writeNode(registry, "a", 10);
-  CHECK_FALSE(registry.settled(tid()));
+  CHECK_FALSE(registry.flushed(tid()));
   CHECK_FALSE(closes());
   CHECK(registry.isOpen(tid()));
 
   // The store takes the write and the row's append fails: every write is stored, and nothing is running.
   log.failNextAppends = 1;
   CHECK(write.wait() == Saved::saved);
-  CHECK(registry.settled(tid()));
+  CHECK(registry.flushed(tid()));
 
-  // The save that lands the row writes the tree's row again: the room is not settled while it runs.
+  // The save that lands the row writes the tree's row again: the room is not flushed while it runs.
   HangingStore store;
   repo.duringSave = store.duringSave();
   std::future<Saved> landing = std::async(std::launch::async, [&] { return registry.persist(tid()).wait(); });
   REQUIRE(store.reachedBy(1, std::chrono::seconds(10)));
-  const bool settledWhileSaving = registry.settled(tid());
+  const bool flushedWhileSaving = registry.flushed(tid());
   const bool closedWhileSaving = closes();
   store.letGoOfIt();
-  CHECK_FALSE(settledWhileSaving);
+  CHECK_FALSE(flushedWhileSaving);
   CHECK_FALSE(closedWhileSaving);
   CHECK(landing.get() == Saved::saved);
   CHECK_EQ(log.byTree["t"].size(), 1u);

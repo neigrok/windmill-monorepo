@@ -53,9 +53,12 @@ std::string colorOf(const UserId& actor) {
   return kPalette[(hashOf(actor) >> 16) % kPalette.size()];
 }
 
-void sendTo(const drogon::WebSocketConnectionPtr& conn, const std::string& payload) {
-  if (conn->connected()) conn->send(payload);
 }
+
+// Through the bus, which enters the frame in what the connection has been handed and hands it over as the framework
+// sends.
+void PresenceHub::sendTo(const drogon::WebSocketConnectionPtr& conn, const std::string& payload) {
+  if (conn->connected()) bus_.send(conn, std::make_shared<const std::string>(payload), FrameKind::presence);
 }
 
 // The first pairing the room is not already wearing. There are more pairings than the member

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <drogon/HttpAppFramework.h>
+#include <drogon/WebSocketController.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -12,7 +13,10 @@
 #include <deque>
 #include <filesystem>
 #include <functional>
+#include <future>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -94,6 +98,38 @@ public:
       return Exchange{answer, loopback_.handedOver()};
     }
 
+    // Upgrades this connection to a WebSocket on /socket and answers the server's end of it. The client end reads
+    // nothing more until `take` is called.
+    drogon::WebSocketConnectionPtr upgrade() {
+      std::future<drogon::WebSocketConnectionPtr> opened = loopback_.nextSocket();
+      const std::string request = "GET /socket HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                                  "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+      if (::send(fd_, request.data(), request.size(), 0) != static_cast<ssize_t>(request.size()))
+        throw std::runtime_error("the loopback connection closed mid-upgrade");
+      std::string head;
+      while (head.find("\r\n\r\n") == std::string::npos) {
+        char byte;
+        if (::recv(fd_, &byte, 1, 0) != 1) throw std::runtime_error("the loopback connection closed before its upgrade: " + head);
+        head.push_back(byte);
+      }
+      if (!head.starts_with("HTTP/1.1 101")) throw std::runtime_error("the upgrade was refused: " + head);
+      if (opened.wait_for(std::chrono::seconds(10)) != std::future_status::ready)
+        throw std::runtime_error("the server never opened the socket");
+      return opened.get();
+    }
+
+    // Reads from the client end until `bytes` have arrived, and answers how many did.
+    std::size_t take(std::size_t bytes) {
+      std::size_t taken = 0;
+      std::string buffer(256 * 1024, '\0');
+      while (taken < bytes) {
+        const ssize_t read = ::recv(fd_, buffer.data(), buffer.size(), 0);
+        if (read <= 0) throw std::runtime_error("the loopback connection closed while its messages were read");
+        taken += static_cast<std::size_t>(read);
+      }
+      return taken;
+    }
+
   private:
     static bool whole(const std::string& answer) {
       std::size_t head = answer.find("\r\n\r\n");
@@ -109,7 +145,33 @@ public:
   };
 
 private:
+  // The server's end of each socket opened on /socket, handed to the test that asked for the next one.
+  class Sockets : public drogon::WebSocketController<Sockets, false> {
+  public:
+    explicit Sockets(DrogonLoopback& loopback) : loopback_(loopback) {}
+    void handleNewMessage(const drogon::WebSocketConnectionPtr&, std::string&&, const drogon::WebSocketMessageType&) override {}
+    void handleNewConnection(const drogon::HttpRequestPtr&, const drogon::WebSocketConnectionPtr& conn) override {
+      std::lock_guard lock(loopback_.mutex_);
+      if (loopback_.awaitedSocket_) loopback_.awaitedSocket_->set_value(conn);
+      loopback_.awaitedSocket_.reset();
+    }
+    void handleConnectionClosed(const drogon::WebSocketConnectionPtr&) override {}
+    WS_PATH_LIST_BEGIN
+    WS_PATH_ADD("/socket");
+    WS_PATH_LIST_END
+
+  private:
+    DrogonLoopback& loopback_;
+  };
+
+  std::future<drogon::WebSocketConnectionPtr> nextSocket() {
+    std::lock_guard lock(mutex_);
+    awaitedSocket_.emplace();
+    return awaitedSocket_->get_future();
+  }
+
   DrogonLoopback() : port_(freePort()) {
+    drogon::app().registerController(std::make_shared<Sockets>(*this));
     drogon::app()
         .setDefaultHandler([this](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& answer) {
           Respond respond;
@@ -170,6 +232,7 @@ private:
   std::mutex mutex_;
   Respond respond_ = noContent;
   std::deque<drogon::HttpRequestPtr> handedOver_;
+  std::optional<std::promise<drogon::WebSocketConnectionPtr>> awaitedSocket_;
 };
 
 }

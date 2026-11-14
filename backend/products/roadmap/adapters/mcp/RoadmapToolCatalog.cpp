@@ -414,7 +414,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "the save; back without your marks should it restart first. `incomplete`, tree ids: "
         "nothing deleted there; each such step now points nowhere, so clear its `opens` or delete it. "
         "The last two appear only when they name a tree. If the steps that open it cannot be read, "
-        "nothing is deleted and the call says so; try again.",
+        "nothing is deleted and the call says so; try again. A deletion is final, and every subtree under "
+        "the roadmap goes with it: `branch: {subtrees, steps}` counts the subtrees and the steps, the "
+        "roadmap's own among them, that went (left out when they could not be counted). A subtree is never "
+        "deleted by its own id: that is refused, naming the step it hangs from — delete that step with "
+        "delete_node instead, which hides the subtree until the step is revived.",
         p, {"treeId"}));
   }
   {
@@ -647,6 +651,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["prune"] = boolean(
         "If true, also remove every edge touching a deleted node (both directions), in the same op. "
         "Default false: those edges stay and are reported in introducedDiagnostics as dangling.");
+    p["branches"] = strArray(
+        "The ids of the subtrees this call knowingly takes with the steps that own them (a node read "
+        "with `fields: [\"opens\"]` names its subtree in `opens.treeId`). Deleting a step that owns a "
+        "subtree hides that subtree and everything under it until the step is revived; a step whose "
+        "subtree is not named here refuses the whole call, even an empty subtree's, naming each "
+        "subtree with its size, and nothing is deleted.",
+        kMaxIdLength);
+    p["branches"]["maxItems"] = static_cast<Json::UInt64>(kMaxDeleteNodeIds);
     tools.push_back(tool("delete_node", Access::del,
         "Delete nodes (tombstone). Two forms, exactly one per call: a single `nodeId`, or `nodeIds` "
         "(1 to 200). Every id must name a present node — one missing or already-deleted id refuses "
@@ -656,7 +668,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "be, nothing is deleted — and a later revive brings none back; anyone else's stay theirs. With `prune: true` the edges the delete dangles go with it too — "
         "that cleanup is part of the delete and needs no write grant beyond the delete grant. The "
         "receipt carries `ids`, `pruned: {edges, progress}` — the edges prune removed (0 without "
-        "prune) and the marks of yours the delete cleared — and `id` for the single form.",
+        "prune) and the marks of yours the delete cleared — and `id` for the single form. A step "
+        "that owns a subtree is deleted only when `branches` names that subtree.",
         p, {"treeId"}));
   }
   {
@@ -778,6 +791,13 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "call is refused, naming each offending id, and nothing is applied. At most 500 per call.",
         kMaxIdLength);
     p["tombstone"]["maxItems"] = static_cast<Json::UInt64>(kMaxTombstones);
+    p["branches"] = strArray(
+        "The ids of the subtrees this call knowingly takes with the `tombstone` steps that own them; a "
+        "tombstoned step that owns a subtree not named here refuses the whole call, dry run included, "
+        "naming each subtree with its size, and nothing is applied. The subtree is hidden, not deleted: "
+        "reviving the step shows it again.",
+        kMaxIdLength);
+    p["branches"]["maxItems"] = static_cast<Json::UInt64>(kMaxTombstones);
     p["expectedSeq"] = expectedSeq();
     p["dryRun"] = boolean(
         "If true, report collisions, keptEdges, what would be tombstoned (and any progressSkipped) "
