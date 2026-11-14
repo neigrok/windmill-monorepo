@@ -25,7 +25,8 @@ sent steps that own a subtree (`SPEC.md`, Model, Legacy pointers) — whatever i
 dry run, which writes nothing. Exactly one successful outer door completion is INFO per request; nested successful
 admissions, commands, publication, server calls and MCP transport use DEBUG. MCP write tools own the
 INFO completion instead of their transport. Refusals use WARN and failures ERROR at every boundary; a write
-that lands nothing completes `unchanged` at the level `ok` would take, and creates no Issue.
+that lands nothing completes `unchanged`, and one a person stopped `stopped`, at the level `ok` would take, and
+neither creates an Issue.
 `WINDMILL_LOG_LEVEL` controls emitted levels and `SENTRY_LOG_LEVEL` independently controls forwarding;
 both default to INFO. Use DEBUG for inner outcomes and timings. Background runs emit a completion only
 after a committed write or failure. Session refresh emits only for a matched UPDATE or failure; its
@@ -104,7 +105,9 @@ or `unmatched`. Machine-code allowlists discard arbitrary body strings. Exceptio
 available only to existing application responses/storage where those contracts require them.
 
 Coach's shared `ask.run` observation spans admission, model execution and conversation persistence;
-`ask.stop` covers recovery and stop persistence. Each offered write ability has its own completion.
+`ask.stop` covers recovery and stop persistence. A generation the lifter stopped completes `ask.run` as
+`stopped` at the level `ok` takes, with no Issue, also when the Stop cut a model round short; a phone
+turn's stop ends in its `coach_turn` line as `state=stopped`, likewise with no Issue. Each offered write ability has its own completion.
 Provider/model failures use fixed diagnostics. Fuse denials are classified per invocation; prior
 denials do not suppress later transport or malformed-response Issues. Usage-ledger writes have
 their own `ai.usage.record` observation, including private-loop callbacks without request context. An absent vendor key leaves the Coach POST route

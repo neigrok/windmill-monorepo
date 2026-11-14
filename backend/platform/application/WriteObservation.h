@@ -48,7 +48,8 @@ void reportWriteWarning(const std::string& operation, const std::string& product
 void reportCurrentWriteFailure(const std::exception& error);
 void reportCurrentUnknownWriteFailure();
 void finishCurrentWriteRefusal(const std::string& code);
-// The write in progress landed nothing: outcome `unchanged`, an expected one that completes at the level `ok` takes.
+// The write in progress landed nothing: outcome `unchanged`, an expected one that completes at the level `ok` takes, as
+// `stopped` does, a write a person stopped.
 void finishCurrentWriteUnchanged();
 // The write in progress completes as `outcome` when its door finishes it, whatever the door then calls it, unless it
 // fails: for a consequence met beneath the door, which every door's line must tell alike.

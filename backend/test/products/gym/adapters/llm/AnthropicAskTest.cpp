@@ -605,10 +605,10 @@ TEST(coach_fuse_recovery_reports_later_transport_and_malformed_failures) {
   }
 }
 
-// Stop is this server's own decision, not an ambiguous send: the round settles at once at the input the vendor reported
-// and the output that streamed — a token per three bytes of the text, rounded up, and three for its one block — so
-// the slot is free for the next question and nothing waits ten minutes to lapse.
-TEST(ask_stop_settles_the_round_at_once_at_the_input_and_the_output_that_streamed) {
+// Stop is the lifter's own decision, neither an ambiguous send nor a failure: the round settles at once at the input
+// the vendor reported and the output that streamed — a token per three bytes of the text, rounded up, and three for
+// its one block — so the slot is free for the next question, and the run ends stopped with no Issue.
+TEST(ask_stop_settles_the_round_at_once_at_the_input_and_the_output_that_streamed_and_files_no_issue) {
   test::LoopbackStream vendor{3'000, std::string(50, 'w'), 400, std::chrono::milliseconds(10)};
   fake::FakeAiBudgetRepository repository;
   auto budgets = std::make_shared<AiBudgetService>(repository, [] { return AiBudgetLimits{}; },
@@ -633,6 +633,9 @@ TEST(ask_stop_settles_the_round_at_once_at_the_input_and_the_output_that_streame
   const ToolCaller caller{lifter.id, ToolScope({{"gym", Access::read}})};
   const auto answer = ask.answer(question("Plan my week."), caller, host, control);
   CHECK_FALSE(answer.ok);
+  CHECK_EQ(answer.error, std::string("stopped"));
+  CHECK(answer.outcomeCode.empty());
+  CHECK_EQ(failures->reports, 0);
   REQUIRE(streamed.size() >= 300);
   REQUIRE_EQ(repository.reservations.size(), 1u);
   const auto& round = repository.reservations.begin()->second;
