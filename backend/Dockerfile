@@ -10,7 +10,8 @@
 # service binaries, the schema, and their shared libraries.
 #
 # The context is backend/, which cannot see the contract the build embeds and the tests read (the sync
-# registries and corpus, the gym ability catalog and its corpus), so the build takes it as a second, named context:
+# registries and corpus, the gym ability catalog and its corpus, the subscription service's wire fixtures), so the
+# build takes it as a second, named context:
 #   docker buildx build --build-context contract=packages/api-contract backend
 
 ########################  builder  ########################
@@ -53,6 +54,7 @@ COPY --from=contract gym /contract/gym
 COPY --from=contract roadmap-addresses.json /contract/roadmap-addresses.json
 COPY --from=contract roadmap-link-urls.json /contract/roadmap-link-urls.json
 COPY --from=contract roadmap-socket.json /contract/roadmap-socket.json
+COPY --from=contract subscriptions/*.json /contract/subscriptions/
 
 # Configure once, then build the two service binaries, the probe server the sync conformance runs against, the offline
 # tools and every test suite. Every suite ctest registers must be listed, or ctest fails on a missing executable, not a

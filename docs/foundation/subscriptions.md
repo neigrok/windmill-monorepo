@@ -344,11 +344,18 @@ Devices never call this service. The backend authenticates the caller and serves
 
 ### §6.1 Following the feed
 
-A backend worker reads `/internal/v1/feed` from its stored epoch and cursor. For each page, in one
-transaction, it replaces each named account's row in `account_entitlements` with the entry's
-`EntitlementResponse`, both environments included, applies funding (§6.3) and advances the cursor.
-Once it reaches `latestSeq` it reads again at most 5 s later, or at once when the claim door asks for
-a `seq` it has not reached (§5.3).
+A backend worker reads `/internal/v1/feed` from its stored epoch and cursor. Each page applies in one
+transaction, which holds the stored cursor and advances it when the page commits. Each entry goes, in
+order, through the consumers that write through that transaction, first the copy, which replaces the
+named account's row in `account_entitlements` with the entry's `EntitlementResponse`, both environments
+included; then through those that write in short transactions of their own before the page commits:
+funding (§6.3), whose ledger lock every Coach admission takes, so it is never held for a whole page.
+Every consumer is idempotent: a failure in either kind rolls the page back and the page is read again,
+and a rebuild reads every entry again. Each is told whether the page belongs to a rebuild and the epoch
+it brings the copy to. Once the copy reaches `latestSeq` the worker reads again at most 5 s later, or at
+once when the claim door asks for a `seq` (§5.3); the `seq` is reached only when a read that began after
+the request has seen the ledger's epoch and left the copy at or past it, so a restored ledger is
+rebuilt before a claim is answered from the copy.
 
 - `Entitlements::hasWindmillOne` is `isOwner(email) || now < production.accessUntil ||
   (allowlisted(account) && now < sandbox.accessUntil)` over the account's row (§6.2).
@@ -359,10 +366,16 @@ a `seq` it has not reached (§5.3).
 - A page whose `epoch` differs from the stored one, or whose `latestSeq` is below the cursor, means the
   ledger was restored. The follower reports it to Sentry and rebuilds the copy from zero under the new
   epoch (INV-11).
+- A page the follower cannot apply, as one whose entry the contract does not describe, stops the copy
+  until the service is fixed, since the follower skips no entry; every entitlement still lapses on time
+  (INV-3). Only what decides access stops it: a page's shape and an entry's `environment`. An event
+  type, store or offer the contract does not name yet is carried: the entry applies to the copy, the
+  consumers after it skip an event they do not know, and the follower reports the word.
 - **INV-10.** No request path of the backend calls this service to decide access. With the service
   down, every entitlement keeps answering from the copy and lapses on time (INV-3).
-- **INV-11.** The copy is rebuilt whole by reading the feed from zero. The old copy answers until the
-  rebuilt one replaces it, and an account the feed no longer names keeps no row.
+- **INV-11.** The copy is rebuilt whole by reading the feed from zero to the `latestSeq` its pages
+  report; an empty page short of it is a feed that cannot be read, never the whole ledger. The old copy
+  answers until the rebuilt one replaces it, and an account the feed no longer names keeps no row.
 
 ### §6.2 Sandbox
 
@@ -378,9 +391,9 @@ Subscription state alone funds nothing; the period events of the feed do. A gran
 period's `id`, so no store id reaches the backend. (R-4, R-5)
 
 - A `period_recorded` entry that names an account, for a production period with a positive captured
-  price and no `refundedAt`, funds one grant spanning the period through `AiBudgetService::fund`. Any
-  other `period_recorded` funds nothing: `grace` adds no period, a free-trial period carries no
-  payment, and a refunded period was paid back.
+  price and no `refundedAt`, funds one grant spanning the period through `AiBudgetService::fund`, in a
+  transaction of its own before the page commits (§6.1). Any other `period_recorded` funds nothing:
+  `grace` adds no period, a free-trial period carries no payment, and a refunded period was paid back.
 - `fund` answers `Replay` to a period it already funded for that account, whatever the grant's
   `closedAt`, so a rebuild (INV-11) funds nothing twice. It answers `Conflict` to a period already
   funded for another account (an operator transfer, or erasure and a claim by another account), which
