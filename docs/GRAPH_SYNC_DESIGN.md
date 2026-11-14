@@ -109,8 +109,9 @@ It changes through only two paths:
 
 Live broadcasts and echoes never advance this vector. On reconnect, the server computes
 `deltaBetween(state, vector)` from the room's current lattice, and adds, whole, every node, edge,
-kind and tree register that landed on the server past `lastSeq`, the last seq this browser applied
-([SPEC, Model](../backend/SPEC.md)). An empty vector gets full state. `lastSeq` is a position with
+kind and tree register that landed late on the server — under a stamp at or below one the room
+already held — past `lastSeq`, the last seq this browser applied ([SPEC, Model](../backend/SPEC.md)).
+An empty vector gets full state. `lastSeq` is a position with
 no gap: a live frame joins only as the next seq, and the subscribe response's seq replaces it.
 The browser joins the response, adopts its coverage and seq, then flushes each register whose stamp
 is greater than its confirmed baseline's stamp, excluding the same register and stamp already in

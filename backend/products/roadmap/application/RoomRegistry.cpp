@@ -363,6 +363,7 @@ Saved RoomRegistry::save(const TreeId& id, const std::shared_ptr<SaveLine>& line
   Lww<std::string> guide;
   Seq head = 0;
   std::vector<AppliedOp> rows;
+  LandSeqs landSeqs;
   std::uint64_t writes = 0;
   std::optional<Held> held;
   {
@@ -383,6 +384,7 @@ Saved RoomRegistry::save(const TreeId& id, const std::shared_ptr<SaveLine>& line
     guide = room.guide();
     head = room.head();
     rows = room.pendingOps();
+    landSeqs = room.landSeqs();
     writes = room.writes();
     it->second.saving = true;
   }
@@ -391,7 +393,7 @@ Saved RoomRegistry::save(const TreeId& id, const std::shared_ptr<SaveLine>& line
   // lattice cannot back.
   bool rowStands = false;
   try {
-    rowStands = repo_.save(id, state, legend, title, guide, head);
+    rowStands = repo_.save(id, state, legend, title, guide, head, landSeqs);
   } catch (const std::bad_alloc&) {
     throw;
   } catch (const std::exception& failure) {

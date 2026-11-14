@@ -421,19 +421,32 @@ coverage. `TreeRoom::deltaSince(since)` adds the title and guide registers the p
 A vector describes a writer only while that writer's writes land in stamp order, and a write can
 land late: a refused or held write the web sends again keeps the stamp it was made under, which may
 be below one of its replica's the room already holds. A peer whose vector is past that stamp would
-never be sent it. So the room keeps, for each node, edge and kind and for the title and the guide,
-the seq at which it last changed on the server — its land seq (`LandSeqs`, `domain/Subgraph.h`) —
-set to a write's seq for exactly what that write landed, at both doors that move the head
-(`joinSubgraph`, `applyCommands`); a tombstone is an entry like any other. A peer that says the last
-seq it applied is sent, beside what its vector lacks, every entry and tree register that landed past
-that seq, whole and unmasked (`deltaSince(since, position)`, `deltaBetween(…, late)`). Land seqs are
-saved with the rows (`land_seq` on `tree_nodes`, `tree_edges`, `tree_kinds`; `title_land_seq` and
-`guide_land_seq` on `trees`): each row a save writes takes the head of that save, never an earlier
-one than it holds, which is no earlier than the seq it landed at, so a room opened from the rows may
-send an entry a peer already has and never misses one. A row stored before these columns holds 0,
-as the rows a tree is born or forked with do: 0 is past no position, and the vector alone cuts
-those. A `PUT`, which writes rows with no room at an unchanged head, gives its rows that head: they
-are past no position a peer at that head holds, and reach it by the vector or not at all.
+never be sent it. A vector hides a register from a peer only when the peer's mark for the
+register's actor is at or past its stamp, and a peer's marks come from the room's coverage and its
+own acks, so they never pass what the room has held. So a register is late when it lands at or below
+what the room held for it before the write (`HeldStamps`, `domain/Subgraph.h`): the greatest stamp
+per actor, kept in the room and joined with each register as it lands — it costs what a write
+landed, never the size of the tree, and unlike the coverage a scan reports it keeps an actor's mark
+once another actor has written over the register that carried it — and, for a room opened from the
+rows, which has forgotten such marks, the greatest stamp of any actor those rows hold, its floor.
+The floor stands for everything the tree ever held because a register is replaced only by a greater
+stamp and a tombstone stays a row, so the greatest stamp in a tree never goes down. A `PUT` is the
+one writer that can lower it: it replaces the rows it carries under the genesis stamp, so a room
+opened after one may judge by a floor below a mark some peer still holds, and a write late against
+that mark alone reaches that peer by its vector or not at all.
+
+The node, edge, kind or tree register of a late register takes the write's seq as its land seq
+(`LandSeqs`) as its frame lands (`joinSubgraph`); a tombstone is an entry like any other, and
+everything else keeps the land seq it had. A command and an import are stamped by the server past
+everything the room holds, so they are never late — `applyCommands` only adds its stamps to what the
+room has held — and neither is a frame whose stamps are past its actor's: those take no land seq and
+are cut by the vector alone, to the registers a peer lacks. A peer that says the last seq it applied is sent, beside what its
+vector lacks, every entry and tree register whose land seq is past that seq, whole and unmasked
+(`deltaSince(since, position)`, `deltaBetween(…, late)`). Land seqs are saved with the rows
+(`land_seq` on `tree_nodes`, `tree_edges`, `tree_kinds`; `title_land_seq` and `guide_land_seq` on
+`trees`), each exactly as the room holds it, and a save never lowers one. Every other row holds 0 —
+one stored before these columns, one a tree is born or forked with, one a `PUT` wrote, one that
+never landed late — which is past no position.
 A frame's `title` or `guide` is null or absent for no information, or `{v, at}` with a string `v` and a
 set stamp `at`; any other shape makes the frame `bad-frame`, so no value is coerced or read as a clear.
 
@@ -950,13 +963,13 @@ Client → server: `ping` · `subscribe {treeId, vector, lastSeq?}` · `subgraph
 `progress {treeId, frameId, marks[{node, status, at}]}` · `presence {treeId, …}`.
 
 A subscribe's `lastSeq` is the last seq the subscriber applied. When it is a non-negative whole
-number the delta also holds, whole, everything that landed past it (Model, land seqs); absent, or
+number the delta also holds, whole, everything that landed late past it (Model, land seqs); absent, or
 anything else, the vector alone cuts the delta and the subscribe is not refused for it. An empty
 vector is answered the whole state either way.
 
 Server → client: `pong` · `subgraph` (intent `delta` carrying `seq` and `reach` as the subscribe
 answer, with the title and guide registers when the vector does not cover their stamps or they
-landed past `lastSeq`; intent
+landed late past `lastSeq`; intent
 `live` for a peer's broadcast, with no `reach`; either is the frame's `readerView` for a connection
 that cannot write the tree, and the delta's `reach` is that same verdict: `writer` for a connection
 that can, `reader` for any other) ·

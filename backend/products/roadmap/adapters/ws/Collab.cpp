@@ -194,7 +194,7 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
     send(bus_, conn, rejectFrame(treeId, kBadFrame, "this frame could not be read"));
     return;
   }
-  // The last seq the subscriber applied, when it says one: it is then sent what landed past it too, whatever its vector
+  // The last seq the subscriber applied, when it says one: it is then sent what landed late past it too, whatever its vector
   // covers. Anything but a non-negative whole number is no position, and the vector alone cuts the delta.
   const std::optional<Seq> lastSeq =
       request["lastSeq"].isUInt64() ? std::optional<Seq>(request["lastSeq"].asUInt64()) : std::nullopt;

@@ -73,11 +73,30 @@ struct Landed {
   std::set<KindId> kinds;
 };
 
-// The seq at which each node, edge and kind, and each of the tree's own registers, last changed on the server: its land
-// seq. A vector describes a writer only while that writer's writes land in stamp order, and a write can land late,
-// under a stamp below one of its writer's already held. It still lands at a new seq, so a peer that says the last seq
-// it applied is also sent everything that landed past it. An entry with none here landed at 0, which is past no
-// position: a row stored before land seqs were kept is cut by the vector alone.
+// The stamps a room has held, by which a register that lands is judged late. `marks` is the greatest stamp per actor:
+// the frontier of the state the room was built from, joined with every register that has landed since, so it never
+// goes down where a scan of the state does when one actor's register is overwritten by another's. `floor` is the
+// greatest stamp, any actor, of the state the room was built from: a register is replaced only by a greater stamp and
+// a tombstone stays an entry, so everything a tree ever held before is at or below it, the marks a rebuild from the
+// rows has forgotten among them.
+struct HeldStamps {
+  VersionVector marks;
+  Hlc floor;
+
+  HeldStamps() = default;
+  // As a room is built: `stateFrontier` is the frontier of everything it holds.
+  explicit HeldStamps(VersionVector stateFrontier);
+  // Whether `stamp` is set and at or below what was held: at or below the floor, or its actor's mark.
+  bool holds(const Hlc& stamp) const;
+};
+
+// The seq at which a node, an edge, a kind or one of the tree's own registers last landed late on the server: its land
+// seq. A vector describes a writer only while that writer's writes land in stamp order. A subscriber's vector hides a
+// register from it only when its mark for the register's actor is at or past the register's stamp, and its marks never
+// pass what the room has held (HeldStamps). So a register that lands at or below what the room held for it is late —
+// it may be hidden from a subscriber that was away — and its entry takes the write's seq; a peer that says the last seq
+// it applied is sent, whole, every entry past it. Every other write is found by the vector, and takes no land seq: an
+// entry with none here is at 0, which is past no position.
 struct LandSeqs {
   std::map<NodeId, Seq> nodes;
   std::map<Edge, Seq> edges;
@@ -86,9 +105,9 @@ struct LandSeqs {
   Seq guide = 0;
   bool operator==(const LandSeqs&) const = default;
 
-  // Everything of `graph` and `legend` landed at `seq`.
-  void land(const GraphState& graph, const LegendState& legend, Seq seq);
-  // The entries that landed past `position`.
+  // `graph` and `legend` are what a write landed, at `seq`: each entry with a register `held` already held is late.
+  void landLate(const GraphState& graph, const LegendState& legend, const HeldStamps& held, Seq seq);
+  // The entries that landed late past `position`.
   Landed past(Seq position) const;
 };
 

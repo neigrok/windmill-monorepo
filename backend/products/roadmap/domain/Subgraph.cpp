@@ -1,5 +1,6 @@
 #include "products/roadmap/domain/Subgraph.h"
 
+#include <utility>
 #include <vector>
 
 namespace wm {
@@ -102,10 +103,30 @@ bool Subgraph::carriesNoStamp() const {
   return frontier(*this).marks.empty();
 }
 
-void LandSeqs::land(const GraphState& graph, const LegendState& legend, Seq seq) {
-  for (const NodeStateEntry& node : graph.nodes) nodes[node.id] = seq;
-  for (const EdgeStateEntry& edge : graph.edges) edges[edge.edge] = seq;
-  for (const KindStateEntry& kind : legend.kinds) kinds[kind.id] = seq;
+HeldStamps::HeldStamps(VersionVector stateFrontier) : marks(std::move(stateFrontier)) {
+  for (const auto& [actor, mark] : marks.marks)
+    if (floor < mark) floor = mark;
+}
+
+bool HeldStamps::holds(const Hlc& stamp) const {
+  return stamp.isSet() && (!(floor < stamp) || marks.covers(stamp));
+}
+
+void LandSeqs::landLate(const GraphState& graph, const LegendState& legend, const HeldStamps& held, Seq seq) {
+  for (const NodeStateEntry& node : graph.nodes) {
+    const bool late = held.holds(node.createdAt) || held.holds(node.deletedAt) || held.holds(node.labelAt) ||
+                      held.holds(node.iconAt) || held.holds(node.colorAt) || held.holds(node.orderAt) ||
+                      held.holds(node.statusAt) || held.holds(node.descriptionAt) || held.holds(node.linksAt) ||
+                      held.holds(node.opensAt);
+    if (late) nodes[node.id] = seq;
+  }
+  for (const EdgeStateEntry& edge : graph.edges)
+    if (held.holds(edge.addedAt) || held.holds(edge.removedAt)) edges[edge.edge] = seq;
+  for (const KindStateEntry& kind : legend.kinds) {
+    const bool late = held.holds(kind.createdAt) || held.holds(kind.deletedAt) || held.holds(kind.hueAt) ||
+                      held.holds(kind.labelAt) || held.holds(kind.descriptionAt) || held.holds(kind.rankAt);
+    if (late) kinds[kind.id] = seq;
+  }
 }
 
 Landed LandSeqs::past(Seq position) const {

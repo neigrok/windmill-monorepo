@@ -414,45 +414,49 @@ struct FakeTreeRepository : TreeRepository {
     return lineage;
   }
   bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) override {
+            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head,
+            const LandSeqs& landed = {}) override {
     if (savesFail) throw std::runtime_error("the write was refused");
     if (duringSave) duringSave(tree);
     savedNodeCounts.push_back(state.nodes.size());
     if (!row(tree)) return false;  // a tree whose row is gone or retired is left as it is
     StoredTree& stored = byId[tree.str()];  // merge the slice, keep the rest
-    // Each row written takes the save's head as its land seq and keeps a later one it holds, as the real rows do; one
-    // at 0 is left out, as the real load leaves it.
-    const auto landAt = [head](Seq& held) { held = std::max(held, head); };
+    // Each row written takes the land seq it is given and keeps a later one it holds, as the real rows do; one at 0 is
+    // left out, as the real load leaves it.
+    const auto landAt = [](auto& seqs, const auto& key, const auto& given) {
+      const auto seq = given.find(key);
+      if (seq != given.end() && seq->second > 0) seqs[key] = std::max(seqs[key], seq->second);
+    };
     for (const NodeStateEntry& node : state.nodes) {
       auto match = std::find_if(stored.state.nodes.begin(), stored.state.nodes.end(),
                                 [&](const NodeStateEntry& n) { return n.id == node.id; });
       if (match != stored.state.nodes.end()) *match = node;
       else stored.state.nodes.push_back(node);
-      if (head > 0) landAt(stored.landed.nodes[node.id]);
+      landAt(stored.landed.nodes, node.id, landed.nodes);
     }
     for (const EdgeStateEntry& edge : state.edges) {
       auto match = std::find_if(stored.state.edges.begin(), stored.state.edges.end(),
                                 [&](const EdgeStateEntry& e) { return e.edge == edge.edge; });
       if (match != stored.state.edges.end()) *match = edge;
       else stored.state.edges.push_back(edge);
-      if (head > 0) landAt(stored.landed.edges[edge.edge]);
+      landAt(stored.landed.edges, edge.edge, landed.edges);
     }
     for (const KindStateEntry& kind : legend.kinds) {
       auto match = std::find_if(stored.legend.kinds.begin(), stored.legend.kinds.end(),
                                 [&](const KindStateEntry& k) { return k.id == kind.id; });
       if (match != stored.legend.kinds.end()) *match = kind;
       else stored.legend.kinds.push_back(kind);
-      if (head > 0) landAt(stored.landed.kinds[kind.id]);
+      landAt(stored.landed.kinds, kind.id, landed.kinds);
     }
     // Each register lands only under a dominating stamp, the rule PgTreeRepository enforces in SQL; only Postgres carries the byte-order tiebreak collation.
     if (title.stamp > stored.title.stamp) {
       stored.title = title;
-      landAt(stored.landed.title);
+      stored.landed.title = std::max(stored.landed.title, landed.title);
     }
     if (guide.stamp > stored.guide.stamp) {
       stored.guide = guide;
       stored.guideInherited = false;
-      landAt(stored.landed.guide);
+      stored.landed.guide = std::max(stored.landed.guide, landed.guide);
     }
     stored.head = head;
     return true;

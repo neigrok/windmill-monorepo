@@ -161,10 +161,11 @@ TEST(pg_a_guide_survives_a_restart_and_a_stale_save_cannot_revert_it) {
   CHECK_EQ(restarted.load(kTree)->title.value, std::string("Sam's tree"));
 }
 
-// A row is written with the land seq its save gives it, the head of that save, and keeps a later one: so a room
-// reopened from the rows still sends a write that landed late to a subscriber whose position is before it. A row a tree
-// was born with holds 0, which is past no position: the seq rule sends it to nobody.
-TEST(pg_land_seqs_survive_a_save_a_close_and_a_reopen_and_a_row_at_land_seq_0_is_sent_by_no_position) {
+// A row is written with the exact land seq the room holds for it, and a later save of the row never lowers it: so a
+// room reopened from the rows still sends a write that landed late to a subscriber whose position is before it. Every
+// other row holds 0 — the one the tree was born with, and the ones that landed in the ordinary way — which is past no
+// position: the seq rule sends them to nobody.
+TEST(pg_exact_land_seqs_survive_a_save_a_close_and_a_reopen_and_a_row_at_land_seq_0_is_sent_by_no_position) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   const auto frame = [](const char* id, GraphState graph, LegendState legend = {}) {
@@ -202,6 +203,12 @@ TEST(pg_land_seqs_survive_a_save_a_close_and_a_reopen_and_a_row_at_land_seq_0_is
     registry.open(kTree)->joinSubgraph(frame("f-late", GraphState{{NodeStateEntry{.id = n.id, .label = n.label, .labelAt = late}}, {}}),
                                        kSam);
     REQUIRE(registry.persist(kTree).wait() == Saved::saved);
+    // The late row saved again by an ordinary write of it, at a later head: its land seq stays where it landed late.
+    n.icon = "anchor";
+    n.iconAt = Hlc{1'700'000'000'400, 0, "r_a"};
+    registry.open(kTree)->joinSubgraph(frame("f-icon", GraphState{{NodeStateEntry{.id = n.id, .icon = n.icon, .iconAt = n.iconAt}}, {}}),
+                                       kSam);
+    REQUIRE(registry.persist(kTree).wait() == Saved::saved);
     REQUIRE(registry.evict(kTree));
   }
 
@@ -210,25 +217,27 @@ TEST(pg_land_seqs_survive_a_save_a_close_and_a_reopen_and_a_row_at_land_seq_0_is
   FakeBus bus;
   RoomRegistry registry(restarted, log, bus);
   LandSeqs stored;
-  stored.nodes = {{n.id, 3}, {m.id, 2}};
-  stored.edges = {{edge.edge, 1}};
-  stored.kinds = {{kind.id, 1}};
-  stored.guide = 1;
+  stored.nodes = {{n.id, 3}};
   CHECK(restarted.load(kTree)->landed == stored);
 
   const TreeRoom& room = *registry.open(kTree);
-  CHECK(room.deltaSince(covered).graph == GraphState{});
-  CHECK(room.deltaSince(covered, 2).graph == (GraphState{{n}, {}}));
-  CHECK(room.deltaSince(covered, 3).graph == GraphState{});
-  // From the very start of the stream every row that landed at a seq is sent, and the one the tree was born with is not.
-  const Subgraph fromTheStart = room.deltaSince(covered, 0);
-  CHECK_EQ(fromTheStart.graph.nodes.size(), 2u);
-  CHECK(std::none_of(fromTheStart.graph.nodes.begin(), fromTheStart.graph.nodes.end(),
-                     [&](const NodeStateEntry& node) { return node.id == born.id; }));
-  CHECK(fromTheStart.graph.edges == std::vector<EdgeStateEntry>{edge});
-  CHECK(fromTheStart.legend == (LegendState{{kind}}));
-  CHECK(fromTheStart.guide == std::optional<Lww<std::string>>(Lww<std::string>{"Rig first.", early}));
+  const VersionVector everything = *room.deltaSince(VersionVector{}).coverage;
+  CHECK(room.deltaSince(everything).graph == GraphState{});
+  CHECK(room.deltaSince(everything, 2).graph == (GraphState{{n}, {}}));
+  CHECK(room.deltaSince(everything, 3).graph == GraphState{});
+  // From the very start of the stream the one row that landed late is sent whole, and nothing else: not the row the
+  // tree was born with, not the rows, the kind and the guide that landed in the ordinary way.
+  const Subgraph fromTheStart = room.deltaSince(everything, 0);
+  CHECK(fromTheStart.graph == (GraphState{{n}, {}}));
+  CHECK(fromTheStart.legend == LegendState{});
+  CHECK_FALSE(fromTheStart.guide.has_value());
   CHECK_FALSE(fromTheStart.title.has_value());
+  CHECK(covered.covers(late));
+
+  // A save that names no land seq for a row it writes, as a PUT's does, leaves the one the row holds.
+  const StoredTree before = *restarted.load(kTree);
+  REQUIRE(restarted.save(kTree, GraphState{{n}, {}}, LegendState{}, before.title, before.guide, before.head));
+  CHECK(restarted.load(kTree)->landed == stored);
 }
 
 TEST(pg_opens_survives_a_restart_with_its_stamp_and_only_a_later_write_of_it_changes_the_row) {

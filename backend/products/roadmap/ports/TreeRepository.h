@@ -51,8 +51,7 @@ struct StoredTree {
   TreeId root;
   std::vector<OwningStep> path;
   std::map<NodeId, TreeId> subtrees;
-  // The land seq each row holds, the ones at 0 left out: a row is saved with the head of the save that wrote it,
-  // which is no earlier than the seq it landed at.
+  // The land seq each row and tree register holds, the ones at 0 left out.
   LandSeqs landed;
   bool operator==(const StoredTree&) const = default;
 };
@@ -161,9 +160,11 @@ struct TreeRepository {
   // Upsert a slice onto a tree whose row stands: entries given replace their rows, absent ones are
   // untouched, and a save never deletes. A tree with no row, or a soft-deleted one, is left as it is,
   // and answers false. The title and the guide each land only under a stamp dominating the stored one;
-  // a guide that lands is the owner's own, so it clears `guideInherited`.
+  // a guide that lands is the owner's own, so it clears `guideInherited`. Each row written, and each register that
+  // lands, takes the land seq `landed` holds for it, never a lower one than it has; none there leaves it as it is.
   virtual bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-                    const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) = 0;
+                    const Lww<std::string>& title, const Lww<std::string>& guide, Seq head,
+                    const LandSeqs& landed = {}) = 0;
   // Insert a brand-new tree. Throws DuplicateTree on an id collision (never overwrites a tree).
   virtual void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
                       const std::string& title, const UserId& owner) = 0;

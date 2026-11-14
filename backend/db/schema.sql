@@ -200,9 +200,10 @@ create table if not exists tree_kinds (
 );
 -- A kind holds no cross-branch flag.
 alter table tree_kinds drop column if exists cross_branch_exempt, drop column if exists cross_branch_exempt_hlc;
--- The seq of the tree's stream at which a row, or one of the tree's own registers, last changed on the server, no
--- earlier than it truly did: the head of the save that wrote it. A subscriber that says the last seq it applied is sent
--- everything past it, whatever its vector covers. 0, which a row stored before these columns holds, is past no position.
+-- The seq of the tree's stream at which a row, or one of the tree's own registers, last landed late on the server: under
+-- a stamp at or below one the tree already held, which a subscriber's vector may hide. A subscriber that says the last
+-- seq it applied is sent everything past it, whatever its vector covers. 0, which every other row holds, is past no
+-- position.
 alter table tree_nodes add column if not exists land_seq bigint not null default 0;
 alter table tree_edges add column if not exists land_seq bigint not null default 0;
 alter table tree_kinds add column if not exists land_seq bigint not null default 0;

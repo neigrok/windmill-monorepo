@@ -66,7 +66,8 @@ public:
   std::optional<UserId> retiredOwner(const TreeId& tree) override;
   ForkLineage loadForkLineage(const TreeId& tree) override;
   bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) override;
+            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head,
+            const LandSeqs& landed = {}) override;
   void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
               const std::string& title, const UserId& owner) override;
   std::vector<OwnedTree> listOwnedBy(const UserId& owner) override;

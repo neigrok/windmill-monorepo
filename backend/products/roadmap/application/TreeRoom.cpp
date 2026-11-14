@@ -71,11 +71,11 @@ TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bo
       clock_(std::string{kServerActor}) {
   // Fold every stamp the loaded document already carries — the graph frontier and the title and guide
   // registers — so a fresh mint after restart is always ahead of anything persisted.
-  for (const auto& [actor, mark] : frontier(graph_.exportState(), legend_.exportState()).marks) {
-    clock_.observe(mark);
-  }
-  clock_.observe(title_.stamp);
-  clock_.observe(guide_.stamp);
+  VersionVector loaded = frontier(graph_.exportState(), legend_.exportState());
+  loaded.observe(title_.stamp);
+  loaded.observe(guide_.stamp);
+  for (const auto& [actor, mark] : loaded.marks) clock_.observe(mark);
+  held_ = HeldStamps{std::move(loaded)};
   // The room opens as its stored rows stand, which no other room of the tree's can have written past: its owning steps
   // are recorded as they are, so an access that missed a write without a room learns them here.
   recordOwningSteps();
@@ -112,9 +112,10 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   unsaved_ = true;
   ++writes_;
   ++head_;
-  landSeqs_.land(landed.graph, landed.legend, head_);
-  if (titleTook) landSeqs_.title = head_;
-  if (guideTook) landSeqs_.guide = head_;
+  landSeqs_.landLate(landed.graph, landed.legend, held_, head_);
+  if (titleTook && held_.holds(title_.stamp)) landSeqs_.title = head_;
+  if (guideTook && held_.holds(guide_.stamp)) landSeqs_.guide = head_;
+  held_.marks.join(frontier(landed));
   // One op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
   // double-counts. A frame with no feed-worthy deed (headline) queues nothing.
   if (std::optional<Command> deed = headline(landed.graph, landed.legend, graph_, legend_))
@@ -164,7 +165,7 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
   const Command deed = commands.size() == 1 ? commands.front() : Command{Batch{commands}};
   pendingOps_.push_back(AppliedOp{head_, frameId, deed, stamp, actor});
   markDirty(produced.graph, produced.legend);  // the broadcast delta is exactly the write's footprint
-  landSeqs_.land(produced.graph, produced.legend, head_);
+  held_.marks.join(frontier(produced));  // minted past everything held, so nothing of it is late
   recordOwningSteps();
   bus_.broadcastSubgraph(id_, head_, produced);
   return head_;

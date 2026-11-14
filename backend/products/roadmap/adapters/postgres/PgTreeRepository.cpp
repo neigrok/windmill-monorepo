@@ -63,8 +63,7 @@ bool entryPresent(const Hlc& added, const Hlc& removed) {
   return added.isSet() && !(removed > added);
 }
 
-// Each row of a slice is written with the land seq its save gives it — the head of that save, which is no earlier than
-// the seq the row landed at — and keeps a later one it already holds.
+// A row is written with the land seq its save gives it and keeps a later one it already holds.
 void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node, Seq landSeq) {
   txn.exec_params(
       "INSERT INTO tree_nodes (tree_id, node_id, created_hlc, deleted_hlc, label, label_hlc, "
@@ -123,12 +122,17 @@ void upsertKind(pqxx::work& txn, const TreeId& tree, const KindStateEntry& kind,
       static_cast<long long>(landSeq));
 }
 
-// `landSeq` is 0 for rows a tree is born with, which landed at no seq of its stream.
+// Each row takes the land seq `landed` holds for it, 0 where it holds none: the rows a tree is born with, and every
+// row that never landed late.
 void upsertSlice(pqxx::work& txn, const TreeId& tree, const GraphState& state, const LegendState& legend,
-                 Seq landSeq = 0) {
-  for (const NodeStateEntry& node : state.nodes) upsertNode(txn, tree, node, landSeq);
-  for (const EdgeStateEntry& edge : state.edges) upsertEdge(txn, tree, edge, landSeq);
-  for (const KindStateEntry& kind : legend.kinds) upsertKind(txn, tree, kind, landSeq);
+                 const LandSeqs& landed = {}) {
+  const auto seqOf = [](const auto& seqs, const auto& key) {
+    const auto held = seqs.find(key);
+    return held == seqs.end() ? Seq{0} : held->second;
+  };
+  for (const NodeStateEntry& node : state.nodes) upsertNode(txn, tree, node, seqOf(landed.nodes, node.id));
+  for (const EdgeStateEntry& edge : state.edges) upsertEdge(txn, tree, edge, seqOf(landed.edges, edge.edge));
+  for (const KindStateEntry& kind : legend.kinds) upsertKind(txn, tree, kind, seqOf(landed.kinds, kind.id));
 }
 
 // pqxx names the row type row_ref on macOS and row on CI's Linux, so these accessors pin the
@@ -434,7 +438,8 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
 }
 
 bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-                            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) {
+                            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head,
+                            const LandSeqs& landed) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   // Only onto a row that stands: a tree erased or retired under its live room is not written back.
@@ -445,28 +450,24 @@ bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
     return false;
   // The title and guide registers are LWW at their columns: each lands only under a dominating
   // stamp. (ms, counter) order numerically; a tie falls to byte order (COLLATE "C"), which is the
-  // actor tiebreak. A register that lands takes this save's head as its land seq; one never written, whose unset
-  // stamp passes the byte order of an empty column once, landed at no seq and takes none.
+  // actor tiebreak. A register that lands takes the land seq the room holds for it.
   txn.exec_params(
       "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5, "
-      "title_land_seq = CASE WHEN $4::bigint > 0 OR $5::bigint > 0 THEN GREATEST(title_land_seq, $6) "
-      "ELSE title_land_seq END "
+      "title_land_seq = GREATEST(title_land_seq, $6) "
       "WHERE id = $1 AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
       "> (title_ms, title_counter, title_hlc COLLATE \"C\")",
       tree.str(), title.value, toString(title.stamp),
       static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter),
-      static_cast<long long>(head));
+      static_cast<long long>(landed.title));
   txn.exec_params(
       "UPDATE trees SET guide = $2, guide_hlc = $3, guide_ms = $4, guide_counter = $5, guide_inherited = false, "
-      "guide_land_seq = CASE WHEN $4::bigint > 0 OR $5::bigint > 0 THEN GREATEST(guide_land_seq, $6) "
-      "ELSE guide_land_seq END "
+      "guide_land_seq = GREATEST(guide_land_seq, $6) "
       "WHERE id = $1 AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
       "> (guide_ms, guide_counter, guide_hlc COLLATE \"C\")",
       tree.str(), guide.value, toString(guide.stamp),
       static_cast<long long>(guide.stamp.physicalMs), static_cast<long long>(guide.stamp.counter),
-      static_cast<long long>(head));
-  // Only the dirty slice, never the whole tree; each row written takes this save's head as its land seq.
-  upsertSlice(txn, tree, state, legend, head);
+      static_cast<long long>(landed.guide));
+  upsertSlice(txn, tree, state, legend, landed);  // only the dirty slice — never the whole tree
   txn.commit();
   markCurrentWrite();
   return true;

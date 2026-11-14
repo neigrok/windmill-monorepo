@@ -76,9 +76,10 @@ struct RecordingTreeRepository : FakeTreeRepository {
   std::vector<std::string>& journal;
   explicit RecordingTreeRepository(std::vector<std::string>& j) : journal(j) {}
   bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) override {
+            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head,
+            const LandSeqs& landed = {}) override {
     journal.push_back("save@" + std::to_string(head));
-    return FakeTreeRepository::save(tree, state, legend, title, guide, head);
+    return FakeTreeRepository::save(tree, state, legend, title, guide, head, landed);
   }
 };
 
@@ -270,8 +271,9 @@ TEST(registry_a_room_behind_its_log_mints_past_the_greatest_stamp_of_those_rows_
   CHECK_EQ(told.reports[1], std::string("mcp.roadmap_update_nodes roadmap mcp failed ") + typeid(std::runtime_error).name());
 }
 
-// Land seqs are saved with the rows and taken back as a room opens: a write that landed late in one room is still sent
-// to a subscriber whose position is before it by the room that opens after it closed.
+// Land seqs are saved with the rows, each exactly as the room held it, and taken back as a room opens: a write that
+// landed late in one room is still sent to a subscriber whose position is before it by the room that opens after it
+// closed. The rows that landed in the ordinary way are saved with none.
 TEST(registry_land_seqs_survive_a_save_a_close_and_a_reopen) {
   FakeTreeRepository repo;
   FakeOpLog log;
@@ -300,7 +302,7 @@ TEST(registry_land_seqs_survive_a_save_a_close_and_a_reopen) {
   REQUIRE(registry.evict(tid()));
 
   LandSeqs stored;
-  stored.nodes = {{nid("n"), 10}, {nid("m"), 9}};
+  stored.nodes = {{nid("n"), 10}};
   CHECK(repo.byId["t"].landed == stored);
   const TreeRoom& reopened = *registry.open(tid());
   CHECK(reopened.deltaSince(covered).graph == GraphState{});

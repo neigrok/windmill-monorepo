@@ -460,23 +460,93 @@ TEST(a_title_or_a_guide_that_lands_late_reaches_a_subscriber_that_was_away) {
   }
 }
 
-// A command lands at a seq as a frame does: what a server write changed is sent whole to a subscriber whose position is
-// before it, whatever its vector covers, and only that.
-TEST(what_a_command_changed_lands_at_its_seq_and_what_it_left_alone_does_not) {
+// Only what lands late takes a land seq. An ordinary frame, under stamps past everything the room held for its actor,
+// and a command, which the server stamps past everything, take none: a subscriber at any position is sent what its
+// vector lacks, cut to the registers it lacks, and nothing whole.
+TEST(an_ordinary_frame_and_an_ordinary_command_record_no_land_seq) {
   FakeBus bus;
   TreeRoom room = makeRoom(bus);
-  apply(room, createNode("a"), 1);
-  apply(room, createNode("b"), 2);
+  REQUIRE(room.joinSubgraph(frameOf("f-a", GraphState{{NodeStateEntry{.id = nid("a"), .createdAt = Hlc{100, 0, "r_a"}}}, {}}), uid()) ==
+          std::optional<Seq>(1));
+  apply(room, createNode("b"), 2'000);
   const VersionVector covered = *room.deltaSince(VersionVector{}).coverage;
-  apply(room, RenameNode{nid("a"), "A again"}, 3);
-  const VersionVector everything = *room.deltaSince(VersionVector{}).coverage;
+  REQUIRE(room.joinSubgraph(frameOf("f-rename", GraphState{{NodeStateEntry{.id = nid("a"), .label = "A", .labelAt = Hlc{3'000, 0, "r_a"}}}, {}}),
+                            uid()) == std::optional<Seq>(3));
+  apply(room, RenameNode{nid("b"), "B"}, 4'000);
 
-  const Subgraph missed = room.deltaSince(everything, 2);
-  REQUIRE_EQ(missed.graph.nodes.size(), 1u);
-  CHECK(missed.graph.nodes[0] == *LooseGraph(room.exportState()).exportNode(nid("a")));
-  CHECK(room.deltaSince(everything, 3).graph == GraphState{});
-  CHECK(room.deltaSince(covered).graph.nodes.size() == 1u);  // the vector's half still masks to the register it lacks
-  CHECK(room.deltaSince(covered).graph.nodes[0].createdAt == Hlc{});
+  CHECK(room.landSeqs() == LandSeqs{});
+  const Subgraph byVector = room.deltaSince(covered);
+  REQUIRE_EQ(byVector.graph.nodes.size(), 2u);
+  CHECK(byVector.graph.nodes[0].createdAt == Hlc{});  // cut to the label it lacks
+  CHECK(room.deltaSince(covered, 0) == byVector);
+  CHECK(room.deltaSince(covered, 2) == byVector);
+}
+
+// A frame that carries a late register beside an ordinary one records a land seq for the late entry alone: the
+// subscriber that was away is sent that entry whole and the other cut to what its vector lacks.
+TEST(a_frame_with_a_late_register_and_an_ordinary_one_records_a_land_seq_for_the_late_entry_alone) {
+  FakeBus bus;
+  TreeRoom room = makeRoom(bus);
+  NodeStateEntry n{.id = nid("n"), .createdAt = Hlc{100, 0, "r_a"}};
+  NodeStateEntry m{.id = nid("m"), .createdAt = Hlc{300, 0, "r_a"}};
+  REQUIRE(room.joinSubgraph(frameOf("f-n", GraphState{{n}, {}}), uid()) == std::optional<Seq>(1));
+  REQUIRE(room.joinSubgraph(frameOf("f-m", GraphState{{m}, {}}), uid()) == std::optional<Seq>(2));
+  const VersionVector covered = *room.deltaSince(VersionVector{}).coverage;
+
+  // One frame: `n`'s label under a stamp below the 300 the room holds for r_a, and `m`'s under one past it.
+  n.label = "N late";
+  n.labelAt = Hlc{200, 0, "r_a"};
+  const NodeStateEntry renamed{.id = nid("m"), .label = "M now", .labelAt = Hlc{400, 0, "r_a"}};
+  REQUIRE(room.joinSubgraph(frameOf("f-both", GraphState{{NodeStateEntry{.id = nid("n"), .label = n.label, .labelAt = n.labelAt}, renamed}, {}}),
+                            uid()) == std::optional<Seq>(3));
+
+  LandSeqs late;
+  late.nodes = {{nid("n"), 3}};
+  CHECK(room.landSeqs() == late);
+  CHECK(room.deltaSince(covered, 2).graph == (GraphState{{renamed, n}, {}}));
+  CHECK(room.deltaSince(covered).graph == (GraphState{{renamed}, {}}));
+}
+
+// What the room has held is never below what a scan of its state reports, and is the same until an actor's greatest
+// stamp is overwritten by another actor's: the scan then loses that actor's mark and the room keeps it, so a write of
+// that actor's below it is still late. A room rebuilt from the same state starts from the scan again, with the
+// greatest stamp of all as its floor.
+TEST(what_a_room_has_held_is_never_below_a_scan_of_its_state_and_the_same_until_an_actors_greatest_stamp_is_overwritten) {
+  FakeBus bus;
+  TreeRoom room = makeRoom(bus);
+  const auto scanned = [](const TreeRoom& of) { return *of.deltaSince(VersionVector{}).coverage; };
+  const NodeStateEntry n{.id = nid("n"), .createdAt = Hlc{100, 0, "r_a"}};
+  const EdgeStateEntry edge{Edge{nid("n"), nid("p")}, Hlc{120, 0, "r_a"}, {}};
+  REQUIRE(room.joinSubgraph(frameOf("f-1", GraphState{{n, NodeStateEntry{.id = nid("p"), .createdAt = Hlc{110, 0, "r_b"}}}, {edge}},
+                                    LegendState{{KindStateEntry{.id = KindId{"k"}, .createdAt = Hlc{130, 0, "r_b"}, .hue = NodeColor::plum,
+                                                                .hueAt = Hlc{130, 0, "r_b"}}}}),
+                            uid()).has_value());
+  apply(room, createNode("c"), 2'000);
+  REQUIRE(room.joinSubgraph(frameOf("f-2", GraphState{{NodeStateEntry{.id = nid("p"), .deletedAt = Hlc{3'000, 0, "r_a"}}},
+                                                      {EdgeStateEntry{edge.edge, {}, Hlc{3'001, 0, "r_a"}}}},
+                                    LegendState{{KindStateEntry{.id = KindId{"k"}, .deletedAt = Hlc{3'002, 0, "r_b"}}}}),
+                            uid()).has_value());
+  Subgraph guided = frameOf("f-3", {});
+  guided.guide = Lww<std::string>{"Rig first.", Hlc{3'100, 0, "r_c"}};
+  REQUIRE(room.joinSubgraph(guided, uid()).has_value());
+  CHECK(room.held().marks == scanned(room));  // writes, deletes, a command and a tree register: nothing overwritten
+
+  // r_c's one stamp is on the guide; r_b writes the guide over it.
+  Subgraph reguided = frameOf("f-4", {});
+  reguided.guide = Lww<std::string>{"Sail first.", Hlc{3'200, 0, "r_b"}};
+  REQUIRE(room.joinSubgraph(reguided, uid()).has_value());
+  const VersionVector scan = scanned(room);
+  CHECK_FALSE(scan.marks.count("r_c"));
+  CHECK(room.held().marks.marks.at("r_c") == (Hlc{3'100, 0, "r_c"}));
+  for (const auto& [actor, mark] : scan.marks) CHECK(room.held().marks.covers(mark));
+
+  // The same state in a room built from it: the scan again, and the floor at the greatest stamp of all.
+  TreeRoom rebuilt(tid(), room.title(), room.guide(), false, LooseGraph(room.exportState()), Legend(room.exportLegend()), room.head(),
+                   tid(), {}, {}, std::make_shared<RootAccess>(std::nullopt, Visibility::private_), 0, bus);
+  CHECK(rebuilt.held().marks == scan);
+  CHECK(rebuilt.held().floor == (Hlc{3'200, 0, "r_b"}));
+  CHECK(rebuilt.held().holds(Hlc{3'100, 0, "r_c"}));  // at or below the floor, though no mark of r_c's is left
+  CHECK_FALSE(rebuilt.held().holds(Hlc{3'201, 0, "r_c"}));
 }
 
 TEST(room_snapshot_carries_the_legend) {
