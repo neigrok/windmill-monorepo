@@ -19,6 +19,7 @@ ProgressReceipt ProgressService::mark(const TreeId& tree, const FollowedSteps& f
                                       std::uint64_t receivedAtMs) {
   ProgressReceipt receipt;
   if (writes.empty()) return receipt;
+  // The steps' trees are read as the owner's, whoever marks: a reader's step that owns a subtree follows the owner's.
   const std::map<NodeId, TreeId>& pointers = followed.opened;
   const OpenedTrees standing(followed.owner ? trees_.openedFrom(*followed.owner, treesOpenedBy(pointers))
                                             : std::map<TreeId, OpenedTree>{});

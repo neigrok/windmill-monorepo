@@ -33,8 +33,8 @@ Json::Value toJson(const TreeData& data, const std::map<NodeId, OwnedSubtree>& s
 // Where a tree sits as GET /v1/trees/{id} answers it: `root`, `parent` as {tree, step} or null, `path` as
 // [{tree, step, title}], root first, and `depth`. Its name is the document's title.
 Json::Value toJson(const Place& place);
-// What creating a subtree answers (PUT /v1/trees/{tree}/steps/{step}/subtree): {created, subtree: {id, root,
-// parent: {tree, step}, depth, seq}, parentSeq}.
+// What creating a subtree answers (PUT /v1/trees/{tree}/steps/{step}/subtree, and MCP create_subtree without the
+// subtree's `seq`): {created, subtree: {id, root, parent: {tree, step}, depth, seq}, parentSeq}.
 Json::Value toJson(const SubtreeCreation& creation);
 Json::Value toJson(const Progress& progress);
 Json::Value toJson(const TreeDiagnostics& diagnostics);
