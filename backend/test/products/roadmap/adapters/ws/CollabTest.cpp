@@ -2474,7 +2474,8 @@ TEST(ws_removing_a_tree_sends_a_page_open_on_a_tree_that_opened_it_the_delete_of
 TEST(ws_a_reject_the_removal_sends_a_page_open_on_its_tree_leaves_the_removals_own_line_its_own) {
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");
-  RoadmapTools tools{h.rooms, h.progress, h.clock, h.trees_registry, h.edits, "https://app.example"};
+  OwnerProgress owners{h.progressRepo, h.trees, h.clock};
+  RoadmapTools tools{h.rooms, h.progress, owners, h.clock, h.trees_registry, h.edits, "https://app.example"};
   CompositeToolHost gate(std::vector<ToolModule>{{tools, ""}});
   const auto pageOn = [&](const char* tree) {
     h.seedSteps(tree, owner, Visibility::private_, "");

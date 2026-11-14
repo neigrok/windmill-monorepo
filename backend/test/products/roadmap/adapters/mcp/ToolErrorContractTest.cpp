@@ -46,9 +46,9 @@ TEST(mcp_every_roadmap_tool_declares_the_grant_level_that_reaches_it) {
                                             "find_nodes"}));
   CHECK_EQ(deletes, (std::vector<std::string>{"delete_tree", "delete_node", "remove_kind"}));
   CHECK_EQ(writes, (std::vector<std::string>{
-                       "update_nodes", "change_edges", "create_tree", "update_tree", "create_node", "add_kind",
-                       "update_kind", "import_subgraph"}));
-  CHECK_EQ(catalog.size(), std::size_t{17});
+                       "update_nodes", "change_edges", "create_tree", "create_subtree", "update_tree", "create_node",
+                       "add_kind", "update_kind", "import_subgraph"}));
+  CHECK_EQ(catalog.size(), std::size_t{18});
 }
 
 TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
@@ -56,7 +56,7 @@ TEST(mcp_a_grant_without_delete_never_sees_the_three_destructive_tools) {
   const ToolCaller author{h.caller, parseToolScope("roadmap:read roadmap:write")};
   const Json::Value visible = h.tools.listTools(author);
 
-  CHECK_EQ(visible.size(), 14u);
+  CHECK_EQ(visible.size(), 15u);
   for (const char* destructive : {"delete_tree", "delete_node", "remove_kind"})
     CHECK(toolNamed(visible, destructive) == nullptr);
   for (const char* ordinary : {"get_tree", "create_node", "change_edges", "import_subgraph"})
@@ -1098,7 +1098,7 @@ TEST(mcp_opens_is_published_alike_wherever_it_is_taken_and_as_a_field_no_read_de
     CHECK_EQ(taken, parse(R"({"type":"string","description":"The id of a top-level roadmap of yours for this node to open; \"\" for none. A step that owns a subtree keeps its own."})"));
 
   const Json::Value fields = list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "status", "seedStatus", "state", "summary", "description", "links", "opens",
-                                   "url"});
+                                   "subtree", "url"});
   for (const char* name : {"get_tree", "get_nodes", "find_nodes"}) {
     const Json::Value* tool = toolNamed(catalog, name);
     REQUIRE(tool != nullptr);

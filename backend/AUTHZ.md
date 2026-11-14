@@ -124,8 +124,12 @@ each parent room tells, as its writes land, which of its owning steps are presen
 hides its branch on every gate at once and its revive shows it again. A subtree's own `visibility`
 column is not read. So whoever may read a tree may read every standing subtree under it and every tree
 above it, which is why the `subtree` frame, the subscribe answer's `subtrees` and a node read's
-`subtree` go to a tree's readers with the subtrees' ids, and why a tree read answers its readers the
-`path` down from its root. A change only a root takes — a visibility change, a removal, a fork, a
+`subtree` — MCP's among them — go to a tree's readers with the subtrees' ids and the owner's counts,
+and why a tree read, MCP `get_tree`'s too, answers its readers the `path` down from its root. A tend
+is answered no `path`, `parent`, `root` or `depth`: `ScopedToolHost` drops them from its replies, as
+it withholds the guides above. Creating a subtree is a write of the parent: MCP `create_subtree`
+answers a tree the caller may not read as an absent one, `no-such-tree`, before anything else, and
+one they may read and do not own `not-writer`, and a tend is not offered it. A change only a root takes — a visibility change, a removal, a fork, a
 create at its id — aimed at a subtree is refused `not-a-root`, after the read gate, so it tells only
 someone who may read the subtree where it hangs; a hidden subtree answers it as an absent tree, but
 for the create-at-id door above, which answers it `409` (`POST /v1/trees`). A

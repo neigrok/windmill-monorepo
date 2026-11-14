@@ -77,6 +77,7 @@ const Vocabulary<NodeField>& nodeVocabulary() {
                                                  {"description", NodeField::description},
                                                  {"links", NodeField::links},
                                                  {"opens", NodeField::opens},
+                                                 {"subtree", NodeField::subtree},
                                                  {"url", NodeField::url}});
   return vocabulary;
 }
@@ -130,6 +131,18 @@ Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const No
       opens["title"] = opening->second.title;
       opens["state"] = opening->second.complete ? "complete" : "open";
       n["opens"] = opens;
+    }
+  }
+  if (fields.count(NodeField::subtree)) {
+    if (const auto owned = context.subtrees.find(node.id); owned != context.subtrees.end()) {
+      Json::Value subtree(Json::objectValue);
+      subtree["id"] = owned->second.id.str();
+      if (const std::optional<Opening>& opening = owned->second.opening) {
+        subtree["done"] = opening->done;
+        subtree["total"] = opening->total;
+        subtree["state"] = opening->complete ? "complete" : "open";
+      }
+      n["subtree"] = subtree;
     }
   }
   if (fields.count(NodeField::url)) n["url"] = stepAddress(context.web.value(), node.id);

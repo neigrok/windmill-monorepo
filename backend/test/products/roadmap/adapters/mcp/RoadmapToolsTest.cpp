@@ -11,6 +11,7 @@
 #include "platform/ports/FailureReporter.h"
 #include "test/testing.h"
 
+#include <algorithm>
 #include <chrono>
 #include <future>
 #include <limits>
@@ -275,7 +276,8 @@ TEST(mcp_create_tree_answers_the_legend_it_planted_without_reading_the_tree_back
   ProgressService progress{progressRepo, trees};
   NodeEdits edits{registry, progress, bus, clock};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
+  OwnerProgress owners{progressRepo, trees, clock};
+  RoadmapTools tools{registry, progress, owners, clock, treeRegistry, edits, "https://app.example"};
   CompositeToolHost gate(std::vector<ToolModule>{{tools, ""}});
 
   const ToolResult created =
@@ -840,7 +842,8 @@ TEST(mcp_an_infrastructure_failure_answers_generically_and_never_leaks_its_detai
   NodeEdits edits{registry, progress, bus, clock};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
   const UserId caller = uid("agent");
-  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
+  OwnerProgress owners{progressRepo, trees, clock};
+  RoadmapTools tools{registry, progress, owners, clock, treeRegistry, edits, "https://app.example"};
 
   Json::Value args(Json::objectValue);
   args["treeId"] = "t";
@@ -970,7 +973,8 @@ TEST(mcp_find_nodes_answers_an_index_and_get_tree_the_shape) {
 
   const Json::Value got = body(h.call("get_tree", kNoArgs));
   CHECK_EQ(keys(got), (std::vector<std::string>{"count", "seq", "tree"}));
-  CHECK_EQ(keys(got["tree"]), (std::vector<std::string>{"guide", "guides", "id", "kinds", "nodes", "title", "url"}));
+  CHECK_EQ(keys(got["tree"]), (std::vector<std::string>{"depth", "guide", "guides", "id", "kinds", "nodes", "parent", "path",
+                                                        "root", "title", "url"}));
   CHECK_EQ(keys(got["tree"]["nodes"][0]),
            (std::vector<std::string>{"color", "id", "label", "prerequisites"}));
   CHECK_EQ(keys(got["tree"]["kinds"][0]), (std::vector<std::string>{"hue", "id", "label"}));
@@ -1145,7 +1149,7 @@ TEST(mcp_an_unknown_field_names_it_and_the_legal_set) {
   CHECK(misspelled.isError);
   CHECK_EQ(message(misspelled),
            std::string("find_nodes: fields[1] \"labl\" is not one of {id, label, icon, color, kind, order, "
-                       "prerequisites, status, seedStatus, state, summary, description, links, opens, url}"));
+                       "prerequisites, status, seedStatus, state, summary, description, links, opens, subtree, url}"));
 
   Json::Value kindArgs(Json::objectValue);
   kindArgs["kindFields"] = list({"color"});
@@ -2215,7 +2219,8 @@ TEST(mcp_import_subgraph_answers_the_landed_graft_when_clearing_the_tombstoned_m
   NodeEdits edits{registry, progress, bus, clock};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
   const UserId caller = uid("agent");
-  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
+  OwnerProgress owners{progressRepo, trees, clock};
+  RoadmapTools tools{registry, progress, owners, clock, treeRegistry, edits, "https://app.example"};
   trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, caller};
   auto call = [&](const char* name, Json::Value args) {
     args["treeId"] = "t";
@@ -2406,7 +2411,7 @@ TEST(mcp_import_subgraph_takes_no_title_and_never_touches_the_trees) {
   CHECK_EQ(body(h.call("get_tree", kNoArgs)),
            parse(R"({"count":1,"seq":1,"tree":{"guide":{"text":"","yours":true},"guides":[],"id":"t","kinds":[],
              "nodes":[{"id":"a","label":"A","color":"terracotta","prerequisites":[]}],"title":"Test Roadmap",
-             "url":"https://app.example/#/app/t"}})"));
+             "url":"https://app.example/#/app/t","root":"t","parent":null,"path":[],"depth":0}})"));
 }
 
 namespace {
@@ -4730,6 +4735,7 @@ TEST(mcp_an_import_that_rehues_a_held_kind_is_judged_with_that_kind_as_the_batch
     "introducedDiagnostics":[]})"));
   CHECK_EQ(body(to.call("get_tree", parse(R"({"fields":["id","color","kind"],"includeGuides":false})")))["tree"],
            parse(R"({"id":"t","title":"Test Roadmap","url":"https://app.example/#/app/t","guide":{"text":"","yours":true},
+    "root":"t","parent":null,"path":[],"depth":0,
     "kinds":[{"id":"base","hue":"terracotta","label":"Base"}],"nodes":[{"id":"b","color":"terracotta","kind":"base"}]})"));
 }
 
@@ -5128,7 +5134,8 @@ TEST(mcp_get_tree_answers_the_guides_of_the_callers_trees_above_farthest_first_t
   for (const char* id : {"a", "b", "c"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
 
   const Json::Value first = body(h.call("get_tree", parse(R"({"limit":2})")));
-  CHECK_EQ(keys(first["tree"]), (std::vector<std::string>{"guide", "guides", "id", "kinds", "nodes", "title", "url"}));
+  CHECK_EQ(keys(first["tree"]), (std::vector<std::string>{"depth", "guide", "guides", "id", "kinds", "nodes", "parent",
+                                                          "path", "root", "title", "url"}));
   CHECK_EQ(first["tree"]["guide"], parse(R"({"text":"Tests before code.","yours":true})"));
   CHECK_EQ(first["tree"]["guides"],
            parse(R"([{"treeId":"t_root","title":"Tree t_root","text":"Write the outcome first.","yours":true},
@@ -5141,7 +5148,8 @@ TEST(mcp_get_tree_answers_the_guides_of_the_callers_trees_above_farthest_first_t
   next["cursor"] = first["nextCursor"];
   const Json::Value second = body(h.call("get_tree", next));
   CHECK_EQ(ids(second["tree"]["nodes"]), (std::vector<std::string>{"c"}));
-  CHECK_EQ(keys(second["tree"]), (std::vector<std::string>{"guide", "id", "kinds", "nodes", "title", "url"}));
+  CHECK_EQ(keys(second["tree"]), (std::vector<std::string>{"depth", "guide", "id", "kinds", "nodes", "parent", "path",
+                                                           "root", "title", "url"}));
   CHECK_EQ(second["tree"]["guide"], parse(R"({"text":"Tests before code.","yours":true})"));
 
   CHECK_FALSE(h.call("update_tree", with("guide", "")).isError);
@@ -5349,7 +5357,8 @@ TEST(mcp_get_tree_asked_for_no_guides_carries_none_and_reads_no_tree_above) {
 
   CHECK_EQ(body(h.call("get_tree", parse(R"({"includeGuides":false})"))),
            parse(R"({"count":0,"seq":1,"tree":{"guide":{"text":"Own.","yours":true},"id":"t","kinds":[],"nodes":[],
-                     "title":"Test Roadmap","url":"https://app.example/#/app/t"}})"));
+                     "title":"Test Roadmap","url":"https://app.example/#/app/t","root":"t","parent":null,"path":[],
+                     "depth":0}})"));
   CHECK(h.trees.aboveReads.empty());
   CHECK_EQ(message(h.call("get_tree", parse(R"({"includeGuides":"no"})"))),
            std::string("get_tree: argument \"includeGuides\" must be a boolean, got string"));
@@ -6954,7 +6963,8 @@ TEST(mcp_an_import_whose_clear_of_marks_on_removed_nodes_throws_reports_it_once_
   NodeEdits edits{registry, progress, bus, clock};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
   const ToolCaller caller{uid("agent"), ToolScope::everything()};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
+  OwnerProgress owners{progressRepo, trees, clock};
+  RoadmapTools tools{registry, progress, owners, clock, treeRegistry, edits, "https://app.example"};
   trees.byId["t"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Test Roadmap", {}}, 0, caller.user};
   CHECK_FALSE(tools.callTool("import_subgraph", parse(R"({"treeId":"t","nodes":[{"id":"n","label":"N"},{"id":"m","label":"M"}],
                                                           "progress":[{"nodeId":"n","status":"complete"},{"nodeId":"m","status":"complete"}]})"), caller).isError);
@@ -7688,7 +7698,7 @@ TEST(mcp_a_mark_stamped_ahead_carries_no_other_write_ahead) {
     ProgressService restartedProgress{h.progressRepo, h.trees};
     NodeEdits restartedEdits{restarted, restartedProgress, h.bus, h.clock};
     TreeRegistry restartedTrees{h.trees, h.progressRepo, h.tokens, Hlc{1, 0, "genesis"}, restarted, restartedEdits, h.clock};
-    RoadmapTools tools{restarted, restartedProgress, h.clock, restartedTrees, restartedEdits, "https://app.example"};
+    RoadmapTools tools{restarted, restartedProgress, h.owners, h.clock, restartedTrees, restartedEdits, "https://app.example"};
     CHECK_FALSE(tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"c","label":"C2"}]})"), h.actor).isError);
     stamps.push_back(lastFrame());
 
@@ -8607,7 +8617,7 @@ TEST(mcp_a_node_position_is_refused_wherever_the_surface_took_or_answered_it) {
                        "appendDescription, color, description, icon, kind, label, links, nodeId, opens, outOfOrder, "
                        "status."));
   const std::string readable = " \"position\" is not one of {id, label, icon, color, kind, order, prerequisites, "
-                               "status, seedStatus, state, summary, description, links, opens, url}";
+                               "status, seedStatus, state, summary, description, links, opens, subtree, url}";
   CHECK_EQ(refusal("get_tree", R"({"fields":["id","position"]})"), "get_tree: fields[1]" + readable);
   CHECK_EQ(refusal("get_nodes", R"({"nodeIds":["a"],"fields":["id","position"]})"), "get_nodes: fields[1]" + readable);
   CHECK_EQ(refusal("find_nodes", R"({"query":"A","fields":["id","position"]})"), "find_nodes: fields[1]" + readable);
@@ -9325,4 +9335,599 @@ TEST(mcp_a_write_that_refused_a_pointer_counts_it_on_its_line_and_a_dry_run_coun
                       "mcp.roadmap_update_nodes ok 0", "mcp.roadmap_update_nodes ok 0",
                       "mcp.roadmap_import_subgraph owns-a-subtree 1", "mcp.roadmap_import_subgraph ok 0",
                       "mcp.roadmap_delete_node ok 0", "mcp.roadmap_create_node ok 1", "mcp.roadmap_create_node ok 0"}));
+}
+
+// create_subtree gives a step an empty subtree under the default legend, or under the legend the call sends, and sent
+// again answers the subtree the step owns, `created: false`, writing nothing. Each call writes the create's own line at
+// door mcp beside the tool's, and the parent's subscribers are told of each subtree once.
+TEST(mcp_create_subtree_creates_an_empty_subtree_under_a_step_and_a_retry_answers_the_same_one) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Learn to sail")).isError);
+  CHECK_FALSE(h.call("create_node", node("coast", "Sail the coast")).isError);
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line.operation + " " + line.door + " " + line.outcome); });
+  const auto create = [&](const char* arguments) {
+    const ToolResult result = gate.callTool("roadmap_create_subtree", parse(arguments), h.actor);
+    return result.isError ? Json::Value(message(result)) : body(result);
+  };
+  const Json::Value created = create(R"({"treeId":"t","nodeId":"sail"})");
+  const Json::Value again = create(R"({"treeId":"t","nodeId":"sail"})");
+  const Json::Value planted = create(R"({"treeId":"t","nodeId":"coast","kinds":[{"id":"leg","hue":"sky","label":"Leg"}]})");
+  installWriteSink({});
+
+  CHECK_EQ(created, parse(R"({"created":true,"subtree":{"id":"t_d1","root":"t","parent":{"tree":"t","step":"sail"},
+                              "depth":1},"parentSeq":3})"));
+  CHECK_EQ(again, parse(R"({"created":false,"subtree":{"id":"t_d1","root":"t","parent":{"tree":"t","step":"sail"},
+                            "depth":1},"parentSeq":3})"));
+  CHECK_EQ(planted, parse(R"({"created":true,"subtree":{"id":"t_d2","root":"t","parent":{"tree":"t","step":"coast"},
+                              "depth":1},"parentSeq":4})"));
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.subtree.create mcp ok", "mcp.roadmap_create_subtree mcp ok",
+                                            "roadmap.subtree.create mcp unchanged", "mcp.roadmap_create_subtree mcp ok",
+                                            "roadmap.subtree.create mcp ok", "mcp.roadmap_create_subtree mcp ok"}));
+  CHECK_EQ(h.bus.subtreeBroadcasts.size(), 2u);
+
+  const auto read = [&](const char* tree) {
+    Json::Value args(Json::objectValue);
+    args["treeId"] = tree;
+    return body(gate.callTool("roadmap_get_tree", args, h.actor));
+  };
+  CHECK_EQ(read("t_d1")["tree"]["kinds"], parse(R"([{"id":"build","hue":"terracotta","label":"Build"},
+                                                     {"id":"learn","hue":"olive","label":"Learn"},
+                                                     {"id":"milestone","hue":"gold","label":"Milestone"}])"));
+  CHECK_EQ(read("t_d1")["count"], Json::Value(0));
+  CHECK_EQ(read("t_d2")["tree"]["kinds"], parse(R"([{"id":"leg","hue":"sky","label":"Leg"}])"));
+}
+
+// A subtree's legend is judged as create_tree judges one, in the same words, and a legend refused creates nothing.
+TEST(mcp_create_subtree_judges_its_kinds_as_create_tree_does) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Learn to sail")).isError);
+  const std::size_t trees = h.trees.byId.size();
+  // The admission's refusals complete under kinds-refused, as on the REST door; a list the door cannot read is refused
+  // before the create.
+  const std::vector<std::pair<const char*, const char*>> legends = {
+      {R"([])", "kinds-refused"},
+      {R"([{"id":"a","hue":"sky"},{"id":"b","hue":"sky"}])", "kinds-refused"},
+      {R"([{"id":"a","hue":"sky"},{"id":"a","hue":"plum"}])", "refused"},
+      {R"([{"id":"a","hue":"sky"},{"id":"b","hue":"plum"},{"id":"c","hue":"gold"},{"id":"d","hue":"olive"},
+           {"id":"e","hue":"brick"},{"id":"f","hue":"terracotta"},{"id":"g","hue":"sky"}])", "refused"},
+      {R"([{"id":"a","hue":"chartreuse"}])", "refused"},
+      {R"("build")", "refused"}};
+  for (const auto& [kinds, code] : legends) {
+    Json::Value planting(Json::objectValue);
+    planting["kinds"] = parse(kinds);
+    Json::Value giving = planting;
+    giving["nodeId"] = "sail";
+    const ToolResult planted = h.tools.callTool("create_tree", planting, h.actor);
+    const ToolResult given = h.call("create_subtree", giving);
+    CHECK(planted.isError);
+    CHECK(given.isError);
+    CHECK_EQ(given.outcomeCode, std::string(code));
+    CHECK_EQ(message(given).substr(std::string("create_subtree: ").size()),
+             message(planted).substr(std::string("create_tree: ").size()));
+  }
+  CHECK_EQ(h.trees.byId.size(), trees);
+  CHECK(h.bus.subtreeBroadcasts.empty());
+}
+
+// Each refusal of create_subtree is answered in words under its code, with nothing created, nothing told and the
+// create's own line at door mcp: a tree the caller may not read as an absent one, another account's tree it may read
+// as not theirs, a step the tree does not hold, a tree as deep as a subtree may sit, a step that opens another roadmap
+// of theirs, and a parent whose save is held.
+TEST(mcp_create_subtree_refuses_in_words_under_each_code_and_creates_nothing) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Learn to sail")).isError);
+  CHECK_FALSE(h.call("create_node", node("away", "Away")).isError);
+  h.plant("t_b", h.caller, "", {});
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"away","opens":"t_b"})"))).isError);
+  h.plant("t_eve", uid("eve"), "", {"t_eve"});
+  h.plant("t_shared", uid("eve"), "", {"t_eve"});
+  h.trees.byId["t_shared"].visibility = Visibility::unlisted;
+  TreeId deepest{"t"};
+  for (int depth = 1; depth <= kMaxTreeDepth; ++depth) {
+    Json::Value step = node("down", "Down");
+    step["treeId"] = deepest.str();
+    REQUIRE(!h.tools.callTool("create_node", step, h.actor).isError);
+    const auto made = h.treeRegistry.createSubtree(deepest, NodeId{"down"}, h.caller, {});
+    REQUIRE(std::holds_alternative<SubtreeCreation>(made));
+    deepest = std::get<SubtreeCreation>(made).subtree.id;
+  }
+  Json::Value bottom = node("down", "Down");
+  bottom["treeId"] = deepest.str();
+  REQUIRE(!h.tools.callTool("create_node", bottom, h.actor).isError);
+  const std::size_t trees = h.trees.byId.size();
+  const std::size_t told = h.bus.subtreeBroadcasts.size();
+
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line.operation + " " + line.door + " " + line.outcome); });
+  const auto refusal = [&](const std::string& tree, const char* step) {
+    Json::Value args(Json::objectValue);
+    args["treeId"] = tree;
+    args["nodeId"] = step;
+    const ToolResult refused = gate.callTool("roadmap_create_subtree", args, h.actor);
+    CHECK(refused.isError);
+    return refused.outcomeCode + ": " + message(refused);
+  };
+  std::vector<std::string> answered = {refusal("t_ghost", "sail"), refusal("t_eve", "to-t_eve"),
+                                       refusal("t_shared", "to-t_eve"), refusal("t", "ghost"),
+                                       refusal(deepest.str(), "down"), refusal("t", "away")};
+  h.trees.savesFail = true;
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"sail","label":"Sail"})"))).isError);
+  answered.push_back(refusal("t", "sail"));
+  installWriteSink({});
+
+  CHECK_EQ(answered, (std::vector<std::string>{
+                         "no-such-tree: create_subtree: no such tree \"t_ghost\"",
+                         "no-such-tree: create_subtree: no such tree \"t_eve\"",
+                         "not-writer: create_subtree: only the roadmap's owner can add a subtree to its steps. "
+                         "Call list_trees to see the roadmaps you own.",
+                         "step-gone: create_subtree: no node in this tree is named \"ghost\". Call get_tree with "
+                         "fields [\"id\",\"label\"] to list the ids this tree has.",
+                         "depth-limit: create_subtree: subtrees go at most 8 levels below their roadmap, and this "
+                         "tree sits 8 levels below it already",
+                         "step-opens-a-tree: create_subtree: step \"away\" opens a roadmap of yours: clear its "
+                         "opens with update_nodes before it holds a subtree",
+                         "save-pending: create_subtree: this roadmap's last change is still being saved: try again. "
+                         "Nothing was created."}));
+  std::vector<std::string> expected;
+  for (const char* code : {"no-such-tree", "no-such-tree", "not-writer", "step-gone", "depth-limit", "step-opens-a-tree"}) {
+    expected.push_back(std::string("roadmap.subtree.create mcp ") + code);
+    expected.push_back(std::string("mcp.roadmap_create_subtree mcp ") + code);
+  }
+  expected.push_back("roadmap.subtree.create mcp save-pending");
+  expected.push_back("mcp.roadmap_create_subtree mcp save-pending");
+  std::erase_if(lines, [](const std::string& line) { return line.rfind("roadmap.tree.save", 0) == 0; });
+  CHECK_EQ(lines, expected);
+  CHECK_EQ(h.trees.byId.size(), trees);
+  CHECK_EQ(h.bus.subtreeBroadcasts.size(), told);
+}
+
+// A grant without write does not see create_subtree, and its call is refused at the gate with nothing created.
+TEST(mcp_a_read_only_grant_is_not_offered_create_subtree) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Learn to sail")).isError);
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const auto listed = [&](const char* scope) {
+    std::vector<std::string> names;
+    for (const Json::Value& tool : gate.listTools(ToolCaller{h.caller, parseToolScope(scope)}))
+      names.push_back(tool["name"].asString());
+    return std::find(names.begin(), names.end(), "roadmap_create_subtree") != names.end();
+  };
+  CHECK_FALSE(listed("roadmap:read"));
+  CHECK(listed("roadmap:read roadmap:write"));
+  const ToolResult refused = gate.callTool("roadmap_create_subtree", parse(R"({"treeId":"t","nodeId":"sail"})"),
+                                           ToolCaller{h.caller, parseToolScope("roadmap:read")});
+  CHECK(refused.isError);
+  CHECK_EQ(refused.outcomeCode, std::string("not-granted"));
+  CHECK(h.bus.subtreeBroadcasts.empty());
+  CHECK(h.registry.open(TreeId{"t"})->subtrees().empty());
+}
+
+// get_tree places every tree among trees, on every page and to anyone who may read it: a root at depth 0 with no
+// parent and an empty path, a subtree and a grandchild with their parent, their root, their depth and the way down from
+// the root, each tree on it named. Someone who may not read the root is answered an absent tree, whichever tree they
+// name.
+TEST(mcp_get_tree_answers_where_a_tree_sits_to_anyone_who_may_read_it) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Learn to sail")).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  const TreeId rigging{"t_00000000000000c2"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  Json::Value rig = node("rig", "Rig the boat");
+  rig["treeId"] = sailing.str();
+  REQUIRE(!h.tools.callTool("create_node", rig, h.actor).isError);
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(sailing, NodeId{"rig"}, h.caller, {rigging, std::nullopt})));
+  Json::Value knot = node("knot", "Tie a knot");
+  knot["treeId"] = rigging.str();
+  Json::Value splice = node("splice", "Splice a line");
+  splice["treeId"] = rigging.str();
+  REQUIRE(!h.tools.callTool("create_node", knot, h.actor).isError);
+  REQUIRE(!h.tools.callTool("create_node", splice, h.actor).isError);
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const auto placeOf = [&](const TreeId& tree, const UserId& who, const char* page) {
+    Json::Value args = parse(page);
+    args["treeId"] = tree.str();
+    const ToolResult read = gate.callTool("roadmap_get_tree", args, ToolCaller{who, ToolScope::everything()});
+    if (read.isError) return Json::Value(message(read));
+    Json::Value place(Json::objectValue);
+    for (const char* key : {"id", "title", "root", "parent", "path", "depth"}) place[key] = body(read)["tree"][key];
+    return place;
+  };
+
+  const Json::Value root = parse(R"({"id":"t","title":"Test Roadmap","root":"t","parent":null,"path":[],"depth":0})");
+  const Json::Value child = parse(R"({"id":"t_00000000000000c1","title":"Learn to sail","root":"t",
+    "parent":{"tree":"t","step":"sail"},"path":[{"tree":"t","step":"sail","title":"Test Roadmap"}],"depth":1})");
+  const Json::Value grandchild = parse(R"({"id":"t_00000000000000c2","title":"Rig the boat","root":"t",
+    "parent":{"tree":"t_00000000000000c1","step":"rig"},
+    "path":[{"tree":"t","step":"sail","title":"Test Roadmap"},{"tree":"t_00000000000000c1","step":"rig","title":"Learn to sail"}],
+    "depth":2})");
+  CHECK_EQ(placeOf(TreeId{"t"}, h.caller, "{}"), root);
+  CHECK_EQ(placeOf(sailing, h.caller, "{}"), child);
+  CHECK_EQ(placeOf(rigging, h.caller, "{}"), grandchild);
+  CHECK_EQ(placeOf(rigging, h.caller, R"({"limit":1,"cursor":"knot"})"), grandchild);
+
+  CHECK_EQ(placeOf(rigging, uid("reader"), "{}"), Json::Value("get_tree: no such tree \"t_00000000000000c2\""));
+  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::unlisted) ==
+          (std::variant<TreeRegistry::VisibilityChange, NotARoot>{TreeRegistry::VisibilityChange::changed}));
+  CHECK_EQ(placeOf(TreeId{"t"}, uid("reader"), "{}"), root);
+  CHECK_EQ(placeOf(rigging, uid("reader"), "{}"), grandchild);
+  CHECK_EQ(placeOf(rigging, UserId{""}, "{}"), grandchild);
+}
+
+// A step that owns a subtree carries `subtree: {id, done, total, state}` on get_tree by default and on get_nodes and
+// find_nodes when `fields` asks for it, so an agent drills down by its id and back up by the subtree's `parent`; the
+// counts are the owner's, to the owner and to every reader of the tree. find_nodes filters on owning steps with `owns`,
+// before the page.
+TEST(mcp_a_step_that_owns_a_subtree_carries_it_on_every_node_read_and_find_nodes_filters_on_it) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Learn to sail")).isError);
+  CHECK_FALSE(h.call("create_node", parse(R"({"id":"coast","label":"Sail the coast","prerequisites":["sail"]})")).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  for (const char* step : {"rig", "trim"}) {
+    Json::Value created = node(step, step);
+    created["treeId"] = sailing.str();
+    REQUIRE(!h.tools.callTool("create_node", created, h.actor).isError);
+  }
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const auto as = [&](const UserId& who, const char* tool, const char* arguments) {
+    const ToolResult read = gate.callTool(tool, parse(arguments), ToolCaller{who, ToolScope::everything()});
+    return read.isError ? Json::Value(message(read)) : body(read);
+  };
+
+  CHECK_EQ(as(h.caller, "roadmap_get_tree", R"({"treeId":"t"})")["tree"]["nodes"],
+           parse(R"([{"id":"coast","label":"Sail the coast","color":"terracotta","prerequisites":["sail"]},
+                     {"id":"sail","label":"Learn to sail","color":"terracotta","prerequisites":[],
+                      "subtree":{"id":"t_00000000000000c1","done":0,"total":2,"state":"open"}}])"));
+  CHECK_EQ(as(h.caller, "roadmap_get_nodes", R"({"treeId":"t","nodeIds":["sail"]})")["nodes"],
+           parse(R"([{"id":"sail","label":"Learn to sail","color":"terracotta","prerequisites":[]}])"));
+  CHECK_EQ(as(h.caller, "roadmap_find_nodes", R"({"treeId":"t","query":"sail"})")["nodes"],
+           parse(R"([{"id":"sail","label":"Learn to sail","color":"terracotta"},
+                     {"id":"coast","label":"Sail the coast","color":"terracotta"}])"));
+
+  Json::Value marks = parse(R"({"treeId":"t_00000000000000c1","updates":[{"nodeId":"rig","status":"complete"}]})");
+  CHECK_FALSE(gate.callTool("roadmap_update_nodes", marks, h.actor).isError);
+  CHECK_EQ(as(h.caller, "roadmap_get_nodes", R"({"treeId":"t","nodeIds":["sail","coast"],"fields":["id","subtree"]})")["nodes"],
+           parse(R"([{"id":"sail","subtree":{"id":"t_00000000000000c1","done":1,"total":2,"state":"open"}},{"id":"coast"}])"));
+  CHECK_EQ(as(h.caller, "roadmap_find_nodes", R"({"treeId":"t","owns":true,"fields":["id","subtree","state"]})"),
+           parse(R"({"count":1,"nodes":[{"id":"sail","state":"available",
+                     "subtree":{"id":"t_00000000000000c1","done":1,"total":2,"state":"open"}}]})"));
+  CHECK_EQ(as(h.caller, "roadmap_find_nodes", R"({"treeId":"t","owns":false,"fields":["id"]})"),
+           parse(R"({"count":1,"nodes":[{"id":"coast"}]})"));
+  CHECK_EQ(as(h.caller, "roadmap_find_nodes", R"({"treeId":"t","owns":true,"state":"locked","fields":["id"]})"),
+           parse(R"({"count":0,"nodes":[]})"));
+  CHECK_EQ(as(h.caller, "roadmap_find_nodes", R"({"treeId":"t","owns":"yes"})"),
+           Json::Value("find_nodes: argument \"owns\" must be a boolean, got string"));
+
+  const Json::Value down = as(h.caller, "roadmap_get_tree", R"({"treeId":"t_00000000000000c1","fields":["id"]})")["tree"];
+  CHECK_EQ(down["parent"], parse(R"({"tree":"t","step":"sail"})"));
+  CHECK_EQ(down["nodes"], parse(R"([{"id":"rig"},{"id":"trim"}])"));
+
+  marks["updates"][0]["nodeId"] = "trim";
+  CHECK_FALSE(gate.callTool("roadmap_update_nodes", marks, h.actor).isError);
+  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::unlisted) ==
+          (std::variant<TreeRegistry::VisibilityChange, NotARoot>{TreeRegistry::VisibilityChange::changed}));
+  const Json::Value complete = parse(R"({"id":"t_00000000000000c1","done":2,"total":2,"state":"complete"})");
+  for (const UserId& who : {h.caller, uid("reader"), UserId{""}}) {
+    CHECK_EQ(as(who, "roadmap_get_tree", R"({"treeId":"t","fields":["id","subtree"]})")["tree"]["nodes"],
+             parse(R"([{"id":"coast"},{"id":"sail","subtree":{"id":"t_00000000000000c1","done":2,"total":2,"state":"complete"}}])"));
+    CHECK_EQ(as(who, "roadmap_get_nodes", R"({"treeId":"t","nodeIds":["sail"],"fields":["subtree"]})")["nodes"][0]["subtree"],
+             complete);
+  }
+  CHECK_EQ(as(uid("reader"), "roadmap_find_nodes", R"({"treeId":"t","owns":true,"fields":["id","state"]})")["nodes"],
+           parse(R"([{"id":"sail","state":"available"}])"));
+}
+
+// A reader is told what a step's subtree comes to off one budgeted follow of the owner's subtrees, shared with every
+// door: a follow that runs out of time leaves the subtree's id alone, under the reader follow's own line, and the owner
+// is not followed again for any reader while the cool-off lasts. The owner's own read is not budgeted.
+TEST(mcp_a_reader_whose_follow_of_the_owner_runs_out_is_answered_the_subtrees_id_alone) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Learn to sail")).isError);
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {TreeId{"t_00000000000000c1"}, std::nullopt})));
+  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::public_) ==
+          (std::variant<TreeRegistry::VisibilityChange, NotARoot>{TreeRegistry::VisibilityChange::changed}));
+  const auto subtreeAs = [&](const UserId& who) {
+    const ToolResult read = h.tools.callTool("get_tree", parse(R"({"treeId":"t"})"), ToolCaller{who, ToolScope::everything()});
+    return body(read)["tree"]["nodes"][0]["subtree"];
+  };
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line.operation + " " + line.door + " " + line.outcome); });
+  h.trees.budgetedReadsTimeOut = true;
+  const std::size_t reads = h.trees.openedReads.size();
+  CHECK_EQ(subtreeAs(uid("reader")), parse(R"({"id":"t_00000000000000c1"})"));
+  CHECK_EQ(subtreeAs(uid("another")), parse(R"({"id":"t_00000000000000c1"})"));
+  CHECK_EQ(h.trees.openedReads.size(), reads + 1);
+  CHECK_EQ(subtreeAs(h.caller), parse(R"({"id":"t_00000000000000c1","done":0,"total":0,"state":"open"})"));
+  installWriteSink({});
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.progress.follow mcp timeout"}));
+}
+
+// No `opens` makes a tree a step's child: create_node, update_nodes and import_subgraph, dry runs included, refuse
+// whole a step pointed at a peer subtree, at a subtree another step owns, at the subtree the step is in, or at another
+// account's tree, with nothing written, logged or told; a step that owns a subtree keeps it whatever it is sent. A
+// pointer at a top-level roadmap of the caller's — a peer root or the root above — is the legacy pointer between roots,
+// which opens that roadmap and never owns it: the target stays a root, and the loop through the root above is named.
+TEST(mcp_an_opens_never_makes_a_tree_a_steps_child_and_a_refused_batch_writes_and_tells_nothing) {
+  Harness h;
+  for (const char* step : {"sail", "fly"}) CHECK_FALSE(h.call("create_node", node(step, step)).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  const TreeId flying{"t_00000000000000c2"};
+  const TreeId rigging{"t_00000000000000c3"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"fly"}, h.caller, {flying, std::nullopt})));
+  for (const char* step : {"rig", "knot"}) {
+    Json::Value created = node(step, step);
+    created["treeId"] = sailing.str();
+    REQUIRE(!h.tools.callTool("create_node", created, h.actor).isError);
+  }
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(sailing, NodeId{"rig"}, h.caller, {rigging, std::nullopt})));
+  h.plant("t_b", h.caller, "", {});
+  h.plant("t_eve", uid("eve"), "", {});
+  h.trees.byId["t_eve"].visibility = Visibility::public_;
+  const auto ownership = [&] {
+    std::map<TreeId, std::map<NodeId, TreeId>> owned;
+    for (const TreeId& tree : {TreeId{"t"}, sailing, flying, rigging, TreeId{"t_b"}}) {
+      std::lock_guard<std::mutex> strand(h.registry.strandFor(tree));
+      owned[tree] = h.registry.open(tree)->subtrees();
+    }
+    return owned;
+  };
+  const std::map<TreeId, std::map<NodeId, TreeId>> owned = ownership();
+  const StoredTree stored = h.trees.byId[sailing.str()];
+  const std::size_t ops = h.ops.byTree[sailing.str()].size();
+  const std::size_t frames = h.bus.subgraphBroadcasts.size();
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+
+  std::vector<std::string> refusals;
+  for (const TreeId& target : {flying, rigging, sailing, TreeId{"t_eve"}}) {
+    const std::string to = target.str();
+    for (const std::string& call : {
+             R"(["roadmap_create_node",{"id":"twin","label":"Twin","opens":")" + to + R"("}])",
+             R"(["roadmap_update_nodes",{"updates":[{"nodeId":"knot","label":"Knot","opens":")" + to + R"("}]}])",
+             R"(["roadmap_update_nodes",{"updates":[{"nodeId":"knot","opens":")" + to + R"("}],"dryRun":true}])",
+             R"(["roadmap_import_subgraph",{"nodes":[{"id":"knot","label":"Knot","opens":")" + to + R"("}]}])",
+             R"(["roadmap_import_subgraph",{"nodes":[{"id":"twin","label":"Twin","opens":")" + to + R"("}],"dryRun":true}])"}) {
+      Json::Value sent = parse(call);
+      sent[1]["treeId"] = sailing.str();
+      const ToolResult refused = gate.callTool(sent[0].asString(), sent[1], h.actor);
+      CHECK(refused.isError);
+      refusals.push_back(refused.outcomeCode);
+    }
+  }
+  CHECK(h.trees.byId[sailing.str()] == stored);
+  CHECK_EQ(h.ops.byTree[sailing.str()].size(), ops);
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames);
+  CHECK(ownership() == owned);
+  std::vector<std::string> expected;
+  for (const char* code : {"opens-a-subtree", "opens-a-subtree", "opens-a-subtree", "opens-not-yours"})
+    for (int call = 0; call < 5; ++call) expected.push_back(code);
+  CHECK_EQ(refusals, expected);
+
+  const auto through = [&](const char* tool, const std::string& arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = sailing.str();
+    const ToolResult result = gate.callTool(tool, args, h.actor);
+    return result.isError ? Json::Value(message(result)) : body(result);
+  };
+  const Json::Value toPeer = through("roadmap_update_nodes", R"({"updates":[{"nodeId":"knot","opens":"t_b"}]})");
+  CHECK_EQ(toPeer["changedNodeIds"], parse(R"(["knot"])"));
+  const Json::Value toRoot = through("roadmap_update_nodes", R"({"updates":[{"nodeId":"knot","opens":"t"}]})");
+  CHECK_EQ(toRoot["introducedDiagnostics"],
+           parse(R"(["loop of trees from \"knot\" through \"t\" -> \"t_00000000000000c1\""])"));
+  CHECK_EQ(through("roadmap_update_nodes", R"({"updates":[{"nodeId":"rig","opens":"t_00000000000000c2"}]})"),
+           Json::Value("update_nodes: updates[0].opens names \"t_00000000000000c2\", a subtree of one of your "
+                       "roadmaps, which only the step that owns it opens — a node opens a roadmap that has no parent: "
+                       "list_trees lists them"));
+  CHECK_EQ(through("roadmap_update_nodes", R"({"updates":[{"nodeId":"rig","opens":"t_eve"}]})"),
+           Json::Value("update_nodes: updates[0].opens names \"t_eve\", which is not a tree of yours — a node "
+                       "opens only a tree you own: list_trees lists them, and someone else's tree is copied into one of "
+                       "yours first, with create_tree then import_subgraph"));
+  CHECK(through("roadmap_update_nodes", R"({"updates":[{"nodeId":"rig","opens":"t_00000000000000c3"}]})")["unchanged"].asBool());
+  CHECK_EQ(through("roadmap_update_nodes", R"({"updates":[{"nodeId":"rig","opens":"t_b"}]})")["opensRefused"],
+           parse(R"(["rig"])"));
+  CHECK_EQ(through("roadmap_import_subgraph", R"({"nodes":[{"id":"rig","opens":"t"}]})")["opensRefused"],
+           parse(R"(["rig"])"));
+  CHECK(ownership() == owned);
+  const Json::Value roots = body(gate.callTool("roadmap_list_trees", Json::Value(Json::objectValue), h.actor))["trees"];
+  std::vector<std::string> listed;
+  for (const Json::Value& row : roots) listed.push_back(row["id"].asString());
+  std::sort(listed.begin(), listed.end());
+  CHECK_EQ(listed, (std::vector<std::string>{"t", "t_b"}));
+  Json::Value peer(Json::objectValue);
+  peer["treeId"] = "t_b";
+  CHECK_EQ(body(gate.callTool("roadmap_get_tree", peer, h.actor))["tree"]["parent"], Json::Value(Json::nullValue));
+}
+
+// An omitted or a stale `opens` never detaches a step's subtree: an import that re-sends the step without it, a replace
+// that sends no prerequisites, a read sent back whole, an update that sends the step the pointer it had before it owned
+// a subtree, and a revive that names no pointer all leave the step owning it, and the subtree standing under it.
+TEST(mcp_an_omitted_or_stale_opens_never_detaches_a_steps_subtree) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Learn to sail")).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const auto through = [&](const char* tool, const std::string& arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = "t";
+    const ToolResult result = gate.callTool(tool, args, h.actor);
+    CHECK_FALSE(result.isError);
+    return result.isError ? Json::Value(message(result)) : body(result);
+  };
+  const auto owns = [&] {
+    std::lock_guard<std::mutex> strand(h.registry.strandFor(TreeId{"t"}));
+    return h.registry.open(TreeId{"t"})->subtrees() == std::map<NodeId, TreeId>{{NodeId{"sail"}, sailing}};
+  };
+  const auto stands = [&] {
+    Json::Value args(Json::objectValue);
+    args["treeId"] = sailing.str();
+    const ToolResult read = gate.callTool("roadmap_get_tree", args, h.actor);
+    return !read.isError && body(read)["tree"]["parent"] == parse(R"({"tree":"t","step":"sail"})");
+  };
+
+  CHECK(through("roadmap_import_subgraph", R"({"nodes":[{"id":"sail","label":"Sail"}]})")["graphApplied"].asBool());
+  CHECK(owns());
+  CHECK(through("roadmap_import_subgraph", R"({"nodes":[{"id":"sail"}],"prerequisiteMode":"replace"})")["unchanged"].asBool());
+  CHECK(owns());
+  const Json::Value read = through("roadmap_get_tree", R"({"fields":["id","label","color","prerequisites","opens"]})");
+  Json::Value back(Json::objectValue);
+  back["nodes"] = read["tree"]["nodes"];
+  for (Json::Value& sent : back["nodes"])
+    if (sent.isMember("opens")) sent["opens"] = Json::Value(sent["opens"]["treeId"].asString());
+  CHECK(through("roadmap_import_subgraph", dump(back))["unchanged"].asBool());
+  CHECK(owns());
+  CHECK(through("roadmap_update_nodes", R"({"updates":[{"nodeId":"sail","opens":""}]})")["unchanged"].asBool());
+  CHECK(owns());
+  CHECK_EQ(through("roadmap_update_nodes", R"({"updates":[{"nodeId":"sail","opens":"t_00000000000000c1"}]})")["unchangedNodeIds"],
+           parse(R"(["sail"])"));
+  CHECK(owns());
+  CHECK(through("roadmap_delete_node", R"({"nodeId":"sail","branches":["t_00000000000000c1"]})")["applied"].asBool());
+  CHECK_FALSE(stands());
+  CHECK(through("roadmap_create_node", R"({"id":"sail","label":"Sail"})")["applied"].asBool());
+  CHECK(owns());
+  CHECK(stands());
+}
+
+// Prerequisites stay on one canvas. Sibling steps of one parent depend on each other there, and the one waiting on a
+// step that owns a subtree unlocks when that subtree completes; a prerequisite an import names that only a subtree
+// holds is a dangling edge of the parent, which locks nothing and never reaches into the subtree, and one naming an id
+// both trees hold resolves to the node of the tree imported into.
+TEST(mcp_prerequisites_imported_across_sibling_steps_resolve_only_inside_the_canvas) {
+  Harness h;
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const auto on = [&](const TreeId& tree, const char* tool, const char* arguments) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = tree.str();
+    const ToolResult result = gate.callTool(tool, args, h.actor);
+    CHECK_FALSE(result.isError);
+    return result.isError ? Json::Value(message(result)) : body(result);
+  };
+  const TreeId parent{"t"};
+  const TreeId sailing{"t_00000000000000c1"};
+  on(parent, "roadmap_import_subgraph", R"({"nodes":[{"id":"sail","label":"Learn to sail"},
+                                                     {"id":"coast","label":"Sail the coast","prerequisites":["sail"]}]})");
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(parent, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  on(sailing, "roadmap_import_subgraph", R"({"nodes":[{"id":"rig","label":"Rig"},{"id":"coast","label":"Coast drill"}]})");
+  TreeData eves;
+  eves.id = TreeId{"t_eve"};
+  eves.nodes.push_back(NodeSpec{.id = NodeId{"rig"}, .label = "Rig"});
+  h.trees.byId["t_eve"] = StoredTree{LooseGraph(eves, Hlc{1, 0, "seed"}).exportState(), LegendState{}, {"Eve's", {}}, 0,
+                                     uid("eve"), Visibility::public_};
+
+  CHECK_EQ(on(parent, "roadmap_import_subgraph", R"({"nodes":[{"id":"harbor","label":"Harbor","prerequisites":["rig"]}]})")
+               ["introducedDiagnostics"],
+           parse(R"(["dangling edge \"rig\" -> \"harbor\""])"));
+  CHECK_EQ(on(sailing, "roadmap_import_subgraph", R"({"nodes":[{"id":"buoy","label":"Buoy","prerequisites":["coast"]}]})")
+               ["introducedDiagnostics"],
+           parse(R"([])"));
+  CHECK(LooseGraph(h.trees.byId[sailing.str()].state).liveEdges() == (std::vector<Edge>{{NodeId{"coast"}, NodeId{"buoy"}}}));
+  CHECK_EQ(on(parent, "roadmap_get_diagnostics", "{}")["dangling"], parse(R"([{"from":"rig","to":"harbor"}])"));
+  CHECK(on(sailing, "roadmap_get_diagnostics", "{}")["dangling"].empty());
+
+  const auto states = [&] {
+    const Json::Value read = on(parent, "roadmap_get_tree", R"({"fields":["id","state"]})");
+    Json::Value out(Json::objectValue);
+    for (const Json::Value& found : read["tree"]["nodes"]) out[found["id"].asString()] = found["state"];
+    return out;
+  };
+  CHECK_EQ(states(), parse(R"({"sail":"available","coast":"locked","harbor":"available"})"));
+  on(sailing, "roadmap_update_nodes", R"({"updates":[{"nodeId":"rig","status":"complete"},{"nodeId":"coast","status":"complete"},
+                                                     {"nodeId":"buoy","status":"complete"}]})");
+  CHECK_EQ(states(), parse(R"({"sail":"complete","coast":"available","harbor":"available"})"));
+  CHECK(LooseGraph(h.trees.byId["t_eve"].state).liveEdges().empty());
+}
+
+// get_diagnostics holds subtrees to the line pointers are held to. For the writer, a step that owns a subtree opens it,
+// so a legacy pointer from inside the subtree back to the root above is a loop of trees told on both trees under the
+// subtree's name, and a step that points at a subtree, which leads nowhere, is listed dangling. A reader is answered
+// the graph alone.
+TEST(mcp_get_diagnostics_reads_a_subtree_as_its_owning_step_opens_it_and_a_pointer_at_one_as_dangling) {
+  Harness h;
+  for (const char* step : {"sail", "coast"}) CHECK_FALSE(h.call("create_node", node(step, step)).isError);
+  CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"sail","label":"Learn to sail"})"))).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  const auto on = [&](const TreeId& tree, const char* tool, const char* arguments, const UserId& who) {
+    Json::Value args = parse(arguments);
+    args["treeId"] = tree.str();
+    const ToolResult result = gate.callTool(tool, args, ToolCaller{who, ToolScope::everything()});
+    CHECK_FALSE(result.isError);
+    return result.isError ? Json::Value(message(result)) : body(result);
+  };
+  on(sailing, "roadmap_create_node", R"({"id":"knot","label":"Knot","opens":"t"})", h.caller);
+  {
+    // A pointer at a subtree, as the socket may still set one.
+    std::unique_lock<std::mutex> strand(h.registry.strandFor(TreeId{"t"}));
+    h.registry.open(TreeId{"t"})->applyCommand(
+        AnnotateNode{NodeId{"coast"}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, sailing}, h.clock.nowMs(),
+        h.caller);
+    PendingSave saving = h.registry.persist(TreeId{"t"});
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
+  }
+
+  const Json::Value parent = on(TreeId{"t"}, "roadmap_get_diagnostics", "{}", h.caller);
+  CHECK_EQ(parent["treeLoops"], parse(R"([{"node":"sail","path":[{"treeId":"t_00000000000000c1","title":"Learn to sail"},
+                                                              {"treeId":"t","title":"Test Roadmap"}]}])"));
+  CHECK_EQ(parent["danglingPointers"], parse(R"([{"node":"coast","treeId":"t_00000000000000c1"}])"));
+  const Json::Value child = on(sailing, "roadmap_get_diagnostics", "{}", h.caller);
+  CHECK_EQ(child["treeLoops"], parse(R"([{"node":"knot","path":[{"treeId":"t","title":"Test Roadmap"},
+                                                             {"treeId":"t_00000000000000c1","title":"Learn to sail"}]}])"));
+  CHECK_EQ(child["danglingPointers"], parse(R"([])"));
+
+  REQUIRE(h.treeRegistry.setVisibility(TreeId{"t"}, h.caller, Visibility::unlisted) ==
+          (std::variant<TreeRegistry::VisibilityChange, NotARoot>{TreeRegistry::VisibilityChange::changed}));
+  for (const TreeId& tree : {TreeId{"t"}, sailing}) {
+    const Json::Value read = on(tree, "roadmap_get_diagnostics", "{}", uid("reader"));
+    CHECK_FALSE(read.isMember("treeLoops"));
+    CHECK_FALSE(read.isMember("danglingPointers"));
+  }
+}
+
+// A create that fails inside the server is one Issue, under the create's own name, and both lines read failed: the
+// caller is told the outcome may be uncertain and to read before retrying, which create_subtree's retry makes safe.
+TEST(mcp_a_create_subtree_that_fails_inside_the_server_is_one_issue_under_the_creates_name) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string&) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("sail", "Learn to sail")).isError);
+  h.trees.duringSubtreeCreate = [] { throw std::runtime_error("connection reset mid-statement"); };
+  CompositeToolHost gate(std::vector<ToolModule>{{h.tools, ""}});
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& line) { lines.push_back(line.operation + " " + line.outcome); });
+  const ToolResult failed = gate.callTool("roadmap_create_subtree", parse(R"({"treeId":"t","nodeId":"sail"})"), h.actor);
+  installWriteSink({});
+
+  CHECK(failed.isError);
+  CHECK_EQ(message(failed), std::string("create_subtree: that call failed inside the server. The outcome may be "
+                                        "uncertain; read the affected records before retrying. The detail is in the "
+                                        "server log."));
+  CHECK_EQ(lines, (std::vector<std::string>{"roadmap.subtree.create failed", "mcp.roadmap_create_subtree failed"}));
+  CHECK_EQ(reporter.failures->reports, (std::vector<std::string>{"roadmap.subtree.create roadmap mcp failed"}));
+  CHECK(h.registry.open(TreeId{"t"})->subtrees().empty());
 }

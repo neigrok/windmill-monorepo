@@ -218,7 +218,10 @@ rejected for structure. Validity is a read model, not a gate.
   below; Authorization). The place is written once, when the tree is created, and
   never changed, and a subtree is always a new tree under a standing one: a subtree has one parent,
   never moves, never closes a loop and is never another account's. A step owns at most one subtree.
-  The store enforces all of it whatever writes it (Persistence). No door creates a subtree yet.
+  The store enforces all of it whatever writes it (Persistence). MCP `create_subtree` creates one under a step,
+  through `TreeRegistry::createSubtree`: keyed by the step, so a retry answers the subtree it already owns
+  `created: false`, and born with the legend the call sends or the default one, never a copy of the parent's
+  (`adapters/mcp/README.md`, A step's subtree).
 
   A subtree reads as one step of its parent:
 
@@ -248,16 +251,19 @@ rejected for structure. Validity is a read model, not a gate.
   - **Place.** A tree read answers `root`, `parent: {tree, step} | null`, `path: [{tree, step,
     title}]` — the trees above it, root first, each with its step the way passes through and its
     name — and `depth`, to anyone who may read it; a root answers `parent: null`, `path: []` and
-    `depth: 0`.
+    `depth: 0`. MCP `get_tree` answers them in `tree` on every page; a tend is answered none of them
+    (`ScopedToolHost`), as it is answered no guide of a tree above.
   - **The owning step's child.** A step that owns a subtree opens it, whatever its pointer holds
     (`OpenedTrees`), so it takes no hand mark at any door (`opens-a-tree`), and its writer is
     answered its subtree wherever a pointer is answered. Every node read of `GET /v1/trees/{id}`
-    carries `subtree: {id, done, total, state}` on such a step, to anyone who may read the tree:
+    carries `subtree: {id, done, total, state}` on such a step, to anyone who may read the tree, and so
+    do MCP `get_tree`, whose default fields name it, and `get_nodes` and `find_nodes` when `fields` does:
     `done` of `total` the subtree's present steps, those complete for the owner, and `state`
     `complete` or `open`. A subtree is complete when it holds at least one step and every one is,
     however deep, so an empty one is unfinished and a leaf reopened reopens every owning step above
-    it; nothing of it is stored. The subscribe answer lists the subtree each step owns (WebSocket
-    surface), which heals a `subtree` frame a client missed.
+    it; nothing of it is stored. MCP `find_nodes {owns: true}` keeps the steps that own one. The
+    subscribe answer lists the subtree each step owns (WebSocket surface), which heals a `subtree` frame
+    a client missed.
   - **Lists show roots only.** A subtree is no row of `GET /v1/trees`, MCP `list_trees`, the gallery or
     reminder readiness; it counts in its parent as the one step that owns it, and a reminder names
     that step by its label.
@@ -1051,8 +1057,8 @@ that can, `reader` for any other) ·
 
 `subtree` says a subtree was created under `step` (Model, Subtrees). It takes the tree's next seq and
 goes to every subscriber, reader and writer alike, carrying the same bytes: whoever may read the tree
-may read its subtrees, whose access is its root's. No door creates a subtree yet, so no connection is
-sent one. The web client takes its seq as it takes a live frame's (`docs/GRAPH_SYNC_DESIGN.md`) and
+may read its subtrees, whose access is its root's. MCP `create_subtree` sends one for each subtree it
+creates. The web client takes its seq as it takes a live frame's (`docs/GRAPH_SYNC_DESIGN.md`) and
 changes nothing else.
 
 The subscribe answer carries `subtrees: [{step, id, depth}]`, one per present step that owns a

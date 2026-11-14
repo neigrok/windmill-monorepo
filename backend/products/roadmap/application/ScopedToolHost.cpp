@@ -17,6 +17,8 @@ namespace {
 // an argument's key or as a value an enum lists, so a field that reaches another tree is named here
 // once and is gone from every tool that takes it or answers it. An argument that switches such an
 // answer on carries the value every call is sent in its place, wherever a tool's schema declares it.
+// A key of a reply's `tree` that says where the tree sits among trees is dropped from what the run is
+// answered, as the guides of the trees above are.
 struct WithheldWord {
   std::string sentence;
   Json::Value sent;
@@ -25,17 +27,20 @@ struct WithheldWord {
 struct Withheld {
   std::map<std::string, std::string> tools;
   std::map<std::string, WithheldWord> words;
+  std::set<std::string> place;
 };
 
 const Withheld& withheld() {
   static const Withheld reach{
       {{"create_tree", "tending edits a single tree — create_tree is out of its reach"},
+       {"create_subtree", "tending edits a single tree — create_subtree is out of its reach"},
        {"list_trees", "tending edits a single tree — list_trees is out of its reach"},
        {"delete_tree", "tending edits a single tree — delete_tree is out of its reach"},
        {"update_tree", "tending reads the tree's guide but cannot set it — update_tree is out of its reach"}},
       {{"opens", {"tending edits a single tree — the tree a node opens is out of its reach"}},
        {"includeGuides", {"tending edits a single tree — the guides of the trees above it are out of its reach", false}},
-       {"includePointers", {"tending edits a single tree — the trees its nodes open are out of its reach", false}}}};
+       {"includePointers", {"tending edits a single tree — the trees its nodes open are out of its reach", false}}},
+      {"root", "parent", "path", "depth"}};
   return reach;
 }
 
@@ -136,6 +141,10 @@ ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& 
       for (const auto& [word, held] : withheld().words)
         if (!held.sent.isNull() && taken.isMember(word)) scopedArgs[word] = held.sent;
       ToolResult result = inner_.callTool(name, scopedArgs, caller);
+      if (!result.isError && result.payload.isObject() && std::as_const(result.payload)["tree"].isObject()) {
+        for (const std::string& key : withheld().place) result.payload["tree"].removeMember(key);
+        result.content = ToolResult::json(result.payload).content;
+      }
 
       // Record what this call planted, from the tool's own result. create_node echoes the one id it
       // minted; import_subgraph plants every incoming node that wasn't already there. Only those two

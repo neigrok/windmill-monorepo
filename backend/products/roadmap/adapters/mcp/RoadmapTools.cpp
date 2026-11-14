@@ -7,6 +7,7 @@
 #include "products/roadmap/adapters/mcp/ReadShape.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 #include "products/roadmap/adapters/mcp/ToolArgs.h"
+#include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Command.h"
@@ -336,13 +337,15 @@ std::map<NodeColor, KindId> kindByHue(const std::vector<Kind>& kinds) {
 }
 
 // What a read takes from the room while it holds the tree's strand; every repository read comes after it lets go.
-// `subtree` says the tree hangs from a step, so its name is that step's label, read through its parent.
+// `place` is where a root sits, its own; a subtree's is none here, since its name and its way down from its root are its
+// parents', read through them. `subtrees` is the subtree each present step owns.
 struct RoomRead {
   TreeData data;
   Seq head = 0;
   std::optional<UserId> owner;
   bool guideInherited = false;
-  bool subtree = false;
+  std::optional<Place> place;
+  std::map<NodeId, TreeId> subtrees;
 };
 
 // Nothing for an absent tree and for one the caller may not read, which answer in the same words.
@@ -350,7 +353,9 @@ std::optional<RoomRead> readRoom(RoomRegistry& registry, const TreeId& tree, con
   std::lock_guard<std::mutex> lock(registry.strandFor(tree));
   TreeRoom* room = registry.open(tree);
   if (!room || !room->readableBy(caller)) return std::nullopt;
-  return RoomRead{room->snapshot(), room->head(), room->owner(), room->guideInherited(), room->parent().has_value()};
+  RoomRead read{room->snapshot(), room->head(), room->owner(), room->guideInherited(), std::nullopt, room->subtrees()};
+  if (!room->parent()) read.place = Place{read.data.title, room->title().stamp, room->root(), std::nullopt, {}, 0};
+  return read;
 }
 
 // The tree as the caller opens it on the web: in the app when it is theirs, on its share page otherwise.
@@ -359,24 +364,35 @@ WebTree webTreeOf(const std::string& origin, const RoomRead& read, const std::op
 }
 
 // States are derived over the whole tree, as a prerequisite may sit off the page; only its writer has pointers followed.
-NodeReadContext readContextFor(TreeRegistry& trees, ProgressService& progress, const std::string& origin,
-                               const std::optional<UserId>& caller, const RoomRead& read, const NodeFields& fields,
-                               bool filtersOnState) {
+// What a step's subtree comes to is the owner's for every reader: its writer's own follow says it, and anyone else is
+// told it off one budgeted follow of the owner's subtrees (OwnerProgress), or the subtree's id alone when the owner's
+// trees are not followed in time.
+NodeReadContext readContextFor(TreeRegistry& trees, OwnerProgress& owners, ProgressService& progress,
+                               const std::string& origin, const std::optional<UserId>& caller, const RoomRead& read,
+                               const NodeFields& fields, bool filtersOnState) {
   const TreeData& data = read.data;
   const bool needsStates = fields.count(NodeField::state) || filtersOnState;
   const bool needsMarks = fields.count(NodeField::status) || needsStates;
+  const bool needsSubtrees = fields.count(NodeField::subtree) && !read.subtrees.empty();
   NodeReadContext context;
   if (needsMarks && caller) context.marks = progress.progressOf(data.id, *caller);
   if (fields.count(NodeField::kind)) context.kindByHue = kindByHue(data.kinds);
   if (fields.count(NodeField::url)) context.web = webTreeOf(origin, read, caller);
-  const bool follows = (needsStates || fields.count(NodeField::opens)) && canWrite(caller, read.owner);
+  const bool follows = (needsStates || fields.count(NodeField::opens) || needsSubtrees) && canWrite(caller, read.owner);
   if (!follows) {
     if (needsStates) context.states = UnlockRules::derive(data.nodes, context.marks);
+    if (needsSubtrees) {
+      std::optional<OpenedTrees> opened;
+      FollowTally tally;
+      if (read.owner) opened = owners.followed(*read.owner, treesOpenedBy(read.subtrees), kReaderFollowBudget, "mcp", tally);
+      context.subtrees = ownedSubtrees(read.subtrees, opened);
+    }
     return context;
   }
-  const OpenedTrees opened(trees.openedFrom(*caller, treesOpenedBy(data)));
-  if (needsStates) context.states = UnlockRules::derive(data.nodes, opened.followed(data, context.marks));
-  if (fields.count(NodeField::opens)) context.openings = opened.openings(data);
+  const std::optional<OpenedTrees> opened(std::in_place, trees.openedFrom(*caller, treesOpenedBy(data)));
+  if (needsStates) context.states = UnlockRules::derive(data.nodes, opened->followed(data, context.marks));
+  if (fields.count(NodeField::opens)) context.openings = opened->openings(data);
+  if (needsSubtrees) context.subtrees = ownedSubtrees(read.subtrees, opened);
   return context;
 }
 
@@ -401,18 +417,18 @@ std::size_t liveEdgeCount(const TreeData& data) {
   return count;
 }
 
-ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, ProgressService& progress, const std::string& origin,
-                    const TreeId& tree, const Json::Value& args, const std::optional<UserId>& caller) {
+ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, OwnerProgress& owners, ProgressService& progress,
+                    const std::string& origin, const TreeId& tree, const Json::Value& args,
+                    const std::optional<UserId>& caller) {
   // Byte-identical to the absent message, or the id is an existence oracle.
   std::optional<RoomRead> read = readRoom(registry, tree, caller);
   if (!read) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-  // A subtree is named by its owning step's label, read through its parent once the strand is released; a read that
-  // fails fails the call rather than answer another name.
-  if (read->subtree) {
-    std::optional<Place> place;
+  // A subtree is named by its owning step's label and placed by the way down from its root, both read through its
+  // parents once the strand is released; a read that fails fails the call rather than answer another name.
+  if (!read->place) {
     WriteObservation observation{"roadmap.tree.place", "roadmap", "mcp"};
     try {
-      place = trees.placeOf(tree);
+      read->place = trees.placeOf(tree);
       observation.skip();
     } catch (const std::bad_alloc&) {
       throw;
@@ -420,8 +436,8 @@ ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, ProgressService
       observation.fail(failure);
       return ToolResult::failure("the name of this tree could not be read just now; read it again.");
     }
-    if (!place) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
-    read->data.title = place->title;
+    if (!read->place) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    read->data.title = read->place->title;
   }
 
   std::string error;
@@ -440,7 +456,7 @@ ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, ProgressService
   std::optional<Page> page = pageOf(data.nodes, args, error);
   if (!page) return ToolResult::failure(error);
 
-  const NodeReadContext context = readContextFor(trees, progress, origin, caller, *read, *nodeFields, false);
+  const NodeReadContext context = readContextFor(trees, owners, progress, origin, caller, *read, *nodeFields, false);
   ProjectedPage projected = projectPage(data.nodes, *page, *nodeFields, context);
   Json::Value kinds(Json::arrayValue);
   for (const Kind& kind : data.kinds) kinds.append(projectKind(kind, *kindFields));
@@ -458,6 +474,9 @@ ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, ProgressService
   document["id"] = data.id.str();
   document["title"] = data.title;
   document["url"] = treeAddress(webTreeOf(origin, *read, caller));
+  // Where the tree sits, on every page: whoever may read a tree may read every tree above it.
+  const Json::Value where = toJson(*read->place);
+  for (const std::string& key : where.getMemberNames()) document[key] = where[key];
   document["guide"] = guide;
   // The first page alone adds the guides of the caller's trees above this one, unless the call asks for none; only
   // the tree's writer has them read. A walk that cannot be made is reported under its own name and leaves the
@@ -501,8 +520,9 @@ ToolResult readTree(RoomRegistry& registry, TreeRegistry& trees, ProgressService
   return ToolResult::json(out);
 }
 
-ToolResult readNodes(RoomRegistry& registry, TreeRegistry& trees, ProgressService& progress, const std::string& origin,
-                     const TreeId& tree, const Json::Value& args, const std::optional<UserId>& caller) {
+ToolResult readNodes(RoomRegistry& registry, TreeRegistry& trees, OwnerProgress& owners, ProgressService& progress,
+                     const std::string& origin, const TreeId& tree, const Json::Value& args,
+                     const std::optional<UserId>& caller) {
   const std::optional<RoomRead> read = readRoom(registry, tree, caller);
   if (!read) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
   if (!args["nodeIds"].isArray() || args["nodeIds"].empty() || args["nodeIds"].size() > kMaxReadNodeIds)
@@ -516,9 +536,9 @@ ToolResult readNodes(RoomRegistry& registry, TreeRegistry& trees, ProgressServic
       return ToolResult::failure("nodeIds repeats \"" + id.asString() + "\"");
   }
   std::string error;
-  const std::optional<NodeFields> fields = nodeVocabulary().parse(args["fields"], "fields", kGetTreeFields, error);
+  const std::optional<NodeFields> fields = nodeVocabulary().parse(args["fields"], "fields", kGetNodesFields, error);
   if (!fields) return ToolResult::failure(error);
-  const NodeReadContext context = readContextFor(trees, progress, origin, caller, *read, *fields, false);
+  const NodeReadContext context = readContextFor(trees, owners, progress, origin, caller, *read, *fields, false);
   std::map<NodeId, const NodeSpec*> byId;
   for (const NodeSpec& node : read->data.nodes) byId.emplace(node.id, &node);
 
@@ -603,8 +623,9 @@ ToolResult readProgress(RoomRegistry& registry, ProgressService& progress, const
   return ToolResult::json(projectProgress(overlay.restrictedTo(held), *fields));
 }
 
-ToolResult findNodes(RoomRegistry& registry, TreeRegistry& trees, ProgressService& progress, const std::string& origin,
-                     const TreeId& tree, const Json::Value& args, const std::optional<UserId>& caller) {
+ToolResult findNodes(RoomRegistry& registry, TreeRegistry& trees, OwnerProgress& owners, ProgressService& progress,
+                     const std::string& origin, const TreeId& tree, const Json::Value& args,
+                     const std::optional<UserId>& caller) {
   const std::optional<RoomRead> read = readRoom(registry, tree, caller);
   if (!read) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
   if (std::optional<std::string> bad = optionalOneOf(args["color"], "color", kHues))
@@ -615,6 +636,7 @@ ToolResult findNodes(RoomRegistry& registry, TreeRegistry& trees, ProgressServic
     return ToolResult::failure(*bad);
   if (std::optional<std::string> bad = optionalOneOf(args["state"], "state", kNodeStates))
     return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = optionalBool(args["owns"], "owns")) return ToolResult::failure(*bad);
 
   NodeFilter filter;
   if (args["color"].isString()) filter.color = parseColor(args["color"].asString());
@@ -628,11 +650,16 @@ ToolResult findNodes(RoomRegistry& registry, TreeRegistry& trees, ProgressServic
   std::optional<NodeFields> fields = nodeVocabulary().parse(args["fields"], "fields", kFindNodesFields, error);
   if (!fields) return ToolResult::failure(error);
 
-  // selectNodes must stay pure in (tree, filter) or a cursor stops resuming: the state filter runs after it.
-  const NodeReadContext context = readContextFor(trees, progress, origin, caller, *read, *fields, state.has_value());
+  // selectNodes must stay pure in (tree, filter) or a cursor stops resuming: the state and owning filters run after it.
+  const NodeReadContext context =
+      readContextFor(trees, owners, progress, origin, caller, *read, *fields, state.has_value());
   std::vector<NodeSpec> matches = selectNodes(read->data, filter);
   if (state)
     std::erase_if(matches, [&](const NodeSpec& node) { return context.states.at(node.id) != *state; });
+  if (args["owns"].isBool()) {
+    const bool owns = args["owns"].asBool();
+    std::erase_if(matches, [&](const NodeSpec& node) { return (read->subtrees.count(node.id) > 0) != owns; });
+  }
   std::optional<Page> page = pageOf(matches, args, error);
   if (!page) return ToolResult::failure(error);
 
@@ -1658,6 +1685,61 @@ ToolResult createTree(TreeRegistry& trees, const std::string& origin, const User
   return ToolResult::json(out);
 }
 
+// The words each refusal of a subtree's create is answered in, under its code; an absent tree's are every read's, so a
+// tree the caller may not read is answered as one that is not there.
+std::string refusalSentence(SubtreeRefusal refusal, const TreeId& tree, const NodeId& step) {
+  switch (refusal) {
+    case SubtreeRefusal::noSuchTree: return "no such tree \"" + tree.str() + "\"";
+    case SubtreeRefusal::notWriter:
+      return "only the roadmap's owner can add a subtree to its steps. Call list_trees to see the roadmaps you own.";
+    case SubtreeRefusal::stepGone:
+      return "no node in this tree is named " + quotedList({step.str()}) + ". " + kNodeHandle.hint;
+    case SubtreeRefusal::depthLimit:
+      return "subtrees go at most " + std::to_string(kMaxTreeDepth) + " levels below their roadmap, and this tree sits " +
+             std::to_string(kMaxTreeDepth) + " levels below it already";
+    case SubtreeRefusal::stepOpensATree:
+      return "step " + quotedList({step.str()}) + " opens a roadmap of yours: clear its opens with update_nodes "
+             "before it holds a subtree";
+    case SubtreeRefusal::savePending:
+      return "this roadmap's last change is still being saved: try again. Nothing was created.";
+  }
+  throw std::logic_error("an unknown subtree refusal");
+}
+
+// The subtree a step owns, created empty under it or, when the step owns one already, answered as it is: a retry after a
+// lost reply answers the same subtree with `created: false`. Its legend is the one the call sends, judged as create_tree
+// judges one, or the default: the server never copies the parent's.
+ToolResult createSubtree(TreeRegistry& trees, const TreeId& tree, const Json::Value& args, const UserId& caller) {
+  std::string step;
+  if (std::optional<std::string> bad = requireHandle(args, kNodeHandle, "", step)) return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = checkKinds(args["kinds"], kMaxKinds)) return ToolResult::failure(*bad);
+  TreeRegistry::SubtreeRequest request;
+  if (args["kinds"].isArray()) {
+    const std::optional<TreeData> sent = treeFromJson(args, TreeId{});
+    if (!sent) return ToolResult::failure("this subtree's kinds carry a field of the wrong type");
+    request.kinds = sent->kinds;
+  }
+
+  const std::variant<SubtreeCreation, SubtreeRefusal, Admission> answer =
+      trees.createSubtree(tree, NodeId{step}, caller, request);
+  if (const Admission* refusal = std::get_if<Admission>(&answer))
+    return ToolResult::failure(refusal->reason, "kinds-refused");
+  if (const SubtreeRefusal* refusal = std::get_if<SubtreeRefusal>(&answer))
+    return ToolResult::failure(refusalSentence(*refusal, tree, NodeId{step}), codeOf(*refusal));
+  const SubtreeCreation& creation = std::get<SubtreeCreation>(answer);
+  Json::Value subtree(Json::objectValue);
+  subtree["id"] = creation.subtree.id.str();
+  subtree["root"] = creation.subtree.root.str();
+  subtree["parent"]["tree"] = creation.subtree.parent.tree.str();
+  subtree["parent"]["step"] = creation.subtree.parent.step.str();
+  subtree["depth"] = creation.subtree.depth;
+  Json::Value out(Json::objectValue);
+  out["created"] = creation.created;
+  out["subtree"] = subtree;
+  out["parentSeq"] = static_cast<Json::Int64>(creation.parentSeq);
+  return ToolResult::json(out);
+}
+
 // Every row is a tree the caller owns, so each opens in the app.
 ToolResult listRegistry(TreeRegistry& registry, const std::string& origin, const UserId& caller) {
   Json::Value trees(Json::arrayValue);
@@ -1748,10 +1830,10 @@ ToolResult updateTree(TreeRegistry& registry, const TreeId& tree, const Json::Va
 
 }  // namespace
 
-RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock,
+RoadmapTools::RoadmapTools(RoomRegistry& registry, ProgressService& progress, OwnerProgress& owners, Clock& clock,
                            TreeRegistry& treeRegistry, NodeEdits& edits, std::string appOrigin)
-    : registry_(registry), progress_(progress), clock_(clock), treeRegistry_(treeRegistry), edits_(edits),
-      appOrigin_(std::move(appOrigin)) {}
+    : registry_(registry), progress_(progress), owners_(owners), clock_(clock), treeRegistry_(treeRegistry),
+      edits_(edits), appOrigin_(std::move(appOrigin)) {}
 
 std::vector<ToolDeclaration> RoadmapTools::declareTools() const { return roadmapToolCatalog(); }
 
@@ -1795,11 +1877,15 @@ ToolResult RoadmapTools::dispatch(const std::string& name, const Json::Value& ar
 
   if (name == "delete_tree")     return removeTree(treeRegistry_, tree, caller);
   if (name == "update_tree") return updateTree(treeRegistry_, tree, arguments, caller);
-  if (name == "get_tree")        return readTree(registry_, treeRegistry_, progress_, appOrigin_, tree, arguments, reader);
-  if (name == "get_nodes")       return readNodes(registry_, treeRegistry_, progress_, appOrigin_, tree, arguments, reader);
+  if (name == "create_subtree") return createSubtree(treeRegistry_, tree, arguments, caller);
+  if (name == "get_tree")
+    return readTree(registry_, treeRegistry_, owners_, progress_, appOrigin_, tree, arguments, reader);
+  if (name == "get_nodes")
+    return readNodes(registry_, treeRegistry_, owners_, progress_, appOrigin_, tree, arguments, reader);
   if (name == "get_diagnostics") return readDiagnostics(registry_, treeRegistry_, tree, arguments, reader);
   if (name == "get_progress")    return readProgress(registry_, progress_, tree, arguments, reader);
-  if (name == "find_nodes")      return findNodes(registry_, treeRegistry_, progress_, appOrigin_, tree, arguments, reader);
+  if (name == "find_nodes")
+    return findNodes(registry_, treeRegistry_, owners_, progress_, appOrigin_, tree, arguments, reader);
   if (name == "update_nodes" || name == "change_edges")
     return applyBatchEdit(registry_, treeRegistry_, edits_, tree, name, arguments, clock_, caller);
   if (name == "import_subgraph")
