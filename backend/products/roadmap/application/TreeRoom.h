@@ -238,6 +238,9 @@ public:
   // is read by nothing (SPEC.md, Model, Subtrees), so it is neither sent nor covered: its subscriber is sent its
   // owning step's label beside the delta.
   Subgraph deltaSince(const VersionVector& since, std::optional<Seq> position = std::nullopt) const;
+  // How many entries and tree registers of `deltaSince(since, position)` are there, or whole, for their land seq alone:
+  // the ones the vector would have masked or left out.
+  std::size_t lateEntriesFor(const VersionVector& since, Seq position) const;
   // The seq at which each entry and tree register last landed late; a save stores the ones of the rows it writes.
   const LandSeqs& landSeqs() const { return landSeqs_; }
   // The land seqs the stored rows hold, as the room opens.

@@ -112,21 +112,28 @@ bool HeldStamps::holds(const Hlc& stamp) const {
   return stamp.isSet() && (!(floor < stamp) || marks.covers(stamp));
 }
 
-void LandSeqs::landLate(const GraphState& graph, const LegendState& legend, const HeldStamps& held, Seq seq) {
+std::size_t LandSeqs::landLate(const GraphState& graph, const LegendState& legend, const HeldStamps& held, Seq seq) {
+  const auto late = [&held](const Hlc& stamp) { return held.holds(stamp) ? std::size_t{1} : std::size_t{0}; };
+  std::size_t registers = 0;
   for (const NodeStateEntry& node : graph.nodes) {
-    const bool late = held.holds(node.createdAt) || held.holds(node.deletedAt) || held.holds(node.labelAt) ||
-                      held.holds(node.iconAt) || held.holds(node.colorAt) || held.holds(node.orderAt) ||
-                      held.holds(node.statusAt) || held.holds(node.descriptionAt) || held.holds(node.linksAt) ||
-                      held.holds(node.opensAt);
-    if (late) nodes[node.id] = seq;
+    const std::size_t ofNode = late(node.createdAt) + late(node.deletedAt) + late(node.labelAt) + late(node.iconAt) +
+                               late(node.colorAt) + late(node.orderAt) + late(node.statusAt) +
+                               late(node.descriptionAt) + late(node.linksAt) + late(node.opensAt);
+    if (ofNode > 0) nodes[node.id] = seq;
+    registers += ofNode;
   }
-  for (const EdgeStateEntry& edge : graph.edges)
-    if (held.holds(edge.addedAt) || held.holds(edge.removedAt)) edges[edge.edge] = seq;
+  for (const EdgeStateEntry& edge : graph.edges) {
+    const std::size_t ofEdge = late(edge.addedAt) + late(edge.removedAt);
+    if (ofEdge > 0) edges[edge.edge] = seq;
+    registers += ofEdge;
+  }
   for (const KindStateEntry& kind : legend.kinds) {
-    const bool late = held.holds(kind.createdAt) || held.holds(kind.deletedAt) || held.holds(kind.hueAt) ||
-                      held.holds(kind.labelAt) || held.holds(kind.descriptionAt) || held.holds(kind.rankAt);
-    if (late) kinds[kind.id] = seq;
+    const std::size_t ofKind = late(kind.createdAt) + late(kind.deletedAt) + late(kind.hueAt) + late(kind.labelAt) +
+                               late(kind.descriptionAt) + late(kind.rankAt);
+    if (ofKind > 0) kinds[kind.id] = seq;
+    registers += ofKind;
   }
+  return registers;
 }
 
 Landed LandSeqs::past(Seq position) const {
@@ -165,6 +172,27 @@ Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const 
   }
   delta.coverage = frontier(graph, legend);
   return delta;
+}
+
+std::size_t hiddenBy(const VersionVector& since, const GraphState& graph, const LegendState& legend, const Landed& late) {
+  // The vector masks or leaves out an entry exactly when it covers one of the stamps the entry carries.
+  const auto has = [&since](const Hlc& stamp) { return stamp.isSet() && since.covers(stamp); };
+  std::size_t hidden = 0;
+  for (const NodeStateEntry& node : graph.nodes) {
+    if (!late.nodes.count(node.id)) continue;
+    if (has(node.createdAt) || has(node.deletedAt) || has(node.labelAt) || has(node.iconAt) || has(node.colorAt) ||
+        has(node.orderAt) || has(node.statusAt) || has(node.descriptionAt) || has(node.linksAt) || has(node.opensAt))
+      ++hidden;
+  }
+  for (const EdgeStateEntry& edge : graph.edges)
+    if (late.edges.count(edge.edge) && (has(edge.addedAt) || has(edge.removedAt))) ++hidden;
+  for (const KindStateEntry& kind : legend.kinds) {
+    if (!late.kinds.count(kind.id)) continue;
+    if (has(kind.createdAt) || has(kind.deletedAt) || has(kind.hueAt) || has(kind.labelAt) ||
+        has(kind.descriptionAt) || has(kind.rankAt))
+      ++hidden;
+  }
+  return hidden;
 }
 
 GraphState readerView(GraphState graph) {

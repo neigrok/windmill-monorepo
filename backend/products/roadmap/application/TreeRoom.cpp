@@ -1,5 +1,7 @@
 #include "products/roadmap/application/TreeRoom.h"
 
+#include "platform/application/WriteObservation.h"
+
 #include <trantor/utils/Logger.h>
 
 #include <algorithm>
@@ -112,10 +114,20 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
   unsaved_ = true;
   ++writes_;
   ++head_;
-  landSeqs_.landLate(landed.graph, landed.legend, held_, head_);
-  if (titleTook && held_.holds(title_.stamp)) landSeqs_.title = head_;
-  if (guideTook && held_.holds(guide_.stamp)) landSeqs_.guide = head_;
+  std::size_t lateRegisters = landSeqs_.landLate(landed.graph, landed.legend, held_, head_);
+  if (titleTook && held_.holds(title_.stamp)) {
+    landSeqs_.title = head_;
+    ++lateRegisters;
+  }
+  if (guideTook && held_.holds(guide_.stamp)) {
+    landSeqs_.guide = head_;
+    ++lateRegisters;
+  }
   held_.marks.join(frontier(landed));
+  if (lateRegisters > 0) {
+    const std::string door = currentWriteDoor();
+    LOG_INFO << "roadmap_late_landing door=" << (door.empty() ? "background" : door) << " registers=" << lateRegisters;
+  }
   // One op per frame at the seq the frame just took, keyed on the frameId so a re-gossip never
   // double-counts. A frame with no feed-worthy deed (headline) queues nothing.
   if (std::optional<Command> deed = headline(landed.graph, landed.legend, graph_, legend_))
@@ -310,6 +322,17 @@ Subgraph TreeRoom::deltaSince(const VersionVector& since, std::optional<Seq> pos
   if (!since.covers(guide_.stamp) || landedPast(landSeqs_.guide)) delta.guide = guide_;
   delta.coverage->observe(guide_.stamp);
   return delta;
+}
+
+std::size_t TreeRoom::lateEntriesFor(const VersionVector& since, Seq position) const {
+  const Landed late = landSeqs_.past(position);
+  std::size_t entries = 0;
+  if (!late.nodes.empty() || !late.edges.empty() || !late.kinds.empty())
+    entries = hiddenBy(since, graph_.exportState(), legend_.exportState(), late);
+  // A register that holds a land seq was written, so its stamp is set.
+  if (path_.empty() && landSeqs_.title > position && since.covers(title_.stamp)) ++entries;
+  if (landSeqs_.guide > position && since.covers(guide_.stamp)) ++entries;
+  return entries;
 }
 
 std::map<NodeId, TreeId> TreeRoom::pointersFor(const std::optional<UserId>& caller) const {

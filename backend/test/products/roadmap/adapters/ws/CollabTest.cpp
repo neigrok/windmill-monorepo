@@ -595,6 +595,34 @@ TEST(a_reader_is_not_sent_what_a_writer_alone_may_see_because_it_landed_late) {
   CHECK_EQ(writers["nodes"], toJson(GraphState{{late.landedLate}, {}})["nodes"]);
 }
 
+// A write that lands a late register says so in one line of counts, and so does a subscribe answer that holds an
+// entry whole for its land seq where the vector alone would have masked it or left it out. Neither names a tree, a
+// step, an account or a stamp, and neither is written for an ordinary write or an answer the vector alone cuts.
+TEST(a_late_landing_and_an_answer_that_carries_late_entries_each_leave_one_line_of_counts) {
+  std::vector<std::string> told;
+  {
+    Observed observed;
+    LateWrite late;
+    // Two late registers and an ordinary one in one frame, at seq 4.
+    late.h.collab.onMessage(late.writer, registerFrame("t_late", "f-mixed", R"({"id":"m","label":"M late","labelAt":"250:0:r_a",
+        "icon":"anchor","iconAt":"260:0:r_a","description":"Past its actor's mark","descriptionAt":"400:0:r_a"})"));
+    late.answered("s-owner", 2);  // away since seq 2: `n` and `m` are both held whole for their land seq
+    late.answered("s-owner", 3);  // away since seq 3: `m` alone
+    late.answered("s-owner", 4);  // at the head: nothing landed late past it
+    late.answered("s-owner", Json::Value());  // no position: the vector alone
+    const auto fresh = late.returning("s-owner");  // an empty vector is answered the whole state by the vector alone
+    late.h.collab.onMessage(fresh, resubscribeFrame("t_late", Json::Value(Json::objectValue), 0));
+    for (const std::string& line : observed.lines)
+      for (const char* name : {"roadmap_late_landing", "roadmap_subscribe_late_entries"})
+        if (line.find(name) != std::string::npos) told.push_back(line.substr(line.find(name), line.find(" - ") - line.find(name)));
+  }
+
+  CHECK_EQ(told, (std::vector<std::string>{"roadmap_late_landing door=websocket registers=1",
+                                           "roadmap_late_landing door=websocket registers=2",
+                                           "roadmap_subscribe_late_entries entries=2",
+                                           "roadmap_subscribe_late_entries entries=1"}));
+}
+
 TEST(ws_subscribe_to_an_absent_tree_is_rejected) {
   Harness h;
   auto conn = std::make_shared<FakeSocket>();

@@ -239,6 +239,8 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       }
       presence_.join(conn, TreeId{treeId});
       delta = room->deltaSince(clientVector, lastSeq);
+      if (const std::size_t late = lastSeq ? room->lateEntriesFor(clientVector, *lastSeq) : 0; late > 0)
+        LOG_INFO << "roadmap_subscribe_late_entries entries=" << late;
       head = room->head();
       subtree = room->parent().has_value();
       depth = room->depth();

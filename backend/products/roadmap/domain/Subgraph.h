@@ -106,7 +106,8 @@ struct LandSeqs {
   bool operator==(const LandSeqs&) const = default;
 
   // `graph` and `legend` are what a write landed, at `seq`: each entry with a register `held` already held is late.
-  void landLate(const GraphState& graph, const LegendState& legend, const HeldStamps& held, Seq seq);
+  // Answers how many registers were.
+  std::size_t landLate(const GraphState& graph, const LegendState& legend, const HeldStamps& held, Seq seq);
   // The entries that landed late past `position`.
   Landed past(Seq position) const;
 };
@@ -116,6 +117,9 @@ struct LandSeqs {
 // full frontier.
 Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const VersionVector& since,
                       const Landed& late = {});
+// How many entries of `late` the vector alone would have masked or left out of that delta: the ones a peer has whole
+// only because they are in `late`.
+std::size_t hiddenBy(const VersionVector& since, const GraphState& graph, const LegendState& legend, const Landed& late);
 
 // What a caller who cannot write a tree receives of its nodes: none says which tree it opens, because
 // a tree id is the read capability of an unlisted tree. A lattice entry left without a stamp is dropped.
