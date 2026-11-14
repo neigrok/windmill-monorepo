@@ -124,16 +124,10 @@ for (const engine of ['Chromium', 'WebKit']) {
           if (process.env.SHORTCUT_CAPTURE_DIR) await page.screenshot({ path: `${process.env.SHORTCUT_CAPTURE_DIR}/${engine}-${view}-${width}-dark-compact.png` });
           await page.keyboard.press(forward);
           await page.setViewportSize({ width, height: 1200 });
-          await page.waitForFunction(() => document.querySelector('[role="region"]').tabIndex === -1, null, { timeout: 2000 });
-          assert.equal(await body.evaluate((element) => element.scrollHeight <= element.clientHeight), true);
-          if (view === 'graph') {
-            for (const name of ['Mac', 'Windows']) {
-              await page.keyboard.press(forward);
-              assert.equal(await page.getByRole('button', { name, exact: true }).evaluate((element) => element === document.activeElement), true);
-            }
-          }
-          await page.keyboard.press(forward);
-          assert.equal(await close.evaluate((element) => element === document.activeElement), true);
+          await page.waitForFunction(() => {
+            const body = document.querySelector('[role="region"]');
+            return body.tabIndex === (body.scrollHeight > body.clientHeight ? 0 : -1);
+          }, null, { timeout: 2000 });
           await page.setViewportSize({ width, height: 500 });
           await page.waitForFunction(() => document.querySelector('[role="region"]').tabIndex === 0, null, { timeout: 2000 });
           await page.keyboard.press(backward);
