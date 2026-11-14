@@ -420,12 +420,14 @@ size:
   first for a peer that is silent too: it closes a connection that neither takes nor sends a byte
   for 60 s, with no line. A tab sends a ping every 20 s, so `stalled` is what reaches one that keeps
   sending and takes nothing.
-- `behind` — more than 16 MiB of live frames, broadcasts and echoes, are pending. A reader that
-  takes bytes but cannot keep up with its trees is dropped, and its next subscribe is answered one
-  delta in place of the backlog. A subscription's first frames, replies and presence never count
-  toward it, so a large delta, or two back to back, is no backlog. Live frames wait behind a delta
-  not yet written, so a reader that needs longer for its delta than its trees take to broadcast
-  16 MiB is dropped on every attempt.
+- `behind` — more than 16 MiB of live frames, broadcasts and echoes, are pending and no first frame
+  of a subscription is. A reader that takes bytes but cannot keep up with its trees is dropped, and
+  its next subscribe is answered one delta in place of the backlog. A subscription's first frames,
+  replies and presence never count toward it, so a large delta, or two back to back, is no backlog.
+  Live frames wait behind a delta not yet written, so while a first frame is pending they are no
+  measure of the reader: one slow to take a large delta is left to finish it, and is dropped as
+  behind only if the live frames that waited are past the bound once the delta is written. A peer
+  that takes nothing of a delta is `stalled`, or reaches the `ceiling`.
 - `ceiling` — more than 320 MiB of any kind are pending: a peer that subscribes again and again
   without reading. The delta of the largest tree of plain text, 10,000 nodes each described in
   16,000 characters, is 156 MiB (measured), so two such deltas back to back stay under it.

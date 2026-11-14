@@ -38,10 +38,11 @@ enum class FrameKind { first, live, reply, presence };
 // never drops it, whatever its size:
 //   stalled — something is pending and not one byte was written for kStalledAfter. Judged on a timer too, so a
 //             connection that stops reading on a tree nobody writes is dropped as well.
-//   behind  — more than kLiveBacklogBytes of live frames are pending: a reader that takes bytes but cannot keep up
-//             is dropped, and its next subscribe is answered one delta in place of the backlog. A subscription's
-//             first frames, replies and presence never count toward it, so a large delta, or two back to back, is
-//             never behind.
+//   behind  — more than kLiveBacklogBytes of live frames are pending and no first frame of a subscription is: a
+//             reader that takes bytes but cannot keep up is dropped, and its next subscribe is answered one delta in
+//             place of the backlog. First frames, replies and presence never count toward it, and live frames wait
+//             behind a delta not yet written, so while a first frame is pending they are no measure of the reader:
+//             one slow to take a large delta is left to finish it, whatever its trees broadcast meanwhile.
 //   ceiling — more than kPendingCeilingBytes are pending of any kind: a peer that subscribes again and again without
 //             reading.
 // The frame that finds a rule broken is not handed over, and the connection is closed: a tab reconnects on that, and
@@ -84,6 +85,7 @@ private:
   };
   std::deque<Run> pending_;
   std::size_t pendingBytes_ = 0;
+  std::size_t firstBytes_ = 0;
   std::size_t liveBytes_ = 0;
   bool began_ = false;
   bool dropped_ = false;

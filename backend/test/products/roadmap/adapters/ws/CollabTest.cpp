@@ -2715,9 +2715,10 @@ TEST(a_connection_is_stalled_once_something_is_pending_and_it_wrote_nothing_for_
             Outbound::Dropped{Outbound::Rule::stalled, 80 * mib + 1'024, limit + std::chrono::milliseconds(1)})));
 }
 
-// Rule `behind`: more than kLiveBacklogBytes of live frames are pending. A reader that takes bytes all the while but
-// half as fast as the tree broadcasts is dropped once it is that far behind; a subscription's first frames, replies
-// and presence frames are entered and never count toward it, so two large deltas back to back are not a drop.
+// Rule `behind`: more than kLiveBacklogBytes of live frames are pending and no first frame is. A reader that takes
+// bytes all the while but half as fast as the tree broadcasts is dropped once it is that far behind; a subscription's
+// first frames, replies and presence frames are entered and never count toward it, so two large deltas back to back
+// are not a drop; and live frames that wait behind a first frame are a backlog only once that frame is written.
 TEST(a_reader_too_far_behind_the_live_frames_is_dropped_as_behind_and_no_other_kind_of_frame_counts_toward_it) {
   const std::chrono::steady_clock::time_point start{};
   const std::size_t mib = 1024 * 1024;
@@ -2746,9 +2747,28 @@ TEST(a_reader_too_far_behind_the_live_frames_is_dropped_as_behind_and_no_other_k
   CHECK_EQ(subscriber.pendingBytes(), 82 * mib);
   CHECK_EQ(subscriber.pendingLiveBytes(), std::size_t{0});
   for (int frame = 0; frame < 16; ++frame) CHECK(!subscriber.handing(mib, FrameKind::live, 0, at).has_value());
-  CHECK(!subscriber.handing(1, FrameKind::live, 0, at).has_value());  // exactly the bound is not past it
-  CHECK(subscriber.handing(mib, FrameKind::live, 0, at) ==
-        (std::optional<Outbound::Dropped>(Outbound::Dropped{Outbound::Rule::behind, 98 * mib + 1, std::chrono::milliseconds{0}})));
+  CHECK(!subscriber.handing(mib, FrameKind::live, 0, at).has_value());  // past the bound, behind deltas not yet written
+  CHECK(!subscriber.judged(42 * mib - 1, at).has_value());  // one byte of the last first frame still pending
+  CHECK_EQ(subscriber.pendingLiveBytes(), 17 * mib);
+  CHECK(subscriber.judged(42 * mib, at) ==
+        (std::optional<Outbound::Dropped>(Outbound::Dropped{Outbound::Rule::behind, 57 * mib, std::chrono::milliseconds{0}})));
+
+  // A delta of 80 MiB taken at 100 KiB a second under 52 KiB a second of broadcasts: 16 MiB of live frames wait behind
+  // it long before it is written, and the reader is left to finish it.
+  Outbound loading;
+  CHECK(!loading.handing(80 * mib, FrameKind::first, 0, start).has_value());
+  for (int second = 1; second <= 800; ++second)
+    CHECK(!loading.handing(52 * 1024, FrameKind::live, static_cast<std::size_t>(second - 1) * 100 * 1024, start + std::chrono::seconds(second)).has_value());
+  CHECK(loading.pendingLiveBytes() > 2 * Outbound::kLiveBacklogBytes);
+  CHECK(!loading.dropped());
+
+  // The same broadcasts after a delta the connection wrote at once: the bound holds from the first live frame.
+  Outbound loaded;
+  CHECK(!loaded.handing(mib, FrameKind::first, 0, at).has_value());
+  for (int frame = 0; frame < 16; ++frame) CHECK(!loaded.handing(mib, FrameKind::live, mib, at).has_value());
+  CHECK(!loaded.handing(1, FrameKind::live, mib, at).has_value());  // exactly the bound is not past it
+  CHECK(loaded.handing(mib, FrameKind::live, mib, at) ==
+        (std::optional<Outbound::Dropped>(Outbound::Dropped{Outbound::Rule::behind, 16 * mib + 1, std::chrono::milliseconds{0}})));
 }
 
 // Rule `ceiling`: more than kPendingCeilingBytes of any kind are pending. A peer that subscribes again and again

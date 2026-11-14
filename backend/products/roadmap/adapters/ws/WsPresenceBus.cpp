@@ -63,13 +63,14 @@ std::optional<Outbound::Dropped> Outbound::judged(std::size_t sent, std::chrono:
     oldest.bytes -= taken;
     written -= taken;
     pendingBytes_ -= taken;
+    if (oldest.kind == FrameKind::first) firstBytes_ -= taken;
     if (oldest.kind == FrameKind::live) liveBytes_ -= taken;
     if (oldest.bytes == 0) pending_.pop_front();
   }
   const auto idle = std::chrono::duration_cast<std::chrono::milliseconds>(now - idleSince_);
   std::optional<Rule> broken;
   if (pendingBytes_ > kPendingCeilingBytes) broken = Rule::ceiling;
-  else if (liveBytes_ > kLiveBacklogBytes) broken = Rule::behind;
+  else if (firstBytes_ == 0 && liveBytes_ > kLiveBacklogBytes) broken = Rule::behind;
   else if (pendingBytes_ > 0 && idle > kStalledAfter) broken = Rule::stalled;
   if (!broken) return std::nullopt;
   dropped_ = true;
@@ -83,6 +84,7 @@ std::optional<Outbound::Dropped> Outbound::handing(std::size_t wireBytes, FrameK
   if (!pending_.empty() && pending_.back().kind == kind) pending_.back().bytes += wireBytes;
   else pending_.push_back(Run{wireBytes, kind});
   pendingBytes_ += wireBytes;
+  if (kind == FrameKind::first) firstBytes_ += wireBytes;
   if (kind == FrameKind::live) liveBytes_ += wireBytes;
   return std::nullopt;
 }
