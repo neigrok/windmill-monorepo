@@ -84,6 +84,21 @@ fn tell(path: &Path) -> Result<(), String> {
         match observe(ledger.clone(), observation, accounts, ids) {
             Ok(change) => {
                 compare(&place, field(step, "expect"), &change_json(&change))?;
+                let subscription = &change.subscription;
+                let grants_until_its_access_ends = match subscription.access_until() {
+                    Some(access_until) => {
+                        let a_moment_before =
+                            Instant::from_epoch_millis(access_until.epoch_millis() - 1);
+                        subscription.grants_access(a_moment_before)
+                            && !subscription.grants_access(access_until)
+                    }
+                    None => !subscription.grants_access(subscription.observed_at),
+                };
+                if !grants_until_its_access_ends {
+                    return Err(format!(
+                        "{place}: grantsAccess breaks INV-1 at the edge of accessUntil"
+                    ));
+                }
                 let Change {
                     subscription,
                     periods,
@@ -115,16 +130,18 @@ fn tell(path: &Path) -> Result<(), String> {
 
         for expected in list(step, "entitlements") {
             let account_id = AccountId::new(text(expected, "accountId"));
-            let at = instant(field(expected, "at"));
             let subscriptions = ledgers
                 .values()
                 .filter_map(|ledger| ledger.subscription.clone())
                 .collect();
-            let entitlement = AccountEntitlement::of(account_id, subscriptions, at);
+            let entitlement = AccountEntitlement::of(account_id, subscriptions);
             compare(
-                &format!("{place}, entitlement at {}", iso(at)),
+                &format!(
+                    "{place}, entitlement of {}",
+                    entitlement.account_id.as_str()
+                ),
                 expected,
-                &entitlement_json(&entitlement, at),
+                &entitlement_json(&entitlement),
             )?;
         }
     }
@@ -432,7 +449,7 @@ fn event_json(event: &Event) -> Value {
     })
 }
 
-fn entitlement_json(entitlement: &AccountEntitlement, at: Instant) -> Value {
+fn entitlement_json(entitlement: &AccountEntitlement) -> Value {
     let block = |entitlement: &Entitlement| {
         json!({
             "plan": entitlement.plan().map(Plan::name),
@@ -443,7 +460,6 @@ fn entitlement_json(entitlement: &AccountEntitlement, at: Instant) -> Value {
     };
     json!({
         "accountId": entitlement.account_id.as_str(),
-        "at": iso(at),
         "production": block(&entitlement.production),
         "sandbox": block(&entitlement.sandbox),
     })

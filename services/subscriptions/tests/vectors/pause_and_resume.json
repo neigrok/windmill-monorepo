@@ -1,5 +1,5 @@
 {
-  "story": "A pause asked for is active with pauseScheduledFor; it begins when the paid period ends and closes access; the subscription resumes into a new period.",
+  "story": "A pause asked for is active with pauseScheduledFor; it begins when the paid period ends and closes access; the subscription resumes into a new period, which resumed names alone.",
   "steps": [
     {
       "note": "The purchase.",
@@ -424,7 +424,6 @@
       "entitlements": [
         {
           "accountId": "account-ada",
-          "at": "2027-02-10T00:00:00Z",
           "production": {
             "plan": null,
             "accessUntil": null,
@@ -564,13 +563,6 @@
         "events": [
           {
             "type": "resumed",
-            "occurredAt": "2027-03-01T10:00:04Z",
-            "subscriptionId": "sub-q1",
-            "accountId": "account-ada",
-            "period": null
-          },
-          {
-            "type": "renewed",
             "occurredAt": "2027-03-01T10:00:04Z",
             "subscriptionId": "sub-q1",
             "accountId": "account-ada",

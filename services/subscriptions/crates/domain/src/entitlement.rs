@@ -4,7 +4,7 @@ use crate::subscription::Subscription;
 use crate::values::{AccountId, Environment, Instant, Plan};
 
 // D-8: an account's answer, one block per environment, so a sandbox purchase never stands in for a
-// production one.
+// production one. It is a function of the ledger alone; whoever reads it applies the clock (INV-1).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountEntitlement {
     pub account_id: AccountId,
@@ -13,19 +13,15 @@ pub struct AccountEntitlement {
 }
 
 impl AccountEntitlement {
-    pub fn of(
-        account_id: AccountId,
-        subscriptions: Vec<Subscription>,
-        now: Instant,
-    ) -> AccountEntitlement {
+    pub fn of(account_id: AccountId, subscriptions: Vec<Subscription>) -> AccountEntitlement {
         let (production, sandbox) = subscriptions
             .into_iter()
             .filter(|subscription| subscription.account_id() == Some(&account_id))
             .partition(|subscription| subscription.lineage.environment == Environment::Production);
         AccountEntitlement {
             account_id,
-            production: Entitlement::of(production, now),
-            sandbox: Entitlement::of(sandbox, now),
+            production: Entitlement::of(production),
+            sandbox: Entitlement::of(sandbox),
         }
     }
 }
@@ -38,29 +34,29 @@ pub struct Entitlement {
 }
 
 impl Entitlement {
-    // Governing: the access-granting subscription with the latest accessUntil, else the one observed
-    // last, the smaller id breaking a tie. Others: every other one that has not ended.
-    fn of(mut subscriptions: Vec<Subscription>, now: Instant) -> Entitlement {
-        let granting_until = |subscription: &Subscription| {
-            subscription
-                .access_until()
-                .filter(|_| subscription.grants_access(now))
-        };
-        subscriptions.sort_by_key(|subscription| {
-            Reverse((
-                granting_until(subscription),
+    // §5.2. Governing: the subscription whose state grants access until the latest instant, else the
+    // one observed last, the smaller id breaking a tie. Others: every other one not ended, by id.
+    fn of(mut subscriptions: Vec<Subscription>) -> Entitlement {
+        let precedence = |subscription: &Subscription| match subscription.access_until() {
+            Some(access_until) => (true, access_until, Reverse(subscription.id.clone())),
+            None => (
+                false,
                 subscription.observed_at,
                 Reverse(subscription.id.clone()),
-            ))
-        });
-        let mut ranked = subscriptions.into_iter();
-        let governing = ranked.next();
+            ),
+        };
+        let governing = (0..subscriptions.len())
+            .max_by_key(|index| precedence(&subscriptions[*index]))
+            .map(|index| subscriptions.swap_remove(index));
+        let mut others: Vec<Subscription> = subscriptions
+            .into_iter()
+            .filter(|subscription| !subscription.status.state.has_ended())
+            .collect();
+        others.sort_by(|one, other| one.id.cmp(&other.id));
         Entitlement {
-            access_until: governing.as_ref().and_then(granting_until),
-            others: ranked
-                .filter(|subscription| !subscription.status.state.has_ended())
-                .collect(),
+            access_until: governing.as_ref().and_then(Subscription::access_until),
             governing,
+            others,
         }
     }
 

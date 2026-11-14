@@ -155,7 +155,6 @@
       "entitlements": [
         {
           "accountId": "account-ada",
-          "at": "2027-01-02T00:00:00Z",
           "production": {
             "plan": null,
             "accessUntil": null,
@@ -301,7 +300,6 @@
       "entitlements": [
         {
           "accountId": "account-ada",
-          "at": "2027-01-04T00:00:00Z",
           "production": {
             "plan": null,
             "accessUntil": null,

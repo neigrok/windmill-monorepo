@@ -231,7 +231,6 @@
       "entitlements": [
         {
           "accountId": "account-bo",
-          "at": "2027-01-06T00:00:00Z",
           "production": {
             "plan": null,
             "accessUntil": null,
@@ -247,7 +246,6 @@
         },
         {
           "accountId": "account-ada",
-          "at": "2027-01-06T00:00:00Z",
           "production": {
             "plan": "windmill_one",
             "accessUntil": "2027-02-02T10:00:00Z",

@@ -368,7 +368,9 @@ fn bind(
 }
 
 // The events a change of status records, in story order. A lineage that starts, or starts again
-// after it ended, is told as a fresh renewing subscription that moved to what the store states.
+// after it ended, is told as a fresh renewing subscription that moved to what the store states. A new
+// period in force records the one event that names how it came: started, renewed, payment_recovered
+// or resumed.
 fn lifecycle_events(
     held: Option<&Status>,
     after: &Status,
@@ -425,7 +427,8 @@ fn lifecycle_events(
             observed_at,
         ),
         (
-            after.current_period.start != before.current_period.start,
+            matches!(was, State::Active { .. })
+                && after.current_period.start != before.current_period.start,
             EventKind::Renewed,
             observed_at,
         ),

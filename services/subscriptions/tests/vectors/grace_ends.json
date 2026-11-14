@@ -1,5 +1,5 @@
 {
-  "story": "Grace ends in revocation when the payment for the period in force is charged back, and in expiry when the store stops retrying without a hold. Two subscriptions in grace until the same instant, observed at the same instant, are ordered by id.",
+  "story": "Grace ends in revocation when the payment for the period in force is charged back, and in expiry when the store stops retrying without a hold. Two subscriptions in grace until the same instant are ordered by id.",
   "steps": [
     {
       "note": "The first purchase.",
@@ -578,7 +578,6 @@
       "entitlements": [
         {
           "accountId": "account-ada",
-          "at": "2027-02-02T00:00:00Z",
           "production": {
             "plan": "windmill_one",
             "accessUntil": "2027-02-15T10:00:00Z",
@@ -744,7 +743,6 @@
       "entitlements": [
         {
           "accountId": "account-ada",
-          "at": "2027-02-06T00:00:00Z",
           "production": {
             "plan": "windmill_one",
             "accessUntil": "2027-02-15T10:00:00Z",
@@ -889,7 +887,6 @@
       "entitlements": [
         {
           "accountId": "account-ada",
-          "at": "2027-02-16T00:00:00Z",
           "production": {
             "plan": null,
             "accessUntil": null,

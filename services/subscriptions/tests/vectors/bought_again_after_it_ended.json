@@ -750,7 +750,6 @@
       "entitlements": [
         {
           "accountId": "account-ada",
-          "at": "2027-04-21T00:00:00Z",
           "production": {
             "plan": "windmill_one",
             "accessUntil": "2027-05-21T09:00:00Z",

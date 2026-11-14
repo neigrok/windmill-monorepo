@@ -1,5 +1,5 @@
 {
-  "story": "A failed renewal opens billing grace with access until graceEndsAt; the retried charge succeeds, recording the recovery, the renewal and the new period.",
+  "story": "A failed renewal opens billing grace with access until graceEndsAt; the retried charge succeeds, recording the recovery and the new period.",
   "steps": [
     {
       "note": "The purchase.",
@@ -293,7 +293,6 @@
       "entitlements": [
         {
           "accountId": "account-ada",
-          "at": "2027-02-05T00:00:00Z",
           "production": {
             "plan": "windmill_one",
             "accessUntil": "2027-02-17T10:00:00Z",
@@ -433,13 +432,6 @@
         "events": [
           {
             "type": "payment_recovered",
-            "occurredAt": "2027-02-03T15:00:00Z",
-            "subscriptionId": "sub-g1",
-            "accountId": "account-ada",
-            "period": null
-          },
-          {
-            "type": "renewed",
             "occurredAt": "2027-02-03T15:00:00Z",
             "subscriptionId": "sub-g1",
             "accountId": "account-ada",

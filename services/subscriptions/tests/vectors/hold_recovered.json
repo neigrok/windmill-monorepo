@@ -1,5 +1,5 @@
 {
-  "story": "A store without grace moves a failed renewal straight to on_hold, closing access; the recovered charge records payment_recovered, renewed and the new period.",
+  "story": "A store without grace moves a failed renewal straight to on_hold, closing access; the recovered charge records payment_recovered and the new period, not renewed.",
   "steps": [
     {
       "note": "The purchase.",
@@ -290,7 +290,6 @@
       "entitlements": [
         {
           "accountId": "account-ada",
-          "at": "2027-02-02T00:00:00Z",
           "production": {
             "plan": null,
             "accessUntil": null,
@@ -436,13 +435,6 @@
             "period": null
           },
           {
-            "type": "renewed",
-            "occurredAt": "2027-02-05T08:00:00Z",
-            "subscriptionId": "sub-p1",
-            "accountId": "account-ada",
-            "period": null
-          },
-          {
             "type": "period_recorded",
             "occurredAt": "2027-02-05T08:00:00Z",
             "subscriptionId": "sub-p1",
@@ -467,7 +459,6 @@
       "entitlements": [
         {
           "accountId": "account-ada",
-          "at": "2027-02-06T00:00:00Z",
           "production": {
             "plan": "windmill_one",
             "accessUntil": "2027-03-02T10:00:00Z",

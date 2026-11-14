@@ -1,5 +1,5 @@
 {
-  "story": "A sandbox subscription has no renewal slack and folds into the account's sandbox block alone; a production purchase on the same account governs the production block, whatever the sandbox one does.",
+  "story": "A sandbox subscription has no renewal slack and folds into the account's sandbox block alone; a production purchase on the same account governs the production block, whatever the sandbox one does. The fold reads no clock: a block grants until its accessUntil, and its reader decides whether that has passed.",
   "steps": [
     {
       "note": "A sandbox purchase: a month lasts five minutes and access ends with it.",
@@ -162,7 +162,6 @@
       "entitlements": [
         {
           "accountId": "account-ada",
-          "at": "2027-01-01T10:02:00Z",
           "production": {
             "plan": null,
             "accessUntil": null,
@@ -172,22 +171,6 @@
           "sandbox": {
             "plan": "windmill_one",
             "accessUntil": "2027-01-01T10:05:00Z",
-            "governing": "sub-sb1",
-            "others": []
-          }
-        },
-        {
-          "accountId": "account-ada",
-          "at": "2027-01-01T10:06:00Z",
-          "production": {
-            "plan": null,
-            "accessUntil": null,
-            "governing": null,
-            "others": []
-          },
-          "sandbox": {
-            "plan": null,
-            "accessUntil": null,
             "governing": "sub-sb1",
             "others": []
           }
@@ -355,7 +338,6 @@
       "entitlements": [
         {
           "accountId": "account-ada",
-          "at": "2027-01-01T11:30:00Z",
           "production": {
             "plan": "windmill_one",
             "accessUntil": "2027-02-02T11:00:00Z",
@@ -363,8 +345,8 @@
             "others": []
           },
           "sandbox": {
-            "plan": null,
-            "accessUntil": null,
+            "plan": "windmill_one",
+            "accessUntil": "2027-01-01T10:05:00Z",
             "governing": "sub-sb1",
             "others": []
           }
