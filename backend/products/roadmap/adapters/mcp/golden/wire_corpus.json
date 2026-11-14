@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 27,
+  "schemaVersion" : 28,
   "steps" : 
   [
     {
@@ -295,10 +295,7 @@
             "text" : 
             {
               "applied" : true,
-              "changedNodeIds" : [],
-              "diagnosticsClean" : true,
               "dryRun" : false,
-              "introducedDiagnostics" : [],
               "progress" : 
               [
                 {
@@ -319,14 +316,7 @@
                 }
               ],
               "seq" : 8,
-              "treeId" : "t",
-              "unchanged" : true,
-              "unchangedNodeIds" : 
-              [
-                "root",
-                "render",
-                "sync"
-              ]
+              "treeId" : "t"
             },
             "type" : "text"
           }
@@ -335,10 +325,7 @@
         "structuredContent" : 
         {
           "applied" : true,
-          "changedNodeIds" : [],
-          "diagnosticsClean" : true,
           "dryRun" : false,
-          "introducedDiagnostics" : [],
           "progress" : 
           [
             {
@@ -359,14 +346,7 @@
             }
           ],
           "seq" : 8,
-          "treeId" : "t",
-          "unchanged" : true,
-          "unchangedNodeIds" : 
-          [
-            "root",
-            "render",
-            "sync"
-          ]
+          "treeId" : "t"
         }
       },
       "step" : 9,
@@ -858,10 +838,7 @@
             "text" : 
             {
               "applied" : true,
-              "changedNodeIds" : [],
-              "diagnosticsClean" : true,
               "dryRun" : false,
-              "introducedDiagnostics" : [],
               "progress" : 
               [
                 {
@@ -887,14 +864,7 @@
                 "docs"
               ],
               "seq" : 10,
-              "treeId" : "t",
-              "unchanged" : true,
-              "unchangedNodeIds" : 
-              [
-                "docs",
-                "launch",
-                "render"
-              ]
+              "treeId" : "t"
             },
             "type" : "text"
           }
@@ -903,10 +873,7 @@
         "structuredContent" : 
         {
           "applied" : true,
-          "changedNodeIds" : [],
-          "diagnosticsClean" : true,
           "dryRun" : false,
-          "introducedDiagnostics" : [],
           "progress" : 
           [
             {
@@ -932,14 +899,7 @@
             "docs"
           ],
           "seq" : 10,
-          "treeId" : "t",
-          "unchanged" : true,
-          "unchangedNodeIds" : 
-          [
-            "docs",
-            "launch",
-            "render"
-          ]
+          "treeId" : "t"
         }
       },
       "step" : 19,
@@ -997,8 +957,7 @@
               {
                 "edges" : 0,
                 "nodes" : 0
-              },
-              "unchanged" : true
+              }
             },
             "type" : "text"
           }
@@ -1045,11 +1004,7 @@
               ],
               "seq" : 11,
               "treeId" : "t",
-              "unchangedNodeIds" : 
-              [
-                "docs",
-                "sync"
-              ]
+              "unchangedNodeIds" : []
             },
             "type" : "text"
           }
@@ -1085,11 +1040,7 @@
           ],
           "seq" : 11,
           "treeId" : "t",
-          "unchangedNodeIds" : 
-          [
-            "docs",
-            "sync"
-          ]
+          "unchangedNodeIds" : []
         }
       },
       "step" : 21,
@@ -1103,11 +1054,8 @@
           {
             "text" : 
             {
-              "applied" : true,
-              "changedNodeIds" : [],
-              "diagnosticsClean" : true,
+              "applied" : false,
               "dryRun" : false,
-              "introducedDiagnostics" : [],
               "progress" : 
               [
                 {
@@ -1123,11 +1071,7 @@
               ],
               "seq" : 11,
               "treeId" : "t",
-              "unchanged" : true,
-              "unchangedNodeIds" : 
-              [
-                "docs"
-              ]
+              "unchanged" : true
             },
             "type" : "text"
           }
@@ -1135,11 +1079,8 @@
         "isError" : false,
         "structuredContent" : 
         {
-          "applied" : true,
-          "changedNodeIds" : [],
-          "diagnosticsClean" : true,
+          "applied" : false,
           "dryRun" : false,
-          "introducedDiagnostics" : [],
           "progress" : 
           [
             {
@@ -1155,11 +1096,7 @@
           ],
           "seq" : 11,
           "treeId" : "t",
-          "unchanged" : true,
-          "unchangedNodeIds" : 
-          [
-            "docs"
-          ]
+          "unchanged" : true
         }
       },
       "step" : 22,

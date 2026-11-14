@@ -5586,7 +5586,8 @@ TEST(mcp_an_import_that_changes_anything_lands_with_a_seq_and_no_unchanged) {
            parse(R"([{"id":"owner","hue":"gold","label":"Captain"}])"));
 }
 
-// `unchanged` speaks for the graft only: progress carried beside an unchanged graft is applied and reported as ever.
+// Progress carried beside a graft that lands nothing is applied and reported as ever, and the receipt does not say
+// `unchanged` beside a mark it recorded.
 TEST(mcp_an_import_whose_graft_changes_nothing_still_applies_its_progress) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
@@ -5596,7 +5597,7 @@ TEST(mcp_an_import_whose_graft_changes_nothing_still_applies_its_progress) {
     "progress":[{"nodeId":"a","status":"complete"}]})"))),
            parse(R"({"nodes":1,"edges":0,"kinds":0,"nodeCollisions":["a"],"kindCollisions":[],"newNodes":0,
              "newKinds":0,"prerequisiteMode":"merge","keptEdges":[],"keptEdgeCount":0,"tombstoned":{"nodes":0,"edges":0},
-             "graphApplied":true,"progressApplied":true,"imported":true,"seq":1,"unchanged":true,
+             "graphApplied":true,"progressApplied":true,"imported":true,"seq":1,
              "diagnosticsClean":true,"introducedDiagnostics":[],
              "progress":[{"nodeId":"a","status":"complete","prerequisitesMet":true}]})"));
   CHECK_EQ(body(h.call("get_progress", Json::Value(Json::objectValue))), parse(R"({"completed":["a"],"outOfOrder":[]})"));
@@ -6328,20 +6329,20 @@ TEST(mcp_a_progress_mark_already_held_says_so_on_its_row) {
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B",
     "prerequisites":["a"]}]})")).isError);
   CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","status":"complete"})")))),
-           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete"}],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["a"]})"));
+           parse(R"({"applied":true,"dryRun":false,"progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete"}],"seq":1,"treeId":"t"})"));
   CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"a","status":"complete"})")))),
-           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete","unchanged":true}],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["a"]})"));
+           parse(R"({"applied":true,"dryRun":false,"progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete","unchanged":true}],"seq":1,"treeId":"t","unchanged":true})"));
   CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"b","status":"complete","outOfOrder":true})")))),
-           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"acknowledged":true,"nodeId":"b","prerequisitesMet":true,"status":"complete"}],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["b"]})"));
+           parse(R"({"applied":true,"dryRun":false,"progress":[{"acknowledged":true,"nodeId":"b","prerequisitesMet":true,"status":"complete"}],"seq":1,"treeId":"t"})"));
   CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"b","status":"complete"})")))),
-           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"b","prerequisitesMet":true,"status":"complete"}],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["b"]})"));
+           parse(R"({"applied":true,"dryRun":false,"progress":[{"nodeId":"b","prerequisitesMet":true,"status":"complete"}],"seq":1,"treeId":"t"})"));
 
   CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
     {"nodeId":"b","status":"none"}]})"))),
-           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete","unchanged":true},{"nodeId":"b","prerequisitesMet":true,"status":"none"}],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["a","b"]})"));
+           parse(R"({"applied":true,"dryRun":false,"progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete","unchanged":true},{"nodeId":"b","prerequisitesMet":true,"status":"none"}],"seq":1,"treeId":"t"})"));
   CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"},
     {"nodeId":"b","status":"none"}]})"))),
-           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete","unchanged":true},{"nodeId":"b","prerequisitesMet":true,"status":"none","unchanged":true}],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["a","b"]})"));
+           parse(R"({"applied":true,"dryRun":false,"progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete","unchanged":true},{"nodeId":"b","prerequisitesMet":true,"status":"none","unchanged":true}],"seq":1,"treeId":"t","unchanged":true})"));
   CHECK_EQ(body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}],"progress":[
     {"nodeId":"a","status":"complete"},{"nodeId":"b","status":"complete"}]})")))["progress"],
            parse(R"([{"nodeId":"a","status":"complete","prerequisitesMet":true,"unchanged":true},
@@ -6380,6 +6381,93 @@ TEST(mcp_a_bulk_progress_row_is_judged_at_its_turn_in_the_batch) {
 
 // A mark on such a node told its maker it did something; the door says what completes the node, names no tree, and
 // writes nothing, a clear as much as a completion. A call of such marks alone is no error and completes as opens-a-tree.
+// A receipt reads as what happened. A call of marks alone answers its rows and no key that speaks of the tree's fields;
+// `unchanged` says the whole call changed nothing, so it never sits beside a row that recorded a mark.
+TEST(mcp_a_call_of_marks_alone_answers_its_rows_and_nothing_of_the_tree_fields) {
+  Harness h;
+  for (const char* id : {"a", "b"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
+
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(mark("a", "complete")))),
+           parse(R"({"applied":true,"dryRun":false,"seq":2,"treeId":"t",
+             "progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete"}]})"));
+  CHECK_EQ(body(h.call("update_nodes", asUpdate(mark("a", "complete")))),
+           parse(R"({"applied":true,"dryRun":false,"seq":2,"treeId":"t","unchanged":true,
+             "progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete","unchanged":true}]})"));
+  CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["a"],"outOfOrder":[]})"));
+}
+
+// A dry run of marks alone previews nothing of the tree and records no mark.
+TEST(mcp_a_dry_run_of_marks_alone_answers_that_nothing_was_applied_and_no_tree_key) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("a", "A")).isError);
+  CHECK_EQ(body(h.call("update_nodes", parse(R"({"dryRun":true,"updates":[{"nodeId":"a","status":"complete"}]})"))),
+           parse(R"({"applied":false,"dryRun":true,"seq":1,"treeId":"t"})"));
+  CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":[],"outOfOrder":[]})"));
+}
+
+// A call of tree fields and marks tells the two apart: the rows that sent a tree field are partitioned by whether it
+// changed, the marks answer in `progress`, and `unchanged` is said only when neither half changed anything.
+TEST(mcp_a_call_of_tree_fields_and_marks_tells_the_two_halves_apart) {
+  Harness h;
+  for (const char* id : {"a", "b"}) CHECK_FALSE(h.call("create_node", node(id, id)).isError);
+  const auto sent = [&](const char* updates) {
+    Json::Value args(Json::objectValue);
+    args["updates"] = parse(updates);
+    return body(h.call("update_nodes", args));
+  };
+
+  CHECK_EQ(sent(R"([{"nodeId":"a","label":"Alpha"},{"nodeId":"b","status":"complete"}])"),
+           parse(R"({"applied":true,"dryRun":false,"seq":3,"treeId":"t","changedNodeIds":["a"],"unchangedNodeIds":[],
+             "diagnosticsClean":true,"introducedDiagnostics":[],
+             "progress":[{"nodeId":"b","prerequisitesMet":true,"status":"complete"}]})"));
+  // The tree field is as the node holds it and the mark is new: the tree half says so by the row, and nothing says
+  // the call changed nothing.
+  CHECK_EQ(sent(R"([{"nodeId":"a","label":"Alpha"},{"nodeId":"b","status":"none"}])"),
+           parse(R"({"applied":true,"dryRun":false,"seq":3,"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],
+             "diagnosticsClean":true,"introducedDiagnostics":[],
+             "progress":[{"nodeId":"b","prerequisitesMet":true,"status":"none"}]})"));
+  CHECK_EQ(sent(R"([{"nodeId":"a","label":"Alpha"},{"nodeId":"b","status":"none"}])"),
+           parse(R"({"applied":true,"dryRun":false,"seq":3,"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],
+             "diagnosticsClean":true,"introducedDiagnostics":[],"unchanged":true,
+             "progress":[{"nodeId":"b","prerequisitesMet":true,"status":"none","unchanged":true}]})"));
+  // One row may carry both.
+  CHECK_EQ(sent(R"([{"nodeId":"a","label":"Alef","status":"complete"}])"),
+           parse(R"({"applied":true,"dryRun":false,"seq":4,"treeId":"t","changedNodeIds":["a"],"unchangedNodeIds":[],
+             "diagnosticsClean":true,"introducedDiagnostics":[],
+             "progress":[{"nodeId":"a","prerequisitesMet":true,"status":"complete"}]})"));
+}
+
+// An import that carries marks and no graft answers its rows the same way: `unchanged` is said when no mark changed
+// either, and never beside a row that recorded one.
+TEST(mcp_an_import_of_marks_alone_says_unchanged_only_when_no_mark_changed) {
+  Harness h;
+  CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
+
+  // A dry run previews the graft and no mark: of marks alone it calls nothing unchanged, of an empty call it does.
+  CHECK_FALSE(body(h.call("import_subgraph", parse(R"({"dryRun":true,"nodes":[],"progress":[{"nodeId":"a","status":"complete"}]})")))
+                  .isMember("unchanged"));
+  CHECK(body(h.call("import_subgraph", parse(R"({"dryRun":true,"nodes":[]})")))["unchanged"].asBool());
+
+  const Json::Value recorded = body(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"a","status":"complete"}]})")));
+  CHECK_FALSE(recorded.isMember("unchanged"));
+  CHECK_EQ(recorded["progress"], parse(R"([{"nodeId":"a","prerequisitesMet":true,"status":"complete"}])"));
+  CHECK_EQ(recorded["seq"].asInt(), 1);
+
+  const Json::Value again = body(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"a","status":"complete"}]})")));
+  CHECK(again["unchanged"].asBool());
+  CHECK_EQ(again["progress"], parse(R"([{"nodeId":"a","prerequisitesMet":true,"status":"complete","unchanged":true}])"));
+
+  // A graft sent as the tree holds it beside a new mark: the graft's own keys say it landed nothing new.
+  const Json::Value echoed = body(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"}],
+    "progress":[{"nodeId":"b","status":"complete"}]})")));
+  CHECK_FALSE(echoed.isMember("unchanged"));
+  CHECK_EQ(echoed["nodeCollisions"], list({"a"}));
+  CHECK_EQ(echoed["newNodes"].asInt(), 0);
+  CHECK_EQ(echoed["progress"], parse(R"([{"nodeId":"b","prerequisitesMet":true,"status":"complete"}])"));
+  CHECK_EQ(echoed["seq"].asInt(), 1);
+  CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["a","b"],"outOfOrder":[]})"));
+}
+
 TEST(mcp_an_update_nodes_mark_on_a_node_that_opens_a_tree_writes_nothing_complete_or_none) {
   Harness h;
   h.trees.byId["t_sub"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Deep dive", {}}, 0, h.caller};
@@ -6397,10 +6485,10 @@ TEST(mcp_an_update_nodes_mark_on_a_node_that_opens_a_tree_writes_nothing_complet
         "roadmap_update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"idea","status":")" + status + R"("}]})"),
         h.actor);
     CHECK_FALSE(refused.isError);
-    CHECK_EQ(body(refused), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
-      "introducedDiagnostics":[],"progress":[{"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}],
+    CHECK_EQ(body(refused), parse(R"({"applied":false,"dryRun":false,
+      "progress":[{"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}],
       "progressApplied":false,"progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.",
-      "progressRefused":["idea"],"seq":2,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea"]})"));
+      "progressRefused":["idea"],"seq":2,"treeId":"t","unchanged":true})"));
   }
   installWriteSink({});
 
@@ -6431,21 +6519,19 @@ TEST(mcp_a_batch_records_its_ordinary_marks_and_answers_a_refused_row_for_each_n
   installWriteSink({});
 
   CHECK_FALSE(mixed.isError);
-  CHECK_EQ(body(mixed), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
-      "introducedDiagnostics":[],"progress":[
+  CHECK_EQ(body(mixed), parse(R"({"applied":true,"dryRun":false,"progress":[
       {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
       {"nodeId":"a","status":"complete","prerequisitesMet":true},
       {"nodeId":"deeper","refused":"\"deeper\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
       {"nodeId":"b","status":"complete","prerequisitesMet":true}],
       "progressApplied":false,"progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.",
-      "progressRefused":["idea","deeper"],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea","a","deeper","b"]})"));
+      "progressRefused":["idea","deeper"],"seq":1,"treeId":"t"})"));
   CHECK_FALSE(everyRowRefused.isError);
-  CHECK_EQ(body(everyRowRefused), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
-      "introducedDiagnostics":[],"progress":[
+  CHECK_EQ(body(everyRowRefused), parse(R"({"applied":false,"dryRun":false,"progress":[
       {"nodeId":"deeper","refused":"\"deeper\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"},
       {"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}],
       "progressApplied":false,"progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.",
-      "progressRefused":["deeper","idea"],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["deeper","idea"]})"));
+      "progressRefused":["deeper","idea"],"seq":1,"treeId":"t","unchanged":true})"));
   CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["a","b"],"outOfOrder":[]})"));
   CHECK_EQ(h.progressRepo.byKey.size(), 2u);
   REQUIRE_EQ(h.bus.progressBroadcasts.size(), 1u);
@@ -6546,16 +6632,16 @@ TEST(mcp_a_node_whose_pointer_is_not_valid_is_marked_as_any_node) {
 
   CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"gone","status":"complete"},{"nodeId":"theirs","status":"complete"},
                                                              {"nodeId":"absent","status":"complete"},{"nodeId":"plain","status":"complete"}]})"))),
-           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],
+           parse(R"({"applied":true,"dryRun":false,
                      "progress":[{"nodeId":"gone","status":"complete","prerequisitesMet":true},
                                  {"nodeId":"theirs","status":"complete","prerequisitesMet":true},
                                  {"nodeId":"absent","status":"complete","prerequisitesMet":true},
                                  {"nodeId":"plain","status":"complete","prerequisitesMet":true}],
-                     "seq":3,"treeId":"t","unchanged":true,"unchangedNodeIds":["gone","theirs","absent","plain"]})"));
+                     "seq":3,"treeId":"t"})"));
   CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"gone","status":"none"})")))),
-           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],
+           parse(R"({"applied":true,"dryRun":false,
                      "progress":[{"nodeId":"gone","status":"none","prerequisitesMet":true}],
-                     "seq":3,"treeId":"t","unchanged":true,"unchangedNodeIds":["gone"]})"));
+                     "seq":3,"treeId":"t"})"));
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","status","state"]})")))["tree"]["nodes"],
            parse(R"([{"id":"absent","status":"complete","state":"complete"},{"id":"gone","status":"none","state":"available"},
                      {"id":"plain","status":"complete","state":"complete"},{"id":"theirs","status":"complete","state":"complete"}])"));
@@ -6617,34 +6703,33 @@ TEST(mcp_prerequisites_met_follows_the_tree_a_prerequisite_opens_whatever_mark_t
                                                             {"id":"behind-unmarked","label":"Behind unmarked","prerequisites":["unmarked"]}],
                                                    "progress":[{"nodeId":"marked","status":"complete"}]})")).isError);
   CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"marked","opens":"t_open"})"))).isError);
-  // The receipt of a call of marks alone on `t`: no tree op, so the head it stands at and every row's node unchanged.
-  const auto receipt = [](const char* progress, const char* nodes) {
-    return parse(std::string(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,)"
-                             R"("introducedDiagnostics":[],"progress":)") + progress +
-                 R"(,"seq":2,"treeId":"t","unchanged":true,"unchangedNodeIds":)" + nodes + "}");
+  // The receipt of a call of marks alone on `t`: no tree op, so the head it stands at and its rows, and `unchanged`
+  // when no row changed a mark.
+  const auto receipt = [](const char* progress, bool unchanged = false) {
+    Json::Value answered = parse(std::string(R"({"applied":true,"dryRun":false,"progress":)") + progress +
+                                 R"(,"seq":2,"treeId":"t"})");
+    if (unchanged) answered["unchanged"] = true;
+    return answered;
   };
 
   CHECK_EQ(body(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"behind-marked","status":"complete","outOfOrder":true},
                                                              {"nodeId":"behind-unmarked","status":"complete"}]})"))),
            receipt(R"([{"nodeId":"behind-marked","status":"complete","prerequisitesMet":false,"acknowledged":true},
-                       {"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":true}])",
-                   R"(["behind-marked","behind-unmarked"])"));
+                       {"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":true}])"));
   CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"behind-marked","status":"complete"})")))),
-           receipt(R"([{"nodeId":"behind-marked","status":"complete","prerequisitesMet":false}])", R"(["behind-marked"])"));
+           receipt(R"([{"nodeId":"behind-marked","status":"complete","prerequisitesMet":false}])"));
 
   CHECK_FALSE(h.tools.callTool("update_nodes", parse(R"({"treeId":"t_open","updates":[{"nodeId":"s","status":"complete"}]})"), h.actor).isError);
   CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"behind-marked","status":"complete"})")))),
-           receipt(R"([{"nodeId":"behind-marked","status":"complete","prerequisitesMet":true,"unchanged":true}])",
-                   R"(["behind-marked"])"));
+           receipt(R"([{"nodeId":"behind-marked","status":"complete","prerequisitesMet":true,"unchanged":true}])", true));
 
   const ToolCaller stranger{uid("stranger"), ToolScope::everything()};
   CHECK_EQ(body(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"behind-unmarked","status":"complete"}]})"), stranger)),
-           receipt(R"([{"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":false}])", R"(["behind-unmarked"])"));
+           receipt(R"([{"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":false}])"));
   CHECK_EQ(body(h.tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"unmarked","status":"complete"},
                                                                                     {"nodeId":"behind-unmarked","status":"complete"}]})"), stranger)),
            receipt(R"([{"nodeId":"unmarked","status":"complete","prerequisitesMet":true},
-                       {"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":true,"unchanged":true}])",
-                   R"(["unmarked","behind-unmarked"])"));
+                       {"nodeId":"behind-unmarked","status":"complete","prerequisitesMet":true,"unchanged":true}])"));
 }
 
 // Nothing is read for a tree with no pointer, for a caller who cannot write the tree, or for a call refused before it is judged.
@@ -6745,7 +6830,7 @@ TEST(mcp_a_mark_whose_pointers_cannot_be_followed_fails_as_the_call_and_records_
   CHECK_EQ(body(edited), parse(R"({"applied":true,"changedNodeIds":["idea"],"diagnosticsClean":true,"dryRun":false,
     "introducedDiagnostics":[],"progressApplied":false,
     "progressError":"The marks' outcome is uncertain. Read get_progress before retrying progress changes.",
-    "seq":2,"treeId":"t","unchangedNodeIds":["a"]})"));
+    "seq":2,"treeId":"t","unchangedNodeIds":[]})"));
   CHECK(imported.isError);
   CHECK_EQ(message(imported), std::string("import_subgraph: that call failed inside the server. The outcome may be uncertain; "
                                           "read the affected records before retrying. The detail is in the server log."));
@@ -6816,18 +6901,23 @@ TEST(mcp_a_call_that_recorded_no_mark_and_was_refused_one_completes_as_opens_a_t
       {"nodeId":"idea","status":"none"},{"nodeId":"b","status":"complete"}]})"), h.actor);
   installWriteSink({});
 
-  // The receipt of a call of marks alone that refused the mark on `idea` beside `others`, and what those answered.
-  const auto receipt = [](const char* others, const char* nodes) {
-    return parse(std::string(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,)"
-                             R"("introducedDiagnostics":[],"progress":[{"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"})") +
+  // The receipt of a call of marks alone that refused the mark on `idea` beside `others`, and what those answered:
+  // applied and changed when one of them recorded a mark, neither when the refusal was all the call came to.
+  const auto receipt = [](const char* others) {
+    Json::Value answered = parse(std::string(R"({"applied":true,"dryRun":false,"progress":[{"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"})") +
                  others + R"(],"progressApplied":false,"progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.",)"
-                          R"("progressRefused":["idea"],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":)" + nodes + "}");
+                          R"("progressRefused":["idea"],"seq":1,"treeId":"t"})");
+    if (answered["progress"].size() == 1) {
+      answered["applied"] = false;
+      answered["unchanged"] = true;
+    }
+    return answered;
   };
-  CHECK_EQ(body(refused), receipt("", R"(["idea"])"));
-  CHECK_EQ(body(refusedAndAhead), receipt(R"(,{"nodeId":"a","status":"none","prerequisitesMet":true})", R"(["idea","a"])"));
+  CHECK_EQ(body(refused), receipt(""));
+  CHECK_EQ(body(refusedAndAhead), receipt(R"(,{"nodeId":"a","status":"none","prerequisitesMet":true})"));
   CHECK_EQ(h.progressRepo.byKey.at(fake::FakeProgressRepository::key(TreeId{"t"}, h.caller, nid("a"))).at,
            (Hlc{9'000'000, 1, std::string{TreeRoom::kServerActor}}));
-  CHECK_EQ(body(refusedAndRecorded), receipt(R"(,{"nodeId":"b","status":"complete","prerequisitesMet":true})", R"(["idea","b"])"));
+  CHECK_EQ(body(refusedAndRecorded), receipt(R"(,{"nodeId":"b","status":"complete","prerequisitesMet":true})"));
   CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["b"],"outOfOrder":[]})"));
   std::vector<std::string> observed;
   for (const WriteCompletion& completion : completions) observed.push_back(completion.operation + " " + completion.outcome);
@@ -7333,7 +7423,7 @@ TEST(mcp_a_server_progress_write_lands_over_a_mark_stamped_ahead_of_the_server) 
 
   CHECK_EQ(body(h.call("delete_node", parse(R"({"nodeId":"a"})")))["pruned"], parse(R"({"edges":0,"progress":1})"));
   CHECK_EQ(body(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"b","status":"none"})")))),
-           parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,"introducedDiagnostics":[],"progress":[{"nodeId":"b","prerequisitesMet":true,"status":"none"}],"seq":2,"treeId":"t","unchanged":true,"unchangedNodeIds":["b"]})"));
+           parse(R"({"applied":true,"dryRun":false,"progress":[{"nodeId":"b","prerequisitesMet":true,"status":"none"}],"seq":2,"treeId":"t"})"));
   const Json::Value cleared = parse(R"({"completed":[],"cleared":["a","b"]})");
   CHECK_EQ(storedMarks(h.progress, h.caller), cleared);
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A"})")).isError);
@@ -7835,8 +7925,7 @@ TEST(mcp_update_nodes_marks_a_tree_the_caller_reads_and_refuses_a_tree_field_the
     return body(h->tools.callTool("get_progress", parse(R"({"treeId":"t"})"), stranger))["completed"];
   };
 
-  Json::Value expected = parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],"dryRun":false,
-    "applied":true,"unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[],
+  Json::Value expected = parse(R"({"treeId":"t","dryRun":false,"applied":true,
     "progress":[{"nodeId":"a","status":"complete","prerequisitesMet":true}]})");
   expected["seq"] = seq;
   CHECK_EQ(body(h->tools.callTool("update_nodes", parse(R"({"treeId":"t","updates":[{"nodeId":"a","status":"complete"}]})"),
@@ -7911,8 +8000,7 @@ TEST(mcp_update_nodes_lands_one_field_as_its_own_command) {
   auto h = nodeTree();
   const std::size_t rows = h->ops.byTree["t"].size();
   CHECK_EQ(body(h->call("update_nodes", parse(R"({"updates":[{"nodeId":"a","status":"complete"}]})"))),
-           parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],"dryRun":false,"applied":true,"seq":2,
-             "unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[],
+           parse(R"({"treeId":"t","dryRun":false,"applied":true,"seq":2,
              "progress":[{"nodeId":"a","status":"complete","prerequisitesMet":true}]})"));
   CHECK_EQ(h->ops.byTree["t"].size(), rows);
   CHECK_EQ(body(h->call("get_progress", kNoArgs))["completed"], parse(R"(["a"])"));
@@ -7951,7 +8039,7 @@ TEST(mcp_update_nodes_refuses_stale_calls_whole_and_previews_without_marking) {
                  std::to_string(seq) + ". Nothing changed; read get_nodes or get_tree and retry with the current seq.");
   }
 
-  Json::Value preview = parse(R"({"treeId":"t","changedNodeIds":["a"],"unchangedNodeIds":["b"],"dryRun":true,
+  Json::Value preview = parse(R"({"treeId":"t","changedNodeIds":["a"],"unchangedNodeIds":[],"dryRun":true,
     "applied":false})");
   preview["seq"] = seq;
   CHECK_EQ(body(h->call("update_nodes", parse(R"({"dryRun":true,"updates":[{"nodeId":"a","label":"Alpha",
@@ -8096,18 +8184,17 @@ TEST(mcp_update_nodes_refuses_a_mark_on_a_node_that_opens_a_tree_row_by_row) {
   const std::string refusedRow = R"({"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"})";
   const std::string refusedSentence = R"("progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.")";
   CHECK_FALSE(refused.isError);
-  CHECK_EQ(body(refused), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
-    "introducedDiagnostics":[],"progress":[)" + refusedRow + R"(],"progressApplied":false,)" + refusedSentence +
-                                R"(,"progressRefused":["idea"],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea"]})"));
+  CHECK_EQ(body(refused), parse(R"({"applied":false,"dryRun":false,"progress":[)" + refusedRow +
+                                R"(],"progressApplied":false,)" + refusedSentence +
+                                R"(,"progressRefused":["idea"],"seq":1,"treeId":"t","unchanged":true})"));
   CHECK_FALSE(beside.isError);
-  CHECK_EQ(body(beside), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
-    "introducedDiagnostics":[],"progress":[)" + refusedRow + R"(,{"nodeId":"a","status":"complete","prerequisitesMet":true}],
-    "progressApplied":false,)" + refusedSentence +
-                               R"(,"progressRefused":["idea"],"seq":1,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea","a"]})"));
+  CHECK_EQ(body(beside), parse(R"({"applied":true,"dryRun":false,"progress":[)" + refusedRow +
+                               R"(,{"nodeId":"a","status":"complete","prerequisitesMet":true}],
+    "progressApplied":false,)" + refusedSentence + R"(,"progressRefused":["idea"],"seq":1,"treeId":"t"})"));
   CHECK_FALSE(edited.isError);
   CHECK_EQ(body(edited), parse(R"({"applied":true,"changedNodeIds":["a"],"diagnosticsClean":true,"dryRun":false,
     "introducedDiagnostics":[],"progress":[)" + refusedRow + R"(],"progressApplied":false,)" + refusedSentence +
-                               R"(,"progressRefused":["idea"],"seq":2,"treeId":"t","unchangedNodeIds":["idea"]})"));
+                               R"(,"progressRefused":["idea"],"seq":2,"treeId":"t","unchangedNodeIds":[]})"));
   CHECK_EQ(body(h.call("get_progress", kNoArgs)), parse(R"({"completed":["a"],"outOfOrder":[]})"));
   CHECK_EQ(lines, (std::vector<std::string>{"mcp.roadmap_update_nodes opens-a-tree", "mcp.roadmap_update_nodes ok",
                                             "mcp.roadmap_update_nodes ok"}));
@@ -8119,8 +8206,7 @@ TEST(mcp_update_nodes_takes_a_null_kind_beside_a_mark_as_no_tree_field) {
   auto h = nodeTree();
   const std::size_t rows = h->ops.byTree["t"].size();
   const Json::Int64 seq = body(h->call("get_tree", parse(R"({"includeGuides":false})")))["seq"].asInt64();
-  Json::Value expected = parse(R"({"treeId":"t","changedNodeIds":[],"unchangedNodeIds":["a"],"dryRun":false,
-    "applied":true,"unchanged":true,"diagnosticsClean":true,"introducedDiagnostics":[],
+  Json::Value expected = parse(R"({"treeId":"t","dryRun":false,"applied":true,
     "progress":[{"nodeId":"a","status":"complete","prerequisitesMet":true}]})");
   expected["seq"] = seq;
   CHECK_EQ(body(h->call("update_nodes", parse(R"({"updates":[{"nodeId":"a","kind":null,"status":"complete"}]})"))),
@@ -8905,7 +8991,8 @@ TEST(mcp_a_call_that_changes_nothing_in_a_held_room_says_earlier_changes_are_uns
                        (receipt["saved"] == Json::Value(false) ? " unsaved: " : " saved: ") + receipt["saveError"].asString());
   }
   const std::string earlier = std::string(" unchanged unsaved: ") + kHeldEarlierSentence;
-  CHECK_EQ(answered, (std::vector<std::string>{"update_nodes" + earlier, "update_nodes" + earlier, "import_subgraph" + earlier,
+  CHECK_EQ(answered, (std::vector<std::string>{std::string("update_nodes changed unsaved: ") + kHeldEarlierSentence,
+                                               "update_nodes" + earlier, "import_subgraph" + earlier,
                                                "update_kind" + earlier, "update_tree" + earlier}));
   CHECK_EQ(h.progressRepo.byKey.size(), 1u);
 }
