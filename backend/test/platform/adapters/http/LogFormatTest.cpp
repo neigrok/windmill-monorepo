@@ -37,6 +37,9 @@ TEST(log_privacy_keeps_audited_write_vendor_and_database_completion_lines) {
   const std::string admission = "ai_output_admission input_nanos=60000000 output_token_nanos=25000 "
       "min_tokens=1024 max_tokens=2000 selected_tokens=1200 code=ok";
   CHECK_EQ(privacySafeLogBody(admission, "AiCallBudget.cpp:200"), admission);
+  const std::string released = "ai_hold_released operation=ai.budget.release_lapsed door=background outcome=uncertain "
+      "age=under_1h request_id=0123456789abcdef0123456789abcdef";
+  CHECK_EQ(privacySafeLogBody(released, "AiBudgetService.cpp:139"), released);
   const std::string follows = "roadmap_gallery_follows followed=3 timed_out=1 failed=0 cooling_off=2 past_cap=0";
   CHECK_EQ(privacySafeLogBody(follows, "GalleryApi.cpp:54"), follows);
   const std::string recovered = "roadmap_progress_follow_recovered door=rest degraded_replies=7";

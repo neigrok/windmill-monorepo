@@ -1,6 +1,7 @@
 # Windmill backend, one VPS. Postgres holds the data, a one-shot applies the schema, another
-# provisions the subscription service's database, the two service binaries run from the same
-# published image, and Caddy terminates TLS and reverse-proxies both. Only Caddy is exposed to the
+# provisions the subscription service's database, the server, its embedder and the subscription
+# service run from the images Backend CI publishes for one commit, and Caddy terminates TLS and
+# reverse-proxies the server and the subscription service's public port. Only Caddy is exposed to the
 # internet; everything else talks over the private compose network by service name.
 #
 # Values come from ./.env (rendered by the deploy workflow from GitHub secrets/vars).
@@ -38,9 +39,10 @@ services:
   # (services/subscriptions/ARCHITECTURE.md): created, given SUBSCRIPTIONS_DB_PASSWORD and closed to the
   # backend's role by pg_hba.conf rules, on every `up` (subscriptions-db/provision.sh). It rewrites
   # pg_hba.conf, so it mounts the cluster's volume and runs as the cluster's OS user; it never starts a
-  # Postgres of its own, and never leaves in force a pg_hba.conf that turns the backend away. Nothing here
-  # depends on it, so it never holds up the backend; deploy-production.sh reports its outcome. Unset or
-  # empty SUBSCRIPTIONS_DB_PASSWORD → it logs SKIP, exits 0 and changes nothing.
+  # Postgres of its own, and never leaves in force a pg_hba.conf that turns the backend away. Only the
+  # subscription service waits on it, so it never holds up the backend; deploy-production.sh reports its
+  # outcome. Unset or empty SUBSCRIPTIONS_DB_PASSWORD → it logs SKIP, exits 0 and changes nothing; the
+  # deploy refuses to render it empty.
   subscriptions-db:
     image: postgres:16
     restart: "no"
@@ -225,6 +227,30 @@ services:
       timeout: 10s
       retries: 20
       start_period: 90s
+
+  # The Windmill One subscription service (services/subscriptions/ARCHITECTURE.md), from the image Backend
+  # CI publishes as `subscriptions-<sha>` beside the server's; deploy-production.sh pins it to the content ID
+  # it pulled, as SUBSCRIPTIONS_IMAGE. It opens and migrates its ledger, windmill_subscriptions, before it
+  # listens. Caddy forwards /v1/stores/* to the public port, 8082, and nothing else; the internal port, 8083,
+  # is published nowhere, so only this network reaches it. The image's HEALTHCHECK asks the internal
+  # /health, which is ready while the ledger answers. SENTRY_RELEASE is the image's own commit, baked in at
+  # build, so it is not set here; Sentry's project and environment are the server's.
+  subscriptions:
+    image: ${SUBSCRIPTIONS_IMAGE:-ghcr.io/neigrok/windmill-monorepo:subscriptions-${IMAGE_TAG:-latest}}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      subscriptions-db:
+        condition: service_completed_successfully
+    environment:
+      SUBSCRIPTIONS_PUBLIC_ADDRESS: 0.0.0.0:8082
+      SUBSCRIPTIONS_INTERNAL_ADDRESS: 0.0.0.0:8083
+      # SUBSCRIPTIONS_DB_PASSWORD is hex, so it sits in the URL unescaped.
+      SUBSCRIPTIONS_DATABASE_URL: postgresql://windmill_subscriptions:${SUBSCRIPTIONS_DB_PASSWORD:-}@db:5432/windmill_subscriptions
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_LOG_LEVEL: ${SENTRY_LOG_LEVEL:-info}
 
   caddy:
     image: caddy:2

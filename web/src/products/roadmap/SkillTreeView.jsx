@@ -61,6 +61,8 @@ import { EmptyGraphCard, GraphChrome, GraphSelectionBar } from './graph/GraphChr
 import { GraphDocks } from './graph/GraphDocks.jsx';
 import { StatusChip, VisitorNotice } from './room/HonestyChrome.jsx';
 import { Minimap } from './graph/Minimap.jsx';
+import { RecoveryTreeSwitcher } from './identity/RecoveryTreeSwitcher.jsx';
+import { LocalTreeRegistry } from './persistence/LocalTreeRegistry.js';
 import { TreeSwitcher } from './identity/TreeSwitcher.jsx';
 import { useTabletEditing } from './graph/tablet/useTabletEditing.js';
 import { KindLegend } from './graph/tree/KindLegend.jsx';
@@ -391,6 +393,20 @@ export function SkillTreeView({ treeId, demo = false }) {
     },
   });
 
+  const recovery = useMemo(() => {
+    if (breakpoint !== 'tablet' || !boardActive || !loadError || shared || demo) return null;
+    if (status === 'signed-in' && account?.id) return { place: 'account' };
+    if (status !== 'ghost') return null;
+    try {
+      return new LocalTreeRegistry().readList(null).some((row) => row.id === treeId && !row.claimed) ? { place: 'device' } : null;
+    } catch (error) {
+      return { error };
+    }
+  }, [breakpoint, boardActive, loadError, shared, demo, status, account?.id, treeId]);
+  useEffect(() => {
+    if (recovery?.error) reportRoadmapFailure('roadmap-recovery-list', recovery.error, { place: 'device', reason: 'index' });
+  }, [recovery]);
+
   const activityPanel = activityOpen && breakpoint === 'tablet' ? (
     <ActivityPanel top={geometry.activityPanelTop} groups={activity.activityGroups} nodesById={nodesById} onClose={verbs.closeRowActivity} onOpenStep={verbs.openActivityStep} />
   ) : null;
@@ -422,8 +438,11 @@ export function SkillTreeView({ treeId, demo = false }) {
             loading={boardAwaitsRoadmap && !loadError}
             back={treeVisit.from === null ? null : { title: treeVisit.from.title, onBack: treeVisit.back }}
             switcher={owner && !phone && !boardAwaitsRoadmap && !inSubtree ? <TreeSwitcher {...verbs.switcher} /> : null}
+            recovery={recovery?.place && <RecoveryTreeSwitcher key={`${account?.id ?? 'device'}:${treeId}`} place={recovery.place}
+              onPickTree={verbs.identitySheet.onPickTree} onNew={verbs.identitySheet.onNewRoadmap} onBrowse={verbs.identitySheet.onBrowse} />}
             progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
             onSwitchView={onSwitchView}
+            guide={!phone ? guideEntry : null}
             graphUnavailable={graphUnavailable}
             onGraphUnavailable={explainGraphUnavailable}
             find={!phone && boardFacts.loaded && !boardFacts.empty ? verbs.identityFind : null}
@@ -457,7 +476,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               onAnchor={setSelectedId}
               refusal={refusal}
               deviceLine={phone ? deviceLine : null}
-              guide={boardActive ? guideEntry : null}
+              guide={phone && boardActive ? guideEntry : null}
               onFork={phone && forkPresent ? openFork : null}
               breakpoint={breakpoint}
               topInset={topbarBottom}
@@ -551,10 +570,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         onOpenStep={stepPage.openFromGraph}
         onBarBottom={geometry.setGraphBarBottom}
         deviceLine={phone ? deviceLine : null}
-        guide={canvasView ? guideEntry : null}
-        guideTop={geometry.guideTop}
-        guideRight={insets.right}
-        onGuideBox={geometry.publishGuideCard}
+        guide={phone && canvasView ? guideEntry : null}
         cameraRight={phone || !canvasView ? undefined : insets.blocks.at(-1)?.right}
         cameraBottom={phone || !canvasView ? undefined : insets.blocks.at(-1)?.bottom}
         onZoomIn={() => sceneRef.current?.zoomBy(1.2)}

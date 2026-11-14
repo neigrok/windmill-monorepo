@@ -400,6 +400,37 @@ TEST(agent_loop_cancellation_after_a_model_turn_prevents_its_tool_effect) {
   CHECK(host.calls.empty());
 }
 
+// Stop is a person's action: a round it cut short — with a partial reply, or before any reply — ends the run as
+// stopped, counted when billed and never reported. The same cut with the run still asked to go on is a failure.
+TEST(a_round_its_stop_cut_short_ends_the_run_stopped_without_a_report) {
+  for (const bool replied : {true, false}) {
+    FakeToolHost host;
+    bool active = true;
+    auto request = spec("Plan my week");
+    request.continueRun = [&] { return active; };
+    Recorder recorder;
+    const auto outcome = driveAgentLoop(request, host, kCaller, [&](const Json::Value&) -> std::optional<Json::Value> {
+      active = false;
+      if (!replied) return std::nullopt;
+      return textReply("cancelled", "Monday: squat, then");
+    }, recorder.report());
+    CHECK_FALSE(outcome.ok);
+    CHECK_EQ(outcome.error, std::string("stopped"));
+    CHECK_EQ(outcome.modelTurns, replied ? 1 : 0);
+    CHECK_EQ(outcome.stopReason, std::string(replied ? "cancelled" : ""));
+    CHECK(recorder.failures.empty());
+  }
+  FakeToolHost host;
+  auto request = spec("Plan my week");
+  request.continueRun = [] { return true; };
+  Recorder recorder;
+  const auto outcome = driveAgentLoop(request, host, kCaller, [](const Json::Value&) -> std::optional<Json::Value> {
+    return textReply("cancelled", "Monday: squat, then");
+  }, recorder.report());
+  CHECK_EQ(outcome.error, std::string("the model stopped early (stop_reason: cancelled)"));
+  CHECK_EQ(recorder.failures, std::vector<std::string>{"test.run | the model stopped early (stop_reason: cancelled)"});
+}
+
 // A host whose executor is elsewhere answers the round's calls as ONE batch, in order, and the
 // loop hands each answer back under its own tool_use id.
 TEST(a_round_of_tool_calls_reaches_the_host_as_one_batch_in_call_order) {

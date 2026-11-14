@@ -341,6 +341,7 @@ select id||' '||coalesce(parent_tree,'-')||' '||coalesce(parent_step,'-')||' '||
         query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
         command([*query, """
 alter table ai_budget_reservations drop constraint ai_budget_output_offer;
+alter table ai_budget_reservations drop constraint ai_budget_released_from, drop column released_from;
 alter table ai_budget_reservations drop column input_cost_nanos, drop column output_token_cost_nanos,
   drop column min_output_tokens, drop column max_output_tokens;
 insert into ai_budget_reservations(id,subject_kind,subject_id,tier,period_start_ms,period_end_ms,
@@ -352,7 +353,8 @@ from (values ('reserved',null::bigint),('dispatched',null),('uncertain',null),('
         legacy_rows = command([*query, legacy_query])
         self.apply_schema()
         self.assertEqual(legacy_rows, command([*query, """
-select (to_jsonb(t)-array['input_cost_nanos','output_token_cost_nanos','min_output_tokens','max_output_tokens'])::text
+select (to_jsonb(t)-array['input_cost_nanos','output_token_cost_nanos','min_output_tokens','max_output_tokens',
+  'released_from'])::text
 from ai_budget_reservations t order by id;
 """]))
         self.assertEqual("5\n", command([*query, """
@@ -380,6 +382,45 @@ where conrelid='ai_budget_reservations'::regclass and conname='ai_budget_output_
 """
         identity = command([*query, constraint])
         self.assertRegex(identity, r"^\d+\|CHECK .+\|t\n$")
+        before = self.snapshot()
+        self.apply_schema()
+        self.assertEqual(identity, command([*query, constraint]))
+        self.assertEqual(before, self.snapshot())
+
+    def test_released_holds_stored_before_released_from_record_the_reserved_state_they_left(self):
+        self.apply_schema()
+        query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
+        command([*query, """
+alter table ai_budget_reservations drop constraint ai_budget_released_from, drop column released_from;
+insert into ai_budget_reservations(id,subject_kind,subject_id,tier,period_start_ms,period_end_ms,
+  admitted_at_ms,amount_nanos,state,actual_nanos)
+select state,'account','legacy-account','logged_in',0,2678400000,1,100,state,actual
+from (values ('reserved',null::bigint),('dispatched',null),('uncertain',null),('settled',50),('released',null)) old(state,actual);
+"""])
+        legacy_query = "select to_jsonb(t)::text from ai_budget_reservations t order by id"
+        legacy_rows = command([*query, legacy_query])
+        constraint = """
+select oid,pg_get_constraintdef(oid),convalidated from pg_constraint
+where conrelid='ai_budget_reservations'::regclass and conname='ai_budget_released_from';
+"""
+        self.apply_schema()
+        self.assertEqual(legacy_rows, command([*query,
+            "select (to_jsonb(t)-'released_from')::text from ai_budget_reservations t order by id"]))
+        self.assertEqual("dispatched -\nreleased reserved\nreserved -\nsettled -\nuncertain -\n", command([*query,
+            "select id||' '||coalesce(released_from,'-') from ai_budget_reservations order by id"]))
+        identity = command([*query, constraint])
+        self.assertRegex(identity, r"^\d+\|CHECK .+\|t\n$")
+        insert = """
+insert into ai_budget_reservations(id,subject_kind,subject_id,tier,period_start_ms,period_end_ms,
+  admitted_at_ms,amount_nanos,state,actual_nanos,released_from)
+values('{id}','account','new-account','logged_in',0,2678400000,1,100,'{state}',{actual},{left});
+"""
+        for values in [dict(id="unrecorded", state="released", actual="null", left="null"),
+                       dict(id="settled-released", state="settled", actual=50, left="'dispatched'")]:
+            with self.subTest(row=values):
+                with self.assertRaisesRegex(RuntimeError, "ai_budget_released_from"):
+                    command([*query, insert.format(**values)])
+        command([*query, insert.format(id="lapsed", state="released", actual="null", left="'uncertain'")])
         before = self.snapshot()
         self.apply_schema()
         self.assertEqual(identity, command([*query, constraint]))

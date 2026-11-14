@@ -16,6 +16,17 @@ std::string_view aiBudgetTierName(AiBudgetTier tier) {
   return "invalid";
 }
 
+std::string_view aiBudgetStateName(AiBudgetState state) {
+  switch (state) {
+    case AiBudgetState::Reserved: return "reserved";
+    case AiBudgetState::Dispatched: return "dispatched";
+    case AiBudgetState::Uncertain: return "uncertain";
+    case AiBudgetState::Settled: return "settled";
+    case AiBudgetState::Released: return "released";
+  }
+  return "invalid";
+}
+
 std::string_view aiBudgetCodeName(AiBudgetCode code) {
   switch (code) {
     case AiBudgetCode::Ok: return "ok";
@@ -199,12 +210,22 @@ bool AiBudgetReservation::valid() const {
   switch (state) {
     case AiBudgetState::Reserved:
     case AiBudgetState::Dispatched:
-    case AiBudgetState::Uncertain:
-    case AiBudgetState::Released: return !actualNanos && !overrunReconciled;
+    case AiBudgetState::Uncertain: return !actualNanos && !overrunReconciled && !releasedFrom;
+    case AiBudgetState::Released:
+      return !actualNanos && !overrunReconciled && releasedFrom && *releasedFrom != AiBudgetState::Settled &&
+          *releasedFrom != AiBudgetState::Released;
     case AiBudgetState::Settled:
-      return actualNanos && *actualNanos >= 0 && (!overrunReconciled || *actualNanos > amountNanos);
+      return actualNanos && *actualNanos >= 0 && (!overrunReconciled || *actualNanos > amountNanos) && !releasedFrom;
   }
   return false;
+}
+
+bool AiBudgetReservation::unresolved() const {
+  return state == AiBudgetState::Reserved || state == AiBudgetState::Dispatched || state == AiBudgetState::Uncertain;
+}
+
+bool AiBudgetReservation::lapsedAt(long long atMs) const {
+  return unresolved() && atMs - admittedAtMs >= kAiBudgetHoldLifetimeMs;
 }
 
 bool AiBudgetReservation::sameRequest(const AiBudgetRequest& other) const {
@@ -348,10 +369,20 @@ AiBudgetCode transitionAiBudget(AiBudgetReservation& reservation, AiBudgetState 
   if (target == AiBudgetState::Released) {
     if (reservation.state == AiBudgetState::Released) return AiBudgetCode::Replay;
     if (reservation.state != AiBudgetState::Reserved) return AiBudgetCode::InvalidState;
+    reservation.releasedFrom = reservation.state;
     reservation.state = target;
     return AiBudgetCode::Ok;
   }
   return AiBudgetCode::InvalidState;
+}
+
+AiBudgetCode releaseLapsedAiBudget(AiBudgetReservation& reservation, long long atMs) {
+  if (!reservation.valid()) return AiBudgetCode::Invalid;
+  if (reservation.state == AiBudgetState::Released) return AiBudgetCode::Replay;
+  if (!reservation.lapsedAt(atMs)) return AiBudgetCode::InvalidState;
+  reservation.releasedFrom = reservation.state;
+  reservation.state = AiBudgetState::Released;
+  return AiBudgetCode::Ok;
 }
 
 AiBudgetCode reconcileAiBudgetOverrun(AiBudgetReservation& reservation) {

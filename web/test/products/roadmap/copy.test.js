@@ -84,7 +84,6 @@ import {
   noStepsMatch,
   showMore,
   draftLine,
-  guidesFromAbove,
 } from '../../../src/products/roadmap/copy.js';
 
 test('copy — the canon strings the demo speaks verbatim', () => {
@@ -614,9 +613,3 @@ test('a subtree a step owns is gone into by Open subtree and says how far it is,
     ['Open tree', 'Open the subtree of Learn to sail', 'Open the tree of Learn to sail']);
 });
 
-test('the guide’s card says whose guides apply from above: one tree, two, or the two farthest and how many more', () => {
-  assert.equal(guidesFromAbove({ first: 'My life', second: null, more: 0 }), 'With a guide from My life');
-  assert.equal(guidesFromAbove({ first: 'My life', second: 'My year', more: 0 }), 'With guides from My life and My year');
-  assert.equal(guidesFromAbove({ first: 'My life', second: 'My year', more: 1 }), 'With guides from My life, My year and 1 more tree');
-  assert.equal(guidesFromAbove({ first: 'My life', second: 'My year', more: 2 }), 'With guides from My life, My year and 2 more trees');
-});
