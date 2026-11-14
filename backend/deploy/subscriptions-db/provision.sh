@@ -66,7 +66,12 @@ refused windmill windmill_subscriptions ||
   fail "the backend's role still reaches windmill_subscriptions"
 
 # 2. The role takes the password the service is given on every run, so rotating the secret rotates it.
+#    A statement below carries the password, so this session logs no statement on the server, even
+#    one that fails, and psql reports an error by its SQLSTATE alone.
 psql -XAq -v ON_ERROR_STOP=1 <<'SQL' || fail "the role or the database could not be created"
+\set VERBOSITY sqlstate
+set log_statement = 'none';
+set log_min_error_statement = panic;
 \getenv password SUBSCRIPTIONS_DB_PASSWORD
 select 'create role windmill_subscriptions'
   where not exists (select from pg_roles where rolname = 'windmill_subscriptions') \gexec

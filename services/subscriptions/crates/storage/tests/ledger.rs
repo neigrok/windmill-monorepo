@@ -81,7 +81,7 @@ async fn an_empty_database_is_migrated_and_given_one_epoch_that_opening_again_ke
 
 #[tokio::test]
 #[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
-async fn a_database_migrated_by_a_newer_build_is_refused() {
+async fn a_database_whose_migrations_are_not_this_build_s_is_refused() {
     with_empty_database(async |url| {
         Ledger::open(&url.parse().unwrap())
             .await
@@ -96,11 +96,24 @@ async fn a_database_migrated_by_a_newer_build_is_refused() {
             )
             .await
             .unwrap();
+        let newer = Ledger::open(&url.parse().unwrap()).await.err().unwrap();
+        connection
+            .execute(
+                "delete from _sqlx_migrations where version = 2; \
+                 update _sqlx_migrations set checksum = '\\x00' where version = 1",
+            )
+            .await
+            .unwrap();
 
-        let refusal = Ledger::open(&url.parse().unwrap()).await.err().unwrap();
+        let edited = Ledger::open(&url.parse().unwrap()).await.err().unwrap();
 
-        assert_eq!(refusal, StorageError::Migration { sqlstate: None });
-        assert_eq!(refusal.code(), "migration");
+        assert_eq!(
+            [newer, edited],
+            [
+                StorageError::Migration { sqlstate: None },
+                StorageError::Migration { sqlstate: None }
+            ]
+        );
     })
     .await;
 }
