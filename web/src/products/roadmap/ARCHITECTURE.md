@@ -111,6 +111,21 @@ nothing, as the tree's own read has already told what the server is doing, and i
 session restores (`loadDeviceMarks`: the private lane's where it holds any, else the steps' seeds), so the room opens on
 the marks it keeps and announces none of them as new.
 
+A failed Board load at 744–1023px offers `RecoveryTreeSwitcher` to authenticated account-root navigation,
+independently of the failed tree's ownership. Shared routes never offer this door. A signed-out device route
+must first establish its unclaimed index row through `LocalTreeRegistry.readList`; a failed read grants no
+capability. Recovery has no current tree, counts, checkmark or edit actions. Account lists use
+`listServerTrees` and preserve authoritative empty versus failed responses, without adding device rows.
+Device lists strictly read the anonymous index and readable local records. Index, storage and corrupt-record
+failures retain Retry list. The existing array-only registry reads retain their contracts.
+
+Opening recovery reads its list with a 15-second account request limit; Retry list repeats that read, while the central Try again repeats only the
+requested roadmap load. Search matches available rows, and expand controls appear only for relationships
+established by returned openers. Rows navigate only returned IDs. The popover focuses Search, its first action
+or Retry list after the read; Escape restores the trigger, outside dismissal preserves the clicked focus,
+and late replies cannot reopen it. Browser history supplies Back. New tree and the gallery use their existing
+navigation callbacks.
+
 After load, `SyncSession` owns the durable lattice. Local gestures and remote frames both produce a projection
 through `graph/useGraphStructure.js` and `scene.applyModel`, and the room's `projectionRef` holds that
 projection.
