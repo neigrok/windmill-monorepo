@@ -930,7 +930,7 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
 
   const Json::Value tools = h.tools.listTools(h.actor);
   for (const char* named : {"get_tree", "update_tree", "find_nodes", "get_diagnostics",
-                            "import_subgraph", "get_nodes", "update_nodes", "change_edges"}) {
+                            "import_subgraph", "get_nodes", "update_nodes", "change_edges", "create_subtree"}) {
     CHECK(text.find("roadmap_" + std::string(named)) != std::string::npos);
     CHECK(toolNamed(tools, named) != nullptr);
   }
@@ -965,7 +965,11 @@ TEST(mcp_the_quickstart_resource_says_what_the_surface_does) {
                             "`introducedDiagnostics` after the graph's errors, within that list's five lines",
                             "`pointerDiagnosticsUnavailable: true` says the opened trees could not be read in time",
                             "`includePointers: false` leaves both lists out",
-                            "A deleted node it brings back opens the tree the\nbatch names for it, or none"})
+                            "A deleted node it brings back opens the tree the\nbatch names for it, or none",
+                            "send the parent tree's `kinds` to inherit it, or the subtree gets\nthe default legend",
+                            "Sent again, it answers the subtree the step already owns, `created: false`.",
+                            "read that id with `roadmap_get_tree` to go down",
+                            "`parent: {tree, step}` to go back up, `null` for a top-level roadmap"})
     CHECK(text.find(claim) != std::string::npos);
   for (const char* claim : {"read its guides with get_tree: those of your trees above it and its own, farthest first",
                             "They add; where they disagree, what to follow is your call",

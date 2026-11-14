@@ -1687,7 +1687,7 @@ ToolResult createTree(TreeRegistry& trees, const std::string& origin, const User
 
 // The words each refusal of a subtree's create is answered in, under its code; an absent tree's are every read's, so a
 // tree the caller may not read is answered as one that is not there.
-std::string refusalSentence(SubtreeRefusal refusal, const TreeId& tree, const NodeId& step) {
+std::string subtreeRefusalSentence(SubtreeRefusal refusal, const TreeId& tree, const NodeId& step) {
   switch (refusal) {
     case SubtreeRefusal::noSuchTree: return "no such tree \"" + tree.str() + "\"";
     case SubtreeRefusal::notWriter:
@@ -1725,7 +1725,7 @@ ToolResult createSubtree(TreeRegistry& trees, const TreeId& tree, const Json::Va
   if (const Admission* refusal = std::get_if<Admission>(&answer))
     return ToolResult::failure(refusal->reason, "kinds-refused");
   if (const SubtreeRefusal* refusal = std::get_if<SubtreeRefusal>(&answer))
-    return ToolResult::failure(refusalSentence(*refusal, tree, NodeId{step}), codeOf(*refusal));
+    return ToolResult::failure(subtreeRefusalSentence(*refusal, tree, NodeId{step}), codeOf(*refusal));
   const SubtreeCreation& creation = std::get<SubtreeCreation>(answer);
   Json::Value subtree(Json::objectValue);
   subtree["id"] = creation.subtree.id.str();

@@ -197,8 +197,9 @@ one is read; the two reads `TendingService` makes of the tree's `seq` send it `f
 `get_diagnostics` reply carries the graph's diagnostics and neither `treeLoops` nor
 `danglingPointers`, which name other trees: a run is not offered `includePointers`, every
 `get_diagnostics` it makes is sent with it `false`, and no pointer is followed. One
-table in `ScopedToolHost.cpp` names what a run is not offered: tools by name, and words wherever a
-schema carries them, each with the value it is sent as when the tool needs one. A withheld name a
+table in `ScopedToolHost.cpp` names what a run is not offered: tools by name, words wherever a
+schema carries them, each with the value it is sent as when the tool needs one, and the keys of a
+reply's `tree` that say where the tree sits, left out of what the run reads. A withheld name a
 run calls anyway is refused before any write is observed; a withheld argument or field is refused
 in its own sentence with nothing written. A tend starts only on a tree its caller can write.
 
