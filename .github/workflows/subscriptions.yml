@@ -4,6 +4,7 @@ name: Subscriptions CI
 # formatting, Clippy with warnings denied and the tests, the Postgres ones included, then the image
 # built and driven once against a database of its own. Its wire fixtures
 # (packages/api-contract/subscriptions): what generate.py writes, and keeping the rules check.py holds.
+# Backend CI calls it too, and publishes the service's image and deploys only once every job here passes.
 
 on:
   push:
@@ -22,9 +23,12 @@ on:
       - '!services/subscriptions/**/*.md'
       - '!packages/api-contract/subscriptions/**/*.md'
   workflow_dispatch:
+  workflow_call:
 
+# A called workflow reads the caller's github context, so the group names the workflow that runs it: Backend
+# CI's call and a run of its own on the same push never share a group, and neither cancels the other.
 concurrency:
-  group: subscriptions-ci-${{ github.ref }}
+  group: ${{ github.workflow }}-subscriptions-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -100,7 +104,7 @@ jobs:
           docker network create ci
           docker run -d --name ledger --network ci -e POSTGRES_USER=windmill_subscriptions \
             -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=windmill_subscriptions postgres:16
-          for attempt in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             docker exec ledger pg_isready -h 127.0.0.1 -U windmill_subscriptions -d windmill_subscriptions && break
             sleep 1
           done
@@ -111,7 +115,7 @@ jobs:
           docker run -d --name subscriptions --network ci -p 8082:8082 -p 8083:8083 -e SENTRY_ENVIRONMENT=ci \
             -e SUBSCRIPTIONS_DATABASE_URL=postgresql://windmill_subscriptions:ci@ledger:5432/windmill_subscriptions \
             windmill-subscriptions:ci
-          for attempt in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             [ "$(docker inspect -f '{{.State.Health.Status}}' subscriptions)" = healthy ] && break
             sleep 1
           done
@@ -133,11 +137,11 @@ jobs:
             -e SENTRY_ENVIRONMENT=ci -e SENTRY_DSN=http://public@host.docker.internal:9478/1 \
             -e SUBSCRIPTIONS_DATABASE_URL=postgresql://windmill_subscriptions:ci@ledger:5432/windmill_subscriptions \
             -e SUBSCRIPTIONS_PANIC_ROUTE_ENABLED=true windmill-subscriptions:ci
-          for attempt in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             curl -sf -o /dev/null http://127.0.0.1:18083/health && break
             sleep 1
           done
-          for panic in 1 2 3; do
+          for _ in 1 2 3; do
             test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18083/debug/panic)" = 500
           done
           started=$(date +%s)
