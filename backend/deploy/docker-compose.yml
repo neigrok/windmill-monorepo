@@ -37,10 +37,10 @@ services:
   server:
     image: ${SERVER_IMAGE:-ghcr.io/neigrok/windmill-monorepo:${IMAGE_TAG:-latest}}
     restart: unless-stopped
-    # How long the server has between SIGTERM and SIGKILL when a deploy replaces it; left unset, Compose gives 10s.
-    # It covers the server's own budget for the saves still to run (5 s) and one statement already running at the
-    # signal (5 s more), with room for the rest of its shutdown: README.md, "What a deploy does to the running server".
-    stop_grace_period: 15s
+    # How long the server has between SIGTERM and SIGKILL when a deploy replaces it. It covers the server's own
+    # deadline for everything still running at the signal (5 s) and the 3 s it may take to write out its log and
+    # reports after it, with room to spare: README.md, "What a deploy does to the running server".
+    stop_grace_period: 10s
     depends_on:
       db:
         condition: service_healthy

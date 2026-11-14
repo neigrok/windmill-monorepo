@@ -140,8 +140,12 @@ public:
   // Stops the heartbeat, so no retry runs after it, then tries once more the save of each room that holds a write the
   // store does not — held or not — the wait for a retry or a write in mid-save and all of those saves within what is
   // left of the budget (it begins here if nobody told the registry earlier). The rooms still unsaved after that are
-  // lost with the process: one line and one report say how many.
+  // lost with the process (reportLost).
   void stop();
+  // Says, once, how many rooms hold a write the store does not as they stand now, in one line and one report under
+  // `lost-at-shutdown`; nothing when there is none. `stop` ends with it, and a process that stops waiting at its
+  // deadline asks it directly, whatever is still running: a room whose write is still being served counts.
+  void reportLost();
 
   // nullptr means no such tree; a throw means infrastructure failure, whose detail must be logged
   // and never surfaced (a pqxx message carries a host, a port, a role). A held room is answered as it stands: opening
@@ -289,6 +293,7 @@ private:
   std::map<TreeId, std::weak_ptr<RootAccess>> roots_;
   std::size_t sweepsHeld_ = 0;  // sweeps running that found a room held
   bool stopped_ = false;
+  bool lostReported_ = false;
   std::atomic<std::uint64_t> stopDeadlineMs_{0};  // when the budget ends, on the steady clock; 0 while the server runs
   std::function<void(const TreeId&)> accessChanged_;
   std::array<std::mutex, kStrandStripes> strands_;

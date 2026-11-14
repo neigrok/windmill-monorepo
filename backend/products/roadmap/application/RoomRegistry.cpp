@@ -76,12 +76,22 @@ void RoomRegistry::stop() {
     for (const auto& [id, live] : rooms_)
       if (live.held || live.saving || live.room->holdsUnsavedWrites()) unsaved.emplace_back(id, live.line);
   }
-  std::size_t lost = 0;
   for (const auto& [id, line] : unsaved) {
     // A write in mid-save holds the gate: it is waited for no longer than the budget either.
     std::unique_lock<std::timed_mutex> gate(
         line->gate, std::chrono::steady_clock::time_point{std::chrono::milliseconds{deadline}});
-    if (!gate.owns_lock() || save(id, line, Asked::atShutdown) == Saved::held) ++lost;
+    if (gate.owns_lock()) save(id, line, Asked::atShutdown);
+  }
+  reportLost();
+}
+
+void RoomRegistry::reportLost() {
+  std::size_t lost = 0;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (std::exchange(lostReported_, true)) return;
+    for (const auto& [id, live] : rooms_)
+      if (live.held || live.saving || live.room->holdsUnsavedWrites()) ++lost;
   }
   if (lost > 0) reportHeld(lost, RoomsHeldUnsaved{}, "lost-at-shutdown");
 }

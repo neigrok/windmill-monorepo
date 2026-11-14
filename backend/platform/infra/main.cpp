@@ -27,6 +27,7 @@
 #include "platform/adapters/http/EventsApi.h"
 #include "platform/adapters/http/FeedbackApi.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "platform/application/ProcessStop.h"
 #include "platform/adapters/http/McpKeyApi.h"
 #include "platform/adapters/http/OAuthApi.h"
 #include "platform/adapters/http/RateLimiter.h"
@@ -129,7 +130,7 @@
 #include <drogon/drogon.h>
 
 #include <algorithm>
-#include <atomic>
+#include <future>
 #include <cstdio>
 #include <cctype>
 #include <cstdlib>
@@ -731,6 +732,47 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   WriteRoutes routes(app, "platform");
   WriteRoutes mcpRoutes(app, "platform", "mcp");
+  // The stop of the process (ProcessStop), in this order. At the signal every door stops taking writes: the registry's
+  // one budget for every save still to run begins, the tree socket takes no frame and opens no connection (Collab asks
+  // the registry), every tree socket is closed, so a tab keeps what it was not acked for the next server, and the
+  // framework closes its listener and its connections and stops its loops, each once the request it is serving has
+  // been answered. The rest follows as this function ends. When the budget passes with any of that still running —
+  // a request, a worker, a join — the process stops waiting: it says what is lost as the rooms stand, writes out its
+  // log and its failure reports within kExitFlushLimit, and ends. A request cut there was never answered.
+  ProcessStop stop{RoomRegistry::kShutdownSaveBudget, {
+      .closeDoors = [registry, bus] {
+        registry->beginStopping();
+        drogon::app().getLoop()->queueInLoop([bus] {
+          bus->closeEvery();
+          drogon::app().quit();
+        });
+      },
+      .giveUp = [registry, &reporter] {
+        LOG_WARN << "server_stop outcome=cut-at-deadline budget_ms=" << RoomRegistry::kShutdownSaveBudget.count();
+        registry->reportLost();
+        drainLogTee(std::chrono::seconds(1));
+        // The reports are waited for on a thread of their own: the reporter's wait is longer than this one may be.
+        std::promise<void> reported;
+        std::future<void> sent = reported.get_future();
+        std::thread([&reporter, &reported] {
+          if (reporter) reporter->drain();
+          reported.set_value();
+        }).detach();
+        sent.wait_for(ProcessStop::kExitFlushLimit - std::chrono::seconds(1));
+        std::_Exit(0);
+      }}};
+  // Ahead of every other advice. A request that reaches the server once it is stopping — on a connection the
+  // framework has not closed yet, or read together with one still being served — is not served: it is answered a bare
+  // 503, what an edge with no upstream answers, on a connection the framework is closing. Closing it here with no
+  // answer would also drop the answer of a request ahead of it on that connection, which the framework sends together
+  // with this one.
+  app.registerSyncAdvice([stopping = stop.stopping()](const drogon::HttpRequestPtr&) -> drogon::HttpResponsePtr {
+    if (!stopping->load()) return nullptr;
+    const auto unavailable = drogon::HttpResponse::newHttpResponse();
+    unavailable->setStatusCode(drogon::k503ServiceUnavailable);
+    unavailable->setCloseConnection(true);
+    return unavailable;
+  });
   app.registerSyncAdvice([](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
     beginWriteRequest(req);
     return nullptr;
@@ -774,19 +816,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto composeGlobal = std::make_shared<RateLimiter>(0.5, 20.0);         // global LLM spend ceiling
   auto tendPerIp = std::make_shared<RateLimiter>(5.0 / 600.0, 3.0);   // ~5 runs / 10 min / client
   auto tendGlobal = std::make_shared<RateLimiter>(0.2, 8.0);          // global agent-spend ceiling
-  // A server told to stop serves no new request, of any product and any door on this listener: the answer says to
-  // try again, and the connection is closed so the next try reaches the next server. A request already being served
-  // is answered as it would be. Ahead of the rate limiter, so a refusal here spends nobody's allowance.
-  const auto stopping = std::make_shared<std::atomic<bool>>(false);
-  app.registerSyncAdvice([stopping, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
-    if (!stopping->load()) return nullptr;
-    const auto resp = error(drogon::k503ServiceUnavailable, "the server is restarting — try again", "restarting");
-    resp->setCloseConnection(true);
-    writeCors(req, resp);
-    finishWriteRequest(req, resp);
-    return resp;
-  });
-
   app.registerSyncAdvice(
       [apiLimiter, magicPerIp, magicGlobal, codePerIp, composePerIp, composeGlobal, tendPerIp,
        tendGlobal, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
@@ -1254,24 +1283,17 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* listenHostEnv = std::getenv("WINDMILL_HOST");
   const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";
   app.addListener(listenHost, port);
-  // The signal to stop, in this order. Every door stops taking writes at once: the listener's requests are refused
-  // (above), the tree socket takes no frame and opens no connection (Collab asks the registry), and the registry's one
-  // budget for every save still to run begins (RoomRegistry::beginStopping). Then, on the main loop, every tree socket
-  // is closed, so a tab keeps what it was not acked for the next server, and the framework stops its loops: each
-  // finishes the request it is serving, whose save runs within the budget. The registry's last tries and the count of
-  // what was lost follow as the lifetime stops, within what the budget has left. The handler itself runs in the
-  // signal's context, so it only sets two numbers and queues the rest, as the framework's own does.
-  const auto stop = [stopping, registry, bus] {
-    stopping->store(true);
-    registry->beginStopping();
-    drogon::app().getLoop()->queueInLoop([bus] {
-      bus->closeEvery();
-      drogon::app().quit();
-    });
-  };
-  app.setTermSignalHandler(stop);
-  app.setIntSignalHandler(stop);
+  // The framework's handlers call into the stop and own nothing of ours: they are taken away as the loops return, so
+  // nothing of this function lives in the framework once it has gone, and a signal after that changes nothing.
+  app.setTermSignalHandler([&stop] { stop.signalled(); });
+  app.setIntSignalHandler([&stop] { stop.signalled(); });
   app.setThreadNum(ioThreads).run();
+  app.setTermSignalHandler([] {});
+  app.setIntSignalHandler([] {});
+  // The rest of the stop in order, still inside the budget's watch: the registry's last tries and its count of what
+  // was lost among it, then the log and the reports.
+  lifetime.stop();
+  stop.finished();
   return 0;
 }
 

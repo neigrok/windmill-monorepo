@@ -134,11 +134,11 @@ jobs:
           node-version: "20"
       - name: Generate pattern cases from the JS reference
         run: node backend/test/platform/domain/sync/reference_pattern_cases.mjs > "$RUNNER_TEMP/pattern-cases.json"
-      - name: Run the domain, mcp, sync, adapters, epoch tool and subtree inventory suites against Postgres
+      - name: Run the domain, mcp, sync, adapters, epoch tool, subtree inventory and server stop suites against Postgres
         run: |
           docker run --rm --network host -e WM_PG_TEST=1 -e DATABASE_URL -e WM_SYNC_DATABASE_URL \
             -e WM_PATTERN_CASES=/cases/pattern-cases.json -v "$RUNNER_TEMP:/cases:ro" \
-            windmill-backend-build ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory)$' --output-on-failure
+            windmill-backend-build ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory|server_stop)$' --output-on-failure
       - name: Prove client recovery after restoring an older dump
         run: |
           sudo apt-get update
