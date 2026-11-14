@@ -442,7 +442,7 @@ never on the status.
 
 | Status | Codes |
 |---|---|
-| 400 | `invalid_request` |
+| 400 | `invalid_request`, `provider_rejected` |
 | 401 | `pass_missing`, `pass_signature`, `pass_audience`, `pass_malformed`, `pass_expired` |
 | 403 | `funding_required`, `device_bound` |
 | 404 | `call_unknown` |
@@ -450,7 +450,11 @@ never on the status.
 | 410 | `result_gone` |
 | 413 | `too_large` |
 | 429 | `subject_exhausted`, `free_month_exhausted`, `free_day_exhausted`, `concurrency_exhausted`, `rate_limited` |
-| 503 | `busy`, `paused`, `accounting_unavailable` |
+| 503 | `busy`, `paused`, `accounting_unavailable`, `provider_unavailable` |
+
+The provider codes can arrive before admission when the counting door rejects the request or its
+credentials, or when the selected capability has no configured provider. Such a refusal has no
+call row and spends nothing.
 
 `AllowanceResponse` is `{tier, period, limit, used, reserved, remaining, resetsAt, budgetResetsAt,
 code, capabilities}`:

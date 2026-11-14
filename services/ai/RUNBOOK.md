@@ -8,19 +8,22 @@ provisioning, image pins, proxy routes and backups belong to the
 ## Build and local checks
 
 Run from `services/ai`. Rustup reads the pinned toolchain. Tests use simulated providers and never
-need a provider key.
+need a provider key. Set `AI_TEST_DATABASE_URL` to a disposable PostgreSQL cluster whose test role
+may create databases before running the complete suite. The database cases create separate test
+databases; the full suite requires PostgreSQL.
 
 ```sh
 ./check-dependencies.sh
 cargo fmt --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
+cargo build --locked --bin windmill-ai
+python3 tests/operations/process_review.py --binary target/debug/windmill-ai -v
 ```
 
-Set `AI_TEST_DATABASE_URL` to a disposable PostgreSQL cluster whose test role may create databases
-to run the database cases. They use separate test databases. Without this variable, a normal test
-run does not establish database correctness. Bound the complete run with the test runner's timeout;
-CI also has job deadlines.
+Bound the complete run with the test runner's timeout; CI also has job deadlines. For checks that
+need no database, run `cargo test -p ai-domain -p ai-providers --locked`. The process probes also
+need `psql`, `pg_dump` and `openssl` on the path.
 
 The wire corpus and pass vectors live in `packages/api-contract/ai`. From the repository root, run
 `python3 packages/api-contract/ai/passes/generate.py --check`,
@@ -75,8 +78,8 @@ environment or a private client configuration, never in a shared command transcr
 requests use passes; neither internal bearer works as a public pass.
 
 1. Start with the caller's `callId`. Read `GET /internal/v1/calls?callId=<callId>` with the operator
-   secret. If `nextBeforeId` is non-null, pass it as `before` on the next request. Match the principal only within this protected
-   response; logs intentionally contain neither identifier.
+   secret. If `nextBeforeId` is non-null, pass it as `before` on the next request. Match the
+   principal only within this protected response; logs intentionally contain neither identifier.
 2. Read `GET /internal/v1/calls/<id>` using the service's numeric ID. It reports the pinned tier,
    model, price version, reservation, usage, state and charge. Find the completion log by this ID.
 3. Read `GET /internal/v1/principals/<kind>/<id>` for that principal's budgets, grants, bindings and

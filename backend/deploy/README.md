@@ -223,14 +223,45 @@ The new required secrets must be configured before this deployment path runs. Ge
 and internal bearer secret separately with `openssl rand -hex 32`. Generate the carry key with
 `openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'`. Keep that key stable across releases so
 existing carry remains readable. `AI_PASS_KEYS={}` is the default; opening caller admission requires
-production issuer public keys. The provider accounting policy controls whether transcription can
-open; no deployment command performs a billable provider call.
+production issuer public keys. Transcription also needs an active One grant and a configured
+provider. Its billing verification is a deployment acceptance gate in the service runbook; no
+deployment command performs a billable provider call.
 
 The backup workflow dumps this database as its own role, verifies `pg_restore --list` identifies
 `windmill_ai`, and records a checksum separately from product and subscription dumps. Recover an AI
 HBA block that was edited manually by removing only the lines between `# BEGIN windmill_ai` and
 `# END windmill_ai` from the cluster's HBA file as its OS user, reloading Postgres, then rerunning
 `ai-db`; do not remove the subscription block.
+
+### Restore the AI database
+
+Replacing production accounting data needs the owner's approval. Pause deployments and persist
+`AI_PASS_KEYS={}` in both the deployment configuration and the host's `.env` before restoring.
+Keep the previous public-key set securely for the later decision to reopen admission. Stop AI;
+the product and subscription services can keep serving.
+
+From `~/windmill`, verify the dump's recorded checksum and `pg_restore --list` identifies
+`windmill_ai`. Then restore through its own role:
+
+```sh
+set -eu
+AI_RESTORE_DUMP="$PWD/backups/<ai-backup>.dump"
+export PGPASSWORD=$(sed -n 's/^AI_DB_PASSWORD=//p' .env)
+docker compose stop ai
+docker compose exec -T db dropdb -U windmill windmill_ai
+docker compose run --rm --no-deps -T ai-db
+docker compose exec -T -e PGPASSWORD db pg_restore -U windmill_ai -d windmill_ai \
+  --single-transaction --exit-on-error --no-owner --no-acl < "$AI_RESTORE_DUMP"
+docker compose up -d --no-deps --pull never ai
+docker compose exec -T ai curl -fsS http://127.0.0.1:8085/health
+```
+
+Startup migrates the restored database and ends orphan reservations conservatively. Results were
+memory-only and cannot be restored. Inspect assumed calls and pinned budgets through the internal
+doors in [the AI runbook](../../services/ai/RUNBOOK.md). Keep caller admission closed until the
+owner has reconciled the interval after the backup with provider accounting: a backup cannot
+recover missing calls or their charges, and restoring an older fuse total is not evidence of new
+spending capacity. Reopening admission is a separate decision after that accounting gap is settled.
 
 ## What a deploy does to the running server
 

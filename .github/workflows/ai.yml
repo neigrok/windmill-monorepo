@@ -37,7 +37,7 @@ defaults:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -50,6 +50,8 @@ jobs:
       AI_TEST_DATABASE_URL: postgresql://postgres:ci@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v5
+      - name: Install PostgreSQL command-line tools
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -65,10 +67,14 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Tests including isolated Postgres databases
         run: cargo test --locked
+      - name: Process recovery, shutdown and reporting
+        run: |
+          cargo build --locked --bin windmill-ai
+          timeout 600s python3 tests/operations/process_review.py --binary target/debug/windmill-ai -v
 
   image:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v4

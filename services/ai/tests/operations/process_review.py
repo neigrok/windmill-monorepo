@@ -23,7 +23,7 @@ import uuid
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = os.environ.get("AI_TEST_DATABASE_URL", "postgresql://ai_test@127.0.0.1:19440/postgres")
+SOURCE = os.environ.get("AI_TEST_DATABASE_URL")
 FUNDING = "f" * 32
 OPERATOR = "o" * 32
 PUBLIC_KEY = "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
@@ -514,5 +514,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", required=True)
     arguments, tests = parser.parse_known_args()
+    if not SOURCE:
+        parser.error("AI_TEST_DATABASE_URL must name a disposable PostgreSQL cluster")
     BINARY = str(Path(arguments.binary).resolve())
     unittest.main(argv=[__file__, *tests])
