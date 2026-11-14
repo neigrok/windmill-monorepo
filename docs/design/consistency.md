@@ -748,10 +748,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   Update the Figma Tend drawings ([desktop](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-152),
   [phone](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-194)) to show failure reopening
   with the sentence and recovery after a mid-run dismissal.
-- **Web shortcuts layout.** `skilltree.css` keeps two columns and nonshrinking keycap groups.
-  At 390px, Pan/Zoom overlap View; Windows desktop Zoom also extends slightly into Edit. Local
-  owner/reader and Mac/Windows captures confirm this. Adapt columns/key wrapping in the implementation;
-  current Figma deliberately shows the defect.
 - **Published web input sizing.** The imported Design System Input field imposes 100px minimum height,
   while ForkDoor uses 46px. The product drawing uses an explicitly named local source adapter. The
   library owner should correct the primitive sizing before replacing that adapter with an instance.

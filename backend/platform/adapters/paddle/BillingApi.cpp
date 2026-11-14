@@ -4,6 +4,7 @@
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/paddle/PaddleSignature.h"
+#include "platform/domain/Ids.h"
 
 #include <json/json.h>
 #include <trantor/utils/Logger.h>
@@ -18,22 +19,6 @@ namespace {
 // asString() throws on a non-string node; read every field defensively.
 std::string asStr(const Json::Value& value) {
   return value.isString() ? value.asString() : std::string();
-}
-
-// custom_data rides in from a checkout anyone can open: a value that isn't a UUID would reach a
-// ::uuid bind and throw, making Paddle redeliver forever. An unusable id is simply no binding.
-bool isUuid(const std::string& value) {
-  if (value.size() != 36) return false;
-  for (std::size_t i = 0; i < value.size(); ++i) {
-    const char c = value[i];
-    if (i == 8 || i == 13 || i == 18 || i == 23) {
-      if (c != '-') return false;
-      continue;
-    }
-    const bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-    if (!hex) return false;
-  }
-  return true;
 }
 
 std::optional<long long> timestampMs(const Json::Value& value) {
@@ -132,6 +117,8 @@ PaddleSubscription subscriptionFrom(const Json::Value& data, const std::string& 
   // outside that flow, which the read resolves by email instead.
   const Json::Value& custom = data["custom_data"];
   if (custom.isObject()) {
+    // custom_data rides in from a checkout anyone can open: a value that isn't a UUID would reach a ::uuid bind and
+    // throw, making Paddle redeliver forever. An unusable id is simply no binding.
     const std::string claimed = asStr(custom["user_id"]);
     if (isUuid(claimed)) subscription.userId = claimed;
   }
