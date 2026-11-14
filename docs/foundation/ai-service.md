@@ -37,7 +37,8 @@ that:
 - the code that decides what a call may cost is small enough to review whole.
 
 It is written in Rust. It runs as one process in its own container on the production host beside
-`server`, `embedder` and `subscriptions`, with its own image, workflow and health check.
+`server` and `embedder`, as the subscription service will, with its own image, workflow and health
+check.
 
 ## §2 Vocabulary
 
@@ -48,8 +49,8 @@ It is written in Rust. It runs as one process in its own container on the produc
 - **D-3 Plan.** What an account holds, as its pass states it: `none` or `one`. A later paid plan adds
   a value.
 - **D-4 Tier.** The row of the tier table (§3) a call is admitted under: `anonymous` for an
-  installation; `one` for an account whose plan is `one` while a grant is in force for it; `free` for
-  every other account.
+  installation; `one` for an account whose plan is `one` while a grant is in force for it, an owner
+  grant included (§3); `free` for every other account.
 - **D-5 Capability.** What a call asks a provider to do: `text`, `transcription` or `speech`.
 - **D-6 Model class.** The name a caller uses for a text model: `large`, `medium` or `small`. The tier
   table maps a class to a provider's model, so no caller names a provider or a model id.
@@ -64,8 +65,8 @@ It is written in Rust. It runs as one process in its own container on the produc
   month and one for the UTC day.
 - **D-11 Grant.** Capacity funded for one account over one period `[start, end)`, with its source
   (`subscription` or `owner`), its amount and the funding reference that makes it unique.
-- **D-12 Reservation.** The most a call can cost, computed before it is admitted, and held in every
-  budget the call draws on until the call ends.
+- **D-12 Reservation.** The ceiling the service computes for a call's cost before it admits the call,
+  held in every budget the call draws on until the call ends.
 
 Instants are epoch milliseconds, UTC. Money is integer nano-USD inside the service and an exact
 decimal USD string on every wire (INV-11).
@@ -88,18 +89,19 @@ tiers, so adding a tier adds a row and a plan value and no code.
 The amounts, the calls in flight and the anonymous row's model are the backend's policy as it stands
 ([USD AI allowances](../../backend/AI_ALLOWANCES.md)); `large` is `claude-opus-5`, `medium` is
 `claude-sonnet-5` and `small` is `claude-haiku-4-5`, the models the backend calls. The output
-ceilings and the calls a minute are set here. (R-4)
+ceilings, the calls a minute and `OWNER_GRANTS_MAX` are set here. (R-4)
 
 - A class a tier serves as another is not refused: the call runs on the class served, and its answer
   says which.
 - An account whose plan is `one` with no grant in force, as in a payment grace period, is `free` in
   every respect. A capability its tier lacks refuses it as `funding_required`, so transcription and
   speech never draw on a free pool. (R-5)
-- A pass that states `ownerGrant` (§4) opens an owner grant: when the account has no grant in force,
-  admission funds one grant of the `one` amount for the current UTC calendar month, source `owner`,
-  under the reference `owner/<account>/<YYYY-MM>`. At most `OWNER_GRANTS_MAX` accounts receive one in
-  a month; beyond that the account stays `free` and the refusal to fund is reported, so a fault in
-  whoever signs passes cannot mint unbounded capacity.
+- A pass that states `ownerGrant` (§4) opens an owner grant. Whenever the service resolves such an
+  account's tier, for a call or for `GET /v1/allowance`, and the account has no grant in force, it
+  first funds one grant of the `one` amount for the current UTC calendar month, source `owner`, in a
+  transaction of its own. An account receives at most one a month, and at most `OWNER_GRANTS_MAX`
+  accounts receive one in a month; beyond that the account stays `free` and the refusal to fund is
+  reported, so a fault in whoever signs passes cannot mint unbounded capacity.
 - The table also lists the labels a caller may give its calls (§6.1), and for each voice capability
   the model, voices and formats served.
 - **INV-1.** Every model the tier table names has a rate in the price book for every count its
@@ -108,7 +110,8 @@ ceilings and the calls a minute are set here. (R-4)
 ## §4 The pass
 
 A pass is `wm-pass.v1.<kid>.<payload>.<signature>`, at most `PASS_MAX_LENGTH` characters. `kid` names
-one of the issuer's keys. `payload` is the unpadded base64url of a JSON object. `signature` is the
+one of the issuer's keys in 1 to 32 characters of `a–z 0–9 -`. `payload` is the unpadded base64url
+of a JSON object. `signature` is the
 unpadded base64url of an Ed25519 signature, verified strictly, over the ASCII bytes of
 `wm-pass.v1.<kid>.<payload>`.
 
@@ -126,14 +129,16 @@ unpadded base64url of an Ed25519 signature, verified strictly, over the ASCII by
 The service verifies the signature before it reads the payload, and believes a pass only when all of
 these hold. Otherwise it answers 401 with the code beside the rule and admits nothing:
 
-1. It has the prefix and the four parts within the length bound, and `kid` names a pinned public key
-   under which the signature verifies — `pass_signature`.
-2. The payload decodes into the claims above and no others, in a combination the table allows, with
-   `iat` no later than the clock plus `PASS_SKEW` and `exp − iat` at most `PASS_MAX_LIFETIME` —
-   `pass_malformed`. This code means the issuer is at fault, and a caller that refreshes its pass
-   and meets it again stops.
-3. `aud` is `ai` and `env` is the service's — `pass_audience`.
-4. The clock is before `exp` — `pass_expired`. A caller fetches a new pass and asks again.
+1. The request carries one — `pass_missing`.
+2. It has the prefix and its three parts within the length bound, and `kid` names a pinned public
+   key under which the signature verifies — `pass_signature`.
+3. The payload is a JSON object whose `aud` is `ai` and whose `env` is the service's —
+   `pass_audience`.
+4. It holds the claims above and no others, in a combination the table allows, and `exp − iat` is at
+   most `PASS_MAX_LIFETIME` — `pass_malformed`. This code means the issuer is at fault, and a caller
+   that meets it stops.
+5. The clock is no earlier than `iat` less `PASS_SKEW` and is before `exp` — `pass_expired`. A
+   caller fetches a new pass and asks once more.
 
 A pass is read once, when a request arrives; a call outlives the pass that admitted it. The public
 keys are configuration, a set keyed by `kid`. An issuer rotates by having the service pin the new key
@@ -141,14 +146,15 @@ before it signs under it, and drop the old one after its last pass has expired.
 
 - **INV-2.** Nothing revokes a pass. What a pass states is believed until `exp` and no longer, so a
   change to an account takes effect here within `PASS_MAX_LIFETIME`.
-- **INV-3.** A key whose private half is public never opens production. Test keys carry a `kid`
-  starting `test-`; with `env` `production` the service refuses to start while it pins one, and
-  refuses any pass naming one.
+- **INV-3.** A key whose private half is public never opens production. The service carries the
+  fingerprint of every key the vectors and `pass_signer` publish, and such keys carry a `kid` starting
+  `test-`. With `env` `production` it refuses to start while a pinned key matches a fingerprint or
+  that prefix, under any `kid`.
 
-The format's golden vectors belong in `packages/api-contract/ai/passes/`: for each, the payload, a
-`test-` key and the pass it MUST produce, and one example of every refusal above. An issuer in any
-language proves itself against them. `tools/pass_signer` signs passes for local use and for the
-checks of §9; it is never linked into the service.
+The format's golden vectors belong in `packages/api-contract/ai/passes/`: for each, the payload's
+exact bytes, a `test-` key and the pass it MUST produce, and one example of every refusal above. An
+issuer in any language proves itself against them. `tools/pass_signer` signs passes for local use
+and for checks against a deployment; it is never linked into the service.
 
 ## §5 The ledger
 
@@ -195,14 +201,17 @@ reserved ──► dispatched ──► settled      the provider said what it c
 A call's reservation (D-12) is computed before admission:
 
 - **Text.** The input is the provider's own count of the request exactly as the adapter will send
-  it, plus `COUNT_MARGIN`. When the provider's counting door does not answer, the input is taken as
-  one token for every byte of that request plus the provider's largest count for each image. The
-  input is priced at the rate that applies at that size, as a cache write when the call caches
-  (§6.2), and the whole output cap is priced as output.
+  it, plus `COUNT_MARGIN`. When the provider's counting door does not answer within `COUNT_DEADLINE`,
+  the input is taken as one token for every byte of that request, plus the provider's largest count
+  for each image and its stated overhead for tools, plus `COUNT_MARGIN`. A counting door that refuses
+  the request refuses the call as `provider_rejected`. The input is priced as a cache write when the
+  call caches (§6.2) and the whole output cap as output, both at the rates that apply to a prompt of
+  that size.
 - A text request states `maxTokens` and MAY state `minTokens`, which defaults to `maxTokens`. A
   `maxTokens` above the tier's ceiling is taken as the ceiling. Admission picks the largest output
   cap between the two that every budget of the call can hold, sends that cap to the provider, and
-  refuses when `minTokens` does not fit.
+  refuses when `minTokens` does not fit. A `minTokens` above `maxTokens` or above the ceiling is
+  `invalid_request`.
 - **Transcription and speech.** The reservation is the ceiling §8.2 gives for the model.
 
 Admission is one database transaction that locks the principal's budgets and every shared budget the
@@ -220,7 +229,9 @@ call draws on. It refuses with the first code that applies:
 
 Admission writes the call as `reserved` with its pins, its reservation and the price book's version,
 and adds the reservation to `held` in each budget. A second transaction marks it `dispatched`; only
-then is it sent. A call refused at admission leaves no row, and its `callId` may be used again.
+then is it sent. A call refused at admission leaves no row, and its `callId` may be used again. A
+call that cannot be marked `dispatched` answers `accounting_unavailable` and ends `unconsumed`; its
+`callId` is spent.
 
 - **INV-10.** At admission `spent + held` never exceeds a budget's limit. A budget ends above its
   limit only by a settlement's excess (§5.4), which is reported.
@@ -239,17 +250,20 @@ A call that ends `unconsumed` releases its reservation. A call that ends `assume
 reservation from `held` to `spent`: the service was not told less, so it counts the most. An operator
 who learns the true cost corrects it through the internal door (§6.5), which keeps both amounts.
 
-A settlement that cannot be written is tried again for `SETTLE_RETRY` with the usage held in memory.
-After that the call is left `dispatched`, and the sweep ends it `assumed`.
+A settlement that cannot be written is tried again for as long as the process lives, by the task
+that owns the call, which keeps the provider's counts and nothing else of the answer. After
+`SETTLE_RETRY` the caller is answered with `charged` null. Only a call no task owns is ended by the
+sweep. Every write that ends a call is conditional on the state it leaves.
 
-- **INV-11.** Every sum is integer nano-USD from the price book's rates. No step uses floating point,
-  and a reservation that would overflow is refused at admission.
+- **INV-11.** Every sum is integer nano-USD from the price book's rates, and every amount on a wire
+  is its exact decimal string. No step uses floating point, and a reservation that would overflow is
+  refused at admission as `invalid_request`.
 
 ### §5.5 Grants
 
 Three operations, each idempotent, reached through the internal door (§6.5):
 
-- **Fund** `{reference, accountId, period}` creates one grant of the `one` amount, source
+- **Fund** `{reference, accountId, plan, period}` creates one grant of that plan's amount, source
   `subscription`. It answers `ok`; `replay` when that reference already funded that account for that
   period; and `conflict` when the reference funded another account or another period, or the period
   overlaps another `subscription` grant of the account. A conflict funds nothing.
@@ -268,11 +282,13 @@ and the two are never combined. Capacity a grant has left at its end is gone.
 ### §5.6 An installation that became an account
 
 A free account's month counts what its device spent before it signed in. When an account's pass
-names an `installation`, admission records that binding the first time it sees it. From then on:
+names an `installation`, the service records that binding the first time it verifies such a pass,
+on any route. From then on:
 
 - the installation's calls pinned to the current UTC month count toward the account's allowance for
   that month, held and spent alike, and its calls in flight count as the account's;
-- the installation is admitted for nothing more (`device_bound`);
+- the installation is admitted for nothing more (`device_bound`), and the account reads and asks
+  again for the installation's calls as its own (§6.4);
 - a later pass naming the same installation under another account changes nothing and is reported,
   since the issuer is the authority on bindings and has contradicted itself.
 
@@ -283,8 +299,9 @@ Binding mints no allowance and moves no cost into a grant.
 - **Fuse.** For each provider the service keeps the sum of what its calls settled and assumed over
   the trailing hour, computed from the ledger so that a restart forgets nothing. Above `HOURLY_FUSE`
   it refuses that provider's calls as `paused` until the sum falls, and reports while it stays open.
-- **Rate.** Each principal may make at most its tier's calls a minute (§3), counting every request
-  to the public door. Beyond that a request is refused as `rate_limited` before its body is read.
+- **Rate.** Each principal may start at most its tier's calls a minute (§3), and make at most
+  `READS_PER_MINUTE` other requests, a call asked for again among them. Beyond either a request is
+  refused as `rate_limited` before its body is read.
 - **Load.** The process carries at most `CALLS_IN_FLIGHT_MAX` calls. Beyond that a new call is
   refused as `busy` before its body is read.
 - **Thresholds.** When a free pool's `spent + held` first crosses 50%, 80% and 95% of its limit in a
@@ -295,12 +312,12 @@ Binding mints no allowance and moves no cost into a grant.
 One task runs at start and every `SWEEP_EVERY`:
 
 - a call left `reserved` by a task that is gone ends `unconsumed`;
-- a call left `dispatched` by another process instance, or past its `CALL_TIMEOUT` and
-  `SETTLE_RETRY`, ends `assumed`;
+- a call left `dispatched` by another process instance, or by a task that is gone, ends `assumed`;
 - a call's row is deleted `CALL_RETENTION` after the call ended; the budgets keep their sums. (R-9)
 
 The service holds a database advisory lock for as long as it runs and takes it before its first
 sweep, so two processes never serve at once and a starting process never ends calls a live one owns.
+A service that loses the lock's session stops admitting until it holds the lock again.
 
 ## §6 Doors
 
@@ -311,7 +328,8 @@ internal route cannot be exposed by a path rule.
 
 The public routes are served on Windmill's API origin. The proxy forwards exactly `/v1/calls/*` and
 `/v1/allowance` to the service's public port, ahead of the backend's own `/v1/*` rule, and removes
-the `Cookie` header, so no credential of the backend reaches the service. Every route takes the pass
+the `Cookie` and `X-Windmill-Installation` headers, so no credential of the backend reaches the
+service. Every route takes the pass
 as `Authorization: Bearer <pass>` and answers `Cache-Control: no-store, no-transform`.
 
 | Route | Body in | Answer |
@@ -319,7 +337,7 @@ as `Authorization: Bearer <pass>` and answers `Cache-Control: no-store, no-trans
 | `PUT /v1/calls/{callId}/text` | `TextRequest` (§6.2) | an event stream (§6.2) |
 | `PUT /v1/calls/{callId}/transcription` | the audio bytes, with their `Content-Type` | an event stream (§6.2) |
 | `PUT /v1/calls/{callId}/speech` | `{text, voice, format}` | the audio bytes, streamed |
-| `GET /v1/calls/{callId}` | | `{callId, capability, state, stop, served, charged, endedAt}` |
+| `GET /v1/calls/{callId}` | | `{callId, capability, state, stop, code, served, charged, endedAt}` |
 | `GET /v1/calls/{callId}/result` | | the call's answer again, while it lingers (§6.4) |
 | `GET /v1/allowance` | | `AllowanceResponse` (§6.3) |
 
@@ -329,7 +347,8 @@ as `Authorization: Bearer <pass>` and answers `Cache-Control: no-store, no-trans
 - Each `PUT` takes `?label=<label>`, naming what the caller is doing. A label the tier table lists is
   recorded as given and any other as `other`, so the labels in the ledger and the logs are a bounded
   set. The service decides nothing by a label.
-- An audio body's `Content-Type` is one of the types the tier table lists for the model.
+- An audio body's `Content-Type` is one of the types the tier table lists for the model; any other
+  is `invalid_request`.
 - **INV-12.** The service names no product. It accepts any prompt and any tool list, and enforces
   only what §3 to §5 say about money.
 
@@ -394,8 +413,8 @@ the service sends a comment line after every `HEARTBEAT` without one.
 - `charged` is what the call cost its principal, and null when the settlement could not be written
   before the answer was due (§5.4).
 - `failed` carries `provider_rejected` when the provider refused the request as malformed,
-  `provider_unavailable` when it was unreachable or busy, and `provider_failed` when the call ended
-  `assumed`, or the provider's answer could not be understood.
+  `provider_unavailable` when it was unreachable or busy, and `provider_failed` when the provider
+  began and its answer did not arrive whole, or it stopped for a reason §8 does not map.
 
 A speech answer is the audio bytes. It carries no money: `GET /v1/calls/{callId}` says what it cost
 and whether it ended whole. Its shape is provisional until a model is chosen (R-6).
@@ -412,7 +431,7 @@ never on the status.
 | Status | Codes |
 |---|---|
 | 400 | `invalid_request` |
-| 401 | `pass_signature`, `pass_malformed`, `pass_audience`, `pass_expired` |
+| 401 | `pass_missing`, `pass_signature`, `pass_audience`, `pass_malformed`, `pass_expired` |
 | 403 | `funding_required`, `device_bound` |
 | 404 | `call_unknown` |
 | 409 | `conflict` |
@@ -425,14 +444,16 @@ never on the status.
 `AllowanceResponse` is `{tier, period, limit, used, reserved, remaining, resetsAt, budgetResetsAt,
 code, capabilities}`:
 
-- `period` is `lifetime`, `calendar_month_utc` or `billing_period`; `resetsAt` is null for a lifetime.
+- `period` is `lifetime`, `calendar_month_utc` (a free account, and an owner grant) or
+  `billing_period` (a subscription grant); `resetsAt` is null for a lifetime.
 - `code` is `ok`, or the refusal a call would meet now. `budgetResetsAt` is when the budget that code
   names returns: the end of the UTC day or month for a free pool, the end of the principal's own
   period for its own budget, and null for every other code.
 - `capabilities` is `{text: {large, medium, small}, transcription, speech}`: for each class, the
   class that would serve it, and for each voice capability whether the tier has it.
 - A positive `remaining` does not promise that a given call fits; its reservation may be larger.
-- No answer states a shared budget's amounts.
+- No answer states a shared budget's amounts. The output cap admission chose is the one thing a
+  caller can infer from: it is never more than the budgets held.
 
 ### §6.4 Asking again
 
@@ -448,13 +469,14 @@ returned without a second charge.
 - A result lingers in memory for `RESULT_LINGER` after its call ends. Each principal's lingering
   results are bounded by `LINGER_PER_PRINCIPAL` and all of them by `LINGER_TOTAL`, oldest first out,
   so one principal cannot push out another's. After that, and after a restart, the answer is 410
-  `result_gone`: the call was paid for and its answer is lost. The call's state and cost stay
-  readable at `GET /v1/calls/{callId}`.
+  `result_gone`: what the call cost was paid, and its answer is lost. The call's state, cost and
+  failure code stay readable at `GET /v1/calls/{callId}`.
 - A reader that is slow or gone never slows the read from the provider (INV-8).
 - **INV-13.** Prompts, messages, tool inputs and results, images, audio, transcripts and every
   provider answer live in the service's memory only. A request's content is dropped once it is sent;
   an answer's, when its linger ends. None is written to the database, a log line, a Sentry report, a
-  core file or any other store, and none is sent anywhere but to the provider serving the call.
+  core file or any other store, and none is sent anywhere but to the provider that counts or serves
+  the call.
 
 ### §6.5 Internal: the ledger's doors
 
@@ -468,7 +490,7 @@ whatever funds grants cannot correct a call.
 | `POST /internal/v1/grants/{reference}/reopen` | funding | Reopen. |
 | `GET /internal/v1/principals/{kind}/{id}` | operator | The principal's budgets, grants, bindings and calls. |
 | `GET /internal/v1/calls/{id}` | operator | One call by the service's own `id`, with its principal. |
-| `GET /internal/v1/calls?state=&since=` | operator | The calls that ended in a state since an instant. |
+| `GET /internal/v1/calls?state=&since=&callId=` | operator | The calls that ended in a state since an instant, or that carry a caller's `callId`. |
 | `GET /internal/v1/budgets` | operator | The shared budgets and each provider's fuse. |
 | `POST /internal/v1/calls/{id}/correct` | operator | State what an `assumed` call really cost, up or down. The budgets it was pinned to move by the difference. |
 
@@ -482,9 +504,11 @@ A call is a fixed pipeline. Each step either passes or ends the request with one
 1. Read the headers within `HEADER_DEADLINE`. Verify the pass (§4).
 2. Look the `callId` up for the principal. A known one leaves the pipeline here (§6.4).
 3. Check the rate and the load (§5.7).
-4. Check that the tier has the capability and that the principal's allowance does not already answer
-   a refusal (§6.3). Nothing of the body has been read.
-5. Read the body within its bound and `BODY_DEADLINE`. Validate it (§6.2).
+4. Resolve the tier, opening an owner grant when one is due (§3). Check that the tier has the
+   capability and that the principal's allowance does not already answer a refusal (§6.3). Nothing of
+   the body has been read.
+5. Read the body within `BODY_DEADLINE`. One above `MAX_TEXT_BODY` or `MAX_AUDIO_BODY` is refused as
+   `too_large`. Validate it (§6.2).
 6. Build the provider's request. Count its input and compute the reservation (§5.3).
 7. Check the provider's fuse (§5.7).
 8. Admit (§5.3), which looks the `callId` up again under its lock.
@@ -502,19 +526,21 @@ Where a dispatched call ends:
 | The answer arrived whole and its usage is missing or cannot be priced | `assumed` | `ended`, charged its reservation |
 | Anything else: the stream broke, the reply could not be read, the time ran out | `assumed` | `failed`, `provider_failed` |
 | The provider stopped for a reason §8 does not map | `settled` from its usage | `failed`, `provider_failed` |
+| The settlement could not be written within `SETTLE_RETRY` | `settled` once the database returns | `ended`, `charged` null |
 | The service stopped mid-call | `assumed`, by the sweep | the connection closes |
 
 A call is never sent twice, so a caller that wants another attempt mints a new `callId`.
 
-On `SIGTERM` the service stops admitting, goes on serving results, and lets calls in flight finish
-for `DRAIN`, which is longer than every `CALL_TIMEOUT`. The container's stop grace is longer than
-`DRAIN`, and a check in CI holds the two together, so a deploy cuts no call short.
+On `SIGTERM` the service refuses new calls as `busy`, goes on serving results, and lets calls in
+flight finish for `DRAIN`, which is longer than every `CALL_TIMEOUT`. The container's stop grace is
+longer than `DRAIN`, and a check in CI holds the two together, so a deploy cuts no call short.
 
 ## §8 Providers
 
 Each provider is one adapter that turns a call into that provider's request and its answer into
-events and a usage statement. The keys are the service's alone and exist nowhere else. An adapter
-sends a provider nothing that names a principal.
+events and a usage statement. The keys are the service's alone, and once the backend's are deleted
+(I-8) no other process can reach a provider. An adapter sends a provider nothing that names a
+principal.
 
 ### §8.1 Text: Anthropic
 
@@ -599,14 +625,15 @@ other. The clock, each provider's base URL and the pass keys are constructor arg
 pipeline runs in tests against a provider the test plays, with no network.
 
 Storage is a database of its own, `windmill_ai`, in the host's Postgres with its own role, which no
-other service's role can read. It holds ids, labels, counts, instants, money and each call's provider
-request id, and nothing else (INV-13).
+other service's role can read. It holds ids, labels, counts, instants, money, each call's `callId`
+and each call's provider request id, and nothing else (INV-13). A provider request id leads to what
+the provider itself kept of the call; it is deleted with the call's row.
 
 Content never reaches a place that prints. The types that hold it implement neither `Debug` nor
 `Display`; an error crossing a boundary carries a code and never a message built from a request;
 Sentry is given static names and no request, header or URL; and the container writes no core file.
-One test plants a marker in every content field of every door and searches the logs, the Sentry
-envelopes and a database dump for it.
+One test plants a marker in every content field of every door, and in the `callId`, and searches the
+logs, the Sentry envelopes and a database dump for it; only the `callId` column may hold it.
 
 - **INV-14.** Every call records the tier it was admitted under, the class asked for, the model that
   served it, the price book's version, the provider's counts and request id, and its cost, with the
@@ -627,15 +654,17 @@ Configuration, with the values the service ships with:
 | `MAX_IMAGES`, `MAX_JSON_DEPTH` | 8, 64 | `SETTLE_RETRY`, `SWEEP_EVERY` | 30 s, 60 s |
 | `COUNT_MARGIN` | 2% and 64 tokens | `HOURLY_FUSE` | $20 a provider |
 | `CALLS_IN_FLIGHT_MAX` | 256 | `OWNER_GRANTS_MAX` | 25 a month |
-| `CALL_RETENTION` | 90 days | | |
+| `CALL_RETENTION` | 90 days | `COUNT_DEADLINE` | 2 s |
+| `READS_PER_MINUTE` | 120 | | |
 
 ## §10 Observability
 
 - Every call logs one structured line when it ends, and so does every request refused after the
-  pass verified: operation `call.text`, `call.transcription` or `call.speech`, the service's call
-  `id`, the caller's `callId` and `label`, `client`, the deployment, tier, class asked and served,
-  end state or refusal code, `stop`, duration, the reservation, the provider's counts, HTTP status
-  and error type, and the cost.
+  pass verified, but for the two counted below: operation `call.text`, `call.transcription` or
+  `call.speech`, the service's call `id` when the call was admitted, the caller's `label`, `client`,
+  the deployment, tier, class asked and served, end state or refusal code, `stop`, duration, the
+  reservation, the provider's counts and HTTP status, its error type mapped to a fixed list, and the
+  cost.
 - A request refused before or at the pass, and one refused as `rate_limited` or `busy`, is counted by
   code; a line with the counts is written at most once a second.
 - The internal doors log `grant.fund`, `grant.close`, `grant.reopen` and `call.correct` with their
@@ -644,13 +673,15 @@ Configuration, with the values the service ships with:
 - Reported to Sentry under a static name, as errors: a failed admission or settlement transaction, a
   settlement's excess, a call that ended `assumed`, a provider that refused the service's key or
   account, a binding the issuer contradicted and an owner grant refused at the cap. As warnings: a
-  threshold crossing, a fuse while it is open, and a provider answering busy for minutes on end.
+  threshold crossing, a fuse while it is open, a provider answering busy for minutes on end, and a
+  Fund or Reopen that answered `conflict`, since a paid period is then left unfunded.
 - An expected refusal is a log line and never an Issue.
-- Nothing logs or reports content (INV-13), a pass, a principal's id, a provider key, or a
-  provider's error text, which can quote the request. A report names a call by the service's `id`,
-  and an operator reads its principal through the internal door.
-- No path leads from a person to the calls they were refused: a refused call has no row, and no line
-  names a principal. Support starts from a `callId` the person's device shows.
+- Nothing logs or reports content (INV-13), a pass, a principal's id, a caller's `callId`, a
+  provider key, the internal doors' secrets, the key that seals `carry`, or a provider's error text,
+  which can quote the request. A report names a call by the service's `id`, and an operator reads its
+  principal through the internal door.
+- A refused call has no row and its line names nobody, so support for a refusal starts from the code
+  the person's device showed; for an admitted call, from its `callId`, through the internal door.
 - The service emits no product event. What a person did is the calling device's to say; what it cost
   is read from the ledger.
 
@@ -663,10 +694,11 @@ Configuration, with the values the service ships with:
 | A provider, unreachable | Its calls end `unconsumed` with `provider_unavailable`; the other provider's go on. |
 | A provider, breaking answers part-way | Each such call ends `assumed` and costs its reservation. The provider's fuse may trip and pause it; the other provider's calls go on. |
 | The database | Every new call is refused as `accounting_unavailable`. A call in flight is read to its end and settled when the database returns, or ended `assumed`. |
-| This service, restarted | Calls in flight finish first (§7). Lingering answers are lost. |
+| The provider's counting door | Text reservations fall back to one token a byte and grow severalfold, so a call near the end of a budget is refused that would have fitted. |
+| This service, restarted | New calls are refused as `busy` until the calls in flight finish, at most `DRAIN` (§7). Lingering answers are lost. |
 | This service, down | Coach, Talk and speech stop. Sync, the journal and the log are untouched. |
 | The network edge cutting a long answer | The call goes on; its caller asks for the `callId` again (§6.4). |
-| The service's clock wrong by more than `PASS_SKEW` | Every pass is refused. |
+| The service's clock behind the issuer's by more than `PASS_SKEW` | Every fresh pass is refused as `pass_expired`. Ahead of it, passes end early. |
 
 ## §12 Integrations
 
@@ -685,7 +717,8 @@ designed when the service is built, one integration at a time.
   4 and 5 of [phone-hosted Coach abilities](mobile/gym_coach.md), which is rewritten when the move is
   designed.
 - **I-4 Tending becomes roadmap Coach.** Roadmap's server-side agent retires. In the browser, roadmap
-  Coach runs its tools through the backend's existing tool door.
+  Coach runs its tools through the backend. The backend's tool door, `/mcp`, takes an OAuth token or
+  an MCP key and no browser session, so this move includes a door a session can call.
 - **I-5 Voice.** Journal Talk calls the transcription door and journal read-aloud calls the speech
   door, from the device. Both are part of Windmill One.
 - **I-6 Work nobody waits on.** When the backend has AI work for an account with no device present,
@@ -696,7 +729,8 @@ designed when the service is built, one integration at a time.
   it is refunded the grant is closed, and when the refund is reversed it is reopened
   ([subscriptions §6.3](subscriptions.md#63-funding-the-ai-allowance)). Whether a worker of this
   service follows the subscription feed or the feed's follower calls the grants door is open. Either
-  way no call waits on it (INV-15).
+  way no call waits on it (INV-15). The amount a period funds then has one home, this service's tier
+  table; where the buy sheet reads it from is settled with this move.
 - **I-8 Cutover.** The backend's ledger rows are not carried over: every allowance starts empty in
   this service. The backend's ledger, its provider clients and its provider keys are deleted when
   their last caller has moved. (R-3)
@@ -726,8 +760,8 @@ this document assumes until it is ruled.
 
 What this service does differently from the backend's ledger, beyond moving it:
 
-- A reservation is a ceiling, from the provider's own count of the request; the backend estimates
-  from the request's size, and what the provider bills can exceed it.
+- A reservation is computed as a ceiling, from the provider's own count of the request; the backend
+  estimates from the request's size, which a caller who chooses its own prompt can outrun.
 - An uncertain call ends at once (R-1); the backend holds it until an operator acts.
 - There is no debt (R-8); the backend refuses a principal that owes until an operator reconciles it.
 - Only shared budgets raise a report (R-2); the backend emails the owner for every budget.
