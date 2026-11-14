@@ -233,6 +233,9 @@ public:
   void resweepAll();
   // Every connection subscribed to anything, deduplicated.
   std::vector<drogon::WebSocketConnectionPtr> connections() const;
+  // Closes every open connection, subscribed or not, each from its own loop's queue, as a server going away: a tab
+  // whose socket closes keeps what it was not acked and sends it to the next server.
+  void closeEvery();
 
   void broadcastSubgraph(const TreeId& tree, Seq seq, const Subgraph& subgraph) override;
   // `{t: "subtree", treeId, seq, step, subtree: {id, depth}}`, the same bytes to every subscriber.

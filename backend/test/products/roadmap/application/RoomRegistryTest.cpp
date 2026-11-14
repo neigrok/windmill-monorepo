@@ -7,6 +7,7 @@
 
 #include <trantor/utils/Logger.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -17,6 +18,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <typeinfo>
 #include <vector>
 
@@ -1181,6 +1183,135 @@ TEST(registry_tries_its_held_rooms_once_more_as_it_stops_within_one_budget_and_r
   CHECK_EQ(holdLines(told).back(), std::string("roadmap_tree_save outcome=lost-at-shutdown rooms=1 request_id=*"));
   CHECK_EQ(told.lines.back(), std::string("roadmap.tree.save roadmap background lost-at-shutdown"));
   CHECK_EQ(told.reports.back().rfind("roadmap.tree.save roadmap background lost-at-shutdown ", 0), std::size_t{0});
+}
+
+// The budget begins when the registry is told the process is stopping, not as it stops, and every save after that
+// moment shares it: one a write was still waiting for, and each room's last try. A save takes what the time before it
+// and the saves before it left.
+TEST(registry_gives_every_save_one_budget_begun_when_it_was_told_to_stop_and_shared_by_every_room) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  HeldRetries retries;
+  for (const char* tree : {"t", "u"}) repo.byId[tree] = oneNodeTree();
+  std::vector<long long> left;
+  {
+    RoomRegistry registry(repo, log, bus, retries.timer());
+    repo.savesFail = true;
+    for (const char* tree : {"t", "u"}) {
+      registry.open(tid(tree))->applyCommand(createNode("added"), 10, uid());
+      REQUIRE(registry.persist(tid(tree)).wait() == Saved::held);
+    }
+    repo.savesFail = false;
+    repo.duringSave = [&](const TreeId&) {
+      const StatementLimits* open = StatementLimits::current();
+      left.push_back(open ? open->remaining().count() : -1);
+      std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    };
+    CHECK_FALSE(registry.stopping());
+    registry.beginStopping();
+    CHECK(registry.stopping());
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    registry.stop();
+  }
+  const long long budget = RoomRegistry::kShutdownSaveBudget.count();
+  REQUIRE_EQ(left.size(), 2u);
+  CHECK(left[0] > 0);
+  CHECK(left[0] <= budget - 150);
+  CHECK(left[1] > 0);
+  CHECK(left[1] <= budget - 300);
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
+  CHECK_EQ(repo.byId["u"].head, static_cast<Seq>(8));
+}
+
+// While the server runs a save is under no limits of the registry's; once it is told to stop, a save a write still
+// waits for runs within what is left of the budget.
+TEST(registry_limits_a_writes_save_by_the_budget_only_once_it_is_told_to_stop) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  repo.byId["t"] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus);
+  std::vector<long long> left;
+  repo.duringSave = [&](const TreeId&) {
+    const StatementLimits* open = StatementLimits::current();
+    left.push_back(open ? open->remaining().count() : -1);
+  };
+
+  CHECK(writeNode(registry, "a", 10).wait() == Saved::saved);
+  registry.beginStopping();
+  CHECK(writeNode(registry, "b", 11).wait() == Saved::saved);
+
+  REQUIRE_EQ(left.size(), 2u);
+  CHECK_EQ(left[0], -1LL);
+  CHECK(left[1] > 0);
+  CHECK(left[1] <= RoomRegistry::kShutdownSaveBudget.count());
+}
+
+// A room a write landed in is the registry's to save as it stops whether or not a save of it ever failed: stopping
+// stores it while the store takes it, and counts it among the rooms lost when it does not.
+TEST(registry_stopping_saves_a_room_left_unsaved_though_not_held_and_counts_it_lost_when_that_save_fails) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  HeldRetries retries;
+  Told told;
+  for (const char* tree : {"t", "u"}) repo.byId[tree] = oneNodeTree();
+  {
+    RoomRegistry registry(repo, log, bus, retries.timer());
+    for (const char* tree : {"t", "u"}) {
+      std::lock_guard<std::mutex> strand(registry.strandFor(tid(tree)));
+      registry.open(tid(tree))->applyCommand(createNode("added"), 10, uid());  // landed, and no save asked for
+    }
+    repo.duringSave = [&](const TreeId& tree) {
+      if (tree == tid("u")) throw std::runtime_error("the write was refused");
+    };
+  }
+  CHECK_EQ(repo.byId["t"].head, static_cast<Seq>(8));
+  CHECK_EQ(nodeCount(repo.byId["t"].state), 2u);
+  CHECK_EQ(repo.byId["u"].head, static_cast<Seq>(7));
+  CHECK_EQ(nodeCount(repo.byId["u"].state), 1u);
+  const std::vector<std::string> holds = holdLines(told);
+  REQUIRE(!holds.empty());
+  CHECK_EQ(holds.back(), std::string("roadmap_tree_save outcome=lost-at-shutdown rooms=1 request_id=*"));
+  CHECK_EQ(told.lines.back(), std::string("roadmap.tree.save roadmap background lost-at-shutdown"));
+}
+
+// A process that stops waiting at its deadline asks the registry what is lost as it stands, with no save tried: every
+// room that holds a write the store does not counts, held or not, and it is said once, whoever asks again.
+TEST(registry_says_once_how_many_rooms_hold_a_write_the_store_does_not_as_they_stand) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  HeldRetries retries;
+  Told told;
+  for (const char* tree : {"t", "u", "v"}) repo.byId[tree] = oneNodeTree();
+  RoomRegistry registry(repo, log, bus, retries.timer());
+  repo.savesFail = true;
+  registry.open(tid("t"))->applyCommand(createNode("held"), 10, uid());
+  REQUIRE(registry.persist(tid("t")).wait() == Saved::held);
+  repo.savesFail = false;
+  {
+    std::lock_guard<std::mutex> strand(registry.strandFor(tid("u")));
+    registry.open(tid("u"))->applyCommand(createNode("still being served"), 10, uid());
+  }
+  registry.open(tid("v"));
+  repo.duringSave = [&](const TreeId&) { throw std::runtime_error("no save is tried"); };
+
+  registry.reportLost();
+  const std::vector<std::string> said = holdLines(told);
+  REQUIRE(!said.empty());
+  CHECK_EQ(said.back(), std::string("roadmap_tree_save outcome=lost-at-shutdown rooms=2 request_id=*"));
+  CHECK_EQ(told.lines.back(), std::string("roadmap.tree.save roadmap background lost-at-shutdown"));
+
+  repo.duringSave = {};
+  registry.reportLost();
+  registry.stop();
+  const std::vector<std::string> afterStopping = holdLines(told);
+  CHECK_EQ(std::count_if(afterStopping.begin(), afterStopping.end(),
+                         [](const std::string& line) { return line.find("lost-at-shutdown") != std::string::npos; }),
+           1);
+  CHECK_EQ(repo.byId["u"].head, static_cast<Seq>(8));
 }
 
 // A held room whose row goes away before its save can land has nothing left to save: the retry that finds the row

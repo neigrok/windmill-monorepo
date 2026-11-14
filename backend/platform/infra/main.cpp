@@ -27,6 +27,7 @@
 #include "platform/adapters/http/EventsApi.h"
 #include "platform/adapters/http/FeedbackApi.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "platform/application/ProcessStop.h"
 #include "platform/adapters/http/McpKeyApi.h"
 #include "platform/adapters/http/OAuthApi.h"
 #include "platform/adapters/http/RateLimiter.h"
@@ -129,6 +130,7 @@
 #include <drogon/drogon.h>
 
 #include <algorithm>
+#include <future>
 #include <cstdio>
 #include <cctype>
 #include <cstdlib>
@@ -192,6 +194,23 @@ int envDays(const char* name, int fallback) {
   }
 }
 }
+
+// Whether the failure reports still to send were sent within `limit`. They are waited for on a thread of their own:
+// the reporter's own wait, for a host it cannot reach, is longer than a stopping process may take.
+static bool reportsSentWithin(std::shared_ptr<wm::SentryClient> reporter, std::chrono::milliseconds limit) {
+  if (!reporter) return true;
+  const auto sent = std::make_shared<std::promise<void>>();
+  std::future<void> done = sent->get_future();
+  std::thread([reporter = std::move(reporter), sent] {
+    reporter->drain();
+    sent->set_value();
+  }).detach();
+  return done.wait_for(limit) == std::future_status::ready;
+}
+
+// The two halves of ProcessStop::kExitFlushLimit: the log, then the reports.
+static constexpr std::chrono::milliseconds kLogFlushLimit{1000};
+static constexpr std::chrono::milliseconds kReportsFlushLimit = wm::ProcessStop::kExitFlushLimit - kLogFlushLimit;
 
 static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::SentryClient>& reporter) {
   using namespace wm;
@@ -730,6 +749,40 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   WriteRoutes routes(app, "platform");
   WriteRoutes mcpRoutes(app, "platform", "mcp");
+  // The stop of the process (ProcessStop), in this order. At the signal every door stops taking writes: the registry's
+  // one budget for every save still to run begins, the tree socket takes no frame and opens no connection (Collab asks
+  // the registry), every tree socket is closed, so a tab keeps what it was not acked for the next server, and the
+  // framework closes its listener and its connections and stops its loops, each once the request it is serving has
+  // been answered. The rest follows as this function ends. When the budget passes with any of that still running —
+  // a request, a worker, a join — the process stops waiting: it says what is lost as the rooms stand, writes out its
+  // log and its failure reports within kExitFlushLimit, and ends. A request cut there was never answered.
+  ProcessStop stop{RoomRegistry::kShutdownSaveBudget, {
+      .closeDoors = [registry, bus] {
+        registry->beginStopping();
+        drogon::app().getLoop()->queueInLoop([bus] {
+          bus->closeEvery();
+          drogon::app().quit();
+        });
+      },
+      .giveUp = [registry, &reporter] {
+        LOG_WARN << "server_stop outcome=cut-at-deadline budget_ms=" << RoomRegistry::kShutdownSaveBudget.count();
+        registry->reportLost();
+        drainLogTee(kLogFlushLimit);
+        reportsSentWithin(reporter, kReportsFlushLimit);
+        std::_Exit(0);
+      }}};
+  // Ahead of every other advice. A request that reaches the server once it is stopping — on a connection the
+  // framework has not closed yet, or read together with one still being served — is not served: it is answered a bare
+  // 503, what an edge with no upstream answers, on a connection the framework is closing. Closing it here with no
+  // answer would also drop the answer of a request ahead of it on that connection, which the framework sends together
+  // with this one.
+  app.registerSyncAdvice([stopping = stop.stopping()](const drogon::HttpRequestPtr&) -> drogon::HttpResponsePtr {
+    if (!stopping->load()) return nullptr;
+    const auto unavailable = drogon::HttpResponse::newHttpResponse();
+    unavailable->setStatusCode(drogon::k503ServiceUnavailable);
+    unavailable->setCloseConnection(true);
+    return unavailable;
+  });
   app.registerSyncAdvice([](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
     beginWriteRequest(req);
     return nullptr;
@@ -1243,28 +1296,45 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* listenHostEnv = std::getenv("WINDMILL_HOST");
   const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";
   app.addListener(listenHost, port);
+  // The framework's handlers call into the stop and own nothing of ours: they are taken away as the loops return, so
+  // nothing of this function lives in the framework once it has gone, and a signal after that changes nothing.
+  app.setTermSignalHandler([&stop] { stop.signalled(); });
+  app.setIntSignalHandler([&stop] { stop.signalled(); });
   app.setThreadNum(ioThreads).run();
+  app.setTermSignalHandler([] {});
+  app.setIntSignalHandler([] {});
+  // The rest of the stop in order, inside the deadline's watch: the registry's last tries and its count of what was
+  // lost among it. The watch ends as the stops do, before the log and the reports are written out, so a stop is cut
+  // only while the log still takes its line.
+  lifetime.stop([&stop] { stop.finished(); });
   return 0;
 }
 
 int main() {
   using namespace wm;
   std::shared_ptr<SentryClient> reporter;
-  ObservabilityLifetime lifetime([&reporter] {
-    stopLogTee();
-    installWriteReporter({});
-    if (reporter) reporter->drain();
-  });
-  WriteContext context(writeRequestId());
-  try {
-    return runServer(lifetime, reporter);
-  } catch (const std::exception& error) {
-    WriteObservation observation("server.lifecycle", "platform", "background");
-    observation.fail(error);
-    return 1;
-  } catch (...) {
-    WriteObservation observation("server.lifecycle", "platform", "background");
-    observation.failUnknown();
-    return 1;
+  int code = 1;
+  bool reportsSent = true;
+  {
+    // The log and then the reports are written out within ProcessStop::kExitFlushLimit, however the process ends.
+    ObservabilityLifetime lifetime([&reporter, &reportsSent] {
+      stopLogTee(kLogFlushLimit);
+      installWriteReporter({});
+      reportsSent = reportsSentWithin(reporter, kReportsFlushLimit);
+    });
+    WriteContext context(writeRequestId());
+    try {
+      code = runServer(lifetime, reporter);
+    } catch (const std::exception& error) {
+      WriteObservation observation("server.lifecycle", "platform", "background");
+      observation.fail(error);
+    } catch (...) {
+      WriteObservation observation("server.lifecycle", "platform", "background");
+      observation.failUnknown();
+    }
   }
+  // Reports that could not be sent in time are left with the thread still waiting for them: the process ends here,
+  // destroying nothing under it.
+  if (!reportsSent) std::_Exit(code);
+  return code;
 }

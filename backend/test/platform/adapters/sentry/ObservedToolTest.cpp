@@ -70,6 +70,26 @@ TEST(observability_lifetime_releases_producer_dependencies_before_reporter_shutd
   CHECK(released);
 }
 
+// Whoever watches the stops is told they are over after the last of them and before the reporter and the log shut
+// down: a watcher that still has a line to say can say it.
+TEST(observability_lifetime_says_the_stops_are_over_before_the_reporter_shuts_down) {
+  std::vector<std::string> order;
+  ObservabilityLifetime lifetime([&order] { order.push_back("reporter"); });
+  lifetime.onStop([&order] { order.push_back("producer"); });
+  lifetime.stop([&order] { order.push_back("stops over"); });
+  lifetime.stop([&order] { order.push_back("again"); });
+  CHECK_EQ(order, (std::vector<std::string>{"producer", "stops over", "reporter"}));
+}
+
+// The server ends the watch on its stop there: its deadline cuts a stop only while the log still takes the cut's line.
+TEST(the_servers_stop_watch_ends_between_its_stops_and_the_shutdown_of_its_log) {
+  auto backend = std::filesystem::path(__FILE__);
+  for (int parent = 0; parent < 5; ++parent) backend = backend.parent_path();
+  const std::string server = source(backend / "platform/infra/main.cpp");
+  CHECK(std::regex_search(server, std::regex(R"(lifetime\.stop\(\[&stop\]\s*\{\s*stop\.finished\(\);\s*\}\);)")));
+  CHECK_FALSE(std::regex_search(server, std::regex(R"(lifetime\.stop\(\);)")));
+}
+
 TEST(observability_lifecycle_covers_every_binary_composition_root) {
   auto backend = std::filesystem::path(__FILE__);
   for (int parent = 0; parent < 5; ++parent) backend = backend.parent_path();
