@@ -376,7 +376,7 @@ prints the new epoch.
 
 ```sh
 REHEARSAL_ENV=$(mktemp)
-printf 'POSTGRES_PASSWORD=%s\nSUBSCRIPTIONS_DB_PASSWORD=%s\nDOMAIN_API=api.localhost\nACME_EMAIL=ops@example.invalid\n' \
+printf 'POSTGRES_PASSWORD=%s\nSUBSCRIPTIONS_DB_PASSWORD=%s\nDOMAIN_APP=app.localhost\nDOMAIN_API=api.localhost\nACME_EMAIL=ops@example.invalid\n' \
   "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" > "$REHEARSAL_ENV"
 rehearse() {
   docker compose -p subscriptions-rehearsal --env-file "$REHEARSAL_ENV" \
@@ -385,13 +385,16 @@ rehearse() {
 rehearse up -d --build --wait subscriptions
 rehearse logs subscriptions-db subscriptions
 rehearse exec -T subscriptions curl -s localhost:8083/health
-rehearse exec -T db psql -U windmill windmill_subscriptions -c 'select 1'
+if rehearse exec -T db psql -U windmill windmill_subscriptions -c 'select 1'; then
+  echo 'FAIL the backend role reached windmill_subscriptions'
+fi
 rehearse down -v
 rm "$REHEARSAL_ENV"
 ```
 
 `up` starts only `db`, `subscriptions-db` and the service: a fresh volume, the rules installed, the
-service migrating the empty ledger and answering `{"status":"ready"}`. The `psql` line is refused.
+service migrating the empty ledger and answering `{"status":"ready"}`. The `psql` line is refused
+with `pg_hba.conf rejects connection`.
 An empty `SUBSCRIPTIONS_DB_PASSWORD` in the file shows the production path while the secret is absent.
 
 ## Resum the scope digests
