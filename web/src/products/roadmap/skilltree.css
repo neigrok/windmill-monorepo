@@ -801,6 +801,9 @@
   outline: none;
   box-shadow: var(--focus-ring);
 }
+.st-shortcuts-dialog [role="region"] {
+  transition-property: none;
+}
 .st-sc-grid {
   column-count: 2;
   column-gap: var(--space-6);

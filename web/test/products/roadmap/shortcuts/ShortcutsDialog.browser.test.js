@@ -102,7 +102,8 @@ for (const engine of ['Chromium', 'WebKit']) {
           }
           await page.keyboard.press(forward);
           assert.equal(await body.evaluate((element) => element === document.activeElement), true);
-          await page.waitForFunction((focusRing) => getComputedStyle(document.querySelector('[role="region"]')).boxShadow === focusRing, focusRing, { timeout: 2000 });
+          assert.equal(await body.evaluate((element) => getComputedStyle(element).transitionProperty), 'none');
+          assert.equal(await body.evaluate((element) => getComputedStyle(element).boxShadow), focusRing);
           await page.keyboard.press('PageDown');
           await page.waitForFunction(() => document.querySelector('[role="region"]').scrollTop > 0, null, { timeout: 2000 });
           t.diagnostic(JSON.stringify(await body.evaluate((element) => ({ clientHeight: element.clientHeight, scrollHeight: element.scrollHeight, pageDownTop: element.scrollTop }))));
