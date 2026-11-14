@@ -409,7 +409,7 @@ TEST(a_renames_stamp_survives_eviction_and_an_older_stamped_write_after_reload_l
   stale.title = Lww<std::string>{"Older name", Hlc{1'699'999'999'000, 0, "r_b"}};
   reloaded.joinSubgraph(stale, me);
   CHECK(reloaded.title() == renamed);
-  s.rooms.persist(tid("t"));
+  s.rooms.persist(tid("t")).wait();
   CHECK(s.trees.byId["t"].title == renamed);
 
   CHECK(s.registry.rename(tid("t"), me, "Renamed again") == TreeRegistry::Renaming::renamed);
@@ -474,7 +474,7 @@ TEST(a_stale_rooms_save_cannot_revert_a_newer_persisted_rename) {
   const Lww<std::string> newer{"Newer name", Hlc{1'700'000'060'000, 0, "srv"}};
   s.trees.byId["t"].title = newer;
 
-  s.rooms.persist(tid("t"));
+  s.rooms.persist(tid("t")).wait();
 
   CHECK(s.trees.byId["t"].title == newer);
   CHECK_EQ(s.trees.byId["t"].head, static_cast<Seq>(1));   // the rest of the save still landed
@@ -678,8 +678,8 @@ TEST(two_rooms_joining_concurrent_guide_frames_in_opposite_orders_converge_on_on
   const Lww<std::string> winner{"Start with the sails.", Hlc{2000, 0, "r_b"}};
   CHECK(one.guide() == winner);
   CHECK(other.guide() == winner);
-  first.rooms.persist(tid("t"));
-  second.rooms.persist(tid("t"));
+  first.rooms.persist(tid("t")).wait();
+  second.rooms.persist(tid("t")).wait();
   CHECK(first.trees.byId["t"].guide == winner);
   CHECK(second.trees.byId["t"].guide == winner);
 }
@@ -1134,10 +1134,12 @@ TEST(create_subtree_under_a_parent_held_unsaved_is_refused_save_pending_until_th
   const UserId me = uid("me");
   seedParent(s, "t_p", me);
   {
-    std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    std::unique_lock<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
     s.rooms.open(tid("t_p"))->applyCommand(createNode("mast"), 10, me);
     s.trees.savesFail = true;
-    REQUIRE(s.rooms.persist(tid("t_p")) == Saved::held);
+    PendingSave saving = s.rooms.persist(tid("t_p"));
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::held);
   }
   const Seq storedHead = s.trees.byId["t_p"].head;
 
@@ -1160,6 +1162,71 @@ TEST(create_subtree_under_a_parent_held_unsaved_is_refused_save_pending_until_th
   CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1")) ==
         (SubtreeAnswer{SubtreeCreation{true, child, storedHead + 2}}));
   CHECK(s.trees.subtrees == (std::map<std::string, Subtree>{{"t_00000000000000c1", child}}));
+}
+
+// The create writes the parent's head in its own transaction. A save of the parent still running would write an older
+// head over it, and the create's would stand past writes the store does not hold: it waits for that save, with the
+// strand let go, and stores its head after.
+TEST(create_subtree_waits_for_a_save_of_its_parent_that_is_running_and_stores_the_parents_head_after_it) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  HangingStore store;
+  s.trees.duringSave = store.duringSave();
+  PendingSave write = Saved::saved;
+  Seq written = 0;
+  {
+    std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    written = s.rooms.open(tid("t_p"))->applyCommand(createNode("mast"), 10, me);
+    write = s.rooms.persist(tid("t_p"));
+  }
+  std::future<Saved> saving = std::async(std::launch::async, [&] { return write.wait(); });
+  REQUIRE(store.reachedBy(1, std::chrono::seconds(10)));
+
+  std::future<SubtreeAnswer> creating = std::async(std::launch::async, [&] {
+    return s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1"));
+  });
+  const bool createdWhileTheSaveRan = creating.wait_for(std::chrono::milliseconds(300)) == std::future_status::ready;
+  store.letGoOfIt();
+  CHECK_FALSE(createdWhileTheSaveRan);
+  CHECK(saving.get() == Saved::saved);
+  const Subtree child{TreeId{"t_00000000000000c1"}, tid("t_p"), OwningStep{tid("t_p"), nid("rig")}, 1, 0};
+  CHECK(creating.get() == (SubtreeAnswer{SubtreeCreation{true, child, written + 1}}));
+  CHECK_EQ(s.trees.byId["t_p"].head, written + 1);
+  CHECK_EQ(LooseGraph(s.trees.byId["t_p"].state).presentNodeIds().size(), 3u);
+  CHECK(s.trees.subtrees == (std::map<std::string, Subtree>{{"t_00000000000000c1", child}}));
+}
+
+TEST(create_subtree_that_waited_for_a_save_of_its_parent_which_failed_is_refused_save_pending_with_nothing_stored) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  const Seq storedHead = s.trees.byId["t_p"].head;
+  HangingStore store;
+  store.refuses = true;
+  s.trees.duringSave = store.duringSave();
+  PendingSave write = Saved::saved;
+  {
+    std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    s.rooms.open(tid("t_p"))->applyCommand(createNode("mast"), 10, me);
+    write = s.rooms.persist(tid("t_p"));
+  }
+  std::future<Saved> saving = std::async(std::launch::async, [&] { return write.wait(); });
+  REQUIRE(store.reachedBy(1, std::chrono::seconds(10)));
+
+  std::future<SubtreeAnswer> creating = std::async(std::launch::async, [&] {
+    return s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1"));
+  });
+  const bool answeredWhileTheSaveRan = creating.wait_for(std::chrono::milliseconds(300)) == std::future_status::ready;
+  store.letGoOfIt();
+  CHECK_FALSE(answeredWhileTheSaveRan);
+  CHECK(saving.get() == Saved::held);
+  CHECK(creating.get() == (SubtreeAnswer{SubtreeRefusal::savePending}));
+  CHECK(s.trees.subtrees.empty());
+  CHECK_FALSE(s.trees.byId.count("t_00000000000000c1"));
+  CHECK_EQ(s.trees.byId["t_p"].head, storedHead);
+  CHECK(s.bus.subtreeBroadcasts.empty());
+  CHECK_EQ(store.entered, 1);  // the create shared the failed save's answer: it sent the store nothing
 }
 
 TEST(create_subtree_that_loses_its_step_or_its_id_to_another_writer_answers_without_a_failure) {
@@ -1554,9 +1621,11 @@ TEST(renaming_a_subtree_writes_its_owning_steps_label_in_the_parent_and_never_it
 
   CHECK(s.registry.rename(child, uid("stranger"), "Mine now") == TreeRegistry::Renaming::notYours);
   {
-    std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    std::unique_lock<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
     s.rooms.open(tid("t_p"))->applyCommands({DeleteNode{nid("rig")}}, s.clock.nowMs(), me, {child});
-    REQUIRE(s.rooms.persist(tid("t_p")) == Saved::saved);
+    PendingSave saving = s.rooms.persist(tid("t_p"));
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   }
   CHECK(s.registry.rename(child, me, "Rig again") == TreeRegistry::Renaming::notFound);
   CHECK_EQ(labelIn(s.trees, "t_p", "rig"), std::string("Rig it"));
@@ -1649,9 +1718,11 @@ TEST(a_subtree_is_never_removed_shared_or_planted_by_its_own_id_and_a_hidden_one
   const TreeId grandchild{"t_00000000000000c2"};
   REQUIRE(std::holds_alternative<SubtreeCreation>(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing(child.str().c_str()))));
   {
-    std::lock_guard<std::mutex> strand(s.rooms.strandFor(child));
+    std::unique_lock<std::mutex> strand(s.rooms.strandFor(child));
     s.rooms.open(child)->applyCommand(CreateNode{nid("knot"), "Knot", "", NodeColor::sky}, s.clock.nowMs(), me);
-    REQUIRE(s.rooms.persist(child) == Saved::saved);
+    PendingSave saving = s.rooms.persist(child);
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   }
   REQUIRE(std::holds_alternative<SubtreeCreation>(
       s.registry.createSubtree(child, nid("knot"), me, proposing(grandchild.str().c_str()))));
@@ -1679,9 +1750,11 @@ TEST(a_subtree_is_never_removed_shared_or_planted_by_its_own_id_and_a_hidden_one
   CHECK(s.registry.create(me, child, treeData("Mine", {})) == TreeRegistry::Creation::notARoot);
 
   {
-    std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    std::unique_lock<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
     s.rooms.open(tid("t_p"))->applyCommand(CreateNode{nid("rig"), "Rig", "", NodeColor::sky}, s.clock.nowMs() + 1, me);
-    REQUIRE(s.rooms.persist(tid("t_p")) == Saved::saved);
+    PendingSave saving = s.rooms.persist(tid("t_p"));
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   }
   CHECK(s.registry.remove(grandchild, me) == (Removal{NotARoot{OwningStep{child, nid("knot")}, tid("t_p")}}));
 

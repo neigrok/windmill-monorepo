@@ -12,6 +12,7 @@
 #include "test/testing.h"
 
 #include <chrono>
+#include <future>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -3003,6 +3004,35 @@ std::string grinsOf(int count) {
 
 // The lattice is saved before the reply, so a row that fails to land after it is the log's
 // problem: the caller is told the truth — applied — and the row lands with the next write.
+// A write waits for its save with the tree's strand let go: a read of the tree answers while the store still holds the
+// save, with the write in what it reads, and the write then answers what its save came to.
+TEST(mcp_a_read_of_the_tree_answers_while_a_writes_save_hangs_and_the_write_answers_once_the_store_does) {
+  Harness h;
+  CHECK_FALSE(h.call("create_node", node("a", "A")).isError);
+  HangingStore store;
+  h.trees.duringSave = store.duringSave();
+
+  std::future<ToolResult> writing = std::async(std::launch::async, [&] { return h.call("create_node", node("b", "B")); });
+  REQUIRE(store.reachedBy(1, std::chrono::seconds(10)));
+  std::future<ToolResult> reading = std::async(std::launch::async, [&] { return h.call("get_tree", kNoArgs); });
+  const bool readWhileTheStoreHung = reading.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+  const bool stillWriting = writing.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
+  store.letGoOfIt();
+
+  CHECK(readWhileTheStoreHung);
+  CHECK(stillWriting);
+  const ToolResult read = reading.get();
+  REQUIRE(!read.isError);
+  CHECK_EQ(body(read)["seq"].asInt64(), 2);
+  CHECK_EQ(body(read)["tree"]["nodes"].size(), 2u);
+  const ToolResult written = writing.get();
+  REQUIRE(!written.isError);
+  CHECK_EQ(body(written)["seq"].asInt64(), 2);
+  CHECK_FALSE(body(written).isMember("saved"));
+  CHECK_EQ(h.trees.byId["t"].head, static_cast<Seq>(2));
+  CHECK_EQ(LooseGraph(h.trees.byId["t"].state).presentNodeIds().size(), 2u);
+}
+
 TEST(mcp_a_write_whose_op_row_fails_to_land_still_answers_applied_and_the_row_lands_next_time) {
   Harness h;
   h.ops.failNextAppends = 1;
@@ -3444,14 +3474,16 @@ TEST(mcp_a_forks_copied_guide_is_not_yours_until_its_owner_writes_one_through_an
 
   forkOf("t_socket");
   {
-    std::lock_guard<std::mutex> strand(h.registry.strandFor(TreeId{"t_socket"}));
+    std::unique_lock<std::mutex> strand(h.registry.strandFor(TreeId{"t_socket"}));
     Subgraph frame;
     frame.treeId = TreeId{"t_socket"};
     frame.frameId = "f-guide";
     frame.actor = "r_forker";
     frame.guide = Lww<std::string>{"Prune with care.", Hlc{h.clock.ms + 1000, 0, "r_forker"}};
     REQUIRE(h.registry.open(TreeId{"t_socket"})->joinSubgraph(frame, forker).has_value());
-    REQUIRE(h.registry.persist(TreeId{"t_socket"}) == Saved::saved);
+    PendingSave saving = h.registry.persist(TreeId{"t_socket"});
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   }
 
   for (const char* fork : {"t_mcp", "t_rest", "t_socket"}) {

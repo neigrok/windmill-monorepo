@@ -277,7 +277,9 @@ std::optional<std::string> prepareEdit(const std::string& tool, Json::Value& pay
   return std::nullopt;  // remove_kind takes its handle alone
 }
 
-// Holds the tree's strand and opens the room; an absent tree becomes a tool-level error.
+// Holds the tree's strand and opens the room; an absent tree becomes a tool-level error. A write lands in the room
+// here, asks for its save (RoomRegistry::persist) and builds its receipt; it waits for the save once this returns, so
+// the strand is never held across the store.
 template <typename Fn>
 ToolResult withRoom(RoomRegistry& registry, const TreeId& tree, Fn&& fn) {
   std::lock_guard<std::mutex> lock(registry.strandFor(tree));
@@ -614,13 +616,21 @@ void answerSave(Saved saved, bool changedTheTree, Json::Value& receipt) {
   receipt["saveError"] = changedTheTree ? kHeldUnsavedSentence : kHeldEarlierSentence;
 }
 
+// The same onto a reply built under the strand, once the save it waited for with the strand let go has answered.
+ToolResult answerSave(Saved saved, bool changedTheTree, ToolResult reply) {
+  if (saved != Saved::held || reply.isError) return reply;
+  answerSave(saved, changedTheTree, reply.payload);
+  return ToolResult::json(reply.payload);
+}
+
 ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& tree, const std::string& tool,
                      Json::Value payload, Clock& clock, const UserId& actor) {
   const std::string kind = *commandKindFor(tool);
   if (std::optional<std::string> bad = prepareEdit(tool, payload)) return ToolResult::failure(*bad);
 
   std::optional<PointerEdit> pointerEdit;
-  const ToolResult edited = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+  PendingSave saving = Saved::saved;
+  ToolResult edited = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     // Read gate first, answering as an absent tree does, then the write gate: the owner alone.
     if (!room.readableBy(actor))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
@@ -675,14 +685,13 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     if (opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
     const Seq seq = room.applyCommand(*command, clock.nowMs(), actor);
-    const Saved saved = registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
+    saving = registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
     const TreeDiagnostics after = room.diagnose();
     if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
 
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
-    answerSave(saved, true, out);
     answerDiagnostics(before, after, out);
     if (payload.isMember("id")) out["id"] = payload["id"];
     // A write that named its kind wears it, as resolveHue just said; one that named none is answered
@@ -695,6 +704,7 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     }
     return ToolResult::json(out);
   });
+  edited = answerSave(saving.wait(), true, std::move(edited));
   return withClosedLoops(trees, actor, tree, pointerEdit, edited);
 }
 
@@ -863,7 +873,9 @@ ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Va
   if (args["description"].isString()) update.description = args["description"].asString();
   if (args["hue"].isString()) update.hue = parseColor(args["hue"].asString());
 
-  return withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
+  PendingSave saving = Saved::saved;
+  bool landed = false;
+  ToolResult updated = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     if (!room.readableBy(actor))
       return ToolResult::failure("no such tree \"" + tree.str() + "\"");
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
@@ -874,21 +886,22 @@ ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Va
 
     const TreeDiagnostics before = room.diagnose();
     Seq seq = room.head();
-    Saved saved = registry.standing(tree);  // what a change of nothing says: the room's save may be held
-    if (!plan.landsNothing()) {
+    saving = registry.standing(tree);  // what a change of nothing says: the room's save may be held
+    landed = !plan.landsNothing();
+    if (landed) {
       seq = room.applyCommands(plan.commands, clock.nowMs(), actor);  // a lone command logs as itself
-      saved = registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
+      saving = registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
     }
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
-    answerSave(saved, !plan.landsNothing(), out);
     out["id"] = update.id.str();
-    if (plan.landsNothing()) out["unchanged"] = true;
+    if (!landed) out["unchanged"] = true;
     if (plan.repaintedNodes) out["repaintedNodes"] = static_cast<Json::UInt64>(*plan.repaintedNodes);
     answerDiagnostics(before, room.diagnose(), out);
     return ToolResult::json(out);
   });
+  return answerSave(saving.wait(), landed, std::move(updated));
 }
 
 // One progress row as a write sends it: `nodeId` (or the legacy `id`), `status`, and `outOfOrder`, a word about a
@@ -1013,6 +1026,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
 
   const bool dryRun = args["dryRun"].asBool();
   bool treeLanded = false;  // an op landed on the tree in this call
+  PendingSave saving = Saved::saved;
   std::optional<PointerEdit> pointerEdit;
   ToolResult edited = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     if (!room.readableBy(actor))
@@ -1086,10 +1100,10 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       const TreeDiagnostics before = room.diagnose();
       if (!landsNothing) {
         out["seq"] = static_cast<Json::Int64>(room.applyCommands(batch.commands, clock.nowMs(), actor));
-        answerSave(registry.persist(tree), true, out);  // flush the dirty rows so the web reader sees this edit
+        saving = registry.persist(tree);  // flush the dirty rows so the web reader sees this edit
         treeLanded = true;
       } else {
-        answerSave(registry.standing(tree), false, out);
+        saving = registry.standing(tree);
       }
       const TreeDiagnostics after = room.diagnose();
       if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
@@ -1097,6 +1111,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     }
     return ToolResult::json(out);
   });
+  edited = answerSave(saving.wait(), treeLanded, std::move(edited));
   edited = withClosedLoops(trees, actor, tree, pointerEdit, edited);
   // update_nodes' marks land after its tree fields, judged against the overlay as the whole call leaves it. A mark on a
   // node that follows the tree it opens is refused there, row by row.
@@ -1271,6 +1286,9 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
   std::vector<UnconfirmedBranch> unconfirmed;  // answered once the strand is released, each with its size
 
   std::optional<PointerEdit> pointerEdit;
+  PendingSave saving = Saved::saved;
+  bool graftJoined = false;
+  std::vector<NodeId> tombstonedNodes;  // what the graft's tombstones took, once it has landed
   ToolResult grafted = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     // Read gate before the write gate: a dry run's collision list would leak ids to a non-reader.
     if (!room.readableBy(actor))
@@ -1371,22 +1389,11 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     if (opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
     const std::optional<Seq> landed = room.importTree(graft, clock.nowMs(), actor);
-    answerSave(landed ? registry.persist(tree) : registry.standing(tree), landed.has_value(), out);
+    graftJoined = landed.has_value();
+    saving = landed ? registry.persist(tree) : PendingSave{registry.standing(tree)};
+    tombstonedNodes = footprint.tombstonedNodes;
     out["graphApplied"] = true;
     out["progressApplied"] = true;
-    // The caller's marks on what the tombstones took are cleared after the graft, which has landed whatever becomes of
-    // them: a clear that fails is told in the reply and reported under its own name, not as the call's failure.
-    WriteObservation clearing{"roadmap.import.clear_marks", "roadmap", currentWriteDoor()};
-    try {
-      edits.clearMarksOn(room, tree, actor, footprint.tombstonedNodes);
-      clearing.skip();
-    } catch (const std::bad_alloc&) {
-      throw;
-    } catch (const std::exception& error) {
-      clearing.fail(error);
-      out["progressApplied"] = false;
-      out["progressError"] = "The graph committed, but clearing progress on removed nodes failed. Read get_progress before retrying progress changes.";
-    }
     out["imported"] = true;
     out["seq"] = static_cast<Json::Int64>(landed.value_or(room.head()));
     if (!landed) out["unchanged"] = true;
@@ -1396,6 +1403,25 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     return ToolResult::json(out);
   });
   if (!unconfirmed.empty()) return branchesUnconfirmed(trees, unconfirmed);
+  grafted = answerSave(saving.wait(), graftJoined, std::move(grafted));
+  // The caller's marks on what the tombstones took are cleared after the graft's save, under the strand again: the
+  // graft has landed whatever becomes of them, so a clear that fails is told in the reply and reported under its own
+  // name, not as the call's failure. A tree gone meanwhile has no marks left to clear.
+  if (!tombstonedNodes.empty()) {
+    WriteObservation clearing{"roadmap.import.clear_marks", "roadmap", currentWriteDoor()};
+    try {
+      std::lock_guard<std::mutex> lock(registry.strandFor(tree));
+      if (TreeRoom* room = registry.open(tree)) edits.clearMarksOn(*room, tree, actor, tombstonedNodes);
+      clearing.skip();
+    } catch (const std::bad_alloc&) {
+      throw;
+    } catch (const std::exception& error) {
+      clearing.fail(error);
+      grafted.payload["progressApplied"] = false;
+      grafted.payload["progressError"] = "The graph committed, but clearing progress on removed nodes failed. Read get_progress before retrying progress changes.";
+      grafted = ToolResult::json(grafted.payload);
+    }
+  }
   grafted = withClosedLoops(trees, actor, tree, pointerEdit, grafted);
   if (grafted.isError || dryRun || carried.empty()) return grafted;
   // The rows a call carries land by one path, and a refusal of theirs is told in the receipt either way: a graft that
@@ -1483,6 +1509,7 @@ ToolResult deleteNodes(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& e
   const DanglingEdges dangling = args["prune"].asBool() ? DanglingEdges::removed : DanglingEdges::kept;
   const bool single = args["nodeIds"].isNull();
 
+  PendingSave saving = Saved::saved;
   std::vector<UnconfirmedBranch> unconfirmed;  // answered once the strand is released, each with its size
   ToolResult deletion = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
     if (!room.readableBy(actor))
@@ -1505,8 +1532,7 @@ ToolResult deleteNodes(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& e
       return ToolResult::failure("", kBranchUnconfirmed);
     }
     const DeletedNodes& landed = std::get<DeletedNodes>(deleted);
-    // The tree's row went away under its room, which went with it: the tree is answered as absent.
-    if (landed.saved == Saved::gone) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+    saving = landed.save;
 
     Json::Value ids(Json::arrayValue);
     for (const NodeId& node : targets) ids.append(node.str());
@@ -1517,7 +1543,6 @@ ToolResult deleteNodes(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& e
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(landed.seq);
-    answerSave(landed.saved, true, out);
     answerDiagnostics(before, room.diagnose(), out);
     if (single) out["id"] = targets.front().str();
     out["ids"] = ids;
@@ -1525,7 +1550,10 @@ ToolResult deleteNodes(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& e
     return ToolResult::json(out);
   });
   if (!unconfirmed.empty()) return branchesUnconfirmed(trees, unconfirmed);
-  return deletion;
+  const Saved saved = saving.wait();
+  // The tree's row went away under its room, which went with it: the tree is answered as absent.
+  if (saved == Saved::gone) return ToolResult::failure("no such tree \"" + tree.str() + "\"");
+  return answerSave(saved, true, std::move(deletion));
 }
 
 // A tree is born with the legend the call sends, whole and in its order, or with the default one when

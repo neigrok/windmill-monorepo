@@ -20,14 +20,14 @@ namespace wm {
 enum class DanglingEdges { kept, removed };
 
 // What a deletion came to: the seq it took, the dangling edges that went with the nodes, the caller's marks on the nodes
-// that were cleared, and what the room's save came to (Saved). Gone, the tree's row was gone when the room saved — an
-// erasure or a removal racing it — so the room was retired, as every write retires a room whose row went away. Held,
-// the room keeps the delete and the registry is retrying its save.
+// that were cleared, and the save of the room, which the caller waits on once it has let the strand go (PendingSave).
+// Gone, the tree's row was gone when the room saved — an erasure or a removal racing it — so the room was retired, as
+// every write retires a room whose row went away. Held, the room keeps the delete and the registry is retrying its save.
 struct DeletedNodes {
   Seq seq = 0;
   std::size_t edges = 0;
   std::size_t marks = 0;
-  Saved saved = Saved::saved;
+  PendingSave save = Saved::saved;
 };
 
 // The edits a server door makes to a tree's nodes for its caller beside the commands the room joins: the marks it sets
@@ -59,9 +59,9 @@ public:
   // step among the nodes whose subtree `branches` does not name, answered as the unconfirmed branches with nothing
   // written; then the actor's marks on the nodes cleared, before the delete lands, so a progress store that fails fails
   // the deletion with nothing deleted and a retry does the whole of it; then the op applied, broadcast to the tree's open
-  // pages, and saved. Called under the tree's strand with its room open. Answered gone, the room is retired and the
-  // caller holds none. A save that fails is answered held: the op applied, the room's head has moved, and the
-  // registry's retry lands the delete.
+  // pages, and its save asked for. Called under the tree's strand with its room open; the save is the caller's to wait
+  // on with the strand let go. Answered gone there, the room is retired and the caller holds none. A save that fails
+  // is answered held: the op applied, the room's head has moved, and the registry's retry lands the delete.
   std::variant<DeletedNodes, std::string, std::vector<UnconfirmedBranch>> deleteNodes(
       TreeRoom& room, const TreeId& tree, const std::vector<NodeId>& nodes, DanglingEdges edges, const UserId& actor,
       const std::set<TreeId>& branches = {});
