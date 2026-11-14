@@ -169,6 +169,7 @@ for (const engine of ['Chromium', 'WebKit']) {
               return innerWidth === width && innerHeight === height
                 && Math.abs(bounds.x + bounds.width / 2 - width / 2) <= 1
                 && Math.abs(bounds.y + bounds.height / 2 - height / 2) <= 1
+                && (height !== 500 || body.scrollHeight > body.clientHeight)
                 && body.tabIndex === (body.scrollHeight > body.clientHeight ? 0 : -1);
             }, { width, height }, { timeout: 2000 });
           }
