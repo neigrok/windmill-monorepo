@@ -22,6 +22,8 @@ pub struct Subscription {
     pub binding: Option<Binding>,
     pub status: Status,
     pub observed_at: Instant,
+    // The stamp of the newest statement of the cancellation applied, the one its cancel time follows.
+    pub cancellation_observed_at: Option<Instant>,
 }
 
 impl Subscription {
@@ -214,6 +216,7 @@ pub struct Renewal {
     pub auto_renew: bool,
     pub next_charge: Option<NextCharge>,
     pub next_product_id: Option<ProductId>,
+    // Stated with renewal off, or not known: a store may say renewal is off without saying since when.
     pub cancel_requested_at: Option<Instant>,
 }
 

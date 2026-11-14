@@ -62,6 +62,13 @@ The action that applies an observation calls `observe` once:
 `verifiedAt` is the sweep's bookkeeping: storage stamps it when it applies a pull, and the domain's
 subscription leaves it out, since no single observation can state it (INV-6).
 
+`cancelRequestedAt` follows its own statements, as a period's refund time does. A statement that
+renewal is on, or off since a stated instant, gives it; the newest such statement wins whatever the
+order of arrival, renewal on outranking a turn-off stated at the same instant, and the subscription
+keeps that statement's stamp as `cancellation_observed_at`. A statement that renewal is off without
+saying since when, as most of the App Store's are, leaves the cancel time as it stands, and a turn-off
+that arrives after a newer statement fills it in and records `updated`.
+
 `observe` records `unbound` only when a new purchase moves an ended lineage to another account
 (R-11). Account erasure (§6.4) unbinds every subscription an account holds and records `unbound` for
 each; the domain has no step for it yet, and the erasure node adds one beside `observe`.

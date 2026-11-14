@@ -48,6 +48,14 @@ proptest! {
             let held = ledger.subscription.clone().expect("the newest observation wrote the subscription");
             let change = observe_alone(&ledger, observation, hint);
             let binding = held.binding.clone().or_else(|| bound_by_hint(observation.ownership, hint));
+            let cancellation = held
+                .cancellation_observed_at
+                .map(|observed_at| (observed_at, held.status.renewal.cancel_requested_at.is_none(), held.status.renewal.cancel_requested_at))
+                .max(stated_cancellation(observation));
+            let mut expected = Subscription { binding, ..held.clone() };
+            expected.status.renewal.cancel_requested_at = cancellation.and_then(|(_, _, requested_at)| requested_at);
+            expected.cancellation_observed_at = cancellation.map(|(observed_at, _, _)| observed_at);
+            let cancel_time_changed = expected.status != held.status;
             let restated: Vec<PeriodChange> = observation
                 .periods
                 .iter()
@@ -65,10 +73,12 @@ proptest! {
                     Some(_) => None,
                 })
                 .collect();
-            prop_assert_eq!(&change.subscription, &Subscription { binding, ..held });
+            prop_assert_eq!(&change.subscription, &expected);
             prop_assert_eq!(&change.periods, &restated);
             prop_assert!(
-                change.events.iter().all(|event| event.kind.period().is_some() || event.kind == EventKind::Bound),
+                change.events.iter().all(|event| event.kind.period().is_some()
+                    || event.kind == EventKind::Bound
+                    || (event.kind == EventKind::Updated && cancel_time_changed)),
                 "a state event in {:?}",
                 change.events
             );
@@ -84,8 +94,11 @@ proptest! {
             .observations
             .iter()
             .map(|(observation, _)| observe_alone(&Ledger::default(), observation, &AccountHint::Absent).subscription)
-            .max_by(|one, other| (one.observed_at, &one.status).cmp(&(other.observed_at, &other.status)))
+            .max_by_key(statement_order)
             .expect("a history states at least once");
+        let cancellation = history.observations.iter().filter_map(|(observation, _)| stated_cancellation(observation)).max();
+        let mut status = alone.status.clone();
+        status.renewal.cancel_requested_at = cancellation.and_then(|(_, _, requested_at)| requested_at);
         let binding = history
             .observations
             .iter()
@@ -105,7 +118,15 @@ proptest! {
         let mut periods = ledger.periods.clone();
         periods.sort_by(|one, other| one.transaction.cmp(&other.transaction));
 
-        prop_assert_eq!(ledger.subscription, Some(Subscription { binding, ..alone }));
+        prop_assert_eq!(
+            ledger.subscription,
+            Some(Subscription {
+                binding,
+                status,
+                cancellation_observed_at: cancellation.map(|(observed_at, _, _)| observed_at),
+                ..alone
+            })
+        );
         prop_assert_eq!(periods, union.into_values().collect::<Vec<_>>());
     }
 
@@ -161,11 +182,28 @@ fn newest(history: &History) -> usize {
     (0..history.observations.len())
         .max_by_key(|index| {
             let observation = &history.observations[*index].0;
-            let alone =
-                observe_alone(&Ledger::default(), observation, &AccountHint::Absent).subscription;
-            (alone.observed_at, alone.status)
+            statement_order(
+                &observe_alone(&Ledger::default(), observation, &AccountHint::Absent).subscription,
+            )
         })
         .expect("a history states at least once")
+}
+
+// INV-6's order of statements; the cancel time follows its own (§3.1), so it takes no part.
+fn statement_order(subscription: &Subscription) -> (Instant, Status) {
+    let mut status = subscription.status.clone();
+    status.renewal.cancel_requested_at = None;
+    (subscription.observed_at, status)
+}
+
+// A statement of the cancellation as cancelRequestedAt orders them: by stamp, renewal on above off, then the time stated.
+fn stated_cancellation(observation: &Observation) -> Option<(Instant, bool, Option<Instant>)> {
+    let renewal = &observation.status.renewal;
+    match (renewal.auto_renew, renewal.cancel_requested_at) {
+        (true, _) => Some((observation.observed_at, true, None)),
+        (false, Some(requested_at)) => Some((observation.observed_at, false, Some(requested_at))),
+        (false, None) => None,
+    }
 }
 
 fn bound_by_hint(ownership: Ownership, hint: &AccountHint) -> Option<Binding> {
