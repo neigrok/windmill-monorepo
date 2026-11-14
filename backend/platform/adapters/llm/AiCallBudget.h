@@ -42,7 +42,7 @@ public:
   AiCallAdmission begin(const AiSpend& spend, std::optional<long long> ceilingNanos, AiCallFunding funding);
   // `settled` books the vendor's reported usage; `unconsumed` books zero — the vendor consumed
   // nothing: it answered an error before any work began, or never received the request; `uncertain`
-  // keeps the hold — the send is ambiguous.
+  // keeps the hold — the send is ambiguous — until it lapses. A round whose hold already lapsed books nothing.
   void finish(const AiBudgetReservation& reservation, const std::string& model,
               const Json::Value& usage, AiCallEnd end);
   // The same for a round its adapter priced: `actualNanos` is what the vendor billed, and none keeps a settled

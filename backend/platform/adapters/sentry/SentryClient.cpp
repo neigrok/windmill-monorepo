@@ -194,6 +194,24 @@ void SentryClient::reportWrite(const std::string& operation, const std::string& 
   ship(id, event);
 }
 
+void SentryClient::reportWarning(const std::string& operation, const std::string& product, const std::string& door,
+                                 const std::string& outcome, const std::string& requestId) {
+  if (stopping_ || !enabled_ || !allow()) return;
+  const std::string id = hex32();
+  Json::Value event = newEvent(id, product);
+  event["level"] = "warning";
+  event["transaction"] = operation;
+  event["message"]["formatted"] = operation + ": " + outcome;
+  event["tags"]["operation"] = operation;
+  event["tags"]["product"] = product;
+  event["tags"]["door"] = door;
+  event["tags"]["outcome"] = outcome;
+  event["tags"]["request_id"] = requestId;
+  event["fingerprint"].append(operation);
+  event["fingerprint"].append(outcome);
+  ship(id, event);
+}
+
 void SentryClient::captureException(const std::string& kind, const std::string& method,
                                     const std::string& path, const std::string&) {
   if (stopping_ || !enabled_ || !allow()) return;

@@ -295,6 +295,11 @@ void AiCallBudget::finish(const AiBudgetReservation& reservation, std::optional<
     const auto amount = end == AiCallEnd::settled ? actualNanos
                       : end == AiCallEnd::unconsumed ? std::optional<long long>{0} : std::nullopt;
     const auto result = amount ? budgets_->settle(reservation.id, *amount) : budgets_->markUncertain(reservation.id);
+    // The hold lapsed and was let go while the round was out: what the vendor billed for it is Windmill's.
+    if (result.reservation && result.reservation->state == AiBudgetState::Released) {
+      observation.finish("released");
+      return;
+    }
     if (result.code != AiBudgetCode::Ok && result.code != AiBudgetCode::Replay)
       throw std::runtime_error("AI accounting transition refused");
     observation.finish(!amount ? "uncertain" : end == AiCallEnd::unconsumed ? "unconsumed" : "settled");

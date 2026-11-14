@@ -15,6 +15,10 @@ struct FailureReporter {
     report(product, operation, "door=" + door + " outcome=" + outcome + " request_id=" +
            requestId + " exception_type=" + exceptionType);
   }
+  // An expected event someone should see as it happens, never a failure: filed at WARNING, so it takes no write's Issue.
+  virtual void reportWarning(const std::string& /*operation*/, const std::string& /*product*/,
+                             const std::string& /*door*/, const std::string& /*outcome*/,
+                             const std::string& /*requestId*/) {}
 };
 
 }

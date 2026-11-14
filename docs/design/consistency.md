@@ -159,7 +159,10 @@ for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colo
   states in USD. Replace remaining drawing question/credit
   figures with server-backed USD and period labels. Customer usage drawings must show
   held/uncertain usage, free daily-pool pauses, individual exhaustion, request-capacity refusals
-  and concurrency. Anonymous lifetime allowance has no reset; One billing periods can cross a
+  and concurrency. A hold whose cost is never confirmed is released at zero 10 minutes after its call
+  began, so a concurrency refusal is never permanent: the backend's sentence says each slot frees when
+  its call finishes or 10 minutes after it began, and the native Coach strings ("Another AI request is
+  still in progress") do not say so yet. Anonymous lifetime allowance has no reset; One billing periods can cross a
   calendar boundary. All hosted AI, including background Echoes, consumes the individual budget.
   Signing in binds the device and includes its current-month anonymous spend in free usage.
   Server-issued installation credentials are implemented; customer USD screens remain unbuilt.

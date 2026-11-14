@@ -2,6 +2,8 @@
 
 #include "platform/application/WriteObservation.h"
 
+#include <trantor/utils/Logger.h>
+
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
@@ -11,17 +13,22 @@ namespace wm {
 namespace {
 
 template<class Run>
-auto observeAiBudgetWrite(const std::string& operation, Run&& run) {
-  WriteObservation observation{operation, "platform", "ai"};
+auto observeAiBudgetWrite(const std::string& operation, Run&& run, const std::string& door = "ai") {
+  WriteObservation observation{operation, "platform", door};
   WriteContext context{observation};
   try {
     auto result = std::forward<Run>(run)();
-    const AiBudgetCode code = [&] {
-      if constexpr (std::is_same_v<decltype(result), AiBudgetCode>) return result;
-      else if constexpr (std::is_same_v<decltype(result), std::vector<AiBudgetAlert>>) return AiBudgetCode::Ok;
-      else return result.code;
-    }();
-    observation.finish(code == AiBudgetCode::Replay ? "ok" : std::string(aiBudgetCodeName(code)));
+    if constexpr (std::is_same_v<decltype(result), std::vector<AiBudgetReservation>>) {
+      if (result.empty()) observation.skip();
+      else observation.finish();
+    } else {
+      const AiBudgetCode code = [&] {
+        if constexpr (std::is_same_v<decltype(result), AiBudgetCode>) return result;
+        else if constexpr (std::is_same_v<decltype(result), std::vector<AiBudgetAlert>>) return AiBudgetCode::Ok;
+        else return result.code;
+      }();
+      observation.finish(code == AiBudgetCode::Replay ? "ok" : std::string(aiBudgetCodeName(code)));
+    }
     return result;
   } catch (const std::exception& error) {
     observation.fail(error);
@@ -41,7 +48,7 @@ AiBudgetService::AiBudgetService(AiBudgetRepository& repository,
   if (!limits_ || !clock_) throw std::invalid_argument("missing_ai_budget_dependency");
 }
 
-AiBudgetView AiBudgetService::view(const AiBudgetPrincipal& principal) const {
+AiBudgetView AiBudgetService::view(const AiBudgetPrincipal& principal) {
   WriteObservation observation{"ai.budget.view", "platform", "ai"};
   WriteContext context{observation};
   const auto before = observation.writeCount();
@@ -55,6 +62,7 @@ AiBudgetView AiBudgetService::view(const AiBudgetPrincipal& principal) const {
       observation.finish("invalid");
       return result;
     }
+    releaseLapsed(principal.subject, atMs, "ai");
     const auto snapshot = repository_.snapshot(principal, atMs, limits);
     const auto result = aiBudgetView(principal, atMs, limits, snapshot);
     if (observation.writeCount() == before) observation.skip();
@@ -74,6 +82,7 @@ AiBudgetResult AiBudgetService::reserve(const std::string& id, const AiBudgetPri
   return observeAiBudgetWrite("ai.budget.reserve", [&] {
     const AiBudgetRequest request{id, principal, amountNanos, clock_(), outputBudget};
     if (!request.valid()) return AiBudgetResult{AiBudgetCode::Invalid};
+    releaseLapsed(principal.subject, request.atMs, "ai");
     return repository_.reserve(request, limits_());
   });
 }
@@ -104,6 +113,33 @@ AiBudgetResult AiBudgetService::release(const std::string& id) {
     if (!validAiBudgetId(id)) return AiBudgetResult{AiBudgetCode::Invalid};
     return repository_.release(id);
   });
+}
+
+int AiBudgetService::releaseLapsed() {
+  return releaseLapsed(std::nullopt, clock_(), "background");
+}
+
+int AiBudgetService::releaseLapsed(const std::optional<AiBudgetSubject>& subject, long long atMs,
+                                   const std::string& door) {
+  constexpr int batch = 20;
+  int released = 0;
+  while (true) {
+    const auto holds = observeAiBudgetWrite("ai.budget.release_lapsed", [&] {
+      return repository_.releaseLapsed(atMs, batch, subject);
+    }, door);
+    for (const auto& hold : holds) {
+      const std::string requestId = freshWriteRequestId();
+      const std::string was(aiBudgetStateName(*hold.releasedFrom));
+      const long long ageMs = atMs - hold.admittedAtMs;
+      LOG_WARN << "ai_hold_released operation=ai.budget.release_lapsed door=" << door << " outcome=" << was
+               << " age=" << (ageMs < 3'600'000 ? "under_1h" : ageMs < 86'400'000 ? "under_1d" : "over_1d")
+               << " request_id=" << requestId;
+      reportWriteWarning("ai.budget.release_lapsed", "platform", door, was, requestId);
+    }
+    const int count = static_cast<int>(holds.size());
+    released += count;
+    if (count < batch) return released;
+  }
 }
 
 AiBudgetResult AiBudgetService::reconcileOverrun(const std::string& id) {

@@ -45,7 +45,8 @@ held. New periods do not fund old calls.
 
 Anonymous and free accounts share $100 per UTC calendar month and $5 per UTC day. Paid grants
 are isolated from both free pools. All hosted AI work, including background processing, debits the
-individual budget. Uncertain liabilities and principal debt survive period and tier changes.
+individual budget. Principal debt survives period and tier changes, and so does an uncertain
+liability until it lapses, released at zero 10 minutes after its admission.
 An installation-to-account binding is permanent and blocks further anonymous use of that credential.
 
 Subscription status alone does not fund usage. A verified, completed positive payment for the

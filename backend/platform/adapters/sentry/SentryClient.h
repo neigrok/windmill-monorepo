@@ -40,6 +40,9 @@ public:
   static Json::Value writeEvent(const std::string& operation, const std::string& product,
                                 const std::string& door, const std::string& outcome,
                                 const std::string& requestId, const std::string& exceptionType);
+  // Level warning, grouped by operation and outcome, and under the same per-minute cap as every report.
+  void reportWarning(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string& requestId) override;
   void drain();
 
   // The server's own log lines, as Sentry structured logs (envelope item type `log`). Buffered

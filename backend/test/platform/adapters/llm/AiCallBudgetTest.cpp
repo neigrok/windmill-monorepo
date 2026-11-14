@@ -503,3 +503,39 @@ TEST(ai_call_budget_settles_an_unconsumed_round_at_zero_and_holds_an_ambiguous_o
   for (const auto& [id, row] : repository.reservations) held += row.state == AiBudgetState::Uncertain ? 1 : 0;
   CHECK_EQ(held, 1);
 }
+
+TEST(ai_call_budget_round_whose_hold_lapsed_while_out_books_nothing_and_files_no_issue) {
+  FakeAiBudgetRepository repository;
+  long long now = 1'792'000'000'000LL;
+  auto service = std::make_shared<AiBudgetService>(repository, [] { return AiBudgetLimits{}; }, [&] { return now; });
+  FakeAuthRepository accounts;
+  const auto user = accounts.createUser(Email{"sam@example.com"}, "Sam");
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository ledger;
+  Entitlements entitlements{subscriptions, ledger, {}};
+  Failures failures;
+  AiCallBudget budget{service, entitlements, accounts, failures};
+  AiSpend spend;
+  spend.user = user.id;
+  const auto settled = budget.begin(spend, std::optional<long long>{10'000'000}, AiCallFunding::anyAllowance);
+  REQUIRE(settled.reservation);
+  now += kAiBudgetHoldLifetimeMs;
+  const auto ambiguous = budget.begin(spend, std::optional<long long>{10'000'000}, AiCallFunding::anyAllowance);
+  REQUIRE(ambiguous.reservation);
+  now += kAiBudgetHoldLifetimeMs;
+  CHECK_EQ(service->releaseLapsed(), 1);
+  std::vector<std::string> accounted;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.operation == "ai.call.account") accounted.push_back(line.outcome);
+  });
+  budget.finish(*settled.reservation, std::optional<long long>{5'000'000}, AiCallEnd::settled);
+  budget.finish(*ambiguous.reservation, std::nullopt, AiCallEnd::uncertain);
+  installWriteSink({});
+  CHECK_EQ(accounted, (std::vector<std::string>{"released", "released"}));
+  CHECK(failures.reports.empty());
+  for (const auto& [id, row] : repository.reservations) {
+    CHECK_EQ(row.state, AiBudgetState::Released);
+    CHECK_EQ(row.releasedFrom, std::optional<AiBudgetState>{AiBudgetState::Dispatched});
+    CHECK_FALSE(row.actualNanos);
+  }
+}

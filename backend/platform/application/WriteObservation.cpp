@@ -75,6 +75,17 @@ std::string freshWriteRequestId() { return newRequestId(); }
 std::string currentWriteRequestId() { return current ? current->id : std::string{}; }
 std::string currentWriteDoor() { return currentObservation ? currentObservation->door() : std::string{}; }
 bool claimWriteIssue() { return !current || !current->reported.exchange(true); }
+void reportWriteWarning(const std::string& operation, const std::string& product, const std::string& door,
+                        const std::string& outcome, const std::string& requestId) {
+  std::shared_ptr<FailureReporter> reporter;
+  {
+    std::lock_guard lock(configurationMutex);
+    reporter = installedReporter;
+  }
+  try {
+    if (reporter) reporter->reportWarning(operation, product, door, outcome, requestId);
+  } catch (...) {}
+}
 void reportCurrentWriteFailure(const std::exception& error) {
   if (currentObservation) currentObservation->reportFailure(error);
 }
