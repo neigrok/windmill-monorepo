@@ -548,7 +548,7 @@ committed before its connection dropped lands once. Only a room closing — `evi
 ### Bounds
 
 Declared once in `domain/Command.h`. The MCP surface tells a cap in the refusal past it and publishes
-none in a tool's schema but a title's `maxLength` (`adapters/mcp/README.md`). Every length
+none in a tool's schema (`adapters/mcp/README.md`). Every length
 is counted in characters — Unicode code points, `codePointCount` — never bytes, and a refusal
 names each field over its cap and by how much. Text that is not valid UTF-8 (an overlong form, a
 surrogate, a code point past U+10FFFF, a lone or missing continuation byte) is refused at the same
@@ -572,6 +572,11 @@ and one `import_subgraph` call carries at most 6 MB of description text, under t
 | tree title | 200 characters |
 | tree guide | 5000 characters |
 | legend kinds | 6 (label 24, description 80 characters) |
+
+A title past its cap is refused wherever one is planted or copied: a posted document, a socket frame,
+MCP `create_tree` and `update_tree`, and the `title` a fork is asked to carry. `PATCH /v1/trees/{id}`
+alone cuts one to the cap, since a rename trims and truncates (`TreeRegistry::titleFrom`). A tree that
+already holds a longer title keeps it and reads as it is.
 
 `validate()` judges a single command; `admit()` judges arrivals that mint no command — a posted
 document, an MCP graft, a client lattice frame. `admit` returns `Admission{verdict ∈ {tooLarge,
@@ -855,7 +860,8 @@ the genesis stamp, byte-equal to a device-born tree's. Retrying an owned existin
 returns `409 id-taken`; the caller's deleted ID returns `409 id-retired`, and the id of a subtree of
 the caller's `409 not-a-root`. A client must not retry that deleted tree under a fresh ID.
 
-`POST /v1/trees/{id}/fork` answers `201 {seq, data}`, the root copy's document (Runtime). A source
+`POST /v1/trees/{id}/fork` answers `201 {seq, data}`, the root copy's document (Runtime). A requested
+`title` past 200 characters is refused `400` with the admission's sentence, and nothing is copied. A source
 that is absent, hidden or not the caller's to read answers `404`; a subtree's id is refused `409`
 `not-a-root`, `{code, error, parent: {tree, step}, root}`.
 
