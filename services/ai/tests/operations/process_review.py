@@ -454,11 +454,13 @@ class ProcessReview(unittest.TestCase):
         destination = urllib.parse.urlsplit(self.database)
         proxy = socketserver.ThreadingTCPServer(("127.0.0.1", 0), DatabaseProxy)
         proxy.daemon_threads = True
-        proxy.destination = (destination.hostname, destination.port)
+        proxy.destination = (destination.hostname, destination.port or 5432)
         proxy.paused = threading.Event()
         proxy.stopping = threading.Event()
         threading.Thread(target=proxy.serve_forever, daemon=True).start()
-        proxy_url = urllib.parse.urlunsplit(destination._replace(netloc=destination.username + "@127.0.0.1:" + str(proxy.server_address[1]), query="application_name=ops-blackhole"))
+        credentials, separator, _ = destination.netloc.rpartition("@")
+        authority = credentials + separator + "127.0.0.1:" + str(proxy.server_address[1])
+        proxy_url = urllib.parse.urlunsplit(destination._replace(netloc=authority, query="application_name=ops-blackhole"))
         try:
             process, public, _ = self.start({"AI_DATABASE_URL": proxy_url})
             self.assertEqual(self.request(public, "/v1/allowance", token=self.token)[0], 200)

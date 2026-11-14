@@ -9,7 +9,8 @@ provisioning, image pins, proxy routes and backups belong to the
 
 Run from `services/ai`. Rustup reads the pinned toolchain. Tests use simulated providers and never
 need a provider key. Set `AI_TEST_DATABASE_URL` to a disposable PostgreSQL cluster whose test role
-may create databases before running the complete suite. The database cases create separate test
+may create databases before running the complete suite. Use TCP with password authentication, as CI
+does, so fault-proxy checks also cover credentials. The database cases create separate test
 databases; the full suite requires PostgreSQL.
 
 ```sh
