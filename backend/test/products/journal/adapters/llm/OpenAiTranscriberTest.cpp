@@ -15,7 +15,6 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
-#include <cstdio>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -287,7 +286,6 @@ TEST(openai_transcription_settles_an_unconsumed_take_at_zero_and_holds_an_ambigu
     CHECK_EQ(take.refusal, std::string{});
     REQUIRE_EQ(a.repository.reservations.size(), 1u);
     const AiBudgetReservation& held = a.repository.reservations.begin()->second;
-    if (held.state != scenario.state) std::fprintf(stderr, "  case %s\n", scenario.name.c_str());
     CHECK(held.state == scenario.state);
     CHECK_EQ(held.actualNanos, scenario.actual);
     CHECK_EQ(held.amountNanos, 60'000'000);

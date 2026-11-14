@@ -24,8 +24,8 @@ constexpr std::array<ModelRate, 11> kRates{{
     {"claude-sonnet-4-6", 3'000, 15'000},
     {"claude-haiku-4-5", 1'000, 5'000},
     {"claude-haiku-4-5-20251001", 1'000, 5'000},
-    // OpenAI's Transcription table, developers.openai.com/api/docs/pricing (read 2026-11-14): $2.50 per 1M input
-    // tokens, audio or text alike, and $10.00 per 1M output tokens.
+    // OpenAI's Transcription table, developers.openai.com/api/docs/pricing (read 2026-11-14): one input price, $2.50
+    // per 1M tokens, and $10.00 per 1M output tokens. Talk sends no text prompt, so its input is the audio.
     {"gpt-4o-transcribe", 2'500, 10'000},
 }};
 
