@@ -2,8 +2,8 @@
 
 **Deferred discovery option.** Journal is on the web and in the iOS TestFlight app. If one of the two active
 pilots closes and a Journal question merits the slot, ask whether someone who already writes will choose to
-write again. Manual writing is a job that can be tested now. Talk is blocked pending verified audio bounds
-and pricing. Automatic Echoes processing draws on the same individual USD AI allowance.
+write again. Manual writing is a job that can be tested now. Talk requires Windmill One, which is not on
+sale. Automatic Echoes processing draws on the same individual USD AI allowance.
 [Journal product role](../../PRODUCT_LOG.md#journal) · [Metered operations](../../AI_USAGE_REVIEW.md)
 
 **Proposed protocol.** Recruit people who already write several days a week and agree to try the supported
@@ -19,6 +19,6 @@ exists, use voluntary confirmation and label its source.
 
 **Readout.** Ask returners what brought them back and others where they wrote instead. Keep the answers
 about the routine. Collect neither excerpts nor screenshots, audio, moods or Echoes matches. A meaningful
-manual return supports a further retention test. Voice demand requires a separate working, costed Talk
-release. Paying demand requires a separately approved, functioning paid offer.
+manual return supports a further retention test. Voice demand needs its own test once Windmill One, which
+carries Talk, is on sale. Paying demand requires a separately approved, functioning paid offer.
 [Usage and billing gates](04-gym-demo-and-checkout.md)

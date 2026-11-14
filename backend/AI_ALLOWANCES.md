@@ -2,8 +2,8 @@
 
 `AI_ALLOWANCES_ENABLED=false` is the default. The enabled backend has durable USD admission,
 funding, installation binding and operational alerts. Anonymous Gym onboarding uses a separate
-server-issued installation credential, network limits and the shared free budgets. Journal voice
-still needs audio accounting. Internal money is integer nano-USD; HTTP
+server-issued installation credential, network limits and the shared free budgets. Journal Talk is
+priced by the tokens its transcription model bills. Internal money is integer nano-USD; HTTP
 amounts are exact decimal USD strings.
 
 ## Policy
@@ -86,8 +86,9 @@ individual, free-month and free-day capacity. A paid reservation requires a live
 capacity. In-flight reservations, dispatched calls and uncertain calls occupy the principal's
 concurrency slots across tier changes and device binding.
 
-Every vendor round estimates input tokens from its actual request and reserves the estimated input
-cost plus the full output cap sent to the provider. Coach alone opts into an adaptive cap: its
+Every Claude round estimates input tokens from its actual request and reserves the estimated input
+cost plus the full output cap sent to the provider; a Talk take reserves its model's ceiling
+(below). Coach alone opts into an adaptive cap: its
 provider-neutral input cost, output-token price, minimum and maximum travel into the same locked
 admission transaction. The domain selects capacity from all applicable balances after checking
 funding, debt, device binding and concurrency; no refusal/retry or balance preflight authorizes a
@@ -126,7 +127,7 @@ at least once; the provider receives a stable idempotency key.
 ## Provider coverage and rollout limits
 
 Enabled mode covers each Claude round in gym Coach, roadmap tending and Journal segmentation and
-curation. Expected background budget refusals leave work due and report a bounded deferred outcome,
+curation, and each Journal Talk transcription. Expected background budget refusals leave work due and report a bounded deferred outcome,
 without a Sentry Issue. Roadmap's customer request-count quota is disabled in this mode; its read
 contract names USD and links the shared allowance endpoint.
 
@@ -135,11 +136,34 @@ a phone Coach turn opened under an installation credential: every round of a tur
 `turn`) reserves against the installation's lifetime allowance, or against the account's when a
 session opened it. Anonymous roadmap composition remains `compose-unavailable`; it is not wired to
 this credential.
-Journal voice returns `unsupported_ai_pricing`: compressed upload size is not a
-verified audio duration/token bound, and audio/text prices need separate accounting.
 
-The supported Claude model allowlist matches `AiUsage.cpp`. Unknown models, unsupported pricing
-options, server tools and one-hour cache writes refuse admission. Each vendor round locally
+Journal Talk (`POST /v1/journal/transcribe`, operation `transcribe`) runs on OpenAI
+`gpt-4o-transcribe`, which bills tokens. Its model page prices audio tokens at $2.50 per 1M input
+and $10.00 per 1M output, and the pricing page's Transcription row gives the same two prices with
+no separate text-input price (`AiUsage.cpp`); Talk sends no text prompt. A take's byte size bounds
+no duration — a lower bitrate packs more seconds into the same bytes — so each take reserves the
+model's own ceiling: its 16,000-token context window priced as input plus its 2,000 output tokens,
+$0.06 (`OpenAiTranscriber.cpp`). That is the vendor's documented bound, not one this server
+measures: the reply's `usage` object (`type: "tokens"`, `input_tokens`, `output_tokens`) is what the
+vendor billed, and settles the take at that cost, with an unfunded excess kept as overrun debt as
+for any round. A transcript that comes back without usable token usage was heard, and settles at
+the $0.06 ceiling. An error status from the vendor, or a request that never reached a connection or
+TLS session, consumed nothing and settles at zero. A timeout (300 s, `OpenAiTranscriber.cpp`), a
+connection dropped mid-exchange or an unreadable reply keeps the whole hold as uncertain. Stopping
+the server lets takes still with the vendor answer and settle for up to 5 s, inside Docker's 10 s
+stop timeout; one still out after that keeps its dispatched hold.
+
+Talk requires Windmill One, checked before any audio is read, and its admission refuses any
+principal below Windmill One as `funding_required`, so a take draws only on a funded grant and
+never on the free pools. The route answers the allowance's own codes: 429 `subject_exhausted` for
+a spent or too-small allowance, 503 for `funding_required`, `concurrency_exhausted`,
+`debt_outstanding` and the other ledger codes, each with the allowance object Coach's refusals
+carry, and 503 `ai_accounting_unavailable` when the ledger cannot be asked. A transcriber
+configured with a model that has no ceiling is not configured in this mode, and the route answers
+503 `voice_unavailable`.
+
+The supported Claude model allowlist matches the Claude rows of `AiUsage.cpp`. Unknown models, unsupported pricing
+options, server tools and one-hour cache writes refuse admission. Each Claude round locally
 estimates the tokens in its actual system prompt, messages, history, tools, results and images.
 The estimate is:
 
@@ -170,7 +194,7 @@ For example, an Opus 5 request with an 8,000-token output cap reserves $0.20 for
 more than the balance of an allowance with $0.10 left.
 Anonymous previews use Sonnet 5 with a bounded input, one provider request and an affordable
 output cap, and an anonymous phone turn runs every round on Sonnet 5 the same way. Signed-in Coach,
-Ask and bound phone turns alike, uses Opus 5. Audio requires its own supported accounting.
+Ask and bound phone turns alike, uses Opus 5.
 
 ## Installation credentials and network admission
 
@@ -265,7 +289,7 @@ request quotas. Enabling the durable ledger does not invent reservations for ear
 - Keep per-round token estimation separate from exact USD settlement. Check estimates against
   actual usage; let original funding absorb covered variance while retaining unfunded overrun
   debt and ambiguous holds. Do not promise a hard cost ceiling. Choose model/output settings that
-  can fit the intended tier. Audio needs supported accounting.
+  can fit the intended tier.
 - The account, Coach and tending clients need exact USD, held amounts, distinct allowance periods
   and bounded refusal recovery. Figma still contains question and credit figures.
 - Subscription and owner grants share one ledger. Nonoverlap is enforced within each source, and

@@ -40,6 +40,15 @@
   flex-shrink: 1;
 }
 
+.st-roadmap-title-skeleton {
+  display: block;
+  width: 128px;
+  height: 24px;
+  margin-right: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+
 /* The way back to the tree this one was gone into from: a chip in the first slot, or the phone's chevron and eyebrow. */
 .st-roadmap-back {
   flex-shrink: 0;

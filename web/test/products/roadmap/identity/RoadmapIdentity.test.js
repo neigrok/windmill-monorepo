@@ -61,7 +61,7 @@ function Room({ initial }) {
   return React.createElement('div', { style: { position: 'relative', top: 50, height: 'calc(100vh - 50px)', '--content-safe-area-top': '0px' } },
     React.createElement(RoadmapIdentity, props),
     options.board && React.createElement('div', { className: 'st-view-layer--board is-active', style: { height: '100%' } },
-      React.createElement(BoardView, { tree: boardTree, completed, completedAt, selectedId, onAnchor: setSelectedId,
+      React.createElement(BoardView, { tree: options.boardLoading ? null : boardTree, loading: options.boardLoading, completed, completedAt, selectedId, onAnchor: setSelectedId,
         onSelect: setSelectedId, breakpoint: props.band, active: true, topInset: rowBottom, query, onQuery: setQuery })),
     React.createElement('button', { id: 'outside', style: { position: 'absolute', top: 500, left: 20 } }, 'Outside'));
 }
@@ -129,6 +129,62 @@ async function openRow(width, options = {}) {
 }
 const focus = (page) => page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent);
 const names = (page) => page.locator('.st-roadmap-identity button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent));
+
+test('Chromium: tablet Board loading holds an inert name placeholder without guessing a title', async () => {
+  for (const width of [744, 1023, 1024]) {
+    const band = width < 1024 ? 'tablet' : 'desktop';
+    const page = await openRow(width, { band, view: 'board', role: 'reader', loading: true, noFind: true, noVerbs: true });
+    try {
+      await page.evaluate(() => window.patch({ title: undefined, progress: null }));
+      const placeholder = page.locator('.st-roadmap-title-skeleton');
+      assert.equal(await placeholder.count(), band === 'tablet' ? 1 : 0);
+      if (band === 'tablet') {
+        assert.deepEqual(await placeholder.evaluate((node) => ({
+          hidden: node.getAttribute('aria-hidden'),
+          rect: [node.getBoundingClientRect().width, node.getBoundingClientRect().height],
+          focusable: node.querySelectorAll('button, a, input, [tabindex]').length,
+        })), { hidden: 'true', rect: [128, 24], focusable: 0 });
+      }
+      assert.equal(await page.locator('.st-roadmap-title').count(), 0);
+      assert.equal(await page.getByRole('button', { name: 'Board' }).count(), 1);
+      if (band === 'tablet') {
+        assert.equal(await page.locator('.st-board-switch').evaluate((node) => node.getBoundingClientRect().left), 168);
+        await page.evaluate(() => window.patch({ loading: false }));
+        await page.waitForFunction(() => !document.querySelector('.st-roadmap-title-skeleton'));
+        await page.evaluate(() => window.patch({ loading: true, title: 'Learn to sail' }));
+        await page.waitForFunction(() => document.querySelector('.st-roadmap-title')?.textContent === 'Learn to sail');
+        assert.equal(await page.locator('.st-roadmap-title-skeleton').count(), 0);
+        await page.evaluate(() => window.patch({ title: undefined, loading: true, view: 'tree' }));
+        await page.waitForFunction(() => document.querySelector('.st-roadmap-identity').dataset.view === 'tree');
+        assert.equal(await page.locator('.st-roadmap-title-skeleton').count(), 0);
+      }
+    } finally {
+      await page.close();
+    }
+  }
+});
+
+test('Chromium: tablet identity, filter placeholders and loading rail align under the row', async () => {
+  const page = await openRow(744, { band: 'tablet', view: 'board', role: 'reader', loading: true, board: true, boardLoading: true, noFind: true, noVerbs: true });
+  try {
+    await page.evaluate(() => window.patch({ title: undefined, progress: null }));
+    await page.locator('.st-roadmap-title-skeleton').waitFor();
+    assert.deepEqual(await page.evaluate(() => {
+      const rect = (selector) => {
+        const box = document.querySelector(selector).getBoundingClientRect();
+        return [box.x, box.y, box.width, box.height].map(Math.round);
+      };
+      return {
+        identity: rect('.st-roadmap-title-skeleton'),
+        filter: rect('.st-board-skeleton-filter'),
+        rail: rect('.st-board-columns-rail--done').slice(0, 3),
+        deck: [...document.querySelectorAll('.st-board-columns-deck-card')].map((node) => Math.round(node.getBoundingClientRect().height)),
+      };
+    }), { identity: [24, 70, 128, 24], filter: [24, 118, 696, 36], rail: [584, 170, 136], deck: [48, 48, 52] });
+  } finally {
+    await page.close();
+  }
+});
 
 for (const width of [1440, 1024, 744]) {
   for (const role of ['owner', 'reader']) {

@@ -114,6 +114,12 @@ TEST(ai_usage_a_dated_snapshot_resolves_to_the_alias_it_pins) {
   CHECK_EQ(costNanos("claude-haiku-4-5-20251001", tokens), std::optional<long long>(6'000'000));
 }
 
+// Talk's model, at the vendor's token rates: $2.50 per 1M input tokens and $10.00 per 1M output tokens.
+TEST(ai_usage_the_transcription_model_is_priced_by_the_tokens_it_bills) {
+  CHECK_EQ(costNanos("gpt-4o-transcribe", TokenUse{1000, 100, 0, 0}), std::optional<long long>(3'500'000));
+  CHECK_EQ(floorCostNanos("gpt-4o-transcribe", TokenUse{1000, 100, 0, 0}), 3'500'000);
+}
+
 // Unpriced returns nothing at all, so the row stores null and every total it lands in is marked a floor.
 TEST(ai_usage_a_model_we_cannot_price_returns_nothing_rather_than_zero) {
   const TokenUse tokens{1000, 1000, 0, 0};
