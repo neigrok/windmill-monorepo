@@ -1,5 +1,5 @@
-// The guide open (17.18–17.19h, 17.21–17.23, 17.26, 17.29, 17.31–17.38, 28.30, 28.31, 28.33): the note in place on the
-// tree from 744px, a bottom sheet on phones. It reads until its owner presses the prose or the pencil, then writes in
+// The guide open (17.02–17.17, 17.18–17.19h, 17.21–17.23, 17.26, 17.29, 17.31–17.38, 28.30, 28.31, 28.33):
+// a window from 744px and a bottom sheet on phones. It reads until its owner presses the prose or the pencil, then writes in
 // the same frame. The guides above the tree stand before its own, farthest first, and are only ever read here.
 
 import React, { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
@@ -29,30 +29,25 @@ const RECOVERY_LINES = {
   copied: { fact: t('roadmap.guide.draftCopied'), wayOut: t('roadmap.guide.draftCopiedNote'), act: 'done', label: t('roadmap.guide.done') },
 };
 
-// The window's edge the note keeps clear beneath it from 744px.
-const NOTE_FOOT = 24;
 // What the guides from above need to be read while the guide is written: the stack's 4px edges round one name and one
 // line of text, then this tree's name under it.
 const LEAST_CONTEXT = 8 + 19 + 6 + 26 + 14 + 19;
 
 // A textarea does not say where its caret is drawn, so a hidden copy of the text before the caret measures the foot of
 // the caret's line, in the field's own box.
-function caretFoot(box) {
+function caretFoot(box, offset = box.selectionEnd) {
   const copy = document.createElement('div');
   copy.className = box.className;
   copy.style.cssText = `position: absolute; visibility: hidden; box-sizing: border-box; width: ${box.clientWidth}px; height: auto; min-height: 0; max-height: none; border: 0; white-space: pre-wrap; animation: none;`;
-  copy.textContent = `${box.value.slice(0, box.selectionEnd)}\u200b`;
+  copy.textContent = `${box.value.slice(0, offset)}\u200b`;
   box.after(copy);
   const foot = copy.offsetHeight;
   copy.remove();
   return foot;
 }
 
-// Reading from 744px shares the room: the tree beside the note stays live. Writing, and the phone's sheet in either
-// mode, holds the window: everything beneath is inert and a press outside asks to leave. `view` is the view the entry
-// stands on, so the note follows its entry when the view changes; `onSeat` hears the box the note holds on the canvas
-// while it reads in place.
-export function GuideNote({ guide, band, view, onSeat }) {
+// Reading and writing hold the window: everything beneath is inert and a press outside asks to leave.
+export function GuideNote({ guide, band }) {
   const phone = band === 'phone';
   const { owner, above } = guide;
   const opening = guide.opened.writing;
@@ -60,20 +55,6 @@ export function GuideNote({ guide, band, view, onSeat }) {
   const written = hasGuide(guide.text);
   const stacked = above.length > 0;
   const openTree = useContext(TreeDoor);
-  // The note stands over its entry, grown 4px to the left and 16px up: measured in the window, and in the room the
-  // note shares while it reads.
-  const seatOverEntry = () => {
-    const entry = guide.entry.current;
-    if (!entry) return null;
-    const box = entry.getBoundingClientRect();
-    const transform = getComputedStyle(entry).transform;
-    const scale = new DOMMatrixReadOnly(transform === 'none' ? undefined : transform);
-    const room = entry.closest('.st-root')?.getBoundingClientRect();
-    // The press scales the entry about its centre; seat the note at the entry's unscaled edges.
-    const left = box.left - (box.width / scale.a - box.width) / 2;
-    const top = box.top - (box.height / scale.d - box.height) / 2;
-    return { left: left - 4, top: top - 16, roomLeft: room?.left ?? 0, roomTop: room?.top ?? 0 };
-  };
   const [draft, setDraft] = useState(() => (opening ? new GuideDraft(guide.text) : null));
   const [caret, setCaret] = useState(() => (opening ? { offset: opening.offset, scroll: 0 } : null));
   const [discarding, setDiscarding] = useState(false);
@@ -83,10 +64,10 @@ export function GuideNote({ guide, band, view, onSeat }) {
   const [line, setLine] = useState(null);
   const [ringed, setRinged] = useState(false);
   const [entering, setEntering] = useState(true);
-  const [seat, setSeat] = useState(seatOverEntry);
   const [crowded, setCrowded] = useState(false);
   const layer = useRef(null);
   const paper = useRef(null);
+  const body = useRef(null);
   const stack = useRef(null);
   const prose = useRef(null);
   const add = useRef(null);
@@ -100,7 +81,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
   const scrolledAlone = useRef(0);
   if (stacked && !wasStacked.current) scrolledAlone.current = prose.current?.scrollTop ?? 0;
   const confirmation = useRef(null);
-  const stop = useRef(-1);
+  const stop = useRef(null);
   const lastPress = useRef(guide.opened.keyboard ? 'key' : 'pointer');
   const enterDown = useRef(false);
   const settled = useRef(false);
@@ -112,7 +93,6 @@ export function GuideNote({ guide, band, view, onSeat }) {
   const lossId = useId();
   const viewport = useComposerViewport(phone);
   const writing = draft !== null;
-  const modal = phone || writing;
   const savable = writing && draft.changed && draft.fits;
   const standing = line && RECOVERY_LINES[line.says];
   const copied = line?.says === 'copied';
@@ -148,6 +128,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
       setDiscarding(true);
       return;
     }
+    if (draft) track('roadmap_guide', { step: 'cancel' });
     leave();
   };
 
@@ -246,11 +227,10 @@ export function GuideNote({ guide, band, view, onSeat }) {
     (next ?? frame).focus();
   };
   useEffect(() => {
-    if (!modal) return undefined;
     const onKey = (event) => keys.current(event);
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [modal]);
+  }, []);
 
   // The prose wears its focus ring only when a key brought focus to it.
   useEffect(() => {
@@ -264,31 +244,8 @@ export function GuideNote({ guide, band, view, onSeat }) {
     };
   }, []);
 
-  useLayoutEffect(() => (modal ? coverBeneath(layer.current) : undefined), [modal]);
+  useLayoutEffect(() => coverBeneath(layer.current), []);
   useCoveredLayer(paper, discarding);
-
-  const inPlace = !phone && !modal;
-  useLayoutEffect(() => {
-    if (!inPlace || !seat || !onSeat) return undefined;
-    const publish = () => onSeat({
-      left: seat.left - seat.roomLeft, top: seat.top - seat.roomTop, width: paper.current.offsetWidth, height: paper.current.offsetHeight,
-    });
-    publish();
-    const observer = new ResizeObserver(publish);
-    observer.observe(paper.current);
-    return () => {
-      observer.disconnect();
-      onSeat(null);
-    };
-  }, [inPlace, seat, onSeat]);
-
-  useLayoutEffect(() => {
-    if (phone) return undefined;
-    const place = () => setSeat(seatOverEntry());
-    place();
-    window.addEventListener('resize', place);
-    return () => window.removeEventListener('resize', place);
-  }, [phone, view]);
 
   // A guide that holds no words under no guide from above has nothing to read: one cleared here or elsewhere closes
   // the note.
@@ -296,18 +253,30 @@ export function GuideNote({ guide, band, view, onSeat }) {
     if (!writing && !written && above.length === 0) guide.close();
   }, [writing, written, above]);
 
-  // The field is as tall as its draft, until the note's bound makes it scroll.
+  // The phone field grows with its draft; in the window it reserves the draft's height before the inherited context.
   useLayoutEffect(() => {
     const box = field.current;
     if (!box) return undefined;
     const fit = () => {
       box.style.height = 'auto';
+      if (!phone) {
+        const draftHeight = caretFoot(box, box.value.length) + box.offsetHeight - box.clientHeight;
+        box.style.minHeight = '0px';
+        box.style.height = `${Math.max(64, draftHeight + parseFloat(getComputedStyle(box).lineHeight))}px`;
+        return;
+      }
+      box.style.minHeight = '';
       box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`;
     };
     fit();
+    const observer = phone ? null : new ResizeObserver(fit);
+    observer?.observe(body.current);
     window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
-  }, [draft?.text]);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', fit);
+    };
+  }, [draft?.text, phone, guide.text, line]);
 
   // Writing starts where reading stood: the caret where the press landed, the field scrolled as far as the prose was.
   useLayoutEffect(() => {
@@ -350,7 +319,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
     }
     resumeAt.current = null;
     rest()?.focus({ preventScroll: true });
-  }, [writing, modal]);
+  }, [writing]);
 
   // Guides from above that answer while the note reads stand over this tree's text and move nothing: the text stays
   // mounted with its selection, and the stack scrolls on by what now stands above it. Where they go, the focus the
@@ -372,20 +341,20 @@ export function GuideNote({ guide, band, view, onSeat }) {
   useLayoutEffect(() => {
     if (!contextual) return undefined;
     const fit = () => {
-      const frame = paper.current;
-      const taken = context.current.hidden ? -parseFloat(getComputedStyle(frame).rowGap) : context.current.offsetHeight;
-      const room = window.innerHeight - NOTE_FOOT - frame.getBoundingClientRect().top - (frame.offsetHeight - taken);
+      const fieldHeight = Math.max(parseFloat(getComputedStyle(field.current).minHeight), caretFoot(field.current, field.current.value.length));
+      const bodyStyle = getComputedStyle(body.current);
+      const room = body.current.clientHeight - parseFloat(bodyStyle.paddingTop) - fieldHeight - parseFloat(bodyStyle.rowGap);
       setCrowded(room < LEAST_CONTEXT);
     };
     fit();
     const observer = new ResizeObserver(fit);
-    for (const part of [paper.current, field.current, context.current]) observer.observe(part);
+    for (const part of [body.current, field.current]) observer.observe(part);
     window.addEventListener('resize', fit);
     return () => {
       observer.disconnect();
       window.removeEventListener('resize', fit);
     };
-  }, [contextual]);
+  }, [contextual, draft?.text]);
 
   useLayoutEffect(() => {
     if (discarding) confirmation.current.focus({ preventScroll: true });
@@ -395,7 +364,13 @@ export function GuideNote({ guide, band, view, onSeat }) {
   // Crossing 744px swaps the footer's buttons for the other band's, which drops the focus one of them held to the page:
   // the stop in the same place takes it.
   useLayoutEffect(() => {
-    if (document.activeElement === document.body) focusableElements(paper.current)[stop.current]?.focus({ preventScroll: true });
+    if (document.activeElement !== document.body || !stop.current) return;
+    const { group, index, element, role } = stop.current;
+    const next = group ? paper.current.querySelectorAll(`${group} button`)[index]
+      : element?.isConnected ? element
+      : role === 'close' ? paper.current.querySelector('.st-guide-close, .st-guide-cancel')
+      : role === 'edit' ? paper.current.querySelector('.st-guide-pencil, .st-guide-edit') : null;
+    if (next?.isConnected) next.focus({ preventScroll: true });
   }, [phone]);
 
   // When the field gives up height, to a line that arrives beneath it or a keyboard that rises, the caret's line stays
@@ -440,6 +415,17 @@ export function GuideNote({ guide, band, view, onSeat }) {
   const act = standing
     ? { label: standing.label, run: acts[standing.act], waits: false }
     : { label: t('roadmap.common.save'), run: save, waits: !savable };
+  const elsewhere = writing && draft.outdatedBy(guide.text) && (
+    <div className="st-guide-status" role="status">
+      {phone ? <>
+        <span><strong>{t('roadmap.guide.changedElsewherePhone')}</strong> <span>{t('roadmap.guide.changedElsewherePhoneNote')}</span></span>
+        <button type="button" className="st-guide-load" onClick={loadLatest}>{t('roadmap.guide.loadLatest')}</button>
+      </> : <>
+        <span>{t('roadmap.guide.changedElsewhere')}</span>
+        <Button variant="ghost" size="sm" onClick={loadLatest}>{t('roadmap.guide.loadLatest')}</Button>
+      </>}
+    </div>
+  );
   // A press leaves focus on the button, which Safari would not: what the press brings, a line or its next act, stands
   // under the control the person used, and a phone's keyboard goes down.
   const press = (event) => {
@@ -507,95 +493,102 @@ export function GuideNote({ guide, band, view, onSeat }) {
     </p>
   );
 
-  const seated = !phone && seat !== null;
   const note = (
-    <div className={`st-guide-seat${phone ? ' st-guide-seat--phone' : ''}`}
-      style={seated ? { left: seat.left - (modal ? 0 : seat.roomLeft), top: seat.top - (modal ? 0 : seat.roomTop) } : undefined}>
-      <section ref={paper} className={paperClasses.join(' ')} role="dialog" aria-modal={modal ? 'true' : undefined}
-        aria-labelledby={titleId} tabIndex={-1}
-        style={seated ? { maxHeight: `calc(100dvh - ${seat.top + NOTE_FOOT}px)` } : undefined}
+    <div className={`st-guide-seat${phone ? ' st-guide-seat--phone' : ''}`}>
+      <section ref={paper} className={paperClasses.join(' ')} role="dialog" aria-modal="true"
+        aria-labelledby={phone ? titleId : undefined} aria-label={phone ? undefined : title} tabIndex={-1}
         onAnimationEnd={() => setEntering(false)}
-        onFocus={(event) => { stop.current = focusableElements(paper.current).indexOf(event.target); }}
-        onKeyDown={modal ? undefined : (event) => {
-          if (event.key !== 'Escape' || event.defaultPrevented) return;
-          event.preventDefault();
-          event.stopPropagation();
-          requestLeave();
+        onFocus={(event) => {
+          const role = event.target.classList.contains('st-guide-close') ? 'close'
+            : event.target.matches('.st-guide-pencil, .st-guide-edit') ? 'edit' : null;
+          const group = event.target.closest('.st-guide-actions') ? '.st-guide-actions'
+            : event.target.closest('.st-guide-status') ? '.st-guide-status' : null;
+          stop.current = group
+            ? { group, index: [...paper.current.querySelectorAll(`${group} button`)].indexOf(event.target) }
+            : { element: event.target, role };
         }}>
         {phone && <span className="st-guide-grabber" aria-hidden />}
         <header className="st-guide-heading">
-          {!phone && <span className="st-guide-tab"><BookOpen size={24} strokeWidth={1.67} aria-hidden /></span>}
+          {!phone && <BookOpen size={20} strokeWidth={1.67} aria-hidden />}
           <div className="st-guide-identity">
-            <p>{phone && <BookOpen size={14} strokeWidth={1.67} aria-hidden />}<span>{guide.roadmapTitle}</span></p>
-            <h2 id={titleId}>{title}</h2>
+            {phone ? <>
+              <p><BookOpen size={14} strokeWidth={1.67} aria-hidden /><span>{guide.roadmapTitle}</span></p>
+              <h2 id={titleId}>{title}</h2>
+            </> : <>
+              <h2 id={titleId}>{owner ? GUIDE.title : GUIDE.authorsNote}</h2>
+              <p><span>{guide.roadmapTitle}</span></p>
+            </>}
           </div>
-          {!writing && owner && written && (
+          {phone && !writing && owner && written && (
             <button type="button" className="st-guide-pencil" aria-label={t('roadmap.guide.edit')}
               onClick={() => begin('pencil', text.length)}>
               <Pencil size={18} strokeWidth={1.67} aria-hidden />
             </button>
           )}
-          {!writing && (
-            <button type="button" className="st-guide-close" aria-label={LABELS.close} onClick={close}>
+          {(!phone || !writing) && (
+            <button type="button" className="st-guide-close" aria-label={LABELS.close} onClick={requestLeave}>
               <X size={18} strokeWidth={1.67} aria-hidden />
             </button>
           )}
         </header>
-        {!phone && <span className="st-guide-rule" />}
-        {/* Under guides from above the note reads one stack, which scrolls as the prose does alone and takes the focus
-            where this tree's text starts out of view; a tree with no guide of its own has Add guide as its block. With
-            nothing above the same element stands aside, so the text stays mounted when guides from above answer. From
-            744px they stay over the field while it writes, where the window has the room. */}
-        {!writing && (
-          <div ref={stack} className={stacked ? `st-guide-stack${ringed ? ' is-ringed' : ''}` : 'st-guide-alone'}
-            {...(stacked ? { tabIndex: 0, role: 'region', 'aria-labelledby': titleId } : {})}
-            onFocus={(event) => { if (event.target === event.currentTarget) setRinged(lastPress.current === 'key'); }}>
-            {stacked && fromAbove}
-            {stacked && ownName}
-            {written || !stacked ? ownGuide : (
-              <button ref={add} type="button" className="st-guide-add" onClick={() => begin('add', 0)}>
-                <Plus size={18} strokeWidth={1.67} aria-hidden />
-                <span>{GUIDE.add}</span>
-              </button>
-            )}
-          </div>
-        )}
-        {contextual && (
-          <div ref={context} className="st-guide-context" hidden={crowded}>
-            <div className="st-guide-stack">{fromAbove}</div>
-            {ownName}
+        <div ref={body} className="st-guide-body">
+          {/* Under guides from above the note reads one stack, which scrolls as the prose does alone and takes the focus
+              where this tree's text starts out of view; a tree with no guide of its own has Add guide as its block. With
+              nothing above the same element stands aside, so the text stays mounted when guides from above answer. From
+              744px they stay over the field while it writes, where the window has the room. */}
+          {!writing && (
+            <div ref={stack} className={stacked ? `st-guide-stack${ringed ? ' is-ringed' : ''}` : 'st-guide-alone'}
+              {...(stacked ? { tabIndex: 0, role: 'region', 'aria-labelledby': titleId } : {})}
+              onFocus={(event) => { if (event.target === event.currentTarget) setRinged(lastPress.current === 'key'); }}>
+              {stacked && fromAbove}
+              {stacked && ownName}
+              {written || !stacked ? ownGuide : (
+                <button ref={add} type="button" className="st-guide-add" onClick={() => begin('add', 0)}>
+                  <Plus size={18} strokeWidth={1.67} aria-hidden />
+                  <span>{GUIDE.add}</span>
+                </button>
+              )}
+            </div>
+          )}
+          {contextual && (
+            <div ref={context} className="st-guide-context" hidden={crowded}>
+              <div className="st-guide-stack">{fromAbove}</div>
+              {ownName}
+            </div>
+          )}
+          {!phone && elsewhere}
+          {writing && (
+            <textarea ref={field} rows={1} className={`st-guide-field${draft.fits ? '' : ' st-guide-field--over'}${standing ? ' st-guide-field--resting' : ''}`}
+              aria-labelledby={titleId} aria-describedby={describerId} value={draft.text} readOnly={saving}
+              placeholder={t('roadmap.guide.placeholder')}
+              onChange={(event) => {
+                const { value } = event.target;
+                setLine(null);
+                setDraft((current) => current.writing(value));
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                // An Enter still held from the press that opened the note types nothing.
+                if (event.repeat && !enterDown.current) event.preventDefault();
+                else enterDown.current = true;
+              }}
+              onKeyUp={(event) => { if (event.key === 'Enter') enterDown.current = false; }} />
+          )}
+        </div>
+        {!phone && !writing && owner && written && (
+          <div className="st-guide-read-footer">
+            <button type="button" className="st-guide-edit" aria-label={t('roadmap.guide.edit')}
+              onClick={() => begin('pencil', text.length)}>
+              <Pencil size={20} strokeWidth={1.67} absoluteStrokeWidth aria-hidden />
+              {stacked ? t('roadmap.guide.edit') : t('roadmap.guide.clickToEdit')}
+            </button>
           </div>
         )}
         {writing && <>
-          <textarea ref={field} rows={1} className={`st-guide-field${draft.fits ? '' : ' st-guide-field--over'}${standing ? ' st-guide-field--resting' : ''}`}
-            aria-labelledby={titleId} aria-describedby={describerId} value={draft.text} readOnly={saving}
-            placeholder={t('roadmap.guide.placeholder')}
-            onChange={(event) => {
-              const { value } = event.target;
-              setLine(null);
-              setDraft((current) => current.writing(value));
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter') return;
-              // An Enter still held from the press that opened the note types nothing.
-              if (event.repeat && !enterDown.current) event.preventDefault();
-              else enterDown.current = true;
-            }}
-            onKeyUp={(event) => { if (event.key === 'Enter') enterDown.current = false; }} />
-          {/* A guide changed elsewhere stands first with its one act. Then who reads the guide and the count, or in
-              their place the line a failed save or a copied draft left; then Cancel and that line's act, else Save. */}
+          {/* The phone's changed-elsewhere line stands first. Then who reads the guide and the count, or a failed
+              save's line, followed by Cancel and the available act. */}
           <footer className={`st-guide-footer${standing ? ` st-guide-footer--${copied ? 'copied' : 'failed'}` : ''}`}>
-            {draft.outdatedBy(guide.text) && (
-              <div className="st-guide-status" role="status">
-                {phone ? <>
-                  <span><strong>{t('roadmap.guide.changedElsewherePhone')}</strong> <span>{t('roadmap.guide.changedElsewherePhoneNote')}</span></span>
-                  <button type="button" className="st-guide-load" onClick={loadLatest}>{t('roadmap.guide.loadLatest')}</button>
-                </> : <>
-                  <span>{t('roadmap.guide.changedElsewhere')}</span>
-                  <Button variant="ghost" size="sm" onClick={loadLatest}>{t('roadmap.guide.loadLatest')}</Button>
-                </>}
-              </div>
-            )}
+            {phone && elsewhere}
             <div className="st-guide-closing">
               {standing ? (
                 <p key={line.nth} id={describerId} className="st-guide-line" role={copied ? 'status' : 'alert'}>
@@ -618,7 +611,7 @@ export function GuideNote({ guide, band, view, onSeat }) {
                     onFocus={() => setRinged(lastPress.current === 'key')} onClick={press}>{act.label}</button>
                 </> : <>
                   <Button variant="secondary" onClick={requestLeave}>{t('roadmap.common.cancel')}</Button>
-                  <Button variant={draft.changed ? 'primary' : 'secondary'} held={act.waits} ariaBusy={saving} describedBy={describerId}
+                  <Button variant="primary" held={act.waits} ariaBusy={saving} describedBy={describerId}
                     onClick={press}>{act.label}</Button>
                 </>}
               </div>
@@ -646,7 +639,6 @@ export function GuideNote({ guide, band, view, onSeat }) {
     </div>
   );
 
-  if (!modal) return note;
   return createPortal(
     <div ref={layer} className={`st-guide-layer${phone ? ' st-guide-layer--phone' : ''}${entering ? ' is-entering' : ''}`} style={viewport.style}>
       {/* A double tap's second click belongs to the press that opened the sheet, so it does not close it. */}

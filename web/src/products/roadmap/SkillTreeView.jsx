@@ -564,7 +564,7 @@ export function SkillTreeView({ treeId, demo = false }) {
           reportRoadmapFailure('roadmap-guide', error);
           guide.close();
         }}>
-          <GuideNote guide={guide} band={breakpoint} view={guideView} onSeat={canvasView ? geometry.publishGuideNote : undefined} />
+          <GuideNote guide={guide} band={breakpoint} />
         </ErrorBoundary>
       )}
 

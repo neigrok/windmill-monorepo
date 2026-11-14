@@ -10,7 +10,7 @@ const box = (page, selector) => page.locator(selector).evaluate((element) => {
   return { left, top, right, bottom, width };
 });
 
-hostTest('Chromium: at 1440px the guide is a card on the Graph\'s canvas, written through the room\'s session; on the Board it sits in the flow over no card, and an open note follows it there', async () => {
+hostTest('Chromium: at 1440px the Guide opens as a modal from the Graph and the Board, and writes through the room session', async () => {
   const { page, errors } = await openHost({ width: 1440, height: 960, shell: true });
   try {
     const add = page.getByRole('button', { name: 'Add guide', exact: true });
@@ -30,7 +30,10 @@ hostTest('Chromium: at 1440px the guide is a card on the Graph\'s canvas, writte
     const note = page.getByRole('dialog', { name: 'Guide' });
     await note.waitFor();
     const reading = await box(page, '.st-guide-paper');
-    assert.deepEqual({ left: reading.left, under: reading.top - row.bottom, width: reading.width }, { left: 24, under: 22, width: 642 });
+    assert.deepEqual({ left: reading.left, top: reading.top, width: reading.width }, { left: 24, top: 24, width: 1392 });
+    assert.equal(await page.locator('.st-root').evaluate((root) => Boolean(root.closest('[inert]'))), true);
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await note.waitFor({ state: 'detached' });
 
     await page.getByRole('button', { name: 'Board', exact: true }).click();
     await page.locator('.st-board-card').first().waitFor();
@@ -42,13 +45,16 @@ hostTest('Chromium: at 1440px the guide is a card on the Graph\'s canvas, writte
         return other.left < guide.right && other.right > guide.left && other.top < guide.bottom && other.bottom > guide.top;
       }).map((element) => element.className), onBoard), []);
     assert.equal(onBoard.top >= row.bottom, true);
+    await card.click();
+    await note.waitFor();
     const overBoard = await box(page, '.st-guide-paper');
-    assert.deepEqual([overBoard.left - onBoard.left, overBoard.top - onBoard.top], [-4, -16]);
+    assert.deepEqual([overBoard.left, overBoard.top, overBoard.width], [24, 24, 1392]);
     assert.deepEqual(await guideEvents(page), [
       { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' },
       { step: 'edit', via: 'add' },
       { step: 'save', outcome: 'saved', length: '1-500' },
       { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' },
+      { step: 'open', door: 'card', view: 'board', role: 'owner', above: 'none' },
     ]);
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await note.waitFor({ state: 'detached' });
@@ -107,6 +113,7 @@ hostTest('Chromium: on a phone a guide the session receives mid-edit is said in 
       { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' },
       { step: 'edit', via: 'pencil' },
       { step: 'loadLatest' },
+      { step: 'cancel' },
     ]);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
@@ -220,7 +227,7 @@ hostTest('Chromium: the note keeps its draft when the window crosses 744px in th
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: the Graph camera frames the tree to the right of the guide\'s card and of its note read in place, and captions keep clear of both', async () => {
+hostTest('Chromium: opening the Guide modal keeps the Graph camera framed around the card', async () => {
   const { page, errors } = await openHost({ width: 1440, height: 960 });
   try {
     await page.evaluate(() => window.session.setGuide('One step a week.'));
@@ -237,15 +244,14 @@ hostTest('Chromium: the Graph camera frames the tree to the right of the guide\'
       { left: 466, guide: card, last: ['bottom', 'height', 'right', 'width'] });
     assert.equal(card.top, row.bottom + 38);
     await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
-    await page.waitForFunction(() => window.cameraInsets.left === 690);
-    assert.deepEqual(await page.evaluate(() => window.cameraInsets.blocks.find((block) => block.top !== undefined)), await held('.st-guide-paper'));
+    assert.deepEqual(await page.evaluate(() => ({ left: window.cameraInsets.left, guide: window.cameraInsets.blocks.find((block) => block.top !== undefined) })), { left: 466, guide: card });
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.waitForFunction(() => window.cameraInsets.left === 466);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: a refusal on the desktop Graph seats the guide\'s card below it, and the open note leaves its message uncovered', async () => {
+hostTest('Chromium: a refusal on the desktop Graph seats the guide card below it, and the modal covers the room', async () => {
   const { page, errors } = await openHost({ width: 1440, height: 960, shell: true });
   try {
     await page.evaluate(() => {
@@ -260,7 +266,8 @@ hostTest('Chromium: a refusal on the desktop Graph seats the guide\'s card below
     await page.waitForFunction((bottom) => document.querySelector('.st-guide-card').getBoundingClientRect().top >= bottom, refusal.bottom);
     assert.equal((await box(page, '.st-guide-card')).top, refusal.bottom + 38);
     await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
-    assert.equal((await box(page, '.st-guide-paper')).top, refusal.bottom + 22);
+    assert.equal((await box(page, '.st-guide-paper')).top, 24);
+    assert.equal(await page.locator('.st-graph-refusal').evaluate((element) => Boolean(element.closest('[inert]'))), true);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
