@@ -35,6 +35,8 @@ std::optional<UserId> TreeApi::callerOf(const drogon::HttpRequestPtr& req) const
 bool TreeApi::readRoom(const std::string& treeId, const std::optional<UserId>& caller,
                        const std::function<void(TreeRoom&)>& read) {
   WriteObservation observation{"roadmap.tree.read", "roadmap", "rest"};
+  // The reads made for it are of its request: a failure one of them reports is the request's one Issue.
+  WriteContext context{observation};
   std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
   try {
     // Authorize on the stored row BEFORE materializing a room: open() pins the whole lattice in

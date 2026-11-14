@@ -2074,3 +2074,32 @@ TEST(a_put_whose_standing_read_fails_answers_its_save_and_the_sweep_settles_the_
   CHECK(h.rooms->isOpen(TreeId{"t_s"}));
   CHECK_EQ(sendGetTree(h.api, "s-owner", "t_s")->getStatusCode(), drogon::k200OK);
 }
+
+// A read that opens the first room of a root's trees makes the root's live access; the read of the absent owning steps
+// that fails there is the request's one Issue, under `roadmap.tree.standing`, and the read answers the 404 every failed
+// read does.
+TEST(a_read_whose_standing_read_fails_as_its_room_opens_files_one_issue_under_the_standing_read) {
+  struct Failures : FailureReporter {
+    std::vector<std::string> reports;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string& exceptionType) override {
+      reports.push_back(operation + " " + product + " " + door + " " + outcome + " " + exceptionType);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedForest(owner, Visibility::unlisted);
+  h.trees->absentReadsFail = true;
+  CHECK_EQ(sendGetTree(h.api, "s-owner", "t_s")->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(reporter.failures->reports,
+           (std::vector<std::string>{std::string("roadmap.tree.standing roadmap rest failed ") +
+                                     typeid(std::runtime_error).name()}));
+  h.trees->absentReadsFail = false;
+  CHECK_EQ(sendGetTree(h.api, "s-owner", "t_s")->getStatusCode(), drogon::k200OK);
+}
