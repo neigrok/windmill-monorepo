@@ -5,8 +5,8 @@ invariants (`INV-n`) and rulings (`R-n`) are numbered so reviews, code and roadm
 
 ## §0 Status and scope
 
-**Status:** Specified, not built. `services/subscriptions/` holds the Rust workspace with its four crates
-empty; nothing runs and nothing is deployed. Windmill One cannot be bought on any surface. The C++
+**Status:** Being built; nothing is deployed. What exists is in
+[`services/subscriptions/ARCHITECTURE.md`](../../services/subscriptions/ARCHITECTURE.md). Windmill One cannot be bought on any surface. The C++
 backend mirrors Paddle subscriptions (`backend/platform/adapters/paddle`) and
 `Entitlements::hasWindmillOne` reads that mirror; this document specifies what replaces it. The build
 order and its owner gates live in the Windmill One roadmap tree, which the dogfood tree
@@ -450,9 +450,9 @@ One worker, hourly:
 - Server reads use the App Store Server API with an in-app purchase key: subscription statuses,
   transaction history, notification history (180 days in production, 30 in sandbox) and the test
   notification. The environment of a call is the one the verified transaction states.
-- A signed transaction whose environment is `Xcode` or `LocalTesting` is not signed by Apple. The
-  claim door refuses it unless the deployment is configured with a test root, which production never
-  is.
+- A signed payload whose environment is `Xcode` or `LocalTesting` is not signed by Apple, and every
+  deployment refuses it. Local and CI testing sign `Sandbox` payloads under a test root that only
+  their own deployment trusts.
 - A notification type the adapter does not map is kept in the inbox, logged as `unsupported` and
   reported; it changes nothing.
 - The transaction's `price` and `currency` are what the plan screen shows and what decides whether a
