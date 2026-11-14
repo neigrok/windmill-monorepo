@@ -587,11 +587,12 @@ ToolResult findNodes(RoomRegistry& registry, TreeRegistry& trees, ProgressServic
 
 // What a write's receipt says of its save. Saved, nothing: the receipt attests it. Held, the change is in the room and
 // on every open page, the store did not take it and the registry is retrying: the receipt says so, and that the call
-// is not one to send again. It is not an error: the change is applied.
-void answerSave(Saved saved, Json::Value& receipt) {
+// is not one to send again. It is not an error: the change is applied. A call that changed nothing in a held room
+// says that instead, and that what is unsaved is earlier work: it does not claim a change of its own.
+void answerSave(Saved saved, bool changedTheTree, Json::Value& receipt) {
   if (saved != Saved::held) return;
   receipt["saved"] = false;
-  receipt["saveError"] = kHeldUnsavedSentence;
+  receipt["saveError"] = changedTheTree ? kHeldUnsavedSentence : kHeldEarlierSentence;
 }
 
 ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& tree, const std::string& tool,
@@ -662,7 +663,7 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
-    answerSave(saved, out);
+    answerSave(saved, true, out);
     answerDiagnostics(before, after, out);
     if (payload.isMember("id")) out["id"] = payload["id"];
     // A write that named its kind wears it, as resolveHue just said; one that named none is answered
@@ -819,7 +820,7 @@ ToolResult updateKind(RoomRegistry& registry, const TreeId& tree, const Json::Va
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
-    answerSave(saved, out);
+    answerSave(saved, !plan.landsNothing(), out);
     out["id"] = update.id.str();
     if (plan.landsNothing()) out["unchanged"] = true;
     if (plan.repaintedNodes) out["repaintedNodes"] = static_cast<Json::UInt64>(*plan.repaintedNodes);
@@ -1023,10 +1024,10 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       const TreeDiagnostics before = room.diagnose();
       if (!landsNothing) {
         out["seq"] = static_cast<Json::Int64>(room.applyCommands(batch.commands, clock.nowMs(), actor));
-        answerSave(registry.persist(tree), out);  // flush the dirty rows so the web reader sees this edit
+        answerSave(registry.persist(tree), true, out);  // flush the dirty rows so the web reader sees this edit
         treeLanded = true;
       } else {
-        answerSave(registry.standing(tree), out);
+        answerSave(registry.standing(tree), false, out);
       }
       const TreeDiagnostics after = room.diagnose();
       if (pointersBefore) pointerEdit = pointerEditOf(room, *pointersBefore, before, after);
@@ -1301,7 +1302,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     if (opensATree(opened)) pointersBefore = room.pointers();
     const TreeDiagnostics before = room.diagnose();
     const std::optional<Seq> landed = room.importTree(graft, clock.nowMs(), actor);
-    answerSave(landed ? registry.persist(tree) : registry.standing(tree), out);
+    answerSave(landed ? registry.persist(tree) : registry.standing(tree), landed.has_value(), out);
     out["graphApplied"] = true;
     out["progressApplied"] = true;
     // The caller's marks on what the tombstones took are cleared after the graft, which has landed whatever becomes of
@@ -1438,7 +1439,7 @@ ToolResult deleteNodes(RoomRegistry& registry, NodeEdits& edits, const TreeId& t
     Json::Value out(Json::objectValue);
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(landed.seq);
-    answerSave(landed.saved, out);
+    answerSave(landed.saved, true, out);
     answerDiagnostics(before, room.diagnose(), out);
     if (single) out["id"] = targets.front().str();
     out["ids"] = ids;
@@ -1534,7 +1535,7 @@ ToolResult updateTree(TreeRegistry& registry, const TreeId& tree, const Json::Va
   out["applied"] = true;
   out["seq"] = static_cast<Json::Int64>(described.seq);
   if (described.unchanged) out["unchanged"] = true;
-  answerSave(described.saved, out);
+  answerSave(described.saved, !described.unchanged, out);
   return ToolResult::json(out);
 }
 
