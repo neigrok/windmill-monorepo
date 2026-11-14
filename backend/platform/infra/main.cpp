@@ -114,6 +114,7 @@
 #include "products/gym/routes.h"
 #include "platform/subscriptions/FeedFollower.h"
 #include "platform/subscriptions/PgEntitlementCopy.h"
+#include "platform/subscriptions/SubscriptionApi.h"
 #include "platform/subscriptions/SubscriptionServiceClient.h"
 
 #include "platform/adapters/http/SyncApi.h"
@@ -492,6 +493,18 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // rest of this composition is already on the wire. SENTRY_LOG_LEVEL (default info) is the volume.
   installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
   installWriteReporter(sentry);
+
+  // The paid line, which GET /v1/subscription offers (§5.3): SUBSCRIPTIONS_PURCHASABLE_STORES names the stores it is open
+  // on, comma-separated. Unset closes it on every store; a name D-1 does not hold refuses to start.
+  std::optional<subscriptions::PaidLine> paidLine;
+  try {
+    const char* purchasableStoresEnv = std::getenv("SUBSCRIPTIONS_PURCHASABLE_STORES");
+    paidLine.emplace(purchasableStoresEnv ? purchasableStoresEnv : "", aiLimits.paidPeriodNanos);
+  } catch (const std::invalid_argument& unknown) {
+    std::fprintf(stderr, "refusing to start: %s\n", unknown.what());
+    return 1;
+  }
+  auto subscriptionApi = std::make_shared<subscriptions::SubscriptionApi>(authService, entitlements, *paidLine, sentry);
 
   // The subscription service's feed, followed into the backend's own copy of every Windmill One entitlement
   // (docs/foundation/subscriptions.md §6.1). Off while neither variable is set; one without the other refuses to start.
@@ -965,8 +978,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   routes.registerHandler(
       "/v1/subscription",
-      [billingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        billingApi->mySubscription(req, std::move(cb));
+      [subscriptionApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        subscriptionApi->get(req, std::move(cb));
       },
       {drogon::Get});
 

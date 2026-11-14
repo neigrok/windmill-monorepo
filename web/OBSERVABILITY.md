@@ -351,6 +351,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-discard` | An unexpected discard failure | The refusal stays |
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
+| `billing-subscription` | The subscription read (`GET /v1/subscription`), kind `billing`, under the tag `reason`: `server` for a 5xx, `shape` for a 200 that is not a SubscriptionResponse. A request lost and a 4xx report nothing | The page reads as holding no Windmill One until the next read, at the next focus |
 
 Expected answers are not Issues: a null receipt, a not-ready session on create or delete, a capacity or missing-tree
 refusal, a refused clipboard, a browser refusing storage (one `[sync]` console warning per document, and writes still reach
