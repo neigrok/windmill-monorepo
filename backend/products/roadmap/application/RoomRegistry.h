@@ -56,6 +56,11 @@ inline constexpr char kHeldUnsavedSentence[] =
     "The change is applied and every open page has it, but saving it failed and the server is retrying the save. "
     "Sending it again is not needed. A server restart before the save succeeds would lose it, so read the record again "
     "later if it matters.";
+// What a door tells the caller of a call that changed nothing in a room that is held: the call wrote nothing, and what
+// the room holds unsaved is earlier work.
+inline constexpr char kHeldEarlierSentence[] =
+    "This call changed nothing in the tree. The tree holds earlier changes that are not saved yet, and the server is "
+    "retrying the save; a server restart before it succeeds would lose them.";
 
 // Owns the live TreeRooms, one per tree being viewed or edited. Idle ones are persisted and closed
 // on its own heartbeat — a room is a cache of the row, not a residence. Every live room of one root's

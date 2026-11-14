@@ -309,7 +309,9 @@ sending it again is not needed, and a server restart before the save succeeds wo
 read the record again later if it matters. `update_nodes` and `change_edges` declare both keys in
 their `outputSchema`. The server holds the room and retries the save by itself (`SPEC.md`,
 Runtime), so no further call is needed; the same call sent again meanwhile changes nothing, tries no
-save, and answers `unchanged: true` beside `saved: false`, since what the room holds is not saved.
+save, and answers `unchanged: true` beside `saved: false`, since what the room holds is not saved; its
+`saveError` then says that this call changed nothing in the tree and that earlier changes are the
+ones not saved yet, as a marks-only `update_nodes` on a held room does while its marks are stored.
 The call's write line reads `held-unsaved`, and the outage is reported by the registry as
 `roadmap.tree.save`. `delete_tree` says the same of another tree's steps by listing the tree
 under `unsaved`.
