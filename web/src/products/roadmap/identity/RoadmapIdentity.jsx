@@ -17,7 +17,7 @@ const FULL_DESKTOP_QUERY = '(min-width: 1280px)';
 // `back` is the tree this one was gone into from, with the way back to it: a chip in the first slot from 744px, a
 // chevron with that tree as an eyebrow over the title on a phone.
 export function RoadmapIdentity({
-  band, view, role, title, loading = false, back = null, switcher, progress, onSwitchView, graphUnavailable = false, onGraphUnavailable, find, next,
+  band, view, role, title, loading = false, back = null, switcher, progress, onSwitchView, graphUnavailable = false, onGraphUnavailable, guide = null, find, next,
   onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom, onActivity, activityOpen = false,
 }) {
   const bar = useRef(null);
@@ -160,6 +160,7 @@ export function RoadmapIdentity({
         </span>
       )}
       {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} graphUnavailable={graphUnavailable} onGraphUnavailable={onGraphUnavailable} />}
+      {!phone && guide}
       {!phone && <>
         <div className="st-roadmap-space" />
         {find && <FindStep {...find} folded={!fullDesktop} tooltip={desktop} onExpand={() => verb('find')} />}

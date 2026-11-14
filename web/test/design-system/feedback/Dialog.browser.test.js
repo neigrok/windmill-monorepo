@@ -37,9 +37,10 @@ function Fixture(props) {
     work: { type: 'page', counted: (count) => count + (count === 1 ? ' page' : ' pages'), many: 'pages' }, onCancel: close, onDecision: close }) : null;
   else dialog = e(Dialog, { ...common, title: props.custom ? undefined : props.title ?? 'Shared dialog',
     labelledBy: props.custom ? 'custom-title' : undefined, onClose: props.empty ? undefined : close,
+    focusableBody: props.focusableBody,
     footer: props.long ? e('button', { id: 'footer' }, 'Continue') : undefined },
     props.custom && e('h2', { id: 'custom-title' }, props.title ?? 'Custom title'),
-    props.long && e('p', { style: { height: 1200 } }, 'Long noninteractive body'),
+    props.long && e('p', { style: { height: props.bodyHeight ?? 1200 } }, 'Noninteractive body'),
     !props.empty && !props.long && e(React.Fragment, null,
       e('input', { id: 'first', 'aria-label': 'First', autoFocus: props.autoFocus }),
       e('button', { disabled: true }, 'Disabled'),
@@ -151,12 +152,51 @@ test('the noninteractive overflowing body is not a Tab stop and the footer stays
   await visit(t, { long: true }, async (page) => {
     const scrollBody = page.getByRole('dialog').locator('div[tabindex="-1"]');
     assert.equal(await scrollBody.getAttribute('tabindex'), '-1');
+    assert.equal(await scrollBody.getAttribute('role'), null);
+    assert.equal(await scrollBody.getAttribute('aria-labelledby'), null);
     assert.equal(await scrollBody.evaluate((element) => element.scrollHeight > element.clientHeight), true);
     await page.getByRole('button', { name: 'Close', exact: true }).focus();
     await page.keyboard.press('Tab');
     assert.equal(await page.evaluate(() => document.activeElement.id), 'footer');
     await page.keyboard.press('Tab');
     assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Close');
+  });
+});
+
+test('an opted-in body leaves Tab order when its content fits and returns when its content grows', async (t) => {
+  await visit(t, { long: true, focusableBody: true, bodyHeight: 1200 }, async (page) => {
+    const close = page.getByRole('button', { name: 'Close', exact: true });
+    const body = page.getByRole('region', { name: 'Shared dialog', exact: true });
+    const footer = page.getByRole('button', { name: 'Continue', exact: true });
+    await page.waitForFunction(() => {
+      const body = document.querySelector('[role="region"]');
+      return body.scrollHeight > body.clientHeight && body.tabIndex === 0;
+    }, null, { timeout: 2000 });
+    for (const target of [close, body, footer, close]) {
+      await page.keyboard.press('Tab');
+      assert.equal(await target.evaluate((element) => element === document.activeElement), true);
+    }
+    await page.evaluate(() => window.paint({ long: true, focusableBody: true, bodyHeight: 24 }));
+    await page.waitForFunction(() => {
+      const body = document.querySelector('[role="region"]');
+      return body.scrollHeight <= body.clientHeight && body.tabIndex === -1;
+    }, null, { timeout: 2000 });
+    for (const target of [footer, close]) {
+      await page.keyboard.press('Tab');
+      assert.equal(await target.evaluate((element) => element === document.activeElement), true);
+    }
+    await page.evaluate(() => window.paint({ long: true, focusableBody: true, bodyHeight: 1200 }));
+    await page.waitForFunction(() => {
+      const body = document.querySelector('[role="region"]');
+      return body.scrollHeight > body.clientHeight && body.tabIndex === 0;
+    }, null, { timeout: 2000 });
+    await page.keyboard.press('Tab');
+    assert.equal(await body.evaluate((element) => element === document.activeElement), true);
+    await page.keyboard.press('PageDown');
+    await page.waitForFunction(() => document.querySelector('[role="region"]').scrollTop > 0, null, { timeout: 2000 });
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    assert.equal(await page.locator('#opener').evaluate((element) => element === document.activeElement), true);
   });
 });
 

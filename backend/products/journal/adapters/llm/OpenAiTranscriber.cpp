@@ -31,11 +31,6 @@ constexpr std::array<TranscriptionLimits, 1> kTranscriptionLimits{{
     {"gpt-4o-transcribe", 16'000, 2'000},
 }};
 
-// OpenAI documents no latency. The largest take is 6 MiB (kMaxAudioBytes) and at most the model's 16,000-token window
-// of audio, about 26.7 minutes at the 1 token per 100 ms OpenAI counts user audio at; such a take gets 300 s to
-// upload and be transcribed before its send is called ambiguous.
-constexpr double kTranscriptionTimeoutSeconds = 300.0;
-
 // How long stop() lets takes still with the vendor answer and settle: inside the 10 s Docker gives a stopping
 // container, with time left for the rest of shutdown.
 constexpr std::chrono::seconds kShutdownDrain{5};
@@ -79,9 +74,9 @@ std::optional<long long> transcriptionActualNanos(const std::string& model, cons
 
 OpenAiTranscriber::OpenAiTranscriber(std::string apiKey, std::string model, std::shared_ptr<AiFuse> fuse,
                                      std::shared_ptr<UsageSink> usage, std::shared_ptr<AiCallBudget> budget,
-                                     std::string baseUrl)
+                                     std::string baseUrl, std::chrono::seconds vendorWait)
     : apiKey_(std::move(apiKey)), model_(std::move(model)), fuse_(std::move(fuse)), usage_(std::move(usage)),
-      budget_(std::move(budget)), baseUrl_(std::move(baseUrl)) {
+      budget_(std::move(budget)), baseUrl_(std::move(baseUrl)), vendorWait_(vendorWait) {
   loop_.run();
 }
 
@@ -206,7 +201,7 @@ void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
         takesSettled_.notify_all();
         done(text.isString() ? Transcription::words(text.asString()) : Transcription::failed());
       },
-      kTranscriptionTimeoutSeconds);
+      std::chrono::duration<double>(vendorWait_).count());
 }
 
 }

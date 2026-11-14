@@ -1,6 +1,6 @@
 name: Deploy to VPS
 
-# Renders the whole ~/windmill/.env on the VPS, ships compose + Caddyfile, pulls the image, brings
+# Renders the whole ~/windmill/.env on the VPS, ships compose + Caddyfile, pulls the images, brings
 # the stack up. Adding a key is TWO edits: the `env:` block below AND the key list in the render
 # loop. A key in `env:` but absent from that list is never written and the compose default stands in
 # silently; a key in the list but not in `env:` aborts the run under `set -u`.
@@ -60,8 +60,8 @@ jobs:
           SSH_PORT: ${{ secrets.SSH_PORT }}
           # Guarded (emptiness breaks the site or the DB):
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          # The subscription service's database role. Empty ⇒ windmill_subscriptions is not provisioned and
-          # the subscriptions-db one-shot logs SKIP (backend/deploy/README.md).
+          # The password of windmill_subscriptions, the subscription service's database role: the
+          # subscriptions-db one-shot sets it and the service signs in with it (backend/deploy/README.md).
           SUBSCRIPTIONS_DB_PASSWORD: ${{ secrets.SUBSCRIPTIONS_DB_PASSWORD }}
           DOMAIN_APP: ${{ vars.DOMAIN_APP }}
           DOMAIN_API: ${{ vars.DOMAIN_API }}
@@ -172,19 +172,19 @@ jobs:
           # RESEND_FROM is guarded because its compose fallback `onboarding@resend.dev` is Resend's
           # shared test sender: it delivers to the account owner and to nobody else.
           missing=
-          for key in DOMAIN_APP DOMAIN_API ACME_EMAIL POSTGRES_PASSWORD RESEND_FROM CF_IPS; do
+          for key in DOMAIN_APP DOMAIN_API ACME_EMAIL POSTGRES_PASSWORD SUBSCRIPTIONS_DB_PASSWORD RESEND_FROM CF_IPS; do
             [ -n "${!key}" ] || missing="$missing $key"
           done
           if [ -n "$missing" ]; then
             echo "Refusing to render — these required values are unset:$missing"
-            echo "Set them (variables for the domains/email/sender, the POSTGRES_PASSWORD secret) and re-run."
+            echo "Set them (variables for the domains/email/sender, the POSTGRES_PASSWORD and SUBSCRIPTIONS_DB_PASSWORD secrets) and re-run."
             echo "(CF_IPS is not configured anywhere — if it is listed, both the live fetch and the compose fallback came back empty.)"
             exit 1
           fi
 
           # The role's password sits unescaped in the subscription service's postgres:// URL.
-          if [ -n "$SUBSCRIPTIONS_DB_PASSWORD" ] && [[ ! "$SUBSCRIPTIONS_DB_PASSWORD" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "Refusing to render — SUBSCRIPTIONS_DB_PASSWORD must be empty or 64 lowercase hex characters (openssl rand -hex 32)."
+          if [[ ! "$SUBSCRIPTIONS_DB_PASSWORD" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Refusing to render — SUBSCRIPTIONS_DB_PASSWORD must be 64 lowercase hex characters (openssl rand -hex 32)."
             exit 1
           fi
 

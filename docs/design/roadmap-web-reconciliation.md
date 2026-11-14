@@ -58,7 +58,7 @@ No-render branches are documented as gates rather than invented screens.
 | 22 | Export idle/preparing/success/no-tree/failure | [162:283](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-283) | `settings/YourDataSection.jsx; settings/exportArchive.js` |
 | 23 | Reminder enabled/off/suppressed, schedule/timezone, save/refusal and absence gates | [162:296](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-296), [184:1307](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1307), [185:1359](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1359) | `settings/ReminderSection.jsx; reminders/remindersClient.js` |
 | 24 | AI settings meter, optional PRO, history/empty, absence gates | [162:315](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-315), [184:1307](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1307), [185:1400](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1400), [185:1459](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1459) | `settings/TendingSection.jsx; tending/receipts.js` |
-| 25 | Mac/Windows shortcuts, editor/reader and phone subset | [185:2501](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2501), [188:662](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=188-662) | `shortcuts/ShortcutsDialog.jsx; shortcuts/shortcutMap.js; skilltree.css` |
+| 25 | Graph Mac/Windows and Board shortcuts, editor/reader and phone subset | [12.01–12.16](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1109-534) | `shortcuts/ShortcutsDialog.jsx; shortcuts/shortcutMap.js; skilltree.css` |
 
 ## Route map and legitimate external owners
 
@@ -129,8 +129,8 @@ responsive bounds, ownership messaging and source action vocabulary.
 ## Tracked implementation/design drift
 
 The [consistency ledger](consistency.md#roadmap) retains publication/gallery-copy disagreement,
-AI failure prompt-retention copy, mobile empty-tree recovery, narrow shortcuts overlap, the
-published input sizing adapter, DOM/canvas fruit treatment and Marketing capability copy.
+AI failure prompt-retention copy, mobile empty-tree recovery, the published input sizing adapter,
+DOM/canvas fruit treatment and Marketing capability copy.
 A current bug can be accurately drawn and marked reconciled; that does not resolve the bug.
 
 [`web/OBSERVABILITY.md`](../../web/OBSERVABILITY.md) tables every Board and Graph step against its
