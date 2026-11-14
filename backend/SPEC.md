@@ -970,7 +970,8 @@ Rules:
   a binary that knows nothing of subtrees still writes roots, and `db/schema.sql` makes a root of
   every row that has no `root_tree`. A row inserted with a parent takes its `root_tree`, its
   `owner_id` and its `depth` from the parent's standing row, held against its removal, whatever the
-  insert names; a parent that does not stand is refused, and so is one at depth 8. Its `visibility`
+  insert names; a parent that does not stand is refused, and so is one at depth 8, and so is a place
+  naming a parent without a step or a step without a parent. Its `visibility`
   column holds `private`, and no read of its access reads it. `trees_place_fixed` refuses an
   `UPDATE` that changes any of the four. `trees_parent_step` is unique on (`parent_tree`,
   `parent_step`) for rows with a parent, so a step owns one subtree whatever writes it.

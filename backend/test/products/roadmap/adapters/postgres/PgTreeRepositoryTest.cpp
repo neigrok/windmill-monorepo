@@ -2386,3 +2386,29 @@ TEST(pg_a_fork_stores_every_copy_of_a_branch_or_none) {
            root.str() + " sail " + root.str() + " 1 " + kBea.str() + " private [Copy] 0");
   CHECK(forest.trees.loadAccess(TreeId{"t_5ab00000000000f1"})->stands);
 }
+
+// A tree's place is both its parent and its step, or neither: the store refuses a subtree that names no step, and a step
+// that names no parent, whatever inserts it, so no row can stand under a tree without the step that owns it.
+TEST(pg_the_store_refuses_a_subtree_with_no_step_and_a_step_with_no_parent) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kAda, {{"sail", nullptr}});
+  const auto refused = [](const std::string& insert) {
+    try {
+      runSql(insert);
+    } catch (const pqxx::sql_error& error) {
+      return std::string(error.sqlstate());
+    }
+    return std::string("stored");
+  };
+  CHECK_EQ(refused("INSERT INTO trees (id, parent_tree) VALUES ('" + kChild.str() + "', '" + kParent.str() + "')"),
+           std::string("23502"));
+  CHECK_EQ(refused("INSERT INTO trees (id, parent_step, owner_id) VALUES ('" + kChild.str() + "', 'sail', '" +
+                   kAda.str() + "'::uuid)"),
+           std::string("23502"));
+  CHECK_EQ(placeOf(kChild), std::string(""));
+  PgTreeRepository trees{pgTestPool()};
+  CHECK(trees.absentStepsUnder(kParent).empty());
+  CHECK(trees.load(kParent).has_value());
+}

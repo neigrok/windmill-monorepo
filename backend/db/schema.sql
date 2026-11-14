@@ -83,7 +83,8 @@ create index if not exists trees_owner_any on trees (owner_id);
 
 -- A tree's place among trees. A root has no parent, is its own root_tree and sits at depth 0. A subtree is owned by
 -- the step parent_step of the tree parent_tree, and trees_place takes its root_tree, owner and depth from its parent's
--- standing row, whatever the insert names, and refuses a parent that does not stand or a depth past 8. A subtree is
+-- standing row, whatever the insert names, and refuses a parent that does not stand, a depth past 8, and a place that
+-- names a parent without a step or a step without a parent. A subtree is
 -- read by its root's owner and visibility, so its own visibility column holds 'private' and nothing reads it. The four
 -- are written once, at insert, and never updated. Every row that holds no root_tree is a root.
 alter table trees add column if not exists parent_tree text;
@@ -94,6 +95,10 @@ create or replace function trees_place() returns trigger language plpgsql as $$
 declare
   parent record;
 begin
+  if (new.parent_tree is null) <> (new.parent_step is null) then
+    raise exception 'a subtree names its parent tree and the step that owns it, a root neither'
+      using errcode = 'not_null_violation';
+  end if;
   if new.parent_tree is null then
     new.root_tree := new.id;
     new.depth := 0;
