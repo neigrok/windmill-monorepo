@@ -1,4 +1,5 @@
 use server::config::{Config, ConfigError, Problem};
+use storage::DatabaseUrl;
 use tracing_subscriber::filter::LevelFilter;
 
 #[test]
@@ -6,6 +7,10 @@ fn every_variable_is_read_into_one_config() {
     let environment = [
         ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
         ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "0.0.0.0:8083"),
+        (
+            "SUBSCRIPTIONS_DATABASE_URL",
+            "postgresql://windmill_subscriptions:secret-password@db:5432/windmill_subscriptions",
+        ),
         ("SENTRY_ENVIRONMENT", "ci"),
         ("SENTRY_RELEASE", "2d63d2ac9"),
         ("SENTRY_DSN", "https://public@sentry.example/7"),
@@ -26,6 +31,10 @@ fn every_variable_is_read_into_one_config() {
         Ok(Config {
             public_address: "0.0.0.0:8082".parse().unwrap(),
             internal_address: "0.0.0.0:8083".parse().unwrap(),
+            database_url:
+                "postgresql://windmill_subscriptions:secret-password@db:5432/windmill_subscriptions"
+                    .parse::<DatabaseUrl>()
+                    .unwrap(),
             environment: "ci".to_owned(),
             release: Some("2d63d2ac9".to_owned()),
             sentry_dsn: Some("https://public@sentry.example/7".parse().unwrap()),
@@ -41,6 +50,10 @@ fn an_empty_optional_variable_counts_as_unset() {
     let environment = [
         ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "127.0.0.1:8082"),
         ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "127.0.0.1:8083"),
+        (
+            "SUBSCRIPTIONS_DATABASE_URL",
+            "postgresql://windmill_subscriptions:secret-password@db:5432/windmill_subscriptions",
+        ),
         ("SENTRY_ENVIRONMENT", "production"),
         ("SENTRY_RELEASE", ""),
         ("SENTRY_DSN", ""),
@@ -61,6 +74,10 @@ fn an_empty_optional_variable_counts_as_unset() {
         Ok(Config {
             public_address: "127.0.0.1:8082".parse().unwrap(),
             internal_address: "127.0.0.1:8083".parse().unwrap(),
+            database_url:
+                "postgresql://windmill_subscriptions:secret-password@db:5432/windmill_subscriptions"
+                    .parse::<DatabaseUrl>()
+                    .unwrap(),
             environment: "production".to_owned(),
             release: None,
             sentry_dsn: None,
@@ -72,15 +89,37 @@ fn an_empty_optional_variable_counts_as_unset() {
 }
 
 #[test]
+fn the_configuration_never_prints_the_database_password() {
+    let config = Config::from_environment(|variable| match variable {
+        "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("0.0.0.0:8082".to_owned()),
+        "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("0.0.0.0:8083".to_owned()),
+        "SUBSCRIPTIONS_DATABASE_URL" => Some(
+            "postgresql://windmill_subscriptions:secret-password@db:5432/windmill_subscriptions"
+                .to_owned(),
+        ),
+        "SENTRY_ENVIRONMENT" => Some("production".to_owned()),
+        _ => None,
+    })
+    .unwrap();
+
+    assert!(!format!("{config:?}").contains("secret-password"));
+}
+
+#[test]
 fn a_missing_required_variable_is_refused_by_its_name() {
     for missing in [
         "SUBSCRIPTIONS_PUBLIC_ADDRESS",
         "SUBSCRIPTIONS_INTERNAL_ADDRESS",
+        "SUBSCRIPTIONS_DATABASE_URL",
         "SENTRY_ENVIRONMENT",
     ] {
         let environment = [
             ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
             ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "0.0.0.0:8083"),
+            (
+                "SUBSCRIPTIONS_DATABASE_URL",
+                "postgresql://windmill_subscriptions:secret-password@db:5432/windmill_subscriptions",
+            ),
             ("SENTRY_ENVIRONMENT", "staging"),
         ];
 
@@ -108,6 +147,14 @@ fn a_malformed_value_is_refused_by_its_name_and_never_repeated() {
     for (malformed, value) in [
         ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "public:secret-port"),
         ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "8083"),
+        (
+            "SUBSCRIPTIONS_DATABASE_URL",
+            "mysql://ledger:secret-password@db/ledger",
+        ),
+        (
+            "SUBSCRIPTIONS_DATABASE_URL",
+            "postgresql://ledger@db/ledger?passwrod=secret-password",
+        ),
         ("SENTRY_DSN", "secret-key-without-a-host"),
         ("WINDMILL_LOG_LEVEL", "off"),
         ("WINDMILL_LOG_LEVEL", "0"),
@@ -117,6 +164,10 @@ fn a_malformed_value_is_refused_by_its_name_and_never_repeated() {
         let environment = [
             ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
             ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "0.0.0.0:8083"),
+            (
+                "SUBSCRIPTIONS_DATABASE_URL",
+                "postgresql://windmill_subscriptions:secret-password@db:5432/windmill_subscriptions",
+            ),
             ("SENTRY_ENVIRONMENT", "staging"),
         ];
 
@@ -155,6 +206,10 @@ fn the_backend_s_level_words_are_read_in_any_case() {
         let environment = [
             ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
             ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "0.0.0.0:8083"),
+            (
+                "SUBSCRIPTIONS_DATABASE_URL",
+                "postgresql://windmill_subscriptions:secret-password@db:5432/windmill_subscriptions",
+            ),
             ("SENTRY_ENVIRONMENT", "staging"),
             ("WINDMILL_LOG_LEVEL", word),
             ("SENTRY_LOG_LEVEL", word),
@@ -191,6 +246,10 @@ fn the_panic_route_is_allowed_only_in_test_deployments() {
         let environment = [
             ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
             ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "0.0.0.0:8083"),
+            (
+                "SUBSCRIPTIONS_DATABASE_URL",
+                "postgresql://windmill_subscriptions:secret-password@db:5432/windmill_subscriptions",
+            ),
             ("SENTRY_ENVIRONMENT", environment_name),
             ("SUBSCRIPTIONS_PANIC_ROUTE_ENABLED", "true"),
         ];

@@ -20,6 +20,14 @@ cd backend && set -a && . ./.env && set +a && WINDMILL_MCP_USER=<uuid> ./build/w
 
 # 3. Frontend — vite.config.js pins port 5173
 cd web && npm run dev
+
+# 4. Subscription service, when the change touches it — its own database and role first
+#    (backend/RUNNING.md §2); it migrates the ledger before it listens
+cd services/subscriptions && SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 \
+  SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0.0.1:8083 SENTRY_ENVIRONMENT=local \
+  SUBSCRIPTIONS_DATABASE_URL="postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions" \
+  cargo run --bin subscriptions
+curl -s localhost:8083/health   # {"status":"ready"} while the ledger answers, 503 otherwise
 ```
 
 Env comes from `backend/.env` (gitignored; `.env.example` documents every variable). Do not paste
