@@ -192,7 +192,7 @@ export function useStepSelection({ tree, board, shown, doneExpanded, active, ena
       },
       escape(event) {
         const { phase } = current.current.state;
-        if (!current.current.enabled) return;
+        if (!current.current.enabled || root.current?.closest('[inert]')) return;
         if (!SELECTING.has(phase) || event.key !== 'Escape' || event.defaultPrevented) return;
         if (document.querySelector('[aria-modal="true"]')) return;
         event.preventDefault();

@@ -18,7 +18,7 @@ hostTest('Chromium: desktop delete Undo after a later link keeps the link, and â
   try {
     const before = await steps(page);
     await page.evaluate(() => window.scene.select('dock'));
-    await page.getByRole('button', { name: 'Delete step', exact: true }).click();
+    await page.evaluate(() => window.scene.options.onDeleteNode('dock'));
     await graphToast(page).waitFor();
     assert.equal(await graphToast(page).locator('.st-board-toast-message').textContent(), 'Step deleted');
     await laterLink(page);
@@ -45,11 +45,11 @@ hostTest('Chromium: the global stack crosses views while a step covering the Boa
     await page.getByRole('button', { name: 'Board', exact: true }).click();
     await page.locator('.st-board-card').first().waitFor();
     await page.locator('.st-board-card[data-step-id="wind"]').click();
-    await page.locator('.st-board-step-layer [role="dialog"]').waitFor();
+    await page.locator('.st-board-step-layer article').waitFor();
     await page.keyboard.press('ControlOrMeta+z');
     assert.equal(await page.evaluate(() => window.session.undoStack.length), 1);
     await page.keyboard.press('Escape');
-    await page.locator('.st-board-step-layer [role="dialog"]').waitFor({ state: 'detached' });
+    await page.locator('.st-board-step-layer article').waitFor({ state: 'detached' });
     await page.keyboard.press('ControlOrMeta+z');
     await page.waitForFunction(() => window.session.undoStack.length === 0);
     assert.deepEqual(await steps(page), before);
@@ -107,7 +107,7 @@ hostTest('Chromium: a plan pasted on the Board counts what it adds, shows its to
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: a tablet add, rename, recolor, link and link removal each offer an Undo for their own act', async () => {
+hostTest('Chromium: tablet Add step and Connect keep the Undo for their own act', async () => {
   const { page, errors } = await openHost({ width: 744, broad: true });
   try {
     const before = await steps(page);
@@ -118,24 +118,20 @@ hostTest('Chromium: a tablet add, rename, recolor, link and link removal each of
       await graphToast(page).waitFor({ state: 'detached' });
     };
     await page.evaluate(() => window.editTap(0, 0, 'wind'));
-    const editor = page.locator('.st-detail-panel--open');
-    await editor.getByRole('button', { name: 'Add step', exact: true }).click();
+    await page.getByRole('button', { name: 'More', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Add step', exact: true }).click();
     await undoAfterLaterLink('Step added');
     assert.deepEqual(Object.keys(await steps(page)).sort(), Object.keys(before).sort());
 
     await page.evaluate(() => window.editTap(0, 0, 'wind'));
-    await editor.getByRole('radio', { name: 'Sky', exact: true }).click();
-    await undoAfterLaterLink('Recolored');
-    assert.equal((await steps(page)).wind.color, before.wind.color);
-
-    await editor.getByRole('button', { name: 'Connect', exact: true }).click();
+    await page.getByRole('button', { name: 'More', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Connect', exact: true }).click();
     await page.evaluate(() => window.editTap(0, 0, 'knots'));
     await undoAfterLaterLink('Linked');
     assert.deepEqual((await steps(page)).knots.prerequisites, before.knots.prerequisites);
 
     assert.deepEqual(await toastEvents(page), [
       { act: 'add', step: 'shown' }, { act: 'add', step: 'undo' },
-      { act: 'recolor', step: 'shown' }, { act: 'recolor', step: 'undo' },
       { act: 'link_add', step: 'shown' }, { act: 'link_add', step: 'undo' },
     ]);
     assert.deepEqual(errors, []);
@@ -146,7 +142,7 @@ hostTest('Chromium: a revert that throws reports its static operation and claims
   const { page, errors } = await openHost({ width: 1440, broad: true });
   try {
     await page.evaluate(() => window.scene.select('dock'));
-    await page.getByRole('button', { name: 'Delete step', exact: true }).click();
+    await page.evaluate(() => window.scene.options.onDeleteNode('dock'));
     await graphToast(page).waitFor();
     await page.evaluate(() => { window.session.revert = () => { throw new Error('Fixture revert failure'); }; });
     await undoButton(page).click();

@@ -1,8 +1,5 @@
-// The tree picker: one of the person's own roadmaps for a step to open. From 744px it is a page in the step modal, and
-// on phones a full-screen page with the field and the commit in the reach band. A pasted address of a roadmap the
-// person can only read is forked first, and the copy is then a row to choose: Fork never attaches by itself. On a tree
-// that lives only on this device the rows are this device's trees, each tagged so, counted here, and only their
-// addresses name a roadmap; with nobody signed in the closing line says what signing in adds.
+// The owner's trees in a nested dialog, with phone inputs and Attach in the reach band.
+// Fork makes a readable tree the person's own before Attach can choose it.
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -15,7 +12,7 @@ import { ForkDoor } from '../share/ForkDoor.jsx';
 import { reportRoadmapFailure, reportUnexpectedFailure } from '../reportFailure.js';
 import { PickerSearch } from './PrerequisitePicker.jsx';
 import { TreeChoices } from './TreeChoices.js';
-import { coverBeneath, useComposerFocus, useComposerViewport } from './composerFocus.js';
+import { coverBeneath, coverLayer, useComposerFocus, useComposerViewport } from './composerFocus.js';
 import { LOAD_ERROR, ON_DEVICE, PICKER, backTo, formatCount, pickerFor, treeProgress } from '../copy.js';
 import { t } from '../i18n/index.js';
 import './composer.css';
@@ -56,9 +53,15 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
   const [addressAttempt, setAddressAttempt] = useState(0);
   const [forking, setForking] = useState(false);
   const viewport = useComposerViewport(phone);
-  const trapTab = useComposerFocus(region, phone, { restore: false });
+  const trapTab = useComposerFocus(region, true, { restore: false });
 
-  useLayoutEffect(() => (phone ? coverBeneath(layer.current) : undefined), [phone]);
+  useLayoutEffect(() => {
+    if (phone) return coverBeneath(layer.current);
+    const host = region.current.closest('.st-step-picker-host');
+    if (!host) return undefined;
+    const restores = [...host.parentElement.children].filter((node) => node !== host).map(coverLayer);
+    return () => restores.forEach((restore) => restore());
+  }, [phone]);
 
   useLayoutEffect(() => {
     if (!phone) search.current.focus({ preventScroll: true });
@@ -215,7 +218,7 @@ export function TreePicker({ step, treeId, standing, attachment, trees, layout, 
 
   const page = (
     <div ref={region} tabIndex={-1} className={`st-board-picker st-board-tree-picker st-board-picker--${layout}`} onKeyDown={onKeyDown}
-      {...(phone ? { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': headingId } : {})}>
+      role="dialog" aria-modal="true" aria-labelledby={headingId}>
       <header className="st-board-draft-heading">
         {phone
           ? <button className="st-board-draft-cancel" type="button" onClick={onCancel}>{PICKER.cancel}</button>

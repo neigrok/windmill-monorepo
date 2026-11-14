@@ -1,5 +1,4 @@
-// The step page and modal's glyphs as the Board drawings carry them: Lucide geometry, stroked in currentColor so each
-// use sets its ink (secondary by default, success for a done row, brand for a link, danger for Delete).
+// Shared step glyphs use Lucide geometry and currentColor for their semantic ink.
 
 import React from 'react';
 

@@ -1,11 +1,10 @@
-// What a step's page or modal says, read off the whole roadmap whatever the Board shows: the step's column, the steps
+// What a step's document says, read off the whole roadmap whatever the Board shows: the step's column, the steps
 // it needs and opens with theirs, and what Complete or Reset would move. Every column comes from UnlockRules.
 
 import { COLUMN_OF_STATE, UnlockRules, owedStepsOf, takesMark, unmetPrerequisitesOf } from '../model/UnlockRules.js';
 import { advanceProgress } from '../model/progress.js';
 import { STEP_DETAIL } from '../copy.js';
 
-export const STEP_SECTIONS = ['overview', 'workspace', 'history'];
 export const titleOf = (step) => step.label?.trim() || STEP_DETAIL.unnamed;
 
 class RelatedStep {

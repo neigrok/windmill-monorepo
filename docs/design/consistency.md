@@ -624,13 +624,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   `🧩 28 · Parts` frame (Step card · tree, Tree pill, Step / Tree row, Back chip, loop and chevron-left icons). The
   Figma Skill Node has no form variant though `scene/NodeBatch.js` has, so the tree node is a composed frame. Move
   the parts into Components.
-- **Section 28 · drawn on surfaces the web does not have (28.05, 28.09, 28.10, 28.24–28.28, 28.36–28.42).** The boards
-  stand a step that opens a tree on the step editor of 19, the selected-step popover of 18.03 and the phone step card of
-  27.08. The web has the step modal and page, the Graph's dock and tablet panel and the phone Graph's bar, so the parts
-  sit in their equivalents there: the Tree section after Prerequisites and Unlocks, what completes the step and Open
-  tree beside Edit step where Complete sat, done of total and Open tree in the dock and the panel, and the tree's mark,
-  *Up next · 3 of 8* and Open tree in the bar. The swipe reveals Open and stops there, as it does for Complete; 28.10's
-  full swipe that opens the tree is not built.
+- **Section 28 · attached trees in the shared step document.** The Tree section follows Requires and Opens,
+  with the tree's completion rule and Open tree in the pinned actions. The shared document follows approved
+  [19/22/27/40](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1157-3166).
+  Board swipe reveals Open and stops there; 28.10's full swipe that opens the tree is not built.
 - **Section 28 · states with no board.** A tree whose facts the load did not read (the device's copy of a server tree,
   a `503` on the pointers, a pointer set while the roadmap is open until it is read again, a device read that failed)
   shows the tree's mark on the node and Open tree, and no pill, row or words; its step stands by its prerequisites and is never done. A step whose pointer leads nowhere and whose own mark
@@ -668,8 +665,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   minus the current tree. 28.38 (the tree was removed between loads) has no phone twin. The row behind the sheet on
   28.33 has no *+2 from above*, which 28.32 draws on it.
 - **Section 28 · making it is drawn twice (28.13–28.23, 28.44, 28.46 and 28.54–28.67).** Journey 3 stands attach, fork
-  first, change and detach on the step editor of 19, which the web does not have. Journey 10 restates it on the step modal
-  and page: a Tree section with *None* and a +, the picker as a page in the modal, Change tree and Detach tree under the
+  first, change and detach on the step editor of 19. Journey 10 draws the controls used in the shared document:
+  a Tree section with *None* and a +, a nested picker dialog, Change tree and Detach tree under the
   section's own ⋯, so a step with a tree shows two ⋯ of different scope. Its picker takes the phone's context line
   (*For Learn to sail · 5 trees*) where 28.14 has a caption, lists My life and reads Coast trip as *0 of 5 done*.
   Journey 10 adds one toast Journey 3 does not draw, *Tree detached*, for a step that held no mark. Its four parts
@@ -698,17 +695,16 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   close button beside the tree's name. 28.39 and 28.42 draw Choose tree where Complete sat; the web offers Change tree
   under the section's ⋯ and no button in the band. The loop's and the missing tree's ways out (*Detach one side.*,
   *Choose another, or detach it.*) show only to the person who has the ⋯; a lapsed session and a server tree's copy
-  with nobody signed in keep the fact alone. Crossing 744px with the tree picker open starts it again: the list is read
-  again and the choice is gone.
+  with nobody signed in keep the fact alone. The tree picker retains its list and choice across the 744px layout boundary.
 - **Section 28 · signed out on the trees of this device (28.43–28.46, 28.60, 28.67), against the boards.** The picker
-  is built from 28.60 and 28.67, which restate 28.44 and 28.46 on today's step page: a page in the step modal from 744px
+  is built from 28.60 and 28.67, which restate 28.44 and 28.46 on today's step page: a nested dialog in the step document from 744px
   and a full-screen page on phones, not 28.44's list in the step's side column; the context line (*For Learn to sail ·
   3 trees on this device*) where 28.44 has a caption; the closing line beside Cancel from 744px and above the field on
   phones; an empty tree reads *No steps · on this device* as the signed-in picker says *No steps*, where 28.44 has *No
   steps yet*. Attach waits while the chosen row is the tree the step opens already, as in the signed-in picker; 28.60
   and 28.67 draw it ready. 28.60's row carries Ask AI, which a device with nobody signed in does not offer and 28.43
   does not draw. The boards behind (28.43, 28.45) do not draw the guide's Add guide entry, which stands there as on
-  any owner's tree, and draw a Coach rail from 744px and a Coach field on phones, which the roadmap room does not show.
+  any owner's tree, and draw a Coach field on phones. The shared step read shell has an empty Coach placeholder; its functional flow is deferred.
 - **Section 28 · signed out on the trees of this device, states with no board.** A device with no other tree: *You
   have no other trees yet.* with the closing line. A pasted address of a tree not on this device, a server tree's
   included: *No roadmap you can read is at that address.*, with no blocked row and no Fork tree. A device that cannot
@@ -765,10 +761,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   ([design-system note 499:42374](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=499-42374)).
   Web's shared token and static-page chrome use that ring; dark, journal and gym overrides retain
   their own values.
-- **Board · no Complete offer after the last subtask in the Graph.** The Board's step page and modal
-  offer *All subtasks done · Complete step* once every subtask is checked (phone 07.06 231:1174,
-  desktop 03.09 399:19282). Checking the last subtask in the Graph's step panel (`graph/StepPanel.jsx`)
-  fills the gauge and nothing else; no drawing covers the Graph.
+- **Shared step document · sync refusal recovery.** The origin Board/Graph refusal notice is hidden with
+  its canvas while a step is open. Retry and Discard need a document placement that keeps inline Undo reachable.
+  [Proposal 43](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1211-104922) awaits owner approval;
+  the enabled single-step completion/rebaseline UI regression exposes this gap.
 - **Board · a failed Copy link says nothing.** When the browser refuses the clipboard write from the step menu (01.09, 03.02) the
   build shows nothing. Proposed, awaiting the owner: toast *Couldn't copy the link* · **Show link**, then the link selected with
   **Retry** (phone 25.01–25.02, desktop 15.01–15.02).
@@ -830,22 +826,13 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the load error once the Graph's load error leaves the topbar reachable.
 - **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and field focus. G4 retains the phone Graph
   camera group under the row. Proposed, awaiting the owner: 25.11, 25.12.
-- **Board · reader Graph title affordance.** G8-H1 makes the selected-step title open the reader's read-only step page, with Fork
-  remaining primary. The approved [04.06 bar](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=377-14343) has no visual tap
-  affordance on that title. Proposed, awaiting the owner: a 44px title row with a chevron (25.10).
 - **Graph and Board · last root.** A roadmap keeps a root on every view and band. While a selection takes every root, the phone Board's bulk bar and the desktop and
   tablet selection bars drop Delete with nothing saying why, and the phone's Recolor sits at half width beside an empty half. Proposed, awaiting the owner: Delete keeps
   its place, dimmed and `aria-disabled`, with *A roadmap keeps one starting step* under the count, on all three bars
-  ([25.25](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=591-19626)). The desktop dock drops *Delete step* for a sole root with nothing saying why, and no
-  frame draws that dock.
+  ([25.25](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=591-19626)). The shared step document also omits *Delete step* for a sole root.
 - **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph where its destination is available. The Board shortcuts dialog does not list A.
   Proposed, awaiting the owner: an *Activity* row after *Board / Graph*, owner only (15.17), before adding it to `BOARD_SHORTCUT_GROUPS`.
   A does nothing on phones.
-- **Board · dock beneath the row.** The step dock from 744px starts 8px
-  below the measured identity row and clears any Graph refusal banner, so an open step never
-  covers Share, Next, New step, More or refusal actions.
-  Owner-approved ✅ 08.11 (1440) and 08.12 (1024), light and dark, draw the desktop Graph with a step
-  in the dock beneath the row. On the Board a step opens in the step modal (03.01, 05.06), not the dock.
 - **Board · Export and reader Share feedback.** G5 downloads this roadmap as one Markdown file in the paste format, with the browser
   download as feedback; Settings retains the all-roadmaps zip. G24 copies the reader's roadmap link and uses the existing *Link copied*
   toast; a refused clipboard shows nothing. Proposed, awaiting the owner: *Learn to sail exported* and *Couldn't export this roadmap* ·
@@ -861,13 +848,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   ControlBar or Next up shelf. Their Web Mobile and Web boards (the [flow index](../index.md#roadmap--web)'s *02 · Find and edit in List*,
   *List vocabulary*, the phone owner sheets in *04 · Edit and complete steps* (Web Mobile 04.01–04.05, 04.08), and the Next up states in *05 · Progress and feedback*) still stand in Figma. The designer deletes them and their
   index rows in the 🚀 pass.
-- **Board · modal and the Shell.** The step modal frames (03.01 184:1693, 03.07 379:18290, 05.06 399:37361) draw the scrim over the Shared
-  Shell and centre the modal on the whole viewport, 80px from the top. The build leaves the Shell clear and centres the modal beneath it,
-  106px from the top.
-- **Board · a reader's step modal.** 04.05 (376:13291) draws Overview and History sections, a Copy link icon and *View branch* for a
-  reader. The build gives a reader the overview alone, the ⋯ menu and no *View branch*.
-- **Graph · dock header.** 08.11 (523:32253) and Web 04.01 (33:105) draw a centred title and *Not started*. `graph/StepPanel.jsx` draws
-  the title at the start and says *Up next*, the Board's word.
 - **Graph · ticker over the selection bar.** Web 16's ticker and the selection bar share the bottom of the canvas with no drawn
   stacking. A rename on the dock followed by a selection inside the ticker's 4.5 seconds lays the ticker across the bar; presses pass
   through it to the bar. Draw where the ticker stands while a selection bar is up.
@@ -880,7 +860,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   to keep the avatar seat. A designer is updating those drawings.
 - **Demo · coach card on a phone.** [P4](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=64-2) draws the
   card beside its step with an arrow. At phone width neither side fits, so the card seats under its step, or over it
-  near the bottom and clear of the Fork pill and selected-step bar, with no arrow. Draw the phone seat.
+  near the bottom and clear of the Fork pill, with no arrow. Draw the phone seat.
 - **Design System · Dialog close target.** The shared `Dialog` close control is 28×28 with a 14px
   glyph; the approved [04.03 Fork dialog](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=398-29874)
   and the other dialog frames draw ✅ Close at 44×44 with a 20px glyph. Align the shared control and

@@ -151,6 +151,7 @@ export class SkillTreeScene {
     };
     this.announceCeremony = (message, options) => { window.ceremonies.push({ message, action: options?.action?.label ?? null }); };
     this.select = (id) => options.onNodePick(id);
+    this.activate = (id) => { options.onNodePick(id); options.onNodeActivate?.(id); };
     this.setArrivalSummary = (summary) => { window.arrivalSummary = summary; };
     this.suppressArrival = () => { window.arrivalSuppressed = true; };
     this.projectToScreen = () => ({ x: 20, y: 300 });
@@ -177,7 +178,7 @@ const subscribe = (handler) => { listeners.add(handler); return () => listeners.
 window.setFixtureAuth = (next) => { status = next; for (const listener of listeners) listener(); };
 export const useAuth = () => {
   const current = useSyncExternalStore(subscribe, () => status);
-  return { status: current, user: current === 'signed-in' ? user : null, account: current === 'signed-in' ? account : null, refresh };
+  return { status: current, user: current === 'signed-in' ? user : null, account: current === 'signed-in' ? account : null, confirmed: true, refresh };
 };
 `;
 const HOST_PLUGIN = { name: 'roadmap-host-contract-test', enforce: 'pre',
@@ -331,6 +332,7 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
       body = { trees: [{ id: 't_other', title: 'Spanish basics', done: 12, total: 40, dominantKind: 'sky' }, ...others] };
     }
     if (path.endsWith('/activity')) body = { events: [] };
+    if (path.endsWith('/guides')) body = { guides: [] };
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
   const params = new URLSearchParams({ role, surface });

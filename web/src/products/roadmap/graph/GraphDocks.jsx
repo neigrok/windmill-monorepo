@@ -1,4 +1,4 @@
-// The Graph's right-hand seats by band and role: the desktop editor's dock, the tablet owner's panel, and a reader's dock.
+// Graph seats retain creation's blank-name handoff, tablet tools, paste and Activity.
 
 import React, { useMemo } from 'react';
 import { track } from '../../../telemetry/beacon.js';
@@ -15,10 +15,10 @@ function relatedStep(node, states) {
 }
 
 export function GraphDocks({
-  who, open, top, canvasView, tree, standingTree, states, selection, selectedNode, selectedState, progress, legend, editing, progressActs, tablet, bulkChoice,
+  namingStep = false, who, open, top, canvasView, tree, standingTree, states, selection, selectedNode, selectedState, progress, legend, editing, progressActs, tablet, bulkChoice,
   composer, activity, onCloseActivity, workspaceByNode, workspaceActions, onJump, sceneRef, hoveredId, onLegendPicker,
 }) {
-  const { desktopEditor, tabletEditor, phone, demo, breakpoint } = who;
+  const { desktopEditor, tabletEditor } = who;
   const { selectedId, selectedIds, setSelectedId, leaveMulti } = selection;
   const nodesById = tree?.nodesById ?? new Map();
 
@@ -52,8 +52,8 @@ export function GraphDocks({
   return (
     <>
       {desktopEditor && (
-        <GraphDock open={open} top={top} tenant={composer ? 'composer' : selectedNode ? selectedNode.id : 'activity'}>
-          {composer ?? (selectedNode ? (
+        <GraphDock open={open} top={top} tenant={composer ? 'composer' : namingStep ? selectedNode.id : 'activity'}>
+          {composer ?? (namingStep ? (
             <StepPanel
               {...stepFacts}
               {...workspaceActions}
@@ -96,7 +96,7 @@ export function GraphDocks({
       {tabletEditor && (
         <TabletPanel
           tablet={tablet}
-          open={tablet.surface !== 'empty' && canvasView}
+          open={canvasView && tablet.surface !== 'empty' && (tablet.surface !== 'editor' || namingStep)}
           top={top}
           selectedNode={selectedNode}
           selectedState={selectedState}
@@ -123,20 +123,6 @@ export function GraphDocks({
           onBulkDelete={takesEveryRoot(standingTree, [...selectedIds]) ? null : editing.bulkDelete}
           onBulkDone={leaveMulti}
         />
-      )}
-
-      {!desktopEditor && !phone && !tabletEditor && (
-        <GraphDock open={open} top={top} tablet={breakpoint === 'tablet'} tenant={selectedNode ? selectedNode.id : 'empty'}>
-          {selectedNode && (
-            <StepPanel
-              {...stepFacts}
-              readOnly
-              unlocks={unlocks}
-              onJump={onJump}
-              onMarkComplete={demo ? markSelected : undefined}
-            />
-          )}
-        </GraphDock>
       )}
     </>
   );

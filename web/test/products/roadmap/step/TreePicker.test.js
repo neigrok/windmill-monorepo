@@ -160,7 +160,7 @@ async function openStep(viewport, options, errors) {
   await page.goto(`${origin}/tree-picker-test`);
   await page.waitForFunction(() => window.entryReady);
   await page.evaluate((given) => window.openStep(given), { steps: myYear(), completed: ['plan', 'sail'], rows: ownTrees(), facts: FACTS, ...options });
-  await page.locator('.st-board-step-layer [role="dialog"]').first().waitFor();
+  await page.locator('.st-board-step-layer article').first().waitFor();
   return page;
 }
 
@@ -264,7 +264,7 @@ for (const viewport of [DESKTOP, PHONE]) {
 
     await page.keyboard.press('Escape');
     await page.locator('.st-board-step-layer').waitFor({ state: 'detached' });
-    assert.deepEqual((await calls(page)).at(-1), band === 'phone' ? 'back' : 'close');
+    assert.deepEqual((await calls(page)).at(-1), 'close');
     assert.deepEqual(errors, []);
     await page.context().close();
   });

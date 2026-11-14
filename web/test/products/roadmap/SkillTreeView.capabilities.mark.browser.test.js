@@ -11,7 +11,7 @@ const phones = [320, 390];
 
 async function openStep(page, id) {
   await page.locator(`.st-board-card[data-step-id="${id}"]`).evaluate((card) => card.click());
-  await page.locator('.st-board-step-layer [role="dialog"]').waitFor();
+  await page.locator('.st-board-step-layer article').waitFor();
 }
 
 async function openColumn(page, width, column) {
@@ -151,9 +151,8 @@ hostTest('One kind rule: the desktop bar, the tablet panel and the phone Board o
 
   const desktop = await openHost({ width: 1440, ...fixture });
   try {
-    await desktop.page.evaluate(() => window.scene.options.onSelectionToggle('knots'));
-    await desktop.page.locator('.st-detail-panel--open').waitFor();
-    await desktop.page.evaluate(() => window.scene.options.onSelectionToggle('dock'));
+    await desktop.page.evaluate(() => window.scene.options.onMarqueeSelect(['knots', 'dock'], false));
+    assert.equal(await desktop.page.locator('.st-detail-panel--open').count(), 0);
     const swatches = desktop.page.locator('.st-selection-bar .st-step-swatch');
     await swatches.first().waitFor();
     assert.deepEqual(await swatches.evaluateAll((elements) => elements.map((element) => [element.title, element.classList.contains('st-step-swatch--current')])), expected);

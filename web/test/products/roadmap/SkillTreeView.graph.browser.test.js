@@ -4,21 +4,20 @@ import { LINK_COPIED, STEP_DETAIL } from '../../../src/products/roadmap/copy.js'
 
 startRoadmapHost();
 
-hostTest('Chromium: Next picks and reveals a Graph step; completion toast Undo restores its mark', async () => {
+hostTest('Chromium: Next only selects and reveals; Enter opens its document with inline Undo', async () => {
   const { page, errors } = await openHost();
   try {
     await page.getByRole('button', { name: 'Next · 1', exact: true }).click();
     await page.getByRole('dialog', { name: '1 up next' }).locator('.st-roadmap-next-card').filter({ hasText: 'Read the wind' }).click();
     assert.deepEqual(await page.evaluate(() => [window.revealed.at(-1), document.activeElement?.textContent]), ['wind', 'Next · 1']);
+    assert.equal(await page.locator('article').count(), 0);
+    await page.locator('canvas[data-graph-focus]').focus();
+    await page.keyboard.press('Enter');
+    await page.getByRole('article', { name: 'Read the wind' }).waitFor();
     await page.getByRole('button', { name: 'Complete', exact: true }).click();
-    await page.locator('.st-graph-toast').waitFor();
-    assert.equal(await page.locator('.st-board-toast-message').textContent(), 'Read the wind done · Leave the dock up next');
-    await page.locator('.st-board-toast-undo').click();
-    await page.waitForFunction(() => document.querySelector('.st-roadmap-progress')?.getAttribute('aria-label') === '1 of 3 steps done');
-    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_graph_toast')), [
-      { name: 'roadmap_graph_toast', props: { act: 'complete', step: 'shown' } },
-      { name: 'roadmap_graph_toast', props: { act: 'complete', step: 'undo' } },
-    ]);
+    assert.equal(await page.evaluate(() => window.session.progress.overlay().completed.has('wind')), true);
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.session.progress.overlay().completed.has('wind')), false);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
@@ -37,7 +36,7 @@ hostTest('Chromium: Graph create reveals the step and Undo removes only that cre
     assert.deepEqual(await page.evaluate(() => {
       const frame = window.revealFrames.at(-1);
       return { id: frame.id, installed: frame.installed, right: frame.insets.right };
-    }), { id: created, installed: true, right: 408 });
+    }), { id: created, installed: true, right: 24 });
     const previousReveals = await page.evaluate(() => window.revealed.length);
     await page.locator('.st-board-toast-message').click();
     await page.waitForFunction((previous) => window.revealed.length > previous, previousReveals);
@@ -51,14 +50,13 @@ hostTest('Chromium: Graph create reveals the step and Undo removes only that cre
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: a Graph milestone keeps the canvas ceremony and reader Share/Fork reach their doors', async () => {
+hostTest('Chromium: completion in the shared document stays quiet and reader Share/Fork reach their doors', async () => {
   const owner = await openHost({ milestone: true });
   try {
-    await owner.page.evaluate(() => window.scene.select('dock'));
+    await owner.page.evaluate(() => window.scene.activate('dock'));
     await owner.page.getByRole('button', { name: 'Complete', exact: true }).click();
-    await owner.page.waitForFunction(() => window.ceremonies.length > 0);
-    assert.deepEqual(await owner.page.evaluate(() => window.ceremonies), [{ message: 'Tree complete — 3/3 steps.', action: 'Share it' }]);
-    assert.equal(await owner.page.locator('.st-graph-toast').count(), 0);
+    assert.equal(await owner.page.evaluate(() => window.session.progress.overlay().completed.has('dock')), true);
+    assert.deepEqual(await owner.page.evaluate(() => window.ceremonies), []);
     assert.deepEqual(owner.errors, []);
   } finally { await owner.page.close(); }
   const reader = await openHost({ role: 'reader' });
@@ -76,11 +74,12 @@ hostTest('Chromium: a Graph milestone keeps the canvas ceremony and reader Share
 });
 
 for (const width of [744, 1440]) {
-  hostTest(`Chromium: the Graph camera clears the selected-step dock at ${width}px`, async () => {
+  hostTest(`Chromium: the Graph camera keeps its full canvas after selection at ${width}px`, async () => {
     const { page, errors } = await openHost({ width });
     try {
       await page.evaluate(() => window.scene.select('wind'));
-      await page.waitForFunction(() => window.cameraInsets.right > 100);
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      assert.equal(await page.locator('article, .st-detail-panel--open').count(), 0);
       const camera = await page.locator('.st-graph-camera').evaluate((element) => ({
         right: Number.parseFloat(element.style.right), bottom: Number.parseFloat(element.style.bottom),
         width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height,
@@ -94,7 +93,7 @@ for (const width of [744, 1440]) {
 }
 
 for (const width of [744, 1024, 1280, 1440]) {
-  for (const ceremony of [false, true]) {
+  for (const ceremony of [true]) {
     hostTest(`Chromium: Graph ${ceremony ? 'ceremony' : 'completion'} toast keeps its drawn width and clears panel, minimap and camera at ${width}px`, async () => {
       const { page, errors } = await openHost({ width, height: 900, legend: true });
       try {
@@ -103,7 +102,7 @@ for (const width of [744, 1024, 1280, 1440]) {
         await page.clock.install({ time: new Date(time.getTime() - 60000) });
         await page.clock.pauseAt(time);
         await page.evaluate(() => window.scene.select('wind'));
-        await page.locator('.st-detail-panel--open').waitFor();
+        assert.equal(await page.locator('.st-detail-panel--open').count(), 0);
         await page.clock.runFor(300);
         if (ceremony) {
           await page.evaluate(() => window.scene.options.onCeremonyToast('Read the wind done · Leave the dock up next'));
@@ -153,86 +152,42 @@ hostTest('Chromium: tablet read-only Graph legend names its non-interactive swat
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: phone Graph toast clears the camera and selected-step bar for both roles', async () => {
+hostTest('Chromium: phone Graph toast clears the camera after selecting a step for both roles', async () => {
   for (const role of ['reader', 'owner']) {
     const { page, errors } = await openHost({ width: 390, role });
     try {
       await page.evaluate(() => window.scene.select('wind'));
-      await page.locator('[data-graph-step-bar]').waitFor();
+      assert.equal(await page.locator('[data-graph-step-bar]').count(), 0);
       await page.evaluate(() => window.scene.options.onCeremonyToast('A roadmap update'));
       await page.locator('.st-graph-toast .st-board-toast').waitFor();
       await page.waitForFunction(() => {
         const toast = document.querySelector('.st-graph-toast .st-board-toast').getBoundingClientRect();
         const camera = document.querySelector('.st-view-actions').getBoundingClientRect();
-        const bar = document.querySelector('[data-graph-step-bar]').getBoundingClientRect();
-        return toast.top >= camera.bottom && toast.bottom <= bar.top;
+        return toast.top >= camera.bottom && toast.bottom <= innerHeight;
       });
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   }
 });
 
-hostTest('Chromium: a tap that deselects keeps focus on the pressed switch through its compatibility mousedown', async () => {
-  const { page, errors } = await openHost({ width: 390, touch: true });
-  try {
-    await page.evaluate(() => {
-      document.querySelector('canvas.st-canvas').addEventListener('pointerup', () => window.scene.select(null));
-      window.scene.select('wind');
-    });
-    const primary = page.locator('[data-graph-step-primary]');
-    await primary.focus();
-    await page.evaluate(() => {
-      window.tapEvents = [];
-      window.addEventListener('mousedown', (event) => window.tapEvents.push(`mousedown:${event.target.tagName}`), true);
-    });
-    await page.touchscreen.tap(30, 480);
-    await primary.waitFor({ state: 'detached' });
-    await page.waitForFunction(() => window.tapEvents.length === 1);
-    assert.deepEqual(await page.evaluate(() => [window.tapEvents, document.activeElement?.matches('.st-board-switch-option[aria-pressed="true"]')]),
-      [['mousedown:CANVAS'], true]);
-    assert.deepEqual(errors, []);
-  } finally { await page.close(); }
-});
-
-hostTest('Chromium: the reader bar title opens from a 44px hit area and leaves the bar 124px tall', async () => {
-  const { page, errors } = await openHost({ width: 320, role: 'reader' });
-  try {
-    await page.evaluate(() => window.scene.select('wind'));
-    const bar = page.locator('[data-graph-step-bar]');
-    await bar.waitFor();
-    assert.deepEqual(await bar.evaluate((element) => {
-      const title = element.querySelector('button.st-graph-step-title').getBoundingClientRect();
-      const state = element.querySelector('.st-graph-step-state').getBoundingClientRect();
-      return { bar: element.getBoundingClientRect().height, title: title.height, centred: title.top + title.height / 2 === state.top + state.height / 2 };
-    }), { bar: 124, title: 44, centred: true });
-    assert.deepEqual(errors, []);
-  } finally { await page.close(); }
-});
-
-hostTest('Chromium: a shown coach chip leaves Escape to the step page over it, and lets it through once retired', async () => {
+hostTest('Chromium: the demo coach leaves Escape to the document above it', async () => {
   const { page, errors } = await openHost({ width: 390, role: 'reader', demo: true });
   try {
-    await page.waitForFunction(() => localStorage.getItem('wm-coach-done') === '1');
-    await page.evaluate(() => window.scene.select('wind'));
-    await page.getByRole('button', { name: 'Read the wind', exact: true }).click();
-    const step = page.getByRole('dialog', { name: 'Read the wind', exact: true });
+    await page.evaluate(() => window.scene.activate('wind'));
+    const step = page.getByRole('article', { name: 'Read the wind', exact: true });
     await step.waitFor();
     await page.keyboard.press('Escape');
     await step.waitFor({ state: 'detached' });
-    await page.locator('[data-graph-step-bar]').waitFor();
-    await page.keyboard.press('Escape');
-    await page.locator('[data-graph-step-bar]').waitFor();
-    await page.keyboard.press('Escape');
-    await page.locator('[data-graph-step-bar]').waitFor({ state: 'detached' });
+    assert.equal(await page.locator('[data-graph-step-bar]').count(), 0);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: a room toast over the phone step page stands above its tabs and its action', async () => {
+hostTest('Chromium: a room toast over the phone step page stands above its pinned actions', async () => {
   const { page, errors } = await openHost({ width: 390, surface: 'board' });
   try {
     await page.locator('.st-board-phone-pane.is-shown .st-board-card[data-step-id="wind"]').click();
-    await page.locator('.st-board-step-layer [role="dialog"]').waitFor();
+    await page.locator('.st-board-step-layer article').waitFor();
     await page.locator('.st-board-step-layer').getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
     await page.getByRole('menuitem', { name: STEP_DETAIL.copyLink, exact: true }).click();
     const toast = page.locator('.st-graph-toast .st-board-toast');
@@ -240,7 +195,7 @@ hostTest('Chromium: a room toast over the phone step page stands above its tabs 
     assert.equal(await toast.locator('.st-board-toast-message').textContent(), LINK_COPIED);
     assert.deepEqual(await page.evaluate(() => {
       const box = document.querySelector('.st-graph-toast .st-board-toast').getBoundingClientRect();
-      return [...document.querySelectorAll('.st-board-step-layer [role="tablist"]')].map((tabs) => box.bottom <= tabs.getBoundingClientRect().top);
+      return [...document.querySelectorAll('.st-step-pinned-actions')].map((tabs) => box.bottom <= tabs.getBoundingClientRect().top);
     }), [true]);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
@@ -255,7 +210,7 @@ hostTest('Chromium: Graph legend and selection labels use the shared Recolor cop
     assert.deepEqual(await legend.locator('button[aria-label]').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
       ['Build', 'Learn', 'Sky'].map(RECOLOR.kind));
     await page.evaluate(() => window.scene.options.onSelectionToggle('knots'));
-    await page.locator('.st-detail-panel--open').waitFor();
+    assert.equal(await page.locator('.st-detail-panel--open').count(), 0);
     await page.evaluate(() => window.scene.options.onSelectionToggle('dock'));
     const selection = page.locator('.st-selection-bar');
     await selection.waitFor();

@@ -14,7 +14,7 @@ function cardIds(page) {
 
 async function openStep(page, id) {
   await page.locator(`.st-board-card[data-step-id="${id}"]`).evaluate((card) => card.click());
-  await page.locator('.st-board-step-layer [role="dialog"]').waitFor();
+  await page.locator('.st-board-step-layer article').waitFor();
 }
 
 async function openColumn(page, width, column) {
@@ -101,7 +101,7 @@ hostTest('§2.5 Delete: the desktop Graph keeps the sole root at every door and 
     };
 
     await page.evaluate(() => window.scene.select('course'));
-    await page.locator('.st-detail-panel--open .st-step-name', { hasText: 'Choose a course' }).waitFor();
+    await page.evaluate(() => new Promise(requestAnimationFrame));
     assert.equal(await page.locator('.st-step-delete').count(), 0);
     await pressDelete();
     assert.deepEqual(await steps(), ['course', 'dock', 'wind']);
@@ -118,7 +118,7 @@ hostTest('§2.5 Delete: the desktop Graph keeps the sole root at every door and 
     assert.deepEqual([await steps(), await deletes()], [['course'], [{ name: 'roadmap_board_bulk', props: { step: 'delete', count: '2-5', view: 'graph' } }]]);
 
     await page.evaluate(() => window.scene.select('course'));
-    await page.locator('.st-detail-panel--open .st-step-name', { hasText: 'Choose a course' }).waitFor();
+    await page.evaluate(() => new Promise(requestAnimationFrame));
     assert.equal(await page.locator('.st-step-delete').count(), 0);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
@@ -136,7 +136,7 @@ hostTest('§2.5 Delete: under a hold the Graph refuses the last root standing, a
     const toast = page.locator('.st-graph-toast .st-board-toast');
     await toast.waitFor();
     await page.evaluate(() => window.scene.select('course'));
-    await page.locator('.st-detail-panel--open .st-step-name', { hasText: 'Choose a course' }).waitFor();
+    await page.evaluate(() => new Promise(requestAnimationFrame));
     assert.equal(await page.locator('.st-step-delete').count(), 0);
     await page.evaluate(() => document.activeElement?.blur());
     await page.keyboard.press('Delete');
@@ -147,13 +147,14 @@ hostTest('§2.5 Delete: under a hold the Graph refuses the last root standing, a
   } finally { await page.close(); }
 });
 
-hostTest('§2.5 Delete: a signed-in reader at the app address gets a reader\'s dock, and Delete writes nothing', async () => {
+hostTest('§2.5 Delete: a signed-in reader at the app address gets a reader\'s document, and Delete writes nothing', async () => {
   const { page, errors } = await openHost({ width: 1440, role: 'reader', appUrl: true });
   try {
     await page.evaluate(() => window.scene.select('dock'));
-    await page.locator('.st-detail-panel--open', { hasText: 'Leave the dock' }).waitFor();
+    await page.evaluate(() => window.scene.activate('dock'));
+    await page.getByRole('article', { name: 'Leave the dock' }).waitFor();
     assert.equal(await page.locator('.st-step-delete').count(), 0);
-    assert.equal(await page.locator('.st-detail-panel--open').getByRole('textbox').count(), 0);
+    assert.equal(await page.getByRole('article').getByRole('textbox').count(), 0);
     await page.evaluate(() => document.activeElement?.blur());
     await page.keyboard.press('Delete');
     await page.evaluate(() => new Promise(requestAnimationFrame));
@@ -174,11 +175,11 @@ hostTest('§2.5 Delete: signing in on a roadmap that loaded as someone else\'s l
   } finally { await page.close(); }
 });
 
-hostTest('§2.5 Delete: the desktop dock offers Delete for a step the roadmap can lose', async () => {
+hostTest('§2.5 Delete: the desktop Graph delete gesture removes a step the roadmap can lose', async () => {
   const { page, errors } = await openHost({ width: 1440 });
   try {
     await page.evaluate(() => window.scene.select('dock'));
-    await page.locator('.st-step-delete').click();
+    await page.evaluate(() => window.scene.options.onDeleteNode('dock'));
     await page.waitForFunction(() => window.session.lattice.toTreeData().nodes.length === 2);
     assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_delete')),
       [{ name: 'roadmap_board_delete', props: { step: 'sent', via: 'direct', view: 'graph' } }]);

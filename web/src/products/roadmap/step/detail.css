@@ -1,4 +1,4 @@
-/* The step layer and the body both its frames share: identity, status, relations, sections, actions, the subtask offer and the ⋯ menu. */
+/* Shared step content, actions and nested menus. */
 
 .st-board-step-layer {
   position: absolute;
@@ -36,21 +36,6 @@
   background: var(--color-brand-soft);
 }
 
-/* ---- Identity: the kind rail inset 4px top and bottom, and the full title, wrapping. ---- */
-.st-board-step-identity {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: stretch;
-  gap: var(--space-3);
-}
-.st-board-step-identity-rail {
-  flex-shrink: 0;
-  width: 4px;
-  margin: 4px 0;
-  border-radius: 2px;
-  background: var(--st-board-step-rail);
-}
 .st-board-step-identity-title {
   flex: 1;
   min-width: 0;
@@ -444,47 +429,7 @@ button.st-board-step-tree {
   color: var(--text-primary);
 }
 
-/* ---- Sections: three equal tabs on the sunken track, the shown one on the card surface. ---- */
-.st-board-step-sections {
-  display: flex;
-  flex-shrink: 0;
-  height: 44px;
-  border-radius: var(--radius-lg);
-  background: var(--surface-sunken);
-  overflow: hidden;
-}
-.st-board-step-section {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  padding: 0 var(--space-1);
-  border: none;
-  background: transparent;
-  cursor: pointer;
-}
-.st-board-step-section:focus-visible {
-  outline-offset: -2px;
-}
-.st-board-step-section-surface {
-  flex: 1;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 12.5px;
-  line-height: 18px;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-.st-board-step-section[aria-selected="true"] .st-board-step-section-surface {
-  background: var(--surface-card);
-}
-
-/* ---- Actions: Complete is the primary, Reset the secondary; the preview names what Reset would return. ---- */
+/* ---- Pinned step actions. ---- */
 .st-board-step-buttons {
   display: flex;
   justify-content: flex-end;

@@ -958,6 +958,7 @@ test('Chromium: Back and Escape close kinds before selection, and finished selec
     await page.evaluate(() => history.back());
     await page.waitForFunction(() => document.querySelector('.st-board-bulk-recolor')?.getAttribute('aria-expanded') === 'false');
     assert.equal(await page.locator('.st-board-bulk-heading').textContent(), '1 selected');
+    assert.equal(await focused(page), 'Recolor');
     await page.keyboard.press('Escape');
     await page.getByRole('tablist').waitFor();
     await page.waitForFunction(() => !history.state?.boardSelection);
