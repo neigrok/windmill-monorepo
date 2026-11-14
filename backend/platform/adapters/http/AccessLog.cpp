@@ -12,6 +12,7 @@ namespace wm {
 
 namespace {
 constexpr char kStartAttribute[] = "wm.received";
+constexpr char kRouteAttribute[] = "wm.route";
 
 // The probe fires every few seconds forever and says nothing when it is healthy, so it stays at debug.
 bool isProbe(const std::string& path) {
@@ -41,9 +42,16 @@ void installAccessLog(drogon::HttpAppFramework& app) {
     req->attributes()->insert(kStartAttribute, std::chrono::steady_clock::now());
   });
 
+  // The route a request matched, copied while the framework still holds it: a request a worker answers once the
+  // framework has stopped would read the pattern out of a router that is gone.
+  app.registerPreHandlingAdvice([](const drogon::HttpRequestPtr& req) {
+    req->attributes()->insert(kRouteAttribute, std::string(req->matchedPathPattern()));
+  });
+
   app.registerPostHandlingAdvice([](const drogon::HttpRequestPtr& req,
                                     const drogon::HttpResponsePtr& resp) {
-    const std::string path = req->matchedPathPattern().empty() ? std::string("unmatched") : std::string(req->matchedPathPattern());
+    const std::string route = req->attributes()->find(kRouteAttribute) ? req->attributes()->get<std::string>(kRouteAttribute) : std::string{};
+    const std::string path = route.empty() ? std::string("unmatched") : route;
     const int status = static_cast<int>(resp->getStatusCode());
 
     long long micros = -1;

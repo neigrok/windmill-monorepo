@@ -102,6 +102,12 @@ void Collab::reproveReaders() {
 }
 
 void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
+  // A server told to stop opens no socket: the tab reaches the next server.
+  if (registry_.stopping()) {
+    conn->setContext(std::make_shared<Principal>(UserId{"u0"}, false, "", "", 0));
+    conn->shutdown(drogon::CloseCode::kEndpointGone);
+    return;
+  }
   // A WebSocket upgrade gets no CORS preflight: a stated origin must be allow-listed.
   const std::string origin = req->getHeader("origin");
   if (!origin.empty() && !allowedOrigins_.count(origin)) {
@@ -149,6 +155,9 @@ bool Collab::overRate(const drogon::WebSocketConnectionPtr& conn) {
 }
 
 void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::string& text) {
+  // A server told to stop takes no frame, the ones a connection had already sent among them: nothing lands and nothing
+  // is answered, so a tab keeps what it was not acked and sends it to the next server.
+  if (registry_.stopping()) return;
   if (overRate(conn)) {
     WriteObservation observation("roadmap.ws.frame", "roadmap", "websocket");
     observation.finish("rate_limited");

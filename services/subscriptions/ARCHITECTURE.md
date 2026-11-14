@@ -6,10 +6,14 @@ dependency rule are in [STRUCTURE.md](../../STRUCTURE.md); this file holds the s
 
 The Rust workspace, its four crates and one tool exist. `domain` models the subscription and folds
 the stores' observations into it ([Domain](#domain)); `app_store` verifies App Store signed payloads
-([below](#app-store-signature-verification)), and the tool `app_store_test_signer` signs them under a
-chain only tests trust ([App Store test signer](#app-store-test-signer)); `subscriptions`, the server
-binary, answers health on both of its listeners, logs every request and reports to Sentry
-([Server](#server)); `storage` is empty. Nothing is deployed.
+([below](#app-store-signature-verification)) and decodes them into observations
+([App Store decoding](#app-store-decoding)), and the tool `app_store_test_signer` signs them under a
+chain only tests trust ([App Store test signer](#app-store-test-signer)); `storage` opens the ledger,
+the service's own database, and migrates it ([Storage](#storage)); `subscriptions`, the server binary,
+opens the ledger before it listens, answers health on both of its listeners, logs every request and
+reports to Sentry ([Server](#server)). The service does not run in production. The production compose
+provisions its database once `SUBSCRIPTIONS_DB_PASSWORD` is set, and does nothing until then
+([deploy README](../../backend/deploy/README.md#the-subscription-database)).
 
 ## Crates
 
@@ -47,7 +51,7 @@ clock, no randomness. Its files, by kind:
 
 | File | Holds |
 |---|---|
-| `values.rs` | Instants (epoch milliseconds), spans, money, the text ids and the closed names: `Store`, `Environment`, `Plan` |
+| `values.rs` | Instants (epoch milliseconds), spans, money, the text ids and the closed names: `Store`, `Environment`, `Plan`. `Money::from_units` writes an amount a store counts in units (Apple's milliunits) with its currency's ISO 4217 minor units, keeping any digit beyond them. A store's ids, `StoreSubscriptionId` and `StoreTransactionId`, print as `(redacted)` in `Debug`, so no log line or panic message formats one (spec §10) |
 | `subscription.rs` | The record: `Subscription`, its `Status` as the newest observation stated it, a `State` that carries only its own facts, `Period`, and access (`access_until`, `grants_access`) |
 | `observe.rs` | `Observation`, what a caller hands `observe`, the `Change` it returns, `Event` and `Refusal` |
 | `entitlement.rs` | `AccountEntitlement`, one `Entitlement` block per environment, folded from the ledger alone |
@@ -66,6 +70,14 @@ The action that applies an observation calls `observe` once:
 
 `verifiedAt` is the sweep's bookkeeping: storage stamps it when it applies a pull, and the domain's
 subscription leaves it out, since no single observation can state it (INV-6).
+
+`cancelRequestedAt` follows its own statements, as a period's refund time does. A statement that
+renewal is on, or off since a stated instant, gives it; the newest such statement wins whatever the
+order of arrival, renewal on outranking a turn-off stated at the same instant, and the subscription
+keeps that statement's stamp as `cancellation_observed_at`. Statements stamped alike therefore order
+by their content with the cancel time aside (INV-6). A statement that renewal is off without
+saying since when, as most of the App Store's are, leaves the cancel time as it stands, and a turn-off
+that arrives after a newer statement fills it in and records `updated`.
 
 `observe` records `unbound` only when a new purchase moves an ended lineage to another account
 (R-11). Account erasure (§6.4) unbinds every subscription an account holds and records `unbound` for
@@ -101,7 +113,7 @@ with a `Refusal`, whose `code()` is the only thing a log line carries about it.
 | 8 | Leaf, intermediate and root are each inside their validity at the signing time of rule 3 | `certificate_validity` |
 | 9 | The ES256 signature verifies under the leaf's key | `signature` |
 | 10 | The payload decodes into Apple's fields, with `environment` `Production` or `Sandbox`. `Xcode` and `LocalTesting` cannot be represented, so a payload stating them is refused here | `malformed` |
-| 11 | `bundleId` is the expected one. A notification states it in `data`, `summary` or `appData`; a renewal info states none | `bundle_id` |
+| 11 | `bundleId` is the expected one. A notification states it, with its environment, in `data`, `summary`, `appData` or `unclaimInfo`, or in `externalPurchaseToken`, whose environment is `Sandbox` when its `externalPurchaseId` starts with `SANDBOX` and `Production` otherwise; a renewal info states none | `bundle_id` |
 | 12 | A nested transaction or renewal info states its notification's environment | `environment` |
 
 Rules 1 to 9 read nothing of the payload but `signedDate`. The decoded types are `Notification`,
@@ -146,7 +158,10 @@ The rules follow Apple's App Store Server Library: Python `e5ffded5c`, Java `6bc
 - Rule 2 follows Swift's `EXPECTED_ALGORITHM`, Java's `decodeSignedObject` and Python's
   `_decode_signed_object`.
 - Rules 10–12 follow `verifyAndDecodeNotification`, `verifyAndDecodeTransaction` and
-  `verifyAndDecodeRenewalInfo` in each library.
+  `verifyAndDecodeRenewalInfo` in each library, the external purchase token's environment included.
+  `unclaimInfo` is newer than those commits; it is read as Apple's
+  [unclaimInfo](https://developer.apple.com/documentation/appstoreservernotifications/unclaiminfo)
+  page shows it, with its own `bundleId` and `environment`.
 
 Where this verifier differs from Apple's:
 
@@ -160,8 +175,6 @@ Where this verifier differs from Apple's:
   its dates are fractional.
 - **App Apple ID.** It does not compare `appAppleId`, which Apple's libraries check on production
   notifications. The bundle id, under Apple's signature, already names the app.
-- **External purchase.** A notification carrying only `externalPurchaseToken` is refused with
-  `bundle_id`. That notification belongs to the External Purchase API, which Windmill does not use.
 
 ### The pinned root
 
@@ -196,6 +209,155 @@ The community crate `app-store-server-library` was not used. It ports Apple's li
 but it validates the chain with `x509-validator`, a crate its author first published in 2026 that
 has no audit. The check this service rests on would sit in that crate. It also brings an App Store
 Server API client, `chrono`, `serde_with` and `uuid`, which the verifier does not need.
+
+## App Store decoding
+
+`app_store::decoding` is the one place Apple's vocabulary is translated; nothing behind it knows a
+notification type. `decode(&Notification)` reads a verified notification, and
+`decode_claim(&TransactionInfo)` a transaction a phone hands to the claim door. Both are pure: no
+I/O, no clock. `decode` answers one `Decoded`:
+
+| Outcome | What it holds | What the caller does |
+|---|---|---|
+| `Observation` | An `Observation` of the subscription's whole state, and the transaction's `appAccountToken` as an `AccountToken` | Resolves the token against the erased accounts into the `AccountHint`, then applies it with `observe` |
+| `AwaitsStatus` | A `PeriodStatement`: the lineage, `observedAt`, ownership, the account token, the one period the transaction states, and the cancel time when the notification states one; and why, an `Awaiting` | Pulls the subscription's status from the App Store Server API, then applies the period, and the cancel time, with the notification's own stamp. `latest_unconfirmed` is also reported to Sentry |
+| `Silent` | `test` or `renewal_extension_summary`: Apple states nothing about any subscription | Logs the code |
+| `Unsupported` | A code: what Windmill does not sell, or a field that decides access or money it cannot read | Keeps the notification in the inbox, logs `unsupported` with the code, reports it; nothing changes |
+
+`decode_claim` answers a `PeriodStatement` stamped at the transaction's own `signedDate`, or
+`Unsupported`; the claim door takes the state from a pull, never from the transaction (above).
+
+Only the subscription's latest transaction states its state, and a transaction is the latest when
+its `expiresDate` is the renewal info's `renewalDate`. When it is not, the outcome is `AwaitsStatus`,
+so the state is pulled rather than inferred (spec §8):
+
+| `Awaiting` | When |
+|---|---|
+| `earlier_transaction` | A type that may concern any transaction (`REFUND`, `REFUND_REVERSED`, `REVOKE` and the rest of the first row below) carries one that expires before the `renewalDate`, as a refund of an earlier month |
+| `latest_unconfirmed` | Anything else that fails the test: a type whose transaction is the latest by Apple's definition (`SUBSCRIBED`, `DID_RENEW`, `DID_FAIL_TO_RENEW`, `GRACE_PERIOD_EXPIRED`, `EXPIRED`, `DID_CHANGE_RENEWAL_STATUS`, `RENEWAL_EXTENDED`), a transaction that expires after the `renewalDate`, or a renewal info without `renewalDate` or missing whole. It means Apple's payload broke the rule the adapter rests on, so the door reports it |
+
+### Types and subtypes
+
+| `notificationType`, `subtype` | Outcome |
+|---|---|
+| `SUBSCRIBED` `INITIAL_BUY`, `RESUBSCRIBE`; `DID_RENEW`, `DID_RENEW` `BILLING_RECOVERY`; `DID_CHANGE_RENEWAL_PREF`, with `UPGRADE` or `DOWNGRADE`; `OFFER_REDEEMED`, with `UPGRADE` or `DOWNGRADE`; `DID_FAIL_TO_RENEW`, with `GRACE_PERIOD`; `GRACE_PERIOD_EXPIRED`; `EXPIRED`, with `VOLUNTARY`, `BILLING_RETRY`, `PRICE_INCREASE` or `PRODUCT_NOT_FOR_SALE`; `PRICE_INCREASE` `PENDING`, `ACCEPTED`; `REFUND_DECLINED`; `REVOKE`; `CONSUMPTION_REQUEST`; `RENEWAL_EXTENDED`; `RENEWAL_EXTENSION` `FAILURE` | The observation its data states, or `AwaitsStatus` |
+| `DID_CHANGE_RENEWAL_STATUS`, with `AUTO_RENEW_ENABLED`, `AUTO_RENEW_DISABLED` or none | The same, and the cancel time |
+| `REFUND` | The same, its transaction refunded |
+| `REFUND_REVERSED` | The same, its transaction's refund cleared |
+| `TEST`; `RENEWAL_EXTENSION` `SUMMARY` | `Silent` |
+| `DID_CHANGE_RENEWAL_PREF` `INCREASE_QUANTITY`, `DECREASE_QUANTITY`; `REFUND` `SEATS`; `UNCLAIM_SEATS` | `seats` |
+| `ONE_TIME_CHARGE` | `one_time_charge` |
+| `EXTERNAL_PURCHASE_TOKEN` `CREATED`, `ACTIVE_TOKEN_REMINDER`, `UNREPORTED` | `external_purchase` |
+| `METADATA_UPDATE`, `MIGRATION`, `PRICE_CHANGE`, the Advanced Commerce API's | `advanced_commerce` |
+| `RESCIND_CONSENT` | `parental_consent` |
+| Any other type, or a subtype Apple does not document for its type | `unknown_type` |
+
+A transaction can also make a mapped type unsupported, for what Windmill does not sell:
+`one_time_charge` when its `type` is a consumable, a non-consumable or a non-renewing subscription,
+`commitment_plan` when its `billingPlanType` is `MONTHLY`, `unknown_product` for any product but
+Windmill One's.
+
+### What refuses and what degrades
+
+State and access are decided only by the fields that decide them, and only those can make a mapped
+notification unsupported: `incomplete` when the notification's `signedDate`, its transaction, the
+transaction's `expiresDate`, `price` or `currency`, the `status`, the `autoRenewStatus`, or the
+`gracePeriodExpiresDate` of a grace is missing; `unknown_value` when the status or `autoRenewStatus`
+is a value Apple does not document, the price is negative or the currency no ISO 4217 code in any
+case; `inconsistent` when the renewal info is another lineage's. Every other field degrades, so a
+refund or an expiry is never dropped for a field access does not depend on:
+
+| Field Apple leaves out or names in a way it does not document | Reads as |
+|---|---|
+| `inAppOwnershipType` | `shared`, which binds to no one: only a purchase its buyer is shown to own binds (§4) |
+| `type` | Nothing: Windmill One's product id says what was sold |
+| `billingPlanType` other than `MONTHLY` | Nothing |
+| `originalPurchaseDate` | `startedAt` is the transaction's `purchaseDate` |
+| `storefront` | `storefront` null |
+| `renewalPrice` or the renewal info's `currency`, or an amount they do not make | `nextCharge` null |
+| `offerType`, or `offerType` 1 without `offerDiscountType` | No offer kind |
+| `revocationType` Apple does not document (one left out reads by ownership, below) | End reason `unknown`; the period is refunded only by a `REFUND` |
+| `revocationDate` of a status 5 | Ended, and for a `REFUND` refunded, at the notification's `signedDate`, the latest the refund can have happened |
+| `expirationIntent` | The `EXPIRED` subtype's reason, else `unknown` |
+
+### Fields
+
+| Domain | From Apple |
+|---|---|
+| Lineage | `app_store`, the verified payload's `environment`, the transaction's `originalTransactionId` |
+| `observedAt` | The notification's `signedDate`; for a claim, the transaction's |
+| Ownership | `inAppOwnershipType` `PURCHASED` is `purchased`; anything else, `FAMILY_SHARED` and `ASSIGNED` among them, `shared` |
+| Account hint | The transaction's `appAccountToken`, a candidate the caller resolves |
+| `plan`, `billingInterval` | `productId` `works.windmill.app.one.monthly` is `windmill_one`, `P1M` |
+| `productId`, `startedAt` | The transaction's `productId` and `originalPurchaseDate` |
+| `currentPeriod`, and the period | `[purchaseDate, expiresDate)` of the transaction, keyed by its `transactionId`, at its price and offer |
+| `state` | `status`: 1 `active`, 2 `expired`, 3 `on_hold`, 4 `grace`, 5 `revoked` |
+| `paymentFailedAt` | The end of the period that did not renew |
+| `graceEndsAt` | `gracePeriodExpiresDate` |
+| `endedAt`, `endReason` in `expired` | The end of the last period; `expirationIntent` 1 `cancelled`, 2 `billing`, 3 `price_change_declined`, 4 `product_unavailable`, 5 `unknown` |
+| `endedAt`, `endReason` in `revoked` | `revocationDate`; `revocationType` `REFUND_FULL` or `REFUND_PRORATED` is `refunded`, `FAMILY_REVOKE` or `ASSIGNMENT_REVOKE` `sharing_removed`, and with none stated a purchase is `refunded` and a shared one `sharing_removed` |
+| A period's `refundedAt` | Set by a `REFUND`, cleared by a `REFUND_REVERSED`, whatever the transaction carries; for any other type, the `revocationDate` of a revocation that is `refunded`. A `REFUND_PRORATED` refunds the period as a full refund does: the funded grant closes at the refund (spec §6.3) |
+| `autoRenew` | `autoRenewStatus` 1 or 0 |
+| `nextChargeAt`, `nextCharge` | The period's end; `renewalPrice` and the renewal info's `currency`. None while `priceIncreaseStatus` is 0: without consent to a price increase Apple ends the subscription rather than charge. `observe` drops it unless the subscription is active and renewing |
+| `nextProductId` | `autoRenewProductId` when it is not the transaction's `productId` |
+| `cancelRequestedAt` | The `signedDate` of `DID_CHANGE_RENEWAL_STATUS` whose renewal info has renewal off. No other notification and no status pull says when, so they state none and the domain keeps the time ([Domain](#domain)) |
+| `offerKind` | `offerType` 1 with `offerDiscountType` `FREE_TRIAL` is `free_trial`, with `PAY_AS_YOU_GO` or `PAY_UP_FRONT` `introductory`; 2 `promotional`; 3 `offer_code`; 4 `win_back`; 5, a retention offer, `promotional`, since the domain names no retention kind |
+| `offerEndsAt` | The period's end, unless renewal is on and the renewal info states the same `offerType` for the next period, when it is not known yet |
+| `price` | `price` in milliunits and `currency`, its code in any case, written with the currency's ISO 4217 minor units by `Money::from_units`: 12000 USD is `12.00`, 1800000 JPY `1800`, 3990 KWD `3.990`; a digit beyond them is kept |
+| `storefront` | `storefront` |
+
+An `expired` subscription ends with its last period in every statement of it, since Apple states no
+instant for the end of billing retry; `paymentFailedAt` is that period's end, since no statement
+after the failure says when it failed.
+
+`Decoded` and `PeriodStatement` carry the account token as `AccountToken` and implement no `Debug`,
+and the domain's store ids print redacted. The crate logs nothing; the door logs the outcome's code,
+`Awaiting::code`, `Silence::code` or `Unsupported::code`.
+
+The vectors in `tests/vectors/app_store/` pin one outcome for every type and subtype above, every
+row of the fields, every field that refuses and every one that degrades;
+`crates/app_store/tests/decoding.rs` runs them, and folds a cancel time through the expiry that
+cannot state it.
+
+### Waits on the sandbox
+
+m3-verify-sandbox-lifecycle confirms these against payloads Apple signs:
+
+- A renewal's `purchaseDate` is the previous period's end, not the instant Apple charged it (D-4).
+  Should it be the charge, a period's start has to come from the previous transaction's
+  `expiresDate`.
+- A `REFUND` of an earlier month carries that month's transaction with its `revocationDate` and
+  `status` 1, and a `REFUND` of the latest carries `status` 5.
+- `renewalDate` equals the latest transaction's `expiresDate` to the millisecond, also after
+  `RENEWAL_EXTENDED`, which states the extended `expiresDate` on the latest transaction, and after a
+  `REFUND` of the latest. Where it does not, the notification answers `AwaitsStatus` and
+  `latest_unconfirmed` is reported; this check gates the paid line.
+- The renewal info's `offerType` is the next renewal's offer.
+- `revocationType` is stated on a refunded transaction.
+
+### Where the mapping comes from
+
+Apple's App Store Server Notifications reference, read on 2026-11-14:
+[notificationType](https://developer.apple.com/documentation/appstoreservernotifications/notificationtype),
+[subtype](https://developer.apple.com/documentation/appstoreservernotifications/subtype),
+[status](https://developer.apple.com/documentation/appstoreservernotifications/status),
+[responseBodyV2DecodedPayload](https://developer.apple.com/documentation/appstoreservernotifications/responsebodyv2decodedpayload),
+[data](https://developer.apple.com/documentation/appstoreservernotifications/data),
+[JWSTransactionDecodedPayload](https://developer.apple.com/documentation/appstoreservernotifications/jwstransactiondecodedpayload),
+[JWSRenewalInfoDecodedPayload](https://developer.apple.com/documentation/appstoreservernotifications/jwsrenewalinfodecodedpayload),
+[expirationIntent](https://developer.apple.com/documentation/appstoreservernotifications/expirationintent),
+[revocationType](https://developer.apple.com/documentation/appstoreservernotifications/revocationtype),
+[inAppOwnershipType](https://developer.apple.com/documentation/appstoreservernotifications/inappownershiptype),
+[offerType](https://developer.apple.com/documentation/appstoreservernotifications/offertype),
+[offerDiscountType](https://developer.apple.com/documentation/appstoreservernotifications/offerdiscounttype),
+[autoRenewStatus](https://developer.apple.com/documentation/appstoreservernotifications/autorenewstatus),
+[priceIncreaseStatus](https://developer.apple.com/documentation/appstoreservernotifications/priceincreasestatus),
+[billingPlanType](https://developer.apple.com/documentation/appstoreservernotifications/billingplantype),
+[price](https://developer.apple.com/documentation/appstoreservernotifications/price),
+[renewalPrice](https://developer.apple.com/documentation/appstoreservernotifications/renewalprice),
+[renewalDate](https://developer.apple.com/documentation/appstoreservernotifications/renewaldate),
+[gracePeriodExpiresDate](https://developer.apple.com/documentation/appstoreservernotifications/graceperiodexpiresdate),
+[signedDate](https://developer.apple.com/documentation/appstoreservernotifications/signeddate).
 
 ## App Store test signer
 
@@ -247,11 +409,60 @@ on. It lives in `tools/`, not `crates/`, because it is not part of the service: 
 are not the service's own in Sentry (`telemetry::SERVICE_CRATES`). Its tests verify what it signs
 through `app_store`, a dev-dependency.
 
+## Storage
+
+### The database
+
+The ledger lives in a database of its own, `windmill_subscriptions`, in the host's Postgres, owned by a
+role of the same name (spec §9). Where the deploy has provisioned it, rules at the head of the
+cluster's `pg_hba.conf` turn the backend's role, `windmill`, away from it on every path, the cluster's
+own socket included; its own role needs its password on both paths and reaches no other database. A
+`pg_hba.conf` rule binds a superuser, which `windmill` is and which `REVOKE CONNECT` would not stop; what
+a superuser set on reaching the database can still do is listed in the deploy README. The rules are
+`backend/deploy/subscriptions-db/pg_hba.conf`; how they, the role and the database are provisioned,
+backed up and restored is in the
+[deploy README](../../backend/deploy/README.md#the-subscription-database).
+
+`storage::Ledger::open` connects and brings the schema up to the newest migration before it returns,
+so no `Ledger` exists over an older schema. It holds at most 8 connections, gives a connection 5 s to
+open, and `Ledger::check` gives the database 2 s to answer.
+
+### Migrations
+
+`migrations/` holds every schema change as `NNNN_<what>.sql`, applied in order, each in a transaction
+of its own, and recorded in `_sqlx_migrations`. `sqlx::migrate!` embeds them in the binary at compile
+time, so no build reads a database and no image carries the files; `crates/storage/build.rs` rebuilds
+the crate when one is added. A merged migration is never edited: the ledger records each one's
+checksum, and a database whose record differs from the binary's, or that holds a migration the binary
+does not have, is refused as `migration`. An image older than the database's newest migration
+therefore does not start.
+
+| Migration | What it creates |
+|---|---|
+| `0001_ledger.sql` | `ledger`: one row, whose `epoch` (a UUID) is minted when the ledger is created and replaced when it is restored (spec §5.2) |
+
+### Failures
+
+A database failure is a `StorageError`: a code and, where the server sent one, its SQLSTATE. The
+server's message is never kept, because it can quote a statement or a value.
+
+| Code | When |
+|---|---|
+| `unreachable` | no connection within its bound: nothing listens, the network refused or TLS failed |
+| `refused` | the server would not let the role in: a `pg_hba.conf` rule (`28000`), a wrong password (`28P01`), no such database (`3D000`) |
+| `migration` | the schema could not be brought up to the binary's, or the database holds a migration the binary does not |
+| `database` | anything else the database answered |
+
+`storage::DatabaseUrl` reads a `postgres://` or `postgresql://` URL. Its query may carry only `host`
+(a host or a unix socket directory), `port`, `user`, `dbname` and `sslmode`: the driver logs any other
+parameter with its value, and the URL holds the role's password. Neither its `Debug` nor any error
+repeats it.
+
 ## Server
 
 `crates/server` holds three modules, `config`, `listeners` and `telemetry`, and the binary
-`subscriptions`, whose `main.rs` reads the configuration, starts telemetry and serves both listeners
-until a signal.
+`subscriptions`, whose `main.rs` reads the configuration, starts telemetry, opens the ledger and serves
+both listeners until a signal.
 
 ### Configuration
 
@@ -263,12 +474,20 @@ value.
 |---|---|---|
 | `SUBSCRIPTIONS_PUBLIC_ADDRESS` | yes | Socket address of the public listener, such as `0.0.0.0:8082` |
 | `SUBSCRIPTIONS_INTERNAL_ADDRESS` | yes | Socket address of the internal listener, such as `0.0.0.0:8083` |
+| `SUBSCRIPTIONS_DATABASE_URL` | yes | The ledger's database, as a `storage::DatabaseUrl` ([Storage](#failures)), such as `postgresql://windmill_subscriptions:<password>@db:5432/windmill_subscriptions` |
 | `SENTRY_ENVIRONMENT` | yes | The deployment's name, such as `production`; Sentry files every report and log under it |
 | `SENTRY_DSN` | no | Where Sentry reports go; unset turns Sentry off, logged once at start |
 | `SENTRY_RELEASE` | no | The build's git sha, attached to every report |
-| `WINDMILL_LOG_LEVEL` | no | The lowest level written to stdout: `trace`, `debug`, `info` (default), `warn`, `error` or `fatal`, in any case, the words the backend reads; `fatal` reads as `error` |
+| `WINDMILL_LOG_LEVEL` | no | The lowest level written to stdout: `trace`, `debug`, `info` (default), `warn`, `error` or `fatal`, in any case, the words the backend reads; `fatal` reads as `error`. sqlx's own lines stay at `warn` or above, because below it they carry the server's raw error text |
 | `SENTRY_LOG_LEVEL` | no | The same words: the lowest level of the service's own lines sent to Sentry as Logs; default `info` |
 | `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` | no | `true` adds `GET /debug/panic` to the internal listener; refused unless `SENTRY_ENVIRONMENT`, trimmed and in any case, is `local`, `development`, `test` or `ci` |
+
+### Start
+
+The ledger opens before either listener binds, so no door ever answers over an older schema. A ledger
+that does not open stops the start with exit code 1, one line `ledger.open failed` carrying its
+`code` and `sqlstate`, and a Sentry Issue ([Logs and Sentry](#logs-and-sentry)). A ledger that
+opens writes `ledger open` with its `epoch`.
 
 ### Listeners
 
@@ -278,8 +497,8 @@ does not exist on the public one and answers 404 there.
 
 | Listener | Route | Answer |
 |---|---|---|
-| public | `GET /health` | 200 `{"status":"ready"}` |
-| internal | `GET /health` | 200 `{"status":"ready"}`; the image's `HEALTHCHECK` asks it |
+| public | `GET /health` | 200 `{"status":"ready"}` while the ledger answers `Ledger::check`, else 503 `{"status":"unavailable"}` |
+| internal | `GET /health` | the same; the image's `HEALTHCHECK` asks it |
 | internal | `GET /debug/panic` | panics, only while `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` is `true` |
 
 `listeners::Bounds` holds what a client may take on either listener:
@@ -294,9 +513,13 @@ A handler runs only while its client waits: a client that leaves cancels it. A d
 outlive its request, such as the App Store notification door, spawns that work as a pipeline of its
 own.
 
+Both listeners answer health the same way because every door reads or writes the ledger. The routers
+take what they ask as a `listeners::Readiness`, which `Ledger` is, so a test hands them a fake.
+
 SIGTERM or SIGINT stops both listeners from accepting. Each open connection then finishes its request
-within the bounds above, for at most 6 s; Sentry's last flush takes at most 1 s more and the send in
-progress at most 2 s, so the process exits 0 inside Docker's 10 s, whether or not Sentry answers.
+within the bounds above, and the ledger's connections close once no request holds one, for at most
+6 s together; Sentry's last flush takes at most 1 s more and the send in progress at most 2 s, so the
+process exits 0 inside Docker's 10 s, whether or not Sentry answers.
 
 ### Logs and Sentry
 
@@ -311,26 +534,40 @@ The line reads no header, body or raw path. A 5xx line is at `error`, a 4xx or c
 {"timestamp":"2026-11-14T10:58:01.163207Z","level":"ERROR","message":"request","listener":"internal","method":"GET","route":"/debug/panic","status":500,"outcome":"panicked","duration_ms":4.3,"request_id":"8244ce4ef07341ff85532a1d8dfc7cf9"}
 ```
 
+A health check the ledger does not answer also writes `ledger did not answer` at `warn`, with
+`operation` `ledger.check`, the failure's `code` and `sqlstate`, inside the request's span.
+
 Lines from every crate of the workspace (`telemetry::SERVICE_CRATES`) also go to Sentry as Logs; a
 vendor's lines stay on stdout. A line at `error` creates no Issue. Issues come from explicit
-reports: a panic after start is reported with its location and stack and without its message, and
-logged as `panic` with the event's `sentry_event_id` (absent while Sentry is off). The stack ends at
+reports, each logged with the event's `sentry_event_id` (absent while Sentry is off):
+
+- `telemetry::report_failure` reports an unexpected failure of a named operation (spec §10). Its
+  message is the operation, such as `ledger.open`; its tags are `operation`, `code` and, from the
+  database, `sqlstate`; one Issue gathers each operation and code. Its line is `<operation> failed`
+  at `error`. `ledger.open` is the one operation so far.
+- A panic after start is reported with its location and stack and without its message, and logged as
+  `panic`. The stack ends at
 the panicking frame, and the service's crates are its in-app frames. A panic inside a request also
 carries that request's span in its line and its `listener`, `route` and `request_id` as tags, and the
 request answers 500 `{"error":"internal"}` while the listener keeps answering.
 
 ### Run
 
+The local Postgres gets the ledger's database and role as
+[backend/RUNNING.md](../../backend/RUNNING.md#2-database) shows. Then:
+
 ```sh
 SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0.0.1:8083 \
+  SUBSCRIPTIONS_DATABASE_URL="postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions" \
   SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
 ```
 
-The image builds from this directory and sets both addresses itself:
+The image builds from this directory and sets both addresses itself. A container reaches the host's
+Postgres over TCP, so it needs a URL with a host and a role that may sign in over it; the deploy
+README's [rehearsal](../../backend/deploy/README.md#rehearse-it-locally) runs it beside its database:
 
 ```sh
 docker build --build-arg SENTRY_RELEASE="$(git rev-parse HEAD)" -t windmill-subscriptions .
-docker run --rm -p 8082:8082 -p 8083:8083 -e SENTRY_ENVIRONMENT=local windmill-subscriptions
 ```
 
 ## Toolchain
@@ -353,7 +590,17 @@ cargo test --locked
 
 `check-dependencies.sh` needs `jq` and runs from any directory.
 
-A second job builds the image and runs it twice. First it must become healthy, answer ready on both
-listeners, answer 404 for an internal path on the public port and exit 0 on SIGTERM. Then, with a
-Sentry that accepts and never answers and three panics waiting to send, `docker stop` must exit 0
-within 10 s.
+The tests that need Postgres, in `crates/storage/tests/ledger.rs`, run only where
+`SUBSCRIPTIONS_TEST_DATABASE_URL` names a database whose role may create databases; each test creates
+an empty one beside it and drops it after. Without the variable they are compiled as ignored, so the
+summary counts them as not run. Against the local Homebrew Postgres:
+
+```sh
+SUBSCRIPTIONS_TEST_DATABASE_URL="postgresql:///postgres?host=/tmp" cargo test --locked
+```
+
+The check job runs them against a Postgres 16 service. A second job builds the image and runs it
+twice beside a Postgres of its own. First it must migrate the empty database, become healthy, answer
+ready on both listeners, answer 404 for an internal path on the public port and exit 0 on SIGTERM.
+Then, with a Sentry that accepts and never answers and three panics waiting to send, `docker stop`
+must exit 0 within 10 s.

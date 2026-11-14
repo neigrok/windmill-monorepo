@@ -60,6 +60,9 @@ jobs:
           SSH_PORT: ${{ secrets.SSH_PORT }}
           # Guarded (emptiness breaks the site or the DB):
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          # The subscription service's database role. Empty ⇒ windmill_subscriptions is not provisioned and
+          # the subscriptions-db one-shot logs SKIP (backend/deploy/README.md).
+          SUBSCRIPTIONS_DB_PASSWORD: ${{ secrets.SUBSCRIPTIONS_DB_PASSWORD }}
           DOMAIN_APP: ${{ vars.DOMAIN_APP }}
           DOMAIN_API: ${{ vars.DOMAIN_API }}
           ACME_EMAIL: ${{ vars.ACME_EMAIL }}
@@ -179,6 +182,12 @@ jobs:
             exit 1
           fi
 
+          # The role's password sits unescaped in the subscription service's postgres:// URL.
+          if [ -n "$SUBSCRIPTIONS_DB_PASSWORD" ] && [[ ! "$SUBSCRIPTIONS_DB_PASSWORD" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Refusing to render — SUBSCRIPTIONS_DB_PASSWORD must be empty or 64 lowercase hex characters (openssl rand -hex 32)."
+            exit 1
+          fi
+
           if [ "$AI_INSTALLATIONS_ENABLED" = true ] || [ "$AI_INSTALLATIONS_ENABLED" = 1 ]; then
             if { [ "$AI_ALLOWANCES_ENABLED" != true ] && [ "$AI_ALLOWANCES_ENABLED" != 1 ]; } || [ "${#AI_INSTALLATION_IP_HMAC_KEY}" -lt 32 ]; then
               echo "Refusing to render — anonymous AI requires enabled allowances and the installation network secret."
@@ -190,7 +199,7 @@ jobs:
           : > rendered.env
           {
             printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG:-latest}"
-            for key in POSTGRES_PASSWORD DOMAIN_APP DOMAIN_API ACME_EMAIL CF_IPS \
+            for key in POSTGRES_PASSWORD SUBSCRIPTIONS_DB_PASSWORD DOMAIN_APP DOMAIN_API ACME_EMAIL CF_IPS \
                        RESEND_API_KEY RESEND_FROM RESEND_WEBHOOK_SECRET ANTHROPIC_API_KEY OPENAI_API_KEY \
                        TENDING_ENABLED COACH_MAX_OUTPUT_TOKENS AI_ALLOWANCES_ENABLED AI_ANONYMOUS_LIFETIME_USD \
                        AI_LOGGED_IN_MONTHLY_USD AI_ONE_PERIOD_USD AI_FREE_MONTHLY_USD \
@@ -217,10 +226,13 @@ jobs:
           PORT="${SSH_PORT:-22}"
           SSH="ssh -i deploy_key -p ${PORT} -o StrictHostKeyChecking=accept-new"
 
-          $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill'
+          # A folder left by a refused candidate would take the next copy inside it, so it goes first.
+          $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill && rm -rf ~/windmill/subscriptions-db.next'
           scp -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \
             backend/deploy/deploy-production.sh backend/deploy/sync_compatibility.py sync-cutover.json rendered.env \
             "$SSH_USER@$SSH_HOST:windmill/"
+          scp -r -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \
+            backend/deploy/subscriptions-db "$SSH_USER@$SSH_HOST:windmill/subscriptions-db.next"
           scp -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \
             backend/deploy/docker-compose.yml "$SSH_USER@$SSH_HOST:windmill/docker-compose.next.yml"
           scp -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \
