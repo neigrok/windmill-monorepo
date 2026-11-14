@@ -118,7 +118,8 @@
               },
               "offerKind": "free_trial",
               "refundedAt": null,
-              "observedAt": "2027-01-01T10:00:05Z"
+              "observedAt": "2027-01-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -153,7 +154,8 @@
               },
               "offerKind": "free_trial",
               "refundedAt": null,
-              "observedAt": "2027-01-01T10:00:05Z"
+              "observedAt": "2027-01-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -288,7 +290,8 @@
               },
               "offerKind": "free_trial",
               "refundedAt": null,
-              "observedAt": "2027-01-03T08:00:00Z"
+              "observedAt": "2027-01-03T08:00:00Z",
+              "leftWith": null
             }
           }
         ],
@@ -432,7 +435,8 @@
               },
               "offerKind": "free_trial",
               "refundedAt": null,
-              "observedAt": "2027-01-08T10:00:03Z"
+              "observedAt": "2027-01-08T10:00:03Z",
+              "leftWith": null
             }
           }
         ],

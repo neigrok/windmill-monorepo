@@ -56,10 +56,16 @@ window.mount = (options = {}) => {
     const mountedAbove = useRef(guide?.above);
     useEffect(() => { if (guide && guide.above !== mountedAbove.current) window.aboveTaken = true; }, [guide?.above]);
     const entry = guide && React.createElement(GuideEntry, { guide, band, view: 'graph' });
+    const sheet = useMemo(() => ({ current: { id: 'sail', title: 'Learn to sail', done: 3, total: 8 }, listTrees: async () => [] }), []);
+    const sheetEntry = guide && React.createElement(GuideEntry, { guide, band, view: 'graph', door: 'sheet' });
     const door = holder ? (treeId, by) => { window.entered.push([treeId, by]); return true; } : null;
     return React.createElement(TreeDoor.Provider, { value: door }, React.createElement('div', { className: 'st-root' },
       React.createElement('button', { type: 'button', id: 'step', style: { position: 'absolute', right: 24, bottom: 24 } }, 'Read the wind'),
-      phone
+      options.sheet
+        ? React.createElement(React.Fragment, null,
+          React.createElement(RoadmapIdentity, { band, view: 'tree', role: owner ? 'owner' : 'reader', title: 'Learn to sail', sheet: owner ? sheet : null, sheetGuide: owner ? sheetEntry : null, guide: !phone ? entry : null, guideOpen: Boolean(guide?.opened) }),
+          phone && !owner ? entry : null)
+        : phone
         ? React.createElement('div', { className: 'st-board st-board--phone', style: { paddingTop: 112 } }, entry)
         : React.createElement(RoadmapIdentity, { band, view: 'tree', role: owner ? 'owner' : 'reader', title: 'Learn to sail', progress: { done: 3, total: 8 }, onSwitchView: () => {}, guide: entry }),
       guide?.opened && React.createElement(GuideNote, { guide, band, view: 'graph' })));

@@ -88,6 +88,12 @@ def on_the_wire(record):
     return {field: shown[field] for field in SUBSCRIPTION_FIELDS}
 
 
+# The latest instant an event named for a subscription that grants nothing: it moves only with an event (§5.2)
+def last_told(record):
+    return max(at for at in (record["startedAt"], record["paymentFailedAt"], record["pausedAt"], record["endedAt"])
+               if at is not None)
+
+
 # One environment's Entitlement (§5.2)
 def fold(records):
     if not records:
@@ -96,7 +102,7 @@ def fold(records):
     if granting:
         governing = min(granting, key=lambda r: (-access_until(r), r["subscriptionId"]))
     else:
-        governing = min(records, key=lambda r: (-r["observedAt"], r["subscriptionId"]))
+        governing = min(records, key=lambda r: (-last_told(r), r["subscriptionId"]))
     others = sorted((r for r in records if r is not governing and r["state"] not in ENDED),
                     key=lambda r: r["subscriptionId"])
     until = access_until(governing)

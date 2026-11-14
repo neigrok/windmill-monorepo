@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use domain::{
-    AccountEntitlement, AccountHint, AccountId, Accounts, BillingInterval, Change, Claim,
+    AccountEntitlement, AccountHint, AccountId, Accounts, BillingInterval, Change, Claim, Claimant,
     EndReason, Ending, Entitlement, Environment, Event, Instant, Ledger, Lineage, Money,
     NextCharge, Observation, ObservedPeriod, Offer, OfferKind, Ownership, Period, PeriodChange,
     PeriodId, Plan, ProductId, Renewal, Span, State, Status, Store, StoreSubscriptionId,
@@ -343,9 +343,17 @@ fn claim(value: &Value) -> Option<Claim> {
     if value.is_null() {
         return None;
     }
-    exactly(value, &["accountId", "at"]);
+    exactly(value, &["claimant", "at"]);
+    let claimant = match field(value, "claimant") {
+        Value::String(claimant) if claimant == "erased" => Claimant::Erased,
+        live @ Value::Object(_) => {
+            exactly(live, &["live"]);
+            Claimant::Live(AccountId::new(text(live, "live")))
+        }
+        other => panic!("{other} is not a claimant: \"erased\" or {{\"live\": accountId}}"),
+    };
     Some(Claim {
-        account_id: AccountId::new(text(value, "accountId")),
+        claimant,
         at: instant(field(value, "at")),
     })
 }
@@ -431,6 +439,7 @@ fn period_json(period: &Period) -> Value {
         "offerKind": period.offer_kind.map(OfferKind::name),
         "refundedAt": optional_iso(period.refunded_at),
         "observedAt": iso(period.observed_at),
+        "leftWith": period.left_with.as_ref().map(AccountId::as_str),
     })
 }
 
