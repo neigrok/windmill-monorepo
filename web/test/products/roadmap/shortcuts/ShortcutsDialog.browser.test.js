@@ -161,17 +161,18 @@ for (const engine of ['Chromium', 'WebKit']) {
           assert.equal(await body.evaluate((element) => element === document.activeElement), true);
           if (process.env.SHORTCUT_CAPTURE_DIR) await page.screenshot({ path: `${process.env.SHORTCUT_CAPTURE_DIR}/${engine}-${view}-${width}-dark-compact.png` });
           await page.keyboard.press(forward);
-          const compactHeight = await body.evaluate((element) => element.clientHeight);
-          await page.setViewportSize({ width, height: 1200 });
-          await page.waitForFunction((compactHeight) => {
-            const body = document.querySelector('[role="region"]');
-            return body.clientHeight > compactHeight && body.tabIndex === (body.scrollHeight > body.clientHeight ? 0 : -1);
-          }, compactHeight, { timeout: 2000 });
-          await page.setViewportSize({ width, height: 500 });
-          await page.waitForFunction((compactHeight) => {
-            const body = document.querySelector('[role="region"]');
-            return body.clientHeight === compactHeight && body.scrollHeight > body.clientHeight && body.tabIndex === 0;
-          }, compactHeight, { timeout: 2000 });
+          for (const height of [1200, 500]) {
+            await page.setViewportSize({ width, height });
+            await page.waitForFunction(({ width, height }) => {
+              const bounds = document.querySelector('[role="dialog"]').getBoundingClientRect();
+              const body = document.querySelector('[role="region"]');
+              return innerWidth === width && innerHeight === height
+                && Math.abs(bounds.x + bounds.width / 2 - width / 2) <= 1
+                && Math.abs(bounds.y + bounds.height / 2 - height / 2) <= 1
+                && body.tabIndex === (body.scrollHeight > body.clientHeight ? 0 : -1);
+            }, { width, height }, { timeout: 2000 });
+          }
+          assert.equal(await body.evaluate((element) => element.scrollHeight > element.clientHeight && element.tabIndex === 0), true);
           await page.keyboard.press(backward);
           assert.equal(await body.evaluate((element) => element === document.activeElement), true);
           await page.keyboard.press('Escape');
