@@ -7,24 +7,26 @@
       "name": "bound_to_caller",
       "status": 200,
       "body": {
-        "plan": "windmill_one",
-        "accessUntil": 1799056800000,
         "environment": "production",
+        "plan": "windmill_one",
+        "accessUntil": 1799236800000,
         "governing": {
-          "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+          "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
           "store": "app_store",
           "state": "active",
-          "startedAt": 1796292000000,
+          "startedAt": 1796472000000,
           "currentPeriod": {
-            "start": 1796292000000,
-            "end": 1798970400000
+            "start": 1796472000000,
+            "end": 1799150400000
           },
+          "accessUntil": 1799236800000,
           "autoRenew": true,
-          "nextChargeAt": 1798970400000,
+          "nextChargeAt": 1799150400000,
           "nextCharge": {
             "amount": "11.99",
             "currency": "USD"
           },
+          "nextProductId": null,
           "cancelRequestedAt": null,
           "paymentFailedAt": null,
           "graceEndsAt": null,
@@ -48,24 +50,26 @@
       "name": "already_bound_to_caller",
       "status": 200,
       "body": {
-        "plan": "windmill_one",
-        "accessUntil": 1799056800000,
         "environment": "production",
+        "plan": "windmill_one",
+        "accessUntil": 1799236800000,
         "governing": {
-          "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+          "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
           "store": "app_store",
           "state": "active",
-          "startedAt": 1796292000000,
+          "startedAt": 1796472000000,
           "currentPeriod": {
-            "start": 1796292000000,
-            "end": 1798970400000
+            "start": 1796472000000,
+            "end": 1799150400000
           },
+          "accessUntil": 1799236800000,
           "autoRenew": true,
-          "nextChargeAt": 1798970400000,
+          "nextChargeAt": 1799150400000,
           "nextCharge": {
             "amount": "11.99",
             "currency": "USD"
           },
+          "nextProductId": null,
           "cancelRequestedAt": null,
           "paymentFailedAt": null,
           "graceEndsAt": null,
