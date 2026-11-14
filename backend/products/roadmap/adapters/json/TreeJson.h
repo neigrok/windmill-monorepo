@@ -54,6 +54,9 @@ Json::Value toJson(const UnconfirmedBranch& branch, const std::optional<BranchSi
 // A root's change aimed at a subtree, as REST answers it: {code: "not-a-root", error, parent: {tree, step}, root}, the
 // error naming where it hangs and then `remedy`, the door's own words.
 Json::Value toJson(const NotARoot& refusal, const std::string& remedy);
+// The pointers a write sent steps that own a subtree, refused (SPEC.md, Model, Legacy pointers), as the socket's ack and a
+// PUT's answer carry them in `refused`: [{node, field: "opens", code: "owns-a-subtree"}], one per step, in step order.
+Json::Value refusedPointersJson(const std::vector<NodeId>& steps);
 // `opens` of GET /v1/trees/{id}, by node id; `loop` marks an opening whose tree is among `leadingBack`.
 Json::Value toJson(const std::map<NodeId, Opening>& openings, const std::set<TreeId>& leadingBack);
 // `guides` of GET /v1/trees/{id}/guides and of MCP get_tree, in the order given: one {treeId, title, text, yours} each.

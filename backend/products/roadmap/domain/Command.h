@@ -7,6 +7,7 @@
 #include "products/roadmap/domain/Tree.h"
 
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -17,7 +18,7 @@ namespace wm {
 
 // Admission bounds, enforced by validate() for a single command and admit() for a graph that
 // arrives whole, and told by the refusal past each: the MCP catalogue publishes none in a schema
-// but a title's (adapters/mcp/README.md, What the catalogue says). Every length is
+// (adapters/mcp/README.md, What the catalogue says). Every length is
 // counted in characters — Unicode code points, by codePointCount() — never bytes.
 constexpr std::size_t kMaxIdLength = 128;                // node / tree id
 constexpr std::size_t kMaxNodeLabelLength = 200;         // node display label
@@ -28,7 +29,7 @@ constexpr std::size_t kMaxLinkLabelLength = 200;         // a link's display tex
 constexpr std::size_t kMaxLinkUrlLength = 2048;          // a link's url
 constexpr std::size_t kMaxNodes = 10000;                 // present nodes admitted per tree
 constexpr std::size_t kMaxEdges = 20000;                 // present edges admitted per tree
-constexpr std::size_t kMaxTitleChars = 200;              // a roadmap's name (TreeRegistry truncates)
+constexpr std::size_t kMaxTitleChars = 200;              // a roadmap's name (a rename cuts to it; other doors refuse)
 constexpr std::size_t kMaxGuideChars = 5000;             // a roadmap's guide: what it is, how to work it
 constexpr std::size_t kMaxKinds = 6;                     // legend kinds per tree (one per hue)
 constexpr std::size_t kMaxKindLabelLength = 24;          // a legend kind's label
@@ -166,9 +167,11 @@ struct EdgeChangePlan {
 std::optional<Command> changedPart(const NodeSpec& node, const Command& command);
 
 // A refusal is its sentence, or the KindRefusal of the row whose `kind` refused the batch. A row's links are judged
-// against the ones its node holds (shownLinks).
+// against the ones its node holds (shownLinks). A row's `opens` on a step of `owned`, the subtree each step owns, plans
+// nothing: such a step's pointer takes no write (SPEC.md, Model, Legacy pointers).
 std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
-    const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates);
+    const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates,
+    const std::map<NodeId, TreeId>& owned);
 // The edges a change lands, as one command each — or, when they are one edge removed and one added that keeps its
 // source or its target, as the one ReconnectEdge that moves an edge, as a lone change lands as its own command.
 std::variant<EdgeChangePlan, std::string> planEdgeChanges(
