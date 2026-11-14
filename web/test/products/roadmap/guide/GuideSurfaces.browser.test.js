@@ -21,13 +21,13 @@ async function linePoint(page, line, from = 'start', height = 27) {
 }
 
 for (const engine of [chromium, webkit]) {
-  test(`${engine.name()}: the card opens a modal, a drag that selects stays reading, and a click writes from where it landed`, async () => {
+  test(`${engine.name()}: the entry opens a modal, a drag that selects stays reading, and a click writes from where it landed`, async () => {
     const page = await open({ guide: GUIDE }, { engine });
     try {
       await withBrowserErrors(page, async () => {
-        const card = page.getByRole('button', { name: 'Guide: One step a week.' });
-        assert.equal(await card.textContent(), 'GuideOne step a week.Read guide→');
-        await card.click();
+        const entry = page.getByRole('button', { name: 'Guide: One step a week.' });
+        assert.equal(await entry.textContent(), 'One step a week.');
+        await entry.click();
         const note = page.getByRole('dialog', { name: 'Guide', exact: true });
         await note.waitFor();
         await settled(page);
@@ -35,10 +35,10 @@ for (const engine of [chromium, webkit]) {
         assert.deepEqual({
           modal: await note.getAttribute('aria-modal'),
           tree: await stepInert(page),
-          cardShown: await page.locator('.st-guide-card').evaluate((button) => getComputedStyle(button).visibility),
+          entryShown: await page.locator('.st-guide-entry').evaluate((button) => getComputedStyle(button).visibility),
           width: opened.width,
           focus: await focusedName(page),
-        }, { modal: 'true', tree: true, cardShown: 'visible', width: 1392, focus: 'st-guide-prose st-guide-prose--owner' });
+        }, { modal: 'true', tree: true, entryShown: 'visible', width: 1392, focus: 'st-guide-prose st-guide-prose--owner' });
         assert.deepEqual([opened.x, opened.y, opened.height], [24, 24, 912]);
 
         const from = await linePoint(page, 0, 'start');
@@ -58,22 +58,22 @@ for (const engine of [chromium, webkit]) {
         await page.keyboard.type('Then ');
         assert.equal(await field(page).inputValue(), GUIDE.replace('A step', 'Then A step'));
         assert.deepEqual(await events(page), [
-          { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' },
+          { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' },
           { step: 'edit', via: 'click' },
         ]);
       });
     } finally { await page.close(); }
   });
 
-  test(`${engine.name()}: a held card press opens the modal at the window inset`, async () => {
+  test(`${engine.name()}: a held entry press opens the modal at the window inset`, async () => {
     const page = await open({ guide: GUIDE }, { engine });
     try {
       await withBrowserErrors(page, async () => {
-        const card = page.getByRole('button', { name: 'Guide: One step a week.' });
-        await card.hover();
+        const entry = page.getByRole('button', { name: 'Guide: One step a week.' });
+        await entry.hover();
         await settled(page);
         await page.mouse.down();
-        await page.waitForFunction(() => new DOMMatrix(getComputedStyle(document.querySelector('.st-guide-card')).transform).a < 0.98);
+        await page.waitForFunction(() => new DOMMatrix(getComputedStyle(document.querySelector('.st-guide-entry')).transform).a < 0.98);
         await page.mouse.up();
         const note = page.getByRole('dialog', { name: 'Guide', exact: true });
         await note.waitFor();
@@ -165,12 +165,12 @@ for (const engine of [chromium, webkit]) {
   });
 }
 
-test('Chromium: the pencil writes from the end, Save waits for a change, and the saved note is read before it closes back to its card', async () => {
+test('Chromium: the pencil writes from the end, Save waits for a change, and the saved note is read before it closes back to its entry', async () => {
   const page = await open({ guide: GUIDE });
   try {
     await withBrowserErrors(page, async () => {
-      const card = page.getByRole('button', { name: 'Guide: One step a week.' });
-      await card.click();
+      const entry = page.getByRole('button', { name: 'Guide: One step a week.' });
+      await entry.click();
       await page.getByRole('button', { name: 'Edit guide' }).click();
       await page.getByRole('dialog', { name: 'Edit guide' }).waitFor();
       assert.deepEqual(await caretState(page), { start: GUIDE.length, end: GUIDE.length, focused: true });
@@ -199,10 +199,10 @@ test('Chromium: the pencil writes from the end, Save waits for a change, and the
       assert.equal(await stepInert(page), true);
       await page.getByRole('button', { name: 'Close' }).click();
       await note.waitFor({ state: 'detached' });
-      await page.waitForFunction(() => document.activeElement.matches('.st-guide-card'));
-      assert.equal(await card.evaluate((button) => getComputedStyle(button).visibility), 'visible');
+      await page.waitForFunction(() => document.activeElement.matches('.st-guide-entry'));
+      assert.equal(await entry.evaluate((button) => getComputedStyle(button).visibility), 'visible');
       assert.deepEqual(await events(page), [
-        { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' },
+        { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' },
         { step: 'edit', via: 'pencil' },
         { step: 'save', outcome: 'saved', length: '1-500' },
       ]);
@@ -284,13 +284,13 @@ test('Chromium: Cancel on an unchanged draft returns to the note at once, and le
   } finally { await page.close(); }
 });
 
-test('Chromium: a guide set elsewhere replaces the card\'s line and the note\'s text, and mid-edit a status line offers Load latest', async () => {
+test('Chromium: a guide set elsewhere replaces the entry\'s line and the note\'s text, and mid-edit a status line offers Load latest', async () => {
   const page = await open({ guide: GUIDE });
   try {
     await withBrowserErrors(page, async () => {
       await page.evaluate((text) => window.setElsewhere(text), ELSEWHERE);
-      const card = page.getByRole('button', { name: 'Guide: Two steps a week until the June trip.' });
-      await card.click();
+      const entry = page.getByRole('button', { name: 'Guide: Two steps a week until the June trip.' });
+      await entry.click();
       assert.equal(await prose(page).textContent(), ELSEWHERE);
       await page.evaluate((text) => window.setElsewhere(text), GUIDE);
       await page.waitForFunction((text) => document.querySelector('.st-guide-prose').textContent === text, GUIDE);
@@ -312,19 +312,19 @@ test('Chromium: a guide set elsewhere replaces the card\'s line and the note\'s 
   } finally { await page.close(); }
 });
 
-test('Chromium: an owner with no guide adds one from the card, an untouched Add guide closes at once, and clearing a guide removes it', async () => {
+test('Chromium: an owner with no guide adds one from the entry, an untouched Add guide closes at once, and clearing a guide removes it', async () => {
   const page = await open({});
   try {
     await withBrowserErrors(page, async () => {
       const add = page.getByRole('button', { name: 'Add guide', exact: true });
-      assert.equal(await add.textContent(), 'Add guide→');
+      assert.equal(await add.textContent(), 'Add guide');
       await add.click();
       const adding = page.getByRole('dialog', { name: 'Add guide' });
       await adding.waitFor();
       assert.deepEqual(await field(page).evaluate((box) => [box.placeholder, box.value, document.activeElement === box]), ['What are you working toward?', '', true]);
       await page.getByRole('button', { name: 'Cancel' }).click();
       await adding.waitFor({ state: 'detached' });
-      await page.waitForFunction(() => document.activeElement.matches('.st-guide-card[aria-label="Add guide"]'));
+      await page.waitForFunction(() => document.activeElement.matches('.st-guide-entry[aria-label="Add guide"]'));
       await add.click();
       await page.keyboard.type('  \n ');
       await page.keyboard.press('Meta+Enter');
@@ -337,11 +337,11 @@ test('Chromium: an owner with no guide adds one from the card, an untouched Add 
       await page.keyboard.type('Written on the dock.');
       await page.getByRole('button', { name: 'Save' }).click();
       await adding.waitFor({ state: 'detached' });
-      const card = page.getByRole('button', { name: 'Guide: Written on the dock.' });
-      await card.waitFor();
-      await page.waitForFunction(() => document.activeElement.matches('.st-guide-card[aria-label^="Guide:"]'));
+      const entry = page.getByRole('button', { name: 'Guide: Written on the dock.' });
+      await entry.waitFor();
+      await page.waitForFunction(() => document.activeElement.matches('.st-guide-entry[aria-label^="Guide:"]'));
       assert.deepEqual(await page.evaluate(() => window.writes), ['Written on the dock.']);
-      await card.click();
+      await entry.click();
       await page.getByRole('button', { name: 'Edit guide' }).click();
       await field(page).fill('');
       await page.getByRole('button', { name: 'Save' }).click();
@@ -349,13 +349,13 @@ test('Chromium: an owner with no guide adds one from the card, an untouched Add 
       await page.getByRole('dialog').waitFor({ state: 'detached' });
       assert.deepEqual(await page.evaluate(() => window.writes), ['Written on the dock.', '']);
       assert.deepEqual(await events(page), [
-        { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'add' },
+        { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'add' },
         { step: 'cancel' },
-        { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'add' },
+        { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'add' },
         { step: 'cancel' },
-        { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'add' },
+        { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'add' },
         { step: 'save', outcome: 'saved', length: '1-500' },
-        { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'pencil' },
+        { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'pencil' },
         { step: 'save', outcome: 'cleared', length: '0' },
       ]);
     });
@@ -366,21 +366,21 @@ test('Chromium: a reader sees the author\'s note on the tree, a reader of a tree
   const reader = await open({ guide: GUIDE, role: 'reader' });
   try {
     await withBrowserErrors(reader, async () => {
-      const card = reader.getByRole('button', { name: 'Author’s note: One step a week.' });
-      assert.equal(await card.textContent(), 'Author’s noteOne step a week.Read note→');
-      await card.click();
+      const entry = reader.getByRole('button', { name: 'Author’s note: One step a week.' });
+      assert.equal(await entry.textContent(), 'One step a week.');
+      await entry.click();
       await reader.getByRole('dialog', { name: 'Author’s note' }).waitFor();
       assert.equal(await prose(reader).textContent(), GUIDE);
-      assert.deepEqual(await events(reader), [{ step: 'open', door: 'card', view: 'graph', role: 'reader', above: 'none' }]);
+      assert.deepEqual(await events(reader), [{ step: 'open', door: 'row', view: 'graph', role: 'reader', above: 'none' }]);
       await reader.evaluate(() => window.setElsewhere(''));
       await reader.getByRole('dialog').waitFor({ state: 'detached' });
-      assert.equal(await reader.locator('.st-guide-card').count(), 0);
+      assert.equal(await reader.locator('.st-guide-entry').count(), 0);
     });
   } finally { await reader.close(); }
   for (const options of [{ role: 'reader' }, { guide: GUIDE, role: 'reader', shared: true }, { guide: GUIDE, role: 'reader', shared: true, band: 'phone' }]) {
     const page = await open(options);
     try {
-      assert.equal(await page.locator('.st-guide-card, .st-guide-row').count(), 0);
+      assert.equal(await page.locator('.st-guide-entry, .st-guide-row').count(), 0);
     } finally { await page.close(); }
   }
 });
@@ -530,7 +530,7 @@ test('Chromium: the note stays open with its draft when the window crosses 744px
       await page.setViewportSize({ width: 1024, height: 800 });
       await page.evaluate(() => window.setRoom({ band: 'desktop' }));
       assert.equal(await field(page).inputValue(), `${GUIDE} Written`);
-      assert.deepEqual(await events(page), [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'pencil' }]);
+      assert.deepEqual(await events(page), [{ step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'pencil' }]);
 
       await page.evaluate(() => window.setRoom({ shared: true }));
       await page.getByRole('dialog').waitFor({ state: 'detached' });
@@ -622,7 +622,7 @@ for (const engine of [chromium, webkit]) {
         assert.deepEqual(await ring(), [true, 'none', 'textbox', 'true']);
         await page.getByRole('button', { name: 'Close' }).click();
         await page.getByRole('dialog').waitFor({ state: 'detached' });
-        await page.locator('.st-guide-card').focus();
+        await page.locator('.st-guide-entry').focus();
         await page.keyboard.press('Enter');
         await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
         assert.deepEqual(await ring(), [true, 'solid', 'textbox', 'true']);
@@ -654,18 +654,18 @@ test('Chromium: Enter held on the entry opens the note once: it neither runs on 
   const page = await open({ guide: GUIDE });
   try {
     await withBrowserErrors(page, async () => {
-      await page.locator('.st-guide-card').focus();
+      await page.locator('.st-guide-entry').focus();
       for (let press = 0; press < 4; press += 1) await page.keyboard.down('Enter');
       await page.keyboard.up('Enter');
       await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
       assert.equal(await field(page).count(), 0);
-      assert.deepEqual(await events(page), [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }]);
+      assert.deepEqual(await events(page), [{ step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' }]);
     });
   } finally { await page.close(); }
   const empty = await open({});
   try {
     await withBrowserErrors(empty, async () => {
-      await empty.locator('.st-guide-card').focus();
+      await empty.locator('.st-guide-entry').focus();
       for (let press = 0; press < 4; press += 1) await empty.keyboard.down('Enter');
       await empty.keyboard.up('Enter');
       assert.equal(await field(empty).inputValue(), '');
@@ -686,7 +686,7 @@ test('Chromium: an owner demoted mid-draft saves nothing and is told it was refu
       await page.getByRole('button', { name: 'Edit guide' }).click();
       await page.keyboard.type(' Written');
       await page.evaluate(() => window.setRoom({ owner: false }));
-      await page.waitForFunction(() => document.querySelector('.st-guide-card').getAttribute('aria-label').startsWith('Author’s note'));
+      await page.waitForFunction(() => document.querySelector('.st-guide-entry').getAttribute('aria-label').startsWith('Author’s note'));
       await page.keyboard.press('Meta+Enter');
       const line = page.getByRole('alert');
       await line.waitFor();
@@ -743,12 +743,12 @@ test('Chromium: the note dissolves in over 160ms and Discard draft? over 120ms, 
   const page = await open({ guide: GUIDE });
   try {
     await withBrowserErrors(page, async () => {
-      const card = page.locator('.st-guide-card');
-      const rest = await card.evaluate((button) => getComputedStyle(button).backgroundColor);
-      await card.hover();
-      await page.waitForFunction((before) => getComputedStyle(document.querySelector('.st-guide-card')).backgroundColor !== before, rest);
+      const entry = page.locator('.st-guide-entry');
+      const rest = await entry.evaluate((button) => getComputedStyle(button).backgroundColor);
+      await entry.hover();
+      await page.waitForFunction((before) => getComputedStyle(document.querySelector('.st-guide-entry')).backgroundColor !== before, rest);
       await page.mouse.down();
-      await page.waitForFunction(() => getComputedStyle(document.querySelector('.st-guide-card')).transform === 'matrix(0.97, 0, 0, 0.97, 0, 0)');
+      await page.waitForFunction(() => getComputedStyle(document.querySelector('.st-guide-entry')).transform === 'matrix(0.97, 0, 0, 0.97, 0, 0)');
       await page.mouse.up();
       assert.deepEqual(await page.locator('.st-guide-paper').evaluate((paper) => paper.getAnimations().map((animation) => [animation.animationName, animation.effect.getTiming().duration, getComputedStyle(paper).animationTimingFunction])),
         [['st-guide-dissolve', 160, 'ease-out']]);

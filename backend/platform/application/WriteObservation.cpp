@@ -75,6 +75,18 @@ std::string freshWriteRequestId() { return newRequestId(); }
 std::string currentWriteRequestId() { return current ? current->id : std::string{}; }
 std::string currentWriteDoor() { return currentObservation ? currentObservation->door() : std::string{}; }
 bool claimWriteIssue() { return !current || !current->reported.exchange(true); }
+void reportWriteWarning(const std::string& operation, const std::string& product, const std::string& door,
+                        const std::string& outcome, const std::string& requestId,
+                        const std::map<std::string, std::string>& tags) {
+  std::shared_ptr<FailureReporter> reporter;
+  {
+    std::lock_guard lock(configurationMutex);
+    reporter = installedReporter;
+  }
+  try {
+    if (reporter) reporter->reportWarning(operation, product, door, outcome, requestId, tags);
+  } catch (...) {}
+}
 void reportCurrentWriteFailure(const std::exception& error) {
   if (currentObservation) currentObservation->reportFailure(error);
 }
@@ -159,7 +171,7 @@ void WriteObservation::finish(std::string outcome) {
   completion_.durationMs = std::round(elapsed * 100) / 100;
   completion_.severity = WriteSeverity::warn;
   if (failed_ || completion_.outcome == "failed") completion_.severity = WriteSeverity::error;
-  else if (completion_.outcome == "ok" || completion_.outcome == "unchanged")
+  else if (completion_.outcome == "ok" || completion_.outcome == "unchanged" || completion_.outcome == "stopped")
     completion_.severity = state_->infoOwner == serial_ && !state_->infoEmitted.exchange(true) ? WriteSeverity::info : WriteSeverity::debug;
   std::function<void(const WriteCompletion&)> sink;
   {

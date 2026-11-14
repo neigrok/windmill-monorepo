@@ -718,6 +718,7 @@ add_executable(windmill_adapters_tests
   test/products/gym/onboarding/OnboardingApiTest.cpp
   test/products/gym/adapters/http/AskApiTest.cpp
   test/products/gym/coach/TurnApiTest.cpp
+  test/products/gym/coach/AnthropicCoachModelTest.cpp
   test/products/gym/adapters/llm/AnthropicAskTest.cpp
   test/products/gym/application/AskServiceTest.cpp
   test/products/gym/application/TrainingServiceTest.cpp

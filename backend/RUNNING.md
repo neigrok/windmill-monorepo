@@ -300,8 +300,9 @@ needs Docker and curl, and checks the Caddyfile first (the `deploy` test).
   (RFC 8441), so that the live socket goes over HTTP/1.1 alone.
 - **§6.8 The idle live socket.** A socket to the server and one through the edge say nothing for
   `LIVE_PING_MS + LIVE_PONG_MS` (35 s) and a second more, and must still be open and answer a `ping`
-  with `pong` within a second. Drogon's idle timeout (60 s) does not reach an upgraded connection, and
-  the production Caddyfile sets no `stream_timeout`, so neither needs a setting for it.
+  with `pong` within a second. The server's idle limit (60 s, `kIdleConnectionLimit` in
+  `platform/adapters/http/ReplyWait.h`) is longer, and the production Caddyfile sets no `stream_timeout`, so
+  neither needs a setting for it.
 
 ```sh
 WM_E2E_DB=wm_sync_test PORT=8089 EDGE_PORT=8443 node test/e2e/deployment_conformance.mjs

@@ -635,6 +635,19 @@ do $$ begin
   end if;
 end $$;
 
+-- The state a released hold left: a `reserved` one was never sent, a `dispatched` or `uncertain` one lapsed unconfirmed
+-- and whatever the vendor billed for it is Windmill's.
+alter table ai_budget_reservations add column if not exists released_from text
+  check (released_from in ('reserved', 'dispatched', 'uncertain'));
+do $$ begin
+  if not exists (select 1 from pg_constraint
+      where conrelid = 'ai_budget_reservations'::regclass and conname = 'ai_budget_released_from') then
+    update ai_budget_reservations set released_from = 'reserved' where state = 'released' and released_from is null;
+    alter table ai_budget_reservations add constraint ai_budget_released_from
+      check ((state = 'released') = (released_from is not null));
+  end if;
+end $$;
+
 create table if not exists ai_budget_alerts (
   id                 text primary key default gen_random_uuid()::text,
   scope              text not null check (scope in ('free_month', 'free_day', 'anonymous_lifetime', 'account_month', 'funded_period')),

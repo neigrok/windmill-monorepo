@@ -10,9 +10,6 @@ const FIRST_FRAME_REFRAME_MS = 1200;
 const ACTIVITY_PANEL_TOP = 172;
 const ACTIVITY_PANEL_GAP = 12;
 
-const sameBox = (held, next) => held === next
-  || Boolean(held && next && held.left === next.left && held.top === next.top && held.width === next.width && held.height === next.height);
-
 // Where everything over the canvas sits: what each piece of chrome measures of itself becomes the camera's insets, the
 // dock's seat, the refusal card's seat, the toast's clearance and the tablet Activity panel's seat.
 export function useGraphGeometry({ breakpoint, canvasView, dockOpen, refusal, forkPillShown, graphStepShown, scene, selectedId, renderModel, toastKey, tendOpen, activityOpen, legendVisible, anchors, framing }) {
@@ -29,19 +26,6 @@ export function useGraphGeometry({ breakpoint, canvasView, dockOpen, refusal, fo
   const graphRefusalRef = useRef(null);
   const [graphRefusalHeight, setGraphRefusalHeight] = useState(0);
   const [legendBox, setLegendBox] = useState(null); // the legend dock's measured { width, height }, or null while it is down
-  // The guide's card publishes its measured box on the canvas.
-  const [guideCardBox, setGuideCardBox] = useState(null);
-  const [canvasWidth, setCanvasWidth] = useState(null);
-  const guideBox = canvasView && !phone ? guideCardBox : null;
-  const publishGuideCard = useCallback((box) => setGuideCardBox((held) => (sameBox(held, box) ? held : box)), []);
-  useLayoutEffect(() => {
-    if (!guideBox) return undefined;
-    const measure = () => setCanvasWidth(rootRef.current?.clientWidth ?? null);
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [Boolean(guideBox)]);
-
   const graphRefusalShown = Boolean(canvasView && refusal);
   const refusalClearance = graphRefusalShown ? graphRefusalHeight + CHROME_GAP : 0;
   const dockTop = phone ? undefined : topbarBottom + CHROME_GAP + refusalClearance;
@@ -69,7 +53,7 @@ export function useGraphGeometry({ breakpoint, canvasView, dockOpen, refusal, fo
   const insets = useMemo(
     () => {
       const base = viewportInsets({
-        breakpoint, dockOpen, legendBox, guideBox, width: canvasWidth,
+        breakpoint, dockOpen, legendBox,
         rowBottom: graphTop,
         barBottom: phoneGraphBottom,
         cameraBlock: canvasView && !phone ? GRAPH_CAMERA_SIZE : null,
@@ -77,7 +61,7 @@ export function useGraphGeometry({ breakpoint, canvasView, dockOpen, refusal, fo
       if (!refusalBottomInset) return base;
       return { ...base, bottom: Math.max(base.bottom, refusalBottomInset) };
     },
-    [breakpoint, dockOpen, legendBox, guideBox, canvasWidth, graphTop, canvasView, phone, phoneGraphBottom, refusalBottomInset],
+    [breakpoint, dockOpen, legendBox, graphTop, canvasView, phone, phoneGraphBottom, refusalBottomInset],
   );
   // The row and the legend publish their measured boxes after the first paint, so the first view — framed a moment
   // earlier against insets that were still guesses — is framed once more as soon as the real ones arrive.
@@ -193,6 +177,6 @@ export function useGraphGeometry({ breakpoint, canvasView, dockOpen, refusal, fo
 
   return {
     topbarBottom, setTopbarBottom, setGraphChromeBottom, setGraphBarBottom, phoneGraphBottom,
-    insets, dockTop, guideTop: topbarBottom + refusalTopInset, publishGuideCard, graphRefusalShown, graphRefusalStyle, attachGraphRefusal, graphToastStyle, tendTopInset, activityPanelTop,
+    insets, dockTop, graphRefusalShown, graphRefusalStyle, attachGraphRefusal, graphToastStyle, tendTopInset, activityPanelTop,
   };
 }
