@@ -17,11 +17,9 @@ class PgEntitlementCopy : public EntitlementCopy {
 public:
   explicit PgEntitlementCopy(std::shared_ptr<PgPool> pool);
 
-  std::unique_ptr<PageTxn> begin() override;
+  std::unique_ptr<PageTxn> begin(const FeedCursor& target, bool rebuilding) override;
   FeedCursor cursor() override;
-  void consume(PageTxn& txn, const FeedEntry& entry) override;
-  void advance(PageTxn& txn, const FeedCursor& cursor) override;
-  void clear(PageTxn& txn) override;
+  void consume(PageTxn& page, const FeedEntry& entry) override;
   std::optional<EntitlementResponse> find(const UserId& account) override;
 
 private:

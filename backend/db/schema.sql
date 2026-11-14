@@ -762,13 +762,14 @@ create index if not exists paddle_subscriptions_user on paddle_subscriptions (us
 -- ── Windmill One entitlements (platform/subscriptions, docs/foundation/subscriptions.md §6.1) ──────────
 -- The backend's own copy of each account's entitlement, as the subscription service's feed last stated it: each
 -- environment's accessUntil (epoch ms, null when that environment grants none), which access reads, and the whole
--- EntitlementResponse, which surfaces show. `seq` is the feed entry that wrote the row; no entry takes it back to an
+-- EntitlementResponse, which surfaces show. It is json, not jsonb, which refuses a \u0000 the feed may carry: any
+-- body the follower accepts is storable. `seq` is the feed entry that wrote the row; no entry takes it back to an
 -- older one. A rebuild from zero replaces every row in one transaction.
 create table if not exists account_entitlements (
   account_id              uuid primary key references users(id) on delete cascade,
   production_access_until bigint,
   sandbox_access_until    bigint,
-  entitlement             jsonb not null,
+  entitlement             json not null,
   seq                     bigint not null
 );
 

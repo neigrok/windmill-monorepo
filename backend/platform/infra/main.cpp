@@ -482,9 +482,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   if (subscriptionService) {
     auto subscriptionFeed = std::make_shared<subscriptions::SubscriptionServiceClient>(*subscriptionService);
     auto entitlementCopy = std::make_shared<subscriptions::PgEntitlementCopy>(pool);
-    auto feedFollower = std::make_shared<subscriptions::FeedFollower>(
-        *subscriptionFeed, *entitlementCopy, std::vector<std::reference_wrapper<subscriptions::FeedEntryConsumer>>{},
-        *sentry);
+    auto feedFollower = std::make_shared<subscriptions::FeedFollower>(*subscriptionFeed, *entitlementCopy,
+                                                                      subscriptions::FurtherConsumers{}, *sentry);
     lifetime.watch(subscriptionFeed);
     lifetime.watch(feedFollower, subscriptionFeed, entitlementCopy, sentry);
     feedFollower->start();

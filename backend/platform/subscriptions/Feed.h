@@ -29,14 +29,41 @@ struct EntitlementResponse {
   Json::Value body;
 };
 
-// One event of the ledger and, when it names an account, that account's entitlement after the event's transaction.
+// What a period was bought at: a decimal amount and its ISO 4217 currency.
+struct Price {
+  std::string amount;
+  std::string currency;
+  bool operator==(const Price&) const = default;
+};
+
+// D-4: one stretch [start, end) paid for or granted, as a period event carries it; `id` is the service's own.
+struct Period {
+  explicit Period(const Json::Value& period);
+
+  std::string id;
+  std::int64_t start = 0;
+  std::int64_t end = 0;
+  std::optional<Price> price;
+  std::optional<std::string> offerKind;
+  std::optional<std::int64_t> refundedAt;
+};
+
+// One event of the ledger (§3.4, §5.2) and, when it names an account, that account's entitlement after the event's
+// transaction. Every word field is one of the contract's closed set.
 struct FeedEntry {
   explicit FeedEntry(const Json::Value& entry);
 
   Seq seq = 0;
   std::string type;
+  std::int64_t occurredAt = 0;
+  std::int64_t recordedAt = 0;
+  std::string subscriptionId;
   std::optional<UserId> accountId;
-  std::optional<EntitlementResponse> entitlement;  // present exactly when accountId is
+  std::string store;
+  std::string environment;
+  std::optional<std::string> offerKind;
+  std::optional<Period> period;                    // exactly on period_recorded, period_refunded, period_refund_reversed
+  std::optional<EntitlementResponse> entitlement;  // exactly when accountId is
 };
 
 // A page of `GET /internal/v1/feed`: entries in ascending seq, the ledger's epoch and the newest seq it holds.

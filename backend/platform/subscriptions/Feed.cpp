@@ -1,10 +1,24 @@
 #include "platform/subscriptions/Feed.h"
 
+#include <algorithm>
+#include <set>
+#include <string_view>
 #include <utility>
 
 namespace wm::subscriptions {
 
 namespace {
+// The contract's closed vocabularies: §3.4's events, D-1's stores, D-2's environments and §3.1's offers.
+const std::set<std::string> kEventTypes{
+    "started", "renewed", "renewal_turned_off", "renewal_turned_on", "payment_failed", "payment_recovered",
+    "pause_scheduled", "paused", "resumed", "plan_change_scheduled", "plan_changed", "period_extended", "expired",
+    "revoked", "revocation_reversed", "updated", "bound", "unbound", "period_recorded", "period_refunded",
+    "period_refund_reversed"};
+const std::set<std::string> kPeriodEvents{"period_recorded", "period_refunded", "period_refund_reversed"};
+const std::set<std::string> kStores{"app_store", "play_store", "paddle"};
+const std::set<std::string> kEnvironments{"production", "sandbox"};
+const std::set<std::string> kOfferKinds{"free_trial", "introductory", "promotional", "offer_code", "win_back"};
+
 // Every key of the contract is always present (packages/api-contract/subscriptions/README.md).
 const Json::Value& field(const Json::Value& object, const char* key) {
   if (!object.isObject() || !object.isMember(key)) throw FeedUnavailable("malformed");
@@ -16,33 +30,81 @@ std::string text(const Json::Value& value) {
   return value.asString();
 }
 
+std::string oneOf(const std::set<std::string>& words, const Json::Value& value) {
+  std::string word = text(value);
+  if (!words.count(word)) throw FeedUnavailable("malformed");
+  return word;
+}
+
+std::optional<std::string> oneOfOrNull(const std::set<std::string>& words, const Json::Value& value) {
+  if (value.isNull()) return std::nullopt;
+  return oneOf(words, value);
+}
+
+std::string uuid(const Json::Value& value) {
+  std::string id = text(value);
+  if (!isUuid(id)) throw FeedUnavailable("malformed");
+  return id;
+}
+
 Seq seqOf(const Json::Value& value) {
   if (!value.isUInt64()) throw FeedUnavailable("malformed");
   return value.asUInt64();
 }
 
-std::optional<std::int64_t> accessUntil(const Json::Value& entitlement) {
-  const Json::Value& value = field(entitlement, "accessUntil");
-  if (value.isNull()) return std::nullopt;
+std::int64_t instant(const Json::Value& value) {
   if (!value.isInt64()) throw FeedUnavailable("malformed");
   return value.asInt64();
+}
+
+std::optional<std::int64_t> instantOrNull(const Json::Value& value) {
+  if (value.isNull()) return std::nullopt;
+  return instant(value);
+}
+
+// A decimal amount ("12.00") and a three-letter ISO 4217 code ("USD"), or no price at all.
+std::optional<Price> priceOrNull(const Json::Value& value) {
+  if (value.isNull()) return std::nullopt;
+  Price price{text(field(value, "amount")), text(field(value, "currency"))};
+  const std::size_t point = price.amount.find('.');
+  const auto digits = [](std::string_view part) {
+    return !part.empty() && std::all_of(part.begin(), part.end(), [](char c) { return c >= '0' && c <= '9'; });
+  };
+  const bool decimal = digits(std::string_view(price.amount).substr(0, point)) &&
+                       (point == std::string::npos || digits(std::string_view(price.amount).substr(point + 1)));
+  const bool currency = price.currency.size() == 3 &&
+                        std::all_of(price.currency.begin(), price.currency.end(), [](char c) { return c >= 'A' && c <= 'Z'; });
+  if (!decimal || !currency) throw FeedUnavailable("malformed");
+  return price;
 }
 }
 
 EntitlementResponse::EntitlementResponse(Json::Value response)
     : accountId(text(field(response, "accountId"))),
-      productionAccessUntil(accessUntil(field(response, "production"))),
-      sandboxAccessUntil(accessUntil(field(response, "sandbox"))),
+      productionAccessUntil(instantOrNull(field(field(response, "production"), "accessUntil"))),
+      sandboxAccessUntil(instantOrNull(field(field(response, "sandbox"), "accessUntil"))),
       body(std::move(response)) {}
 
+Period::Period(const Json::Value& period)
+    : id(uuid(field(period, "id"))), start(instant(field(period, "start"))), end(instant(field(period, "end"))),
+      price(priceOrNull(field(period, "price"))), offerKind(oneOfOrNull(kOfferKinds, field(period, "offerKind"))),
+      refundedAt(instantOrNull(field(period, "refundedAt"))) {}
+
 FeedEntry::FeedEntry(const Json::Value& entry)
-    : seq(seqOf(field(entry, "seq"))), type(text(field(entry, "type"))) {
+    : seq(seqOf(field(entry, "seq"))), type(oneOf(kEventTypes, field(entry, "type"))),
+      occurredAt(instant(field(entry, "occurredAt"))), recordedAt(instant(field(entry, "recordedAt"))),
+      subscriptionId(uuid(field(entry, "subscriptionId"))), store(oneOf(kStores, field(entry, "store"))),
+      environment(oneOf(kEnvironments, field(entry, "environment"))),
+      offerKind(oneOfOrNull(kOfferKinds, field(entry, "offerKind"))) {
+  const Json::Value& stretch = field(entry, "period");
+  if (stretch.isNull() == (kPeriodEvents.count(type) > 0)) throw FeedUnavailable("malformed");
+  if (!stretch.isNull()) period.emplace(stretch);
+
   const Json::Value& account = field(entry, "accountId");
   const Json::Value& after = field(entry, "entitlement");
   if (account.isNull() != after.isNull()) throw FeedUnavailable("malformed");
   if (account.isNull()) return;
-  if (!isUuid(text(account))) throw FeedUnavailable("malformed");
-  accountId = UserId{account.asString()};
+  accountId = UserId{uuid(account)};
   entitlement.emplace(after);
   if (entitlement->accountId != *accountId) throw FeedUnavailable("malformed");
 }

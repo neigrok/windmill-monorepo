@@ -361,6 +361,34 @@ docker compose exec -T server windmill_subtree_inventory
 Exit 0 means the counts were printed, 2 means `DATABASE_URL` is unset, and 1 means the read failed or
 stdout did not take the counts.
 
+## Windmill One: the entitlement copy
+
+The server follows the subscription service's feed into `account_entitlements`, its own copy of every
+account's entitlement ([subscriptions.md](../../docs/foundation/subscriptions.md) §6.1), once
+`SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are both set. With neither it logs at
+start that the follower is off; with one alone it refuses to start, naming the other.
+
+**A page the backend cannot apply stops the copy for every account, by design.** A page applies whole
+or not at all, and the follower skips no entry, since a skipped entry would leave someone's paid state
+wrong. A page with an entry the contract does not describe, one that does not continue the cursor, or
+one the service refuses is read again every 30 s and never applied. Every row stays as the last page
+left it: access still lapses on time, since each row holds the instant it ends (INV-3), but no
+renewal, refund or purchase reaches the copy. The way out is a fix on the service's side; nothing on
+the backend's side moves the cursor past such a page.
+
+To see the cause, read the server's log, which Sentry Logs also holds: each attempt writes
+`subscription follow: the feed is unavailable (<answer>)`, and once the cursor has not moved for 60 s
+the follower writes `subscription follow: the cursor has stalled (cause=…)` and files a
+`subscription.follow.stalled` Issue, at most once per 5 minutes. The Issue carries no detail, so the
+line is where the cause is. The answer is a bounded word: `malformed` (an entry the contract does not
+describe), `out-of-order`, `epoch-changed` or `behind` (pages that do not chain), `timeout`,
+`unreachable`, `network`, `tls` or `bad-reply` (the transport), or an HTTP status such as `401` (a
+token the service does not take). Where the copy stands:
+
+```sh
+docker compose exec db psql -U windmill windmill -c "SELECT epoch, seq FROM subscription_feed_cursor"
+```
+
 ## Frontend
 
 The frontend is the `web/` half of this monorepo — a static Vite SPA, no container, no registry.

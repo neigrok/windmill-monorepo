@@ -4,6 +4,7 @@
 
 #include <trantor/utils/Logger.h>
 
+#include <algorithm>
 #include <exception>
 #include <iterator>
 #include <memory>
@@ -11,13 +12,12 @@
 
 namespace wm::subscriptions {
 
-FeedFollower::FeedFollower(SubscriptionFeed& feed, EntitlementCopy& copy,
-                           std::vector<std::reference_wrapper<FeedEntryConsumer>> furtherConsumers,
+FeedFollower::FeedFollower(SubscriptionFeed& feed, EntitlementCopy& copy, FurtherConsumers further,
                            FailureReporter& reporter, FollowerTiming timing, Now now)
-    : feed_(feed), copy_(copy), consumers_{copy}, timing_(timing), now_(std::move(now)),
-      restores_(reporter, "subscription.follow.restored", std::chrono::minutes(5), now_),
+    : feed_(feed), copy_(copy), inPage_{copy}, beside_(std::move(further.beside)), timing_(timing),
+      now_(std::move(now)), restores_(reporter, "subscription.follow.restored", std::chrono::minutes(5), now_),
       stalls_(reporter, "subscription.follow.stalled", std::chrono::minutes(5), now_), lastProgress_(now_()) {
-  consumers_.insert(consumers_.end(), furtherConsumers.begin(), furtherConsumers.end());
+  inPage_.insert(inPage_.end(), further.inPage.begin(), further.inPage.end());
 }
 
 void FeedFollower::start() {
@@ -39,14 +39,18 @@ void FeedFollower::stop() {
 FollowStep FeedFollower::follow() {
   WriteObservation observation{"subscription.follow", "platform", "background"};
   WriteContext context{observation};
+  {
+    std::lock_guard lock{mutex_};
+    reading_ = ++readsBegun_;
+  }
   FeedCursor from;
   try {
     from = copy_.cursor();
-    standsAt(from.seq);
     const FeedPage page = feed_.page(from.seq, timing_.pageLimit);
     latestSeq_ = page.latestSeq;
     if (const auto cause = from.restoreIn(page)) return rebuild(from, *cause, observation);
     if (!page.entries.empty()) return apply(from, page.entries, from.past(page), false, observation);
+    confirm(from.seq);
     if (from.caughtUpWith(page)) {
       lastProgress_ = now_();
       observation.skip();
@@ -71,20 +75,20 @@ FollowStep FeedFollower::follow() {
 
 FollowStep FeedFollower::apply(const FeedCursor& from, const std::vector<FeedEntry>& entries, const FeedCursor& to,
                                bool rebuilding, WriteObservation& observation) {
-  const std::unique_ptr<PageTxn> txn = copy_.begin();
+  const std::unique_ptr<PageTxn> txn = copy_.begin(to, rebuilding);
   if (txn->cursor() != from) {
     observation.skip();
     return FollowStep::overtaken;
   }
-  if (rebuilding) copy_.clear(*txn);
-  for (const FeedEntry& entry : entries)
-    for (FeedEntryConsumer& consumer : consumers_) consumer.consume(*txn, entry);
-  copy_.advance(*txn, to);
+  for (const FeedEntry& entry : entries) {
+    for (FeedEntryConsumer& consumer : inPage_) consumer.consume(*txn, entry);
+    for (FeedEntrySideConsumer& consumer : beside_) consumer.consume(*txn, entry);
+  }
   txn->commit();
   observation.wrote();
   observation.finish(rebuilding ? "rebuilt" : "ok");
   lastProgress_ = now_();
-  standsAt(to.seq);
+  confirm(to.seq);
   return rebuilding ? FollowStep::rebuilt : FollowStep::applied;
 }
 
@@ -96,13 +100,16 @@ FollowStep FeedFollower::rebuild(const FeedCursor& from, const std::string& caus
     restores_.report("cause=" + cause);
   }
 
+  // Read to the newest event the ledger holds: an empty page short of it is a feed that cannot be read, never a whole
+  // ledger, or the copy would be replaced by a prefix of it.
   std::vector<FeedEntry> ledger;
   FeedCursor rebuilt;
   for (bool whole = false; !whole;) {
     FeedPage page = feed_.page(rebuilt.seq, timing_.pageLimit);
     rebuilt = rebuilt.past(page);
     latestSeq_ = page.latestSeq;
-    whole = page.entries.empty() || rebuilt.caughtUpWith(page);
+    whole = rebuilt.caughtUpWith(page);
+    if (page.entries.empty() && !whole) throw FeedUnavailable("behind");
     std::move(page.entries.begin(), page.entries.end(), std::back_inserter(ledger));
   }
   return apply(from, ledger, rebuilt, true, observation);
@@ -110,17 +117,19 @@ FollowStep FeedFollower::rebuild(const FeedCursor& from, const std::string& caus
 
 bool FeedFollower::reach(Seq seq, std::chrono::milliseconds wait) {
   std::unique_lock lock{mutex_};
-  if (heldSeq_ >= seq) return true;
+  const std::uint64_t asked = readsBegun_;
+  const auto held = [&] { return confirmedRead_ > asked && confirmedSeq_ >= seq; };
   asked_ = true;
   wake_.notify_all();
-  moved_.wait_for(lock, wait, [&] { return heldSeq_ >= seq || stopping_; });
-  return heldSeq_ >= seq;
+  moved_.wait_for(lock, wait, [&] { return held() || stopping_; });
+  return held();
 }
 
-void FeedFollower::standsAt(Seq seq) {
+void FeedFollower::confirm(Seq seq) {
   {
     std::lock_guard lock{mutex_};
-    heldSeq_ = seq;
+    confirmedRead_ = reading_;
+    confirmedSeq_ = seq;
   }
   moved_.notify_all();
 }
@@ -149,7 +158,7 @@ void FeedFollower::run() {
     const auto pause = [&]() -> std::chrono::milliseconds {
       switch (step) {
         case FollowStep::applied:
-        case FollowStep::rebuilt: return latestSeq_ && heldSeq_ >= *latestSeq_ ? timing_.poll : std::chrono::milliseconds{0};
+        case FollowStep::rebuilt: return latestSeq_ && confirmedSeq_ >= *latestSeq_ ? timing_.poll : std::chrono::milliseconds{0};
         case FollowStep::overtaken: return std::chrono::milliseconds{0};
         case FollowStep::caughtUp: return timing_.poll;
         case FollowStep::behind:

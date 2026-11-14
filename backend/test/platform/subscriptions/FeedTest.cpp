@@ -107,6 +107,70 @@ TEST(subscription_feed_entries_carry_the_entitlement_of_the_account_they_name_af
       "26 3f6c2a1e production=- sandbox=-\n"));
 }
 
+TEST(subscription_feed_entries_carry_every_field_the_contract_gives_an_event) {
+  std::string read;
+  for (const char* name : {"from_zero", "claimed_then_sandbox", "refunded_then_renewed", "payment_trouble",
+                           "older_period_refunded", "account_erased"}) {
+    const Json::Value body = contractExample("feed.json", name)["body"];
+    const FeedPage page{body};
+    for (Json::ArrayIndex at = 0; at < body["entries"].size(); ++at) {
+      const Json::Value& recordedEntry = body["entries"][at];
+      const FeedEntry& entry = page.entries[at];
+      CHECK_EQ(entry.subscriptionId, recordedEntry["subscriptionId"].asString());
+      if (entry.period) CHECK_EQ(entry.period->id, recordedEntry["period"]["id"].asString());
+      const auto word = [](const std::optional<std::string>& value) { return value ? *value : std::string("-"); };
+      const auto instant = [](const std::optional<std::int64_t>& value) { return value ? std::to_string(*value) : std::string("-"); };
+      read += std::to_string(entry.seq) + " " + entry.type + " occurred=" + std::to_string(entry.occurredAt) +
+              " recorded=" + std::to_string(entry.recordedAt) + " subscription=" + entry.subscriptionId.substr(0, 8) +
+              " account=" + (entry.accountId ? entry.accountId->str().substr(0, 8) : "-") + " " + entry.store + " " +
+              entry.environment + " offer=" + word(entry.offerKind);
+      if (entry.period)
+        read += " period=" + entry.period->id.substr(0, 8) + " [" + std::to_string(entry.period->start) + "," +
+                std::to_string(entry.period->end) + ") price=" +
+                (entry.period->price ? entry.period->price->amount + " " + entry.period->price->currency : "-") +
+                " offer=" + word(entry.period->offerKind) + " refunded=" + instant(entry.period->refundedAt);
+      read += "\n";
+    }
+  }
+  CHECK_EQ(read, std::string(
+      "1 started occurred=1796292000000 recorded=1796292004000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "2 bound occurred=1796292000000 recorded=1796292004000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "3 period_recorded occurred=1796292000000 recorded=1796292004000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=e2b8f0a4 [1796292000000,1798970400000) price=12.00 USD offer=- refunded=-\n"
+      "4 started occurred=1796472000000 recorded=1796472003000 subscription=77f866f6 account=- app_store production offer=-\n"
+      "5 period_recorded occurred=1796472000000 recorded=1796472003000 subscription=77f866f6 account=- app_store production offer=- period=8f04068f [1796472000000,1799150400000) price=12.00 USD offer=- refunded=-\n"
+      "6 bound occurred=1796547600000 recorded=1796547600000 subscription=77f866f6 account=9387ec65 app_store production offer=-\n"
+      "7 period_recorded occurred=1796547600000 recorded=1796547600000 subscription=77f866f6 account=9387ec65 app_store production offer=- period=8f04068f [1796472000000,1799150400000) price=12.00 USD offer=- refunded=-\n"
+      "9 started occurred=1796742000000 recorded=1796742002000 subscription=c0498d34 account=c806aea4 app_store sandbox offer=-\n"
+      "10 bound occurred=1796742000000 recorded=1796742002000 subscription=c0498d34 account=c806aea4 app_store sandbox offer=-\n"
+      "11 period_recorded occurred=1796742000000 recorded=1796742002000 subscription=c0498d34 account=c806aea4 app_store sandbox offer=- period=5f28ab82 [1796742000000,1796742300000) price=12.00 USD offer=- refunded=-\n"
+      "12 renewed occurred=1796742300000 recorded=1796742302000 subscription=c0498d34 account=c806aea4 app_store sandbox offer=-\n"
+      "13 period_recorded occurred=1796742300000 recorded=1796742302000 subscription=c0498d34 account=c806aea4 app_store sandbox offer=- period=db0e7f48 [1796742300000,1796742600000) price=12.00 USD offer=- refunded=-\n"
+      "14 period_refunded occurred=1797780600000 recorded=1797780602000 subscription=77f866f6 account=9387ec65 app_store production offer=- period=8f04068f [1796472000000,1799150400000) price=12.00 USD offer=- refunded=1797780600000\n"
+      "15 revoked occurred=1797780600000 recorded=1797780602000 subscription=77f866f6 account=9387ec65 app_store production offer=-\n"
+      "16 renewed occurred=1798966800000 recorded=1798966810000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "17 period_recorded occurred=1798966800000 recorded=1798966810000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=4c7a19e3 [1798970400000,1801648800000) price=12.00 USD offer=- refunded=-\n"
+      "18 payment_failed occurred=1801648800000 recorded=1801648803000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "19 updated occurred=1803031200000 recorded=1803031203000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "20 payment_recovered occurred=1803304800000 recorded=1803304803000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "21 period_recorded occurred=1803304800000 recorded=1803304803000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=d9aaabda [1803304800000,1805724000000) price=12.00 USD offer=- refunded=-\n"
+      "22 period_refunded occurred=1803898800000 recorded=1803898802000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=4c7a19e3 [1798970400000,1801648800000) price=12.00 USD offer=- refunded=1803898800000\n"
+      "23 period_refund_reversed occurred=1804608000000 recorded=1804608002000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=4c7a19e3 [1798970400000,1801648800000) price=12.00 USD offer=- refunded=-\n"
+      "24 renewal_turned_off occurred=1804708800000 recorded=1804708802000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "25 expired occurred=1805724000000 recorded=1805724004000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "26 unbound occurred=1806580800000 recorded=1806580800000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"));
+
+  // A free trial's period: no price, and an offer on the event and its period alike.
+  Json::Value trial = contractExample("feed.json", "from_zero")["body"];
+  trial["entries"][2]["offerKind"] = "free_trial";
+  trial["entries"][2]["period"]["offerKind"] = "free_trial";
+  trial["entries"][2]["period"]["price"] = Json::nullValue;
+  const FeedPage trialPage{trial};
+  const FeedEntry& period = trialPage.entries[2];
+  CHECK_EQ(period.offerKind, std::optional<std::string>("free_trial"));
+  CHECK_EQ(period.period->offerKind, std::optional<std::string>("free_trial"));
+  CHECK_FALSE(period.period->price.has_value());
+}
+
 TEST(subscription_feed_cursor_sees_a_restored_ledger_by_its_epoch_or_by_a_ledger_that_ends_below_it) {
   const FeedCursor following{"c09a3ab3-2732-4415-ba88-825ff868cf13", 26};
   CHECK_EQ(following.restoreIn(recorded("ledger_restored")), std::optional<std::string>("epoch"));
@@ -150,6 +214,22 @@ TEST(subscription_feed_reads_a_body_the_contract_does_not_describe_as_malformed)
       {"no sandbox", [](Json::Value& body) { body["entries"][0]["entitlement"].removeMember("sandbox"); }},
       {"accessUntil in words", [](Json::Value& body) { body["entries"][0]["entitlement"]["production"]["accessUntil"] = "soon"; }},
       {"no accessUntil", [](Json::Value& body) { body["entries"][0]["entitlement"]["production"].removeMember("accessUntil"); }},
+      {"an event the contract does not name", [](Json::Value& body) { body["entries"][0]["type"] = "gifted"; }},
+      {"another store", [](Json::Value& body) { body["entries"][0]["store"] = "galaxy_store"; }},
+      {"another environment", [](Json::Value& body) { body["entries"][0]["environment"] = "staging"; }},
+      {"another offer", [](Json::Value& body) { body["entries"][0]["offerKind"] = "half_price"; }},
+      {"occurredAt in words", [](Json::Value& body) { body["entries"][0]["occurredAt"] = "today"; }},
+      {"no recordedAt", [](Json::Value& body) { body["entries"][0].removeMember("recordedAt"); }},
+      {"a subscription that is not a uuid", [](Json::Value& body) { body["entries"][0]["subscriptionId"] = "sub_1"; }},
+      {"a period on a lifecycle event", [](Json::Value& body) { body["entries"][0]["period"] = body["entries"][2]["period"]; }},
+      {"a period event with no period", [](Json::Value& body) { body["entries"][2]["period"] = Json::nullValue; }},
+      {"a period id that is not a uuid", [](Json::Value& body) { body["entries"][2]["period"]["id"] = "txn-1"; }},
+      {"a period with no end", [](Json::Value& body) { body["entries"][2]["period"].removeMember("end"); }},
+      {"an amount that is not decimal", [](Json::Value& body) { body["entries"][2]["period"]["price"]["amount"] = "12,00"; }},
+      {"an amount with no digits after the point", [](Json::Value& body) { body["entries"][2]["period"]["price"]["amount"] = "12."; }},
+      {"a currency in lower case", [](Json::Value& body) { body["entries"][2]["period"]["price"]["currency"] = "usd"; }},
+      {"a period offer the contract does not name", [](Json::Value& body) { body["entries"][2]["period"]["offerKind"] = "gift"; }},
+      {"refundedAt in words", [](Json::Value& body) { body["entries"][2]["period"]["refundedAt"] = "yesterday"; }},
   };
   std::string answers;
   for (const auto& [name, mutate] : breaks) {
@@ -172,6 +252,22 @@ TEST(subscription_feed_reads_a_body_the_contract_does_not_describe_as_malformed)
       "another account's entitlement: malformed\n"
       "no sandbox: malformed\n"
       "accessUntil in words: malformed\n"
-      "no accessUntil: malformed\n"));
+      "no accessUntil: malformed\n"
+      "an event the contract does not name: malformed\n"
+      "another store: malformed\n"
+      "another environment: malformed\n"
+      "another offer: malformed\n"
+      "occurredAt in words: malformed\n"
+      "no recordedAt: malformed\n"
+      "a subscription that is not a uuid: malformed\n"
+      "a period on a lifecycle event: malformed\n"
+      "a period event with no period: malformed\n"
+      "a period id that is not a uuid: malformed\n"
+      "a period with no end: malformed\n"
+      "an amount that is not decimal: malformed\n"
+      "an amount with no digits after the point: malformed\n"
+      "a currency in lower case: malformed\n"
+      "a period offer the contract does not name: malformed\n"
+      "refundedAt in words: malformed\n"));
   CHECK_EQ(answerOf([&] { FeedPage{page}; }), std::string("read"));
 }

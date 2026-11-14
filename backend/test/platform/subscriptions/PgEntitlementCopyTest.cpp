@@ -35,9 +35,10 @@ std::string rowsAsText() {
   return text;
 }
 
+// The chosen entries of a recorded page through the copy, in a page transaction that leaves the cursor where it is.
 void consume(PgEntitlementCopy& copy, const char* page, std::initializer_list<Seq> seqs) {
   const FeedPage read{contractExample("feed.json", page)["body"]};
-  const auto txn = copy.begin();
+  const auto txn = copy.begin(copy.cursor(), false);
   for (const FeedEntry& entry : read.entries)
     for (const Seq seq : seqs)
       if (entry.seq == seq) copy.consume(*txn, entry);
@@ -63,7 +64,7 @@ TEST(pg_entitlement_copy_writes_no_row_for_an_account_this_backend_does_not_hold
   CHECK_FALSE(copy.find(UserId{"not-an-account"}).has_value());
 }
 
-TEST(pg_entitlement_copy_never_takes_a_row_back_to_an_older_entry_but_a_cleared_copy_starts_over) {
+TEST(pg_entitlement_copy_never_takes_a_row_back_to_an_older_entry_but_a_rebuild_starts_from_empty) {
   if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
   sql("DELETE FROM account_entitlements");
   sql("UPDATE subscription_feed_cursor SET epoch = NULL, seq = 0");
@@ -77,13 +78,21 @@ TEST(pg_entitlement_copy_never_takes_a_row_back_to_an_older_entry_but_a_cleared_
   CHECK_EQ(rowsAsText(), std::string("3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=26 production=-\n"));
   CHECK_EQ(copy.find(UserId{"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"})->body, entitlementExample("never_subscribed"));
 
+  // A rebuild that never commits leaves the old copy whole.
   {
-    const auto txn = copy.begin();
+    const auto txn = copy.begin(FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 3}, true);
+    CHECK_EQ(rowsAsText(), std::string("3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=26 production=-\n"));
+  }
+  CHECK_EQ(rowsAsText(), std::string("3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=26 production=-\n"));
+  CHECK_EQ(copy.cursor(), FeedCursor{});
+
+  {
+    const auto txn = copy.begin(FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 3}, true);
     CHECK_EQ(txn->cursor(), FeedCursor{});
-    copy.clear(*txn);
+    CHECK(txn->rebuilding());
+    CHECK_EQ(txn->target(), (FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 3}));
     const FeedPage page{contractExample("feed.json", "from_zero")["body"]};
     copy.consume(*txn, page.entries[2]);
-    copy.advance(*txn, FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 3});
     txn->commit();
   }
   CHECK_EQ(rowsAsText(), std::string("3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=3 production=1799056800000\n"));

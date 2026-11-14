@@ -11,13 +11,13 @@ telemetry, access, the HTTP host, the AI usage meter (`domain/AiUsage`, `domain/
 `ports/AiBudgetRepository`). The durable mode owns free daily/monthly pools, lifetime devices,
 funded subscription/owner periods, permanent device binding, concurrency and threshold alerts.
 `platform/ai_installations/` holds server-issued anonymous Coach credentials and network admission.
+Every hosted AI call, including background work, debits its individual allowance in that mode;
+[AI_ALLOWANCES.md](AI_ALLOWANCES.md) defines its rollout switch and unsupported edges.
 `platform/subscriptions/` follows the Windmill One subscription service's feed into `account_entitlements`, the
 backend's own copy of every account's entitlement ([subscriptions.md](../docs/foundation/subscriptions.md) §6.1): the
 feed's vocabulary and cursor (`Feed.h`), the copy and the seam each entry passes through (`EntitlementCopy.h`), the
 worker (`FeedFollower`), the Postgres copy and the client of the service's internal doors. It is off while
 `SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are unset, and nothing reads the copy yet.
-Every hosted AI call, including background work, debits its individual allowance in that mode;
-[AI_ALLOWANCES.md](AI_ALLOWANCES.md) defines its rollout switch and unsupported edges.
 
 `products/<p>/` is one product each (roadmap, journal, gym, and the sync engine's test-only probe),
 with four shared layers: `domain/` (pure), `application/` (services over
