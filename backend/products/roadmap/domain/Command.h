@@ -16,7 +16,8 @@
 namespace wm {
 
 // Admission bounds, enforced by validate() for a single command and admit() for a graph that
-// arrives whole, and published as `maxLength` by the surfaces that take them. Every length is
+// arrives whole, and told by the refusal past each: the MCP catalogue publishes none in a schema
+// but a title's (adapters/mcp/README.md, What the catalogue says). Every length is
 // counted in characters — Unicode code points, by codePointCount() — never bytes.
 constexpr std::size_t kMaxIdLength = 128;                // node / tree id
 constexpr std::size_t kMaxNodeLabelLength = 200;         // node display label

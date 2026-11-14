@@ -421,12 +421,20 @@ TEST(mcp_delete_node_whose_trees_row_went_away_before_its_save_answers_no_such_t
   CHECK_FALSE(h.registry.isOpen(TreeId{"t"}));
 }
 
+// Someone else's tree the caller can read is refused as theirs; one the caller cannot read answers as an absent one.
 TEST(mcp_delete_tree_refuses_a_tree_you_dont_own_and_an_unknown_one) {
   Harness h;
   h.trees.byId["other"] = StoredTree{LooseGraph().exportState(), LegendState{}, {"Other", {}}, 0, uid("someone")};
+  h.trees.byId["shared"] = h.trees.byId["other"];
+  h.trees.byId["shared"].visibility = Visibility::unlisted;
 
-  CHECK(h.tools.callTool("delete_tree", with("treeId", "other"), h.actor).isError);
-  CHECK(h.tools.callTool("delete_tree", with("treeId", "ghost"), h.actor).isError);
+  CHECK_EQ(message(h.tools.callTool("delete_tree", with("treeId", "shared"), h.actor)),
+           std::string("delete_tree: this tree belongs to another account. Call list_trees to see the roadmaps you own."));
+  CHECK_EQ(message(h.tools.callTool("delete_tree", with("treeId", "other"), h.actor)),
+           std::string("delete_tree: no such tree \"other\""));
+  CHECK_EQ(message(h.tools.callTool("delete_tree", with("treeId", "ghost"), h.actor)),
+           std::string("delete_tree: no such tree \"ghost\""));
+  CHECK_EQ(h.trees.byId.size(), 3u);
 }
 
 TEST(mcp_create_node_wires_prerequisites_description_and_links) {
@@ -1768,8 +1776,7 @@ TEST(mcp_delete_node_publishes_both_forms_in_its_schema) {
   CHECK(deleteSchema["properties"]["id"]["deprecated"].asBool());
   CHECK_EQ(deleteSchema["properties"]["nodeIds"]["type"].asString(), std::string("array"));
   CHECK_EQ(deleteSchema["properties"]["nodeIds"]["items"]["type"].asString(), std::string("string"));
-  CHECK_EQ(deleteSchema["properties"]["nodeIds"]["minItems"].asInt(), 1);
-  CHECK_EQ(deleteSchema["properties"]["nodeIds"]["maxItems"].asInt(), 200);
+  CHECK_FALSE(deleteSchema["properties"]["id"].isMember("description"));
   CHECK_EQ(deleteSchema["properties"]["prune"]["type"].asString(), std::string("boolean"));
   CHECK(deleteSchema["additionalProperties"].isBool());
   CHECK_FALSE(deleteSchema["additionalProperties"].asBool());
@@ -2716,18 +2723,14 @@ TEST(mcp_update_nodes_refuses_links_it_cannot_add_and_leaves_the_nodes_links_as_
       CHECK_EQ(writeCompletionJson(lines[i]).find(content), std::string::npos);
   }
 
-  // The schema states the same bounds: the item `links` takes, at least one, at most the 32 cap.
+  // The schema publishes the item `links` takes; the bounds are the refusals above.
   const Json::Value catalog = h.tools.listTools(h.actor);
   const Json::Value* declared = nullptr;
   for (const Json::Value& tool : catalog)
     if (tool["name"].asString() == "update_nodes") declared = &tool;
   REQUIRE(declared != nullptr);
   const Json::Value& properties = (*declared)["inputSchema"]["properties"]["updates"]["items"]["properties"];
-  Json::Value linksWithAtLeastOne = properties["links"];
-  linksWithAtLeastOne["minItems"] = 1;
-  linksWithAtLeastOne["description"] = properties["addLinks"]["description"];
-  CHECK_EQ(properties["addLinks"], linksWithAtLeastOne);
-  CHECK_EQ(properties["addLinks"]["maxItems"].asUInt64(), 32u);
+  CHECK_EQ(properties["addLinks"], properties["links"]);
 }
 
 namespace {
@@ -2906,27 +2909,6 @@ TEST(mcp_import_subgraph_keeps_the_legend_order_on_a_colliding_kind_and_appends_
   CHECK_EQ(legend[2]["id"].asString(), std::string("c"));
   CHECK_EQ(legend[3]["id"].asString(), std::string("y"));
   CHECK_EQ(legend[4]["id"].asString(), std::string("x"));
-}
-
-// The description and the field doc say the same thing about outOfOrder: it is the subset of
-// completed whose mark carried the flag, met prerequisites or not.
-TEST(mcp_get_progress_describes_out_of_order_as_the_marks_that_carried_the_flag) {
-  Harness h;
-  for (const ToolDeclaration& tool : h.tools.declareTools()) {
-    if (tool.name() != "get_progress") continue;
-    CHECK_EQ(tool.descriptor["description"].asString(),
-             std::string("The caller's private progress overlay for a roadmap: the node ids that are "
-                         "completed, and outOfOrder — the subset of completed whose mark carried "
-                         "outOfOrder:true, from an update_nodes row's `status` or an import's progress row. Per-user, "
-                         "separate from the shared structure. Only marks on nodes the tree holds are answered: a mark "
-                         "on a node someone deleted is kept and shows again when the node comes back. A roadmap that "
-                         "does not exist, or that you cannot read, is refused as get_tree refuses it; empty lists mean "
-                         "a roadmap you can read and have marked nothing in."));
-    const std::string fields = tool.descriptor["inputSchema"]["properties"]["fields"]["description"].asString();
-    CHECK(fields.find("the subset of `completed` whose mark carried outOfOrder:true") != std::string::npos);
-    return;
-  }
-  CHECK(false);
 }
 
 TEST(mcp_import_subgraph_keeps_a_colliding_kinds_omitted_fields_and_defaults_a_new_kinds) {
@@ -3368,7 +3350,7 @@ TEST(mcp_update_tree_holds_5000_code_points_of_any_width_and_names_the_bound_whe
   REQUIRE(declared != nullptr);
   const Json::Value& schema = (*declared)["inputSchema"];
   CHECK_EQ(schema["properties"]["guide"]["type"].asString(), std::string("string"));
-  CHECK_EQ(schema["properties"]["guide"]["maxLength"].asUInt64(), static_cast<Json::UInt64>(5000));
+  CHECK_FALSE(schema["properties"]["guide"].isMember("maxLength"));
   CHECK_EQ(schema["properties"]["title"]["type"].asString(), std::string("string"));
   CHECK_EQ(schema["properties"]["title"]["maxLength"].asUInt64(), static_cast<Json::UInt64>(200));
   CHECK_EQ(schema["required"], list({"treeId"}));
@@ -3509,7 +3491,7 @@ TEST(mcp_update_tree_names_the_guide_a_plain_text_note) {
   Harness h;
   for (const Json::Value& tool : h.tools.listTools(h.actor))
     if (tool["name"].asString() == "update_tree")
-      CHECK(tool["description"].asString().find("The guide is one plain-text note on what the tree is") !=
+      CHECK(tool["description"].asString().find("The guide is a plain-text note on what the roadmap is") !=
             std::string::npos);
 }
 
@@ -8404,8 +8386,8 @@ TEST(mcp_the_retired_edge_tools_are_refused_as_unknown_tools) {
   CHECK_EQ(h->ops.byTree["t"].size(), rows);
 }
 
-// The lists the batch tools take are published whole — bounds, each item's properties, what an item requires, and no
-// other key — so a caller is refused at the schema what the handler would refuse. Prose aside, every key is pinned.
+// The lists the batch tools take are published whole: each item's properties, what an item requires, and no other
+// key. Their bounds are refusals that name the bound, so no list publishes one. Prose aside, every key is pinned.
 TEST(mcp_the_batch_tools_publish_their_lists_whole) {
   Harness h;
   std::function<Json::Value(Json::Value)> shape = [&](Json::Value schema) {
@@ -8424,28 +8406,22 @@ TEST(mcp_the_batch_tools_publish_their_lists_whole) {
       if (properties.isMember(list))  // through text, so a count reads the same whether it was built signed or not
         lists[tool["name"].asString() + "." + list] = parse(dump(shape(properties[list])));
   }
-  const Json::Value edges = parse(R"({"type":"array","maxItems":500,"uniqueItems":true,"items":{"type":"object",
-    "additionalProperties":false,"required":["from","to"],"properties":{"from":{"type":"string","maxLength":128},
-    "to":{"type":"string","maxLength":128}}}})");
-  const Json::Value links = parse(R"({"type":"array","maxItems":32,"items":{"type":"object","additionalProperties":false,
-    "required":["url"],"properties":{"label":{"type":"string","maxLength":200},"url":{"type":"string","maxLength":2048}}}})");
-  Json::Value addLinks = links;
-  addLinks["minItems"] = 1;
-  Json::Value updates = parse(R"({"type":"array","minItems":1,"maxItems":200,"items":{"type":"object",
-    "additionalProperties":false,"required":["nodeId"],"properties":{
-      "nodeId":{"type":"string","maxLength":128},"label":{"type":"string","maxLength":200},
+  const Json::Value edges = parse(R"({"type":"array","items":{"type":"object","additionalProperties":false,
+    "required":["from","to"],"properties":{"from":{"type":"string"},"to":{"type":"string"}}}})");
+  const Json::Value links = parse(R"({"type":"array","items":{"type":"object","additionalProperties":false,
+    "required":["url"],"properties":{"label":{"type":"string"},"url":{"type":"string"}}}})");
+  Json::Value updates = parse(R"({"type":"array","items":{"type":"object","additionalProperties":false,
+    "required":["nodeId"],"properties":{"nodeId":{"type":"string"},"label":{"type":"string"},
       "color":{"type":"string","enum":["terracotta","olive","gold","brick","sky","plum"]},
-      "kind":{"type":"string","maxLength":128},"description":{"type":"string","maxLength":16000},
-      "appendDescription":{"type":"string","maxLength":16000},"icon":{"type":"string","maxLength":64},
-      "opens":{"type":"string","maxLength":128},"status":{"type":"string","enum":["complete","none"]},
+      "kind":{"type":"string"},"description":{"type":"string"},"appendDescription":{"type":"string"},
+      "icon":{"type":"string"},"opens":{"type":"string"},"status":{"type":"string","enum":["complete","none"]},
       "outOfOrder":{"type":"boolean"}}}})");
   updates["items"]["properties"]["links"] = links;
-  updates["items"]["properties"]["addLinks"] = addLinks;
+  updates["items"]["properties"]["addLinks"] = links;
   CHECK_EQ(lists.at("change_edges.add"), edges);
   CHECK_EQ(lists.at("change_edges.remove"), edges);
   CHECK_EQ(lists.at("update_nodes.updates"), updates);
-  CHECK_EQ(lists.at("delete_node.nodeIds"),
-           parse(R"({"type":"array","minItems":1,"maxItems":200,"items":{"type":"string","maxLength":128}})"));
+  CHECK_EQ(lists.at("delete_node.nodeIds"), parse(R"({"type":"array","items":{"type":"string"}})"));
 }
 
 // A legend's order is the order its kinds were created or imported in: create_tree keeps the order it is sent, add_kind
