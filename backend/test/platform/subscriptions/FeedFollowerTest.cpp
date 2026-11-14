@@ -264,7 +264,7 @@ TEST(pg_subscription_follow_a_consumer_that_fails_rolls_the_page_back_and_the_pa
   feed.serve({"from_zero"});
   PgEntitlementCopy copy{pgTestPool()};
 
-  // A consumer after the copy, as funding will be: it sees the copy's write of the same entry in the page's
+  // A consumer after the copy that writes through the page: it sees the copy's write of the same entry in the page's
   // transaction, and fails once at seq 3.
   struct Funding : FeedEntryConsumer {
     std::vector<std::string> seen;
@@ -430,7 +430,7 @@ TEST(pg_subscription_follow_side_consumers_write_apart_from_the_page_before_it_c
     explicit Records(std::vector<std::string>& order) : order(order) {}
     void consume(PageTxn&, const FeedEntry& entry) override { order.push_back("page:" + std::to_string(entry.seq)); }
   } records{order};
-  // As funding will: its own short transaction per entry, which sees the copy as last committed, never the page's
+  // As funding does: its own short transaction per entry, which sees the copy as last committed, never the page's
   // own writes; it fails once at seq 7.
   struct Funding : FeedEntrySideConsumer {
     std::vector<std::string>& order;

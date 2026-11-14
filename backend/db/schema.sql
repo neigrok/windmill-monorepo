@@ -525,6 +525,16 @@ create table if not exists ai_budget_grants (
 );
 create index if not exists ai_budget_grants_account_period
   on ai_budget_grants (account_id, period_start_ms, period_end_ms);
+-- A store's refund of the period a subscription grant funds (docs/foundation/subscriptions.md §6.3): the grant funds
+-- nothing from closed_at_ms on, and null again when the store reverses the refund. Owner grants are never closed.
+alter table ai_budget_grants add column if not exists closed_at_ms bigint;
+do $$ begin
+  if not exists (select 1 from pg_constraint
+      where conrelid = 'ai_budget_grants'::regclass and conname = 'ai_budget_grant_closed') then
+    alter table ai_budget_grants add constraint ai_budget_grant_closed
+      check (closed_at_ms is null or (source = 'subscription' and closed_at_ms >= 0 and closed_at_ms <= period_end_ms));
+  end if;
+end $$;
 
 create table if not exists ai_budget_device_accounts (
   device_id   text primary key,

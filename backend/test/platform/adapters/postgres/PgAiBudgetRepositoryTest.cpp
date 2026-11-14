@@ -214,7 +214,8 @@ TEST(pg_ai_budget_free_month_and_day_caps_are_atomic_and_cannot_spend_paid_fundi
     CHECK_EQ(refused, 9);
     PgAiBudgetRepository repository{pgTestPool()};
     const AiBudgetPrincipal paid{{AiBudgetSubjectKind::Account, "paid"}, AiBudgetTier::WindmillOne};
-    CHECK_EQ(repository.reserve({"unfunded", paid, 10, at}, limits).code, AiBudgetCode::FundingRequired);
+    CHECK_EQ(repository.reserve({"unfunded", paid, 10, at, std::nullopt, AiBudgetFunding::GrantOnly}, limits).code,
+             AiBudgetCode::FundingRequired);
     CHECK_EQ(repository.fund({"grant", "paid", AiBudgetFundingSource::Subscription,
                              *AiBudgetPeriod::at(at), limits.paidPeriodNanos, "invoice"}, limits).code, AiBudgetCode::Ok);
     CHECK_EQ(repository.reserve({"paid-call", paid, 100, at}, limits).code, AiBudgetCode::Ok);
@@ -328,7 +329,8 @@ TEST(pg_ai_budget_paid_grants_survive_calendar_boundaries_expire_and_pin_ambiguo
   CHECK_EQ(acrossMonth.window, AiBudgetWindow::BillingPeriod);
   CHECK_EQ(acrossMonth.subject.heldNanos, 4'000'000'000);
   CHECK_EQ(repository.reserve({"too-much", principal, 3'000'000'001, february}, limits).code, AiBudgetCode::SubjectExhausted);
-  CHECK_EQ(repository.reserve({"expired", principal, 1, billing.endMs}, limits).code, AiBudgetCode::FundingRequired);
+  CHECK_EQ(repository.reserve({"expired", principal, 1, billing.endMs, std::nullopt, AiBudgetFunding::GrantOnly},
+                              limits).code, AiBudgetCode::FundingRequired);
   const AiBudgetGrant renewal{"grant-two", "paid", AiBudgetFundingSource::Subscription,
       {billing.endMs, billing.endMs + 28 * 86'400'000LL}, limits.paidPeriodNanos, "invoice-two"};
   CHECK_EQ(repository.fund(renewal, limits).code, AiBudgetCode::Ok);
@@ -421,6 +423,90 @@ TEST(pg_ai_budget_funding_is_idempotent_nonoverlapping_and_owner_months_are_uniq
   CHECK_EQ(txn.exec("SELECT count(*) FROM ai_budget_grants")[0][0].as<int>(), 3);
 }
 
+TEST(pg_ai_budget_a_refund_closes_a_grant_to_the_free_allowance_keeps_its_spend_and_a_reversal_reopens_it) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("DELETE FROM ai_budget_alerts; DELETE FROM ai_budget_reservations; DELETE FROM ai_budget_balances; "
+             "DELETE FROM ai_budget_grants; DELETE FROM ai_budget_device_accounts");
+    txn.commit();
+  }
+  const AiBudgetLimits limits;
+  const long long start = 1'767'225'600'000;
+  const long long refundedAt = start + 10 * 86'400'000LL;
+  const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, "refunded"}, AiBudgetTier::WindmillOne};
+  PgAiBudgetRepository repository{pgTestPool()};
+  const AiBudgetGrant grant{"period-one", "refunded", AiBudgetFundingSource::Subscription,
+                            {start, start + 31 * 86'400'000LL}, limits.paidPeriodNanos, "period-one"};
+  const auto grantText = [&] {
+    PgLease conn{*pgTestPool()};
+    pqxx::read_transaction txn{*conn};
+    const pqxx::result rows = txn.exec("SELECT id, coalesce(closed_at_ms::text, '-') FROM ai_budget_grants ORDER BY id");
+    std::string text;
+    for (std::size_t index = 0; index < rows.size(); ++index)
+      text += rows[index][0].as<std::string>() + " closed=" + rows[index][1].as<std::string>() + "\n";
+    return text;
+  };
+
+  // Before the period is funded, the account is admitted under the free signed-in allowance; a grant-only call is not.
+  const auto unfunded = repository.reserve({"before", principal, 100'000'000, start}, limits);
+  REQUIRE(unfunded.reservation);
+  CHECK_EQ(unfunded.reservation->tier, AiBudgetTier::LoggedIn);
+  CHECK_FALSE(unfunded.reservation->grantId);
+  CHECK_EQ(repository.release("before").code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"talk-before", principal, 1, start, std::nullopt, AiBudgetFunding::GrantOnly}, limits).code,
+           AiBudgetCode::FundingRequired);
+
+  CHECK_EQ(repository.fund(grant, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"paid", principal, 2'000'000'000, start + 86'400'000LL}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.markDispatched("paid").code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.settle("paid", 2'000'000'000).code, AiBudgetCode::Ok);
+
+  const auto closed = repository.refund("period-one", refundedAt);
+  CHECK_EQ(closed.code, AiBudgetCode::Ok);
+  REQUIRE(closed.grant);
+  CHECK_EQ(closed.grant->closedAtMs, std::optional<long long>{refundedAt});
+  CHECK_EQ(repository.refund("period-one", refundedAt).code, AiBudgetCode::Replay);
+  CHECK_EQ(repository.refund("no-such-period", refundedAt).code, AiBudgetCode::NotFound);
+  CHECK_EQ(grantText(), "period-one closed=" + std::to_string(refundedAt) + "\n");
+
+  // Up to the close the grant still funds; from it on the account is back on the free allowance, and a grant-only call
+  // is refused. The grant's spend stays spent.
+  CHECK_EQ(repository.snapshot(principal, refundedAt - 1, limits).grant, closed.grant);
+  const auto after = repository.snapshot(principal, refundedAt, limits);
+  CHECK_FALSE(after.grant);
+  CHECK_EQ(after.window, AiBudgetWindow::CalendarMonth);
+  CHECK_EQ(after.period, *AiBudgetPeriod::at(refundedAt));
+  const auto free = repository.reserve({"free", principal, 100'000'000, refundedAt}, limits);
+  REQUIRE(free.reservation);
+  CHECK_EQ(free.reservation->tier, AiBudgetTier::LoggedIn);
+  CHECK_EQ(repository.release("free").code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"talk", principal, 1, refundedAt, std::nullopt, AiBudgetFunding::GrantOnly}, limits).code,
+           AiBudgetCode::FundingRequired);
+
+  // The reversal reopens the grant with its spend, and funding it again replays whatever its close.
+  CHECK_EQ(repository.fund(grant, limits).code, AiBudgetCode::Replay);
+  const auto reopened = repository.refund("period-one", std::nullopt);
+  CHECK_EQ(reopened.code, AiBudgetCode::Ok);
+  CHECK_EQ(reopened.grant, std::optional<AiBudgetGrant>{grant});
+  const auto back = repository.snapshot(principal, refundedAt, limits);
+  CHECK_EQ(back.grant, std::optional<AiBudgetGrant>{grant});
+  CHECK_EQ(back.subject.spentNanos, 2'000'000'000);
+  CHECK_EQ(grantText(), "period-one closed=-\n");
+
+  // A refund after the period ended closes it at its end; while closed, a second subscription's overlapping period may
+  // fund, and the reversal that would overlap it answers Conflict and leaves the grant closed.
+  CHECK_EQ(repository.refund("period-one", grant.period.endMs + 5).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.refund("period-one", start + 86'400'000LL).code, AiBudgetCode::Ok);
+  const AiBudgetGrant second{"period-two", "refunded", AiBudgetFundingSource::Subscription,
+                             {start + 20 * 86'400'000LL, start + 50 * 86'400'000LL}, limits.paidPeriodNanos,
+                             "period-two"};
+  CHECK_EQ(repository.fund(second, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.refund("period-one", std::nullopt).code, AiBudgetCode::Conflict);
+  CHECK_EQ(grantText(), "period-one closed=" + std::to_string(start + 86'400'000LL) + "\nperiod-two closed=-\n");
+}
+
 TEST(pg_ai_budget_subscription_priority_preserves_owner_balance_and_funds_monthly_fallback) {
   if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
   {
@@ -439,8 +525,8 @@ TEST(pg_ai_budget_subscription_priority_preserves_owner_balance_and_funds_monthl
   const AiBudgetPrincipal revokedOwner{owner.subject, AiBudgetTier::WindmillOne, false};
   const auto revokedBeforeSubscription = repository.snapshot(revokedOwner, at, limits);
   CHECK_FALSE(revokedBeforeSubscription.grant);
-  CHECK_EQ(repository.reserve({"revoked-before", revokedOwner, 1, at}, limits).code,
-           AiBudgetCode::FundingRequired);
+  CHECK_EQ(repository.reserve({"revoked-before", revokedOwner, 1, at, std::nullopt, AiBudgetFunding::GrantOnly},
+                              limits).code, AiBudgetCode::FundingRequired);
   CHECK_EQ(repository.reserve({"owner-call", owner, 2'000'000'000, at}, limits).code, AiBudgetCode::Ok);
   CHECK_EQ(repository.markDispatched("owner-call").code, AiBudgetCode::Ok);
   const AiBudgetGrant subscription{"subscription", "owner", AiBudgetFundingSource::Subscription,
@@ -465,8 +551,8 @@ TEST(pg_ai_budget_subscription_priority_preserves_owner_balance_and_funds_monthl
   CHECK_EQ(fallback.grant, initial.grant);
   const auto revokedAfterSubscription = repository.snapshot(revokedOwner, subscription.period.endMs, limits);
   CHECK_FALSE(revokedAfterSubscription.grant);
-  CHECK_EQ(repository.reserve({"revoked-after", revokedOwner, 1, subscription.period.endMs}, limits).code,
-           AiBudgetCode::FundingRequired);
+  CHECK_EQ(repository.reserve({"revoked-after", revokedOwner, 1, subscription.period.endMs, std::nullopt,
+                               AiBudgetFunding::GrantOnly}, limits).code, AiBudgetCode::FundingRequired);
   {
     PgLease conn{*pgTestPool()};
     pqxx::work txn{*conn};

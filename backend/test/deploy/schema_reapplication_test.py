@@ -426,6 +426,37 @@ values('{id}','account','new-account','logged_in',0,2678400000,1,100,'{state}',{
         self.assertEqual(identity, command([*query, constraint]))
         self.assertEqual(before, self.snapshot())
 
+    def test_grants_funded_before_refunds_closed_them_stay_open_and_only_subscription_grants_close(self):
+        self.apply_schema()
+        query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
+        command([*query, """
+alter table ai_budget_grants drop constraint ai_budget_grant_closed, drop column closed_at_ms;
+insert into ai_budget_grants(id,account_id,source,funding_reference,period_start_ms,period_end_ms,amount_nanos)
+values ('subscription-grant','legacy-account','subscription','period-one',0,2678400000,7000000000),
+       ('owner-grant','legacy-account','owner','owner:owner-grant',0,2678400000,7000000000);
+"""])
+        legacy_rows = command([*query, "select to_jsonb(t)::text from ai_budget_grants t order by id"])
+        constraint = """
+select oid,pg_get_constraintdef(oid),convalidated from pg_constraint
+where conrelid='ai_budget_grants'::regclass and conname='ai_budget_grant_closed';
+"""
+        self.apply_schema()
+        self.assertEqual(legacy_rows, command([*query,
+            "select (to_jsonb(t)-'closed_at_ms')::text from ai_budget_grants t order by id"]))
+        self.assertEqual("owner-grant -\nsubscription-grant -\n", command([*query,
+            "select id||' '||coalesce(closed_at_ms::text,'-') from ai_budget_grants order by id"]))
+        identity = command([*query, constraint])
+        self.assertRegex(identity, r"^\d+\|CHECK .+\|t\n$")
+        for row, closed in [("owner-grant", 1), ("subscription-grant", 2678400001), ("subscription-grant", -1)]:
+            with self.subTest(row=row, closed=closed):
+                with self.assertRaisesRegex(RuntimeError, "ai_budget_grant_closed"):
+                    command([*query, f"update ai_budget_grants set closed_at_ms={closed} where id='{row}'"])
+        command([*query, "update ai_budget_grants set closed_at_ms=2678400000 where id='subscription-grant'"])
+        before = self.snapshot()
+        self.apply_schema()
+        self.assertEqual(identity, command([*query, constraint]))
+        self.assertEqual(before, self.snapshot())
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

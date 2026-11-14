@@ -78,20 +78,10 @@ TEST(ai_allowance_reads_fixed_point_account_month_and_refuses_ambiguous_credenti
   REQUIRE(response->getJsonObject());
   CHECK(*response->getJsonObject() == expected);
   CHECK_EQ(response->getHeader("cache-control"), std::string{"no-store"});
+  // Windmill One with no grant in force reads the free signed-in allowance it is admitted under.
   subscriptions.subscribe(user.id);
   api.get(exchange.request, [&](const auto& result) { response = result; });
-  auto unfunded = expected;
-  unfunded["tier"] = "windmill_one";
-  unfunded["period"] = "billing_period";
-  unfunded["configured"] = false;
-  unfunded["code"] = "funding_required";
-  unfunded["limit"] = Json::Value();
-  unfunded["used"] = "0.000000000";
-  unfunded["reserved"] = "0.000000000";
-  unfunded["remaining"] = "0.000000000";
-  unfunded["resetsAtMs"] = Json::Value();
-  unfunded["status"] = "unavailable";
-  CHECK(*response->getJsonObject() == unfunded);
+  CHECK(*response->getJsonObject() == expected);
   repository.grants.emplace("paid-period", AiBudgetGrant{"paid-period", user.id.str(),
       AiBudgetFundingSource::Subscription, {static_cast<long long>(clock.now) - 1'000, static_cast<long long>(clock.now) + 2'000}, 7'000'000'000, "txn-paid"});
   api.get(exchange.request, [&](const auto& result) { response = result; });

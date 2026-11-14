@@ -115,6 +115,7 @@
 #include "platform/infra/SyncProducts.h"
 #include "products/gym/routes.h"
 #include "platform/subscriptions/FeedFollower.h"
+#include "platform/subscriptions/PeriodFunding.h"
 #include "platform/subscriptions/PgEntitlementCopy.h"
 #include "platform/subscriptions/SubscriptionServiceClient.h"
 
@@ -501,12 +502,18 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     return 1;
   }
   if (subscriptionService) {
+    // Paid periods fund the AI allowance (§6.3): a copy followed without the ledger would pass periods it never funds.
+    if (!aiBudgets) {
+      std::fprintf(stderr, "refusing to start: SUBSCRIPTIONS_INTERNAL_URL needs AI_ALLOWANCES_ENABLED=true\n");
+      return 1;
+    }
     auto subscriptionFeed = std::make_shared<subscriptions::SubscriptionServiceClient>(*subscriptionService);
     auto entitlementCopy = std::make_shared<subscriptions::PgEntitlementCopy>(pool);
-    auto feedFollower = std::make_shared<subscriptions::FeedFollower>(*subscriptionFeed, *entitlementCopy,
-                                                                      subscriptions::FurtherConsumers{}, *sentry);
+    auto periodFunding = std::make_shared<subscriptions::PeriodFunding>(*aiBudgets, aiLimits.paidPeriodNanos);
+    auto feedFollower = std::make_shared<subscriptions::FeedFollower>(
+        *subscriptionFeed, *entitlementCopy, subscriptions::FurtherConsumers{.beside = {*periodFunding}}, *sentry);
     lifetime.watch(subscriptionFeed);
-    lifetime.watch(feedFollower, subscriptionFeed, entitlementCopy, sentry);
+    lifetime.watch(feedFollower, subscriptionFeed, entitlementCopy, periodFunding, aiBudgets, aiBudgetRepo, sentry);
     feedFollower->start();
   } else {
     LOG_INFO << "subscriptions: the feed follower is off (SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN unset)";

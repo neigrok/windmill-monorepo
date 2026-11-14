@@ -32,6 +32,11 @@ std::string subjectKind(AiBudgetSubjectKind kind) {
   throw std::invalid_argument("Invalid AI budget subject kind");
 }
 
+// Every column a grant is read back from, in the order grantFrom reads them.
+constexpr const char* kSelectGrants =
+    "SELECT id, account_id, source, period_start_ms, period_end_ms, amount_nanos, funding_reference, closed_at_ms "
+    "FROM ai_budget_grants ";
+
 template<class Row>
 AiBudgetGrant grantFrom(const Row& row) {
   AiBudgetGrant grant;
@@ -43,8 +48,15 @@ AiBudgetGrant grantFrom(const Row& row) {
   grant.period = {row[3].template as<long long>(), row[4].template as<long long>()};
   grant.amountNanos = row[5].template as<long long>();
   grant.fundingReference = row[6].template as<std::string>();
+  if (!row[7].is_null()) grant.closedAtMs = row[7].template as<long long>();
   if (!grant.valid()) throw std::runtime_error("Invalid stored AI grant");
   return grant;
+}
+
+std::vector<AiBudgetGrant> grantsFrom(const pqxx::result& rows) {
+  std::vector<AiBudgetGrant> grants;
+  for (std::size_t index = 0; index < rows.size(); ++index) grants.push_back(grantFrom(rows[index]));
+  return grants;
 }
 
 void ensureBudget(pqxx::work& txn, const Budget& budget) {
@@ -140,49 +152,53 @@ AccountTotals accountTotals(pqxx::work& txn, const std::string& account, const A
           rows[0][3].as<int>()};
 }
 
+// The grant a Windmill One principal draws on at `atMs`: its subscription grant in force, else an owner's calendar
+// grant, made on first use.
+std::optional<AiBudgetGrant> grantInForce(pqxx::work& txn, const AiBudgetPrincipal& principal, long long atMs,
+                                          const AiBudgetLimits& limits, bool& wrote) {
+  const pqxx::result grants = txn.exec(
+      std::string(kSelectGrants) + "WHERE account_id = $1 AND period_start_ms <= $2 AND period_end_ms > $2 "
+      "AND (closed_at_ms IS NULL OR closed_at_ms > $2) AND (source = 'subscription' OR $3) "
+      "ORDER BY CASE source WHEN 'subscription' THEN 0 ELSE 1 END",
+      pqxx::params{principal.subject.id, atMs, principal.owner});
+  if (grants.size() > 2 || (grants.size() == 2 && grants[0][2].as<std::string>() == grants[1][2].as<std::string>()))
+    throw std::runtime_error("Overlapping AI grants from one source");
+  if (!grants.empty()) return grantFrom(grants[0]);
+  if (!principal.owner) return std::nullopt;
+  const auto month = *AiBudgetPeriod::at(atMs);
+  const pqxx::result overlap = txn.exec(
+      "SELECT 1 FROM ai_budget_grants WHERE account_id = $1 AND source = 'owner' "
+      "AND period_start_ms < $3 AND period_end_ms > $2",
+      pqxx::params{principal.subject.id, month.startMs, month.endMs});
+  if (!overlap.empty()) return std::nullopt;
+  const auto id = txn.exec("SELECT gen_random_uuid()::text")[0][0].as<std::string>();
+  const AiBudgetGrant owned{id, principal.subject.id, AiBudgetFundingSource::Owner, month, limits.paidPeriodNanos,
+                            "owner:" + id};
+  insertGrant(txn, owned);
+  wrote = true;
+  return owned;
+}
+
+// The grant first, when the principal holds Windmill One; then the balances of the allowance it draws on (§6.3).
 AiBudgetSnapshot readSnapshot(pqxx::work& txn, const AiBudgetPrincipal& principal, long long atMs,
                               const AiBudgetLimits& limits, bool& wrote) {
   AiBudgetSnapshot snapshot;
   const auto month = *AiBudgetPeriod::at(atMs);
-  if (principal.tier == AiBudgetTier::WindmillOne) {
-    snapshot.window = AiBudgetWindow::BillingPeriod;
-    snapshot.period = month;
-    const pqxx::result grants = txn.exec(
-        "SELECT id, account_id, source, period_start_ms, period_end_ms, amount_nanos, funding_reference "
-        "FROM ai_budget_grants WHERE account_id = $1 AND period_start_ms <= $2 AND period_end_ms > $2 "
-        "AND (source = 'subscription' OR $3) "
-        "ORDER BY CASE source WHEN 'subscription' THEN 0 ELSE 1 END",
-        pqxx::params{principal.subject.id, atMs, principal.owner});
-    if (grants.size() > 2 || (grants.size() == 2 && grants[0][2].as<std::string>() == grants[1][2].as<std::string>()))
-      throw std::runtime_error("Overlapping AI grants from one source");
-    if (!grants.empty()) snapshot.grant = grantFrom(grants[0]);
-    if (!snapshot.grant && principal.owner) {
-      const pqxx::result overlap = txn.exec(
-          "SELECT 1 FROM ai_budget_grants WHERE account_id = $1 AND source = 'owner' "
-          "AND period_start_ms < $3 AND period_end_ms > $2",
-          pqxx::params{principal.subject.id, month.startMs, month.endMs});
-      if (overlap.empty()) {
-        const auto id = txn.exec("SELECT gen_random_uuid()::text")[0][0].as<std::string>();
-        snapshot.grant = AiBudgetGrant{id, principal.subject.id, AiBudgetFundingSource::Owner,
-                                      month, limits.paidPeriodNanos, "owner:" + id};
-        insertGrant(txn, *snapshot.grant);
-        wrote = true;
-      }
-    }
+  if (principal.tier == AiBudgetTier::WindmillOne) snapshot.grant = grantInForce(txn, principal, atMs, limits, wrote);
+  const auto tier = snapshot.tierFor(principal, atMs);
+  if (tier == AiBudgetTier::WindmillOne) {
     const auto totals = accountTotals(txn, principal.subject.id, month);
     snapshot.concurrentCalls = totals.concurrent;
-    if (snapshot.grant) {
-      snapshot.period = snapshot.grant->period;
-      snapshot.window = snapshot.grant->source == AiBudgetFundingSource::Owner
-                            ? AiBudgetWindow::CalendarMonth : AiBudgetWindow::BillingPeriod;
-      snapshot.subject = readBalance(txn, {AiBudgetScope::FundedPeriod, snapshot.grant->id, snapshot.period});
-    }
+    snapshot.period = snapshot.grant->period;
+    snapshot.window = snapshot.grant->source == AiBudgetFundingSource::Owner
+                          ? AiBudgetWindow::CalendarMonth : AiBudgetWindow::BillingPeriod;
+    snapshot.subject = readBalance(txn, {AiBudgetScope::FundedPeriod, snapshot.grant->id, snapshot.period});
     snapshot.subject.debtNanos = totals.free.debtNanos;
     return snapshot;
   }
   snapshot.freeMonth = readBalance(txn, {AiBudgetScope::FreeMonth, "all", month});
   snapshot.freeDay = readBalance(txn, {AiBudgetScope::FreeDay, "all", *AiBudgetPeriod::dayAt(atMs)});
-  if (principal.tier == AiBudgetTier::LoggedIn) {
+  if (tier == AiBudgetTier::LoggedIn) {
     snapshot.period = month;
     const auto totals = accountTotals(txn, principal.subject.id, month);
     snapshot.subject = totals.free;
@@ -448,28 +464,37 @@ AiBudgetGrantResult PgAiBudgetRepository::fund(const AiBudgetGrant& grant, const
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   lockBudget(txn);
-  const pqxx::result prior = txn.exec(
-      "SELECT id, account_id, source, period_start_ms, period_end_ms, amount_nanos, funding_reference "
-      "FROM ai_budget_grants WHERE id = $1 OR (source = $2 AND funding_reference = $3)",
-      pqxx::params{grant.id, std::string(aiBudgetFundingSourceName(grant.source)), grant.fundingReference});
-  if (!prior.empty()) {
-    if (prior.size() != 1) return {AiBudgetCode::Conflict};
-    const auto stored = grantFrom(prior[0]);
-    auto retry = grant;
-    retry.id = stored.id;
-    if (stored != retry) return {AiBudgetCode::Conflict};
-    return {AiBudgetCode::Replay, stored};
-  }
-  const pqxx::result overlap = txn.exec(
-      "SELECT 1 FROM ai_budget_grants WHERE account_id = $1 AND source = $4 "
-      "AND period_start_ms < $3 AND period_end_ms > $2",
-      pqxx::params{grant.accountId, grant.period.startMs, grant.period.endMs,
-                   std::string(aiBudgetFundingSourceName(grant.source))});
-  if (!overlap.empty()) return {AiBudgetCode::Conflict};
+  const auto held = grantsFrom(txn.exec(
+      std::string(kSelectGrants) + "WHERE id = $1 OR (source = $2 AND (funding_reference = $3 OR account_id = $4))",
+      pqxx::params{grant.id, std::string(aiBudgetFundingSourceName(grant.source)), grant.fundingReference,
+                   grant.accountId}));
+  auto funded = fundAiBudgetGrant(grant, held);
+  if (funded.code != AiBudgetCode::Ok) return funded;
   insertGrant(txn, grant);
   txn.commit();
   markCurrentWrite();
-  return {AiBudgetCode::Ok, grant};
+  return funded;
+}
+
+AiBudgetGrantResult PgAiBudgetRepository::refund(const std::string& fundingReference,
+                                                 std::optional<long long> refundedAtMs) {
+  if (!validAiBudgetId(fundingReference)) return {AiBudgetCode::Invalid};
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  lockBudget(txn);
+  const pqxx::result named = txn.exec(
+      std::string(kSelectGrants) + "WHERE source = 'subscription' AND funding_reference = $1",
+      pqxx::params{fundingReference});
+  if (named.empty()) return {AiBudgetCode::NotFound};
+  auto grant = grantFrom(named[0]);
+  const auto held = grantsFrom(txn.exec(std::string(kSelectGrants) + "WHERE account_id = $1 AND source = 'subscription'",
+                                        pqxx::params{grant.accountId}));
+  const auto code = refundAiBudgetGrant(grant, refundedAtMs, held);
+  if (code != AiBudgetCode::Ok) return {code, std::move(grant)};
+  txn.exec("UPDATE ai_budget_grants SET closed_at_ms = $2 WHERE id = $1", pqxx::params{grant.id, grant.closedAtMs});
+  txn.commit();
+  markCurrentWrite();
+  return {AiBudgetCode::Ok, std::move(grant)};
 }
 
 std::optional<std::string> PgAiBudgetRepository::boundAccount(const std::string& deviceId) {

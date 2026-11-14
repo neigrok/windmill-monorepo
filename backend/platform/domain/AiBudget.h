@@ -12,6 +12,9 @@ enum class AiBudgetSubjectKind { Device, Account };
 enum class AiBudgetState { Reserved, Dispatched, Uncertain, Settled, Released };
 enum class AiBudgetWindow { Lifetime, CalendarMonth, BillingPeriod };
 enum class AiBudgetFundingSource { Subscription, Owner };
+// Which allowances may fund a call: any its principal draws on, or only a funded Windmill One grant, for a call that must
+// never draw on the free pools.
+enum class AiBudgetFunding { AnyAllowance, GrantOnly };
 enum class AiBudgetScope { FreeMonth, FreeDay, AnonymousLifetime, AccountMonth, FundedPeriod };
 enum class AiBudgetCode {
   Ok, Replay, Invalid, Unconfigured, SubjectExhausted,
@@ -81,7 +84,11 @@ struct AiBudgetGrant {
   AiBudgetPeriod period;
   long long amountNanos = 0;
   std::string fundingReference;
+  std::optional<long long> closedAtMs;  // a store's refund: the subscription grant funds nothing from then on
   bool valid() const;
+  bool inForceAt(long long atMs) const;
+  // Both hold an instant, each holding its period up to its close: one account and source never funds an instant twice.
+  bool overlaps(const AiBudgetGrant& other) const;
   bool operator==(const AiBudgetGrant&) const = default;
 };
 
@@ -94,6 +101,10 @@ struct AiBudgetSnapshot {
   std::optional<AiBudgetGrant> grant;
   int concurrentCalls = 0;
   bool deviceBound = false;
+
+  // The allowance `principal` draws on at `atMs`: Windmill One's while this holds its grant in force, else the free
+  // allowance of its kind, the signed-in one for an account (subscriptions.md §6.3).
+  AiBudgetTier tierFor(const AiBudgetPrincipal& principal, long long atMs) const;
 };
 
 struct AiOutputBudget {
@@ -113,6 +124,7 @@ struct AiBudgetRequest {
   long long amountNanos = 0;
   long long atMs = 0;
   std::optional<AiOutputBudget> outputBudget;
+  AiBudgetFunding funding = AiBudgetFunding::AnyAllowance;
   bool valid() const;
 };
 
@@ -194,5 +206,12 @@ AiBudgetCode transitionAiBudget(AiBudgetReservation& reservation, AiBudgetState 
 // left. Windmill absorbs whatever the vendor billed for it.
 AiBudgetCode releaseLapsedAiBudget(AiBudgetReservation& reservation, long long atMs);
 AiBudgetCode reconcileAiBudgetOverrun(AiBudgetReservation& reservation);
+// `grant` beside `held`, the grants sharing its id, its source and reference, or its account and source: Replay with the
+// stored grant when one is this funding, whatever its close; Conflict when one is another or holds an instant it would.
+AiBudgetGrantResult fundAiBudgetGrant(const AiBudgetGrant& grant, const std::vector<AiBudgetGrant>& held);
+// A refund closes a subscription grant at min(end, refundedAt) and its reversal, none, reopens it; spent capacity stays
+// spent. A change that holds an instant more must overlap none of `held`, or answers Conflict and changes nothing.
+AiBudgetCode refundAiBudgetGrant(AiBudgetGrant& grant, std::optional<long long> refundedAtMs,
+                                const std::vector<AiBudgetGrant>& held);
 
 }

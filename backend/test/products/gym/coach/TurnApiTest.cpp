@@ -308,10 +308,7 @@ TEST(gym_turn_route_answers_an_allowance_refusal_429_with_the_allowance_and_file
       {"concurrency_exhausted", [](ApiHarness& a) { a.h.budgetRepository.totals.concurrentCalls = 1; },
        allowanceOf("concurrency_exhausted", Json::Value(), Json::Value(Json::objectValue))},
       {"debt_outstanding", [](ApiHarness& a) { a.h.budgetRepository.totals.subject.debtNanos = 1; },
-       allowanceOf("debt_outstanding", Json::Value(), Json::Value(Json::objectValue))},
-      {"funding_required", [](ApiHarness& a) { a.h.subscriptions.subscribe(a.account); },
-       allowanceOf("funding_required", Json::Value(), parse(R"({"configured":false,"limit":null,"period":"billing_period",
-           "remaining":"0.000000000","resetsAtMs":null,"tier":"windmill_one"})"))}};
+       allowanceOf("debt_outstanding", Json::Value(), Json::Value(Json::objectValue))}};
   for (const Case& refusal : cases) {
     WriteWatch watch;
     ApiHarness a(true);

@@ -103,6 +103,10 @@ struct BudgetRepository : AiBudgetRepository {
     markCurrentWrite();
     return {AiBudgetCode::Ok, grant};
   }
+  AiBudgetGrantResult refund(const std::string&, std::optional<long long>) override {
+    ++calls;
+    return {AiBudgetCode::NotFound};
+  }
   std::optional<std::string> boundAccount(const std::string& device) override {
     if (binding.first == device) return binding.second;
     return std::nullopt;
@@ -234,7 +238,8 @@ TEST(ai_budget_service_replays_original_admission_after_month_and_tier_change) {
   CHECK_EQ(retry.reservation->period, first.reservation->period);
   CHECK_EQ(retry.reservation->state, AiBudgetState::Dispatched);
   CHECK_EQ(service.markDispatched("call").code, AiBudgetCode::AlreadyDispatched);
-  CHECK_EQ(service.reserve("new", {principal.subject, AiBudgetTier::WindmillOne}, 10).code, AiBudgetCode::FundingRequired);
+  CHECK_EQ(service.reserve("new", {principal.subject, AiBudgetTier::WindmillOne}, 10, std::nullopt,
+                           AiBudgetFunding::GrantOnly).code, AiBudgetCode::FundingRequired);
   CHECK_EQ(repository.rows.size(), std::size_t{1});
 }
 

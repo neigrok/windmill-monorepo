@@ -529,8 +529,9 @@ The backend's role cannot read it.
   `sweep.inbox`, `sweep.due`, `sweep.drift`, `sweep.history`.
 - Unexpected failures report to Sentry under those names. A signature that does not verify is a
   logged refusal, not an Issue. `drift` reports as a warning.
-- The backend's follower logs `subscription.follow` per page and `subscription.fund` per funding call
-  with its outcome (`ok`, `replay`) or refusal code (`conflict`, reported as a warning). It reports a
+- The backend's follower logs `subscription.follow` per page, `subscription.fund` per funding call and
+  `subscription.refund` per close or reopen of a grant, each with its outcome (`ok`, `replay`, `unchanged`
+  for a refund of a period no grant funds) or refusal code (`conflict`, reported as a warning). It reports a
   cursor that has not advanced while the service reports newer events, and a page whose epoch or
   `latestSeq` starts a rebuild (§6.1).
 - The backend's claim door logs `subscription.claim` with its outcome or refusal code; a wait for the

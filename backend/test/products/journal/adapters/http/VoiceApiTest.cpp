@@ -280,12 +280,14 @@ TEST(voice_with_allowances_on_answers_a_subscription_no_payment_has_funded_with_
 
   const auto response = send(h.api, post("opus-bytes", "s-live"));
 
+  // The allowance it carries is the free signed-in one the account falls back to, which funds no take.
   CHECK_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
-  CHECK_EQ(dump(*response->getJsonObject()), dump(parse(R"({"code":"funding_required","reason":"unavailable",
+  Json::Value expected = parse(R"({"code":"funding_required","reason":"unavailable",
       "error":"your plan has no funded AI allowance for this period","allowance":{"code":"funding_required",
-      "currency":"USD","period":"billing_period","tier":"windmill_one","configured":false,"limit":null,
-      "used":"0.000000000","reserved":"0.000000000","remaining":"0.000000000","resetsAtMs":null,
-      "budgetResetsAtMs":null}})")));
+      "currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"limit":"0.500000000",
+      "used":"0.000000000","reserved":"0.000000000","remaining":"0.500000000","budgetResetsAtMs":null}})");
+  expected["allowance"]["resetsAtMs"] = Json::Int64(AiBudgetPeriod::at(static_cast<long long>(h.clock->now))->endMs);
+  CHECK_EQ(dump(*response->getJsonObject()), dump(expected));
   CHECK_EQ(h.transcriber->calls, 0);
 }
 
