@@ -12,6 +12,10 @@ fi
 
 # Run from ~/windmill. All candidate files are uploaded under separate names so a rejected
 # image/configuration cannot change the live environment or recreate any old container.
+if [[ ! -d subscriptions-db.next ]]; then
+  printf 'FAIL candidate subscriptions-db folder is missing\n' >&2
+  exit 1
+fi
 candidate_env=.env.next
 verification=$(mktemp -d)
 trap 'rm -f "$candidate_env"; rm -rf "$verification"' EXIT
@@ -38,6 +42,8 @@ python3 "$(dirname "$0")/sync_compatibility.py" preflight "$candidate_env" sync-
 [[ ! -f .env ]] || cp .env .env.bak
 mv "$candidate_env" .env
 mv docker-compose.next.yml docker-compose.yml
+rm -rf subscriptions-db
+mv subscriptions-db.next subscriptions-db
 if cmp -s Caddyfile.next Caddyfile; then
   rm Caddyfile.next
 else
@@ -126,4 +132,28 @@ except Exception:
 PY
 python3 "$(dirname "$0")/sync_compatibility.py" verify "$verification/sync.json"
 rm -f .env.bak rendered.env sync-cutover.json
+# The subscription database's one-shot ran with `up`, and nothing waits on it, so its outcome is read here,
+# once the backend is verified: a FAIL turns this run red while the backend stays deployed and serving.
+provisioning=$(docker compose ps -aq subscriptions-db)
+if [[ -z "$provisioning" ]]; then
+  printf 'FAIL subscription database provisioning did not run; the backend is deployed and serving\n' >&2
+  exit 1
+fi
+for ((attempt=0; attempt<60; attempt++)); do
+  outcome=$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$provisioning")
+  [[ "$outcome" == exited* ]] && break
+  sleep 1
+done
+docker compose logs --no-log-prefix --tail 1 subscriptions-db
+case "$outcome" in
+  "exited 0") ;;
+  exited*)
+    printf 'FAIL subscription database provisioning exited with code %s; the backend is deployed and serving\n' \
+      "${outcome#exited }" >&2
+    exit 1 ;;
+  *)
+    printf 'FAIL subscription database provisioning was still %s after 60 s; the backend is deployed and serving\n' \
+      "${outcome%% *}" >&2
+    exit 1 ;;
+esac
 printf 'PASS deployed: immutable image, sync compatibility, process environment and Caddy verified; DB password preserved\n'

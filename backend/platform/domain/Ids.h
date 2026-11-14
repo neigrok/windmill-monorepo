@@ -33,6 +33,21 @@ using UserId = Id<UserTag>;
 
 using Seq = std::uint64_t;
 
+// The 8-4-4-4-12 hex form, either case: the shape every account id has, checked before it reaches a ::uuid bind.
+inline bool isUuid(std::string_view value) {
+  if (value.size() != 36) return false;
+  for (std::size_t i = 0; i < value.size(); ++i) {
+    const char c = value[i];
+    if (i == 8 || i == 13 || i == 18 || i == 23) {
+      if (c != '-') return false;
+      continue;
+    }
+    const bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    if (!hex) return false;
+  }
+  return true;
+}
+
 // Ordered by (physicalMs, counter, actor): the default spaceship compares members in declaration
 // order, which is the HLC order.
 struct Hlc {

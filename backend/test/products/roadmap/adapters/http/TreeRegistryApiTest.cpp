@@ -478,6 +478,81 @@ TEST(create_with_an_oversized_field_is_400_naming_the_node_and_plants_nothing) {
   CHECK_EQ(h.trees.byId.size(), std::size_t{0});
 }
 
+TEST(create_with_an_opens_past_the_id_cap_is_400_naming_the_node_and_one_at_the_cap_is_stored) {
+  Harness h;
+  h.signIn("s-me", "sam@example.com");
+  Json::Value body = claim("t_00000000000000e4", "Mine");
+  body["nodes"] = parse(R"([{"id":"hull","label":"Hull"}])");
+  body["nodes"][0]["opens"] = std::string(kMaxIdLength + 1, 't');
+
+  drogon::HttpResponsePtr response = create(h.api, post(body, "s-me"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)),
+           std::string(R"({"error":"node \"hull\": opens would be 129 characters, 1 over the 128 cap"})"));
+  CHECK_EQ(h.trees.byId.size(), std::size_t{0});
+
+  body["nodes"][0]["opens"] = std::string(kMaxIdLength, 't');
+  CHECK_EQ(create(h.api, post(body, "s-me"))->getStatusCode(), drogon::k200OK);
+  REQUIRE_EQ(h.trees.byId["t_00000000000000e4"].state.nodes.size(), 1u);
+  CHECK_EQ(h.trees.byId["t_00000000000000e4"].state.nodes[0].opens, TreeId{std::string(kMaxIdLength, 't')});
+}
+
+TEST(create_over_the_edge_ceiling_is_413_and_plants_nothing) {
+  Harness h;
+  h.signIn("s-me", "sam@example.com");
+  Json::Value body = titled("Too tangled");
+  body["nodes"] = Json::Value(Json::arrayValue);
+  // Five hubs and 4001 steps requiring all five: 20005 edges over 4006 nodes — under the node ceiling, over the edge one.
+  for (int hub = 0; hub < 5; ++hub) {
+    Json::Value node(Json::objectValue);
+    node["id"] = "hub" + std::to_string(hub);
+    body["nodes"].append(node);
+  }
+  for (std::size_t i = 0; i <= kMaxEdges / 5; ++i) {
+    Json::Value node(Json::objectValue);
+    node["id"] = "n" + std::to_string(i);
+    node["prerequisites"] = Json::Value(Json::arrayValue);
+    for (int hub = 0; hub < 5; ++hub) node["prerequisites"].append("hub" + std::to_string(hub));
+    body["nodes"].append(node);
+  }
+
+  drogon::HttpResponsePtr response = create(h.api, post(body, "s-me"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k413RequestEntityTooLarge);
+  CHECK_EQ(bodyOf(response)["error"].asString(),
+           std::string("this tree would hold 20005 edges, max 20000 — remove edges with change_edges before "
+                       "adding more"));
+  CHECK_EQ(h.trees.byId.size(), std::size_t{0});
+}
+
+// The bytes are spliced into the request text after serialization: the JSON writer would rewrite
+// them, and it is the raw client bytes the door must judge.
+TEST(create_with_a_field_that_is_not_valid_utf8_is_400_naming_the_field_and_plants_nothing) {
+  Harness h;
+  h.signIn("s-me", "sam@example.com");
+  // The document holding RAW, sent with `bytes` in its place.
+  const auto sent = [&](const char* title, const char* description, const std::string& bytes) {
+    Json::Value body = titled(title);
+    body["nodes"] = parse(R"([{"id":"hull","label":"Hull"}])");
+    body["nodes"][0]["description"] = description;
+    std::string text = dump(body);
+    text.replace(text.find("RAW"), 3, bytes);
+    drogon::HttpRequestPtr request = post(Json::Value(Json::objectValue), "s-me");
+    request->setBody(text);
+    return create(h.api, request);
+  };
+
+  drogon::HttpResponsePtr response = sent("Mine", "RAW", std::string(100000, '\x80'));  // zero code points, so no cap would catch it
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"node \"hull\": description is not valid UTF-8"})"));
+
+  response = sent("RAW", "A note.", "\xE2\x82");
+  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"the title is not valid UTF-8"})"));
+  CHECK_EQ(h.trees.byId.size(), std::size_t{0});
+}
+
 TEST(create_with_a_wrong_typed_field_is_400_not_a_thrown_500) {
   Harness h;
   h.signIn("s-me", "sam@example.com");
@@ -513,6 +588,23 @@ TEST(create_takes_a_node_that_still_sends_a_position_and_plants_its_twin_without
     "createdAt":"1700000000000:0:srv","deletedAt":"0:0:","description":"","descriptionAt":"0:0:","icon":"",
     "iconAt":"1700000000000:0:srv","id":"hull","label":"Hull","labelAt":"1700000000000:0:srv","links":[],
     "linksAt":"0:0:","opens":"","opensAt":"0:0:","order":"","orderAt":"0:0:","statusAt":"0:0:"}]})")));
+}
+
+// A kind has no cross-branch flag: a legend that still sends one with a kind, of any shape, plants the kind without it.
+TEST(create_takes_a_kind_that_still_sends_a_cross_branch_flag_and_plants_the_kind_without_it) {
+  Harness h;
+  h.signIn("s-me", "sam@example.com");
+  Json::Value body = claim("t_00000000000000f1", "Flagged");
+  body["nodes"] = parse(R"([{"id":"hull","label":"Hull"}])");
+  body["kinds"] = parse(R"([{"id":"drill","hue":"gold","label":"Drill","description":"","crossBranchExempt":true},
+    {"id":"build","hue":"sky","label":"Build","description":"","crossBranchExempt":"yes"}])");
+
+  CHECK_EQ(create(h.api, post(body, "s-me"))->getStatusCode(), drogon::k200OK);
+
+  TreeData planted;
+  planted.kinds = Legend(h.trees.byId["t_00000000000000f1"].legend).kinds();
+  CHECK_EQ(toJson(planted)["kinds"], parse(R"([{"id":"drill","hue":"gold","label":"Drill","description":""},
+    {"id":"build","hue":"sky","label":"Build","description":""}])"));
 }
 
 TEST(create_and_patch_refuse_a_non_object_json_root_with_400) {

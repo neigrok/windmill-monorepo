@@ -26,6 +26,19 @@ psql windmill -f db/schema.sql
 pulling. It also removes retired gym and journal cutover copies; current user rows and engine
 tables remain. The server-file purge and backup retention are in [the production runbook](deploy/README.md#day-to-day).
 
+The subscription service (`services/subscriptions`) keeps its ledger in a database of its own, owned by
+a role of the same name. Locally the role needs no password, since Homebrew's cluster trusts every
+connection over its socket, and the service migrates the empty database itself when it starts:
+
+```sh
+createuser -h /tmp windmill_subscriptions
+createdb -h /tmp -O windmill_subscriptions windmill_subscriptions
+```
+
+Its URL is `postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions`; the service's
+[ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#run) runs it. The production rules that
+keep the backend's role out of this database are not part of the local cluster.
+
 ## 3. Build
 
 ```sh
