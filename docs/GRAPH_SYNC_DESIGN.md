@@ -166,7 +166,9 @@ once. Its stamps are held unsent until Retry, and with them every other part of 
 carries, so no part of an act lands while another is held; every other write goes on, and Retry
 sends the held frames as they were stamped. A lighter frame is sent again with every socket, without
 limit, and a frame that is acknowledged is counted afresh. A connection that dies five times running
-for another reason while such a frame is unanswered is judged the same way.
+for another reason while such a frame is unanswered is judged the same way: with the socket dying
+around a 142 KiB frame at a chance of 0.5 it was judged in 3 of 48 runs, at 0.9 in 26 of 48, and
+Retry landed it each time.
 Resends pause while refused, offline, rebaselining or closed. A late acknowledgement for a settled
 frame is ignored. Socket closure and epoch adoption clear pending ping boundaries and delivery timers.
 

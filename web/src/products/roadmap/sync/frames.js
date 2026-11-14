@@ -117,7 +117,8 @@ function addedBytes(held, part) {
   return bytes;
 }
 
-// One stamp too large for a frame, cut across frames in section order: only a record an earlier bundle saved holds one.
+// One stamp too large for a frame, its rows cut across frames in section order: only a record an earlier bundle saved
+// holds one. A tree register under that stamp follows in a frame of its own (framesOf).
 function* cutAcross(part, room) {
   let frame = emptyPart();
   let size = EMPTY_PART_BYTES;
@@ -157,6 +158,7 @@ export function* framesOf(writes, room) {
     }
     if (alone > room && part.nodes.length + part.edges.length + part.kinds.length > 1) {
       yield* cutAcross(part, room);
+      for (const name of TREE_REGISTERS) if (part[name]) yield { ...emptyPart(), [name]: part[name] };
       continue;
     }
     if (apart) {

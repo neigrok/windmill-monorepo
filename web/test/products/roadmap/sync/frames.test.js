@@ -103,3 +103,20 @@ test('one stamp too large for a frame, as a record of an earlier bundle holds, i
   assert.equal(frames.flatMap((frame) => frame.nodes).filter((node) => node.id.startsWith('p')).length, 60);
   assert.equal(frames.reduce((sum, frame) => sum + frame.edges.length, 0), 1);
 });
+
+test('a tree register that shares a stamp cut across frames is kept, in a frame of its own', () => {
+  const room = frameRoom('tree', 'r_cut', 2000);
+  const writes = { nodes: Array.from({ length: 60 }, (_, i) => ({ id: `p${i}`, createdAt: at(50), label: `Pasted step ${i}`, labelAt: at(50) })),
+    edges: [], kinds: [], title: { v: 'Named with the paste', at: at(50) }, guide: { v: 'Trunk first.', at: at(50) } };
+
+  const frames = [...framesOf(writes, room)];
+
+  const envelope = { t: 'subgraph', v: 1, treeId: 'tree', frameId: 'x'.repeat(36), actor: 'r_cut', intent: 'flush' };
+  for (const frame of frames) assert.ok(bytesOf({ ...envelope, ...frame }) <= 2000);
+  assert.equal(frames.reduce((sum, frame) => sum + frame.nodes.length, 0), 60);
+  assert.deepEqual(frames.filter((frame) => frame.title).map((frame) => [frame.title, frame.nodes.length, Boolean(frame.guide)]),
+    [[{ v: 'Named with the paste', at: at(50) }, 0, false]]);
+  assert.deepEqual(frames.filter((frame) => frame.guide).map((frame) => [frame.guide, frame.nodes.length, Boolean(frame.title)]),
+    [[{ v: 'Trunk first.', at: at(50) }, 0, false]]);
+});
+

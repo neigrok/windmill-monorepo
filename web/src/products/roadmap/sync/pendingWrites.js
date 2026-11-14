@@ -95,8 +95,12 @@ export function pendingGestures(frame, confirmedFrame, gestures = {}) {
     const remaining = unconfirmedStamps(references, confirmed);
     if (Object.keys(remaining).length) pending[stamp] = remaining;
   }
+  // A register an act already references is that act's: one act cut into several stamps stays one, and only a write
+  // no act references is taken for an act of its own, under its stamp.
+  const referenced = new Set(Object.values(pending).flatMap((references) =>
+    Object.entries(references).map(([key, stamp]) => `${key}\n${stamp}`)));
   for (const [key, stamp] of Object.entries(unconfirmedStamps(writeStamps(frame), confirmed))) {
-    if (stamp === GENESIS_STAMP) continue;
+    if (stamp === GENESIS_STAMP || referenced.has(`${key}\n${stamp}`)) continue;
     pending[stamp] ??= {};
     pending[stamp][key] = stamp;
   }

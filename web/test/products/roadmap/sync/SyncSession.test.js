@@ -1296,8 +1296,11 @@ test('a write set is cut into the same frames before and after a reload, and a r
   const sent = structureFrames(whole.session.ws);
   assert.ok(sent.length > 1);
 
+  assert.equal(whole.session.pendingEditCount(), 1);
   const afterNone = await reloaded(t, whole.session, whole.saves, { server: '2:0:server' });
   assert.deepEqual(structureFrames(afterNone.ws).map(carried), sent.map(carried));
+  assert.deepEqual([afterNone.pendingEditCount(), afterNone.statusSnapshot().structureGestures], [1, 1],
+    'one act is one unsent edit after the reload and its graft, however many stamps it was cut into');
 
   const partWay = connectedSession(t);
   wornBy(partWay.session, 5000);
