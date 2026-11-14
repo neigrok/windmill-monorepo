@@ -195,6 +195,23 @@ int envDays(const char* name, int fallback) {
 }
 }
 
+// Whether the failure reports still to send were sent within `limit`. They are waited for on a thread of their own:
+// the reporter's own wait, for a host it cannot reach, is longer than a stopping process may take.
+static bool reportsSentWithin(std::shared_ptr<wm::SentryClient> reporter, std::chrono::milliseconds limit) {
+  if (!reporter) return true;
+  const auto sent = std::make_shared<std::promise<void>>();
+  std::future<void> done = sent->get_future();
+  std::thread([reporter = std::move(reporter), sent] {
+    reporter->drain();
+    sent->set_value();
+  }).detach();
+  return done.wait_for(limit) == std::future_status::ready;
+}
+
+// The two halves of ProcessStop::kExitFlushLimit: the log, then the reports.
+static constexpr std::chrono::milliseconds kLogFlushLimit{1000};
+static constexpr std::chrono::milliseconds kReportsFlushLimit = wm::ProcessStop::kExitFlushLimit - kLogFlushLimit;
+
 static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::SentryClient>& reporter) {
   using namespace wm;
 
@@ -750,15 +767,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       .giveUp = [registry, &reporter] {
         LOG_WARN << "server_stop outcome=cut-at-deadline budget_ms=" << RoomRegistry::kShutdownSaveBudget.count();
         registry->reportLost();
-        drainLogTee(std::chrono::seconds(1));
-        // The reports are waited for on a thread of their own: the reporter's wait is longer than this one may be.
-        std::promise<void> reported;
-        std::future<void> sent = reported.get_future();
-        std::thread([&reporter, &reported] {
-          if (reporter) reporter->drain();
-          reported.set_value();
-        }).detach();
-        sent.wait_for(ProcessStop::kExitFlushLimit - std::chrono::seconds(1));
+        drainLogTee(kLogFlushLimit);
+        reportsSentWithin(reporter, kReportsFlushLimit);
         std::_Exit(0);
       }}};
   // Ahead of every other advice. A request that reaches the server once it is stopping — on a connection the
@@ -1290,31 +1300,38 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   app.setThreadNum(ioThreads).run();
   app.setTermSignalHandler([] {});
   app.setIntSignalHandler([] {});
-  // The rest of the stop in order, still inside the budget's watch: the registry's last tries and its count of what
-  // was lost among it, then the log and the reports.
-  lifetime.stop();
-  stop.finished();
+  // The rest of the stop in order, inside the deadline's watch: the registry's last tries and its count of what was
+  // lost among it. The watch ends as the stops do, before the log and the reports are written out, so a stop is cut
+  // only while the log still takes its line.
+  lifetime.stop([&stop] { stop.finished(); });
   return 0;
 }
 
 int main() {
   using namespace wm;
   std::shared_ptr<SentryClient> reporter;
-  ObservabilityLifetime lifetime([&reporter] {
-    stopLogTee();
-    installWriteReporter({});
-    if (reporter) reporter->drain();
-  });
-  WriteContext context(writeRequestId());
-  try {
-    return runServer(lifetime, reporter);
-  } catch (const std::exception& error) {
-    WriteObservation observation("server.lifecycle", "platform", "background");
-    observation.fail(error);
-    return 1;
-  } catch (...) {
-    WriteObservation observation("server.lifecycle", "platform", "background");
-    observation.failUnknown();
-    return 1;
+  int code = 1;
+  bool reportsSent = true;
+  {
+    // The log and then the reports are written out within ProcessStop::kExitFlushLimit, however the process ends.
+    ObservabilityLifetime lifetime([&reporter, &reportsSent] {
+      stopLogTee(kLogFlushLimit);
+      installWriteReporter({});
+      reportsSent = reportsSentWithin(reporter, kReportsFlushLimit);
+    });
+    WriteContext context(writeRequestId());
+    try {
+      code = runServer(lifetime, reporter);
+    } catch (const std::exception& error) {
+      WriteObservation observation("server.lifecycle", "platform", "background");
+      observation.fail(error);
+    } catch (...) {
+      WriteObservation observation("server.lifecycle", "platform", "background");
+      observation.failUnknown();
+    }
   }
+  // Reports that could not be sent in time are left with the thread still waiting for them: the process ends here,
+  // destroying nothing under it.
+  if (!reportsSent) std::_Exit(code);
+  return code;
 }

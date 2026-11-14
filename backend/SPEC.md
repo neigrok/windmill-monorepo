@@ -743,14 +743,16 @@ Rules:
   everything. Every save from the signal on shares it (`RoomRegistry::beginStopping`,
   `StatementLimits`): the ones a write still waits for, and the last try `RoomRegistry::stop`
   gives each room that holds a write the store does not, held or not — and a registry that simply
-  goes away has stopped (`~RoomRegistry`). A stop that finishes inside it ends as any process
-  does. When it passes with anything still running — a request, a worker of the sync engine, a
-  statement — the process stops waiting: it says what is lost as the rooms stand
-  (`RoomRegistry::reportLost`, one line of the number of rooms that hold a write the store does
-  not, a room whose write was still being served among them), writes out its log and its failure
-  reports within `ProcessStop::kExitFlushLimit` (3 s) and exits 0. A request cut there was never
-  answered: its caller reads a connection closed with no response, and what the request had
-  already stored is stored. The deploy gives the server longer than the two together to stop
+  goes away has stopped (`~RoomRegistry`). When it passes with anything still running — a
+  request, a worker of the sync engine, a statement — the process stops waiting: it says what is
+  lost as the rooms stand (`RoomRegistry::reportLost`, one line of the number of rooms that hold a
+  write the store does not, a room whose write was still being served among them) and exits 0. A
+  request cut there was never answered: its caller reads a connection closed with no response,
+  and what the request had already stored is stored. The watch for the deadline ends as the stop's
+  own work does, before anything is torn down, so a stop is cut only while the log still takes its
+  line. However the stop ends, the log and then the failure reports are written out within
+  `ProcessStop::kExitFlushLimit` (3 s): reports a reporter cannot send in that time are left, and
+  the process exits without them. The deploy gives the server longer than the two together to stop
   (`deploy/README.md`).
 - `open()` loads the stored lattice and nothing else: a room is its snapshot, and the op log is the
   history the Activity feed reads, never a second source of a tree's state. An op row states one

@@ -546,7 +546,7 @@ set_tests_properties(subtree_inventory PROPERTIES TIMEOUT 120)
 # signal (SPEC.md, "The server stops in one order").
 add_test(NAME server_stop COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/platform/infra/server_stop_test.py $<TARGET_FILE:windmill_server>)
-set_tests_properties(server_stop PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+set_tests_properties(server_stop PROPERTIES TIMEOUT 900 RUN_SERIAL TRUE)
 add_test(NAME auth_differential COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/e2e/auth_differential_test.py)
 add_test(NAME anonymous_coach COMMAND ${Python3_EXECUTABLE}

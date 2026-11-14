@@ -180,12 +180,13 @@ they are kept together:
 At the signal the server takes no new write on any door: a new connection is refused, an open one
 is closed once the request on it has been answered, and a request that still reaches it is answered
 a bare `503`. It saves what is in flight and what its rooms still hold. A stop that is over inside
-the 5 s exits by itself. One that is not is cut there, whatever is still running: the server logs
+the 5 s ends by itself. One that is not is cut there, whatever is still running: the server logs
 `server_stop outcome=cut-at-deadline`, then `roadmap_tree_save outcome=lost-at-shutdown rooms=N` for
-the rooms that hold a write the store does not, writes out its log and its failure reports within
-3 s more (`ProcessStop::kExitFlushLimit`) and exits 0 (`SPEC.md`, "The server stops in one order").
+the rooms that hold a write the store does not. Either way it writes out its log and its failure
+reports within 3 s more (`ProcessStop::kExitFlushLimit`), leaving reports it cannot send by then,
+and exits 0 (`SPEC.md`, "The server stops in one order").
 The 10 s is that deadline, the 3 s, and room to spare, rounded up; a stop cut at the deadline
-measures 5.0 to 5.1 s. Compose's own default, were the line removed, is also 10 s, and stating it
+with no report left to send measures 5.0 to 5.1 s. Compose's own default, were the line removed, is also 10 s, and stating it
 is what keeps the two numbers together: a server killed at the end of the grace period loses what it
 had acked and not stored without the `lost-at-shutdown` line, so the deadline may be raised only
 with the grace period, and the `deploy_stop_grace` check in ctest fails when the grace no longer
