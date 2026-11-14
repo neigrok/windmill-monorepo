@@ -12,7 +12,7 @@ A file is `{note, notification, expect}` or `{note, claim, expect}`.
 | `note` | What the vector shows. |
 | `notification` | The notification as `SignedDataVerifier` hands it over, every key present: `notificationType`, `subtype`, `signedDate`, `environment`, `status`, and `transaction` and `renewalInfo`, the decoded JWSTransactionDecodedPayload and JWSRenewalInfoDecodedPayload in Apple's own field names, or `null`. |
 | `claim` | A decoded JWSTransactionDecodedPayload. |
-| `expect` | One outcome, written in full: `{observation, accountToken}`, the observation in the grammar of the [domain's vectors](../README.md) with its status flat; `{awaitsStatus}`, a transaction other than the latest, as `{lineage, observedAt, ownership, period, accountToken}`; `{periodStatement}` for a claim, in the same shape; `{silent: code}`; or `{unsupported: code}`. |
+| `expect` | One outcome, written in full: `{observation, accountToken}`, the observation in the grammar of the [domain's vectors](../README.md) with its status flat; `{awaitsStatus, awaiting}`, a statement whose state must be pulled, as `{lineage, observedAt, ownership, period, accountToken, cancelRequestedAt}`, and why, `earlier_transaction` or `latest_unconfirmed`; `{periodStatement}` for a claim, in the same shape; `{silent: code}`; or `{unsupported: code}`. |
 
 Apple's payloads count epoch milliseconds and state prices in milliunits, as Apple sends them; the
 expectations write instants as UTC ISO 8601. Store ids are invented: the lineage of most vectors is

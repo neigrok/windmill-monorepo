@@ -1,5 +1,5 @@
 {
-  "note": "Status 5, revoked, with a latest transaction that states no revocationDate: the payload lacks what Apple documents for it, unsupported, nothing changes.",
+  "note": "A REFUND with status 5 whose latest transaction states no revocationDate: revoked all the same, ended and refunded at the notification's signedDate, the latest instant the refund can have happened.",
   "notification": {
     "notificationType": "REFUND",
     "subtype": null,
@@ -47,6 +47,61 @@
     }
   },
   "expect": {
-    "unsupported": "incomplete"
+    "observation": {
+      "lineage": {
+        "store": "app_store",
+        "environment": "production",
+        "storeSubscriptionId": "2000000100000001"
+      },
+      "observedAt": "2027-02-12T10:00:01Z",
+      "ownership": "purchased",
+      "status": {
+        "plan": "windmill_one",
+        "productId": "works.windmill.app.one.monthly",
+        "billingInterval": "P1M",
+        "startedAt": "2027-01-01T10:00:00Z",
+        "state": "revoked",
+        "currentPeriod": {
+          "start": "2027-02-01T10:00:00Z",
+          "end": "2027-03-01T10:00:00Z"
+        },
+        "autoRenew": false,
+        "nextChargeAt": "2027-03-01T10:00:00Z",
+        "nextCharge": {
+          "amount": "12.00",
+          "currency": "USD"
+        },
+        "nextProductId": null,
+        "cancelRequestedAt": null,
+        "paymentFailedAt": null,
+        "graceEndsAt": null,
+        "pauseScheduledFor": null,
+        "pausedAt": null,
+        "resumesAt": null,
+        "endedAt": "2027-02-12T10:00:01Z",
+        "endReason": "refunded",
+        "offerKind": null,
+        "offerEndsAt": null,
+        "price": {
+          "amount": "12.00",
+          "currency": "USD"
+        },
+        "storefront": "USA"
+      },
+      "periods": [
+        {
+          "transaction": "2000000100000002",
+          "start": "2027-02-01T10:00:00Z",
+          "end": "2027-03-01T10:00:00Z",
+          "price": {
+            "amount": "12.00",
+            "currency": "USD"
+          },
+          "offerKind": null,
+          "refundedAt": "2027-02-12T10:00:01Z"
+        }
+      ]
+    },
+    "accountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84"
   }
 }

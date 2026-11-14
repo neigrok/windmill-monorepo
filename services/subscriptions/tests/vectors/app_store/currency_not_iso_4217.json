@@ -1,5 +1,5 @@
 {
-  "note": "A currency that is not an ISO 4217 code: unsupported.",
+  "note": "A currency that is no ISO 4217 code in any case: the price decides whether the period was paid (spec \u00a78), so it is unsupported.",
   "notification": {
     "notificationType": "DID_RENEW",
     "subtype": null,
@@ -26,7 +26,7 @@
       "storefront": "USA",
       "storefrontId": "143441",
       "price": 12000,
-      "currency": "usd",
+      "currency": "US$",
       "appTransactionId": "704512345678901234",
       "billingPlanType": "BILLED_UPFRONT"
     },

@@ -437,6 +437,6 @@ fn status() -> impl Strategy<Value = Status> {
             renewal,
             offer,
             price: usd("11.99"),
-            storefront: Storefront::new("USA"),
+            storefront: Some(Storefront::new("USA")),
         })
 }

@@ -24,7 +24,7 @@ fn every_app_store_vector_passes() {
         .collect();
     vectors.sort();
     assert!(
-        vectors.len() >= 100,
+        vectors.len() >= 112,
         "{} holds {} vectors, fewer than the ones written",
         directory.display(),
         vectors.len()
@@ -155,7 +155,13 @@ fn decoded_json(decoded: Decoded) -> Value {
             "observation": observation_json(&observation),
             "accountToken": account_token.as_ref().map(AccountToken::expose),
         }),
-        Decoded::AwaitsStatus(statement) => json!({ "awaitsStatus": statement_json(&statement) }),
+        Decoded::AwaitsStatus {
+            statement,
+            awaiting,
+        } => json!({
+            "awaitsStatus": statement_json(&statement),
+            "awaiting": awaiting.code(),
+        }),
         Decoded::Silent(silence) => json!({ "silent": silence.code() }),
         Decoded::Unsupported(unsupported) => json!({ "unsupported": unsupported.code() }),
     }
@@ -186,6 +192,7 @@ fn statement_json(statement: &PeriodStatement) -> Value {
         "ownership": statement.ownership.name(),
         "period": period_json(&statement.period),
         "accountToken": statement.account_token.as_ref().map(AccountToken::expose),
+        "cancelRequestedAt": statement.cancel_requested_at.map(iso),
     })
 }
 
@@ -213,7 +220,7 @@ fn status_json(status: &Status) -> Value {
         "offerKind": status.offer.as_ref().map(|offer| offer.kind.name()),
         "offerEndsAt": status.offer.as_ref().and_then(|offer| offer.ends_at).map(iso),
         "price": money_json(&status.price),
-        "storefront": status.storefront.as_str(),
+        "storefront": status.storefront.as_ref().map(|storefront| storefront.as_str()),
     })
 }
 

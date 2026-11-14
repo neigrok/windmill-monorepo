@@ -117,13 +117,38 @@ pub(super) struct NotificationPayload {
     pub(super) data: Option<NotificationData>,
     summary: Option<App>,
     app_data: Option<App>,
+    unclaim_info: Option<App>,
+    external_purchase_token: Option<ExternalPurchaseToken>,
 }
 
 impl NotificationPayload {
-    pub(super) fn app(&self) -> Option<&App> {
-        let data = self.data.as_ref().map(|data| &data.app);
-        data.or(self.summary.as_ref()).or(self.app_data.as_ref())
+    // The app a notification is for, read where Apple puts it for each kind of notification.
+    pub(super) fn app(&self) -> Option<App> {
+        let stated = [
+            self.data.as_ref().map(|data| &data.app),
+            self.summary.as_ref(),
+            self.app_data.as_ref(),
+            self.unclaim_info.as_ref(),
+        ];
+        let stated = stated.into_iter().flatten().next().cloned();
+        stated.or_else(|| {
+            self.external_purchase_token.as_ref().map(|token| App {
+                bundle_id: token.bundle_id.clone(),
+                environment: match token.external_purchase_id.as_deref() {
+                    Some(id) if id.starts_with("SANDBOX") => Environment::Sandbox,
+                    _ => Environment::Production,
+                },
+            })
+        })
     }
+}
+
+// A token states no environment: Apple's libraries read a sandbox token by its id's SANDBOX prefix.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExternalPurchaseToken {
+    bundle_id: String,
+    external_purchase_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -136,7 +161,7 @@ pub(super) struct NotificationData {
     pub(super) signed_renewal_info: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct App {
     pub(super) bundle_id: String,

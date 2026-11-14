@@ -1,5 +1,5 @@
 {
-  "note": "A product type Apple does not document: unsupported.",
+  "note": "A product type Apple does not document: Windmill One's product id says what was sold.",
   "notification": {
     "notificationType": "DID_RENEW",
     "subtype": null,
@@ -47,6 +47,61 @@
     }
   },
   "expect": {
-    "unsupported": "unknown_value"
+    "observation": {
+      "lineage": {
+        "store": "app_store",
+        "environment": "production",
+        "storeSubscriptionId": "2000000100000001"
+      },
+      "observedAt": "2027-02-01T10:00:05Z",
+      "ownership": "purchased",
+      "status": {
+        "plan": "windmill_one",
+        "productId": "works.windmill.app.one.monthly",
+        "billingInterval": "P1M",
+        "startedAt": "2027-01-01T10:00:00Z",
+        "state": "active",
+        "currentPeriod": {
+          "start": "2027-02-01T10:00:00Z",
+          "end": "2027-03-01T10:00:00Z"
+        },
+        "autoRenew": true,
+        "nextChargeAt": "2027-03-01T10:00:00Z",
+        "nextCharge": {
+          "amount": "12.00",
+          "currency": "USD"
+        },
+        "nextProductId": null,
+        "cancelRequestedAt": null,
+        "paymentFailedAt": null,
+        "graceEndsAt": null,
+        "pauseScheduledFor": null,
+        "pausedAt": null,
+        "resumesAt": null,
+        "endedAt": null,
+        "endReason": null,
+        "offerKind": null,
+        "offerEndsAt": null,
+        "price": {
+          "amount": "12.00",
+          "currency": "USD"
+        },
+        "storefront": "USA"
+      },
+      "periods": [
+        {
+          "transaction": "2000000100000002",
+          "start": "2027-02-01T10:00:00Z",
+          "end": "2027-03-01T10:00:00Z",
+          "price": {
+            "amount": "12.00",
+            "currency": "USD"
+          },
+          "offerKind": null,
+          "refundedAt": null
+        }
+      ]
+    },
+    "accountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84"
   }
 }

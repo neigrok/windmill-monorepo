@@ -1,11 +1,11 @@
 {
-  "note": "A price Apple states to the thousandth: the amount keeps two decimals and a third only when Apple states one.",
+  "note": "A REVOKE with a revocationType Apple does not document: revoked for a reason not known; a REVOKE states no refund, so the period keeps none.",
   "notification": {
-    "notificationType": "DID_RENEW",
+    "notificationType": "REVOKE",
     "subtype": null,
-    "signedDate": 1801476005000,
+    "signedDate": 1802426401000,
     "environment": "Production",
-    "status": 1,
+    "status": 5,
     "transaction": {
       "transactionId": "2000000100000002",
       "originalTransactionId": "2000000100000001",
@@ -20,29 +20,32 @@
       "type": "Auto-Renewable Subscription",
       "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
       "inAppOwnershipType": "PURCHASED",
-      "signedDate": 1801476005000,
+      "signedDate": 1802426401000,
       "environment": "Production",
       "transactionReason": "RENEWAL",
-      "storefront": "KWT",
-      "storefrontId": "143493",
-      "price": 3995,
-      "currency": "KWD",
+      "storefront": "USA",
+      "storefrontId": "143441",
+      "price": 12000,
+      "currency": "USD",
       "appTransactionId": "704512345678901234",
-      "billingPlanType": "BILLED_UPFRONT"
+      "billingPlanType": "BILLED_UPFRONT",
+      "revocationDate": 1802426400000,
+      "revocationReason": 0,
+      "revocationType": "TEAM_REVOKE"
     },
     "renewalInfo": {
       "originalTransactionId": "2000000100000001",
       "productId": "works.windmill.app.one.monthly",
       "autoRenewProductId": "works.windmill.app.one.monthly",
-      "autoRenewStatus": 1,
+      "autoRenewStatus": 0,
       "isInBillingRetryPeriod": false,
       "renewalDate": 1803895200000,
-      "renewalPrice": 3995,
-      "currency": "KWD",
+      "renewalPrice": 12000,
+      "currency": "USD",
       "recentSubscriptionStartDate": 1798797600000,
       "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
       "appTransactionId": "704512345678901234",
-      "signedDate": 1801476005000,
+      "signedDate": 1802426401000,
       "environment": "Production"
     }
   },
@@ -53,23 +56,23 @@
         "environment": "production",
         "storeSubscriptionId": "2000000100000001"
       },
-      "observedAt": "2027-02-01T10:00:05Z",
+      "observedAt": "2027-02-12T10:00:01Z",
       "ownership": "purchased",
       "status": {
         "plan": "windmill_one",
         "productId": "works.windmill.app.one.monthly",
         "billingInterval": "P1M",
         "startedAt": "2027-01-01T10:00:00Z",
-        "state": "active",
+        "state": "revoked",
         "currentPeriod": {
           "start": "2027-02-01T10:00:00Z",
           "end": "2027-03-01T10:00:00Z"
         },
-        "autoRenew": true,
+        "autoRenew": false,
         "nextChargeAt": "2027-03-01T10:00:00Z",
         "nextCharge": {
-          "amount": "3.995",
-          "currency": "KWD"
+          "amount": "12.00",
+          "currency": "USD"
         },
         "nextProductId": null,
         "cancelRequestedAt": null,
@@ -78,15 +81,15 @@
         "pauseScheduledFor": null,
         "pausedAt": null,
         "resumesAt": null,
-        "endedAt": null,
-        "endReason": null,
+        "endedAt": "2027-02-12T10:00:00Z",
+        "endReason": "unknown",
         "offerKind": null,
         "offerEndsAt": null,
         "price": {
-          "amount": "3.995",
-          "currency": "KWD"
+          "amount": "12.00",
+          "currency": "USD"
         },
-        "storefront": "KWT"
+        "storefront": "USA"
       },
       "periods": [
         {
@@ -94,8 +97,8 @@
           "start": "2027-02-01T10:00:00Z",
           "end": "2027-03-01T10:00:00Z",
           "price": {
-            "amount": "3.995",
-            "currency": "KWD"
+            "amount": "12.00",
+            "currency": "USD"
           },
           "offerKind": null,
           "refundedAt": null

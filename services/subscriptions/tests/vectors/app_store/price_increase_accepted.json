@@ -1,5 +1,5 @@
 {
-  "note": "PRICE_INCREASE ACCEPTED: the customer consented, or the increase needs no consent; the next charge is the new price.",
+  "note": "PRICE_INCREASE ACCEPTED: the customer consented, or the increase needs no consent (priceIncreaseStatus 1); the next charge is the new price.",
   "notification": {
     "notificationType": "PRICE_INCREASE",
     "subtype": "ACCEPTED",

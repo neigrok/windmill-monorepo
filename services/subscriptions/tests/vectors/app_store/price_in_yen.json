@@ -1,5 +1,5 @@
 {
-  "note": "A renewal in Japan: Apple's milliunits scale by a thousand in every currency, so 1800000 is 1800.00 JPY.",
+  "note": "A renewal in Japan: Apple's milliunits scale by a thousand in every currency, and the yen has no minor unit, so 1800000 is 1800 JPY.",
   "notification": {
     "notificationType": "DID_RENEW",
     "subtype": null,
@@ -68,7 +68,7 @@
         "autoRenew": true,
         "nextChargeAt": "2027-03-01T10:00:00Z",
         "nextCharge": {
-          "amount": "1800.00",
+          "amount": "1800",
           "currency": "JPY"
         },
         "nextProductId": null,
@@ -83,7 +83,7 @@
         "offerKind": null,
         "offerEndsAt": null,
         "price": {
-          "amount": "1800.00",
+          "amount": "1800",
           "currency": "JPY"
         },
         "storefront": "JPN"
@@ -94,7 +94,7 @@
           "start": "2027-02-01T10:00:00Z",
           "end": "2027-03-01T10:00:00Z",
           "price": {
-            "amount": "1800.00",
+            "amount": "1800",
             "currency": "JPY"
           },
           "offerKind": null,

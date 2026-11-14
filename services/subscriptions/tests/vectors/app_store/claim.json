@@ -44,7 +44,8 @@
         "offerKind": null,
         "refundedAt": null
       },
-      "accountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84"
+      "accountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
+      "cancelRequestedAt": null
     }
   }
 }

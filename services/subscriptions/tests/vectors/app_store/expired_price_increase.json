@@ -68,11 +68,8 @@
           "end": "2027-03-01T10:00:00Z"
         },
         "autoRenew": false,
-        "nextChargeAt": "2027-03-01T10:00:00Z",
-        "nextCharge": {
-          "amount": "14.00",
-          "currency": "USD"
-        },
+        "nextChargeAt": null,
+        "nextCharge": null,
         "nextProductId": null,
         "cancelRequestedAt": null,
         "paymentFailedAt": null,

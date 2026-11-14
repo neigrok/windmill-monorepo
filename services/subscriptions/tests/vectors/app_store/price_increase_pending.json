@@ -1,5 +1,5 @@
 {
-  "note": "PRICE_INCREASE PENDING: the customer has not yet consented to a price increase; the next charge is the renewal price Apple states.",
+  "note": "PRICE_INCREASE PENDING: the customer has not consented to a price increase that needs it (priceIncreaseStatus 0). Without consent Apple ends the subscription rather than charge, so there is no next charge.",
   "notification": {
     "notificationType": "PRICE_INCREASE",
     "subtype": "PENDING",
@@ -67,11 +67,8 @@
           "end": "2027-03-01T10:00:00Z"
         },
         "autoRenew": true,
-        "nextChargeAt": "2027-03-01T10:00:00Z",
-        "nextCharge": {
-          "amount": "14.00",
-          "currency": "USD"
-        },
+        "nextChargeAt": null,
+        "nextCharge": null,
         "nextProductId": null,
         "cancelRequestedAt": null,
         "paymentFailedAt": null,

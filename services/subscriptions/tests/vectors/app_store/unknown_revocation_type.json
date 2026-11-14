@@ -1,9 +1,9 @@
 {
-  "note": "A revocationType Apple does not document: whether money was taken back is unknown, unsupported.",
+  "note": "A REFUND of the latest transaction with a revocationType Apple does not document: revoked all the same, for a reason not known, and the REFUND still sets the period's refund time.",
   "notification": {
     "notificationType": "REFUND",
     "subtype": null,
-    "signedDate": 1801476005000,
+    "signedDate": 1802260801000,
     "environment": "Production",
     "status": 5,
     "transaction": {
@@ -20,7 +20,7 @@
       "type": "Auto-Renewable Subscription",
       "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
       "inAppOwnershipType": "PURCHASED",
-      "signedDate": 1801476005000,
+      "signedDate": 1802260801000,
       "environment": "Production",
       "transactionReason": "RENEWAL",
       "storefront": "USA",
@@ -45,11 +45,66 @@
       "recentSubscriptionStartDate": 1798797600000,
       "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
       "appTransactionId": "704512345678901234",
-      "signedDate": 1801476005000,
+      "signedDate": 1802260801000,
       "environment": "Production"
     }
   },
   "expect": {
-    "unsupported": "unknown_value"
+    "observation": {
+      "lineage": {
+        "store": "app_store",
+        "environment": "production",
+        "storeSubscriptionId": "2000000100000001"
+      },
+      "observedAt": "2027-02-10T12:00:01Z",
+      "ownership": "purchased",
+      "status": {
+        "plan": "windmill_one",
+        "productId": "works.windmill.app.one.monthly",
+        "billingInterval": "P1M",
+        "startedAt": "2027-01-01T10:00:00Z",
+        "state": "revoked",
+        "currentPeriod": {
+          "start": "2027-02-01T10:00:00Z",
+          "end": "2027-03-01T10:00:00Z"
+        },
+        "autoRenew": false,
+        "nextChargeAt": "2027-03-01T10:00:00Z",
+        "nextCharge": {
+          "amount": "12.00",
+          "currency": "USD"
+        },
+        "nextProductId": null,
+        "cancelRequestedAt": null,
+        "paymentFailedAt": null,
+        "graceEndsAt": null,
+        "pauseScheduledFor": null,
+        "pausedAt": null,
+        "resumesAt": null,
+        "endedAt": "2027-02-10T12:00:00Z",
+        "endReason": "unknown",
+        "offerKind": null,
+        "offerEndsAt": null,
+        "price": {
+          "amount": "12.00",
+          "currency": "USD"
+        },
+        "storefront": "USA"
+      },
+      "periods": [
+        {
+          "transaction": "2000000100000002",
+          "start": "2027-02-01T10:00:00Z",
+          "end": "2027-03-01T10:00:00Z",
+          "price": {
+            "amount": "12.00",
+            "currency": "USD"
+          },
+          "offerKind": null,
+          "refundedAt": "2027-02-10T12:00:00Z"
+        }
+      ]
+    },
+    "accountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84"
   }
 }

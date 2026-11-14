@@ -76,7 +76,7 @@ pub struct Status {
     pub renewal: Renewal,
     pub offer: Option<Offer>,
     pub price: Money,
-    pub storefront: Storefront,
+    pub storefront: Option<Storefront>,
 }
 
 impl Status {

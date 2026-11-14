@@ -697,6 +697,91 @@ fn a_summary_notification_names_its_app_in_the_summary() {
 }
 
 #[test]
+fn an_unclaim_seats_notification_names_its_app_in_its_unclaim_info() {
+    let chain = TestChain::issue(ChainShape::default());
+    let unclaim = |bundle_id: &str| {
+        chain.sign(&json!({
+            "notificationType": "UNCLAIM_SEATS",
+            "notificationUUID": "3e7d9a4c-0b6f-4c9b-9a4e-6d2f1c8b5a70",
+            "version": "2.0",
+            "signedDate": 1_793_491_260_000_i64,
+            "unclaimInfo": {
+                "appAppleId": 6_400_000_000_i64,
+                "bundleId": bundle_id,
+                "environment": "Sandbox",
+                "originalTransactionId": "2000000000000001",
+                "unclaimSeatIds": ["8a1f3c2e-5b7d-4e9a-b6c4-2d8f0e1a3b5c"]
+            }
+        }))
+    };
+    let verifier = chain.verifier();
+
+    let verified = verifier.verify_notification(&unclaim("works.windmill.app"));
+    let refused = verifier.verify_notification(&unclaim("com.example.other"));
+
+    let expected = Notification {
+        notification_uuid: "3e7d9a4c-0b6f-4c9b-9a4e-6d2f1c8b5a70".to_owned(),
+        notification_type: "UNCLAIM_SEATS".to_owned(),
+        subtype: None,
+        signed_date: Some(1_793_491_260_000),
+        environment: Environment::Sandbox,
+        status: None,
+        transaction: None,
+        renewal_info: None,
+    };
+    assert!(verified == Ok(expected), "refused: {:?}", verified.err());
+    assert!(refused.err() == Some(Refusal::BundleId));
+}
+
+#[test]
+fn an_external_purchase_token_notification_takes_its_environment_from_the_token_id() {
+    let chain = TestChain::issue(ChainShape::default());
+    let token = |external_purchase_id: &str, bundle_id: &str| {
+        chain.sign(&json!({
+            "notificationType": "EXTERNAL_PURCHASE_TOKEN",
+            "subtype": "UNREPORTED",
+            "notificationUUID": "002e14d5-51f5-4503-b5a8-c3a1af68eb20",
+            "version": "2.0",
+            "signedDate": 1_793_491_260_000_i64,
+            "externalPurchaseToken": {
+                "externalPurchaseId": external_purchase_id,
+                "tokenCreationDate": 1_793_491_200_000_i64,
+                "appAppleId": 6_400_000_000_i64,
+                "bundleId": bundle_id
+            }
+        }))
+    };
+    let verifier = chain.verifier();
+    let environment = |signed: &str| {
+        verifier
+            .verify_notification(signed)
+            .map(|notification| notification.environment)
+    };
+
+    assert_eq!(
+        environment(&token(
+            "SANDBOX_b2158121-7af9-49d4-9561-1f588205523e",
+            "works.windmill.app"
+        )),
+        Ok(Environment::Sandbox)
+    );
+    assert_eq!(
+        environment(&token(
+            "b2158121-7af9-49d4-9561-1f588205523e",
+            "works.windmill.app"
+        )),
+        Ok(Environment::Production)
+    );
+    assert_eq!(
+        environment(&token(
+            "b2158121-7af9-49d4-9561-1f588205523e",
+            "com.example.other"
+        )),
+        Err(Refusal::BundleId)
+    );
+}
+
+#[test]
 fn a_chain_missing_the_intermediate_is_refused() {
     let chain = TestChain::issue(ChainShape::default());
     let transaction = jws(
