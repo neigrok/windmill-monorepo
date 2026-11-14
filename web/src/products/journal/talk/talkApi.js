@@ -21,9 +21,10 @@ export class TalkError extends Error {
   }
 }
 
-// A failure the server did not explain is Sentry's: no answer, an answer past the deadline, or a 5xx with no `error`,
-// which is a proxy's or a crash's. A refusal the server explains is the person's to read, not an Issue.
-async function ask(operation, url, options, deadlineMs) {
+// A failure the server did not explain is Sentry's: no answer, an answer past the deadline, a success whose body cannot
+// be read, or a 5xx with no `error`, which is a proxy's or a crash's. A refusal the server explains is the person's to
+// read, not an Issue. An unreadable success throws a TalkError: the take was not transcribed.
+async function ask(operation, url, options, deadlineMs, readable = () => true) {
   let response;
   try {
     response = await fetch(url, { credentials: 'include', ...options, signal: AbortSignal.timeout(deadlineMs) });
@@ -31,20 +32,24 @@ async function ask(operation, url, options, deadlineMs) {
     captureError('journal', operation, '', '/journal', { failure: error?.name === 'TimeoutError' ? 'timeout' : 'unreachable' });
     throw error;
   }
-  const body = response.ok ? await response.json() : await response.json().catch(() => ({}));
-  if (response.status >= 500 && !body.error) captureError('journal', operation, '', '/journal', { failure: 'status', status: String(response.status) });
-  return { status: response.status, ok: response.ok, body };
+  const body = await response.json().catch(() => null);
+  if (response.ok && !(body && readable(body))) {
+    captureError('journal', operation, '', '/journal', { failure: 'unreadable', status: String(response.status) });
+    throw new TalkError(response.status, {});
+  }
+  if (response.status >= 500 && !body?.error) captureError('journal', operation, '', '/journal', { failure: 'status', status: String(response.status) });
+  return { status: response.status, ok: response.ok, body: body ?? {} };
 }
 
 export const talkApi = {
-  // Audio in, text out; no page is made. Anything but a transcript throws a TalkError, or the fetch's own error
-  // when no answer came.
+  // Audio in, text out; no page is made. Anything but a transcript throws a TalkError — a success with no text in it
+  // included — or the fetch's own error when no answer came.
   async transcribe(audio) {
     const answer = await ask('journal-talk-transcribe', `${API_BASE}/v1/journal/transcribe`, {
       method: 'POST',
       body: audio,
       headers: { 'content-type': audio.type || 'application/octet-stream' },
-    }, TRANSCRIBE_DEADLINE_MS);
+    }, TRANSCRIBE_DEADLINE_MS, (body) => typeof body.text === 'string');
     if (!answer.ok) throw new TalkError(answer.status, answer.body);
     return answer.body.text;
   },

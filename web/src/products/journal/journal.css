@@ -2149,10 +2149,12 @@ a.journal-link:focus-visible {
   border-radius: 1px;
   background: color-mix(in srgb, var(--lamp-400) 55%, transparent);
 }
+/* The journal's dim ink: by night the secondary text (#B6B5B0, 8.56:1 on the card) where the board draws the tertiary
+   (3.76:1, under the 4.5:1 floor for 11 px text; docs/design/consistency.md), by day the tertiary the board draws. */
 .journal-talk-length,
 .journal-talk-kept,
 .journal-talk-undo {
-  color: var(--text-tertiary);
+  color: var(--journal-ink-dim);
   font: 400 11px/16px var(--font-mono), ui-monospace, monospace;
 }
 .journal-talk-length { flex: none; white-space: nowrap; }

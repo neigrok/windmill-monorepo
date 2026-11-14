@@ -108,14 +108,17 @@ Journal Talk emits `journal_talk_refused` each time the sheet says why Talk refu
 that set, `status_<n>` where the answer carried none, or `unreachable` where nothing answered. `reason` is
 `allowance_exhausted`, `request_exceeds_remaining`, `held` (a spent allowance a request in progress still holds),
 `unavailable` or `none`. `moment` is `take` (a take's answer), `before_take` (the allowance read refused before the
-microphone opened) or `remembered` (a press reopened a refusal the tab holds until its date). `journal_talk_take`
-carries `action`: `download`, `close` (the sheet closed on a kept take), `discard`, `undo`, `retry` or `sign_in`.
+microphone opened) or `remembered` (a press reopened a refusal the tab holds until its date). The event is sent once,
+when a sheet first shows the face: an answer that lands while the journal room is away is told when the room shows it.
+`journal_talk_take` carries `action`: `written` (a take's words went into today), `download` (from the sheet or the
+sign-out question), `close` (the sheet closed on a kept take), `discard`, `undo`, `retry` or `sign_in`.
 `journal_talk_retry` carries `outcome`: `written`, `refused` or `unreachable`. Sentry hears, under static
 operations, a transcribe (`journal-talk-transcribe`), allowance read (`journal-talk-allowance`) or subscription read
-(`journal-talk-subscription`) that got no answer (`failure`: `unreachable` or `timeout`) or a 5xx the server did not
-explain (`failure: status` and its `status`), a take the browser cannot decode for its waveform
-(`journal-talk-levels`) and a playback it refuses (`journal-talk-playback`). A refusal the server explains is not an
-Issue. No audio, transcript, duration, date, filename or allowance amount is reported.
+(`journal-talk-subscription`) that got no answer (`failure`: `unreachable` or `timeout`), a success whose body is not
+what it should carry (`failure: unreadable` and its `status`) or a 5xx the server did not explain (`failure: status` and
+its `status`), a take the browser cannot decode for its waveform (`journal-talk-levels`) and a playback it refuses
+(`journal-talk-playback`). A refusal the server explains is not an Issue. No audio, transcript, duration, date,
+filename or allowance amount is reported.
 
 Gym engine writes emit `gym_action` through the first-party events intake with only `operation`
 and `outcome`. Operations are routine create/save, exercise create/rename, preferences save,

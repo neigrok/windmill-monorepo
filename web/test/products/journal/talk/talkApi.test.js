@@ -50,6 +50,15 @@ test('a refused take throws what the server said, and a body that is not JSON re
     && JSON.stringify(error.body) === '{}');
 });
 
+test('a success that carries no transcript is not a transcript: it throws, so the take is kept', async () => {
+  serve(answer(200, undefined), answer(200, { words: 'not the field' }));
+
+  for (let call = 0; call < 2; call += 1) {
+    await assert.rejects(talkApi.transcribe(new Blob(['a'])), (error) => error instanceof TalkError && error.status === 200
+      && JSON.stringify(error.body) === '{}');
+  }
+});
+
 test('a take with no answer throws the fetch’s own error, so the sheet can tell the network from a refusal', async () => {
   const lost = new TypeError('Failed to fetch');
   serve(lost);

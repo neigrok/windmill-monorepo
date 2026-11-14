@@ -16,20 +16,27 @@ import '/src/products/journal/journal.css';
 import { TalkButton } from '/src/products/journal/talk/TalkButton.jsx';
 window.written = [];
 window.signInDoors = 0;
-// Under StrictMode, as main.jsx renders the app: every effect mounts, unmounts and mounts again.
-window.mount = (theme) => createRoot(document.getElementById('fixture')).render(React.createElement(React.StrictMode, null,
+// Under StrictMode, as main.jsx renders the app: every effect mounts, unmounts and mounts again. Leaving the room
+// renders another in its place, as the app's own navigation does.
+const journal = (theme) => React.createElement(React.StrictMode, null,
   React.createElement('div', { className: 'journal-root', 'data-theme': theme, 'data-brand': 'journal' },
     React.createElement('div', { className: 'journal-tools' },
       React.createElement(TalkButton, {
         onTranscript: (text) => window.written.push(text),
         onNeedSignIn: () => { window.signInDoors += 1; },
-      })))));
+      }))));
+let reactRoot;
+window.mount = (theme) => { reactRoot = createRoot(document.getElementById('fixture')); reactRoot.render(journal(theme)); };
+window.leaveRoom = () => reactRoot.render(React.createElement('p', null, 'gym room'));
+window.backToRoom = (theme) => reactRoot.render(journal(theme));
 `;
 const auth = `
 import { useSyncExternalStore } from 'react';
 const listeners = new Set();
 window.authRefreshes = 0;
-window.account = { status: 'signed-in', user: { id: 'u_1' }, refresh: async () => { window.authRefreshes += 1; } };
+window.recheckFinds = null;
+window.account = { status: 'signed-in', user: { id: 'u_1' },
+  refresh: async () => { window.authRefreshes += 1; return window.recheckFinds; } };
 window.signIn = (status) => { window.account = { ...window.account, status }; listeners.forEach((listener) => listener()); };
 export const useAuth = () => useSyncExternalStore(
   (listener) => { listeners.add(listener); return () => listeners.delete(listener); }, () => window.account);
@@ -95,8 +102,13 @@ function fakeMicrophone() {
     bytes.setInt16(44 + index * 2, Math.round(Math.sin((index / rate) * 2 * Math.PI * 220) * swell * 20000), true);
   }
   window.recording = new Blob([bytes.buffer], { type: 'audio/webm' });
+  // `window.holdMicrophone` keeps the browser's own question open until `window.grantMicrophone()`.
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
-    getUserMedia: async () => { window.microphones += 1; return { getTracks: () => [{ stop() { window.released += 1; } }] }; },
+    getUserMedia: async () => {
+      window.microphones += 1;
+      if (window.holdMicrophone) await new Promise((resolve) => { window.grantMicrophone = resolve; });
+      return { getTracks: () => [{ stop() { window.released += 1; } }] };
+    },
   } });
   window.MediaRecorder = class {
     static isTypeSupported(mime) { return mime === 'audio/webm'; }
@@ -120,9 +132,9 @@ const spent = { status: 429, body: { code: 'subject_exhausted', reason: 'allowan
 const renewing = { environment: 'production', allowlisted: false, plan: 'windmill_one', accessUntil: Date.UTC(2026, 11, 4),
   governing: { autoRenew: true }, others: [], manage: null, purchasable: [], offer: null };
 
-// A room whose server answers each take from `takes`, in order, the allowance read with `allowance` and the plan with
-// `plan`. Time stands still until the test moves it.
-async function room(t, { theme = 'dark', allowance = read('ok', { remaining: '6.000000000' }), plan = renewing, takes = [] } = {}) {
+// A room whose server answers each take from `takes`, in order — an answer, 'unreachable', or a function the route is
+// handed — the allowance read with `allowance` and the plan with `plan`. Time stands still until the test moves it.
+async function room(t, { theme = 'dark', allowance = read('ok', { remaining: '6.000000000' }), plan = renewing, takes = [], reads = null } = {}) {
   await ready;
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, timezoneId: 'UTC', locale: 'en-US' });
   t.after(() => context.close());
@@ -134,13 +146,17 @@ async function room(t, { theme = 'dark', allowance = read('ok', { remaining: '6.
   await page.addInitScript(fakeMicrophone);
   await page.clock.install({ time: Date.UTC(2026, 10, 15, 14, 2) });
   await page.clock.pauseAt(Date.UTC(2026, 10, 15, 14, 2));
-  await page.route(/\/v1\/ai\/allowance$/, (route) => route.fulfill({ status: allowance ? 200 : 503,
-    json: allowance ?? { code: 'ai_allowance_disabled', error: 'AI allowances are not enabled.' } }));
+  await page.route(/\/v1\/ai\/allowance$/, async (route) => {
+    await reads;
+    await route.fulfill({ status: allowance ? 200 : 503,
+      json: allowance ?? { code: 'ai_allowance_disabled', error: 'AI allowances are not enabled.' } });
+  });
   await page.route(/\/v1\/subscription$/, (route) => route.fulfill({ status: 200, json: plan }));
   await page.route(/\/v1\/journal\/transcribe$/, async (route) => {
     sent.push({ type: route.request().headers()['content-type'], bytes: route.request().postDataBuffer()?.length ?? 0 });
     const answer = takes.shift();
     if (answer === 'unreachable') return route.abort('internetdisconnected');
+    if (typeof answer === 'function') return answer(route);
     return route.fulfill({ status: answer.status, json: answer.body });
   });
   await page.goto(`${origin}/talk-test`);
@@ -159,6 +175,10 @@ async function room(t, { theme = 'dark', allowance = read('ok', { remaining: '6.
       await mic.click();
     },
     events: () => page.evaluate(() => window.events),
+    focused: () => page.evaluate(() => {
+      const element = document.activeElement;
+      return element === document.body ? 'body' : element.getAttribute('aria-label') ?? element.textContent;
+    }),
     issues: () => page.evaluate(() => window.issues),
     shown: () => page.evaluate(() => ({
       state: document.querySelector('.journal-talk-state')?.textContent ?? null,
@@ -272,7 +292,8 @@ test('a busy allowance offers Try again, which sends the kept take once more and
   await talk.talk(12);
   await talk.page.locator('.journal-talk-take').waitFor();
   assert.deepEqual(await talk.shown(), {
-    state: 'Another AI request is still in progress.', detail: 'Try again when it finishes.', take: '0:12',
+    state: 'Your earlier AI requests hold every slot you have.',
+    detail: 'Each frees when its cost is confirmed, at most 10 minutes after it began.', take: '0:12',
     kept: 'Held in this tab only.', acts: ['Try again', 'Download recording'], undo: null,
   });
 
@@ -286,6 +307,7 @@ test('a busy allowance offers Try again, which sends the kept take once more and
   assert.deepEqual(await talk.events(), [
     { name: 'journal_talk_refused', props: { code: 'concurrency_exhausted', reason: 'unavailable', moment: 'take' } },
     { name: 'journal_talk_take', props: { action: 'retry' } },
+    { name: 'journal_talk_take', props: { action: 'written' } },
     { name: 'journal_talk_retry', props: { outcome: 'written' } },
   ]);
 });
@@ -305,6 +327,7 @@ test('signed out mid-take, the face opens the sign-in door and, signed back in, 
   assert.equal(await talk.page.evaluate(() => window.signInDoors), 1);
 
   await talk.page.evaluate(() => window.signIn('signed-in'));
+  await talk.page.getByRole('button', { name: 'Try again' }).waitFor();
 
   assert.deepEqual(await talk.shown(), {
     state: 'You’re signed out.', detail: 'Sign in, then send it again.', take: '0:05', kept: 'Held in this tab only.',
@@ -330,9 +353,193 @@ test('no answer keeps the take, Try again waits for the browser to be online, an
   });
   assert.equal(await talk.page.evaluate(() => window.refreshes), 1, 'a lapsed plan re-syncs so the mic re-locks');
   assert.deepEqual(await talk.issues(), [{ operation: 'journal-talk-transcribe', tags: { failure: 'unreachable' } }]);
-  assert.deepEqual((await talk.events()).slice(1), [
-    { name: 'journal_talk_take', props: { action: 'retry' } },
-    { name: 'journal_talk_retry', props: { outcome: 'refused' } },
-    { name: 'journal_talk_refused', props: { code: 'status_403', reason: 'none', moment: 'take' } },
+  // The retry's outcome and the face it brought are told in whichever order the render lands.
+  const told = (await talk.events()).map((event) => JSON.stringify(event));
+  assert.deepEqual([told[0], told[1], ...told.slice(2).sort()], [
+    JSON.stringify({ name: 'journal_talk_refused', props: { code: 'unreachable', reason: 'none', moment: 'take' } }),
+    JSON.stringify({ name: 'journal_talk_take', props: { action: 'retry' } }),
+    JSON.stringify({ name: 'journal_talk_refused', props: { code: 'status_403', reason: 'none', moment: 'take' } }),
+    JSON.stringify({ name: 'journal_talk_retry', props: { outcome: 'refused' } }),
   ]);
+});
+
+// The take lives in the tab, not the room: leaving for another room and coming back finds it behind the dot, and
+// leaving the page still asks first.
+test('a kept take survives leaving the journal room and coming back', async (t) => {
+  const talk = await room(t, { takes: [spent] });
+  await talk.talk(5);
+  await talk.page.locator('.journal-talk-take').waitFor();
+  const href = await talk.page.locator('a.journal-talk-act').getAttribute('href');
+  await talk.page.getByRole('button', { name: 'Close' }).click();
+  const alive = () => talk.page.evaluate(async (url) => { try { await (await fetch(url)).arrayBuffer(); return true; } catch { return false; } }, href);
+
+  await talk.page.evaluate(() => window.leaveRoom());
+  await talk.page.getByText('gym room').waitFor();
+  const away = { mic: await talk.mic.count(), guarded: await talk.guarded(), alive: await alive() };
+  await talk.page.evaluate(() => window.backToRoom('dark'));
+  await talk.page.locator('.journal-talk-tool.has-take').waitFor();
+  await talk.mic.click();
+
+  assert.deepEqual(away, { mic: 0, guarded: true, alive: true });
+  assert.equal(await talk.page.locator('a.journal-talk-act').getAttribute('href'), href);
+  assert.deepEqual((await talk.shown()).acts, ['Download recording', 'Close']);
+  assert.equal(await talk.page.evaluate(() => window.microphones), 1);
+});
+
+// The room is left while the take is with the server. The refusal still keeps it, and its event is told only when a
+// sheet first shows it; nothing leaks, and leaving the page asked all along.
+test('a refusal that lands after the room was left keeps the take, told only once a sheet shows it', async (t) => {
+  let answer;
+  const answered = new Promise((resolve) => { answer = resolve; });
+  const talk = await room(t, { takes: [async (route) => { await answered; await route.fulfill({ status: 502, json: { error: 'the transcriber could not answer' } }); }] });
+  await talk.page.evaluate(() => {
+    window.urls = { made: 0, revoked: 0 };
+    const make = URL.createObjectURL.bind(URL);
+    const revoke = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = (blob) => { window.urls.made += 1; return make(blob); };
+    URL.revokeObjectURL = (url) => { window.urls.revoked += 1; return revoke(url); };
+  });
+  await talk.talk(5);
+  await talk.page.getByText('Writing it down…').waitFor();
+  const guardedWhileWriting = await talk.guarded();
+
+  await talk.page.evaluate(() => window.leaveRoom());
+  await talk.page.getByText('gym room').waitFor();
+  answer();
+  await talk.page.waitForFunction(() => window.urls.made === 1);
+  const eventsAway = await talk.events();
+  await talk.page.evaluate(() => window.backToRoom('dark'));
+  await talk.page.locator('.journal-talk-tool.has-take').waitFor();
+  await talk.mic.click();
+  await talk.page.locator('.journal-talk-take').waitFor();
+
+  assert.equal(guardedWhileWriting, true);
+  assert.deepEqual(eventsAway, []);
+  assert.equal((await talk.shown()).state, 'The transcriber could not answer.');
+  assert.deepEqual(await talk.events(), [
+    { name: 'journal_talk_refused', props: { code: 'status_502', reason: 'none', moment: 'take' } },
+  ]);
+  await talk.page.getByRole('button', { name: 'Discard recording' }).click();
+  await talk.page.clock.runFor(6000);
+  assert.deepEqual(await talk.page.evaluate(() => window.urls), { made: 1, revoked: 1 });
+  assert.equal(await talk.guarded(), false);
+  assert.deepEqual(talk.errors, []);
+});
+
+// Default 5: nothing retries on its own, but once the day's audio has refilled the kept take offers to go again.
+test('a take refused until a time offers Try again once that time has come', async (t) => {
+  const ration = { status: 429, body: { code: 'voice_ration_spent', error: 'talk has had its turn for now', retryAtMs: Date.UTC(2026, 10, 15, 14, 12) } };
+  const talk = await room(t, { takes: [ration, { status: 200, body: { text: 'the second time' } }] });
+  await talk.talk(5);
+  await talk.page.locator('.journal-talk-take').waitFor();
+  const before = (await talk.shown()).acts;
+
+  await talk.page.clock.runFor(10 * 60 * 1000);
+  await talk.page.getByRole('button', { name: 'Try again' }).waitFor();
+  const after = (await talk.shown()).acts;
+  await talk.page.getByRole('button', { name: 'Try again' }).click();
+  await talk.sheet.waitFor({ state: 'detached' });
+
+  assert.deepEqual(before, ['Download recording', 'Close']);
+  assert.deepEqual(after, ['Try again', 'Download recording']);
+  assert.deepEqual(await talk.page.evaluate(() => window.written), ['the second time']);
+  assert.equal(talk.sent.length, 2);
+});
+
+// The state line is the sheet's polite live region, and focus follows the person through the refused face.
+test('focus moves through the refused face and its state line is announced', async (t) => {
+  const busy = { status: 503, body: { code: 'voice_busy', error: 'voice is busy right now' } };
+  const talk = await room(t, { takes: [busy, busy] });
+  await talk.talk(5);
+  await talk.page.locator('.journal-talk-take').waitFor();
+  const onRefusal = await talk.focused();
+  const live = await talk.page.locator('.journal-talk-state').getAttribute('role');
+  await talk.page.getByRole('button', { name: 'Discard recording' }).click();
+  const onDiscard = await talk.focused();
+  await talk.page.getByRole('button', { name: 'Undo' }).click();
+  await talk.page.locator('.journal-talk-take').waitFor();
+  const onUndo = await talk.focused();
+  await talk.page.getByRole('button', { name: 'Try again' }).click();
+  await talk.page.getByText('Talk is busy right now.').waitFor();
+  const onFailedRetry = await talk.focused();
+
+  assert.deepEqual({ live, onRefusal, onDiscard, onUndo, onFailedRetry },
+    { live: 'status', onRefusal: 'Try again', onDiscard: 'Undo', onUndo: 'Play recording', onFailedRetry: 'Try again' });
+});
+
+// The mic is asked only after the allowance and plan are read; until then the sheet does not claim to be waiting on it.
+test('"Waiting for the microphone…" shows only once the microphone is asked', async (t) => {
+  let readsAnswer;
+  const reads = new Promise((resolve) => { readsAnswer = resolve; });
+  const talk = await room(t, { reads, takes: [] });
+  await talk.page.evaluate(() => { window.holdMicrophone = true; });
+
+  await talk.mic.click();
+  await talk.sheet.waitFor();
+  const reading = { state: (await talk.shown()).state, microphones: await talk.page.evaluate(() => window.microphones) };
+  readsAnswer();
+  await talk.page.getByText('Waiting for the microphone…').waitFor();
+  const asking = await talk.page.evaluate(() => window.microphones);
+  await talk.page.evaluate(() => window.grantMicrophone());
+  await talk.page.locator('.journal-talk-tool.is-recording').waitFor();
+
+  assert.deepEqual(reading, { state: 'Talk', microphones: 0 });
+  assert.equal(asking, 1);
+});
+
+// A 401 the account's own check finds was a blip — the session is valid — goes back to offering the send.
+test('a 401 whose re-check finds the session valid offers Try again', async (t) => {
+  const talk = await room(t, { takes: [{ status: 401, body: { error: 'sign in to talk' } }] });
+  await talk.page.evaluate(() => { window.recheckFinds = { id: 'u_1' }; });
+
+  await talk.talk(5);
+  await talk.page.getByRole('button', { name: 'Try again' }).waitFor();
+
+  assert.deepEqual((await talk.shown()).acts, ['Try again', 'Download recording']);
+  assert.equal(await talk.page.evaluate(() => window.authRefreshes), 1);
+});
+
+// A success whose body is not a transcript is a failure Sentry hears of, said as the transcriber's, with the take kept.
+test('a 200 that is not a transcript keeps the take as the transcriber’s failure and reports it', async (t) => {
+  const talk = await room(t, { takes: [(route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<html>proxy</html>' })] });
+
+  await talk.talk(5);
+  await talk.page.locator('.journal-talk-take').waitFor();
+
+  assert.deepEqual((await talk.shown()).state, 'The transcriber could not answer.');
+  assert.deepEqual((await talk.shown()).acts, ['Try again', 'Download recording']);
+  assert.deepEqual(await talk.issues(), [{ operation: 'journal-talk-transcribe', tags: { failure: 'unreadable', status: '200' } }]);
+});
+
+// The happy path tells telemetry the take was written, and nothing else.
+test('a written take is told as written', async (t) => {
+  const talk = await room(t, { takes: [{ status: 200, body: { text: 'rain all morning' } }] });
+
+  await talk.talk(5);
+  await talk.sheet.waitFor({ state: 'detached' });
+
+  assert.deepEqual(await talk.page.evaluate(() => window.written), ['rain all morning']);
+  assert.deepEqual(await talk.events(), [{ name: 'journal_talk_take', props: { action: 'written' } }]);
+});
+
+// By night the kept line and the take's length clear the 4.5:1 floor for small text on the card.
+test('the kept line and the take’s length clear 4.5:1 at night', async (t) => {
+  const talk = await room(t, { takes: [spent] });
+  await talk.talk(5);
+  await talk.page.locator('.journal-talk-take').waitFor();
+
+  const ratios = await talk.page.evaluate(() => {
+    const channels = (css) => css.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const luminance = (rgb) => {
+      const [r, g, b] = rgb.map((value) => { const v = value / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const card = luminance(channels(getComputedStyle(document.querySelector('.journal-talk-sheet')).backgroundColor));
+    return ['.journal-talk-kept', '.journal-talk-length', '.journal-talk-detail'].map((selector) => {
+      const line = luminance(channels(getComputedStyle(document.querySelector(selector)).color));
+      return Math.round(((Math.max(line, card) + 0.05) / (Math.min(line, card) + 0.05)) * 100) / 100;
+    });
+  });
+
+  assert.ok(ratios.slice(0, 2).every((ratio) => ratio >= 4.5), `kept and length: ${ratios}`);
 });

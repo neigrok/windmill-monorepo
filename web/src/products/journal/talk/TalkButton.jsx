@@ -1,11 +1,12 @@
 // Talk: speak a page instead of typing it. A press settles what it can before the microphone opens: signed out it opens
 // the sign-in door, without Windmill One it shows the locked face, and with an allowance that cannot fund a take it says
 // so without recording one. A take goes to the voice endpoint and its transcript drops into today. A take the server
-// refuses stays in this tab — in the sheet, or behind a dot on the mic once the sheet closes — until it is written down,
-// downloaded or discarded, and leaving the page asks first; nothing keeps it past a reload. Every refusal keeps the
-// take, and none retires Talk. A browser without MediaRecorder never shows it.
+// refuses stays in this tab (talkStore.js) — in the sheet, or behind a dot on the mic once the sheet closes, and across
+// the room being left and come back to — until it is written down, downloaded or discarded; leaving the page asks first
+// and nothing keeps it past a reload. Every refusal keeps the take, and none retires Talk. A browser without
+// MediaRecorder never shows it.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Mic, Pause, X } from 'lucide-react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { useEntitlements } from '../../../shell/billing/EntitlementsProvider.jsx';
@@ -15,13 +16,14 @@ import { captureError } from '../../../telemetry/sentry.js';
 import { Refusal } from './refusal.js';
 import { Take, levelsOf } from './take.js';
 import { AUDIO_CAP_BYTES, TalkError, talkApi } from './talkApi.js';
+import { talkStore } from './talkStore.js';
 import { t } from '../i18n/index.js';
 
-// How long a discarded take can still come back with Undo: the toast hold with an action (motion-language.md).
-const DISCARD_HOLD_MS = 6000;
 // The recorder hands its audio over each second and stops itself short of the server's cap, so a long take is written
 // down rather than refused.
 const SLICE_MS = 1000;
+// The refusal takes the state line's place in a cross-fade: 280 ms on --ease-standard.
+const STATE_FADE = { duration: 280, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' };
 
 function pickMime() {
   const candidates = ['audio/webm', 'audio/mp4', 'audio/ogg'];
@@ -31,47 +33,64 @@ function pickMime() {
   return '';
 }
 
+// One send of a take's audio. It settles into talkStore whether or not the room is still there: a transcript goes into
+// today, now or when the room comes back, and a refusal keeps the take under the face that says why. A 401 has the
+// account check itself, and a 403 re-reads the plan so the mic re-locks. The answer is the error, or null once written.
+async function send(audio, { kept = null, recording = null, renews = null, account, plan }) {
+  const ticket = talkStore.begin();
+  let text;
+  try {
+    text = (await talkApi.transcribe(audio)).trim();
+  } catch (error) {
+    const refusal = Refusal.ofAnswer(error, { renews: await (renews ?? talkApi.renews()) });
+    if (error?.status === 401) {
+      talkStore.needSignIn(true);
+      account.recheck?.().then((me) => { if (me) talkStore.needSignIn(false); }).catch(() => {});
+    }
+    if (error?.status === 403) plan.refresh();
+    talkStore.kept(ticket, kept ?? new Take({ ...recording, audio, levels: await levelsOf(audio) }), refusal);
+    return error;
+  }
+  if (talkStore.written(ticket, text) && text) track('journal_talk_take', { action: 'written' });
+  return null;
+}
+
 export function TalkButton({ onTranscript, onNeedSignIn }) {
-  // `starting` is a phase of its own: without it a second press opens a second recorder over the first,
-  // and the first stream is then released by nothing.
-  const [phase, setPhase] = useState('idle');   // idle | starting | recording | working
+  // `reading` and `starting` are phases of their own: without them a second press opens a second recorder over the
+  // first, and the first stream is then released by nothing. A send is talkStore's, so it outlives the room.
+  const [phase, setPhase] = useState('idle');   // idle | reading | starting | recording
   const [open, setOpen] = useState(false);      // the sheet
   const [note, setNote] = useState('');
-  const [refusal, setRefusal] = useState(null);     // the face the sheet shows in place of its own state
-  const [take, setTake] = useState(null);           // the refused take this tab holds
-  const [discarded, setDiscarded] = useState(null); // a take × let go, back with Undo until its hold ends
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false);
-  // The server said the session is gone, which the account's own state may not know yet: the face asks for sign-in
-  // until the account comes back signed in.
-  const [signInNeeded, setSignInNeeded] = useState(false);
+  const [, setTick] = useState(0);
+  const { take, face, discarded, sending, signInNeeded } = useSyncExternalStore(talkStore.subscribe, talkStore.snapshot);
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
-  const discardTimer = useRef(null);
-  // The refusal only a date lifts, said again on every press until then.
-  const remembered = useRef(null);
-  // Whether the plan renews, read when the sheet opens and asked only when a refusal would name a date.
-  const renews = useRef(Promise.resolve(false));
+  const stateLine = useRef(null);
+  // Whether the plan renews, read when the sheet opens so a refusal can name its date without waiting.
+  const renews = useRef(null);
   const mounted = useRef(false);
   const latest = useRef({});
   const lastStatus = useRef(null);
   const { status, refresh: recheckAccount } = useAuth();
-  const { loading: entLoading, windmillOne, refresh } = useEntitlements();
-  latest.current = { take, discarded, close: () => close() };
+  const { loading: entLoading, windmillOne, refresh: refreshPlan } = useEntitlements();
+  latest.current = { onTranscript, close: () => close() };
 
-  // Leaving the page must never leave the mic hot, nor hold a take's memory past the page.
+  // The room's way into today; a transcript that landed while the room was away is written as it comes back. Leaving
+  // the room mid-take stops the recorder, which sends what it heard: the mic is never left hot, and the take is kept.
   useEffect(() => {
     mounted.current = true;
+    const detach = talkStore.attach((text) => latest.current.onTranscript(text));
     return () => {
       mounted.current = false;
+      detach();
+      if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
       streamRef.current?.getTracks().forEach((track) => track.stop());
-      clearTimeout(discardTimer.current);
-      latest.current.take?.release();
-      latest.current.discarded?.release();
     };
   }, []);
 
   useEffect(() => {
-    if (status === 'signed-in' && lastStatus.current !== null && lastStatus.current !== 'signed-in') setSignInNeeded(false);
+    if (status === 'signed-in' && lastStatus.current !== null && lastStatus.current !== 'signed-in') talkStore.needSignIn(false);
     lastStatus.current = status;
   }, [status]);
 
@@ -79,71 +98,63 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (event) => {
-      if (event.key !== 'Escape' || phase === 'starting') return;
+      if (event.key !== 'Escape' || phase === 'reading' || phase === 'starting') return;
       latest.current.close();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, phase]);
 
-  // While a take is held, leaving the page asks first, and Try again waits for the browser to say it is online.
+  // While a take is held, Try again waits for the browser to say it is online.
   useEffect(() => {
     if (!take) return undefined;
-    const ask = (event) => { event.preventDefault(); event.returnValue = ''; };
     const connectivity = () => setOnline(navigator.onLine !== false);
     connectivity();
-    window.addEventListener('beforeunload', ask);
     window.addEventListener('online', connectivity);
     window.addEventListener('offline', connectivity);
     return () => {
-      window.removeEventListener('beforeunload', ask);
       window.removeEventListener('online', connectivity);
       window.removeEventListener('offline', connectivity);
     };
   }, [take]);
 
+  // A face is told to telemetry once, when a sheet first shows it — never for an answer that landed while no sheet did.
+  useEffect(() => {
+    if (open && face && talkStore.announce(face)) {
+      track('journal_talk_refused', { code: face.refusal.code, reason: face.refusal.reason, moment: face.moment });
+    }
+  }, [open, face]);
+
+  // The face redraws when its date comes, so a kept take whose wait is over offers Try again.
+  const returnsAt = face?.refusal.returnsAt ?? null;
+  useEffect(() => {
+    const wait = returnsAt === null ? 0 : returnsAt - Date.now();
+    if (!open || wait <= 0 || wait > 2 ** 31 - 1) return undefined;
+    const timer = setTimeout(() => setTick((tick) => tick + 1), wait + 50);
+    return () => clearTimeout(timer);
+  }, [open, returnsAt]);
+
+  // The state line is the sheet's polite live region; a refusal fades into it in place.
+  const refusalText = face?.refusal.sentence ?? null;
+  useEffect(() => {
+    if (!refusalText || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    stateLine.current?.animate?.([{ opacity: 0 }, { opacity: 1 }], STATE_FADE);
+  }, [refusalText]);
+
   if (typeof window === 'undefined' || !window.MediaRecorder) return null;
 
+  const shown = sending ? 'working' : phase;
   const entitled = status === 'signed-in' && windmillOne;
   const checking = status === 'signed-in' && entLoading;
-  const waiting = Boolean(take) && !open && phase !== 'working';
+  const busy = checking || phase === 'reading' || phase === 'starting';
+  const waiting = Boolean(take) && !open && !sending;
   const flash = (message) => { setNote(message); setTimeout(() => setNote(''), 3000); };
-
-  const refuse = (shown, moment) => {
-    setRefusal(shown);
-    track('journal_talk_refused', { code: shown.code, reason: shown.reason, moment });
-  };
-
-  // One send of a take's audio, the phase `working` until whoever sent it settles what the answer means. The answer is
-  // the error, or null once the transcript is in today and the sheet has closed.
-  const transcribe = async (audio) => {
-    setPhase('working');
-    try {
-      const text = await talkApi.transcribe(audio);
-      if (text && text.trim()) onTranscript(text.trim());
-      setPhase('idle');
-      setOpen(false);
-      return null;
-    } catch (error) {
-      return error;
-    }
-  };
-
-  // A refused take stays, under the face that says why. A lapsed session or subscription re-syncs, so the account
-  // learns what the server said and the mic re-locks.
-  const hold = async (kept, error) => {
-    const refused = Refusal.ofAnswer(error, { renews: await renews.current });
-    if (error?.status === 401) { setSignInNeeded(true); recheckAccount?.().catch(() => {}); }
-    if (error?.status === 403) refresh();
-    if (refused.until !== null) remembered.current = refused;
-    setTake(kept);
-    setPhase('idle');
-    refuse(refused, 'take');
-  };
+  const collaborators = { account: { recheck: recheckAccount }, plan: { refresh: refreshPlan } };
 
   const writeDown = async (recording) => {
-    const error = await transcribe(recording.audio);
-    if (error) await hold(new Take({ ...recording, levels: await levelsOf(recording.audio) }), error);
+    setPhase('idle');
+    const error = await send(recording.audio, { recording, renews: renews.current, ...collaborators });
+    if (!error && mounted.current) setOpen(false);
   };
 
   const record = (stream) => {
@@ -170,18 +181,19 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
     setPhase('recording');
   };
 
-  // The allowance is read before the microphone opens: a refusal only a date lifts is said now, with no take made.
+  // The allowance and the plan are read before the microphone is asked: a refusal only a date lifts is said now, with
+  // no take made. "Waiting for the microphone…" shows only once the microphone is asked.
   const begin = async () => {
-    setPhase('starting');
+    setPhase('reading');
     renews.current = talkApi.renews();
     const allowance = await talkApi.allowance();
     const blocked = allowance && Refusal.beforeTake(allowance, { renews: await renews.current });
     if (blocked) {
-      remembered.current = blocked;
       setPhase('idle');
-      refuse(blocked, 'before_take');
+      talkStore.show(blocked, 'before_take');
       return;
     }
+    setPhase('starting');
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -197,55 +209,30 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
 
   const stop = () => recorderRef.current?.stop();
 
-  // A discarded take's hold ends early when the sheet closes: Undo goes with the sheet.
-  const letGo = () => {
-    clearTimeout(discardTimer.current);
-    discarded?.release();
-    setDiscarded(null);
-  };
-
   const close = () => {
     if (phase === 'recording') stop();
-    if (discarded) letGo();
-    if (take && refusal) track('journal_talk_take', { action: 'close' });
-    if (!take) setRefusal(null);   // a face with nothing held goes with the sheet; one holding a take waits behind the dot
+    if (take && face) track('journal_talk_take', { action: 'close' });
+    talkStore.dismiss();
     setOpen(false);
   };
 
   const press = () => {
-    if (checking || phase === 'starting') return;
+    if (busy) return;
     if (phase === 'recording') { stop(); return; }
     if (open) { close(); return; }     // a second press closes what the first press opened
-    if (take) { setOpen(true); return; }   // the kept take comes back as it was left, never a new recording
+    if (take || sending) { setOpen(true); return; }   // a kept or travelling take comes back as it was left
     if (status !== 'signed-in') { onNeedSignIn?.(); return; }
     setOpen(true);
-    if (remembered.current?.blocks(Date.now())) { refuse(remembered.current, 'remembered'); return; }
+    const blocking = talkStore.blocking(Date.now());
+    if (blocking) { talkStore.show(blocking, 'remembered'); return; }
     if (entitled && phase === 'idle') begin();
   };
 
   const retry = async () => {
     track('journal_talk_take', { action: 'retry' });
-    setRefusal(null);
-    const error = await transcribe(take.audio);
+    const error = await send(take.audio, { kept: take, ...collaborators });
     track('journal_talk_retry', { outcome: !error ? 'written' : error instanceof TalkError ? 'refused' : 'unreachable' });
-    if (error) { await hold(take, error); return; }
-    take.release();
-    setTake(null);
-  };
-
-  const discard = () => {
-    track('journal_talk_take', { action: 'discard' });
-    const gone = take;
-    setTake(null);
-    setDiscarded(gone);
-    discardTimer.current = setTimeout(() => { gone.release(); setDiscarded(null); }, DISCARD_HOLD_MS);
-  };
-
-  const undo = () => {
-    track('journal_talk_take', { action: 'undo' });
-    clearTimeout(discardTimer.current);
-    setTake(discarded);
-    setDiscarded(null);
+    if (!error && mounted.current) setOpen(false);
   };
 
   const acts = {
@@ -254,15 +241,20 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
     signIn: () => { track('journal_talk_take', { action: 'sign_in' }); onNeedSignIn?.(); },
     close,
   };
+  const discard = () => { track('journal_talk_take', { action: 'discard' }); talkStore.discard(); };
+  const undo = () => { track('journal_talk_take', { action: 'undo' }); talkStore.undo(); };
 
+  const refusal = sending ? null : face?.refusal ?? null;
+  const talking = entitled || sending;
+  const stateText = refusal ? refusal.sentence : talking ? TALK_STATES[shown] ?? t('journal.talk.title') : t('journal.talk.locked');
   const label = phase === 'recording' ? t('journal.talk.stop') : waiting ? t('journal.talk.takeWaiting') : t('journal.talk.start');
   return (
     <>
       <button
         type="button"
-        className={'journal-tool journal-talk-tool is-' + phase + (waiting ? ' has-take' : '')}
+        className={'journal-tool journal-talk-tool is-' + shown + (waiting ? ' has-take' : '')}
         onClick={press}
-        disabled={checking || phase === 'starting'}
+        disabled={busy}
         aria-label={label}
         title={label}
         aria-expanded={open}
@@ -271,21 +263,22 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
       </button>
       {open && (
         <div className="journal-talk-sheet" role="dialog" aria-label={t('journal.talk.title')}>
+          <p ref={stateLine} className="journal-talk-state" role="status">{stateText}</p>
           {refusal ? (
             <RefusedSheet
               refusal={refusal}
               take={take}
               discarded={Boolean(discarded)}
-              acts={refusal.acts({ holding: Boolean(take), signedIn: status === 'signed-in' && !signInNeeded })}
+              acts={refusal.acts({ holding: Boolean(take), signedIn: status === 'signed-in' && !signInNeeded, now: Date.now() })}
               online={online}
               on={acts}
               onDiscard={discard}
               onUndo={undo}
             />
-          ) : entitled ? (
-            <TalkSheet phase={phase} onStop={stop} onClose={close} />
+          ) : talking ? (
+            <TalkSheet phase={shown} onStop={stop} onClose={close} />
           ) : (
-            <LockedSheet onClose={close} onFlash={flash} onRefresh={refresh} />
+            <LockedSheet onClose={close} onFlash={flash} onRefresh={refreshPlan} />
           )}
           {note && <p className="journal-talk-note">{note}</p>}
         </div>
@@ -294,7 +287,8 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
   );
 }
 
-// While the browser is still asking for the microphone there is nothing yet to stop, so no control.
+// While the account and plan are read, or the browser is still asking for the microphone, there is nothing yet to stop,
+// so no control.
 const TALK_STATES = {
   starting: t('journal.talk.waiting'),
   recording: t('journal.talk.listening'),
@@ -304,9 +298,8 @@ const TALK_STATES = {
 function TalkSheet({ phase, onStop, onClose }) {
   return (
     <>
-      <p className="journal-talk-state">{TALK_STATES[phase] ?? t('journal.talk.title')}</p>
       <p className="journal-talk-detail">{t('journal.talk.promise')}</p>
-      {phase !== 'starting' && (
+      {phase !== 'reading' && phase !== 'starting' && (
         <div className="journal-talk-acts">
           <button type="button" className="journal-talk-act" onClick={phase === 'recording' ? onStop : onClose}>
             {phase === 'recording' ? t('journal.talk.stop') : t('journal.talk.close')}
@@ -327,7 +320,6 @@ function LockedSheet({ onClose, onFlash, onRefresh }) {
   };
   return (
     <>
-      <p className="journal-talk-state">{t('journal.talk.locked')}</p>
       <p className="journal-talk-detail">
         {t('journal.talk.promise')}
         {!paidPlansOpen() && ` ${t('journal.talk.notOnSale')}`}
@@ -348,22 +340,37 @@ const ACT_LABELS = {
   close: t('journal.talk.close'),
 };
 
-// Figma Journal · Web · `Talk sheet · refused`: the refusal's sentence, when Talk is back, the kept take and at most two
-// acts, the first in the lamp. Try again is offered only where trying again can work, and waits while offline.
+// Figma Journal · Web · `Talk sheet · refused`: when Talk is back, the kept take and at most two acts, the first in the
+// lamp, under the state line the sheet already holds. Try again is offered only where trying again can work, and waits
+// while offline. Focus follows the person: to the first act when a refusal arrives, to Undo after ×, back to the take
+// after Undo, and to the first act again once Undo has gone.
 function RefusedSheet({ refusal, take, discarded, acts, online, on, onDiscard, onUndo }) {
+  const firstAct = useRef(null);
+  const undoAct = useRef(null);
+  const play = useRef(null);
+  const shownTake = useRef(take);
+  useEffect(() => { firstAct.current?.focus(); }, [refusal]);
+  useEffect(() => {
+    if (discarded) undoAct.current?.focus();
+    else if (!take) firstAct.current?.focus();
+  }, [discarded, take]);
+  useEffect(() => {
+    if (take && !shownTake.current) play.current?.focus();
+    shownTake.current = take;
+  }, [take]);
   return (
     <div className="journal-talk-refused">
-      <p className="journal-talk-state">{refusal.sentence}</p>
       {refusal.detail && <p className="journal-talk-detail">{refusal.detail}</p>}
-      {take && <TakeStrip take={take} onDiscard={onDiscard} />}
+      {take && <TakeStrip take={take} play={play} onDiscard={onDiscard} />}
       <div className="journal-talk-acts">
         {acts.map((act, index) => {
           const className = 'journal-talk-act' + (index > 0 ? ' is-quiet' : '');
+          const ref = index === 0 ? firstAct : undefined;
           if (act === 'download') {
-            return <a key={act} className={className} href={take.url} download={take.filename} onClick={on.download}>{ACT_LABELS.download}</a>;
+            return <a key={act} ref={ref} className={className} href={take.url} download={take.filename} onClick={on.download}>{ACT_LABELS.download}</a>;
           }
           return (
-            <button key={act} type="button" className={className} onClick={on[act]} disabled={act === 'retry' && !online}>
+            <button key={act} ref={ref} type="button" className={className} onClick={on[act]} disabled={act === 'retry' && !online}>
               {ACT_LABELS[act]}
             </button>
           );
@@ -372,7 +379,7 @@ function RefusedSheet({ refusal, take, discarded, acts, online, on, onDiscard, o
       {discarded && (
         <p className="journal-talk-undo">
           {t('journal.talk.take.discarded', {
-            undo: <button type="button" className="journal-talk-undo-act" onClick={onUndo}>{t('journal.talk.take.undo')}</button>,
+            undo: <button ref={undoAct} type="button" className="journal-talk-undo-act" onClick={onUndo}>{t('journal.talk.take.undo')}</button>,
           })}
         </p>
       )}
@@ -381,7 +388,7 @@ function RefusedSheet({ refusal, take, discarded, acts, online, on, onDiscard, o
 }
 
 // The kept take: play it back, see its shape and length, or let it go.
-function TakeStrip({ take, onDiscard }) {
+function TakeStrip({ take, play, onDiscard }) {
   const audio = useRef(null);
   const [playing, setPlaying] = useState(false);
   const toggle = () => {
@@ -391,7 +398,7 @@ function TakeStrip({ take, onDiscard }) {
   return (
     <div className="journal-talk-take">
       <div className="journal-talk-strip">
-        <button type="button" className="journal-talk-play" onClick={toggle}
+        <button ref={play} type="button" className="journal-talk-play" onClick={toggle}
           aria-label={playing ? t('journal.talk.take.pause') : t('journal.talk.take.play')}>
           {playing
             ? <Pause size={12} fill="currentColor" strokeWidth={0} aria-hidden="true" />

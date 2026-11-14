@@ -37,13 +37,15 @@ function clock() {
 
 export class Refusal {
   // `code` and `reason` are bounded labels for telemetry. `until` is the moment a remembered refusal stops holding the
-  // mic shut — Infinity for the rest of the tab — or null for one that is not remembered.
-  constructor({ face, code, reason = 'none', detail = null, until = null }) {
+  // mic shut — Infinity for the rest of the tab — or null for one that is not remembered. `returnsAt` is the moment a
+  // take refused for its date can be sent again, or null.
+  constructor({ face, code, reason = 'none', detail = null, until = null, returnsAt = null }) {
     this.face = face;
     this.code = code;
     this.reason = reason;
     this.detail = detail;
     this.until = until;
+    this.returnsAt = returnsAt;
   }
 
   get sentence() {
@@ -51,9 +53,10 @@ export class Refusal {
   }
 
   // The face's two acts while it holds a take, and Close alone once there is no take to act on. Signed out, it asks
-  // for sign-in; signed back in, it offers the send again.
-  acts({ holding, signedIn }) {
+  // for sign-in; signed back in, it offers the send again, as it does once the date a take waited for has come.
+  acts({ holding, signedIn, now }) {
     if (!holding) return ['close'];
+    if (this.returnsAt !== null && now >= this.returnsAt) return ['retry', 'download'];
     return FACES[this.face].acts.map((act) => (act === 'signIn' && signedIn ? 'retry' : act));
   }
 
@@ -74,11 +77,12 @@ export class Refusal {
     if (status === 403) return new Refusal({ face: 'locked', code: known });
     if (status === 413) return new Refusal({ face: 'tooLong', code: known });
     if (status === 429) {
-      return new Refusal({ face: 'turnUsed', code: known,
+      return new Refusal({ face: 'turnUsed', code: known, returnsAt: body.retryAtMs ?? null,
         detail: body.retryAtMs ? t('journal.talk.again.at', { time: clock().format(body.retryAtMs) }) : t('journal.talk.again.later') });
     }
     if (code === 'voice_busy') return new Refusal({ face: 'busy', code: known, detail: t('journal.talk.again.inAMoment') });
-    if (code === 'voice_unavailable' || status < 500) return new Refusal({ face: 'notAvailable', code: known });
+    if (code === 'voice_unavailable' || (status >= 400 && status < 500)) return new Refusal({ face: 'notAvailable', code: known });
+    // A 5xx the route names no further, or a 200 whose body was not a transcript.
     return new Refusal({ face: 'transcriberFailed', code: known });
   }
 
@@ -99,18 +103,18 @@ function ofAllowance(allowance, code, reason, renews) {
   const resetsAt = allowance?.resetsAtMs ?? null;
   const day = resetsAt && new Intl.DateTimeFormat(APP_LOCALE, { month: 'short', day: 'numeric' }).format(resetsAt);
   const dated = { detail: renews && resetsAt ? t('journal.talk.again.on', { day, time: clock().format(resetsAt) }) : null,
-    until: resetsAt ?? Infinity };
+    until: resetsAt ?? Infinity, returnsAt: resetsAt };
   if (code === 'subject_exhausted') {
     if (reason === 'request_exceeds_remaining' || Number(allowance?.remaining) > 0) {
       return new Refusal({ face: 'tooLittleLeft', code: known, reason: 'request_exceeds_remaining', ...dated });
     }
     if (Number(allowance?.reserved) > 0) {
-      return new Refusal({ face: 'held', code: known, reason: 'held', detail: t('journal.talk.again.whenFinished') });
+      return new Refusal({ face: 'held', code: known, reason: 'held', detail: t('journal.talk.again.heldFrees') });
     }
     return new Refusal({ face: 'spent', code: known, reason: 'allowance_exhausted', ...dated });
   }
   if (code === 'concurrency_exhausted') {
-    return new Refusal({ face: 'anotherRequest', code: known, reason: 'unavailable', detail: t('journal.talk.again.whenFinished') });
+    return new Refusal({ face: 'anotherRequest', code: known, reason: 'unavailable', detail: t('journal.talk.again.slotFrees') });
   }
   if (code === 'funding_required') return new Refusal({ face: 'unfunded', code: known, reason: 'unavailable', until: Infinity });
   return new Refusal({ face: 'allowanceUnavailable', code: known, reason: 'unavailable' });
