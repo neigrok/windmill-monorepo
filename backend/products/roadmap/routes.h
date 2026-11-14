@@ -37,7 +37,6 @@ struct RoadmapDeps {
   std::shared_ptr<OpLog> oplog;
   std::shared_ptr<WsPresenceBus> bus;
   std::shared_ptr<PresenceHub> presence;
-  Hlc genesis;
   std::shared_ptr<AuthService> authService;
   std::shared_ptr<ForkService> forkService;
   std::shared_ptr<TreeRegistry> treeRegistry;
