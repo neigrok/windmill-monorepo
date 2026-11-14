@@ -40,8 +40,8 @@ packages/
   api-contract/             shared wire contracts, executable golden fixtures and the JS sync core/client
 services/
   embedder/                 HTTP sidecar for journal passage vectors
-  subscriptions/            Rust workspace of the Windmill One subscription service: domain,
-                            app_store, storage and server
+  subscriptions/            Rust workspace of the Windmill One subscription service: the crates domain,
+                            app_store, storage and server, and the test-only App Store payload signer
 tools/                     standalone operational tools
   lift-import/              imports Lift training history over the gym API
   resend-webhook-probe/     sends a signed synthetic bounce to verify webhook configuration
