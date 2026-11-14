@@ -26,7 +26,7 @@ pay for. Label answers as interview evidence. [Gym cohort](08-gym-demand-cohort.
 
 One is the optional paid entitlement shared by Roadmap, Journal and Gym. The ordinary editor, journal
 and training log are free. One is sold first as a monthly App Store subscription inside the iOS app, at
-the App Store price point nearest $12, with no free trial; a person signs in to buy. It goes on sale with
+the App Store price point $12.00, with no free trial; a person signs in to buy. It goes on sale with
 the public iOS release, which waits until Apple has approved the subscription with the app version and the
 owner has opened the paid line. The web sells nothing; a Paddle checkout on the web and Google Play come
 later, by a future owner ruling, with no date. A person who buys on iPhone sees their plan on the web. The
