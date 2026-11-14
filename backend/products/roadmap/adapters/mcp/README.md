@@ -445,9 +445,9 @@ A node may point at another tree: `opens` holds that tree's id.
   open, under the outcome `opens-a-subtree`. A tree that is not there, a deleted one, a hidden
   subtree and someone else's are refused in one sentence, so the refusal confirms no id, under the
   outcome `opens-not-yours`. A step that owns a subtree passes with its own subtree's id, an echo
-  that lands nothing. A node may open the tree it is in while that tree is a root. The read is made before the tree's strand is
-  taken, since no database read runs under it, so the door refuses a pointer at a tree that does not
-  stand *when it checks*: an edit racing that tree's removal can leave the step pointing at it after
+  that lands nothing. A node may open the tree it is in while that tree is a root. The read is made
+  under the strand of the tree being written, not the target's, so the door refuses a pointer at a
+  tree that does not stand *when it checks*: an edit racing that tree's removal can leave the step pointing at it after
   the removal has taken the steps that opened it. Such a step points nowhere: it reads as an ordinary
   step, and `get_diagnostics` lists it in `danglingPointers`.
 - **Read.** `opens` is a `fields` value on `get_tree`, `get_nodes` and `find_nodes`, never in a
@@ -457,8 +457,8 @@ A node may point at another tree: `opens` holds that tree's id.
   so a reader of someone else's tree and a signed-out caller never receive it. `state` is
   `complete` or `open`, and the title is the opened tree's stored one.
 - **The node follows the tree, for its owner.** A pointer is valid when its target is a root that
-  stands and belongs to the owner of the tree the node is in. For a caller who can write the tree, a node with
-  a valid pointer is `complete` exactly when the opened tree is complete for them, whatever its own
+  stands and belongs to the owner of the tree the node is in. For a caller who can write the tree, a
+  node with a valid pointer is `complete` exactly when the opened tree is complete for them, whatever its own
   prerequisites, and `locked` or `available` by its prerequisites until then; a mark it already
   holds is kept, answered as `status` and by `get_progress`, and decides nothing. A tree is
   complete when it holds at least one node and every node of it is complete, a node with a valid
@@ -499,7 +499,8 @@ A node may point at another tree: `opens` holds that tree's id.
   says in `opensError` that their `opens` was left as it was and that another roadmap is opened from a
   step that owns no subtree; a row whose only change was that `opens` is among `unchangedNodeIds`, and
   a call whose whole write was such a pointer answers `unchanged` and completes under the outcome
-  `owns-a-subtree`. A pointer at a subtree from any other step leads nowhere. `list_trees` lists roots alone. `update_tree` with a
+  `owns-a-subtree`. A pointer at a subtree from any other step leads nowhere. `list_trees` lists
+  roots alone. `update_tree` with a
   `title` aimed at a subtree renames its owning step in the parent, the subtree's name, and answers
   the subtree's own `seq`, its head when only the title moved; a `guide` sent beside it lands in the
   subtree's own room after it, so a guide that fails leaves the new name in place. A rename whose save

@@ -332,13 +332,7 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     Json::Value body(Json::objectValue);
     body["seq"] = static_cast<Json::Int64>(existing ? existing->head : 0);
     body["data"] = toJson(*data);
-    for (const NodeId& step : refused) {
-      Json::Value refusal(Json::objectValue);
-      refusal["node"] = step.str();
-      refusal["field"] = "opens";
-      refusal["code"] = kOwnsASubtree;
-      body["refused"].append(refusal);
-    }
+    if (!refused.empty()) body["refused"] = refusedPointersJson(refused);
     return jsonResponse(body);
   }();
   callback(reply);

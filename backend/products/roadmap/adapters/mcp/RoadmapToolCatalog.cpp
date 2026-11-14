@@ -631,9 +631,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["opens"] = cappedStr("Optional id of a tree you own that has no parent, which this node opens: the node "
                            "points at that tree, is complete for you when that tree is, and get_tree, get_nodes and "
                            "find_nodes answer the tree's id, title and state under the `opens` field. A tree that "
-                           "is not yours, or a subtree, is refused. A tree that leads back to this one lands, and the receipt's "
-                           "`introducedDiagnostics` names the loop after the graph's errors, within its five "
-                           "lines: a tree on a loop never completes. Omit, or pass \"\", and the node opens "
+                           "is not yours, or a subtree, is refused. A tree that leads back to this one lands, and "
+                           "the receipt's `introducedDiagnostics` names the loop after the graph's errors, within its "
+                           "five lines: a tree on a loop never completes. Omit, or pass \"\", and the node opens "
                            "none, whatever a deleted node under the same id opened, unless that node is a step that "
                            "owns a subtree: it comes back opening its subtree, and an `opens` sent there is listed "
                            "in opensRefused.",

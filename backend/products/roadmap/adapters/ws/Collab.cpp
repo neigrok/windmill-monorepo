@@ -420,7 +420,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
         // Answered once the strand is released, with each branch's size.
       } else {
         // Each pointer the frame stamps is the sender's word: one on a step that owns a subtree is answered refused, and
-        // the join lands none of them.
+        // the join lands no pointer on such a step.
         std::map<NodeId, TreeId> sent;
         for (const NodeStateEntry& node : incoming.graph.nodes)
           if (node.opensAt.isSet()) sent.emplace(node.id, node.opens);
@@ -459,13 +459,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   else finishCurrentWriteUnchanged();
   if (heldUnsaved) ack["unsaved"] = true;
   // Names each step alone, never the subtree it owns: the rest of the frame landed, and the step still opens its subtree.
-  for (const NodeId& step : refused) {
-    Json::Value refusal(Json::objectValue);
-    refusal["node"] = step.str();
-    refusal["field"] = "opens";
-    refusal["code"] = kOwnsASubtree;
-    ack["refused"].append(refusal);
-  }
+  if (!refused.empty()) ack["refused"] = refusedPointersJson(refused);
   send(conn, ack);
 }
 

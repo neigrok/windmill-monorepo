@@ -23,8 +23,8 @@ rejected for structure. Validity is a read model, not a gate.
   stricter: every non-empty `opens` a `create_node`, `update_nodes` or `import_subgraph` call carries
   must be valid (Legacy pointers), judged on one read for the whole call
   (`TreeRepository::pointerTargets`), or the call is refused with nothing written (Legacy pointers).
-  That read is made before the tree's strand is taken, so an edit racing the target's removal can still
-  set a pointer at it, which then points nowhere. A node may open the tree it is in. A tree id is the read capability of an unlisted tree, so only a caller who
+  That read is made under the strand of the tree being written, not the target's, so an edit racing the
+  target's removal can still set a pointer at it, which then points nowhere. A node may open the tree it is in. A tree id is the read capability of an unlisted tree, so only a caller who
   can write the tree receives the pointer: `readerView` (`domain/Subgraph.h`) is what every other
   reader gets from `GET /v1/trees/{id}` (`data` and `state`), the subscribe delta and a live frame —
   a document node without `opens`, a
