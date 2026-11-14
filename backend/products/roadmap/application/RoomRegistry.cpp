@@ -185,12 +185,14 @@ void RoomRegistry::settle(const TreeId& root, RootAccess& live) {
   std::vector<OwningStep> moved;
   {
     // Under the root's lock no tree of the root's can finish opening, so each one without a live room holds as the store
-    // says, and a room that opens after records its own steps as it opens.
+    // says, and a room that opens after records its own steps as it opens. The rooms are read before the rows: one
+    // that saves and closes while the rows are read is still taken as live, with the steps it recorded, where rows
+    // read before its save would bring a step it deleted back.
     std::lock_guard<std::mutex> rootLock(rootLockFor(root));
     WriteObservation standing{"roadmap.tree.standing", "roadmap", doorNow()};
     try {
-      const std::set<OwningStep> absent = repo_.absentStepsUnder(root);
       const std::vector<TreeId> rooms = roomsUnder(root);
+      const std::set<OwningStep> absent = repo_.absentStepsUnder(root);
       moved = live.settle(absent, std::set<TreeId>(rooms.begin(), rooms.end()));
       standing.skip();
     } catch (const std::bad_alloc&) {

@@ -709,7 +709,9 @@ that are absent, so `accessOf`, the socket gates, the bus's read gate and the MC
 subtree by its root and its path, from memory alone for a live room: the socket's fan-out reads no
 store. That access is made under the root's lock from the root's row and its absent owning steps
 (`TreeRepository::absentStepsUnder`), read while no room of the root's trees is live, so the store
-then holds every write of theirs. A change of the root's visibility or its removal writes the row
+then holds every write of theirs: a room's save runs off its strand (Runtime), and a room is still
+closed only once the store holds every write it took and no save of it is running
+(`RoomRegistry::flushed`). A change of the root's visibility or its removal writes the row
 under the same lock, the narrower first: making the root private shuts its open subtrees before its
 row says so, and opening it opens them after. Each owning step is recorded by its own tree's room as
 every write lands, under that tree's strand and before the write is told to anyone
@@ -717,7 +719,8 @@ every write lands, under that tree's strand and before the write is told to anyo
 and shows with its revive, saved or not. A room records its owning steps as it opens too, from the
 stored rows no other room of its tree can have written past. A `PUT`, which writes a tree's rows with
 no room, then has the access take the owning steps of every tree under the root with no live room
-from the store (`RoomRegistry::settleOwningSteps`). When that read fails it is reported as itself, the
+from the store (`RoomRegistry::settleOwningSteps`), the rooms read before the rows, so a room that
+saves and closes while the rows are read keeps the steps it recorded. When that read fails it is reported as itself, the
 `PUT` answers what its save did, and the access is left unsettled — narrower than the store, never
 wider, since a write without a room only revives steps — until the registry's sweep, every 30 s,
 takes them from the store again. The live rooms below a step whose

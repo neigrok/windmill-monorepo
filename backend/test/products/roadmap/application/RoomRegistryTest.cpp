@@ -660,6 +660,40 @@ TEST(registry_a_parent_room_closing_mid_check_admits_nobody) {
   CHECK(repo.accessReads == (std::vector<TreeId>{tid("g"), tid("g")}));
 }
 
+// The live access takes the store's owning steps for every tree that has no room, and the rooms are read before the
+// rows: a room that saves the delete of an owning step and closes while the rows are being read is still taken as live,
+// its step absent as it recorded it, never as rows read before its save held them.
+TEST(registry_a_room_that_saves_and_closes_while_the_owning_steps_are_read_keeps_the_step_it_recorded_absent) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  plantBranch(repo);
+  RoomRegistry registry(repo, log, bus);
+  const TreeRoom& deeper = *registry.open(tid("g"));  // its room keeps the root's access live throughout
+  PendingSave deletion = Saved::saved;
+  {
+    std::lock_guard<std::mutex> strand(registry.strandFor(tid("t")));
+    registry.open(tid("t"))->applyCommands({DeleteNode{nid("seed")}}, 20, uid("owner"), {tid("c")});
+    deletion = registry.persist(tid("t"));
+  }
+  REQUIRE(!admitted(registry, "c"));
+
+  bool closed = false;
+  repo.afterAbsentRead = [&] {
+    if (closed) return;
+    closed = registry.evict(tid("t"));  // the rows were read with the step still present; now its delete is stored
+  };
+  registry.settleOwningSteps(tid("t"));
+
+  CHECK(closed);
+  CHECK_FALSE(registry.isOpen(tid("t")));
+  CHECK_FALSE(LooseGraph(repo.byId["t"].state).hasNode(nid("seed")));
+  CHECK_FALSE(admitted(registry, "c"));
+  CHECK_FALSE(admitted(registry, "g"));
+  CHECK_FALSE(deeper.readableBy(uid("owner")));
+  CHECK(deletion.wait() == Saved::saved);
+}
+
 // Opening a room makes its root's live access, which reads the absent owning steps under the root. That read failing is
 // a failure of its own, reported as `roadmap.tree.standing` at the opening's door with the one Issue of its request, and
 // the open fails: no room, and no access made from half of what the store holds.
