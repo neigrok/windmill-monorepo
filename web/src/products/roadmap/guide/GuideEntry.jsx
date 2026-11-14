@@ -60,7 +60,7 @@ export function GuideEntry({ guide, band, view }) {
   }
 
   return (
-    <button ref={guide.entry} type="button" className={`st-guide-card${guide.opened ? ' is-open' : ''}`} aria-label={name}
+    <button ref={guide.entry} type="button" className="st-guide-card" aria-label={name}
       aria-describedby={above > 0 ? aboveId : undefined} aria-haspopup="dialog" aria-expanded={Boolean(guide.opened)} onClick={open}>
       <span className="st-guide-card-heading">
         <span className="st-guide-tab"><Glyph size={24} strokeWidth={1.67} aria-hidden /></span>

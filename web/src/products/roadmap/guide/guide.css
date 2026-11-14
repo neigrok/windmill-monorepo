@@ -1,5 +1,5 @@
-/* The guide (17.18–17.39, 28.29–28.33): a note on the tree. At rest it is a card on the canvas from 744px and a row
-   under the head on phones; open, it is the note in place from 744px and a bottom sheet on phones, reading or writing
+/* The guide (17.02–17.39, 28.29–28.33): a note on the tree. At rest it is a card on the canvas from 744px and a row
+   under the head on phones; open, it is a window from 744px and a bottom sheet on phones, reading or writing
    in one frame. A save no door took leaves one line with its act where the footer says who reads the guide. The guides
    of the trees above stand before the tree's own, each under its tree's name. */
 
@@ -39,9 +39,6 @@
 .st-guide-row:focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: -2px;
-}
-.st-guide-card.is-open {
-  visibility: hidden;
 }
 .st-guide-card-heading {
   display: flex;
@@ -199,7 +196,7 @@
   margin-top: calc(-1 * var(--space-3));
 }
 
-/* ---- Open: the layer that holds the window while writing and under the phone's sheet, and the note's seat. ---- */
+/* ---- Open: the layer that holds the window and the note's seat. ---- */
 .st-guide-layer {
   position: fixed;
   inset: 0;
@@ -208,6 +205,7 @@
 .st-guide-backdrop {
   position: absolute;
   inset: 0;
+  background: var(--surface-overlay);
 }
 .st-guide-layer--phone {
   display: flex;
@@ -220,11 +218,8 @@
 }
 .st-guide-seat {
   position: absolute;
-  top: 138px;
-  left: 24px;
+  inset: 24px;
   z-index: 26;
-  width: 642px;
-  max-width: calc(100% - 48px);
 }
 .st-guide-seat--phone {
   display: contents;
@@ -244,6 +239,125 @@
   color: var(--text-primary);
   font-family: var(--font-body);
   outline: none;
+}
+.st-guide-body {
+  display: contents;
+}
+/* The desktop and tablet window takes the viewport, while its reading and writing measure stays centred. */
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-paper {
+  height: 100%;
+  gap: 16px;
+  padding: 20px;
+  border: 0;
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-heading {
+  gap: 12px;
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-heading > svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-identity > h2 {
+  font: 700 20px/28px var(--font-display);
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-identity > p {
+  font: 600 12px/16px var(--font-body);
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-close {
+  margin-left: 0;
+  border-radius: var(--radius-full);
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-height: 0;
+  padding-top: 24px;
+}
+.st-guide-layer:not(.st-guide-layer--phone) :is(.st-guide-prose, .st-guide-stack, .st-guide-context, .st-guide-field, .st-guide-add) {
+  box-sizing: border-box;
+  width: min(592px, 100%);
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-prose {
+  flex: 0 1 auto;
+  max-height: 100%;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  font: 400 18px/27px var(--font-body);
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-prose--owner:hover {
+  background: var(--surface-sunken);
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-stack {
+  max-height: 100%;
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-stack .st-guide-prose {
+  flex-shrink: 0;
+  width: 100%;
+  max-height: none;
+  overflow: visible;
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-status {
+  flex: 0 0 auto;
+  width: min(592px, 100%);
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-field {
+  flex: 1 1 auto;
+  max-height: none;
+  padding: 12px 16px;
+  border-color: var(--field-focus-edge);
+  background: var(--surface-card);
+  font: 400 18px/27px var(--font-body);
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-field--over {
+  border-color: var(--color-danger);
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-field--resting:not(:focus) {
+  border-color: var(--border-default);
+}
+.st-guide-layer:not(.st-guide-layer--phone) :is(.st-guide-footer, .st-guide-read-footer) {
+  flex-shrink: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-default);
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-audience {
+  flex: 1 1 0;
+}
+.st-guide-layer:not(.st-guide-layer--phone) .st-guide-actions {
+  flex: 0 0 auto;
+}
+.st-guide-read-footer .st-guide-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 400 14px/20px var(--font-body);
+  cursor: pointer;
+}
+@media (min-width: 744px) and (max-height: 400px) {
+  .st-guide-layer:not(.st-guide-layer--phone) .st-guide-paper {
+    gap: 8px;
+    padding: 12px 20px;
+  }
+  .st-guide-layer:not(.st-guide-layer--phone) .st-guide-body {
+    gap: 4px;
+    padding-top: 0;
+  }
+  .st-guide-layer:not(.st-guide-layer--phone) :is(.st-guide-footer, .st-guide-read-footer) {
+    padding-top: 8px;
+  }
+  .st-guide-layer:not(.st-guide-layer--phone) :is(.st-guide-footer--failed, .st-guide-footer--copied) > .st-guide-closing {
+    padding: 4px;
+  }
 }
 .st-guide-heading {
   display: flex;
@@ -628,7 +742,7 @@ button.st-guide-from-name {
 .st-guide-paper--phone .st-guide-pencil {
   background: var(--surface-sunken);
 }
-.st-guide-paper--phone > .st-guide-alone > .st-guide-prose {
+.st-guide-paper--phone > .st-guide-body > .st-guide-alone > .st-guide-prose {
   max-height: none;
   margin: 6px 18px 0;
   padding: 0 4px;
@@ -636,11 +750,11 @@ button.st-guide-from-name {
   font-size: 17px;
   line-height: 25px;
 }
-.st-guide-paper--phone > .st-guide-alone > .st-guide-prose.is-ringed:focus,
+.st-guide-paper--phone > .st-guide-body > .st-guide-alone > .st-guide-prose.is-ringed:focus,
 .st-guide-paper--phone .st-guide-stack > .st-guide-prose.is-ringed:focus {
   outline-offset: -2px;
 }
-.st-guide-paper--phone > .st-guide-stack {
+.st-guide-paper--phone > .st-guide-body > .st-guide-stack {
   gap: 12px;
   max-height: none;
   margin: 2px 0 0;
@@ -657,7 +771,7 @@ button.st-guide-from-name {
   font-size: 15px;
   line-height: 22px;
 }
-.st-guide-paper--phone > .st-guide-field {
+.st-guide-paper--phone > .st-guide-body > .st-guide-field {
   min-height: 41px;
   max-height: none;
   padding: 6px 22px 12px;

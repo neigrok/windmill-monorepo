@@ -29,13 +29,11 @@ export function useGraphGeometry({ breakpoint, canvasView, dockOpen, refusal, fo
   const graphRefusalRef = useRef(null);
   const [graphRefusalHeight, setGraphRefusalHeight] = useState(0);
   const [legendBox, setLegendBox] = useState(null); // the legend dock's measured { width, height }, or null while it is down
-  // The guide's card and its note read in place each publish their measured box on the canvas; the note stands over the card.
+  // The guide's card publishes its measured box on the canvas.
   const [guideCardBox, setGuideCardBox] = useState(null);
-  const [guideNoteBox, setGuideNoteBox] = useState(null);
   const [canvasWidth, setCanvasWidth] = useState(null);
-  const guideBox = canvasView && !phone ? guideNoteBox ?? guideCardBox : null;
+  const guideBox = canvasView && !phone ? guideCardBox : null;
   const publishGuideCard = useCallback((box) => setGuideCardBox((held) => (sameBox(held, box) ? held : box)), []);
-  const publishGuideNote = useCallback((box) => setGuideNoteBox((held) => (sameBox(held, box) ? held : box)), []);
   useLayoutEffect(() => {
     if (!guideBox) return undefined;
     const measure = () => setCanvasWidth(rootRef.current?.clientWidth ?? null);
@@ -195,6 +193,6 @@ export function useGraphGeometry({ breakpoint, canvasView, dockOpen, refusal, fo
 
   return {
     topbarBottom, setTopbarBottom, setGraphChromeBottom, setGraphBarBottom, phoneGraphBottom,
-    insets, dockTop, guideTop: topbarBottom + refusalTopInset, publishGuideCard, publishGuideNote, graphRefusalShown, graphRefusalStyle, attachGraphRefusal, graphToastStyle, tendTopInset, activityPanelTop,
+    insets, dockTop, guideTop: topbarBottom + refusalTopInset, publishGuideCard, graphRefusalShown, graphRefusalStyle, attachGraphRefusal, graphToastStyle, tendTopInset, activityPanelTop,
   };
 }
