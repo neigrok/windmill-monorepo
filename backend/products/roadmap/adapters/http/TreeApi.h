@@ -1,7 +1,6 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
-#include "platform/ports/Clock.h"
 #include "products/roadmap/application/ForkService.h"
 #include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/application/RoomRegistry.h"
@@ -20,15 +19,14 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// Reads go through the room, so they reflect live socket edits; PUT evicts the room.
+// Reads go through the room, so they reflect live socket edits.
 class TreeApi {
 public:
   TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
-          std::shared_ptr<OwnerProgress> progress, std::shared_ptr<OpLog> ops, Hlc genesis,
-          std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork, std::shared_ptr<Clock> clock);
+          std::shared_ptr<OwnerProgress> progress, std::shared_ptr<OpLog> ops, std::shared_ptr<AuthService> auth,
+          std::shared_ptr<ForkService> fork);
 
   void getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
-  void putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
   void getGuides(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId);
@@ -50,10 +48,8 @@ private:
   std::shared_ptr<TreeRepository> trees_;
   std::shared_ptr<OwnerProgress> progress_;
   std::shared_ptr<OpLog> ops_;
-  Hlc genesis_;
   std::shared_ptr<AuthService> auth_;
   std::shared_ptr<ForkService> fork_;
-  std::shared_ptr<Clock> clock_;
 };
 
 }

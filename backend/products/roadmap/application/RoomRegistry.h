@@ -160,12 +160,6 @@ public:
   // the root's trees — so a parent room that saved a deletion and closed since the first read admits
   // nobody; one they hide is answered hidden at once.
   std::optional<TreeAccess> accessOf(const TreeId& id);
-  // A write that reached a tree's rows without its room (PUT) may have revived owning steps the live access of its root
-  // holds absent: the access, if there is one, takes every closed tree's owning steps under `root` from the store again.
-  // A read of the store that fails is reported as `roadmap.tree.standing` and throws nothing: the access is left
-  // unsettled — narrower than the store, never wider — and the sweep settles it, as a room's open records its own
-  // steps.
-  void settleOwningSteps(const TreeId& root);
 
   // Save, then land the queued op rows, then close; a room with nothing unsaved closes with no save. A row
   // that fails to land after the save is dropped with the room — logged, never surfaced — since the lattice
@@ -226,8 +220,8 @@ public:
 
 private:
   friend class PendingSave;
-  // What asks for a save: a write that has just landed in the room; a caller in passing — a close, the sweep's or a
-  // PUT's, or a subtree's create — which never tries a held room; the retry timer; or the registry as it stops. Only
+  // What asks for a save: a write that has just landed in the room; a caller in passing — the sweep's close, or a
+  // subtree's create — which never tries a held room; the retry timer; or the registry as it stops. Only
   // the timer's failures move the next wait.
   enum class Asked { byAWrite, inPassing, byTheTimer, atShutdown };
   // One save of the room `line` belongs to, as the class comment tells it. The caller holds the line's gate and no
@@ -245,10 +239,6 @@ private:
   std::shared_ptr<RootAccess> shareRootAccess(const TreeId& root);
   // Every live room below `step` is told its access changed: the step's branch hid or showed.
   void announceBelow(const TreeId& root, const OwningStep& step);
-  // `live` takes the store's owning steps for every tree under `root` that has no live room, under the root's lock, and
-  // the rooms below each step that moved are told once it is released. A read of the store that fails is reported as
-  // `roadmap.tree.standing` and leaves `live` unsettled.
-  void settle(const TreeId& root, RootAccess& live);
   // The live one, or nullptr. Caller holds mutex_.
   std::shared_ptr<RootAccess> liveRootAccess(const TreeId& root);
   // The live rooms of `root`'s trees, the root's own among them.

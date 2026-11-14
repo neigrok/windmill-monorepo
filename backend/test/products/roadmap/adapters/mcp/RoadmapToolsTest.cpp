@@ -5197,7 +5197,7 @@ TEST(mcp_a_caller_who_cannot_write_the_tree_receives_its_own_guide_alone_and_no_
   CHECK_EQ(h.trees.aboveReads, (std::vector<TreeId>{TreeId{"t"}}));
 }
 
-// The room, the socket and PUT admit any pointer text, so a pointer at a tree proves nothing about who planted it.
+// The room and the socket admit any pointer text, so a pointer at a tree proves nothing about who planted it.
 TEST(mcp_a_removed_tree_someone_elses_tree_and_a_tombstoned_pointer_are_not_above_a_tree) {
   Harness h;
   h.plant("t_removed", h.caller, "Removed.", {"t"});
