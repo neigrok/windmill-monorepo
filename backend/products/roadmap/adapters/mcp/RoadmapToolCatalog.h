@@ -16,15 +16,15 @@ inline const std::vector<const char*> kHues = {"terracotta", "olive", "gold", "b
 inline const std::vector<const char*> kStatuses = {"complete", "none"};
 inline const std::vector<const char*> kNodeStates = {"locked", "available", "complete"};
 
-// The two batch forms' item caps, published as `maxItems` and refused past them.
+// The two batch forms' item caps, refused past them in a sentence that names the cap.
 inline constexpr std::size_t kMaxDeleteNodeIds = 200;    // delete_node's `nodeIds`
 inline constexpr std::size_t kMaxProgressUpdates = 1000;
 
 // The product half of every grant that reaches this catalog (`roadmap:write`).
 inline constexpr const char* kRoadmapProduct = "roadmap";
 
-// How import_subgraph meets a re-sent node's existing prerequisites, and how many ids one call may
-// tombstone — published as `enum` and `maxItems` on the tool.
+// How import_subgraph meets a re-sent node's existing prerequisites, published as the tool's `enum`, and how many
+// ids one call may tombstone, refused past it by name.
 inline const std::vector<const char*> kPrerequisiteModes = {"merge", "replace"};
 constexpr std::size_t kMaxTombstones = 500;
 
@@ -35,7 +35,7 @@ constexpr std::size_t kMaxTombstones = 500;
 constexpr std::size_t kMaxImportDescriptionBytes = 6 * 1024 * 1024;
 
 // Every tool, its description, the JSON Schema its arguments are pre-validated against, and the
-// grant level that reaches it. Byte-pinned by the wire corpus test.
+// grant level that reaches it.
 std::vector<ToolDeclaration> roadmapToolCatalog();
 
 }
