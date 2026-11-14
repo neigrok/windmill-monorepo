@@ -110,7 +110,7 @@ for (const engine of [chromium, webkit]) {
           text: { ink: 'secondary', size: '18px/26px', cursor: 'auto' },
           own: 'Learn to sail · this tree',
           doors: 0,
-          stops: [GUIDE, 'Cancel', 'Save'],
+          stops: ['BUTTON', GUIDE, 'Cancel', 'Save'],
         });
         assert.equal(await field(page).inputValue(), GUIDE);
         await page.keyboard.type('Then ');
@@ -138,7 +138,7 @@ test('Chromium: the name over a guide from above goes into its tree by the guide
       await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
       const note = page.getByRole('dialog', { name: 'Guide', exact: true });
       await note.waitFor();
-      assert.deepEqual(await note.getByRole('button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent)), ['Edit guide', 'Close', 'My life', 'My year']);
+      assert.deepEqual(await note.getByRole('button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent)), ['Close', 'My life', 'My year', 'Edit guide']);
       await note.getByRole('button', { name: 'My year' }).click();
       await note.getByRole('button', { name: 'My life' }).press('Enter');
       assert.deepEqual(await page.evaluate(() => window.entered), [['t_year', 'guide'], ['t_life', 'guide']]);
@@ -172,7 +172,7 @@ test('Chromium: a tree with no guide of its own under guides from above reads th
         'own: Learn to sail · this tree', 'add: Add guide',
       ]);
       assert.deepEqual({ pencil: await note.getByRole('button', { name: 'Edit guide' }).count(), focus: await focusedName(page), tree: await stepInert(page) },
-        { pencil: 0, focus: 'st-guide-add', tree: false });
+        { pencil: 0, focus: 'st-guide-add', tree: true });
 
       await note.getByRole('button', { name: 'Add guide' }).click();
       const adding = page.getByRole('dialog', { name: 'Add guide' });
@@ -365,7 +365,7 @@ test('Chromium: a reader and a room with no holder ask for nothing and are shown
       asked,
       events: await events(page),
     }, {
-      body: ['st-guide-heading flex', 'st-guide-rule block', 'st-guide-alone contents'],
+      body: ['st-guide-heading flex', 'st-guide-body flex', 'st-guide-read-footer block'],
       text: 'st-guide-alone',
       stops: ['st-guide-prose'],
       asked: ['GET'],

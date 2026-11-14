@@ -12,21 +12,21 @@ hostGuideSurfaces({ cache: 'guide-test' });
 // The crossfade a guide set elsewhere earns is the one animation on the prose that no stylesheet declares.
 const arrivalFades = (page) => page.evaluate(() => document.querySelector('.st-guide-prose').getAnimations().filter((animation) => !(animation instanceof CSSAnimation)).length);
 
-// A point inside a line of the prose: `height` is its line height, 32px from 744px and 25px on phones.
-async function linePoint(page, line, from = 'start', height = 32) {
+// A point inside a line of the prose: `height` is its line height, 27px from 744px and 25px on phones.
+async function linePoint(page, line, from = 'start', height = 27) {
   const box = await prose(page).boundingBox();
-  const y = box.y + height * line + height / 2;
+  const padding = await prose(page).evaluate((element) => parseFloat(getComputedStyle(element).paddingTop));
+  const y = box.y + padding + height * line + height / 2;
   return from === 'start' ? { x: box.x + 1, y } : { x: box.x + box.width - 8, y };
 }
 
 for (const engine of [chromium, webkit]) {
-  test(`${engine.name()}: the card opens the note in place beside a live tree, a drag that selects stays reading, and a click writes from where it landed`, async () => {
+  test(`${engine.name()}: the card opens a modal, a drag that selects stays reading, and a click writes from where it landed`, async () => {
     const page = await open({ guide: GUIDE }, { engine });
     try {
       await withBrowserErrors(page, async () => {
         const card = page.getByRole('button', { name: 'Guide: One step a week.' });
         assert.equal(await card.textContent(), 'GuideOne step a week.Read guide→');
-        const resting = await card.boundingBox();
         await card.click();
         const note = page.getByRole('dialog', { name: 'Guide', exact: true });
         await note.waitFor();
@@ -38,9 +38,8 @@ for (const engine of [chromium, webkit]) {
           cardShown: await page.locator('.st-guide-card').evaluate((button) => getComputedStyle(button).visibility),
           width: opened.width,
           focus: await focusedName(page),
-        }, { modal: null, tree: false, cardShown: 'hidden', width: 642, focus: 'st-guide-prose st-guide-prose--owner' });
-        assert.ok(Math.abs(opened.x - resting.x + 4) <= 0.25, `note left offset: ${opened.x - resting.x}px`);
-        assert.ok(Math.abs(opened.y - resting.y + 16) <= 0.25, `note top offset: ${opened.y - resting.y}px`);
+        }, { modal: 'true', tree: true, cardShown: 'visible', width: 1392, focus: 'st-guide-prose st-guide-prose--owner' });
+        assert.deepEqual([opened.x, opened.y, opened.height], [24, 24, 912]);
 
         const from = await linePoint(page, 0, 'start');
         await page.mouse.move(from.x, from.y);
@@ -66,14 +65,13 @@ for (const engine of [chromium, webkit]) {
     } finally { await page.close(); }
   });
 
-  test(`${engine.name()}: a held card press opens the note at the card's resting position`, async () => {
+  test(`${engine.name()}: a held card press opens the modal at the window inset`, async () => {
     const page = await open({ guide: GUIDE }, { engine });
     try {
       await withBrowserErrors(page, async () => {
         const card = page.getByRole('button', { name: 'Guide: One step a week.' });
         await card.hover();
         await settled(page);
-        const resting = await card.boundingBox();
         await page.mouse.down();
         await page.waitForFunction(() => new DOMMatrix(getComputedStyle(document.querySelector('.st-guide-card')).transform).a < 0.98);
         await page.mouse.up();
@@ -81,8 +79,7 @@ for (const engine of [chromium, webkit]) {
         await note.waitFor();
         await settled(page);
         const opened = await note.boundingBox();
-        assert.ok(Math.abs(opened.x - resting.x + 4) <= 0.25, `note left offset: ${opened.x - resting.x}px`);
-        assert.ok(Math.abs(opened.y - resting.y + 16) <= 0.25, `note top offset: ${opened.y - resting.y}px`);
+        assert.deepEqual([opened.x, opened.y, opened.width, opened.height], [24, 24, 1392, 912]);
         assert.equal(await focusedName(page), 'st-guide-prose st-guide-prose--owner');
       });
     } finally { await page.close(); }
@@ -191,7 +188,7 @@ test('Chromium: the pencil writes from the end, Save waits for a change, and the
       await note.waitFor();
       assert.deepEqual(await page.evaluate(() => window.writes), [`${GUIDE}\nWritten on the dock.`]);
       assert.equal(await prose(page).textContent(), `${GUIDE}\nWritten on the dock.`);
-      assert.equal(await stepInert(page), false);
+      assert.equal(await stepInert(page), true);
       await page.getByRole('button', { name: 'Close' }).click();
       await note.waitFor({ state: 'detached' });
       await page.waitForFunction(() => document.activeElement.matches('.st-guide-card'));
@@ -267,12 +264,12 @@ test('Chromium: Cancel on an unchanged draft returns to the note at once, and le
       await page.getByRole('button', { name: 'Keep editing' }).click();
       assert.equal(await field(page).inputValue(), `${GUIDE} Written`);
       assert.equal((await caretState(page)).focused, true);
-      await page.mouse.click(1200, 600);
+      await page.mouse.click(10, 600);
       await question.waitFor();
       await page.getByRole('button', { name: 'Discard', exact: true }).click();
       await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
       assert.equal(await prose(page).textContent(), GUIDE);
-      assert.equal(await stepInert(page), false);
+      assert.equal(await stepInert(page), true);
       assert.deepEqual(await page.evaluate(() => window.writes), []);
       assert.deepEqual((await events(page)).at(-1), { step: 'discard' });
     });
@@ -295,7 +292,7 @@ test('Chromium: a guide set elsewhere replaces the card\'s line and the note\'s 
       await page.evaluate((text) => window.setElsewhere(text), GUIDE);
       const status = page.getByRole('status');
       assert.equal(await status.textContent(), 'Changed elsewhere. Saving replaces that version.Load latest');
-      assert.equal(await status.evaluate((line) => line.parentElement.className), 'st-guide-footer');
+      assert.equal(await status.evaluate((line) => line.parentElement.className), 'st-guide-body');
       assert.equal(await field(page).inputValue(), `${ELSEWHERE} Written`);
       await page.getByRole('button', { name: 'Load latest' }).click();
       assert.equal(await field(page).inputValue(), GUIDE);
@@ -341,7 +338,7 @@ test('Chromium: an owner with no guide adds one from the card, an untouched Add 
       await field(page).fill('');
       await page.getByRole('button', { name: 'Save' }).click();
       await add.waitFor();
-      assert.equal(await page.getByRole('dialog').count(), 0);
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
       assert.deepEqual(await page.evaluate(() => window.writes), ['Written on the dock.', '']);
       assert.deepEqual(await events(page), [
         { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }, { step: 'edit', via: 'add' },
@@ -581,7 +578,7 @@ for (const engine of [chromium, webkit]) {
           await page.keyboard.press('Tab');
           stops.push(await page.evaluate(() => (document.activeElement.tagName === 'TEXTAREA' ? 'TEXTAREA' : document.activeElement.textContent)));
         }
-        assert.deepEqual(stops, ['Cancel', 'Save', 'TEXTAREA', 'Cancel']);
+        assert.deepEqual(stops, ['Cancel', 'Save', '', 'TEXTAREA']);
         await page.evaluate(() => document.activeElement.blur());
         await page.keyboard.press('Escape');
         const question = page.getByRole('alertdialog', { name: 'Discard draft?' });

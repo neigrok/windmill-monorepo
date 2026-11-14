@@ -56,7 +56,7 @@ for (const engine of [chromium, webkit]) {
       await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
       await page.getByRole('button', { name: 'Edit guide' }).click();
       await page.keyboard.type(' Written');
-      const fieldBox = () => field(page).evaluate((box) => [getComputedStyle(box).borderTopWidth, getComputedStyle(box).paddingTop, box.getBoundingClientRect().height]);
+      const fieldBox = () => field(page).evaluate((box) => [getComputedStyle(box).borderTopWidth, getComputedStyle(box).paddingTop]);
       const written = await fieldBox();
       await page.getByRole('button', { name: 'Save' }).click();
       const line = page.getByRole('alert');
@@ -78,7 +78,14 @@ for (const engine of [chromium, webkit]) {
         field: {
           box: await fieldBox(),
           fits: await field(page).evaluate((box) => box.scrollHeight === box.clientHeight),
-          plainEdge: await field(page).evaluate((box) => getComputedStyle(box).borderTopColor === getComputedStyle(box.closest('.st-guide-paper')).borderTopColor),
+          plainEdge: await field(page).evaluate((box) => {
+            const probe = document.createElement('div');
+            probe.style.border = '1px solid var(--border-default)';
+            box.after(probe);
+            const matches = getComputedStyle(box).borderTopColor === getComputedStyle(probe).borderTopColor;
+            probe.remove();
+            return matches;
+          }),
         },
         issues: await issues(page),
       }, {
@@ -97,9 +104,10 @@ for (const engine of [chromium, webkit]) {
       const stops = [];
       for (let press = 0; press < 3; press += 1) {
         await page.keyboard.press('Tab');
-        stops.push(await page.evaluate(() => (document.activeElement.tagName === 'TEXTAREA' ? 'TEXTAREA' : document.activeElement.textContent)));
+        stops.push(await page.evaluate(() => (document.activeElement.tagName === 'TEXTAREA' ? 'TEXTAREA' : document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent)));
       }
-      assert.deepEqual(stops, ['TEXTAREA', 'Cancel', 'Try again']);
+      assert.deepEqual(stops, ['Close', 'TEXTAREA', 'Cancel']);
+      await page.getByRole('button', { name: 'Try again' }).focus();
       await browserOnline(page, true);
       await page.keyboard.press('Enter');
       await page.waitForFunction(() => document.querySelector('[role="alert"]')?.textContent === 'Couldn’t save just now. Try again in a moment.');
@@ -601,8 +609,8 @@ test('Chromium: a guide changed elsewhere while a failed save\'s line stands is 
     await page.getByRole('alert').waitFor();
     await page.evaluate((text) => window.setElsewhere(text), ELSEWHERE);
     await page.getByRole('status').waitFor();
-    assert.equal(await page.locator('.st-guide-footer').textContent(),
-      'Changed elsewhere. Saving replaces that version.Load latestCouldn’t save just now. Try again in a moment.CancelTry again');
+    assert.equal(await page.getByRole('status').textContent(), 'Changed elsewhere. Saving replaces that version.Load latest');
+    assert.equal(await page.locator('.st-guide-footer').textContent(), 'Couldn’t save just now. Try again in a moment.CancelTry again');
     await page.getByRole('button', { name: 'Load latest' }).click();
     assert.deepEqual({ draft: await field(page).inputValue(), footer: await page.locator('.st-guide-footer').textContent() },
       { draft: ELSEWHERE, footer: 'Your agents and people you share this tree with can read the guide.CancelSave' });
