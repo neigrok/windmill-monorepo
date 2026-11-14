@@ -846,6 +846,25 @@ class DeployWorkflowTest(unittest.TestCase):
                                         env={**os.environ, **required, "SUBSCRIPTIONS_DB_PASSWORD": value})
                 self.assertEqual((result.returncode, result.stdout + result.stderr), outcome)
 
+    def test_windmill_one_settings_render_from_variables_to_the_server_and_default_to_closed(self):
+        root = SCRIPT.parents[2]
+        workflow = (root / ".github/workflows/deploy.yml").read_text()
+        compose = (root / "backend/deploy/docker-compose.yml").read_text()
+        server = compose.split("\n  server:\n", 1)[1].split("\n  embedder:\n", 1)[0]
+        render = re.search(r"for key in POSTGRES_PASSWORD[\s\S]*?\n\s*done", workflow).group()
+        rendered = lambda environment: subprocess.run(["bash", "-euc", render], env=environment, check=True,
+                                                      capture_output=True, text=True).stdout.splitlines()
+        settings = ("WINDMILL_SANDBOX_EMAILS", "SUBSCRIPTIONS_PURCHASABLE_STORES")
+        keys = render.partition("; do")[0].replace("\\", "").split()[3:]
+        unset = {key: "" for key in keys if key not in settings}
+        for name in settings:
+            with self.subTest(name=name):
+                self.assertIn(f"          {name}: ${{{{ vars.{name} }}}}\n", workflow)
+                self.assertNotIn(f"secrets.{name}", workflow)
+                self.assertIn(f"      {name}: ${{{name}:-}}\n", server)
+                self.assertIn(f"{name}=", rendered({**unset, **{other: "" for other in settings}}))
+                self.assertIn(f"{name}=configured", rendered({**unset, **{other: "configured" for other in settings}}))
+
     def test_backend_readiness_probes_admit_the_current_schema_without_pinning_an_old_client(self):
         root = SCRIPT.parents[2]
         workflow = (root / ".github/workflows/backend.yml").read_text()

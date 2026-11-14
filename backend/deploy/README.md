@@ -592,7 +592,15 @@ stdout did not take the counts.
 The server follows the subscription service's feed into `account_entitlements`, its own copy of every
 account's entitlement ([subscriptions.md](../../docs/foundation/subscriptions.md) §6.1), once
 `SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are both set. With neither it logs at
-start that the follower is off; with one alone it refuses to start, naming the other.
+start that the follower is off; with one alone it refuses to start, naming the other. Windmill One and
+`GET /v1/subscription` read the copy either way, so an account the feed has not reached holds Windmill One
+only through `WINDMILL_OWNER_EMAILS`.
+
+Two GitHub variables, both empty by default, decide what the copy is read against. `WINDMILL_SANDBOX_EMAILS`
+names the accounts whose sandbox purchases count (the team's testers and the App Review account); every
+other sandbox purchase entitles no one (§6.2). `SUBSCRIPTIONS_PURCHASABLE_STORES` names the stores the paid
+line is open on (`app_store`, `play_store`, `paddle`), the one switch that lets a surface offer a buy
+control (INV-12); empty keeps it closed on every store, and a name the server does not know refuses to start.
 
 **A page the backend cannot apply stops the copy for every account, by design.** A page applies whole
 or not at all, and the follower skips no entry, since a skipped entry would leave someone's paid state
