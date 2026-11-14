@@ -2,13 +2,24 @@
 
 #include "platform/application/Entitlements.h"
 #include "platform/adapters/json/JsonText.h"
+#include "platform/adapters/llm/AiCallBudget.h"
+#include "products/journal/adapters/llm/OpenAiTranscriber.h"
+#include "test/DrogonLoopback.h"
 #include "test/platform/FakeAiBudgetRepository.h"
 #include "test/platform/Fakes.h"
 #include "test/products/journal/Fakes.h"
 #include "test/testing.h"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <chrono>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 using namespace wm;
 using namespace wm::fake;
@@ -70,6 +81,38 @@ drogon::HttpRequestPtr post(const std::string& audio, const std::string& session
   if (!session.empty()) request->addCookie("wm_session", session);
   return request;
 }
+
+// A vendor that takes the connection and never answers: the kernel completes the handshake and holds the request, and
+// nothing reads it.
+class SilentVendor {
+public:
+  SilentVendor() : listener_(::socket(AF_INET, SOCK_STREAM, 0)) {
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t size = sizeof address;
+    if (::bind(listener_, reinterpret_cast<const sockaddr*>(&address), sizeof address) != 0 ||
+        ::getsockname(listener_, reinterpret_cast<sockaddr*>(&address), &size) != 0 || ::listen(listener_, 1) != 0)
+      throw std::runtime_error("the silent vendor could not listen");
+    port_ = ntohs(address.sin_port);
+  }
+  ~SilentVendor() { ::close(listener_); }
+  SilentVendor(const SilentVendor&) = delete;
+  SilentVendor& operator=(const SilentVendor&) = delete;
+
+  std::string origin() const { return "http://127.0.0.1:" + std::to_string(port_); }
+
+private:
+  int listener_;
+  int port_ = 0;
+};
+
+struct Failures : FailureReporter {
+  std::vector<std::string> reports;
+  void report(const std::string& kind, const std::string& where, const std::string& detail) override {
+    reports.push_back(kind + ":" + where + ":" + detail);
+  }
+};
 
 // The reply may arrive after this returns, so the slot it lands in is shared, never a reference to this stack frame. A null answer means the take is still with the vendor.
 drogon::HttpResponsePtr send(VoiceApi& api, const drogon::HttpRequestPtr& request) {
@@ -308,4 +351,35 @@ TEST(voice_with_allowances_on_a_refused_take_gives_its_audio_back_to_the_day) {
   CHECK_EQ(spent->getStatusCode(), drogon::k429TooManyRequests);
   CHECK_EQ(dump(*spent->getJsonObject()), std::string{R"({"error":"talk has had its turn for today"})"});
   CHECK_EQ(h.transcriber->calls, 11);
+}
+
+// A vendor slower than the take's wait: the route's 502 is written from the transcriber's loop once the wait is over,
+// and reaches the person on the connection the take came in on. The take may have been heard, so its hold stays. It is
+// sent to a path no test registers a route on, so the loopback's route answers it and not the journal's.
+TEST(voice_answers_502_on_the_takes_own_connection_when_the_vendor_is_slower_than_its_wait) {
+  Harness h{true};
+  UserId me = h.signIn("s-live");
+  h.fund(me);
+  Failures failures;
+  SilentVendor vendor;
+  auto calls = std::make_shared<AiCallBudget>(h.budgets, *h.entitlements, h.authRepo, failures);
+  VoiceApi api{std::make_shared<OpenAiTranscriber>("sk-fixture-only", "gpt-4o-transcribe", nullptr, nullptr, calls,
+                                                   vendor.origin(), std::chrono::seconds{1}),
+               h.entitlements, h.auth, h.clock};
+  test::DrogonLoopback::Connection wire;
+
+  const auto exchange = wire.exchange(
+      "POST /take HTTP/1.1\r\nHost: localhost\r\nCookie: wm_session=s-live\r\n"
+      "Content-Type: audio/webm\r\nContent-Length: 10\r\n\r\nopus-bytes",
+      [&api](const drogon::HttpRequestPtr& req, test::DrogonLoopback::Answer&& answer) {
+        api.transcribe(req, std::move(answer));
+      });
+
+  CHECK(exchange.answer.starts_with("HTTP/1.1 502 Bad Gateway\r\n"));
+  CHECK(exchange.answer.ends_with("\r\n\r\n{\"error\":\"the transcriber could not answer\"}"));
+  REQUIRE_EQ(h.allowances.reservations.size(), 1u);
+  const AiBudgetReservation& held = h.allowances.reservations.begin()->second;
+  CHECK(held.state == AiBudgetState::Uncertain);
+  CHECK_EQ(held.amountNanos, 60'000'000);
+  CHECK(failures.reports.empty());
 }

@@ -326,7 +326,9 @@ distinct.
 
 The handler does not wait on the vendor: it hands its callback to the transcriber and returns, and
 the reply is written from the transcriber's loop, after the take's charge is settled, under the
-route's request id. The vendor gets 300 s to answer, and stopping the transcriber lets takes still
+route's request id. The vendor gets 50 s to answer (`kVendorReplyWait`, `platform/adapters/http/ReplyWait.h`):
+the server drops a connection that has waited 60 s on its reply, and Cloudflare answers 524 after 125 s, so a
+take the vendor is too slow for still reaches the person as its 502. Stopping the transcriber lets takes still
 with it settle for up to 5 s before its loop ends. `VoiceRation` is in memory and best-effort; the
 money is held by the account's AI allowance and the process fuse (`platform/domain/AiFuse.h`).
 

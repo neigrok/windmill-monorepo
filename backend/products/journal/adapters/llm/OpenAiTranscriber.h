@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/adapters/http/ReplyWait.h"
 #include "platform/domain/AiFuse.h"
 #include "platform/ports/AiUsageRepository.h"
 #include "products/journal/ports/Transcriber.h"
@@ -7,6 +8,7 @@
 #include <json/json.h>
 #include <trantor/net/EventLoopThread.h>
 
+#include <chrono>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -32,8 +34,9 @@ std::optional<long long> transcriptionActualNanos(const std::string& model, cons
 // so no drogon handler thread is parked. The audio is used for one request and dropped; neither it nor the
 // transcript is logged. With the AI allowance ledger (`budget`) a take holds its model's ceiling on a Windmill One
 // grant before any audio leaves and settles at what the vendor billed; configured() then also requires a model it
-// can price. stop() lets takes still with the vendor answer and settle, for a bounded time, before the loop ends. The
-// fuse, the sink and the budget default to null, the no-op.
+// can price. A take the vendor has not answered within `vendorWait` fails as an ambiguous send; the route's reply
+// waits on it, so it is kVendorReplyWait (ReplyWait.h). stop() lets takes still with the vendor answer and settle, for
+// a bounded time, before the loop ends. The fuse, the sink and the budget default to null, the no-op.
 class OpenAiTranscriber : public Transcriber {
  public:
   ~OpenAiTranscriber() { stop(); }
@@ -43,7 +46,8 @@ class OpenAiTranscriber : public Transcriber {
                              std::shared_ptr<AiFuse> fuse = nullptr,
                              std::shared_ptr<UsageSink> usage = nullptr,
                              std::shared_ptr<AiCallBudget> budget = nullptr,
-                             std::string baseUrl = kOpenAiBaseUrl);
+                             std::string baseUrl = kOpenAiBaseUrl,
+                             std::chrono::seconds vendorWait = kVendorReplyWait);
 
   bool configured() const override;
   void transcribe(const UserId& user, const std::string& audio, const std::string& mimeType,
@@ -56,6 +60,7 @@ class OpenAiTranscriber : public Transcriber {
   std::shared_ptr<UsageSink> usage_;
   std::shared_ptr<AiCallBudget> budget_;
   std::string baseUrl_;
+  std::chrono::seconds vendorWait_;
   std::mutex takesMutex_;
   std::condition_variable takesSettled_;
   int takesWithVendor_ = 0;
