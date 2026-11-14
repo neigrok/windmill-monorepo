@@ -59,3 +59,26 @@ fn total_overflow_discards_triggering_answer_without_evicting_other_principal() 
     assert!(results.get("1").is_some());
     assert!(results.get("2").is_none());
 }
+
+#[test]
+fn expired_content_is_cleared_from_existing_readers_without_new_traffic() {
+    let results = Results::new(1000, 2000);
+    let ended = results.create("1".to_owned(), "account:a".to_owned(), false);
+    let active = results.create("2".to_owned(), "account:b".to_owned(), false);
+    results.push(&ended, "ended", json!({"text":"expires"}), true);
+    results.push(&active, "text", json!({"text":"continues"}), false);
+    let reader = ended.attach();
+
+    results.prune_at(std::time::Instant::now() + ai_server::config::RESULT_LINGER);
+
+    assert!(results.get("1").is_none());
+    assert!(ended.last().is_none());
+    let (event, done) = ended.next(0, reader);
+    assert!(event.is_none());
+    assert!(done);
+    assert!(results.get("2").is_some());
+    assert_eq!(
+        active.next(0, active.attach()).0.unwrap().data,
+        r#"{"text":"continues"}"#
+    );
+}

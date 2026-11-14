@@ -124,25 +124,25 @@ pub fn shared(ledger: SharedLedger) -> Value {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct FundIn {
+pub struct FundRequest {
     pub account_id: String,
     pub plan: String,
-    pub period: PeriodIn,
+    pub period: PeriodRequest,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PeriodIn {
+pub struct PeriodRequest {
     pub start: i64,
     pub end: i64,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct CloseIn {
+pub struct CloseRequest {
     pub closed_at: i64,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CorrectIn {
+pub struct CorrectRequest {
     pub charged: String,
 }
 

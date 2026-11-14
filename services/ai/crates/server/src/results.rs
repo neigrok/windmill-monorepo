@@ -155,6 +155,10 @@ impl Results {
     }
 
     pub fn prune(&self) {
+        self.prune_at(Instant::now());
+    }
+
+    pub fn prune_at(&self, now: Instant) {
         let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         let mut totals = HashMap::<String, usize>::new();
         let mut ended = vec![];
@@ -166,7 +170,9 @@ impl Results {
                 id.clone(),
                 entry.principal.clone(),
                 data.bytes,
-                data.ended.is_some_and(|at| at.elapsed() >= RESULT_LINGER) || data.evicted,
+                data.ended
+                    .is_some_and(|at| now.saturating_duration_since(at) >= RESULT_LINGER)
+                    || data.evicted,
             ));
         }
         ended.sort_by_key(|row| row.0);

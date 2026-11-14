@@ -956,7 +956,7 @@ async fn fund(
         return refusal("pass_signature", None);
     }
     let value = match body(request, 65536).await.and_then(|bytes| {
-        serde_json::from_slice::<wire::FundIn>(&bytes).map_err(|_| StaticCode::InvalidRequest)
+        serde_json::from_slice::<wire::FundRequest>(&bytes).map_err(|_| StaticCode::InvalidRequest)
     }) {
         Ok(value) => value,
         Err(code) => return refusal(code.as_str(), None),
@@ -983,7 +983,7 @@ async fn close(
         return refusal("pass_signature", None);
     }
     let value = match body(request, 65536).await.and_then(|bytes| {
-        serde_json::from_slice::<wire::CloseIn>(&bytes).map_err(|_| StaticCode::InvalidRequest)
+        serde_json::from_slice::<wire::CloseRequest>(&bytes).map_err(|_| StaticCode::InvalidRequest)
     }) {
         Ok(value) => value,
         Err(code) => return refusal(code.as_str(), None),
@@ -1136,7 +1136,8 @@ async fn correct(
         Err(_) => return refusal("invalid_request", None),
     };
     let value = match body(request, 65536).await.and_then(|bytes| {
-        serde_json::from_slice::<wire::CorrectIn>(&bytes).map_err(|_| StaticCode::InvalidRequest)
+        serde_json::from_slice::<wire::CorrectRequest>(&bytes)
+            .map_err(|_| StaticCode::InvalidRequest)
     }) {
         Ok(value) => value,
         Err(code) => return refusal(code.as_str(), None),
