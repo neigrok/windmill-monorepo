@@ -1,0 +1,11 @@
+[package]
+name = "app_store"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+domain = { path = "../domain" }
+
+[lints]
+workspace = true
