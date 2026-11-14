@@ -32,7 +32,33 @@ struct ResultData {
     evicted: bool,
 }
 
+pub struct ResultProducer {
+    entry: Arc<ResultEntry>,
+}
+
+impl Drop for ResultProducer {
+    fn drop(&mut self) {
+        let mut data = self
+            .entry
+            .data
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if data.ended.is_some() {
+            return;
+        }
+        data.evicted = true;
+        data.events.clear();
+        data.bytes = 0;
+        self.entry.changed.notify_waiters();
+    }
+}
+
 impl ResultEntry {
+    pub fn producer(self: &Arc<Self>) -> ResultProducer {
+        ResultProducer {
+            entry: self.clone(),
+        }
+    }
     pub fn attach(&self) -> u64 {
         let reader = self.reader.fetch_add(1, Ordering::SeqCst) + 1;
         self.changed.notify_waiters();
@@ -107,6 +133,21 @@ impl Results {
             .unwrap_or_else(|e| e.into_inner())
             .insert(id, entry.clone());
         entry
+    }
+
+    pub fn remove(&self, id: &str) {
+        if let Some(entry) = self
+            .entries
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(id)
+        {
+            let mut data = entry.data.lock().unwrap_or_else(|error| error.into_inner());
+            data.evicted = true;
+            data.events.clear();
+            data.bytes = 0;
+            entry.changed.notify_waiters();
+        }
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<ResultEntry>> {

@@ -8,8 +8,9 @@ struct Database {
 }
 
 impl Database {
-    async fn new() -> Option<Self> {
-        let source = std::env::var("AI_TEST_DATABASE_URL").ok()?;
+    async fn new() -> Self {
+        let source = std::env::var("AI_TEST_DATABASE_URL")
+            .expect("AI_TEST_DATABASE_URL is required for ledger PostgreSQL tests");
         let admin = sqlx::PgPool::connect(&source).await.unwrap();
         let name = format!("ai_ledger_{}", uuid::Uuid::new_v4().simple());
         sqlx::query(sqlx::AssertSqlSafe(format!("CREATE DATABASE {name}")))
@@ -18,11 +19,11 @@ impl Database {
             .unwrap();
         let mut url = url::Url::parse(&source).unwrap();
         url.set_path(&name);
-        Some(Self {
+        Self {
             url: url.to_string(),
             name,
             admin,
-        })
+        }
     }
 
     async fn finish(self, ledger: Ledger) {
@@ -213,9 +214,7 @@ fn prices() -> PriceBook {
 
 #[tokio::test]
 async fn admission_is_atomic_and_dispatch_is_once() {
-    let Some(database) = Database::new().await else {
-        return;
-    };
+    let database = Database::new().await;
     let ledger = Ledger::connect(&database.url, tiers(), prices())
         .await
         .unwrap();
@@ -299,9 +298,7 @@ async fn admission_is_atomic_and_dispatch_is_once() {
 
 #[tokio::test]
 async fn concurrent_different_calls_cannot_oversubscribe_and_pins_survive_rollover() {
-    let Some(database) = Database::new().await else {
-        return;
-    };
+    let database = Database::new().await;
     let ledger = Ledger::connect(&database.url, tiers(), prices())
         .await
         .unwrap();
@@ -346,9 +343,7 @@ async fn concurrent_different_calls_cannot_oversubscribe_and_pins_survive_rollov
 
 #[tokio::test]
 async fn grants_replay_overlap_close_reopen_owner_cap_and_source_precedence() {
-    let Some(database) = Database::new().await else {
-        return;
-    };
+    let database = Database::new().await;
     let mut table = tiers();
     table.owner_grants_max = 1;
     let ledger = Ledger::connect(&database.url, table, prices())
@@ -458,9 +453,7 @@ async fn grants_replay_overlap_close_reopen_owner_cap_and_source_precedence() {
 
 #[tokio::test]
 async fn bindings_share_in_flight_and_keep_monthly_contributions_after_retention() {
-    let Some(database) = Database::new().await else {
-        return;
-    };
+    let database = Database::new().await;
     let ledger = Ledger::connect(&database.url, tiers(), prices())
         .await
         .unwrap();
@@ -585,9 +578,7 @@ async fn bindings_share_in_flight_and_keep_monthly_contributions_after_retention
 
 #[tokio::test]
 async fn live_slices_are_retry_safe_and_final_cost_is_not_charged_twice() {
-    let Some(database) = Database::new().await else {
-        return;
-    };
+    let database = Database::new().await;
     let ledger = Ledger::connect(&database.url, tiers(), prices())
         .await
         .unwrap();
@@ -751,9 +742,7 @@ async fn live_slices_are_retry_safe_and_final_cost_is_not_charged_twice() {
 
 #[tokio::test]
 async fn thresholds_cross_once_and_excess_is_fully_spent() {
-    let Some(database) = Database::new().await else {
-        return;
-    };
+    let database = Database::new().await;
     let mut table = tiers();
     for row in &mut table.rows {
         if let Some(pool) = row.month_pool.as_mut() {
@@ -840,9 +829,7 @@ async fn thresholds_cross_once_and_excess_is_fully_spent() {
 
 #[tokio::test]
 async fn corrections_keep_original_charge_and_cannot_clear_a_new_hour_fuse() {
-    let Some(database) = Database::new().await else {
-        return;
-    };
+    let database = Database::new().await;
     let mut table = tiers();
     table.hourly_fuse = NanoUsd::new(50_000).unwrap();
     let ledger = Ledger::connect(&database.url, table, prices())
@@ -921,9 +908,7 @@ async fn corrections_keep_original_charge_and_cannot_clear_a_new_hour_fuse() {
 
 #[tokio::test]
 async fn session_lock_loss_fails_closed_and_restart_sweeps_only_orphans() {
-    let Some(database) = Database::new().await else {
-        return;
-    };
+    let database = Database::new().await;
     let ledger = Ledger::connect(&database.url, tiers(), prices())
         .await
         .unwrap();
@@ -995,9 +980,7 @@ async fn session_lock_loss_fails_closed_and_restart_sweeps_only_orphans() {
 
 #[tokio::test]
 async fn settlement_transaction_failure_rolls_back_money_and_retries_once() {
-    let Some(database) = Database::new().await else {
-        return;
-    };
+    let database = Database::new().await;
     let ledger = Ledger::connect(&database.url, tiers(), prices())
         .await
         .unwrap();
@@ -1075,9 +1058,7 @@ async fn settlement_transaction_failure_rolls_back_money_and_retries_once() {
 
 #[tokio::test]
 async fn settlement_uses_immutable_rates_when_a_new_process_loads_another_book() {
-    let Some(database) = Database::new().await else {
-        return;
-    };
+    let database = Database::new().await;
     let ledger = Ledger::connect(&database.url, tiers(), prices())
         .await
         .unwrap();
@@ -1130,9 +1111,7 @@ async fn settlement_uses_immutable_rates_when_a_new_process_loads_another_book()
 
 #[tokio::test]
 async fn a_tier_transition_cannot_dispatch_a_different_model_than_the_counted_request() {
-    let Some(database) = Database::new().await else {
-        return;
-    };
+    let database = Database::new().await;
     let mut table = tiers();
     table
         .rows

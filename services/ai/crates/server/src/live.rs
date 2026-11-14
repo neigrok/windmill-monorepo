@@ -3,7 +3,7 @@ use crate::{
     settle, telemetry, wire,
 };
 use ai_domain::*;
-use ai_providers::{LiveEvent, LiveSession};
+use ai_providers::{FailureKind, LiveEvent, LiveSession, ProviderFailure};
 use axum::{
     extract::{
         FromRequestParts, Path, Request, State, WebSocketUpgrade,
@@ -44,6 +44,7 @@ struct Transcript {
     pending_commit: bool,
     bytes: u64,
     last_text_bytes: u64,
+    failure_kind: Option<FailureKind>,
 }
 
 impl Transcript {
@@ -60,6 +61,7 @@ impl Transcript {
             pending_commit: false,
             bytes: 0,
             last_text_bytes: 0,
+            failure_kind: None,
         }
     }
     fn seconds(&self) -> u64 {
@@ -99,6 +101,20 @@ impl Transcript {
             .iter()
             .any(|turn| turn.bytes > 0 && turn.final_text.is_none())
     }
+    fn provider_error(&mut self, failure: ProviderFailure) -> StaticCode {
+        self.failure_kind = Some(failure.kind);
+        StaticCode::ProviderFailed
+    }
+
+    async fn forward(&mut self, provider: &mut LiveSession, pcm: &[u8]) -> Result<(), StaticCode> {
+        self.bytes += pcm.len() as u64;
+        self.turns.last_mut().unwrap().bytes += pcm.len() as u64;
+        provider
+            .send_audio(pcm)
+            .await
+            .map_err(|failure| self.provider_error(failure))
+    }
+
     async fn commit(&mut self, provider: &mut LiveSession, force: bool) -> Result<(), StaticCode> {
         let index = self.turns.len() - 1;
         let bytes = self.turns[index].bytes;
@@ -112,7 +128,7 @@ impl Transcript {
         provider
             .commit()
             .await
-            .map_err(|_| StaticCode::ProviderFailed)?;
+            .map_err(|failure| self.provider_error(failure))?;
         self.turns[index].committed = Some(Instant::now());
         self.commits.push_back(index);
         self.turns.push(Turn {
@@ -187,8 +203,22 @@ impl Transcript {
                 self.last_text_bytes = self.bytes;
                 Ok(Some(json!({"type":"turn","turn":index+1,"text":text})))
             }
-            LiveEvent::Failed { .. } | LiveEvent::Closed => Err(StaticCode::ProviderFailed),
+            LiveEvent::Failed { failure, .. } => Err(self.provider_error(failure)),
+            LiveEvent::Closed => Err(StaticCode::ProviderFailed),
         }
+    }
+}
+
+async fn write_while_active(
+    service: &Service,
+    deadline: tokio::time::Instant,
+    write: impl std::future::Future<Output = Result<(), StaticCode>>,
+) -> Result<(), StaticCode> {
+    tokio::select! {
+        biased;
+        _=service.drain.cancelled()=>Err(StaticCode::Restarting),
+        _=tokio::time::sleep_until(deadline)=>Err(StaticCode::SessionLimit),
+        result=write=>result,
     }
 }
 
@@ -243,7 +273,15 @@ pub async fn upgrade(
     let (mut parts, _) = request.into_parts();
     let socket = match WebSocketUpgrade::from_request_parts(&mut parts, &service).await {
         Ok(socket) => socket,
-        Err(_) => return refusal("invalid_request", None),
+        Err(_) => {
+            return reject(
+                &service,
+                &identity,
+                StaticCode::InvalidRequest,
+                "call.transcription",
+            )
+            .await;
+        }
     };
     socket
         .protocols(["wm-live.v1"])
@@ -253,8 +291,41 @@ pub async fn upgrade(
         .into_response()
 }
 
-async fn first_failure(socket: &mut WebSocket, code: StaticCode, allowance: Option<Value>) {
-    let message = json!({"type":"failed","code":code.as_str(),"text":"","seconds":0,"charged":null,"allowance":allowance});
+async fn first_failure(
+    service: &Service,
+    identity: &Identity,
+    label: &str,
+    started: Instant,
+    socket: &mut WebSocket,
+    code: StaticCode,
+) {
+    let allowance = if code == StaticCode::AccountingUnavailable {
+        None
+    } else {
+        crate::database(
+            "ledger.allowance",
+            service.ledger.allowance(identity, service.now()),
+        )
+        .await
+        .ok()
+    };
+    if matches!(code, StaticCode::RateLimited | StaticCode::Busy) {
+        service.refusals.count(code.as_str());
+    } else {
+        tracing::info!(
+            operation = "call.transcription",
+            product = "ai",
+            door = "public",
+            code = code.as_str(),
+            client = identity.client.as_str(),
+            tier = allowance.as_ref().map(|value| value.tier.as_str()),
+            label,
+            environment = service.config.environment.label(),
+            duration_ms = started.elapsed().as_millis() as u64,
+            "refused"
+        );
+    }
+    let message = json!({"type":"failed","code":code.as_str(),"text":"","seconds":0,"charged":null,"allowance":allowance.as_ref().map(wire::allowance)});
     let _ = tokio::time::timeout(
         Duration::from_secs(2),
         socket.send(Message::Text(message.to_string().into())),
@@ -270,45 +341,47 @@ async fn session(
     label: String,
     mut socket: WebSocket,
 ) {
+    let started = Instant::now();
     let caller = match CallerId::new(id) {
         Ok(caller) => caller,
         Err(code) => {
-            first_failure(&mut socket, code, None).await;
+            first_failure(&service, &identity, &label, started, &mut socket, code).await;
             return;
         }
     };
-    match service.ledger.lookup(&identity.principal, &caller).await {
+    match crate::database(
+        "ledger.lookup",
+        service.ledger.lookup(&identity.principal, &caller),
+    )
+    .await
+    {
         Ok(Some(_)) => {
             let code = if crate::read_rate(&service, &identity) {
                 StaticCode::Conflict
             } else {
                 StaticCode::RateLimited
             };
-            first_failure(
-                &mut socket,
-                code,
-                service
-                    .ledger
-                    .allowance(&identity, service.now())
-                    .await
-                    .ok()
-                    .map(|value| wire::allowance(&value)),
-            )
-            .await;
+            first_failure(&service, &identity, &label, started, &mut socket, code).await;
             return;
         }
         Ok(None) => {}
         Err(code) => {
-            first_failure(&mut socket, code, None).await;
+            first_failure(&service, &identity, &label, started, &mut socket, code).await;
             return;
         }
     }
-    let lifecycle = service.lifecycle.lock().await;
+    let lifecycle = match crate::lifecycle(&service).await {
+        Ok(guard) => guard,
+        Err(code) => {
+            first_failure(&service, &identity, &label, started, &mut socket, code).await;
+            return;
+        }
+    };
     let admission = async {
         if service.drain.is_cancelled() {
             return Err(StaticCode::Busy);
         }
-        if !service.ledger.lock_alive().await {
+        if !crate::ledger_ready(&service.ledger).await {
             return Err(StaticCode::AccountingUnavailable);
         }
         let permit = service
@@ -321,7 +394,11 @@ async fn session(
             .clone()
             .try_acquire_owned()
             .map_err(|_| StaticCode::Busy)?;
-        let allowance = service.ledger.allowance(&identity, service.now()).await?;
+        let allowance = crate::database(
+            "ledger.allowance",
+            service.ledger.allowance(&identity, service.now()),
+        )
+        .await?;
         let row = service.policy.tiers.row(allowance.tier)?;
         if !service.rates.allow(
             principal_key(&identity.principal),
@@ -337,7 +414,10 @@ async fn session(
             return Err(allowance.code);
         }
         let provider = service.policy.tiers.transcription.provider;
-        if service.ledger.fuse(provider, service.now()).await?.paused {
+        if crate::database("ledger.fuse", service.ledger.fuse(provider, service.now()))
+            .await?
+            .paused
+        {
             return Err(StaticCode::Paused);
         }
         if service.drain.is_cancelled() {
@@ -355,9 +435,9 @@ async fn session(
         {
             return Err(StaticCode::ProviderUnavailable);
         }
-        let call = match service
-            .ledger
-            .admit(
+        let call = match crate::database(
+            "ledger.admit",
+            service.ledger.admit(
                 Admission {
                     expected_route: ModelRoute {
                         provider,
@@ -366,13 +446,14 @@ async fn session(
                     },
                     identity: identity.clone(),
                     caller_id: caller,
-                    label,
+                    label: label.clone(),
                     requested: ModelClass::Small,
                     reservation: Reservation::Transcription,
                 },
                 service.now(),
-            )
-            .await?
+            ),
+        )
+        .await?
         {
             AdmissionOutcome::Admitted(call) => call,
             AdmissionOutcome::Existing(_) => return Err(StaticCode::Conflict),
@@ -383,60 +464,62 @@ async fn session(
     let (mut call, permit, _session_permit) = match admission {
         Ok(value) => value,
         Err(code) => {
-            let _ = reject(&service, &identity, code, "call.transcription").await;
-            first_failure(
-                &mut socket,
-                code,
-                service
-                    .ledger
-                    .allowance(&identity, service.now())
-                    .await
-                    .ok()
-                    .map(|value| wire::allowance(&value)),
-            )
-            .await;
+            first_failure(&service, &identity, &label, started, &mut socket, code).await;
             return;
         }
     };
     let active = ActiveCall::new(service.clone(), call.id, permit);
-    drop(lifecycle);
     let entry = service
         .results
         .create(call.id.to_string(), principal_key(&call.principal), true);
-    if service
-        .ledger
-        .dispatch(call.id, service.now())
-        .await
-        .is_err()
-    {
+    let _producer = entry.producer();
+    drop(lifecycle);
+    let call_start = Instant::now();
+    if let Err(code) = crate::dispatch(&service, call.id).await {
         let charged = settle(
             service.clone(),
-            call.id,
+            call.clone(),
             Settlement {
                 charge: Charge::Unconsumed,
                 stop: None,
-                code: Some(StaticCode::AccountingUnavailable),
+                code: Some(code),
                 provider_request_id: None,
             },
             active,
+            telemetry::CallSignal::new(call_start),
         )
         .await;
-        let message = json!({"type":"failed","code":"accounting_unavailable","text":"","seconds":0,"charged":charged.map(NanoUsd::usd),"allowance":null});
+        let message = json!({"type":"failed","code":code.as_str(),"text":"","seconds":0,"charged":charged.map(NanoUsd::usd),"allowance":null});
         service
             .results
             .push(&entry, "failed", message.clone(), true);
-        let _ = socket.send(Message::Text(message.to_string().into())).await;
+        let _ = tokio::time::timeout(
+            Duration::from_secs(2),
+            socket.send(Message::Text(message.to_string().into())),
+        )
+        .await;
         return;
     }
     let mut provider = match service.live.as_ref().unwrap().open().await {
         Ok(provider) => provider,
         Err(failure) => {
+            service.provider_health.observe(
+                call.route.provider,
+                failure.http_status,
+                service.now(),
+            );
+            let signal = telemetry::CallSignal {
+                started: call_start,
+                http_status: failure.http_status,
+                failure_kind: Some(failure.kind),
+                usage: None,
+            };
             if failure.key_account_fault {
                 telemetry::report_failure("provider.transcription", "provider_credentials", None);
             }
             let charged = settle(
                 service.clone(),
-                call.id,
+                call.clone(),
                 Settlement {
                     charge: Charge::Unconsumed,
                     stop: None,
@@ -444,24 +527,34 @@ async fn session(
                     provider_request_id: failure.request_id,
                 },
                 active,
+                signal,
             )
             .await;
-            let allowance = service
-                .ledger
-                .allowance(&identity, service.now())
-                .await
-                .ok()
-                .map(|value| wire::allowance(&value));
+            let allowance = crate::database(
+                "ledger.allowance",
+                service.ledger.allowance(&identity, service.now()),
+            )
+            .await
+            .ok()
+            .map(|value| wire::allowance(&value));
             let message = json!({"type":"failed","code":"provider_unavailable","text":"","seconds":0,"charged":charged.map(NanoUsd::usd),"allowance":allowance});
             service
                 .results
                 .push(&entry, "failed", message.clone(), true);
-            let _ = socket.send(Message::Text(message.to_string().into())).await;
+            let _ = tokio::time::timeout(
+                Duration::from_secs(2),
+                socket.send(Message::Text(message.to_string().into())),
+            )
+            .await;
             return;
         }
     };
+    service
+        .provider_health
+        .observe(call.route.provider, Some(101), service.now());
     let provider_request_id = provider.request_id.clone();
     let start = Instant::now();
+    let deadline = tokio::time::Instant::now() + MAX_SESSION;
     let mut last_audio = start;
     let mut last_sent = start;
     let mut ping: Option<Instant> = None;
@@ -481,31 +574,30 @@ async fn session(
         }
         let _ = tokio::time::timeout(Duration::from_secs(2), sink.close()).await;
     });
-    let remaining = service
-        .ledger
-        .allowance(&identity, service.now())
-        .await
-        .ok()
-        .and_then(|a| {
-            service
-                .policy
-                .prices
-                .model(call.route.provider, &call.route.model)
-                .ok()
-                .and_then(|price| price.audio_rate().ok())
-                .map(|rate| {
-                    u64::try_from(
-                        u128::try_from(
-                            a.remaining.nanos().saturating_add(call.reservation.nanos()),
-                        )
+    let remaining = crate::database(
+        "ledger.allowance",
+        service.ledger.allowance(&identity, service.now()),
+    )
+    .await
+    .ok()
+    .and_then(|a| {
+        service
+            .policy
+            .prices
+            .model(call.route.provider, &call.route.model)
+            .ok()
+            .and_then(|price| price.audio_rate().ok())
+            .map(|rate| {
+                u64::try_from(
+                    u128::try_from(a.remaining.nanos().saturating_add(call.reservation.nanos()))
                         .unwrap_or_default()
-                            * 60
-                            / u128::try_from(rate.nanos().max(1)).unwrap_or(1),
-                    )
-                    .unwrap_or(u64::MAX)
-                })
-        })
-        .unwrap_or(LIVE_SLICE);
+                        * 60
+                        / u128::try_from(rate.nanos().max(1)).unwrap_or(1),
+                )
+                .unwrap_or(u64::MAX)
+            })
+    })
+    .unwrap_or(LIVE_SLICE);
     let _ = sender.try_send(Message::Text(
         json!({"type":"started","callId":call.caller_id.as_str(),"remainingSeconds":remaining})
             .to_string()
@@ -520,12 +612,12 @@ async fn session(
             _=tick.tick()=>{
                 if start.elapsed()>=MAX_SESSION{break(Some(StaticCode::SessionLimit),false);}
                 if last_audio.elapsed()>=LIVE_IDLE||transcript.bytes.saturating_sub(transcript.last_text_bytes)>=LIVE_SILENT*AUDIO_BYTES_PER_SECOND{break(Some(StaticCode::Idle),false);}
-                if transcript.timed_out(){break(Some(StaticCode::ProviderFailed),true);}
+                if transcript.timed_out(){transcript.failure_kind=Some(FailureKind::Timeout);break(Some(StaticCode::ProviderFailed),true);}
                 if ping.is_some_and(|at|at.elapsed()>=LIVE_PONG){break(Some(StaticCode::WentAway),false);}
                 if last_sent.elapsed()>=HEARTBEAT&&ping.is_none(){if sender.try_send(Message::Ping(Vec::new().into())).is_err(){break(Some(StaticCode::WentAway),false);}ping=Some(Instant::now());last_sent=Instant::now();}
             },
             event=provider.next_event()=>{
-                match event.map_err(|_|StaticCode::ProviderFailed).and_then(|event|transcript.event(event)){
+                match event.map_err(|failure|transcript.provider_error(failure)).and_then(|event|transcript.event(event)){
                     Ok(Some(message))=>{if sender.try_send(Message::Text(message.to_string().into())).is_err(){break(Some(StaticCode::WentAway),false);}last_sent=Instant::now();},Ok(None)=>{},Err(code)=>break(Some(code),true),
                 }
             },
@@ -550,10 +642,9 @@ async fn session(
                                     Ok(Ok(value))=>call=value,Ok(Err(code))=>{fault=Some((code,code==StaticCode::AccountingUnavailable));break;},Err(_)=>{fault=Some((StaticCode::AccountingUnavailable,true));break;}
                                 }
                             }
-                            transcript.bytes+=length as u64;transcript.turns.last_mut().unwrap().bytes+=length as u64;
-                            if provider.send_audio(&bytes[offset..offset+length]).await.is_err(){fault=Some((StaticCode::ProviderFailed,true));break;}
+                            if let Err(code)=write_while_active(&service,deadline,transcript.forward(&mut provider,&bytes[offset..offset+length])).await{fault=Some((code,code==StaticCode::ProviderFailed));break;}
                             offset+=length;
-                            if (transcript.turns.last().unwrap().bytes==60*AUDIO_BYTES_PER_SECOND||(transcript.pending_commit&&transcript.turns.last().unwrap().bytes>=AUDIO_BYTES_PER_SECOND)) && let Err(code)=transcript.commit(&mut provider,false).await{fault=Some((code,true));break;}
+                            if (transcript.turns.last().unwrap().bytes==60*AUDIO_BYTES_PER_SECOND||(transcript.pending_commit&&transcript.turns.last().unwrap().bytes>=AUDIO_BYTES_PER_SECOND)) && let Err(code)=write_while_active(&service,deadline,transcript.commit(&mut provider,false)).await{fault=Some((code,code==StaticCode::ProviderFailed));break;}
                         }
                         if let Some((code,failed))=fault{break(Some(code),failed);}
                     },
@@ -561,8 +652,8 @@ async fn session(
                         let control=match serde_json::from_str::<Control>(&text){Ok(control)=>control,Err(_)=>break(Some(StaticCode::InvalidRequest),true)};
                         match control{
                             Control::Context{keywords}=>{if transcript.bytes!=0||keywords.len()>256||keywords.iter().any(|word|word.is_empty()||word.len()>256){break(Some(StaticCode::InvalidRequest),true);}
-                            if provider.context(&keywords).await.is_err(){break(Some(StaticCode::ProviderFailed),true);}},
-                            Control::Commit=>if let Err(code)=transcript.commit(&mut provider,false).await{break(Some(code),true);},
+                            if let Err(code)=write_while_active(&service,deadline,async{provider.context(&keywords).await.map_err(|failure|transcript.provider_error(failure))}).await{break(Some(code),code==StaticCode::ProviderFailed);}},
+                            Control::Commit=>if let Err(code)=write_while_active(&service,deadline,transcript.commit(&mut provider,false)).await{break(Some(code),code==StaticCode::ProviderFailed);},
                             Control::End=>break(None,false),
                         }
                     },Some(Ok(Message::Pong(_)))=>{ping=None;},Some(Ok(Message::Close(_)))|None=>break(Some(StaticCode::WentAway),false),
@@ -571,14 +662,23 @@ async fn session(
             }
         }
     };
+    if code == Some(StaticCode::AccountingUnavailable) {
+        telemetry::report_failure("ledger.extend_live", "accounting_unavailable", None);
+    }
     let mut final_code = code;
     let mut final_failed = failed;
-    if transcript.commit(&mut provider, true).await.is_err() && !final_failed {
+    if !provider.is_closed()
+        && transcript.commit(&mut provider, true).await.is_err()
+        && !final_failed
+    {
         final_code = Some(StaticCode::ProviderFailed);
         final_failed = true;
     }
     let close_start = Instant::now();
-    while transcript.outstanding() && close_start.elapsed() < LIVE_CLOSE_WAIT {
+    while !provider.is_closed()
+        && transcript.outstanding()
+        && close_start.elapsed() < LIVE_CLOSE_WAIT
+    {
         match tokio::time::timeout(
             LIVE_CLOSE_WAIT.saturating_sub(close_start.elapsed()),
             provider.next_event(),
@@ -596,7 +696,8 @@ async fn session(
                     break;
                 }
             },
-            Ok(Err(_)) => {
+            Ok(Err(failure)) => {
+                transcript.provider_error(failure);
                 final_code = Some(StaticCode::ProviderFailed);
                 final_failed = true;
                 break;
@@ -612,7 +713,7 @@ async fn session(
     };
     let charged = settle(
         service.clone(),
-        call.id,
+        call.clone(),
         Settlement {
             charge: Charge::Audio {
                 bytes: transcript.bytes,
@@ -624,14 +725,23 @@ async fn session(
             provider_request_id,
         },
         active,
+        telemetry::CallSignal {
+            started: call_start,
+            http_status: Some(101),
+            failure_kind: transcript.failure_kind.or_else(|| {
+                (final_code == Some(StaticCode::ProviderFailed)).then_some(FailureKind::Protocol)
+            }),
+            usage: None,
+        },
     )
     .await;
-    let allowance = service
-        .ledger
-        .allowance(&identity, service.now())
-        .await
-        .ok()
-        .map(|value| wire::allowance(&value));
+    let allowance = crate::database(
+        "ledger.allowance",
+        service.ledger.allowance(&identity, service.now()),
+    )
+    .await
+    .ok()
+    .map(|value| wire::allowance(&value));
     let message = if final_failed {
         json!({"type":"failed","code":final_code.map(StaticCode::as_str),"text":transcript.text(),"seconds":transcript.seconds(),"charged":charged.map(NanoUsd::usd),"allowance":allowance})
     } else {
@@ -646,27 +756,65 @@ async fn session(
     let _ = sender.try_send(Message::Text(message.to_string().into()));
     drop(sender);
     let _ = tokio::time::timeout(Duration::from_secs(3), writer).await;
-    tracing::info!(
-        operation = "call.transcription",
-        id = call.id,
-        label = call.label,
-        client = call.client.as_str(),
-        environment = service.config.environment.label(),
-        tier = call.tier.as_str(),
-        code = final_code.map(StaticCode::as_str),
-        stop = stop.as_str(),
-        duration_ms = start.elapsed().as_millis() as u64,
-        reservation = call.reservation.nanos(),
-        seconds = transcript.seconds(),
-        turns = transcript.completed_turns(),
-        charged = charged.map(NanoUsd::nanos),
-        "call ended"
-    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn audio_timeout_counts_the_attempted_frame_and_drops_provider_socket() {
+        use ai_providers::{LiveAuth, LiveClient, LiveConfig, Secret};
+        use tokio_tungstenite::tungstenite::Message as ProviderMessage;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let release = CancellationToken::new();
+        let provider_release = release.clone();
+        let task = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            let config: Value =
+                serde_json::from_str(socket.next().await.unwrap().unwrap().to_text().unwrap())
+                    .unwrap();
+            socket
+                .send(ProviderMessage::Text(
+                    json!({"type":"session.updated","session":config["session"]})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
+            provider_release.cancelled().await;
+        });
+        let client = LiveClient::new(LiveConfig {
+            url: format!("ws://{address}/realtime?intent=transcription"),
+            key: Secret::new("fixture".to_owned()),
+            auth: LiveAuth::Bearer,
+            model: "gpt-live-transcribe".to_owned(),
+            delay: "low".to_owned(),
+        })
+        .unwrap();
+        let mut provider = client.open().await.unwrap();
+        let mut transcript = Transcript::new();
+        let frame = vec![0; MAX_AUDIO_FRAME];
+        let mut successful = 0;
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while transcript.forward(&mut provider, &frame).await.is_ok() {
+                successful += 1;
+            }
+        })
+        .await
+        .expect("stalled audio send exceeded its client deadline");
+        assert_eq!(transcript.bytes, (successful + 1) * MAX_AUDIO_FRAME as u64);
+        assert_eq!(transcript.turns[0].bytes, transcript.bytes);
+        assert_eq!(
+            transcript.seconds(),
+            transcript.bytes.div_ceil(AUDIO_BYTES_PER_SECOND)
+        );
+        assert!(provider.is_closed());
+        release.cancel();
+        task.await.unwrap();
+    }
 
     #[test]
     fn slice_ceiling_counts_each_turn_rounding_before_forward() {

@@ -4,6 +4,10 @@ use sentry::types::Dsn;
 use std::{collections::BTreeMap, net::SocketAddr, sync::Arc, time::Duration};
 use tracing_subscriber::filter::LevelFilter;
 
+pub const DATABASE_DEADLINE: Duration = Duration::from_secs(5);
+pub const DATABASE_REPORT_INTERVAL: Duration = Duration::from_secs(60);
+pub const PROVIDER_BUSY_AFTER: i64 = 180_000;
+pub const PROVIDER_BUSY_GAP: i64 = 60_000;
 pub const HEADER_DEADLINE: Duration = Duration::from_secs(10);
 pub const BODY_DEADLINE: Duration = Duration::from_secs(60);
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(600);

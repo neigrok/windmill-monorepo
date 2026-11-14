@@ -34,8 +34,10 @@ pub struct LiveClient {
     config: LiveConfig,
 }
 
+pub const LIVE_WRITE_TIMEOUT: Duration = Duration::from_secs(1);
+
 pub struct LiveSession {
-    socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    socket: Option<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     model: String,
     delay: String,
     audio_started: bool,
@@ -137,7 +139,7 @@ impl LiveClient {
                     .and_then(|header| header.to_str().ok()),
             );
             let mut session = LiveSession {
-                socket,
+                socket: Some(socket),
                 model: self.config.model.clone(),
                 delay: self.config.delay.clone(),
                 audio_started: false,
@@ -148,6 +150,8 @@ impl LiveClient {
             loop {
                 let message = session
                     .socket
+                    .as_mut()
+                    .ok_or_else(ProviderFailure::protocol)?
                     .next()
                     .await
                     .ok_or_else(ProviderFailure::protocol)?
@@ -179,11 +183,7 @@ impl LiveClient {
                             _ => return Err(ProviderFailure::protocol()),
                         }
                     }
-                    Message::Ping(_) => session
-                        .socket
-                        .flush()
-                        .await
-                        .map_err(|_| ProviderFailure::protocol())?,
+                    Message::Ping(_) => session.flush().await?,
                     Message::Pong(_) => {}
                     _ => return Err(ProviderFailure::protocol()),
                 }
@@ -206,21 +206,68 @@ impl LiveClient {
 }
 
 impl LiveSession {
+    pub fn is_closed(&self) -> bool {
+        self.closed || self.socket.is_none()
+    }
+
+    async fn send(&mut self, message: Message) -> Result<(), ProviderFailure> {
+        let mut socket = self.socket.take().ok_or_else(ProviderFailure::protocol)?;
+        match tokio::time::timeout(LIVE_WRITE_TIMEOUT, socket.send(message)).await {
+            Ok(Ok(())) => {
+                self.socket = Some(socket);
+                Ok(())
+            }
+            Ok(Err(_)) => {
+                self.closed = true;
+                Err(ProviderFailure::new(
+                    FailureCode::ProviderFailed,
+                    Certainty::Assumed,
+                    FailureKind::Transport,
+                ))
+            }
+            Err(_) => {
+                self.closed = true;
+                Err(ProviderFailure::new(
+                    FailureCode::ProviderFailed,
+                    Certainty::Assumed,
+                    FailureKind::Timeout,
+                ))
+            }
+        }
+    }
+
+    async fn flush(&mut self) -> Result<(), ProviderFailure> {
+        let mut socket = self.socket.take().ok_or_else(ProviderFailure::protocol)?;
+        match tokio::time::timeout(LIVE_WRITE_TIMEOUT, socket.flush()).await {
+            Ok(Ok(())) => {
+                self.socket = Some(socket);
+                Ok(())
+            }
+            Ok(Err(_)) => {
+                self.closed = true;
+                Err(ProviderFailure::new(
+                    FailureCode::ProviderFailed,
+                    Certainty::Assumed,
+                    FailureKind::Transport,
+                ))
+            }
+            Err(_) => {
+                self.closed = true;
+                Err(ProviderFailure::new(
+                    FailureCode::ProviderFailed,
+                    Certainty::Assumed,
+                    FailureKind::Timeout,
+                ))
+            }
+        }
+    }
+
     async fn send_config(&mut self, keywords: Option<&[String]>) -> Result<(), ProviderFailure> {
         let mut value = json!({"type":"session.update","session":{"type":"transcription","audio":{"input":{"format":{"type":"audio/pcm","rate":24000},"transcription":{"model":self.model,"delay":self.delay},"turn_detection":null}}}});
         if let Some(keywords) = keywords {
             value["session"]["audio"]["input"]["transcription"]["keywords"] = json!(keywords);
         }
-        self.socket
-            .send(Message::Text(value.to_string().into()))
-            .await
-            .map_err(|_| {
-                ProviderFailure::new(
-                    FailureCode::ProviderFailed,
-                    Certainty::Assumed,
-                    FailureKind::Transport,
-                )
-            })
+        self.send(Message::Text(value.to_string().into())).await
     }
 
     pub async fn context(&mut self, keywords: &[String]) -> Result<(), ProviderFailure> {
@@ -246,42 +293,31 @@ impl LiveSession {
         }
         self.audio_started = true;
         let value = json!({"type":"input_audio_buffer.append","audio":STANDARD.encode(pcm)});
-        self.socket
-            .send(Message::Text(value.to_string().into()))
-            .await
-            .map_err(|_| {
-                ProviderFailure::new(
-                    FailureCode::ProviderFailed,
-                    Certainty::Assumed,
-                    FailureKind::Transport,
-                )
-            })
+        self.send(Message::Text(value.to_string().into())).await
     }
 
     pub async fn commit(&mut self) -> Result<(), ProviderFailure> {
-        if self.closed {
+        if self.is_closed() {
             return Err(ProviderFailure::protocol());
         }
-        self.socket
-            .send(Message::Text(
-                "{\"type\":\"input_audio_buffer.commit\"}".into(),
-            ))
-            .await
-            .map_err(|_| {
-                ProviderFailure::new(
-                    FailureCode::ProviderFailed,
-                    Certainty::Assumed,
-                    FailureKind::Transport,
-                )
-            })
+        self.send(Message::Text(
+            "{\"type\":\"input_audio_buffer.commit\"}".into(),
+        ))
+        .await
     }
 
     pub async fn next_event(&mut self) -> Result<LiveEvent, ProviderFailure> {
-        if self.closed {
+        if self.is_closed() {
             return Ok(LiveEvent::Closed);
         }
         loop {
-            let Some(message) = self.socket.next().await else {
+            let Some(message) = self
+                .socket
+                .as_mut()
+                .ok_or_else(ProviderFailure::protocol)?
+                .next()
+                .await
+            else {
                 self.closed = true;
                 return Ok(LiveEvent::Closed);
             };
@@ -299,11 +335,7 @@ impl LiveSession {
                         return Ok(event);
                     }
                 }
-                Message::Ping(_) => self
-                    .socket
-                    .flush()
-                    .await
-                    .map_err(|_| ProviderFailure::protocol())?,
+                Message::Ping(_) => self.flush().await?,
                 Message::Pong(_) => {}
                 Message::Close(_) => {
                     self.closed = true;
@@ -315,11 +347,14 @@ impl LiveSession {
     }
 
     pub async fn close(&mut self) -> Result<(), ProviderFailure> {
-        if self.closed {
+        if self.is_closed() {
             return Ok(());
         }
         self.closed = true;
-        tokio::time::timeout(Duration::from_secs(10), self.socket.close(None))
+        let Some(mut socket) = self.socket.take() else {
+            return Ok(());
+        };
+        tokio::time::timeout(LIVE_WRITE_TIMEOUT, socket.close(None))
             .await
             .map_err(|_| {
                 ProviderFailure::new(

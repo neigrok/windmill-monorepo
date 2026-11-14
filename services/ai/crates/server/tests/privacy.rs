@@ -418,8 +418,38 @@ fn content_stays_out_of_logs_sentry_database_and_provider_identity() {
 }
 
 #[test]
-#[ignore = "reproduces orphan answer retention after ledger recovery"]
 fn recovered_orphan_does_not_retain_content_past_linger() {
+    if std::env::var_os("AI_ORPHAN_PROBE_CHILD").is_none() {
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "recovered_orphan_does_not_retain_content_past_linger",
+            ])
+            .env("AI_ORPHAN_PROBE_CHILD", "1")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let start = std::time::Instant::now();
+        loop {
+            if child.try_wait().unwrap().is_some() {
+                let output = child.wait_with_output().unwrap();
+                assert!(
+                    output.status.success(),
+                    "orphan regression failed: {} {}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                return;
+            }
+            if start.elapsed() >= Duration::from_secs(120) {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("orphan regression process exceeded120seconds");
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+    }
     let source =
         std::env::var("AI_TEST_DATABASE_URL").expect("privacy review requires disposable Postgres");
     let previous = std::panic::take_hook();
@@ -585,6 +615,7 @@ async fn privacy_pipeline(source: &str, probe_orphan: bool) {
         results: Results::default(),
         rates: Rates::default(),
         refusals: Refusals::default(),
+        provider_health: ai_server::telemetry::ProviderHealth::default(),
         calls: Arc::new(Semaphore::new(256)),
         sessions: Arc::new(Semaphore::new(64)),
         active: Mutex::new(HashSet::new()),
@@ -820,13 +851,23 @@ async fn privacy_pipeline(source: &str, probe_orphan: bool) {
         service
             .results
             .push(&entry, "text", json!({"delta":MARKER}), false);
+        let producer = entry.producer();
         assert!(
             tokio::spawn(async move {
+                let _producer = producer;
                 let _active = active;
                 std::panic::panic_any(MARKER.to_owned());
             })
             .await
             .is_err()
+        );
+        assert!(
+            entry.next(0, entry.attach()).0.is_none(),
+            "orphan content must be cleared before any recovery I/O"
+        );
+        assert!(
+            service.results.get(&orphan.id.to_string()).is_none(),
+            "orphan replay must end before database recovery"
         );
         service.ledger.sweep(&[], NOW + 1000).await.unwrap();
         let recovered = service.ledger.call(orphan.id).await.unwrap().unwrap();

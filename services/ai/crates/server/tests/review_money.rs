@@ -16,12 +16,51 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet},
+    io::{self, Write},
     sync::{Arc, Mutex},
     time::Duration,
 };
 use tokio::sync::Semaphore;
 use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
 use tokio_util::sync::CancellationToken;
+use tracing_subscriber::prelude::*;
+
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Write for Captured {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Captured {
+    type Writer = Self;
+    fn make_writer(&'a self) -> Self {
+        self.clone()
+    }
+}
+
+impl Captured {
+    fn calls(&self, operation: &str) -> Vec<Value> {
+        String::from_utf8(self.0.lock().unwrap().clone())
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .filter(|line| line["operation"] == operation)
+            .map(|mut line| {
+                let fields = line.as_object_mut().unwrap();
+                fields.remove("timestamp");
+                assert!(fields.remove("duration_ms").unwrap().is_u64());
+                line
+            })
+            .collect()
+    }
+}
 
 const NOW: i64 = 1_800_000_000_000;
 struct Database {
@@ -182,6 +221,7 @@ async fn service(
         results: Results::default(),
         rates: Rates::default(),
         refusals: Refusals::default(),
+        provider_health: ai_server::telemetry::ProviderHealth::default(),
         calls: Arc::new(Semaphore::new(256)),
         sessions: Arc::new(Semaphore::new(64)),
         active: Mutex::new(HashSet::new()),
@@ -519,6 +559,10 @@ async fn bound_installation_correction_counts_once_and_not_into_grant() {
 
 #[tokio::test]
 async fn unpriceable_usage_is_assumed_and_does_not_retry_forever() {
+    let logs = Captured::default();
+    let subscriber =
+        tracing_subscriber::registry().with(ai_server::telemetry::json_lines(logs.clone()));
+    let _scope = tracing::subscriber::set_default(subscriber);
     let db = Database::new().await;
     let response = concat!(
         "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"role\":\"assistant\",\"content\":[],\"usage\":{\"input_tokens\":10}}}\n\n",
@@ -563,6 +607,18 @@ async fn unpriceable_usage_is_assumed_and_does_not_retry_forever() {
         call.charged,
         call.reservation,
         service.active.lock().unwrap().len(),
+    );
+    assert_eq!(
+        logs.calls("call.text"),
+        vec![json!({
+            "level":"INFO", "message":"call ended", "operation":"call.text",
+        "product":"ai", "door":"public", "outcome":"assumed",
+            "id":call.id, "label":"other", "client":"web", "environment":"development",
+            "tier":"one", "provider":"anthropic", "requested":"small", "served":"small",
+            "stop":"completed", "state":"assumed", "reservation":call.reservation.nanos(),
+            "charged":call.reservation.nanos(), "http_status":200, "failure_kind":"None",
+            "input":10, "output":u64::MAX, "cache_write":0, "cache_write_1h":0, "cache_read":0
+        })]
     );
     provider.abort();
     drop(service);
@@ -665,4 +721,88 @@ async fn counted_route_mismatch_never_creates_a_call_or_hold() {
     assert_eq!(refused, Some(StaticCode::AccountingUnavailable));
     assert!(missing);
     assert_eq!((allowance.used.nanos(), allowance.reserved.nanos()), (0, 0));
+}
+
+#[tokio::test]
+async fn live_open_failure_and_initial_refusals_each_emit_one_static_signal() {
+    let logs = Captured::default();
+    let subscriber =
+        tracing_subscriber::registry().with(ai_server::telemetry::json_lines(logs.clone()));
+    let _scope = tracing::subscriber::set_default(subscriber);
+    let db = Database::new().await;
+    let provider_socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let provider_address = provider_socket.local_addr().unwrap();
+    let provider = tokio::spawn(async move {
+        let router =
+            Router::new().fallback(|| async { axum::http::StatusCode::SERVICE_UNAVAILABLE });
+        axum::serve(provider_socket, router).await.unwrap();
+    });
+    let service = service(
+        &db,
+        Some(format!(
+            "ws://{provider_address}/realtime?intent=transcription"
+        )),
+        None,
+    )
+    .await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let stop = CancellationToken::new();
+    let server = tokio::spawn(ai_server::listeners::serve(
+        listener,
+        public_router(service.clone()),
+        stop.clone(),
+    ));
+    for (id, code) in [
+        ("short", "invalid_request"),
+        ("live_open_failure_signal", "provider_unavailable"),
+        ("live_open_failure_signal", "conflict"),
+    ] {
+        let mut request = format!("ws://{address}/v1/calls/{id}/transcription")
+            .into_client_request()
+            .unwrap();
+        request.headers_mut().insert(
+            header::AUTHORIZATION,
+            format!("Bearer {}", pass("signals")).parse().unwrap(),
+        );
+        request.headers_mut().insert(
+            header::SEC_WEBSOCKET_PROTOCOL,
+            "wm-live.v1".parse().unwrap(),
+        );
+        let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+        let message = tokio::time::timeout(Duration::from_secs(5), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let message: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
+        assert_eq!(
+            (&message["type"], &message["code"]),
+            (&json!("failed"), &json!(code))
+        );
+    }
+    let call = service
+        .ledger
+        .lookup(
+            &identity("signals").principal,
+            &CallerId::new("live_open_failure_signal".into()).unwrap(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(call.state, CallState::Unconsumed);
+    let lines = logs.calls("call.transcription");
+    assert_eq!(
+        lines,
+        vec![
+            json!({"level":"INFO","message":"refused","operation":"call.transcription","product":"ai","door":"public","code":"invalid_request","client":"web","tier":"one","label":"other","environment":"development"}),
+            json!({"level":"INFO","message":"call ended","operation":"call.transcription","product":"ai","door":"public","outcome":"unconsumed","id":call.id,"label":"other","client":"web","environment":"development","tier":"one","provider":"openai","requested":"small","served":"small","code":"provider_unavailable","state":"unconsumed","reservation":call.reservation.nanos(),"charged":0,"http_status":503,"failure_kind":"Some(HttpStatus)"}),
+            json!({"level":"INFO","message":"refused","operation":"call.transcription","product":"ai","door":"public","code":"conflict","client":"web","tier":"one","label":"other","environment":"development"}),
+        ]
+    );
+    stop.cancel();
+    server.await.unwrap();
+    provider.abort();
+    drop(service);
+    db.finish().await;
 }

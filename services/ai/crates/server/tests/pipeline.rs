@@ -50,14 +50,8 @@ fn pass(account: &str) -> String {
 
 #[tokio::test]
 async fn detached_text_replay_and_internal_secrets_on_real_ledger() {
-    let Ok(source) = std::env::var("AI_TEST_DATABASE_URL") else {
-        assert!(
-            std::env::var("CI").is_err(),
-            "AI_TEST_DATABASE_URL must be set in CI"
-        );
-        eprintln!("Postgres pipeline skipped: AI_TEST_DATABASE_URL is unset");
-        return;
-    };
+    let source = std::env::var("AI_TEST_DATABASE_URL")
+        .expect("AI_TEST_DATABASE_URL is required for server PostgreSQL tests");
     tokio::time::timeout(std::time::Duration::from_secs(60),async {
     let admin=sqlx::PgPool::connect(&source).await.unwrap();
     let database_name=format!("ai_server_{}",uuid::Uuid::new_v4().simple());
@@ -177,6 +171,7 @@ async fn detached_text_replay_and_internal_secrets_on_real_ledger() {
         results: Results::default(),
         rates: Rates::default(),
         refusals: Refusals::default(),
+        provider_health: ai_server::telemetry::ProviderHealth::default(),
         calls: Arc::new(Semaphore::new(256)),
         sessions: Arc::new(Semaphore::new(64)),
         active: Mutex::new(HashSet::new()),

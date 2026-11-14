@@ -33,26 +33,29 @@ async fn run() -> Result<(), &'static str> {
     let tiers = std::fs::read_to_string("config/tiers.toml").map_err(|_| "tiers_unreadable")?;
     let prices = std::fs::read_to_string("config/prices.toml").map_err(|_| "prices_unreadable")?;
     let policy = Arc::new(Policy::parse(&tiers, &prices).map_err(|_| "policy_invalid")?);
-    let ledger = Ledger::connect(
-        &config.database_url,
-        policy.tiers.clone(),
-        policy.prices.clone(),
+    let ledger = ai_server::database(
+        "ledger.connect",
+        Ledger::connect(
+            &config.database_url,
+            policy.tiers.clone(),
+            policy.prices.clone(),
+        ),
     )
     .await
     .map_err(|_| "database_unavailable")?;
-    if !ledger
-        .acquire_lock()
+    if !ai_server::database("ledger.acquire_lock", ledger.acquire_lock())
         .await
         .map_err(|_| "lock_unavailable")?
     {
         return Err("already_running");
     }
+    let sweep_start = Instant::now();
     report_events(
-        ledger
-            .sweep(&[], now())
+        ai_server::database("ledger.sweep", ledger.sweep(&[], now()))
             .await
             .map_err(|_| "sweep_unavailable")?
             .events,
+        sweep_start.elapsed(),
     );
     let text = config
         .anthropic_key
@@ -104,6 +107,7 @@ async fn run() -> Result<(), &'static str> {
         results: Results::default(),
         rates: Rates::default(),
         refusals: Refusals::default(),
+        provider_health: ai_server::telemetry::ProviderHealth::default(),
         calls: Arc::new(Semaphore::new(CALLS_IN_FLIGHT_MAX)),
         sessions: Arc::new(Semaphore::new(LIVE_SESSIONS_MAX)),
         active: Mutex::new(HashSet::new()),
@@ -113,10 +117,16 @@ async fn run() -> Result<(), &'static str> {
     });
     let public = TcpListener::bind(config.public_address)
         .await
-        .map_err(|_| "public_bind")?;
+        .map_err(|_| {
+            telemetry::report_failure("listener.public_bind", "bind_failed", None);
+            "public_bind"
+        })?;
     let internal = TcpListener::bind(config.internal_address)
         .await
-        .map_err(|_| "internal_bind")?;
+        .map_err(|_| {
+            telemetry::report_failure("listener.internal_bind", "bind_failed", None);
+            "internal_bind"
+        })?;
     let stop = CancellationToken::new();
     let public_task = tokio::spawn(listeners::serve(
         public,
@@ -153,23 +163,41 @@ async fn run() -> Result<(), &'static str> {
                 _ = tick.tick() => {
                     if sweep.elapsed() >= SWEEP_EVERY {
                         sweep = Instant::now();
-                        if !maintenance_service.ledger.lock_alive().await {
-                            let _ = maintenance_service.ledger.acquire_lock().await;
+                        let ready = ai_server::ledger_ready(&maintenance_service.ledger).await;
+                        if !ready {
+                            let _ = ai_server::database(
+                                "ledger.acquire_lock",
+                                maintenance_service.ledger.acquire_lock(),
+                            ).await;
                         }
-                        if maintenance_service.ledger.lock_alive().await {
-                            let _lifecycle = maintenance_service.lifecycle.lock().await;
+                        if ready || ai_server::ledger_ready(&maintenance_service.ledger).await {
+                            let _lifecycle = match ai_server::lifecycle(&maintenance_service).await {
+                                Ok(guard) => guard,
+                                Err(_) => continue,
+                            };
                             let active = maintenance_service.active.lock()
                                 .unwrap_or_else(|error| error.into_inner())
                                 .iter().copied().collect::<Vec<_>>();
-                            match maintenance_service.ledger.sweep(&active, maintenance_service.now()).await {
-                                Ok(outcome) => report_events(outcome.events),
-                                Err(code) => telemetry::report_failure("ledger.sweep", code.as_str(), None),
+                            let sweep_start = Instant::now();
+                            if let Ok(outcome) = ai_server::database(
+                                "ledger.sweep",
+                                maintenance_service.ledger.sweep(&active, maintenance_service.now()),
+                            ).await {
+                                for event in &outcome.events {
+                                    if let ai_domain::LedgerEvent::SweepEnd { call_id, .. } = event {
+                                        maintenance_service.results.remove(&call_id.to_string());
+                                    }
+                                }
+                                report_events(outcome.events, sweep_start.elapsed());
                             }
                         }
                     }
-                    match maintenance_service.ledger.drain_events().await {
-                        Ok(events) => report_events(events),
-                        Err(code) => telemetry::report_failure("ledger.events", code.as_str(), None),
+                    let events_start = Instant::now();
+                    if let Ok(events) = ai_server::database(
+                        "ledger.drain_events",
+                        maintenance_service.ledger.drain_events(),
+                    ).await {
+                        report_events(events, events_start.elapsed());
                     }
                 }
             }
@@ -188,18 +216,9 @@ async fn run() -> Result<(), &'static str> {
     tokio::signal::ctrl_c()
         .await
         .map_err(|_| "signal_configuration")?;
-    {
-        let _lifecycle = service.lifecycle.lock().await;
-        service.drain.cancel();
-    }
     let start = Instant::now();
-    while start.elapsed() < DRAIN
-        && !service
-            .active
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_empty()
-    {
+    service.drain.cancel();
+    while start.elapsed() < DRAIN && service.calls.available_permits() < CALLS_IN_FLIGHT_MAX {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     stop.cancel();
