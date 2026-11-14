@@ -1,0 +1,105 @@
+{
+  "kid": "test-rfc8032",
+  "privateSeed": "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A",
+  "publicKey": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+  "cases": [
+    {
+      "name": "account",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"ownerGrant\":true,\"installation\":\"installation-vector\",\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsIm93bmVyR3JhbnQiOnRydWUsImluc3RhbGxhdGlvbiI6Imluc3RhbGxhdGlvbi12ZWN0b3IiLCJjbGllbnQiOiJ3ZWIifQ.p4HrJOLILyq7BcelX46VG1XqcOC3xfTd4OH1Yl_pfLoj_anjE782Mp6WXM9ZPZpHqKCDAxdQRhgD1Apy1oswBQ",
+      "now": 1800000000000,
+      "expected": "ok"
+    },
+    {
+      "name": "installation",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"installation\":\"installation-vector\"},\"client\":\"ios\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJpbnN0YWxsYXRpb24iOiJpbnN0YWxsYXRpb24tdmVjdG9yIn0sImNsaWVudCI6ImlvcyJ9.Hq9p8dNyK90I2v9RJMcvlGXReFIrSnPTiUBT4meamD0VghMeH8cYwDWPCT65jdtFwTlrbyy9CUTRlqPdHNvxCA",
+      "now": 1800000000000,
+      "expected": "ok"
+    },
+    {
+      "name": "missing",
+      "payload": null,
+      "passValue": null,
+      "now": 1800000000000,
+      "expected": "pass_missing"
+    },
+    {
+      "name": "audience",
+      "payload": "{\"aud\":\"other\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"ownerGrant\":true,\"installation\":\"installation-vector\",\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJvdGhlciIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsIm93bmVyR3JhbnQiOnRydWUsImluc3RhbGxhdGlvbiI6Imluc3RhbGxhdGlvbi12ZWN0b3IiLCJjbGllbnQiOiJ3ZWIifQ.IW1J3sTTAAh8FoifddnDFarvLaKC9qzytU7chW3ha5D0OLoBaKTV3x6QSIRB6Kr_mWItiVzDpMolVpJ7GbuJDg",
+      "now": 1800000000000,
+      "expected": "pass_audience"
+    },
+    {
+      "name": "environment",
+      "payload": "{\"aud\":\"ai\",\"env\":\"production\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"ownerGrant\":true,\"installation\":\"installation-vector\",\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6InByb2R1Y3Rpb24iLCJpYXQiOjE4MDAwMDAwMDAwMDAsImV4cCI6MTgwMDAwMDYwMDAwMCwic3ViIjp7ImFjY291bnQiOiJhY2NvdW50LXZlY3RvciJ9LCJwbGFuIjoib25lIiwib3duZXJHcmFudCI6dHJ1ZSwiaW5zdGFsbGF0aW9uIjoiaW5zdGFsbGF0aW9uLXZlY3RvciIsImNsaWVudCI6IndlYiJ9.GyhL5xewFkCQBbFccyi7N2nbcppZd7LqO8cQAEdzav-mmTJH-mnJxH9SzTvaiqTvdQGraqdIrLlAkHU2fll0Dw",
+      "now": 1800000000000,
+      "expected": "pass_audience"
+    },
+    {
+      "name": "unknown_claim",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"ownerGrant\":true,\"installation\":\"installation-vector\",\"client\":\"web\",\"secret\":\"unknown\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsIm93bmVyR3JhbnQiOnRydWUsImluc3RhbGxhdGlvbiI6Imluc3RhbGxhdGlvbi12ZWN0b3IiLCJjbGllbnQiOiJ3ZWIiLCJzZWNyZXQiOiJ1bmtub3duIn0.9G02bWBbssZdtxBjKtfREl-JEDyH1NYZX_Vwi7CEN26gd6FlVMMg2hVvS1gZaMB5iKeM-SdXA0Gt6oXxVYWPAg",
+      "now": 1800000000000,
+      "expected": "pass_malformed"
+    },
+    {
+      "name": "too_long_lifetime",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600001,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"ownerGrant\":true,\"installation\":\"installation-vector\",\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDEsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsIm93bmVyR3JhbnQiOnRydWUsImluc3RhbGxhdGlvbiI6Imluc3RhbGxhdGlvbi12ZWN0b3IiLCJjbGllbnQiOiJ3ZWIifQ.AyV9RW8-GUFPepXgVZ59lpy4BSOQP1oNa4yRxxQprvrNcOvDnt53ky4L6Chw3mtUFdFWS6O708vv-0EsEGobDw",
+      "now": 1800000000000,
+      "expected": "pass_malformed"
+    },
+    {
+      "name": "expired",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"ownerGrant\":true,\"installation\":\"installation-vector\",\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsIm93bmVyR3JhbnQiOnRydWUsImluc3RhbGxhdGlvbiI6Imluc3RhbGxhdGlvbi12ZWN0b3IiLCJjbGllbnQiOiJ3ZWIifQ.p4HrJOLILyq7BcelX46VG1XqcOC3xfTd4OH1Yl_pfLoj_anjE782Mp6WXM9ZPZpHqKCDAxdQRhgD1Apy1oswBQ",
+      "now": 1800000600000,
+      "expected": "pass_expired"
+    },
+    {
+      "name": "future",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"ownerGrant\":true,\"installation\":\"installation-vector\",\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsIm93bmVyR3JhbnQiOnRydWUsImluc3RhbGxhdGlvbiI6Imluc3RhbGxhdGlvbi12ZWN0b3IiLCJjbGllbnQiOiJ3ZWIifQ.p4HrJOLILyq7BcelX46VG1XqcOC3xfTd4OH1Yl_pfLoj_anjE782Mp6WXM9ZPZpHqKCDAxdQRhgD1Apy1oswBQ",
+      "now": 1799999939999,
+      "expected": "pass_expired"
+    },
+    {
+      "name": "invalid_owner",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"ownerGrant\":false,\"installation\":\"installation-vector\",\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsIm93bmVyR3JhbnQiOmZhbHNlLCJpbnN0YWxsYXRpb24iOiJpbnN0YWxsYXRpb24tdmVjdG9yIiwiY2xpZW50Ijoid2ViIn0.-8P1G1wDifOK9l6Yp74XqSFW_qpujZ8a7xSaF2l9Ll_Itw9OiTTEZVusc6acsrYkjS3ho084ZUpgnQR_C7OnCg",
+      "now": 1800000000000,
+      "expected": "pass_malformed"
+    },
+    {
+      "name": "null_claim",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"ownerGrant\":true,\"installation\":null,\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsIm93bmVyR3JhbnQiOnRydWUsImluc3RhbGxhdGlvbiI6bnVsbCwiY2xpZW50Ijoid2ViIn0.-pP-TTQ_3jZsaQaHe6hPEGiQ4e8sdtHblv17iYB-__oALZq4C0qZbYynKvn49hzaAc_MEl0VfachG8MaNtQoDw",
+      "now": 1800000000000,
+      "expected": "pass_malformed"
+    },
+    {
+      "name": "duplicate_claim",
+      "payload": "{\"aud\":\"ai\",\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"ownerGrant\":true,\"installation\":\"installation-vector\",\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImF1ZCI6ImFpIiwiZW52IjoiZGV2ZWxvcG1lbnQiLCJpYXQiOjE4MDAwMDAwMDAwMDAsImV4cCI6MTgwMDAwMDYwMDAwMCwic3ViIjp7ImFjY291bnQiOiJhY2NvdW50LXZlY3RvciJ9LCJwbGFuIjoib25lIiwib3duZXJHcmFudCI6dHJ1ZSwiaW5zdGFsbGF0aW9uIjoiaW5zdGFsbGF0aW9uLXZlY3RvciIsImNsaWVudCI6IndlYiJ9.I8lPlMigNQpRzIezEXTsBDkJqfdsN7uLnqME5b0sGOpkPyTE8iPZMnz1X2qJQi_l0_N8W0qFkVrDad5dznCCDA",
+      "now": 1800000000000,
+      "expected": "pass_malformed"
+    },
+    {
+      "name": "unknown_key",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"ownerGrant\":true,\"installation\":\"installation-vector\",\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.unknown.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsIm93bmVyR3JhbnQiOnRydWUsImluc3RhbGxhdGlvbiI6Imluc3RhbGxhdGlvbi12ZWN0b3IiLCJjbGllbnQiOiJ3ZWIifQ.lDVqLPz4v3_iCnB1YBKl6-vHF8CrirU3AInJt-vrYvaPpbNBgNlJX7fMVKmIlHyHI322R27kaZnr1Vvk2p7nBg",
+      "now": 1800000000000,
+      "expected": "pass_signature"
+    },
+    {
+      "name": "signature_before_payload",
+      "payload": "{not-json",
+      "passValue": "wm-pass.v1.test-rfc8032.e25vdC1qc29u.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "now": 1800000000000,
+      "expected": "pass_signature"
+    }
+  ]
+}
