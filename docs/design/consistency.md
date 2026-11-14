@@ -788,11 +788,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · Roadmap complete for a reader.** The Board shows a reader the title alone, plus the crown and a secondary Fork offer on
   phones. Proposed, awaiting the owner: *All 8 steps done* / *Fork it to walk these steps yourself.*, with Fork primary on phones
   (25.03, 15.03).
-- **Board · states at 744px.** At 744–1023px the build uses the desktop loading, load-error and empty frames, with three skeleton
-  columns side by side rather than the tablet's rail. Proposed, awaiting the owner: 15.04–15.06; load error and empty have no columns,
-  so no rail.
+- **Board · states at 744px.** At 744–1023px the build uses the desktop load-error and empty frames. The owner approved
+  15.05–15.06; both await implementation, and neither has columns or a rail.
 - **Board · New step on an empty phone roadmap.** An owner's empty roadmap reaches the Board on phone, tablet and desktop. Its New
-  step opens the composer (185:2149, 226:1055); the tablet uses the desktop empty-state structure pending 15.06.
+  step opens the composer (185:2149, 226:1055); the tablet uses the desktop empty-state structure pending implementation of approved 15.06.
 - **Board · composer and picker at 744px.** At 744–1023px the owner-approved picker is a page inside
   the 600px composer dialog: back chevron, Prerequisites, *for <draft>*, search, chips, results, Cancel
   and Apply. The implementation uses this page layout. The canon is ✅ 744 09.02–09.04: 470:23411,
@@ -831,20 +830,20 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · planted summary and welcome-back recap without WebGL2.** Both presentations belong to the scene: the planted roadmap's
   summary follows its arrival, and the welcome-back recap names progress since the previous visit. Without WebGL2 neither appears
   on the Board. No approved frame draws either Board presentation; the follow-up is to draw both on the applicable bands.
-- **Board · the topbar before a roadmap loads.** Before the load answers, or after it fails, the build knows no name, so it shows none
-  rather than *Untitled roadmap*, and it offers no Share. It shows the switch while loading, but not after a failed load: the Graph's
+- **Board · the topbar before a roadmap loads.** Before the load answers, the tablet Board shows a still name skeleton; other bands
+  show no name. After a failure the build shows no name and offers no Share. It shows the switch while loading, but not after a failed load: the Graph's
   load error veils the topbar, so the switch would lead where a pointer cannot come back from. Proposed, awaiting the owner: a still name
-  skeleton with no chevron while loading (15.08), and *Your roadmaps* with its chevron after a failed load (15.09). The switch returns to
+  skeleton with no chevron while loading outside the tablet Board (15.08), and *Your roadmaps* with its chevron after a failed load (15.09). The switch returns to
   the load error once the Graph's load error leaves the topbar reachable.
 - **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and field focus. G4 retains the phone Graph
   camera group under the row. Proposed, awaiting the owner: 25.11, 25.12.
 - **Board · reader Graph title affordance.** G8-H1 makes the selected-step title open the reader's read-only step page, with Fork
   remaining primary. The approved [04.06 bar](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=377-14343) has no visual tap
   affordance on that title. Proposed, awaiting the owner: a 44px title row with a chevron (25.10).
-- **Board · filter strip at 744.** The built strip ends at y=172; 08.13 draws it ending at y=160.
-  The tablet Activity panel keeps the drawn 12px gap beneath the strip, so on the Board it stands at
-  y=184 where [08.13](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-48638) draws
-  y=172; on the Graph, with no strip, it stands at y=172. Reconcile the strip's padding with the frame.
+- **Board · filter strip at 744.** On an owner's Board with an Add guide card, the built strip runs from y=236 to y=280,
+  with the Activity panel 12px below it at y=292. On the Graph, with no strip, the panel stands at y=172.
+  [08.13](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=527-48638) draws the strip from y=116 to y=160
+  and the panel 12px below it at y=172, but omits the existing Guide. Reconcile the Guide and filter arrangement in design.
 - **Graph and Board · last root.** A roadmap keeps a root on every view and band. While a selection takes every root, the phone Board's bulk bar and the desktop and
   tablet selection bars drop Delete with nothing saying why, and the phone's Recolor sits at half width beside an empty half. Proposed, awaiting the owner: Delete keeps
   its place, dimmed and `aria-disabled`, with *A roadmap keeps one starting step* under the count, on all three bars

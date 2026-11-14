@@ -1208,11 +1208,14 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       *journalEchoes, *journalSegmenter, *journalEmbedder, *journalCurator, *journalPages);
   lifetime.watch(journalEchoExplainer, journalEchoes, journalSegmenter, journalEmbedder, journalCurator,
                  journalPages);
-  // Without OPENAI_API_KEY the transcriber is null and the endpoint answers 503.
+  // Without OPENAI_API_KEY the transcriber is null and the endpoint answers 503. OPENAI_BASE_URL points it at another
+  // origin speaking the same protocol, a local stub in tests.
   const char* openaiKeyEnv = std::getenv("OPENAI_API_KEY");
+  const char* openaiBaseUrlEnv = std::getenv("OPENAI_BASE_URL");
   std::shared_ptr<Transcriber> journalTranscriber;
   if (openaiKeyEnv && *openaiKeyEnv) {
-    auto transport = std::make_shared<OpenAiTranscriber>(openaiKeyEnv, "gpt-4o-transcribe", aiFuse, aiSpendSink, aiCallBudget);
+    auto transport = std::make_shared<OpenAiTranscriber>(openaiKeyEnv, "gpt-4o-transcribe", aiFuse, aiSpendSink,
+        aiCallBudget, openaiBaseUrlEnv && *openaiBaseUrlEnv ? openaiBaseUrlEnv : kOpenAiBaseUrl);
     lifetime.watch(transport);
     journalTranscriber = transport;
   } else journalTranscriber = std::make_shared<NullTranscriber>();

@@ -225,10 +225,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     answered["progressError"] = typed("string");
     answered["opensRefused"] = listOf(typed("string"));
     answered["opensError"] = typed("string");
-    for (const char* partition : {"changedNodeIds", "unchangedNodeIds"}) {
-      answered[partition] = listOf(typed("string"));
-      receipt["required"].append(partition);
-    }
+    // The rows that sent a tree field, partitioned; a call of marks alone answers neither.
+    for (const char* partition : {"changedNodeIds", "unchangedNodeIds"}) answered[partition] = listOf(typed("string"));
     declaration.descriptor["outputSchema"] = receipt;
     tools.push_back(std::move(declaration));
   }

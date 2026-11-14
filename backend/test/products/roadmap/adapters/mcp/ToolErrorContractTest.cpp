@@ -624,10 +624,9 @@ TEST(mcp_a_progress_mark_on_a_node_that_opens_a_tree_names_the_node_and_what_com
   ToolResult refused = h.call("update_nodes", asUpdate(mark("idea", "complete")));
   CHECK_FALSE(refused.isError);
   CHECK_EQ(refused.outcomeCode, std::string("opens-a-tree"));
-  CHECK_EQ(body(refused), parse(R"({"applied":true,"changedNodeIds":[],"diagnosticsClean":true,"dryRun":false,
-    "introducedDiagnostics":[],"progress":[{"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}],
+  CHECK_EQ(body(refused), parse(R"({"applied":false,"dryRun":false,"progress":[{"nodeId":"idea","refused":"\"idea\" opens a tree: it is complete when that tree is and takes no mark of its own — mark the steps of the tree it opens"}],
     "progressApplied":false,"progressError":"Some requested progress marks nodes that open a tree, which take no mark of their own — each is complete when the tree it opens is; those ids are listed in progressRefused.",
-    "progressRefused":["idea"],"seq":2,"treeId":"t","unchanged":true,"unchangedNodeIds":["idea"]})"));
+    "progressRefused":["idea"],"seq":2,"treeId":"t","unchanged":true})"));
 
   ToolResult missing = h.call("update_nodes", parse(R"({"updates":[{"nodeId":"idea","status":"complete"},
                                                                     {"nodeId":"ghost","status":"complete"},

@@ -312,10 +312,10 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
       AgentStep step;
       step.tool = name;
       step.failed = result.isError;
-      // A write is an edit of the run's only when its reply says it wrote: its tree op landed — the reply does not
-      // answer `unchanged`, which an import's speaks for its graft — or a progress row recorded a mark the caller did
-      // not hold already. A refused row recorded none, and a dry run (`dryRun: true`, or `applied: false`) wrote
-      // nothing, whatever its preview says would change.
+      // A write is an edit of the run's only when its reply says it wrote: the reply does not answer `unchanged`,
+      // which speaks for the whole call, or a progress row recorded a mark the caller did not hold already. A
+      // refused row recorded none, and a dry run (`dryRun: true`, or `applied: false`) wrote nothing, whatever its
+      // preview says would change.
       const Json::Value& reply = result.payload;
       const bool previewed =
           reply.isObject() && (reply.get("dryRun", false).asBool() || !reply.get("applied", true).asBool());

@@ -718,36 +718,44 @@ public:
 };
 
 // `on` toggles configured() (the 503 path), `answers` toggles the vendor failure (the 502 path); `hold` keeps a take with the vendor so `held`/`answerHeld()` drive the in-flight caps.
+// `refusal`, when set, is the AI allowance code its admission refuses every take with before the vendor hears it.
 struct FakeTranscriber : Transcriber {
   bool on = true;
   bool answers = true;
   bool hold = false;
+  std::string refusal;
   std::string reply = "rain all morning";
   std::string lastAudio;
   std::string lastMime;
   std::string lastUser;
   int calls = 0;
-  std::vector<std::function<void(std::optional<Transcript>)>> held;
+  std::vector<std::function<void(Transcription)>> held;
 
   bool configured() const override { return on; }
   void transcribe(const UserId& user, const std::string& audio, const std::string& mimeType,
-                  std::function<void(std::optional<Transcript>)> done) override {
+                  std::function<void(Transcription)> done) override {
     lastAudio = audio;
     lastMime = mimeType;
     lastUser = user.str();
     ++calls;
+    if (!refusal.empty()) {
+      done(Transcription::refused(refusal));
+      return;
+    }
     if (hold) {
       held.push_back(std::move(done));
       return;
     }
-    done(answers ? std::optional<Transcript>{Transcript{reply}} : std::nullopt);
+    done(answer());
   }
 
   void answerHeld() {
-    std::vector<std::function<void(std::optional<Transcript>)>> waiting;
+    std::vector<std::function<void(Transcription)>> waiting;
     waiting.swap(held);
-    for (auto& done : waiting) done(answers ? std::optional<Transcript>{Transcript{reply}} : std::nullopt);
+    for (auto& done : waiting) done(answer());
   }
+
+  Transcription answer() const { return answers ? Transcription::words(reply) : Transcription::failed(); }
 };
 
 }

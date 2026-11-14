@@ -688,7 +688,8 @@ add_executable(windmill_adapters_tests
   test/products/journal/adapters/http/EchoApiTest.cpp
   test/products/journal/adapters/http/VoiceApiTest.cpp
   test/products/journal/adapters/llm/AnthropicCuratorTest.cpp
-test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
+  test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
+  test/products/journal/adapters/llm/OpenAiTranscriberTest.cpp
   test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
   test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp
   test/products/gym/sync/GymTrainingDoorTest.cpp
