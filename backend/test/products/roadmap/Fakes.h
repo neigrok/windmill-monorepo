@@ -11,6 +11,7 @@
 #include "products/roadmap/ports/TreeRepository.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -21,6 +22,19 @@
 #include <vector>
 
 namespace wm::fake {
+
+// The retries a room registry sets for its held saves, kept for a test to run in place of a clock: `timer()` is given
+// to the registry as its RetryTimer, `set` holds what it asked for in order, and running one is that retry coming due.
+struct HeldRetries {
+  struct Retry {
+    std::chrono::milliseconds delay;
+    std::function<void()> run;
+  };
+  std::vector<Retry> set;
+  std::function<void(std::chrono::milliseconds, std::function<void()>)> timer() {
+    return [this](std::chrono::milliseconds delay, std::function<void()> retry) { set.push_back({delay, std::move(retry)}); };
+  }
+};
 
 struct FakeOpLog : OpLog {
   std::map<std::string, std::vector<AppliedOp>> byTree;

@@ -33,7 +33,8 @@ struct Setup {
   FakeOpLog ops;
   FakeBus bus;
   FakeClock clock;
-  RoomRegistry rooms{trees, ops, bus};
+  HeldRetries retries;
+  RoomRegistry rooms{trees, ops, bus, retries.timer()};
   ProgressService marks{progress, trees};
   NodeEdits edits{rooms, marks, bus, clock};
   TreeRegistry registry{trees, progress, tokens, Hlc{1, 0, "genesis"}, rooms, edits, clock};
@@ -567,14 +568,14 @@ TEST(set_guide_writes_an_owned_trees_guide_leaving_no_op_row_and_an_empty_one_cl
   seed(s.trees, "t", me, 100, {spec("a", NodeColor::sky)});
 
   const auto written = s.registry.setGuide(tid("t"), me, "Work the trunk first; leaves can wait.");
-  CHECK(std::get<Seq>(written) == Seq{1});
+  CHECK(std::get<TreeRegistry::Described>(written).seq == Seq{1});
   CHECK(s.trees.byId["t"].guide ==
         (Lww<std::string>{"Work the trunk first; leaves can wait.", Hlc{1'700'000'000'000, 0, "srv"}}));
   CHECK_EQ(s.trees.byId["t"].title.value, std::string("t"));
   CHECK(s.ops.byTree.empty());
 
   const auto cleared = s.registry.setGuide(tid("t"), me, "");
-  CHECK(std::get<Seq>(cleared) == Seq{2});
+  CHECK(std::get<TreeRegistry::Described>(cleared).seq == Seq{2});
   CHECK(s.trees.byId["t"].guide == (Lww<std::string>{"", Hlc{1'700'000'000'000, 1, "srv"}}));
   CHECK(s.ops.byTree.empty());
 }
@@ -607,7 +608,7 @@ TEST(set_guide_holds_five_thousand_characters_of_any_width_and_refuses_one_more)
   std::string wide;  // 5000 three-byte characters: 15000 bytes
   for (std::size_t i = 0; i < kMaxGuideChars; ++i) wide += "\xE5\xAD\x97";
 
-  CHECK(std::holds_alternative<Seq>(s.registry.setGuide(tid("t"), me, wide)));
+  CHECK(std::holds_alternative<TreeRegistry::Described>(s.registry.setGuide(tid("t"), me, wide)));
   CHECK_EQ(s.trees.byId["t"].guide.value, wide);
 
   const auto refused = s.registry.setGuide(tid("t"), me, wide + "x");
@@ -632,7 +633,7 @@ TEST(set_guide_of_a_live_tree_flows_through_the_room_to_subscribers_and_survives
   CHECK(room.snapshot().guide == guide.value);
   CHECK(s.trees.byId["t"].guide == guide);
   CHECK_EQ(room.head(), before + 1);
-  CHECK(std::get<Seq>(written) == room.head());
+  CHECK(std::get<TreeRegistry::Described>(written).seq == room.head());
   CHECK(room.pendingOps().empty());
   CHECK(s.ops.byTree.empty());
   REQUIRE_EQ(s.bus.subgraphBroadcasts.size(), 1u);
@@ -646,7 +647,7 @@ TEST(set_guide_of_a_live_tree_flows_through_the_room_to_subscribers_and_survives
   s.rooms.evict(tid("t"));
   TreeRoom& reloaded = *s.rooms.open(tid("t"));
   CHECK(reloaded.guide() == guide);
-  CHECK(std::holds_alternative<Seq>(s.registry.setGuide(tid("t"), me, "Two branches a week.")));
+  CHECK(std::holds_alternative<TreeRegistry::Described>(s.registry.setGuide(tid("t"), me, "Two branches a week.")));
   CHECK(reloaded.guide() == (Lww<std::string>{"Two branches a week.", Hlc{1'700'000'000'000, 1, "srv"}}));
 }
 
@@ -832,8 +833,9 @@ TEST(remove_of_one_of_two_trees_that_open_each_other_takes_the_others_opening_st
 // A tree that cannot be edited part-way through keeps its steps and is named in `incomplete`; the trees edited before
 // and after it stay edited, its line is `failed`, and the removal files one Issue under the cascade's name.
 // Each tree is answered as what became of it. A save that fails once the delete applied leaves the steps gone from the
-// room, unsaved, and the room's next save keeps them gone; a tree whose room cannot be opened keeps its steps,
-// incomplete. Each writes its line, and the removal files one Issue, the first failure's.
+// room, unsaved and held: its line and the removal's own read held-unsaved, the outage is reported by the registry
+// under a request of its own, and the registry's retry keeps the steps gone with no further call. A tree whose room
+// cannot be opened keeps its steps, incomplete, on a failed line, and that failure is the removal's own Issue.
 TEST(remove_answers_each_tree_removed_unsaved_or_incomplete_as_it_is_and_files_one_issue) {
   Setup s;
   AtTheDoor door;
@@ -864,16 +866,19 @@ TEST(remove_answers_each_tree_removed_unsaved_or_incomplete_as_it_is_and_files_o
   CHECK(s.trees.byId["t_c"].state == storedC);
   CHECK_FALSE(s.rooms.isOpen(tid("t_c")));
   CHECK(door.lines == (std::vector<std::string>{"roadmap.tree.remove.cascade roadmap rest ok",
-                                                "roadmap.tree.remove.cascade roadmap rest unsaved",
+                                                "roadmap.tree.save roadmap rest failed",
+                                                "roadmap.tree.remove.cascade roadmap rest held-unsaved",
                                                 "roadmap.tree.remove.cascade roadmap rest failed",
                                                 "roadmap.tree.remove.cascade roadmap rest ok",
-                                                "roadmap.DELETE.v1.trees.id roadmap rest ok"}));
+                                                "roadmap.DELETE.v1.trees.id roadmap rest held-unsaved"}));
   CHECK(door.failures->reports ==
-        (std::vector<std::string>{std::string("roadmap.tree.remove.cascade roadmap rest unsaved ") +
-                                  typeid(std::runtime_error).name()}));
+        (std::vector<std::string>{std::string("roadmap.tree.save roadmap rest failed ") + typeid(std::runtime_error).name(),
+                                  std::string("roadmap.tree.remove.cascade roadmap rest failed ") +
+                                      typeid(std::runtime_error).name()}));
 
   savesOfBFail = false;
-  CHECK(s.rooms.persist(tid("t_b")));
+  REQUIRE_EQ(s.retries.set.size(), 1u);
+  s.retries.set[0].run();
   std::vector<std::string> standing;
   for (const NodeSpec& node : LooseGraph(s.trees.byId["t_b"].state).toTreeData(tid("t_b"), "").nodes)
     standing.push_back(node.id.str() + "<" + std::to_string(node.prerequisites.size()));
@@ -1119,6 +1124,43 @@ TEST(a_free_proposed_id_is_kept_and_one_any_row_holds_or_that_is_malformed_is_re
 
 // Another writer fills the step, or takes the proposed id, between the site and the store, as a second server process
 // can: the step's child is answered, or a minted id taken, and neither is a failure.
+// A subtree create moves its parent's stored head past whatever the parent's room has not saved, so against a parent
+// held unsaved it is refused, save-pending, with nothing written: no child row, the stored head where it was, no event,
+// one line with its code and no Issue. The refusal lifts by itself: once the registry's retry has saved the parent, the
+// same call creates.
+TEST(create_subtree_under_a_parent_held_unsaved_is_refused_save_pending_until_the_retry_saves_the_parent) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  {
+    std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    s.rooms.open(tid("t_p"))->applyCommand(createNode("mast"), 10, me);
+    s.trees.savesFail = true;
+    REQUIRE(s.rooms.persist(tid("t_p")) == Saved::held);
+  }
+  const Seq storedHead = s.trees.byId["t_p"].head;
+
+  {
+    AtTheDoor door;
+    CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1")) ==
+          (SubtreeAnswer{SubtreeRefusal::savePending}));
+    CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create roadmap internal save-pending"}));
+    CHECK(door.failures->reports.empty());
+  }
+  CHECK(s.trees.subtrees.empty());
+  CHECK_FALSE(s.trees.byId.count("t_00000000000000c1"));
+  CHECK_EQ(s.trees.byId["t_p"].head, storedHead);
+  CHECK(s.bus.subtreeBroadcasts.empty());
+
+  s.trees.savesFail = false;
+  REQUIRE_EQ(s.retries.set.size(), 1u);
+  s.retries.set[0].run();
+  const Subtree child{TreeId{"t_00000000000000c1"}, tid("t_p"), OwningStep{tid("t_p"), nid("rig")}, 1, 0};
+  CHECK(s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1")) ==
+        (SubtreeAnswer{SubtreeCreation{true, child, storedHead + 2}}));
+  CHECK(s.trees.subtrees == (std::map<std::string, Subtree>{{"t_00000000000000c1", child}}));
+}
+
 TEST(create_subtree_that_loses_its_step_or_its_id_to_another_writer_answers_without_a_failure) {
   Setup s;
   AtTheDoor door;
@@ -1512,7 +1554,7 @@ TEST(renaming_a_subtree_writes_its_owning_steps_label_in_the_parent_and_never_it
   {
     std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
     s.rooms.open(tid("t_p"))->applyCommand(DeleteNode{nid("rig")}, s.clock.nowMs(), me);
-    REQUIRE(s.rooms.persist(tid("t_p")));
+    REQUIRE(s.rooms.persist(tid("t_p")) == Saved::saved);
   }
   CHECK(s.registry.rename(child, me, "Rig again") == TreeRegistry::Renaming::notFound);
   CHECK_EQ(labelIn(s.trees, "t_p", "rig"), std::string("Rig it"));
@@ -1557,4 +1599,38 @@ TEST(a_retry_after_a_lost_commit_answer_records_the_subtree_in_the_live_parent_r
                                                StampedBy::replica, 50);
   CHECK(receipt.outcomes.at(0).refused);
   CHECK(s.bus.subtreeBroadcasts.empty());
+}
+
+// A subtree's rename is a label write of its owning step in the parent, so a save of the parent that fails holds it
+// there as any write of the parent's: the caller is told it is applied and held, the parent's room has the new label
+// at once, and the subtree's name, read off the stored rows, stays the stored label until the registry's retry lands
+// the save.
+TEST(renaming_a_subtree_whose_parent_save_fails_is_held_in_the_parent_and_its_name_reads_the_store_until_it_lands) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  const TreeId child{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1"))));
+  REQUIRE(s.registry.rename(child, me, "Rig the boat") == TreeRegistry::Renaming::renamed);
+
+  s.trees.savesFail = true;
+  CHECK(s.registry.rename(child, me, "Rig a dinghy") == TreeRegistry::Renaming::renamedUnsaved);
+  using Answer = std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission>;
+  const Answer again = s.registry.describe(child, me, {std::string("Rig a dinghy"), std::nullopt});
+  REQUIRE(std::holds_alternative<TreeRegistry::Described>(again));
+  CHECK(std::get<TreeRegistry::Described>(again).unchanged);
+  CHECK(std::get<TreeRegistry::Described>(again).saved == Saved::held);
+  {
+    std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    CHECK(s.rooms.open(tid("t_p"))->labelOf(nid("rig")) == std::optional<std::string>("Rig a dinghy"));
+  }
+  CHECK_EQ(s.trees.placeOf(child)->title, std::string("Rig the boat"));
+  CHECK_EQ(s.trees.byId[child.str()].title.value, std::string(""));
+
+  s.trees.savesFail = false;
+  REQUIRE_EQ(s.retries.set.size(), 1u);
+  s.retries.set[0].run();
+  CHECK_EQ(s.trees.placeOf(child)->title, std::string("Rig a dinghy"));
+  CHECK(s.registry.rename(child, me, "Rig a skiff") == TreeRegistry::Renaming::renamed);
 }

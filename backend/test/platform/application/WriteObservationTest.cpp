@@ -126,6 +126,42 @@ TEST(WriteObservation_a_named_failure_finishes_at_error_under_its_name_and_is_th
   CHECK(recording.reporter->issues[0].toStyledString().find(error.what()) == std::string::npos);
 }
 
+// A consequence met beneath the door settles the line of the write in progress: it completes under that outcome
+// whatever its door finishes it with, at WARN and with no Issue. A failure still names the line, and so does a door
+// that finishes it failed; a write nobody settled is finished as its door says.
+TEST(WriteObservation_a_settled_outcome_names_the_line_its_door_finishes_unless_the_write_fails) {
+  Recording recording;
+  {
+    wm::WriteObservation door("mcp.roadmap_create_node", "roadmap", "mcp");
+    wm::WriteContext context(door);
+    wm::settleCurrentWriteAs("held-unsaved");
+    door.finish();
+  }
+  {
+    wm::WriteObservation door("mcp.roadmap_create_node", "roadmap", "mcp");
+    wm::WriteContext context(door);
+    wm::settleCurrentWriteAs("held-unsaved");
+    door.fail(std::runtime_error("SECRET_TREE_TITLE"));
+  }
+  {
+    wm::WriteObservation door("mcp.roadmap_create_node", "roadmap", "mcp");
+    wm::WriteContext context(door);
+    wm::settleCurrentWriteAs("held-unsaved");
+    door.finish("failed");
+  }
+  wm::settleCurrentWriteAs("held-unsaved");
+  wm::WriteObservation unsettled("mcp.roadmap_create_node", "roadmap", "mcp");
+  unsettled.finish();
+
+  REQUIRE(recording.lines.size() == 4);
+  CHECK(recording.lines[0].outcome == "held-unsaved");
+  CHECK(recording.lines[0].severity == wm::WriteSeverity::warn);
+  CHECK(recording.lines[1].outcome == "failed");
+  CHECK(recording.lines[2].outcome == "failed");
+  CHECK(recording.lines[3].outcome == "ok");
+  CHECK(recording.reporter->issues.size() == 1);
+}
+
 TEST(WriteObservation_nested_engine_successes_emit_one_info_for_the_outer_request) {
   Recording recording;
   wm::WriteObservation request("gym.save", "gym", "rest");

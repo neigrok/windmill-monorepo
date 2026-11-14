@@ -96,6 +96,10 @@ std::variant<SubtreeCreation, SubtreeRefusal, Admission> TreeRegistry::createSub
     TreeRoom* room = rooms_.open(parent);
     if (!room) return refuse(SubtreeRefusal::noSuchTree);
     if (!room->hasNode(step)) return refuse(SubtreeRefusal::stepGone);
+    // The create stores the parent's head at the room's next seq. A room held unsaved has seqs the store does not, so
+    // the stored head would move past writes that are not stored, and a restart would leave no gap to show them lost:
+    // the create waits for the room's save, which the registry is retrying.
+    if (rooms_.standing(parent) == Saved::held) return refuse(SubtreeRefusal::savePending);
 
     const std::map<NodeId, TreeId> pointers = room->pointers();
     const auto pointer = pointers.find(step);
@@ -255,8 +259,14 @@ std::variant<Cascade, TreeRegistry::RemovalRefusal> TreeRegistry::remove(const T
         // Nodes the room holds pass every check a deletion makes, so a refusal here is a fault.
         if (std::holds_alternative<std::string>(deleted)) throw std::logic_error("a room refused to delete nodes it holds");
         const DeletedNodes& landed = std::get<DeletedNodes>(deleted);
-        if (!landed.saved) {
+        if (landed.saved == Saved::gone) {
           editing.fail(TreeRowGone{}, "unsaved");
+          cascade.unsaved.push_back(parent);
+          continue;
+        }
+        // The steps are gone from the room and every open page; the registry holds the delete and retries its save.
+        if (landed.saved == Saved::held) {
+          editing.finish(kHeldUnsaved);
           cascade.unsaved.push_back(parent);
           continue;
         }
@@ -266,8 +276,8 @@ std::variant<Cascade, TreeRegistry::RemovalRefusal> TreeRegistry::remove(const T
         cascade.removed.emplace(parent, std::move(nodes));
         editing.finish();
       } catch (const std::exception& error) {
-        // The room's head moves when its delete applies, so a failure after that is its save's: the steps are gone
-        // from the room, unsaved. Before it, nothing was applied and the steps stay.
+        // The room's head moves when its delete applies, so a failure after that leaves the steps gone from the
+        // room, unsaved. Before it, nothing was applied and the steps stay.
         const bool applied = headBefore && room->head() != *headBefore;
         editing.fail(error, applied ? "unsaved" : "failed");
         (applied ? cascade.unsaved : cascade.incomplete).push_back(parent);
@@ -315,7 +325,7 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   if (const std::optional<TreeAccess> hanging = rooms_.accessOf(tree); hanging && hanging->parent) {
     const std::variant<Described, Renaming> relabelled = relabel(*hanging->parent, caller, trimmed);
     if (const Renaming* refusal = std::get_if<Renaming>(&relabelled)) return *refusal;
-    return Renaming::renamed;
+    return std::get<Described>(relabelled).saved == Saved::held ? Renaming::renamedUnsaved : Renaming::renamed;
   }
 
   // The strand serializes the rename against the tree's socket frames, so the gates, the title op and the persist form
@@ -325,8 +335,9 @@ TreeRegistry::Renaming TreeRegistry::rename(const TreeId& tree, const UserId& ca
   if (!stored || !canRead(caller, stored->owner, stored->visibility)) return Renaming::notFound;
   if (std::optional<WriteRefusal> refusal = writeRefusalFor(caller, stored->owner))
     return *refusal == WriteRefusal::nobodysTree ? Renaming::nobodysTree : Renaming::notYours;
-  if (!rooms_.rename(tree, trimmed, clock_.nowMs(), stored->title.stamp)) return Renaming::notFound;
-  return Renaming::renamed;
+  const Saved saved = rooms_.rename(tree, trimmed, clock_.nowMs(), stored->title.stamp);
+  if (saved == Saved::gone) return Renaming::notFound;
+  return saved == Saved::held ? Renaming::renamedUnsaved : Renaming::renamed;
 }
 
 std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission> TreeRegistry::describe(
@@ -345,14 +356,17 @@ std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission> TreeReg
   }
 
   // Where a tree hangs never changes, so it is read before a strand is taken: a subtree's title is its owning step's
-  // label, and lands in its parent before its guide lands here.
+  // label, and lands in its parent before its guide lands here. The call's save is held when either room's is.
   bool relabelled = false;
+  Saved labelSaved = Saved::saved;
   if (const std::optional<TreeAccess> hanging = title ? rooms_.accessOf(tree) : std::nullopt; hanging && hanging->parent) {
     const std::variant<Described, Renaming> landed = relabel(*hanging->parent, caller, *title);
     if (const Renaming* refusal = std::get_if<Renaming>(&landed)) return *refusal;
     relabelled = !std::get<Described>(landed).unchanged;
+    labelSaved = std::get<Described>(landed).saved;
     title.reset();
   }
+  const auto heldWithTheLabel = [labelSaved](Saved saved) { return labelSaved == Saved::held ? Saved::held : saved; };
 
   // The strand serializes both against the tree's socket frames, so the gates, the one frame and the
   // persist form one uninterrupted step. Both gates read the stored access row before a room is
@@ -365,9 +379,10 @@ std::variant<TreeRegistry::Described, TreeRegistry::Renaming, Admission> TreeReg
   TreeRoom* room = rooms_.open(tree);
   if (!room) return Renaming::notFound;
   if (title && *title == room->title().value) title.reset();  // the name it already has is no rename
-  if (!title && !guide) return Described{room->head(), !relabelled};
+  if (!title && !guide) return Described{room->head(), !relabelled, heldWithTheLabel(rooms_.standing(tree))};
   const Seq seq = room->describe(title, guide, clock_.nowMs());
-  if (rooms_.persist(tree)) return Described{seq, false};
+  const Saved saved = rooms_.persist(tree);
+  if (saved != Saved::gone) return Described{seq, false, heldWithTheLabel(saved)};
   // The row went away under its live room: the room goes too, so no reader is served what it set.
   rooms_.retire(tree);
   return Renaming::notFound;
@@ -387,18 +402,18 @@ std::variant<TreeRegistry::Described, TreeRegistry::Renaming> TreeRegistry::rela
   if (!room) return Renaming::notFound;
   const std::optional<std::string> label = room->labelOf(owning.step);
   if (!label) return Renaming::notFound;
-  if (*label == title) return Described{room->head(), true};
+  if (*label == title) return Described{room->head(), true, rooms_.standing(owning.tree)};
   const Seq seq = room->applyCommand(RenameNode{owning.step, title}, clock_.nowMs(), caller);
-  if (rooms_.persist(owning.tree)) return Described{seq, false};
+  const Saved saved = rooms_.persist(owning.tree);
+  if (saved != Saved::gone) return Described{seq, false, saved};
   rooms_.retire(owning.tree);
   return Renaming::notFound;
 }
 
-std::variant<Seq, TreeRegistry::GuideRefusal, Admission> TreeRegistry::setGuide(const TreeId& tree,
-                                                                              const UserId& caller,
-                                                                              const std::string& guide) {
+std::variant<TreeRegistry::Described, TreeRegistry::GuideRefusal, Admission> TreeRegistry::setGuide(
+    const TreeId& tree, const UserId& caller, const std::string& guide) {
   const auto described = describe(tree, caller, Description{std::nullopt, guide});
-  if (const Described* landed = std::get_if<Described>(&described)) return landed->seq;
+  if (const Described* landed = std::get_if<Described>(&described)) return *landed;
   if (const Admission* refusal = std::get_if<Admission>(&described)) return *refusal;
   const Renaming refusal = std::get<Renaming>(described);
   if (refusal == Renaming::notYours) return GuideRefusal::notYours;

@@ -67,8 +67,9 @@ struct NotARoot {
   bool operator==(const NotARoot&) const = default;
 };
 
-// Why a subtree was not created. Each is expected: a line, never an Issue.
-enum class SubtreeRefusal { noSuchTree, notWriter, stepGone, depthLimit, stepOpensATree };
+// Why a subtree was not created. Each is expected: a line, never an Issue. savePending: the parent's room holds a
+// write its store has not taken, and the create would move the stored head past it; it lifts when that save lands.
+enum class SubtreeRefusal { noSuchTree, notWriter, stepGone, depthLimit, stepOpensATree, savePending };
 
 inline const char* codeOf(SubtreeRefusal refusal) {
   switch (refusal) {
@@ -77,6 +78,7 @@ inline const char* codeOf(SubtreeRefusal refusal) {
     case SubtreeRefusal::stepGone: return "step-gone";
     case SubtreeRefusal::depthLimit: return "depth-limit";
     case SubtreeRefusal::stepOpensATree: return "step-opens-a-tree";
+    case SubtreeRefusal::savePending: return "save-pending";
   }
   return "no-such-tree";
 }

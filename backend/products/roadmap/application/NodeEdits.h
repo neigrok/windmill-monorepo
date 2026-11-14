@@ -19,13 +19,14 @@ namespace wm {
 enum class DanglingEdges { kept, removed };
 
 // What a deletion came to: the seq it took, the dangling edges that went with the nodes, the caller's marks on the nodes
-// that were cleared, and whether the room's save kept it. Unsaved, the tree's row was gone when the room saved — an
-// erasure or a removal racing it — so the room was retired, as every write retires a room whose row went away.
+// that were cleared, and what the room's save came to (Saved). Gone, the tree's row was gone when the room saved — an
+// erasure or a removal racing it — so the room was retired, as every write retires a room whose row went away. Held,
+// the room keeps the delete and the registry is retrying its save.
 struct DeletedNodes {
   Seq seq = 0;
   std::size_t edges = 0;
   std::size_t marks = 0;
-  bool saved = true;
+  Saved saved = Saved::saved;
 };
 
 // The edits a server door makes to a tree's nodes for its caller beside the commands the room joins: the marks it sets
@@ -56,8 +57,8 @@ public:
   // is never seen between them: each command checked first, a refusal answered with nothing written; then the actor's
   // marks on the nodes cleared, before the delete lands, so a progress store that fails fails the deletion with nothing
   // deleted and a retry does the whole of it; then the op applied, broadcast to the tree's open pages, and saved. Called
-  // under the tree's strand with its room open. Answered unsaved, the room is retired and the caller holds none. A save
-  // that throws does so after the op applied: the room's head has moved, and the room's next save lands the delete.
+  // under the tree's strand with its room open. Answered gone, the room is retired and the caller holds none. A save
+  // that fails is answered held: the op applied, the room's head has moved, and the registry's retry lands the delete.
   std::variant<DeletedNodes, std::string> deleteNodes(TreeRoom& room, const TreeId& tree,
                                                       const std::vector<NodeId>& nodes, DanglingEdges edges,
                                                       const UserId& actor);

@@ -38,7 +38,8 @@ struct Harness {
   std::shared_ptr<FakeClock> clock = std::make_shared<FakeClock>();
   FakeAuthRepository authRepo;
   FakeEmail email;
-  std::shared_ptr<RoomRegistry> rooms = std::make_shared<RoomRegistry>(*trees, *ops, bus);
+  HeldRetries retries;
+  std::shared_ptr<RoomRegistry> rooms = std::make_shared<RoomRegistry>(*trees, *ops, bus, retries.timer());
   FakeOAuthRepository oauthRepo;
   OAuthService oauth{oauthRepo, tokens, *clock};
   FakeAccountFootprint footprint;
@@ -1615,6 +1616,30 @@ TEST(put_over_a_live_room_saves_at_the_rooms_head_so_no_op_row_is_left_past_it) 
   REQUIRE_EQ(h.ops->byTree["t_00000000000000cc"].size(), 1u);   // the flush landed the row behind the save
   CHECK_EQ(h.ops->byTree["t_00000000000000cc"][0].seq, Seq{1});
   CHECK(h.ops->since(TreeId{"t_00000000000000cc"}, h.trees->byId["t_00000000000000cc"].head).empty());
+}
+
+// A PUT closes the tree's live room and writes the row beneath it, so it does not land while that room holds an edit
+// the row lacks: with the room's save held the PUT is refused 503 `save-pending` with nothing written and the room
+// left open, and once the registry's retry has stored the edit it lands.
+TEST(put_over_a_live_room_whose_save_is_held_is_refused_until_the_save_lands) {
+  Harness h;
+  UserId me = h.signIn("s-me");
+  h.seed("t_00000000000000ce", "Old name", me, Visibility::unlisted);
+  editInTheLiveRoom(h, "t_00000000000000ce", "socket-step", me);
+  h.trees->savesFail = true;
+
+  drogon::HttpResponsePtr refused = sendPut(h.api, "s-me", "t_00000000000000ce", document("New name", "mast"));
+  CHECK_EQ(refused->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK_EQ(bodyOf(refused), parse(R"({"error":"an earlier edit of this tree is still being saved — try again","code":"save-pending"})"));
+  CHECK(h.rooms->isOpen(TreeId{"t_00000000000000ce"}));
+  CHECK_EQ(h.trees->byId["t_00000000000000ce"].title.value, std::string("Old name"));
+
+  h.trees->savesFail = false;
+  REQUIRE_EQ(h.retries.set.size(), 1u);
+  h.retries.set[0].run();
+  CHECK_EQ(sendPut(h.api, "s-me", "t_00000000000000ce", document("New name", "mast"))->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(h.trees->byId["t_00000000000000ce"].title.value, std::string("New name"));
+  CHECK(LooseGraph(h.trees->byId["t_00000000000000ce"].state).hasNode(NodeId{"socket-step"}));
 }
 
 TEST(put_leaves_the_guide_alone_and_answers_with_the_one_the_tree_holds) {

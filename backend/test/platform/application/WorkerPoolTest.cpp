@@ -475,6 +475,32 @@ TEST(heartbeat_idle_tick_and_queued_read_complete_without_write_logs) {
   CHECK(completions.empty());
 }
 
+// Work given a delay runs once on the heartbeat's loop, on a blocking thread and observed as background work is, and
+// work given once the heartbeat has stopped never runs.
+TEST(heartbeat_runs_delayed_work_on_a_blocking_thread_under_its_own_line_and_none_given_after_it_stopped) {
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  std::promise<bool> seen;
+  std::future<bool> blocking = seen.get_future();
+  bool late = false;
+  {
+    Heartbeat heartbeat{"delayed"};
+    heartbeat.after(std::chrono::milliseconds{1}, [&] {
+      markCurrentWrite();
+      seen.set_value(BlockingThread::here());
+    });
+    REQUIRE(blocking.wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+    CHECK(blocking.get());
+    heartbeat.stop();
+    heartbeat.after(std::chrono::milliseconds{0}, [&] { late = true; });
+  }
+  installWriteSink({});
+  CHECK_FALSE(late);
+  REQUIRE_EQ(completions.size(), 1u);
+  CHECK_EQ(completions[0].operation, std::string("background.delayed"));
+  CHECK_EQ(completions[0].outcome, std::string("ok"));
+}
+
 TEST(heartbeat_drains_queued_mutations_before_explicit_shutdown) {
   std::vector<WriteCompletion> completions;
   installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });

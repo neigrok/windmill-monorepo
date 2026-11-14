@@ -70,7 +70,8 @@ struct Harness {
   FakeTreeRepository trees{progressRepo};
   FakeOpLog ops;
   WsPresenceBus bus;
-  RoomRegistry rooms{trees, ops, bus};
+  HeldRetries retries;
+  RoomRegistry rooms{trees, ops, bus, retries.timer()};
   ProgressService progress{progressRepo, trees};
   FakeAuthRepository authRepo;
   FakeEmail email;
@@ -1845,36 +1846,48 @@ TEST(ws_a_frame_onto_a_tree_whose_row_went_away_under_its_live_room_answers_no_s
   CHECK_EQ(rejectCode(conn->sent.back()), std::string("no-such-tree"));
 }
 
-TEST(ws_a_frame_whose_save_throws_answers_its_author_server_error_and_files_one_issue) {
+// A frame whose save fails has landed in the room and been sent to every subscriber, so it is not refused: its author
+// is acked with the seq it took, as unsaved, and need not send it again. The frame's line reads held-unsaved, the
+// failure is one Issue under the save's own name with nothing of the frame in any line, and the registry's retry
+// stores the frame with no further frame from anyone. The frame sent again meanwhile lands nothing and is acked
+// without a seq, still as unsaved: what the room holds is not saved.
+TEST(ws_a_frame_whose_save_fails_is_acked_with_its_seq_as_unsaved_and_the_retry_stores_it) {
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");
   h.seed("t_priv", owner, Visibility::private_);
   auto conn = std::make_shared<FakeSocket>();
+  auto watcher = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-owner"), conn);
+  h.collab.onOpen(h.upgrade("s-owner"), watcher);
+  h.collab.onMessage(watcher, subscribeFrame("t_priv"));
   h.trees.savesFail = true;
 
   {
     Observed observed;
-    h.collab.onMessage(conn, guideFrame("t_priv", "f-refused", "Ask Maren before the third branch", "100:0:client"));
+    h.collab.onMessage(conn, guideFrame("t_priv", "f-held", "Ask Maren before the third branch", "100:0:client"));
 
     REQUIRE_EQ(conn->sent.size(), 1u);
-    const Json::Value reject = parse(conn->sent[0]);
-    CHECK_EQ(reject["t"].asString(), std::string("reject"));
-    CHECK_EQ(reject["code"].asString(), std::string("server-error"));
-    CHECK_EQ(reject["reason"].asString(), std::string("the server could not save this edit"));
-    CHECK_EQ(reject["frameId"].asString(), std::string("f-refused"));
-    CHECK_EQ(reject["treeId"].asString(), std::string("t_priv"));
-    REQUIRE_EQ(observed.completions.size(), 1u);
-    CHECK_EQ(observed.completions[0].operation, std::string("roadmap.ws.subgraph"));
-    CHECK_EQ(observed.completions[0].outcome, std::string("failed"));
-    CHECK_EQ(observed.issues, std::vector<std::string>{"roadmap.ws.subgraph"});
+    CHECK_EQ(parse(conn->sent[0]), parse(R"({"t":"subgraphAck","treeId":"t_priv","frameId":"f-held","seq":1,"unsaved":true})"));
+    CHECK_EQ(lastFrameOfType(*watcher, "subgraph")["guide"]["v"].asString(), std::string("Ask Maren before the third branch"));
+    std::vector<std::string> told;
+    for (const WriteCompletion& line : observed.completions) told.push_back(line.operation + " " + line.door + " " + line.outcome);
+    CHECK_EQ(told, (std::vector<std::string>{"roadmap.tree.save websocket failed", "roadmap.ws.subgraph websocket held-unsaved"}));
+    CHECK_EQ(observed.issues, std::vector<std::string>{"roadmap.tree.save"});
     for (const std::string& line : observed.lines) {
-      CHECK(line.find("malformed") == std::string::npos);
       CHECK(line.find("Ask Maren") == std::string::npos);
       CHECK(line.find("the write was refused") == std::string::npos);
     }
   }
   CHECK(h.trees.byId["t_priv"].guide == Lww<std::string>{});
+
+  h.collab.onMessage(conn, guideFrame("t_priv", "f-held", "Ask Maren before the third branch", "100:0:client"));
+  CHECK_EQ(parse(conn->sent.back()), parse(R"({"t":"subgraphAck","treeId":"t_priv","frameId":"f-held","unsaved":true})"));
+
+  h.trees.savesFail = false;
+  REQUIRE_EQ(h.retries.set.size(), 1u);
+  h.retries.set[0].run();
+  CHECK_EQ(h.trees.byId["t_priv"].guide.value, std::string("Ask Maren before the third branch"));
+  CHECK_EQ(h.trees.byId["t_priv"].head, static_cast<Seq>(1));
 }
 
 TEST(ws_concurrent_opens_frames_converge_on_the_later_stamp_and_a_frame_without_the_field_clears_nothing) {

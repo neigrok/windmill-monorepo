@@ -210,7 +210,7 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 
 | | Tool | Effect |
 | --- | --- | --- |
-| registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own; `list_trees` lists your roots, a subtree counting in its parent as the step that owns it; `delete_tree` also deletes the steps of your other trees that open it, each tree's as `delete_node` with `prune: true` deletes nodes (`NodeEdits::deleteNodes`), and answers `{deleted, id, removed: [{treeId, nodeIds}]}` with what became of them per tree, in tree id order: `removed`, deleted and saved; `unsaved: [treeId]`, deleted in the tree's room and sent to its pages but not saved — gone now and kept gone by the room's next save, back without your marks should the server restart before it; `incomplete: [treeId]`, nothing deleted, the steps kept pointing nowhere, to clear or delete by hand. The last two are present only when they name a tree. When the steps that open it cannot be read, nothing is removed and the call is refused under `cascade-unavailable`, to try again (`SPEC.md`, `DELETE /v1/trees/{id}`); `create_tree` plants the legend sent in `kinds` (1–6 of `import_subgraph`'s kind items, each id and hue once, replacing the default Build/Learn/Milestone whole and in order; `[]`, a repeated id or hue, or seven refuse the call and plant nothing) and answers `{treeId, url, kinds: [{id, hue, label}]}`, the legend planted; each `list_trees` row carries the tree's `url` too (see `url`); a node later written with neither `color` nor `kind` is terracotta, so a legend with no terracotta kind leaves such a node under no kind |
+| registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own; `list_trees` lists your roots, a subtree counting in its parent as the step that owns it; `delete_tree` also deletes the steps of your other trees that open it, each tree's as `delete_node` with `prune: true` deletes nodes (`NodeEdits::deleteNodes`), and answers `{deleted, id, removed: [{treeId, nodeIds}]}` with what became of them per tree, in tree id order: `removed`, deleted and saved; `unsaved: [treeId]`, deleted in the tree's room and sent to its pages but not saved — gone now and kept gone by the save the server retries, back without your marks should it restart first; `incomplete: [treeId]`, nothing deleted, the steps kept pointing nowhere, to clear or delete by hand. The last two are present only when they name a tree. When the steps that open it cannot be read, nothing is removed and the call is refused under `cascade-unavailable`, to try again (`SPEC.md`, `DELETE /v1/trees/{id}`); `create_tree` plants the legend sent in `kinds` (1–6 of `import_subgraph`'s kind items, each id and hue once, replacing the default Build/Learn/Milestone whole and in order; `[]`, a repeated id or hue, or seven refuse the call and plant nothing) and answers `{treeId, url, kinds: [{id, hue, label}]}`, the legend planted; each `list_trees` row carries the tree's `url` too (see `url`); a node later written with neither `color` nor `kind` is terracotta, so a legend with no terracotta kind leaves such a node under no kind |
 | registry | `update_tree` | rename the tree with `title`, set its guide with `guide`, or both — at least one, each set only when sent; on a root both land as one frame at one seq or neither does (`TreeRegistry::describe`). A subtree's title is its owning step's label, written in its parent first and its guide after, in its own room, so a guide that fails leaves the label landed (see "A step that owns a subtree"). The title follows `rename`'s rule (`TreeRegistry::titleFrom`: trimmed, cut to 200 characters, a blank refused as "a tree always has a name"), and one equal to the name the tree has is not written and answers `unchanged: true` with the head; a guide is written whenever it is sent, even as the tree holds it, which is also how a fork's owner makes an inherited guide theirs; the guide is a plain-text note on what the tree is and how to work it, at most 5000 characters, and `""` or only whitespace clears it. Owner only; answers `{applied, seq}`, `seq` the head after the call, and leaves no op row; an open page receives the frame with the new title or guide |
 | read | `get_tree` | title + `url` (see `url`) + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + `guides` on the first page (see `guides`) + nodes (label, icon, color, `kind`, description, links, `opens`, `url`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
 | read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
@@ -299,6 +299,27 @@ already holds (see `update_nodes`).
 A tend counts a write as an edit only when its reply says it wrote: its tree op landed (the reply
 does not answer `unchanged`), or a progress row recorded a mark the caller did not hold already. A
 refused row recorded no mark, and a dry run (`dryRun: true`, or `applied: false`) wrote nothing.
+
+## A save that fails
+
+An edit lands in the tree's room and is sent to every open page before it is saved, so a save that
+fails does not undo it and is not an error. The receipt is the usual one with `saved: false` and
+`saveError`: the change is applied and on every open page, saving it failed and is being retried,
+sending it again is not needed, and a server restart before the save succeeds would lose it, so
+read the record again later if it matters. `update_nodes` and `change_edges` declare both keys in
+their `outputSchema`. The server holds the room and retries the save by itself (`SPEC.md`,
+Runtime), so no further call is needed; the same call sent again meanwhile changes nothing, tries no
+save, and answers `unchanged: true` beside `saved: false`, since what the room holds is not saved.
+The call's write line reads `held-unsaved`, and the outage is reported by the registry as
+`roadmap.tree.save`. `delete_tree` says the same of another tree's steps by listing the tree
+under `unsaved`.
+
+A call that also writes marks saves them apart from the tree, and its receipt tells the two apart.
+`update_nodes` with a held tree save and marks that landed answers `saved: false` beside its
+`progress` rows; with a tree saved and marks that failed, `progressApplied: false` and
+`progressError`; when one outage fails both, all four. `delete_node` clears the caller's marks
+before the delete lands, so a delete whose save is held answers `saved: false` with those marks
+already cleared in the store.
 
 ## `status`, `seedStatus`, `state`, `summary`
 
@@ -467,7 +488,9 @@ A node may point at another tree: `opens` holds that tree's id.
   is unfinished, and the step takes no mark. `list_trees` lists roots alone. `update_tree` with a
   `title` aimed at a subtree renames its owning step in the parent, the subtree's name, and answers
   the subtree's own `seq`, its head when only the title moved; a `guide` sent beside it lands in the
-  subtree's own room after it, so a guide that fails leaves the new name in place. `get_tree` names a
+  subtree's own room after it, so a guide that fails leaves the new name in place. A rename whose save
+  in the parent is held answers `saved: false` (A save that fails); until that save lands, every read
+  of the subtree's name answers the label the store holds, the name before. `get_tree` names a
   subtree by that label, its `title` and its own entry among `guides` alike, to every reader, and a
   read of the name that fails fails the call; its `guides` above a subtree are its ancestors', up its
   parents, and the trees above its root.
@@ -534,7 +557,7 @@ A node may point at another tree: `opens` holds that tree's id.
   row that names only the tree the node already opens writes nothing and answers `unchanged: true`
   (An edit that changes nothing), and one that changes the pointer is a change there and is
   followed here (`changedPart`, `pointersSetSince`).
-- **The receipt's follow is short.** The edit is durable before it, and the reply waits on that
+- **The receipt's follow is short.** The edit is applied before it, and the reply waits on that
   read alone, so the read is given 750 ms of its own (`kReceiptFollowBudget`; a statement limit
   for that one transaction, `TreeRepository::openedFrom`), not the pool's 5 s. Past it the receipt
   carries the graph's diagnostics and `pointerDiagnosticsUnavailable: true`, and the follow

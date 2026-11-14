@@ -92,8 +92,9 @@ public:
 
   // trim → refuse a blank, text that is not valid UTF-8 and a NUL → read gate → owner check → apply through
   // RoomRegistry. A tree whose row went away under its live room answers notFound. A subtree's title is its owning
-  // step's label, so it lands there (relabel).
-  enum class Renaming { renamed, notFound, notYours, nobodysTree, blankTitle, malformedTitle, nulInTitle };
+  // step's label, so it lands there (relabel). renamedUnsaved: the name is the room's and every open page's — the
+  // parent's, for a subtree — and the registry holds its save and is retrying it (Saved::held).
+  enum class Renaming { renamed, renamedUnsaved, notFound, notYours, nobodysTree, blankTitle, malformedTitle, nulInTitle };
   Renaming rename(const TreeId& tree, const UserId& caller, const std::string& title);
   // The title a rename lands: trimmed, cut to kMaxTitleChars, or the refusal of a blank, malformed or NUL-holding one.
   static std::variant<std::string, Renaming> titleFrom(const std::string& title);
@@ -101,13 +102,13 @@ public:
   static const char* sentenceOf(Renaming refusal);
 
   // A title, a guide, or both, each set only when sent: rename's title rule and the guide's admission judge both
-  // before either lands. A root's: read gate → owner check → one frame through the tree's room, durable before it
+  // before either lands. A root's: read gate → owner check → one frame through the tree's room, saved before it
   // answers the seq it took, so the two land together or neither does. A title equal to the one the tree has is left
   // out, and a call left with nothing to set lands nothing and answers the head, `unchanged`. A tree whose row went
   // away under its live room answers notFound. A subtree's title is its owning step's label: it lands first, in its
   // parent's room (relabel), and the guide after it, in its own, so a guide that fails then leaves the label landed.
-  // The seq answered is of the subtree's own stream, its head when only the title moved, and `unchanged` says neither
-  // moved.
+  // The seq answered is of the subtree's own stream, its head when only the title moved, `unchanged` says neither
+  // moved, and `saved` is held when either room's save is.
   struct Description {
     std::optional<std::string> title;
     std::optional<std::string> guide;
@@ -115,16 +116,17 @@ public:
   struct Described {
     Seq seq = 0;
     bool unchanged = false;
+    Saved saved = Saved::saved;  // held: set, sent to every open page, and the registry is retrying its save
   };
   std::variant<Described, Renaming, Admission> describe(const TreeId& tree, const UserId& caller,
                                                         const Description& sent);
 
-  // describe with a guide alone: the seq the guide took. An empty guide clears it, and so does one of
+  // describe with a guide alone: what the guide came to. An empty guide clears it, and so does one of
   // only whitespace. A tree the caller cannot read, or whose row went away under its live room,
   // answers notFound; a guide past kMaxGuideChars, not valid UTF-8 or carrying a NUL answers its
   // Admission.
   enum class GuideRefusal { notFound, notYours, nobodysTree };
-  std::variant<Seq, GuideRefusal, Admission> setGuide(const TreeId& tree, const UserId& caller, const std::string& guide);
+  std::variant<Described, GuideRefusal, Admission> setGuide(const TreeId& tree, const UserId& caller, const std::string& guide);
 
   // read gate → owner check → a root's alone, a subtree answering NotARoot with its owning step → set read visibility
   // through RoomRegistry: the durable column write plus the live access of every room of the root's trees, so a
@@ -136,9 +138,10 @@ public:
 private:
   // A subtree's title written as its owning step's label (SPEC.md, Model, Subtrees), as an ordinary label write of that
   // step under the parent's strand: read gate → owner check, on the parent, whose access is the subtree's → the step
-  // stands → one RenameNode through the parent's room, durable before it answers the seq it took in the parent's
-  // stream. A label that already is the title lands nothing and answers the parent's head, `unchanged`; a step gone from
-  // its parent, or a parent whose row went away under its live room, answers notFound.
+  // stands → one RenameNode through the parent's room, saved before it answers the seq it took in the parent's stream,
+  // or held there and retried as any write of the parent's is (Saved::held). A label that already is the title lands
+  // nothing and answers the parent's head, `unchanged`, with the parent room's standing; a step gone from its parent, or
+  // a parent whose row went away under its live room, answers notFound.
   std::variant<Described, Renaming> relabel(const OwningStep& owning, const UserId& caller, const std::string& title);
 
   TreeRepository& trees_;

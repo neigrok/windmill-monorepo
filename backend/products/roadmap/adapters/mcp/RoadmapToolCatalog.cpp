@@ -322,6 +322,11 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     properties["applied"] = boolean("True after the batch has been accepted, including a no-op retry.");
     properties["dryRun"] = boolean("True when the listed changes are a preview.");
     properties["unchanged"] = boolean("True when the batch changes nothing, so it takes no seq. Absent otherwise.");
+    properties["saved"] = boolean("False when what the tree holds is applied and on every open page but not saved: "
+                                  "saving failed and the server is retrying, so sending the batch again is not "
+                                  "needed, and a server restart before the save succeeds would lose it. Also "
+                                  "beside `unchanged` while that lasts. Absent when it is saved.");
+    properties["saveError"] = str("One sentence saying so, when saved is false.");
     properties["diagnosticsClean"] = boolean("Whether the graph after an applied batch has no structural errors.");
     properties["introducedDiagnostics"] = strArray(
         nodes ? "New structural errors after an applied batch, then each loop of trees a pointer it set closed: "
@@ -405,8 +410,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
         "be read. Only the owner may delete; someone else's tree is refused. Deleting a tree also deletes "
         "the steps in your other trees that open it, with their edges and your marks on them, and the "
         "reply says what became of them per tree. `removed`, one {treeId, nodeIds} per tree: deleted and "
-        "saved. `unsaved`, tree ids: deleted, but not yet saved — gone now and kept gone by that tree's "
-        "next save, back without your marks should the server restart first. `incomplete`, tree ids: "
+        "saved. `unsaved`, tree ids: deleted, but not yet saved — gone now, and the server is retrying "
+        "the save; back without your marks should it restart first. `incomplete`, tree ids: "
         "nothing deleted there; each such step now points nowhere, so clear its `opens` or delete it. "
         "The last two appear only when they name a tree. If the steps that open it cannot be read, "
         "nothing is deleted and the call says so; try again.",

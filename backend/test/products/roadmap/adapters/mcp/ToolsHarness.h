@@ -29,7 +29,8 @@ struct Harness {
   fake::FakeBus bus;
   StepClock clock;
   fake::FakeTokens tokens;
-  RoomRegistry registry{trees, ops, bus};
+  fake::HeldRetries retries;
+  RoomRegistry registry{trees, ops, bus, retries.timer()};
   ProgressService progress{progressRepo, trees};
   NodeEdits edits{registry, progress, bus, clock};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/Crdt.h"
@@ -126,6 +128,15 @@ public:
   // A stamp issued for this tree that the loaded state does not show — the greatest among the op rows past the
   // snapshot, when it is behind its log: the next stamp the room mints is past it.
   void observe(const Hlc& issued) { clock_.observe(issued); }
+  // The head taken past the last op row of a log the snapshot is behind: the room then has that head to save.
+  void takeHeadPast(Seq lastRow) {
+    if (lastRow <= head_) return;
+    head_ = lastRow;
+    unsaved_ = true;
+  }
+  // Whether the room holds anything its store does not: a write since the last save, or an op row still to land. A
+  // subtree created under one of its steps is stored by its own transaction, the head with it, and leaves nothing.
+  bool unsaved() const { return unsaved_ || !pendingOps_.empty(); }
 
   // wm::validate over this room's live state: a malformed or over-cap field, a node edit naming no
   // present node, or a legend rule. Server-driven undo/redo bypasses it.
@@ -245,6 +256,7 @@ private:
   std::vector<AppliedOp> pendingOps_;
   PresenceBus& bus_;
   HlcClock clock_;
+  bool unsaved_ = false;  // a write has landed since the store last took the room
   std::set<NodeId> dirtyNodes_;
   std::set<Edge> dirtyEdges_;
   std::set<KindId> dirtyKinds_;
