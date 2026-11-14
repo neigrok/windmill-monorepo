@@ -250,6 +250,8 @@ only what a call cannot be formed without, by four rules that `ToolErrorContract
   a caller needs before its first call to avoid damage: what `import_subgraph` removes, that
   `delete_tree` cannot be undone, that `delete_node` clears the caller's marks and hides a subtree,
   that `update_kind` repaints nodes, and that a mark on a node that opens a tree is not recorded.
+  One refusal is named too, because a first call runs into it: `create_node` and the `nodes` of
+  `import_subgraph` say a new node names a `kind` or `color` when the legend has no terracotta kind.
 - **A parameter** is described only where its name, type and enum do not say what to send, in one
   clause, and reads the same in every tool that takes it: each parameter two tools share is one
   function in the catalogue (`kind()`, `opens()`, `fields()`, `expectedSeq()`, `status()`). A

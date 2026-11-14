@@ -1084,6 +1084,21 @@ TEST(mcp_the_catalog_says_a_node_that_opens_a_tree_takes_no_mark_wherever_a_mark
            mark);
 }
 
+// Two facts a first call cannot be formed without, which an agent working from the catalogue alone got wrong when
+// they were left to the refusal and the reply: a new node's hue where no kind wears terracotta, and how an append joins.
+TEST(mcp_the_catalog_says_what_a_new_node_names_and_how_an_append_joins) {
+  Harness h;
+  const Json::Value catalog = h.tools.listTools(h.actor);
+  CHECK((*toolNamed(catalog, "create_node"))["description"].asString().find(
+            "Name a `kind` or `color` when the legend has no terracotta kind.") != std::string::npos);
+  const Json::Value& import = (*toolNamed(catalog, "import_subgraph"))["inputSchema"]["properties"];
+  CHECK_EQ(import["nodes"]["description"].asString(),
+           std::string("Nodes as get_tree returns them; a new one names a `kind` or `color` when the legend has no "
+                       "terracotta kind."));
+  const Json::Value& row = (*toolNamed(catalog, "update_nodes"))["inputSchema"]["properties"]["updates"]["items"]["properties"];
+  CHECK_EQ(row["appendDescription"], parse(R"({"type":"string","description":"Text added after a blank line."})"));
+}
+
 TEST(mcp_an_opens_that_is_no_tree_id_is_refused_by_its_path_and_a_null_is_absent_outside_a_patch_row) {
   Harness h;
   h.call("create_node", node("a", "A"));

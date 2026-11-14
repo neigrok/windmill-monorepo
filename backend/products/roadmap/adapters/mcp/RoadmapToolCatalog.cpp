@@ -197,7 +197,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     row["label"] = typed("string");
     row["icon"] = icon();
     row["description"] = typed("string");
-    row["appendDescription"] = typed("string");
+    row["appendDescription"] = typed("string", "Text added after a blank line.");
     row["color"] = oneOf(kHues);
     row["kind"] = kind();
     row["links"] = links();
@@ -345,8 +345,8 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["links"] = links();
     p["opens"] = opens();
     tools.push_back(treeTool("create_node", Access::write,
-        "Add one node to a roadmap. For many nodes, or nodes with edges among them, import_subgraph does it in one "
-        "call.",
+        "Add one node to a roadmap. Name a `kind` or `color` when the legend has no terracotta kind. For many nodes, "
+        "or nodes with edges among them, import_subgraph does it in one call.",
         p, {"label"}));
   }
   {
@@ -409,7 +409,9 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     mark["status"] = status();
     mark["outOfOrder"] = outOfOrder();
     Json::Value p(Json::objectValue);
-    p["nodes"] = listOf(object(node, {"id"}), "Nodes as get_tree returns them.");
+    p["nodes"] = listOf(
+        object(node, {"id"}),
+        "Nodes as get_tree returns them; a new one names a `kind` or `color` when the legend has no terracotta kind.");
     p["kinds"] = legendKinds();
     p["progress"] = listOf(object(mark, {"nodeId", "status"}));
     p["prerequisiteMode"] = oneOf(
