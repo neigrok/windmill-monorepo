@@ -24,7 +24,7 @@ fn every_app_store_vector_passes() {
         .collect();
     vectors.sort();
     assert!(
-        vectors.len() >= 70,
+        vectors.len() >= 100,
         "{} holds {} vectors, fewer than the ones written",
         directory.display(),
         vectors.len()
