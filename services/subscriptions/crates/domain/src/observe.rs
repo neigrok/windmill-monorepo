@@ -210,10 +210,19 @@ pub fn observe(
         "observe was handed the ledger of another lineage"
     );
 
-    let status = status.charging_only_while_renewing();
-    let supersedes = held
+    let cancellation = held
         .as_ref()
-        .is_none_or(|held| (observed_at, &status) > (held.observed_at, &held.status));
+        .and_then(Cancellation::held_by)
+        .max(Cancellation::stated_by(observed_at, &status.renewal));
+    let cancel_requested_at = cancellation.and_then(|cancellation| cancellation.requested_at);
+    let follows_cancellation = |mut status: Status| {
+        status.renewal.cancel_requested_at = cancel_requested_at;
+        status
+    };
+    let status = follows_cancellation(status.charging_only_while_renewing());
+    let supersedes = held.as_ref().is_none_or(|held| {
+        (observed_at, &status) > (held.observed_at, &follows_cancellation(held.status.clone()))
+    });
     let bought_again_at = held
         .as_ref()
         .filter(|held| supersedes && status.is_bought_again_after(&held.status))
@@ -225,14 +234,20 @@ pub fn observe(
             binding: None,
             status,
             observed_at,
+            cancellation_observed_at: None,
         },
         Some(held) if supersedes => Subscription {
             status,
             observed_at,
             ..held
         },
-        Some(held) => held,
+        Some(held) => Subscription {
+            status: follows_cancellation(held.status.clone()),
+            ..held
+        },
     };
+    subscription.cancellation_observed_at =
+        cancellation.map(|cancellation| cancellation.observed_at);
 
     let held_binding = held.as_ref().and_then(|held| held.binding.clone());
     subscription.binding = bind(
@@ -248,14 +263,11 @@ pub fn observe(
     let (period_changes, period_events) =
         record_periods(&held_periods, stated_periods, observed_at, first_bound);
 
-    let lifecycle = match &held {
-        Some(held) if !supersedes => Vec::new(),
-        held => lifecycle_events(
-            held.as_ref().map(|held| &held.status),
-            &subscription.status,
-            observed_at,
-        ),
-    };
+    let lifecycle = lifecycle_events(
+        held.as_ref().map(|held| &held.status),
+        &subscription.status,
+        observed_at,
+    );
     let (ending, going_on): (Vec<_>, Vec<_>) = lifecycle
         .into_iter()
         .partition(|(kind, _)| matches!(kind, EventKind::Expired | EventKind::Revoked));
@@ -306,6 +318,43 @@ pub fn observe(
         events,
         hint_for_store,
     })
+}
+
+// cancelRequestedAt follows the newest statement of renewal on, or off since a stated instant; off since when unsaid states none.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct Cancellation {
+    observed_at: Instant,
+    renewing: bool,
+    requested_at: Option<Instant>,
+}
+
+impl Cancellation {
+    fn stated_by(observed_at: Instant, renewal: &Renewal) -> Option<Cancellation> {
+        match (renewal.auto_renew, renewal.cancel_requested_at) {
+            (true, _) => Some(Cancellation {
+                observed_at,
+                renewing: true,
+                requested_at: None,
+            }),
+            (false, Some(requested_at)) => Some(Cancellation {
+                observed_at,
+                renewing: false,
+                requested_at: Some(requested_at),
+            }),
+            (false, None) => None,
+        }
+    }
+
+    fn held_by(subscription: &Subscription) -> Option<Cancellation> {
+        let requested_at = subscription.status.renewal.cancel_requested_at;
+        subscription
+            .cancellation_observed_at
+            .map(|observed_at| Cancellation {
+                observed_at,
+                renewing: requested_at.is_none(),
+                requested_at,
+            })
+    }
 }
 
 // §4: a hint binds a purchase its buyer owns, a new purchase moves an ended lineage (R-11), a claim binds the rest.

@@ -1,0 +1,108 @@
+{
+  "note": "REVOKE: a family member lost a subscription shared with them. The transaction is the member's own, FAMILY_SHARED, so the lineage binds to no one; revoked for sharing_removed, and the period was not refunded, since the purchaser paid.",
+  "notification": {
+    "notificationType": "REVOKE",
+    "subtype": null,
+    "signedDate": 1802426401000,
+    "environment": "Production",
+    "status": 5,
+    "transaction": {
+      "transactionId": "2000000200000002",
+      "originalTransactionId": "2000000200000001",
+      "webOrderLineItemId": "2000000100000102",
+      "bundleId": "works.windmill.app",
+      "productId": "works.windmill.app.one.monthly",
+      "subscriptionGroupIdentifier": "21540000",
+      "purchaseDate": 1801476000000,
+      "originalPurchaseDate": 1798797600000,
+      "expiresDate": 1803895200000,
+      "quantity": 1,
+      "type": "Auto-Renewable Subscription",
+      "inAppOwnershipType": "FAMILY_SHARED",
+      "signedDate": 1802426401000,
+      "environment": "Production",
+      "transactionReason": "RENEWAL",
+      "storefront": "USA",
+      "storefrontId": "143441",
+      "price": 12000,
+      "currency": "USD",
+      "appTransactionId": "704512345678901234",
+      "billingPlanType": "BILLED_UPFRONT",
+      "revocationDate": 1802426400000,
+      "revocationReason": 0,
+      "revocationType": "FAMILY_REVOKE"
+    },
+    "renewalInfo": {
+      "originalTransactionId": "2000000200000001",
+      "productId": "works.windmill.app.one.monthly",
+      "autoRenewProductId": "works.windmill.app.one.monthly",
+      "autoRenewStatus": 1,
+      "isInBillingRetryPeriod": false,
+      "renewalDate": 1803895200000,
+      "renewalPrice": 12000,
+      "currency": "USD",
+      "recentSubscriptionStartDate": 1798797600000,
+      "appTransactionId": "704512345678901234",
+      "signedDate": 1802426401000,
+      "environment": "Production"
+    }
+  },
+  "expect": {
+    "observation": {
+      "lineage": {
+        "store": "app_store",
+        "environment": "production",
+        "storeSubscriptionId": "2000000200000001"
+      },
+      "observedAt": "2027-02-12T10:00:01Z",
+      "ownership": "shared",
+      "status": {
+        "plan": "windmill_one",
+        "productId": "works.windmill.app.one.monthly",
+        "billingInterval": "P1M",
+        "startedAt": "2027-01-01T10:00:00Z",
+        "state": "revoked",
+        "currentPeriod": {
+          "start": "2027-02-01T10:00:00Z",
+          "end": "2027-03-01T10:00:00Z"
+        },
+        "autoRenew": true,
+        "nextChargeAt": "2027-03-01T10:00:00Z",
+        "nextCharge": {
+          "amount": "12.00",
+          "currency": "USD"
+        },
+        "nextProductId": null,
+        "cancelRequestedAt": null,
+        "paymentFailedAt": null,
+        "graceEndsAt": null,
+        "pauseScheduledFor": null,
+        "pausedAt": null,
+        "resumesAt": null,
+        "endedAt": "2027-02-12T10:00:00Z",
+        "endReason": "sharing_removed",
+        "offerKind": null,
+        "offerEndsAt": null,
+        "price": {
+          "amount": "12.00",
+          "currency": "USD"
+        },
+        "storefront": "USA"
+      },
+      "periods": [
+        {
+          "transaction": "2000000200000002",
+          "start": "2027-02-01T10:00:00Z",
+          "end": "2027-03-01T10:00:00Z",
+          "price": {
+            "amount": "12.00",
+            "currency": "USD"
+          },
+          "offerKind": null,
+          "refundedAt": null
+        }
+      ]
+    },
+    "accountToken": null
+  }
+}
