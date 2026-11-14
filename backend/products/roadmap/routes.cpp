@@ -32,8 +32,8 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
                                      deps.allowedOrigins));
   linkTreeSocket();
 
-  auto api = std::make_shared<TreeApi>(deps.registry, deps.trees, deps.ownerProgress, deps.oplog,
-                                       deps.genesis, deps.authService, deps.forkService, deps.clock);
+  auto api = std::make_shared<TreeApi>(deps.registry, deps.trees, deps.ownerProgress, deps.oplog, deps.authService,
+                                       deps.forkService);
   auto ogImageApi = std::make_shared<OgImageApi>(deps.ogImages, deps.registry, deps.authService);
   auto ogVideoApi = std::make_shared<OgVideoApi>(deps.ogVideos, deps.registry, deps.authService);
   auto sharePageApi =
@@ -86,12 +86,6 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
         api->getTree(req, std::move(cb), id);
       },
       {drogon::Get});
-  routes.registerHandler(
-      "/v1/trees/{id}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
-        api->putTree(req, std::move(cb), id);
-      },
-      {drogon::Put});
   routes.registerHandler(
       "/v1/trees/{id}/fork",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {

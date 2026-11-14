@@ -54,23 +54,6 @@ void RootAccess::record(const OwningStep& step, bool present) {
   if (moved && moved_) moved_(step);
 }
 
-std::vector<OwningStep> RootAccess::settle(const std::set<OwningStep>& absent, const std::set<TreeId>& live) {
-  std::vector<OwningStep> moved;
-  std::lock_guard<std::mutex> lock(mutex_);
-  for (auto held = absent_.begin(); held != absent_.end();) {
-    if (live.count(held->tree) || absent.count(*held)) {
-      ++held;
-      continue;
-    }
-    moved.push_back(*held);
-    held = absent_.erase(held);
-  }
-  for (const OwningStep& step : absent)
-    if (!live.count(step.tree) && absent_.insert(step).second) moved.push_back(step);
-  settled_.store(true);
-  return moved;
-}
-
 TreeRoom::~TreeRoom() {
   if (pendingOps_.empty()) return;
   LOG_WARN << "room operation rows not committed count=" << pendingOps_.size();
@@ -91,8 +74,8 @@ TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, Lww<std::string> guide, bo
   loaded.observe(guide_.stamp);
   for (const auto& [actor, mark] : loaded.marks) clock_.observe(mark);
   held_ = HeldStamps{std::move(loaded)};
-  // The room opens as its stored rows stand, which no other room of the tree's can have written past: its owning steps
-  // are recorded as they are, so an access that missed a write without a room learns them here.
+  // The stored rows may name a subtree whose create this tree's last room missed, the commit's answer lost, and whose
+  // step that room recorded no write of: each owning step is recorded as this room's graph holds it.
   recordOwningSteps();
 }
 

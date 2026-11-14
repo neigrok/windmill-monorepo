@@ -7,6 +7,7 @@ use futures_util::FutureExt;
 use server::config::Config;
 use server::listeners::{Bounds, Listener};
 use server::telemetry;
+use storage::{Ledger, StorageError};
 use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
 use tokio::signal::unix::{SignalKind, signal};
@@ -14,7 +15,8 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
 
-// Docker kills 10 s after SIGTERM: 6 s for open connections, then at most 3 s for Sentry.
+// Docker kills 10 s after SIGTERM: 6 s for open connections, the ledger's included, then at most 3 s
+// for Sentry.
 const DRAIN_BOUND: Duration = Duration::from_secs(6);
 
 fn main() -> ExitCode {
@@ -58,6 +60,23 @@ async fn serve(config: Config) -> ExitCode {
         }
     };
 
+    // The ledger is migrated before either listener binds, so no door ever answers over an older schema.
+    let opened = async {
+        let ledger = Ledger::open(&config.database_url).await?;
+        let epoch = ledger.epoch().await?;
+        Ok::<_, StorageError>((ledger, epoch))
+    };
+    let ledger = match opened.await {
+        Ok((ledger, epoch)) => {
+            tracing::info!(%epoch, "ledger open");
+            ledger
+        }
+        Err(failure) => {
+            telemetry::report_failure("ledger.open", failure.code(), failure.sqlstate());
+            return ExitCode::FAILURE;
+        }
+    };
+
     let bounds = Bounds::default();
     let stop = CancellationToken::new();
     let mut running = JoinSet::new();
@@ -73,7 +92,7 @@ async fn serve(config: Config) -> ExitCode {
         };
         let bound = socket.local_addr().unwrap_or(address);
         tracing::info!(listener = listener.label(), address = %bound, "listening");
-        let router = listener.router(&config, bounds);
+        let router = listener.router(&config, ledger.clone(), bounds);
         let stop = stop.clone();
         running.spawn(async move {
             let served = AssertUnwindSafe(listener.serve(socket, router, bounds, stop))
@@ -99,10 +118,15 @@ async fn serve(config: Config) -> ExitCode {
         }
     };
 
-    // Both listeners stop accepting at once; each then waits for the requests it is answering.
+    // Both listeners stop accepting at once; each then waits for the requests it is answering, and the
+    // ledger's connections close once no request holds one.
     tracing::info!(signal, "stopping");
     stop.cancel();
-    match tokio::time::timeout(DRAIN_BOUND, running.join_all()).await {
+    let drained = async {
+        running.join_all().await;
+        ledger.close().await;
+    };
+    match tokio::time::timeout(DRAIN_BOUND, drained).await {
         Ok(_) => tracing::info!("stopped"),
         Err(_) => tracing::warn!(
             drain_bound_s = DRAIN_BOUND.as_secs(),

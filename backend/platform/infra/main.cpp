@@ -113,6 +113,9 @@
 #include "platform/infra/AppOrigin.h"
 #include "platform/infra/SyncProducts.h"
 #include "products/gym/routes.h"
+#include "platform/subscriptions/FeedFollower.h"
+#include "platform/subscriptions/PgEntitlementCopy.h"
+#include "platform/subscriptions/SubscriptionServiceClient.h"
 
 #include "platform/adapters/http/SyncApi.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
@@ -336,6 +339,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                 {"org_members", "user_id"},
                 {"feedback", "user_id"},
                 {"paddle_subscriptions", "user_id"},  // platform
+                {"account_entitlements", "account_id"},
                 {"mcp_keys", "user_id"},              // platform
                 {"oauth_grants", "user_id"},          // platform
                 {"oauth_codes", "user_id"},
@@ -484,6 +488,28 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // rest of this composition is already on the wire. SENTRY_LOG_LEVEL (default info) is the volume.
   installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
   installWriteReporter(sentry);
+
+  // The subscription service's feed, followed into the backend's own copy of every Windmill One entitlement
+  // (docs/foundation/subscriptions.md §6.1). Off while neither variable is set; one without the other refuses to start.
+  std::optional<subscriptions::ServiceAddress> subscriptionService;
+  try {
+    subscriptionService = subscriptions::ServiceAddress::from(std::getenv("SUBSCRIPTIONS_INTERNAL_URL"),
+                                                              std::getenv("SUBSCRIPTIONS_INTERNAL_TOKEN"));
+  } catch (const std::invalid_argument& missing) {
+    std::fprintf(stderr, "refusing to start: %s\n", missing.what());
+    return 1;
+  }
+  if (subscriptionService) {
+    auto subscriptionFeed = std::make_shared<subscriptions::SubscriptionServiceClient>(*subscriptionService);
+    auto entitlementCopy = std::make_shared<subscriptions::PgEntitlementCopy>(pool);
+    auto feedFollower = std::make_shared<subscriptions::FeedFollower>(*subscriptionFeed, *entitlementCopy,
+                                                                      subscriptions::FurtherConsumers{}, *sentry);
+    lifetime.watch(subscriptionFeed);
+    lifetime.watch(feedFollower, subscriptionFeed, entitlementCopy, sentry);
+    feedFollower->start();
+  } else {
+    LOG_INFO << "subscriptions: the feed follower is off (SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN unset)";
+  }
 
   std::shared_ptr<AiBudgetAlerts> aiBudgetAlerts;
   if (aiBudgets) {
@@ -1134,7 +1160,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   RoadmapDeps roadmapDeps{
       .registry = registry, .trees = trees, .progressService = progressService, .ownerProgress = ownerProgress,
-      .oplog = oplog, .bus = bus, .presence = presence, .genesis = genesis,
+      .oplog = oplog, .bus = bus, .presence = presence,
       .authService = authService, .forkService = forkService, .treeRegistry = treeRegistry,
       .ogImages = ogImages, .ogVideos = ogVideos, .webRoot = webRootEnv ? webRootEnv : "", .appBaseUrl = appBaseUrl,
       .tendingService = tendingService, .reminderSweep = reminderSweep, .reminderRepo = reminderRepo,
@@ -1289,7 +1315,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* portEnv = std::getenv("PORT");
   int port = portEnv ? std::atoi(portEnv) : 8080;
   LOG_INFO << "windmill-backend listening on :" << port;
-  // Backstop cap; a full PUT document can be large. Above it Drogon answers a bare 413 before any handler runs,
+  // Backstop cap; a posted document can be large. Above it Drogon answers a bare 413 before any handler runs,
   // which engine.md §9.1 allows a transport: it sits above PUSH_MAX_BYTES and PULL_MAX_BYTES.
   app.setClientMaxBodySize(8 * 1024 * 1024);
   app.setClientMaxMemoryBodySize(2 * 1024 * 1024);

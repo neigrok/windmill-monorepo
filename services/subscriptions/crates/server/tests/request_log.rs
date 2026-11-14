@@ -10,10 +10,31 @@ use axum::http::Request;
 use axum::routing::get;
 use serde_json::{Value, json};
 use server::config::Config;
-use server::listeners::{Bounds, Listener};
+use server::listeners::{Bounds, Listener, Readiness};
 use server::telemetry::json_lines;
+use storage::StorageError;
 use tower::ServiceExt;
 use tracing_subscriber::prelude::*;
+
+// Answers ready, as a ledger that answers does.
+#[derive(Clone)]
+struct Answering;
+
+impl Readiness for Answering {
+    async fn ready(&self) -> Result<(), StorageError> {
+        Ok(())
+    }
+}
+
+// Answers as a ledger that cannot be reached does.
+#[derive(Clone)]
+struct Silent;
+
+impl Readiness for Silent {
+    async fn ready(&self) -> Result<(), StorageError> {
+        Err(StorageError::Unreachable)
+    }
+}
 
 #[derive(Clone)]
 struct Captured(Arc<Mutex<Vec<u8>>>);
@@ -34,6 +55,7 @@ async fn each_request_writes_one_line_naming_its_route_and_nothing_it_carried() 
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
+        "SUBSCRIPTIONS_DATABASE_URL" => Some("postgresql://ledger@127.0.0.1:1/ledger".to_owned()),
         "SENTRY_ENVIRONMENT" => Some("test".to_owned()),
         _ => None,
     })
@@ -45,12 +67,17 @@ async fn each_request_writes_one_line_naming_its_route_and_nothing_it_carried() 
     );
 
     Listener::Internal
-        .router(&config, Bounds::default())
+        .router(&config, Answering, Bounds::default())
+        .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    Listener::Internal
+        .router(&config, Silent, Bounds::default())
         .oneshot(Request::get("/health").body(Body::empty()).unwrap())
         .await
         .unwrap();
     Listener::Public
-        .router(&config, Bounds::default())
+        .router(&config, Answering, Bounds::default())
         .oneshot(
             Request::post("/internal/v1/accounts/acct_secret/claims?token=secret")
                 .header("authorization", "Bearer secret")
@@ -86,9 +113,21 @@ async fn each_request_writes_one_line_naming_its_route_and_nothing_it_carried() 
             let mut line: Value = serde_json::from_str(line).unwrap();
             let fields = line.as_object_mut().unwrap();
             assert!(fields.remove("timestamp").unwrap().is_string(), "{output}");
-            assert!(fields.remove("duration_ms").unwrap().is_f64(), "{output}");
+            // A request's own line carries its id and duration; a line inside it, its span.
+            let request_fields = match fields.get_mut("span") {
+                Some(span) => span.as_object_mut().unwrap(),
+                None => {
+                    assert!(fields.remove("duration_ms").unwrap().is_f64(), "{output}");
+                    fields
+                }
+            };
             assert_eq!(
-                fields.remove("request_id").unwrap().as_str().unwrap().len(),
+                request_fields
+                    .remove("request_id")
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .len(),
                 32,
                 "{output}"
             );
@@ -105,6 +144,27 @@ async fn each_request_writes_one_line_naming_its_route_and_nothing_it_carried() 
                 "method": "GET",
                 "route": "/health",
                 "status": 200,
+                "outcome": "answered",
+            }),
+            json!({
+                "level": "WARN",
+                "message": "ledger did not answer",
+                "operation": "ledger.check",
+                "code": "unreachable",
+                "span": {
+                    "name": "request",
+                    "listener": "internal",
+                    "method": "GET",
+                    "route": "/health",
+                },
+            }),
+            json!({
+                "level": "ERROR",
+                "message": "request",
+                "listener": "internal",
+                "method": "GET",
+                "route": "/health",
+                "status": 503,
                 "outcome": "answered",
             }),
             json!({

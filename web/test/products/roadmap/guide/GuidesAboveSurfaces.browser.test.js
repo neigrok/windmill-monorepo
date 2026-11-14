@@ -110,7 +110,7 @@ for (const engine of [chromium, webkit]) {
           text: { ink: 'secondary', size: '18px/26px', cursor: 'auto' },
           own: 'Learn to sail · this tree',
           doors: 0,
-          stops: [GUIDE, 'Cancel', 'Save'],
+          stops: ['BUTTON', GUIDE, 'Cancel', 'Save'],
         });
         assert.equal(await field(page).inputValue(), GUIDE);
         await page.keyboard.type('Then ');
@@ -138,7 +138,7 @@ test('Chromium: the name over a guide from above goes into its tree by the guide
       await page.getByRole('button', { name: 'Guide: One step a week.' }).click();
       const note = page.getByRole('dialog', { name: 'Guide', exact: true });
       await note.waitFor();
-      assert.deepEqual(await note.getByRole('button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent)), ['Edit guide', 'Close', 'My life', 'My year']);
+      assert.deepEqual(await note.getByRole('button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent)), ['Close', 'My life', 'My year', 'Edit guide']);
       await note.getByRole('button', { name: 'My year' }).click();
       await note.getByRole('button', { name: 'My life' }).press('Enter');
       assert.deepEqual(await page.evaluate(() => window.entered), [['t_year', 'guide'], ['t_life', 'guide']]);
@@ -150,7 +150,7 @@ test('Chromium: the name over a guide from above goes into its tree by the guide
       await note.waitFor();
       await note.getByRole('button', { name: 'Edit guide' }).click();
       assert.deepEqual(await caretState(page), { start: GUIDE.length, end: GUIDE.length, focused: true });
-      assert.deepEqual((await events(page)).slice(1), [{ step: 'edit', via: 'click' }, { step: 'edit', via: 'pencil' }]);
+      assert.deepEqual((await events(page)).slice(1), [{ step: 'edit', via: 'click' }, { step: 'cancel' }, { step: 'edit', via: 'pencil' }]);
     });
   } finally { await page.close(); }
 });
@@ -172,7 +172,7 @@ test('Chromium: a tree with no guide of its own under guides from above reads th
         'own: Learn to sail · this tree', 'add: Add guide',
       ]);
       assert.deepEqual({ pencil: await note.getByRole('button', { name: 'Edit guide' }).count(), focus: await focusedName(page), tree: await stepInert(page) },
-        { pencil: 0, focus: 'st-guide-add', tree: false });
+        { pencil: 0, focus: 'st-guide-add', tree: true });
 
       await note.getByRole('button', { name: 'Add guide' }).click();
       const adding = page.getByRole('dialog', { name: 'Add guide' });
@@ -197,7 +197,7 @@ test('Chromium: a tree with no guide of its own under guides from above reads th
       assert.equal((await stackOf(page)).at(-1), 'add: Add guide');
       assert.deepEqual(await events(page), [
         { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'some' },
-        { step: 'edit', via: 'add' }, { step: 'edit', via: 'add' },
+        { step: 'edit', via: 'add' }, { step: 'cancel' }, { step: 'edit', via: 'add' },
         { step: 'save', outcome: 'saved', length: '1-500' },
         { step: 'edit', via: 'pencil' },
         { step: 'save', outcome: 'cleared', length: '0' },
@@ -243,7 +243,7 @@ test('Chromium: on a phone the row counts the guides from above, the sheet reads
       await page.getByRole('button', { name: 'Cancel' }).click();
       await sheet.waitFor();
       assert.equal(await page.locator('.st-guide-from').count(), 2);
-      assert.deepEqual(await events(page), [{ step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'some' }, { step: 'edit', via: 'tap' }]);
+      assert.deepEqual(await events(page), [{ step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'some' }, { step: 'edit', via: 'tap' }, { step: 'cancel' }]);
     });
   } finally { await page.close(); }
 });
@@ -365,7 +365,7 @@ test('Chromium: a reader and a room with no holder ask for nothing and are shown
       asked,
       events: await events(page),
     }, {
-      body: ['st-guide-heading flex', 'st-guide-rule block', 'st-guide-alone contents'],
+      body: ['st-guide-heading flex', 'st-guide-body flex', 'st-guide-read-footer block'],
       text: 'st-guide-alone',
       stops: ['st-guide-prose'],
       asked: ['GET'],
