@@ -1,5 +1,6 @@
 #include "products/roadmap/domain/Subgraph.h"
 
+#include <utility>
 #include <vector>
 
 namespace wm {
@@ -102,13 +103,63 @@ bool Subgraph::carriesNoStamp() const {
   return frontier(*this).marks.empty();
 }
 
-Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const VersionVector& since) {
+HeldStamps::HeldStamps(VersionVector stateFrontier) : marks(std::move(stateFrontier)) {
+  for (const auto& [actor, mark] : marks.marks)
+    if (floor < mark) floor = mark;
+}
+
+bool HeldStamps::holds(const Hlc& stamp) const {
+  return stamp.isSet() && (!(floor < stamp) || marks.covers(stamp));
+}
+
+std::size_t LandSeqs::landLate(const GraphState& graph, const LegendState& legend, const HeldStamps& held, Seq seq) {
+  const auto late = [&held](const Hlc& stamp) { return held.holds(stamp) ? std::size_t{1} : std::size_t{0}; };
+  std::size_t registers = 0;
+  for (const NodeStateEntry& node : graph.nodes) {
+    const std::size_t ofNode = late(node.createdAt) + late(node.deletedAt) + late(node.labelAt) + late(node.iconAt) +
+                               late(node.colorAt) + late(node.orderAt) + late(node.statusAt) +
+                               late(node.descriptionAt) + late(node.linksAt) + late(node.opensAt);
+    if (ofNode > 0) nodes[node.id] = seq;
+    registers += ofNode;
+  }
+  for (const EdgeStateEntry& edge : graph.edges) {
+    const std::size_t ofEdge = late(edge.addedAt) + late(edge.removedAt);
+    if (ofEdge > 0) edges[edge.edge] = seq;
+    registers += ofEdge;
+  }
+  for (const KindStateEntry& kind : legend.kinds) {
+    const std::size_t ofKind = late(kind.createdAt) + late(kind.deletedAt) + late(kind.hueAt) + late(kind.labelAt) +
+                               late(kind.descriptionAt) + late(kind.rankAt);
+    if (ofKind > 0) kinds[kind.id] = seq;
+    registers += ofKind;
+  }
+  return registers;
+}
+
+Landed LandSeqs::past(Seq position) const {
+  Landed late;
+  for (const auto& [node, seq] : nodes)
+    if (seq > position) late.nodes.insert(node);
+  for (const auto& [edge, seq] : edges)
+    if (seq > position) late.edges.insert(edge);
+  for (const auto& [kind, seq] : kinds)
+    if (seq > position) late.kinds.insert(kind);
+  return late;
+}
+
+Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const VersionVector& since,
+                      const Landed& late) {
   Subgraph delta;
   delta.intent = SubgraphIntent::delta;
   for (const NodeStateEntry& node : graph.nodes) {
-    if (nodeUncovered(node, since)) delta.graph.nodes.push_back(maskNode(node, since));
+    if (late.nodes.count(node.id)) delta.graph.nodes.push_back(node);
+    else if (nodeUncovered(node, since)) delta.graph.nodes.push_back(maskNode(node, since));
   }
   for (const EdgeStateEntry& edge : graph.edges) {
+    if (late.edges.count(edge.edge)) {
+      delta.graph.edges.push_back(edge);
+      continue;
+    }
     if (since.covers(edge.addedAt) && since.covers(edge.removedAt)) continue;
     EdgeStateEntry masked{edge.edge, {}, {}};
     if (!since.covers(edge.addedAt)) masked.addedAt = edge.addedAt;
@@ -116,10 +167,32 @@ Subgraph deltaBetween(const GraphState& graph, const LegendState& legend, const 
     delta.graph.edges.push_back(masked);
   }
   for (const KindStateEntry& kind : legend.kinds) {
-    if (kindUncovered(kind, since)) delta.legend.kinds.push_back(maskKind(kind, since));
+    if (late.kinds.count(kind.id)) delta.legend.kinds.push_back(kind);
+    else if (kindUncovered(kind, since)) delta.legend.kinds.push_back(maskKind(kind, since));
   }
   delta.coverage = frontier(graph, legend);
   return delta;
+}
+
+std::size_t hiddenBy(const VersionVector& since, const GraphState& graph, const LegendState& legend, const Landed& late) {
+  // The vector masks or leaves out an entry exactly when it covers one of the stamps the entry carries.
+  const auto has = [&since](const Hlc& stamp) { return stamp.isSet() && since.covers(stamp); };
+  std::size_t hidden = 0;
+  for (const NodeStateEntry& node : graph.nodes) {
+    if (!late.nodes.count(node.id)) continue;
+    if (has(node.createdAt) || has(node.deletedAt) || has(node.labelAt) || has(node.iconAt) || has(node.colorAt) ||
+        has(node.orderAt) || has(node.statusAt) || has(node.descriptionAt) || has(node.linksAt) || has(node.opensAt))
+      ++hidden;
+  }
+  for (const EdgeStateEntry& edge : graph.edges)
+    if (late.edges.count(edge.edge) && (has(edge.addedAt) || has(edge.removedAt))) ++hidden;
+  for (const KindStateEntry& kind : legend.kinds) {
+    if (!late.kinds.count(kind.id)) continue;
+    if (has(kind.createdAt) || has(kind.deletedAt) || has(kind.hueAt) || has(kind.labelAt) ||
+        has(kind.descriptionAt) || has(kind.rankAt))
+      ++hidden;
+  }
+  return hidden;
 }
 
 GraphState readerView(GraphState graph) {

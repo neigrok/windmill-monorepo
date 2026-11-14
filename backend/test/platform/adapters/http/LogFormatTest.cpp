@@ -44,6 +44,10 @@ TEST(log_privacy_keeps_audited_write_vendor_and_database_completion_lines) {
   CHECK_EQ(privacySafeLogBody(cascade, "TreeRegistry.cpp:161"), cascade);
   const std::string fork = "roadmap_tree_fork trees=100 duration_ms=179 request_id=0123456789abcdef0123456789abcdef";
   CHECK_EQ(privacySafeLogBody(fork, "ForkService.cpp:83"), fork);
+  const std::string lateLanding = "roadmap_late_landing door=websocket registers=2";
+  CHECK_EQ(privacySafeLogBody(lateLanding, "TreeRoom.cpp:121"), lateLanding);
+  const std::string lateEntries = "roadmap_subscribe_late_entries entries=3";
+  CHECK_EQ(privacySafeLogBody(lateEntries, "Collab.cpp:243"), lateEntries);
 }
 
 TEST(log_privacy_redacts_capabilities_and_secret_query_strings_in_full) {

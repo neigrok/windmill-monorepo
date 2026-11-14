@@ -56,6 +56,13 @@ std::string ownedSubtreeJoin(std::string_view step) {
 
 std::string stepOpensColumn(std::string_view step) { return "coalesce(owned.id, " + std::string{step} + ".opens)"; }
 
+std::string pointerTargetCondition(std::string_view target, std::string_view owner) {
+  const std::string t{target};
+  // A root stands while its own row does, so no walk up is needed.
+  return "(" + t + ".parent_tree IS NULL AND " + t + ".deleted_at IS NULL AND " + t + ".owner_id = " + std::string{owner} +
+         ")";
+}
+
 namespace {
 
 // Add-biased presence, computed by the writer so reads never compare HLC text in SQL.
@@ -63,13 +70,14 @@ bool entryPresent(const Hlc& added, const Hlc& removed) {
   return added.isSet() && !(removed > added);
 }
 
-void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node) {
+// A row is written with the land seq its save gives it and keeps a later one it already holds.
+void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node, Seq landSeq) {
   txn.exec_params(
       "INSERT INTO tree_nodes (tree_id, node_id, created_hlc, deleted_hlc, label, label_hlc, "
       "icon, icon_hlc, color, color_hlc, status, status_hlc, "
-      "description, description_hlc, links, links_hlc, present, ord, ord_hlc, opens, opens_hlc) "
+      "description, description_hlc, links, links_hlc, present, ord, ord_hlc, opens, opens_hlc, land_seq) "
       "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, "
-      "$15::jsonb, $16, $17, $18, $19, $20, $21) "
+      "$15::jsonb, $16, $17, $18, $19, $20, $21, $22) "
       "ON CONFLICT (tree_id, node_id) DO UPDATE SET "
       "created_hlc = EXCLUDED.created_hlc, deleted_hlc = EXCLUDED.deleted_hlc, "
       "label = EXCLUDED.label, label_hlc = EXCLUDED.label_hlc, "
@@ -79,7 +87,8 @@ void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node)
       "description = EXCLUDED.description, description_hlc = EXCLUDED.description_hlc, "
       "links = EXCLUDED.links, links_hlc = EXCLUDED.links_hlc, present = EXCLUDED.present, "
       "ord = EXCLUDED.ord, ord_hlc = EXCLUDED.ord_hlc, "
-      "opens = EXCLUDED.opens, opens_hlc = EXCLUDED.opens_hlc",
+      "opens = EXCLUDED.opens, opens_hlc = EXCLUDED.opens_hlc, "
+      "land_seq = GREATEST(tree_nodes.land_seq, EXCLUDED.land_seq)",
       tree.str(), node.id.str(), toString(node.createdAt), toString(node.deletedAt),
       node.label, toString(node.labelAt), node.icon, toString(node.iconAt),
       std::string(toString(node.color)), toString(node.colorAt),
@@ -87,39 +96,50 @@ void upsertNode(pqxx::work& txn, const TreeId& tree, const NodeStateEntry& node)
       node.description, toString(node.descriptionAt),
       dump(linksToJson(node.links)), toString(node.linksAt),
       entryPresent(node.createdAt, node.deletedAt),
-      node.order, toString(node.orderAt), node.opens.str(), toString(node.opensAt));
+      node.order, toString(node.orderAt), node.opens.str(), toString(node.opensAt),
+      static_cast<long long>(landSeq));
 }
 
-void upsertEdge(pqxx::work& txn, const TreeId& tree, const EdgeStateEntry& edge) {
+void upsertEdge(pqxx::work& txn, const TreeId& tree, const EdgeStateEntry& edge, Seq landSeq) {
   txn.exec_params(
-      "INSERT INTO tree_edges (tree_id, from_id, to_id, added_hlc, removed_hlc) "
-      "VALUES ($1, $2, $3, $4, $5) "
+      "INSERT INTO tree_edges (tree_id, from_id, to_id, added_hlc, removed_hlc, land_seq) "
+      "VALUES ($1, $2, $3, $4, $5, $6) "
       "ON CONFLICT (tree_id, from_id, to_id) DO UPDATE SET "
-      "added_hlc = EXCLUDED.added_hlc, removed_hlc = EXCLUDED.removed_hlc",
+      "added_hlc = EXCLUDED.added_hlc, removed_hlc = EXCLUDED.removed_hlc, "
+      "land_seq = GREATEST(tree_edges.land_seq, EXCLUDED.land_seq)",
       tree.str(), edge.edge.from.str(), edge.edge.to.str(),
-      toString(edge.addedAt), toString(edge.removedAt));
+      toString(edge.addedAt), toString(edge.removedAt), static_cast<long long>(landSeq));
 }
 
-void upsertKind(pqxx::work& txn, const TreeId& tree, const KindStateEntry& kind) {
+void upsertKind(pqxx::work& txn, const TreeId& tree, const KindStateEntry& kind, Seq landSeq) {
   txn.exec_params(
       "INSERT INTO tree_kinds (tree_id, kind_id, created_hlc, deleted_hlc, hue, hue_hlc, "
-      "label, label_hlc, description, description_hlc, rank, rank_hlc) "
-      "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) "
+      "label, label_hlc, description, description_hlc, rank, rank_hlc, land_seq) "
+      "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) "
       "ON CONFLICT (tree_id, kind_id) DO UPDATE SET "
       "created_hlc = EXCLUDED.created_hlc, deleted_hlc = EXCLUDED.deleted_hlc, "
       "hue = EXCLUDED.hue, hue_hlc = EXCLUDED.hue_hlc, "
       "label = EXCLUDED.label, label_hlc = EXCLUDED.label_hlc, "
       "description = EXCLUDED.description, description_hlc = EXCLUDED.description_hlc, "
-      "rank = EXCLUDED.rank, rank_hlc = EXCLUDED.rank_hlc",
+      "rank = EXCLUDED.rank, rank_hlc = EXCLUDED.rank_hlc, "
+      "land_seq = GREATEST(tree_kinds.land_seq, EXCLUDED.land_seq)",
       tree.str(), kind.id.str(), toString(kind.createdAt), toString(kind.deletedAt),
       std::string(toString(kind.hue)), toString(kind.hueAt), kind.label, toString(kind.labelAt),
-      kind.description, toString(kind.descriptionAt), kind.rank, toString(kind.rankAt));
+      kind.description, toString(kind.descriptionAt), kind.rank, toString(kind.rankAt),
+      static_cast<long long>(landSeq));
 }
 
-void upsertSlice(pqxx::work& txn, const TreeId& tree, const GraphState& state, const LegendState& legend) {
-  for (const NodeStateEntry& node : state.nodes) upsertNode(txn, tree, node);
-  for (const EdgeStateEntry& edge : state.edges) upsertEdge(txn, tree, edge);
-  for (const KindStateEntry& kind : legend.kinds) upsertKind(txn, tree, kind);
+// Each row takes the land seq `landed` holds for it, 0 where it holds none: the rows a tree is born with, and every
+// row that never landed late.
+void upsertSlice(pqxx::work& txn, const TreeId& tree, const GraphState& state, const LegendState& legend,
+                 const LandSeqs& landed = {}) {
+  const auto seqOf = [](const auto& seqs, const auto& key) {
+    const auto held = seqs.find(key);
+    return held == seqs.end() ? Seq{0} : held->second;
+  };
+  for (const NodeStateEntry& node : state.nodes) upsertNode(txn, tree, node, seqOf(landed.nodes, node.id));
+  for (const EdgeStateEntry& edge : state.edges) upsertEdge(txn, tree, edge, seqOf(landed.edges, edge.edge));
+  for (const KindStateEntry& kind : legend.kinds) upsertKind(txn, tree, kind, seqOf(landed.kinds, kind.id));
 }
 
 // pqxx names the row type row_ref on macOS and row on CI's Linux, so these accessors pin the
@@ -151,30 +171,37 @@ NodeStateEntry nodeFromRow(const auto& row) {
   return node;
 }
 
-GraphState graphRows(pqxx::work& txn, const TreeId& tree) {
+// The rows of a tree's graph, and into `landed` the land seq of each that holds one past 0.
+GraphState graphRows(pqxx::work& txn, const TreeId& tree, LandSeqs& landed) {
   GraphState state;
   pqxx::result nodes = txn.exec_params(
       "SELECT node_id, created_hlc, deleted_hlc, label, label_hlc, icon, icon_hlc, color, "
       "color_hlc, ord, ord_hlc, status, status_hlc, description, "
-      "description_hlc, links::text AS links, links_hlc, opens, opens_hlc FROM tree_nodes WHERE tree_id = $1",
+      "description_hlc, links::text AS links, links_hlc, opens, opens_hlc, land_seq FROM tree_nodes WHERE tree_id = $1",
       tree.str());
-  for (const auto& row : nodes) state.nodes.push_back(nodeFromRow(row));
+  for (const auto& row : nodes) {
+    state.nodes.push_back(nodeFromRow(row));
+    if (const long long seq = row["land_seq"].template as<long long>(); seq > 0)
+      landed.nodes[state.nodes.back().id] = static_cast<Seq>(seq);
+  }
 
   pqxx::result edges = txn.exec_params(
-      "SELECT from_id, to_id, added_hlc, removed_hlc FROM tree_edges WHERE tree_id = $1", tree.str());
+      "SELECT from_id, to_id, added_hlc, removed_hlc, land_seq FROM tree_edges WHERE tree_id = $1", tree.str());
   for (const auto& row : edges) {
     state.edges.push_back(EdgeStateEntry{
         Edge{NodeId{row["from_id"].as<std::string>()}, NodeId{row["to_id"].as<std::string>()}},
         roadmapStamp(row["added_hlc"].as<std::string>()), roadmapStamp(row["removed_hlc"].as<std::string>())});
+    if (const long long seq = row["land_seq"].template as<long long>(); seq > 0)
+      landed.edges[state.edges.back().edge] = static_cast<Seq>(seq);
   }
   return state;
 }
 
-LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
+LegendState legendRows(pqxx::work& txn, const TreeId& tree, LandSeqs& landed) {
   LegendState legend;
   pqxx::result kinds = txn.exec_params(
       "SELECT kind_id, created_hlc, deleted_hlc, hue, hue_hlc, label, label_hlc, description, "
-      "description_hlc, rank, rank_hlc "
+      "description_hlc, rank, rank_hlc, land_seq "
       "FROM tree_kinds WHERE tree_id = $1",
       tree.str());
   for (const auto& row : kinds) {
@@ -190,6 +217,8 @@ LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
     kind.descriptionAt = roadmapStamp(row["description_hlc"].as<std::string>());
     kind.rank = row["rank"].as<double>();
     kind.rankAt = roadmapStamp(row["rank_hlc"].as<std::string>());
+    if (const long long seq = row["land_seq"].template as<long long>(); seq > 0)
+      landed.kinds[kind.id] = static_cast<Seq>(seq);
     legend.kinds.push_back(std::move(kind));
   }
   return legend;
@@ -363,6 +392,7 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   // is the access's question, not the content's.
   pqxx::result rows = txn.exec_params(
       "SELECT t.title, t.title_hlc, t.guide, t.guide_hlc, t.guide_inherited, t.head_seq, t.document::text, "
+      "t.title_land_seq, t.guide_land_seq, "
       "r.owner_id::text AS owner_id, r.visibility, t.root_tree, t.parent_tree, "
       "(extract(epoch from t.created_at) * 1000)::bigint AS created_ms "
       "FROM trees t JOIN trees r ON r.id = t.root_tree "
@@ -371,8 +401,11 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   if (rows.empty()) return std::nullopt;
   const auto row = rows[0];
 
-  GraphState state = graphRows(txn, tree);
-  LegendState legend = legendRows(txn, tree);
+  LandSeqs landed;
+  landed.title = static_cast<Seq>(row["title_land_seq"].as<long long>());
+  landed.guide = static_cast<Seq>(row["guide_land_seq"].as<long long>());
+  GraphState state = graphRows(txn, tree, landed);
+  LegendState legend = legendRows(txn, tree, landed);
   if (state.nodes.empty() && state.edges.empty() && legend.kinds.empty()) {
     // A tree whose lattice lives only in the document blob: parse it and backfill the rows in this
     // same transaction.
@@ -408,11 +441,12 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
                     parseVisibility(row["visibility"].as<std::string>()),
                     static_cast<std::uint64_t>(row["created_ms"].as<long long>()), std::move(guide),
                     row["guide_inherited"].as<bool>(), TreeId{text(row, "root_tree")}, std::move(path),
-                    std::move(subtrees)};
+                    std::move(subtrees), std::move(landed)};
 }
 
 bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-                            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) {
+                            const Lww<std::string>& title, const Lww<std::string>& guide, Seq head,
+                            const LandSeqs& landed) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   // Only onto a row that stands: a tree erased or retired under its live room is not written back.
@@ -423,20 +457,24 @@ bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
     return false;
   // The title and guide registers are LWW at their columns: each lands only under a dominating
   // stamp. (ms, counter) order numerically; a tie falls to byte order (COLLATE "C"), which is the
-  // actor tiebreak.
+  // actor tiebreak. A register that lands takes the land seq the room holds for it.
   txn.exec_params(
-      "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5 "
+      "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5, "
+      "title_land_seq = GREATEST(title_land_seq, $6) "
       "WHERE id = $1 AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
       "> (title_ms, title_counter, title_hlc COLLATE \"C\")",
       tree.str(), title.value, toString(title.stamp),
-      static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter));
+      static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter),
+      static_cast<long long>(landed.title));
   txn.exec_params(
-      "UPDATE trees SET guide = $2, guide_hlc = $3, guide_ms = $4, guide_counter = $5, guide_inherited = false "
+      "UPDATE trees SET guide = $2, guide_hlc = $3, guide_ms = $4, guide_counter = $5, guide_inherited = false, "
+      "guide_land_seq = GREATEST(guide_land_seq, $6) "
       "WHERE id = $1 AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
       "> (guide_ms, guide_counter, guide_hlc COLLATE \"C\")",
       tree.str(), guide.value, toString(guide.stamp),
-      static_cast<long long>(guide.stamp.physicalMs), static_cast<long long>(guide.stamp.counter));
-  upsertSlice(txn, tree, state, legend);  // only the dirty slice — never the whole tree
+      static_cast<long long>(guide.stamp.physicalMs), static_cast<long long>(guide.stamp.counter),
+      static_cast<long long>(landed.guide));
+  upsertSlice(txn, tree, state, legend, landed);  // only the dirty slice — never the whole tree
   txn.commit();
   markCurrentWrite();
   return true;
@@ -556,26 +594,30 @@ std::set<TreeId> PgTreeRepository::listForkedSources(const UserId& owner) {
   return sources;
 }
 
-std::map<TreeId, std::string> PgTreeRepository::titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) {
+std::map<TreeId, OpenedTree> PgTreeRepository::pointerTargets(const UserId& owner, const std::set<TreeId>& trees) {
   if (trees.empty()) return {};
   Json::Value ids(Json::arrayValue);
   for (const TreeId& tree : trees) ids.append(tree.str());
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT id, title FROM trees WHERE deleted_at IS NULL AND owner_id = $1::uuid "
-      "AND id IN (SELECT jsonb_array_elements_text($2::jsonb))",
+      "SELECT t.id, t.parent_tree, t.parent_step FROM trees t WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid "
+      "AND t.id IN (SELECT jsonb_array_elements_text($2::jsonb)) AND " + branchStandsCondition("t"),
       owner.str(), dump(ids));
 
-  std::map<TreeId, std::string> titles;
-  for (const auto& row : rows) titles.emplace(TreeId{row["id"].as<std::string>()}, row["title"].as<std::string>());
-  return titles;
+  std::map<TreeId, OpenedTree> targets;
+  for (const auto& row : rows) {
+    OpenedTree& target = targets[TreeId{text(row, "id")}];
+    if (!row["parent_tree"].is_null())
+      target.parent = OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}};
+  }
+  return targets;
 }
 
 std::string PgTreeRepository::openedFromStatement() {
   // One statement: the counts and the marks are one snapshot, and no node row leaves the database. A step opens the
-  // subtree it owns, found through trees_parent_step, else the tree its pointer names; a tree stands while its own row
-  // does and its branch stands, the path read only for a subtree.
+  // subtree it owns, found through trees_parent_step, else the tree its pointer names, which the walk follows only while
+  // that pointer is valid; a tree stands while its own row does and its branch stands, the path read only for a subtree.
   const std::string opens = stepOpensColumn("n");
   const std::string owned = ownedSubtreeJoin("n") + " ";
   const std::string rootStands = branchStandsCondition("t");
@@ -588,20 +630,22 @@ std::string PgTreeRepository::openedFromStatement() {
       "  UNION "
       "  SELECT t.id, t.title, t.parent_tree, t.parent_step FROM reached r "
       // Each LATERAL runs once per row before it, so each table is read by its key whatever the planner expects.
-      "  CROSS JOIN LATERAL (SELECT DISTINCT " + opens + " AS opens FROM tree_nodes n " + owned +
-      "                      WHERE n.tree_id = r.id AND n.present) o "
+      "  CROSS JOIN LATERAL (SELECT DISTINCT " + opens + " AS opens, owned.id IS NOT NULL AS owned FROM tree_nodes n " +
+      owned + "                      WHERE n.tree_id = r.id AND n.present) o "
       "  CROSS JOIN LATERAL (SELECT s.id, s.title, s.owner_id, s.deleted_at, s.parent_tree, s.parent_step, s.root_tree "
       "                      FROM trees s "
       "                      WHERE s.id = o.opens LIMIT 1) t "
       "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid AND " + rootStands +
+      "    AND (o.owned OR " + pointerTargetCondition("t", "$1::uuid") + ")"
       ") "
-      // A row is a tree and one target: '' for its nodes that open none, NULL for a tree with no node. `latest` is
-      // the stamp and receipt instant of the latest of the marks counted that carry a stamp, in the order the domain
-      // compares stamps: a row written before marks were stamped counts, and is never the latest.
-      "SELECT r.id, " + treeNameColumn("r") + " AS title, c.opens, c.nodes, c.marked, "
-      "c.latest[1][1] AS latest_hlc, c.latest[1][2] AS latest_ms "
+      // A row is a tree and one target, the steps that own it apart from the ones whose pointer names it: '' for its
+      // nodes that open none, NULL for a tree with no node. `latest` is the stamp and receipt instant of the latest of the
+      // marks counted that carry a stamp, in the order the domain compares stamps: a row written before marks were
+      // stamped counts, and is never the latest.
+      "SELECT r.id, " + treeNameColumn("r") + " AS title, r.parent_tree, r.parent_step, c.opens, c.owned, c.nodes, "
+      "c.marked, c.latest[1][1] AS latest_hlc, c.latest[1][2] AS latest_ms "
       "FROM reached r LEFT JOIN LATERAL ("
-      "  SELECT " + opens + " AS opens, count(*) AS nodes, count(m.node_id) AS marked, "
+      "  SELECT " + opens + " AS opens, owned.id IS NOT NULL AS owned, count(*) AS nodes, count(m.node_id) AS marked, "
       "         (array_agg(ARRAY[m.hlc, m.updated_ms::text] "
       "                    ORDER BY m.stamp_ms DESC, m.stamp_counter DESC, m.hlc COLLATE \"C\" DESC) "
       "            FILTER (WHERE m.node_id IS NOT NULL AND m.hlc NOT IN ('', '0:0:'))) AS latest "
@@ -612,7 +656,7 @@ std::string PgTreeRepository::openedFromStatement() {
       // node_progress_user_tree), so whichever the planner takes, it reads this reader's marks on this tree alone.
       "    WHERE p.tree_id = r.id AND p.user_id = $1::text AND p.status = 'complete'"
       "  ) m ON m.node_id = n.node_id "
-      "  WHERE n.tree_id = r.id AND n.present GROUP BY " + opens +
+      "  WHERE n.tree_id = r.id AND n.present GROUP BY " + opens + ", owned.id IS NOT NULL"
       ") c ON true";
 }
 
@@ -638,6 +682,8 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
   for (const auto& row : rows) {
     OpenedTree& tree = trees[TreeId{row["id"].as<std::string>()}];
     tree.title = row["title"].as<std::string>();
+    if (!row["parent_tree"].is_null())
+      tree.parent = OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}};
     if (row["opens"].is_null()) continue;
     Pointers counted{row["nodes"].as<int>(), row["marked"].as<int>()};
     if (!row["latest_hlc"].is_null())
@@ -650,7 +696,7 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
       tree.latest = counted.latest;
       continue;
     }
-    tree.pointers.emplace(target, counted);
+    (row["owned"].as<bool>() ? tree.subtrees : tree.pointers).emplace(target, counted);
   }
   return trees;
 }
@@ -658,14 +704,14 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
 std::string PgTreeRepository::guidedTreesAboveStatement() {
   // Keyed on the owner's own standing trees, so its cost does not grow with the pointers other accounts plant at one. A
   // subtree stands while its branch does, which is read for a subtree alone.
-  return "WITH RECURSIVE owned(id, guided, parent_tree) AS MATERIALIZED ("
-         "  SELECT t.id, t.guide <> '', t.parent_tree FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL "
-         "  AND " + branchStandsCondition("t") +
+  return "WITH RECURSIVE owned(id, guided, parent_tree, deleted_at, owner_id) AS MATERIALIZED ("
+         "  SELECT t.id, t.guide <> '', t.parent_tree, t.deleted_at, t.owner_id FROM trees t "
+         "  WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND " + branchStandsCondition("t") +
          "), "
          // What lies directly below each tree: the subtrees it owns, off the rows already read, and each root its steps
          // point at. The LATERAL runs once per owned tree, so each tree's pointers are read by its key whatever the
          // planner expects; tree_nodes_pointers_idx serves only a scan that states its predicate. A step that owns a
-         // subtree opens it and no other tree, and a pointer leads anywhere only at another of the owner's standing roots.
+         // subtree opens it and no other tree, and a pointer leads only where it is valid: at a standing root of the owner's.
          "below(tree, opens) AS MATERIALIZED ("
          "  SELECT o.parent_tree, o.id FROM owned o WHERE o.parent_tree IN (SELECT parent.id FROM owned parent) "
          "  UNION ALL "
@@ -674,7 +720,7 @@ std::string PgTreeRepository::guidedTreesAboveStatement() {
          "                      WHERE n.tree_id = o.id AND n.present AND n.opens <> '' "
          "                        AND NOT EXISTS (SELECT 1 FROM trees owning WHERE owning.parent_tree = n.tree_id "
          "                                        AND owning.parent_step = n.node_id AND owning.deleted_at IS NULL)) p "
-         "  WHERE p.opens IN (SELECT target.id FROM owned target WHERE target.parent_tree IS NULL)"
+         "  WHERE p.opens IN (SELECT target.id FROM owned target WHERE " + pointerTargetCondition("target", "$1::uuid") + ")"
          "), "
          "reached(id, distance) AS ("
          "  SELECT o.id, 0 FROM owned o WHERE o.id = $2 "
@@ -706,7 +752,7 @@ std::map<TreeId, TreeAbove> PgTreeRepository::guidedTreesAbove(const UserId& own
   return above;
 }
 
-const char* PgTreeRepository::treesOpeningStatement() {
+std::string PgTreeRepository::treesOpeningStatement() {
   // Keyed on the owner's own trees. The LATERAL runs once per standing one and stops at its first node that opens $2, so
   // each tree's pointers are read by its key on tree_nodes_pointers_idx, which serves only a scan that states its
   // predicate, and never through tree_nodes_opens_idx, where other accounts' pointers at $2 sit too.
@@ -714,7 +760,8 @@ const char* PgTreeRepository::treesOpeningStatement() {
          "CROSS JOIN LATERAL (SELECT 1 FROM tree_nodes n "
          "                    WHERE n.tree_id = t.id AND n.present AND n.opens <> '' AND n.opens = $2 LIMIT 1) o "
          "WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND t.id <> $2 "
-         "  AND EXISTS (SELECT 1 FROM trees opened WHERE opened.id = $2 AND opened.owner_id = $1::uuid) "
+         "  AND EXISTS (SELECT 1 FROM trees opened WHERE opened.id = $2 AND " +
+         pointerTargetCondition("opened", "$1::uuid") + ") "
          "ORDER BY t.id COLLATE \"C\"";
 }
 
@@ -784,19 +831,6 @@ void PgTreeRepository::softDelete(const TreeId& tree) {
   txn.commit();
 }
 
-void PgTreeRepository::rename(const TreeId& tree, const Lww<std::string>& title) {
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  txn.exec_params(  // the same LWW guard as save(): only a dominating stamp lands
-      "UPDATE trees SET title = $2, title_hlc = $3, title_ms = $4, title_counter = $5, "
-      "updated_at = now() WHERE id = $1 AND deleted_at IS NULL "
-      "AND ($4::bigint, $5::bigint, $3::text COLLATE \"C\") "
-      "> (title_ms, title_counter, title_hlc COLLATE \"C\")",
-      tree.str(), title.value, toString(title.stamp),
-      static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter));
-  txn.commit();
-}
-
 void PgTreeRepository::setVisibility(const TreeId& tree, Visibility visibility) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
@@ -847,7 +881,7 @@ std::optional<SubtreeSite> PgTreeRepository::subtreeSite(const TreeId& parent, c
   pqxx::result rows = txn.exec_params(
       "SELECT p.root_tree, p.depth, p.head_seq, c.id AS owned, c.root_tree AS owned_root, c.depth AS owned_depth, "
       "c.head_seq AS owned_seq, "
-      "EXISTS (SELECT 1 FROM trees o WHERE o.id = $3 AND o.deleted_at IS NULL AND o.owner_id = p.owner_id) "
+      "EXISTS (SELECT 1 FROM trees o WHERE o.id = $3 AND " + pointerTargetCondition("o", "p.owner_id") + ") "
       "AS opens_a_tree, "
       "EXISTS (SELECT 1 FROM trees t WHERE t.id = $4) AS proposed_taken "
       "FROM trees p LEFT JOIN trees c ON c.parent_tree = p.id AND c.parent_step = $2 "

@@ -7,6 +7,7 @@
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/OpenedTrees.h"
+#include "products/roadmap/domain/Subgraph.h"
 #include "products/roadmap/domain/Subtree.h"
 #include "products/roadmap/domain/Tree.h"
 
@@ -50,6 +51,8 @@ struct StoredTree {
   TreeId root;
   std::vector<OwningStep> path;
   std::map<NodeId, TreeId> subtrees;
+  // The land seq each row and tree register holds, the ones at 0 left out.
+  LandSeqs landed;
   bool operator==(const StoredTree&) const = default;
 };
 
@@ -110,8 +113,8 @@ struct TreeCopy {
 };
 
 // What creating a subtree under one step of a standing tree reads off the stored rows: that tree's root, depth and head,
-// the subtree the step already owns, standing or deleted, whether the tree the step's pointer names stands and is the
-// same owner's, and whether a proposed id names any row, anyone's, standing or deleted.
+// the subtree the step already owns, standing or deleted, whether the step's pointer is valid — it names a standing root
+// of the same owner's (OpenedTrees::pointsAt) — and whether a proposed id names any row, anyone's, standing or deleted.
 struct SubtreeSite {
   TreeId root;
   int depth = 0;
@@ -157,9 +160,11 @@ struct TreeRepository {
   // Upsert a slice onto a tree whose row stands: entries given replace their rows, absent ones are
   // untouched, and a save never deletes. A tree with no row, or a soft-deleted one, is left as it is,
   // and answers false. The title and the guide each land only under a stamp dominating the stored one;
-  // a guide that lands is the owner's own, so it clears `guideInherited`.
+  // a guide that lands is the owner's own, so it clears `guideInherited`. Each row written, and each register that
+  // lands, takes the land seq `landed` holds for it, never a lower one than it has; none there leaves it as it is.
   virtual bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
-                    const Lww<std::string>& title, const Lww<std::string>& guide, Seq head) = 0;
+                    const Lww<std::string>& title, const Lww<std::string>& guide, Seq head,
+                    const LandSeqs& landed = {}) = 0;
   // Insert a brand-new tree. Throws DuplicateTree on an id collision (never overwrites a tree).
   virtual void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
                       const std::string& title, const UserId& owner) = 0;
@@ -169,13 +174,14 @@ struct TreeRepository {
   virtual std::vector<ListedTree> listPublic() = 0;
   // The sources this user forked FROM, only while the copy still stands.
   virtual std::set<TreeId> listForkedSources(const UserId& owner) = 0;
-  // The title of each tree among `trees` that stands and is `owner`'s, by id. A soft-deleted tree,
-  // someone else's, nobody's and an id no row holds are left out alike.
-  virtual std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) = 0;
-  // Each of `opened` that stands and is `owner`'s, and every such tree their steps open, under `owner`'s marks: a step
-  // opens the subtree it owns, else the tree its pointer names, and a subtree is named by its owning step's label. With
-  // a `budget` the read is given that long and no longer: past it the read is abandoned, holding nothing, and throws
-  // FollowTimedOut.
+  // Each tree among `trees` that stands and is `owner`'s, by id, as a pointer's target: where it hangs, nothing named
+  // or counted, for OpenedTrees to judge. A tree that does not stand, someone else's, nobody's and an id no row holds are
+  // left out alike.
+  virtual std::map<TreeId, OpenedTree> pointerTargets(const UserId& owner, const std::set<TreeId>& trees) = 0;
+  // Each of `opened` that stands and is `owner`'s, and every such tree their steps open, under `owner`'s marks, with
+  // where each hangs: a step opens the subtree it owns, else the root its pointer names when that pointer is valid
+  // (OpenedTrees::pointsAt), and a subtree is named by its owning step's label. With a `budget` the read is given that
+  // long and no longer: past it the read is abandoned, holding nothing, and throws FollowTimedOut.
   virtual std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened,
                                                   std::optional<std::chrono::milliseconds> budget = std::nullopt) = 0;
   // The kMaxGuides nearest trees above `tree` that carry a guide (SPEC.md, Model, `guides`; nearestGuided cuts them):
@@ -183,17 +189,15 @@ struct TreeRepository {
   // it and a root under each tree whose present steps point at it, never `tree` itself. Nothing when `tree` does not
   // stand or is not `owner`'s.
   virtual std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree) = 0;
-  // `owner`'s standing trees other than `tree` that hold a present node whose pointer names `tree`, in id order, ids
-  // compared as bytes; nothing when `tree` is not `owner`'s. Whether `tree` stands does not matter: a removal asks once
-  // its tree is gone. The read is keyed on the owner's own trees, so it does not grow with the pointers other accounts
-  // plant at `tree`.
+  // `owner`'s standing trees other than `tree` that hold a present step whose pointer names `tree`, in id order, ids
+  // compared as bytes; nothing when a pointer at `tree` is not valid (OpenedTrees::pointsAt): for a subtree, a tree that
+  // does not stand or one that is not `owner`'s. It reads each step's own register, so a step that owns a subtree is
+  // read by the pointer it holds, which the removal's own read of the tree's room then passes over. The read is keyed on
+  // the owner's own trees, so it does not grow with the pointers other accounts plant at `tree`.
   virtual std::vector<TreeId> treesOpening(const UserId& owner, const TreeId& tree) = 0;
   // Retire a root by stamping deleted_at; every read filters it, and every tree under it, out afterwards. A subtree's
   // row is never retired: it goes and comes back with its owning step.
   virtual void softDelete(const TreeId& tree) = 0;
-  // The closed-room seam only — a live room's title reaches the column through save(). Lands only
-  // under a stamp dominating the stored one.
-  virtual void rename(const TreeId& tree, const Lww<std::string>& title) = 0;
   // The owner check is the caller's, not this write's. A root's alone: a subtree's is its root's and is never set, and a
   // soft-deleted root is left alone.
   virtual void setVisibility(const TreeId& tree, Visibility visibility) = 0;

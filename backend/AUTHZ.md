@@ -20,8 +20,12 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   (`products/roadmap/domain/Subgraph.h`), the nodes without their pointers, from `GET` tree, the WS
   subscribe delta and every live frame. The MCP reads answer it, as `opens: {treeId, title, state}`,
   to that same caller alone and only for a tree of theirs that stands; an MCP write that sets one is
-  refused unless its target stands and is the caller's, in the same words for an absent tree and
-  someone else's, so the refusal confirms no id. What a pointer comes to follows the same line: for
+  refused unless the pointer is valid — its target a root that stands and is the caller's (`SPEC.md`,
+  Model, Legacy pointers) — in the same words for an absent tree, a hidden one and someone else's, so
+  the refusal confirms no id; a subtree of the caller's that stands is told as one (`opens-a-subtree`),
+  which names nothing they cannot read. A pointer any door is sent for a step that owns a subtree is
+  refused `owns-a-subtree` only to a caller who can write the tree, since every other caller's write
+  meets the write gate first, and the refusal names the step and nothing of its subtree. What a pointer comes to follows the same line: for
   a caller `canWrite` admits, a node that opens a tree of theirs is complete when that tree is, in
   MCP `state`, the registry counts and the `opens` object of `GET` tree; for every other reader the
   node is an ordinary one whose state follows their own mark, the `opens` key is absent, and the

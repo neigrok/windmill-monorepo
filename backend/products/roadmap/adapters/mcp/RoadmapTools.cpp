@@ -160,32 +160,67 @@ std::optional<std::string> checkImportedNode(const Json::Value& node, const std:
   return checkAnnotation(node, path + ".");
 }
 
-// A tree a call would make a node open, by the argument path that names it; an empty id opens none.
-using OpenedTree = std::pair<std::string, TreeId>;
+// A pointer a call sends a step: the argument path that names it, the step and the tree it names, an empty id for none.
+struct SentPointer {
+  std::string path;
+  NodeId step;
+  TreeId tree;
+};
 
-// Every tree a call would make a node open must stand and be the caller's, asked of the registry once
-// for the whole call. One sentence serves a tree that is not there and a tree that is someone else's:
-// a tree id is the read capability of an unlisted tree, so telling the two apart would say which ids exist.
-// The refusal carries its own outcome code, so a write line tells a pointer at a tree that is not the
-// caller's from a mistyped argument.
-std::optional<ToolResult> checkOpenedTrees(TreeRegistry& trees, const UserId& caller,
-                                           const std::vector<OpenedTree>& opened) {
+// Every pointer a call sends must be valid (OpenedTrees::pointsAt): a standing root of the caller's, asked of the registry
+// once for the whole call. An echo of the subtree the step owns, present or deleted, as the room holds it, passes before
+// that read, and lands nothing. One sentence serves a tree that is not there, one whose branch is hidden and one that is
+// someone else's: a tree id is the read capability of an unlisted tree, so telling them apart would say which ids exist.
+// A subtree of the caller's that stands is told as one, since they may read it. The refusal carries its own outcome code,
+// so a write line tells a pointer at a tree that is not the caller's from a mistyped argument.
+std::optional<ToolResult> checkPointers(TreeRegistry& trees, const UserId& caller, const TreeRoom& room,
+                                        const std::vector<SentPointer>& sent) {
+  std::vector<SentPointer> judged;
+  for (const SentPointer& pointer : sent)
+    if (!pointer.tree.empty() && !room.owns(pointer.step, pointer.tree)) judged.push_back(pointer);
   std::set<TreeId> targets;
-  for (const auto& [path, target] : opened)
-    if (!target.empty()) targets.insert(target);
-  const std::map<TreeId, std::string> owned = trees.titlesOwnedBy(caller, targets);
-  for (const auto& [path, target] : opened)
-    if (!target.empty() && !owned.count(target))
+  for (const SentPointer& pointer : judged) targets.insert(pointer.tree);
+  const OpenedTrees standing(trees.pointerTargets(caller, targets));
+  for (const SentPointer& pointer : judged) {
+    if (standing.pointsAt(pointer.tree)) continue;
+    if (!standing.opening(pointer.tree).missing)
       return ToolResult::failure(
-          path + " names \"" + target.str() +
-              "\", which is not a tree of yours — a node opens only a tree you own: list_trees lists them, "
-              "and someone else's tree is copied into one of yours first, with create_tree then import_subgraph",
-          "opens-not-yours");
+          pointer.path + " names \"" + pointer.tree.str() +
+              "\", a subtree of one of your roadmaps, which only the step that owns it opens — a node opens a roadmap "
+              "that has no parent: list_trees lists them",
+          kOpensASubtree);
+    return ToolResult::failure(
+        pointer.path + " names \"" + pointer.tree.str() +
+            "\", which is not a tree of yours — a node opens only a tree you own: list_trees lists them, "
+            "and someone else's tree is copied into one of yours first, with create_tree then import_subgraph",
+        "opens-not-yours");
+  }
   return std::nullopt;
 }
 
-bool opensATree(const std::vector<OpenedTree>& opened) {
-  return std::any_of(opened.begin(), opened.end(), [](const OpenedTree& named) { return !named.second.empty(); });
+bool opensATree(const std::vector<SentPointer>& sent) {
+  return std::any_of(sent.begin(), sent.end(), [](const SentPointer& pointer) { return !pointer.tree.empty(); });
+}
+
+// The pointers of `sent` the room refuses, in the order sent: those that would change the register of a step that owns a
+// subtree, which takes no pointer (SPEC.md, Model, Legacy pointers). Asked under the strand the write then takes.
+std::vector<NodeId> refusedPointersOf(const TreeRoom& room, const std::vector<SentPointer>& sent) {
+  std::vector<std::pair<NodeId, TreeId>> steps;
+  for (const SentPointer& pointer : sent) steps.emplace_back(pointer.step, pointer.tree);
+  return room.refusedPointers(steps);
+}
+
+// What a receipt says of the pointers its call sent steps that own a subtree: each id in `opensRefused`, the rest of the
+// call applied, and what to do instead in `opensError`. Nothing for a call none of whose pointers was refused.
+void answerRefusedPointers(const std::vector<NodeId>& refused, Json::Value& receipt) {
+  if (refused.empty()) return;
+  Json::Value ids(Json::arrayValue);
+  for (const NodeId& step : refused) ids.append(step.str());
+  receipt["opensRefused"] = ids;
+  receipt["opensError"] =
+      "Some steps own a subtree, which each opens whatever its opens holds: their opens was left as it was and the rest "
+      "of the call applied — those ids are listed in opensRefused. To open another roadmap from this tree, set opens on "
+      "a step that owns no subtree.";
 }
 
 // How long the follow an edit makes for its receipt may take. The edit is saved by then and its reply waits on
@@ -630,6 +665,8 @@ ToolResult answerSave(Saved saved, bool changedTheTree, ToolResult reply) {
 ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& tree, const std::string& tool,
                      Json::Value payload, Clock& clock, const UserId& actor) {
   const std::string kind = *commandKindFor(tool);
+  // A created node is always written a pointer, an empty one when the call names none; only a named one is its word.
+  const bool sentOpens = !std::as_const(payload)["opens"].isNull();
   if (std::optional<std::string> bad = prepareEdit(tool, payload)) return ToolResult::failure(*bad);
 
   std::optional<PointerEdit> pointerEdit;
@@ -641,12 +678,12 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     if (std::optional<WriteRefusal> refusal = writeRefusalFor(actor, room.owner()))
       return ToolResult::failure(writeRefusalSentence(*refusal));
     const std::string sentId = payload.get("id", "").asString();
+    // A create that names no id takes none the tree has held, present or deleted: only one that names a deleted step's
+    // id brings it back, with any branch it owns.
     if (tool == "create_node" && sentId.empty()) {
-      std::set<std::string> present;
-      for (const NodeSpec& node : room.snapshot().nodes) present.insert(node.id.str());
       std::string base = slugify(payload.get("label", "").asString());
       std::string id = base;
-      for (int n = 2; present.count(id); ++n) id = base + "-" + std::to_string(n);
+      for (int n = 2; room.hasHeld(NodeId{id}); ++n) id = base + "-" + std::to_string(n);
       payload["id"] = id;
     }
 
@@ -678,10 +715,13 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
       return ToolResult::failure("the arguments passed every published check but no " + kind +
                                  " could be built from them — that is a server bug, please report it.");
     if (std::optional<std::string> reason = room.validate(*command)) return ToolResult::failure(*reason);
-    std::vector<OpenedTree> opened;
-    if (const CreateNode* created = std::get_if<CreateNode>(&*command); created && created->opens)
-      opened.emplace_back("opens", *created->opens);
-    if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
+    std::vector<SentPointer> opened;
+    if (const CreateNode* created = std::get_if<CreateNode>(&*command); created && created->opens && sentOpens)
+      opened.push_back({"opens", created->id, *created->opens});
+    if (std::optional<ToolResult> refusal = checkPointers(trees, actor, room, opened)) return *refusal;
+    // A create on the id of a deleted step that owns a subtree revives it, and that step takes no pointer.
+    const std::vector<NodeId> refused = refusedPointersOf(room, opened);
+    countCurrentWriteRefused(refused.size());
 
     // A create and a kind's addition or removal land whole. Bracketed under the strand, so whatever the tree
     // gains between these reads, this gained.
@@ -697,6 +737,7 @@ ToolResult applyEdit(RoomRegistry& registry, TreeRegistry& trees, const TreeId& 
     out["applied"] = true;
     out["seq"] = static_cast<Json::Int64>(seq);
     answerDiagnostics(before, after, out);
+    answerRefusedPointers(refused, out);
     if (payload.isMember("id")) out["id"] = payload["id"];
     // A write that named its kind wears it, as resolveHue just said; one that named none is answered
     // from the hue join, for the hue its command landed.
@@ -938,7 +979,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
   std::vector<NodePatch> patches;
   std::vector<NodeId> rows;           // every row's node, in input order
   std::vector<RequestedMark> marks;   // update_nodes' marks, in input order
-  std::vector<OpenedTree> opened;
+  std::vector<SentPointer> opened;
   EdgeChanges edges;
   if (nodes) {
     if (std::optional<std::string> bad = requireObjects(args["updates"], "updates", kMaxPatchNodes))
@@ -992,7 +1033,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       if (row.isMember("addLinks")) patch.addLinks = linksFromJson(row["addLinks"]);
       if (row.isMember("opens")) {
         patch.opens = TreeId{row["opens"].asString()};
-        opened.emplace_back(path + ".opens", *patch.opens);
+        opened.push_back({path + ".opens", patch.nodeId, *patch.opens});
       }
       // A field is sent when it holds a value: a null one is refused above where the field takes none, and is absent
       // where it may be left out (`kind`, `outOfOrder`), as its read takes it.
@@ -1030,6 +1071,7 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
 
   const bool dryRun = args["dryRun"].asBool();
   bool treeLanded = false;  // an op landed on the tree in this call
+  std::vector<NodeId> refused;  // the steps whose pointer the call sent was refused, each owning a subtree
   PendingSave saving = Saved::saved;
   std::optional<PointerEdit> pointerEdit;
   ToolResult edited = withRoom(registry, tree, [&](TreeRoom& room) -> ToolResult {
@@ -1060,7 +1102,8 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
         const auto result = room.planNodePatches(patches);
         if (const auto* error = std::get_if<std::string>(&result)) return ToolResult::failure(*error);
         if (const auto* refusal = std::get_if<KindRefusal>(&result)) return kindRefused(*refusal);
-        if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
+        if (std::optional<ToolResult> refusal = checkPointers(trees, actor, room, opened)) return *refusal;
+        refused = refusedPointersOf(room, opened);
         const NodePatchPlan& plan = std::get<NodePatchPlan>(result);
         batch = plan.batch;
         landsNothing = plan.landsNothing();
@@ -1097,7 +1140,9 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     out["applied"] = !dryRun;
     out["seq"] = static_cast<Json::Int64>(room.head());
     if (landsNothing) out["unchanged"] = true;
+    answerRefusedPointers(refused, out);
     if (!dryRun) {
+      countCurrentWriteRefused(refused.size());
       // A batch that lands nothing writes nothing — no seq, no op row, no frame, no save — as a single-node edit does.
       std::optional<std::map<NodeId, TreeId>> pointersBefore;
       if (!landsNothing && opensATree(opened)) pointersBefore = room.pointers();
@@ -1152,6 +1197,8 @@ ToolResult applyBatchEdit(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     edited = ToolResult::json(receipt);
     if (cameToARefusal) edited.outcomeCode = kOpensATree;
   }
+  // A call whose whole write was pointers refused on steps that own a subtree completes under that refusal.
+  if (!edited.isError && !dryRun && !treeLanded && marks.empty() && !refused.empty()) edited.outcomeCode = kOwnsASubtree;
   edited.structured = edited.payload;
   return edited;
 }
@@ -1288,6 +1335,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
   graft.branches = std::get<std::set<TreeId>>(std::move(named));
   const bool dryRun = args["dryRun"].asBool();
   std::vector<UnconfirmedBranch> unconfirmed;  // answered once the strand is released, each with its size
+  std::vector<NodeId> refused;  // the steps whose pointer the batch sent was refused, each owning a subtree
 
   std::optional<PointerEdit> pointerEdit;
   PendingSave saving = Saved::saved;
@@ -1319,10 +1367,14 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     // A graft mints no Command, so the tree caps are checked here, before the dry-run branch.
     if (std::optional<Admission> refusal = room.admit(graft))
       return ToolResult::failure(refusal->reason);
-    std::vector<OpenedTree> opened;
-    for (std::size_t i = 0; i < graft.document.nodes.size(); ++i)
-      opened.emplace_back("nodes[" + std::to_string(i) + "].opens", graft.document.nodes[i].opens);
-    if (std::optional<ToolResult> refusal = checkOpenedTrees(trees, actor, opened)) return *refusal;
+    std::vector<SentPointer> opened;
+    for (std::size_t i = 0; i < graft.document.nodes.size(); ++i) {
+      const NodeSpec& node = graft.document.nodes[i];
+      if (graft.carries(node.id, NodeRegister::opens))
+        opened.push_back({"nodes[" + std::to_string(i) + "].opens", node.id, node.opens});
+    }
+    if (std::optional<ToolResult> refusal = checkPointers(trees, actor, room, opened)) return *refusal;
+    refused = refusedPointersOf(room, opened);
 
     const TreeData& incoming = graft.document;
     TreeData current = room.snapshot();  // collision = an incoming id already present (an upsert overwrites it)
@@ -1368,6 +1420,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     // A held kind the batch re-hues carries the nodes holding its old hue; the receipt counts the present ones.
     if (const Repaint repaint = room.repaintOf(graft); !repaint.rehued.empty())
       out["repaintedNodes"] = static_cast<Json::UInt64>(repaint.present);
+    answerRefusedPointers(refused, out);
     if (dryRun) {
       out["dryRun"] = true;
       if (room.graftLandsNothing(graft, clock.nowMs())) out["unchanged"] = true;
@@ -1387,6 +1440,7 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       return ToolResult::json(out);
     }
 
+    countCurrentWriteRefused(refused.size());
     // A graft can dangle an edge per node it carries; the receipt says which of them are new.
     // A graft that lands nothing is not joined, so there is nothing to save and the head stays where it is.
     std::optional<std::map<NodeId, TreeId>> pointersBefore;
@@ -1427,6 +1481,9 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
     }
   }
   grafted = withClosedLoops(trees, actor, tree, pointerEdit, grafted);
+  // A graft whose whole write was pointers refused on steps that own a subtree completes under that refusal.
+  if (!grafted.isError && !dryRun && carried.empty() && !refused.empty() && grafted.payload.get("unchanged", false).asBool())
+    grafted.outcomeCode = kOwnsASubtree;
   if (grafted.isError || dryRun || carried.empty()) return grafted;
   // The rows a call carries land by one path, and a refusal of theirs is told in the receipt either way: a graft that
   // landed nothing beside marks that came to a refusal wrote nothing, and the write line says why.
@@ -1564,7 +1621,8 @@ ToolResult deleteNodes(RoomRegistry& registry, TreeRegistry& trees, NodeEdits& e
 // it sends none. The reply answers that legend from Legend::bornWith, the rule the registry plants by,
 // in the shape get_tree answers kinds by default, and reads nothing back once the tree is inserted.
 ToolResult createTree(TreeRegistry& trees, const std::string& origin, const UserId& caller, const Json::Value& args) {
-  if (std::optional<std::string> bad = optionalString(args["title"], "title")) return ToolResult::failure(*bad);
+  if (std::optional<std::string> bad = optionalString(args["title"], "title", kMaxTitleChars))
+    return ToolResult::failure(*bad);
   if (std::optional<std::string> bad = checkKinds(args["kinds"], kMaxKinds)) return ToolResult::failure(*bad);
   const std::optional<TreeData> sent = treeFromJson(args, TreeId{});
   if (!sent) return ToolResult::failure("this tree's title or kinds carry a field of the wrong type");
@@ -1637,8 +1695,11 @@ ToolResult updateTree(TreeRegistry& registry, const TreeId& tree, const Json::Va
   const Json::Value& guide = args["guide"];
   if (title.isNull() && guide.isNull())
     return ToolResult::failure("nothing to set — pass at least one of \"title\", \"guide\".");
-  // A title is judged by rename's own rule (TreeRegistry::titleFrom), so the tool checks only that one is a string.
+  // A blank or malformed title is refused by rename's own rule (TreeRegistry::titleFrom). That rule cuts a title past
+  // its cap, and this door refuses one, as it refuses every argument past its cap.
   if (!title.isNull() && !title.isString()) return ToolResult::failure(*requireString(title, "title"));
+  if (title.isString() && isValidUtf8(title.asString()))
+    if (std::optional<std::string> bad = optionalString(title, "title", kMaxTitleChars)) return ToolResult::failure(*bad);
   if (!guide.isNull() && !guide.isString())
     return ToolResult::failure(*requireString(guide, "guide") + ". A guide is plain text of at most " +
                                std::to_string(kMaxGuideChars) + " characters; \"\" clears it.");

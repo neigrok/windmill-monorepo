@@ -59,9 +59,9 @@ public:
 
   std::vector<TreeSummary> list(const UserId& owner);
 
-  // The title of each tree among `trees` that stands and is `owner`'s, by id — the trees a node of
-  // theirs may open. Read off the stored rows, as list() is.
-  std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees);
+  // Each tree among `trees` that stands and is `owner`'s, with where it hangs — what a pointer of theirs at it comes to
+  // is OpenedTrees' to judge. Read off the stored rows, as list() is.
+  std::map<TreeId, OpenedTree> pointerTargets(const UserId& owner, const std::set<TreeId>& trees);
 
   // What following `opened` finds among `owner`'s standing trees (TreeRepository::openedFrom), off the stored rows,
   // within `budget` when one is given.
@@ -96,10 +96,12 @@ public:
   static constexpr std::chrono::milliseconds kCascadeLockWait{1'000};
   static constexpr std::chrono::milliseconds kCascadeTime{8'000};
 
-  // trim → refuse a blank, text that is not valid UTF-8 and a NUL → read gate → owner check → apply through
-  // RoomRegistry. A tree whose row went away under its live room answers notFound. A subtree's title is its owning
-  // step's label, so it lands there (relabel). renamedUnsaved: the name is the room's and every open page's — the
-  // parent's, for a subtree — and the registry holds its save and is retrying it (Saved::held).
+  // A title alone, set as describe sets one: trimmed, a blank, text that is not valid UTF-8 and a NUL refused, then
+  // the read gate, the owner check and the tree's room, opened when none is live, whose clock stamps it past every
+  // stamp the tree holds. A name the tree already has lands nothing and answers renamed. A tree whose row went away
+  // under its live room answers notFound. A subtree's title is its owning step's label, so it lands there (relabel).
+  // renamedUnsaved: the name is the room's and every open page's — the parent's, for a subtree — and the registry
+  // holds its save and is retrying it (Saved::held).
   enum class Renaming { renamed, renamedUnsaved, notFound, notYours, nobodysTree, blankTitle, malformedTitle, nulInTitle };
   Renaming rename(const TreeId& tree, const UserId& caller, const std::string& title);
   // The title a rename lands: trimmed, cut to kMaxTitleChars, or the refusal of a blank, malformed or NUL-holding one.

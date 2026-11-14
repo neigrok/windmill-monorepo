@@ -208,12 +208,6 @@ public:
   // the room cap.
   void sweep(std::chrono::steady_clock::duration idleFor);
 
-  // A live room takes the rename through its lattice, and its save is the caller's to wait on (persist); a closed
-  // tree's goes straight to the column, stamped past `persistedStamp` so it dominates the stored title. Caller holds
-  // the strand.
-  [[nodiscard]] PendingSave rename(const TreeId& id, const std::string& title, std::uint64_t nowMs,
-                                   const Hlc& persistedStamp);
-
   // One writer per tree: every caller that touches a room holds this. Striped over a fixed lock
   // array so unknown tree ids can't grow it; never hold two strands at once.
   std::mutex& strandFor(const TreeId& id);

@@ -38,7 +38,7 @@ ShownToReaders OwnerProgress::shownToReaders(const std::vector<OwnersTrees>& own
 
   for (const OwnersTrees& owner : owners)
     for (const auto& [tree, pointers] : owner.trees)
-      shown.progress.emplace(tree, readerView(marks_.load(tree, owner.owner), pointers, byOwner.at(owner.owner)));
+      shown.progress.emplace(tree, readerView(tree, marks_.load(tree, owner.owner), pointers, byOwner.at(owner.owner)));
   return shown;
 }
 
