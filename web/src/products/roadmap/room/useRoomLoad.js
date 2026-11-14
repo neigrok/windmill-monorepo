@@ -75,6 +75,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
   const [reloadKey, setReloadKey] = useState(0);
   const [treeVisibility, setTreeVisibility] = useState(null); // 'private'|'unlisted'|'public'|null
   const [treeMine, setTreeMine] = useState(false);
+  const [treePlace, setTreePlace] = useState(null); // where the tree sits among the trees, as the server read it; null for a device copy
   const [syncSession, setSyncSession] = useState(null);
   const accountAtLoad = useRef(null);
   const plantNoteRef = useRef(null); // null until read; survives StrictMode’s double effect
@@ -93,6 +94,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
     setSelectedId(null);
     setTreeVisibility(null);
     setTreeMine(false);
+    setTreePlace(null);
     knownRef.current = new Map();
     framing.firstFrameRef.current = null;
     if (plantNoteRef.current === null) plantNoteRef.current = takePlantNote();
@@ -115,14 +117,17 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       }
       const { overlay, serverActivity } = read;
       const owner = read.seed.mine === true && !shared && !demo;
-      // Only its owner's room reads what a step opens: anyone else sees an ordinary step. A tree that lives only here, until
-      // a claim takes it to the account, has its facts worked out on the device, and its projection is the device's own
-      // word, so its pointers always decide. Any other copy from the device read none, so its pointers stand unread.
+      const sits = read.seed.place ?? null;
+      // A step that owns a subtree opens it for anyone who reads the tree. Only its owner's room reads the tree a step's
+      // pointer names: anyone else sees such a step as an ordinary one. A tree that lives only here, until a claim takes it
+      // to the account, has its facts worked out on the device, and its projection is the device's own word, so its
+      // pointers always decide. Any other copy from the device read none, so its pointers stand unread.
       const onDevice = () => owner && new LocalTreeRegistry().onDevice(read.seed.id) !== null;
-      let openings = !owner ? null : onDevice() ? await openingsOnDevice(read.seed) : read.seed.openings ?? new Openings();
+      let openings = !owner ? read.seed.openings?.subtreesAlone() ?? null
+        : onDevice() ? await openingsOnDevice(read.seed) : read.seed.openings ?? new Openings();
       if (cancelled) return;
-      const standing = (projection, joined, own = new Set()) => (openings
-        ? openings.onto(projection, { joined: joined || onDevice(), own, known: knownRef.current })
+      const standing = (projection, joined, own = new Set(), subtrees = new Map()) => (openings
+        ? openings.onto(projection, { joined: joined || onDevice(), own, known: knownRef.current, subtrees })
         : projection);
       const seed = standing(read.seed, false);
       const nextTree = new SkillTree(seed);
@@ -160,6 +165,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       structure.install(nextTree, model, mountedScene?.getBounds() ?? null);
       setTreeVisibility(seed.visibility ?? null);
       setTreeMine(seed.mine ?? false);
+      setTreePlace(sits);
       workspace.hydrateWorkspaces(seed.id);
       legend.hydrateLegend(seed.id, nextTree.nodes, seed.kinds ?? null);
       workspace.pushArcs();
@@ -178,7 +184,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       // What the room stands shows its pointers' facts, and tells the session which lead to no tree: a mark there is an
       // ordinary mark and is owed, as the server records it.
       const stand = () => {
-        shown = standing(projected, session.joinedServer, session.ownPointers());
+        shown = standing(projected, session.joinedServer, session.ownPointers(), session.subtrees());
         session.pointersLeadNowhere(shown.nodes.flatMap((step) => (step.opening?.dangling ? [[step.id, step.opening.treeId]] : [])));
         latest.current.structure.onTreeChanged(shown);
         workspace.pushArcs();
@@ -186,10 +192,11 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
       };
       // The facts follow the pointers the server holds. A pointer the room has no read facts of (unread, or as the picker
       // knew it) is read once the server has confirmed it: this device's own on its ack, a peer's with its frame. A read
-      // that fails, or still says nothing of it, waits for the next confirmation or reconnect.
+      // that fails, or still says nothing of it, waits for the next confirmation or reconnect. Only a writer's read says
+      // more than its load: a reader's room fills its subtrees from the load and the subtree frames, and reads no more.
       let asked = '';
       const followPointers = () => {
-        if (onDevice() || !openings?.read) return;
+        if (onDevice() || !openings?.read || read.seed.mine !== true) return;
         const own = session.ownPointers();
         const lacking = shown.nodes.flatMap((step) => (step.opening && (!step.opening.read || step.opening.provisional) && !own.has(step.id)
           ? `${step.id}>${step.opening.treeId}` : [])).join(' ');
@@ -200,7 +207,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
           if (cancelled || asked !== ask) return;
           const fresh = await new HttpTreeRepository({ treeId }).loadTree({ signal: AbortSignal.timeout(POINTER_READ_LIMIT_MS) }).catch(() => null);
           if (cancelled || fresh?.mine !== true) return;
-          openings = fresh.openings;
+          openings = owner ? fresh.openings : fresh.openings.subtreesAlone();
           stand();
         }, POINTER_READ_AFTER_MS);
       };
@@ -216,7 +223,12 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
           stand();
         });
       };
-      const session = new SyncSession({ treeId: seed.id, title: seed.title, guide: seed.guide ?? '', registry: seed.mine && !shared && !demo && !demotion ? deviceTrees : null })
+      // A subtree is no row of this device's index: the switcher lists roots alone.
+      const subtree = sits?.subtree === true;
+      const session = new SyncSession({
+        treeId: seed.id, title: seed.title, guide: seed.guide ?? '', subtree,
+        registry: seed.mine && !shared && !demo && !demotion && !subtree ? deviceTrees : null,
+      })
         .onTreeChanged((data) => {
           projected = data;
           stand();
@@ -297,7 +309,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, breakpo
   const knowTree = useCallback((stepId, tree) => { knownRef.current.set(`${stepId}>${tree.id}`, Opening.chosen(tree)); }, []);
 
   return {
-    loading, loadError, reloadKey, syncSession, treeVisibility, setTreeVisibility, treeMine, takeForkNote, knowTree,
+    loading, loadError, reloadKey, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace, takeForkNote, knowTree,
     retryLoad: useCallback(() => setReloadKey((key) => key + 1), []),
   };
 }

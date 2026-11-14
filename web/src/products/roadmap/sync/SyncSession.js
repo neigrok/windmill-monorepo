@@ -4,7 +4,7 @@
 
 import { pageWatching, reportInvalidProgressMark, reportRoadmapFailure } from '../reportFailure.js';
 import { socketUrl } from '../../../shell/apiBase.js';
-import { HlcClock, NODE_REGISTERS, TREE_REGISTERS, TreeLattice, UNWRITTEN_NODE, VersionVector, hlcText, parseHlc } from './lattice.js';
+import { HlcClock, NODE_REGISTERS, TREE_REGISTERS, TreeLattice, UNWRITTEN_NODE, VersionVector, compareHlc, hlcText, parseHlc } from './lattice.js';
 import { ProgressLattice } from './progressLattice.js';
 import { materialize } from './materialize.js';
 import { MAX_FRAME_BYTES, UNSENDABLE_FROM_BYTES, bytesOf, frameRoom, framesOf, stampedPerFrame, stampsOf } from './frames.js';
@@ -39,14 +39,48 @@ function frameFrontier(writes) {
   return new TreeLattice().join(writes);  // join returns the frontier of a frame's stamps
 }
 
+// A subscribe answer's `subtrees`, by step: `{id, depth}`. An entry that is not one — no step or no id — makes the answer
+// one the session cannot take, as a malformed node does; an absent list names none.
+function toldSubtrees(subtrees = []) {
+  if (!Array.isArray(subtrees)) throw new Error('malformed subtrees list');
+  return new Map(subtrees.map((entry) => {
+    if (typeof entry?.step !== 'string' || typeof entry.id !== 'string') throw new Error('malformed subtree entry');
+    return [entry.step, { id: entry.id, depth: entry.depth }];
+  }));
+}
+
+// The steps whose pointer an ack says the server refused: it stores none on a step that owns a subtree.
+function refusedPointers(frame) {
+  if (!Array.isArray(frame.refused)) return [];
+  return frame.refused.flatMap((refusal) => (refusal?.field === 'opens' && typeof refusal.node === 'string' ? [refusal.node] : []));
+}
+
+// Writes without the pointers of the steps `steps` holds (a Set or a Map of them), and without a row left naming nothing.
+function withoutPointersOf(writes, steps) {
+  if (!writes.nodes.some((row) => 'opensAt' in row && steps.has(row.id))) return writes;
+  const nodes = writes.nodes.flatMap((row) => {
+    if (!('opensAt' in row) || !steps.has(row.id)) return [row];
+    const { opens, opensAt, ...rest } = row;
+    return Object.keys(rest).length > 1 ? [rest] : [];
+  });
+  return { ...writes, nodes };
+}
+
 function writesNothing(writes) {
   return !writes.nodes.length && !writes.edges.length && !writes.kinds.length && TREE_REGISTERS.every((name) => !writes[name]);
 }
 
+// A step's pointer register as a writes key: what a refused pointer takes out of an act it was written under.
+const pointerKey = (stepId) => JSON.stringify(['nodes', stepId, 'opensAt']);
+const UNSET_STAMP = parseHlc('');
+
 export class SyncSession {
-  constructor({ url = DEFAULT_URL, treeId, title = '', guide = '', registry = new LocalTreeRegistry(), store = new SyncStore(),
+  // `subtree` says the tree is a subtree: its name is its owning step's label, which only its parent's room writes.
+  constructor({ url = DEFAULT_URL, treeId, title = '', guide = '', subtree = false, registry = new LocalTreeRegistry(), store = new SyncStore(),
     reportFailure = reportRoadmapFailure, chunkBytes = MAX_FRAME_BYTES, timers = globalThis } = {}) {
     this.url = url;
+    this.subtree = subtree;
+    this.owned = new Map();                         // step → the subtree it owns, as the server told this session: {id, depth, fresh}
     this.timers = timers;
     this.resendTimers = { structure: null, progress: null };
     this.skewTimers = { structure: null, progress: null };
@@ -279,6 +313,7 @@ export class SyncSession {
   // Whether a step's mark is an ordinary one: it holds no pointer, or the pointer it holds is one the room found leading
   // to no tree. A pointer nothing was found of keeps its mark set aside.
   markOwed(stepId) {
+    if (this.owned.has(stepId)) return false;
     const opens = this.lattice.nodes.get(stepId)?.opens.v;
     return !opens || this.leadNowhere.get(stepId) === opens;
   }
@@ -629,7 +664,9 @@ export class SyncSession {
     }
     let frontier;
     let coverage;
+    let subtrees;
     try {
+      subtrees = toldSubtrees(frame.subtrees);
       frontier = this.lattice.join(frame);
       coverage = frame.coverage ? VersionVector.fromJSON(frame.coverage) : frontier;
       if (this.fullGraftPending) {
@@ -649,6 +686,7 @@ export class SyncSession {
     }
     for (const [actor, m] of frontier.marks) this.clock.observe({ ms: m.ms, counter: m.counter, actor });
     if (typeof frame.seq === 'number') this.lastSeq = frame.seq;
+    this.adoptSubtrees(subtrees);
     this.ackedServerVector = coverage;
     this.fullGraftPending = false;
     this.confirmedKnown.structure = true;
@@ -702,11 +740,71 @@ export class SyncSession {
     this.emitStatus();
   }
 
-  // A subtree created under one of this tree's steps takes the next seq of the tree's stream, and changes nothing else here.
+  // A subtree created under one of this tree's steps takes the next seq of the tree's stream, and stands on its step at
+  // once: new, so empty. A frame that names no step or no subtree, or a step this tree has never held, is reported once
+  // and kept nowhere; the next subscribe answer says which steps own one.
   receiveSubtree(frame) {
     if (!this.takesNextSeq(frame)) return;
     this.lastSeq = frame.seq;
     this.scheduleSave();
+    if (typeof frame.step !== 'string' || typeof frame.subtree?.id !== 'string') {
+      this.reportOnce('roadmap-sync-frame', new Error('malformed subtree frame'));
+      return;
+    }
+    if (!this.knowsStep(frame.step)) return;
+    this.owned.set(frame.step, { id: frame.subtree.id, depth: frame.subtree.depth, fresh: true });
+    this.putBackPointers([frame.step]);
+    this.emitProjection('structure');
+  }
+
+  // The subscribe answer's `subtrees`, one per present step that owns one, is the server's word on which do: it heals a
+  // `subtree` frame this session missed. A subtree it was told of as new stays so; one on a step this tree has never
+  // held is reported once and not kept.
+  adoptSubtrees(subtrees) {
+    const owned = new Map();
+    for (const [step, { id, depth }] of subtrees) {
+      if (!this.knowsStep(step)) continue;
+      owned.set(step, { id, depth, fresh: this.owned.get(step)?.id === id && this.owned.get(step).fresh });
+    }
+    this.owned = owned;
+    this.putBackPointers([...owned.keys()]);
+  }
+
+  // Whether this tree has ever held the step a subtree is said to hang from; one it has not is reported once.
+  knowsStep(stepId) {
+    if (this.lattice.nodes.has(stepId)) return true;
+    this.reportOnce('roadmap-sync-frame', new Error('subtree on a step this tree never held'));
+    return false;
+  }
+
+  // The subtrees this tree's steps own, by step, as the server has told this session: `{id, depth, fresh}`.
+  subtrees() {
+    return this.owned;
+  }
+
+  // A step that owns a subtree takes no pointer: the server stores none on it. Where this device holds one the server
+  // does not, the step's register goes back to what the server confirmed, and no act owes it any more. One in flight
+  // waits for its ack, which says whether the server stored it before the subtree came, or refused it.
+  putBackPointers(stepIds) {
+    const lowered = stepIds.filter((stepId) => {
+      const held = this.lattice.nodes.get(stepId)?.opens;
+      const confirmed = this.confirmedStructure.nodes.get(stepId)?.opens;
+      return held && compareHlc(held.at, confirmed?.at ?? UNSET_STAMP) > 0 && !this.pointerInFlight(stepId, held.at);
+    });
+    if (lowered.length === 0) return;
+    for (const stepId of lowered) this.lattice.restorePointer(stepId, this.confirmedStructure.nodes.get(stepId)?.opens);
+    const keys = new Set(lowered.map(pointerKey));
+    this.gestures.structure = Object.fromEntries(Object.entries(this.gestures.structure).flatMap(([stamp, references]) => {
+      const kept = Object.fromEntries(Object.entries(references).filter(([key]) => !keys.has(key)));
+      return Object.keys(kept).length ? [[stamp, kept]] : [];
+    }));
+    this.scheduleSave();
+  }
+
+  // Whether a frame on its way holds this step's pointer under `at`.
+  pointerInFlight(stepId, at) {
+    const stamp = hlcText(at);
+    return [...this.inFlight.values()].some((writes) => writes.nodes.some((row) => row.id === stepId && row.opensAt === stamp));
   }
 
   // The steps a frame names that open a tree before it joins.
@@ -719,19 +817,24 @@ export class SyncSession {
     if (pointed.some((node) => this.markOwed(node.id)) && this.canResend('progress')) this.flushProgress();
   }
 
+  // An ack confirms the writes its frame carried but a pointer the server refused (`refused`, `owns-a-subtree`): that
+  // register was not stored, so it goes back to what the server confirmed.
   receiveAck(frame) {
     const writes = this.inFlight.get(frame.frameId);
     if (!writes) return;
+    const refused = refusedPointers(frame);
     this.settleUnanswered('structure', frame.frameId);
     this.ackedServerVector.join(frameFrontier(writes));
-    this.confirmedStructure.join(writes);
-    this.confirm('structure');
+    this.confirmedStructure.join(withoutPointersOf(writes, new Set(refused)));
     this.inFlight.delete(frame.frameId);
     this.sent.delete(frame.frameId);
+    this.putBackPointers(refused);
+    this.confirm('structure');
     if (stampsOf(writes)[0] === this.dropped.stamp) this.dropped = { stamp: null, closes: 0 };
     this.persistNow();
     this.noteConfirmed();
     this.noteDrained();
+    if (refused.length) this.emitProjection('structure');
     this.emitStatus();
   }
 
@@ -1028,7 +1131,8 @@ export class SyncSession {
 
   dispatch(gesture) {
     if (!this.ready) return null;
-    const writes = materialize(gesture, this.lattice, this.clock);
+    // A step that owns a subtree takes no pointer: one a gesture would write is taken out before it is made.
+    const writes = withoutPointersOf(materialize(gesture, this.lattice, this.clock), this.owned);
     if (!writes.nodes.length && !writes.edges.length && !writes.kinds.length) return null;
     const inverse = this.captureInverse(writes);
     const receipt = Object.freeze({});
@@ -1093,9 +1197,10 @@ export class SyncSession {
   }
 
   // One stamped write to the title register, LWW against concurrent renames and out of the undo
-  // journal. Returns false before the durable lattice loads, when the caller must PATCH instead.
+  // journal. Returns false before the durable lattice loads, and for a subtree, whose name is its owning step's label,
+  // when the caller must PATCH instead.
   renameTree(title) {
-    if (!this.ready) return false;
+    if (!this.ready || this.subtree) return false;
     const next = title.trim();
     if (!next || next === this.lattice.title) return true;
     this.writeRegister('title', next);
@@ -1166,7 +1271,7 @@ export class SyncSession {
   // the saved record hold are the ones its frames go out under. Answers the write as it was stamped. One act stays one
   // unsent edit however many stamps it was cut into: it is counted under its first.
   apply(writes, { save = true } = {}) {
-    writes = stampedPerFrame(writes, this.clock, this.room);
+    writes = stampedPerFrame(withoutPointersOf(writes, this.owned), this.clock, this.room);
     const pointed = this.pointedIn(writes);
     this.lattice.join(writes);
     const act = stampsOf(writes)[0];
