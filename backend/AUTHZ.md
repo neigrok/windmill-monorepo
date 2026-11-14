@@ -220,6 +220,14 @@ wires OAuth and personal MCP keys, so an empty shared token still requires one o
   a session is near its expiry.
 - **MCP read tools open the room before the access check.** `RoadmapTools::withRoom` builds the room,
   then the lambda runs `canRead`; threading the caller into `withRoom` is its own change.
+- **A standing subtree's refusal takes one read longer than an absent id's.** A closed subtree whose
+  stored rows admit it is read again under its root's lock, which keeps a parent room that saved a
+  deletion and closed meanwhile from admitting anyone (`RoomRegistry::accessOf`). So a stranger's `404`
+  on a private standing subtree costs one more primary-key walk than an absent id's: measured on a
+  local Postgres at about 4.3 ms against 3.4 ms for `GET /v1/trees/{id}`, and 4.4 ms against 2.6 ms for
+  the share page, the unfurl card and a fork, enough to tell that a private id names a standing
+  subtree. A hidden subtree answers in the one statement an absent id does (3.5 ms against 3.4 ms), and
+  any tree whose root has a live room answers from memory, faster than either.
 - **No CI guard against a published port.** Nothing in `.github/workflows/` fails if `db`, `server` or
   `embedder` gains a `ports:` mapping or `network_mode: host`. Only `caddy` publishes ports
   (`deploy/docker-compose.yml`), and only convention keeps it that way.

@@ -170,26 +170,6 @@ GraphState graphRows(pqxx::work& txn, const TreeId& tree) {
   return state;
 }
 
-// The owning steps from `tree`'s root down to it, root first, each with whether its step's row is present: one walk up
-// the parents through trees_pkey, each step read through tree_nodes_pkey. None for a root.
-std::vector<std::pair<OwningStep, bool>> pathRows(pqxx::work& txn, const TreeId& tree) {
-  pqxx::result rows = txn.exec_params(
-      "WITH RECURSIVE up(parent_tree, parent_step, depth) AS ("
-      "  SELECT t.parent_tree, t.parent_step, t.depth FROM trees t WHERE t.id = $1"
-      "  UNION ALL"
-      "  SELECT p.parent_tree, p.parent_step, p.depth FROM up u JOIN trees p ON p.id = u.parent_tree"
-      ") "
-      "SELECT u.parent_tree, u.parent_step, EXISTS (SELECT 1 FROM tree_nodes s WHERE s.tree_id = u.parent_tree "
-      "AND s.node_id = u.parent_step AND s.present) AS present FROM up u WHERE u.parent_tree IS NOT NULL "
-      "ORDER BY u.depth",
-      tree.str());
-  std::vector<std::pair<OwningStep, bool>> path;
-  for (const auto& row : rows)
-    path.emplace_back(OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}},
-                      row["present"].as<bool>());
-  return path;
-}
-
 LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
   LegendState legend;
   pqxx::result kinds = txn.exec_params(
@@ -219,27 +199,40 @@ LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
 
 PgTreeRepository::PgTreeRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
+const char* PgTreeRepository::accessStatement() {
+  // One walk up the tree's parents through trees_pkey, the root's row first in the answer, each owning step on the way
+  // read through tree_nodes_pkey: a root is one row, a subtree at depth d is d + 1.
+  return "WITH RECURSIVE up(id, parent_tree, parent_step, depth, owner_id, visibility, deleted) AS ("
+         "  SELECT t.id, t.parent_tree, t.parent_step, t.depth, t.owner_id, t.visibility, t.deleted_at IS NOT NULL "
+         "  FROM trees t WHERE t.id = $1"
+         "  UNION ALL"
+         "  SELECT p.id, p.parent_tree, p.parent_step, p.depth, p.owner_id, p.visibility, p.deleted_at IS NOT NULL "
+         "  FROM up u JOIN trees p ON p.id = u.parent_tree"
+         ") "
+         "SELECT u.id, u.parent_tree, u.parent_step, u.owner_id::text AS owner_id, u.visibility, u.deleted, "
+         "u.parent_tree IS NULL OR EXISTS (SELECT 1 FROM tree_nodes s WHERE s.tree_id = u.parent_tree "
+         "AND s.node_id = u.parent_step AND s.present) AS present "
+         "FROM up u ORDER BY u.depth";
+}
+
 std::optional<StoredAccess> PgTreeRepository::loadAccess(const TreeId& tree) {
-  // Two columns of the root's row, no lattice: "may this caller read it?" costs two primary-key lookups, and for a
-  // subtree one walk up its path.
+  // The root's owner and visibility and the tree's path in one statement, no lattice.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  pqxx::result rows = txn.exec_params(
-      "SELECT r.owner_id::text AS owner_id, r.visibility, r.id AS root, t.parent_tree IS NOT NULL AS subtree "
-      "FROM trees t JOIN trees r ON r.id = t.root_tree "
-      "WHERE t.id = $1 AND t.deleted_at IS NULL AND r.deleted_at IS NULL",
-      tree.str());
-  if (rows.empty()) return std::nullopt;
+  pqxx::result rows = txn.exec_params(accessStatement(), tree.str());
+  // A tree is there while its own row and its root's are: the first row is the root, the last the tree.
+  if (rows.empty() || !rows[0]["parent_tree"].is_null() || rows[0]["deleted"].as<bool>() ||
+      rows[rows.size() - 1]["deleted"].as<bool>())
+    return std::nullopt;
 
-  const auto& row = rows[0];
+  const auto& root = rows[0];
   StoredAccess stored;
-  if (!row["owner_id"].is_null()) stored.access.owner = UserId{row["owner_id"].as<std::string>()};
-  stored.access.visibility = parseVisibility(row["visibility"].as<std::string>());
-  stored.access.root = TreeId{text(row, "root")};
-  if (!row["subtree"].as<bool>()) return stored;
-  for (const auto& [step, present] : pathRows(txn, tree)) {
-    stored.access.path.push_back(step);
-    stored.stands = stored.stands && present;
+  if (!root["owner_id"].is_null()) stored.access.owner = UserId{root["owner_id"].as<std::string>()};
+  stored.access.visibility = parseVisibility(root["visibility"].as<std::string>());
+  stored.access.root = TreeId{text(root, "id")};
+  for (pqxx::result::size_type i = 1; i < rows.size(); ++i) {
+    stored.access.path.push_back(OwningStep{TreeId{text(rows[i], "parent_tree")}, NodeId{text(rows[i], "parent_step")}});
+    stored.stands = stored.stands && rows[i]["present"].as<bool>();
   }
   return stored;
 }
@@ -393,9 +386,17 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
   for (const auto& owned : txn.exec_params(
            "SELECT parent_step, id FROM trees WHERE parent_tree = $1 AND deleted_at IS NULL", tree.str()))
     subtrees.emplace(NodeId{text(owned, "parent_step")}, TreeId{text(owned, "id")});
+  // A subtree's owning steps from its root down, one walk up its parents through trees_pkey.
   std::vector<OwningStep> path;
   if (!row["parent_tree"].is_null())
-    for (const auto& [step, present] : pathRows(txn, tree)) path.push_back(step);
+    for (const auto& step : txn.exec_params(
+             "WITH RECURSIVE up(parent_tree, parent_step, depth) AS ("
+             "  SELECT t.parent_tree, t.parent_step, t.depth FROM trees t WHERE t.id = $1"
+             "  UNION ALL"
+             "  SELECT p.parent_tree, p.parent_step, p.depth FROM up u JOIN trees p ON p.id = u.parent_tree"
+             ") SELECT parent_tree, parent_step FROM up WHERE parent_tree IS NOT NULL ORDER BY depth",
+             tree.str()))
+      path.push_back(OwningStep{TreeId{text(step, "parent_tree")}, NodeId{text(step, "parent_step")}});
   txn.commit();
 
   std::optional<UserId> owner;

@@ -160,8 +160,11 @@ std::optional<TreeAccess> RoomRegistry::accessOf(const TreeId& id) {
     }
   }
   if (read.path.empty()) return read;
-  // No room of the root is live, and none can open while the root's lock is held, so the store now holds every write of
-  // its trees: read again, since a parent room that held a deletion may have saved and closed since the first read.
+  // A stored answer that hides the tree is answered as it is: at worst a revive saved since the first read is missed,
+  // which is narrower, never wider. One that admits it is read again, now that no room of the root is live and none can
+  // open while the root's lock is held, so the store holds every write of its trees: a parent room that held a deletion
+  // may have saved and closed since the first read.
+  if (!stored->stands) return std::nullopt;
   const std::optional<StoredAccess> settled = repo_.loadAccess(id);
   if (!settled || !settled->stands) return std::nullopt;
   return settled->access;

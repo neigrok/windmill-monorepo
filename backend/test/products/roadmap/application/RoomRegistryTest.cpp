@@ -642,6 +642,26 @@ TEST(registry_a_standing_read_that_fails_as_a_room_opens_reports_as_itself) {
   CHECK(registry.open(tid("c")) != nullptr);
 }
 
+// A closed subtree's access is one read of the store when that read hides it, as an absent id's is: only an answer that
+// admits the tree is read again under the root's lock.
+TEST(registry_a_closed_subtree_the_store_hides_is_answered_in_one_read) {
+  FakeTreeRepository repo;
+  FakeOpLog log;
+  FakeBus bus;
+  plantBranch(repo);
+  RoomRegistry registry(repo, log, bus);
+  CHECK(registry.accessOf(tid("g")).has_value());
+  CHECK(repo.accessReads == (std::vector<TreeId>{tid("g"), tid("g")}));
+
+  LooseGraph deleted(repo.byId["c"].state);
+  deleted.deleteNode(nid("seed"), at(5));
+  repo.byId["c"].state = deleted.exportState();
+  repo.accessReads.clear();
+  CHECK_FALSE(registry.accessOf(tid("g")).has_value());
+  CHECK_FALSE(registry.accessOf(tid("absent")).has_value());
+  CHECK(repo.accessReads == (std::vector<TreeId>{tid("g"), tid("absent")}));
+}
+
 // A retirement drops the room WITHOUT persisting it, and announces so readers are re-decided.
 TEST(registry_retire_drops_the_room_unsaved_and_announces_it) {
   FakeTreeRepository repo;

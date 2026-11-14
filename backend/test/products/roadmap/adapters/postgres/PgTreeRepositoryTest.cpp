@@ -2412,3 +2412,50 @@ TEST(pg_the_store_refuses_a_subtree_with_no_step_and_a_step_with_no_parent) {
   CHECK(trees.absentStepsUnder(kParent).empty());
   CHECK(trees.load(kParent).has_value());
 }
+
+// A tree's access is one statement however deep it sits: at depth 8 it walks the 9 rows of trees above it and the tree's
+// own by trees_pkey and the 8 owning steps by tree_nodes_pkey, and nothing else, so a closed subtree's access costs one
+// round trip, as an absent id's does.
+TEST(pg_a_subtrees_access_is_one_statement_of_primary_key_probes) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kAda, {{"down", nullptr}});
+  TreeId above = kParent;
+  std::vector<OwningStep> path;
+  for (int depth = 1; depth <= kMaxTreeDepth; ++depth) {
+    const TreeId below{"t_5ab00000000000d" + std::to_string(depth)};
+    REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(above, "down", below)));
+    if (depth < kMaxTreeDepth) forest.edit(below, kAda, {{"down", nullptr}});
+    path.push_back(OwningStep{above, nid("down")});
+    above = below;
+  }
+  PgTreeRepository trees{pgTestPool()};
+  CHECK(trees.loadAccess(above) == (std::optional<StoredAccess>(StoredAccess{
+                                       TreeAccess{kAda, Visibility::private_, kParent, path}, true})));
+  CHECK(trees.loadAccess(kParent) ==
+        (std::optional<StoredAccess>(StoredAccess{TreeAccess{kAda, Visibility::private_, kParent, {}}, true})));
+  CHECK_FALSE(trees.loadAccess(TreeId{"t_5ab00000000000ff"}).has_value());
+
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  txn.exec("SET LOCAL enable_seqscan = off");
+  const pqxx::result explained = txn.exec_params(
+      std::string("EXPLAIN (ANALYZE, TIMING OFF, FORMAT JSON) ") + PgTreeRepository::accessStatement(), above.str());
+  std::map<std::string, double> probes;
+  bool sequential = false;
+  std::vector<Json::Value> nodes{parse(explained[0][0].as<std::string>())[0]["Plan"]};
+  while (!nodes.empty()) {
+    const Json::Value node = nodes.back();
+    nodes.pop_back();
+    for (const Json::Value& child : node["Plans"]) nodes.push_back(child);
+    if (node["Actual Loops"].asDouble() == 0) continue;  // a plan's alternative it never ran
+    if (node.isMember("Index Name")) probes[node["Index Name"].asString()] += node["Actual Loops"].asDouble();
+    sequential = sequential || node["Node Type"].asString() == "Seq Scan";
+  }
+  CHECK_FALSE(sequential);
+  CHECK_EQ(probes.size(), 2u);
+  CHECK_EQ(probes["trees_pkey"], 1.0 + kMaxTreeDepth + 1);  // the tree, then its 8 parents and the root's no-parent
+  CHECK_EQ(probes["tree_nodes_pkey"], static_cast<double>(kMaxTreeDepth));
+  CHECK_EQ(parse(explained[0][0].as<std::string>())[0]["Plan"]["Actual Rows"].asInt(), kMaxTreeDepth + 1);
+}

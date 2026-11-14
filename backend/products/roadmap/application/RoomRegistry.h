@@ -100,9 +100,10 @@ public:
   // Answers WITHOUT materializing a room. Every path that may refuse asks this BEFORE open(), which
   // drags the whole lattice off disk and pins it. A tree of any depth is answered its root's access, and
   // nothing while its branch does not stand: the live RootAccess while any room of the root's trees is
-  // open, else the stored rows. A live room answers from memory alone. A closed subtree's stored answer
-  // is taken under its root's lock with no access live — when the store holds every write of the root's
-  // trees — so a parent room that saved a deletion and closed since the first read is read again.
+  // open, else the stored rows. A live room answers from memory alone. A closed subtree the stored rows
+  // admit is read again under its root's lock with no access live — when the store holds every write of
+  // the root's trees — so a parent room that saved a deletion and closed since the first read admits
+  // nobody; one they hide is answered hidden at once.
   std::optional<TreeAccess> accessOf(const TreeId& id);
   // A write that reached a tree's rows without its room (PUT) may have revived owning steps the live access of its root
   // holds absent: the access, if there is one, takes every closed tree's owning steps under `root` from the store again.

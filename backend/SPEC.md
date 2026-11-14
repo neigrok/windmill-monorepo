@@ -638,7 +638,7 @@ visibility, none at all while its root is deleted, and none while an owning step
 absent. Every door asks it of `RoomRegistry::accessOf` before it opens a room, or of a live room's
 `readableBy`; the tree's content (`TreeRepository::load`) answers no access question. A closed
 tree's access is read off the stored rows with its root's and its path, and whether every step on the
-path is present there (`TreeRepository::loadAccess`). Every live room of one root's trees shares one
+path is present there, in one statement (`TreeRepository::loadAccess`). Every live room of one root's trees shares one
 `RootAccess`, holding the root's owner, visibility and standing and the owning steps under the root
 that are absent, so `accessOf`, the socket gates, the bus's read gate and the MCP reads answer a
 subtree by its root and its path, from memory alone for a live room: the socket's fan-out reads no
@@ -657,8 +657,9 @@ from the store (`RoomRegistry::settleOwningSteps`). When that read fails it is r
 wider, since a write without a room only revives steps — until the registry's sweep, every 30 s,
 takes them from the store again. The live rooms below a step whose
 presence changed are told, and the socket drops the readers they may no longer keep. A closed
-subtree's stored answer is taken under its root's lock with no access live, read again there, so a
-parent room that saves a deletion and closes between the first read and that check admits nobody.
+subtree the stored rows admit is read again under its root's lock with no access live, so a parent
+room that saves a deletion and closes between the first read and that check admits nobody; one they
+hide is answered hidden at once, at worst missing a revive saved since, which is narrower, never wider.
 No tree ever admits a reader its root and its path do not. A visibility change aimed at a subtree is
 refused `not-a-root` (`PATCH /v1/trees/{id}`, `409`, naming the step it hangs from and its root).
 
