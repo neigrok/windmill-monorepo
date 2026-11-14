@@ -7,6 +7,7 @@
 #include <json/json.h>
 #include <trantor/net/EventLoopThread.h>
 
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -29,20 +30,14 @@ std::optional<long long> transcriptionActualNanos(const std::string& model, cons
 
 // OpenAI's transcription endpoint on a private event loop: the calling thread returns and `done` fires on this loop,
 // so no drogon handler thread is parked. The audio is used for one request and dropped; neither it nor the
-// transcript is logged. With the AI allowance ledger (`budget`) a take holds its model's ceiling before any audio
-// leaves and settles at what the vendor billed; configured() then also requires a model it can price. The fuse,
-// the sink and the budget default to null, the no-op.
+// transcript is logged. With the AI allowance ledger (`budget`) a take holds its model's ceiling on a Windmill One
+// grant before any audio leaves and settles at what the vendor billed; configured() then also requires a model it
+// can price. stop() lets takes still with the vendor answer and settle, for a bounded time, before the loop ends. The
+// fuse, the sink and the budget default to null, the no-op.
 class OpenAiTranscriber : public Transcriber {
  public:
   ~OpenAiTranscriber() { stop(); }
-  void stop() {
-    std::call_once(stopped_, [this] {
-      loop_.run();
-      auto* loop = loop_.getLoop();
-      loop->queueInLoop([loop] { loop->quit(); });
-      loop_.wait();
-    });
-  }
+  void stop();
 
   explicit OpenAiTranscriber(std::string apiKey, std::string model = "gpt-4o-transcribe",
                              std::shared_ptr<AiFuse> fuse = nullptr,
@@ -61,6 +56,9 @@ class OpenAiTranscriber : public Transcriber {
   std::shared_ptr<UsageSink> usage_;
   std::shared_ptr<AiCallBudget> budget_;
   std::string baseUrl_;
+  std::mutex takesMutex_;
+  std::condition_variable takesSettled_;
+  int takesWithVendor_ = 0;
   std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };

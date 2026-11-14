@@ -21,6 +21,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace wm;
@@ -28,11 +29,13 @@ using namespace wm::fake;
 
 namespace {
 
-// The vendor on loopback for one request: it answers with `status` and `body`, or closes without a word when `status`
-// is 0, and hands the test the bytes it was sent. An empty request is a vendor nobody called within `waitMs`.
+// The vendor on loopback for one request: it answers with `status` and `body` `answerAfterMs` after the request
+// arrives, or closes without a word when `status` is 0, and hands the test the bytes it was sent. An empty request is a
+// vendor nobody called within `waitMs`.
 class StubVendor {
 public:
-  StubVendor(int status, std::string body, int waitMs = 10'000) : listener_(::socket(AF_INET, SOCK_STREAM, 0)) {
+  StubVendor(int status, std::string body, int waitMs = 10'000, int answerAfterMs = 0)
+      : listener_(::socket(AF_INET, SOCK_STREAM, 0)) {
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -41,7 +44,7 @@ public:
         ::getsockname(listener_, reinterpret_cast<sockaddr*>(&address), &size) != 0 || ::listen(listener_, 1) != 0)
       throw std::runtime_error("the stub vendor could not listen");
     port_ = ntohs(address.sin_port);
-    served_ = std::async(std::launch::async, [fd = listener_, status, body = std::move(body), waitMs] {
+    served_ = std::async(std::launch::async, [fd = listener_, status, body = std::move(body), waitMs, answerAfterMs] {
       pollfd ready{fd, POLLIN, 0};
       if (::poll(&ready, 1, waitMs) != 1) return std::string{};
       const int peer = ::accept(fd, nullptr, nullptr);
@@ -55,6 +58,7 @@ public:
         if (count <= 0) break;
         request.append(buffer, static_cast<std::size_t>(count));
       }
+      std::this_thread::sleep_for(std::chrono::milliseconds(answerAfterMs));
       if (status > 0) {
         const std::string response = "HTTP/1.1 " + std::to_string(status) + " Stub\r\nContent-Type: application/json\r\n"
             "Content-Length: " + std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
@@ -108,7 +112,7 @@ struct Ledger : UsageSink {
 };
 
 // The durable allowance mode over fakes. The owner holds a funded calendar-month grant, as Windmill One's owner does;
-// `subscriber` holds Windmill One with no grant behind it.
+// `subscriber` holds Windmill One with no grant behind it, and `free` holds no Windmill One at all.
 struct Allowances {
   FakeAiBudgetRepository repository;
   AiBudgetLimits limits;
@@ -122,6 +126,7 @@ struct Allowances {
   std::shared_ptr<AiCallBudget> calls = std::make_shared<AiCallBudget>(budgets, entitlements, accounts, failures);
   User owner = accounts.createUser(Email{"owner@example.com"}, "Owner");
   User subscriber = accounts.createUser(Email{"sam@example.com"}, "Sam");
+  User free = accounts.createUser(Email{"free@example.com"}, "Free");
   std::shared_ptr<Ledger> ledger = std::make_shared<Ledger>();
 
   Allowances() { subscriptions.subscribe(subscriber.id); }
@@ -218,13 +223,14 @@ TEST(openai_transcription_a_take_the_allowance_cannot_hold_never_reaches_the_ven
   for (const Case& scenario : std::vector<Case>{{"spent", "subject_exhausted"},
                                                 {"smaller than the ceiling", "subject_exhausted"},
                                                 {"busy", "concurrency_exhausted"},
-                                                {"unfunded", "funding_required"}}) {
+                                                {"unfunded", "funding_required"},
+                                                {"below Windmill One", "funding_required"}}) {
     Allowances a;
     if (scenario.name == "spent") a.repository.totals.subject.spentNanos = a.limits.paidPeriodNanos;
     if (scenario.name == "smaller than the ceiling")
       a.repository.totals.subject.spentNanos = a.limits.paidPeriodNanos - 60'000'000 + 1;
     if (scenario.name == "busy") a.repository.totals.concurrentCalls = a.limits.paidConcurrency;
-    const User& speaker = scenario.name == "unfunded" ? a.subscriber : a.owner;
+    const User& speaker = scenario.name == "unfunded" ? a.subscriber : scenario.name == "below Windmill One" ? a.free : a.owner;
     StubVendor vendor{200, R"({"text":"never asked"})", 300};
     OpenAiTranscriber transcriber{"sk-fixture-only", "gpt-4o-transcribe", nullptr, a.ledger, a.calls, vendor.origin()};
 
@@ -240,10 +246,11 @@ TEST(openai_transcription_a_take_the_allowance_cannot_hold_never_reaches_the_ven
 }
 
 // What the vendor consumed decides the charge: an answered error or a request that never connected consumed nothing
-// and settles at zero, freeing the slot; a reply that may have been billed but says nothing readable about it keeps
-// the whole hold as uncertain. An origin Drogon cannot address answers BadServerAddress without opening a socket, the
-// result a failed lookup or a refused connection gives a remote vendor.
-TEST(openai_transcription_settles_an_unconsumed_take_at_zero_and_holds_an_ambiguous_one) {
+// and settles at zero, freeing the slot; a transcript without usage to price was heard, and settles at the take's
+// ceiling; only a reply that may have been billed and carries nothing readable keeps the whole hold as uncertain. An
+// origin Drogon cannot address answers BadServerAddress without opening a socket, the result a failed lookup or a
+// refused connection gives a remote vendor.
+TEST(openai_transcription_settles_what_the_vendor_consumed_and_holds_only_an_ambiguous_send) {
   struct Case {
     std::string name;
     int status;
@@ -257,9 +264,9 @@ TEST(openai_transcription_settles_an_unconsumed_take_at_zero_and_holds_an_ambigu
            {"vendor error", 500, R"({"error":{"message":"private vendor detail"}})", std::nullopt, AiBudgetState::Settled, 0, "transport"},
            {"rate limited", 429, R"({"error":{"message":"slow down"}})", std::nullopt, AiBudgetState::Settled, 0, "rate_limited"},
            {"never connected", -1, "", std::nullopt, AiBudgetState::Settled, 0, "transport"},
-           {"no usage", 200, R"({"text":"rain"})", "rain", AiBudgetState::Uncertain, std::nullopt, "ok"},
+           {"no usage", 200, R"({"text":"rain"})", "rain", AiBudgetState::Settled, 60'000'000, "ok"},
            {"billed by duration", 200, R"({"text":"rain","usage":{"type":"duration","seconds":4.2}})", "rain",
-            AiBudgetState::Uncertain, std::nullopt, "ok"},
+            AiBudgetState::Settled, 60'000'000, "ok"},
            {"unreadable", 200, "not json", std::nullopt, AiBudgetState::Uncertain, std::nullopt, "schema_invalid"},
            {"closed unanswered", 0, "", std::nullopt, AiBudgetState::Uncertain, std::nullopt, "transport"}}) {
     Allowances a;
@@ -281,4 +288,27 @@ TEST(openai_transcription_settles_an_unconsumed_take_at_zero_and_holds_an_ambigu
     CHECK_EQ(a.ledger->rows[0].outcome, scenario.outcome);
     CHECK(a.failures.reports.empty());
   }
+}
+
+// A deploy stops the server while a take is still with the vendor: stop() waits for its answer, so the take settles at
+// what it billed and its slot opens, rather than the loop ending with the hold still dispatched.
+TEST(openai_transcriber_stopping_lets_a_take_still_with_the_vendor_settle_first) {
+  Allowances a;
+  StubVendor vendor{200, R"({"text":"late rain","usage":{"type":"tokens","input_tokens":312,"output_tokens":9}})",
+                    10'000, 1'000};
+  OpenAiTranscriber transcriber{"sk-fixture-only", "gpt-4o-transcribe", nullptr, a.ledger, a.calls, vendor.origin()};
+  auto answered = std::make_shared<std::promise<Transcription>>();
+  std::future<Transcription> answer = answered->get_future();
+  transcriber.transcribe(a.owner.id, "opus-bytes", "audio/webm",
+                         [answered](Transcription take) { answered->set_value(std::move(take)); });
+
+  transcriber.stop();
+
+  REQUIRE(answer.wait_for(std::chrono::seconds(0)) == std::future_status::ready);
+  CHECK_EQ(answer.get().text, std::optional<std::string>{"late rain"});
+  REQUIRE_EQ(a.repository.reservations.size(), 1u);
+  const AiBudgetReservation& held = a.repository.reservations.begin()->second;
+  CHECK(held.state == AiBudgetState::Settled);
+  CHECK_EQ(held.actualNanos, std::optional<long long>{312 * 2'500 + 9 * 10'000});
+  CHECK(a.failures.reports.empty());
 }

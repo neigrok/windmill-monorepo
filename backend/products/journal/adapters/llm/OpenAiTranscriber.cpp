@@ -4,6 +4,7 @@
 #include "platform/adapters/json/JsonText.h"
 #include "platform/adapters/llm/AiCallBudget.h"
 #include "platform/adapters/llm/AnthropicClient.h"
+#include "platform/application/WriteObservation.h"
 
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
@@ -11,6 +12,7 @@
 #include <trantor/utils/Logger.h>
 
 #include <array>
+#include <chrono>
 #include <memory>
 #include <utility>
 
@@ -28,6 +30,15 @@ struct TranscriptionLimits {
 constexpr std::array<TranscriptionLimits, 1> kTranscriptionLimits{{
     {"gpt-4o-transcribe", 16'000, 2'000},
 }};
+
+// OpenAI documents no latency. The largest take is 6 MiB (kMaxAudioBytes) and at most the model's 16,000-token window
+// of audio, about 26.7 minutes at the 1 token per 100 ms OpenAI counts user audio at; such a take gets 300 s to
+// upload and be transcribed before its send is called ambiguous.
+constexpr double kTranscriptionTimeoutSeconds = 300.0;
+
+// How long stop() lets takes still with the vendor answer and settle: inside the 10 s Docker gives a stopping
+// container, with time left for the rest of shutdown.
+constexpr std::chrono::seconds kShutdownDrain{5};
 
 // How a take ends for the ledger. An answer that is not a success consumed nothing, and neither did a request that
 // never reached a connection or a TLS session: both settle at zero. A success settles at what it billed. Anything
@@ -74,6 +85,19 @@ OpenAiTranscriber::OpenAiTranscriber(std::string apiKey, std::string model, std:
   loop_.run();
 }
 
+void OpenAiTranscriber::stop() {
+  std::call_once(stopped_, [this] {
+    {
+      std::unique_lock lock(takesMutex_);
+      takesSettled_.wait_for(lock, kShutdownDrain, [this] { return takesWithVendor_ == 0; });
+    }
+    loop_.run();
+    auto* loop = loop_.getLoop();
+    loop->queueInLoop([loop] { loop->quit(); });
+    loop_.wait();
+  });
+}
+
 bool OpenAiTranscriber::configured() const {
   return !apiKey_.empty() && (!budget_ || transcriptionCeilingNanos(model_).has_value());
 }
@@ -94,10 +118,12 @@ void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
   spend.model = model_;
   spend.runId = newRunId("voice");
 
-  // The take holds the most it can cost before the audio leaves; an allowance that cannot hold it keeps the audio here.
+  // The take holds the most it can cost on a Windmill One grant before the audio leaves; an allowance that cannot hold
+  // it keeps the audio here.
   std::optional<AiBudgetReservation> reservation;
   if (budget_) {
-    const AiCallAdmission admission = budget_->begin(spend, transcriptionCeilingNanos(model_));
+    const AiCallAdmission admission =
+        budget_->begin(spend, transcriptionCeilingNanos(model_), AiCallFunding::windmillOne);
     if (!admission.reservation) {
       done(Transcription::refused(admission.refusal));
       return;
@@ -130,20 +156,34 @@ void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
 
   // Reports vendor, operation, status and cost, never a byte of the audio or the transcript.
   auto call = std::make_shared<VendorCall>("openai", "transcribe");
+  const std::string requestId = currentWriteRequestId();
+  {
+    std::lock_guard lock(takesMutex_);
+    ++takesWithVendor_;
+  }
   // `client` rides into the callback because nothing else owns it once this function returns.
   client->sendRequest(
       req,
-      [this, client, call, spend, reservation, done = std::move(done)](
+      [this, client, call, spend, reservation, requestId, done = std::move(done)](
           drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
+        // The take's vendor round, under the request id of the route that sent it, so the ledger and usage lines it
+        // settles share that id.
+        WriteObservation round{"journal.transcribe", "journal", "vendor", requestId};
+        WriteContext context{round};
         const bool succeeded = call->succeeded(result, response);
         const std::optional<Json::Value> reply = succeeded ? parseWhole(std::string(response->getBody())) : std::nullopt;
         const bool readable = reply && reply->isObject();
         const Json::Value usage = readable ? (*reply)["usage"] : Json::Value();
         const Json::Value text = readable ? (*reply)["text"] : Json::Value();
         const std::optional<long long> billed = transcriptionActualNanos(model_, usage);
+        // A transcript is proof the vendor did the work: with no usage to price, the take settles at the most it could
+        // cost rather than holding that, and the slot with it, for good.
+        const bool unpriced = text.isString() && !billed;
 
         // Settled before the answer is written, so the slot this take held is open to the next one.
-        if (reservation) budget_->finish(*reservation, billed, takeEnd(result, response));
+        if (reservation)
+          budget_->finish(*reservation, unpriced ? std::optional<long long>{reservation->amountNanos} : billed,
+                          takeEnd(result, response));
 
         // What the reply says it cost, never an estimate. A failed call lands a row too.
         spend.tokens = tokensFrom(usage);
@@ -155,10 +195,18 @@ void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
         meterSpend(spend, fuse_, usage_);
 
         if (succeeded && !text.isString()) LOG_ERROR << "OpenAI transcribe: unreadable reply";
-        else if (succeeded && !billed) LOG_ERROR << "OpenAI transcribe: reply carried no token usage";
+        else if (unpriced && reservation)
+          LOG_ERROR << "OpenAI transcribe: reply carried no token usage; the take settles at its ceiling";
+        else if (unpriced) LOG_ERROR << "OpenAI transcribe: reply carried no token usage";
+        round.finish(spend.outcome);
+        {
+          std::lock_guard lock(takesMutex_);
+          --takesWithVendor_;
+        }
+        takesSettled_.notify_all();
         done(text.isString() ? Transcription::words(text.asString()) : Transcription::failed());
       },
-      60.0);
+      kTranscriptionTimeoutSeconds);
 }
 
 }

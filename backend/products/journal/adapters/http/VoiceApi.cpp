@@ -70,10 +70,15 @@ VoiceTake VoiceRation::take(const std::string& account, std::size_t bytes) {
   return VoiceTake::ok;
 }
 
-void VoiceRation::release(const std::string& account) {
+void VoiceRation::release(const std::string& account, std::size_t unheardBytes) {
   std::lock_guard<std::mutex> guard{mutex_};
   auto entry = held_.find(account);
-  if (entry != held_.end() && entry->second.inFlight > 0) --entry->second.inFlight;
+  if (entry != held_.end()) {
+    Talking& talking = entry->second;
+    if (talking.inFlight > 0) --talking.inFlight;
+    talking.bytesLeft = std::min(static_cast<double>(kVoiceBytesPerDay),
+                                 talking.bytesLeft + static_cast<double>(unheardBytes));
+  }
   if (inFlight_ > 0) --inFlight_;
 }
 
@@ -155,8 +160,9 @@ void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
   // admission refuses the take before its audio leaves.
   transcriber_->transcribe(
       caller->id, audio, req->getHeader("content-type"),
-      [this, caller = *caller, cb = std::move(cb)](Transcription take) {
-        ration_.release(caller.id.str());
+      [this, caller = *caller, bytes = audio.size(), cb = std::move(cb)](Transcription take) {
+        // A refused take never reached the vendor, so its bytes go back on the day's bucket.
+        ration_.release(caller.id.str(), take.refusal.empty() ? 0 : bytes);
         if (take.text) {
           Json::Value body(Json::objectValue);
           body["text"] = *take.text;

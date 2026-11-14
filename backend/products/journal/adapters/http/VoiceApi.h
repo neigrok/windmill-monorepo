@@ -43,8 +43,9 @@ class VoiceRation {
 public:
   // Bytes off the day's bucket and a slot in both in-flight counters, taken together or not at all.
   VoiceTake take(const std::string& account, std::size_t bytes);
-  // The slot back once the vendor has answered, however it answered. The bytes are not returned.
-  void release(const std::string& account);
+  // The slot back once the take is over, however it ended. A heard take keeps its bytes spent; `unheardBytes` are
+  // those of a take the vendor never heard, and go back on the day's bucket.
+  void release(const std::string& account, std::size_t unheardBytes);
 
 private:
   struct Talking {

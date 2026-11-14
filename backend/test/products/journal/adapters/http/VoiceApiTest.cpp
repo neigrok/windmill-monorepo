@@ -289,3 +289,23 @@ TEST(voice_with_allowances_on_answers_a_refused_admission_under_the_code_that_re
   }
   CHECK_EQ(h.transcriber->calls, 4);
 }
+
+// A take the allowance refused never reached the vendor, so its bytes go back on the day's bucket: six refused
+// maximum takes leave the whole 30 MiB for the five that follow.
+TEST(voice_with_allowances_on_a_refused_take_gives_its_audio_back_to_the_day) {
+  Harness h{true};
+  UserId me = h.signIn("s-live");
+  h.fund(me);
+  const std::string take(kMaxAudioBytes, 'a');
+  h.transcriber->refusal = "concurrency_exhausted";
+  for (int i = 0; i < 6; ++i)
+    CHECK_EQ(send(h.api, post(take, "s-live"))->getStatusCode(), drogon::k503ServiceUnavailable);
+
+  h.transcriber->refusal.clear();
+  for (int i = 0; i < 5; ++i) CHECK_EQ(send(h.api, post(take, "s-live"))->getStatusCode(), drogon::k200OK);
+  const auto spent = send(h.api, post(take, "s-live"));
+
+  CHECK_EQ(spent->getStatusCode(), drogon::k429TooManyRequests);
+  CHECK_EQ(dump(*spent->getJsonObject()), std::string{R"({"error":"talk has had its turn for today"})"});
+  CHECK_EQ(h.transcriber->calls, 11);
+}
