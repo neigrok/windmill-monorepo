@@ -6440,6 +6440,11 @@ TEST(mcp_an_import_of_marks_alone_says_unchanged_only_when_no_mark_changed) {
   Harness h;
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"a","label":"A"},{"id":"b","label":"B"}]})")).isError);
 
+  // A dry run previews the graft and no mark: of marks alone it calls nothing unchanged, of an empty call it does.
+  CHECK_FALSE(body(h.call("import_subgraph", parse(R"({"dryRun":true,"nodes":[],"progress":[{"nodeId":"a","status":"complete"}]})")))
+                  .isMember("unchanged"));
+  CHECK(body(h.call("import_subgraph", parse(R"({"dryRun":true,"nodes":[]})")))["unchanged"].asBool());
+
   const Json::Value recorded = body(h.call("import_subgraph", parse(R"({"nodes":[],"progress":[{"nodeId":"a","status":"complete"}]})")));
   CHECK_FALSE(recorded.isMember("unchanged"));
   CHECK_EQ(recorded["progress"], parse(R"([{"nodeId":"a","prerequisitesMet":true,"status":"complete"}])"));

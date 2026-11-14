@@ -1384,7 +1384,10 @@ ToolResult importSubgraph(RoomRegistry& registry, TreeRegistry& trees, NodeEdits
       out["repaintedNodes"] = static_cast<Json::UInt64>(repaint.present);
     if (dryRun) {
       out["dryRun"] = true;
-      if (room.graftLandsNothing(graft, clock.nowMs())) out["unchanged"] = true;
+      // A dry run previews the graft and no mark, so one of marks alone has nothing to call unchanged.
+      const bool marksAlone =
+          incoming.nodes.empty() && incoming.kinds.empty() && graft.tombstones.empty() && !carried.empty();
+      if (room.graftLandsNothing(graft, clock.nowMs()) && !marksAlone) out["unchanged"] = true;
       Json::Value tombstone(Json::arrayValue);
       for (const NodeId& id : footprint.tombstonedNodes) tombstone.append(id.str());
       out["tombstone"] = tombstone;
