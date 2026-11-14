@@ -260,16 +260,18 @@ environments; the environment is read from the verified payload. The door is a f
 1. Read a bounded body.
 2. Verify the signed payload and the signed transaction and renewal info inside it: each certificate
    chain to the pinned Apple root certificates, each signature, that the bundle id is
-   `works.windmill.app`, and that the environment is `Production` or `Sandbox`.
+   `works.windmill.app`, that the environment is `Production` or `Sandbox`, and that it was signed at
+   most eight days ago, which covers Apple's redelivery schedule.
 3. Insert the signed payload into the inbox keyed by the notification's UUID. A duplicate already
    settled answers 200; one not yet settled goes on to step 4.
 4. Build the observation and apply it (§3.4) in one transaction with its periods, events and binding,
    which also settles the inbox row, so a notification is applied once however often it is retried.
 5. Answer 200.
 
-A failure at 1–2 answers 4xx and stores nothing. Once step 3 commits the door answers 200 whatever
-step 4 does: an unsettled inbox row is retried by the sweep (§7), so recovery never waits on the
-store's redelivery schedule. Apple redelivers a production notification five times over a week and a
+A failure at 1–2 answers 4xx and stores nothing; the answer names no reason, which the door logs. Once
+step 3 commits the door answers 200 whatever step 4 does, and answers before step 4 runs: an unsettled
+inbox row is applied by the sweep (§7 step 1) within a minute, so recovery never waits on the store's
+redelivery schedule. Apple redelivers a production notification five times over a week and a
 sandbox notification never. Later stores add `/v1/stores/play-store/notifications` and
 `/v1/stores/paddle/notifications` with the same shape.
 
@@ -447,13 +449,14 @@ so the close flow MUST say so before it proceeds, and name where to cancel.
 
 ## §7 The sweep
 
-One worker, hourly:
+One worker. Step 1 runs at start and every minute, the others hourly:
 
-1. Apply every inbox row not yet settled. A row settles in the transaction that applies it, or with its
-   code when it states nothing to apply, as Apple's test notification or a type the adapter does not
-   map (§8). An apply that fails for a reason a retry cannot change, such as a value the database
-   refuses, makes the row wait 1, 2, 4, then 8 hours before its next attempt, so it holds up no row
-   behind it, and its fifth such failure settles it `failed`, which the sweep reports.
+1. Apply every inbox row not yet settled, through its door's own §5.1 step 4. A row settles in the
+   transaction that applies it, or with its code when it states nothing to apply, as Apple's test
+   notification or a type the adapter does not map (§8). An apply that fails for a reason a retry cannot
+   change, such as a value the database refuses, makes the row wait 1, 2, 4, then 8 hours before its
+   next attempt, so it holds up no row behind it, and its fifth such failure settles it `failed`, which
+   the sweep reports. A row whose state waits on a status pull (§8) waits an hour between attempts.
 2. Pull the store's state for every subscription whose `accessUntil` falls within the next hour or
    has passed while its state still grants access or is `on_hold`.
 3. Pull every subscription not `expired` or `revoked` whose `verifiedAt` is older than seven days. A

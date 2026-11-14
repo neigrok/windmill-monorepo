@@ -9,6 +9,7 @@ use futures_util::FutureExt;
 use server::config::Config;
 use server::listeners::{Bounds, Listener};
 use server::store_doors::{self, AppStoreDoor};
+use server::sweep::InboxSweep;
 use server::telemetry;
 use storage::{Ledger, StorageError};
 use tokio::net::TcpListener;
@@ -134,6 +135,9 @@ async fn serve(config: Config, verifier: SignedDataVerifier) -> ExitCode {
         });
     }
 
+    // On start, so what the last run kept and left unsettled is applied first, then every minute.
+    let sweep = tokio::spawn(InboxSweep::new(ledger.clone(), app_store.clone()).run(stop.clone()));
+
     let signal = tokio::select! {
         _ = terminate.recv() => "SIGTERM",
         _ = interrupt.recv() => "SIGINT",
@@ -143,21 +147,38 @@ async fn serve(config: Config, verifier: SignedDataVerifier) -> ExitCode {
         }
     };
 
-    // Both listeners stop accepting at once; each then waits for the requests it is answering, the App Store door
-    // for the deliveries it is applying, and the ledger's connections close once nothing holds one.
+    // Both listeners stop accepting at once and the sweep stops after the row it is applying; each listener then waits
+    // for the requests it is answering, the App Store door for the deliveries it is applying, and the ledger's
+    // connections close once nothing holds one.
     tracing::info!(signal, "stopping");
     stop.cancel();
     let drained = async {
         running.join_all().await;
+        let _ = sweep.await;
         app_store.drain().await;
         ledger.close().await;
     };
-    match tokio::time::timeout(DRAIN_BOUND, drained).await {
-        Ok(_) => tracing::info!("stopped"),
-        Err(_) => tracing::warn!(
-            drain_bound_s = DRAIN_BOUND.as_secs(),
-            "stopped with requests still in flight"
-        ),
+    if tokio::time::timeout(DRAIN_BOUND, drained).await.is_ok() {
+        tracing::info!("stopped");
+        return ExitCode::SUCCESS;
     }
+    // Whatever was kept and not applied is applied by the next start's sweep; a delivery not kept yet is sent again.
+    let abandoned_deliveries = app_store.deliveries_under_way();
+    let sentry_event_id = (abandoned_deliveries > 0)
+        .then(|| {
+            telemetry::report(
+                sentry::Level::Error,
+                "store.notification",
+                "abandoned",
+                None,
+            )
+        })
+        .flatten();
+    tracing::warn!(
+        drain_bound_s = DRAIN_BOUND.as_secs(),
+        abandoned_deliveries,
+        sentry_event_id,
+        "stopped with requests still in flight"
+    );
     ExitCode::SUCCESS
 }

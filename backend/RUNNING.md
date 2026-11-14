@@ -90,9 +90,11 @@ psql -h /tmp -U windmill_subscriptions windmill_subscriptions \
 
 The inbox holds the notification `applied`, and the events are `started`, `bound` and `period_recorded`.
 The same `SIGNED` posted again answers 200 and adds nothing; a service started without
-`SUBSCRIPTIONS_APP_STORE_TEST_ROOT` answers it `400 {"error":"untrusted_chain"}` and keeps nothing. Each
-delivery writes one `store.notification` line to the service's stdout
-([ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#the-app-store-notification-door)). Stop the
+`SUBSCRIPTIONS_APP_STORE_TEST_ROOT` answers it `400 {"error":"refused"}` and keeps nothing, and its
+`store.notification` line says `untrusted_chain`. Each delivery writes one such line to the service's
+stdout, and the sweep one `sweep.inbox` line a minute
+([ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#the-app-store-notification-door)). Locally
+the service is reached directly; in production Caddy lets only Apple's subnet reach the door. Stop the
 service by its ports.
 
 ### Engine server for the iOS simulator

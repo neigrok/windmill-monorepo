@@ -116,14 +116,15 @@ impl SignedDataVerifier {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_millis() as i64);
         let signed_at = signed_date.unwrap_or(now);
-        if signed_at > now.saturating_add(CLOCK_SKEW_MILLIS) {
-            return Err(Refusal::SignedInFuture);
-        }
         let leaf_key = self.roots.verify_chain(&header.x5c, signed_at)?;
 
         UnparsedPublicKey::new(&ECDSA_P256_SHA256_FIXED, leaf_key)
             .verify(signing_input.as_bytes(), &decode_segment(signature)?)
             .map_err(|_| Refusal::Signature)?;
+        // Checked once the signature holds, so a payload refused for its date was signed by a trusted chain.
+        if signed_at > now.saturating_add(CLOCK_SKEW_MILLIS) {
+            return Err(Refusal::SignedInFuture);
+        }
         decode_json(&payload)
     }
 }
@@ -154,6 +155,15 @@ pub enum Refusal {
 }
 
 impl Refusal {
+    // Whether the payload this refuses verified under a trusted chain first: a statement the store signed, refused
+    // for what it says.
+    pub fn after_signature(self) -> bool {
+        matches!(
+            self,
+            Refusal::SignedInFuture | Refusal::BundleId | Refusal::Environment
+        )
+    }
+
     pub fn code(self) -> &'static str {
         match self {
             Refusal::Malformed => "malformed",

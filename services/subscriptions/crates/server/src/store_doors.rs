@@ -1,4 +1,7 @@
+use std::num::NonZero;
+use std::panic::resume_unwind;
 use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use app_store::decoding::{self, Awaiting, Decoded};
@@ -14,12 +17,12 @@ use sentry::{Hub, SentryFutureExt};
 use serde::Deserialize;
 use serde_json::json;
 use storage::{Applied, KeptNotification, Ledger, Observed, Receipt, StorageError};
-use tokio::sync::oneshot;
+use tokio::sync::{Semaphore, oneshot};
 use tokio_util::task::TaskTracker;
 use tracing::Instrument;
 use uuid::Uuid;
 
-use crate::telemetry;
+use crate::telemetry::{self, Throttle};
 
 const OPERATION: &str = "store.notification";
 
@@ -28,6 +31,17 @@ const OPERATION: &str = "store.notification";
 // own delays. Nothing checks revocation and validity is judged at signedDate, so this is also how long a leaf's key
 // can still sign after its certificate expires.
 const SIGNED_DATE_MAX_AGE: Duration = Duration::from_secs(8 * 24 * 60 * 60);
+
+// How long a notification that waits on its subscription's status, or has no door in this build, stays out of the
+// sweep: no sooner pass could change what it comes to.
+pub const POSTPONED_FOR: Duration = Duration::from_secs(60 * 60);
+
+// Applies at once, the door's and the sweep's together: half the ledger's connections, so keeping a notification
+// always finds one. A burst waits here, in memory, rather than at the pool's 5 s bound for a connection.
+const APPLIES_AT_ONCE: usize = Ledger::CONNECTIONS as usize / 2;
+
+// A store's statement refused although its signature held is worth knowing of, at most this often.
+const REFUSED_STATEMENTS_REPORTED_EVERY: Duration = Duration::from_secs(10 * 60);
 
 // The public doors through which the stores' statements reach the ledger (spec §5.1).
 pub fn router(app_store: AppStoreDoor) -> Router {
@@ -39,13 +53,19 @@ pub fn router(app_store: AppStoreDoor) -> Router {
         .with_state(app_store)
 }
 
-// App Store Server Notifications V2, from both environments: the environment is the verified payload's.
+// App Store Server Notifications V2, from both environments: the environment is the verified payload's. The sweep
+// applies what the door kept and left unsettled through the same step (§7).
 #[derive(Clone)]
 pub struct AppStoreDoor {
     ledger: Ledger,
     verifier: Arc<SignedDataVerifier>,
     clock: Arc<dyn Fn() -> SystemTime + Send + Sync>,
     deliveries: TaskTracker,
+    // Verification is CPU work, run off the async workers and at most once per core, so payloads nobody signed
+    // cost no more than the cores the service has.
+    verifications: Arc<Semaphore>,
+    applies: Arc<Semaphore>,
+    refused_statements: Arc<Throttle>,
 }
 
 // What Apple posts: the notification as one signed payload.
@@ -81,11 +101,15 @@ impl AppStoreDoor {
         verifier: SignedDataVerifier,
         clock: impl Fn() -> SystemTime + Send + Sync + 'static,
     ) -> AppStoreDoor {
+        let cores = thread::available_parallelism().map_or(1, NonZero::get);
         AppStoreDoor {
             ledger,
             verifier: Arc::new(verifier),
             clock: Arc::new(clock),
             deliveries: TaskTracker::new(),
+            verifications: Arc::new(Semaphore::new(cores)),
+            applies: Arc::new(Semaphore::new(APPLIES_AT_ONCE)),
+            refused_statements: Arc::new(Throttle::every(REFUSED_STATEMENTS_REPORTED_EVERY)),
         }
     }
 
@@ -95,92 +119,81 @@ impl AppStoreDoor {
         self.deliveries.wait().await;
     }
 
+    pub fn deliveries_under_way(&self) -> usize {
+        self.deliveries.len()
+    }
+
     // §5.1 in order: steps 1 to 3 keep the notification, step 5 answers, then step 4 applies it. Once the inbox holds
     // it the answer is 200 whatever the apply does, since the sweep applies what the apply leaves unsettled (§7).
-    async fn deliver(&self, body: &[u8], answer: oneshot::Sender<Response>) -> Delivery {
-        let arrival = self.keep(body).await;
+    async fn deliver(&self, body: &[u8], mut answer: oneshot::Sender<Response>) -> Delivery {
+        let arrival = self.keep(body, &mut answer).await;
+        let status = arrival.answer_status();
         let _ = answer.send(arrival.answer());
-        match arrival {
-            Arrival::Refused(refused) => Delivery {
-                environment: None,
-                redelivered: None,
-                outcome: Outcome::Refused(refused),
-            },
+        let (environment, redelivered, payload_differs, outcome) = match arrival {
+            Arrival::Left => (None, None, None, Outcome::Left),
+            Arrival::Refused(refused) => {
+                (refused.environment(), None, None, Outcome::Refused(refused))
+            }
             Arrival::NotKept {
                 environment,
                 failure,
-            } => Delivery {
-                environment: Some(environment),
-                redelivered: None,
-                outcome: Outcome::NotKept(failure),
-            },
-            Arrival::Settled { environment } => Delivery {
-                environment: Some(environment),
-                redelivered: Some(true),
-                outcome: Outcome::Duplicate,
-            },
+            } => (Some(environment), None, None, Outcome::NotKept(failure)),
+            Arrival::Settled { environment } => {
+                (Some(environment), Some(true), None, Outcome::Duplicate)
+            }
             Arrival::Unsettled {
                 environment,
                 notification,
                 kept,
                 redelivered,
-            } => Delivery {
-                environment: Some(environment),
-                redelivered: Some(redelivered),
-                outcome: self.apply(&notification, &kept).await,
-            },
+                payload_differs,
+            } => {
+                // A redelivery applies the notification the inbox holds: the record is what was kept first.
+                let kept_outcome = match notification {
+                    Some(notification) => self.apply(&notification, &kept).await,
+                    None => self.apply_kept(&kept).await,
+                };
+                (
+                    Some(environment),
+                    Some(redelivered),
+                    redelivered.then_some(payload_differs),
+                    Outcome::Kept(kept_outcome),
+                )
+            }
+        };
+        Delivery {
+            environment,
+            redelivered,
+            payload_differs,
+            answered: status,
+            outcome,
+            refused_statements: self.refused_statements.clone(),
         }
     }
 
     // Steps 1 to 3: the bounded body as Apple posts it, the signed payload verified with the transaction and renewal
     // info inside it, then kept in the inbox under its notificationUUID, once.
-    async fn keep(&self, body: &[u8]) -> Arrival {
-        let (notification, signed_payload) = match self.verify(body) {
-            Ok(verified) => verified,
-            Err(refused) => return Arrival::Refused(refused),
+    async fn keep(&self, body: &[u8], answer: &mut oneshot::Sender<Response>) -> Arrival {
+        let Ok(AppStoreNotificationRequest { signed_payload }) = serde_json::from_slice(body)
+        else {
+            return Arrival::Refused(Refused::Body);
+        };
+        // A client that leaves before its payload is verified is owed nothing: the door keeps nothing of it.
+        let verified = tokio::select! {
+            verified = self.verify(signed_payload.clone()) => verified,
+            () = answer.closed() => return Arrival::Left,
+        };
+        let notification = match verified {
+            Ok(notification) => notification,
+            Err(refusal) => return Arrival::Refused(Refused::Unverified(refusal)),
         };
         let environment = match notification.environment {
             verification::Environment::Production => Environment::Production,
             verification::Environment::Sandbox => Environment::Sandbox,
         };
-        let received = self
-            .ledger
-            .receive(storage::Notification {
-                store: Store::AppStore,
-                id: notification.notification_uuid.clone(),
-                environment,
-                signed_payload,
-            })
-            .await;
-        let (kept, redelivered) = match received {
-            Ok(Receipt::Kept(kept)) => (kept, false),
-            Ok(Receipt::Duplicate(Some(kept))) => (kept, true),
-            Ok(Receipt::Duplicate(None)) => return Arrival::Settled { environment },
-            Err(failure) => {
-                return Arrival::NotKept {
-                    environment,
-                    failure,
-                };
-            }
-        };
-        Arrival::Unsettled {
-            environment,
-            notification: Box::new(notification),
-            kept,
-            redelivered,
-        }
-    }
-
-    fn verify(&self, body: &[u8]) -> Result<(Notification, String), Refused> {
-        let AppStoreNotificationRequest { signed_payload } =
-            serde_json::from_slice(body).map_err(|_| Refused::Body)?;
-        let notification = self
-            .verifier
-            .verify_notification(&signed_payload)
-            .map_err(Refused::Unverified)?;
         // The inbox keys the notification by its UUID, and no text the ledger keeps can hold NUL.
         if notification.notification_uuid.contains('\0') {
-            return Err(Refused::NotificationUuid);
+            return Arrival::Refused(Refused::NotificationUuid(environment));
         }
         let now = (self.clock)()
             .duration_since(UNIX_EPOCH)
@@ -190,14 +203,91 @@ impl AppStoreDoor {
             .signed_date
             .is_some_and(|signed_at| signed_at < oldest)
         {
-            return Err(Refused::SignedTooLongAgo);
+            return Arrival::Refused(Refused::SignedTooLongAgo(environment));
         }
-        Ok((notification, signed_payload))
+
+        let received = self
+            .ledger
+            .receive(storage::Notification {
+                store: Store::AppStore,
+                id: notification.notification_uuid.clone(),
+                environment,
+                signed_payload: signed_payload.clone(),
+            })
+            .await;
+        match received {
+            Ok(Receipt::Kept(kept)) => Arrival::Unsettled {
+                environment,
+                notification: Some(Box::new(notification)),
+                kept,
+                redelivered: false,
+                payload_differs: false,
+            },
+            Ok(Receipt::Duplicate(Some(kept))) => {
+                let payload_differs = kept.notification().signed_payload != signed_payload;
+                Arrival::Unsettled {
+                    environment,
+                    notification: (!payload_differs).then(|| Box::new(notification)),
+                    kept,
+                    redelivered: true,
+                    payload_differs,
+                }
+            }
+            Ok(Receipt::Duplicate(None)) => Arrival::Settled { environment },
+            Err(failure) => Arrival::NotKept {
+                environment,
+                failure,
+            },
+        }
+    }
+
+    // The verifier on the blocking pool, one payload per core at a time. The turn is the blocking task's own, so a
+    // verification its caller stopped waiting for still holds it until it ends.
+    async fn verify(&self, signed_payload: String) -> Result<Notification, verification::Refusal> {
+        let turn = self
+            .verifications
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("the door never closes its semaphores");
+        let verifier = self.verifier.clone();
+        let hub = Hub::current();
+        let verified = tokio::task::spawn_blocking(move || {
+            let verified = Hub::run(hub, || verifier.verify_notification(&signed_payload));
+            drop(turn);
+            verified
+        })
+        .await;
+        match verified {
+            Ok(verified) => verified,
+            Err(panicked) => resume_unwind(panicked.into_panic()),
+        }
+    }
+
+    // Step 4 for a notification the inbox holds, read from the inbox's own copy: a redelivery whose bytes differ, or a
+    // row the sweep found unsettled. The door's own rules held when it was kept and are not asked again.
+    pub async fn apply_kept(&self, kept: &KeptNotification) -> KeptOutcome {
+        match self
+            .verify(kept.notification().signed_payload.clone())
+            .await
+        {
+            Ok(notification) => self.apply(&notification, kept).await,
+            // Kept under a root this deployment no longer trusts, or no longer readable: it states nothing to apply.
+            Err(refusal) => {
+                self.settle(kept, refusal.code(), KeptOutcome::Unverifiable)
+                    .await
+            }
+        }
     }
 
     // Step 4: what the notification states, applied in the transaction that settles it, or the notification settled
-    // with the code of why nothing applies. One whose state waits on a status pull stays unsettled (§8).
-    async fn apply(&self, notification: &Notification, kept: &KeptNotification) -> Outcome {
+    // with the code of why nothing applies. One whose state waits on a status pull is postponed (§8).
+    async fn apply(&self, notification: &Notification, kept: &KeptNotification) -> KeptOutcome {
+        let _turn = self
+            .applies
+            .acquire()
+            .await
+            .expect("the door never closes its semaphores");
         match decoding::decode(notification) {
             Decoded::Observation {
                 observation,
@@ -211,16 +301,30 @@ impl AppStoreDoor {
                     pulled_at: None,
                 };
                 match self.ledger.apply_notification(kept, observed).await {
-                    Ok(Applied::Recorded { seqs, .. }) => Outcome::Applied { events: seqs.len() },
-                    Ok(Applied::Refused(refusal)) => Outcome::Settled(refusal.name()),
-                    Ok(Applied::AlreadySettled) => Outcome::Duplicate,
-                    Err(failure) => Outcome::ApplyFailed(failure),
+                    Ok(Applied::Recorded { seqs, .. }) => {
+                        KeptOutcome::Applied { events: seqs.len() }
+                    }
+                    Ok(Applied::Refused(refusal)) => KeptOutcome::Settled(refusal.name()),
+                    Ok(Applied::AlreadySettled) => KeptOutcome::AlreadySettled,
+                    Err(failure) => KeptOutcome::Failed(failure),
                 }
             }
-            Decoded::AwaitsStatus { awaiting, .. } => Outcome::AwaitsStatus(awaiting),
-            Decoded::Silent(silence) => self.settle(kept, silence.code(), Outcome::Settled).await,
+            Decoded::AwaitsStatus { awaiting, .. } => {
+                match self
+                    .ledger
+                    .postpone(kept, POSTPONED_FOR.as_millis() as i64)
+                    .await
+                {
+                    Ok(()) => KeptOutcome::AwaitsStatus(awaiting),
+                    Err(failure) => KeptOutcome::Failed(failure),
+                }
+            }
+            Decoded::Silent(silence) => {
+                self.settle(kept, silence.code(), KeptOutcome::Settled)
+                    .await
+            }
             Decoded::Unsupported(unsupported) => {
-                self.settle(kept, unsupported.code(), Outcome::Unsupported)
+                self.settle(kept, unsupported.code(), KeptOutcome::Unsupported)
                     .await
             }
         }
@@ -230,17 +334,81 @@ impl AppStoreDoor {
         &self,
         kept: &KeptNotification,
         code: &'static str,
-        outcome: fn(&'static str) -> Outcome,
-    ) -> Outcome {
+        outcome: fn(&'static str) -> KeptOutcome,
+    ) -> KeptOutcome {
         match self.ledger.settle(kept, code).await {
             Ok(()) => outcome(code),
-            Err(failure) => Outcome::ApplyFailed(failure),
+            Err(failure) => KeptOutcome::Failed(failure),
         }
+    }
+}
+
+// What step 4 came to for a notification the inbox holds, by the door or by the sweep.
+pub enum KeptOutcome {
+    Applied { events: usize },
+    // Settled with the code of why nothing applies: Apple's silence, or the domain's refusal.
+    Settled(&'static str),
+    // Settled with the code of what the adapter does not map (§8).
+    Unsupported(&'static str),
+    // Settled with the verifier's code: the inbox's copy does not verify any more.
+    Unverifiable(&'static str),
+    // Postponed until the subscription's status is pulled (§8).
+    AwaitsStatus(Awaiting),
+    // Settled by another delivery or the sweep first: nothing changed.
+    AlreadySettled,
+    // Left unsettled, for the sweep.
+    Failed(StorageError),
+}
+
+impl KeptOutcome {
+    pub fn label(&self) -> &'static str {
+        match self {
+            KeptOutcome::Applied { .. } => "applied",
+            KeptOutcome::Settled(_) => "settled",
+            KeptOutcome::Unsupported(_) => "unsupported",
+            KeptOutcome::Unverifiable(_) => "unverifiable",
+            KeptOutcome::AwaitsStatus(_) => "awaits_status",
+            KeptOutcome::AlreadySettled => "duplicate",
+            KeptOutcome::Failed(_) => "apply_failed",
+        }
+    }
+
+    pub fn code(&self) -> Option<&'static str> {
+        match self {
+            KeptOutcome::Applied { .. } | KeptOutcome::AlreadySettled => None,
+            KeptOutcome::Settled(code)
+            | KeptOutcome::Unsupported(code)
+            | KeptOutcome::Unverifiable(code) => Some(code),
+            KeptOutcome::AwaitsStatus(awaiting) => Some(awaiting.code()),
+            KeptOutcome::Failed(failure) => Some(failure.code()),
+        }
+    }
+
+    pub fn sqlstate(&self) -> Option<&str> {
+        match self {
+            KeptOutcome::Failed(failure) => failure.sqlstate(),
+            _ => None,
+        }
+    }
+
+    // A failure, and what the ledger cannot take from a notification it holds: a type the adapter does not map, a copy
+    // that does not verify any more, a latest transaction Apple's renewal info does not confirm, which stalls its
+    // lineage until a status pull (§8).
+    pub fn reported(&self) -> bool {
+        matches!(
+            self,
+            KeptOutcome::Failed(_)
+                | KeptOutcome::Unsupported(_)
+                | KeptOutcome::Unverifiable(_)
+                | KeptOutcome::AwaitsStatus(Awaiting::LatestUnconfirmed)
+        )
     }
 }
 
 // What steps 1 to 3 came to, which decides the answer.
 enum Arrival {
+    // The client left before its payload was verified.
+    Left,
     Refused(Refused),
     NotKept {
         environment: Environment,
@@ -250,39 +418,47 @@ enum Arrival {
     Settled {
         environment: Environment,
     },
-    // The inbox holds it unsettled: a first delivery, or a redelivery of one not applied yet, which applies now.
+    // The inbox holds it unsettled: a first delivery, or a redelivery of one not applied yet, which applies now. The
+    // verified notification comes along when it is the inbox's copy.
     Unsettled {
         environment: Environment,
-        notification: Box<Notification>,
+        notification: Option<Box<Notification>>,
         kept: KeptNotification,
         redelivered: bool,
+        payload_differs: bool,
     },
 }
 
 impl Arrival {
-    // A refusal is the store's to see; any 4xx or 5xx makes Apple send the notification again.
-    fn answer(&self) -> Response {
+    // Any 4xx or 5xx makes Apple send a notification again; Apple reads no body, and a refusal's code is the log's.
+    fn answer_status(&self) -> StatusCode {
         match self {
-            Arrival::Refused(refused) => {
-                let body = Json(json!({ "error": refused.code() }));
-                (StatusCode::BAD_REQUEST, body).into_response()
+            Arrival::Refused(_) => StatusCode::BAD_REQUEST,
+            Arrival::NotKept { .. } | Arrival::Left => StatusCode::SERVICE_UNAVAILABLE,
+            Arrival::Settled { .. } | Arrival::Unsettled { .. } => StatusCode::OK,
+        }
+    }
+
+    fn answer(&self) -> Response {
+        let status = self.answer_status();
+        match self {
+            Arrival::Refused(_) => (status, Json(json!({ "error": "refused" }))).into_response(),
+            Arrival::NotKept { .. } | Arrival::Left => {
+                (status, Json(json!({ "error": "unavailable" }))).into_response()
             }
-            Arrival::NotKept { .. } => {
-                let body = Json(json!({ "error": "unavailable" }));
-                (StatusCode::SERVICE_UNAVAILABLE, body).into_response()
-            }
-            Arrival::Settled { .. } | Arrival::Unsettled { .. } => StatusCode::OK.into_response(),
+            Arrival::Settled { .. } | Arrival::Unsettled { .. } => status.into_response(),
         }
     }
 }
 
-// Why the door kept nothing of a delivery: what a log line and the answer carry about it.
+// Why the door kept nothing of a delivery. A payload refused before its signature held could be anyone's; one refused
+// after it is the store's own statement, which the door refuses for what it says.
 #[derive(Clone, Copy)]
 enum Refused {
     Body,
     Unverified(verification::Refusal),
-    NotificationUuid,
-    SignedTooLongAgo,
+    NotificationUuid(Environment),
+    SignedTooLongAgo(Environment),
 }
 
 impl Refused {
@@ -290,70 +466,66 @@ impl Refused {
         match self {
             Refused::Body => "body",
             Refused::Unverified(refusal) => refusal.code(),
-            Refused::NotificationUuid => "notification_uuid",
-            Refused::SignedTooLongAgo => "signed_too_long_ago",
+            Refused::NotificationUuid(_) => "notification_uuid",
+            Refused::SignedTooLongAgo(_) => "signed_too_long_ago",
+        }
+    }
+
+    fn signed(self) -> bool {
+        match self {
+            Refused::Body => false,
+            Refused::Unverified(refusal) => refusal.after_signature(),
+            Refused::NotificationUuid(_) | Refused::SignedTooLongAgo(_) => true,
+        }
+    }
+
+    // The verifier answers its refusals without the payload's environment, so only the door's own carry one.
+    fn environment(self) -> Option<Environment> {
+        match self {
+            Refused::Body | Refused::Unverified(_) => None,
+            Refused::NotificationUuid(environment) | Refused::SignedTooLongAgo(environment) => {
+                Some(environment)
+            }
         }
     }
 }
 
 enum Outcome {
+    Left,
     Refused(Refused),
     // Answered 503, so the store sends it again.
     NotKept(StorageError),
-    // Settled already, by an earlier delivery or the sweep: nothing changed.
+    // Settled already when it arrived: nothing changed.
     Duplicate,
-    Applied { events: usize },
-    // Settled with the code of why nothing applies: Apple's silence, or the domain's refusal.
-    Settled(&'static str),
-    // Settled with the code of what the adapter does not map (§8).
-    Unsupported(&'static str),
-    // Kept unsettled until the subscription's status is pulled (§8).
-    AwaitsStatus(Awaiting),
-    // Kept unsettled, for the sweep.
-    ApplyFailed(StorageError),
+    Kept(KeptOutcome),
 }
 
 impl Outcome {
     fn label(&self) -> &'static str {
         match self {
+            Outcome::Left => "left",
             Outcome::Refused(_) => "refused",
             Outcome::NotKept(_) => "not_kept",
             Outcome::Duplicate => "duplicate",
-            Outcome::Applied { .. } => "applied",
-            Outcome::Settled(_) => "settled",
-            Outcome::Unsupported(_) => "unsupported",
-            Outcome::AwaitsStatus(_) => "awaits_status",
-            Outcome::ApplyFailed(_) => "apply_failed",
+            Outcome::Kept(kept) => kept.label(),
         }
     }
 
     fn code(&self) -> Option<&'static str> {
         match self {
+            Outcome::Left | Outcome::Duplicate => None,
             Outcome::Refused(refused) => Some(refused.code()),
-            Outcome::NotKept(failure) | Outcome::ApplyFailed(failure) => Some(failure.code()),
-            Outcome::Duplicate | Outcome::Applied { .. } => None,
-            Outcome::Settled(code) | Outcome::Unsupported(code) => Some(code),
-            Outcome::AwaitsStatus(awaiting) => Some(awaiting.code()),
+            Outcome::NotKept(failure) => Some(failure.code()),
+            Outcome::Kept(kept) => kept.code(),
         }
     }
 
     fn sqlstate(&self) -> Option<&str> {
         match self {
-            Outcome::NotKept(failure) | Outcome::ApplyFailed(failure) => failure.sqlstate(),
+            Outcome::NotKept(failure) => failure.sqlstate(),
+            Outcome::Kept(kept) => kept.sqlstate(),
             _ => None,
         }
-    }
-
-    // A failure, a notification the adapter does not map, and a latest transaction Apple's renewal info does not
-    // confirm, which stalls its lineage until a status pull (§8). A refusal is never an Issue (§10).
-    fn reported(&self) -> bool {
-        matches!(
-            self,
-            Outcome::NotKept(_)
-                | Outcome::ApplyFailed(_)
-                | Outcome::Unsupported(_)
-                | Outcome::AwaitsStatus(Awaiting::LatestUnconfirmed)
-        )
     }
 }
 
@@ -362,7 +534,10 @@ impl Outcome {
 struct Delivery {
     environment: Option<Environment>,
     redelivered: Option<bool>,
+    payload_differs: Option<bool>,
+    answered: StatusCode,
     outcome: Outcome,
+    refused_statements: Arc<Throttle>,
 }
 
 impl Delivery {
@@ -370,19 +545,35 @@ impl Delivery {
         let Delivery {
             environment,
             redelivered,
+            payload_differs,
+            answered,
             ref outcome,
+            ref refused_statements,
         } = self;
         let store = Store::AppStore.name();
         let environment = environment.map(Environment::name);
+        let answered = answered.as_u16();
         let code = outcome.code();
         let sqlstate = outcome.sqlstate();
         let events = match outcome {
-            Outcome::Applied { events } => Some(*events),
+            Outcome::Kept(KeptOutcome::Applied { events }) => Some(*events),
             _ => None,
         };
-        let sentry_event_id = code
-            .filter(|_| outcome.reported())
-            .and_then(|code| telemetry::report(OPERATION, code, sqlstate));
+        let failed = match outcome {
+            Outcome::NotKept(_) => true,
+            Outcome::Kept(kept) => kept.reported(),
+            _ => false,
+        };
+        let refused_statement = matches!(outcome, Outcome::Refused(refused) if refused.signed());
+        let sentry_event_id = match code {
+            Some(code) if failed => {
+                telemetry::report(sentry::Level::Error, OPERATION, code, sqlstate)
+            }
+            Some(code) if refused_statement => {
+                refused_statements.report(sentry::Level::Warning, OPERATION, code, None)
+            }
+            _ => None,
+        };
         let duration_ms = (elapsed.as_secs_f64() * 100_000.0).round() / 100.0;
         // tracing fixes a line's level at the call, so the line is written once, placed below.
         macro_rules! notification_line {
@@ -394,7 +585,9 @@ impl Delivery {
                     outcome = outcome.label(),
                     code,
                     sqlstate,
+                    answered,
                     redelivered,
+                    payload_differs,
                     events,
                     duration_ms,
                     sentry_event_id,
@@ -403,8 +596,9 @@ impl Delivery {
             };
         }
         match outcome {
-            _ if outcome.reported() => notification_line!(error),
-            Outcome::Refused(_) | Outcome::AwaitsStatus(_) => notification_line!(warn),
+            _ if failed => notification_line!(error),
+            _ if refused_statement => notification_line!(warn),
+            Outcome::Kept(KeptOutcome::AwaitsStatus(_)) => notification_line!(warn),
             _ => notification_line!(info),
         }
     }

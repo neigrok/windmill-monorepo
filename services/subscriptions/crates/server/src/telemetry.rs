@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::io;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use sentry::integrations::backtrace::current_stacktrace;
 use sentry::integrations::tracing::LogLayer;
@@ -90,7 +91,7 @@ impl TransportFactory for BoundedSends {
 
 // An unexpected failure of a named operation (spec §10), and the one line naming the operation and its code.
 pub fn report_failure(operation: &'static str, code: &'static str, sqlstate: Option<&str>) {
-    let sentry_event_id = report(operation, code, sqlstate);
+    let sentry_event_id = report(sentry::Level::Error, operation, code, sqlstate);
     tracing::error!(
         operation,
         code,
@@ -100,9 +101,10 @@ pub fn report_failure(operation: &'static str, code: &'static str, sqlstate: Opt
     );
 }
 
-// One Issue per operation and code, answering the event's id for the caller's own line, absent while Sentry is off.
-// No message travels: a failure's text can quote what it was handed.
+// One Issue per operation and code, at `level`, answering the event's id for the caller's own line, absent while
+// Sentry is off. No message travels: a failure's text can quote what it was handed.
 pub fn report(
+    level: sentry::Level,
     operation: &'static str,
     code: &'static str,
     sqlstate: Option<&str>,
@@ -116,9 +118,51 @@ pub fn report(
             }
             scope.set_fingerprint(Some(&[operation, code]));
         },
-        || sentry::capture_message(operation, sentry::Level::Error),
+        || sentry::capture_message(operation, level),
     );
     (!event_id.is_nil()).then(|| event_id.simple().to_string())
+}
+
+// At most one report of each operation and code per interval: what something outside the service can make happen as
+// often as it likes, such as a store's refused statement, reaches Sentry without spending its quota.
+pub struct Throttle {
+    every: Duration,
+    last_reported: Mutex<HashMap<(&'static str, &'static str), Instant>>,
+}
+
+impl Throttle {
+    pub fn every(interval: Duration) -> Throttle {
+        Throttle {
+            every: interval,
+            last_reported: Mutex::new(HashMap::new()),
+        }
+    }
+
+    // Reports as `report` does, unless the same operation and code was reported within the interval.
+    pub fn report(
+        &self,
+        level: sentry::Level,
+        operation: &'static str,
+        code: &'static str,
+        sqlstate: Option<&str>,
+    ) -> Option<String> {
+        let now = Instant::now();
+        let due = {
+            let mut last_reported = self
+                .last_reported
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let due = last_reported
+                .get(&(operation, code))
+                .is_none_or(|last| now.duration_since(*last) >= self.every);
+            if due {
+                last_reported.insert((operation, code), now);
+            }
+            due
+        };
+        due.then(|| report(level, operation, code, sqlstate))
+            .flatten()
+    }
 }
 
 // The other source of Issues: location and stack, never the message, which may hold anything.

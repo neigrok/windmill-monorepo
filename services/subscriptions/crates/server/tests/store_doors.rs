@@ -30,9 +30,11 @@ use serde_json::{Value, json};
 use server::config::Config;
 use server::listeners::{Bounds, Listener};
 use server::store_doors::{self, AppStoreDoor};
+use server::sweep::{InboxSweep, Pass};
 use server::telemetry::json_lines;
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
 use storage::{Ledger, Notification, Receipt};
+use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
 use tracing_subscriber::prelude::*;
 use url::Url;
@@ -150,7 +152,11 @@ impl Captured {
 
     // A delivery logs its line once the pipeline behind its answer is done.
     async fn delivered(&self, count: usize) -> Vec<Value> {
-        let deadline = Instant::now() + Duration::from_secs(15);
+        self.delivered_within(count, Duration::from_secs(15)).await
+    }
+
+    async fn delivered_within(&self, count: usize, bound: Duration) -> Vec<Value> {
+        let deadline = Instant::now() + bound;
         loop {
             let deliveries = self.deliveries();
             if deliveries.len() >= count {
@@ -158,7 +164,7 @@ impl Captured {
             }
             assert!(
                 Instant::now() < deadline,
-                "{count} deliveries were not logged within 15 s: {deliveries:#?}"
+                "{count} deliveries were not logged within {bound:?}: {deliveries:#?}"
             );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -185,6 +191,15 @@ impl Clock {
 }
 
 fn public_router(ledger: &Ledger, verifier: SignedDataVerifier, clock: &Clock) -> Router {
+    door_and_router(ledger, verifier, clock).1
+}
+
+// The door the public router serves, for a test that also drains it or sweeps behind it.
+fn door_and_router(
+    ledger: &Ledger,
+    verifier: SignedDataVerifier,
+    clock: &Clock,
+) -> (AppStoreDoor, Router) {
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
@@ -194,12 +209,13 @@ fn public_router(ledger: &Ledger, verifier: SignedDataVerifier, clock: &Clock) -
     })
     .unwrap();
     let door = AppStoreDoor::new(ledger.clone(), verifier, clock.reading());
-    Listener::Public.router(
+    let router = Listener::Public.router(
         &config,
         ledger.clone(),
-        store_doors::router(door),
+        store_doors::router(door.clone()),
         Bounds::default(),
-    )
+    );
+    (door, router)
 }
 
 fn trusting_the_test_root(clock: &Clock) -> SignedDataVerifier {
@@ -348,6 +364,7 @@ fn every_example_story_is_answered_once_kept_and_applied_into_the_feed() {
             "store": "app_store",
             "environment": "sandbox",
             "outcome": "applied",
+            "answered": 200,
             "redelivered": false,
             "events": events,
         })
@@ -450,6 +467,7 @@ fn the_same_delivery_again_answers_200_and_keeps_and_applies_nothing_more() {
                 "store": "app_store",
                 "environment": "sandbox",
                 "outcome": "applied",
+                "answered": 200,
                 "redelivered": false,
                 "events": 3,
             }),
@@ -460,6 +478,7 @@ fn the_same_delivery_again_answers_200_and_keeps_and_applies_nothing_more() {
                 "store": "app_store",
                 "environment": "sandbox",
                 "outcome": "duplicate",
+                "answered": 200,
                 "redelivered": true,
             }),
         ]
@@ -523,7 +542,9 @@ fn a_notification_kept_but_never_applied_is_applied_when_it_is_delivered_again()
             "store": "app_store",
             "environment": "sandbox",
             "outcome": "applied",
+            "answered": 200,
             "redelivered": true,
+            "payload_differs": false,
             "events": 3,
         })]
     );
@@ -609,20 +630,24 @@ fn a_delivery_that_does_not_verify_answers_400_with_its_code_keeps_nothing_and_r
 
     assert_eq!(
         answers,
-        ["signature", "untrusted_chain", "malformed", "body", "body"].map(|code| (
-            StatusCode::BAD_REQUEST,
-            json!({ "error": code }).to_string()
-        ))
+        vec![
+            (
+                StatusCode::BAD_REQUEST,
+                json!({ "error": "refused" }).to_string()
+            );
+            5
+        ]
     );
     assert_eq!(
         deliveries,
         ["signature", "untrusted_chain", "malformed", "body", "body"].map(|code| {
             json!({
-                "level": "WARN",
+                "level": "INFO",
                 "message": "store.notification",
                 "operation": "store.notification",
                 "store": "app_store",
                 "outcome": "refused",
+                "answered": 400,
                 "code": code,
             })
         })
@@ -655,17 +680,18 @@ fn a_service_that_trusts_apple_s_root_alone_refuses_what_the_test_signer_signs()
         answer,
         (
             StatusCode::BAD_REQUEST,
-            json!({ "error": "untrusted_chain" }).to_string()
+            json!({ "error": "refused" }).to_string()
         )
     );
     assert_eq!(
         deliveries,
         [json!({
-            "level": "WARN",
+            "level": "INFO",
             "message": "store.notification",
             "operation": "store.notification",
             "store": "app_store",
             "outcome": "refused",
+            "answered": 400,
             "code": "untrusted_chain",
         })]
     );
@@ -675,7 +701,7 @@ fn a_service_that_trusts_apple_s_root_alone_refuses_what_the_test_signer_signs()
 
 #[test]
 #[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
-fn a_notification_uuid_holding_nul_and_a_signing_older_than_eight_days_are_refused() {
+fn apple_s_statements_refused_for_what_they_say_are_warned_of_at_most_once_a_while() {
     let start = 1_793_491_200_000;
     let eight_days = 8 * 86_400_000;
     let ((answers, deliveries, inbox), events) = reported(with_empty_database(async |url| {
@@ -689,43 +715,84 @@ fn a_notification_uuid_holding_nul_and_a_signing_older_than_eight_days_are_refus
 
         let mut answers = vec![post(&router, delivery(&signed(holding_nul, start))).await];
         clock.set(start + eight_days + 1);
-        answers.push(post(&router, delivery(&signed(story("started.json"), start))).await);
+        for _ in 0..2 {
+            answers.push(post(&router, delivery(&signed(story("started.json"), start))).await);
+        }
+        let ahead = start + eight_days + 1 + 60_001;
+        answers.push(post(&router, delivery(&signed(story("started.json"), ahead))).await);
         clock.set(start + eight_days);
         answers.push(post(&router, delivery(&signed(story("started.json"), start))).await);
-        let deliveries = captured.delivered(3).await;
+        let deliveries = captured.delivered(5).await;
 
         (answers, deliveries, inbox(&url).await)
     }));
 
+    let refused = (
+        StatusCode::BAD_REQUEST,
+        json!({ "error": "refused" }).to_string(),
+    );
     assert_eq!(
         answers,
         [
-            (
-                StatusCode::BAD_REQUEST,
-                json!({ "error": "notification_uuid" }).to_string()
-            ),
-            (
-                StatusCode::BAD_REQUEST,
-                json!({ "error": "signed_too_long_ago" }).to_string()
-            ),
+            refused.clone(),
+            refused.clone(),
+            refused.clone(),
+            refused,
             (StatusCode::OK, String::new()),
         ]
     );
-    let refused = |code: &str| {
-        json!({
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| (
+                event.level,
+                event.tags["code"].as_str(),
+                &event.fingerprint[..]
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (
+                sentry::Level::Warning,
+                "notification_uuid",
+                &["store.notification".into(), "notification_uuid".into()][..]
+            ),
+            (
+                sentry::Level::Warning,
+                "signed_too_long_ago",
+                &["store.notification".into(), "signed_too_long_ago".into()][..]
+            ),
+            (
+                sentry::Level::Warning,
+                "signed_in_future",
+                &["store.notification".into(), "signed_in_future".into()][..]
+            ),
+        ]
+    );
+    let refused_line = |code: &str, environment: Option<&str>, event: Option<usize>| {
+        let mut line = json!({
             "level": "WARN",
             "message": "store.notification",
             "operation": "store.notification",
             "store": "app_store",
             "outcome": "refused",
+            "answered": 400,
             "code": code,
-        })
+        });
+        if let Some(environment) = environment {
+            line["environment"] = json!(environment);
+        }
+        if let Some(event) = event {
+            line["sentry_event_id"] = json!(events[event].event_id.simple().to_string());
+        }
+        line
     };
     assert_eq!(
         deliveries,
         [
-            refused("notification_uuid"),
-            refused("signed_too_long_ago"),
+            refused_line("notification_uuid", Some("sandbox"), Some(0)),
+            refused_line("signed_too_long_ago", Some("sandbox"), Some(1)),
+            refused_line("signed_too_long_ago", Some("sandbox"), None),
+            refused_line("signed_in_future", None, Some(2)),
             json!({
                 "level": "INFO",
                 "message": "store.notification",
@@ -733,6 +800,7 @@ fn a_notification_uuid_holding_nul_and_a_signing_older_than_eight_days_are_refus
                 "store": "app_store",
                 "environment": "sandbox",
                 "outcome": "applied",
+                "answered": 200,
                 "redelivered": false,
                 "events": 3,
             }),
@@ -745,7 +813,6 @@ fn a_notification_uuid_holding_nul_and_a_signing_older_than_eight_days_are_refus
             .collect::<Vec<_>>(),
         [("sandbox".to_owned(), Some("applied".to_owned()))]
     );
-    assert_eq!(events.len(), 0, "{events:#?}");
 }
 
 #[test]
@@ -818,6 +885,7 @@ fn what_the_adapter_does_not_map_is_settled_with_its_code_and_reported_and_apple
                 "environment": "sandbox",
                 "outcome": "unsupported",
                 "code": "unknown_type",
+                "answered": 200,
                 "redelivered": false,
                 "sentry_event_id": event.event_id.simple().to_string(),
             }),
@@ -829,6 +897,7 @@ fn what_the_adapter_does_not_map_is_settled_with_its_code_and_reported_and_apple
                 "environment": "sandbox",
                 "outcome": "settled",
                 "code": "test",
+                "answered": 200,
                 "redelivered": false,
             }),
         ]
@@ -852,36 +921,44 @@ fn what_the_adapter_does_not_map_is_settled_with_its_code_and_reported_and_apple
 
 #[test]
 #[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
-fn a_notification_waiting_on_its_status_stays_unsettled_and_an_unconfirmed_latest_is_reported() {
+fn a_notification_waiting_on_its_status_stays_unsettled_out_of_the_sweep_and_an_unconfirmed_latest_is_reported()
+ {
     let start = 1_793_491_200_000;
-    let ((answers, deliveries, inbox, feed), events) = reported(with_empty_database(async |url| {
-        let (captured, _logs) = Captured::start();
-        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
-        let clock = Clock::at(start);
-        let router = public_router(&ledger, trusting_the_test_root(&clock), &clock);
-        let mut unconfirmed = story("started.json");
-        unconfirmed["notification"]["notificationUUID"] =
-            json!("00000000-0000-4000-8000-000000000001");
-        unconfirmed["notification"]["data"]["signedRenewalInfo"]["renewalDate"] = json!("now+31d");
-        let mut of_an_earlier_month = story("refunded.json");
-        of_an_earlier_month["notification"]["notificationUUID"] =
-            json!("00000000-0000-4000-8000-000000000002");
-        of_an_earlier_month["notification"]["data"]["signedRenewalInfo"]["renewalDate"] =
-            json!("now+50d");
+    let ((answers, deliveries, inbox, feed, pass), events) =
+        reported(with_empty_database(async |url| {
+            let (captured, _logs) = Captured::start();
+            let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+            let clock = Clock::at(start);
+            let (door, router) = door_and_router(&ledger, trusting_the_test_root(&clock), &clock);
+            let mut unconfirmed = story("started.json");
+            unconfirmed["notification"]["notificationUUID"] =
+                json!("00000000-0000-4000-8000-000000000001");
+            unconfirmed["notification"]["data"]["signedRenewalInfo"]["renewalDate"] =
+                json!("now+31d");
+            let mut of_an_earlier_month = story("refunded.json");
+            of_an_earlier_month["notification"]["notificationUUID"] =
+                json!("00000000-0000-4000-8000-000000000002");
+            of_an_earlier_month["notification"]["data"]["signedRenewalInfo"]["renewalDate"] =
+                json!("now+50d");
 
-        let mut answers = Vec::new();
-        for description in [unconfirmed, of_an_earlier_month] {
-            answers.push(post(&router, delivery(&signed(description, start))).await);
-            captured.delivered(answers.len()).await;
-        }
+            let mut answers = Vec::new();
+            for description in [unconfirmed, of_an_earlier_month] {
+                answers.push(post(&router, delivery(&signed(description, start))).await);
+                captured.delivered(answers.len()).await;
+            }
 
-        (
-            answers,
-            captured.deliveries(),
-            inbox(&url).await,
-            feed(&ledger, start).await,
-        )
-    }));
+            let pass = InboxSweep::new(ledger.clone(), door)
+                .pass(&CancellationToken::new())
+                .await;
+
+            (
+                answers,
+                captured.deliveries(),
+                inbox(&url).await,
+                feed(&ledger, start).await,
+                pass,
+            )
+        }));
 
     assert_eq!(answers, vec![(StatusCode::OK, String::new()); 2]);
     assert_eq!(events.len(), 1, "{events:#?}");
@@ -909,6 +986,7 @@ fn a_notification_waiting_on_its_status_stays_unsettled_and_an_unconfirmed_lates
                 "environment": "sandbox",
                 "outcome": "awaits_status",
                 "code": "latest_unconfirmed",
+                "answered": 200,
                 "redelivered": false,
                 "sentry_event_id": event.event_id.simple().to_string(),
             }),
@@ -920,6 +998,7 @@ fn a_notification_waiting_on_its_status_stays_unsettled_and_an_unconfirmed_lates
                 "environment": "sandbox",
                 "outcome": "awaits_status",
                 "code": "earlier_transaction",
+                "answered": 200,
                 "redelivered": false,
             }),
         ]
@@ -940,6 +1019,7 @@ fn a_notification_waiting_on_its_status_stays_unsettled_and_an_unconfirmed_lates
         ]
     );
     assert_eq!(feed, []);
+    assert_eq!(pass, Pass::default());
 }
 
 #[test]
@@ -1094,6 +1174,7 @@ fn an_apply_that_fails_answers_200_leaves_the_notification_unsettled_and_is_repo
                 "environment": "sandbox",
                 "outcome": "apply_failed",
                 "code": "busy",
+                "answered": 200,
                 "redelivered": false,
                 "sentry_event_id": event.event_id.simple().to_string(),
             }),
@@ -1104,7 +1185,9 @@ fn an_apply_that_fails_answers_200_leaves_the_notification_unsettled_and_is_repo
                 "store": "app_store",
                 "environment": "sandbox",
                 "outcome": "applied",
+                "answered": 200,
                 "redelivered": true,
+                "payload_differs": false,
                 "events": 3,
             }),
         ]
@@ -1199,5 +1282,280 @@ fn draining_the_door_waits_for_the_delivery_it_is_applying() {
             .collect::<Vec<_>>(),
         [Some("applied".to_owned())]
     );
+    assert_eq!(events.len(), 0, "{events:#?}");
+}
+
+#[test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+fn what_an_apply_leaves_unsettled_the_sweep_applies() {
+    let start = 1_793_491_200_000;
+    let ((answers, unsettled_after_the_door, pass, sweep_lines, inbox, feed), events) =
+        reported(with_empty_database(async |url| {
+            let (captured, _logs) = Captured::start();
+            let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+            let clock = Clock::at(start);
+            let (door, router) = door_and_router(&ledger, trusting_the_test_root(&clock), &clock);
+            let mut another = story("started.json");
+            for (payload, field) in [
+                ("signedTransactionInfo", "originalTransactionId"),
+                ("signedTransactionInfo", "transactionId"),
+                ("signedRenewalInfo", "originalTransactionId"),
+            ] {
+                another["notification"]["data"][payload][field] = json!("2000000000000501");
+            }
+            let mut control = PgConnection::connect(&url).await.unwrap();
+            let mut holder = PgConnection::connect(&url).await.unwrap();
+            let mut held = holder.begin().await.unwrap();
+            for lineage in ["2000000000000001", "2000000000000501"] {
+                held.execute(AssertSqlSafe(format!(
+                    "select pg_advisory_xact_lock(hashtextextended(\
+                     format('lineage %s %s %s', 'app_store', 'sandbox', '{lineage}'), 0))"
+                )))
+                .await
+                .unwrap();
+            }
+
+            // The first apply's connection ends under it, as a database restart ends it; the second waits past its
+            // 5 s bound for the lineage's lock.
+            let mut answers = vec![post(&router, delivery(&signed(another, start))).await];
+            let deadline = Instant::now() + Duration::from_secs(15);
+            loop {
+                let ended: i64 = sqlx::query_scalar(
+                    "select count(pg_terminate_backend(pid)) from pg_stat_activity \
+                     where datname = current_database() and wait_event = 'advisory'",
+                )
+                .fetch_one(&mut control)
+                .await
+                .unwrap();
+                if ended == 1 {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "the apply never waited for its lineage"
+                );
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            answers.push(post(&router, delivery(&signed(story("started.json"), start))).await);
+            captured.delivered(2).await;
+            let unsettled_after_the_door = inbox(&url).await;
+            held.rollback().await.unwrap();
+
+            let pass = InboxSweep::new(ledger.clone(), door)
+                .pass(&CancellationToken::new())
+                .await;
+            let sweep_lines: Vec<Value> = captured
+                .lines()
+                .into_iter()
+                .filter(|line| line["message"] == "sweep.inbox")
+                .map(|mut line| {
+                    assert!(
+                        line.as_object_mut()
+                            .unwrap()
+                            .remove("duration_ms")
+                            .unwrap()
+                            .is_f64()
+                    );
+                    line
+                })
+                .collect();
+            (
+                answers,
+                unsettled_after_the_door,
+                pass,
+                sweep_lines,
+                inbox(&url).await,
+                feed(&ledger, start).await,
+            )
+        }));
+
+    assert_eq!(answers, vec![(StatusCode::OK, String::new()); 2]);
+    assert_eq!(
+        unsettled_after_the_door
+            .iter()
+            .map(|(_, _, outcome)| outcome.clone())
+            .collect::<Vec<_>>(),
+        [None, None]
+    );
+    assert_eq!(
+        pass,
+        Pass {
+            applied: 2,
+            ..Pass::default()
+        }
+    );
+    assert_eq!(
+        sweep_lines,
+        [json!({
+            "level": "INFO",
+            "message": "sweep.inbox",
+            "operation": "sweep.inbox",
+            "rows": 2,
+            "applied": 2,
+        })]
+    );
+    assert_eq!(
+        inbox
+            .into_iter()
+            .map(|(_, _, outcome)| outcome)
+            .collect::<Vec<_>>(),
+        [Some("applied".to_owned()), Some("applied".to_owned())]
+    );
+    assert_eq!(
+        feed.iter().map(|(kind, ..)| *kind).collect::<Vec<_>>(),
+        [
+            "started",
+            "bound",
+            "period_recorded",
+            "started",
+            "bound",
+            "period_recorded"
+        ]
+    );
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| event.tags["operation"].as_str())
+            .collect::<Vec<_>>(),
+        ["store.notification", "store.notification"]
+    );
+}
+
+#[test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+fn a_burst_loses_no_notification_it_answered_200() {
+    let start = 1_793_491_200_000;
+    let ((answers, outcomes, inbox), events) = reported(with_empty_database(async |url| {
+        let (captured, _logs) = Captured::start();
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let clock = Clock::at(start);
+        let router = public_router(&ledger, trusting_the_test_root(&clock), &clock);
+        // A hundred at once, each of its own lineage: a debug build applies a few dozen a second.
+        let bodies: Vec<String> = (0..100)
+            .map(|index| {
+                // Each of its own buyer, as a burst of purchases is: one account's entitlement folds over all its
+                // subscriptions at every event.
+                let mut description = story("started.json");
+                let lineage = format!("{}", 3_000_000_000_000_000_u64 + index);
+                let buyer = Uuid::new_v4().to_string();
+                for (payload, field, value) in [
+                    ("signedTransactionInfo", "originalTransactionId", &lineage),
+                    ("signedTransactionInfo", "transactionId", &lineage),
+                    ("signedRenewalInfo", "originalTransactionId", &lineage),
+                    ("signedTransactionInfo", "appAccountToken", &buyer),
+                    ("signedRenewalInfo", "appAccountToken", &buyer),
+                ] {
+                    description["notification"]["data"][payload][field] = json!(value);
+                }
+                delivery(&signed(description, start))
+            })
+            .collect();
+
+        let answers =
+            futures_util::future::join_all(bodies.into_iter().map(|body| post(&router, body)))
+                .await;
+        let outcomes: Vec<(u64, String)> = captured
+            .delivered_within(100, Duration::from_secs(60))
+            .await
+            .iter()
+            .map(|line| {
+                (
+                    line["answered"].as_u64().unwrap(),
+                    line["outcome"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        (answers, outcomes, inbox(&url).await)
+    }));
+
+    // A slow machine answers some 503 at the request's bound: one not verified by then keeps nothing and Apple sends
+    // it again, and one the inbox kept by then is applied all the same.
+    let kept = outcomes
+        .iter()
+        .filter(|(answered, _)| *answered == 200)
+        .count();
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| *outcome == (200, "applied".to_owned())
+                || *outcome == (503, "left".to_owned())),
+        "{outcomes:?}"
+    );
+    assert!(
+        answers
+            .iter()
+            .all(|(status, _)| *status == StatusCode::OK
+                || *status == StatusCode::SERVICE_UNAVAILABLE),
+        "{answers:?}"
+    );
+    assert!(
+        answers
+            .iter()
+            .filter(|(status, _)| *status == StatusCode::OK)
+            .count()
+            <= kept
+    );
+    assert_eq!(
+        inbox
+            .iter()
+            .map(|(_, _, outcome)| outcome.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("applied"); kept]
+    );
+    assert!(kept > 0);
+    assert_eq!(events.len(), 0, "{events:#?}");
+}
+
+#[test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+fn a_redelivery_whose_bytes_differ_applies_the_copy_the_inbox_kept() {
+    let start = 1_793_491_200_000;
+    let ((answer, deliveries, prices), events) = reported(with_empty_database(async |url| {
+        let (captured, _logs) = Captured::start();
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let clock = Clock::at(start);
+        let router = public_router(&ledger, trusting_the_test_root(&clock), &clock);
+        let mut first = story("started.json");
+        first["notification"]["notificationUUID"] = json!("5b1c3f0e-8d2a-4e6b-9c7f-1a2b3c4d5e6f");
+        let mut second = first.clone();
+        second["notification"]["data"]["signedTransactionInfo"]["price"] = json!(99_000);
+        let kept = ledger
+            .receive(Notification {
+                store: Store::AppStore,
+                id: "5b1c3f0e-8d2a-4e6b-9c7f-1a2b3c4d5e6f".to_owned(),
+                environment: Environment::Sandbox,
+                signed_payload: signed(first, start),
+            })
+            .await
+            .unwrap();
+        assert!(matches!(kept, Receipt::Kept(_)));
+
+        let answer = post(&router, delivery(&signed(second, start))).await;
+        let deliveries = captured.delivered(1).await;
+        let mut connection = PgConnection::connect(&url).await.unwrap();
+        let prices: Vec<String> = sqlx::query_scalar("select price_amount from periods")
+            .fetch_all(&mut connection)
+            .await
+            .unwrap();
+        (answer, deliveries, prices)
+    }));
+
+    assert_eq!(answer, (StatusCode::OK, String::new()));
+    assert_eq!(
+        deliveries,
+        [json!({
+            "level": "INFO",
+            "message": "store.notification",
+            "operation": "store.notification",
+            "store": "app_store",
+            "environment": "sandbox",
+            "outcome": "applied",
+            "answered": 200,
+            "redelivered": true,
+            "payload_differs": true,
+            "events": 3,
+        })]
+    );
+    assert_eq!(prices, ["12.00"]);
     assert_eq!(events.len(), 0, "{events:#?}");
 }
