@@ -379,7 +379,7 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
     return held;
   };
   const ToolCaller sam{kSam, ToolScope::everything()};
-  Json::Value created = parse(R"({"label":"Sail trim"})");
+  Json::Value created = parse(R"({"id":"sail-trim","label":"Sail trim"})");
   created["treeId"] = kTree.str();
   {
     RoomRegistry registry(trees, log, bus);
@@ -1712,6 +1712,18 @@ TEST(pg_every_read_judges_a_pointer_valid_at_a_standing_root_of_the_owners_alone
   CHECK(forest.create(pointing, "root") == SubtreeAnswer{SubtreeRefusal::stepOpensATree});
   for (const char* step : {"subtree", "hidden", "deleted", "foreign", "absent"})
     CHECK(std::get<SubtreeCreation>(forest.create(pointing, step)).created);
+
+  // The create that revives a deleted owning step may echo its own subtree, hidden at the time: it passes and lands.
+  RoadmapTools tools{forest.rooms, forest.progress, forest.clock, forest.registry, forest.edits, "https://app.example"};
+  Json::Value echo = parse(R"({"id":"swim","label":"Swim"})");
+  echo["treeId"] = kParent.str();
+  echo["opens"] = kGrandchild.str();
+  const ToolResult revived = tools.callTool("create_node", echo, ToolCaller{kAda, ToolScope::everything()});
+  CHECK_FALSE(revived.isError);
+  CHECK_FALSE(test::body(revived).isMember("opensRefused"));
+  std::lock_guard<std::mutex> strand(forest.rooms.strandFor(kParent));
+  CHECK(forest.rooms.open(kParent)->subtrees() ==
+        (std::map<NodeId, TreeId>{{nid("sail"), kChild}, {nid("swim"), kGrandchild}}));
 }
 
 // The store holds the place whatever writes it: an insert naming a parent is given that parent's root, owner and depth,

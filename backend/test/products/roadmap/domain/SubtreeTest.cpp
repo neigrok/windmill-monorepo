@@ -21,13 +21,17 @@ TEST(unconfirmed_branches_are_the_removed_owning_steps_whose_subtrees_go_unnamed
   CHECK(unconfirmedBranches({nid("plain")}, owned, {}).empty());
 }
 
-// Of the pointers a write sent, by step, those on a step that owns a subtree naming another tree, an empty one among them;
-// an echo of the step's own subtree, and a pointer on a step that owns none, are not.
-TEST(refused_pointers_are_those_sent_steps_that_own_a_subtree_other_than_an_echo_of_it) {
-  const std::map<NodeId, TreeId> owned{{nid("sail"), tid("t_s")}, {nid("rig"), tid("t_r")}, {nid("swim"), tid("t_w")}};
-  CHECK(refusedPointers({{nid("swim"), tid("")}, {nid("plain"), tid("t_x")}, {nid("rig"), tid("t_r")}, {nid("sail"), tid("t_x")}},
-                        owned) == (std::vector<NodeId>{nid("sail"), nid("swim")}));
-  CHECK(refusedPointers({}, owned).empty());
+// Of the pointers a server-stamped write sends, in the order sent, those that would change the register of a step that
+// owns a subtree: another tree than its subtree, an empty one included. An echo of the subtree, the value the register
+// already holds, and a pointer on a step that owns none are not refused.
+TEST(refused_pointers_are_those_that_would_change_an_owning_steps_register_in_the_order_sent) {
+  const std::map<NodeId, TreeId> owned{
+      {nid("sail"), tid("t_s")}, {nid("rig"), tid("t_r")}, {nid("swim"), tid("t_w")}, {nid("keel"), tid("t_k")}};
+  const std::map<NodeId, TreeId> held{{nid("swim"), tid("t_old")}, {nid("keel"), tid("t_x")}};
+  CHECK(refusedPointers({{nid("swim"), tid("")}, {nid("plain"), tid("t_x")}, {nid("rig"), tid("t_r")},
+                         {nid("sail"), tid("t_x")}, {nid("keel"), tid("t_x")}},
+                        owned, held) == (std::vector<NodeId>{nid("swim"), nid("sail")}));
+  CHECK(refusedPointers({}, owned, held).empty());
 }
 
 // A write lands no pointer on a step that owns a subtree, an echo of it included, and keeps every other register; an

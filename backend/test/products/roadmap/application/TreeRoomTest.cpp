@@ -802,16 +802,25 @@ TEST(room_lands_no_pointer_on_a_step_that_owns_a_subtree_on_any_write_path_and_n
   };
   const std::pair<TreeId, Hlc> stale{tid("t_stale"), at(2)};
 
-  CHECK(room.refusedPointers({{nid("sail"), tid("t_s")}, {nid("idea"), tid("t_x")}, {nid("gone"), TreeId{}}}) ==
-        std::vector<NodeId>{nid("gone")});
-  CHECK(room.refusedPointers({{nid("sail"), tid("t_x")}}) == std::vector<NodeId>{nid("sail")});
+  using Sent = std::vector<std::pair<NodeId, TreeId>>;
+  CHECK(room.refusedPointers(Sent{{nid("sail"), tid("t_s")}, {nid("idea"), tid("t_x")}, {nid("gone"), TreeId{}},
+                                  {nid("sail"), tid("t_stale")}})
+            .empty());
+  CHECK(room.refusedPointers(Sent{{nid("gone"), tid("t_x")}, {nid("sail"), TreeId{}}}) ==
+        (std::vector<NodeId>{nid("gone"), nid("sail")}));
 
   Subgraph frame;
   frame.frameId = "f1";
   frame.graph.nodes.push_back(
       NodeStateEntry{.id = nid("sail"), .label = "Sail on", .labelAt = at(10, "web"), .opens = tid("t_x"), .opensAt = at(10, "web")});
   frame.graph.nodes.push_back(NodeStateEntry{.id = nid("idea"), .opens = tid("t_x"), .opensAt = at(10, "web")});
+  Subgraph held;
+  held.frameId = "held";
+  held.graph.nodes.push_back(NodeStateEntry{.id = nid("sail"), .opens = tid("t_other"), .opensAt = at(2)});
+  CHECK(room.refusedPointers(frame) == std::vector<NodeId>{nid("sail")});
+  CHECK(room.refusedPointers(held).empty());
   CHECK(room.joinSubgraph(frame, uid("owner")) == std::optional<Seq>(1));
+  CHECK(room.refusedPointers(frame).empty());
   CHECK(registerOf("sail") == stale);
   CHECK(registerOf("idea") == (std::pair<TreeId, Hlc>{tid("t_x"), at(10, "web")}));
   CHECK_EQ(*room.labelOf(nid("sail")), std::string("Sail on"));

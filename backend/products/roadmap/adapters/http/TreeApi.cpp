@@ -282,20 +282,26 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     const Hlc plantedAt = existing ? genesis_ : Hlc{clock_->nowMs(), 0, std::string{TreeRoom::kServerActor}};
     GraphState state = LooseGraph(*data, plantedAt).exportState();
     // A step that owns a subtree keeps the pointer its row holds (SPEC.md, Model, Legacy pointers). A document cannot
-    // tell an empty pointer from one it leaves out, so only a step it names another tree on is answered refused.
+    // tell an empty pointer from one it leaves out, so only a step it names another tree on than the one its row holds
+    // is answered refused, in the document's order.
     std::vector<NodeId> refused;
     if (existing) {
-      std::map<NodeId, TreeId> sent;
+      std::map<NodeId, NodeStateEntry> owning;
+      for (const NodeStateEntry& stored : existing->state.nodes)
+        if (existing->subtrees.count(stored.id)) owning.emplace(stored.id, stored);
+      std::vector<std::pair<NodeId, TreeId>> sent;
       for (const NodeSpec& node : data->nodes)
-        if (!node.opens.empty()) sent.emplace(node.id, node.opens);
-      refused = refusedPointers(sent, existing->subtrees);
+        if (!node.opens.empty()) sent.emplace_back(node.id, node.opens);
+      std::map<NodeId, TreeId> held;
+      for (const auto& [step, stored] : owning) held.emplace(step, stored.opens);
+      refused = refusedPointers(sent, existing->subtrees, held);
       for (NodeStateEntry& node : state.nodes) {
         if (!existing->subtrees.count(node.id)) continue;
-        const auto held = std::find_if(existing->state.nodes.begin(), existing->state.nodes.end(),
-                                       [&](const NodeStateEntry& stored) { return stored.id == node.id; });
-        node.opens = held == existing->state.nodes.end() ? TreeId{} : held->opens;
-        node.opensAt = held == existing->state.nodes.end() ? Hlc{} : held->opensAt;
+        const auto stored = owning.find(node.id);
+        node.opens = stored == owning.end() ? TreeId{} : stored->second.opens;
+        node.opensAt = stored == owning.end() ? Hlc{} : stored->second.opensAt;
       }
+      countCurrentWriteRefused(refused.size());
     }
 
     LegendState legend;

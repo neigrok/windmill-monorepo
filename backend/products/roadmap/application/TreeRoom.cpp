@@ -338,6 +338,29 @@ bool TreeRoom::hasNode(const NodeId& node) const {
   return graph_.hasNode(node);
 }
 
+bool TreeRoom::hasHeld(const NodeId& node) const {
+  return graph_.lifeOf(node).has_value();
+}
+
+std::vector<NodeId> TreeRoom::refusedPointers(const Subgraph& incoming) const {
+  if (appliedOpIds_.count(incoming.frameId)) return {};
+  std::vector<NodeId> refused;
+  for (const NodeStateEntry& node : incoming.graph.nodes) {
+    const auto subtree = subtrees_.find(node.id);
+    if (subtree == subtrees_.end() || node.opens == subtree->second) continue;
+    const std::optional<NodeStateEntry> held = graph_.exportNode(node.id);
+    if (node.opensAt > (held ? held->opensAt : Hlc{})) refused.push_back(node.id);
+  }
+  return refused;
+}
+
+std::vector<NodeId> TreeRoom::refusedPointers(const std::vector<std::pair<NodeId, TreeId>>& sent) const {
+  std::map<NodeId, TreeId> held;
+  for (const auto& [step, subtree] : subtrees_)
+    if (const std::optional<NodeStateEntry> entry = graph_.exportNode(step)) held.emplace(step, entry->opens);
+  return wm::refusedPointers(sent, subtrees_, held);
+}
+
 std::optional<std::string> TreeRoom::labelOf(const NodeId& node) const {
   if (!graph_.hasNode(node)) return std::nullopt;
   return graph_.exportNode(node)->label;

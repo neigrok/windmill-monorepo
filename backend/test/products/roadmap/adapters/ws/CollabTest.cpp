@@ -2801,8 +2801,9 @@ TEST(ws_a_pointer_written_on_a_step_that_owns_a_subtree_is_refused_by_register_a
                            R"("refused":[{"node":"plain","field":"opens","code":"owns-a-subtree"}]})"),
                      parse(R"({"t":"subgraphAck","treeId":"t_p","frameId":"f3"})")}));
   std::vector<std::string> outcomes;
-  for (const WriteCompletion& completion : observed.completions) outcomes.push_back(completion.outcome);
-  CHECK_EQ(outcomes, (std::vector<std::string>{"ok", "owns-a-subtree", "unchanged"}));
+  for (const WriteCompletion& completion : observed.completions)
+    outcomes.push_back(completion.outcome + " " + std::to_string(completion.refused));
+  CHECK_EQ(outcomes, (std::vector<std::string>{"ok 1", "owns-a-subtree 1", "unchanged 0"}));
   CHECK(observed.issues.empty());
   REQUIRE_EQ(watcher->sent.size(), 1u);
   CHECK_EQ(parse(watcher->sent[0])["nodes"],
@@ -2814,4 +2815,36 @@ TEST(ws_a_pointer_written_on_a_step_that_owns_a_subtree_is_refused_by_register_a
   CHECK_EQ(opensOf("idea"), std::string("t_00000000000000f3"));
   std::lock_guard<std::mutex> lock(h.rooms.strandFor(TreeId{"t_p"}));
   CHECK(h.rooms.open(TreeId{"t_p"})->pointers().at(NodeId{"plain"}) == child);
+}
+
+// A refusal judges what the frame would change, not its text: a retried frame answers as the duplicate it is, and a
+// pointer the owning step's register already holds under that stamp, or one an older stamp would lose to, changes
+// nothing, so none is refused and each frame completes `unchanged`.
+TEST(ws_a_retried_frame_and_a_pointer_that_would_change_nothing_are_no_refusal_on_an_owning_step) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedSteps("t_p", owner, Visibility::private_, "");
+  auto writer = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), writer);
+  const std::string first =
+      registerFrame("t_p", "f1", R"({"id":"plain","label":"Plain on","labelAt":"300:0:web","opens":"","opensAt":"300:0:web"})");
+  h.collab.onMessage(writer, first);
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {TreeId{"t_00000000000000c1"}, std::nullopt})));
+  writer->sent.clear();
+
+  Observed observed;
+  h.collab.onMessage(writer, first);
+  h.collab.onMessage(writer, registerFrame("t_p", "f2", R"({"id":"plain","opens":"","opensAt":"300:0:web"})"));
+  h.collab.onMessage(writer, registerFrame("t_p", "f3", R"({"id":"plain","opens":"t_00000000000000f2","opensAt":"299:0:web"})"));
+
+  std::vector<Json::Value> acks;
+  for (const std::string& text : writer->sent) acks.push_back(parse(text));
+  CHECK_EQ(acks, (std::vector<Json::Value>{parse(R"({"t":"subgraphAck","treeId":"t_p","frameId":"f1"})"),
+                                           parse(R"({"t":"subgraphAck","treeId":"t_p","frameId":"f2"})"),
+                                           parse(R"({"t":"subgraphAck","treeId":"t_p","frameId":"f3"})")}));
+  std::vector<std::string> outcomes;
+  for (const WriteCompletion& completion : observed.completions)
+    outcomes.push_back(completion.outcome + " " + std::to_string(completion.refused));
+  CHECK_EQ(outcomes, (std::vector<std::string>{"unchanged 0", "unchanged 0", "unchanged 0"}));
 }

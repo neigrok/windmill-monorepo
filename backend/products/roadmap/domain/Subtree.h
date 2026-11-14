@@ -111,12 +111,19 @@ inline std::vector<UnconfirmedBranch> unconfirmedBranches(const std::vector<Node
 inline constexpr char kOwnsASubtree[] = "owns-a-subtree";
 inline constexpr char kOpensASubtree[] = "opens-a-subtree";
 
-// Of the pointers a write sent, by step, those on a step that owns a subtree (`owned`, by step, present or deleted)
-// naming another tree than that subtree, an empty one included, in step order.
-inline std::vector<NodeId> refusedPointers(const std::map<NodeId, TreeId>& sent, const std::map<NodeId, TreeId>& owned) {
+// Of the pointers a write stamped by the server sends, each a step and the tree it names, those it would write on a step
+// that owns a subtree (`owned`, by step, present or deleted), in the order sent: a value the step's register (`held`, by
+// step, the empty id where none is held) does not hold, naming another tree than that subtree, an empty one included.
+// An echo of the subtree, and the value the register already holds, change nothing and are not refused.
+inline std::vector<NodeId> refusedPointers(const std::vector<std::pair<NodeId, TreeId>>& sent,
+                                           const std::map<NodeId, TreeId>& owned, const std::map<NodeId, TreeId>& held) {
   std::vector<NodeId> refused;
-  for (const auto& [step, tree] : sent)
-    if (const auto subtree = owned.find(step); subtree != owned.end() && subtree->second != tree) refused.push_back(step);
+  for (const auto& [step, tree] : sent) {
+    const auto subtree = owned.find(step);
+    if (subtree == owned.end() || subtree->second == tree) continue;
+    const auto holds = held.find(step);
+    if (tree != (holds == held.end() ? TreeId{} : holds->second)) refused.push_back(step);
+  }
   return refused;
 }
 

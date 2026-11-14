@@ -419,12 +419,8 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
       } else if (unconfirmed = room->unconfirmedBranches(incoming); !unconfirmed.empty()) {
         // Answered once the strand is released, with each branch's size.
       } else {
-        // Each pointer the frame stamps is the sender's word: one on a step that owns a subtree is answered refused, and
-        // the join lands no pointer on such a step.
-        std::map<NodeId, TreeId> sent;
-        for (const NodeStateEntry& node : incoming.graph.nodes)
-          if (node.opensAt.isSet()) sent.emplace(node.id, node.opens);
-        refused = room->refusedPointers(sent);
+        // A pointer the frame would write on a step that owns a subtree is answered refused, and the join lands none.
+        refused = room->refusedPointers(incoming);
         seq = room->joinSubgraph(incoming, principal.user);
         // Persist before the ack, so the ack attests durability or says what it cannot. A row gone under its live room
         // holds nothing: the room is retired, which drops its readers, and the frame answers as absent. A save that
@@ -454,6 +450,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   ack["t"] = "subgraphAck";
   ack["treeId"] = treeId;
   ack["frameId"] = frameId;
+  countCurrentWriteRefused(refused.size());
   if (seq) ack["seq"] = static_cast<Json::Int64>(*seq);
   else if (!refused.empty()) finishCurrentWriteRefusal(kOwnsASubtree);
   else finishCurrentWriteUnchanged();

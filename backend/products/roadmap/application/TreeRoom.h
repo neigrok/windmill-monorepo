@@ -120,10 +120,18 @@ public:
     withoutOwnedPointers(frame.graph, subtrees_);
     return frame.landsNothing();
   }
-  // Of the pointers a write sent, by step, those this room refuses (wm::refusedPointers): every write path lands no
-  // pointer on a step that owns a subtree, so a door answers these `owns-a-subtree` and the rest of its write applies.
-  std::vector<NodeId> refusedPointers(const std::map<NodeId, TreeId>& sent) const {
-    return wm::refusedPointers(sent, subtrees_);
+  // Every write path lands no pointer on a step that owns a subtree, so a door answers each pointer that would otherwise
+  // have changed the step's register `owns-a-subtree`, and the rest of its write applies. Of a frame's, in its order: one
+  // whose stamp the join would take, naming another tree than the subtree. A frame this room has joined before is a
+  // duplicate, answered as one, with nothing judged anew.
+  std::vector<NodeId> refusedPointers(const Subgraph& incoming) const;
+  // Of the pointers a write the server stamps sends, each a step and the tree it names, in the order sent: one naming a
+  // tree the register does not hold, nor the subtree (wm::refusedPointers).
+  std::vector<NodeId> refusedPointers(const std::vector<std::pair<NodeId, TreeId>>& sent) const;
+  // Whether `step`, present or deleted, owns `subtree`: a pointer it is sent naming it is an echo, which lands nothing.
+  bool owns(const NodeId& step, const TreeId& subtree) const {
+    const auto owned = subtrees_.find(step);
+    return owned != subtrees_.end() && owned->second == subtree;
   }
 
   // A node write's kind read off this room's own legend, under the strand the write then takes, so a
@@ -249,6 +257,7 @@ public:
   // The node's live prerequisites (incoming DAG edges); empty if the node is absent.
   std::vector<NodeId> prerequisitesOf(const NodeId& node) const;
   bool hasNode(const NodeId& node) const;  // present: created, not tombstoned
+  bool hasHeld(const NodeId& node) const;  // present or tombstoned: an id the tree has held
   // A present node's label; none for a node the tree does not hold.
   std::optional<std::string> labelOf(const NodeId& node) const;
   bool hasEdge(const NodeId& from, const NodeId& to) const;

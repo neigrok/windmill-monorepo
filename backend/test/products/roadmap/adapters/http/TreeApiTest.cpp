@@ -1473,8 +1473,20 @@ TEST(put_keeps_the_pointer_of_a_step_that_owns_a_subtree_and_answers_another_one
   };
   Json::Value doc = parse(R"({"title":"My year","nodes":[{"id":"sail","label":"Sail far","opens":"t_b"},
                                                        {"id":"coast","label":"Sail the coast","opens":"t_b"}]})");
+  // The door's write line, as the REST host opens one around each write: it counts the refused pointers.
+  std::vector<std::uint64_t> refusedOnTheLine;
+  installWriteSink([&](const WriteCompletion& line) {
+    if (line.operation == "roadmap.PUT.v1.trees.id") refusedOnTheLine.push_back(line.refused);
+  });
+  const auto put = [&](const Json::Value& sent) {
+    WriteObservation door{"roadmap.PUT.v1.trees.id", "roadmap", "rest"};
+    WriteContext context{door};
+    const drogon::HttpResponsePtr answered = sendPut(h.api, "s-me", "t_a", sent);
+    door.finish();
+    return answered;
+  };
 
-  const drogon::HttpResponsePtr response = sendPut(h.api, "s-me", "t_a", doc);
+  const drogon::HttpResponsePtr response = put(doc);
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(response)["refused"], parse(R"([{"node":"sail","field":"opens","code":"owns-a-subtree"}])"));
   CHECK_EQ(bodyOf(response)["data"]["nodes"][0]["opens"], Json::Value("t_s"));
@@ -1487,11 +1499,13 @@ TEST(put_keeps_the_pointer_of_a_step_that_owns_a_subtree_and_answers_another_one
     Json::Value again(Json::objectValue);
     again["title"] = "My year";
     again["nodes"].append(parse(sent));
-    const drogon::HttpResponsePtr kept = sendPut(h.api, "s-me", "t_a", again);
+    const drogon::HttpResponsePtr kept = put(again);
     CHECK_EQ(kept->getStatusCode(), drogon::k200OK);
     CHECK_FALSE(bodyOf(kept).isMember("refused"));
     CHECK(opensIn("sail") == (std::pair<std::string, Hlc>{"", Hlc{}}));
   }
+  installWriteSink({});
+  CHECK_EQ(refusedOnTheLine, (std::vector<std::uint64_t>{1, 0, 0, 0}));
 }
 
 TEST(put_to_a_malformed_id_is_400_bad_id_and_creates_nothing) {
