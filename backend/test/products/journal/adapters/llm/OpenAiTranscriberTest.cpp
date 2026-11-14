@@ -90,19 +90,6 @@ private:
   std::future<std::string> served_;
 };
 
-// An origin nothing listens on: the port was free a moment ago, so a connection to it is refused.
-std::string refusingOrigin() {
-  const int probe = ::socket(AF_INET, SOCK_STREAM, 0);
-  sockaddr_in address{};
-  address.sin_family = AF_INET;
-  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  socklen_t size = sizeof address;
-  ::bind(probe, reinterpret_cast<const sockaddr*>(&address), sizeof address);
-  ::getsockname(probe, reinterpret_cast<sockaddr*>(&address), &size);
-  ::close(probe);
-  return "http://127.0.0.1:" + std::to_string(ntohs(address.sin_port));
-}
-
 struct Failures : FailureReporter {
   std::vector<std::string> reports;
   void report(const std::string& kind, const std::string& where, const std::string& detail) override {
@@ -254,7 +241,8 @@ TEST(openai_transcription_a_take_the_allowance_cannot_hold_never_reaches_the_ven
 
 // What the vendor consumed decides the charge: an answered error or a request that never connected consumed nothing
 // and settles at zero, freeing the slot; a reply that may have been billed but says nothing readable about it keeps
-// the whole hold as uncertain.
+// the whole hold as uncertain. An origin Drogon cannot address answers BadServerAddress without opening a socket, the
+// result a failed lookup or a refused connection gives a remote vendor.
 TEST(openai_transcription_settles_an_unconsumed_take_at_zero_and_holds_an_ambiguous_one) {
   struct Case {
     std::string name;
@@ -268,7 +256,7 @@ TEST(openai_transcription_settles_an_unconsumed_take_at_zero_and_holds_an_ambigu
   for (const Case& scenario : std::vector<Case>{
            {"vendor error", 500, R"({"error":{"message":"private vendor detail"}})", std::nullopt, AiBudgetState::Settled, 0, "transport"},
            {"rate limited", 429, R"({"error":{"message":"slow down"}})", std::nullopt, AiBudgetState::Settled, 0, "rate_limited"},
-           {"refused connection", -1, "", std::nullopt, AiBudgetState::Settled, 0, "transport"},
+           {"never connected", -1, "", std::nullopt, AiBudgetState::Settled, 0, "transport"},
            {"no usage", 200, R"({"text":"rain"})", "rain", AiBudgetState::Uncertain, std::nullopt, "ok"},
            {"billed by duration", 200, R"({"text":"rain","usage":{"type":"duration","seconds":4.2}})", "rain",
             AiBudgetState::Uncertain, std::nullopt, "ok"},
@@ -278,7 +266,7 @@ TEST(openai_transcription_settles_an_unconsumed_take_at_zero_and_holds_an_ambigu
     std::optional<StubVendor> vendor;
     if (scenario.status >= 0) vendor.emplace(scenario.status, scenario.body);
     OpenAiTranscriber transcriber{"sk-fixture-only", "gpt-4o-transcribe", nullptr, a.ledger, a.calls,
-                                  vendor ? vendor->origin() : refusingOrigin()};
+                                  vendor ? vendor->origin() : "127.0.0.1:9"};
 
     const Transcription take = transcribeOnce(transcriber, a.owner.id);
 
