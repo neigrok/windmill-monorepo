@@ -593,9 +593,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   builds Save, the field edge, rings and the caret on `--color-brand` and the link on `--text-link`; Save's white label
   is 3.92:1 where the board's is 7.31:1. The device tree's footer line is built and not drawn. 17.36 draws Save solid
   on an empty draft while 17.22 *Before typing* draws it off; web
-  keeps it off, as it does after *Load latest*, where 17.33 draws Save solid on a draft equal to the guide. 17.38 and
-  17.39 omit the device line that 17.29 draws; web shows it above the row. 17.32 draws a 513 px sheet over the
-  keyboard where 17.23 draws 451; web keeps 17.23's cap, so the field gives up the notice's height.
+  keeps it off, as it does after *Load latest*, where 17.33 draws Save solid on a draft equal to the guide.
+  Owner phone geometry follows 38/42’s full page and flexible body below the Shell. The device footer and current
+  recovery behavior remain in the owner editor; phone readers retain the 17 read-only sheet.
   The recovery boards ([three save failures](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=858-75016),
   [17.31–17.32](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69845)) type three tints no token holds:
   `#fcf0e8` under the desktop failure line, `#fbf3eb` under the phone's and `#f7f3e6` under the phone's *Guide changed
@@ -635,9 +635,14 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   tree loops back or has no steps keeps the loop's or the empty tree's line. The tablet band and C on a card whose tree
   loops back (*Won’t complete by itself*) or is not found (*Can’t complete yet*) follow the desktop boards. Under guides
   from above, the wide entry follows [39 · Inherited Guide](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1143-75474):
-  a known parent count or unknown marker in the identity row. The phone retains its count beside the heading. The note
-  reads parents farthest first, then this tree's text or the owner's Add guide. Wide unknown status keeps its notice
-  and any own text visible; phone reads keep the own text without that notice. While the guide is written from 744px
+  a known parent count or unknown marker in the identity row. Owner phones follow
+  [38 · Guide from the Roadmap sheet](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1130-100932)
+  and [42 · Unknown parent Guide](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1178-28969): the
+  sheet’s 48px Guide row opens a full page below the Shell and keeps its focus return. Confirmed inherited-only
+  reading offers both Add guide and the header pencil for the current tree’s blank Guide. Unknown parent status
+  shows Guide · ? in the sheet and a neutral notice above readable own text or Add guide, including at 320px.
+  The note reads parents farthest first, then this tree’s text or the owner’s Add guide. Parent status stays unknown
+  while pending or failed, with usable inherited entries retained and no new retry action. While the guide is written from 744px
   the chevrons over the guides from above are drawn as on 28.31 and do not act:
   leaving a draft is Cancel's to ask. The hint beside this tree's name (*Click to edit*, *Tap to edit*) writes from
   the end of the guide, as the pencil does. Where the window leaves the guides from above less than one name and one

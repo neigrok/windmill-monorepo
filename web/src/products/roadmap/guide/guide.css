@@ -884,6 +884,107 @@ button.st-guide-from-name {
   background: var(--surface-card);
 }
 
+/* Owner phones keep the Roadmap sheet beneath a full page below the Shell. */
+.st-guide-sheet-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px 0 16px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+.st-guide-sheet-entry > span {
+  flex: 1;
+  color: var(--text-primary);
+  font: 700 15px/20px var(--font-body);
+}
+.st-guide-sheet-entry > svg {
+  flex-shrink: 0;
+}
+.st-guide-sheet-entry:hover {
+  background: var(--surface-hover);
+}
+.st-guide-sheet-entry:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+}
+.st-guide-layer--owner-phone {
+  box-sizing: border-box;
+  padding-top: calc(52px + env(safe-area-inset-top, 0px));
+}
+.st-guide-layer--owner-phone > .st-guide-backdrop {
+  display: none;
+}
+.st-guide-paper--owner-phone {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  max-height: none;
+  padding: 0 0 env(safe-area-inset-bottom, 0px);
+  border-radius: 0;
+  overflow: hidden;
+}
+.st-guide-paper--owner-phone.st-guide-paper--writing {
+  overflow-y: auto;
+}
+.st-guide-paper--owner-phone > .st-guide-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.st-guide-paper--owner-phone > .st-guide-body > :is(.st-guide-alone, .st-guide-stack) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  padding: 6px 22px 12px;
+}
+.st-guide-paper--owner-phone > .st-guide-body > .st-guide-alone > .st-guide-prose,
+.st-guide-paper--owner-phone .st-guide-stack > .st-guide-prose {
+  margin: 0;
+  padding: 0;
+}
+.st-guide-paper--owner-phone .st-guide-parent-status {
+  padding: 4px 4px 4px 16px;
+  overflow-wrap: anywhere;
+}
+.st-guide-paper--owner-phone .st-guide-parent-add {
+  margin: 0;
+}
+.st-guide-paper--owner-phone .st-guide-add {
+  flex-shrink: 0;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px 0 16px;
+  color: var(--text-secondary);
+  font: 700 15px/20px var(--font-body);
+  text-align: left;
+}
+.st-guide-paper--owner-phone .st-guide-add > span {
+  flex: 1;
+  color: var(--text-primary);
+}
+.st-guide-paper--owner-phone .st-guide-add > svg {
+  flex-shrink: 0;
+}
+.st-guide-paper--owner-phone > .st-guide-body > .st-guide-field {
+  flex: 1;
+  min-height: 0;
+}
+
 /* ---- Discard draft?: a card over the note from 744px, a sheet at the foot of the phone. ---- */
 .st-guide-discard {
   position: absolute;

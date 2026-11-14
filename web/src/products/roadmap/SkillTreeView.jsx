@@ -209,7 +209,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const guideView = boardActive ? 'board' : 'graph';
   const guideEntry = guide && !boardAwaitsRoadmap ? (
     <ErrorBoundary fallback={null} onCrash={(error) => reportRoadmapFailure('roadmap-guide', error)}>
-      <GuideEntry guide={guide} band={breakpoint} view={guideView} />
+      <GuideEntry guide={guide} band={breakpoint} view={guideView} door={phone && owner ? 'sheet' : 'row'} />
     </ErrorBoundary>
   ) : null;
   const revealOnGraph = useCallback((id) => {
@@ -420,6 +420,8 @@ export function SkillTreeView({ treeId, demo = false }) {
             progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
             onSwitchView={onSwitchView}
             guide={!phone ? guideEntry : null}
+            sheetGuide={phone && owner ? guideEntry : null}
+            guideOpen={Boolean(guide?.opened)}
             graphUnavailable={graphUnavailable}
             onGraphUnavailable={explainGraphUnavailable}
             find={!phone && boardFacts.loaded && !boardFacts.empty ? verbs.identityFind : null}
@@ -453,7 +455,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               onAnchor={setSelectedId}
               refusal={refusal}
               deviceLine={phone ? deviceLine : null}
-              guide={phone && boardActive ? guideEntry : null}
+              guide={phone && !owner && boardActive ? guideEntry : null}
               onFork={phone && forkPresent ? openFork : null}
               breakpoint={breakpoint}
               topInset={topbarBottom}
@@ -547,7 +549,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         onOpenStep={stepPage.openFromGraph}
         onBarBottom={geometry.setGraphBarBottom}
         deviceLine={phone ? deviceLine : null}
-        guide={phone && canvasView ? guideEntry : null}
+        guide={phone && !owner && canvasView ? guideEntry : null}
         cameraRight={phone || !canvasView ? undefined : insets.blocks.at(-1)?.right}
         cameraBottom={phone || !canvasView ? undefined : insets.blocks.at(-1)?.bottom}
         onZoomIn={() => sceneRef.current?.zoomBy(1.2)}
