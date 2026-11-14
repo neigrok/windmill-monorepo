@@ -749,7 +749,11 @@
 }
 
 /* ---- Keyboard-shortcuts reference ---- */
+.st-shortcuts-dialog {
+  --st-sc-padding: var(--space-8);
+}
 .st-sc-toolbar {
+  flex: none;
   display: flex;
   justify-content: flex-end;
   margin-bottom: var(--space-5);
@@ -763,16 +767,26 @@
   border-radius: var(--radius-full);
 }
 .st-sc-toggle button {
+  position: relative;
+  min-width: 44px;
   padding: 4px 12px;
   font-family: var(--font-body);
   font-size: var(--text-xs);
   font-weight: 700;
+  line-height: 18px;
   color: var(--text-tertiary);
   background: transparent;
   border: none;
   border-radius: var(--radius-full);
   cursor: pointer;
   transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.st-sc-toggle button::after {
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto;
+  height: 44px;
+  transform: translateY(-50%);
 }
 .st-sc-toggle button:hover {
   color: var(--text-secondary);
@@ -782,51 +796,13 @@
   background: var(--surface-card);
   box-shadow: var(--shadow-sm);
 }
+.st-shortcuts-dialog button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 .st-sc-grid {
   column-count: 2;
   column-gap: var(--space-6);
-}
-.st-sc-grid--board {
-  --st-sc-keycap-min-width: 21px;
-  --st-sc-keycap-height: 22px;
-  --st-sc-keycap-padding: 6px;
-  --st-sc-keycap-font-size: 11px;
-  column-count: 1;
-  padding-top: var(--space-4);
-}
-.st-sc-grid--board .st-sc-group {
-  margin-bottom: var(--space-4);
-}
-.st-sc-grid--board .st-sc-group:last-child {
-  margin-bottom: 0;
-}
-.st-sc-grid--board .st-sc-heading {
-  margin-bottom: 0;
-  line-height: var(--leading-sm);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: normal;
-  text-transform: none;
-  color: var(--text-secondary);
-}
-.st-sc-grid--board .st-sc-row {
-  min-height: var(--space-10);
-  padding: 0;
-}
-.st-sc-grid--board .st-sc-label {
-  color: var(--text-primary);
-}
-.st-sc-grid--board .st-sc-chord {
-  gap: var(--space-2);
-}
-.st-sc-grid--board .st-keycap {
-  min-width: var(--st-sc-keycap-min-width);
-  height: var(--st-sc-keycap-height);
-  padding: 0 var(--st-sc-keycap-padding);
-  font-size: var(--st-sc-keycap-font-size);
-  font-weight: var(--font-weight-regular);
-  color: var(--text-secondary);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-default);
 }
 .st-sc-group {
   break-inside: avoid;
@@ -856,7 +832,14 @@
   gap: var(--space-3);
   padding: var(--space-2) 0;
 }
+.st-sc-row--alternatives {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+}
 .st-sc-label {
+  min-width: 0;
   font-family: var(--font-body);
   font-size: var(--text-sm);
   color: var(--text-secondary);
@@ -865,18 +848,26 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
   flex-shrink: 0;
+  max-width: 100%;
+}
+.st-sc-alternative {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
 }
 .st-sc-chord {
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  white-space: nowrap;
 }
 .st-sc-or {
   font-family: var(--font-body);
   font-size: var(--text-xs);
   color: var(--text-tertiary);
-  margin: 0 2px;
 }
 .st-keycap {
   display: inline-flex;
@@ -909,6 +900,11 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+@media (max-width: 743px) {
+  .st-shortcuts-dialog { --st-sc-padding: var(--space-6); }
+  .st-sc-grid { column-count: 1; }
 }
 
 /* ---- Dock tenants: Activity (resting) ⇄ step details, same width, fade-rise swap ---- */

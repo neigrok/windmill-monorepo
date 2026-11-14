@@ -53,7 +53,7 @@ export function useDialogFocus({ open, cardRef, onClose, preserveOutsideFocus = 
 // been read to its end. With `gate="scrolled"` `seen` starts false, turns true once the body is
 // scrolled to its end or fits without scrolling, and drops back to false only if the body grows past
 // the height that was seen — scrolling back up never re-locks it. Without the gate `seen` is true.
-export function Dialog({ open, onClose, title, labelledBy, children, footer, width = 420, gate = null, padding = 'var(--space-8)', preserveOutsideFocus = false }) {
+export function Dialog({ open, onClose, title, labelledBy, header, children, footer, className, closeButtonSize = 28, width = 420, gate = null, padding = 'var(--space-8)', preserveOutsideFocus = false }) {
   const cardRef = useRef(null);
   const bodyRef = useRef(null);
   const contentRef = useRef(null);
@@ -109,6 +109,7 @@ export function Dialog({ open, onClose, title, labelledBy, children, footer, wid
     >
       <div
         ref={cardRef}
+        className={className}
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy ?? (title ? titleId : undefined)}
@@ -139,10 +140,10 @@ export function Dialog({ open, onClose, title, labelledBy, children, footer, wid
             onMouseLeave={() => setCloseHover(false)}
             style={{
               position: 'absolute',
-              top: 'var(--space-4)',
-              right: 'var(--space-4)',
-              width: 28,
-              height: 28,
+              top: closeButtonSize === 28 ? 'var(--space-4)' : `calc(var(--space-4) - ${(closeButtonSize - 28) / 2}px)`,
+              right: closeButtonSize === 28 ? 'var(--space-4)' : `calc(var(--space-4) - ${(closeButtonSize - 28) / 2}px)`,
+              width: closeButtonSize,
+              height: closeButtonSize,
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -162,6 +163,7 @@ export function Dialog({ open, onClose, title, labelledBy, children, footer, wid
             {title}
           </div>
         )}
+        {header}
         {/* Scrolling makes this a clip box on BOTH axes (CSS computes the paired overflow-x up
             from `visible` to `auto`), and a field paints its focus ring outside its own box. The
             card's padding is borrowed back here so the clip edge lands on the card wall. */}
