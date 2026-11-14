@@ -13,7 +13,7 @@ fn new_reader_replaces_old_and_replays_after_cursor() {
     );
     let first = entry.attach();
     let second = entry.attach();
-    assert_eq!(entry.next(0, first).1, true);
+    assert!(entry.next(0, first).1);
     assert_eq!(
         entry.next(0, second).0.unwrap().data,
         r#"{"callId":"abcdefghijklmnopqrstuv","maxTokens":20,"served":"small"}"#
@@ -41,7 +41,7 @@ fn active_answer_overflow_discards_own_content_and_never_blocks_writer() {
     }
     assert!(results.get("1").is_none());
     assert!(results.get("2").is_some());
-    assert_eq!(first.next(0, first.attach()).1, true);
+    assert!(first.next(0, first.attach()).1);
 }
 
 #[test]

@@ -232,7 +232,7 @@ pub async fn upgrade(
     let token = header_pass.or(offered_passes.first().copied());
     let identity = match authenticate_token(&service, token).await {
         Ok(identity) => identity,
-        Err(response) => return response,
+        Err(code) => return refusal(code, None),
     };
     let label = service.policy.tiers.label(
         &url::form_urlencoded::parse(request.uri().query().unwrap_or("").as_bytes())
@@ -359,6 +359,11 @@ async fn session(
             .ledger
             .admit(
                 Admission {
+                    expected_route: ModelRoute {
+                        provider,
+                        model: service.policy.tiers.transcription.model.clone(),
+                        served: ModelClass::Small,
+                    },
                     identity: identity.clone(),
                     caller_id: caller,
                     label,
@@ -489,8 +494,15 @@ async fn session(
                 .ok()
                 .and_then(|price| price.audio_rate().ok())
                 .map(|rate| {
-                    a.remaining.nanos().saturating_add(call.reservation.nanos()) as u64 * 60
-                        / rate.nanos().max(1) as u64
+                    u64::try_from(
+                        u128::try_from(
+                            a.remaining.nanos().saturating_add(call.reservation.nanos()),
+                        )
+                        .unwrap_or_default()
+                            * 60
+                            / u128::try_from(rate.nanos().max(1)).unwrap_or(1),
+                    )
+                    .unwrap_or(u64::MAX)
                 })
         })
         .unwrap_or(LIVE_SLICE);
@@ -541,14 +553,15 @@ async fn session(
                             transcript.bytes+=length as u64;transcript.turns.last_mut().unwrap().bytes+=length as u64;
                             if provider.send_audio(&bytes[offset..offset+length]).await.is_err(){fault=Some((StaticCode::ProviderFailed,true));break;}
                             offset+=length;
-                            if transcript.turns.last().unwrap().bytes==60*AUDIO_BYTES_PER_SECOND||(transcript.pending_commit&&transcript.turns.last().unwrap().bytes>=AUDIO_BYTES_PER_SECOND){if let Err(code)=transcript.commit(&mut provider,false).await{fault=Some((code,true));break;}}
+                            if (transcript.turns.last().unwrap().bytes==60*AUDIO_BYTES_PER_SECOND||(transcript.pending_commit&&transcript.turns.last().unwrap().bytes>=AUDIO_BYTES_PER_SECOND)) && let Err(code)=transcript.commit(&mut provider,false).await{fault=Some((code,true));break;}
                         }
                         if let Some((code,failed))=fault{break(Some(code),failed);}
                     },
                     Some(Ok(Message::Text(text)))=>{
                         let control=match serde_json::from_str::<Control>(&text){Ok(control)=>control,Err(_)=>break(Some(StaticCode::InvalidRequest),true)};
                         match control{
-                            Control::Context{keywords}=>{if transcript.bytes!=0||keywords.len()>256||keywords.iter().any(|word|word.is_empty()||word.len()>256){break(Some(StaticCode::InvalidRequest),true);}if provider.context(&keywords).await.is_err(){break(Some(StaticCode::ProviderFailed),true);}},
+                            Control::Context{keywords}=>{if transcript.bytes!=0||keywords.len()>256||keywords.iter().any(|word|word.is_empty()||word.len()>256){break(Some(StaticCode::InvalidRequest),true);}
+                            if provider.context(&keywords).await.is_err(){break(Some(StaticCode::ProviderFailed),true);}},
                             Control::Commit=>if let Err(code)=transcript.commit(&mut provider,false).await{break(Some(code),true);},
                             Control::End=>break(None,false),
                         }

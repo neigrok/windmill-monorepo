@@ -109,7 +109,15 @@ impl Config {
         {
             return Err("AI_INTERNAL_SECRETS");
         }
-        Ok(Self {
+        let database_url = required("AI_DATABASE_URL")?;
+        let database = url::Url::parse(&database_url).map_err(|_| "AI_DATABASE_URL")?;
+        if !matches!(database.scheme(), "postgres" | "postgresql")
+            || environment == Environment::Production
+                && (database.username() != "windmill_ai" || database.path() != "/windmill_ai")
+        {
+            return Err("AI_DATABASE_URL");
+        }
+        let config = Self {
             public_address: optional("AI_PUBLIC_ADDRESS")
                 .unwrap_or_else(|| "0.0.0.0:8084".to_owned())
                 .parse()
@@ -118,7 +126,7 @@ impl Config {
                 .unwrap_or_else(|| "0.0.0.0:8085".to_owned())
                 .parse()
                 .map_err(|_| "AI_INTERNAL_ADDRESS")?,
-            database_url: required("AI_DATABASE_URL")?,
+            database_url,
             environment,
             verifier,
             carry_key,
@@ -137,6 +145,10 @@ impl Config {
                 .transpose()?,
             log_level: LevelFilter::INFO,
             sentry_log_level: LevelFilter::INFO,
-        })
+        };
+        if config.public_address.port() == config.internal_address.port() {
+            return Err("AI_INTERNAL_ADDRESS");
+        }
+        Ok(config)
     }
 }

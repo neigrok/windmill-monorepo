@@ -32,6 +32,13 @@ def generate():
             payload = json.dumps(claims, separators=(',',':'))
             cases.append(dict(name=name,payload=payload,passValue=sign(payload),now=now,expected=expected))
         add('account',{},'ok')
+        for name, plan, owner in [('account_none','none',False),('account_one','one',False),('owner_unbound','one',True)]:
+            claims=dict(base)
+            claims['plan']=plan
+            claims.pop('installation')
+            if not owner: claims.pop('ownerGrant')
+            payload=json.dumps(claims,separators=(',',':'))
+            cases.append(dict(name=name,payload=payload,passValue=sign(payload),now=1800000000000,expected='ok'))
         installation = dict(aud='ai',env='development',iat=1800000000000,exp=1800000600000,sub={'installation':'installation-vector'},client='ios')
         payload=json.dumps(installation,separators=(',',':'))
         cases.append(dict(name='installation',payload=payload,passValue=sign(payload),now=1800000000000,expected='ok'))

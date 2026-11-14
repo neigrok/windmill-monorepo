@@ -11,6 +11,27 @@
       "expected": "ok"
     },
     {
+      "name": "account_none",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"none\",\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im5vbmUiLCJjbGllbnQiOiJ3ZWIifQ.-iwwsiVuYMLaxwvaeycgao4MqEQ46Ujn0hqeStpEYPH7Au_jI7jvhlCAlV0Dq27npB9cniUfQM7HojKXlTAGDQ",
+      "now": 1800000000000,
+      "expected": "ok"
+    },
+    {
+      "name": "account_one",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsImNsaWVudCI6IndlYiJ9.wMpaxzzpmTL56qKCO4VYWd95j8XDEfk7p_mHepvOit20r6h5MaGMOT6JEh9YIdCpajMDVIYAxRha-VeIi1skBQ",
+      "now": 1800000000000,
+      "expected": "ok"
+    },
+    {
+      "name": "owner_unbound",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"ownerGrant\":true,\"client\":\"web\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsIm93bmVyR3JhbnQiOnRydWUsImNsaWVudCI6IndlYiJ9.0u4mkNO9EGcGyL3h4sJOtTRSHAgh3Z8JV2Lc6-PqwiIz3lH1N6MR88zHDhwQoL1q7AFBt2NtZJDC5kVhEVyQAQ",
+      "now": 1800000000000,
+      "expected": "ok"
+    },
+    {
       "name": "installation",
       "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"installation\":\"installation-vector\"},\"client\":\"ios\"}",
       "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJpbnN0YWxsYXRpb24iOiJpbnN0YWxsYXRpb24tdmVjdG9yIn0sImNsaWVudCI6ImlvcyJ9.Hq9p8dNyK90I2v9RJMcvlGXReFIrSnPTiUBT4meamD0VghMeH8cYwDWPCT65jdtFwTlrbyy9CUTRlqPdHNvxCA",

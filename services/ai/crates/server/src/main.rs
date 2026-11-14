@@ -128,33 +128,61 @@ async fn run() -> Result<(), &'static str> {
         internal_router(service.clone()),
         stop.clone(),
     ));
+    let cleanup_service = service.clone();
+    let cleanup_stop = stop.clone();
+    let cleanup = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(1));
+        loop {
+            tokio::select! {
+                _=cleanup_stop.cancelled()=>break,
+                _=tick.tick()=>{
+                    cleanup_service.results.prune();
+                    cleanup_service.refusals.flush();
+                }
+            }
+        }
+    });
     let maintenance_service = service.clone();
     let maintenance_stop = stop.clone();
     let maintenance = tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(1));
         let mut sweep = Instant::now();
         loop {
-            tokio::select! {_=maintenance_stop.cancelled()=>break,_=tick.tick()=>{
-                maintenance_service.results.prune();maintenance_service.refusals.flush();
-                if sweep.elapsed()>=SWEEP_EVERY{
-                    sweep=Instant::now();
-                    let lock=maintenance_service.ledger.lock_alive().await;
-                    if !lock{let _=maintenance_service.ledger.acquire_lock().await;}
-                    if maintenance_service.ledger.lock_alive().await{
-                        let _lifecycle=maintenance_service.lifecycle.lock().await;
-                        let active=maintenance_service.active.lock().unwrap_or_else(|e|e.into_inner()).iter().copied().collect::<Vec<_>>();
-                        match maintenance_service.ledger.sweep(&active,maintenance_service.now()).await{Ok(outcome)=>report_events(outcome.events),Err(code)=>telemetry::report_failure("ledger.sweep",code.as_str(),None)}
+            tokio::select! {
+                _ = maintenance_stop.cancelled() => break,
+                _ = tick.tick() => {
+                    if sweep.elapsed() >= SWEEP_EVERY {
+                        sweep = Instant::now();
+                        if !maintenance_service.ledger.lock_alive().await {
+                            let _ = maintenance_service.ledger.acquire_lock().await;
+                        }
+                        if maintenance_service.ledger.lock_alive().await {
+                            let _lifecycle = maintenance_service.lifecycle.lock().await;
+                            let active = maintenance_service.active.lock()
+                                .unwrap_or_else(|error| error.into_inner())
+                                .iter().copied().collect::<Vec<_>>();
+                            match maintenance_service.ledger.sweep(&active, maintenance_service.now()).await {
+                                Ok(outcome) => report_events(outcome.events),
+                                Err(code) => telemetry::report_failure("ledger.sweep", code.as_str(), None),
+                            }
+                        }
+                    }
+                    match maintenance_service.ledger.drain_events().await {
+                        Ok(events) => report_events(events),
+                        Err(code) => telemetry::report_failure("ledger.events", code.as_str(), None),
                     }
                 }
-                match maintenance_service.ledger.drain_events().await{Ok(events)=>report_events(events),Err(code)=>telemetry::report_failure("ledger.events",code.as_str(),None)}
-            }}
+            }
         }
     });
     #[cfg(unix)]
     {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .map_err(|_| "signal_configuration")?;
-        tokio::select! {_=tokio::signal::ctrl_c()=>{},_=term.recv()=>{}}
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {},
+            _ = term.recv() => {},
+        }
     }
     #[cfg(not(unix))]
     tokio::signal::ctrl_c()
@@ -177,6 +205,7 @@ async fn run() -> Result<(), &'static str> {
     stop.cancel();
     let _ = public_task.await;
     let _ = internal_task.await;
-    let _ = maintenance.await;
+    let _ = tokio::time::timeout(Duration::from_secs(5), maintenance).await;
+    let _ = cleanup.await;
     Ok(())
 }

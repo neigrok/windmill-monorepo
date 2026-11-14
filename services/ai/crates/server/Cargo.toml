@@ -34,6 +34,8 @@ url = "2.5"
 toml = "0.9"
 
 [dev-dependencies]
+sqlx = { version = "0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring-webpki"] }
+tokio-tungstenite = "0.28.0"
 sentry = { version = "0.49.5", default-features = false, features = ["test"] }
 tower = { version = "0.5.3", features = ["util"] }
 

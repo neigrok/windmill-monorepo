@@ -16,7 +16,7 @@ use ai_storage::Ledger;
 use axum::{
     Json, Router,
     body::to_bytes,
-    extract::{Path, Request, State},
+    extract::{MatchedPath, Path, Request, State},
     http::{HeaderMap, StatusCode, header},
     middleware::{self, Next},
     response::{
@@ -115,7 +115,7 @@ pub fn public_router(service: Arc<Service>) -> Router {
         .route("/v1/calls/{callId}", get(status))
         .route("/v1/allowance", get(allowance))
         .fallback(|| async { refusal("call_unknown", None) })
-        .layer(middleware::from_fn(no_store))
+        .layer(middleware::from_fn_with_state(service.clone(), no_store))
         .with_state(service)
 }
 
@@ -130,16 +130,92 @@ pub fn internal_router(service: Arc<Service>) -> Router {
         .route("/internal/v1/calls/{id}", get(internal_call))
         .route("/internal/v1/calls/{id}/correct", post(correct))
         .route("/internal/v1/budgets", get(budgets))
-        .layer(middleware::from_fn(no_store))
+        .layer(middleware::from_fn_with_state(service.clone(), no_store))
         .with_state(service)
 }
 
-async fn no_store(request: Request, next: Next) -> Response {
+#[derive(Clone)]
+struct RefusalCode(&'static str);
+#[derive(Clone)]
+struct RefusalLine {
+    operation: &'static str,
+    code: &'static str,
+    client: &'static str,
+    tier: Option<&'static str>,
+}
+#[derive(Clone)]
+struct WriteOutcome(&'static str);
+
+async fn no_store(State(service): State<Arc<Service>>, request: Request, next: Next) -> Response {
+    let start = Instant::now();
+    let route = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map_or("unmatched", MatchedPath::as_str)
+        .to_owned();
+    let label = service
+        .policy
+        .tiers
+        .label(&query(&request, "label").unwrap_or_default());
     let mut response = next.run(request).await;
     response.headers_mut().insert(
         header::CACHE_CONTROL,
         header::HeaderValue::from_static("no-store, no-transform"),
     );
+    let duration_ms = start.elapsed().as_millis() as u64;
+    let operation = match route.as_str() {
+        "/internal/v1/grants/{reference}" => Some("grant.fund"),
+        "/internal/v1/grants/{reference}/close" => Some("grant.close"),
+        "/internal/v1/grants/{reference}/reopen" => Some("grant.reopen"),
+        "/internal/v1/calls/{id}/correct" => Some("call.correct"),
+        _ => None,
+    };
+    if let Some(operation) = operation {
+        let outcome = response
+            .extensions()
+            .get::<WriteOutcome>()
+            .map(|value| value.0)
+            .or_else(|| {
+                response
+                    .extensions()
+                    .get::<RefusalCode>()
+                    .map(|value| value.0)
+            })
+            .unwrap_or("invalid_request");
+        tracing::info!(operation, outcome, duration_ms, "write");
+    } else if let Some(line) = response.extensions().get::<RefusalLine>() {
+        tracing::info!(
+            operation = line.operation,
+            code = line.code,
+            client = line.client,
+            tier = line.tier,
+            label,
+            environment = service.config.environment.label(),
+            duration_ms,
+            "refused"
+        );
+    } else if response.status().is_success()
+        && matches!(
+            route.as_str(),
+            "/v1/allowance"
+                | "/v1/calls/{callId}"
+                | "/v1/calls/{callId}/result"
+                | "/internal/v1/principals/{kind}/{id}"
+                | "/internal/v1/calls"
+                | "/internal/v1/calls/{id}"
+                | "/internal/v1/budgets"
+        )
+    {
+        tracing::info!(
+            operation = "request.read",
+            route,
+            duration_ms,
+            status = response.status().as_u16(),
+            "read"
+        );
+    } else if route == "/health" && response.status().is_success() {
+        tracing::debug!(operation = "health.read", duration_ms, "ready");
+    }
     response
 }
 
@@ -160,10 +236,12 @@ pub fn bearer(headers: &HeaderMap) -> Result<Option<&str>, &'static str> {
     }
 }
 
-pub async fn authenticate(service: &Service, headers: &HeaderMap) -> Result<Identity, Response> {
-    let token = bearer(headers).map_err(|code| {
+pub async fn authenticate(
+    service: &Service,
+    headers: &HeaderMap,
+) -> Result<Identity, &'static str> {
+    let token = bearer(headers).inspect_err(|code| {
         service.refusals.count(code);
-        refusal(code, None)
     })?;
     authenticate_token(service, token).await
 }
@@ -171,14 +249,13 @@ pub async fn authenticate(service: &Service, headers: &HeaderMap) -> Result<Iden
 pub async fn authenticate_token(
     service: &Service,
     token: Option<&str>,
-) -> Result<Identity, Response> {
+) -> Result<Identity, &'static str> {
     let claims = service
         .config
         .verifier
         .verify(token, service.now())
-        .map_err(|code| {
+        .inspect_err(|code| {
             service.refusals.count(code);
-            refusal(code, None)
         })?;
     let identity = wire::identity(claims);
     let preparation = service
@@ -187,7 +264,7 @@ pub async fn authenticate_token(
         .await
         .map_err(|code| {
             telemetry::report_failure("ledger.prepare", code.as_str(), None);
-            refusal(code.as_str(), None)
+            code.as_str()
         })?;
     report_events(preparation.events);
     Ok(identity)
@@ -247,7 +324,9 @@ pub fn refusal(code: &'static str, allowance: Option<Value>) -> Response {
         }
         _ => StatusCode::BAD_REQUEST,
     };
-    (status, Json(json!({"code":code,"allowance":allowance}))).into_response()
+    let mut response = (status, Json(json!({"code":code,"allowance":allowance}))).into_response();
+    response.extensions_mut().insert(RefusalCode(code));
+    response
 }
 
 pub async fn reject(
@@ -256,28 +335,26 @@ pub async fn reject(
     code: StaticCode,
     operation: &'static str,
 ) -> Response {
-    if matches!(code, StaticCode::Busy | StaticCode::RateLimited) {
+    let counted = matches!(code, StaticCode::Busy | StaticCode::RateLimited);
+    if counted {
         service.refusals.count(code.as_str());
-    } else {
-        tracing::info!(
-            operation,
-            code = code.as_str(),
-            client = identity.client.as_str(),
-            environment = service.config.environment.label(),
-            "refused"
-        );
     }
-    if code == StaticCode::AccountingUnavailable {
+    let allowance = if code == StaticCode::AccountingUnavailable {
         telemetry::report_failure(operation, code.as_str(), None);
-        return refusal(code.as_str(), None);
+        None
+    } else {
+        service.ledger.allowance(identity, service.now()).await.ok()
+    };
+    let mut response = refusal(code.as_str(), allowance.as_ref().map(wire::allowance));
+    if !counted {
+        response.extensions_mut().insert(RefusalLine {
+            operation,
+            code: code.as_str(),
+            client: identity.client.as_str(),
+            tier: allowance.map(|value| value.tier.as_str()),
+        });
     }
-    let allowance = service
-        .ledger
-        .allowance(identity, service.now())
-        .await
-        .ok()
-        .map(|value| wire::allowance(&value));
-    refusal(code.as_str(), allowance)
+    response
 }
 
 pub fn read_rate(service: &Service, identity: &Identity) -> bool {
@@ -315,7 +392,7 @@ async fn health(State(service): State<Arc<Service>>) -> Response {
 async fn allowance(State(service): State<Arc<Service>>, request: Request) -> Response {
     let identity = match authenticate(&service, request.headers()).await {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(code) => return refusal(code, None),
     };
     if !read_rate(&service, &identity) {
         return reject(
@@ -339,7 +416,7 @@ async fn status(
 ) -> Response {
     let identity = match authenticate(&service, request.headers()).await {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(code) => return refusal(code, None),
     };
     if !read_rate(&service, &identity) {
         return reject(&service, &identity, StaticCode::RateLimited, "call.read").await;
@@ -362,7 +439,7 @@ async fn result(
 ) -> Response {
     let identity = match authenticate(&service, request.headers()).await {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(code) => return refusal(code, None),
     };
     if !read_rate(&service, &identity) {
         return reject(&service, &identity, StaticCode::RateLimited, "call.result").await;
@@ -456,7 +533,7 @@ async fn text(
 ) -> Response {
     let identity = match authenticate(&service, request.headers()).await {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(code) => return refusal(code, None),
     };
     let caller = match CallerId::new(id) {
         Ok(value) => value,
@@ -566,13 +643,12 @@ async fn text(
             if failure.key_account_fault {
                 telemetry::report_failure("provider.count", "provider_credentials", None);
             }
-            return reject(
-                &service,
-                &identity,
-                StaticCode::ProviderRejected,
-                "call.text",
-            )
-            .await;
+            let code = match failure.code {
+                FailureCode::ProviderRejected => StaticCode::ProviderRejected,
+                FailureCode::ProviderUnavailable => StaticCode::ProviderUnavailable,
+                FailureCode::ProviderFailed => StaticCode::ProviderFailed,
+            };
+            return reject(&service, &identity, code, "call.text").await;
         }
     };
     match service.ledger.fuse(route.provider, service.now()).await {
@@ -584,6 +660,7 @@ async fn text(
         Err(code) => return reject(&service, &identity, code, "call.text").await,
     }
     let admission = Admission {
+        expected_route: route.clone(),
         identity: identity.clone(),
         caller_id: caller,
         label,
@@ -611,25 +688,54 @@ async fn text(
         .create(call.id.to_string(), principal_key(&call.principal), false);
     let active = ActiveCall::new(service.clone(), call.id, permit);
     drop(lifecycle);
-    let task_entry = entry.clone();
+    let (ready, answer) = oneshot::channel();
+    let task = TextCall {
+        identity: identity.clone(),
+        call,
+        prepared,
+        entry: entry.clone(),
+        active,
+    };
+    let task_service = service.clone();
     tokio::spawn(async move {
-        text_task(
-            service, identity, call, adapter, prepared, task_entry, active,
-        )
-        .await;
+        text_task(task_service, adapter, task, ready).await;
     });
-    event_stream(entry, 0)
+    match answer.await {
+        Ok(Ok(())) => event_stream(entry, 0),
+        Ok(Err(code)) => reject(&service, &identity, code, "call.text").await,
+        Err(_) => {
+            reject(
+                &service,
+                &identity,
+                StaticCode::AccountingUnavailable,
+                "call.text",
+            )
+            .await
+        }
+    }
+}
+
+struct TextCall {
+    identity: Identity,
+    call: Call,
+    prepared: ai_providers::PreparedText,
+    entry: Arc<ResultEntry>,
+    active: ActiveCall,
 }
 
 async fn text_task(
     service: Arc<Service>,
-    identity: Identity,
-    call: Call,
     adapter: Arc<Anthropic>,
-    prepared: ai_providers::PreparedText,
-    entry: Arc<ResultEntry>,
-    active: ActiveCall,
+    task: TextCall,
+    ready: oneshot::Sender<Result<(), StaticCode>>,
 ) {
+    let TextCall {
+        identity,
+        call,
+        prepared,
+        entry,
+        active,
+    } = task;
     let start = Instant::now();
     if service
         .ledger
@@ -645,6 +751,7 @@ async fn text_task(
         };
         let charged = settle(service.clone(), call.id, settlement, active).await;
         service.results.push(&entry,"failed",json!({"code":"accounting_unavailable","charged":charged.map(NanoUsd::usd),"allowance":null}),true);
+        let _ = ready.send(Err(StaticCode::AccountingUnavailable));
         telemetry::report_failure("ledger.dispatch", "accounting_unavailable", None);
         tracing::info!(
             operation = "call.text",
@@ -664,6 +771,7 @@ async fn text_task(
         );
         return;
     }
+    let _ = ready.send(Ok(()));
     service.results.push(&entry,"started",json!({"callId":call.caller_id.as_str(),"served":call.route.served.as_str(),"maxTokens":call.max_tokens}),false);
     let outcome = adapter
         .run(
@@ -748,7 +856,29 @@ async fn text_task(
     } else {
         service.results.push(&entry,"ended",json!({"stop":stop.map(Stop::as_str),"message":outcome.message,"charged":charged.map(NanoUsd::usd),"allowance":allowance}),true);
     }
-    tracing::info!(operation="call.text",id=call.id,label=call.label,client=call.client.as_str(),environment=service.config.environment.label(),tier=call.tier.as_str(),requested=call.requested.as_str(),served=call.route.served.as_str(),code=code.map(StaticCode::as_str),stop=stop.map(Stop::as_str),duration_ms=start.elapsed().as_millis() as u64,reservation=call.reservation.nanos(),charged=charged.map(NanoUsd::nanos),http_status=outcome.http_status,input=usage.map(|u|u.input),output=usage.map(|u|u.output),cache_write=usage.map(|u|u.cache_write),cache_write_1h=usage.map(|u|u.cache_write_1h),cache_read=usage.map(|u|u.cache_read),state=match charge{Charge::Usage(_)=>"settled",Charge::Unconsumed=>"unconsumed",_=>"assumed"},failure_kind=?outcome.failure.as_ref().map(|failure|failure.kind),"call ended");
+    tracing::info!(operation="call.text",
+        id=call.id,
+        label=call.label,
+        client=call.client.as_str(),
+        environment=service.config.environment.label(),
+        tier=call.tier.as_str(),
+        requested=call.requested.as_str(),
+        served=call.route.served.as_str(),
+        code=code.map(StaticCode::as_str),
+        stop=stop.map(Stop::as_str),
+        duration_ms=start.elapsed().as_millis() as u64,
+        reservation=call.reservation.nanos(),
+        charged=charged.map(NanoUsd::nanos),
+        http_status=outcome.http_status,
+        input=usage.map(|u|u.input),
+        output=usage.map(|u|u.output),
+        cache_write=usage.map(|u|u.cache_write),
+        cache_write_1h=usage.map(|u|u.cache_write_1h),
+        cache_read=usage.map(|u|u.cache_read),
+        state=match charge{Charge::Usage(_)=>"settled",Charge::Unconsumed=>"unconsumed",_=>"assumed"},
+        failure_kind=?outcome.failure.as_ref().map(|failure|failure.kind),
+        "call ended"
+    );
 }
 
 pub async fn settle(
@@ -794,10 +924,10 @@ pub async fn settle(
                     }
                 }
             }
-            if start.elapsed() >= SETTLE_RETRY {
-                if let Some(sender) = sender.take() {
-                    let _ = sender.send(None);
-                }
+            if start.elapsed() >= SETTLE_RETRY
+                && let Some(sender) = sender.take()
+            {
+                let _ = sender.send(None);
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
@@ -876,11 +1006,14 @@ async fn reopen(
 fn grant_response(operation: &'static str, result: Result<GrantOutcome, StaticCode>) -> Response {
     match result {
         Ok(outcome) => {
-            tracing::info!(operation, outcome = outcome.as_str(), "write");
             if outcome == GrantOutcome::Conflict {
                 sentry::capture_message(operation, sentry::Level::Warning);
             }
-            Json(json!({"outcome":outcome.as_str()})).into_response()
+            let mut response = Json(json!({"outcome":outcome.as_str()})).into_response();
+            response
+                .extensions_mut()
+                .insert(WriteOutcome(outcome.as_str()));
+            response
         }
         Err(code) => {
             telemetry::report_failure(operation, code.as_str(), None);
@@ -900,7 +1033,18 @@ async fn principal(
         Ok(value) => value,
         Err(code) => return refusal(code.as_str(), None),
     };
-    match service.ledger.principal(&principal, service.now()).await {
+    let before = match query(&request, "before")
+        .map(|value| value.parse::<i64>())
+        .transpose()
+    {
+        Ok(value) if value.is_none_or(|id| id > 0) => value,
+        _ => return refusal("invalid_request", None),
+    };
+    match service
+        .ledger
+        .principal(&principal, service.now(), before)
+        .await
+    {
         Ok(value) => Json(wire::principal(value)).into_response(),
         Err(code) => refusal(code.as_str(), None),
     }
@@ -945,9 +1089,27 @@ async fn calls(State(service): State<Arc<Service>>, request: Request) -> Respons
         Ok(value) => value,
         Err(code) => return refusal(code.as_str(), None),
     };
-    match service.ledger.calls(state, since, caller.as_ref()).await {
-        Ok(value) => {
-            Json(json!({"calls":value.iter().map(wire::call).collect::<Vec<_>>()})).into_response()
+    let before = match query(&request, "before")
+        .map(|value| value.parse::<i64>())
+        .transpose()
+    {
+        Ok(value) if value.is_none_or(|id| id > 0) => value,
+        _ => return refusal("invalid_request", None),
+    };
+    match service
+        .ledger
+        .calls(state, since, caller.as_ref(), before)
+        .await
+    {
+        Ok(mut value) => {
+            let more = value.len() > 1000;
+            value.truncate(1000);
+            let next_before_id = if more {
+                value.last().map(|call| call.id)
+            } else {
+                None
+            };
+            Json(json!({"calls":value.iter().map(wire::call).collect::<Vec<_>>(),"nextBeforeId":next_before_id})).into_response()
         }
         Err(code) => refusal(code.as_str(), None),
     }
@@ -985,16 +1147,11 @@ async fn correct(
     };
     match service.ledger.correct(id, cost, service.now()).await {
         Ok(value) => {
-            tracing::info!(operation = "call.correct", id, outcome = "ok", "write");
-            Json(json!({"state":value.state.as_str(),"charged":value.charged.usd(),"replay":value.replay})).into_response()
+            let mut response=Json(json!({"state":value.state.as_str(),"charged":value.charged.usd(),"replay":value.replay})).into_response();
+            response.extensions_mut().insert(WriteOutcome("ok"));
+            response
         }
         Err(code) => {
-            tracing::info!(
-                operation = "call.correct",
-                id,
-                outcome = code.as_str(),
-                "write"
-            );
             if code == StaticCode::AccountingUnavailable {
                 telemetry::report_failure("call.correct", code.as_str(), None);
             }
