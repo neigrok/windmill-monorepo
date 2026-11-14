@@ -88,6 +88,39 @@ TEST(anthropic_stream_requires_message_stop_and_preserves_partial_usage_on_failu
   CHECK_EQ(tokens.cacheWrite, 0);
 }
 
+TEST(anthropic_stream_counts_an_unfinished_replys_output_from_what_streamed_never_below_the_vendors_count) {
+  const auto streamed = events({
+    R"({"type":"message_start","message":{"content":[],"usage":{"input_tokens":13,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}})",
+    R"({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}})",
+    R"({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"abcdefgh"}})",
+    R"({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"not-written-by-the-model"}})",
+    R"({"type":"content_block_stop","index":0})",
+    R"({"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}})",
+    R"({"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Héllo"}})",
+    R"({"type":"content_block_stop","index":1})",
+    R"({"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"t1","name":"create_routine","input":{}}})",
+    R"({"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"name\":"}})"});
+  AnthropicMessageStream cut;
+  REQUIRE(cut.feed(streamed));
+  const auto stopped = cut.finish("cancelled");
+  REQUIRE(stopped.has_value());
+  CHECK_EQ((*stopped)["stop_reason"].asString(), std::string("cancelled"));
+  // 8 bytes of thinking, 6 of text, 14 of the tool's name and 8 of its input: 36 bytes, 12 tokens, and 3 a block.
+  CHECK_EQ((*stopped)["usage"], parse(R"({"input_tokens":13,"output_tokens":21,"cache_read_input_tokens":0,"cache_creation_input_tokens":0})"));
+  AnthropicMessageStream counted;
+  REQUIRE(counted.feed(streamed + events({R"({"type":"message_delta","delta":{},"usage":{"output_tokens":40}})"})));
+  CHECK_EQ((*counted.finish("cancelled"))["usage"]["output_tokens"].asInt64(), 40);
+  AnthropicMessageStream finished;
+  REQUIRE(finished.feed(events({
+    R"({"type":"message_start","message":{"content":[],"usage":{"input_tokens":13,"output_tokens":1}}})",
+    R"({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}})",
+    R"({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"A whole answer that streamed in full"}})",
+    R"({"type":"content_block_stop","index":0})",
+    R"({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}})",
+    R"({"type":"message_stop"})"})));
+  CHECK_EQ((*finished.finish())["usage"]["output_tokens"].asInt64(), 2);
+}
+
 TEST(anthropic_stream_rejects_unclosed_tool_json_malformed_events_and_resource_overruns) {
   AnthropicMessageStream unfinished;
   REQUIRE(unfinished.feed(events({R"({"type":"message_start","message":{"content":[]}})",

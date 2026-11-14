@@ -19,7 +19,12 @@ enum class AiBudgetCode {
   FreeMonthExhausted, FreeDayExhausted, ConcurrencyExhausted, DeviceBound, FundingRequired
 };
 
+// How long a hold may wait for its cost. Every vendor call this server makes ends well inside it, so a hold still
+// unresolved this long after admission is one whose outcome is never coming.
+constexpr long long kAiBudgetHoldLifetimeMs = 10 * 60 * 1000;
+
 std::string_view aiBudgetTierName(AiBudgetTier tier);
+std::string_view aiBudgetStateName(AiBudgetState state);
 std::string_view aiBudgetCodeName(AiBudgetCode code);
 std::string_view aiBudgetWindowName(AiBudgetWindow window);
 std::string_view aiBudgetScopeName(AiBudgetScope scope);
@@ -123,9 +128,13 @@ struct AiBudgetReservation {
   long long admittedAtMs = 0;
   std::optional<std::string> grantId;
   std::optional<AiOutputBudget> outputBudget;
+  std::optional<AiBudgetState> releasedFrom;
 
   bool valid() const;
   bool sameRequest(const AiBudgetRequest& other) const;
+  // Its cost is not known yet, so it holds one of its principal's concurrency slots.
+  bool unresolved() const;
+  bool lapsedAt(long long atMs) const;
 };
 
 struct AiBudgetResult {
@@ -181,6 +190,9 @@ std::vector<int> crossedAiBudgetThresholds(const AiBudgetBalance& before, const 
                                          long long limitNanos);
 AiBudgetCode transitionAiBudget(AiBudgetReservation& reservation, AiBudgetState target,
                                std::optional<long long> actualNanos = std::nullopt);
+// Lets go of a hold that lapsed: nothing is charged, its slot frees, and the record keeps its amount and the state it
+// left. Windmill absorbs whatever the vendor billed for it.
+AiBudgetCode releaseLapsedAiBudget(AiBudgetReservation& reservation, long long atMs);
 AiBudgetCode reconcileAiBudgetOverrun(AiBudgetReservation& reservation);
 
 }

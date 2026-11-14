@@ -5,6 +5,7 @@
 #include "platform/adapters/postgres/PgAccountFootprint.h"
 #include "platform/adapters/paddle/BillingApi.h"
 #include "platform/application/AiBudgetAlerts.h"
+#include "platform/application/AiBudgetHoldSweep.h"
 #include "platform/ai_installations/AiInstallationApi.h"
 #include "platform/ai_installations/PgAiInstallations.h"
 #include "products/gym/onboarding/PgOnboardingRepository.h"
@@ -522,6 +523,9 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     aiBudgetAlerts = std::make_shared<AiBudgetAlerts>(aiBudgets, emailSender, systemClock, *alertEmail);
     lifetime.watch(aiBudgetAlerts, aiBudgets, aiBudgetRepo, emailSender, resendClient, systemClock);
     aiBudgetAlerts->start();
+    auto aiBudgetHoldSweep = std::make_shared<AiBudgetHoldSweep>(aiBudgets);
+    lifetime.watch(aiBudgetHoldSweep, aiBudgets, aiBudgetRepo, systemClock);
+    aiBudgetHoldSweep->start();
   }
 
   std::shared_ptr<AiCallBudget> aiCallBudget;
