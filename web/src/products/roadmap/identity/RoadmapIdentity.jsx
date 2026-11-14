@@ -159,7 +159,7 @@ export function RoadmapIdentity({
           {progressFigure({ ...progress, compact: phone })}
         </span>
       )}
-      {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} graphUnavailable={graphUnavailable} onGraphUnavailable={onGraphUnavailable} />}
+      {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} tooltip={desktop} graphUnavailable={graphUnavailable} onGraphUnavailable={onGraphUnavailable} />}
       {!phone && guide}
       {!phone && <>
         <div className="st-roadmap-space" />
