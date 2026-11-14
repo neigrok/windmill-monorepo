@@ -350,8 +350,9 @@ alone cannot correct those implementations.
 `subscriptions` runs the Windmill One subscription service
 ([ARCHITECTURE.md](../../services/subscriptions/ARCHITECTURE.md)) from
 `ghcr.io/neigrok/windmill-monorepo:subscriptions-<sha>`, the image Backend CI builds from
-`services/subscriptions` for the same commit as the server's. No store is connected: the public
-listener answers `GET /health` and 404s every other path, every path under `/v1/stores/` included.
+`services/subscriptions` for the same commit as the server's. The public listener answers `GET /health`
+and the App Store notification door, `POST /v1/stores/app-store/notifications`, which trusts Apple's root
+alone, and 404s every other path; no App Store Connect setting sends notifications to it yet.
 
 - **Routing**: Caddy forwards `/v1/stores/*`, on both hosts and behind the Cloudflare gate, to the public
   port, 8082, and nothing else; the server never sees such a path. The internal port, 8083, is published
@@ -363,7 +364,8 @@ listener answers `GET /health` and 404s every other path, every path under `/v1/
 - **Status**: `docker compose ps subscriptions` shows `(healthy)`, and
   `docker compose exec -T subscriptions curl -s localhost:8083/health` prints the answer.
 - **Logs**: `docker compose logs -f subscriptions`, one JSON object per line: `ledger open` with the
-  ledger's epoch at start, then one line per request. Its Logs and failure reports go to the server's
+  ledger's epoch at start, then one line per request, and one `store.notification` line per App Store
+  delivery with its `outcome` and `code`. Its Logs and failure reports go to the server's
   Sentry project under the same environment, with the commit the image was built from as release; the
   `operation` tag, such as `ledger.open`, names a failure.
 - **Restart**: `docker compose restart subscriptions`. It stops within Docker's 10 s and exits 0.

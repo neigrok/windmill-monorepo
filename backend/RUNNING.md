@@ -35,9 +35,9 @@ createuser -h /tmp windmill_subscriptions
 createdb -h /tmp -O windmill_subscriptions windmill_subscriptions
 ```
 
-Its URL is `postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions`; the service's
-[ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#run) runs it. The production rules that
-keep the backend's role out of this database are not part of the local cluster.
+Its URL is `postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions`;
+[§4](#the-subscription-service) runs the service. The production rules that keep the backend's role out
+of this database are not part of the local cluster.
 
 ## 3. Build
 
@@ -61,6 +61,39 @@ finds it with no configuration. The default is `:8080`, which Docker Desktop usu
 
 Everything else is optional and each feature stays dark without its key — copy `.env.example` to
 `.env` and `set -a; source .env; set +a` before the binary.
+
+### The subscription service
+
+Run from `services/subscriptions/`, once its database exists (§2); it migrates the ledger before it
+listens. `SUBSCRIPTIONS_APP_STORE_TEST_ROOT` makes its App Store notification door trust the test chain
+beside Apple's root, so a notification `app_store_test_signer` signs is believed. The service refuses that
+variable at start unless `SENTRY_ENVIRONMENT` is `local`, `development`, `test` or `ci`; without it the
+door trusts Apple's root alone, as production does.
+
+```sh
+SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0.0.1:8083 \
+  SUBSCRIPTIONS_DATABASE_URL="postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions" \
+  SUBSCRIPTIONS_APP_STORE_TEST_ROOT=tests/fixtures/app_store/test-chain/root.cer \
+  SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
+```
+
+In a second terminal, from the same directory, sign one of the example notifications
+(`tests/fixtures/app_store/test-payloads/`) and post it as Apple does:
+
+```sh
+SIGNED=$(cargo run -q -p app_store_test_signer < tests/fixtures/app_store/test-payloads/started.json)
+curl -s -w '%{http_code}\n' localhost:8082/v1/stores/app-store/notifications \
+  -H 'content-type: application/json' -d "{\"signedPayload\":\"$SIGNED\"}"              # 200
+psql -h /tmp -U windmill_subscriptions windmill_subscriptions \
+  -c 'select environment, outcome from inbox' -c 'select seq, type from events order by seq'
+```
+
+The inbox holds the notification `applied`, and the events are `started`, `bound` and `period_recorded`.
+The same `SIGNED` posted again answers 200 and adds nothing; a service started without
+`SUBSCRIPTIONS_APP_STORE_TEST_ROOT` answers it `400 {"error":"untrusted_chain"}` and keeps nothing. Each
+delivery writes one `store.notification` line to the service's stdout
+([ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#the-app-store-notification-door)). Stop the
+service by its ports.
 
 ### Engine server for the iOS simulator
 

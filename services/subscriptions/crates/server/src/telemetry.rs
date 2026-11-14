@@ -88,9 +88,25 @@ impl TransportFactory for BoundedSends {
     }
 }
 
-// An unexpected failure of a named operation (spec §10): one Issue per operation and code, and one
-// line naming both. No message travels: a failure's text can quote what it was handed.
+// An unexpected failure of a named operation (spec §10), and the one line naming the operation and its code.
 pub fn report_failure(operation: &'static str, code: &'static str, sqlstate: Option<&str>) {
+    let sentry_event_id = report(operation, code, sqlstate);
+    tracing::error!(
+        operation,
+        code,
+        sqlstate,
+        sentry_event_id,
+        "{operation} failed"
+    );
+}
+
+// One Issue per operation and code, answering the event's id for the caller's own line, absent while Sentry is off.
+// No message travels: a failure's text can quote what it was handed.
+pub fn report(
+    operation: &'static str,
+    code: &'static str,
+    sqlstate: Option<&str>,
+) -> Option<String> {
     let event_id = sentry::with_scope(
         |scope| {
             scope.set_tag("operation", operation);
@@ -102,14 +118,7 @@ pub fn report_failure(operation: &'static str, code: &'static str, sqlstate: Opt
         },
         || sentry::capture_message(operation, sentry::Level::Error),
     );
-    let sentry_event_id = (!event_id.is_nil()).then(|| event_id.simple().to_string());
-    tracing::error!(
-        operation,
-        code,
-        sqlstate,
-        sentry_event_id,
-        "{operation} failed"
-    );
+    (!event_id.is_nil()).then(|| event_id.simple().to_string())
 }
 
 // The other source of Issues: location and stack, never the message, which may hold anything.

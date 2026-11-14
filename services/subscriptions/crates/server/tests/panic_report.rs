@@ -1,5 +1,6 @@
 // Its own binary: the panic hook it installs is process-wide.
 
+use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use server::config::Config;
@@ -39,7 +40,7 @@ fn a_handler_panic_reaches_sentry_with_its_route_and_without_its_message() {
     let events = sentry::test::with_captured_events(|| {
         let response = runtime.block_on(
             Listener::Internal
-                .router(&config, Answering, Bounds::default())
+                .router(&config, Answering, Router::new(), Bounds::default())
                 .oneshot(Request::get("/debug/panic").body(Body::empty()).unwrap()),
         );
         status = Some(response.unwrap().status());

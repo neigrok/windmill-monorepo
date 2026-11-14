@@ -31,6 +31,14 @@ impl SignedDataVerifier {
             .expect("Apple Root CA - G3 is a certificate with a P-384 key")
     }
 
+    // The production configuration that also trusts a root only a test deployment holds, such as the test chain's.
+    pub fn windmill_also_trusting(
+        test_root: &[u8],
+        clock: impl Fn() -> SystemTime + Send + Sync + 'static,
+    ) -> Result<Self, InvalidRoots> {
+        Self::new(&[APPLE_ROOT_CA_G3, test_root], WINDMILL_BUNDLE_ID, clock)
+    }
+
     pub fn new(
         roots: &[&[u8]],
         bundle_id: &str,
@@ -188,7 +196,7 @@ impl std::error::Error for InvalidRoots {}
 mod tests {
     use std::time::SystemTime;
 
-    use super::{Environment, RenewalInfo, SignedDataVerifier, TransactionId};
+    use super::{Environment, InvalidRoots, RenewalInfo, SignedDataVerifier, TransactionId};
 
     #[test]
     fn a_renewal_info_apple_signed_for_another_app_passes_the_chain_and_signature_under_the_pinned_root()
@@ -216,5 +224,21 @@ mod tests {
             environment: Environment::Sandbox,
         };
         assert!(verified == Ok(expected), "refused: {:?}", verified.err());
+    }
+
+    #[test]
+    fn the_configuration_that_also_trusts_a_test_root_keeps_trusting_apple_s_and_takes_only_a_certificate()
+     {
+        let signed =
+            include_str!("../../../tests/fixtures/app_store/go-iap-renewal-info.jws").trim();
+        let test_root = include_bytes!("../../../tests/fixtures/app_store/test-chain/root.cer");
+
+        let verifier =
+            SignedDataVerifier::windmill_also_trusting(test_root, SystemTime::now).unwrap();
+        let not_a_certificate =
+            SignedDataVerifier::windmill_also_trusting(b"not a certificate", SystemTime::now);
+
+        assert!(verifier.verify_signed::<RenewalInfo>(signed).is_ok());
+        assert!(matches!(not_a_certificate, Err(InvalidRoots)));
     }
 }

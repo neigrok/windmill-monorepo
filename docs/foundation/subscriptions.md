@@ -5,9 +5,9 @@ invariants (`INV-n`) and rulings (`R-n`) are numbered so reviews, code and roadm
 
 ## §0 Status and scope
 
-**Status:** Being built. The service runs in production with no store connected: its public listener
-answers only `GET /health`, and every path under `/v1/stores/` answers 404 until the App Store door
-lands. What exists is in
+**Status:** Being built. The service runs in production with the App Store notification door open on
+its public listener (§5.1), and no App Store Connect setting sends notifications to it yet. What exists
+is in
 [`services/subscriptions/ARCHITECTURE.md`](../../services/subscriptions/ARCHITECTURE.md). Windmill One cannot be bought on any surface. The C++
 backend mirrors Paddle subscriptions (`backend/platform/adapters/paddle`) and
 `Entitlements::hasWindmillOne` reads that mirror; this document specifies what replaces it. The build
