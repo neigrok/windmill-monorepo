@@ -72,7 +72,7 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   `guides` (`SPEC.md`, Model) follows the same line. The trees above a tree are the caller's own:
   they are read only for a caller `canWrite` admits, after the tree's strand is released, and each
   must stand and belong to that caller, so someone else's tree that points at this one — the socket
-  and `PUT` admit any pointer text — is above it for nobody, and the read is keyed on the caller's
+  admits any pointer text — is above it for nobody, and the read is keyed on the caller's
   own trees, so its cost does not grow with what another account points at a tree. Every other
   reader of `GET …/guides` and of MCP `get_tree` is answered the tree's own guide alone, `yours:
   false`, with no read of the trees above: no key, id, title or timing says a tree of the owner's
@@ -86,21 +86,19 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   trees and answers none for a tree that is not theirs, so a refused delete edits nothing, and only
   the owner's reply names trees, theirs alone. Someone else's step that points at the tree stays
   theirs, leading nowhere.
-- **Document writes** (`PUT`, WS `subgraph`, structural MCP tools) require
+- **Document writes** (WS `subgraph`, structural MCP tools) require
   a session (anonymous → `401`) and gate on `canWrite`, which is ownership and nothing else. **A tree
-  is born owned** — the owner is written by the same insert that creates the row (create, fork, `PUT`
-  of an absent id, and a subtree's create, whose owner the store takes from its parent's row) — so
+  is born owned** — the owner is written by the same insert that creates the row (create, fork,
+  and a subtree's create, whose owner the store takes from its parent's row) — so
   there is no instant at which a row exists without one. **An unowned tree is
   nobody's to write**: the seeded demo tree (`t_9e407a96b5330ebe`, `owner_id NULL`, `public`) is
   world-readable and editable by no one. Every write path runs `canRead` first, so a refusal never
   confirms that a private id names something; a readable tree the caller does not own answers `403`.
-  Three doors do not hold to it yet. A create under a client-minted id (`POST /v1/trees`, a fork's
+  Two doors do not hold to it yet. A create under a client-minted id (`POST /v1/trees`, a fork's
   requested id) answers `409` when that id is another account's tree, private or not, or a hidden
-  subtree's. `PUT /v1/trees/{id}` answers `404` on another account's private tree, and on a hidden
-  subtree, where it creates the tree at an id no row holds. `PUT /v1/trees/{tree}/steps/{step}/subtree`
-  keeps a `proposedId` no row holds and mints another for one any row holds, anyone's, so the id it
-  answers tells the parent's owner whether the proposed id was taken. Tree ids are random, so none of
-  the three can be walked.
+  subtree's. `PUT /v1/trees/{tree}/steps/{step}/subtree` keeps a `proposedId` no row holds and
+  mints another for one any row holds, anyone's, so the id it answers tells the parent's owner
+  whether the proposed id was taken. Tree ids are random, so neither can be walked.
 - **Forks** require read access to the source and create new trees owned by the recipient — the root
   and its standing branch — and do not require write access to the source. A subtree is never forked
   alone.
@@ -132,10 +130,9 @@ above it, which is why the `subtree` frame, the subscribe answer's `subtrees` an
 `path` down from its root. A change only a root takes — a visibility change, a removal, a fork, a
 create at its id — aimed at a subtree is refused `not-a-root`, after the read gate, so it tells only
 someone who may read the subtree where it hangs; a hidden subtree answers it as an absent tree, but
-for the three create-at-id doors above, which answer it `404` (`PUT`), `409` (`POST /v1/trees`) and
-a minted id in its place (a subtree's create). A deletion of an owning step names its subtree
-(`branches`) or is refused `branch-unconfirmed` after the write gate. Pointers stay the writer's
-alone.
+for the two create-at-id doors above, which answer it `409` (`POST /v1/trees`) and a minted id in
+its place (a subtree's create). A deletion of an owning step names its subtree (`branches`) or is
+refused `branch-unconfirmed` after the write gate. Pointers stay the writer's alone.
 
 ## Per surface
 

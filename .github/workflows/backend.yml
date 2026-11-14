@@ -17,6 +17,7 @@ on:
       - 'packages/api-contract/roadmap-addresses.json'
       - 'packages/api-contract/roadmap-link-urls.json'
       - 'packages/api-contract/roadmap-socket.json'
+      - 'packages/api-contract/subscriptions/*.json'
       - 'packages/api-contract/sync/reference/core/**'
       - '.github/workflows/backend.yml'
       - '.github/workflows/deploy.yml'
@@ -35,6 +36,7 @@ on:
       - 'packages/api-contract/roadmap-addresses.json'
       - 'packages/api-contract/roadmap-link-urls.json'
       - 'packages/api-contract/roadmap-socket.json'
+      - 'packages/api-contract/subscriptions/*.json'
       - 'packages/api-contract/sync/reference/core/**'
       - 'packages/api-contract/sync/reference/client/**'
       - 'web/src/platform/sync/**'
@@ -134,11 +136,11 @@ jobs:
           node-version: "20"
       - name: Generate pattern cases from the JS reference
         run: node backend/test/platform/domain/sync/reference_pattern_cases.mjs > "$RUNNER_TEMP/pattern-cases.json"
-      - name: Run the domain, mcp, sync, adapters, epoch tool and subtree inventory suites against Postgres
+      - name: Run the domain, mcp, sync, adapters, epoch tool, subtree inventory and server stop suites against Postgres
         run: |
           docker run --rm --network host -e WM_PG_TEST=1 -e DATABASE_URL -e WM_SYNC_DATABASE_URL \
             -e WM_PATTERN_CASES=/cases/pattern-cases.json -v "$RUNNER_TEMP:/cases:ro" \
-            windmill-backend-build ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory)$' --output-on-failure
+            windmill-backend-build ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory|server_stop)$' --output-on-failure
       - name: Prove client recovery after restoring an older dump
         run: |
           sudo apt-get update
@@ -345,8 +347,21 @@ jobs:
           docker rm -f anonymous-coach-server anonymous-coach-observer || true
           sudo rm -rf "$RUNNER_TEMP/anonymous-coach-live"
 
+  # The subscriptions-db one-shot (backend/deploy/subscriptions-db), which every deploy runs, on the production
+  # compose's Postgres 16 holding rows of the backend's: without its password, twice with it, with rules that
+  # lack a final newline, over a live pg_hba.conf holding a block left open, and with rules that would turn the
+  # backend away before or after the reload. The backend must reach its rows after each. It gates the image, so
+  # a script that could lock the backend out of its database is never published or deployed.
+  subscriptions-db:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: The one-shot never turns the backend away
+        run: python3 backend/test/deploy/subscriptions_db_test.py -v
+
   build-and-push:
-    needs: [test, postgres]
+    needs: [test, postgres, subscriptions-db]
     if: github.event_name != 'pull_request' && !inputs.verify_live_coach && !inputs.verify_live_anonymous_coach
     runs-on: ubuntu-latest
     permissions:

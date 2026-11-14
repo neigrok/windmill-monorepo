@@ -18,7 +18,7 @@ rejected for structure. Validity is a read model, not a gate.
   `ElementSet` per `(from, to)`.
 - `opens` — a node's pointer at another tree: that tree's id, or empty for none. A document node
   carries it as `opens` and omits it when empty; a lattice entry carries `opens` and `opensAt`. The
-  room, the socket and `PUT` hold a write to the id length and to nothing about its target, so a
+  room and the socket hold a write to the id length and to nothing about its target, so a
   pointer may name a tree that is absent, deleted, someone else's or a subtree. The MCP door is
   stricter: every non-empty `opens` a `create_node`, `update_nodes` or `import_subgraph` call carries
   must be valid (Legacy pointers), judged on one read for the whole call
@@ -179,8 +179,7 @@ rejected for structure. Validity is a read model, not a gate.
   `InvalidTree` on a duplicate id, a dangling prerequisite or a cycle. Indexes the DAG, the topo
   order, ancestry and the render model.
 - `Legend` — up to 6 kinds per tree, one per hue, sorted by `rank` then id. A tree created with no
-  kinds is seeded with three: build · learn · milestone. A PUT omitting kinds on an existing tree
-  preserves its legend.
+  kinds is seeded with three: build · learn · milestone.
 - `title` and `guide` — the tree's own LWW text registers, beside its graph and legend. The title
   names the tree. The guide is one plain-text note the owner writes on what the tree is and how to
   work it, for agents and for people; an empty guide, or one of only whitespace, is no guide, and a
@@ -232,7 +231,7 @@ rejected for structure. Validity is a read model, not a gate.
     tree and guides reads `404`, the share page the shell unchanged, the subscribe a `server-error`
     reject, and `get_tree` a failed call. Its own title register is read by nothing: no read answers
     it and the subscribe answer neither sends nor covers it. A rename never writes it; the socket's
-    `subgraph` frame and `PUT /v1/trees/{subtree}` still do. Renaming a subtree (`PATCH
+    `subgraph` frame still does. Renaming a subtree (`PATCH
     /v1/trees/{id} {title}`, MCP `update_tree {title}`) writes that label in the parent's room, under
     the parent's strand, as an ordinary label write of the step (`RenameNode`, one seq of the parent's
     stream, broadcast and logged as any other). A rename the step's label already holds lands nothing,
@@ -275,9 +274,8 @@ rejected for structure. Validity is a read model, not a gate.
     the gate (`RoomRegistry::accessOf`, or a live room's `readableBy`) before it reads anything of a
     tree, and what it reads past the gate — the tree's place and name (`placeOf`) among it — does not
     judge standing again. A tree whose branch is hidden answers every read, and every write but a
-    create at its id, as an absent tree does. The two doors that create at an id cannot: an absent id
-    is one they create at, and a hidden tree's row is there. `PUT /v1/trees/{id}` answers a hidden
-    tree's well-formed id `404`, where it creates at an absent one, and `POST /v1/trees` with its id
+    create at its id, as an absent tree does. The door that creates at an id cannot: an absent id
+    is one it creates at, and a hidden tree's row is there. `POST /v1/trees` with its id
     answers `409` — `not-a-root` to its owner, `id-taken` to anyone else — where it creates at an
     absent one (HTTP surface). A new write aimed at a
     hidden tree is refused as one aimed at an absent tree — `no-such-tree` on the socket — and writes
@@ -305,7 +303,7 @@ rejected for structure. Validity is a read model, not a gate.
     named with its size, `{step, subtree, steps, subtrees}` (`BranchSize`): `steps` the present steps
     of the subtree and of each standing subtree under it, `subtrees` how many those are, read off the
     stored rows once the parent's strand is released (`TreeRepository::branchSizes`) and left out when
-    that read fails. `update_nodes` deletes no step and `PUT` tombstones none (HTTP surface). A root
+    that read fails. `update_nodes` deletes no step. A root
     removal's cascade never reaches an owning step, which opens its subtree and not the removed root.
   - **A root's deletion** takes every branch under it, by standing alone: the subtrees' rows are left
     as they are and read as absent. Each row of `GET /v1/trees` carries `branch: {subtrees, steps}`,
@@ -367,20 +365,20 @@ rejected for structure. Validity is a read model, not a gate.
   a loop it closes through ownership is one (`treeLoops`).
 
   A step that owns a subtree opens it whatever its register holds, and the register takes no write on
-  any write path — a socket frame, a command, a graft, a `PUT` — an echo of its own subtree and the
-  clear a create or a revive synthesizes included (`TreeRoom` on its write paths, `withoutOwnedPointers`;
-  the `PUT` handler on the rows it replaces), so no value, stale or late, changes the step's child.
+  any write path — a socket frame, a command, a graft — an echo of its own subtree and the
+  clear a create or a revive synthesizes included (`TreeRoom` on its write paths, `withoutOwnedPointers`),
+  so no value, stale or late, changes the step's child.
 
   A pointer a write sends such a step is refused `owns-a-subtree` for that step alone when it would
   have changed the step's register and names another tree than the step's subtree, an empty one
   included (`TreeRoom::refusedPointers`): a frame's whose stamp the join would take, and a server-stamped
-  write's — MCP, `PUT` — naming a value the register does not hold (`refusedPointers`). So a pointer the
+  write's — MCP — naming a value the register does not hold (`refusedPointers`). So a pointer the
   register holds under that stamp, one an older stamp loses to, the value the register already holds and
   an echo of the subtree are no refusal, and a retried frame, which the room has joined before, is
   answered as the duplicate it is. The rest of the write applies: the socket acks the refused steps in
   `subgraphAck.refused` (WebSocket surface), MCP `create_node`, `update_nodes` and `import_subgraph` in
-  `opensRefused` with `opensError`, dry runs too (`adapters/mcp/README.md`), and `PUT` in `refused`
-  (HTTP surface), each in the order the write sent them. Each names the step and nothing of its subtree,
+  `opensRefused` with `opensError`, dry runs too (`adapters/mcp/README.md`), each in the order the write
+  sent them. Each names the step and nothing of its subtree,
   and only a caller who can write the tree is told: every other caller's write meets the write gate first,
   as ever. A socket frame or an MCP call whose whole word was such a pointer lands nothing, takes no seq
   and completes under `owns-a-subtree`, a line and never an Issue; a dry run of one writes nothing and
@@ -483,17 +481,11 @@ landed, never the size of the tree, and unlike the coverage a scan reports it ke
 once another actor has written over the register that carried it — and, for a room opened from the
 rows, which has forgotten such marks, the greatest stamp of any actor those rows hold, its floor.
 The floor stands for everything the tree ever held because a register is replaced only by a greater
-stamp and a tombstone stays a row, so the greatest stamp in a tree never goes down. A `PUT` is the
-one writer that can lower it: it replaces the rows it carries under the genesis stamp, so a room
-opened after one may judge by a floor below a mark some peer still holds, and a write late against
-that mark alone reaches that peer by its vector or not at all.
+stamp and a tombstone stays a row, so the greatest stamp in a tree never goes down.
 
 Every write the server stamps is minted by the tree's room, past every stamp the tree holds, so it
 is never late: a command, an import, and a rename or a guide, for which the room is opened when
-none is live. A `PUT` is the one exception. It writes rows with no room: the steps it carries under
-the genesis stamp, and its title one tick past the stored title's stamp alone. Either can be at or
-below a mark a peer holds, and a `PUT` records no land seq, so a peer whose vector is past what a
-`PUT` wrote is not sent it until it subscribes with an empty vector, as a reloaded page does.
+none is live.
 
 The node, edge, kind or tree register of a late register takes the write's seq as its land seq
 (`LandSeqs`) as its frame lands (`joinSubgraph`); a tombstone is an entry like any other, and
@@ -505,7 +497,7 @@ vector lacks, every entry and tree register whose land seq is past that seq, who
 (`deltaSince(since, position)`, `deltaBetween(…, late)`). Land seqs are saved with the rows
 (`land_seq` on `tree_nodes`, `tree_edges`, `tree_kinds`; `title_land_seq` and `guide_land_seq` on
 `trees`), each exactly as the room holds it, and a save never lowers one. Every other row holds 0 —
-one stored before these columns, one a tree is born or forked with, one a `PUT` wrote, one that
+one stored before these columns, one a tree is born or forked with, one that
 never landed late — which is past no position.
 A frame's `title` or `guide` is null or absent for no information, or `{v, at}` with a string `v` and a
 set stamp `at`; any other shape makes the frame `bad-frame`, so no value is coerced or read as a clear.
@@ -697,7 +689,7 @@ Rules:
   room at or past its seq is stored, whichever write ran it. Writes that queue behind a save that
   fails share its answer when it covered them, with no statement of their own; one that landed
   after its copy is tried once more.
-- Whoever writes a tree's row itself — a subtree's create, a `PUT` — does so under the strand and
+- Whoever writes a tree's row itself — a subtree's create — does so under the strand and
   only over a room that is flushed (`RoomRegistry::flushed`): no write unsaved, none held, no save
   running. Whoever waits on a save, or evicts, holds no strand at all: strands are a fixed stripe
   array shared by unrelated tree ids, so a wait under any of them could stand in the way of the very
@@ -714,7 +706,7 @@ Rules:
   holds the room and retries the save until the store takes it, on its own timer: 1 s after the
   failure and then after twice the wait before, up to 60 s between tries (`kFirstRetry`,
   `kRetryCeiling`). Only that timer and a write that changes the room try a held room's save; a
-  read, a write that changes nothing, the sweep, a `PUT` and a subtree's create send no statement
+  read, a write that changes nothing, the sweep and a subtree's create send no statement
   for it and move no retry. The
   op rows land only after the save does. The writer is told the change is applied and on every open
   page, that saving it failed and is being retried, that sending it again is not needed, and that a
@@ -725,14 +717,35 @@ Rules:
   says so too, in a sentence of its own that claims no change — this call changed nothing in the
   tree, earlier changes are not saved yet and are being retried, a restart before the save succeeds
   would lose them — `unchanged: true` beside `saved: false`, an ack without a seq beside `unsaved: true`
-  — since what the room holds is not saved. A held room is not closed by the sweep, and a `PUT`
-  over one is refused `503 save-pending` until the save lands, as it is over a room an edit landed
-  in while the `PUT` was flushing it. Only a room with something unsaved
-  is ever held: one with nothing to save closes with no statement sent. As the registry stops —
-  and one that goes away has stopped (`~RoomRegistry`) — it tries each held room once more, the
-  wait for a retry or a write in mid-save and all of those saves within `kShutdownSaveBudget` together (5 s,
-  `StatementLimits`), and reports the rooms it could not save as lost. A held write is lost only that way; marks a call stored beside it —
-  `update_nodes` rows, the marks `delete_node` clears — are stored already.
+  — since what the room holds is not saved. A held room is not closed by the sweep. Only a room with something unsaved
+  is ever held: one with nothing to save closes with no statement sent. A held write is lost only
+  when the server stops before its save lands; marks a call stored beside it — `update_nodes` rows,
+  the marks `delete_node` clears — are stored already.
+- The server stops in one order and by one deadline (`ProcessStop`, `platform/infra/main.cpp`). At the signal
+  (`SIGTERM`, `SIGINT`) every door stops taking writes: the tree socket takes no frame, the ones a
+  connection had already sent among them, answers none and opens no connection, and every tree
+  socket is closed as a server going away (close code 1001), so a tab keeps what it was not acked
+  and sends it to the next server; the framework closes its listener and every connection once the
+  request on it has been answered, so a new connection is refused. A request that still reaches
+  the server — read together with one being served, or before its connection was closed — is not
+  served, on any door of the listener, REST, MCP or `/v1/sync/*`: it is answered a bare `503` with
+  no body, what an edge with no upstream answers. A request being served at the signal is answered
+  as it would be, its save included; a frame being saved at the signal is saved and its ack not
+  delivered. The deadline is `kShutdownSaveBudget` (5 s) from the signal, and it is one for
+  everything. Every save from the signal on shares it (`RoomRegistry::beginStopping`,
+  `StatementLimits`): the ones a write still waits for, and the last try `RoomRegistry::stop`
+  gives each room that holds a write the store does not, held or not — and a registry that simply
+  goes away has stopped (`~RoomRegistry`). When it passes with anything still running — a
+  request, a worker of the sync engine, a statement — the process stops waiting: it says what is
+  lost as the rooms stand (`RoomRegistry::reportLost`, one line of the number of rooms that hold a
+  write the store does not, a room whose write was still being served among them) and exits 0. A
+  request cut there was never answered: its caller reads a connection closed with no response,
+  and what the request had already stored is stored. The watch for the deadline ends as the stop's
+  own work does, before anything is torn down, so a stop is cut only while the log still takes its
+  line. However the stop ends, the log and then the failure reports are written out within
+  `ProcessStop::kExitFlushLimit` (3 s): reports a reporter cannot send in that time are left, and
+  the process exits without them. The deploy gives the server longer than the two together to stop
+  (`deploy/README.md`).
 - `open()` loads the stored lattice and nothing else: a room is its snapshot, and the op log is the
   history the Activity feed reads, never a second source of a tree's state. An op row states one
   deed of its frame — one node of an import, one kind of a re-hue of several — so merging it back
@@ -813,18 +826,13 @@ under the same lock, the narrower first: making the root private shuts its open 
 row says so, and opening it opens them after. Each owning step is recorded by its own tree's room as
 every write lands, under that tree's strand and before the write is told to anyone
 (`TreeRoom::joinSubgraph`, `applyCommands`), so a branch hides the moment its step's deletion lands
-and shows with its revive, saved or not. A room records its owning steps as it opens too, from the
-stored rows no other room of its tree can have written past. A `PUT`, which writes a tree's rows with
-no room, then has the access take the owning steps of every tree under the root with no live room
-from the store (`RoomRegistry::settleOwningSteps`), the rooms read before the rows, so a room that
-saves and closes while the rows are read keeps the steps it recorded. When that read fails it is reported as itself, the
-`PUT` answers what its save did, and the access is left unsettled — narrower than the store, never
-wider, since a write without a room only revives steps — until the registry's sweep, every 30 s,
-takes them from the store again. The live rooms below a step whose
-presence changed are told, and the socket drops the readers they may no longer keep. A closed
-subtree the stored rows admit is read again under its root's lock with no access live, so a parent
-room that saves a deletion and closes between the first read and that check admits nobody; one they
-hide is answered hidden at once, at worst missing a revive saved since, which is narrower, never wider.
+and shows with its revive, saved or not. A room records its owning steps as it opens too: the stored
+rows may name a subtree whose create the tree's last room missed, the commit's answer lost, and that
+room recorded no write of its step. The live rooms below a step whose presence changed are told, and
+the socket drops the readers they may no longer keep. A closed subtree the stored rows admit is read
+again under its root's lock with no access live, so a parent room that saves a deletion and closes
+between the first read and that check admits nobody; one they hide is answered hidden at once, at
+worst missing a revive saved since, which is narrower, never wider.
 No tree ever admits a reader its root and its path do not. A visibility change aimed at a subtree is
 refused `not-a-root` (`PATCH /v1/trees/{id}`, `409`, naming the step it hangs from and its root).
 
@@ -837,7 +845,7 @@ Registered in `products/roadmap/routes.cpp`.
 | Method | Path |
 | --- | --- |
 | POST · GET | `/v1/trees` |
-| GET · PUT · PATCH · DELETE | `/v1/trees/{id}` |
+| GET · PATCH · DELETE | `/v1/trees/{id}` |
 | PUT | `/v1/trees/{tree}/steps/{step}/subtree` |
 | POST | `/v1/trees/{id}/fork` |
 | GET | `/v1/trees/{id}/progress` |
@@ -859,25 +867,12 @@ Registered in `products/roadmap/routes.cpp`.
 | GET | `/t/{id}` |
 | GET | `/og/{id}.png` |
 
-Single edits have no REST endpoint — they ride the socket; `PUT /v1/trees/{id}` takes a whole
-document and joins it as one write. A PUT that creates the tree stamps its steps at the moment of
-creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stored row of every step
-and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
-and read as unknown creation time. A PUT tombstones nothing: a step it leaves out is untouched, and a
-deleted owning step it carries is revived, its subtree shown again (Model, Subtrees). A step that owns
-a subtree keeps the pointer its row holds (Model, Legacy pointers): one the document names that is
-neither the step's own subtree's id nor the pointer its row holds is answered in `refused: [{node,
-field: "opens", code: "owns-a-subtree"}]`, one entry per step in the document's order, beside `seq` and
-`data`, and the step's other fields land. A document
-cannot tell an empty pointer from one it leaves out, so neither is refused. The answer's `data` reads
-each step that owns a subtree opening it, as every read does, and `refused` is absent when it would be
-empty. A PUT aimed at
-a tree whose branch is hidden answers `404 no such tree` and writes nothing, where one aimed at an
-absent well-formed id creates the tree; one aimed at a tree the caller may not read answers `404`
-too, as AUTHZ says of this door. The PUT flushes and closes the tree's live room before it takes
-the strand, and under the strand closes one opened since only if the store holds all of it: over a
-room that holds a save that failed, or an edit that landed while it was being flushed, it is
-refused `503 save-pending` with nothing written, until that save lands. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
+Single edits have no REST endpoint — they ride the socket. A whole document is taken by `POST
+/v1/trees` alone, which creates a tree and never writes one that stands: an id the caller already
+owns answers `existed` with its row untouched. A document is grafted into a standing tree through
+its room, by MCP `import_subgraph` or a socket frame. `PUT /v1/trees/{id}` has no handler: it is
+answered the framework's own `404 Not Found`, and writes nothing and no log line. Inbound models are
+suffixed `Request`, outbound `Response`.
 
 `GET /v1/trees/{id}` answers `{seq, data, state, createdAt, visibility, mine, root, parent, path,
 depth}`, the last four where the tree sits and `data.title` its name (Model, Subtrees); a subtree's
@@ -933,7 +928,7 @@ save succeeds would lose it. A body naming more than one is refused `400`, and a
 breaks does (stored as `""`); a real guide keeps its leading and trailing spaces. A title carrying a
 NUL is refused `400` too. A subtree's title is its owning step's label, so `{title}` aimed at a
 subtree renames that step in its parent (Model, Subtrees). The guide's writes are this, the socket's `subgraph` frame and MCP
-`update_tree`; a posted document (`POST`, `PUT`)
+`update_tree`; a posted document (`POST`)
 never sets it, and a tend is not offered `update_tree`. `GET /v1/trees/{id}` carries it as `data.guide` beside `data.title`, MCP `get_tree` as
 `tree.guide: {text, yours}` on every page and no other MCP read at all, `yours` true when the caller
 owns the tree and wrote its current guide. A fork copies it, marked inherited when it is someone
@@ -1262,7 +1257,7 @@ Every standing tree is counted in exactly one of `roots`, `owned`, `multiOpened`
 on a loop is counted under `cycles` whatever else is true of it, since a loop has no owning step until
 one of its pointers goes. The other three are told apart by how many steps open the tree.
 
-The doors that set a pointer are `POST /v1/trees` and `PUT /v1/trees/{id}` (a posted document), the
+The doors that set a pointer are `POST /v1/trees` (a posted document), the
 socket's `subgraph` frame, MCP `create_node`, `update_nodes` and `import_subgraph`, and a fork of the
 owner's own tree, which keeps its pointers. A tend cannot set one. `tree_ops` does not record which
 door set a pointer: a frame's row is its headline deed, which never carries `opens`, so a frame or an

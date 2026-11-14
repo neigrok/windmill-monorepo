@@ -188,10 +188,6 @@ TEST(write_http_expected_refusals_never_create_issues_and_unsafe_codes_are_disca
                             "roadmap.DELETE.v1.trees.id"), std::string("cascade-unavailable"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "cascade-unavailable"), "gym.write"),
            std::string("failed"));
-  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "save-pending"), "roadmap.PUT.v1.trees.id"),
-           std::string("save-pending"));
-  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "save-pending"), "gym.write"),
-           std::string("failed"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k409Conflict, "private", "not-a-root"), "roadmap.DELETE.v1.trees.id"),
            std::string("not-a-root"));
   const std::string subtree = "roadmap.PUT.v1.trees.tree.steps.step.subtree";
@@ -523,6 +519,16 @@ TEST(write_http_inventory_covers_every_registered_mutating_route) {
 TEST(main_sets_the_socket_message_limit_from_the_roadmap_contracts_constant) {
   const std::string main = sourceText(backendPath() / "platform/infra/main.cpp");
   CHECK(std::regex_search(main, std::regex(R"(app\.setClientMaxWebSocketMessageSize\s*\(\s*kMaxSocketMessageBytes\s*\))")));
+}
+
+// A tree's document is written through its room alone, so `/v1/trees/{id}` registers no handler for PUT.
+TEST(roadmap_registers_no_handler_for_put_on_a_tree) {
+  const std::string routes = sourceText(backendPath() / "products/roadmap/routes.cpp");
+  const std::regex registration(R"re("/v1/trees/\{id\}",[\s\S]*?\{drogon::(\w+)\}\))re");
+  std::set<std::string> methods;
+  for (auto match = std::sregex_iterator(routes.begin(), routes.end(), registration); match != std::sregex_iterator(); ++match)
+    methods.insert((*match)[1].str());
+  CHECK(methods == (std::set<std::string>{"Delete", "Get", "Patch"}));
 }
 
 TEST(write_http_registered_retired_routes_equal_the_gym_retirement_ledger) {

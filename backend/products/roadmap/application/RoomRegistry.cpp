@@ -25,13 +25,16 @@ struct RoomsHeldUnsaved : std::exception {
   const char* what() const noexcept override { return "rooms are held with a save that keeps failing"; }
 };
 
-// Time that only moves forward, for the budget of the saves tried at shutdown.
+// Time that only moves forward, for the budget every save shares once the process is told to stop.
 struct SteadyClock : Clock {
   std::uint64_t nowMs() override {
     return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
   }
 };
+
+// Made as the program loads, so reading it from a signal handler initializes nothing.
+SteadyClock steadyClock;
 
 // The door a registry's own line is told at: the one of the call it serves, or the background for the timer's and a
 // sweep's.
@@ -52,29 +55,43 @@ RoomRegistry::RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus, R
 
 RoomRegistry::~RoomRegistry() { stop(); }
 
+void RoomRegistry::beginStopping() {
+  std::uint64_t running = 0;
+  stopDeadlineMs_.compare_exchange_strong(
+      running, steadyClock.nowMs() + static_cast<std::uint64_t>(kShutdownSaveBudget.count()));
+}
+
 void RoomRegistry::stop() {
-  // One budget for all of stopping: it starts before the heartbeat is joined, since a retry may be in the middle of a
-  // save that hangs. A statement waits and runs no later than its end, and a save asked for after it is refused at
-  // once (StatementLimits), so a store that hangs cannot hold the process past it.
-  SteadyClock clock;
-  const std::uint64_t deadline = clock.nowMs() + static_cast<std::uint64_t>(kShutdownSaveBudget.count());
+  // One budget for all of stopping, begun when the process was told to stop: a retry may be in the middle of a save
+  // that hangs as the heartbeat is joined, and a save asked for after the budget is refused at once (save), so a store
+  // that hangs cannot hold the process past it.
+  beginStopping();
+  const std::uint64_t deadline = stopDeadlineMs_;
   heartbeat_.stop();
-  std::vector<std::pair<TreeId, std::shared_ptr<SaveLine>>> held;
+  std::vector<std::pair<TreeId, std::shared_ptr<SaveLine>>> unsaved;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stopped_) return;
     stopped_ = true;
     for (const auto& [id, live] : rooms_)
-      if (live.held) held.emplace_back(id, live.line);
+      if (live.held || live.saving || live.room->holdsUnsavedWrites()) unsaved.emplace_back(id, live.line);
   }
-  if (held.empty()) return;
-  const StatementLimits limits{kShutdownSaveBudget, clock, deadline};
-  std::size_t lost = 0;
-  for (const auto& [id, line] : held) {
+  for (const auto& [id, line] : unsaved) {
     // A write in mid-save holds the gate: it is waited for no longer than the budget either.
     std::unique_lock<std::timed_mutex> gate(
         line->gate, std::chrono::steady_clock::time_point{std::chrono::milliseconds{deadline}});
-    if (!gate.owns_lock() || save(id, line, Asked::atShutdown) == Saved::held) ++lost;
+    if (gate.owns_lock()) save(id, line, Asked::atShutdown);
+  }
+  reportLost();
+}
+
+void RoomRegistry::reportLost() {
+  std::size_t lost = 0;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (std::exchange(lostReported_, true)) return;
+    for (const auto& [id, live] : rooms_)
+      if (live.held || live.saving || live.room->holdsUnsavedWrites()) ++lost;
   }
   if (lost > 0) reportHeld(lost, RoomsHeldUnsaved{}, "lost-at-shutdown");
 }
@@ -171,41 +188,6 @@ std::optional<TreeAccess> RoomRegistry::accessOf(const TreeId& id) {
   const std::optional<StoredAccess> settled = repo_.loadAccess(id);
   if (!settled || !settled->stands) return std::nullopt;
   return settled->access;
-}
-
-void RoomRegistry::settleOwningSteps(const TreeId& root) {
-  std::shared_ptr<RootAccess> live;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    live = liveRootAccess(root);
-  }
-  if (live) settle(root, *live);
-}
-
-void RoomRegistry::settle(const TreeId& root, RootAccess& live) {
-  std::vector<OwningStep> moved;
-  {
-    // Under the root's lock no tree of the root's can finish opening, so each one without a live room holds as the store
-    // says, and a room that opens after records its own steps as it opens. The rooms are read before the rows: one
-    // that saves and closes while the rows are read is still taken as live, with the steps it recorded, where rows
-    // read before its save would bring a step it deleted back.
-    std::lock_guard<std::mutex> rootLock(rootLockFor(root));
-    WriteObservation standing{"roadmap.tree.standing", "roadmap", doorNow()};
-    try {
-      const std::vector<TreeId> rooms = roomsUnder(root);
-      const std::set<OwningStep> absent = repo_.absentStepsUnder(root);
-      moved = live.settle(absent, std::set<TreeId>(rooms.begin(), rooms.end()));
-      standing.skip();
-    } catch (const std::bad_alloc&) {
-      throw;
-    } catch (const std::exception& failure) {
-      standing.fail(failure);
-      live.unsettle();
-      return;
-    }
-  }
-  // Told with no lock held: whoever listens asks accessOf again, which may take the root's lock.
-  for (const OwningStep& step : moved) announceBelow(root, step);
 }
 
 Saved RoomRegistry::flush(const TreeId& id) {
@@ -309,15 +291,6 @@ void RoomRegistry::sweep(std::chrono::steady_clock::duration idleFor) {
   // Never under the map lock, and under no strand: each room's save runs off its own.
   for (const TreeId& id : closing) evict(id);
   if (!closing.empty()) LOG_INFO << "swept " << closing.size() << " rooms, " << openRooms() << " still open";
-  // Each live access a write without a room left unsettled takes the store's owning steps again.
-  std::vector<std::pair<TreeId, std::shared_ptr<RootAccess>>> unsettled;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (const auto& [root, weak] : roots_)
-      if (const std::shared_ptr<RootAccess> live = weak.lock(); live && !live->settled())
-        unsettled.emplace_back(root, live);
-  }
-  for (const auto& [root, live] : unsettled) settle(root, *live);
   // The registry's own report of rooms that stay held: one a ceiling, however many rooms there are.
   std::size_t held = 0;
   {
@@ -390,7 +363,9 @@ Saved RoomRegistry::save(const TreeId& id, const std::shared_ptr<SaveLine>& line
   }
   // I/O under the gate alone: no strand, no map lock. The lattice lands first and the op rows after, so a crash
   // between the two leaves a lattice at `head` with no row at `head` — the feed misses one deed — never a row the
-  // lattice cannot back.
+  // lattice cannot back. Once the process is told to stop, both run within what is left of the one budget.
+  std::optional<StatementLimits> untilStopped;
+  if (const std::uint64_t deadline = stopDeadlineMs_) untilStopped.emplace(kShutdownSaveBudget, steadyClock, deadline);
   bool rowStands = false;
   try {
     rowStands = repo_.save(id, state, legend, title, guide, head, landSeqs);

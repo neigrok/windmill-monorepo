@@ -188,8 +188,7 @@ std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std:
   if (aiRequest && aiAllowanceRefusalCodes.count(code)) return code;
   if (operation == "roadmap.POST.v1.compose" && code == "compose-unavailable") return code;
   if (operation == "roadmap.DELETE.v1.trees.id" && code == "cascade-unavailable") return code;
-  if ((operation == "roadmap.PUT.v1.trees.id" || operation == "roadmap.PUT.v1.trees.tree.steps.step.subtree") &&
-      code == "save-pending") return code;
+  if (operation == "roadmap.PUT.v1.trees.tree.steps.step.subtree" && code == "save-pending") return code;
   if (operation == "journal.POST.v1.journal.transcribe" &&
       (code == "voice_busy" || code == "voice_unavailable")) return code;
   if (operation == "platform.POST.v1.billing.checkout" && code == "checkout_closed") return code;

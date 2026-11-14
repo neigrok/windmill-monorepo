@@ -77,15 +77,18 @@ It is written in Rust. It runs as its own container on the production host besid
 | Renewal | `autoRenew` | Whether the store will charge again. |
 | | `nextChargeAt`, `nextCharge` | When and how much (`amount`, `currency`) the store will charge next. Null when `autoRenew` is false, and in `grace`, `on_hold`, `paused`, `expired` and `revoked`, where the store states no next charge. |
 | | `nextProductId` | A plan change that takes effect at renewal. |
-| Cancellation | `cancelRequestedAt` | When the customer turned renewal off. Cleared if they turn it back on. |
+| Cancellation | `cancelRequestedAt` | When renewal was turned off, by the customer or by the store (as when a refund is asked for). Cleared when renewal is turned back on; kept through statements that say renewal is off without saying since when (INV-6). |
 | Payment trouble | `paymentFailedAt`, `graceEndsAt` | When a renewal charge first failed, and until when the store keeps access open. |
 | Pause | `pauseScheduledFor`, `pausedAt`, `resumesAt` | A pause asked for, in force, and its end. |
 | Offer | `offerKind`, `offerEndsAt` | `free_trial`, `introductory`, `promotional`, `offer_code`, `win_back`, or none. |
-| Price | `price`, `storefront` | The current period's `amount` and `currency`, and the store's country. |
+| Price | `price`, `storefront` | The current period's `amount` and `currency`, and the store's country, null when the store does not state it. |
 | Bookkeeping | `observedAt` | `observedAt` of the newest observation applied. |
 | | `verifiedAt` | The last time the service pulled this subscription's state from the store. |
+| | `cancellationObservedAt` | `observedAt` of the newest statement of the cancellation applied (INV-6). Storage persists it; no wire carries it. |
 
-Amounts are decimal strings with an ISO 4217 currency. Instants are epoch milliseconds on every wire.
+Amounts are decimal strings with an ISO 4217 currency, written with that currency's minor units
+(`12.00` USD, `1800` JPY, `3.990` KWD); a digit a store states beyond them is kept, never rounded
+away. Instants are epoch milliseconds on every wire.
 
 ### §3.2 States
 
@@ -99,7 +102,7 @@ Amounts are decimal strings with an ISO 4217 currency. Instants are epoch millis
 | `revoked` | The store took the money back or withdrew the purchase. | no |
 
 A trial is `active` with `offerKind = free_trial`. A cancellation that has not yet taken effect is
-`active` with `autoRenew = false` and `cancelRequestedAt` set. A pause that has not begun is `active`
+`active` with `autoRenew = false`, and `cancelRequestedAt` set once a store has said when. A pause that has not begun is `active`
 with `pauseScheduledFor` set. `expired` and `revoked` are left only by a new store purchase on the
 same lineage, which returns the subscription to `active` and records `started` again.
 
@@ -126,15 +129,22 @@ it returns the subscription, the periods to write and the events to append, or a
 
 - **INV-4 Idempotent.** Applying an observation twice changes nothing and records nothing.
 - **INV-5 Stale-safe.** An observation the record's newest statement supersedes changes no field of
-  the subscription but its binding (§4). It still adds a period the ledger lacks, and its statement of a
-  period's refund time applies when it supersedes the newest statement of that period the ledger has
-  applied.
+  the subscription but its binding (§4) and `cancelRequestedAt`, which follows its own statements
+  (INV-6): when it says when renewal was turned off, or that renewal is on, and that statement is newer
+  than the one the record's cancel time follows, it sets the cancel time and records `updated`. It
+  still adds a period the ledger lacks, and its statement of a period's refund time applies when it
+  supersedes the newest statement of that period the ledger has applied.
 - **INV-6 Convergent.** For any order of any set of observations, the resulting subscription, its
-  binding aside (§4), equals the one the newest observation alone produces, and the resulting set of
-  periods is the union, each period's refund time as its newest statement gives it and its stretch as
-  INV-7 keeps it. One statement supersedes another when its `observedAt` is later or, at the same
-  instant, when its content orders after the other's in one fixed order over every stated field, so
-  statements stamped alike converge too; a period's refund statements order by stamp, then refund time.
+  binding aside (§4), equals the one the newest observation alone produces, but for
+  `cancelRequestedAt`; and the resulting set of periods is the union, each period's refund time as its
+  newest statement gives it and its stretch as INV-7 keeps it. `cancelRequestedAt` is the one the
+  newest statement of the cancellation gives: a statement that renewal is on gives none, one that it
+  is off since a stated instant gives that instant, and one that renewal is off without saying since
+  when, as most of the App Store's are, is no statement of it. One statement supersedes another when
+  its `observedAt` is later or, at the same instant, when its content orders after the other's in one
+  fixed order over every stated field but the cancel time, so statements stamped alike converge too; a
+  period's refund statements order by stamp, then refund time; statements of the cancellation order by
+  stamp, then renewal on above off, then the instant stated.
 - **INV-7.** A period is identified by its store transaction and written once: its stretch, price and
   offer are those of the statement that wrote it, and a later statement of the same transaction with
   another stretch changes none of them, so the stretch is the one exception to INV-6's order. A
@@ -344,11 +354,18 @@ Devices never call this service. The backend authenticates the caller and serves
 
 ### §6.1 Following the feed
 
-A backend worker reads `/internal/v1/feed` from its stored epoch and cursor. For each page, in one
-transaction, it replaces each named account's row in `account_entitlements` with the entry's
-`EntitlementResponse`, both environments included, applies funding (§6.3) and advances the cursor.
-Once it reaches `latestSeq` it reads again at most 5 s later, or at once when the claim door asks for
-a `seq` it has not reached (§5.3).
+A backend worker reads `/internal/v1/feed` from its stored epoch and cursor. Each page applies in one
+transaction, which holds the stored cursor and advances it when the page commits. Each entry goes, in
+order, through the consumers that write through that transaction, first the copy, which replaces the
+named account's row in `account_entitlements` with the entry's `EntitlementResponse`, both environments
+included; then through those that write in short transactions of their own before the page commits:
+funding (§6.3), whose ledger lock every Coach admission takes, so it is never held for a whole page.
+Every consumer is idempotent: a failure in either kind rolls the page back and the page is read again,
+and a rebuild reads every entry again. Each is told whether the page belongs to a rebuild and the epoch
+it brings the copy to. Once the copy reaches `latestSeq` the worker reads again at most 5 s later, or at
+once when the claim door asks for a `seq` (§5.3); the `seq` is reached only when a read that began after
+the request has seen the ledger's epoch and left the copy at or past it, so a restored ledger is
+rebuilt before a claim is answered from the copy.
 
 - `Entitlements::hasWindmillOne` is `isOwner(email) || now < production.accessUntil ||
   (allowlisted(account) && now < sandbox.accessUntil)` over the account's row (§6.2).
@@ -359,10 +376,16 @@ a `seq` it has not reached (§5.3).
 - A page whose `epoch` differs from the stored one, or whose `latestSeq` is below the cursor, means the
   ledger was restored. The follower reports it to Sentry and rebuilds the copy from zero under the new
   epoch (INV-11).
+- A page the follower cannot apply, as one whose entry the contract does not describe, stops the copy
+  until the service is fixed, since the follower skips no entry; every entitlement still lapses on time
+  (INV-3). Only what decides access stops it: a page's shape and an entry's `environment`. An event
+  type, store or offer the contract does not name yet is carried: the entry applies to the copy, the
+  consumers after it skip an event they do not know, and the follower reports the word.
 - **INV-10.** No request path of the backend calls this service to decide access. With the service
   down, every entitlement keeps answering from the copy and lapses on time (INV-3).
-- **INV-11.** The copy is rebuilt whole by reading the feed from zero. The old copy answers until the
-  rebuilt one replaces it, and an account the feed no longer names keeps no row.
+- **INV-11.** The copy is rebuilt whole by reading the feed from zero to the `latestSeq` its pages
+  report; an empty page short of it is a feed that cannot be read, never the whole ledger. The old copy
+  answers until the rebuilt one replaces it, and an account the feed no longer names keeps no row.
 
 ### §6.2 Sandbox
 
@@ -378,9 +401,9 @@ Subscription state alone funds nothing; the period events of the feed do. A gran
 period's `id`, so no store id reaches the backend. (R-4, R-5)
 
 - A `period_recorded` entry that names an account, for a production period with a positive captured
-  price and no `refundedAt`, funds one grant spanning the period through `AiBudgetService::fund`. Any
-  other `period_recorded` funds nothing: `grace` adds no period, a free-trial period carries no
-  payment, and a refunded period was paid back.
+  price and no `refundedAt`, funds one grant spanning the period through `AiBudgetService::fund`, in a
+  transaction of its own before the page commits (§6.1). Any other `period_recorded` funds nothing:
+  `grace` adds no period, a free-trial period carries no payment, and a refunded period was paid back.
 - `fund` answers `Replay` to a period it already funded for that account, whatever the grant's
   `closedAt`, so a rebuild (INV-11) funds nothing twice. It answers `Conflict` to a period already
   funded for another account (an operator transfer, or erasure and a claim by another account), which
@@ -440,11 +463,14 @@ One worker, hourly:
 - A period's bounds are the dates its transaction states for the stretch it pays for (D-4), not the
   instant Apple charged it. Which transaction fields carry them waits on confirmation against sandbox
   in m3-verify-sandbox-lifecycle.
-- A `REFUND` or `REVOKE` notification states a fact about the transaction it carries: it sets that
-  period's refund time, and `REFUND_REVERSED` clears it. The subscription's state in that observation
-  comes from the notification's renewal info; when the refunded transaction is not the subscription's
-  latest, the adapter pulls the subscription's status instead of inferring the state. Both wait on
-  confirmation in m3-decode and m3-verify-sandbox-lifecycle.
+- A `REFUND` notification states that its transaction's money was taken back: it sets that period's
+  refund time, the transaction's `revocationDate` or, without one, the notification's `signedDate`.
+  `REFUND_REVERSED` clears it, whatever the transaction still carries. A `REVOKE` sets a refund time
+  only when its `revocationType` is a refund: one of `FAMILY_REVOKE` or `ASSIGNMENT_REVOKE` takes no
+  money back, from a lineage that binds to no one (§4). The subscription's state in that observation
+  is the notification's status; when the transaction is not the subscription's latest, the adapter
+  pulls the subscription's status instead of inferring the state. The payloads wait on confirmation
+  in m3-verify-sandbox-lifecycle.
 - What the app shows about a subscription comes from `GET /v1/subscription`, never from the device's
   own StoreKit state, so every surface agrees.
 - Server reads use the App Store Server API with an in-app purchase key: subscription statuses,
@@ -454,7 +480,11 @@ One worker, hourly:
   deployment refuses it. Local and CI testing sign `Sandbox` payloads under a test root that only
   their own deployment trusts.
 - A notification type the adapter does not map is kept in the inbox, logged as `unsupported` and
-  reported; it changes nothing.
+  reported; it changes nothing. Within a mapped type, only a field that decides access or money (the
+  status, the transaction's dates, `gracePeriodExpiresDate`, `autoRenewStatus`, the product, the price
+  and its currency) can make a notification unsupported. A descriptive field the adapter cannot read
+  reads as unknown, and an ownership it cannot read binds to no one, so a refund or an expiry is never
+  dropped for a field access does not depend on.
 - The transaction's `price` and `currency` are what the plan screen shows and what decides whether a
   period was paid. Revenue is read from Apple's sales reports, not from them.
 - Billing Grace Period is enabled in App Store Connect for production and sandbox. (R-7)

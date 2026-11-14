@@ -1,0 +1,36 @@
+{
+  "note": "CONSUMPTION_REQUEST for a consumable: a type Windmill maps, about a transaction for a product type Windmill does not sell. Unsupported, nothing changes.",
+  "notification": {
+    "notificationType": "CONSUMPTION_REQUEST",
+    "subtype": null,
+    "signedDate": 1803132000000,
+    "environment": "Production",
+    "status": null,
+    "transaction": {
+      "transactionId": "2000000400000001",
+      "originalTransactionId": "2000000400000001",
+      "webOrderLineItemId": "2000000100000102",
+      "bundleId": "works.windmill.app",
+      "productId": "works.windmill.app.tip",
+      "subscriptionGroupIdentifier": "21540000",
+      "purchaseDate": 1801476000000,
+      "originalPurchaseDate": 1798797600000,
+      "quantity": 1,
+      "type": "Consumable",
+      "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
+      "inAppOwnershipType": "PURCHASED",
+      "signedDate": 1803132000000,
+      "environment": "Production",
+      "transactionReason": "PURCHASE",
+      "storefront": "USA",
+      "storefrontId": "143441",
+      "price": 2000,
+      "currency": "USD",
+      "appTransactionId": "704512345678901234"
+    },
+    "renewalInfo": null
+  },
+  "expect": {
+    "unsupported": "one_time_charge"
+  }
+}

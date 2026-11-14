@@ -390,8 +390,9 @@ adds one line naming their trees, the two farthest and then how many more (`name
 its title; a tree with no guide of its own then keeps the written entry without an excerpt. The line is one line and
 never loses its count, whatever the font measures: the sentence's own words never shrink, and the titles alone give
 way with an ellipsis; words too wide for the line together wrap rather than go. `GuideNote` is the note
-open. From 744px it stands in place over its entry and shares the room while it reads; on phones it is a bottom sheet
-as tall as its text. The guides from above stand first in it, farthest first, each under its tree's name and in the
+open. From 744px it is a modal window 24px inside the viewport; on phones it is a bottom sheet as tall as its text.
+Both reading and writing hold the window and make the room beneath inert. The guides from above stand first in it,
+farthest first, each under its tree's name and in the
 secondary ink, then this tree's own under its name, and the whole stack scrolls inside the note. They are plain text
 with no caret and no tint; a tree with no guide of its own has Add guide as its block and no pencil. This tree's text
 is one mounted element with or without guides above it, so guides that answer while it is read move nothing: the
@@ -405,9 +406,9 @@ act. They take what the window leaves once the field has its height, and where t
 line of text they are not drawn; on phones the editor holds this tree's guide alone. The draft, its count and
 its save never hold them. The owner presses the prose, the hint beside this tree's name or the pencil, or Enter, and
 writes in the same frame from where the press landed
-(`caretPositionFromPoint`, or Safari's `caretRangeFromPoint`); writing holds the window, so everything beneath is inert
-and a press outside asks to leave. The field is as tall as its draft until the note's bound makes it scroll, and on
-phones the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
+(`caretPositionFromPoint`, or Safari's `caretRangeFromPoint`); a press outside asks to leave. The desktop field fills
+the modal's body and gives inherited guides their room while keeping the draft visible where it fits; on phones the
+field grows with the draft and the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
 the guide, which closes the note unless guides from above remain to read. While a save is in flight the frame holds:
 the field is read-only and nothing leaves until it settles. A save by someone who is no longer the owner writes through
 no door and is refused. While the note holds
@@ -415,7 +416,7 @@ the window, Escape, ⌘↩ and Tab work wherever focus stands; ⌘↩ presses Sa
 key is one press. The note keeps its draft, and the focus a stop held, across a change of band, and closes
 when the tree changes or the guide stops being shown. Leaving a draft returns to where writing began (the note read, or the tree for a guide begun from Add guide),
 at once when nothing changed and through Discard draft? when something did. Closing hands focus back to the entry. The
-footer keeps a status line with one act above who reads the guide: a guide changed elsewhere mid-edit says so there and
+status line above the field on desktop and in the footer on phones: a guide changed elsewhere mid-edit says so and
 offers Load latest, which replaces the draft, so Cancel then leaves at once; on phones the line also says what Save
 replaces, and it waits while a save is in flight. A save no door took keeps the draft and leaves one line
 (`role="alert"`) where the footer says who reads the guide, and its act takes Save's place: Try again for `offline`,
@@ -429,9 +430,9 @@ line is a block above the actions. A sheet too short for what it holds lets the 
 caret's line kept in view, and then scrolls under Cancel and the footer's button, which stay at its foot. Editing the
 draft or Load latest clears the line and brings Save back. A guide set elsewhere replaces the entry's line and the read note's text with one
 crossfade (`useArrivalFade`), none under reduced motion; the note dissolves in and out over 160ms. On the Graph from
-744px the card and the note read in place publish their boxes to `useGraphGeometry`: `viewportInsets` frames the tree
-to their right while 320px of canvas stays, keeps captions out from under them, seats the card below a refusal banner
-and ends it clear of an open dock or panel.
+744px the card publishes its box to `useGraphGeometry`: `viewportInsets` frames the tree to its right while 320px of
+canvas stays, keeps captions out from under it, seats the card below a refusal banner and ends it clear of an open dock
+or panel. Opening the modal leaves that framing unchanged.
 
 **The roadmap sheet.** `RoadmapSheet` owns title search above eight roadmaps and the keyboard-aware search and
 New roadmap footer; `roadmapSearch.js` owns the threshold, trimmed title match and highlight offsets in the

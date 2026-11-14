@@ -576,9 +576,9 @@ A node may point at another tree: `opens` holds that tree's id.
   where two ways are as short the smaller tree id is taken, ids compared as bytes. A loop among
   other trees that does not lead back to this one is not listed: it is reported when one of those
   trees is read. `danglingPointers` holds one `{node, treeId}` per node whose pointer is not valid
-  — the tree was removed (a step its removal could not take, or a pointer the socket or `PUT` set
+  — the tree was removed (a step its removal could not take, or a pointer the socket set
   after it), is someone else's, or the text names none — with the pointer as it is
-  stored; this door refuses to set such a pointer, and the socket and `PUT` do not. Neither makes
+  stored; this door refuses to set such a pointer, and the socket does not. Neither makes
   a tree unclean: `diagnosticsClean` and `TreeDiagnostics::clean()` stay
   a statement about the graph. Both are repaired by re-pointing or clearing the node's `opens`.
   A reader who cannot write the tree is answered the graph's diagnostics alone, in the bytes a

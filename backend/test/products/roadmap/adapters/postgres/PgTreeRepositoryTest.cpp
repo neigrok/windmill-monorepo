@@ -234,7 +234,7 @@ TEST(pg_exact_land_seqs_survive_a_save_a_close_and_a_reopen_and_a_row_at_land_se
   CHECK_FALSE(fromTheStart.title.has_value());
   CHECK(covered.covers(late));
 
-  // A save that names no land seq for a row it writes, as a PUT's does, leaves the one the row holds.
+  // A save that names no land seq for a row it writes leaves the one the row holds.
   const StoredTree before = *restarted.load(kTree);
   REQUIRE(restarted.save(kTree, GraphState{{n}, {}}, LegendState{}, before.title, before.guide, before.head));
   CHECK(restarted.load(kTree)->landed == stored);

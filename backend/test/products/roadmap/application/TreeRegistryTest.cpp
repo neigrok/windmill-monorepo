@@ -1463,6 +1463,42 @@ TEST(create_subtree_whose_event_fails_after_the_child_is_stored_is_unannounced_a
   CHECK(s.bus.subtreeBroadcasts.empty());
 }
 
+// A create whose commit's answer was lost stores a subtree its parent's room is not told of, so that room records
+// nothing for the step: its delete there hides no branch. The parent's next room reads the subtree off the stored rows
+// and records the step as its graph holds it, in the access a room of another tree under the root kept live.
+TEST(a_parent_room_that_reopens_hides_the_subtree_whose_create_its_last_room_missed_under_a_step_since_deleted) {
+  Setup s;
+  const UserId me = uid("me");
+  seedParent(s, "t_p", me);
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      s.registry.createSubtree(tid("t_p"), nid("sail"), me, proposing("t_00000000000000c1"))));
+  s.rooms.open(tid("t_00000000000000c1"));
+  s.trees.subtreeAnswerLost = true;
+  bool threw = false;
+  try {
+    s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c2"));
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+  REQUIRE(threw);
+  REQUIRE_EQ(s.trees.subtrees.count("t_00000000000000c2"), std::size_t{1});
+  {
+    std::unique_lock<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
+    s.rooms.open(tid("t_p"))->applyCommand(DeleteNode{nid("rig")}, 20, me);
+    PendingSave saving = s.rooms.persist(tid("t_p"));
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
+  }
+  REQUIRE(s.rooms.evict(tid("t_p")));
+  REQUIRE_EQ(s.rooms.openRooms(), std::size_t{1});
+
+  s.rooms.open(tid("t_p"));
+
+  CHECK_FALSE(s.rooms.accessOf(tid("t_00000000000000c2")).has_value());
+  CHECK(s.rooms.accessOf(tid("t_00000000000000c1")) ==
+        std::optional<TreeAccess>(TreeAccess{me, Visibility::private_, tid("t_p"), {OwningStep{tid("t_p"), nid("sail")}}}));
+}
+
 TEST(create_subtree_whose_store_fails_leaves_no_row_no_seq_and_no_event) {
   Setup s;
   AtTheDoor door;

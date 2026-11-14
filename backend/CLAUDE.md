@@ -13,6 +13,11 @@ funded subscription/owner periods, permanent device binding, concurrency and thr
 `platform/ai_installations/` holds server-issued anonymous Coach credentials and network admission.
 Every hosted AI call, including background work, debits its individual allowance in that mode;
 [AI_ALLOWANCES.md](AI_ALLOWANCES.md) defines its rollout switch and unsupported edges.
+`platform/subscriptions/` follows the Windmill One subscription service's feed into `account_entitlements`, the
+backend's own copy of every account's entitlement ([subscriptions.md](../docs/foundation/subscriptions.md) §6.1): the
+feed's vocabulary and cursor (`Feed.h`), the copy and the seam each entry passes through (`EntitlementCopy.h`), the
+worker (`FeedFollower`), the Postgres copy and the client of the service's internal doors. It is off while
+`SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are unset, and nothing reads the copy yet.
 
 `products/<p>/` is one product each (roadmap, journal, gym, and the sync engine's test-only probe),
 with four shared layers: `domain/` (pure), `application/` (services over
@@ -54,7 +59,7 @@ receipts and retained journal revisions stay in place.
 ```sh
 cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:12)
 cmake --build build -j8
-ctest --test-dir build --output-on-failure      # four C++ suites and seven script checks (RUNNING.md §7)
+ctest --test-dir build --output-on-failure      # four C++ suites and nine script checks (RUNNING.md §7)
 ```
 
 Drogon and libpqxx are the two vendor dependencies, and the configure fails without either. libpqxx
@@ -141,7 +146,7 @@ That order and that ceiling are both load-bearing: a closed loopback connection 
 - Work that must answer in bounded time opens `StatementLimits` (`platform/application/StatementLimits.h`)
   around its statements: every lease borrowed on that thread meanwhile waits for a lock at most their
   wait and runs nothing past their deadline, and goes back to the pool under its own settings. A tree
-  removal's cascade is the one user.
+  removal's cascade opens one, and so does every save of a room once the server is told to stop.
 - Tests borrow from `test/PgTestPool.h`, one pool per binary — never a connection per case.
 - Local `DATABASE_URL` is the unix socket (`postgresql:///windmill?host=/tmp`), which costs no
   ephemeral port. Production keeps TCP.

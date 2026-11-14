@@ -1,0 +1,29 @@
+{
+  "note": "A claim of a transaction that states no signedDate: it cannot be stamped, unsupported.",
+  "claim": {
+    "transactionId": "2000000100000001",
+    "originalTransactionId": "2000000100000001",
+    "webOrderLineItemId": "2000000100000101",
+    "bundleId": "works.windmill.app",
+    "productId": "works.windmill.app.one.monthly",
+    "subscriptionGroupIdentifier": "21540000",
+    "purchaseDate": 1798797600000,
+    "originalPurchaseDate": 1798797600000,
+    "expiresDate": 1801476000000,
+    "quantity": 1,
+    "type": "Auto-Renewable Subscription",
+    "appAccountToken": "6f9d0c2e-4b1a-4c8e-9f3d-2a7b5e1c0d84",
+    "inAppOwnershipType": "PURCHASED",
+    "environment": "Production",
+    "transactionReason": "PURCHASE",
+    "storefront": "USA",
+    "storefrontId": "143441",
+    "price": 12000,
+    "currency": "USD",
+    "appTransactionId": "704512345678901234",
+    "billingPlanType": "BILLED_UPFRONT"
+  },
+  "expect": {
+    "unsupported": "incomplete"
+  }
+}

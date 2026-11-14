@@ -121,6 +121,8 @@ contents. Native acceptance and a same-key update check precede publication. See
   Both phones implement phone-hosted turns.
   [The subscription service](docs/foundation/subscriptions.md) for Windmill One is being built; what
   exists is in its [ARCHITECTURE.md](services/subscriptions/ARCHITECTURE.md).
+  [The AI service](docs/foundation/ai-service.md), which takes over the AI allowance ledger and every
+  provider call, is specified and not built.
 - [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
   model loop the web uses. [The iOS app](apps/ios/App/README.md) also documents
   signed-in routine onboarding.
