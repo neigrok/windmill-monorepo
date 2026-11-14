@@ -906,6 +906,15 @@ std::variant<Subtree, SubtreeConflict> PgTreeRepository::createSubtree(const Tre
   try {
     PgLease conn{*pool_};
     pqxx::work txn{*conn};
+    // The root's row held first, in the mode the root's removal and the head written below take it: a removal that has
+    // not committed is waited for and then read, so no child is stored under a root that no longer stands, and one that
+    // begins after this waits for the child and takes it with the branch. Taken before anything else, so two creates
+    // under one root wait on each other here and never on each other's rows below.
+    if (txn.exec_params("SELECT r.id FROM trees p JOIN trees r ON r.id = p.root_tree "
+                        "WHERE p.id = $1 AND r.deleted_at IS NULL FOR NO KEY UPDATE OF r",
+                        parent.tree.str())
+            .empty())
+      return SubtreeConflict::parentGone;
     // The owner's account held as create and fork hold it, so an erasure either waits for this child or leaves no
     // parent to put it under.
     if (txn.exec_params("SELECT u.id FROM trees p JOIN users u ON u.id = p.owner_id "

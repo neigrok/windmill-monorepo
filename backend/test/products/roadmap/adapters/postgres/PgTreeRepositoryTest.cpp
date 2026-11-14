@@ -2626,3 +2626,27 @@ TEST(pg_a_subtrees_access_is_one_statement_of_primary_key_probes) {
   CHECK_EQ(probes["tree_nodes_pkey"], static_cast<double>(kMaxTreeDepth));
   CHECK_EQ(parse(explained[0][0].as<std::string>())[0]["Plan"]["Actual Rows"].asInt(), kMaxTreeDepth + 1);
 }
+
+// A subtree's create commits only under a root that stands. One that races the root's removal waits on the root's row
+// while the removal's transaction holds it, and once the removal has committed it stores nothing and answers the parent
+// gone, which the registry answers as an absent tree.
+TEST(pg_a_subtrees_create_racing_its_roots_removal_stores_nothing_under_the_removed_root) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kAda, {{"rig", nullptr}});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kParent, "rig", kChild)));
+  forest.edit(kChild, kAda, {{"knot", nullptr}});
+  PgLease removal{*pgTestPool()};
+  pqxx::work removing{*removal};
+  removing.exec_params("UPDATE trees SET deleted_at = now() WHERE id = $1", kParent.str());
+
+  std::future<std::variant<Subtree, SubtreeConflict>> created = std::async(std::launch::async, [&forest] {
+    return forest.trees.createSubtree(kGrandchild, OwningStep{kChild, nid("knot")}, LegendState{}, 2);
+  });
+  CHECK(created.wait_for(std::chrono::milliseconds(300)) == std::future_status::timeout);
+  removing.commit();
+  REQUIRE(created.wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+  CHECK(created.get() == (std::variant<Subtree, SubtreeConflict>{SubtreeConflict::parentGone}));
+  CHECK_EQ(childrenOf(kChild), 0L);
+}
