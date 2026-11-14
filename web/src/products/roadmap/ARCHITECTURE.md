@@ -16,7 +16,7 @@ point for the component showcase.
 | `room/` | What the room holds: the load, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band and who holds the roadmap |
 | `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
-| `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (a card from 744px, a row on phones) and the note it opens |
+| `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, below the head on phones) and the note it opens |
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
 | `step/` | The step page and modal, workspace, composer and its picker, the tree picker and its choices, and the step's address |
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
@@ -351,7 +351,8 @@ the reply without the tree's own entry, since the room holds that guide and a sa
 shared-reader mode, the demo, a device with nobody signed in, a tree that lives only on this device and a lapsed session
 make no read and are shown nothing from above. The guides from above live in memory alone. Leaving the tree aborts the
 read and drops what it brought, as the holder going does, so a return reads again and nothing read earlier stands in
-the meantime. A read that fails leaves the tree's own guide standing and says nothing. It reports once as
+the meantime. A pending or failed read keeps parent status unknown; the wide entry and viewer say so while retaining
+the tree's own guide. The phone keeps its own guide standing. A failed read reports once as
 `roadmap-guides-load` under one tag, `reason`: `unavailable` where the server could not read the trees above, `server`
 for any other 5xx, `network` for a request lost while visible and online, and `shape` for a 200 that is not the
 contract's, one that is not JSON among them (`readFailureReason`; `guidesAbove` says whether an answer is shaped). What is well formed in such an
@@ -359,15 +360,20 @@ answer still shows. A tree answered twice stands once, where it stood farthest, 
 among the others, and a tree with no title takes *Untitled roadmap*. The open event says what the entry knew at the
 press: `none`, `some`, or `unread` while the read has not answered or after it failed, by its status or its shape.
 
-The guide is a note on the tree. `GuideEntry` is the note at rest, which the room hands to the view that shows it: from
-744px a card, over the Graph's canvas under the row and first in the Board's flow, with the first line and Read guide; on
-phones a row under the head of both views, beneath the device line when the tree carries one, with up to three lines.
-A reader's entry says Author's note, and an owner without a guide gets Add guide. Under guides from above the card
-adds one line naming their trees, the two farthest and then how many more (`namedAbove`), and the row a count beside
-its title; a tree with no guide of its own then keeps the written entry without an excerpt. The line is one line and
-never loses its count, whatever the font measures: the sentence's own words never shrink, and the titles alone give
-way with an ellipsis; words too wide for the line together wrap rather than go. `GuideNote` is the note
-open. From 744px it is a modal window 24px inside the viewport; on phones it is a bottom sheet as tall as its text.
+The guide is a note on the tree. From 744px `GuideEntry` stands immediately after `ViewSwitch` in `RoadmapIdentity`,
+shared by Board and Graph. The first nonblank line is ellipsised in a seat capped at 200px from 1024–1279 and 320px
+from 1280px. At 744–1023 the 44px-high control holds a 20px book icon and, when applicable, the actual parent count
+or an unknown marker inside the same focus ring. Known inherited-only entries say “2 guides from above”; a guide of
+its own adds “+2 above ·” before its first line. Pending or failed parent reads show “Guide · unknown” without own
+text, or “? ·” before its first line, and the accessible name and tooltip say “Guide · parent status unknown”.
+The tooltip is the concise Guide or Author’s note title, the confirmed parent count, or the unknown-status label;
+own-only and confirmed-parent accessible names retain the own excerpt. These entries open reading. Only a
+confirmed-empty owner's entry offers dashed Add guide and opens writing directly;
+a reader never gets Add. Readers with an own guide retain Author's note as the accessible name. Phones keep their
+row below the head, beneath the device line when present, with up to three lines and a count beside the heading.
+`GuideNote` opens a modal window 24px inside the viewport from 744px and a bottom sheet on phones. The wide viewer
+keeps “Parent Guide status has not been confirmed.” visible while parent status is unknown, below the own text when
+present; without own text an owner may Add guide beneath the notice. A reader cannot add or edit.
 Both reading and writing hold the window and make the room beneath inert. The guides from above stand first in it,
 farthest first, each under its tree's name and in the
 secondary ink, then this tree's own under its name, and the whole stack scrolls inside the note. They are plain text
@@ -386,13 +392,15 @@ writes in the same frame from where the press landed
 (`caretPositionFromPoint`, or Safari's `caretRangeFromPoint`); a press outside asks to leave. The desktop field fills
 the modal's body and gives inherited guides their room while keeping the draft visible where it fits; on phones the
 field grows with the draft and the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
-the guide, which closes the note unless guides from above remain to read. While a save is in flight the frame holds:
+the guide, which closes the note unless guides from above remain to read or wide parent status remains unknown. While a save is in flight the frame holds:
 the field is read-only and nothing leaves until it settles. A save by someone who is no longer the owner writes through
 no door and is refused. While the note holds
 the window, Escape, ⌘↩ and Tab work wherever focus stands; ⌘↩ presses Save or Try again and no other act, and a held
 key is one press. The note keeps its draft, and the focus a stop held, across a change of band, and closes
 when the tree changes or the guide stops being shown. Leaving a draft returns to where writing began (the note read, or the tree for a guide begun from Add guide),
-at once when nothing changed and through Discard draft? when something did. Closing hands focus back to the entry. The
+at once when nothing changed and through Discard draft? when something did. Closing hands focus back to the entry.
+A remote clear while parent status is unknown moves focus from removed prose to Add guide for the owner or Close
+for a reader. Escape dismisses a shown entry tooltip before the room handles another Escape. The
 status line above the field on desktop and in the footer on phones: a guide changed elsewhere mid-edit says so and
 offers Load latest, which replaces the draft, so Cancel then leaves at once; on phones the line also says what Save
 replaces, and it waits while a save is in flight. A save no door took keeps the draft and leaves one line
@@ -406,10 +414,10 @@ down. From 744px the line and the actions share one tinted block and the field r
 line is a block above the actions. A sheet too short for what it holds lets the field give up height first, the
 caret's line kept in view, and then scrolls under Cancel and the footer's button, which stay at its foot. Editing the
 draft or Load latest clears the line and brings Save back. A guide set elsewhere replaces the entry's line and the read note's text with one
-crossfade (`useArrivalFade`), none under reduced motion; the note dissolves in and out over 160ms. On the Graph from
-744px the card publishes its box to `useGraphGeometry`: `viewportInsets` frames the tree to its right while 320px of
-canvas stays, keeps captions out from under it, seats the card below a refusal banner and ends it clear of an open dock
-or panel. Opening the modal leaves that framing unchanged.
+crossfade (`useArrivalFade`), and the wide entry wears the 700ms inset gold arrival ring; neither animates under
+reduced motion. The note dissolves in and out over 160ms. `useGraphGeometry` clears the measured identity row,
+refusal banner, dock, legend and camera controls; the Guide adds no canvas reservation. Opening its modal leaves
+that framing unchanged.
 
 **The roadmap sheet.** `RoadmapSheet` owns title search above eight roadmaps and the keyboard-aware search and
 New roadmap footer; `roadmapSearch.js` owns the threshold, trimmed title match and highlight offsets in the

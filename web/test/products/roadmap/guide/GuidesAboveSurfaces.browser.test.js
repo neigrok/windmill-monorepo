@@ -55,15 +55,15 @@ const inkOf = (page, selector) => page.locator(selector).first().evaluate((eleme
 });
 
 for (const engine of [chromium, webkit]) {
-  test(`${engine.name()}: the holder’s card says whose guides apply from above, and the note reads them farthest first over this tree’s own, which alone a click writes`, async () => {
+  test(`${engine.name()}: the holder’s entry counts guides from above, and the note reads them farthest first over this tree’s own, which alone a click writes`, async () => {
     const { page, asked } = await openHeld(repliedGuides('An older copy of this tree’s guide.'), { guide: GUIDE }, { engine });
     try {
       await withBrowserErrors(page, async () => {
-        const card = page.getByRole('button', { name: 'Guide: One step a week.' });
-        assert.equal(await card.textContent(), 'GuideOne step a week.With guides from My life and My yearRead guide→');
-        assert.equal(await card.evaluate((button) => document.getElementById(button.getAttribute('aria-describedby')).textContent), 'With guides from My life and My year');
-        assert.deepEqual(await inkOf(page, '.st-guide-card-above'), { ink: 'secondary', size: '13px/19px', cursor: 'pointer' });
-        await card.click();
+        const entry = page.getByRole('button', { name: 'Guide: One step a week.' });
+        assert.equal(await entry.textContent(), '+2 above · One step a week.');
+        assert.equal(await entry.getAttribute('aria-label'), 'Guide: One step a week. · 2 guides from above');
+        assert.deepEqual(await inkOf(page, '.st-guide-entry-excerpt'), { ink: 'secondary', size: '14px/20px', cursor: 'pointer' });
+        await entry.click();
         await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
         await settled(page);
         assert.deepEqual(await stackOf(page), [
@@ -119,7 +119,7 @@ for (const engine of [chromium, webkit]) {
         assert.deepEqual(await page.evaluate(() => window.writes), [`Then ${GUIDE}`]);
         assert.equal((await stackOf(page)).at(-1), `prose: Then ${GUIDE}`);
         assert.deepEqual(await events(page), [
-          { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'some' },
+          { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'some' },
           { step: 'edit', via: 'click' },
           { step: 'save', outcome: 'saved', length: '1-500' },
         ]);
@@ -159,10 +159,10 @@ test('Chromium: a tree with no guide of its own under guides from above reads th
   const { page } = await openHeld(repliedGuides(null));
   try {
     await withBrowserErrors(page, async () => {
-      const card = page.getByRole('button', { name: 'Guide', exact: true });
-      assert.equal(await card.textContent(), 'GuideWith guides from My life and My yearRead guide→');
-      assert.equal(await page.locator('.st-guide-card .lucide-book-open').count(), 1);
-      await card.click();
+      const entry = page.getByRole('button', { name: 'Guide · 2 guides from above', exact: true });
+      assert.equal(await entry.textContent(), '2 guides from above');
+      assert.equal(await page.locator('.st-guide-entry .lucide-book-open').count(), 1);
+      await entry.click();
       const note = page.getByRole('dialog', { name: 'Guide', exact: true });
       await note.waitFor();
       await settled(page);
@@ -196,7 +196,7 @@ test('Chromium: a tree with no guide of its own under guides from above reads th
       await note.waitFor();
       assert.equal((await stackOf(page)).at(-1), 'add: Add guide');
       assert.deepEqual(await events(page), [
-        { step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'some' },
+        { step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'some' },
         { step: 'edit', via: 'add' }, { step: 'cancel' }, { step: 'edit', via: 'add' },
         { step: 'save', outcome: 'saved', length: '1-500' },
         { step: 'edit', via: 'pencil' },
@@ -205,7 +205,7 @@ test('Chromium: a tree with no guide of its own under guides from above reads th
 
       await page.evaluate(() => window.setRoom({ holder: null }));
       await note.waitFor({ state: 'detached' });
-      assert.equal(await page.getByRole('button', { name: 'Add guide', exact: true }).textContent(), 'Add guide→');
+      assert.equal(await page.getByRole('button', { name: 'Add guide', exact: true }).textContent(), 'Add guide');
     });
   } finally { await page.close(); }
 });
@@ -248,16 +248,16 @@ test('Chromium: on a phone the row counts the guides from above, the sheet reads
   } finally { await page.close(); }
 });
 
-test('Chromium: the card’s line names one tree, two, or the two farthest and how many more; a phone row with no guide of its own still counts them', async () => {
+test('Chromium: the entry counts each parent guide; a phone row with no guide of its own still counts them', async () => {
   const above = (...titles) => titles.map((title, index) => ({ treeId: `t_${index}`, title, text: 'A guide.', yours: index > 0 }));
   for (const [guides, line] of [
-    [above('My life'), 'With a guide from My life'],
-    [above('My life', '', 'Learn to sail'), 'With guides from My life, Untitled roadmap and 1 more tree'],
-    [above('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'), 'With guides from A, B and 6 more trees'],
+    [above('My life'), '+1 above · One step a week.'],
+    [above('My life', '', 'Learn to sail'), '+3 above · One step a week.'],
+    [above('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'), '+8 above · One step a week.'],
   ]) {
     const { page } = await openHeld(guides, { guide: GUIDE });
     try {
-      assert.equal(await page.locator('.st-guide-card-above').textContent(), line);
+      assert.equal(await page.locator('.st-guide-entry-excerpt').textContent(), line);
     } finally { await page.close(); }
   }
   const { page } = await openHeld(above('My life'), { band: 'phone' }, { width: 390, height: 844 });
@@ -266,15 +266,15 @@ test('Chromium: the card’s line names one tree, two, or the two farthest and h
   } finally { await page.close(); }
 });
 
-test('Chromium: a read of the guides above that fails leaves the tree’s own guide alone and says nothing; it reports once with the kind of failure, except with no connection or a refusal', async () => {
+test('Chromium: a read of the guides above that fails leaves the tree’s own guide alone and marks parent status unknown; it reports once with the kind of failure, except with no connection or a refusal', async () => {
   for (const [guides, online, reason] of [[503, true, 'unavailable'], [500, true, 'server'], ['lost', true, 'network'], ['lost', false, null], [404, true, null]]) {
     const { page, asked } = await openHeld(guides, { guide: GUIDE }, { online });
     try {
       const said = complaintsOf(page);
-      const card = page.getByRole('button', { name: 'Guide: One step a week.' });
+      const entry = page.getByRole('button', { name: 'Guide · parent status unknown' });
       await page.waitForFunction((count) => (window.issues ?? []).length === count, reason ? 1 : 0);
-      assert.equal(await card.textContent(), 'GuideOne step a week.Read guide→');
-      await card.click();
+      assert.equal(await entry.textContent(), '? · One step a week.');
+      await entry.click();
       const note = page.getByRole('dialog', { name: 'Guide', exact: true });
       await note.waitFor();
       assert.deepEqual({
@@ -288,17 +288,17 @@ test('Chromium: a read of the guides above that fails leaves the tree’s own gu
       }, {
         above: 0,
         prose: GUIDE,
-        said: 0,
+        said: 1,
         issues: reason ? [{ operation: 'roadmap-guides-load', stack: true, tags: { reason } }] : [],
         asked: ['GET'],
-        events: [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'unread' }],
+        events: [{ step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'unread' }],
         complaints: [],
       }, `${guides} ${online ? 'online' : 'offline'}`);
     } finally { await page.close(); }
   }
 });
 
-test('Chromium: a 200 that is not the contract’s shape reports once as such and says nothing on screen; the well-formed guides in it are still shown, and the press says the guides above went unread', async () => {
+test('Chromium: a 200 that is not the contract’s shape reports once as such and marks parent status unknown; the well-formed guides in it are still shown, and the press says the guides above went unread', async () => {
   const life = { treeId: 't_life', title: 'My life', text: 'Health first, then craft.', yours: true };
   for (const [body, line] of [
     ['<!doctype html><title>My life</title>Health first', null],
@@ -312,9 +312,9 @@ test('Chromium: a 200 that is not the contract’s shape reports once as such an
     try {
       const said = complaintsOf(page);
       await page.waitForFunction(() => (window.issues ?? []).length === 1);
-      const card = page.getByRole('button', { name: 'Guide: One step a week.' });
-      assert.equal(await card.textContent(), `GuideOne step a week.${line ?? ''}Read guide→`, body);
-      await card.click();
+      const entry = page.getByRole('button', { name: 'Guide · parent status unknown' });
+      assert.equal(await entry.textContent(), '? · One step a week.', body);
+      await entry.click();
       await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
       const sent = JSON.stringify([await issues(page), await page.evaluate(() => window.events)]);
       assert.deepEqual({
@@ -327,10 +327,10 @@ test('Chromium: a 200 that is not the contract’s shape reports once as such an
         complaints: said,
       }, {
         above: line ? 1 : 0,
-        said: 0,
+        said: 1,
         issues: [{ operation: 'roadmap-guides-load', stack: true, tags: { reason: 'shape' } }],
         asked: ['GET'],
-        events: [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'unread' }],
+        events: [{ step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'unread' }],
         words: [],
         complaints: [],
       }, body);
@@ -338,24 +338,24 @@ test('Chromium: a 200 that is not the contract’s shape reports once as such an
   }
 });
 
-test('Chromium: a reader and a room with no holder ask for nothing and are shown nothing from above; a holder with nothing above keeps the card and the note as they were', async () => {
+test('Chromium: a reader and a room with no holder ask for nothing and are shown nothing from above; a holder with nothing above keeps the own entry and note', async () => {
   for (const options of [{ guide: GUIDE, role: 'reader', holder: null }, { guide: GUIDE, holder: null }]) {
     const { page, asked } = await openHeld(repliedGuides(GUIDE), options);
     try {
       const label = options.role === 'reader' ? 'Author’s note' : 'Guide';
-      const card = page.getByRole('button', { name: `${label}: One step a week.` });
-      assert.equal(await card.textContent(), `${label}One step a week.Read ${options.role === 'reader' ? 'note' : 'guide'}→`);
-      await card.click();
+      const entry = page.getByRole('button', { name: `${label}: One step a week.` });
+      assert.equal(await entry.textContent(), 'One step a week.');
+      await entry.click();
       await page.getByRole('dialog', { name: label, exact: true }).waitFor();
       assert.deepEqual({ stack: await page.locator('.st-guide-stack').count(), asked }, { stack: 0, asked: [] });
     } finally { await page.close(); }
   }
   const { page, asked } = await openHeld([{ treeId: 'sail', title: 'Learn to sail', text: GUIDE, yours: true }], { guide: GUIDE });
   try {
-    const card = page.getByRole('button', { name: 'Guide: One step a week.' });
-    assert.equal(await card.textContent(), 'GuideOne step a week.Read guide→');
-    assert.equal(await card.getAttribute('aria-describedby'), null);
-    await card.click();
+    const entry = page.getByRole('button', { name: 'Guide: One step a week.' });
+    assert.equal(await entry.textContent(), 'One step a week.');
+    assert.equal(await entry.getAttribute('aria-describedby'), null);
+    await entry.click();
     const note = page.getByRole('dialog', { name: 'Guide', exact: true });
     await note.waitFor();
     assert.deepEqual({
@@ -369,7 +369,7 @@ test('Chromium: a reader and a room with no holder ask for nothing and are shown
       text: 'st-guide-alone',
       stops: ['st-guide-prose'],
       asked: ['GET'],
-      events: [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'none' }],
+      events: [{ step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' }],
     });
   } finally { await page.close(); }
 });
@@ -423,7 +423,7 @@ test('Chromium: guides from above that answer while the note already reads stand
         await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ guides: repliedGuides(GUIDE) }) });
       });
       await page.evaluate((mounted) => window.mount(mounted), { guide: GUIDE, holder: 'u_olya' });
-      await page.getByRole('button', { name: 'Guide: One step a week.' }).press('Enter');
+      await page.getByRole('button', { name: 'Guide · parent status unknown' }).press('Enter');
       const note = page.getByRole('dialog', { name: 'Guide', exact: true });
       await note.waitFor();
       assert.deepEqual({ stack: await page.locator('.st-guide-stack').count(), focus: await focusedName(page) }, { stack: 0, focus: 'st-guide-prose st-guide-prose--owner is-ringed' });
@@ -433,7 +433,7 @@ test('Chromium: guides from above that answer while the note already reads stand
       assert.deepEqual({ above: await page.locator('.st-guide-from').count(), focus: await focusedName(page) }, { above: 2, focus: 'st-guide-prose st-guide-prose--owner is-ringed' });
       await page.keyboard.press('Escape');
       await note.waitFor({ state: 'detached' });
-      assert.equal(await page.locator('.st-guide-card-above').textContent(), 'With guides from My life and My year');
+      assert.equal(await page.locator('.st-guide-entry-excerpt').textContent(), '+2 above · One step a week.');
     });
   } finally { await page.close(); }
 });
@@ -480,7 +480,7 @@ for (const [engine, band, width, height] of [[chromium, 'desktop', 1440, 960], [
   test(`${engine.name()}, ${band}: under guides from above a press on this tree's text writes where it landed with its line in view, and leaving the draft returns the note to where it was read`, async () => {
     const { page } = await openHeld([...longAbove(), { treeId: 'sail', title: 'Learn to sail', text: longOwn(), yours: true }], { guide: longOwn(), band }, { engine, width, height });
     try {
-      await page.locator(band === 'phone' ? '.st-guide-row' : '.st-guide-card').click();
+      await page.locator(band === 'phone' ? '.st-guide-row' : '.st-guide-entry').click();
       await page.locator('.st-guide-stack').waitFor();
       await settled(page);
       const point = await pointOn(page, 'Line 003');
@@ -506,7 +506,7 @@ test('Chromium: a draft begun from the pencil while a guide from above is read, 
   for (const leave of ['Cancel', 'Save']) {
     const { page } = await openHeld([...longAbove(), { treeId: 'sail', title: 'Learn to sail', text: longOwn(), yours: true }], { guide: longOwn() });
     try {
-      await page.locator('.st-guide-card').click();
+      await page.locator('.st-guide-entry').click();
       await page.locator('.st-guide-stack').waitFor();
       await settled(page);
       assert.deepEqual(await standingOf(page), { scrollTop: 0, ownInView: false, focus: 'st-guide-stack' });
@@ -584,7 +584,7 @@ test('Chromium: guides from above that answer while a long note is being read mo
       await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ guides: [...longAbove(), { treeId: 'sail', title: 'Learn to sail', text: longOwn(), yours: true }] }) });
     });
     await page.evaluate((mounted) => window.mount(mounted), { guide: longOwn(), holder: 'u_olya' });
-    await page.locator('.st-guide-card').click();
+    await page.locator('.st-guide-entry').click();
     await prose(page).waitFor();
     await settled(page);
     await pointOn(page, 'Line 030');
@@ -606,68 +606,8 @@ test('Chromium: guides from above that answer while a long note is being read mo
     await read;
     await page.locator('.st-guide-stack').waitFor();
     assert.deepEqual(await standing(), { lineFromTop: 64, selected: 'Line 030', stacked: 2 });
-    assert.deepEqual(await events(page), [{ step: 'open', door: 'card', view: 'graph', role: 'owner', above: 'unread' }]);
+    assert.deepEqual(await events(page), [{ step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'unread' }]);
   } finally { await page.close(); }
-});
-
-test('Chromium: the card’s line never loses its count, whatever the font: its words never shrink, and where two long titles do not fit, the titles alone give way', async () => {
-  const titled = (count) => ['The year I finally learn to sail a dinghy single-handed', 'Everything I want from the next ten years of my life', 'C', 'D', 'E', 'F', 'G', 'H'].slice(0, count).map((title, index) => ({ treeId: `t_${index}`, title, text: 'A guide.', yours: true }));
-  // The card's own font, once loaded, and wider and narrower ones forced on its line, as another system's fonts or a
-  // fallback would measure. The card's own font and a narrower one keep the one line 28.29 draws; a font so wide that
-  // the sentence's words overrun the line wraps them, and still loses nothing.
-  const fonts = {
-    card: null,
-    wider: 'font-family: monospace; letter-spacing: 0.08em',
-    widest: 'font-family: monospace; letter-spacing: 0.5em',
-    narrower: 'letter-spacing: -0.06em',
-  };
-  const oneLine = (font) => font === 'card' || font === 'narrower';
-  for (const [count, said] of [
-    [8, 'With guides from The year I finally learn to sail a dinghy single-handed, Everything I want from the next ten years of my life and 6 more trees'],
-    [3, 'With guides from The year I finally learn to sail a dinghy single-handed, Everything I want from the next ten years of my life and 1 more tree'],
-    [2, 'With guides from The year I finally learn to sail a dinghy single-handed and Everything I want from the next ten years of my life'],
-    [1, 'With a guide from The year I finally learn to sail a dinghy single-handed'],
-  ]) {
-    const { page } = await openHeld(titled(count), { guide: GUIDE });
-    try {
-      await page.evaluate(() => document.fonts.ready);
-      for (const [font, forced] of Object.entries(fonts)) {
-        const measured = await page.locator('.st-guide-card-above').evaluate((above, style) => {
-          above.style.cssText = style ?? '';
-          const line = above.querySelector(':scope > span');
-          const shown = line.getBoundingClientRect();
-          const card = above.closest('.st-guide-card');
-          const edges = getComputedStyle(card);
-          const box = card.getBoundingClientRect();
-          const inner = { left: box.left + parseFloat(edges.paddingLeft), right: box.right - parseFloat(edges.paddingRight) };
-          const words = [...line.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).flatMap((node) => {
-            const range = document.createRange();
-            range.selectNodeContents(node);
-            return [...range.getClientRects()];
-          });
-          const rows = new Set([...line.childNodes].flatMap((node) => {
-            const range = document.createRange();
-            range.selectNodeContents(node);
-            return [...range.getClientRects()].map((rect) => Math.round(rect.top));
-          }));
-          return {
-            text: line.textContent,
-            clipped: line.scrollHeight > line.clientHeight + 1 || line.scrollWidth > line.clientWidth + 1,
-            wordsShown: words.every((rect) => rect.left >= shown.left - 1 && rect.right <= shown.right + 1 && rect.top >= shown.top - 1 && rect.bottom <= shown.bottom + 1),
-            insideCard: words.every((rect) => rect.left >= inner.left - 1 && rect.right <= inner.right + 1) && shown.right <= inner.right + 1,
-            lines: rows.size,
-            titlesGiveWay: [...line.querySelectorAll('.st-guide-card-tree')].map((title) => title.scrollWidth > title.clientWidth),
-          };
-        }, forced);
-        const { lines, ...kept } = measured;
-        assert.deepEqual(oneLine(font) ? measured : kept, {
-          text: said, clipped: false, wordsShown: true, insideCard: true,
-          ...(oneLine(font) ? { lines: 1 } : {}),
-          titlesGiveWay: Array.from({ length: Math.min(count, 2) }, () => true),
-        }, `${font}: ${said} (${lines} lines)`);
-      }
-    } finally { await page.close(); }
-  }
 });
 
 test('Chromium: while a guide is written from 744px the guides above are readable or not drawn: a long draft in a short window takes their place, and they return when the draft leaves the room', async () => {
@@ -675,7 +615,7 @@ test('Chromium: while a guide is written from 744px the guides above are readabl
     const { page } = await openHeld([...longAbove(), { treeId: 'sail', title: 'Learn to sail', text: longOwn(), yours: true }], { guide: longOwn() }, { width: 1440, height });
     try {
       await withBrowserErrors(page, async () => {
-        await page.locator('.st-guide-card').click();
+        await page.locator('.st-guide-entry').click();
         await page.getByRole('button', { name: 'Edit guide' }).click();
         await field(page).waitFor();
         await settled(page);
