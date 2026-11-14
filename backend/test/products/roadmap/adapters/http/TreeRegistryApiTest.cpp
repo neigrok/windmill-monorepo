@@ -1,5 +1,7 @@
 #include "products/roadmap/adapters/http/TreeRegistryApi.h"
 
+#include "platform/adapters/http/WriteRoutes.h"
+
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/domain/Command.h"
@@ -872,8 +874,9 @@ TEST(delete_counts_the_branch_only_once_the_removal_passed_its_gates) {
 
 namespace {
 
-// The subtree door, run as the REST route runs it: inside the route's own write observation at door `rest`, the request's
-// body and its answer whole, and the lines the create writes (a session's refresh writes its own, not counted here).
+// The subtree door, run as the REST route runs it: inside the route's own write observation at door `rest`, finished as
+// the route finishes it, the request's body and its answer whole, and the lines the create and the route write (a
+// session's refresh writes its own, not counted here).
 struct SubtreeDoor {
   TreeRegistryApi& api;
   std::vector<std::string> lines;
@@ -893,7 +896,7 @@ struct SubtreeDoor {
     WriteContext context{route};
     drogon::HttpResponsePtr answered;
     api.createSubtree(request, [&](const drogon::HttpResponsePtr& response) { answered = response; }, tree, step);
-    route.skip();
+    route.finish(writeHttpOutcome(answered, "roadmap.PUT.v1.trees.tree.steps.step.subtree"));
     return std::to_string(answered->getStatusCode()) + " " + dump(parse(std::string(answered->getBody())));
   }
 };
@@ -904,7 +907,8 @@ std::string answer(int status, const std::string& body) { return std::to_string(
 
 // PUT /v1/trees/{tree}/steps/{step}/subtree creates an empty subtree under the step, born with the kinds it is sent and
 // under the id it proposes, and answers 201 with where it sits; a retry answers the same subtree 200, `created` false,
-// at the parent's head, and writes nothing. Each call writes one `roadmap.subtree.create` line at door `rest`.
+// at the parent's head, and writes nothing. Each call writes one `roadmap.subtree.create` line at door `rest` beside the
+// route's own, and a retry's both say `unchanged`.
 TEST(put_subtree_creates_an_empty_child_with_the_kinds_sent_and_a_retry_answers_it_unchanged) {
   Harness h;
   const UserId me = h.signIn("s-live", "sam@example.com");
@@ -928,7 +932,9 @@ TEST(put_subtree_creates_an_empty_child_with_the_kinds_sent_and_a_retry_answers_
   CHECK(h.trees.byId["t_00000000000000c1"].state == GraphState{});
   CHECK_EQ(h.trees.subtrees.size(), 1u);
   CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create rest ok",
-                                                "roadmap.subtree.create rest unchanged"}));
+                                                "roadmap.PUT.v1.trees.tree.steps.step.subtree rest ok",
+                                                "roadmap.subtree.create rest unchanged",
+                                                "roadmap.PUT.v1.trees.tree.steps.step.subtree rest unchanged"}));
 }
 
 // Every refusal answers its code and its words, and writes nothing: no subtree, no child row. A body the door cannot
@@ -954,6 +960,8 @@ TEST(put_subtree_refusals_answer_their_code_and_write_nothing) {
   plant("t_a", {step("sail"), step("map", "t_b")});
   plant("t_b", {step("knot")});
   plant("t_shared", {step("rig")}, Visibility::public_);
+  plant("t_demo", {step("tack")}, Visibility::public_);
+  h.trees.byId["t_demo"].owner = std::nullopt;
   plant("t_deep", {step("hoist")});
   h.trees.subtrees["t_deep"] = Subtree{tid("t_deep"), tid("t_a"), OwningStep{tid("t_a"), nid("sail")}, kMaxTreeDepth, 0};
   SubtreeDoor door{h.api};
@@ -971,7 +979,10 @@ TEST(put_subtree_refusals_answer_their_code_and_write_nothing) {
            answer(404, R"({"code":"no-such-tree","error":"no such tree"})"));
   CHECK_EQ(door.put("t_a", "sail", "{}", "s-stranger"), answer(404, R"({"code":"no-such-tree","error":"no such tree"})"));
   CHECK_EQ(door.put("t_shared", "rig", "{}", "s-stranger"),
-           answer(403, R"({"code":"not-writer","error":"only the roadmap's owner can add a subtree to its steps"})"));
+           answer(403, R"({"code":"not-yours","error":"this tree belongs to another account"})"));
+  CHECK_EQ(door.put("t_demo", "tack", "{}", "s-live"),
+           answer(403, R"({"code":"nobodys-tree","error":"no account owns this tree, so it cannot be edited — you can )"
+                       R"(still read it, or fork it into a roadmap of your own"})"));
   CHECK_EQ(door.put("t_a", "nope", "{}", "s-live"),
            answer(409, R"({"code":"step-gone","error":"that step is no longer in this roadmap"})"));
   CHECK_EQ(door.put("t_deep", "hoist", "{}", "s-live"),
@@ -981,11 +992,15 @@ TEST(put_subtree_refusals_answer_their_code_and_write_nothing) {
                        R"(before it holds a subtree"})"));
 
   CHECK_EQ(h.trees.subtrees.size(), 1u);
+  const std::string route = "roadmap.PUT.v1.trees.tree.steps.step.subtree rest ";
+  const std::string create = "roadmap.subtree.create rest ";
   CHECK(door.lines == (std::vector<std::string>{
-                          "roadmap.subtree.create rest kinds-refused", "roadmap.subtree.create rest no-such-tree",
-                          "roadmap.subtree.create rest no-such-tree", "roadmap.subtree.create rest not-writer",
-                          "roadmap.subtree.create rest step-gone", "roadmap.subtree.create rest depth-limit",
-                          "roadmap.subtree.create rest step-opens-a-tree"}));
+                          route + "http_401", route + "http_400", route + "http_400", route + "http_400",
+                          create + "kinds-refused", route + "kinds-refused", create + "no-such-tree", route + "no-such-tree",
+                          create + "no-such-tree", route + "no-such-tree", create + "not-yours", route + "http_403",
+                          create + "nobodys-tree", route + "http_403", create + "step-gone", route + "step-gone",
+                          create + "depth-limit", route + "depth-limit", create + "step-opens-a-tree",
+                          route + "step-opens-a-tree"}));
 }
 
 // A parent whose last save failed and is being retried refuses the create `save-pending`, 503, with nothing written; once
@@ -1014,6 +1029,9 @@ TEST(put_subtree_under_a_parent_held_unsaved_answers_save_pending_until_its_save
   REQUIRE_EQ(h.retries.set.size(), 1u);
   h.retries.set[0].run();
   CHECK_EQ(door.put("t_a", "sail", "{}", "s-live").substr(0, 4), std::string("201 "));
-  CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create rest save-pending", "roadmap.subtree.create rest ok"}));
+  CHECK(door.lines == (std::vector<std::string>{"roadmap.subtree.create rest save-pending",
+                                                "roadmap.PUT.v1.trees.tree.steps.step.subtree rest save-pending",
+                                                "roadmap.subtree.create rest ok",
+                                                "roadmap.PUT.v1.trees.tree.steps.step.subtree rest ok"}));
 }
 

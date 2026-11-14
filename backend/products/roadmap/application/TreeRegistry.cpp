@@ -99,7 +99,8 @@ std::variant<SubtreeCreation, SubtreeRefusal, Admission> TreeRegistry::createSub
     const auto gateRefusal = [&]() -> std::optional<SubtreeRefusal> {
       const std::optional<TreeAccess> access = rooms_.accessOf(parent);
       if (!access || !canRead(caller, access->owner, access->visibility)) return SubtreeRefusal::noSuchTree;
-      if (!canWrite(caller, access->owner)) return SubtreeRefusal::notWriter;
+      if (const std::optional<WriteRefusal> refusal = writeRefusalFor(caller, access->owner))
+        return *refusal == WriteRefusal::nobodysTree ? SubtreeRefusal::nobodysTree : SubtreeRefusal::notYours;
       room = rooms_.open(parent);
       if (!room) return SubtreeRefusal::noSuchTree;
       if (!room->hasNode(step)) return SubtreeRefusal::stepGone;

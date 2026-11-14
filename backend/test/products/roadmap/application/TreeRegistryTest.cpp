@@ -1322,12 +1322,15 @@ TEST(create_subtree_in_a_deleted_tree_is_refused_no_such_tree) {
   checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), uid("me"), SubtreeRefusal::noSuchTree);
 }
 
-TEST(create_subtree_in_a_tree_the_caller_reads_but_cannot_write_is_refused_not_writer) {
+TEST(create_subtree_in_a_tree_the_caller_reads_but_cannot_write_is_refused_as_every_write_door_refuses_it) {
   Setup s;
   AtTheDoor door;
   seedParent(s, "t_p", uid("owner"));
   s.trees.byId["t_p"].visibility = Visibility::public_;
-  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), uid("intruder"), SubtreeRefusal::notWriter);
+  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), uid("intruder"), SubtreeRefusal::notYours);
+  door.lines.clear();
+  s.trees.byId["t_p"].owner = std::nullopt;
+  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), uid("intruder"), SubtreeRefusal::nobodysTree);
 }
 
 TEST(create_subtree_in_an_absent_tree_or_a_private_one_of_someone_else_is_refused_no_such_tree) {

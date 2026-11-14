@@ -197,7 +197,7 @@ TEST(write_http_expected_refusals_never_create_issues_and_unsafe_codes_are_disca
   const std::string subtree = "roadmap.PUT.v1.trees.tree.steps.step.subtree";
   CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "save-pending"), subtree),
            std::string("save-pending"));
-  for (const char* code : {"kinds-refused", "no-such-tree", "not-writer", "step-gone", "depth-limit", "step-opens-a-tree"})
+  for (const char* code : {"kinds-refused", "no-such-tree", "step-gone", "depth-limit", "step-opens-a-tree"})
     CHECK_EQ(writeHttpOutcome(error(drogon::k409Conflict, "private", code), subtree), std::string(code));
 }
 

@@ -44,8 +44,8 @@ drogon::HttpResponsePtr answerSet(Saved saved) {
 drogon::HttpResponsePtr refused(SubtreeRefusal refusal) {
   switch (refusal) {
     case SubtreeRefusal::noSuchTree: return error(drogon::k404NotFound, "no such tree", codeOf(refusal));
-    case SubtreeRefusal::notWriter:
-      return error(drogon::k403Forbidden, "only the roadmap's owner can add a subtree to its steps", codeOf(refusal));
+    case SubtreeRefusal::notYours: return forbidden(WriteRefusal::notYours);
+    case SubtreeRefusal::nobodysTree: return forbidden(WriteRefusal::nobodysTree);
     case SubtreeRefusal::stepGone:
       return error(drogon::k409Conflict, "that step is no longer in this roadmap", codeOf(refusal));
     case SubtreeRefusal::depthLimit:
@@ -335,6 +335,7 @@ void TreeRegistryApi::createSubtree(const drogon::HttpRequestPtr& req, HttpCallb
     return;
   }
   const SubtreeCreation& creation = std::get<SubtreeCreation>(answer);
+  if (!creation.created) finishCurrentWriteUnchanged();  // a retry, or a race another writer won: nothing was written
   callback(jsonResponse(toJson(creation), creation.created ? drogon::k201Created : drogon::k200OK));
 }
 

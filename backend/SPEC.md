@@ -319,9 +319,10 @@ rejected for structure. Validity is a read model, not a gate.
   refusals and words) and a refusal writes nothing. The rest runs under the parent's strand, so it
   is serialised with every other write to the parent, a step's deletion among them. In order it
   checks that the caller may read the parent (`no-such-tree` for an absent, deleted or
-  private-denied tree, or one whose root is deleted, alike) and write it (`not-writer`), and that
-  the step is present (`step-gone`). The create stores the parent's head at the room's next seq, in
-  its own transaction, so it runs only over a room that is flushed (`RoomRegistry::flushed`): every
+  private-denied tree, or one whose root is deleted, alike) and write it (`not-yours`, or
+  `nobodys-tree` for a tree no account owns, as every write door refuses it), and that the step is
+  present (`step-gone`). The create stores the parent's head at the room's next seq, in its own
+  transaction, so it runs only over a room that is flushed (`RoomRegistry::flushed`): every
   write the room holds is stored and no save of it is running. A head stored past writes that are
   not would leave no gap to show them lost, and a save still running would write an older head over
   the create's. A parent whose save failed and is being retried (Runtime) refuses the create as
@@ -967,8 +968,9 @@ otherwise; `kinds` is the legend the subtree is born with, judged as `POST /v1/t
 subtree gets the default legend: the server never copies the parent's. A body that is not one JSON object, a
 `proposedId` that is not a string and `kinds` that is not a list of kinds whose fields are strings answer `400`; kinds the
 admission refuses answer `400` `kinds-refused` with its sentence (`413` past the count). The registry's refusals answer
-with their code and nothing written: `404 no-such-tree` (an absent, hidden or unreadable tree, alike), `403 not-writer`,
-`409 step-gone`, `409 depth-limit`, `409 step-opens-a-tree` (the step's pointer is valid, Legacy pointers) and
+with their code and nothing written: `404 no-such-tree` (an absent, hidden or unreadable tree, alike), `403` in
+`PATCH`'s code and words (`not-yours`, or `nobodys-tree` for a tree no account owns), `409 step-gone`, `409 depth-limit`,
+`409 step-opens-a-tree` (the step's pointer is valid, Legacy pointers) and
 `503 save-pending` (the parent's save is being retried; the same request creates once it lands). No signed-out caller
 reaches the registry (`401`).
 
