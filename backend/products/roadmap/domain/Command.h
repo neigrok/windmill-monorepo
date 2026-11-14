@@ -7,6 +7,7 @@
 #include "products/roadmap/domain/Tree.h"
 
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -165,9 +166,11 @@ struct EdgeChangePlan {
 std::optional<Command> changedPart(const NodeSpec& node, const Command& command);
 
 // A refusal is its sentence, or the KindRefusal of the row whose `kind` refused the batch. A row's links are judged
-// against the ones its node holds (shownLinks).
+// against the ones its node holds (shownLinks). A row's `opens` on a step of `owned`, the subtree each step owns, plans
+// nothing: such a step's pointer takes no write (SPEC.md, Model, Legacy pointers).
 std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(
-    const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates);
+    const LooseGraph& graph, const Legend& legend, const std::vector<NodePatch>& updates,
+    const std::map<NodeId, TreeId>& owned);
 // The edges a change lands, as one command each — or, when they are one edge removed and one added that keeps its
 // source or its target, as the one ReconnectEdge that moves an edge, as a lone change lands as its own command.
 std::variant<EdgeChangePlan, std::string> planEdgeChanges(

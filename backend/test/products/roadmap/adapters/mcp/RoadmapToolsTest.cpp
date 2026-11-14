@@ -3624,7 +3624,7 @@ TEST(mcp_no_read_answers_the_tree_a_node_opens_to_a_caller_who_cannot_write_the_
   h.trees.byId["t_secret_sub"] =
       StoredTree{LooseGraph().exportState(), LegendState{}, {"Secret plans", {}}, 0, h.caller, Visibility::unlisted};
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"a","label":"A","opens":"t_secret_sub"})")).isError);
-  const std::size_t readsAfterTheWrite = h.trees.titleReads.size();
+  const std::size_t readsAfterTheWrite = h.trees.targetReads.size();
   const std::vector<std::set<TreeId>> followedByTheWrite = h.trees.openedReads;
 
   for (const UserId& reader : {uid("stranger"), UserId{}}) {
@@ -3641,7 +3641,7 @@ TEST(mcp_no_read_answers_the_tree_a_node_opens_to_a_caller_who_cannot_write_the_
       CHECK_EQ(message(reply).find("Secret plans"), std::string::npos);
     }
   }
-  CHECK_EQ(h.trees.titleReads.size(), readsAfterTheWrite);
+  CHECK_EQ(h.trees.targetReads.size(), readsAfterTheWrite);
   CHECK_EQ(h.trees.openedReads, followedByTheWrite);
 
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
@@ -3683,23 +3683,23 @@ TEST(mcp_the_trees_a_call_opens_are_read_once_and_a_reply_follows_them_only_when
   CHECK_FALSE(h.call("import_subgraph",
                      parse(R"({"nodes":[{"id":"a","opens":"t_sub"},{"id":"b","opens":"t_other"},{"id":"c","opens":"t_sub"},{"id":"d"}]})"))
                   .isError);
-  CHECK_EQ(h.trees.titleReads, (std::vector<std::set<TreeId>>{{TreeId{"t_other"}, TreeId{"t_sub"}}}));
+  CHECK_EQ(h.trees.targetReads, (std::vector<std::set<TreeId>>{{TreeId{"t_other"}, TreeId{"t_sub"}}}));
   const std::set<TreeId> opened{TreeId{"t_other"}, TreeId{"t_sub"}};
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened}));
   CHECK_FALSE(h.call("update_nodes", parse(R"({"updates":[{"nodeId":"a","opens":"t_other"},{"nodeId":"d","opens":"t_sub"},{"nodeId":"b","label":"B"}]})")).isError);
-  CHECK_EQ(h.trees.titleReads.size(), 2u);
+  CHECK_EQ(h.trees.targetReads.size(), 2u);
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened}));
   CHECK_FALSE(h.call("create_node", parse(R"({"id":"e","label":"E"})")).isError);
   CHECK_FALSE(h.call("update_nodes", asUpdate(parse(R"({"nodeId":"e","opens":""})"))).isError);
-  CHECK_EQ(h.trees.titleReads.size(), 2u);
+  CHECK_EQ(h.trees.targetReads.size(), 2u);
 
   CHECK_FALSE(h.call("get_tree", kNoArgs).isError);
   CHECK_FALSE(h.call("find_nodes", kNoArgs).isError);
   CHECK_FALSE(h.call("get_nodes", parse(R"({"nodeIds":["a"],"fields":["id","label","description"]})")).isError);
-  CHECK_EQ(h.trees.titleReads.size(), 2u);
+  CHECK_EQ(h.trees.targetReads.size(), 2u);
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened}));
   CHECK_FALSE(h.call("get_tree", parse(R"({"fields":["id","opens"]})")).isError);
-  CHECK_EQ(h.trees.titleReads.size(), 2u);
+  CHECK_EQ(h.trees.targetReads.size(), 2u);
   CHECK_EQ(h.trees.openedReads, (std::vector<std::set<TreeId>>{opened, opened, opened}));
 }
 
@@ -4120,7 +4120,7 @@ TEST(mcp_get_diagnostics_answers_a_reader_who_cannot_write_the_tree_what_a_twin_
   CHECK_FALSE(h.tools.callTool("import_subgraph", parse(R"({"treeId":"t_twin","nodes":[{"id":"loop","label":"Loop"},
       {"id":"gone","label":"Gone"},{"id":"plain","label":"Plain","prerequisites":["ghost"]}]})"), h.actor).isError);
   h.trees.softDelete(TreeId{"t_gone"});
-  const std::size_t titleReads = h.trees.titleReads.size();
+  const std::size_t targetReads = h.trees.targetReads.size();
   h.trees.openedReads.clear();
   h.trees.openedReadsFail = true;
 
@@ -4141,7 +4141,7 @@ TEST(mcp_get_diagnostics_answers_a_reader_who_cannot_write_the_tree_what_a_twin_
     }
   }
   CHECK(h.trees.openedReads.empty());
-  CHECK_EQ(h.trees.titleReads.size(), titleReads);
+  CHECK_EQ(h.trees.targetReads.size(), targetReads);
 }
 
 // Following costs one read, and only where it can say something: none for a tree that holds no pointer, where

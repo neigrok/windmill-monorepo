@@ -281,6 +281,22 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     // the genesis stamp, which every live edit outranks.
     const Hlc plantedAt = existing ? genesis_ : Hlc{clock_->nowMs(), 0, std::string{TreeRoom::kServerActor}};
     GraphState state = LooseGraph(*data, plantedAt).exportState();
+    // A step that owns a subtree keeps the pointer its row holds (SPEC.md, Model, Legacy pointers). A document cannot
+    // tell an empty pointer from one it leaves out, so only a step it names another tree on is answered refused.
+    std::vector<NodeId> refused;
+    if (existing) {
+      std::map<NodeId, TreeId> sent;
+      for (const NodeSpec& node : data->nodes)
+        if (!node.opens.empty()) sent.emplace(node.id, node.opens);
+      refused = refusedPointers(sent, existing->subtrees);
+      for (NodeStateEntry& node : state.nodes) {
+        if (!existing->subtrees.count(node.id)) continue;
+        const auto held = std::find_if(existing->state.nodes.begin(), existing->state.nodes.end(),
+                                       [&](const NodeStateEntry& stored) { return stored.id == node.id; });
+        node.opens = held == existing->state.nodes.end() ? TreeId{} : held->opens;
+        node.opensAt = held == existing->state.nodes.end() ? Hlc{} : held->opensAt;
+      }
+    }
 
     LegendState legend;
     if (!data->kinds.empty()) legend = Legend(data->kinds, genesis_).exportState();
@@ -304,12 +320,25 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
       registry_->settleOwningSteps(access->root);
     }
 
-    // A document never sets the guide, so the answer states the one the tree holds.
-    if (existing) data->guide = existing->guide.value;
+    // A document never sets the guide, so the answer states the one the tree holds, and each step that owns a subtree
+    // opens it, as every read answers.
+    if (existing) {
+      data->guide = existing->guide.value;
+      for (NodeSpec& node : data->nodes)
+        if (const auto subtree = existing->subtrees.find(node.id); subtree != existing->subtrees.end())
+          node.opens = subtree->second;
+    }
     data->kinds = Legend(legend).kinds();
     Json::Value body(Json::objectValue);
     body["seq"] = static_cast<Json::Int64>(existing ? existing->head : 0);
     body["data"] = toJson(*data);
+    for (const NodeId& step : refused) {
+      Json::Value refusal(Json::objectValue);
+      refusal["node"] = step.str();
+      refusal["field"] = "opens";
+      refusal["code"] = kOwnsASubtree;
+      body["refused"].append(refusal);
+    }
     return jsonResponse(body);
   }();
   callback(reply);

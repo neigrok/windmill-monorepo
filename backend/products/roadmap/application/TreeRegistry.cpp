@@ -175,8 +175,8 @@ std::vector<TreeSummary> TreeRegistry::list(const UserId& owner) {
   return registrySummaries(loaded);
 }
 
-std::map<TreeId, std::string> TreeRegistry::titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) {
-  return trees_.titlesOwnedBy(owner, trees);
+std::map<TreeId, OpenedTree> TreeRegistry::pointerTargets(const UserId& owner, const std::set<TreeId>& trees) {
+  return trees_.pointerTargets(owner, trees);
 }
 
 std::map<TreeId, OpenedTree> TreeRegistry::openedFrom(const UserId& owner, const std::set<TreeId>& opened,

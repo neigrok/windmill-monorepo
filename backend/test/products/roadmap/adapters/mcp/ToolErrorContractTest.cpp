@@ -996,5 +996,5 @@ TEST(mcp_an_opens_that_is_no_tree_id_is_refused_by_its_path_and_a_null_is_absent
   CHECK_FALSE(h.call("import_subgraph", parse(R"({"nodes":[{"id":"c","opens":null}]})")).isError);
   CHECK_EQ(body(h.call("get_tree", parse(R"({"fields":["id","opens"]})")))["tree"]["nodes"],
            parse(R"([{"id":"a"},{"id":"b"},{"id":"c"}])"));
-  CHECK(h.trees.titleReads.empty());
+  CHECK(h.trees.targetReads.empty());
 }

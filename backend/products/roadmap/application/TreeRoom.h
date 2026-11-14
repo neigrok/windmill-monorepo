@@ -90,7 +90,8 @@ public:
   // nullopt means the frame lands nothing — a duplicate, or one whose every stamp the room already
   // holds — so it takes no seq, dirties nothing and is told to no one. Admits nothing on its own —
   // every door that can refuse asks admit() and unconfirmedBranches() first; a frame that removes an owning step its
-  // `branches` do not name is a fault (std::logic_error), refused before anything lands. Every owning step the frame
+  // `branches` do not name is a fault (std::logic_error), refused before anything lands. A pointer it writes on a step
+  // that owns a subtree is left out of what lands, as on every write path (refusedPointers). Every owning step the frame
   // leaves present or absent is recorded in the root's access before the frame is told.
   std::optional<Seq> joinSubgraph(const Subgraph& incoming, const UserId& actor);
 
@@ -115,7 +116,14 @@ public:
   // Whether importTree(incoming) at `nowMs` would land nothing, read off a copy of the room clock so
   // nothing moves: the preview a dry run answers.
   bool graftLandsNothing(const Graft& incoming, std::uint64_t nowMs) const {
-    return graftFrame(graph_, legend_, incoming, HlcClock(clock_).tick(nowMs)).landsNothing();
+    GraftFrame frame = graftFrame(graph_, legend_, incoming, HlcClock(clock_).tick(nowMs));
+    withoutOwnedPointers(frame.graph, subtrees_);
+    return frame.landsNothing();
+  }
+  // Of the pointers a write sent, by step, those this room refuses (wm::refusedPointers): every write path lands no
+  // pointer on a step that owns a subtree, so a door answers these `owns-a-subtree` and the rest of its write applies.
+  std::vector<NodeId> refusedPointers(const std::map<NodeId, TreeId>& sent) const {
+    return wm::refusedPointers(sent, subtrees_);
   }
 
   // A node write's kind read off this room's own legend, under the strand the write then takes, so a
@@ -176,7 +184,7 @@ public:
   std::optional<std::string> validate(const Command& command) const;
 
   std::variant<NodePatchPlan, std::string, KindRefusal> planNodePatches(const std::vector<NodePatch>& updates) const {
-    return wm::planNodePatches(graph_, legend_, updates);
+    return wm::planNodePatches(graph_, legend_, updates, subtrees_);
   }
   std::variant<EdgeChangePlan, std::string> planEdgeChanges(const EdgeChanges& changes) const {
     return wm::planEdgeChanges(graph_, changes);

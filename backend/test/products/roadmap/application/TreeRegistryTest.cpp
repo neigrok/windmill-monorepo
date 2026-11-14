@@ -743,7 +743,7 @@ TEST(list_names_for_each_tree_the_owners_other_trees_whose_steps_open_it_and_rea
   CHECK(openers == (std::map<std::string, std::vector<OpeningSteps>>{
                        {"t_target", {{tid("t_a"), 1}, {tid("t_b"), 2}}}, {"t_a", {}}, {"t_b", {}}, {"t_lonely", {}}}));
   CHECK(s.trees.openedReads.empty());
-  CHECK(s.trees.titleReads.empty());
+  CHECK(s.trees.targetReads.empty());
   CHECK(s.trees.aboveReads.empty());
   CHECK(s.trees.openingReads.empty());
 }

@@ -21,6 +21,19 @@ std::vector<NodeId> deletedBy(const std::vector<Command>& commands, const LooseG
   }
   return deleted;
 }
+
+// `commands` with no pointer written on a step of `owned`, the subtree each step owns, a batch's members among them: such
+// a step's pointer takes no write (SPEC.md, Model, Legacy pointers).
+std::vector<Command> withoutOwnedPointers(std::vector<Command> commands, const std::map<NodeId, TreeId>& owned) {
+  for (Command& command : commands) {
+    if (CreateNode* created = std::get_if<CreateNode>(&command); created && owned.count(created->id))
+      created->opens.reset();
+    if (AnnotateNode* annotated = std::get_if<AnnotateNode>(&command); annotated && owned.count(annotated->id))
+      annotated->opens.reset();
+    if (Batch* batch = std::get_if<Batch>(&command)) batch->commands = withoutOwnedPointers(std::move(batch->commands), owned);
+  }
+  return commands;
+}
 }
 
 bool RootAccess::admits(const std::vector<OwningStep>& path) const {
@@ -100,10 +113,13 @@ std::optional<Seq> TreeRoom::joinSubgraph(const Subgraph& incoming, const UserId
     guideInherited_ = false;  // the guide that won is a write of this tree's, not its source's
   }
   // What the room took of the frame: the frame as sent, each entry cut to the registers that landed. A register the
-  // room already holds changed nothing, so it marks no row to save, names no deed and is not sent on.
+  // room already holds changed nothing, so it marks no row to save, names no deed and is not sent on, and a step that
+  // owns a subtree takes no pointer.
+  GraphState arriving = incoming.graph;
+  withoutOwnedPointers(arriving, subtrees_);
   Subgraph landed = incoming;
   landed.branches.clear();  // a confirmation for this server, never sent on
-  landed.graph = graph_.join(incoming.graph);
+  landed.graph = graph_.join(arriving);
   landed.legend = legend_.join(incoming.legend);
   if (!titleTook) landed.title.reset();
   if (!guideTook) landed.guide.reset();
@@ -141,11 +157,12 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
                             const std::set<TreeId>& branches) {
   if (commands.empty()) return head_;  // nothing to apply mints no seq, logs no op, broadcasts nothing
   insistConfirmed(deletedBy(commands, graph_), branches);
+  const std::vector<Command> landing = withoutOwnedPointers(commands, subtrees_);
   Hlc stamp = clock_.tick(nowMs);  // one stamp for the whole frame, as a graft takes one
   std::string frameId = "srv-" + toString(stamp);  // unique: the clock mints monotone stamps
   appliedOpIds_.insert(frameId);
   VersionVector before = frontier(graph_.exportState(), legend_.exportState());
-  for (const Command& command : commands) merge(graph_, legend_, command, stamp);
+  for (const Command& command : landing) merge(graph_, legend_, command, stamp);
   unsaved_ = true;
   ++head_;
 
@@ -156,7 +173,7 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
   produced.intent = SubgraphIntent::live;
   // The op row is the whole frame: a lone command as itself, a batch as one Batch, so the feed
   // tells all of what this call did.
-  const Command deed = commands.size() == 1 ? commands.front() : Command{Batch{commands}};
+  const Command deed = landing.size() == 1 ? landing.front() : Command{Batch{landing}};
   pendingOps_.push_back(AppliedOp{head_, frameId, deed, stamp, actor});
   markDirty(produced.graph, produced.legend);  // the broadcast delta is exactly the write's footprint
   recordOwningSteps();
@@ -167,6 +184,7 @@ Seq TreeRoom::applyCommands(const std::vector<Command>& commands, std::uint64_t 
 std::optional<Seq> TreeRoom::importTree(const Graft& incoming, std::uint64_t nowMs, const UserId& actor) {
   Hlc at = clock_.tick(nowMs);  // one dominating stamp for the whole graft: the upsert and every removal
   GraftFrame landed = graftFrame(graph_, legend_, incoming, at);
+  withoutOwnedPointers(landed.graph, subtrees_);
   if (landed.landsNothing()) return std::nullopt;
   Subgraph frame;
   frame.treeId = id_;

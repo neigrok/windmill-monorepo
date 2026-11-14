@@ -32,6 +32,9 @@ std::string branchStandsCondition(std::string_view tree);
 // trees_parent_step as `owned`, else the tree its pointer names.
 std::string ownedSubtreeJoin(std::string_view step);
 std::string stepOpensColumn(std::string_view step);
+// That a pointer at the `trees` row `target` is valid, for a tree of `owner`'s, an SQL expression of the owner's id:
+// the row is a root, stands and is that owner's (SPEC.md, Model, Legacy pointers; OpenedTrees::pointsAt in memory).
+std::string pointerTargetCondition(std::string_view target, std::string_view owner);
 
 // Stores a tree's lattice as per-entry rows (tree_nodes / tree_edges / tree_kinds), so a save
 // upserts only the slice it is given. Each call borrows a connection from the shared pool for
@@ -48,7 +51,7 @@ public:
   // The statement behind openedFrom, with the owner as $1 and the trees it starts from as $2, a JSON array of ids.
   static std::string openedFromStatement();
   // The statement behind treesOpening, with the owner as $1 and the opened tree as $2.
-  static const char* treesOpeningStatement();
+  static std::string treesOpeningStatement();
   // The statement behind eachAccountsTrees: every account's standing trees, each with the trees its present steps open
   // and where each of those stands, account after account.
   static const char* accountsTreesStatement();
@@ -72,7 +75,7 @@ public:
   std::vector<OwnedTree> listOwnedBy(const UserId& owner) override;
   std::vector<ListedTree> listPublic() override;
   std::set<TreeId> listForkedSources(const UserId& owner) override;
-  std::map<TreeId, std::string> titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) override;
+  std::map<TreeId, OpenedTree> pointerTargets(const UserId& owner, const std::set<TreeId>& trees) override;
   std::map<TreeId, OpenedTree> openedFrom(const UserId& owner, const std::set<TreeId>& opened,
                                           std::optional<std::chrono::milliseconds> budget = std::nullopt) override;
   std::map<TreeId, TreeAbove> guidedTreesAbove(const UserId& owner, const TreeId& tree) override;

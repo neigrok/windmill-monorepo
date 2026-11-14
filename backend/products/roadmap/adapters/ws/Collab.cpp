@@ -393,6 +393,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   bool heldUnsaved = false;  // the frame landed in the room, whose save failed and is being retried
   std::optional<Json::Value> reject;  // absent while the write is still admissible
   std::vector<UnconfirmedBranch> unconfirmed;  // owning steps the frame would delete without naming their subtrees
+  std::vector<NodeId> refused;  // steps owning a subtree the frame sent a pointer that is not an echo of it
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
@@ -418,6 +419,12 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
       } else if (unconfirmed = room->unconfirmedBranches(incoming); !unconfirmed.empty()) {
         // Answered once the strand is released, with each branch's size.
       } else {
+        // Each pointer the frame stamps is the sender's word: one on a step that owns a subtree is answered refused, and
+        // the join lands none of them.
+        std::map<NodeId, TreeId> sent;
+        for (const NodeStateEntry& node : incoming.graph.nodes)
+          if (node.opensAt.isSet()) sent.emplace(node.id, node.opens);
+        refused = room->refusedPointers(sent);
         seq = room->joinSubgraph(incoming, principal.user);
         // Persist before the ack, so the ack attests durability or says what it cannot. A row gone under its live room
         // holds nothing: the room is retired, which drops its readers, and the frame answers as absent. A save that
@@ -448,8 +455,17 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   ack["treeId"] = treeId;
   ack["frameId"] = frameId;
   if (seq) ack["seq"] = static_cast<Json::Int64>(*seq);
+  else if (!refused.empty()) finishCurrentWriteRefusal(kOwnsASubtree);
   else finishCurrentWriteUnchanged();
   if (heldUnsaved) ack["unsaved"] = true;
+  // Names each step alone, never the subtree it owns: the rest of the frame landed, and the step still opens its subtree.
+  for (const NodeId& step : refused) {
+    Json::Value refusal(Json::objectValue);
+    refusal["node"] = step.str();
+    refusal["field"] = "opens";
+    refusal["code"] = kOwnsASubtree;
+    ack["refused"].append(refusal);
+  }
   send(conn, ack);
 }
 

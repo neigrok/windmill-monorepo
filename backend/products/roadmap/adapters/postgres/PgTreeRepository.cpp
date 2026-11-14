@@ -56,6 +56,13 @@ std::string ownedSubtreeJoin(std::string_view step) {
 
 std::string stepOpensColumn(std::string_view step) { return "coalesce(owned.id, " + std::string{step} + ".opens)"; }
 
+std::string pointerTargetCondition(std::string_view target, std::string_view owner) {
+  const std::string t{target};
+  // A root stands while its own row does, so no walk up is needed.
+  return "(" + t + ".parent_tree IS NULL AND " + t + ".deleted_at IS NULL AND " + t + ".owner_id = " + std::string{owner} +
+         ")";
+}
+
 namespace {
 
 // Add-biased presence, computed by the writer so reads never compare HLC text in SQL.
@@ -556,26 +563,30 @@ std::set<TreeId> PgTreeRepository::listForkedSources(const UserId& owner) {
   return sources;
 }
 
-std::map<TreeId, std::string> PgTreeRepository::titlesOwnedBy(const UserId& owner, const std::set<TreeId>& trees) {
+std::map<TreeId, OpenedTree> PgTreeRepository::pointerTargets(const UserId& owner, const std::set<TreeId>& trees) {
   if (trees.empty()) return {};
   Json::Value ids(Json::arrayValue);
   for (const TreeId& tree : trees) ids.append(tree.str());
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT id, title FROM trees WHERE deleted_at IS NULL AND owner_id = $1::uuid "
-      "AND id IN (SELECT jsonb_array_elements_text($2::jsonb))",
+      "SELECT t.id, t.parent_tree, t.parent_step FROM trees t WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid "
+      "AND t.id IN (SELECT jsonb_array_elements_text($2::jsonb)) AND " + branchStandsCondition("t"),
       owner.str(), dump(ids));
 
-  std::map<TreeId, std::string> titles;
-  for (const auto& row : rows) titles.emplace(TreeId{row["id"].as<std::string>()}, row["title"].as<std::string>());
-  return titles;
+  std::map<TreeId, OpenedTree> targets;
+  for (const auto& row : rows) {
+    OpenedTree& target = targets[TreeId{text(row, "id")}];
+    if (!row["parent_tree"].is_null())
+      target.parent = OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}};
+  }
+  return targets;
 }
 
 std::string PgTreeRepository::openedFromStatement() {
   // One statement: the counts and the marks are one snapshot, and no node row leaves the database. A step opens the
-  // subtree it owns, found through trees_parent_step, else the tree its pointer names; a tree stands while its own row
-  // does and its branch stands, the path read only for a subtree.
+  // subtree it owns, found through trees_parent_step, else the tree its pointer names, which the walk follows only while
+  // that pointer is valid; a tree stands while its own row does and its branch stands, the path read only for a subtree.
   const std::string opens = stepOpensColumn("n");
   const std::string owned = ownedSubtreeJoin("n") + " ";
   const std::string rootStands = branchStandsCondition("t");
@@ -588,20 +599,22 @@ std::string PgTreeRepository::openedFromStatement() {
       "  UNION "
       "  SELECT t.id, t.title, t.parent_tree, t.parent_step FROM reached r "
       // Each LATERAL runs once per row before it, so each table is read by its key whatever the planner expects.
-      "  CROSS JOIN LATERAL (SELECT DISTINCT " + opens + " AS opens FROM tree_nodes n " + owned +
-      "                      WHERE n.tree_id = r.id AND n.present) o "
+      "  CROSS JOIN LATERAL (SELECT DISTINCT " + opens + " AS opens, owned.id IS NOT NULL AS owned FROM tree_nodes n " +
+      owned + "                      WHERE n.tree_id = r.id AND n.present) o "
       "  CROSS JOIN LATERAL (SELECT s.id, s.title, s.owner_id, s.deleted_at, s.parent_tree, s.parent_step, s.root_tree "
       "                      FROM trees s "
       "                      WHERE s.id = o.opens LIMIT 1) t "
       "  WHERE t.deleted_at IS NULL AND t.owner_id = $1::uuid AND " + rootStands +
+      "    AND (o.owned OR " + pointerTargetCondition("t", "$1::uuid") + ")"
       ") "
-      // A row is a tree and one target: '' for its nodes that open none, NULL for a tree with no node. `latest` is
-      // the stamp and receipt instant of the latest of the marks counted that carry a stamp, in the order the domain
-      // compares stamps: a row written before marks were stamped counts, and is never the latest.
-      "SELECT r.id, " + treeNameColumn("r") + " AS title, c.opens, c.nodes, c.marked, "
-      "c.latest[1][1] AS latest_hlc, c.latest[1][2] AS latest_ms "
+      // A row is a tree and one target, the steps that own it apart from the ones whose pointer names it: '' for its
+      // nodes that open none, NULL for a tree with no node. `latest` is the stamp and receipt instant of the latest of the
+      // marks counted that carry a stamp, in the order the domain compares stamps: a row written before marks were
+      // stamped counts, and is never the latest.
+      "SELECT r.id, " + treeNameColumn("r") + " AS title, r.parent_tree, r.parent_step, c.opens, c.owned, c.nodes, "
+      "c.marked, c.latest[1][1] AS latest_hlc, c.latest[1][2] AS latest_ms "
       "FROM reached r LEFT JOIN LATERAL ("
-      "  SELECT " + opens + " AS opens, count(*) AS nodes, count(m.node_id) AS marked, "
+      "  SELECT " + opens + " AS opens, owned.id IS NOT NULL AS owned, count(*) AS nodes, count(m.node_id) AS marked, "
       "         (array_agg(ARRAY[m.hlc, m.updated_ms::text] "
       "                    ORDER BY m.stamp_ms DESC, m.stamp_counter DESC, m.hlc COLLATE \"C\" DESC) "
       "            FILTER (WHERE m.node_id IS NOT NULL AND m.hlc NOT IN ('', '0:0:'))) AS latest "
@@ -612,7 +625,7 @@ std::string PgTreeRepository::openedFromStatement() {
       // node_progress_user_tree), so whichever the planner takes, it reads this reader's marks on this tree alone.
       "    WHERE p.tree_id = r.id AND p.user_id = $1::text AND p.status = 'complete'"
       "  ) m ON m.node_id = n.node_id "
-      "  WHERE n.tree_id = r.id AND n.present GROUP BY " + opens +
+      "  WHERE n.tree_id = r.id AND n.present GROUP BY " + opens + ", owned.id IS NOT NULL"
       ") c ON true";
 }
 
@@ -638,6 +651,8 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
   for (const auto& row : rows) {
     OpenedTree& tree = trees[TreeId{row["id"].as<std::string>()}];
     tree.title = row["title"].as<std::string>();
+    if (!row["parent_tree"].is_null())
+      tree.parent = OwningStep{TreeId{text(row, "parent_tree")}, NodeId{text(row, "parent_step")}};
     if (row["opens"].is_null()) continue;
     Pointers counted{row["nodes"].as<int>(), row["marked"].as<int>()};
     if (!row["latest_hlc"].is_null())
@@ -650,7 +665,7 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
       tree.latest = counted.latest;
       continue;
     }
-    tree.pointers.emplace(target, counted);
+    (row["owned"].as<bool>() ? tree.subtrees : tree.pointers).emplace(target, counted);
   }
   return trees;
 }
@@ -658,14 +673,14 @@ std::map<TreeId, OpenedTree> PgTreeRepository::openedFrom(const UserId& owner, c
 std::string PgTreeRepository::guidedTreesAboveStatement() {
   // Keyed on the owner's own standing trees, so its cost does not grow with the pointers other accounts plant at one. A
   // subtree stands while its branch does, which is read for a subtree alone.
-  return "WITH RECURSIVE owned(id, guided, parent_tree) AS MATERIALIZED ("
-         "  SELECT t.id, t.guide <> '', t.parent_tree FROM trees t WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL "
-         "  AND " + branchStandsCondition("t") +
+  return "WITH RECURSIVE owned(id, guided, parent_tree, deleted_at, owner_id) AS MATERIALIZED ("
+         "  SELECT t.id, t.guide <> '', t.parent_tree, t.deleted_at, t.owner_id FROM trees t "
+         "  WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND " + branchStandsCondition("t") +
          "), "
          // What lies directly below each tree: the subtrees it owns, off the rows already read, and each root its steps
          // point at. The LATERAL runs once per owned tree, so each tree's pointers are read by its key whatever the
          // planner expects; tree_nodes_pointers_idx serves only a scan that states its predicate. A step that owns a
-         // subtree opens it and no other tree, and a pointer leads anywhere only at another of the owner's standing roots.
+         // subtree opens it and no other tree, and a pointer leads only where it is valid: at a standing root of the owner's.
          "below(tree, opens) AS MATERIALIZED ("
          "  SELECT o.parent_tree, o.id FROM owned o WHERE o.parent_tree IN (SELECT parent.id FROM owned parent) "
          "  UNION ALL "
@@ -674,7 +689,7 @@ std::string PgTreeRepository::guidedTreesAboveStatement() {
          "                      WHERE n.tree_id = o.id AND n.present AND n.opens <> '' "
          "                        AND NOT EXISTS (SELECT 1 FROM trees owning WHERE owning.parent_tree = n.tree_id "
          "                                        AND owning.parent_step = n.node_id AND owning.deleted_at IS NULL)) p "
-         "  WHERE p.opens IN (SELECT target.id FROM owned target WHERE target.parent_tree IS NULL)"
+         "  WHERE p.opens IN (SELECT target.id FROM owned target WHERE " + pointerTargetCondition("target", "$1::uuid") + ")"
          "), "
          "reached(id, distance) AS ("
          "  SELECT o.id, 0 FROM owned o WHERE o.id = $2 "
@@ -706,15 +721,19 @@ std::map<TreeId, TreeAbove> PgTreeRepository::guidedTreesAbove(const UserId& own
   return above;
 }
 
-const char* PgTreeRepository::treesOpeningStatement() {
+std::string PgTreeRepository::treesOpeningStatement() {
   // Keyed on the owner's own trees. The LATERAL runs once per standing one and stops at its first node that opens $2, so
   // each tree's pointers are read by its key on tree_nodes_pointers_idx, which serves only a scan that states its
-  // predicate, and never through tree_nodes_opens_idx, where other accounts' pointers at $2 sit too.
+  // predicate, and never through tree_nodes_opens_idx, where other accounts' pointers at $2 sit too. A step that owns a
+  // subtree opens it, whatever its pointer names.
   return "SELECT t.id FROM trees t "
          "CROSS JOIN LATERAL (SELECT 1 FROM tree_nodes n "
-         "                    WHERE n.tree_id = t.id AND n.present AND n.opens <> '' AND n.opens = $2 LIMIT 1) o "
+         "                    WHERE n.tree_id = t.id AND n.present AND n.opens <> '' AND n.opens = $2 "
+         "                      AND NOT EXISTS (SELECT 1 FROM trees owning WHERE owning.parent_tree = n.tree_id "
+         "                                      AND owning.parent_step = n.node_id AND owning.deleted_at IS NULL) LIMIT 1) o "
          "WHERE t.owner_id = $1::uuid AND t.deleted_at IS NULL AND t.id <> $2 "
-         "  AND EXISTS (SELECT 1 FROM trees opened WHERE opened.id = $2 AND opened.owner_id = $1::uuid) "
+         "  AND EXISTS (SELECT 1 FROM trees opened WHERE opened.id = $2 AND " +
+         pointerTargetCondition("opened", "$1::uuid") + ") "
          "ORDER BY t.id COLLATE \"C\"";
 }
 
@@ -847,7 +866,7 @@ std::optional<SubtreeSite> PgTreeRepository::subtreeSite(const TreeId& parent, c
   pqxx::result rows = txn.exec_params(
       "SELECT p.root_tree, p.depth, p.head_seq, c.id AS owned, c.root_tree AS owned_root, c.depth AS owned_depth, "
       "c.head_seq AS owned_seq, "
-      "EXISTS (SELECT 1 FROM trees o WHERE o.id = $3 AND o.deleted_at IS NULL AND o.owner_id = p.owner_id) "
+      "EXISTS (SELECT 1 FROM trees o WHERE o.id = $3 AND " + pointerTargetCondition("o", "p.owner_id") + ") "
       "AS opens_a_tree, "
       "EXISTS (SELECT 1 FROM trees t WHERE t.id = $4) AS proposed_taken "
       "FROM trees p LEFT JOIN trees c ON c.parent_tree = p.id AND c.parent_step = $2 "

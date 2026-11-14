@@ -338,7 +338,7 @@ TEST(scoped_tool_host_refuses_the_tree_a_node_opens_wherever_a_tend_names_it_and
   const StoredTree before = h.trees.byId["t"];
   const std::size_t broadcasts = h.bus.subgraphBroadcasts.size();
   const std::size_t ops = h.ops.byTree["t"].size();
-  const std::size_t titleReads = h.trees.titleReads.size();
+  const std::size_t targetReads = h.trees.targetReads.size();
   std::vector<WriteCompletion> completions;
   installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
 
@@ -362,7 +362,7 @@ TEST(scoped_tool_host_refuses_the_tree_a_node_opens_wherever_a_tend_names_it_and
   CHECK(h.trees.byId["t"] == before);
   CHECK_EQ(h.bus.subgraphBroadcasts.size(), broadcasts);
   CHECK_EQ(h.ops.byTree["t"].size(), ops);
-  CHECK_EQ(h.trees.titleReads.size(), titleReads);
+  CHECK_EQ(h.trees.targetReads.size(), targetReads);
   CHECK(scoped.createdNodeIds().empty());
   std::vector<std::string> observed;
   for (const WriteCompletion& completion : completions)

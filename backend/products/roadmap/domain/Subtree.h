@@ -1,5 +1,6 @@
 #pragma once
 
+#include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/Ids.h"
 
 #include <map>
@@ -101,6 +102,33 @@ inline std::vector<UnconfirmedBranch> unconfirmedBranches(const std::vector<Node
   std::vector<UnconfirmedBranch> named;
   for (const auto& [step, subtree] : unconfirmed) named.push_back(UnconfirmedBranch{step, subtree});
   return named;
+}
+
+// The legacy pointer (SPEC.md, Model, Legacy pointers). A step that owns a subtree opens it whatever its pointer holds, and
+// its pointer takes no write. A pointer write a caller sent such a step is refused `owns-a-subtree`, the rest of the
+// write applied, unless it is an echo of the step's own subtree. A new pointer at a subtree, which leads nowhere, is
+// refused `opens-a-subtree` at the door that judges pointer targets (MCP).
+inline constexpr char kOwnsASubtree[] = "owns-a-subtree";
+inline constexpr char kOpensASubtree[] = "opens-a-subtree";
+
+// Of the pointers a write sent, by step, those on a step that owns a subtree (`owned`, by step, present or deleted)
+// naming another tree than that subtree, an empty one included, in step order.
+inline std::vector<NodeId> refusedPointers(const std::map<NodeId, TreeId>& sent, const std::map<NodeId, TreeId>& owned) {
+  std::vector<NodeId> refused;
+  for (const auto& [step, tree] : sent)
+    if (const auto subtree = owned.find(step); subtree != owned.end() && subtree->second != tree) refused.push_back(step);
+  return refused;
+}
+
+// `graph` with no pointer written on a step of `owned`, an echo of its subtree included; an entry left with nothing to
+// write goes.
+inline void withoutOwnedPointers(GraphState& graph, const std::map<NodeId, TreeId>& owned) {
+  for (NodeStateEntry& node : graph.nodes) {
+    if (!owned.count(node.id)) continue;
+    node.opens = TreeId{};
+    node.opensAt = Hlc{};
+  }
+  std::erase_if(graph.nodes, [](const NodeStateEntry& node) { return node == NodeStateEntry{.id = node.id}; });
 }
 
 // Why a subtree was not created. Each is expected: a line, never an Issue. savePending: the parent's room holds a

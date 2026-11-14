@@ -317,9 +317,8 @@ TEST(pg_a_save_onto_a_soft_deleted_tree_writes_nothing_and_answers_false) {
   CHECK_EQ(row[0]["nodes"].as<long long>(), 0LL);
 }
 
-// What a node may open and what a read may name: only the owner's trees that stand, whatever the ids
-// asked after, in one read.
-TEST(pg_titles_owned_by_answers_the_owners_standing_trees_alone_for_every_id_asked_in_one_call) {
+// What a node's pointer may be judged at: only the owner's trees that stand, whatever the ids asked after, in one read.
+TEST(pg_pointer_targets_answers_the_owners_standing_trees_alone_for_every_id_asked_in_one_call) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   const TreeId oddlyNamed{std::string("t_pgtest_opens,\"odd\" {id}")};
@@ -349,11 +348,10 @@ TEST(pg_titles_owned_by_answers_the_owners_standing_trees_alone_for_every_id_ask
   }
   const std::set<TreeId> asked{kTree, oddlyNamed, retired, theirs, nobodys, absent};
 
-  CHECK_EQ(trees.titlesOwnedBy(kSam, asked),
-           (std::map<TreeId, std::string>{{kTree, "Sam's first"}, {oddlyNamed, "Sam's \"second\", with commas"}}));
-  CHECK_EQ(trees.titlesOwnedBy(kEve, asked), (std::map<TreeId, std::string>{{theirs, "Eve's"}}));
-  CHECK_EQ(trees.titlesOwnedBy(kSam, {theirs, nobodys, retired, absent}), (std::map<TreeId, std::string>{}));
-  CHECK_EQ(trees.titlesOwnedBy(kSam, {}), (std::map<TreeId, std::string>{}));
+  CHECK(trees.pointerTargets(kSam, asked) == (std::map<TreeId, OpenedTree>{{kTree, {}}, {oddlyNamed, {}}}));
+  CHECK(trees.pointerTargets(kEve, asked) == (std::map<TreeId, OpenedTree>{{theirs, {}}}));
+  CHECK(trees.pointerTargets(kSam, {theirs, nobodys, retired, absent}).empty());
+  CHECK(trees.pointerTargets(kSam, {}).empty());
   clear();
 }
 
@@ -1090,9 +1088,10 @@ TEST(pg_a_strangers_flood_of_pointers_at_a_tree_changes_no_answer_and_the_walk_s
   clear();
 }
 
-// The statement a removal asks: the owner's other standing trees with a present step that opens the tree, standing or
-// not, and nothing for a tree that is not theirs. It is keyed on the owner's trees, so the pointers another account
-// plants at the tree are neither answered nor read, and each tree's steps are read through tree_nodes_pointers_idx.
+// The statement a removal asks: the owner's other standing trees with a present step whose pointer leads to the tree, and
+// nothing for a tree a pointer is not valid at — someone else's, one that does not stand, or a subtree. A step that owns a
+// subtree opens that one alone. It is keyed on the owner's trees, so the pointers another account plants at the tree are
+// neither answered nor read, and each tree's steps are read through tree_nodes_pointers_idx.
 TEST(pg_trees_opening_answers_the_owners_other_trees_whose_present_steps_open_a_tree_and_reads_no_one_elses_pointers) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -1135,14 +1134,21 @@ TEST(pg_trees_opening_answers_the_owners_other_trees_whose_present_steps_open_a_
   }
   plant("theirs", kEve, {"target"});
   plant("eves", kEve, {});
+  plant("owning", kSam, {"target", "owning_sub"});
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO trees (id, head_seq, parent_tree, parent_step) VALUES ($1, 0, $2, 's0')",
+                    id("owning_sub").str(), id("owning").str());
+    txn.commit();
+  }
 
   const std::vector<TreeId> openers{id("one"), id("two")};
   CHECK(trees.treesOpening(kSam, id("target")) == openers);
   CHECK(trees.treesOpening(kEve, id("target")) == std::vector<TreeId>{});
   CHECK(trees.treesOpening(kSam, id("eves")) == std::vector<TreeId>{});
   CHECK(trees.treesOpening(kSam, id("absent")) == std::vector<TreeId>{});
-  trees.softDelete(id("target"));
-  CHECK(trees.treesOpening(kSam, id("target")) == openers);
+  CHECK(trees.treesOpening(kSam, id("owning_sub")) == std::vector<TreeId>{});
 
   // What each table gave the statement, filtered rows included, with sequential scans off so a table of a few pages
   // is not rightly read whole; and every index it read tree_nodes through.
@@ -1197,6 +1203,8 @@ TEST(pg_trees_opening_answers_the_owners_other_trees_whose_present_steps_open_a_
   const Read after = explain();
   CHECK(after.rows == before.rows);
   CHECK(after.nodeIndexes == before.nodeIndexes);
+  trees.softDelete(id("target"));
+  CHECK(trees.treesOpening(kSam, id("target")) == std::vector<TreeId>{});
   clear();
 }
 

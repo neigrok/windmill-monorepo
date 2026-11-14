@@ -20,7 +20,7 @@ ProgressReceipt ProgressService::mark(const TreeId& tree, const std::map<NodeId,
   ProgressReceipt receipt;
   if (writes.empty()) return receipt;
   const OpenedTrees standing(trees_.openedFrom(user, treesOpenedBy(pointers)));
-  const std::set<NodeId> following = standing.following(pointers);
+  const std::set<NodeId> following = standing.following(tree, pointers);
   std::vector<ProgressUpdate> updates;
   for (const ProgressWrite& write : writes)
     if (!following.count(write.node)) updates.push_back({write.node, write.status, write.outOfOrder, write.at});
@@ -32,7 +32,7 @@ ProgressReceipt ProgressService::mark(const TreeId& tree, const std::map<NodeId,
   }
   const std::vector<ProgressWritten> written = repo_.setStatuses(tree, user, updates, stampedBy, receivedAtMs);
   // One read after the commit, so completing a subtree out of dependency order misreports no advisory.
-  const std::set<NodeId> completed = standing.followed(pointers, repo_.load(tree, user)).completed;
+  const std::set<NodeId> completed = standing.followed(tree, pointers, repo_.load(tree, user)).completed;
   auto did = written.begin();
   for (const ProgressWrite& write : writes) {
     if (following.count(write.node)) {
