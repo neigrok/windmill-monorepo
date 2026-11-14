@@ -31,19 +31,40 @@ else
 fi
 candidate=(docker compose --env-file "$candidate_env" -f docker-compose.next.yml)
 "${candidate[@]}" config -q
+# Every service but the subscription one is the backend. It is pulled and brought up first and on its own, so
+# nothing about the subscription service, its image, its database or its health, keeps the backend from deploying.
+services=$("${candidate[@]}" config --services)
+backend=()
+while read -r service; do
+  [[ "$service" == subscriptions ]] || backend+=("$service")
+done <<< "$services"
 # Images no container uses come back from their registry on demand; pruning them before the pull keeps the
 # disk to the live images plus the candidate. Volumes are never pruned.
 docker image prune -af > /dev/null
 docker builder prune -af > /dev/null
-"${candidate[@]}" pull
+"${candidate[@]}" pull "${backend[@]}"
 python3 "$(dirname "$0")/sync_compatibility.py" preflight "$candidate_env" sync-cutover.json "$verification/sync.json"
-# The subscription service is pinned to the content ID it was pulled as, like the server and the migration.
-subscriptions_image=$("${candidate[@]}" config --format json |
-  python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["subscriptions"]["image"])')
-subscriptions_id=$(docker image inspect --format '{{.Id}}' "$subscriptions_image")
-if [[ ! "$subscriptions_id" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-  printf 'FAIL candidate subscription image has no immutable content ID\n' >&2
-  exit 1
+# The subscription service runs the image built for this commit, pinned to the content ID it was pulled as, like
+# the server and the migration. A commit that has none, as an image built before Backend CI published the service,
+# keeps the image the live service runs: its container keeps it on the host through the prune.
+if "${candidate[@]}" pull subscriptions; then
+  subscriptions_image=$("${candidate[@]}" config --format json |
+    python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["subscriptions"]["image"])')
+  subscriptions_id=$(docker image inspect --format '{{.Id}}' "$subscriptions_image")
+  if [[ ! "$subscriptions_id" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+    printf 'FAIL candidate subscription image has no immutable content ID\n' >&2
+    exit 1
+  fi
+else
+  subscriptions_id=
+  [[ ! -f .env ]] || subscriptions_id=$(sed -n 's/^SUBSCRIPTIONS_IMAGE=//p' .env)
+  if [[ ! "$subscriptions_id" =~ ^sha256:[a-f0-9]{64}$ ]] ||
+     ! docker image inspect --format '{{.Id}}' "$subscriptions_id" > /dev/null 2>&1; then
+    printf 'FAIL no subscription service image could be pulled for this commit, and none runs here to keep\n' >&2
+    exit 1
+  fi
+  printf 'NOTE subscription service: no image could be pulled for this commit, so it keeps the one it runs, %s\n' \
+    "$subscriptions_id"
 fi
 sed '/^SUBSCRIPTIONS_IMAGE=/d' "$candidate_env" > "$verification/candidate.env"
 printf 'SUBSCRIPTIONS_IMAGE=%s\n' "$subscriptions_id" >> "$verification/candidate.env"
@@ -67,13 +88,7 @@ if docker compose exec -T caddy cat /etc/caddy/Caddyfile > "$verification/Caddyf
    cmp -s Caddyfile "$verification/Caddyfile.before"; then
   caddy_changed=0
 fi
-# Everything but the subscription service comes up here. That one waits on its database's provisioning and
-# starts last, below, so neither of them can keep the backend from starting.
-services=$(docker compose config --services)
-backend=()
-while read -r service; do
-  [[ "$service" == subscriptions ]] || backend+=("$service")
-done <<< "$services"
+# The subscription service waits on its database's provisioning and starts last, below.
 docker compose up -d --pull never "${backend[@]}"
 # A single-file bind mount retains its inode across mv. Recreate to bind the new file.
 if [[ "$caddy_changed" == 1 ]]; then

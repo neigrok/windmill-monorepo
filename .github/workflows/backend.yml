@@ -3,7 +3,7 @@ name: Backend CI/CD
 # services/embedder and services/subscriptions ship from here as images under the SAME package, tagged
 # `embedder-<sha>` and `subscriptions-<sha>`: one package means one visibility setting, the host pulls
 # with no login, and every commit this deploys has all three images. The subscription service's own
-# checks run in subscriptions.yml.
+# checks are subscriptions.yml, which this workflow calls: a red check publishes and deploys nothing.
 
 on:
   push:
@@ -24,6 +24,7 @@ on:
       - 'packages/api-contract/sync/reference/core/**'
       - '.github/workflows/backend.yml'
       - '.github/workflows/deploy.yml'
+      - '.github/workflows/subscriptions.yml'
       - '!backend/**/*.md'
       - '!services/embedder/**/*.md'
       - '!services/subscriptions/**/*.md'
@@ -47,6 +48,7 @@ on:
       - 'web/src/platform/sync/**'
       - '.github/workflows/backend.yml'
       - '.github/workflows/deploy.yml'
+      - '.github/workflows/subscriptions.yml'
       - '!backend/**/*.md'
       - '!services/embedder/**/*.md'
       - '!services/subscriptions/**/*.md'
@@ -370,8 +372,13 @@ jobs:
       - name: The one-shot never turns the backend away
         run: python3 backend/test/deploy/subscriptions_db_test.py -v
 
+  # The subscription service's own checks, the ones its pull requests run: its image below is published only once
+  # they pass.
+  subscriptions:
+    uses: ./.github/workflows/subscriptions.yml
+
   build-and-push:
-    needs: [test, postgres, subscriptions-db]
+    needs: [test, postgres, subscriptions-db, subscriptions]
     if: github.event_name != 'pull_request' && !inputs.verify_live_coach && !inputs.verify_live_anonymous_coach
     runs-on: ubuntu-latest
     permissions:

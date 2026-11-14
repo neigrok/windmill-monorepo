@@ -40,8 +40,12 @@ def compose(state, arguments):
         command = command[2:]
     if command == ["version"]:
         return 1 if state.get("composeUnavailable") else 0, ""
-    if command in (["config", "-q"], ["pull"]):
-        return 1 if state.get("failAt") == command[0] else 0, ""
+    if command == ["config", "-q"]:
+        return 1 if state.get("failAt") == "config" else 0, ""
+    if command == ["pull", "subscriptions"]:
+        return 1 if state.get("subscriptionsImageMissing") else 0, ""
+    if command[0] == "pull":
+        return 1 if state.get("failAt") == "pull" else 0, ""
     if command == ["config", "--format", "json"]:
         env = dict(line.split("=", 1) for line in Path(environment).read_text().splitlines() if "=" in line)
         return 0, json.dumps({"services": {"server": server_config(environment),
@@ -128,8 +132,12 @@ def docker_shim(arguments):
         status, output = 0, health.pop(0) if len(health) > 1 else health[0]
     elif arguments == ["inspect", "--format", "{{.Image}}", "subscriptions-container"]:
         status, output = 0, state.get("subscriptionsRunningId", "sha256:" + "b" * 64)
+    elif arguments[:4] == ["image", "inspect", "--format", "{{.Id}}"] and arguments[4] in state.get("absentImages", []):
+        status, output = 1, "Error: No such image: " + arguments[4]
     elif arguments[:4] == ["image", "inspect", "--format", "{{.Id}}"] and ":subscriptions-" in arguments[4]:
         status, output = 0, state.get("subscriptionsImageId", "sha256:" + "b" * 64)
+    elif arguments[:4] == ["image", "inspect", "--format", "{{.Id}}"] and arguments[4].startswith("sha256:"):
+        status, output = 0, arguments[4]
     elif arguments[:4] == ["image", "inspect", "--format", "{{.Id}}"]:
         status, output = 0, state.get("candidateImageId", "sha256:" + "a" * 64)
     elif arguments in (["image", "prune", "-af"], ["builder", "prune", "-af"]):
@@ -353,13 +361,14 @@ class DeployProductionTest(unittest.TestCase):
             ["compose", "version"],
             ["compose", "--env-file", ".env.next", "-f", "docker-compose.next.yml", "config", "-q"]])
 
-    def test_a_candidate_whose_images_fail_to_pull_changes_nothing_live(self):
+    def test_a_candidate_whose_backend_images_fail_to_pull_changes_nothing_live(self):
         self.assert_rejected_candidate_changes_nothing_live("pull", [
             ["compose", "version"],
             ["compose", "--env-file", ".env.next", "-f", "docker-compose.next.yml", "config", "-q"],
+            ["compose", "--env-file", ".env.next", "-f", "docker-compose.next.yml", "config", "--services"],
             ["image", "prune", "-af"],
             ["builder", "prune", "-af"],
-            ["compose", "--env-file", ".env.next", "-f", "docker-compose.next.yml", "pull"]])
+            ["compose", "--env-file", ".env.next", "-f", "docker-compose.next.yml", "pull"] + BACKEND_UP[5:]])
 
     def test_a_recreated_caddy_still_serving_the_old_file_fails_the_deploy(self):
         self.state(staleMount=True)
@@ -457,6 +466,31 @@ class DeployProductionTest(unittest.TestCase):
                 self.assertEqual({command[0] if command[0] == "inspect" else " ".join(command)
                                   for command in commands[commands.index(SUBSCRIPTIONS_UP) + 1:]},
                                  set() if state.get("subscriptionsUpFails") else {"compose ps -aq subscriptions", "inspect"})
+
+    def test_a_commit_without_a_subscription_image_keeps_the_image_the_live_service_runs(self):
+        live = "sha256:" + "c" * 64
+        (self.work / ".env").write_text("IMAGE_TAG=old\nPOSTGRES_PASSWORD=live-secret\nSUBSCRIPTIONS_IMAGE=" + live + "\n")
+        self.state(subscriptionsImageMissing=True, subscriptionsRunningId=live)
+        result = self.deploy()
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0,
+            "NOTE subscription service: no image could be pulled for this commit, so it keeps the one it runs, " + live +
+            "\n" + PROVISIONED + "\n" + DEPLOYED, ""))
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret"
+                                        "\nSERVER_IMAGE=sha256:" + "a" * 64 + "\nSUBSCRIPTIONS_IMAGE=" + live + "\n",
+                                        "docker-compose.yml": "# candidate compose\n",
+                                        "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
+                                        "Caddyfile": "# candidate Caddyfile\n"})
+        commands = self.state()["commands"]
+        self.assertLess(commands.index(["image", "inspect", "--format", "{{.Id}}", live]), commands.index(BACKEND_UP))
+        self.assertIn(SUBSCRIPTIONS_UP, commands)
+
+    def test_a_commit_without_a_subscription_image_is_refused_where_no_service_runs_to_keep(self):
+        for live, absent in (("", []), ("SUBSCRIPTIONS_IMAGE=sha256:" + "c" * 64 + "\n", ["sha256:" + "c" * 64])):
+            with self.subTest(live=live):
+                (self.work / ".env").write_text("IMAGE_TAG=old\nPOSTGRES_PASSWORD=live-secret\n" + live)
+                self.state(subscriptionsImageMissing=True, absentImages=absent, commands=[])
+                self.assert_preflight_refusal(
+                    "no subscription service image could be pulled for this commit, and none runs here to keep")
 
     def test_a_candidate_subscription_image_without_a_content_id_changes_nothing_live(self):
         self.state(subscriptionsImageId="PRIVATE_DEPLOY_SECRET")

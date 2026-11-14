@@ -583,7 +583,8 @@ The `Dockerfile` builds on the `rust` image of the same release and fails when t
 ## Checks
 
 `.github/workflows/subscriptions.yml` runs these on every change under `services/subscriptions/`
-other than Markdown, and on changes to the workflow. Locally, from `services/subscriptions/`:
+other than Markdown, and on changes to the workflow. Backend CI calls it as well, and publishes the
+image only once it passes. Locally, from `services/subscriptions/`:
 
 ```sh
 ./check-dependencies.sh

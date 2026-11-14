@@ -144,10 +144,12 @@ must be public.
 - **Logs**: `cd ~/windmill && docker compose logs -f server` (or `caddy`, `db`, `embedder`, `subscriptions`).
 - **Status**: `docker compose ps`.
 - **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. The
-  server, `embedder-<sha>` and `subscriptions-<sha>` images must exist, and the server image must contain
-  its compatibility manifest. An image built before Backend CI published the subscription service has no
-  `subscriptions-<sha>` beside it, so a rollback to it is refused at the pull, before anything changes.
-  Only the images go back: the run renders `.env` and ships `docker-compose.yml`, the Caddyfile and
+  server and `embedder-<sha>` images must exist, and the server image must contain its compatibility
+  manifest. A commit with no `subscriptions-<sha>`, as one built before Backend CI published the service,
+  deploys its backend and keeps the image the live subscription service runs, printing `NOTE subscription
+  service: no image could be pulled for this commit, so it keeps the one it runs, sha256:…`. On a host where
+  no subscription service runs, it is refused before anything changes with `FAIL no subscription service
+  image could be pulled for this commit, and none runs here to keep`. Only the images go back: the run renders `.env` and ships `docker-compose.yml`, the Caddyfile and
   `deploy-production.sh` from the branch it is dispatched on (`main` only), and `migrate` applies the
   selected image's own `db/schema.sql`.
   A lower minimum is a compatibility change too and requires exact manual acknowledgement. That
@@ -181,6 +183,13 @@ must be public.
   systemd journal to 200 MB. Neither touches volumes, containers or `~/windmill/backups`.
 
 ## What a deploy does to the running server
+
+Every deploy replaces the server's container, a commit that changes only `services/subscriptions`
+included: Backend CI builds and deploys every image for each commit it runs on. While the old container
+stops and the new one starts, Caddy answers 502 to a request the server does not take. A deploy that
+ships a changed Caddyfile also recreates Caddy, which refuses connections until it listens again. A
+rehearsal of such a deploy on a stand-in server, probing the edge every 0.2 s, saw about 2 s of 502 and
+then about 1 s of refused connections.
 
 `docker compose up -d` replaces the server's container: Docker sends it `SIGTERM`, waits
 `stop_grace_period`, then sends `SIGKILL`. Two numbers decide whether the server gets to finish, and
@@ -366,8 +375,12 @@ listener answers `GET /health` and 404s every other path, every path under `/v1/
   prints `FAIL subscription service …; the backend is deployed and serving` and the run is red, with the
   container it started left as it is and nothing rolled back; while the service is down, Caddy answers
   `/v1/stores/*` with 502. A `subscriptions-db` FAIL ends the run before this step and leaves the running
-  service as it was. A missing `subscriptions-<sha>` image stops the deploy at the pull, before anything
-  changes.
+  service as it was. A commit without its own `subscriptions-<sha>` keeps the live service's image
+  ([Rollback](#day-to-day)).
+- **What gates it**: Backend CI calls the service's own checks, `subscriptions.yml`, as a job its image
+  publish needs, so a red check publishes no image and deploys nothing. A commit under
+  `services/subscriptions` deploys the whole stack and replaces the server's container too
+  ([What a deploy does](#what-a-deploy-does-to-the-running-server)).
 
 ## The subscription database
 
