@@ -5,8 +5,9 @@ Pages live in the browser replica (`self/journal`) and change only through the e
 retirements, pending claims, editor drafts, content clocks, reconciliation and echo quotation
 comparisons. `pages.js` runs its actions and adapts `JournalRoom` to the web's flat page view
 (`pagesOf`, `corpus`), with durable refusal notices and editor drafts overlaid. `journalApi.js`
-holds the server features over the
-session cookie: echoes, nudges, transcription and export.
+holds the server features over the session cookie: echoes, nudges and export. `talk/` is Talk: the
+mic, its sheet and its kept take, and `talkApi.js`, the transcription and the two reads a press makes
+before the microphone opens.
 
 Only a body with non-whitespace text makes a journal day. Mood and energy alone never make a
 page. Blank drafts normalize before validation; a new blank draft queues no page command, and

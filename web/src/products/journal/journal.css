@@ -2012,6 +2012,7 @@ a.journal-link:focus-visible {
 }
 
 /* ── Talk — speak a page ────────────────────────────────────────────────── */
+.journal-talk-tool { position: relative; }
 .journal-talk-tool.is-recording {
   border-color: var(--lamp-400);
   color: var(--lamp-400);
@@ -2022,6 +2023,30 @@ a.journal-link:focus-visible {
 }
 .journal-talk-tool.is-working { opacity: 0.6; cursor: default; }
 .journal-talk-tool:disabled { opacity: 0.5; cursor: default; }
+/* A refused take waits behind a lamp dot: 9px, ringed 2px in the ground, 4px in from the tool's top-right edge (inside
+   its 1px border). It wakes in as the sheet closes and fades plainly as the take goes. */
+.journal-talk-tool::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--lamp-400);
+  box-shadow: 0 0 0 2px var(--surface-canvas);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 280ms var(--ease-standard);
+}
+.journal-talk-tool.has-take::after {
+  opacity: 1;
+  animation: journal-fade-in 280ms var(--ease-standard) both, journal-talk-dot-settle 480ms var(--ease-soft) both;
+}
+@keyframes journal-talk-dot-settle {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
 
 /* Anchored to the rail, not the viewport, so it follows the rail when the margin opens. */
 .journal-talk-sheet {
@@ -2042,27 +2067,121 @@ a.journal-link:focus-visible {
   font: 600 13.5px/20px var(--font-body), sans-serif;
   color: var(--journal-ink);
 }
-.journal-talk-promise {
+.journal-talk-detail {
   margin: 6px 0 0;
   font: 400 12px/19px var(--font-body), sans-serif;
   color: var(--journal-ink);
   opacity: 0.62;
 }
-.journal-talk-act {
+.journal-talk-acts {
+  display: flex;
+  gap: 18px;
   margin-top: 12px;
+}
+.journal-talk-act {
   padding: 0;
   border: 0;
   background: none;
   color: var(--lamp-400);
   font: 600 12.5px/1 var(--font-body), sans-serif;
+  text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
 }
+.journal-talk-act.is-quiet { color: var(--journal-ink); opacity: 0.62; }
 .journal-talk-act:hover { text-decoration: underline; }
+.journal-talk-act:disabled { opacity: 0.38; cursor: default; text-decoration: none; }
 .journal-talk-note {
   margin: 10px 0 0;
   color: var(--journal-ink-dim);
   font: 400 11px/16px var(--font-mono), ui-monospace, monospace;
 }
+
+/* Figma Journal · Web · `Talk sheet · refused`. The refusal takes the state line's place in a cross-fade; the take
+   rises in under it. A downward change is silent: no shake, no red. */
+.journal-talk-refused { animation: journal-fade-in 280ms var(--ease-standard) both; }
+.journal-talk-take {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  animation: wm-fade-in-up 280ms var(--ease-soft) both;
+}
+.journal-talk-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lamp-400) 8%, transparent);
+}
+.journal-talk-play {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lamp-400) 13%, transparent);
+  color: var(--lamp-400);
+  cursor: pointer;
+}
+.journal-talk-play-glyph {
+  width: 12px;
+  height: 12px;
+  background: var(--lamp-400);
+  mask: url('./talk/play.svg') center / 12px 12px no-repeat;
+}
+.journal-talk-wave {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  overflow: hidden;
+}
+.journal-talk-wave span {
+  flex: none;
+  width: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--lamp-400) 55%, transparent);
+}
+.journal-talk-length,
+.journal-talk-kept,
+.journal-talk-undo {
+  color: var(--text-tertiary);
+  font: 400 11px/16px var(--font-mono), ui-monospace, monospace;
+}
+.journal-talk-length { flex: none; white-space: nowrap; }
+.journal-talk-kept { margin: 0; }
+.journal-talk-discard {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.journal-talk-discard:hover { color: var(--journal-ink); }
+.journal-talk-undo { margin: 10px 0 0; }
+.journal-talk-undo-act {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--lamp-400);
+  font: inherit;
+  cursor: pointer;
+}
+.journal-talk-undo-act:hover { text-decoration: underline; }
+
 /* Journal has no glows by day: a bloom by night, an ink shadow by day, at the same radius. */
 .journal-root[data-theme='dark'] .journal-talk-tool { --talk-pulse: color-mix(in srgb, var(--lamp-400) 70%, transparent); }
 .journal-root[data-theme='light'] .journal-talk-tool { --talk-pulse: color-mix(in srgb, var(--journal-ink) 26%, transparent); }
@@ -2072,4 +2191,8 @@ a.journal-link:focus-visible {
 }
 @media (prefers-reduced-motion: reduce) {
   .journal-talk-tool.is-recording svg { animation: none; }
+  .journal-talk-tool::after { transition: none; }
+  .journal-talk-tool.has-take::after,
+  .journal-talk-refused,
+  .journal-talk-take { animation: none; }
 }
