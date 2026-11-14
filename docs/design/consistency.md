@@ -755,13 +755,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Published web input sizing.** The imported Design System Input field imposes 100px minimum height,
   while ForkDoor uses 46px. The product drawing uses an explicitly named local source adapter. The
   library owner should correct the primitive sizing before replacing that adapter with an instance.
-- **Web sharing copy.** `ShareDialog.jsx` publishes private or unlisted trees directly to public
-  before copying a link, and discloses gallery eligibility. `BrowsePage.jsx` empty copy instead says
-  sharing keeps a tree unlisted and listing is a separate choice. Reconcile the gallery copy with the
-  implemented publication action; the Figma share flow reflects the action, while the gallery
-  empty-state specimen retains the current contradictory copy with a ledger annotation. Gallery
-  search/filter thresholds in `galleryIndex.js` are not rendered by `BrowsePage.jsx` and are not
-  current controls.
+- **Gallery controls.** Search/filter thresholds in `galleryIndex.js` are not rendered by
+  `BrowsePage.jsx` and are not current controls.
 - **Marketing capability copy.** `RoadmapLanding.jsx` says starter quests and paste-list creation
   are still growing in, although `QuestShelf.jsx` and `PasteComposer.jsx` provide both. Its promise
   that a first branch unlocks tonight also exceeds the completion-dependent unlock behavior.
