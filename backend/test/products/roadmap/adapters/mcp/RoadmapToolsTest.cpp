@@ -9034,11 +9034,13 @@ TEST(mcp_a_pointer_sent_a_step_that_owns_a_subtree_is_refused_by_register_and_th
   CHECK_FALSE(h.call("create_node", node("idea", "Idea")).isError);
   {
     // A pointer that leads nowhere, as a released client could leave one, lets the step come to own a subtree.
-    std::lock_guard<std::mutex> strand(h.registry.strandFor(TreeId{"t"}));
+    std::unique_lock<std::mutex> strand(h.registry.strandFor(TreeId{"t"}));
     h.registry.open(TreeId{"t"})->applyCommand(
         AnnotateNode{NodeId{"sail"}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, TreeId{"t_stale"}},
         h.clock.nowMs(), h.caller);
-    REQUIRE(h.registry.persist(TreeId{"t"}) == Saved::saved);
+    PendingSave saving = h.registry.persist(TreeId{"t"});
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   }
   const TreeId sailing{"t_00000000000000c1"};
   REQUIRE(std::holds_alternative<SubtreeCreation>(

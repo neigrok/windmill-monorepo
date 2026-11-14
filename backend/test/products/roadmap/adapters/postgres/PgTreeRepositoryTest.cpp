@@ -1686,9 +1686,11 @@ TEST(pg_every_read_judges_a_pointer_valid_at_a_standing_root_of_the_owners_alone
   REQUIRE(std::get<SubtreeCreation>(forest.create(kParent, "sail", kChild)).created);
   REQUIRE(std::get<SubtreeCreation>(forest.create(kParent, "swim", kGrandchild)).created);
   {
-    std::lock_guard<std::mutex> strand(forest.rooms.strandFor(kParent));
+    std::unique_lock<std::mutex> strand(forest.rooms.strandFor(kParent));
     forest.rooms.open(kParent)->applyCommands({DeleteNode{nid("swim")}}, forest.clock.nowMs(), kAda, {kGrandchild});
-    REQUIRE(forest.rooms.persist(kParent) == Saved::saved);
+    PendingSave saving = forest.rooms.persist(kParent);
+    strand.unlock();
+    REQUIRE(saving.wait() == Saved::saved);
   }
   const std::map<NodeId, TreeId> pointers{{nid("root"), kOther},       {nid("subtree"), kChild}, {nid("hidden"), kGrandchild},
                                           {nid("deleted"), kGone},     {nid("foreign"), kBeas},  {nid("absent"), absent}};
