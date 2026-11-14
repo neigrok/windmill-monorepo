@@ -1,0 +1,645 @@
+{
+  "story": "Two live subscriptions on one account in one environment: the one granting access until the latest instant governs and the other is listed; once none grants access, the one observed last governs and every other that has not ended is still listed.",
+  "steps": [
+    {
+      "note": "The App Store purchase.",
+      "observation": {
+        "lineage": {
+          "store": "app_store",
+          "environment": "production",
+          "storeSubscriptionId": "t1"
+        },
+        "observedAt": "2027-01-01T10:00:05Z",
+        "ownership": "purchased",
+        "status": {
+          "plan": "windmill_one",
+          "productId": "one.monthly",
+          "billingInterval": "P1M",
+          "startedAt": "2027-01-01T10:00:00Z",
+          "state": "active",
+          "currentPeriod": {
+            "start": "2027-01-01T10:00:00Z",
+            "end": "2027-02-01T10:00:00Z"
+          },
+          "autoRenew": true,
+          "nextChargeAt": "2027-02-01T10:00:00Z",
+          "nextCharge": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "nextProductId": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "endedAt": null,
+          "endReason": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "price": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "storefront": "USA"
+        },
+        "periods": [
+          {
+            "transaction": "t1-1",
+            "start": "2027-01-01T10:00:00Z",
+            "end": "2027-02-01T10:00:00Z",
+            "price": {
+              "amount": "11.99",
+              "currency": "USD"
+            },
+            "offerKind": null,
+            "refundedAt": null
+          }
+        ]
+      },
+      "hint": {
+        "live": "account-ada"
+      },
+      "claim": null,
+      "expect": {
+        "subscription": {
+          "id": "sub-t1",
+          "store": "app_store",
+          "environment": "production",
+          "storeSubscriptionId": "t1",
+          "accountId": "account-ada",
+          "boundAt": "2027-01-01T10:00:00Z",
+          "boundBy": "purchase",
+          "accessUntil": "2027-02-02T10:00:00Z",
+          "observedAt": "2027-01-01T10:00:05Z",
+          "plan": "windmill_one",
+          "productId": "one.monthly",
+          "billingInterval": "P1M",
+          "startedAt": "2027-01-01T10:00:00Z",
+          "state": "active",
+          "currentPeriod": {
+            "start": "2027-01-01T10:00:00Z",
+            "end": "2027-02-01T10:00:00Z"
+          },
+          "autoRenew": true,
+          "nextChargeAt": "2027-02-01T10:00:00Z",
+          "nextCharge": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "nextProductId": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "endedAt": null,
+          "endReason": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "price": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "storefront": "USA"
+        },
+        "periods": [
+          {
+            "written": {
+              "id": "period-t1-1",
+              "transaction": "t1-1",
+              "start": "2027-01-01T10:00:00Z",
+              "end": "2027-02-01T10:00:00Z",
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null,
+              "observedAt": "2027-01-01T10:00:05Z"
+            }
+          }
+        ],
+        "events": [
+          {
+            "type": "started",
+            "occurredAt": "2027-01-01T10:00:00Z",
+            "subscriptionId": "sub-t1",
+            "accountId": "account-ada",
+            "period": null
+          },
+          {
+            "type": "bound",
+            "occurredAt": "2027-01-01T10:00:00Z",
+            "subscriptionId": "sub-t1",
+            "accountId": "account-ada",
+            "period": null
+          },
+          {
+            "type": "period_recorded",
+            "occurredAt": "2027-01-01T10:00:05Z",
+            "subscriptionId": "sub-t1",
+            "accountId": "account-ada",
+            "period": {
+              "id": "period-t1-1",
+              "transaction": "t1-1",
+              "start": "2027-01-01T10:00:00Z",
+              "end": "2027-02-01T10:00:00Z",
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null,
+              "observedAt": "2027-01-01T10:00:05Z"
+            }
+          }
+        ],
+        "hintForStore": null
+      },
+      "entitlements": []
+    },
+    {
+      "note": "A Play Store purchase two weeks later on the same account.",
+      "observation": {
+        "lineage": {
+          "store": "play_store",
+          "environment": "production",
+          "storeSubscriptionId": "t2"
+        },
+        "observedAt": "2027-01-15T10:00:05Z",
+        "ownership": "purchased",
+        "status": {
+          "plan": "windmill_one",
+          "productId": "one.monthly",
+          "billingInterval": "P1M",
+          "startedAt": "2027-01-15T10:00:00Z",
+          "state": "active",
+          "currentPeriod": {
+            "start": "2027-01-15T10:00:00Z",
+            "end": "2027-02-15T10:00:00Z"
+          },
+          "autoRenew": true,
+          "nextChargeAt": "2027-02-15T10:00:00Z",
+          "nextCharge": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "nextProductId": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "endedAt": null,
+          "endReason": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "price": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "storefront": "US"
+        },
+        "periods": [
+          {
+            "transaction": "t2-1",
+            "start": "2027-01-15T10:00:00Z",
+            "end": "2027-02-15T10:00:00Z",
+            "price": {
+              "amount": "11.99",
+              "currency": "USD"
+            },
+            "offerKind": null,
+            "refundedAt": null
+          }
+        ]
+      },
+      "hint": {
+        "live": "account-ada"
+      },
+      "claim": null,
+      "expect": {
+        "subscription": {
+          "id": "sub-t2",
+          "store": "play_store",
+          "environment": "production",
+          "storeSubscriptionId": "t2",
+          "accountId": "account-ada",
+          "boundAt": "2027-01-15T10:00:00Z",
+          "boundBy": "purchase",
+          "accessUntil": "2027-02-16T10:00:00Z",
+          "observedAt": "2027-01-15T10:00:05Z",
+          "plan": "windmill_one",
+          "productId": "one.monthly",
+          "billingInterval": "P1M",
+          "startedAt": "2027-01-15T10:00:00Z",
+          "state": "active",
+          "currentPeriod": {
+            "start": "2027-01-15T10:00:00Z",
+            "end": "2027-02-15T10:00:00Z"
+          },
+          "autoRenew": true,
+          "nextChargeAt": "2027-02-15T10:00:00Z",
+          "nextCharge": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "nextProductId": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "endedAt": null,
+          "endReason": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "price": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "storefront": "US"
+        },
+        "periods": [
+          {
+            "written": {
+              "id": "period-t2-1",
+              "transaction": "t2-1",
+              "start": "2027-01-15T10:00:00Z",
+              "end": "2027-02-15T10:00:00Z",
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null,
+              "observedAt": "2027-01-15T10:00:05Z"
+            }
+          }
+        ],
+        "events": [
+          {
+            "type": "started",
+            "occurredAt": "2027-01-15T10:00:00Z",
+            "subscriptionId": "sub-t2",
+            "accountId": "account-ada",
+            "period": null
+          },
+          {
+            "type": "bound",
+            "occurredAt": "2027-01-15T10:00:00Z",
+            "subscriptionId": "sub-t2",
+            "accountId": "account-ada",
+            "period": null
+          },
+          {
+            "type": "period_recorded",
+            "occurredAt": "2027-01-15T10:00:05Z",
+            "subscriptionId": "sub-t2",
+            "accountId": "account-ada",
+            "period": {
+              "id": "period-t2-1",
+              "transaction": "t2-1",
+              "start": "2027-01-15T10:00:00Z",
+              "end": "2027-02-15T10:00:00Z",
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null,
+              "observedAt": "2027-01-15T10:00:05Z"
+            }
+          }
+        ],
+        "hintForStore": null
+      },
+      "entitlements": [
+        {
+          "accountId": "account-ada",
+          "at": "2027-01-20T00:00:00Z",
+          "production": {
+            "plan": "windmill_one",
+            "accessUntil": "2027-02-16T10:00:00Z",
+            "governing": "sub-t2",
+            "others": [
+              "sub-t1"
+            ]
+          },
+          "sandbox": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": null,
+            "others": []
+          }
+        }
+      ]
+    },
+    {
+      "note": "The App Store renewal fails into hold; it has not ended, so it is still listed.",
+      "observation": {
+        "lineage": {
+          "store": "app_store",
+          "environment": "production",
+          "storeSubscriptionId": "t1"
+        },
+        "observedAt": "2027-02-01T10:00:05Z",
+        "ownership": "purchased",
+        "status": {
+          "plan": "windmill_one",
+          "productId": "one.monthly",
+          "billingInterval": "P1M",
+          "startedAt": "2027-01-01T10:00:00Z",
+          "state": "on_hold",
+          "currentPeriod": {
+            "start": "2027-01-01T10:00:00Z",
+            "end": "2027-02-01T10:00:00Z"
+          },
+          "autoRenew": true,
+          "nextChargeAt": null,
+          "nextCharge": null,
+          "nextProductId": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": "2027-02-01T10:00:00Z",
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "endedAt": null,
+          "endReason": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "price": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "storefront": "USA"
+        },
+        "periods": [
+          {
+            "transaction": "t1-1",
+            "start": "2027-01-01T10:00:00Z",
+            "end": "2027-02-01T10:00:00Z",
+            "price": {
+              "amount": "11.99",
+              "currency": "USD"
+            },
+            "offerKind": null,
+            "refundedAt": null
+          }
+        ]
+      },
+      "hint": {
+        "live": "account-ada"
+      },
+      "claim": null,
+      "expect": {
+        "subscription": {
+          "id": "sub-t1",
+          "store": "app_store",
+          "environment": "production",
+          "storeSubscriptionId": "t1",
+          "accountId": "account-ada",
+          "boundAt": "2027-01-01T10:00:00Z",
+          "boundBy": "purchase",
+          "accessUntil": null,
+          "observedAt": "2027-02-01T10:00:05Z",
+          "plan": "windmill_one",
+          "productId": "one.monthly",
+          "billingInterval": "P1M",
+          "startedAt": "2027-01-01T10:00:00Z",
+          "state": "on_hold",
+          "currentPeriod": {
+            "start": "2027-01-01T10:00:00Z",
+            "end": "2027-02-01T10:00:00Z"
+          },
+          "autoRenew": true,
+          "nextChargeAt": null,
+          "nextCharge": null,
+          "nextProductId": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": "2027-02-01T10:00:00Z",
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "endedAt": null,
+          "endReason": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "price": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "storefront": "USA"
+        },
+        "periods": [
+          {
+            "restated": {
+              "id": "period-t1-1",
+              "transaction": "t1-1",
+              "start": "2027-01-01T10:00:00Z",
+              "end": "2027-02-01T10:00:00Z",
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null,
+              "observedAt": "2027-02-01T10:00:05Z"
+            }
+          }
+        ],
+        "events": [
+          {
+            "type": "payment_failed",
+            "occurredAt": "2027-02-01T10:00:00Z",
+            "subscriptionId": "sub-t1",
+            "accountId": "account-ada",
+            "period": null
+          }
+        ],
+        "hintForStore": null
+      },
+      "entitlements": [
+        {
+          "accountId": "account-ada",
+          "at": "2027-02-05T00:00:00Z",
+          "production": {
+            "plan": "windmill_one",
+            "accessUntil": "2027-02-16T10:00:00Z",
+            "governing": "sub-t2",
+            "others": [
+              "sub-t1"
+            ]
+          },
+          "sandbox": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": null,
+            "others": []
+          }
+        }
+      ]
+    },
+    {
+      "note": "The Play Store one expires: no access; the one observed last governs.",
+      "observation": {
+        "lineage": {
+          "store": "play_store",
+          "environment": "production",
+          "storeSubscriptionId": "t2"
+        },
+        "observedAt": "2027-02-15T10:00:02Z",
+        "ownership": "purchased",
+        "status": {
+          "plan": "windmill_one",
+          "productId": "one.monthly",
+          "billingInterval": "P1M",
+          "startedAt": "2027-01-15T10:00:00Z",
+          "state": "expired",
+          "currentPeriod": {
+            "start": "2027-01-15T10:00:00Z",
+            "end": "2027-02-15T10:00:00Z"
+          },
+          "autoRenew": false,
+          "nextChargeAt": null,
+          "nextCharge": null,
+          "nextProductId": null,
+          "cancelRequestedAt": "2027-02-10T08:00:00Z",
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "endedAt": "2027-02-15T10:00:00Z",
+          "endReason": "cancelled",
+          "offerKind": null,
+          "offerEndsAt": null,
+          "price": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "storefront": "US"
+        },
+        "periods": [
+          {
+            "transaction": "t2-1",
+            "start": "2027-01-15T10:00:00Z",
+            "end": "2027-02-15T10:00:00Z",
+            "price": {
+              "amount": "11.99",
+              "currency": "USD"
+            },
+            "offerKind": null,
+            "refundedAt": null
+          }
+        ]
+      },
+      "hint": {
+        "live": "account-ada"
+      },
+      "claim": null,
+      "expect": {
+        "subscription": {
+          "id": "sub-t2",
+          "store": "play_store",
+          "environment": "production",
+          "storeSubscriptionId": "t2",
+          "accountId": "account-ada",
+          "boundAt": "2027-01-15T10:00:00Z",
+          "boundBy": "purchase",
+          "accessUntil": null,
+          "observedAt": "2027-02-15T10:00:02Z",
+          "plan": "windmill_one",
+          "productId": "one.monthly",
+          "billingInterval": "P1M",
+          "startedAt": "2027-01-15T10:00:00Z",
+          "state": "expired",
+          "currentPeriod": {
+            "start": "2027-01-15T10:00:00Z",
+            "end": "2027-02-15T10:00:00Z"
+          },
+          "autoRenew": false,
+          "nextChargeAt": null,
+          "nextCharge": null,
+          "nextProductId": null,
+          "cancelRequestedAt": "2027-02-10T08:00:00Z",
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "endedAt": "2027-02-15T10:00:00Z",
+          "endReason": "cancelled",
+          "offerKind": null,
+          "offerEndsAt": null,
+          "price": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "storefront": "US"
+        },
+        "periods": [
+          {
+            "restated": {
+              "id": "period-t2-1",
+              "transaction": "t2-1",
+              "start": "2027-01-15T10:00:00Z",
+              "end": "2027-02-15T10:00:00Z",
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null,
+              "observedAt": "2027-02-15T10:00:02Z"
+            }
+          }
+        ],
+        "events": [
+          {
+            "type": "renewal_turned_off",
+            "occurredAt": "2027-02-10T08:00:00Z",
+            "subscriptionId": "sub-t2",
+            "accountId": "account-ada",
+            "period": null
+          },
+          {
+            "type": "expired",
+            "occurredAt": "2027-02-15T10:00:00Z",
+            "subscriptionId": "sub-t2",
+            "accountId": "account-ada",
+            "period": null
+          }
+        ],
+        "hintForStore": null
+      },
+      "entitlements": [
+        {
+          "accountId": "account-ada",
+          "at": "2027-02-16T00:00:00Z",
+          "production": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": "sub-t2",
+            "others": [
+              "sub-t1"
+            ]
+          },
+          "sandbox": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": null,
+            "others": []
+          }
+        }
+      ]
+    }
+  ]
+}

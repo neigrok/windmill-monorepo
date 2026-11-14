@@ -1,0 +1,335 @@
+{
+  "story": "A free trial that renews into a paid period records renewed and the paid period; the offer ends with the trial.",
+  "steps": [
+    {
+      "note": "The trial starts.",
+      "observation": {
+        "lineage": {
+          "store": "app_store",
+          "environment": "production",
+          "storeSubscriptionId": "f2"
+        },
+        "observedAt": "2027-01-01T10:00:05Z",
+        "ownership": "purchased",
+        "status": {
+          "plan": "windmill_one",
+          "productId": "one.monthly",
+          "billingInterval": "P1M",
+          "startedAt": "2027-01-01T10:00:00Z",
+          "state": "active",
+          "currentPeriod": {
+            "start": "2027-01-01T10:00:00Z",
+            "end": "2027-01-08T10:00:00Z"
+          },
+          "autoRenew": true,
+          "nextChargeAt": "2027-01-08T10:00:00Z",
+          "nextCharge": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "nextProductId": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "endedAt": null,
+          "endReason": null,
+          "offerKind": "free_trial",
+          "offerEndsAt": "2027-01-08T10:00:00Z",
+          "price": {
+            "amount": "0.00",
+            "currency": "USD"
+          },
+          "storefront": "USA"
+        },
+        "periods": [
+          {
+            "transaction": "f2-1",
+            "start": "2027-01-01T10:00:00Z",
+            "end": "2027-01-08T10:00:00Z",
+            "price": {
+              "amount": "0.00",
+              "currency": "USD"
+            },
+            "offerKind": "free_trial",
+            "refundedAt": null
+          }
+        ]
+      },
+      "hint": {
+        "live": "account-ada"
+      },
+      "claim": null,
+      "expect": {
+        "subscription": {
+          "id": "sub-f2",
+          "store": "app_store",
+          "environment": "production",
+          "storeSubscriptionId": "f2",
+          "accountId": "account-ada",
+          "boundAt": "2027-01-01T10:00:00Z",
+          "boundBy": "purchase",
+          "accessUntil": "2027-01-09T10:00:00Z",
+          "observedAt": "2027-01-01T10:00:05Z",
+          "plan": "windmill_one",
+          "productId": "one.monthly",
+          "billingInterval": "P1M",
+          "startedAt": "2027-01-01T10:00:00Z",
+          "state": "active",
+          "currentPeriod": {
+            "start": "2027-01-01T10:00:00Z",
+            "end": "2027-01-08T10:00:00Z"
+          },
+          "autoRenew": true,
+          "nextChargeAt": "2027-01-08T10:00:00Z",
+          "nextCharge": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "nextProductId": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "endedAt": null,
+          "endReason": null,
+          "offerKind": "free_trial",
+          "offerEndsAt": "2027-01-08T10:00:00Z",
+          "price": {
+            "amount": "0.00",
+            "currency": "USD"
+          },
+          "storefront": "USA"
+        },
+        "periods": [
+          {
+            "written": {
+              "id": "period-f2-1",
+              "transaction": "f2-1",
+              "start": "2027-01-01T10:00:00Z",
+              "end": "2027-01-08T10:00:00Z",
+              "price": {
+                "amount": "0.00",
+                "currency": "USD"
+              },
+              "offerKind": "free_trial",
+              "refundedAt": null,
+              "observedAt": "2027-01-01T10:00:05Z"
+            }
+          }
+        ],
+        "events": [
+          {
+            "type": "started",
+            "occurredAt": "2027-01-01T10:00:00Z",
+            "subscriptionId": "sub-f2",
+            "accountId": "account-ada",
+            "period": null
+          },
+          {
+            "type": "bound",
+            "occurredAt": "2027-01-01T10:00:00Z",
+            "subscriptionId": "sub-f2",
+            "accountId": "account-ada",
+            "period": null
+          },
+          {
+            "type": "period_recorded",
+            "occurredAt": "2027-01-01T10:00:05Z",
+            "subscriptionId": "sub-f2",
+            "accountId": "account-ada",
+            "period": {
+              "id": "period-f2-1",
+              "transaction": "f2-1",
+              "start": "2027-01-01T10:00:00Z",
+              "end": "2027-01-08T10:00:00Z",
+              "price": {
+                "amount": "0.00",
+                "currency": "USD"
+              },
+              "offerKind": "free_trial",
+              "refundedAt": null,
+              "observedAt": "2027-01-01T10:00:05Z"
+            }
+          }
+        ],
+        "hintForStore": null
+      },
+      "entitlements": []
+    },
+    {
+      "note": "The first charge goes through: a paid period starts where the trial ended.",
+      "observation": {
+        "lineage": {
+          "store": "app_store",
+          "environment": "production",
+          "storeSubscriptionId": "f2"
+        },
+        "observedAt": "2027-01-08T09:00:00Z",
+        "ownership": "purchased",
+        "status": {
+          "plan": "windmill_one",
+          "productId": "one.monthly",
+          "billingInterval": "P1M",
+          "startedAt": "2027-01-01T10:00:00Z",
+          "state": "active",
+          "currentPeriod": {
+            "start": "2027-01-08T10:00:00Z",
+            "end": "2027-02-08T10:00:00Z"
+          },
+          "autoRenew": true,
+          "nextChargeAt": "2027-02-08T10:00:00Z",
+          "nextCharge": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "nextProductId": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "endedAt": null,
+          "endReason": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "price": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "storefront": "USA"
+        },
+        "periods": [
+          {
+            "transaction": "f2-2",
+            "start": "2027-01-08T10:00:00Z",
+            "end": "2027-02-08T10:00:00Z",
+            "price": {
+              "amount": "11.99",
+              "currency": "USD"
+            },
+            "offerKind": null,
+            "refundedAt": null
+          }
+        ]
+      },
+      "hint": {
+        "live": "account-ada"
+      },
+      "claim": null,
+      "expect": {
+        "subscription": {
+          "id": "sub-f2",
+          "store": "app_store",
+          "environment": "production",
+          "storeSubscriptionId": "f2",
+          "accountId": "account-ada",
+          "boundAt": "2027-01-01T10:00:00Z",
+          "boundBy": "purchase",
+          "accessUntil": "2027-02-09T10:00:00Z",
+          "observedAt": "2027-01-08T09:00:00Z",
+          "plan": "windmill_one",
+          "productId": "one.monthly",
+          "billingInterval": "P1M",
+          "startedAt": "2027-01-01T10:00:00Z",
+          "state": "active",
+          "currentPeriod": {
+            "start": "2027-01-08T10:00:00Z",
+            "end": "2027-02-08T10:00:00Z"
+          },
+          "autoRenew": true,
+          "nextChargeAt": "2027-02-08T10:00:00Z",
+          "nextCharge": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "nextProductId": null,
+          "cancelRequestedAt": null,
+          "paymentFailedAt": null,
+          "graceEndsAt": null,
+          "pauseScheduledFor": null,
+          "pausedAt": null,
+          "resumesAt": null,
+          "endedAt": null,
+          "endReason": null,
+          "offerKind": null,
+          "offerEndsAt": null,
+          "price": {
+            "amount": "11.99",
+            "currency": "USD"
+          },
+          "storefront": "USA"
+        },
+        "periods": [
+          {
+            "written": {
+              "id": "period-f2-2",
+              "transaction": "f2-2",
+              "start": "2027-01-08T10:00:00Z",
+              "end": "2027-02-08T10:00:00Z",
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null,
+              "observedAt": "2027-01-08T09:00:00Z"
+            }
+          }
+        ],
+        "events": [
+          {
+            "type": "renewed",
+            "occurredAt": "2027-01-08T09:00:00Z",
+            "subscriptionId": "sub-f2",
+            "accountId": "account-ada",
+            "period": null
+          },
+          {
+            "type": "period_recorded",
+            "occurredAt": "2027-01-08T09:00:00Z",
+            "subscriptionId": "sub-f2",
+            "accountId": "account-ada",
+            "period": {
+              "id": "period-f2-2",
+              "transaction": "f2-2",
+              "start": "2027-01-08T10:00:00Z",
+              "end": "2027-02-08T10:00:00Z",
+              "price": {
+                "amount": "11.99",
+                "currency": "USD"
+              },
+              "offerKind": null,
+              "refundedAt": null,
+              "observedAt": "2027-01-08T09:00:00Z"
+            }
+          }
+        ],
+        "hintForStore": null
+      },
+      "entitlements": [
+        {
+          "accountId": "account-ada",
+          "at": "2027-01-10T00:00:00Z",
+          "production": {
+            "plan": "windmill_one",
+            "accessUntil": "2027-02-09T10:00:00Z",
+            "governing": "sub-f2",
+            "others": []
+          },
+          "sandbox": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": null,
+            "others": []
+          }
+        }
+      ]
+    }
+  ]
+}
