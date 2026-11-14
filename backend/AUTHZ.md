@@ -162,13 +162,17 @@ context.
 
 **Read authorization is re-decided, not granted once.** `Collab::reachOf` is the single verdict —
 `canRead`, then `canWrite`, against the tree's *current* access facts, answering nothing, the
-reader's view or the whole frame — and four things run it: `subscribe`; every
+reader's view or the whole frame — and four things run it: `subscribe`, which asks the room's gate
+again once the subscription has joined, so a branch hidden while its room opened refuses it; every
 fan-out on `WsPresenceBus` (a refused connection is dropped from that tree and told "no such tree");
-`RoomRegistry::setVisibility` and `RoomRegistry::retire`, so a share flip and a deletion land on the
+`RoomRegistry::setVisibility`, `RoomRegistry::retire` and an owning step's change of presence, which
+tells each live room below the step, so a share flip, a deletion and a branch's hide land on the
 event; and `Collab::reproveReaders`, a 15 s sweep over every open subscription, which is the only
-road for the two revocations no event carries — a session revoked on a tree nobody is editing, and
-presence, since `PresenceHub::flush` fans cursors and selections straight to its roster at 20 Hz and
-never touches the bus.
+road for the revocations no event carries — a session revoked on a tree nobody is editing; presence,
+since `PresenceHub::flush` fans cursors and selections straight to its roster at 20 Hz and never
+touches the bus; and a subscription to a tree whose room had closed when its root went private or its
+branch hid. Such a reader is sent nothing of the tree meanwhile, since only a live room makes a
+frame, and is told "no such tree" within the 15 s.
 
 **`reachOf` never goes to the database.** A fan-out runs it under the tree's strand, and re-proving N
 sessions there costs one serial lookup per subscriber per minute with the strand held. The re-proof

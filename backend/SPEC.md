@@ -897,8 +897,12 @@ whole as `branch-unconfirmed`, with nothing of it landed (Model, Subtrees): the 
 `branches: [{step, subtree, steps, subtrees}]`, one per such step in step order, and the first one's
 `subtree`, `steps` and `subtrees` beside its code, the counts left out when they could not be read.
 A frame whose `branches` is not a list of tree ids is refused as `bad-frame`. A frame's `branches`
-are never broadcast. Deleting the step hides the subtree: each page open on a tree of its branch is
-sent the `no-such-tree` reject and is no longer sent its frames.
+are never broadcast. Deleting the step hides the subtree: each page open on a tree of its branch
+whose room is live is sent the `no-such-tree` reject at once and is no longer sent its frames; one
+whose room had closed is sent nothing of it, since only a live room makes a frame, and is told within
+the 15 s re-proof of every open subscription, as a reader of a root made private is (`AUTHZ.md`). A
+subscribe that joins while an owning step above it is deleted is asked the gate again once it has
+joined, and is refused `no-such-tree` with nothing of the tree sent.
 
 Limits and rules:
 

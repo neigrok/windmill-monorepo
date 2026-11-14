@@ -216,9 +216,18 @@ struct FakeTreeRepository : TreeRepository {
   bool savesFail = false;  // save throws, the way a write Postgres refuses does
   // Runs inside save before anything lands, the way a slow or refused statement holds its caller; it may throw.
   std::function<void(const TreeId&)> duringSave;
+  // Runs once inside load of the tree it is keyed by, after the rows are read: what another strand does while a room's
+  // lattice loads.
+  std::map<std::string, std::function<void()>> afterLoadOf;
   std::optional<StoredTree> load(const TreeId& tree) override {
     if (latticeLoadsFail || latticeLoadsFailFor.count(tree.str())) throw std::runtime_error("connection reset mid-read");
-    return placed(tree);
+    std::optional<StoredTree> stored = placed(tree);
+    if (const auto hook = afterLoadOf.find(tree.str()); hook != afterLoadOf.end()) {
+      const std::function<void()> once = std::move(hook->second);
+      afterLoadOf.erase(hook);
+      once();
+    }
+    return stored;
   }
   std::optional<StoredTree> row(const TreeId& tree) const {
     if (deletedIds.count(tree.str())) return std::nullopt;

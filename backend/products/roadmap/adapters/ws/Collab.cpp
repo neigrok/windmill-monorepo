@@ -222,6 +222,16 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       // Join under the strand, so no broadcast slips between the delta and the subscription, and the delta goes out
       // ahead of every broadcast made after it.
       first = bus_.subscribe(TreeId{treeId}, conn, principal.user);
+      // The gate was asked before the room opened, and an owning step's delete may have hidden the tree since, telling
+      // the live rooms below before this one was among them. Asked again now that the subscription has joined, a hide
+      // lands either before this check, which refuses it, or after, when its announce reaches the subscription.
+      const std::optional<UserId> reader =
+          principal.authenticated ? std::optional<UserId>(principal.user) : std::nullopt;
+      if (!room->readableBy(reader)) {
+        bus_.unsubscribe(TreeId{treeId}, conn);
+        send(conn, rejectFrame(treeId, kNoSuchTree, "no such tree \"" + treeId + "\""));
+        return;
+      }
       presence_.join(conn, TreeId{treeId});
       delta = room->deltaSince(clientVector);
       head = room->head();

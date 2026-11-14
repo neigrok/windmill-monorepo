@@ -2729,3 +2729,34 @@ TEST(ws_a_subtree_whose_revive_is_held_unsaved_is_subscribed_to_under_its_name) 
   CHECK_EQ(countOfType(*reader, "reject"), 0u);
   CHECK_EQ(lastFrameOfType(*reader, "subgraph")["title"]["v"].asString(), std::string("Plain"));
 }
+
+// A subscribe whose gate passes before the owning step's delete lands, and whose room opens after it, is asked again
+// once it has joined: the hidden subtree's view is never sent, the subscription is dropped and the reader is sent the
+// reject an absent tree gets.
+TEST(ws_a_subscribe_racing_the_delete_of_its_owning_step_is_refused_once_joined) {
+  Harness h;
+  const UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  const TreeId child{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {child, std::nullopt})));
+  auto writer = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), writer);
+  REQUIRE(h.rooms.isOpen(TreeId{"t_p"}));
+  REQUIRE(&h.rooms.strandFor(child) != &h.rooms.strandFor(TreeId{"t_p"}));
+  Json::Value deletion = parse(registerFrame("t_p", "d1", R"({"id":"plain","deletedAt":"200:0:web"})"));
+  deletion["branches"].append(child.str());
+  // The subscribe holds the subtree's strand while its lattice loads; the delete lands meanwhile on the parent's.
+  h.trees.afterLoadOf[child.str()] = [&] {
+    std::async(std::launch::async, [&] { h.collab.onMessage(writer, dump(deletion)); }).get();
+  };
+  auto reader = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade(""), reader);
+  std::async(std::launch::async, [&] { h.collab.onMessage(reader, subscribeFrame(child.str())); }).get();
+
+  REQUIRE(!h.rooms.open(TreeId{"t_p"})->hasNode(NodeId{"plain"}));
+  CHECK_EQ(countOfType(*reader, "subgraph"), 0u);
+  CHECK_EQ(rejectCode(reader->sent.back()), std::string("no-such-tree"));
+  const std::vector<drogon::WebSocketConnectionPtr> subscribed = h.bus.connections();
+  CHECK(std::find(subscribed.begin(), subscribed.end(), reader) == subscribed.end());
+}
