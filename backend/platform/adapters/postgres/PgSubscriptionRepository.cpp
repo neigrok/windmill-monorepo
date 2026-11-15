@@ -5,30 +5,7 @@
 #include <pqxx/pqxx>
 #include <stdexcept>
 
-#include <string_view>
-
 namespace wm {
-
-namespace {
-constexpr std::string_view kSubscriptionColumns =
-    "s.subscription_id, s.customer_id, coalesce(s.user_id::text, '') AS user_id, s.status, "
-    "s.price_id, s.product_id, "
-    "coalesce(to_json(s.scheduled_change_at)#>>'{}', '') AS scheduled_change_at, "
-    "coalesce(to_json(s.occurred_at)#>>'{}', '') AS occurred_at";
-
-// Templated on the row type: pqxx names it row_ref on macOS and row on the CI's Linux build.
-template <typename Row>
-PaddleSubscription subscriptionFrom(const Row& row) {
-  return PaddleSubscription{row["subscription_id"].template as<std::string>(),
-                            row["customer_id"].template as<std::string>(),
-                            row["user_id"].template as<std::string>(),
-                            row["status"].template as<std::string>(),
-                            row["price_id"].template as<std::string>(),
-                            row["product_id"].template as<std::string>(),
-                            row["scheduled_change_at"].template as<std::string>(),
-                            row["occurred_at"].template as<std::string>()};
-}
-}
 
 PgSubscriptionRepository::PgSubscriptionRepository(std::shared_ptr<PgPool> pool)
     : pool_(std::move(pool)) {}
@@ -98,27 +75,21 @@ std::optional<PaddleCustomer> PgSubscriptionRepository::findCustomer(const std::
 std::optional<PaddleSubscription> PgSubscriptionRepository::findSubscription(const std::string& subscriptionId) {
   PgLease conn{*pool_};
   pqxx::read_transaction txn{*conn};
-  const auto rows = txn.exec_params("SELECT " + std::string(kSubscriptionColumns) +
-      " FROM paddle_subscriptions s WHERE s.subscription_id=$1", subscriptionId);
+  const auto rows = txn.exec_params(
+      "SELECT subscription_id, customer_id, coalesce(user_id::text, '') AS user_id, status, price_id, product_id, "
+      "coalesce(to_json(scheduled_change_at)#>>'{}', '') AS scheduled_change_at, "
+      "coalesce(to_json(occurred_at)#>>'{}', '') AS occurred_at "
+      "FROM paddle_subscriptions WHERE subscription_id=$1",
+      subscriptionId);
   if (rows.empty()) return std::nullopt;
-  return subscriptionFrom(rows[0]);
-}
-
-std::optional<PaddleSubscription> PgSubscriptionRepository::findFor(const UserId& user,
-                                                                    const std::string& email) {
-  // Either binding may match, and an access-granting row wins over a merely newer one.
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  pqxx::result rows = txn.exec_params(
-      "SELECT " + std::string(kSubscriptionColumns) +
-          " FROM paddle_subscriptions s "
-          "LEFT JOIN paddle_customers c ON c.customer_id = s.customer_id "
-          "WHERE s.user_id = $1::uuid OR c.email = $2 "
-          "ORDER BY (s.status IN ('active', 'trialing', 'past_due')) DESC, s.created_at DESC "
-          "LIMIT 1",
-      user.str(), email);
-  if (rows.empty()) return std::nullopt;
-  return subscriptionFrom(rows[0]);
+  return PaddleSubscription{rows[0]["subscription_id"].as<std::string>(),
+                            rows[0]["customer_id"].as<std::string>(),
+                            rows[0]["user_id"].as<std::string>(),
+                            rows[0]["status"].as<std::string>(),
+                            rows[0]["price_id"].as<std::string>(),
+                            rows[0]["product_id"].as<std::string>(),
+                            rows[0]["scheduled_change_at"].as<std::string>(),
+                            rows[0]["occurred_at"].as<std::string>()};
 }
 
 }
