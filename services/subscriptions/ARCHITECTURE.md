@@ -49,7 +49,11 @@ service never runs: `app_store_test_signer` ([below](#app-store-test-signer)). E
 
 `check-dependencies.sh` reads `cargo metadata` and fails, naming each offending edge, when a normal
 or build dependency between the crates is not one of the five edges above, or when `domain` has a
-normal or build dependency outside its allowlist.
+normal or build dependency outside its allowlist. It also fails when `serde_json` resolves with other
+features in the binary (`cargo tree -p server -e features,normal`) than in the workspace's tests
+(`cargo tree --workspace -e features`): a dev-dependency's feature reaches every test build, so a body the
+binary writes in one key order would pass tests that write it in another. The server's own `serde_json` takes
+`preserve_order`, so a body keeps the order it is written in.
 
 ## Domain
 
