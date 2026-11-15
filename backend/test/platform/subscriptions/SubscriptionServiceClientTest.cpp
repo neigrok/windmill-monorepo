@@ -274,3 +274,36 @@ TEST(subscription_service_client_reads_the_status_before_the_body_of_a_claim_ans
   CHECK_EQ(answers, std::string("refused too_large refused timeout 502 400 401 500 409 503 malformed malformed malformed "
                                 "unreachable"));
 }
+
+TEST(subscription_service_client_erases_an_account_with_its_bearer_secret_and_only_a_204_settles_it) {
+  const std::string account = "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61";
+  StubService service{{StubService::reply(204, ""), StubService::reply(404, ""), StubService::reply(200, "{}"),
+                       StubService::reply(405, ""), StubService::reply(503, R"({"code":"unavailable"})"),
+                       StubService::reply(401, R"({"code":"unauthorized"})")}};
+  SubscriptionServiceClient client{ServiceAddress{service.url(), "internal-secret"}};
+
+  std::string answers;
+  for (int call = 0; call < 6; ++call) {
+    const UnbindAnswer answer = client.unbind(UserId{account});
+    answers += answer.answer + (answer.settled ? " settled " : " owed ");
+  }
+
+  CHECK_EQ(answers, std::string("204 settled 404 owed 200 owed 405 owed 503 owed 401 owed "));
+  const std::vector<std::string> requests = service.requests();
+  REQUIRE_EQ(requests.size(), std::size_t{6});
+  CHECK_EQ(requests[0].substr(0, requests[0].find("\r\n")), "DELETE /internal/v1/accounts/" + account + " HTTP/1.1");
+  CHECK(lowered(requests[0]).find("\r\nauthorization: bearer internal-secret\r\n") != std::string::npos);
+}
+
+TEST(subscription_service_client_reads_an_erasure_a_service_not_listening_never_took_as_owed) {
+  std::string url;
+  {
+    StubService closed{{}};
+    url = closed.url();
+  }
+  SubscriptionServiceClient client{ServiceAddress{url, "internal-secret"}};
+
+  const UnbindAnswer answer = client.unbind(UserId{"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"});
+
+  CHECK_EQ(answer.answer + (answer.settled ? " settled" : " owed"), std::string("unreachable owed"));
+}

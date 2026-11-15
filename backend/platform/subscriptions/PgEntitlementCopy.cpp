@@ -30,6 +30,12 @@ public:
 
   const FeedCursor& cursor() const override { return cursor_; }
 
+  // The account's users row, taken as the copy takes it, before any row of it, so an erasure waits for the page.
+  bool accountStands(const UserId& account) const override {
+    if (!isUuid(account.str())) return false;
+    return !work_.exec("SELECT 1 FROM users WHERE id = $1::uuid FOR KEY SHARE", pqxx::params{account.str()}).empty();
+  }
+
   pqxx::work& sql() { return work_; }
 
 private:
@@ -40,7 +46,7 @@ private:
   }
 
   PgLease lease_;
-  pqxx::work work_;  // declared after the lease, so it destructs first and can still roll back
+  mutable pqxx::work work_;  // declared after the lease, so it destructs first and can still roll back
   FeedCursor cursor_;
 };
 }

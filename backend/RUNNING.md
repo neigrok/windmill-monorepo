@@ -203,6 +203,24 @@ claim within 5 s. The same claim again answers alike; another account's answers
 follower off `503 {"code":"subscriptions_unavailable"}`. Each claim writes one `subscription.claim` line
 ([OBSERVABILITY.md](OBSERVABILITY.md)).
 
+#### An erasure
+
+The backend's erasure of a finally closed account owes the service the unbind of everything the account held
+([subscriptions.md](../docs/foundation/subscriptions.md) §6.4). The service's door takes it directly too, and
+answers 204 the first time and every time after:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE "localhost:8083/internal/v1/accounts/$ACCOUNT" \
+  -H "authorization: Bearer $TOKEN"                                                                   # 204
+psql -h /tmp -U windmill_subscriptions windmill_subscriptions \
+  -c 'select account_id is null as unbound from subscriptions' -c 'select left_with_no_one from periods'
+```
+
+The feed ends with `unbound` under the account, its entitlement holding nothing, and the periods it paid for stay
+with no one. Each call writes one `account.unbind` line. A backend that erases the account while the service is down
+keeps the unbind in `owed_subscription_unbinds` and its sweep tries it again, a minute or two later at first
+(`subscription.unbind`, [OBSERVABILITY.md](OBSERVABILITY.md)).
+
 ### Engine server for the iOS simulator
 
 Run from `backend/`. This serves `windmill_server` on an isolated local database, and the simulator

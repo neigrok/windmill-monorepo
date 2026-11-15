@@ -1,8 +1,8 @@
 use domain::{
     AccountId, BillingInterval, Binding, BoundBy, Change, EndReason, Ending, Environment, Instant,
-    Lineage, Money, NextCharge, Offer, OfferKind, Period, PeriodChange, PeriodId, Plan, ProductId,
-    Renewal, Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId, Storefront,
-    Subscription, SubscriptionId,
+    LeftWith, Lineage, Money, NextCharge, Offer, OfferKind, Period, PeriodChange, PeriodId, Plan,
+    ProductId, Renewal, Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId,
+    Storefront, Subscription, SubscriptionId,
 };
 use sqlx::postgres::{PgArguments, PgConnection};
 use sqlx::query::Query;
@@ -53,6 +53,12 @@ const SELECT_BY_ID: &str = concat!(
     subscription_columns!(),
     " from subscriptions where id = $1::uuid"
 );
+// The lineages holding anything of an account: a subscription bound to it, or a period it paid for that a new purchase
+// moved away (R-11), in the one order every erasure locks them in.
+const SELECT_LINEAGES_OF_ACCOUNT: &str = "select store, environment, store_subscription_id from subscriptions s \
+     where s.account_id = $1::uuid \
+     or exists (select from periods p where p.subscription_id = s.id and p.left_with = $1::uuid) \
+     order by store, environment, store_subscription_id collate \"C\"";
 const SELECT_BOUND_TO: &str = concat!(
     "select ",
     subscription_columns!(),
@@ -76,13 +82,13 @@ const STAMP_VERIFIED: &str =
     "update subscriptions set verified_at = greatest(verified_at, $2) where id = $1::uuid";
 
 const SELECT_PERIODS: &str = "select id, store_transaction_id, starts_at, ends_at, price_amount, \
-     price_currency, offer_kind, refunded_at, observed_at, left_with from periods \
+     price_currency, offer_kind, refunded_at, observed_at, left_with, left_with_no_one from periods \
      where subscription_id = $1::uuid order by starts_at, store_transaction_id collate \"C\"";
 const INSERT_PERIOD: &str = "insert into periods (id, store_transaction_id, starts_at, ends_at, \
-     price_amount, price_currency, offer_kind, refunded_at, observed_at, left_with, subscription_id) \
-     values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10::uuid, $11::uuid)";
-const RESTATE_PERIOD: &str = "update periods set refunded_at = $2, observed_at = $3, left_with = $4::uuid \
-     where id = $1::uuid";
+     price_amount, price_currency, offer_kind, refunded_at, observed_at, left_with, left_with_no_one, \
+     subscription_id) values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10::uuid, $11, $12::uuid)";
+const RESTATE_PERIOD: &str = "update periods set refunded_at = $2, observed_at = $3, left_with = $4::uuid, \
+     left_with_no_one = $5 where id = $1::uuid";
 
 impl Ledger {
     // What the ledger holds for one lineage: its subscription, if any, and its periods, read in one snapshot.
@@ -186,7 +192,8 @@ pub(crate) async fn save(
                     .bind(period.id.as_str())
                     .bind(period.refunded_at.map(Instant::epoch_millis))
                     .bind(period.observed_at.epoch_millis())
-                    .bind(period.left_with.as_ref().map(AccountId::as_str))
+                    .bind(paid_by(Some(period)))
+                    .bind(left_with_no_one(Some(period)))
                     .execute(&mut *connection)
                     .await?;
             }
@@ -207,6 +214,27 @@ pub(crate) async fn stamp_verified(
         .execute(connection)
         .await?;
     Ok(())
+}
+
+// The lineages an erasure of the account changes (§6.4). Read before their locks are taken; only a move away from the
+// account changes what one holds of it meanwhile, and a lineage moved away still holds the periods the account paid for.
+pub(crate) async fn of_account(
+    connection: &mut PgConnection,
+    account_id: &AccountId,
+) -> Result<Vec<Lineage>, StorageError> {
+    let rows: Vec<(String, String, String)> = sqlx::query_as(SELECT_LINEAGES_OF_ACCOUNT)
+        .bind(account_id.as_str())
+        .fetch_all(connection)
+        .await?;
+    rows.into_iter()
+        .map(|(store, environment, store_subscription_id)| {
+            Ok(Lineage {
+                store: named(Store::from_name, &store)?,
+                environment: named(Environment::from_name, &environment)?,
+                store_subscription_id: StoreSubscriptionId::new(store_subscription_id),
+            })
+        })
+        .collect()
 }
 
 // Every subscription bound to the account, what its entitlement folds over (D-8).
@@ -293,9 +321,9 @@ pub(crate) fn bind_subscription<'q>(
         .bind(cancellation_observed_at.map(Instant::epoch_millis))
 }
 
-// Binds a period, or none, to ten parameters in the order of the periods table: id, store transaction, start, end,
-// price amount and currency, offer kind, refund time, the stamp of its newest statement and the account it stays
-// with; the last is cast from text to uuid.
+// Binds a period, or none, to eleven parameters in the order of the periods table: id, store transaction, start, end,
+// price amount and currency, offer kind, refund time, the stamp of its newest statement, the account it stays with,
+// cast from text to uuid, and whether it stays with no one, false for none.
 pub(crate) fn bind_period<'q>(query: PgQuery<'q>, period: Option<&Period>) -> PgQuery<'q> {
     query
         .bind(period.map(|period| period.id.as_str()))
@@ -315,7 +343,20 @@ pub(crate) fn bind_period<'q>(query: PgQuery<'q>, period: Option<&Period>) -> Pg
                 .map(Instant::epoch_millis),
         )
         .bind(period.map(|period| period.observed_at.epoch_millis()))
-        .bind(period.and_then(|period| period.left_with.as_ref().map(AccountId::as_str)))
+        .bind(paid_by(period))
+        .bind(left_with_no_one(period))
+}
+
+// The account a period stays with once a new purchase moved its subscription (R-11).
+fn paid_by(period: Option<&Period>) -> Option<&str> {
+    match period.and_then(|period| period.left_with.as_ref()) {
+        Some(LeftWith::Account(account_id)) => Some(account_id.as_str()),
+        Some(LeftWith::NoOne) | None => None,
+    }
+}
+
+fn left_with_no_one(period: Option<&Period>) -> bool {
+    period.is_some_and(|period| period.left_with == Some(LeftWith::NoOne))
 }
 
 #[derive(FromRow)]
@@ -465,6 +506,7 @@ pub(crate) struct PeriodRow {
     pub(crate) refunded_at: Option<i64>,
     pub(crate) observed_at: i64,
     pub(crate) left_with: Option<Uuid>,
+    pub(crate) left_with_no_one: bool,
 }
 
 impl TryFrom<PeriodRow> for Period {
@@ -486,9 +528,14 @@ impl TryFrom<PeriodRow> for Period {
                 .transpose()?,
             refunded_at: row.refunded_at.map(Instant::from_epoch_millis),
             observed_at: Instant::from_epoch_millis(row.observed_at),
-            left_with: row
-                .left_with
-                .map(|account_id| AccountId::new(account_id.to_string())),
+            left_with: match (row.left_with, row.left_with_no_one) {
+                (None, false) => None,
+                (Some(account_id), false) => {
+                    Some(LeftWith::Account(AccountId::new(account_id.to_string())))
+                }
+                (None, true) => Some(LeftWith::NoOne),
+                (Some(_), true) => return Err(StorageError::Unreadable),
+            },
         })
     }
 }

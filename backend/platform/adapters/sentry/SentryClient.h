@@ -44,6 +44,14 @@ public:
   void reportWarning(const std::string& operation, const std::string& product, const std::string& door,
                      const std::string& outcome, const std::string& requestId,
                      const std::map<std::string, std::string>& tags) override;
+  // Level error, grouped by operation and outcome, under the failures' cap.
+  void reportFailure(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string& requestId,
+                     const std::map<std::string, std::string>& tags) override;
+  // The event either of the two ships: its tags those of a write's and the caller's own.
+  static Json::Value taggedEvent(const std::string& operation, const std::string& product, const std::string& door,
+                                 const std::string& outcome, const std::string& requestId,
+                                 const std::map<std::string, std::string>& tags);
   void drain();
 
   // The server's own log lines, as Sentry structured logs (envelope item type `log`). Buffered

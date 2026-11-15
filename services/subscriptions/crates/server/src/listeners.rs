@@ -73,6 +73,19 @@ impl Listener {
         }
     }
 
+    // What a client may take on this listener. The internal doors write the ledger, so their requests wait past every
+    // bound a write keeps (5 s for a lock, 10 s for a statement): a stalled ledger answers a door's own 503
+    // `unavailable`, and a write that commits late answers as it came to, before the request's bound does.
+    pub fn bounds(self) -> Bounds {
+        match self {
+            Listener::Public => Bounds::default(),
+            Listener::Internal => Bounds {
+                request: Duration::from_secs(12),
+                ..Bounds::default()
+            },
+        }
+    }
+
     pub fn address(self, config: &Config) -> SocketAddr {
         match self {
             Listener::Public => config.public_address,

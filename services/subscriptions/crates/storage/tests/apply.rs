@@ -9,13 +9,14 @@ use domain::{
     EndReason, Ending, Environment, Instant, Lineage, Money, NextCharge, Observation,
     ObservedPeriod, Offer, OfferKind, Ownership, PeriodChange, PeriodId, Plan, ProductId, Renewal,
     Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId, Storefront, Subscription,
-    SubscriptionId, observe,
+    SubscriptionId, erase, observe,
 };
 use futures_util::FutureExt;
 use serde_json::Value;
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
 use storage::{
-    AccountClaim, Applied, FeedEntry, Ledger, Notification, Observed, Receipt, StoreHint,
+    AccountClaim, Applied, ErasedLineage, FeedEntry, Ledger, Notification, Observed, Receipt,
+    StoreHint,
 };
 use url::Url;
 use uuid::Uuid;
@@ -74,13 +75,85 @@ async fn tell(path: &Path, url: &str) {
     let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
     let mut accounts: HashMap<String, Uuid> = HashMap::new();
     let erased = Uuid::new_v4();
-    ledger.record_erasure(erased).await.unwrap();
+    ledger.erase_account(erased).await.unwrap();
     let mut held: HashMap<Lineage, domain::Ledger> = HashMap::new();
     let mut newest: HashMap<SubscriptionId, i64> = HashMap::new();
     let mut told: Vec<FeedEntry> = Vec::new();
 
     for (index, step) in story["steps"].as_array().unwrap().iter().enumerate() {
         let place = format!("{name} step {}", index + 1);
+        if let Some(erasure) = step.get("erasure") {
+            let account_id = *accounts
+                .entry(text(erasure, "accountId").to_owned())
+                .or_insert_with(Uuid::new_v4);
+            let erasure = ledger.erase_account(account_id).await.unwrap();
+            let erased_id = AccountId::new(account_id.to_string());
+            let touched: Vec<&Lineage> = erasure
+                .lineages
+                .iter()
+                .map(|lineage| &lineage.change.subscription.lineage)
+                .collect();
+            for (lineage, before) in &held {
+                if !touched.contains(&lineage) {
+                    assert_eq!(
+                        erase(before.clone(), &erased_id, erasure.erased_at),
+                        None,
+                        "{place}"
+                    );
+                }
+            }
+            for erased_lineage in &erasure.lineages {
+                let change = &erased_lineage.change;
+                let lineage = change.subscription.lineage.clone();
+                let before = held[&lineage].clone();
+                let pure = erase(before.clone(), &erased_id, erasure.erased_at);
+                assert_eq!(Some(change), pure.as_ref(), "{place}");
+                held.insert(lineage, after(before, change));
+                newest.insert(
+                    change.subscription.id.clone(),
+                    erased_lineage
+                        .seqs
+                        .last()
+                        .copied()
+                        .unwrap_or(newest[&change.subscription.id]),
+                );
+            }
+            let subscriptions: Vec<Subscription> = held
+                .values()
+                .filter_map(|held| held.subscription.clone())
+                .collect();
+            for erased_lineage in erasure.lineages {
+                let ErasedLineage { change, seqs } = erased_lineage;
+                let lineage = &change.subscription.lineage;
+                assert_eq!(seqs.len(), change.events.len(), "{place}");
+                for (seq, event) in seqs.into_iter().zip(change.events) {
+                    told.push(FeedEntry {
+                        seq,
+                        recorded_at: Instant::from_epoch_millis(0),
+                        store: lineage.store,
+                        environment: lineage.environment,
+                        offer_kind: change
+                            .subscription
+                            .status
+                            .offer
+                            .as_ref()
+                            .map(|offer| offer.kind),
+                        entitlement: event.account_id.clone().map(|account_id| {
+                            AccountEntitlement::of(account_id, subscriptions.clone())
+                        }),
+                        event,
+                    });
+                }
+            }
+            for (lineage, expected) in &held {
+                let mut expected = expected.clone();
+                expected.periods.sort_by(|one, other| {
+                    (one.span.start, &one.transaction).cmp(&(other.span.start, &other.transaction))
+                });
+                assert_eq!(ledger.lineage(lineage).await.unwrap(), expected, "{place}");
+            }
+            continue;
+        }
         let observation = observation(&step["observation"]);
         let lineage = observation.lineage.clone();
         let (hint, resolved) = match &step["hint"] {

@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 
 use domain::{
     AccountEntitlement, AccountHint, AccountId, Accounts, BillingInterval, Change, Claim, Claimant,
-    EndReason, Ending, Entitlement, Environment, Event, Instant, Ledger, Lineage, Money,
+    EndReason, Ending, Entitlement, Environment, Event, Instant, Ledger, LeftWith, Lineage, Money,
     NextCharge, Observation, ObservedPeriod, Offer, OfferKind, Ownership, Period, PeriodChange,
     PeriodId, Plan, ProductId, Renewal, Span, State, Status, Store, StoreSubscriptionId,
-    StoreTransactionId, Storefront, Subscription, SubscriptionId, observe,
+    StoreTransactionId, Storefront, Subscription, SubscriptionId, erase, observe,
 };
 use serde_json::{Value, json};
 
@@ -53,6 +53,25 @@ fn tell(path: &Path) -> Result<(), String> {
 
     for (index, step) in list(&story, "steps").iter().enumerate() {
         let place = format!("{name} step {}", index + 1);
+        if step.get("erasure").is_some() {
+            exactly(step, &["note", "erasure", "expect", "entitlements"]);
+            let erasure = field(step, "erasure");
+            exactly(erasure, &["accountId", "at"]);
+            let erased = AccountId::new(text(erasure, "accountId"));
+            let at = instant(field(erasure, "at"));
+            let mut held: Vec<(Lineage, Ledger)> = ledgers.clone().into_iter().collect();
+            held.sort_by(|(_, one), (_, other)| subscription_id(one).cmp(subscription_id(other)));
+            let mut changes = Vec::new();
+            for (lineage, ledger) in held {
+                if let Some(change) = erase(ledger.clone(), &erased, at) {
+                    changes.push(change_json(&change));
+                    ledgers.insert(lineage, after(ledger, change));
+                }
+            }
+            compare(&place, field(step, "expect"), &Value::from(changes))?;
+            entitled(&place, step, &ledgers)?;
+            continue;
+        }
         exactly(
             step,
             &[
@@ -94,27 +113,7 @@ fn tell(path: &Path) -> Result<(), String> {
                         "{place}: grantsAccess breaks INV-1 at the edge of accessUntil"
                     ));
                 }
-                let Change {
-                    subscription,
-                    periods,
-                    ..
-                } = change;
-                let mut ledger = ledger;
-                ledger.subscription = Some(subscription);
-                for period_change in periods {
-                    match period_change {
-                        PeriodChange::Written(period) => ledger.periods.push(period),
-                        PeriodChange::Restated(period) => {
-                            let held = ledger
-                                .periods
-                                .iter_mut()
-                                .find(|held| held.id == period.id)
-                                .expect("a restated period is held");
-                            *held = period;
-                        }
-                    }
-                }
-                ledgers.insert(lineage, ledger);
+                ledgers.insert(lineage, after(ledger, change));
             }
             Err(refusal) => compare(
                 &place,
@@ -123,22 +122,54 @@ fn tell(path: &Path) -> Result<(), String> {
             )?,
         }
 
-        for expected in list(step, "entitlements") {
-            let account_id = AccountId::new(text(expected, "accountId"));
-            let subscriptions = ledgers
-                .values()
-                .filter_map(|ledger| ledger.subscription.clone())
-                .collect();
-            let entitlement = AccountEntitlement::of(account_id, subscriptions);
-            compare(
-                &format!(
-                    "{place}, entitlement of {}",
-                    entitlement.account_id.as_str()
-                ),
-                expected,
-                &entitlement_json(&entitlement),
-            )?;
+        entitled(&place, step, &ledgers)?;
+    }
+    Ok(())
+}
+
+// What the ledger holds for a lineage once a change is persisted.
+fn after(mut ledger: Ledger, change: Change) -> Ledger {
+    ledger.subscription = Some(change.subscription);
+    for period_change in change.periods {
+        match period_change {
+            PeriodChange::Written(period) => ledger.periods.push(period),
+            PeriodChange::Restated(period) => {
+                let held = ledger
+                    .periods
+                    .iter_mut()
+                    .find(|held| held.id == period.id)
+                    .expect("a restated period is held");
+                *held = period;
+            }
         }
+    }
+    ledger
+}
+
+fn subscription_id(ledger: &Ledger) -> &str {
+    ledger
+        .subscription
+        .as_ref()
+        .map_or("", |subscription| subscription.id.as_str())
+}
+
+// Each account's entitlement the step states, folded over every subscription the story holds after it.
+fn entitled(place: &str, step: &Value, ledgers: &HashMap<Lineage, Ledger>) -> Result<(), String> {
+    for expected in list(step, "entitlements") {
+        let account_id = AccountId::new(text(expected, "accountId"));
+        let subscriptions = ledgers
+            .values()
+            .filter_map(|ledger| ledger.subscription.clone())
+            .collect();
+        let entitlement = AccountEntitlement::of(account_id, subscriptions);
+        compare(
+            &format!(
+                "{place}, entitlement of {}",
+                entitlement.account_id.as_str()
+            ),
+            expected,
+            &entitlement_json(&entitlement),
+        )?;
     }
     Ok(())
 }
@@ -439,7 +470,11 @@ fn period_json(period: &Period) -> Value {
         "offerKind": period.offer_kind.map(OfferKind::name),
         "refundedAt": optional_iso(period.refunded_at),
         "observedAt": iso(period.observed_at),
-        "leftWith": period.left_with.as_ref().map(AccountId::as_str),
+        "leftWith": match &period.left_with {
+            None => Value::Null,
+            Some(LeftWith::Account(paid_by)) => paid_by.as_str().into(),
+            Some(LeftWith::NoOne) => "no_one".into(),
+        },
     })
 }
 

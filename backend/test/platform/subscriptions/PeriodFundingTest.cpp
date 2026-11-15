@@ -423,6 +423,39 @@ TEST(pg_subscription_fund_an_overlapping_or_another_accounts_period_is_a_logged_
   CHECK(ledger.reports.failures.empty());
 }
 
+TEST(pg_subscription_fund_a_period_of_an_account_the_backend_no_longer_holds_funds_nothing_and_says_so) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
+  freshLedger();
+  // An account erased here before the service unbound it, whose renewal the feed then tells, or a rebuild reads again.
+  const char* erased = "e7a5e7a5-1f2e-4d3c-8b4a-59687a6b5c4d";
+  {
+    PgLease lease{*pgTestPool()};
+    pqxx::work txn{*lease};
+    txn.exec("DELETE FROM users WHERE id = $1::uuid", pqxx::params{erased});
+    txn.commit();
+  }
+  Json::Value ofTheErased = entryOf(3, 1, "period_recorded", kBought, kStart, kEnd);
+  ofTheErased["accountId"] = erased;
+  ofTheErased["entitlement"]["accountId"] = erased;
+  FakeFeed feed;
+  feed.serve(0, pageOf({ofTheErased, entryOf(3, 2, "period_recorded", kSecond, kStart, kEnd)}));
+  Ledger ledger{feed};
+  LedgerLines lines;
+
+  CHECK_EQ(nameOf(ledger.follower.follow()), std::string("applied"));
+
+  CHECK_EQ(grantsAsText(), std::string(kSecond) + " account=3f6c2a1e 1796292000000-1798970400000 amount=7000000000 "
+                                                  "closed=- statement=c09a3ab3/2\n");
+  CHECK_EQ(lines.taken(), (std::vector<std::string>{"subscription.fund no_account/warn background",
+                                                    "subscription.fund ok/info background",
+                                                    "subscription.follow ok/info background"}));
+  CHECK(ledger.reports.failures.empty());
+  CHECK(ledger.reports.warnings.empty());
+  PgLease lease{*pgTestPool()};
+  pqxx::read_transaction txn{*lease};
+  CHECK(txn.exec("SELECT 1 FROM account_entitlements WHERE account_id = $1::uuid", pqxx::params{erased}).empty());
+}
+
 TEST(pg_subscription_fund_a_period_of_a_refunded_grants_stretch_funds_and_the_follower_moves_on) {
   if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
   freshLedger();

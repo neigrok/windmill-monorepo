@@ -27,6 +27,8 @@ struct WriteCompletion {
   // How many parts of the write its door refused while the rest applied, whatever the outcome: on the line as `refused`
   // when there are any, and left off when there are none.
   std::uint64_t refused = 0;
+  // A bounded word that says more of the outcome, as the answer a called service gave: on the line as `code` when set.
+  std::string code;
 };
 std::string writeCompletionJson(const WriteCompletion& completion);
 
@@ -43,6 +45,11 @@ std::string currentWriteDoor();
 bool claimWriteIssue();
 // Files an expected event to the installed reporter as a level-warning event, under the caller's request id.
 void reportWriteWarning(const std::string& operation, const std::string& product, const std::string& door,
+                        const std::string& outcome, const std::string& requestId,
+                        const std::map<std::string, std::string>& tags);
+// Files a failure that threw nothing to the installed reporter as a level-error event with its bounded tags, under the
+// caller's request id.
+void reportWriteFailure(const std::string& operation, const std::string& product, const std::string& door,
                         const std::string& outcome, const std::string& requestId,
                         const std::map<std::string, std::string>& tags);
 void reportCurrentWriteFailure(const std::exception& error);
@@ -81,6 +88,7 @@ public:
   void finish(std::string outcome = "ok");
   void settleAs(std::string outcome) { settledOutcome_ = std::move(outcome); }
   void countRefused(std::uint64_t count) { completion_.refused += count; }
+  void code(std::string code) { completion_.code = std::move(code); }
   void skip();
   void ownInfo();
   void wrote();

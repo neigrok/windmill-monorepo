@@ -194,13 +194,10 @@ void SentryClient::reportWrite(const std::string& operation, const std::string& 
   ship(id, event);
 }
 
-void SentryClient::reportWarning(const std::string& operation, const std::string& product, const std::string& door,
-                                 const std::string& outcome, const std::string& requestId,
-                                 const std::map<std::string, std::string>& tags) {
-  if (stopping_ || !enabled_ || !allow(warnings_)) return;
-  const std::string id = hex32();
-  Json::Value event = newEvent(id, product);
-  event["level"] = "warning";
+Json::Value SentryClient::taggedEvent(const std::string& operation, const std::string& product, const std::string& door,
+                                     const std::string& outcome, const std::string& requestId,
+                                     const std::map<std::string, std::string>& tags) {
+  Json::Value event(Json::objectValue);
   event["transaction"] = operation;
   event["message"]["formatted"] = operation + ": " + outcome;
   event["tags"]["operation"] = operation;
@@ -211,6 +208,29 @@ void SentryClient::reportWarning(const std::string& operation, const std::string
   for (const auto& [name, value] : tags) event["tags"][name] = value;
   event["fingerprint"].append(operation);
   event["fingerprint"].append(outcome);
+  return event;
+}
+
+void SentryClient::reportWarning(const std::string& operation, const std::string& product, const std::string& door,
+                                 const std::string& outcome, const std::string& requestId,
+                                 const std::map<std::string, std::string>& tags) {
+  if (stopping_ || !enabled_ || !allow(warnings_)) return;
+  const std::string id = hex32();
+  Json::Value event = newEvent(id, product);
+  const Json::Value tagged = taggedEvent(operation, product, door, outcome, requestId, tags);
+  for (const std::string& key : tagged.getMemberNames()) event[key] = tagged[key];
+  event["level"] = "warning";
+  ship(id, event);
+}
+
+void SentryClient::reportFailure(const std::string& operation, const std::string& product, const std::string& door,
+                                 const std::string& outcome, const std::string& requestId,
+                                 const std::map<std::string, std::string>& tags) {
+  if (stopping_ || !enabled_ || !allow(failures_)) return;
+  const std::string id = hex32();
+  Json::Value event = newEvent(id, product);
+  const Json::Value tagged = taggedEvent(operation, product, door, outcome, requestId, tags);
+  for (const std::string& key : tagged.getMemberNames()) event[key] = tagged[key];
   ship(id, event);
 }
 
