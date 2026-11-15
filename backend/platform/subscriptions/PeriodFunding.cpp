@@ -35,20 +35,26 @@ void PeriodFunding::consume(const PageTxn& page, const std::vector<FeedEntry>& e
     if (!statesAProductionPeriod(entry) || lastEvent.at(entry.period->id) != entry.seq) continue;
     const AiBudgetStatement statement{page.target().epoch, static_cast<long long>(entry.seq)};
     if (entry.type == "period_recorded") {
-      fund(entry, statement);
+      fund(page, entry, statement);
     } else if (entry.type == "period_refunded") {
       // The event occurs at the refund time (§3.4), which its period states.
       refund(entry, entry.period->refundedAt.value_or(entry.occurredAt), statement);
     } else if (entry.type == "period_refund_reversed") {
-      if (refund(entry, std::nullopt, statement) == AiBudgetCode::NotFound) fund(entry, statement);
+      if (refund(entry, std::nullopt, statement) == AiBudgetCode::NotFound) fund(page, entry, statement);
     }
   }
 }
 
-// One grant over the period, its reference the period's own id, for the account the entry names.
-void PeriodFunding::fund(const FeedEntry& entry, const AiBudgetStatement& statement) {
+// One grant over the period, its reference the period's own id, for the account the entry names, while the backend holds
+// it.
+void PeriodFunding::fund(const PageTxn& page, const FeedEntry& entry, const AiBudgetStatement& statement) {
   const Period& period = *entry.period;
   if (!entry.accountId || !paidFor(period)) return;
+  if (!page.accountStands(*entry.accountId)) {
+    WriteObservation observation{"subscription.fund", "platform", "background", freshWriteRequestId()};
+    observation.finish("no_account");
+    return;
+  }
   observe("subscription.fund", entry, [&] {
     return budgets_.fund(AiBudgetGrant{period.id, entry.accountId->str(), AiBudgetFundingSource::Subscription,
                                        {period.start, period.end}, periodNanos_, period.id, std::nullopt, statement});

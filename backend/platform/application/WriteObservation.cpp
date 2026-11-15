@@ -63,6 +63,7 @@ std::string writeCompletionJson(const WriteCompletion& completion) {
   fields["duration_ms"] = completion.durationMs;
   fields["request_id"] = completion.requestId;
   if (completion.refused) fields["refused"] = static_cast<Json::UInt64>(completion.refused);
+  if (!completion.code.empty()) fields["code"] = completion.code;
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";
   builder["precisionType"] = "decimal";
@@ -85,6 +86,18 @@ void reportWriteWarning(const std::string& operation, const std::string& product
   }
   try {
     if (reporter) reporter->reportWarning(operation, product, door, outcome, requestId, tags);
+  } catch (...) {}
+}
+void reportWriteFailure(const std::string& operation, const std::string& product, const std::string& door,
+                        const std::string& outcome, const std::string& requestId,
+                        const std::map<std::string, std::string>& tags) {
+  std::shared_ptr<FailureReporter> reporter;
+  {
+    std::lock_guard lock(configurationMutex);
+    reporter = installedReporter;
+  }
+  try {
+    if (reporter) reporter->reportFailure(operation, product, door, outcome, requestId, tags);
   } catch (...) {}
 }
 void reportCurrentWriteFailure(const std::exception& error) {

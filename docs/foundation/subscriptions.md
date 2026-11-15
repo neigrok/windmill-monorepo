@@ -191,9 +191,9 @@ instant is named:
   it records or does not. `period_recorded` when it writes the period, carrying its refund time as
   stated, so a period first heard of refunded records `period_recorded` alone; otherwise
   `period_refunded` when its refund time is set and `period_refund_reversed` when it is cleared.
-  Binding an unbound subscription records `period_recorded` again under the account for each period it
-  holds, carrying its refund time as it stands, and that event stands for any change the same
-  observation makes to the period; so a period written while the subscription was unbound still
+  Binding an unbound subscription records `period_recorded` again under the account for each period
+  that follows its binding (§6.4), carrying its refund time as it stands, and that event stands for any
+  change the same observation makes to the period; so a period written while the subscription was unbound still
   reaches its account, and one written by the binding observation is recorded once. A purchase that
   moves an ended lineage to another account (R-11) records no period again: the periods before it stay
   recorded under the account that paid for them, and a later event of one of them, as its refund, names
@@ -250,8 +250,8 @@ period leaves a running subscription `active` (§8).
   writes the caller's id to the store as the hint (the App Store's Set App Account Token), so the
   store's later statements name the account. The binding's transaction records the hint as owed, and the
   sweep writes it and clears it once the store took it (§7). A hint is written only while the subscription
-  is bound to its account and that account is not erased; one whose binding moved, as a new purchase moves
-  it (R-11), or whose account was erased is dropped unwritten.
+  is bound to its account; one whose binding moved, as a new purchase moves it (R-11), is dropped unwritten,
+  and the erasure of its account drops it in the erasure's own transaction (§6.4).
 
 ## §5 Doors
 
@@ -334,8 +334,9 @@ it recorded any; a claim retried after its answer was lost answers the same `seq
 it cannot apply the store's state now: `store_api_unavailable` while the service holds no key for the
 store's API, `store_unavailable` when the pull gave no state to apply, `unavailable` when the ledger did
 not answer. A refresh answers 200 with `{seq}`, the subscription's newest event once the pulled state
-applied, 404 `unknown_subscription`, or the same three 503s. Every 503 means the same to a caller: try
-again later.
+applied, 404 `unknown_subscription`, or the same three 503s. The erasure answers 204 with no body
+whether it unbound anything or the account was erased already, 400 `invalid_account_id`, or 503
+`unavailable` when the ledger did not answer. Every 503 means the same to a caller: try again later.
 
 ### §5.3 What a person's device calls
 
@@ -446,8 +447,10 @@ period's `id`, so no store id reaches the backend. (R-4, R-5)
   without passing through the ones before.
 - A `period_recorded` entry that names an account, for a production period with a positive captured
   price and no `refundedAt`, funds one grant spanning the period through `AiBudgetService::fund`, in a
-  transaction of its own before the page commits (§6.1). Any other `period_recorded` funds nothing:
-  `grace` adds no period, a free-trial period carries no payment, and a refunded period was paid back.
+  transaction of its own before the page commits (§6.1), while the backend holds the account: the page
+  finds its `users` row and keeps it from an erasure until the page commits. Any other `period_recorded`
+  funds nothing: `grace` adds no period, a free-trial period carries no payment, a refunded period was paid
+  back, and an account the backend deleted, as one a rebuild reads again, is gone (§6.4).
 - A period whose start falls inside a grant the account holds, as a renewal the store charged and dated
   before the period it renews ended, is funded from that grant's `closedAt`, or its end, to its own end.
   One that leaves nothing, or still holds an instant another grant of the account holds, answers
@@ -455,8 +458,7 @@ period's `id`, so no store id reaches the backend. (R-4, R-5)
 - `fund` answers `Replay` to a period it already funded for that account, whatever the grant's
   `closedAt` or amount, and the grant keeps what it was funded with, its stretch included, so a rebuild
   (INV-11) funds nothing twice. It answers `Conflict` to a period already funded for another account (an
-  operator transfer, or erasure and a claim by another account), which is not funded again. §6.1 says
-  what the follower does with each answer.
+  operator transfer), which is not funded again. §6.1 says what the follower does with each answer.
 - A `period_refunded` entry closes the grant whose reference is the period's `id`: its `closedAt`
   becomes `min(end, refundedAt)`. A closed grant funds nothing after `closedAt` and counts toward the
   overlap rule only until `closedAt`; spent capacity is not recovered. A close for a grant that does
@@ -480,13 +482,30 @@ period's `id`, so no store id reaches the backend. (R-4, R-5)
 `DELETE /v1/me` closes an account with a 30-day grace in which a sign-in brings it back whole; from
 `closesMs` the close is final, and the account is erased by the first sign-in that meets it or by
 `ClosedAccountSweep` ([accounts](../../backend/AUTH.md)). Until then its subscriptions stay bound, so
-an account that comes back finds them as it left them. The erasure of a finally closed account calls
-`DELETE /internal/v1/accounts/{accountId}`: the service records the account as erased, so a hint
-naming it never binds again (§4), its subscriptions are unbound and its entitlement ends. The backend
-records that call in the erasure's own transaction and repeats it until the service answers, so a
-service outage never leaves a subscription bound to an erased account. The periods and events stay,
-keyed by store ids that name no person. The store goes on charging until the customer cancels there,
-so the close flow MUST say so before it proceeds, and name where to cancel.
+an account that comes back finds them as it left them. Every account the backend deletes owes the service
+`DELETE /internal/v1/accounts/{accountId}`: the erasure of a finally closed account, and an empty account
+folded into another (`POST /v1/auth/link`), which may hold a subscription the copy has not shown yet. A
+trigger on the delete of a `users` row records it in `owed_subscription_unbinds` in the deleting
+transaction, so neither a service outage nor a path that forgets leaves a subscription bound to an account
+that is gone. The backend calls the door once an erasure commits, and its sweep tries every unbind owed
+each minute until the service takes it. Only a 204, which the service answers whether it unbound anything
+or had erased the account already, settles it; any other answer, a 404 from a request that missed the
+door included, or none leaves it owed, tried again after a wait that doubles from one minute to at most
+an hour, and reported once it has been owed five minutes, then at most once an hour (§10). A period the
+feed tells of an account the backend no longer holds, as a renewal charged before the service took the
+unbind, funds nothing (§6.3).
+
+In one transaction the service records the account as erased, so a hint naming it never binds again
+(§4); unbinds every subscription bound to it, recording `unbound` under the account at the erasure, so its
+entitlement holds nothing; and drops every hint owed to a store for it. Every period the account held or
+paid for, one a new purchase moved away from it (R-11) included, stays with no one: no later event of it,
+as its refund, names an account, and a binding records again only the periods that follow it (INV-13). A
+new account that claims the subscription (R-9) therefore holds Windmill One at once, and the periods paid
+since the erasure fund its allowance (§6.3); until one does, its AI runs under the free signed-in
+allowance. The periods and events stay, keyed by store ids that name no person: the past events and the
+inbox keep the erased account's id as an opaque value, and nothing joins it to a person. The store goes on
+charging until the customer cancels there, so the close flow MUST say so before it proceeds, and name
+where to cancel.
 
 ## §7 The sweep
 
@@ -606,6 +625,11 @@ The backend's role cannot read it.
   and reported once per answer per window under `subscription.claim.unanswered`, and a claimed seq past
   the newest event of the ledger a read begun after the claim found the copy caught up with once per
   window under `subscription.claim.seq_unreached`.
+- The backend's unbind sweep logs `subscription.unbind` per attempt at a deleted account's unbind (§6.4),
+  with its outcome, `ok` or `owed`, and the service's answer as its `code`. An unbind still owed is an Issue
+  once it has been owed five minutes, then at most once an hour for each account, never once per attempt,
+  tagged with the answer and the attempt; the service logs `account.unbind` per call of its door. Funding
+  that skips a period of an account the backend no longer holds logs `subscription.fund` `no_account`.
 - A renewal, a failed charge and a refund happen with no device present, so no client can emit them.
   The follower records them as product events in the store the `/v1/events` intake writes and
   forwards from: `subscription_started`, `subscription_renewed`, `subscription_renewal_turned_off`,

@@ -1,6 +1,7 @@
 use std::env;
 use std::panic::{AssertUnwindSafe, resume_unwind};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -13,10 +14,12 @@ use domain::{
 use futures_util::FutureExt;
 use serde_json::{Value, json};
 use server::config::Config;
-use server::internal::{self, Reads};
+use server::internal::{self, BackendLedger};
 use server::listeners::{Bounds, Listener, Readiness};
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
-use storage::{AccountClaim, AccountRecord, Applied, FeedPage, Ledger, Observed, StorageError};
+use storage::{
+    AccountClaim, AccountRecord, Applied, Erasure, FeedPage, Ledger, Observed, StorageError,
+};
 use tower::ServiceExt;
 use url::Url;
 use uuid::Uuid;
@@ -31,7 +34,7 @@ impl Readiness for Unread {
     }
 }
 
-impl Reads for Unread {
+impl BackendLedger for Unread {
     async fn feed(&self, _after: i64, _limit: i64) -> Result<FeedPage, StorageError> {
         panic!("a refused request read the feed")
     }
@@ -39,9 +42,13 @@ impl Reads for Unread {
     async fn account(&self, _account_id: Uuid) -> Result<AccountRecord, StorageError> {
         panic!("a refused request read an account")
     }
+
+    async fn erase_account(&self, _account_id: Uuid) -> Result<Erasure, StorageError> {
+        panic!("a refused request erased an account")
+    }
 }
 
-// An empty ledger that remembers what each read asked for.
+// An empty ledger that remembers what each read and erasure asked for.
 #[derive(Clone, Default)]
 struct Empty {
     reads: Arc<Mutex<Vec<String>>>,
@@ -53,7 +60,7 @@ impl Readiness for Empty {
     }
 }
 
-impl Reads for Empty {
+impl BackendLedger for Empty {
     async fn feed(&self, after: i64, limit: i64) -> Result<FeedPage, StorageError> {
         self.reads
             .lock()
@@ -76,8 +83,22 @@ impl Reads for Empty {
             subscriptions: Vec::new(),
         })
     }
+
+    async fn erase_account(&self, account_id: Uuid) -> Result<Erasure, StorageError> {
+        self.reads
+            .lock()
+            .unwrap()
+            .push(format!("erase {account_id}"));
+        Ok(Erasure {
+            newly_erased: true,
+            erased_at: Instant::from_epoch_millis(1_806_000_000_000),
+            lineages: Vec::new(),
+            hints_dropped: 0,
+        })
+    }
 }
 
+// The answer's status, its challenge, and its body as JSON, null when it has none.
 async fn answer(router: Router, request: Request<Body>) -> (StatusCode, Option<String>, Value) {
     let response = router.oneshot(request).await.unwrap();
     let status = response.status();
@@ -86,6 +107,9 @@ async fn answer(router: Router, request: Request<Body>) -> (StatusCode, Option<S
         .get("www-authenticate")
         .map(|value| value.to_str().unwrap().to_owned());
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    if body.is_empty() {
+        return (status, challenge, Value::Null);
+    }
     (status, challenge, serde_json::from_slice(&body).unwrap())
 }
 
@@ -107,9 +131,16 @@ async fn every_door_refuses_a_caller_without_the_secret_and_says_nothing_of_why(
         Bounds::default(),
     );
 
-    for path in [
-        "/internal/v1/feed?after=0&limit=500",
-        "/internal/v1/accounts/3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+    for (method, path) in [
+        ("GET", "/internal/v1/feed?after=0&limit=500"),
+        (
+            "GET",
+            "/internal/v1/accounts/3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+        ),
+        (
+            "DELETE",
+            "/internal/v1/accounts/3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+        ),
     ] {
         for authorization in [
             None,
@@ -121,7 +152,7 @@ async fn every_door_refuses_a_caller_without_the_secret_and_says_nothing_of_why(
             Some("Basic 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b"),
             Some("5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b"),
         ] {
-            let mut request = Request::get(path);
+            let mut request = Request::builder().method(method).uri(path);
             if let Some(authorization) = authorization {
                 request = request.header("authorization", authorization);
             }
@@ -135,7 +166,7 @@ async fn every_door_refuses_a_caller_without_the_secret_and_says_nothing_of_why(
                     Some("Bearer".to_owned()),
                     json!({ "code": "unauthorized" })
                 ),
-                "{path} {authorization:?}"
+                "{method} {path} {authorization:?}"
             );
         }
     }
@@ -159,16 +190,23 @@ async fn without_a_secret_every_door_stays_shut() {
         Bounds::default(),
     );
 
-    for path in [
-        "/internal/v1/feed?after=0&limit=500",
-        "/internal/v1/accounts/3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+    for (method, path) in [
+        ("GET", "/internal/v1/feed?after=0&limit=500"),
+        (
+            "GET",
+            "/internal/v1/accounts/3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+        ),
+        (
+            "DELETE",
+            "/internal/v1/accounts/3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+        ),
     ] {
         for authorization in [
             None,
             Some("Bearer "),
             Some("Bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b"),
         ] {
-            let mut request = Request::get(path);
+            let mut request = Request::builder().method(method).uri(path);
             if let Some(authorization) = authorization {
                 request = request.header("authorization", authorization);
             }
@@ -182,7 +220,7 @@ async fn without_a_secret_every_door_stays_shut() {
                     Some("Bearer".to_owned()),
                     json!({ "code": "unauthorized" })
                 ),
-                "{path} {authorization:?}"
+                "{method} {path} {authorization:?}"
             );
         }
     }
@@ -200,7 +238,7 @@ async fn without_a_secret_every_door_stays_shut() {
 }
 
 #[tokio::test]
-async fn the_secret_opens_both_doors_and_each_reads_what_it_was_asked() {
+async fn the_secret_opens_every_door_and_each_reads_or_erases_what_it_was_asked() {
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
@@ -227,9 +265,17 @@ async fn the_secret_opens_both_doors_and_each_reads_what_it_was_asked() {
     )
     .await;
     let account = answer(
-        internal,
+        internal.clone(),
         Request::get("/internal/v1/accounts/3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61")
             .header("authorization", "bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    let erasure = answer(
+        internal,
+        Request::delete("/internal/v1/accounts/3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61")
+            .header("authorization", "Bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")
             .body(Body::empty())
             .unwrap(),
     )
@@ -263,17 +309,19 @@ async fn the_secret_opens_both_doors_and_each_reads_what_it_was_asked() {
             })
         )
     );
+    assert_eq!(erasure, (StatusCode::NO_CONTENT, None, Value::Null));
     assert_eq!(
         *ledger.reads.lock().unwrap(),
         [
             "feed after 26 limit 500",
-            "account 3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"
+            "account 3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            "erase 3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
         ]
     );
 }
 
 #[tokio::test]
-async fn a_query_or_an_account_id_outside_its_bounds_is_refused_before_the_ledger_is_read() {
+async fn a_query_or_an_account_id_outside_its_bounds_is_refused_before_the_ledger_is_reached() {
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
@@ -323,15 +371,19 @@ async fn a_query_or_an_account_id_outside_its_bounds_is_refused_before_the_ledge
         "/internal/v1/accounts/3f6c2a1e9b7d4e2a8c510d4f7b2e9a61",
         "/internal/v1/accounts/urn:uuid:3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
     ] {
-        let (status, _, body) = answer(
-            internal.clone(),
-            Request::get(path)
-                .header("authorization", "Bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await;
-        refusals.push((status, body));
+        for method in ["GET", "DELETE"] {
+            let (status, _, body) = answer(
+                internal.clone(),
+                Request::builder()
+                    .method(method)
+                    .uri(path)
+                    .header("authorization", "Bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
+            refusals.push((status, body));
+        }
     }
 
     let invalid = json!("invalid_query");
@@ -370,7 +422,7 @@ async fn a_query_or_an_account_id_outside_its_bounds_is_refused_before_the_ledge
         StatusCode::BAD_REQUEST,
         json!({ "code": "invalid_account_id" }),
     );
-    assert_eq!(refusals, vec![invalid_account; 6]);
+    assert_eq!(refusals, vec![invalid_account; 12]);
     assert_eq!(
         *ledger.reads.lock().unwrap(),
         ["feed after 0 limit 1", "feed after 0 limit 500"]
@@ -378,7 +430,7 @@ async fn a_query_or_an_account_id_outside_its_bounds_is_refused_before_the_ledge
 }
 
 #[test]
-fn a_read_the_ledger_does_not_answer_is_an_issue_under_its_operation() {
+fn a_read_or_an_erasure_the_ledger_does_not_answer_is_an_issue_under_its_operation() {
     #[derive(Clone)]
     struct Failing;
 
@@ -388,7 +440,7 @@ fn a_read_the_ledger_does_not_answer_is_an_issue_under_its_operation() {
         }
     }
 
-    impl Reads for Failing {
+    impl BackendLedger for Failing {
         async fn feed(&self, _after: i64, _limit: i64) -> Result<FeedPage, StorageError> {
             Err(StorageError::Busy)
         }
@@ -397,6 +449,10 @@ fn a_read_the_ledger_does_not_answer_is_an_issue_under_its_operation() {
             Err(StorageError::Database {
                 sqlstate: Some("57P01".to_owned()),
             })
+        }
+
+        async fn erase_account(&self, _account_id: Uuid) -> Result<Erasure, StorageError> {
+            Err(StorageError::OutcomeUnknown)
         }
     }
 
@@ -422,13 +478,22 @@ fn a_read_the_ledger_does_not_answer_is_an_issue_under_its_operation() {
     let mut answers = Vec::new();
 
     let events = sentry::test::with_captured_events(|| {
-        for path in [
-            "/internal/v1/feed?after=0&limit=500",
-            "/internal/v1/accounts/3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+        for (method, path) in [
+            ("GET", "/internal/v1/feed?after=0&limit=500"),
+            (
+                "GET",
+                "/internal/v1/accounts/3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            ),
+            (
+                "DELETE",
+                "/internal/v1/accounts/3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+            ),
         ] {
             let answered = runtime.block_on(answer(
                 internal.clone(),
-                Request::get(path)
+                Request::builder()
+                    .method(method)
+                    .uri(path)
                     .header("authorization", "Bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")
                     .body(Body::empty())
                     .unwrap(),
@@ -442,7 +507,10 @@ fn a_read_the_ledger_does_not_answer_is_an_issue_under_its_operation() {
         None,
         json!({ "code": "unavailable" }),
     );
-    assert_eq!(answers, [unavailable.clone(), unavailable]);
+    assert_eq!(
+        answers,
+        [unavailable.clone(), unavailable.clone(), unavailable]
+    );
     let reported: Vec<Value> = events
         .iter()
         .map(|event| {
@@ -465,6 +533,10 @@ fn a_read_the_ledger_does_not_answer_is_an_issue_under_its_operation() {
             json!({
                 "message": "account.read",
                 "tags": { "operation": "account.read", "code": "database", "sqlstate": "57P01" },
+            }),
+            json!({
+                "message": "account.unbind",
+                "tags": { "operation": "account.unbind", "code": "outcome_unknown" },
             }),
         ]
     );
@@ -499,6 +571,65 @@ async fn with_empty_database(test: impl AsyncFnOnce(String)) {
     if let Err(panic) = outcome {
         resume_unwind(panic);
     }
+}
+
+// A stalled lock costs the erasure the write's 5 s lock bound, inside the internal listener's request bound, so the door
+// answers the contract's 503 `unavailable` rather than the listener's timeout; once the lock is free it answers 204.
+#[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn an_erasure_behind_a_stalled_lock_answers_its_own_unavailable_and_once_free_erases() {
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let account = Uuid::new_v4();
+        let mut holder = PgConnection::connect(&url).await.unwrap();
+        holder
+            .execute(AssertSqlSafe(format!(
+                "select pg_advisory_lock(hashtextextended(format('account %s', '{account}'::uuid), 0))"
+            )))
+            .await
+            .unwrap();
+        let config = Config::from_environment(|variable| match variable {
+            "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
+            "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
+            "SUBSCRIPTIONS_DATABASE_URL" => Some(url.clone()),
+            "SENTRY_ENVIRONMENT" => Some("test".to_owned()),
+            "SUBSCRIPTIONS_INTERNAL_TOKEN" => Some("5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b".to_owned()),
+            _ => None,
+        })
+        .unwrap();
+        let internal = Listener::Internal.router(
+            &config,
+            ledger.clone(),
+            internal::doors(config.internal_token.clone(), ledger.clone(), Router::new()),
+            Listener::Internal.bounds(),
+        );
+        let erase = || {
+            Request::delete(format!("/internal/v1/accounts/{account}"))
+                .header("authorization", "Bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")
+                .body(Body::empty())
+                .unwrap()
+        };
+
+        let stalled = answer(internal.clone(), erase()).await;
+        holder
+            .execute("select pg_advisory_unlock_all()")
+            .await
+            .unwrap();
+        let freed = answer(internal, erase()).await;
+
+        assert_eq!(
+            stalled,
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                None,
+                json!({ "code": "unavailable" })
+            )
+        );
+        assert_eq!(freed, (StatusCode::NO_CONTENT, None, Value::Null));
+        assert!(Listener::Internal.bounds().request > Duration::from_secs(10));
+        ledger.close().await;
+    })
+    .await;
 }
 
 #[tokio::test]

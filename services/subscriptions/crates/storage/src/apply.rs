@@ -96,7 +96,8 @@ async fn apply_and_settle(
 }
 
 // The accounts the observation names are held first, then its lineage, so an erasure, which holds its account and
-// then the rows bound to it, never waits on an apply that waits on it. The events go last, under the seq lock.
+// then the lineages holding anything of it, never waits on an apply that waits on it. The events go last, under the
+// seq lock.
 async fn apply_in(
     connection: &mut PgConnection,
     observed: Observed,

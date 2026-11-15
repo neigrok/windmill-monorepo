@@ -1,0 +1,31 @@
+{
+  "request": {
+    "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"
+  },
+  "examples": [
+    {
+      "name": "erased",
+      "status": 204,
+      "body": null
+    },
+    {
+      "name": "already_erased",
+      "status": 204,
+      "body": null
+    },
+    {
+      "name": "invalid_account_id",
+      "status": 400,
+      "body": {
+        "code": "invalid_account_id"
+      }
+    },
+    {
+      "name": "ledger_unavailable",
+      "status": 503,
+      "body": {
+        "code": "unavailable"
+      }
+    }
+  ]
+}

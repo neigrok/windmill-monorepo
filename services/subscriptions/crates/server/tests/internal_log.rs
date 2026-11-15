@@ -11,18 +11,20 @@ use domain::{
 };
 use serde_json::{Value, json};
 use server::config::Config;
-use server::internal::{self, Reads};
+use server::internal::{self, BackendLedger};
 use server::listeners::{Bounds, Listener, Readiness};
 use server::telemetry::json_lines;
-use storage::{AccountRecord, FeedEntry, FeedPage, StorageError};
+use storage::{AccountRecord, Erasure, FeedEntry, FeedPage, StorageError};
 use tower::ServiceExt;
 use tracing_subscriber::prelude::*;
 use uuid::Uuid;
 
-// A ledger whose feed holds one event after seq 0 and none after it, and whose second account read fails.
+// A ledger whose feed holds one event after seq 0 and none after it, whose second account read fails, and whose first
+// erasure records an account that held nothing, its second finds it erased already and its third fails.
 #[derive(Clone, Default)]
 struct OneEvent {
     account_reads: Arc<Mutex<u32>>,
+    erasures: Arc<Mutex<u32>>,
 }
 
 impl Readiness for OneEvent {
@@ -31,7 +33,7 @@ impl Readiness for OneEvent {
     }
 }
 
-impl Reads for OneEvent {
+impl BackendLedger for OneEvent {
     async fn feed(&self, after: i64, _limit: i64) -> Result<FeedPage, StorageError> {
         let started = FeedEntry {
             seq: 1,
@@ -69,6 +71,20 @@ impl Reads for OneEvent {
             subscriptions: Vec::new(),
         })
     }
+
+    async fn erase_account(&self, _account_id: Uuid) -> Result<Erasure, StorageError> {
+        let mut erasures = self.erasures.lock().unwrap();
+        *erasures += 1;
+        if *erasures > 2 {
+            return Err(StorageError::Busy);
+        }
+        Ok(Erasure {
+            newly_erased: *erasures == 1,
+            erased_at: Instant::from_epoch_millis(1_806_000_000_000),
+            lineages: Vec::new(),
+            hints_dropped: 0,
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -86,7 +102,8 @@ impl io::Write for Captured {
 }
 
 #[tokio::test]
-async fn each_read_writes_its_route_template_and_its_outcome_and_never_the_account_or_the_secret() {
+async fn each_read_and_erasure_writes_its_route_template_and_its_outcome_and_never_the_account_or_the_secret()
+ {
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
@@ -114,36 +131,34 @@ async fn each_read_writes_its_route_template_and_its_outcome_and_never_the_accou
         tracing_subscriber::registry().with(json_lines(move || writer.clone())),
     );
 
-    for (path, authorization) in [
+    let secret = "Bearer secret-5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b";
+    let account = "/internal/v1/accounts/9387ec65-ab17-4b8c-b145-fd0d622966db";
+    for (method, path, authorization) in [
         (
+            "GET",
             "/internal/v1/feed?after=0&limit=500",
             "Bearer secret-5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b",
         ),
+        ("GET", "/internal/v1/feed?after=1&limit=500", secret),
         (
-            "/internal/v1/feed?after=1&limit=500",
-            "Bearer secret-5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b",
-        ),
-        (
+            "GET",
             "/internal/v1/feed?after=1&limit=500",
             "Bearer secret-the-wrong-one",
         ),
-        (
-            "/internal/v1/feed?after=one&limit=500",
-            "Bearer secret-5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b",
-        ),
-        (
-            "/internal/v1/accounts/9387ec65-ab17-4b8c-b145-fd0d622966db",
-            "Bearer secret-5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b",
-        ),
-        (
-            "/internal/v1/accounts/9387ec65-ab17-4b8c-b145-fd0d622966db",
-            "Bearer secret-5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b",
-        ),
+        ("GET", "/internal/v1/feed?after=one&limit=500", secret),
+        ("GET", account, secret),
+        ("GET", account, secret),
+        ("DELETE", account, secret),
+        ("DELETE", account, secret),
+        ("DELETE", account, secret),
+        ("DELETE", "/internal/v1/accounts/9387EC65", secret),
     ] {
         internal
             .clone()
             .oneshot(
-                Request::get(path)
+                Request::builder()
+                    .method(method)
+                    .uri(path)
                     .header("authorization", authorization)
                     .body(Body::empty())
                     .unwrap(),
@@ -161,13 +176,18 @@ async fn each_read_writes_its_route_template_and_its_outcome_and_never_the_accou
             let mut line: Value = serde_json::from_str(line).unwrap();
             let fields = line.as_object_mut().unwrap();
             assert!(fields.remove("timestamp").unwrap().is_string(), "{output}");
-            // A request's own line carries its id and duration; a line inside it, its span.
+            // A request's own line carries its id and duration; a line inside it, its span, and a write's line its
+            // duration too.
+            let duration = fields.remove("duration_ms");
+            let timed = !fields.contains_key("span") || fields["message"] == "account.unbind";
+            assert_eq!(
+                duration.is_some_and(|duration| duration.is_f64()),
+                timed,
+                "{output}"
+            );
             let request_fields = match fields.get_mut("span") {
                 Some(span) => span.as_object_mut().unwrap(),
-                None => {
-                    assert!(fields.remove("duration_ms").unwrap().is_f64(), "{output}");
-                    fields
-                }
+                None => fields,
             };
             assert_eq!(
                 request_fields
@@ -183,15 +203,36 @@ async fn each_read_writes_its_route_template_and_its_outcome_and_never_the_accou
         })
         .collect();
     let span = |route: &str| json!({ "name": "request", "listener": "internal", "method": "GET", "route": route });
-    let request = |level: &str, route: &str, status: u16| {
+    let erasing = json!({
+        "name": "request",
+        "listener": "internal",
+        "method": "DELETE",
+        "route": "/internal/v1/accounts/{accountId}",
+    });
+    let answered = |level: &str, method: &str, route: &str, status: u16| {
         json!({
             "level": level,
             "message": "request",
             "listener": "internal",
-            "method": "GET",
+            "method": method,
             "route": route,
             "status": status,
             "outcome": "answered",
+        })
+    };
+    let request = |level: &str, route: &str, status: u16| answered(level, "GET", route, status);
+    let erased = |outcome: &str| {
+        json!({
+            "level": "INFO",
+            "message": "account.unbind",
+            "operation": "account.unbind",
+            "outcome": outcome,
+            "answered": 204,
+            "unbound": 0,
+            "periods": 0,
+            "hints_dropped": 0,
+            "events": 0,
+            "span": erasing,
         })
     };
     assert_eq!(
@@ -234,6 +275,30 @@ async fn each_read_writes_its_route_template_and_its_outcome_and_never_the_accou
                 "span": span("/internal/v1/accounts/{accountId}"),
             }),
             request("ERROR", "/internal/v1/accounts/{accountId}", 503),
+            erased("erased"),
+            answered("INFO", "DELETE", "/internal/v1/accounts/{accountId}", 204),
+            erased("already_erased"),
+            answered("INFO", "DELETE", "/internal/v1/accounts/{accountId}", 204),
+            json!({
+                "level": "ERROR",
+                "message": "account.unbind",
+                "operation": "account.unbind",
+                "outcome": "ledger_failed",
+                "code": "busy",
+                "answered": 503,
+                "span": erasing,
+            }),
+            answered("ERROR", "DELETE", "/internal/v1/accounts/{accountId}", 503),
+            json!({
+                "level": "INFO",
+                "message": "account.unbind",
+                "operation": "account.unbind",
+                "outcome": "refused",
+                "code": "invalid_account_id",
+                "answered": 400,
+                "span": erasing,
+            }),
+            answered("WARN", "DELETE", "/internal/v1/accounts/{accountId}", 400),
         ]
     );
 }
