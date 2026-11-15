@@ -96,12 +96,14 @@ drogon::HttpResponsePtr VoiceApi::allowanceRefusalBeforeAudio(const User& caller
   }
   try {
     AiBudgetView allowance = entitlements_->aiAllowanceView(caller.id, caller.email.value);
-    if (allowance.code != AiBudgetCode::Ok) return allowanceRefusal(allowance);
-    if (allowance.tier == AiBudgetTier::WindmillOne) return nullptr;
     // A take draws only on a funded Windmill One grant, never on the free allowance a subscription falls back to
-    // without one in force.
-    allowance.code = AiBudgetCode::FundingRequired;
-    return allowanceRefusal(allowance);
+    // without one in force, so what that allowance holds is no reason to give.
+    if (allowance.tier != AiBudgetTier::WindmillOne) {
+      allowance.code = AiBudgetCode::FundingRequired;
+      allowance.budgetResetsAtMs.reset();
+      return allowanceRefusal(allowance);
+    }
+    return allowance.code == AiBudgetCode::Ok ? nullptr : allowanceRefusal(allowance);
   } catch (...) {
     return accountingUnavailable();
   }

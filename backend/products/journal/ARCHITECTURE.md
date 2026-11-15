@@ -305,8 +305,9 @@ account's AI allowance · 503 busy (`kVoiceInFlightPerAccount` 2, `kVoiceInFligh
 `kVoiceBytesPerDay` (30 MB). A vendor failure is 502, never `200 {"text":""}`.
 
 With durable USD allowances on (`backend/AI_ALLOWANCES.md`), the allowance step reads the account's
-allowance and refuses one that is not `ok` with its own code, and one that is not a Windmill One grant,
-as the free allowance a subscription with no grant in force draws on, as `funding_required`. The
+allowance and refuses one that is not a Windmill One grant, as the free allowance a subscription with no
+grant in force draws on, as `funding_required` whatever that allowance holds, then one that is not `ok`
+with its own code. The
 transcriber's admission then holds the take's ceiling on a Windmill One grant before any audio leaves,
 refusing any call without one in force as `funding_required`, and settles it at the tokens the vendor billed; a refused admission answers under
 the code that refused it and gives the take's bytes back to `kVoiceBytesPerDay`. Both answer as Coach's allowance refusals do:

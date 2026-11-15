@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -289,6 +290,36 @@ TEST(voice_with_allowances_on_answers_a_subscription_no_payment_has_funded_with_
   expected["allowance"]["resetsAtMs"] = Json::Int64(AiBudgetPeriod::at(static_cast<long long>(h.clock->now))->endMs);
   CHECK_EQ(dump(*response->getJsonObject()), dump(expected));
   CHECK_EQ(h.transcriber->calls, 0);
+}
+
+// What the free allowance holds is no reason a take is refused: a subscriber with no grant in force is told
+// funding_required whether that allowance is spent or a shared free pool is.
+TEST(voice_with_allowances_on_tells_a_subscription_no_payment_has_funded_funding_required_whatever_the_free_allowance_holds) {
+  const auto unfunded = [](const std::function<void(Harness&)>& arrange, const char* used, const char* remaining) {
+    Harness h{true};
+    UserId me = h.signIn("s-live");
+    h.subs->subscribe(me);
+    arrange(h);
+
+    const auto response = send(h.api, post("opus-bytes", "s-live"));
+
+    CHECK_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
+    Json::Value expected = parse(R"({"code":"funding_required","reason":"unavailable",
+        "error":"your plan has no funded AI allowance for this period","allowance":{"code":"funding_required",
+        "currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"limit":"0.500000000",
+        "reserved":"0.000000000","budgetResetsAtMs":null}})");
+    expected["allowance"]["used"] = used;
+    expected["allowance"]["remaining"] = remaining;
+    expected["allowance"]["resetsAtMs"] = Json::Int64(AiBudgetPeriod::at(static_cast<long long>(h.clock->now))->endMs);
+    CHECK_EQ(dump(*response->getJsonObject()), dump(expected));
+    CHECK_EQ(h.transcriber->calls, 0);
+  };
+  unfunded([](Harness& h) { h.allowances.totals.subject.spentNanos = h.limits.loggedInMonthlyNanos; },
+           "0.500000000", "0.000000000");
+  unfunded([](Harness& h) { h.allowances.totals.freeDay.spentNanos = h.limits.freeDailyNanos; },
+           "0.000000000", "0.500000000");
+  unfunded([](Harness& h) { h.allowances.totals.freeMonth.spentNanos = h.limits.freeMonthlyNanos; },
+           "0.000000000", "0.500000000");
 }
 
 // The read showed room, and the transcriber's admission refused anyway: a take holds more than is left, another AI
