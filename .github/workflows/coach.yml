@@ -1,0 +1,34 @@
+name: Coach contracts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/api-contract/agent/**'
+      - 'packages/api-contract/ai/**'
+      - '.github/workflows/coach.yml'
+      - '!packages/api-contract/**/*.md'
+  pull_request:
+    paths:
+      - 'packages/api-contract/agent/**'
+      - 'packages/api-contract/ai/**'
+      - '.github/workflows/coach.yml'
+      - '!packages/api-contract/**/*.md'
+  workflow_dispatch:
+
+concurrency:
+  group: coach-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate the AI wire
+        run: python3 packages/api-contract/ai/check.py
+      - name: Check the shared turn stories
+        run: |
+          python3 packages/api-contract/agent/generate.py --check
+          python3 packages/api-contract/agent/check.py

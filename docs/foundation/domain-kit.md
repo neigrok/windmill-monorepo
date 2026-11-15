@@ -8,8 +8,8 @@ client's design, whose public API the kit binds to.
 ## §0 Status and scope
 
 **Status:** Built in Swift (`apps/ios/Domain`); Kotlin implements it from this spec. Each
-implementation passes the shared vectors of §15. Of §2.1's packages and apps, `WindmillKit` and the
-app are not built yet.
+implementation passes the shared vectors of §15. `WindmillKit` supplies the product-neutral AI
+client and Coach runtime; the shipped app lives in `apps/ios/App` and keeps its product UI there.
 
 **The kit is pure logic.** It is the layer every Windmill feature's domain logic is declared on, on iOS
 and Android: §3–§15 and the layering tests of §2. It provides base interfaces and base implementations;
@@ -143,9 +143,10 @@ reach them.
 |---|---|---|---|
 | `WindmillSync` | `apps/ios/Sync/` | `GRDB.swift` | `SyncCore`, `SyncAPI`, `SyncSchema`, `SyncReplica`, `SyncStore`, `SyncModelServer`, `SyncEngine`, `SyncIOS`, `SyncSchemaGen`, `SyncTesting` |
 | `WindmillDomain` | `apps/ios/Domain/` | `WindmillSync`; `swift-syntax` for `LayeringTests` | `DomainKitNFC`, `DomainKit`, `DomainKitTesting`, `GymDomain`, `JournalDomain` |
-| `WindmillKit` | `apps/ios/WindmillKit/` | `WindmillDomain`, `WindmillSync` | `WindmillPlatform`, `WindmillGym`, `WindmillJournal` |
+| `WindmillAgent` | `apps/ios/Agent/` | `WindmillSync`, its `SyncCore` product only | `Agent` |
+| `WindmillKit` | `apps/ios/WindmillKit/` | `WindmillDomain`, `WindmillSync`, `WindmillAgent` | `WindmillPlatform`, `WindmillGym`, `WindmillJournal` |
 | `SyncTestingSurface` | `apps/ios/SyncTestingSurface/` | `WindmillSync`, its `SyncTesting` product only | test targets only |
-| the app | `apps/ios/project.yml` | the three packages; remote packages of its own | the app target and its test bundles |
+| the app | `apps/ios/App/project.yml` | `WindmillSync`, `WindmillDomain`, `WindmillKit`; remote packages of its own | the app target and its test bundles |
 | the probe app | `apps/ios/SyncProbe/project.yml` | `WindmillSync` | the engine's dev and test host over the probe product; never shipped |
 
 Every module is a regular Swift target, except `SyncSchemaGen`, an executable. Remote dependencies are
@@ -158,6 +159,7 @@ closed by package identity; the checked-in `Package.resolved` pins their revisio
 | `DomainKitTesting` | `DomainKit`, `SyncCore`, `SyncAPI`, `SyncEngine`, `SyncTesting` |
 | `<P>Domain` | `DomainKit`, `SyncCore`, `SyncAPI`, `SyncSchema` |
 | `<P>DomainTests` | `<P>Domain`, `DomainKit`, `DomainKitTesting`, `SyncCore`, `SyncAPI`, `SyncSchema`, `SyncTesting` |
+| `Agent` | `SyncCore` |
 | `Windmill<P>` | `<P>Domain`, `DomainKit`, `SyncCore`, `SyncAPI`, `SyncEngine`, `WindmillPlatform` |
 
 The app injects `SyncSchema.registry` into the runner and the UI modules, which do not import
@@ -167,8 +169,9 @@ The Kotlin modules `:sync-core`, `:sync-api`, `:sync-schema`, `:sync-model-serve
 (ER-10), `:domain-kit`, `:domain-kit-testing`, `:gym:domain` and `:agent` are `jvm` modules;
 `:sync-engine`, `:platform`, `:gym` and `:app` are `android` modules. Each depends as its Swift twin
 above does, with `:sync-testing` for `SyncEngine` and `SyncTesting`; `:sync-engine`,
-`:sync-model-server`, `:platform` and `:agent`, with no twin above, follow §2.2. `:agent` holds the
-product-neutral turn of [the phone Coach](mobile/gym_coach.md) (§4): it depends on `:sync-core` and
+`:sync-model-server` and `:platform`, with no twin above, follow §2.2. `:agent` and Swift's `Agent`
+hold the product-neutral [Coach engine](coach-engine.md). Kotlin's existing server-wire driver for
+[the phone Coach](mobile/gym_coach.md) (§4) stays beside it: `:agent` depends on `:sync-core` and
 kotlinx-coroutines-core, so it is neither kit nor domain and §2.3's class rules do not read it. The
 conversation's records, its receipts and context reads, and every screen stay gym's. `:gym:domain` holds the
 actions of a turn's records (`StreamTurnText`, `WithdrawTurn`, `KeepPicture`, `DeleteConversation`), which Swift
@@ -190,14 +193,14 @@ manifest. A test target is in the test layer. Every other module is in the one r
 | kit | `DomainKit`, `DomainKitNFC` | `:domain-kit` | engine API, kit |
 | kit test support | `DomainKitTesting` | `:domain-kit-testing` | kit, engine API, `SyncEngine`, `SyncTesting` |
 | product domain | `GymDomain`, `JournalDomain` | `:gym:domain` | kit, engine API |
-| agent | none: the turn is in the app target | `:agent` | `:sync-core` |
+| agent | `Agent` | `:agent` | `SyncCore` / `:sync-core` |
 | platform | `WindmillPlatform` | `:platform` | kit, engine API, `SyncEngine`, agent |
 | product UI | `WindmillGym`, `WindmillJournal` | `:gym` | its own product domain, kit, engine API, `SyncEngine`, platform, agent |
 | test | test targets; the modules of the package whose identity is `swift-syntax` | test source sets | anything but platform, product UI and composition; `<M>Tests` also `<M>` |
 
 - No product domain depends on another product domain. Platform never depends on a product module,
   and a product UI on no other product's modules.
-- No kit or product-domain module depends on `:agent`, and `:agent` depends on no product. Its sources
+- No kit or product-domain module depends on `Agent` or `:agent`, and neither depends on a product. Their sources
   name no product either: `LayeringTests` scans them for product nouns, and only the frozen `coach-…`
   wire codes of `TurnRefusal.codes`, quoted whole, may say that word.
 - The transitive closure of every kit and product-domain module stays inside kit and engine API. A
@@ -217,9 +220,10 @@ literals are not tokens.
 | `<P>Domain` | `SyncCore`, `SyncAPI`, `SyncSchema`, `DomainKit` | yes |
 | `SyncCore` | `CryptoKit`, in its digest file only | — |
 | `SyncAPI`, `SyncSchema` | `SyncCore` | — |
+| `Agent` | `SyncCore` | — |
 | every other non-test module | package modules (of §2.1's packages or a remote package): its declared direct dependencies; SDK modules (any other): any, but the layers below import no UI framework, and only `SyncStore` imports `SQLite3`, `CoreData` or `SwiftData` | — |
 
-- No kit, kit test support, product domain, engine API, engine runtime or engine test support module of
+- No agent, kit, kit test support, product domain, engine API, engine runtime or engine test support module of
   §2.1's packages imports `SwiftUI`, `UIKit` (`SyncIOS` may), `AppKit`, `Combine` or a framework
   bringing `UIKit` or `AppKit` (`AuthenticationServices`, `StoreKit`, `SafariServices`,
   `LinkPresentation`, `QuickLook`, `PhotosUI`, `MapKit`, `AVKit`, `WebKit`, `PassKit`), or names
@@ -277,16 +281,16 @@ Kotlin does not check global mutable state (an `object` holding a `var`); a doma
 ### §2.4 Enforcement
 
 1. **Declared edges (compile time).** Every `swift build` and `swift test` of `WindmillSync`,
-   `WindmillDomain`, `WindmillKit` and `SyncTestingSurface` runs with
+   `WindmillDomain`, `WindmillAgent`, `WindmillKit` and `SyncTestingSurface` runs with
    `--explicit-target-dependency-import-check error`, in CI and in each package's README command. It
    checks only that an import lies in the module's transitive closure; §2.3's import rule checks the
    edge. A domain's own UI module is a dependency cycle and never compiles.
 2. **Plain JVM (compile time).** Kit, domain and engine-API Kotlin modules are `jvm` modules, so
    `android.*` does not compile in them.
-3. **Settings (compile time).** The four packages of §2.1 declare tools version 6.2 or later and
+3. **Settings (compile time).** The five packages of §2.1 declare tools version 6.2 or later and
    Swift language mode 6 only, so global mutable state is a compile error. Every non-test target's
    settings are exactly these, with no condition and no plugin:
-   - `DomainKit`, every product domain, `SyncCore`, `SyncAPI` and `SyncSchema`:
+   - `Agent`, `DomainKit`, every product domain, `SyncCore`, `SyncAPI` and `SyncSchema`:
      `[.enableUpcomingFeature("MemberImportVisibility")]`, so a Foundation member cannot be called
      from a file that does not import Foundation;
    - every `WindmillKit` target: `[.defaultIsolation(MainActor.self), .treatAllWarnings(as: .error),
