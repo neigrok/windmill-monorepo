@@ -61,7 +61,7 @@ the pass door and no turn; its move is designed apart (AI service I-5).
 - **D-5 AI client.** The code that fetches a pass and makes a call (§4). It knows no turn.
 - **D-6 Mark.** A row the device keeps for itself, which does not sync. It names the turn the
   device is running, the `callId` of the round in flight, and how many bytes of the Coach message's
-  text, as UTF-8, had arrived before that round began.
+  text, as UTF-8, had arrived before that round began. Before the first round, `callId` is null.
 
 ## §3 Where things live
 
@@ -132,7 +132,9 @@ installation routes already answer keep their meaning:
 | 400 | `invalid_request` | The body is not the one above, the `use` is not one the backend knows, or the network address cannot be read |
 | 401 | `unauthenticated` | No session and no installation credential, or a session that has ended |
 | 401 | `invalid_installation` | The installation credential is not one the backend issued |
+| 403 | `untrusted-origin` | A cookie request has no allow-listed Origin |
 | 409 | `device_bound` | The installation alone asked, and it is bound to an account: sign in |
+| 415 | `unsupported-media-type` | A cookie request's Content-Type is not JSON |
 | 426 | `client-update-required` | The version of this use is retired |
 | 429 | `rate_limited` | The address or the principal asked too often |
 | 503 | `anonymous_ai_unavailable` | Signed-out AI is switched off on this server |
@@ -180,7 +182,8 @@ the first account pass that names the installation
   that nothing was admitted.
 - **A picture.** The client uploads a picture once, with `PUT /v1/pictures/{pictureId}`, and each
   round names it ([AI service §6.7](ai-service.md#67-pictures-a-caller-uploads)). A call refused
-  `picture_gone` uploads the picture again and is sent once more under the same `callId`.
+  `picture_gone` uploads the picture again and is sent once more under the same `callId`. A second
+  `picture_gone` is a defect and ends that operation; it does not mint another call.
 - **The allowance.** `GET /v1/allowance` answers what the seat has left. An `ended`, a `failed` and
   a refusal carry it too, or null where the service could not read it.
 - The client never makes a call under a second `callId` for the same round (INV-2).
@@ -217,7 +220,7 @@ profile. The engine runs it in this order.
       - `declined`: end the turn `declined`.
    6. On `failed`, on a refusal, or when the answer is lost for good (§4.2), end the turn `failed`
       with the code.
-4. Reaching `MAX_MODEL_CALLS` without `completed` ends the turn `failed`.
+4. Reaching `MAX_MODEL_CALLS` without `completed` ends the turn `failed` with `model-call-limit`.
 5. **End.** The tool host writes the end in one local write: the state, the whole text,
    `truncated`, the code, and what the product derives from the calls. The same write clears the
    mark. Every end keeps the text that arrived and every write an ability made.
@@ -249,6 +252,11 @@ the round's `PUT` again: it no longer holds the request.
 A recovered turn is never withdrawn, and a turn is not otherwise resumed. A round in flight when
 the process ended is paid for. (R-4)
 
+Recovery measures `ASK_AGAIN_FOR` from the recovery attempt's start; the mark holds no dispatch
+time. A mark with no `callId` ends `interrupted` without making a service request. A live client
+that exhausts its asking-again deadline gives the engine `answer-timeout`, retaining its admission
+certainty.
+
 **The device sleeps.** A process that stayed alive while its connection dropped asks for the round
 again. A phone holds the platform's lease for work in progress while a turn runs, as
 [phone-hosted Coach abilities](mobile/gym_coach.md) §4.5 says.
@@ -256,6 +264,9 @@ again. A phone holds the platform's lease for work in progress while a turn runs
 **The seat changes.** A sign-in, a sign-out or a change of the active replica ends a running turn
 `interrupted` and drops the pass (INV-1). The end is written when the change begins, before a
 sign-out sends what the device still holds, so the account's record carries it.
+The caller awaits this barrier before replacing the seat or credentials. The host guards every
+write and ability execution against that turn's seat and record identities within its commit;
+a late response cannot write through an invalidated seat or recreate a removed record.
 
 **A record gone.** A Coach message removed under its running turn, as when the conversation is
 deleted on another device, ends the turn. Nothing is written, and nothing is reported as a failure.
@@ -303,8 +314,12 @@ an error result holding its code and the profile's sentence for that code, and t
   AI service nor the backend relies on it: what the server accepts of a device's writes is checked
   where the server admits them.
 - A product's executor MAY check again what the gate checked.
+- Volume counts calls admitted to execution, including executions the host then refuses; a gate
+  refusal consumes no volume. Once groups count successful executions only.
 - A tool is sent to the provider with its input schema. Whether the provider enforces that schema
   is the AI service's to say; the Shape rule holds either way.
+- Duplicate tool-call ids within one terminal message are `invalid-answer`, a defect refused before
+  any call from that message runs. Transport replay never dispatches an already executed call again.
 
 ## §7 Access
 
@@ -320,8 +335,8 @@ for each are the product's.
 | Update | the pass door's `client-update-required` |
 | Switched off | the pass door's `anonymous_ai_unavailable`; a 404 from the pass door, which means this server has no AI |
 | Offline | no connection |
-| Did not answer | `provider_unavailable`, `provider_failed`, `accounting_unavailable`, `result_gone` |
-| A defect | `invalid_request`, `too_large`, `provider_rejected`, `funding_required`, `conflict`, `call_unknown`, every `pass_` code but one `pass_expired`: shown as did not answer, and reported |
+| Did not answer | `provider_unavailable`, `provider_failed`, `accounting_unavailable`, `result_gone`, `answer-timeout`, `model-call-limit` |
+| A defect | `invalid_request`, `invalid-answer`, `untrusted-origin`, `unsupported-media-type`, `too_large`, `provider_rejected`, `funding_required`, `conflict`, `call_unknown`, a second `picture_gone`, every `pass_` code but one `pass_expired`: shown as did not answer, and reported |
 
 - The engine reads `GET /v1/allowance` when Coach opens, and its `code` says before a question is
   sent whether one could be asked.
