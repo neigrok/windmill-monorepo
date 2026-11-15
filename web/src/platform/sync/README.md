@@ -114,3 +114,10 @@ both replicas intact; ordinary device settings retain the destination value on a
 
 Command predictions may include local deaths and serial values; only the command arguments go on
 the wire.
+## Server freshness
+
+`freshness(scope)` returns `{syncLive,serverNow}`. It requires a live socket following that scope,
+a completed pull, a clock sample from this boot without a later clock jump, and no auth or seat
+transition. Disconnected or unsampled clocks return null time. The same value is available inside
+transaction `readMetadata`, whose confirmed records carry both `rc` and server update time `ru`.
+Consumers recheck freshness inside the commit that depends on server age.

@@ -401,3 +401,12 @@ sends the labels and frames the shell's reporter above describes and no exceptio
 
 `scripts/smoke-roadmap.mjs` sends nothing: it blocks the intake and Sentry at the network layer. Any Sentry attempt or
 `client_error` beacon it blocks fails its walk.
+## Device Coach libraries
+
+The product-neutral Coach engine and AI client are available as libraries; released products do
+not call them yet. The engine's injected telemetry port emits one turn outcome (state, seat kind,
+code, counts, answer byte count and duration) and each ability's bounded name and outcome. Product
+adapters supply event names through the first-party intake when they integrate the library.
+`AiClient` reports defects and unreadable answers through `telemetry/sentry.js` under static
+`ai-call`, and pass-door failures under `ai-pass`. Expected actionable refusals return as outcomes.
+No telemetry includes seat keys, call IDs, credentials, prompts, questions, answers or tool results.

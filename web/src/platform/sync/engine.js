@@ -7,6 +7,7 @@ import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core
 import { compareRecords, recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { bodyBytes, Cursor } from '../../../../packages/api-contract/sync/reference/core/wire.js';
 import { Stamp } from '../../../../packages/api-contract/sync/reference/core/stamp.js';
+import { Offset } from '../../../../packages/api-contract/sync/reference/core/clock.js';
 import { CommitError, commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { release, releaseAll, releaseDue, undo, undoOffers } from '../../../../packages/api-contract/sync/reference/client/hold.js';
 import { engineStart, epochChange, signIn, signOut } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
@@ -344,6 +345,18 @@ export class BrowserSyncEngine {
   // passes it as `opts.gestureId`.
   newGestureId() { return crypto.randomUUID(); }
 
+  freshness(scope, replica = this.device.activeReplica) {
+    const reading = this.reading();
+    const sample = replica.meta.clockReading;
+    const syncLive = Boolean(replica.id === this.device.activeReplica.id && this.canSync()
+      && !this.signOutOpening && !this.device.meta.signOut && !this.device.meta.pendingSignIn
+      && this.live.socket?.readyState === 1 && this.live.following.has(scope)
+      && firstPullComplete(replica, scope, this.scopes(replica))
+      && replica.meta.offsetSamples.length > 0 && sample !== undefined
+      && !Offset.jumped(sample, reading, this.limits));
+    return { syncLive, serverNow: syncLive ? reading.wall + replica.meta.serverOffsetMs : null };
+  }
+
   // Confirmed rows and reconciliation metadata must come from the same replica as a commit's views.
   readMetadata(scope, replica = this.device.activeReplica, actor = this.actor) {
     const record = replica.cursorOf(scope);
@@ -352,7 +365,8 @@ export class BrowserSyncEngine {
       && !record.behind && record.digestStop === undefined && !record.mismatchReset && !replica.staging[scope];
     return {
       confirmed: new Map(replica.confirmedRows(scope).map((row) => [recordKey(row.t, row.id),
-        structuredClone({ ...viewRecord(row), ...(row.rc === undefined ? {} : { rc: row.rc }) })])),
+        structuredClone({ ...viewRecord(row), ...(row.rc === undefined ? {} : { rc: row.rc }), ...(row.ru === undefined ? {} : { ru: row.ru }) })])),
+      freshness: this.freshness(scope, replica),
       devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),
       firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)),
       actor,
