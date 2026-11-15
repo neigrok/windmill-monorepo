@@ -207,6 +207,7 @@ for (const outcome of ['copied', 'failed']) for (const action of ['edit', 'loadL
       } else if (action === 'unmount') {
         await page.evaluate(() => window.setRoom({ shared: true }));
         await page.getByRole('dialog').waitFor({ state: 'detached' });
+        await page.waitForFunction(() => document.activeElement === document.querySelector('.st-roadmap-title'));
       } else {
         await page.getByRole('button', { name: 'Copy draft' }).click();
         await page.evaluate(() => window.copies[1].reject(new DOMException('Denied', 'NotAllowedError')));
