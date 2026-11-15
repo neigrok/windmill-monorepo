@@ -135,7 +135,11 @@ The `/v1/events` endpoint accepts anonymous or authenticated client batches:
 properties are preserved. The user comes exclusively from the Bearer session or session cookie.
 Names must be lowercase snake case; properties must be flat JSON within 1 KB, including the
 platform. Batches accept at most 50 valid events and sessions are limited to 2,000 events per day.
-Clients own their event/property allowlists and must exclude user content and credentials.
+Clients own their event/property allowlists and must exclude user content and credentials. An event
+named after one only the server records, the six `subscription_*` lifecycle events below and `ai_spend`,
+drops alone, and a batch whose session key starts `subscription-` or is `windmill-backend`, the device
+keys the server's own events are told under, is refused with 400: no client can forge a server event or
+take its insert ID.
 
 An event's optional `id` uses the same bounded alphabet as `sessionKey`: 1–64 letters, digits,
 hyphens or underscores. It gives Amplitude the stable insert ID `sessionKey:id`, including when a
@@ -154,14 +158,40 @@ accepted rows, but no automatic replay to Amplitude runs. Repeated accepted clie
 create duplicate Postgres rows; the stable event ID deduplicates the Amplitude mirror. An unset
 Amplitude key intentionally disables forwarding.
 
+A renewal, a failed charge or a refund happens with no device present, so the subscription follower
+records those events itself ([subscriptions.md](../docs/foundation/subscriptions.md) §10), into the same
+`events` table and through the same forwarder: `subscription_started`, `subscription_renewed`,
+`subscription_renewal_turned_off`, `subscription_payment_failed`, `subscription_expired` and
+`subscription_revoked`. Each carries exactly `store` (`app_store`, `play_store`, `paddle` or `unknown`),
+`environment` (`production` or `sandbox`) and `offer_kind` (`none`, `free_trial`, `introductory`,
+`promotional`, `offer_code`, `win_back` or `unknown`); a word the feed's contract does not name yet reads
+`unknown`. The account the feed entry names is the row's `user_id` and Amplitude's `user_id`, never a
+property, and the event names no device. An event that is no one's, a start before the purchase is bound
+or one naming an account this backend no longer holds, names no user: its `device_id` is `subscription-`
+and 32 hex characters of the SHA-256 of the subscription's id. No event the server sends names both, so
+nothing Amplitude receives ties a device to an account; the backend itself can, since the copy's
+entitlement names its subscription, for as long as `account_entitlements` holds that account's row.
+`time` is the store's instant.
+
+An event's key is 32 hex characters of the SHA-256 of the subscription's id, the name and that instant,
+carried on the row as `server_key`. `server_event_keys` keeps every key after retention or an erasure
+deletes the row, so a page read again and a rebuild record nothing twice. That rests on a restored ledger
+replaying the same statements: a renewal the service hears again through another observation, stamped at
+another instant, is recorded again. Two events of one name for one subscription at one instant are one
+row. The insert ID is the key, after `device_id:` when there is one. The forward runs once the page has
+committed; a page that rolls back forwards nothing. A server event whose forward still fails after its
+retries stays in Postgres, its key on the row, and is not sent again. A sandbox purchase costs its buyer
+nothing; it is recorded with `environment: sandbox`, and analysis of subscribers excludes it by that
+property.
+
 The inventory has 93 HTTP write registrations: REST platform 27, roadmap 13, gym 33 (20 of them
 retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two
 standalone transport duplicates leaves 89 production HTTP operations. MCP has one write operation
 per write tool in the tables below, and a compatibility alias shares its canonical operation. Coach
 has ask's operations and one per gym ability and per roadmap ability a tend is offered, each in the
 tables below. The catalogs have eleven production commands
-(gym 9, journal 2), plus four probe commands. Background coverage includes 24 scheduled/stage
-operations plus sync publication, Amplitude forwarding and the AI usage ledger (27 background
+(gym 9, journal 2), plus four probe commands. Background coverage includes 25 scheduled/stage
+operations plus sync publication, Amplitude forwarding and the AI usage ledger (28 background
 operations). Server-origin entry points include the gym door, ServerCall metadata, session refresh,
 signup fork and the erasure of an account a sign-in finds past its grace. The roadmap socket has two write frame kinds plus rate refusal.
 
@@ -364,6 +394,7 @@ listed separately because their only server writes are authentication refresh or
 | `platform/application/ClosedAccountSweep.h via platform/application/Heartbeat.h` (background) | `background.closed-accounts` | completion only for an erased account or failure | unexpected |
 | `AuthService::eraseFinalCloses` via `ClosedAccountSweep` (background) | `auth.account.erase` | DEBUG completion per erased account, door `background`, nested in `background.closed-accounts`; one INFO `auth: closed account erased` line per account with the door, the erased account's id and the shared `request_id`; a failed account is an ERROR completion and the pass goes on to the next | unexpected |
 | `platform/subscriptions/FeedFollower.cpp follow` (background, on its own thread: at most 5 s apart once caught up, at once when asked to reach a seq, 30 s after a read that made no progress; off while `SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are unset, which one INFO line says at start) | `subscription.follow` | one completion per page read, door `background`: `ok` for a page applied, its cursor moved in the same transaction; `rebuilt` (WARN) when a restored ledger, read whole from zero, replaced the copy in one transaction, after one WARN `subscription follow: the ledger was restored (…)` line naming the cause; `unavailable` (WARN) when the feed could not be read, beside one WARN `subscription follow: the feed is unavailable (…)` line naming a bounded answer (`timeout`, `unreachable`, `network`, `tls`, `bad-reply`, an HTTP status, `malformed`, `out-of-order`, `epoch-changed`, `behind` for a rebuild that met an empty page short of the ledger); `behind` (WARN) for an empty page while the ledger reports newer events; `failed` (ERROR) for a page that could not be applied and rolled back whole, read again at the next attempt. A read that finds the copy caught up writes no line. No line or report carries an account id, a seq, an epoch, a body or the bearer secret | `failed`: unexpected, with the exception type. `subscription.follow.restored` (`cause=epoch` or `cause=latest_seq_below_cursor`) when a page starts a rebuild, and `subscription.follow.stalled` (`cause=behind` or `cause=failed` with `behind=N`, how far the ledger's newest seq is past the cursor, or `cause=unavailable answer=…`) when the cursor has not moved for 60 s while the ledger reports newer events or the feed cannot be read, beside one WARN `subscription follow: the cursor has stalled (…)` line naming that cause, which the report does not carry; each at most once per 5 minutes and under a request id of its own, apart from the read's completion. `subscription.follow.unknown_word` once per word per process, under a request id of its own, when an entry that still applied carries an event type, store or offer the contract does not name yet, beside one WARN `subscription follow: the feed names a word the backend does not know (field=word)` line; a word that is not 1–64 of `a-z0-9_` reads `(not a word)` |
+| `platform/subscriptions/PgLifecycleEvents.cpp consume` (background, in the follower's page transaction, per lifecycle entry) | `subscription.record` | DEBUG completion per lifecycle entry, door `background`, nested in the page's `subscription.follow`: `ok` when recorded in the page, its forward waiting on the page's commit; `unchanged` when its key was recorded before (a page read again, a rebuild). Other entries write no line. No line carries an account id, a subscription id or a key | `failed`: unexpected, with the exception type, under the page read's request id; the page rolls back and is read again |
 | `platform/application/MailSweep.h + ReminderSweep.cpp` (background) | `roadmap.reminder.sweep` | completion; bounded stage outcome | unexpected |
 | `platform/application/MailSweep.h + ReminderSweep.cpp` (background) | `roadmap.reminder.sweep.slot` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/RoomRegistry.cpp land` (background) | `roadmap.oplog.flush` | completion; bounded stage outcome | unexpected |

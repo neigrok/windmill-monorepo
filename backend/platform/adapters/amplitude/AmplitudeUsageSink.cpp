@@ -10,9 +10,6 @@
 namespace wm {
 namespace {
 
-// Amplitude needs a device_id or a user_id, and a server has neither.
-constexpr const char* kServerDevice = "windmill-backend";
-
 std::string propsOf(const AiSpend& spend) {
   Json::Value props(Json::objectValue);
   props["product"] = spend.product;
