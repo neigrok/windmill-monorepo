@@ -846,9 +846,9 @@ designed when the service is built, one integration at a time.
   different prompt and tools, and each product keeps its own conversations. This replaces principles
   4 and 5 of [phone-hosted Coach abilities](mobile/gym_coach.md), which is rewritten when the move is
   designed.
-- **I-4 Tending becomes roadmap Coach.** Roadmap's server-side agent retires. In the browser, roadmap
-  Coach runs its tools through the backend. The backend's tool door, `/mcp`, takes an OAuth token or
-  an MCP key and no browser session, so this move includes a door a session can call.
+- **I-4 Tending becomes roadmap Coach.** Roadmap's server-side agent retires. Roadmap Coach runs its
+  abilities on the browser's own copy of a roadmap, and its changes travel by synchronization, as
+  [Roadmap Coach](roadmap-coach.md) specifies.
 - **I-5 Talk.** Journal Talk streams the microphone to the live transcription door from the device,
   detecting the person's pauses there and naming no language. It is part of Windmill One. Where Talk
   is offered, the product tells the person that their speech is sent to the provider and kept there
