@@ -561,12 +561,12 @@ export function StepDetail({
               </section>
             </div>
           </div>
-          <span className="st-board-step-checked-announcement" role="status" aria-live="polite" aria-atomic="true">{liveChecked && !noteEditing ? checkedToast({ item: checked.label }) : ''}</span>
+          <span className="st-step-announcement st-board-step-checked-announcement" role="status" aria-live="polite" aria-atomic="true">{liveChecked && !noteEditing ? checkedToast({ item: checked.label }) : ''}</span>
           {liveChecked && !noteEditing && <div className="st-board-step-checked"><StepIcons.statusDone /><span>{checkedToast({ item: checked.label })}</span>
             <button type="button" onClick={() => { workspaceActions.onToggleSubtask(id, checked.id); setChecked(null); track('roadmap_board_workspace', { action: 'undo' }); }}>{LABELS.undo}</button>
           </div>}
           <div className="st-step-copy-anchor">
-            <span className="st-board-step-checked-announcement" role="status" aria-live="polite" aria-atomic="true">{copyRecovery ? t('roadmap.step.copyFailed') : ''}</span>
+            <span className="st-step-announcement st-step-copy-announcement" role="status" aria-live="polite" aria-atomic="true">{copyRecovery ? t('roadmap.step.copyFailed') : ''}</span>
             {copyRecovery && <section ref={copyCard} className="st-step-copy-recovery" aria-labelledby={copyTitleId}
               onKeyDown={(event) => {
                 if (event.key !== 'Escape' || event.defaultPrevented) return;
