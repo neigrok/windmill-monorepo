@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { useViewMode } from '../room/useViewMode.js';
 import { forkTree } from '../persistence/TreeRegistry.js';
 import { GalleryCard, GALLERY_CARD_CSS } from '../share/GalleryCard.jsx';
 import { ForkDoor } from '../share/ForkDoor.jsx';
-import { reportUnexpectedFailure } from '../reportFailure.js';
+import { reportRoadmapFailure, reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 import { GalleryIndex, galleryHeader } from './galleryIndex.js';
 import { fetchGallery } from './GalleryClient.js';
@@ -15,6 +15,12 @@ const SKELETON_AFTER_MS = 400;
 const ARRIVAL_MS = 150;
 const SKELETON_CARDS = [0, 1, 2, 3, 4, 5];
 
+function reportReadFailure(error, read) {
+  const reason = error?.code === 'shape' ? 'shape' : error?.status === 0 ? 'network' : 'server';
+  const report = reason === 'shape' ? reportRoadmapFailure : reportUnexpectedFailure;
+  report('roadmap-gallery-load', error, { read, reason });
+}
+
 export function BrowsePage() {
   const { user, status } = useAuth();
   const { breakpoint } = useViewMode();
@@ -24,6 +30,7 @@ export function BrowsePage() {
   const [forkingId, setForkingId] = useState('');
   const [forkFailedId, setForkFailedId] = useState('');
   const [doorFor, setDoorFor] = useState('');
+  const pageRead = useRef(null);
 
   const signedIn = status === 'signed-in' && Boolean(user);
 
@@ -34,17 +41,22 @@ export function BrowsePage() {
       .then((page) => {
         clearTimeout(reveal);
         if (!live) return;
+        track('roadmap_gallery', { step: 'load', outcome: page.entries.length ? 'available' : 'empty' });
         setIndex((current) => current.join(page));
         setSkeleton((current) => (current === 'shown' ? 'leaving' : 'hidden'));
       })
-      .catch(() => {
+      .catch((error) => {
         clearTimeout(reveal);
         if (!live) return;
+        reportReadFailure(error, 'initial');
+        track('roadmap_gallery', { step: 'load', outcome: 'failed' });
         setIndex((current) => current.failed());
         setSkeleton('hidden');
       });
     return () => { live = false; clearTimeout(reveal); };
   }, [attempt]);
+
+  useEffect(() => () => { pageRead.current = null; }, []);
 
   useEffect(() => {
     if (skeleton !== 'leaving') return undefined;
@@ -52,19 +64,34 @@ export function BrowsePage() {
     return () => clearTimeout(settled);
   }, [skeleton]);
 
-  function showMore() {
-    if (!index.hasMore || index.status === 'paging') return;
+  function loadPage(step) {
+    if (!index.hasMore || index.status === 'paging' || pageRead.current) return;
+    const request = {};
+    pageRead.current = request;
+    track('roadmap_gallery', { step, read: 'page' });
     setIndex(index.paging());
     fetchGallery({ cursor: index.cursor })
-      .then((page) => setIndex((current) => current.join(page)))
-      .catch(() => setIndex((current) => current.failed()));
+      .then((page) => {
+        if (pageRead.current !== request) return;
+        pageRead.current = null;
+        track('roadmap_gallery', { step: 'page', outcome: page.entries.length ? 'available' : 'empty' });
+        setIndex((current) => current.join(page));
+      })
+      .catch((error) => {
+        if (pageRead.current !== request) return;
+        pageRead.current = null;
+        reportReadFailure(error, 'page');
+        track('roadmap_gallery', { step: 'page', outcome: 'failed' });
+        setIndex((current) => current.failed());
+      });
   }
 
   function retry() {
     if (index.hasMore) {
-      showMore();
+      loadPage('retry');
       return;
     }
+    track('roadmap_gallery', { step: 'retry', read: 'initial' });
     setIndex(new GalleryIndex());
     setSkeleton('hidden');
     setAttempt((n) => n + 1);
@@ -153,7 +180,7 @@ export function BrowsePage() {
           </div>
         ) : index.hasMore ? (
           <div className="wm-br-quiet">
-            <button type="button" className="wm-br-more" onClick={showMore} disabled={index.status === 'paging'}>
+            <button type="button" className="wm-br-more" onClick={() => loadPage('more')} disabled={index.status === 'paging'}>
               {index.status === 'paging' ? t('roadmap.browse.loading') : t('roadmap.browse.showMore')}
             </button>
           </div>

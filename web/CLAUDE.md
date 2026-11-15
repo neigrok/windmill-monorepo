@@ -110,8 +110,8 @@ Verify an existing build against a running local backend from the repository roo
 node web/scripts/serve-built.mjs --root web/dist --port 5300 --backend http://127.0.0.1:8088 --duration 1800
 ```
 
-The server binds `127.0.0.1`, serves the existing files without rebuilding and proxies `/v1`, `/mcp`
-and `/oauth` on the same origin. The backend argument is an HTTP(S) origin without credentials,
+The server binds `127.0.0.1`, serves the existing files without rebuilding and proxies `/v1`, `/mcp`,
+`/oauth` and `/og/` on the same origin. The backend argument is an HTTP(S) origin without credentials,
 path, query or fragment. WebSocket upgrades use fresh upstream connections because Drogon can
 reject an upgrade on a connection reused after an HTTP request. Missing assets return 404; `/app`
 and its extensionless descendants and `/t/:id` use the built index. Shared-tree paths verify the

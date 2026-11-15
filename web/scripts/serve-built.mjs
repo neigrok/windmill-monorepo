@@ -83,7 +83,7 @@ export async function serveBuilt({ root, port, backend, durationSeconds = 1800 }
   }
 
   function proxyPath(url) {
-    return /^\/(?:v1|mcp|oauth)(?:\/|\?|$)/.test(url);
+    return /^\/(?:v1|mcp|oauth)(?:\/|\?|$)/.test(url) || url.startsWith('/og/');
   }
 
   const server = http.createServer(async (request, response) => {

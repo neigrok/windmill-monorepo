@@ -171,6 +171,36 @@ test('HTTP proxy preserves method, query, body, status and end-to-end headers', 
   }
 });
 
+test('gallery portraits reach the backend while their fallback remains a static image', { timeout: 5000 }, async (t) => {
+  const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 255]);
+  const received = [];
+  const site = await fixture(t, { handler: (incoming, response) => {
+    received.push({ method: incoming.method, url: incoming.url });
+    if (incoming.url === '/og/missing.png') {
+      response.writeHead(302, { location: '/og-image.png' });
+      response.end();
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=300' });
+    response.end(png);
+  } });
+  await writeFile(join(site.root, 'og-image.png'), png);
+  const portrait = await request(site.port, '/og/tree.png?version=one');
+  assert.equal(portrait.status, 200);
+  assert.equal(portrait.headers['content-type'], 'image/png');
+  assert.equal(portrait.headers['cache-control'], 'public, max-age=300');
+  assert.deepEqual(portrait.body, png);
+  const redirect = await request(site.port, '/og/missing.png');
+  assert.equal(redirect.status, 302);
+  assert.equal(redirect.headers.location, '/og-image.png');
+  const fallback = await request(site.port, redirect.headers.location);
+  assert.equal(fallback.status, 200);
+  assert.equal(fallback.headers['content-type'], 'image/png');
+  assert.deepEqual(fallback.body, png);
+  assert.equal((await request(site.port, '/ogx/tree.png')).status, 404);
+  assert.deepEqual(received, [{ method: 'GET', url: '/og/tree.png?version=one' }, { method: 'GET', url: '/og/missing.png' }]);
+});
+
 test('an HTTP request followed by an upgrade uses a fresh connection and carries frames both ways', { timeout: 5000 }, async (t) => {
   const ordinarySockets = new Set();
   const frames = [];
