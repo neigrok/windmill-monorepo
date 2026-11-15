@@ -591,30 +591,30 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Roadmap
 
-- **Guide · boards against tokens and undrawn desktop states (17).** The [desktop boards](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69888)
-  type `#884321` on Save, the field edge, the Read guide link, focus rings and the caret, and no token holds it. Web
-  builds Save, the field edge, rings and the caret on `--color-brand` and the link on `--text-link`; Save's white label
-  is 3.92:1 where the board's is 7.31:1. The device tree's footer line is built and not drawn. 17.36 draws Save solid
-  on an empty draft while 17.22 *Before typing* draws it off; web
-  keeps it off, as it does after *Load latest*, where 17.33 draws Save solid on a draft equal to the guide.
-  Owner phone geometry follows 38/42’s full page and flexible body below the Shell. The device footer and current
-  recovery behavior remain in the owner editor; phone readers retain the 17 read-only sheet.
-  The recovery boards ([three save failures](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=858-75016),
-  [17.31–17.32](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69845)) type three tints no token holds:
-  `#fcf0e8` under the desktop failure line, `#fbf3eb` under the phone's and `#f7f3e6` under the phone's *Guide changed
-  elsewhere*. Web builds both failure lines on `--color-danger-bg` and the notice on `--surface-sunken`, the
-  *Draft copied* tick on `--color-brand`, and the notice's text, typed `#312617`, on `--text-primary`. The
-  design-system Button differs from the boards' buttons: 46 px tall where they draw 44, so the desktop failure block is
-  74 px where the board's is 72; radius 16 and side padding 20 where they draw 12 and 18; and a ring on every focus
-  where they draw none. The resting field keeps its 1.5 px edge in `--border-default` where the failure boards draw
-  1 px. The `🧩 Board / Guide save failed` component (781:43205) still describes Save staying and a 12 px phone line,
-  and its variants carry older copy (*Couldn’t save — you’re offline.*, *Copy your text to keep it.*); the boards it is
-  placed on draw the line's act in Save's place, the phone line at 14 px and their own copy, and web follows the
-  boards. Built and not drawn: a guide changed elsewhere from 744 px (one line, *Changed elsewhere. Saving replaces
-  that version.*, with *Load latest*); *Draft copied* on phones (the phone's line on `--surface-sunken`, with Cancel
-  and Done); a failed save's line under a *changed elsewhere* line when both stand; a clipboard that refuses, which
-  leaves *Copy draft* standing and says nothing; the recovery states in the dark theme; and a save by someone who is no
-  longer the owner, which shows the refused line though no request was sent.
+- **Guide · recovery coverage and component contracts (17, 38–42).** Canonical
+  [17.00](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=719-42451) specifies the desktop modal and names
+  17.18–17.39 superseded; several field-note and recovery frames still carry production labels. Reconcile those
+  labels and transfer missing recovery examples into the current modal or owner phone page from 38/42. Reader
+  sheets, desktop changed-elsewhere (17.07), device editing (17.12), inherited identity (39) and phone unknown-parent
+  states (42) already have drawings. Owner phone Save retains the approved `#884321`/white styling.
+  The [Guide save-failed component](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=781-43205) still
+  describes Save staying and a 12 px phone line, with older refusal/offline copy. Current recovery replaces Save with
+  *Try again* or *Copy draft*, uses 14 px phone failure text and offers *Done* after copying. Update its description
+  and variants from the approved recovery behavior. [17.33](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69855)
+  draws active Save after *Load latest*; the clean draft's Save is focusable but `aria-disabled` and 45% opaque. Carry
+  that state into the current phone page. 17.36 contains a nonempty first draft and correctly enables Save; its
+  *Cancel an empty guide* title needs clarification.
+  [17.12](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=715-41080) draws the device disclosure with
+  outdated wording. Current device copy is *Only on this device until you sign in.*; account copy is *Your agents
+  and people you share this tree with can read the guide.* Refresh the desktop instances and handoff copy.
+  Current containers still need phone *Draft copied*, simultaneous changed-elsewhere and save failure, and dark
+  recovery examples. Copied/conflict lines use `--surface-sunken`, failures use `--color-danger-bg`, and the copied
+  tick uses `--color-brand`. *Done* returns to *Copy draft* without dismissing the draft. Annotate the current focus
+  behavior: pointer footer actions receive focus, keyboard save retains field focus, and Cmd/Ctrl+Enter invokes
+  Save or Try again, never Copy or Done.
+  Clipboard refusal leaves *Copy draft* and the draft unchanged without a message. Loss of ownership shows the
+  refused line before sending a request, although its copy says the server refused the save. Document these
+  delivered cases; a new clipboard recovery UI or changed ownership-loss wording needs an owner decision.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a
