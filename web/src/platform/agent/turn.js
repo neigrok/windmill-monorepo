@@ -71,6 +71,7 @@ export class TurnRunner {
     turn.wait.abort();
     await this.barrier.catch(() => {});
     if (turn.lease && !turn.done) await this.finish(turn, 'interrupted');
+    if (this.active === turn) this.active = null;
   }
 
   mutate(operation) {

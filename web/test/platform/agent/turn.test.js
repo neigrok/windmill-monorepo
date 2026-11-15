@@ -5,6 +5,45 @@ import { TurnRunner, HostUnavailable } from '../../../src/platform/agent/turn.js
 import { AiClient } from '../../../src/platform/ai/client.js';
 import { TransportFailure } from '../../../src/platform/ai/wire.js';
 
+test('the awaited seat barrier permits a new turn while the old provider finishes without late writes', async () => {
+  const story = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/agent/turns/text.json', import.meta.url), 'utf8'));
+  const writes = [];
+  let release;
+  let admit;
+  const admitted = new Promise((resolve) => { admit = resolve; });
+  let calls = 0;
+  let ids = 0;
+  const telemetry = { failure: () => assert.fail('unexpected failure'), turn() {}, ability() {} };
+  const ai = new AiClient({ telemetry, transport: {
+    pass: async () => ({ status: 200, body: { pass: 'private', expiresIn: 600000 } }),
+    request: async () => {
+      const first = calls++ === 0;
+      return { status: 200, events: (async function* () {
+        if (first) { admit(); await new Promise((resolve) => { release = resolve; }); }
+        yield { id: 1, event: 'text', data: { delta: first ? 'old' : 'new' } };
+        yield { id: 2, event: 'ended', data: { stop: 'completed', message: { role: 'assistant', parts: [], carry: '' }, charged: '0', allowance: null } };
+      })() };
+    },
+  } });
+  const runner = new TurnRunner({ ai, telemetry, runtime: { now: () => 0, newId: () => story.runtime.callIds[ids++], withLock: (_, options, body) => body(true) }, host: {
+    open: async (input) => ({ lease: input.seat.key, history: '', context: [], pictures: [] }),
+    beginRound: async () => {},
+    text: async (lease, text) => writes.push({ lease, text }),
+    end: async (lease, end) => writes.push({ lease, end }),
+  } });
+  const old = runner.run(story.input, story.profile);
+  await admitted;
+  await runner.seatWillChange();
+  assert.equal((await runner.run({ ...story.input, turnId: 'second', seat: { kind: 'bound', key: 'seat-2' } }, story.profile)).state, 'completed');
+  release();
+  assert.equal((await old).state, 'interrupted');
+  assert.deepEqual(writes, [
+    { lease: 'seat-1', end: { state: 'interrupted', text: '', truncated: false, code: null } },
+    { lease: 'seat-2', text: 'new' },
+    { lease: 'seat-2', end: { state: 'completed', text: 'new', truncated: false, code: null } },
+  ]);
+});
+
 for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/turns/', import.meta.url)).filter((name) => name.endsWith('.json')).sort()) {
   test(`Coach shared story: ${file}`, async () => {
     const story = JSON.parse(readFileSync(new URL(`../../../../packages/api-contract/agent/turns/${file}`, import.meta.url), 'utf8'));
