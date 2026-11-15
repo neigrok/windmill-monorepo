@@ -139,6 +139,23 @@ TEST(subscription_service_client_reads_a_service_that_is_not_listening_as_an_una
   CHECK_EQ(answerOf(client), std::string("unreachable"));
 }
 
+TEST(subscription_service_client_looks_its_host_up_at_every_read_and_names_it_as_the_host) {
+  const std::string page = dump(contractExample("feed.json", "caught_up")["body"]);
+  StubService service{{StubService::reply(200, page), StubService::reply(200, page)}};
+  const std::string port = service.url().substr(service.url().rfind(':') + 1);
+  SubscriptionServiceClient client{ServiceAddress{"http://localhost:" + port, "internal-secret"}};
+  SubscriptionServiceClient nowhere{ServiceAddress{"http://subscriptions-internal.invalid:" + port, "internal-secret"}};
+
+  CHECK_EQ(answerOf(client), std::string("read"));
+  CHECK_EQ(answerOf(client), std::string("read"));
+  CHECK_EQ(answerOf(nowhere), std::string("unreachable"));
+
+  const std::vector<std::string> requests = service.requests();
+  REQUIRE_EQ(requests.size(), std::size_t{2});
+  for (const std::string& request : requests)
+    CHECK(lowered(request).find("\r\nhost: localhost:" + port + "\r\n") != std::string::npos);
+}
+
 TEST(subscription_service_address_is_both_variables_or_neither) {
   CHECK_FALSE(ServiceAddress::from(nullptr, nullptr).has_value());
   CHECK_FALSE(ServiceAddress::from("", "").has_value());
