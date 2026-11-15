@@ -20,9 +20,10 @@ std::string stores(const PaidLine& line) {
   return "[" + listed + "]" + (line.namesUnknownStore ? " unknown" : "");
 }
 
-// The parts of a SubscriptionResponse INV-12 rules, on one line.
+// The parts of a SubscriptionResponse INV-12 rules, and the hold on Windmill One it rules on, on one line.
 std::string offered(const Json::Value& body) {
-  return "purchasable=" + dump(body["purchasable"]) + " offer=" + dump(body["offer"]) + " manage=" + dump(body["manage"]);
+  return "windmillOne=" + dump(body["windmillOne"]) + " purchasable=" + dump(body["purchasable"]) + " offer=" +
+         dump(body["offer"]) + " manage=" + dump(body["manage"]);
 }
 
 }
@@ -49,17 +50,17 @@ TEST(a_subscription_response_offers_the_open_stores_only_to_an_account_with_noth
   const std::int64_t later = 1'806'667'200'000;
 
   CHECK_EQ(offered(SubscriptionResponse{Standing{false, false, never, later}, open}.body),
-           std::string(R"(purchasable=["app_store"] offer={"aiAllowance":{"amount":"7.00","currency":"USD"}} manage=null)"));
+           std::string(R"(windmillOne=false purchasable=["app_store"] offer={"aiAllowance":{"amount":"7.00","currency":"USD"}} manage=null)"));
   CHECK_EQ(offered(SubscriptionResponse{Standing{false, false, std::nullopt, later}, open}.body),
-           std::string(R"(purchasable=["app_store"] offer={"aiAllowance":{"amount":"7.00","currency":"USD"}} manage=null)"));
+           std::string(R"(windmillOne=false purchasable=["app_store"] offer={"aiAllowance":{"amount":"7.00","currency":"USD"}} manage=null)"));
   CHECK_EQ(offered(SubscriptionResponse{Standing{true, false, never, later}, open}.body),
-           std::string("purchasable=[] offer=null manage=null"));
+           std::string("windmillOne=true purchasable=[] offer=null manage=null"));
   CHECK_EQ(offered(SubscriptionResponse{Standing{true, false, expired, later}, open}.body),
-           std::string(R"(purchasable=[] offer=null manage={"store":"app_store","url":"https://apps.apple.com/account/subscriptions"})"));
+           std::string(R"(windmillOne=true purchasable=[] offer=null manage={"store":"app_store","url":"https://apps.apple.com/account/subscriptions"})"));
   CHECK_EQ(offered(SubscriptionResponse{Standing{false, false, onHold, later}, open}.body),
-           std::string(R"(purchasable=[] offer=null manage={"store":"app_store","url":"https://apps.apple.com/account/subscriptions"})"));
+           std::string(R"(windmillOne=false purchasable=[] offer=null manage={"store":"app_store","url":"https://apps.apple.com/account/subscriptions"})"));
   CHECK_EQ(offered(SubscriptionResponse{Standing{false, false, expired, later}, PaidLine{"", 7'000'000'000}}.body),
-           std::string(R"(purchasable=[] offer=null manage={"store":"app_store","url":"https://apps.apple.com/account/subscriptions"})"));
+           std::string(R"(windmillOne=false purchasable=[] offer=null manage={"store":"app_store","url":"https://apps.apple.com/account/subscriptions"})"));
 }
 
 TEST(a_subscription_response_writes_the_offer_in_usd_minor_units_keeping_any_digit_past_them) {
@@ -79,5 +80,5 @@ TEST(a_subscription_response_reads_an_unknown_state_as_live_and_links_only_a_sto
   entitlement["production"]["governing"]["store"] = "play_store";
   const Json::Value body = SubscriptionResponse{
       Standing{false, false, EntitlementResponse{entitlement}, 1'806'667'200'000}, PaidLine{"app_store,play_store", 1}}.body;
-  CHECK_EQ(offered(body), std::string("purchasable=[] offer=null manage=null"));
+  CHECK_EQ(offered(body), std::string("windmillOne=false purchasable=[] offer=null manage=null"));
 }

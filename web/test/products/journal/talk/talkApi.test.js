@@ -109,6 +109,7 @@ test('the plan renews only where the subscription contract says Windmill One wil
     never_subscribed_line_open: false,
     allowlisted_never_subscribed_line_open: false,
     never_subscribed_line_closed: false,
+    owner_line_open: false,
     charged_twice: true,
     sandbox_allowlisted: true,
     sandbox_not_allowlisted_line_open: false,
