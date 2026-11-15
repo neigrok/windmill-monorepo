@@ -3,6 +3,7 @@
 // a test gives it, and the reads below are what more than one of those files asks of the page.
 
 import { after } from 'node:test';
+import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
@@ -112,7 +113,9 @@ export function start() {
         },
       }], optimizeDeps: { include: ['react', 'react-dom/client', 'lucide-react'] },
       server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../../', import.meta.url))] } } });
-    await server.listen(0);
+    const serverReady = once(server.httpServer, 'listening');
+    server.httpServer.listen(0, '127.0.0.1');
+    await serverReady;
     origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   })();
   return ready;
@@ -130,7 +133,13 @@ export async function open(options = {}, { engine = chromium, width = 1440, heig
   return page;
 }
 
-export const settled = (page) => page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== 'running'));
+export const settled = (page) => page.evaluate(async () => {
+  await document.fonts.ready;
+  await Promise.all(document.getAnimations()
+    .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+    .map((animation) => animation.finished.catch(() => {})));
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+});
 export const events = (page) => page.evaluate(() => (window.events ?? []).filter(({ name }) => name === 'roadmap_guide').map(({ props }) => props));
 export const prose = (page) => page.locator('.st-guide-prose');
 export const field = (page) => page.locator('.st-guide-field');

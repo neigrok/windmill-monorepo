@@ -87,6 +87,11 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
       },
       {drogon::Get});
   routes.registerHandler(
+      "/v1/trees/{tree}/steps/{step}/subtree",
+      [registryApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& tree,
+                    const std::string& step) { registryApi->createSubtree(req, std::move(cb), tree, step); },
+      {drogon::Put});
+  routes.registerHandler(
       "/v1/trees/{id}/fork",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         api->forkTree(req, std::move(cb), id);

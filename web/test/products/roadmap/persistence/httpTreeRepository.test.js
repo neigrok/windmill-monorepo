@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { HttpTreeRepository } from '../../../../src/products/roadmap/persistence/HttpTreeRepository.js';
-import { Opening, Openings } from '../../../../src/products/roadmap/model/Opening.js';
+import { Opening, Openings, TreePlace } from '../../../../src/products/roadmap/model/Opening.js';
 import { BoundaryFailure } from '../../../../src/products/roadmap/reportFailure.js';
 
 const BASE = 'http://backend.test';
@@ -24,6 +24,9 @@ async function withFetch(handler, run) {
 const ok = (body) => ({ ok: true, status: 200, json: async () => body });
 const status = (code, body = {}) => ({ ok: false, status: code, json: async () => body });
 
+// Where a root sits, as every tree read says it.
+const ROOT = { root: 't_1', parent: null, path: [], depth: 0 };
+
 const SEEDED = {
   id: 't_1',
   title: 'Learn to sail',
@@ -39,18 +42,18 @@ test('a repository without a tree id refuses to exist — there is no default ro
 });
 
 test('loadTree returns the document plus what the server knows about it', async () => {
-  await withFetch(() => ok({ data: SEEDED, visibility: 'unlisted', mine: true, createdAt: 1700000000000 }), async (calls) => {
+  await withFetch(() => ok({ data: SEEDED, ...ROOT, visibility: 'unlisted', mine: true, createdAt: 1700000000000 }), async (calls) => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     const tree = await repo.loadTree();
     assert.deepEqual(calls, [{ url: 'http://backend.test/v1/trees/t_1', init: { credentials: 'include', signal: undefined } }]);
-    assert.deepEqual(tree, { ...SEEDED, visibility: 'unlisted', mine: true, createdAt: 1700000000000, openings: Openings.fromWire() });
+    assert.deepEqual(tree, { ...SEEDED, visibility: 'unlisted', mine: true, createdAt: 1700000000000, place: TreePlace.fromWire(ROOT), openings: Openings.fromWire() });
   });
 });
 
 test('loadTree fills the three server facts a bare answer omits', async () => {
-  await withFetch(() => ok({ data: SEEDED }), async () => {
+  await withFetch(() => ok({ data: SEEDED, ...ROOT }), async () => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
-    assert.deepEqual(await repo.loadTree(), { ...SEEDED, visibility: null, mine: false, createdAt: 0, openings: Openings.fromWire() });
+    assert.deepEqual(await repo.loadTree(), { ...SEEDED, visibility: null, mine: false, createdAt: 0, place: TreePlace.fromWire(ROOT), openings: Openings.fromWire() });
   });
 });
 
@@ -59,10 +62,26 @@ test('loadTree reads what each pointer of an owner’s tree comes to, keyed by i
     b: { treeId: 't_2', title: 'Tacking drills', state: 'open', done: 1, total: 4, loop: false },
     c: { treeId: 't_3', missing: true },
   };
-  await withFetch(() => ok({ data: SEEDED, mine: true, opens }), async () => {
+  await withFetch(() => ok({ data: SEEDED, ...ROOT, mine: true, opens }), async () => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     const { openings } = await repo.loadTree();
     assert.deepEqual(openings, new Openings(new Map([['b', Opening.fromWire(opens.b)], ['c', Opening.fromWire(opens.c)]]), true));
+  });
+});
+
+test('a subtree’s read says where it sits, and every step that owns a subtree carries it, to any reader', async () => {
+  const place = { root: 't_year', parent: { tree: 't_year', step: 'sail' }, path: [{ tree: 't_year', step: 'sail', title: 'My year' }], depth: 1 };
+  const nodes = [
+    { id: 'rig', label: 'Rig the boat', prerequisites: [], subtree: { id: 't_rig', done: 1, total: 1, state: 'complete' } },
+    { id: 'wind', label: 'Read the wind', prerequisites: [] },
+  ];
+  await withFetch(() => ok({ data: { id: 't_sail', title: 'Learn to sail', nodes }, ...place, mine: false, visibility: 'public' }), async () => {
+    const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_sail' });
+    const read = await repo.loadTree();
+    assert.deepEqual({ place: read.place, openings: read.openings }, {
+      place: TreePlace.fromWire(place),
+      openings: new Openings(new Map(), true, new Map([['rig', Opening.owned({ id: 't_rig', done: 1, total: 1, state: 'complete' })]])),
+    });
   });
 });
 
@@ -139,11 +158,13 @@ test('loadTree stays silent on a request lost offline, behind a hidden page, or 
   ], [[], [], [], []]);
 });
 
-test('loadTree reports a 200 that is not a tree, such as a proxy serving the app shell, and throws', async () => {
+test('loadTree reports a 200 that is not a tree, such as a proxy serving the app shell, or that does not say where it sits, and throws', async () => {
   const answers = [
     { ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } },
-    ok({ data: { title: 'no nodes' } }),
+    ok({ data: { title: 'no nodes' }, ...ROOT }),
     ok({ error: 'nope' }),
+    ok({ data: SEEDED }),
+    ok({ data: SEEDED, ...ROOT, parent: { tree: 't_year' } }),
   ];
   for (const answer of answers) {
     const reported = [];
@@ -244,7 +265,7 @@ test('loadActivity carries the cursor and the cap, and a miss is silence, not a 
 // A repository that has read its tree from the server, and what `run` does next, under one answer for every other read.
 async function afterTreeRead(answer, run) {
   const reported = [];
-  await withFetch((url) => (/\/t_1$/.test(url) ? ok({ data: SEEDED, visibility: 'public' }) : answer()), async () => {
+  await withFetch((url) => (/\/t_1$/.test(url) ? ok({ data: SEEDED, ...ROOT, visibility: 'public' }) : answer()), async () => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', reportFailure: (operation) => reported.push(operation) });
     await repo.loadTree();
     await run(repo);
@@ -276,7 +297,7 @@ test('a server tree whose marks are refused or lost unwatched throws without rep
 
 test('an owner naming its operation reports the marks under it too', async () => {
   const reported = [];
-  await withFetch((url) => (/\/t_1$/.test(url) ? ok({ data: SEEDED }) : status(500)), async () => {
+  await withFetch((url) => (/\/t_1$/.test(url) ? ok({ data: SEEDED, ...ROOT }) : status(500)), async () => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1', operation: 'roadmap-export-load', reportFailure: (operation) => reported.push(operation) });
     await repo.loadTree();
     await assert.rejects(() => repo.loadProgress(SEEDED), (error) => error instanceof BoundaryFailure);

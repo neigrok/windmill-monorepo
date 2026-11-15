@@ -7,7 +7,7 @@ import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
 import { useAppearance } from '../../shell/useAppearance.js';
 import { Canvas } from './Canvas.jsx';
-import { TalkButton } from './TalkButton.jsx';
+import { TalkButton } from './talk/TalkButton.jsx';
 import { SearchOverlay } from './search/SearchOverlay.jsx';
 import { NudgePanel } from './NudgePanel.jsx';
 import { ZoomView } from './zoom/ZoomView.jsx';
