@@ -18,9 +18,21 @@ test('gallery reads report only wanted results and keep retries private', { time
       resolveId(id) {
         if (id === '/gallery-reads-entry.js') return '\0gallery-reads-entry';
         if (id.endsWith('/auth/AuthProvider.jsx')) return '\0gallery-reads-auth';
+        if (id.endsWith('/browse/GalleryClient.js') || id === './GalleryClient.js') return '\0gallery-reads-client';
       },
       load(id) {
         if (id === '\0gallery-reads-auth') return "export const useAuth = () => ({ status: 'signed-out', user: null });";
+        if (id === '\0gallery-reads-client') return `
+import { fetchGallery as fetchGalleryActual, portraitUrl } from '/src/products/roadmap/browse/GalleryClient.js?actual';
+export { portraitUrl };
+window.galleryReads = [];
+export function fetchGallery(options) {
+  const read = { promise: fetchGalleryActual(options), settled: false };
+  window.galleryReads.push(read);
+  Promise.allSettled([read.promise]).then(() => { read.settled = true; });
+  return read.promise;
+}
+`;
         if (id === '\0gallery-reads-entry') return `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -28,6 +40,18 @@ import { flushSync } from 'react-dom';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 import { BrowsePage } from '/src/products/roadmap/browse/BrowsePage.jsx';
+const actualFetch = window.fetch;
+window.telemetryRequests = [];
+window.fetch = (...args) => {
+  const promise = actualFetch(...args);
+  const url = new URL(args[0] instanceof Request ? args[0].url : args[0], location.href);
+  if (url.pathname === '/v1/events' || url.origin === 'https://errors.example') {
+    const request = { promise, settled: false };
+    window.telemetryRequests.push(request);
+    Promise.allSettled([promise]).then(() => { request.settled = true; });
+  }
+  return promise;
+};
 const root = createRoot(document.getElementById('fixture'));
 window.mount = () => flushSync(() => root.render(React.createElement(BrowsePage)));
 window.unmount = () => flushSync(() => root.render(null));
@@ -111,10 +135,23 @@ window.unmount = () => flushSync(() => root.render(null));
           await page.goto(`${origin}/gallery-reads-test#/${canary}`);
           await page.waitForFunction(() => typeof window.mount === 'function');
           const assertTelemetry = async (expected) => {
+            await page.waitForFunction((count) => window.galleryReads.length === count && window.galleryReads.every((read) => read.settled), requests.length);
+            await page.evaluate(() => {
+              window.galleryTaskComplete = false;
+              const task = new MessageChannel();
+              task.port1.onmessage = () => {
+                task.port1.close();
+                task.port2.close();
+                window.galleryTaskComplete = true;
+              };
+              task.port2.postMessage(null);
+            });
+            await page.waitForFunction(() => window.galleryTaskComplete);
             await page.evaluate(() => {
               Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
               window.dispatchEvent(new Event('online'));
             });
+            await page.waitForFunction(() => window.telemetryRequests.every((request) => request.settled));
             const deadline = AbortSignal.timeout(5000);
             while (events.length < expected.events.length || issues.length < expected.issues.length || pendingTelemetry.size) {
               await once(observation, 'change', { signal: deadline });
@@ -236,12 +273,31 @@ window.unmount = () => flushSync(() => root.render(null));
               await held;
               return response;
             }, async ({ page, assertTelemetry }) => {
+              if (read === 'page') {
+                await page.evaluate(() => window.mount());
+                await page.getByRole('button', { name: 'Show more trees', exact: true }).waitFor();
+              }
+              if (response.status === 200) await page.evaluate(() => {
+                const actualFetch = window.fetch;
+                window.fetch = async (...args) => {
+                  const response = await actualFetch(...args);
+                  if (String(args[0]).includes('/v1/gallery?')) {
+                    const actualText = response.text.bind(response);
+                    response.text = async () => {
+                      const text = await actualText();
+                      await new Promise((resolve) => setTimeout(resolve, 250));
+                      return text;
+                    };
+                  }
+                  return response;
+                };
+              });
               const requested = page.waitForRequest((request) => {
                 const url = new URL(request.url());
                 return url.pathname === '/v1/gallery' && (read === 'initial' || url.searchParams.get('cursor') === cursor);
               });
-              await page.evaluate(() => window.mount());
               if (read === 'page') await page.getByRole('button', { name: 'Show more trees', exact: true }).click();
+              else await page.evaluate(() => window.mount());
               await requested;
               await page.evaluate(() => window.unmount());
               const finished = page.waitForEvent('requestfinished', (request) => request.url().includes('/v1/gallery?'));
