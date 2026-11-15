@@ -28,7 +28,8 @@ struct ServiceAddress {
 };
 
 // The backend's client of the subscription service's internal doors (§5.2), reached on the container network. Each
-// call blocks its caller until the service answers or kTimeoutSeconds pass. No body, query or secret reaches a log.
+// call blocks its caller until the service answers, or kTimeoutSeconds pass for a feed read and kClaimAnswerWait for a
+// claim. No body, query or secret reaches a log.
 class SubscriptionServiceClient : public SubscriptionFeed, public AppStoreClaims {
 public:
   explicit SubscriptionServiceClient(const ServiceAddress& address);
