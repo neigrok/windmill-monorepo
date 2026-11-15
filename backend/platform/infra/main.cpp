@@ -507,7 +507,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     LOG_ERROR << "subscriptions: SUBSCRIPTIONS_PURCHASABLE_STORES names a store the backend does not know; it stays closed";
     sentry->report("config", "subscription.paid_line", "unknown_store");
   }
-  auto subscriptionApi = std::make_shared<subscriptions::SubscriptionApi>(authService, entitlements, paidLine, sentry);
 
   std::shared_ptr<AiBudgetAlerts> aiBudgetAlerts;
   if (aiBudgets) {
@@ -605,6 +604,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // (docs/foundation/subscriptions.md §6.1), its lifecycle events recorded into the events store (§10). Off while
   // neither variable is set; one without the other refuses to start.
   std::optional<subscriptions::ServiceAddress> subscriptionService;
+  std::optional<subscriptions::ClaimForwarding> claimForwarding;
   try {
     subscriptionService = subscriptions::ServiceAddress::from(std::getenv("SUBSCRIPTIONS_INTERNAL_URL"),
                                                               std::getenv("SUBSCRIPTIONS_INTERNAL_TOKEN"));
@@ -628,6 +628,12 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     lifetime.watch(feedFollower, subscriptionFeed, entitlementCopy, lifecycleEvents, eventRepo, amplitude, periodFunding,
                    aiBudgets, aiBudgetRepo, sentry);
     feedFollower->start();
+    // A device's App Store claim, forwarded to the service and answered once the follower brings the copy to it (§5.3).
+    // The queue holds at most one claim per account, the others waiting behind it in the door.
+    auto claimWorkers = std::make_shared<WorkerPool>("subscription-claim", 4, 32,
+                                                     std::make_shared<FailureWindow>(*sentry, "worker_pool.saturated"));
+    lifetime.onStop([claimWorkers] { claimWorkers->stopAndJoin(); }, feedFollower, subscriptionFeed, entitlements, sentry);
+    claimForwarding = subscriptions::ClaimForwarding{subscriptionFeed, feedFollower, claimWorkers};
   } else {
     LOG_INFO << "subscriptions: the feed follower is off (SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN unset)";
   }
@@ -830,6 +836,10 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         reportsSentWithin(reporter, kReportsFlushLimit);
         std::_Exit(0);
       }}};
+  // A claim still queued when the process is told to stop answers at once, so the framework is not held past its budget.
+  if (claimForwarding) claimForwarding->stopping = [stopping = stop.stopping()] { return stopping->load(); };
+  auto subscriptionApi = std::make_shared<subscriptions::SubscriptionApi>(authService, entitlements, paidLine, sentry,
+                                                                          claimForwarding);
   // Ahead of every other advice. A request that reaches the server once it is stopping — on a connection the
   // framework has not closed yet, or read together with one still being served — is not served: it is answered a bare
   // 503, what an edge with no upstream answers, on a connection the framework is closing. Closing it here with no
@@ -885,9 +895,10 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto composeGlobal = std::make_shared<RateLimiter>(0.5, 20.0);         // global LLM spend ceiling
   auto tendPerIp = std::make_shared<RateLimiter>(5.0 / 600.0, 3.0);   // ~5 runs / 10 min / client
   auto tendGlobal = std::make_shared<RateLimiter>(0.2, 8.0);          // global agent-spend ceiling
+  auto claimPerIp = std::make_shared<RateLimiter>(20.0 / 60.0, 10.0);  // ~20 App Store claims / min / client
   app.registerSyncAdvice(
       [apiLimiter, magicPerIp, magicGlobal, codePerIp, composePerIp, composeGlobal, tendPerIp,
-       tendGlobal, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+       tendGlobal, claimPerIp, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
         if (req->method() == drogon::Options) return nullptr;  // preflight already answered above
         if (retiredRoute(req)) return nullptr;
         const std::string ip = clientIp(req);
@@ -911,6 +922,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         if (ok && path.rfind("/v1/trees/", 0) == 0 && path.size() >= 5 &&
             path.compare(path.size() - 5, 5, "/tend") == 0)
           ok = tendPerIp->allow(ip) && tendGlobal->allow("global");
+        // Each claim waits on the service and the follower, so one address cannot keep every account's waiting.
+        if (ok && path == "/v1/subscription/app-store/claims") ok = claimPerIp->allow(ip);
         if (ok) return nullptr;
         Json::Value body(Json::objectValue);
         body["error"] = "rate limited";
@@ -998,6 +1011,12 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         subscriptionApi->get(req, std::move(cb));
       },
       {drogon::Get});
+  routes.registerWriteHandler(
+      "subscription.claim", "/v1/subscription/app-store/claims",
+      [subscriptionApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        subscriptionApi->claimAppStore(req, std::move(cb));
+      },
+      {drogon::Post});
 
   // Redirects, not fetches, so no CORS.
   routes.registerWriteHandler("auth.google.start",

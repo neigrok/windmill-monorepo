@@ -23,6 +23,7 @@ struct Standing {
   bool allowlisted = false;                       // on the sandbox allowlist: its sandbox purchases count
   std::optional<EntitlementResponse> entitlement;  // the copy's row; none for an account the feed never named
   std::int64_t now = 0;
+  bool recordedClaim = false;  // a claim the service recorded that the copy has not reached yet (§5.3)
 
   bool grants(Environment environment) const;
   bool hasWindmillOne() const;
@@ -46,7 +47,8 @@ struct PaidLine {
 
 // §5.3 SubscriptionResponse: whether the account holds Windmill One, as every gate reads it; the Entitlement shown and
 // which environment it is, whether the account is on the sandbox allowlist, where its governing subscription is managed,
-// the stores it may buy through now (INV-12) and the offer beside them, which is there exactly when a store is.
+// the stores it may buy through now (INV-12), none beside a recorded claim, and the offer beside them, which is there
+// exactly when a store is.
 struct SubscriptionResponse {
   SubscriptionResponse(const Standing& standing, const PaidLine& line);
 

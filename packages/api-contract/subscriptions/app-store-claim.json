@@ -96,6 +96,22 @@
       }
     },
     {
+      "name": "recorded_copy_behind",
+      "status": 202,
+      "body": {
+        "windmillOne": false,
+        "environment": "production",
+        "allowlisted": false,
+        "plan": null,
+        "accessUntil": null,
+        "governing": null,
+        "others": [],
+        "manage": null,
+        "purchasable": [],
+        "offer": null
+      }
+    },
+    {
       "name": "bound_to_another_account",
       "status": 409,
       "body": {
