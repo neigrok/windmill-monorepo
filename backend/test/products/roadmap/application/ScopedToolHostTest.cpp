@@ -316,13 +316,14 @@ TEST(scoped_tool_host_offers_a_tend_no_argument_and_no_field_for_the_tree_a_node
   CHECK_EQ(tended.at("update_nodes"), update);
   Json::Value import = plain.at("import_subgraph");
   import["properties"]["nodes"]["items"]["properties"].removeMember("opens");
+  import["properties"].removeMember("branches");
   CHECK_EQ(tended.at("import_subgraph"), import);
   for (const char* read : {"get_tree", "get_nodes", "find_nodes"}) {
     Json::Value schema = plain.at(read);
     schema["properties"].removeMember("includeGuides");
     schema["properties"]["fields"]["items"]["enum"] =
         test::list({"id", "label", "icon", "color", "kind", "order", "prerequisites", "status",
-                    "seedStatus", "state", "summary", "description", "links", "url"});
+                    "seedStatus", "state", "summary", "description", "links", "subtree", "url"});
     CHECK_EQ(tended.at(read), schema);
   }
   CHECK_EQ(tended.at("change_edges"), plain.at("change_edges"));
@@ -604,4 +605,72 @@ TEST(scoped_tool_host_names_no_withheld_word_among_the_keys_an_unknown_argument_
   CHECK_EQ(message(scoped.callTool("import_subgraph", parse(R"({"nodes":[{"id":"n","open":"t_sub"}]})"), h.actor)),
            std::string("import_subgraph: unknown argument \"nodes[0].open\". nodes[0] takes: color, description, icon, id, kind, label, links, order, prerequisites, seedStatus."));
   CHECK_EQ(test::body(h.call("get_tree", test::kNoArgs))["count"].asUInt64(), 0u);
+}
+
+// A tend is pinned to its tree, so it is told nothing of the trees above and is not offered create_subtree: its get_tree
+// answers no root, parent, path or depth where a plain caller's answers them, its catalog names no create_subtree and a
+// call of it is refused with nothing created. The subtree a step of its tree owns is that tree's: it reads it, and an
+// import that re-sends the step, which a tend can only send without a pointer, leaves the step owning it.
+TEST(scoped_tool_host_tells_a_tend_nothing_of_the_trees_above_and_offers_it_no_create_subtree) {
+  test::Harness h;
+  CHECK_FALSE(h.call("create_node", test::node("sail", "Learn to sail")).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  Json::Value rig = test::node("rig", "Rig");
+  rig["treeId"] = sailing.str();
+  REQUIRE(!h.tools.callTool("create_node", rig, h.actor).isError);
+  ScopedToolHost below(h.tools, sailing);
+  ScopedToolHost above(h.tools, TreeId{"t"});
+
+  Json::Value plain(Json::objectValue);
+  plain["treeId"] = sailing.str();
+  CHECK_EQ(test::keys(test::body(h.tools.callTool("get_tree", plain, h.actor))["tree"]),
+           (std::vector<std::string>{"depth", "guide", "guides", "id", "kinds", "nodes", "parent", "path", "root", "title",
+                                     "url"}));
+  const ToolResult tended = below.callTool("get_tree", Json::Value(Json::objectValue), h.actor);
+  CHECK_EQ(test::keys(test::body(tended)["tree"]),
+           (std::vector<std::string>{"guide", "id", "kinds", "nodes", "title", "url"}));
+  CHECK_EQ(test::body(tended)["tree"]["title"], Json::Value("Learn to sail"));
+
+  CHECK_FALSE(has(toolNames(below.declareTools()), "create_subtree"));
+  const ToolResult refused = above.callTool("create_subtree", test::with("nodeId", "sail"), h.actor);
+  CHECK(refused.isError);
+  CHECK_EQ(message(refused), std::string("tending edits a single tree — create_subtree is out of its reach"));
+  CHECK_EQ(h.bus.subtreeBroadcasts.size(), 1u);
+
+  const Json::Value nodes = test::body(above.callTool("get_tree", Json::Value(Json::objectValue), h.actor))["tree"]["nodes"];
+  CHECK_EQ(nodes[0]["subtree"], parse(R"({"id":"t_00000000000000c1","done":0,"total":1,"state":"open"})"));
+  CHECK_FALSE(above.callTool("import_subgraph", parse(R"({"nodes":[{"id":"sail","label":"Sail"}]})"), h.actor).isError);
+  std::lock_guard<std::mutex> strand(h.registry.strandFor(TreeId{"t"}));
+  CHECK(h.registry.open(TreeId{"t"})->subtrees() == (std::map<NodeId, TreeId>{{NodeId{"sail"}, sailing}}));
+}
+
+// A tend never removes a branch: it is not offered `branches` on delete_node or import_subgraph, a call that names it is
+// refused in words that a branch is removed by its owner, with nothing deleted, and the step that owns the subtree goes
+// only with its owner's own call. The catalogue a tend reads tells it nothing it is never sent.
+TEST(scoped_tool_host_refuses_a_tend_the_branches_that_would_remove_a_subtree) {
+  test::Harness h;
+  CHECK_FALSE(h.call("create_node", test::node("sail", "Learn to sail")).isError);
+  const TreeId sailing{"t_00000000000000c1"};
+  REQUIRE(std::holds_alternative<SubtreeCreation>(
+      h.treeRegistry.createSubtree(TreeId{"t"}, NodeId{"sail"}, h.caller, {sailing, std::nullopt})));
+  ScopedToolHost scoped(h.tools, TreeId{"t"});
+
+  for (const ToolDeclaration& tool : scoped.declareTools()) {
+    CHECK_EQ(dump(tool.descriptor["inputSchema"]).find("\"branches\""), std::string::npos);
+    CHECK_EQ(tool.descriptor["description"].asString().find("where it sits"), std::string::npos);
+  }
+  const std::size_t frames = h.bus.subgraphBroadcasts.size();
+  for (const char* arguments : {R"({"nodeId":"sail","branches":["t_00000000000000c1"]})",
+                                R"({"nodes":[],"tombstone":["sail"],"branches":["t_00000000000000c1"]})"}) {
+    const Json::Value args = parse(arguments);
+    const ToolResult refused = scoped.callTool(args.isMember("nodes") ? "import_subgraph" : "delete_node", args, h.actor);
+    CHECK(refused.isError);
+    CHECK_EQ(message(refused),
+             std::string("tending edits a single tree — a step's subtree is removed by its owner, never by a tend"));
+  }
+  CHECK_EQ(h.bus.subgraphBroadcasts.size(), frames);
+  std::lock_guard<std::mutex> strand(h.registry.strandFor(TreeId{"t"}));
+  CHECK(h.registry.open(TreeId{"t"})->subtrees() == (std::map<NodeId, TreeId>{{NodeId{"sail"}, sailing}}));
 }

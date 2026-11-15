@@ -287,6 +287,15 @@ PointerDiagnostics OpenedTrees::diagnose(const TreeId& tree, const std::map<Node
   return diagnostics;
 }
 
+Progress followedOrUnread(const TreeId& tree, const std::map<NodeId, TreeId>& steps,
+                          const std::optional<OpenedTrees>& opened, const Progress& marks) {
+  if (opened) return opened->followed(tree, steps, marks);
+  Progress unread;
+  unread.completed = marks.completed;
+  for (const auto& [step, opens] : steps) unread.completed.erase(step);
+  return unread;
+}
+
 Progress readerView(const TreeId& tree, const Progress& marks, const std::map<NodeId, StampedPointer>& pointers,
                     const std::optional<OpenedTrees>& opened) {
   std::map<NodeId, TreeId> targets;

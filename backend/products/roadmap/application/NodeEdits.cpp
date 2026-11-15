@@ -10,9 +10,9 @@ namespace wm {
 NodeEdits::NodeEdits(RoomRegistry& rooms, ProgressService& progress, PresenceBus& bus, Clock& clock)
     : rooms_(rooms), progress_(progress), bus_(bus), clock_(clock) {}
 
-ProgressReceipt NodeEdits::landMarks(const TreeId& tree, const UserId& user, const std::map<NodeId, TreeId>& pointers,
+ProgressReceipt NodeEdits::landMarks(const TreeId& tree, const UserId& user, const FollowedSteps& followed,
                                      const std::vector<ProgressWrite>& writes) {
-  const ProgressReceipt receipt = progress_.mark(tree, pointers, user, writes, StampedBy::server, clock_.nowMs());
+  const ProgressReceipt receipt = progress_.mark(tree, followed, user, writes, StampedBy::server, clock_.nowMs());
   // One echo for the whole batch, not one frame per node.
   bus_.broadcastProgress(tree, user, receipt.recorded);
   return receipt;

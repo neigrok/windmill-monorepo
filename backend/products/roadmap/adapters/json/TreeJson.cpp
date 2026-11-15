@@ -95,18 +95,21 @@ Json::Value toJson(const TreeData& data) {
   return root;
 }
 
+Json::Value toJson(const OwnedSubtree& owned) {
+  Json::Value subtree(Json::objectValue);
+  subtree["id"] = owned.id.str();
+  if (!owned.opening) return subtree;
+  subtree["done"] = owned.opening->done;
+  subtree["total"] = owned.opening->total;
+  subtree["state"] = owned.opening->complete ? "complete" : "open";
+  return subtree;
+}
+
 Json::Value toJson(const TreeData& data, const std::map<NodeId, OwnedSubtree>& subtrees) {
   Json::Value root = toJson(data);
-  for (Json::ArrayIndex i = 0; i < data.nodes.size(); ++i) {
-    const auto owned = subtrees.find(data.nodes[i].id);
-    if (owned == subtrees.end()) continue;
-    Json::Value& subtree = root["nodes"][i]["subtree"];
-    subtree["id"] = owned->second.id.str();
-    if (!owned->second.opening) continue;
-    subtree["done"] = owned->second.opening->done;
-    subtree["total"] = owned->second.opening->total;
-    subtree["state"] = owned->second.opening->complete ? "complete" : "open";
-  }
+  for (Json::ArrayIndex i = 0; i < data.nodes.size(); ++i)
+    if (const auto owned = subtrees.find(data.nodes[i].id); owned != subtrees.end())
+      root["nodes"][i]["subtree"] = toJson(owned->second);
   return root;
 }
 

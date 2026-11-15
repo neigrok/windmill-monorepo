@@ -52,7 +52,7 @@ public:
   // is answered as owned, and an id another writer took meanwhile is replaced by a minted one, once. A call that fails
   // before the commit leaves no row, no seq and no event; one that fails after it is `unannounced`. One
   // `roadmap.subtree.create` line per call, at the door the call came through (`internal` outside one): REST's
-  // `PUT /v1/trees/{tree}/steps/{step}/subtree`.
+  // `PUT /v1/trees/{tree}/steps/{step}/subtree` and MCP's `create_subtree`.
   std::variant<SubtreeCreation, SubtreeRefusal, Admission> createSubtree(const TreeId& parent, const NodeId& step,
                                                                          const UserId& caller,
                                                                          const SubtreeRequest& request = {});

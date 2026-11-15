@@ -677,7 +677,7 @@ struct FakeTreeRepository : TreeRepository {
                                                        const LegendState& legend, Seq parentSeq) override {
     if (duringSubtreeCreate) duringSubtreeCreate();
     const std::optional<StoredTree> stored = row(parent.tree);
-    if (!stored) return SubtreeConflict::parentGone;
+    if (!stored || !row(rootOf(parent.tree))) return SubtreeConflict::parentGone;
     for (const auto& [id, subtree] : subtrees)
       if (subtree.parent == parent) return SubtreeConflict::stepOwned;
     if (byId.count(child.str())) return SubtreeConflict::idTaken;
