@@ -672,6 +672,8 @@ TEST(subscription_claim_waiting_past_its_queue_wait_or_through_a_stop_answers_wi
   CHECK_EQ(told(door.await(withTheService)), refused);
   CHECK_EQ(told(door.await(behind)), later + " stopping/warn platform rest");
   CHECK_EQ(told(door.await(another)), later + " stopping/warn platform rest");
+  door.workers->stopAndJoin();
+  CHECK_EQ(told(door.claim(first, Door::transaction(6))), later + " stopping/warn platform rest");
   CHECK_EQ(door.service->asked().size(), std::size_t{2});
   CHECK(door.reports->seen.empty());
 }

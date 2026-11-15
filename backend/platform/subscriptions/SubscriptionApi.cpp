@@ -70,13 +70,13 @@ struct SubscriptionApi::Claims : std::enable_shared_from_this<Claims> {
   }
 
 private:
-  // The account's first claim onto the pool's queue, behind every claim taken before it. One the pool refuses is
-  // answered `busy`, and the next behind it is tried.
+  // The account's first claim onto the pool's queue, behind every claim taken before it. One the pool refuses, full or
+  // stopping with the process, is answered at once, and the next behind it is tried.
   void post(const std::string& account) {
     for (;;) {
       if (forwarding_.workers->post([self = shared_from_this(), account] { self->settleFirst(account); })) return;
-      const bool another = answerFirst(account, [](const Claim&) {
-        settleCurrentWriteAs("busy");
+      const bool another = answerFirst(account, [this](const Claim&) {
+        settleCurrentWriteAs(forwarding_.stopping() ? "stopping" : "busy");
         return claimAgainLater();
       });
       if (!another) return;
