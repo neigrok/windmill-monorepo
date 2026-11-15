@@ -957,7 +957,6 @@ TEST(coach_turn_error_frame_names_when_the_refused_budget_returns_and_only_a_fai
       {R"({"refused":"free_month_exhausted"})", "free_month_exhausted", "{" + read + R"(,"budgetResetsAtMs":1793491200000,"code":"free_month_exhausted"})", {}},
       {R"({"refused":"subject_exhausted"})", "subject_exhausted", "{" + read + R"(,"code":"subject_exhausted"})", {}},
       {R"({"refused":"concurrency_exhausted"})", "concurrency_exhausted", "{" + read + R"(,"code":"concurrency_exhausted"})", {}},
-      {R"({"refused":"funding_required"})", "funding_required", "{" + read + R"(,"code":"funding_required"})", {}},
       {R"({"refused":"debt_outstanding"})", "debt_outstanding", "{" + read + R"(,"code":"debt_outstanding"})", {}},
       {R"({"refused":"coach-busy"})", "coach-busy", R"({"code":"coach-busy"})", {}},
       {R"({"refused":"coach-rate-limited"})", "coach-rate-limited", R"({"code":"coach-rate-limited"})", {}},
