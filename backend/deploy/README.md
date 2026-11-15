@@ -592,9 +592,12 @@ stdout did not take the counts.
 The server follows the subscription service's feed into `account_entitlements`, its own copy of every
 account's entitlement ([subscriptions.md](../../docs/foundation/subscriptions.md) §6.1), once
 `SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are both set. With neither it logs at
-start that the follower is off; with one alone it refuses to start, naming the other. Windmill One and
-`GET /v1/subscription` read the copy either way, so an account the feed has not reached holds Windmill One
-only through `WINDMILL_OWNER_EMAILS`.
+start that the follower is off; with one alone it refuses to start, naming the other. The same pages
+record the subscription lifecycle events into `events` and forward them to Amplitude
+([OBSERVABILITY.md](../OBSERVABILITY.md)); a key in `server_event_keys` is an event recorded, so a page
+read again or a rebuild after a restore records none twice. Windmill One and `GET /v1/subscription` read the
+copy whether or not the follower runs, so an account the feed has not reached holds Windmill One only through
+`WINDMILL_OWNER_EMAILS`.
 
 Two GitHub variables, both empty by default, decide what the copy is read against. `WINDMILL_SANDBOX_EMAILS`
 names the accounts whose sandbox purchases count (the team's testers and the App Review account); every

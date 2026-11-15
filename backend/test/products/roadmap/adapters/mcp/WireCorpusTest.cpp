@@ -15,7 +15,7 @@ using namespace wm::test;
 namespace {
 
 // The corpus schema version, written into the golden. Bump it by convention when the wire changes on purpose; nothing enforces it.
-constexpr int kWireCorpusVersion = 28;
+constexpr int kWireCorpusVersion = 29;
 
 struct Step {
   const char* tool;
@@ -142,8 +142,14 @@ std::vector<Step> plan() {
                               array.append(mark("docs", "complete"));
                               return array;
                             }()}})},
-      // Four deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end. The
-      // last is a node that names neither kind nor colour in a legend whose one kind is plum.
+      // `sync` is given a subtree, and the same call sent again answers it as made; a read of the owning steps carries it.
+      {"create_subtree", with("nodeId", "sync")},
+      {"create_subtree", with("nodeId", "sync")},
+      {"find_nodes", obj({{"owns", true}, {"fields", strings({"id", "subtree"})}})},
+      // Five deterministic FAILURES, so the error wire is pinned too. Errors mutate nothing, so they ride at the end. A
+      // step that opens a tree takes no subtree, and the last is a node that names neither kind nor colour in a legend
+      // whose one kind is plum.
+      {"create_subtree", with("nodeId", "docs")},
       {"update_nodes", obj({{"updates", [] {
                                Json::Value array(Json::arrayValue);
                                array.append(mark("no-such-node", "active"));

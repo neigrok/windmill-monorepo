@@ -187,6 +187,78 @@
   outline-offset: 2px;
 }
 
+.st-switcher-actions {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.st-switcher-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+
+.st-switcher-action[data-switcher-action="rename"]:hover {
+  background: var(--color-brand-soft);
+  color: var(--accent-terracotta-600);
+}
+
+.st-switcher-action[data-switcher-action="delete"]:hover {
+  background: var(--color-danger-bg);
+  color: var(--accent-brick-500);
+}
+
+.st-switcher-row:hover .st-switcher-actions,
+.st-switcher-row:focus-within .st-switcher-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.st-switcher-row:focus-visible,
+.st-switcher-row button:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+@media (min-width: 744px) and (max-width: 1023px) {
+  .st-switcher-action {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    color: var(--text-secondary);
+  }
+
+  .st-switcher-action > svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .st-switcher-confirm-actions > button {
+    min-width: 84px;
+    min-height: 44px;
+  }
+}
+
+@media (min-width: 744px) and (max-width: 1023px) and (pointer: coarse) {
+  .st-switcher-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .st-roadmap-popover-anchor {
   position: relative;
   flex-shrink: 0;

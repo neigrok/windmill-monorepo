@@ -59,6 +59,7 @@ add_library(windmill_platform
   platform/subscriptions/Feed.cpp
   platform/subscriptions/FeedFollower.cpp
   platform/subscriptions/PgEntitlementCopy.cpp
+  platform/subscriptions/PgLifecycleEvents.cpp
   platform/subscriptions/SubscriptionApi.cpp
   platform/subscriptions/SubscriptionServiceClient.cpp
   platform/subscriptions/WindmillOne.cpp
@@ -642,6 +643,7 @@ add_executable(windmill_adapters_tests
   test/platform/ai_installations/PgAiInstallationsTest.cpp
   test/platform/subscriptions/FeedFollowerTest.cpp
   test/platform/subscriptions/PgEntitlementCopyTest.cpp
+  test/platform/subscriptions/PgLifecycleEventsTest.cpp
   test/platform/subscriptions/SubscriptionApiTest.cpp
   test/platform/subscriptions/SubscriptionServiceClientTest.cpp
   test/platform/adapters/http/AiAllowanceApiTest.cpp

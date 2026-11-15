@@ -77,7 +77,9 @@ Json::Value amplitudeEvents(const std::string& sessionKey, const std::optional<U
   int index = 0;
   for (const FunnelEvent& event : events) {
     Json::Value item(Json::objectValue);
-    item["device_id"] = sessionKey;  // Amplitude needs a device_id OR user_id; the anon key is always present
+    // Amplitude needs a device_id OR a user_id. A client's session key is always present; a server event told under its
+    // account alone has none.
+    if (!sessionKey.empty()) item["device_id"] = sessionKey;
     if (user) item["user_id"] = user->str();
     item["event_type"] = event.name;
     item["time"] = static_cast<Json::Int64>(event.clientMs);
@@ -90,7 +92,7 @@ Json::Value amplitudeEvents(const std::string& sessionKey, const std::optional<U
     // two events sharing a session and a millisecond from colliding.
     item["insert_id"] = sessionKey + ":" + idSeed + ":" + std::to_string(event.clientMs) + ":" +
                         event.name + ":" + std::to_string(index++);
-    if (!event.id.empty()) item["insert_id"] = sessionKey + ":" + event.id;
+    if (!event.id.empty()) item["insert_id"] = sessionKey.empty() ? event.id : sessionKey + ":" + event.id;
     out.append(std::move(item));
   }
   return out;
@@ -99,25 +101,29 @@ Json::Value amplitudeEvents(const std::string& sessionKey, const std::optional<U
 void AmplitudeClient::forward(const std::string& sessionKey, const std::optional<UserId>& user,
                               const std::vector<FunnelEvent>& events, const std::string& idSeed) {
   if (apiKey_.empty() || events.empty()) return;
-
-  Json::Value payload(Json::objectValue);
-  payload["api_key"] = apiKey_;
-  payload["options"]["min_id_length"] = 1;
-  payload["events"] = amplitudeEvents(sessionKey, user, events, idSeed);
-
-  Json::StreamWriterBuilder builder;
-  builder["indentation"] = "";
-  const std::string body = Json::writeString(builder, payload);
-
-  auto client = drogon::HttpClient::newHttpClient("https://" + host_, loop_.getLoop());
-  auto req = drogon::HttpRequest::newHttpRequest();
-  req->setMethod(drogon::Post);
-  req->setPath("/2/httpapi");
-  req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-  req->setBody(body);
-
   auto observation = std::make_shared<WriteObservation>("amplitude.forward", "platform", "background", "", failures_.get());
-  sendBatch(client, req, failures_, 3, observation);
+
+  // The events are already stored: a forward that cannot even be sent fails this observation, never its caller.
+  try {
+    Json::Value payload(Json::objectValue);
+    payload["api_key"] = apiKey_;
+    payload["options"]["min_id_length"] = 1;
+    payload["events"] = amplitudeEvents(sessionKey, user, events, idSeed);
+
+    Json::StreamWriterBuilder builder;
+    builder["indentation"] = "";
+    const std::string body = Json::writeString(builder, payload);
+
+    auto client = drogon::HttpClient::newHttpClient("https://" + host_, loop_.getLoop());
+    auto req = drogon::HttpRequest::newHttpRequest();
+    req->setMethod(drogon::Post);
+    req->setPath("/2/httpapi");
+    req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    req->setBody(body);
+    sendBatch(client, req, failures_, 3, observation);
+  } catch (const std::exception& error) {
+    observation->fail(error);
+  }
 }
 
 }

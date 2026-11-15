@@ -46,3 +46,11 @@ TEST(amplitude_event_ids_survive_a_retry_in_a_different_batch) {
       R"("event_type":"gym_ask_outcome","insert_id":"session-123:event-2",)"
       R"("platform":"Android","time":1000}])"));
 }
+
+TEST(amplitude_an_event_told_under_its_account_alone_names_no_device) {
+  const FunnelEvent renewed{"subscription_renewed", 1000, R"({"store":"app_store"})", "6927e7ab1d4daf287bbe9eaf1cb62da8"};
+
+  CHECK_EQ(dump(amplitudeEvents("", UserId{"user-123"}, {renewed})), std::string(
+      R"([{"event_properties":{"store":"app_store"},"event_type":"subscription_renewed",)"
+      R"("insert_id":"6927e7ab1d4daf287bbe9eaf1cb62da8","time":1000,"user_id":"user-123"}])"));
+}

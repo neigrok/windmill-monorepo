@@ -2,9 +2,11 @@
 
 #include "platform/subscriptions/Feed.h"
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <utility>
+#include <vector>
 
 namespace wm::subscriptions {
 
@@ -16,14 +18,27 @@ public:
   virtual ~PageTxn() = default;
 
   virtual const FeedCursor& cursor() const = 0;  // where the copy stood as the page began
-  virtual void commit() = 0;
+
+  // The page's rows and the cursor become durable together, then what waited on them runs, in the order it was asked.
+  void commit() {
+    persist();
+    for (const std::function<void()>& then : afterCommit_) then();
+  }
+
+  // What may happen only once the page's rows are durable, as telling Amplitude of an event the page recorded. A page
+  // that rolls back runs none of it. It must not throw, since the page has committed by then.
+  void afterCommit(std::function<void()> then) { afterCommit_.push_back(std::move(then)); }
 
   const FeedCursor& target() const { return target_; }  // its epoch is the ledger's the page was read under
   bool rebuilding() const { return rebuilding_; }        // a rebuild from zero, whose copy began the page empty
 
+protected:
+  virtual void persist() = 0;  // the page's rows and the cursor, in one commit
+
 private:
   const FeedCursor target_;
   const bool rebuilding_;
+  std::vector<std::function<void()>> afterCommit_;
 };
 
 // What the backend does with each entry, in order: the copy first, then each further consumer (§6.1). A consumer that

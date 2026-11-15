@@ -5,6 +5,8 @@ import { lazy } from 'react';
 import { journalLandingHead } from './marketing/landingHead.js';
 import { migratePages } from './migrate.js';
 import { adoptDeviceRows, isWritten, onSyncResult, pagesOf, pendingClaimWork, recoveredDrafts, watchClaims } from './pages.js';
+import { talkStore } from './talk/talkStore.js';
+import { track } from '../../telemetry/beacon.js';
 import { t } from './i18n/entry/index.js';
 
 const importJournalApp = () => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp }));
@@ -27,6 +29,18 @@ function home() {
 
 function landingAfterSignIn() {
   return home();
+}
+
+// What signing out takes from this tab: a recording Talk kept, which leaves with the account (forgetDevice below). The
+// sign-out question says so and offers it as a download first.
+function signOutNotice() {
+  const { take } = talkStore.snapshot();
+  if (!take) return null;
+  return {
+    line: t('journal.talk.signOutDiscards'),
+    download: { label: t('journal.talk.act.download'), href: take.url, filename: take.filename,
+      onDownload: () => track('journal_talk_take', { action: 'download' }) },
+  };
 }
 
 function render({ hash }) {
@@ -60,6 +74,9 @@ export const journalRoutes = {
   settingsSections: {
     data: [YourJournalSection],
   },
+  signOutNotice,
+  // An account change forgets what Talk held for the last account: a recording never crosses accounts.
+  forgetDevice: () => talkStore.forget(),
   landing: {
     head: journalLandingHead,
     href: '/journal',

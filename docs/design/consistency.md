@@ -861,10 +861,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   summary follows its arrival, and the welcome-back recap names progress since the previous visit. Without WebGL2 neither appears
   on the Board. No approved frame draws either Board presentation; the follow-up is to draw both on the applicable bands.
 - **Board · the topbar before a roadmap loads.** Before the load answers, the tablet Board shows a still name skeleton; other bands
-  show no name. After a failure the build shows no name and offers no Share. It shows the switch while loading, but not after a failed load: the Graph's
-  load error veils the topbar, so the switch would lead where a pointer cannot come back from. Proposed, awaiting the owner: a still name
-  skeleton with no chevron while loading outside the tablet Board (15.08), and *Your roadmaps* with its chevron after a failed load (15.09). The switch returns to
-  the load error once the Graph's load error leaves the topbar reachable.
+  show no name. After a failure, eligible tablet app routes offer the account or device roadmap list through
+  [approved 32](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1098-71834); loading, empty and failed lists stay distinct.
+  Shared-reader routes offer no recovery switcher, including while signed in. Other bands show no name after failure.
+  A failed Board offers neither Share nor the Board/Graph switch: the Graph's load error veils its topbar.
+  Proposed, awaiting the owner outside the tablet Board: a still name skeleton without a chevron (15.08) and
+  *Your roadmaps* after failure (15.09). The view switch waits for an accessible Graph load-error topbar.
 - **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and field focus. G4 retains the phone Graph
   camera group under the row. Proposed, awaiting the owner: 25.11, 25.12.
 - **Board · reader Graph title affordance.** G8-H1 makes the selected-step title open the reader's read-only step page, with Fork
@@ -997,6 +999,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   nothing to fill in — write a line or a page.* (engine A.3); where the web draws it under the mood and
   energy scales, *no fields* reads against two fields. Copy owner: reword it (*nothing you have to fill
   in*) or keep it.
+- **Talk refused sheet · night tertiary.** The approved `Talk sheet · refused`
+  ([296:839](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=296-839)) sets the kept line, the take's
+  length and *Recording discarded · Undo* in `text/tertiary`, at night `#737476` on the `#161921` card: 3.76:1, under
+  the 4.5:1 floor for 11 px text. The web draws the three in the journal's dim ink (`.journal-talk-kept` in
+  `journal.css`): at night the secondary text `#B6B5B0`, 8.56:1; by day the tertiary `#74654F` the board draws. Redraw the
+  night lines on `text/secondary`, or rule the board's value back in.
 - **F34 · Type roles.** Reconcile the journal's unassigned first-run, talk, verdict, nudge,
   week-count and narrow scale styles with the named type ramp.
 - **F36 · Phone tools.** Check the fixed `.journal-tools` rail against the writing measure at

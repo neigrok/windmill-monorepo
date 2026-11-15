@@ -1,5 +1,5 @@
 {
-  "schemaVersion" : 28,
+  "schemaVersion" : 29,
   "steps" : 
   [
     {
@@ -14,6 +14,7 @@
               "seq" : 0,
               "tree" : 
               {
+                "depth" : 0,
                 "guide" : 
                 {
                   "text" : "",
@@ -23,6 +24,9 @@
                 "id" : "t",
                 "kinds" : [],
                 "nodes" : [],
+                "parent" : null,
+                "path" : [],
+                "root" : "t",
                 "title" : "Test Roadmap",
                 "url" : "https://app.example/#/app/t"
               }
@@ -607,6 +611,7 @@
               "seq" : 10,
               "tree" : 
               {
+                "depth" : 0,
                 "guide" : 
                 {
                   "text" : "Ship the root first; render and sync follow it.",
@@ -706,6 +711,9 @@
                     "status" : "complete"
                   }
                 ],
+                "parent" : null,
+                "path" : [],
+                "root" : "t",
                 "title" : "Test Roadmap",
                 "url" : "https://app.example/#/app/t"
               }
@@ -1108,6 +1116,116 @@
         "content" : 
         [
           {
+            "text" : 
+            {
+              "created" : true,
+              "parentSeq" : 12,
+              "subtree" : 
+              {
+                "depth" : 1,
+                "id" : "t_d1",
+                "parent" : 
+                {
+                  "step" : "sync",
+                  "tree" : "t"
+                },
+                "root" : "t"
+              }
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 23,
+      "tool" : "create_subtree"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "created" : false,
+              "parentSeq" : 12,
+              "subtree" : 
+              {
+                "depth" : 1,
+                "id" : "t_d1",
+                "parent" : 
+                {
+                  "step" : "sync",
+                  "tree" : "t"
+                },
+                "root" : "t"
+              }
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 24,
+      "tool" : "create_subtree"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : 
+            {
+              "count" : 1,
+              "nodes" : 
+              [
+                {
+                  "id" : "sync",
+                  "subtree" : 
+                  {
+                    "done" : 0,
+                    "id" : "t_d1",
+                    "state" : "open",
+                    "total" : 0
+                  }
+                }
+              ]
+            },
+            "type" : "text"
+          }
+        ],
+        "isError" : false,
+        "structuredContent" : null
+      },
+      "step" : 25,
+      "tool" : "find_nodes"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
+            "text" : "create_subtree: step \"docs\" opens a roadmap of yours: clear its opens with update_nodes before it holds a subtree",
+            "type" : "text"
+          }
+        ],
+        "isError" : true,
+        "structuredContent" : null
+      },
+      "step" : 26,
+      "tool" : "create_subtree"
+    },
+    {
+      "result" : 
+      {
+        "content" : 
+        [
+          {
             "text" : "update_nodes: no node in this tree is named \"no-such-node\". Call get_tree with fields [\"id\",\"label\"] to list the ids this tree has.",
             "type" : "text"
           }
@@ -1115,7 +1233,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 23,
+      "step" : 27,
       "tool" : "update_nodes"
     },
     {
@@ -1131,7 +1249,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 24,
+      "step" : 28,
       "tool" : "update_nodes"
     },
     {
@@ -1147,7 +1265,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 25,
+      "step" : 29,
       "tool" : "create_node"
     },
     {
@@ -1163,7 +1281,7 @@
         "isError" : true,
         "structuredContent" : null
       },
-      "step" : 26,
+      "step" : 30,
       "tool" : "create_node"
     }
   ]

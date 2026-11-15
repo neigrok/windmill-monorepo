@@ -1,5 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { register } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -281,7 +282,9 @@ const ready = (async () => {
       },
     }], optimizeDeps: { include: ['react', 'react-dom/client'] },
     server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../../', import.meta.url))] } } });
-  await server.listen(0);
+  const httpReady = once(server.httpServer, 'listening');
+  server.httpServer.listen(0, '127.0.0.1');
+  await httpReady;
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   browser = await chromium.launch({ headless: true });
 })();
@@ -412,18 +415,41 @@ async function openStatePage(viewport, state, errors, { reducedMotion = 'no-pref
   return page;
 }
 
-test('Chromium: Try again on a load error reloads and emits once, with only the state and the action', async () => {
+test('Chromium: load error keeps its message centered on tablet; Try again reloads and emits once', async () => {
   await ready;
   const errors = [];
-  const page = await openStatePage({ width: 1440, height: 900 }, { nodes: null, failed: true, breakpoint: 'desktop' }, errors);
-  try {
-    await page.getByRole('button', { name: 'Try again' }).click();
-    assert.deepEqual([await page.evaluate(() => window.calls), await events(page)],
-      [['retry'], ['roadmap_board_state_action {"state":"error","action":"retry"}']]);
-    assert.deepEqual(errors, []);
-  } finally {
-    await page.close();
+  const expected = {
+    phone: { top: 128, height: 756, messageTop: 128, messageCenter: 475 },
+    tablet: { top: 116, height: 844, messageTop: 458.5, messageCenter: 538 },
+    desktop: { top: 128, height: 832, messageTop: 452.5, messageCenter: 532 },
+  };
+  for (const width of [390, 743, 744, 1023, 1024, 1440]) {
+    const breakpoint = width < 744 ? 'phone' : width < 1024 ? 'tablet' : 'desktop';
+    for (const theme of ['light', 'dark']) {
+      const page = await openStatePage({ width, height: 960 }, { nodes: null, failed: true, breakpoint, topInset: 116 }, errors);
+      try {
+        await page.evaluate(async (theme) => {
+          document.documentElement.dataset.theme = theme;
+          await document.fonts.ready;
+          await Promise.all(document.getAnimations().filter((animation) =>
+            animation.effect.getComputedTiming().iterations !== Infinity).map((animation) => animation.finished));
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        }, theme);
+        const layout = await page.evaluate(() => {
+          const state = document.querySelector('.st-board-state').getBoundingClientRect();
+          const message = document.querySelector('.st-board-state-message').getBoundingClientRect();
+          return { top: state.top, height: state.height, messageTop: message.top, messageCenter: message.top + message.height / 2 };
+        });
+        assert.deepEqual(layout, expected[breakpoint], `${width}px ${theme}`);
+        await page.getByRole('button', { name: 'Try again' }).click();
+        assert.deepEqual([await page.evaluate(() => window.calls), await events(page)],
+          [['retry'], ['roadmap_board_state_action {"state":"error","action":"retry"}']]);
+      } finally {
+        await page.close();
+      }
+    }
   }
+  assert.deepEqual(errors, []);
 });
 
 test('Chromium: after Try again focus rests on the skeleton, then lands on the columns’ tab stop, or on Try again if the load fails again', async () => {

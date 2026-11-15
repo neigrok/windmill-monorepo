@@ -1,5 +1,6 @@
 #include "platform/adapters/http/EventsApi.h"
 
+#include "platform/adapters/amplitude/AmplitudeClient.h"
 #include "platform/adapters/json/JsonText.h"
 #include "test/platform/Fakes.h"
 #include "test/testing.h"
@@ -34,6 +35,15 @@ struct FakeEventRepository : EventRepository {
   int countInLastDay(const std::string& sessionKey) override { return alreadyToday[sessionKey]; }
 };
 
+// Each batch the intake forwards, as Amplitude would be sent it.
+struct RecordedForwards : EventForwarder {
+  std::vector<std::string> batches;
+  void forward(const std::string& sessionKey, const std::optional<UserId>& user, const std::vector<FunnelEvent>& events,
+               const std::string& idSeed) override {
+    batches.push_back(dump(amplitudeEvents(sessionKey, user, events, idSeed)));
+  }
+};
+
 struct RecordedFailures : FailureReporter {
   std::vector<std::string> events;
   bool throwReport = false;
@@ -57,7 +67,8 @@ struct Harness {
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
   std::shared_ptr<FakeEventRepository> repo = std::make_shared<FakeEventRepository>();
   std::shared_ptr<RecordedFailures> failures = std::make_shared<RecordedFailures>();
-  EventsApi api{repo, auth, nullptr, failures};
+  std::shared_ptr<RecordedForwards> forwards = std::make_shared<RecordedForwards>();
+  EventsApi api{repo, auth, forwards, failures};
 
   UserId signIn(const std::string& sessionSecret) {
     User user = authRepo.createUser(Email{"sam@example.com"}, "sam");
@@ -261,6 +272,57 @@ TEST(events_native_batch_keeps_the_authenticated_user_and_overrides_property_pla
   CHECK_EQ(stored.events[0].props, std::string(R"({"platform":"android"})"));
   CHECK_EQ(stored.events[1].props,
            std::string(R"({"failure_kind":"timeout","outcome":"failed","platform":"android"})"));
+}
+
+TEST(events_a_stored_batch_reaches_the_forwarder_as_stored_and_one_not_stored_never_does) {
+  Harness h;
+  const UserId user = h.signIn("s-web");
+  Json::Value events(Json::arrayValue);
+  Json::Value started = entry("gym_ask_started", 1000);
+  started["id"] = "event-1";
+  events.append(started);
+  events.append(entry("not a name", 1500));
+  auto request = post(batch("web-session", events));
+  request->addHeader("authorization", "Bearer s-web");
+
+  CHECK_EQ(send(h.api, request)->getStatusCode(), drogon::k202Accepted);
+  CHECK_EQ(h.forwards->batches, (std::vector<std::string>{
+      R"([{"device_id":"web-session","event_properties":{},"event_type":"gym_ask_started",)"
+      R"("insert_id":"web-session:event-1","time":1000,"user_id":")" + user.str() + R"("}])"}));
+
+  h.repo->failAppend = true;
+  CHECK_EQ(send(h.api, post(batch("web-session", events)))->getStatusCode(), drogon::k500InternalServerError);
+  CHECK_EQ(h.forwards->batches.size(), std::size_t{1});
+}
+
+TEST(events_a_client_batch_names_no_event_and_no_device_key_only_the_server_records) {
+  Harness h;
+  Json::Value events(Json::arrayValue);
+  for (const std::string& name : kServerOriginEvents) {
+    Json::Value forged = entry(name, 1000);
+    forged["id"] = "6927e7ab1d4daf287bbe9eaf1cb62da8";
+    forged["props"]["store"] = "app_store";
+    events.append(forged);
+  }
+  events.append(entry("app_started", 2000));
+
+  const auto response = send(h.api, post(batch("browser-abc", events)));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k202Accepted);
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"accepted":1})"));
+  REQUIRE_EQ(h.repo->appended.size(), 1u);
+  REQUIRE_EQ(h.repo->appended[0].events.size(), 1u);
+  CHECK_EQ(h.repo->appended[0].events[0].name, std::string("app_started"));
+  CHECK_EQ(h.forwards->batches.size(), std::size_t{1});
+
+  // A batch under a device key the server's own events are told under is refused whole.
+  for (const char* deviceKey : {"subscription-3060389043f8b1972136c93d7e63ae88", "subscription-", "windmill-backend"}) {
+    const auto refused = send(h.api, post(batch(deviceKey, events)));
+    CHECK_EQ(refused->getStatusCode(), drogon::k400BadRequest);
+    CHECK_EQ(dump(bodyOf(refused)), std::string(R"({"error":"this session key is the server's own"})"));
+  }
+  CHECK_EQ(h.repo->appended.size(), 1u);
+  CHECK_EQ(h.forwards->batches.size(), std::size_t{1});
 }
 
 TEST(events_storage_failure_reports_once_without_private_properties_even_if_reporting_throws) {

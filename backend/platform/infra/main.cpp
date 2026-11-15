@@ -116,6 +116,7 @@
 #include "products/gym/routes.h"
 #include "platform/subscriptions/FeedFollower.h"
 #include "platform/subscriptions/PgEntitlementCopy.h"
+#include "platform/subscriptions/PgLifecycleEvents.h"
 #include "platform/subscriptions/SubscriptionApi.h"
 #include "platform/subscriptions/SubscriptionServiceClient.h"
 
@@ -507,27 +508,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   }
   auto subscriptionApi = std::make_shared<subscriptions::SubscriptionApi>(authService, entitlements, paidLine, sentry);
 
-  // The subscription service's feed, followed into the backend's own copy of every Windmill One entitlement
-  // (docs/foundation/subscriptions.md §6.1). Off while neither variable is set; one without the other refuses to start.
-  std::optional<subscriptions::ServiceAddress> subscriptionService;
-  try {
-    subscriptionService = subscriptions::ServiceAddress::from(std::getenv("SUBSCRIPTIONS_INTERNAL_URL"),
-                                                              std::getenv("SUBSCRIPTIONS_INTERNAL_TOKEN"));
-  } catch (const std::invalid_argument& missing) {
-    std::fprintf(stderr, "refusing to start: %s\n", missing.what());
-    return 1;
-  }
-  if (subscriptionService) {
-    auto subscriptionFeed = std::make_shared<subscriptions::SubscriptionServiceClient>(*subscriptionService);
-    auto feedFollower = std::make_shared<subscriptions::FeedFollower>(*subscriptionFeed, *entitlementCopy,
-                                                                      subscriptions::FurtherConsumers{}, *sentry);
-    lifetime.watch(subscriptionFeed);
-    lifetime.watch(feedFollower, subscriptionFeed, entitlementCopy, sentry);
-    feedFollower->start();
-  } else {
-    LOG_INFO << "subscriptions: the feed follower is off (SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN unset)";
-  }
-
   std::shared_ptr<AiBudgetAlerts> aiBudgetAlerts;
   if (aiBudgets) {
     const char* alertEmailEnv = std::getenv("AI_ALLOWANCE_ALERT_EMAIL");
@@ -620,6 +600,29 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto eventRepo = std::make_shared<PgEventRepository>(pool);
   auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService, amplitude, sentry);
 
+  // The subscription service's feed, followed into the backend's own copy of every Windmill One entitlement
+  // (docs/foundation/subscriptions.md §6.1), its lifecycle events recorded into the events store (§10). Off while
+  // neither variable is set; one without the other refuses to start.
+  std::optional<subscriptions::ServiceAddress> subscriptionService;
+  try {
+    subscriptionService = subscriptions::ServiceAddress::from(std::getenv("SUBSCRIPTIONS_INTERNAL_URL"),
+                                                              std::getenv("SUBSCRIPTIONS_INTERNAL_TOKEN"));
+  } catch (const std::invalid_argument& missing) {
+    std::fprintf(stderr, "refusing to start: %s\n", missing.what());
+    return 1;
+  }
+  if (subscriptionService) {
+    auto subscriptionFeed = std::make_shared<subscriptions::SubscriptionServiceClient>(*subscriptionService);
+    auto lifecycleEvents = std::make_shared<subscriptions::PgLifecycleEvents>(*eventRepo, *amplitude);
+    auto feedFollower = std::make_shared<subscriptions::FeedFollower>(
+        *subscriptionFeed, *entitlementCopy, subscriptions::FurtherConsumers{.inPage = {*lifecycleEvents}}, *sentry);
+    lifetime.watch(subscriptionFeed);
+    lifetime.watch(feedFollower, subscriptionFeed, entitlementCopy, lifecycleEvents, eventRepo, amplitude, sentry);
+    feedFollower->start();
+  } else {
+    LOG_INFO << "subscriptions: the feed follower is off (SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN unset)";
+  }
+
   auto feedbackRepo = std::make_shared<PgFeedbackRepository>(pool);
   auto feedbackApi = std::make_shared<FeedbackApi>(feedbackRepo, authService);
 
@@ -670,8 +673,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* mcpOriginsEnv = std::getenv("WINDMILL_MCP_ALLOWED_ORIGINS");
   const std::set<std::string> mcpOrigins = parseOriginList(mcpOriginsEnv ? mcpOriginsEnv : "");
 
-  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *systemClock, *treeRegistry, *nodeEdits,
-                                                 appBaseUrl);
+  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *ownerProgress, *systemClock,
+                                                 *treeRegistry, *nodeEdits, appBaseUrl);
 
   // Tending runs a server-side agent over the same tools MCP drives, on the same ANTHROPIC_API_KEY
   // the composer uses. TENDING_ENABLED must be "true"/"1" AND the agent configured to arm it.

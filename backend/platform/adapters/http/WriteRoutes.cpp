@@ -56,7 +56,8 @@ const std::set<std::string> refusalCodes{
     "replica-foreign", "request-too-large", "routine-save-in-progress", "session-deleted", "session-id-taken",
     "session-overlap", "set-id-taken", "share-id-taken", "subject_exhausted", "temporarily_unavailable",
     "unauthenticated", "unavailable", "unconfigured", "unknown-exercise", "unreachable", "unsupported_ai_pricing",
-    "unsupported_grant_type", "unsupported_response_type", "upgrade-required", "voice_busy", "voice_unavailable"
+    "unsupported_grant_type", "unsupported_response_type", "upgrade-required", "voice_busy", "voice_ration_spent",
+    "voice_unavailable"
 };
 
 const std::set<std::string> aiAllowanceRefusalCodes{

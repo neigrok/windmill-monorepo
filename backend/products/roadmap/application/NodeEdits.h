@@ -42,10 +42,10 @@ public:
   // mark on that node holds a later stamp — a replica stamped it ahead of the server — the write itself takes the stamp
   // just after that one, so it always lands over it, whatever another door wrote a moment before; the room's clock
   // does not learn that stamp, so it carries no other write of the tree ahead. A node named twice is stamped after its
-  // own row. The marks go through ProgressService::mark with `pointers`, the nodes that open a tree as the room handed
-  // them to the caller: a mark on one that follows its tree is refused. The batch is written in one go, and the marks
-  // that landed go to the caller's open sessions in one progress frame, at the stamps they took.
-  ProgressReceipt landMarks(const TreeId& tree, const UserId& user, const std::map<NodeId, TreeId>& pointers,
+  // own row. The marks go through ProgressService::mark with `followed`, the steps that follow a tree as the room judges
+  // the caller (TreeRoom::followedStepsFor): a mark on one that follows its tree is refused. The batch is written in one
+  // go, and the marks that landed go to the caller's open sessions in one progress frame, at the stamps they took.
+  ProgressReceipt landMarks(const TreeId& tree, const UserId& user, const FollowedSteps& followed,
                             const std::vector<ProgressWrite>& writes);
 
   // The caller's own completion marks on the nodes a write removes, cleared to none through landMarks, so a revive of the
