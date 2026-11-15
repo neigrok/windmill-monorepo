@@ -775,9 +775,9 @@ create table if not exists sync_requests (
 create index if not exists sync_requests_started_at on sync_requests (started_at);
 
 -- ── Paddle billing ──────────────────────────────────────────────────────────────────────────
--- Every notification upserts here, and funding a Paddle payment reads this database, never the Paddle API. No
--- access is read from it: Windmill One is read from account_entitlements. An account bridges to a Paddle customer by
--- email (citext, matching users.email).
+-- Every customer and subscription notification upserts here, and funding a Paddle payment reads this database, never
+-- the Paddle API. No access is read from it: Windmill One is read from account_entitlements. An account bridges to a
+-- Paddle customer by email (citext, matching users.email).
 create table if not exists paddle_customers (
   customer_id text primary key,   -- "ctm_..."
   email       citext not null,
