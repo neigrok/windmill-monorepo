@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Declarative story authoring; imports no implementation and runs no policy."""
+# Declarative story authoring imports no implementation and runs no policy.
 import copy
 import json
 from pathlib import Path
@@ -76,6 +76,7 @@ def simple(name, stop='completed', code=None):
     s = story(name)
     s['service']['exchanges'] = [exchange(events(stop=stop, code=code))]
     opened(s); begin(s, 0, '', [first(s)]); text_write(s, 'Hello')
+    if code == 'provider_rejected': s['expected']['telemetry'].append({'kind':'failure','operation':'ai-call'})
     finish(s, 'failed' if code else 'declined' if stop == 'declined' else 'completed', code=code, truncated=stop == 'truncated')
     return s
 
@@ -126,8 +127,8 @@ def stories():
             s['service']['exchanges'] = [exchange(refusal=refusal(code)), exchange(events())]
             s['expected']['requests'] *= 2; s['expected']['waitsMs'] = [1000]; text_write(s, 'Hello'); finish(s, duration=1000)
         elif code == 'paused':
-            s['service']['exchanges'] = [exchange(refusal=refusal(code), repeat=7)]
-            s['expected']['requests'] *= 7; s['expected']['waitsMs'] = [1000,2000,4000,8000,8000,7000]
+            s['service']['exchanges'] = [exchange(refusal=refusal(code), repeat=6)]
+            s['expected']['requests'] *= 6; s['expected']['waitsMs'] = [1000,2000,4000,8000,8000,7000]
             finish(s, 'failed', '', code, duration=30000, withdraw=True)
         else:
             s['service']['exchanges'] = [exchange(refusal=refusal(code))]; finish(s, 'failed', '', code, withdraw=True)
@@ -194,6 +195,17 @@ def stories():
     call=s['expected']['requests'][0]; s['expected']['requests']=[upload,call,upload,call]
     s['service']['exchanges']=[exchange(refusal=refusal('picture_gone')),exchange(events())]
     s['service']['pictures']=[204,204]; text_write(s,'Hello'); finish(s); out.append(s)
+    s=copy.deepcopy(s); s['name']='picture-repair-twice'; s['service']['exchanges'][1]=exchange(refusal=refusal('picture_gone'))
+    s['expected']['hostCalls']=s['expected']['hostCalls'][:-2]; s['expected']['marks'].pop(); s['expected']['telemetry']=[{'kind':'failure','operation':'ai-call'}]
+    finish(s,'failed','','picture_gone',withdraw=True); out.append(s)
+    s=story('lost-then-refused'); opened(s); begin(s,0,'',[first(s)])
+    s['service']['exchanges']=[exchange(broken=True),exchange(refusal=refusal('subject_exhausted'))]
+    s['expected']['requests'] *= 2; s['expected']['waitsMs']=[1000]
+    finish(s,'failed','','subject_exhausted',duration=1000); out.append(s)
+    s=story('answer-deadline'); opened(s); begin(s,0,'',[first(s)])
+    s['service']['exchanges']=[exchange(broken=True,repeat=153)]
+    s['expected']['requests'] *= 153; s['expected']['waitsMs']=[1000,2000,4000]+[8000]*149+[1000]
+    finish(s,'failed','','answer-timeout',duration=1200000); out.append(s)
     s=tool_story('stop-during-execution',[{},{}]); s['controls']=[{'at':'execute:tool-0:beforeCommit','action':'stop'}]
     s['service']['exchanges']=s['service']['exchanges'][:1]
     s['expected']['requests']=s['expected']['requests'][:1]
