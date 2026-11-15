@@ -3,7 +3,7 @@ use std::fmt;
 use domain::{Environment, Store};
 use sqlx::{FromRow, PgConnection};
 
-use crate::ledger::{Ledger, StorageError};
+use crate::ledger::{Ledger, StorageError, commit};
 use crate::subscriptions::named;
 
 const KEEP: &str = "insert into inbox (store, notification_id, environment, signed_payload) \
@@ -16,6 +16,8 @@ const SELECT_UNSETTLED: &str = "select store, notification_id, environment, sign
 const HOLD_UNSETTLED: &str = "select true from inbox \
      where store = $1 and notification_id = $2 and settled_at is null for update";
 const SETTLE: &str = "update inbox set settled_at = now_millis(), outcome = $3 \
+     where store = $1 and notification_id = $2 and settled_at is null";
+const POSTPONE: &str = "update inbox set next_attempt_at = now_millis() + $3 \
      where store = $1 and notification_id = $2 and settled_at is null";
 // The attempt that fails for the n-th time for a reason a retry cannot change waits 2^(n-1) hours before the next,
 // 1, 2, 4 and 8 hours, and the fifth settles the notification `failed`, which the sweep reports.
@@ -66,26 +68,28 @@ pub enum Receipt {
 }
 
 impl Ledger {
-    // §5.1 step 3: keeps the notification, once.
+    // §5.1 step 3: keeps the notification, once, within the bounds of every write.
     pub async fn receive(&self, notification: Notification) -> Result<Receipt, StorageError> {
+        let mut transaction = self.begin_write().await?;
         let kept = sqlx::query(KEEP)
             .bind(notification.store.name())
             .bind(&notification.id)
             .bind(notification.environment.name())
             .bind(&notification.signed_payload)
-            .execute(&self.pool)
+            .execute(&mut *transaction)
             .await?;
-        if kept.rows_affected() == 0 {
+        let receipt = if kept.rows_affected() == 0 {
             let unsettled: Option<NotificationRow> = sqlx::query_as(SELECT_KEPT_UNSETTLED)
                 .bind(notification.store.name())
                 .bind(&notification.id)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&mut *transaction)
                 .await?;
-            return Ok(Receipt::Duplicate(
-                unsettled.map(KeptNotification::try_from).transpose()?,
-            ));
-        }
-        Ok(Receipt::Kept(KeptNotification(notification)))
+            Receipt::Duplicate(unsettled.map(KeptNotification::try_from).transpose()?)
+        } else {
+            Receipt::Kept(KeptNotification(notification))
+        };
+        commit(transaction).await?;
+        Ok(receipt)
     }
 
     // §7 step 1: at most `limit` notifications kept and not yet settled, the longest kept first, but for those
@@ -105,20 +109,39 @@ impl Ledger {
         kept: &KeptNotification,
         outcome: &'static str,
     ) -> Result<(), StorageError> {
-        let mut connection = self.pool.acquire().await?;
-        settle(&mut connection, kept, outcome).await
+        let mut transaction = self.begin_write().await?;
+        settle(&mut transaction, kept, outcome).await?;
+        commit(transaction).await
+    }
+
+    // Leaves a kept notification unsettled and out of `unsettled` for `by_millis`: one that waits on what no retry
+    // brings sooner, such as its subscription's status. A redelivery still hands it back.
+    pub async fn postpone(
+        &self,
+        kept: &KeptNotification,
+        by_millis: i64,
+    ) -> Result<(), StorageError> {
+        let mut transaction = self.begin_write().await?;
+        sqlx::query(POSTPONE)
+            .bind(kept.0.store.name())
+            .bind(&kept.0.id)
+            .bind(by_millis)
+            .execute(&mut *transaction)
+            .await?;
+        commit(transaction).await
     }
 
     pub(crate) async fn count_failed_attempt(
         &self,
         kept: &KeptNotification,
     ) -> Result<(), StorageError> {
+        let mut transaction = self.begin_write().await?;
         sqlx::query(COUNT_FAILED_ATTEMPT)
             .bind(kept.0.store.name())
             .bind(&kept.0.id)
-            .execute(&self.pool)
+            .execute(&mut *transaction)
             .await?;
-        Ok(())
+        commit(transaction).await
     }
 }
 

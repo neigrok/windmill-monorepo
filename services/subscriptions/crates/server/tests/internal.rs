@@ -13,7 +13,7 @@ use domain::{
 use futures_util::FutureExt;
 use serde_json::{Value, json};
 use server::config::Config;
-use server::internal::Reads;
+use server::internal::{self, Reads};
 use server::listeners::{Bounds, Listener, Readiness};
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
 use storage::{AccountClaim, AccountRecord, Applied, FeedPage, Ledger, Observed, StorageError};
@@ -100,7 +100,12 @@ async fn every_door_refuses_a_caller_without_the_secret_and_says_nothing_of_why(
         _ => None,
     })
     .unwrap();
-    let internal = Listener::Internal.router(&config, Unread, Bounds::default());
+    let internal = Listener::Internal.router(
+        &config,
+        Unread,
+        internal::doors(config.internal_token.clone(), Unread),
+        Bounds::default(),
+    );
 
     for path in [
         "/internal/v1/feed?after=0&limit=500",
@@ -147,7 +152,12 @@ async fn without_a_secret_every_door_stays_shut() {
         _ => None,
     })
     .unwrap();
-    let internal = Listener::Internal.router(&config, Unread, Bounds::default());
+    let internal = Listener::Internal.router(
+        &config,
+        Unread,
+        internal::doors(config.internal_token.clone(), Unread),
+        Bounds::default(),
+    );
 
     for path in [
         "/internal/v1/feed?after=0&limit=500",
@@ -177,7 +187,12 @@ async fn without_a_secret_every_door_stays_shut() {
         }
     }
     let health = Listener::Internal
-        .router(&config, Unread, Bounds::default())
+        .router(
+            &config,
+            Unread,
+            internal::doors(config.internal_token.clone(), Unread),
+            Bounds::default(),
+        )
         .oneshot(Request::get("/health").body(Body::empty()).unwrap())
         .await
         .unwrap();
@@ -196,7 +211,12 @@ async fn the_secret_opens_both_doors_and_each_reads_what_it_was_asked() {
     })
     .unwrap();
     let ledger = Empty::default();
-    let internal = Listener::Internal.router(&config, ledger.clone(), Bounds::default());
+    let internal = Listener::Internal.router(
+        &config,
+        ledger.clone(),
+        internal::doors(config.internal_token.clone(), ledger.clone()),
+        Bounds::default(),
+    );
 
     let feed = answer(
         internal.clone(),
@@ -264,7 +284,12 @@ async fn a_query_or_an_account_id_outside_its_bounds_is_refused_before_the_ledge
     })
     .unwrap();
     let ledger = Empty::default();
-    let internal = Listener::Internal.router(&config, ledger.clone(), Bounds::default());
+    let internal = Listener::Internal.router(
+        &config,
+        ledger.clone(),
+        internal::doors(config.internal_token.clone(), ledger.clone()),
+        Bounds::default(),
+    );
 
     let mut answers = Vec::new();
     for query in [
@@ -384,7 +409,12 @@ fn a_read_the_ledger_does_not_answer_is_an_issue_under_its_operation() {
         _ => None,
     })
     .unwrap();
-    let internal = Listener::Internal.router(&config, Failing, Bounds::default());
+    let internal = Listener::Internal.router(
+        &config,
+        Failing,
+        internal::doors(config.internal_token.clone(), Failing),
+        Bounds::default(),
+    );
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -521,7 +551,12 @@ async fn a_feed_read_from_zero_returns_every_event_in_seq_order_across_pages() {
             _ => None,
         })
         .unwrap();
-        let internal = Listener::Internal.router(&config, ledger.clone(), Bounds::default());
+        let internal = Listener::Internal.router(
+            &config,
+            ledger.clone(),
+            internal::doors(config.internal_token.clone(), ledger.clone()),
+            Bounds::default(),
+        );
         let read = async |after: i64, limit: i64| {
             let (status, _, page) = answer(
                 internal.clone(),

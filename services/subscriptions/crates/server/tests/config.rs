@@ -18,6 +18,10 @@ fn every_variable_is_read_into_one_config() {
         ("SENTRY_LOG_LEVEL", "warn"),
         ("SUBSCRIPTIONS_PANIC_ROUTE_ENABLED", "true"),
         (
+            "SUBSCRIPTIONS_APP_STORE_TEST_ROOT",
+            "tests/fixtures/app_store/test-chain/root.cer",
+        ),
+        (
             "SUBSCRIPTIONS_INTERNAL_TOKEN",
             "7c1f0e9a4b2d8c6e5f3a1b0c9d8e7f6a",
         ),
@@ -45,6 +49,7 @@ fn every_variable_is_read_into_one_config() {
             log_level: LevelFilter::DEBUG,
             sentry_log_level: LevelFilter::WARN,
             panic_route_enabled: true,
+            app_store_test_root: Some("tests/fixtures/app_store/test-chain/root.cer".into()),
             internal_token: Some("7c1f0e9a4b2d8c6e5f3a1b0c9d8e7f6a".parse().unwrap()),
         })
     );
@@ -65,6 +70,7 @@ fn an_empty_optional_variable_counts_as_unset() {
         ("WINDMILL_LOG_LEVEL", ""),
         ("SENTRY_LOG_LEVEL", ""),
         ("SUBSCRIPTIONS_PANIC_ROUTE_ENABLED", ""),
+        ("SUBSCRIPTIONS_APP_STORE_TEST_ROOT", ""),
         ("SUBSCRIPTIONS_INTERNAL_TOKEN", ""),
     ];
 
@@ -90,6 +96,7 @@ fn an_empty_optional_variable_counts_as_unset() {
             log_level: LevelFilter::INFO,
             sentry_log_level: LevelFilter::INFO,
             panic_route_enabled: false,
+            app_store_test_root: None,
             internal_token: None,
         })
     );
@@ -252,48 +259,63 @@ fn the_backend_s_level_words_are_read_in_any_case() {
 }
 
 #[test]
-fn the_panic_route_is_allowed_only_in_test_deployments() {
-    for (environment_name, allowed) in [
-        ("local", true),
-        (" CI ", true),
-        ("Test", true),
-        ("development", true),
-        ("production", false),
-        ("Production", false),
-        ("production ", false),
-        ("staging", false),
+fn what_only_tests_need_is_allowed_only_in_test_deployments() {
+    for (variable, value) in [
+        ("SUBSCRIPTIONS_PANIC_ROUTE_ENABLED", "true"),
+        (
+            "SUBSCRIPTIONS_APP_STORE_TEST_ROOT",
+            "tests/fixtures/app_store/test-chain/root.cer",
+        ),
     ] {
-        let environment = [
-            ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
-            ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "0.0.0.0:8083"),
-            (
-                "SUBSCRIPTIONS_DATABASE_URL",
-                "postgresql://windmill_subscriptions:secret-password@db:5432/windmill_subscriptions",
-            ),
-            ("SENTRY_ENVIRONMENT", environment_name),
-            ("SUBSCRIPTIONS_PANIC_ROUTE_ENABLED", "true"),
-        ];
+        for (environment_name, allowed) in [
+            ("local", true),
+            (" CI ", true),
+            ("Test", true),
+            ("development", true),
+            ("production", false),
+            ("Production", false),
+            ("production ", false),
+            ("staging", false),
+        ] {
+            let environment = [
+                ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
+                ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "0.0.0.0:8083"),
+                (
+                    "SUBSCRIPTIONS_DATABASE_URL",
+                    "postgresql://windmill_subscriptions:secret-password@db:5432/windmill_subscriptions",
+                ),
+                ("SENTRY_ENVIRONMENT", environment_name),
+                (variable, value),
+            ];
 
-        let config = Config::from_environment(|variable| {
-            environment
-                .iter()
-                .find(|(name, _)| *name == variable)
-                .map(|(_, value)| value.to_string())
-        });
+            let config = Config::from_environment(|name| {
+                environment
+                    .iter()
+                    .find(|(known, _)| *known == name)
+                    .map(|(_, value)| value.to_string())
+            });
 
-        match config {
-            Ok(config) => assert!(
-                allowed && config.panic_route_enabled,
-                "{environment_name:?}"
-            ),
-            Err(refusal) => {
-                assert!(!allowed, "{environment_name:?}");
-                assert_eq!(
-                    refusal.to_string(),
-                    "SUBSCRIPTIONS_PANIC_ROUTE_ENABLED is refused unless SENTRY_ENVIRONMENT is \
-                     one of \
-                     local, development, test, ci"
-                );
+            match config {
+                Ok(config) => assert!(
+                    allowed && (config.panic_route_enabled || config.app_store_test_root.is_some()),
+                    "{variable} in {environment_name:?}"
+                ),
+                Err(refusal) => {
+                    assert!(!allowed, "{variable} in {environment_name:?}");
+                    assert_eq!(
+                        refusal,
+                        ConfigError {
+                            variable,
+                            problem: Problem::RefusedInEnvironment
+                        }
+                    );
+                    assert_eq!(
+                        refusal.to_string(),
+                        format!(
+                            "{variable} is refused unless SENTRY_ENVIRONMENT is one of local, development, test, ci"
+                        )
+                    );
+                }
             }
         }
     }

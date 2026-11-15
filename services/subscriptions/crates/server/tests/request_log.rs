@@ -10,13 +10,11 @@ use axum::http::Request;
 use axum::routing::get;
 use serde_json::{Value, json};
 use server::config::Config;
-use server::internal::Reads;
 use server::listeners::{Bounds, Listener, Readiness};
 use server::telemetry::json_lines;
-use storage::{AccountRecord, FeedPage, StorageError};
+use storage::StorageError;
 use tower::ServiceExt;
 use tracing_subscriber::prelude::*;
-use uuid::Uuid;
 
 // Answers ready, as a ledger that answers does.
 #[derive(Clone)]
@@ -28,17 +26,6 @@ impl Readiness for Answering {
     }
 }
 
-// Health asks nothing else of the ledger.
-impl Reads for Answering {
-    async fn feed(&self, _after: i64, _limit: i64) -> Result<FeedPage, StorageError> {
-        unreachable!("a health answer reads no feed")
-    }
-
-    async fn account(&self, _account_id: Uuid) -> Result<AccountRecord, StorageError> {
-        unreachable!("a health answer reads no account")
-    }
-}
-
 // Answers as a ledger that cannot be reached does.
 #[derive(Clone)]
 struct Silent;
@@ -46,16 +33,6 @@ struct Silent;
 impl Readiness for Silent {
     async fn ready(&self) -> Result<(), StorageError> {
         Err(StorageError::Unreachable)
-    }
-}
-
-impl Reads for Silent {
-    async fn feed(&self, _after: i64, _limit: i64) -> Result<FeedPage, StorageError> {
-        unreachable!("a health answer reads no feed")
-    }
-
-    async fn account(&self, _account_id: Uuid) -> Result<AccountRecord, StorageError> {
-        unreachable!("a health answer reads no account")
     }
 }
 
@@ -90,17 +67,17 @@ async fn each_request_writes_one_line_naming_its_route_and_nothing_it_carried() 
     );
 
     Listener::Internal
-        .router(&config, Answering, Bounds::default())
+        .router(&config, Answering, Router::new(), Bounds::default())
         .oneshot(Request::get("/health").body(Body::empty()).unwrap())
         .await
         .unwrap();
     Listener::Internal
-        .router(&config, Silent, Bounds::default())
+        .router(&config, Silent, Router::new(), Bounds::default())
         .oneshot(Request::get("/health").body(Body::empty()).unwrap())
         .await
         .unwrap();
     Listener::Public
-        .router(&config, Answering, Bounds::default())
+        .router(&config, Answering, Router::new(), Bounds::default())
         .oneshot(
             Request::post("/internal/v1/accounts/acct_secret/claims?token=secret")
                 .header("authorization", "Bearer secret")

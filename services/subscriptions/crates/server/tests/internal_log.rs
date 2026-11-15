@@ -10,7 +10,7 @@ use domain::{
 };
 use serde_json::{Value, json};
 use server::config::Config;
-use server::internal::Reads;
+use server::internal::{self, Reads};
 use server::listeners::{Bounds, Listener, Readiness};
 use server::telemetry::json_lines;
 use storage::{AccountRecord, FeedEntry, FeedPage, StorageError};
@@ -97,7 +97,12 @@ async fn each_read_writes_its_route_template_and_its_outcome_and_never_the_accou
         _ => None,
     })
     .unwrap();
-    let internal = Listener::Internal.router(&config, OneEvent::default(), Bounds::default());
+    let internal = Listener::Internal.router(
+        &config,
+        OneEvent::default(),
+        internal::doors(config.internal_token.clone(), OneEvent::default()),
+        Bounds::default(),
+    );
     let captured = Captured(Arc::new(Mutex::new(Vec::new())));
     let writer = captured.clone();
     let _logs = tracing::subscriber::set_default(

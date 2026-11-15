@@ -17,7 +17,7 @@ use domain::{
 use futures_util::FutureExt;
 use serde_json::{Value, json};
 use server::config::Config;
-use server::internal::Reads;
+use server::internal::{self, Reads};
 use server::listeners::{Bounds, Listener, Readiness};
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
 use storage::{
@@ -94,7 +94,12 @@ async fn read<L: Readiness + Reads>(ledger: L, path: &str) -> String {
     })
     .unwrap();
     let response = Listener::Internal
-        .router(&config, ledger, Bounds::default())
+        .router(
+            &config,
+            ledger.clone(),
+            internal::doors(config.internal_token.clone(), ledger),
+            Bounds::default(),
+        )
         .oneshot(
             Request::get(path)
                 .header("authorization", "Bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")

@@ -25,7 +25,7 @@ use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::config::Config;
-use crate::internal::{self, FEED_ROUTE, Reads};
+use crate::internal::FEED_ROUTE;
 
 // How long a client may take, and how much it may send, before the listener gives up on it.
 #[derive(Clone, Copy, Debug)]
@@ -80,23 +80,24 @@ impl Listener {
         }
     }
 
-    pub fn router<L: Readiness + Reads>(
+    // Health and the doors this listener serves: the store doors on the public one, the backend's on the internal one.
+    pub fn router<R: Readiness>(
         self,
         config: &Config,
-        ledger: L,
+        readiness: R,
+        doors: Router,
         bounds: Bounds,
     ) -> Router {
         let routes = Router::new()
-            .route("/health", get(health::<L>))
-            .with_state(ledger.clone());
+            .route("/health", get(health::<R>))
+            .with_state(readiness)
+            .merge(doors);
         let routes = match self {
             Listener::Public => routes,
-            Listener::Internal if config.panic_route_enabled => routes
-                .merge(internal::doors(config.internal_token.clone(), ledger))
-                .route("/debug/panic", get(forced_panic)),
-            Listener::Internal => {
-                routes.merge(internal::doors(config.internal_token.clone(), ledger))
+            Listener::Internal if config.panic_route_enabled => {
+                routes.route("/debug/panic", get(forced_panic))
             }
+            Listener::Internal => routes,
         };
         self.boundary(routes, bounds)
     }

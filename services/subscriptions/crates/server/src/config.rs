@@ -1,5 +1,6 @@
 use std::fmt;
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use sentry::types::Dsn;
@@ -8,8 +9,9 @@ use tracing_subscriber::filter::LevelFilter;
 
 use crate::internal::BearerSecret;
 
-// The deployments the forced-panic route may run in, matched trimmed and in any case.
-const PANIC_ROUTE_ENVIRONMENTS: [&str; 4] = ["local", "development", "test", "ci"];
+// The deployments that may turn on what only tests need, the forced-panic route and the App Store test root, matched
+// trimmed and in any case.
+const TEST_DEPLOYMENTS: [&str; 4] = ["local", "development", "test", "ci"];
 
 #[derive(Debug, PartialEq)]
 pub struct Config {
@@ -22,6 +24,7 @@ pub struct Config {
     pub log_level: LevelFilter,
     pub sentry_log_level: LevelFilter,
     pub panic_route_enabled: bool,
+    pub app_store_test_root: Option<PathBuf>,
     pub internal_token: Option<BearerSecret>,
 }
 
@@ -45,12 +48,27 @@ impl Config {
             panic_route_enabled: variables
                 .optional("SUBSCRIPTIONS_PANIC_ROUTE_ENABLED")?
                 .unwrap_or(false),
+            app_store_test_root: variables.optional("SUBSCRIPTIONS_APP_STORE_TEST_ROOT")?,
             internal_token: variables.optional("SUBSCRIPTIONS_INTERNAL_TOKEN")?,
         };
         let environment = config.environment.trim().to_ascii_lowercase();
-        if config.panic_route_enabled && !PANIC_ROUTE_ENVIRONMENTS.contains(&environment.as_str()) {
+        let test_deployment = TEST_DEPLOYMENTS.contains(&environment.as_str());
+        let test_only = [
+            (
+                "SUBSCRIPTIONS_PANIC_ROUTE_ENABLED",
+                config.panic_route_enabled,
+            ),
+            (
+                "SUBSCRIPTIONS_APP_STORE_TEST_ROOT",
+                config.app_store_test_root.is_some(),
+            ),
+        ];
+        if let Some((variable, _)) = test_only
+            .into_iter()
+            .find(|(_, turned_on)| *turned_on && !test_deployment)
+        {
             return Err(ConfigError {
-                variable: "SUBSCRIPTIONS_PANIC_ROUTE_ENABLED",
+                variable,
                 problem: Problem::RefusedInEnvironment,
             });
         }
@@ -144,7 +162,7 @@ impl fmt::Display for ConfigError {
             Problem::RefusedInEnvironment => write!(
                 formatter,
                 "{variable} is refused unless SENTRY_ENVIRONMENT is one of {}",
-                PANIC_ROUTE_ENVIRONMENTS.join(", ")
+                TEST_DEPLOYMENTS.join(", ")
             ),
         }
     }
