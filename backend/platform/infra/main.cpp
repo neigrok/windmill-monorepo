@@ -367,9 +367,9 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     std::fprintf(stderr, "refusing to start: %s\n", missing.what());
     return 1;
   }
-  // An erasure owes the service the unbind of everything the account held (§6.4): recorded in the erasing transaction
-  // whether or not the service is reached, then repeated until the service takes it, at once and every minute once the
-  // sweep starts below.
+  // Every delete of a users row owes the service the unbind of everything the account held (§6.4): recorded by a trigger in
+  // the deleting transaction whether or not the service is reached, then repeated until the service takes it, at once
+  // after an erasure and every minute once the sweep starts below.
   auto owedUnbinds = std::make_shared<subscriptions::PgOwedUnbinds>(pool);
   std::shared_ptr<subscriptions::UnbindSweep> unbindSweep;
   if (subscriptionService) {
@@ -380,11 +380,16 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // Erasing a closed account takes, beside the platform's own rows, every product row that no foreign
   // key to users cascades from. Gym and journal rows all cascade; roadmap's trees do not, and their
   // live rooms are retired once the erasure commits, so no reader is served one and no save brings
-  // one back. The unbind the erasure owes the subscription service is recorded in the same transaction.
+  // one back. Once an erasure commits, the unbind it owes the subscription service is tried at once.
   AccountErasure roadmapErasure = roadmapAccountErasure();
   roadmapErasure.committed = [registry](const std::vector<std::string>& trees) { registry->retireErased(trees); };
   AccountErasure subscriptionErasure = subscriptions::unbindOnErasure([unbindSweep] {
-    if (unbindSweep) unbindSweep->soon();
+    if (unbindSweep) {
+      unbindSweep->soon();
+      return;
+    }
+    LOG_WARN << "subscriptions: an erased account's unbind is owed to the subscription service and waits, since the "
+                "unbind sweep is off while SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN are unset";
   });
   auto authRepo = std::make_shared<PgAuthRepository>(
       pool, accountFootprint, std::vector<AccountErasure>{roadmapErasure, subscriptionErasure}, oauthRepo);

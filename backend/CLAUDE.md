@@ -20,11 +20,11 @@ worker (`FeedFollower`), the Postgres copy, the recorder of the feed's lifecycle
 (`PgLifecycleEvents`, §10), the AI allowance each paid period funds (`PeriodFunding`, §6.3), the client of the
 service's internal doors, an account's hold on Windmill One read from its row and what a device is shown of it
 (`WindmillOne.h`), which `Entitlements::hasWindmillOne` answers from, `GET /v1/subscription` (`SubscriptionApi`), and
-the unbind each erasure owes the service (§6.4): recorded in the erasing transaction (`PgOwedUnbinds`, the share
-`main.cpp` hands `PgAuthRepository`) and repeated until the service takes it (`AccountUnbinds.h`, `UnbindSweep`).
-The follower and the unbind sweep are off while `SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are
-unset, and the server refuses to start with them set and `AI_ALLOWANCES_ENABLED` off; the copy is read and an
-erasure's unbind recorded either way.
+the unbind each deleted account owes the service (§6.4): recorded by a trigger on every delete of a `users` row
+(`db/schema.sql`), tried once an erasure commits (`PgOwedUnbinds`, the share `main.cpp` hands `PgAuthRepository`) and
+every minute until the service takes it (`AccountUnbinds.h`, `UnbindSweep`). The follower and the unbind sweep are
+off while `SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are unset, and the server refuses to start
+with them set and `AI_ALLOWANCES_ENABLED` off; the copy is read and a deleted account's unbind recorded either way.
 
 `products/<p>/` is one product each (roadmap, journal, gym, and the sync engine's test-only probe),
 with four shared layers: `domain/` (pure), `application/` (services over

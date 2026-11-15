@@ -132,7 +132,7 @@ UnbindAnswer SubscriptionServiceClient::unbind(const UserId& account) {
   if (result != drogon::ReqResult::Ok) return UnbindAnswer{false, answerFor(result)};
   if (!response) return UnbindAnswer{false, "bad-reply"};
   const int status = static_cast<int>(response->getStatusCode());
-  return UnbindAnswer{(status >= 200 && status < 300) || status == 404, std::to_string(status)};
+  return UnbindAnswer{status == 204, std::to_string(status)};
 }
 
 }

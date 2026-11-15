@@ -435,8 +435,10 @@ period's `id`, so no store id reaches the backend. (R-4, R-5)
   without passing through the ones before.
 - A `period_recorded` entry that names an account, for a production period with a positive captured
   price and no `refundedAt`, funds one grant spanning the period through `AiBudgetService::fund`, in a
-  transaction of its own before the page commits (§6.1). Any other `period_recorded` funds nothing:
-  `grace` adds no period, a free-trial period carries no payment, and a refunded period was paid back.
+  transaction of its own before the page commits (§6.1), while the backend holds the account: the page
+  finds its `users` row and keeps it from an erasure until the page commits. Any other `period_recorded`
+  funds nothing: `grace` adds no period, a free-trial period carries no payment, a refunded period was paid
+  back, and an account the backend deleted, as one a rebuild reads again, is gone (§6.4).
 - A period whose start falls inside a grant the account holds, as a renewal the store charged and dated
   before the period it renews ended, is funded from that grant's `closedAt`, or its end, to its own end.
   One that leaves nothing, or still holds an instant another grant of the account holds, answers
@@ -468,14 +470,18 @@ period's `id`, so no store id reaches the backend. (R-4, R-5)
 `DELETE /v1/me` closes an account with a 30-day grace in which a sign-in brings it back whole; from
 `closesMs` the close is final, and the account is erased by the first sign-in that meets it or by
 `ClosedAccountSweep` ([accounts](../../backend/AUTH.md)). Until then its subscriptions stay bound, so
-an account that comes back finds them as it left them. The erasure of a finally closed account owes the
-service `DELETE /internal/v1/accounts/{accountId}`. The backend records it in `owed_subscription_unbinds`
-in the erasure's own transaction, calls the door once that transaction commits, and repeats it until the
-service takes it, so a service outage never leaves a subscription bound to an erased account. A 204, which
-the service answers whether it unbound anything or had erased the account already, settles it, and so
-does a 404, which is reported; any other answer, or none, leaves it owed, tried again by the sweep's next
-minute pass after a wait that doubles from one minute to at most an hour, and reported at most once an
-hour while it stays owed (§10).
+an account that comes back finds them as it left them. Every account the backend deletes owes the service
+`DELETE /internal/v1/accounts/{accountId}`: the erasure of a finally closed account, and an empty account
+folded into another (`POST /v1/auth/link`), which may hold a subscription the copy has not shown yet. A
+trigger on the delete of a `users` row records it in `owed_subscription_unbinds` in the deleting
+transaction, so neither a service outage nor a path that forgets leaves a subscription bound to an account
+that is gone. The backend calls the door once an erasure commits, and its sweep tries every unbind owed
+each minute until the service takes it. Only a 204, which the service answers whether it unbound anything
+or had erased the account already, settles it; any other answer, a 404 from a request that missed the
+door included, or none leaves it owed, tried again after a wait that doubles from one minute to at most
+an hour, and reported once it has been owed five minutes, then at most once an hour (§10). A period the
+feed tells of an account the backend no longer holds, as a renewal charged before the service took the
+unbind, funds nothing (§6.3).
 
 In one transaction the service records the account as erased, so a hint naming it never binds again
 (§4); unbinds every subscription bound to it, recording `unbound` under the account at the erasure, so its
@@ -602,10 +608,11 @@ The backend's role cannot read it.
   `latestSeq` starts a rebuild (§6.1).
 - The backend's claim door logs `subscription.claim` with its outcome or refusal code; a wait for the
   follower that runs out is logged as `copy_behind`.
-- The backend's unbind sweep logs `subscription.unbind` per attempt at an erased account's unbind (§6.4),
-  with its outcome: `ok`, `not_found` (reported as a warning) or `owed`. An unbind still owed is an Issue
-  at most once an hour for each account, never once per attempt; the service logs `account.unbind` per
-  call of its door.
+- The backend's unbind sweep logs `subscription.unbind` per attempt at a deleted account's unbind (§6.4),
+  with its outcome, `ok` or `owed`, and the service's answer as its `code`. An unbind still owed is an Issue
+  once it has been owed five minutes, then at most once an hour for each account, never once per attempt,
+  tagged with the answer and the attempt; the service logs `account.unbind` per call of its door. Funding
+  that skips a period of an account the backend no longer holds logs `subscription.fund` `no_account`.
 - A renewal, a failed charge and a refund happen with no device present, so no client can emit them.
   The follower records them as product events in the store the `/v1/events` intake writes and
   forwards from: `subscription_started`, `subscription_renewed`, `subscription_renewal_turned_off`,

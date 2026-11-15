@@ -831,11 +831,12 @@ create table if not exists subscription_feed_cursor (
 );
 insert into subscription_feed_cursor (one) values (true) on conflict (one) do nothing;
 
--- The unbind each erased account owes the subscription service (subscriptions.md §6.4): written in the transaction that
--- erases the account and deleted once the service takes it, so an outage of the service never leaves a subscription
--- bound to an erased account. It keeps the erased account's id alone, and no foreign key to users, whose row that
--- erasure deletes. A null `next_attempt_ms` is due at once; each attempt the service did not take counts in `attempts`
--- and waits until `next_attempt_ms`, and `reported_at_ms` is when the unbind was last reported while owed.
+-- The unbind each deleted account owes the subscription service (subscriptions.md §6.4): written by the trigger below in
+-- the transaction that deletes the account's users row, whatever deletes it — an erasure, an empty account folded into
+-- another — and deleted once the service takes it, so neither an outage of the service nor a path that forgets leaves a
+-- subscription bound to an account that is gone. It keeps the deleted account's id alone, and no foreign key to users.
+-- A null `next_attempt_ms` is due at once; each attempt the service did not take counts in `attempts` and waits until
+-- `next_attempt_ms`, and `reported_at_ms` is when the unbind was last reported while owed.
 create table if not exists owed_subscription_unbinds (
   account_id      uuid primary key,
   owed_since_ms   bigint not null default (extract(epoch from clock_timestamp()) * 1000)::bigint,
@@ -843,6 +844,13 @@ create table if not exists owed_subscription_unbinds (
   next_attempt_ms bigint,
   reported_at_ms  bigint
 );
+create or replace function owe_subscription_unbind() returns trigger language plpgsql as $$
+begin
+  insert into owed_subscription_unbinds (account_id) values (old.id) on conflict (account_id) do nothing;
+  return old;
+end $$;
+create or replace trigger users_owe_subscription_unbind after delete on users
+  for each row execute function owe_subscription_unbind();
 
 -- ── Roadmap (products/roadmap), continued ────────────────────────────────────────────────────
 

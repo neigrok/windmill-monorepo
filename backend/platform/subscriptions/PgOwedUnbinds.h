@@ -9,7 +9,8 @@
 
 namespace wm::subscriptions {
 
-// owed_subscription_unbinds (db/schema.sql), one row per erased account whose unbind the service has not taken.
+// owed_subscription_unbinds (db/schema.sql), one row per deleted account whose unbind the service has not taken, which
+// the trigger on every delete of a users row writes in the deleting transaction.
 class PgOwedUnbinds final : public OwedUnbinds {
 public:
   explicit PgOwedUnbinds(std::shared_ptr<PgPool> pool);
@@ -22,8 +23,9 @@ private:
   std::shared_ptr<PgPool> pool_;
 };
 
-// The erasure's share of an account (PgAuthRepository): the unbind it owes the service, recorded in the erasing
-// transaction, so no outage of the service loses it. `owed` runs once that transaction commits.
+// The erasure's share of an account (PgAuthRepository), whose users row's delete owes the service its unbind: `owed`
+// runs once the erasing transaction commits, so the unbind is tried at once. Any other delete of a users row, as an
+// empty account folded into another, owes it alike, and the sweep's minute pass tries it.
 AccountErasure unbindOnErasure(std::function<void()> owed);
 
 }

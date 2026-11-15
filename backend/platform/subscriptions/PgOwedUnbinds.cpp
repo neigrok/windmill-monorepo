@@ -10,7 +10,7 @@ std::vector<OwedUnbind> PgOwedUnbinds::due(std::int64_t nowMs, int limit) {
   PgLease lease{*pool_};
   pqxx::read_transaction txn{*lease};
   const pqxx::result rows = txn.exec(
-      "SELECT account_id::text, attempts, next_attempt_ms, reported_at_ms FROM owed_subscription_unbinds "
+      "SELECT account_id::text, owed_since_ms, attempts, next_attempt_ms, reported_at_ms FROM owed_subscription_unbinds "
       "WHERE next_attempt_ms IS NULL OR next_attempt_ms <= $1 ORDER BY owed_since_ms, account_id LIMIT $2",
       pqxx::params{nowMs, limit});
   std::vector<OwedUnbind> due;
@@ -19,7 +19,8 @@ std::vector<OwedUnbind> PgOwedUnbinds::due(std::int64_t nowMs, int limit) {
       if (rows[at][column].is_null()) return std::nullopt;
       return rows[at][column].as<std::int64_t>();
     };
-    due.push_back(OwedUnbind{UserId{rows[at][0].as<std::string>()}, rows[at][1].as<int>(), instant(2), instant(3)});
+    due.push_back(OwedUnbind{UserId{rows[at][0].as<std::string>()}, rows[at][1].as<std::int64_t>(),
+                             rows[at][2].as<int>(), instant(3), instant(4)});
   }
   return due;
 }
@@ -41,12 +42,9 @@ void PgOwedUnbinds::settle(const UserId& account) {
 }
 
 AccountErasure unbindOnErasure(std::function<void()> owed) {
-  return AccountErasure{
-      {"INSERT INTO owed_subscription_unbinds (account_id) VALUES ($1::uuid) ON CONFLICT (account_id) DO NOTHING "
-       "RETURNING account_id::text"},
-      [owed = std::move(owed)](const std::vector<std::string>& accounts) {
-        if (!accounts.empty() && owed) owed();
-      }};
+  return AccountErasure{{}, [owed = std::move(owed)](const std::vector<std::string>&) {
+                          if (owed) owed();
+                        }};
 }
 
 }

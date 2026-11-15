@@ -5,7 +5,6 @@
 #include <trantor/utils/Logger.h>
 
 #include <exception>
-#include <stdexcept>
 #include <string>
 
 namespace wm::subscriptions {
@@ -32,8 +31,8 @@ void UnbindSweep::pass() {
     if (!attempt(owed)) return;
 }
 
-// Taken, `ok`; a 404, `not_found`, settled and warned of, since the service never confirmed it unbound anything; still
-// owed, `owed` with one line naming the service's answer, at ERROR and as the account's Issue when its report is due.
+// Taken, `ok`. Still owed, `owed` with the service's answer as its `code` and one line naming it, and the account's Issue,
+// tagged with the answer and the attempt, when its report is due.
 bool UnbindSweep::attempt(const OwedUnbind& owed) {
   WriteObservation observation{kOperation, "platform", "background", freshWriteRequestId()};
   WriteContext context{observation};
@@ -42,25 +41,20 @@ bool UnbindSweep::attempt(const OwedUnbind& owed) {
     if (answer.settled) {
       owed_.settle(owed.account);
       observation.wrote();
-      if (answer.answer != "404") {
-        observation.finish("ok");
-        return true;
-      }
-      observation.finish("not_found");
-      reportWriteWarning(kOperation, "platform", "background", "not_found", observation.requestId(), {});
+      observation.finish("ok");
       return true;
     }
     const std::int64_t now = static_cast<std::int64_t>(clock_.nowMs());
     const OwedUnbind after = owed.afterAttempt(now, pace_);
     owed_.keep(after);
     observation.wrote();
+    observation.code(answer.answer);
     LOG_WARN << "subscription unbind: an erased account's unbind is still owed to the service (answer=" << answer.answer
              << " attempt=" << after.attempts << ")";
-    if (owed.reportDue(now, pace_)) {
-      observation.fail(std::runtime_error{"the subscription service did not take an erased account's unbind"}, "owed");
-      return true;
-    }
     observation.finish("owed");
+    if (owed.reportDue(now, pace_))
+      reportWriteFailure(kOperation, "platform", "background", "owed", observation.requestId(),
+                         {{"code", answer.answer}, {"attempt", std::to_string(after.attempts)}});
     return true;
   } catch (const std::exception& error) {
     observation.fail(error);
