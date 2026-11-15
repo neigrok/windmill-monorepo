@@ -686,7 +686,9 @@ instance. Description remains plain text with the existing 5000-code-point limit
 links. The owner-only workspace is device-local; authorized readers receive shared text, relationships and history.
 
 Coach is an empty placeholder: a 56px collapsed rail or a 400px desktop, 340px laptop or 280px tablet panel, with
-heading and Collapse. Phones keep a blank placeholder above the safe area and pinned actions. It has no composer,
+heading and Collapse. Phones keep a blank placeholder below the pinned actions, retaining the safe-area inset.
+Its empty height can shrink on short screens so the actions stay visible and recovery controls can scroll into view.
+It has no composer,
 conversation, history, proposals or backend behavior.
 
 `StepFacts` derives status, relationships and completion outcomes from the whole tree. Complete and Reset stay in
