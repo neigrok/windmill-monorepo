@@ -169,6 +169,24 @@ curl -s -X POST "localhost:8083/internal/v1/subscriptions/$SUBSCRIPTION_ID/refre
 Each claim and refresh writes one `store.claim` or `store.refresh` line
 ([ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#the-claim-and-refresh-doors)).
 
+#### An erasure
+
+The backend's erasure of a finally closed account owes the service the unbind of everything the account held
+([subscriptions.md](../docs/foundation/subscriptions.md) §6.4). The service's door takes it directly too, and
+answers 204 the first time and every time after:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE "localhost:8083/internal/v1/accounts/$ACCOUNT" \
+  -H "authorization: Bearer $TOKEN"                                                                   # 204
+psql -h /tmp -U windmill_subscriptions windmill_subscriptions \
+  -c 'select account_id is null as unbound from subscriptions' -c 'select left_with_no_one from periods'
+```
+
+The feed ends with `unbound` under the account, its entitlement holding nothing, and the periods it paid for stay
+with no one. Each call writes one `account.unbind` line. A backend that erases the account while the service is down
+keeps the unbind in `owed_subscription_unbinds` and its sweep tries it again, a minute later at first
+(`subscription.unbind`, [OBSERVABILITY.md](OBSERVABILITY.md)).
+
 ### Engine server for the iOS simulator
 
 Run from `backend/`. This serves `windmill_server` on an isolated local database, and the simulator

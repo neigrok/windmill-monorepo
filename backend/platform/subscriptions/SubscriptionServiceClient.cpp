@@ -118,4 +118,21 @@ FeedPage SubscriptionServiceClient::page(Seq after, int limit) {
   return FeedPage{*body};
 }
 
+UnbindAnswer SubscriptionServiceClient::unbind(const UserId& account) {
+  const std::optional<std::string> address = host_.empty() ? std::nullopt : addressOf(host_);
+  if (!address) return UnbindAnswer{false, "unreachable"};
+  auto client = drogon::HttpClient::newHttpClient(*address, port_, https_, loop_.getLoop());
+  auto request = drogon::HttpRequest::newHttpRequest();
+  request->setMethod(drogon::Delete);
+  request->setPath(prefix_ + "/internal/v1/accounts/" + account.str());
+  request->addHeader("host", authority_);
+  request->addHeader("authorization", "Bearer " + token_);
+
+  const auto [result, response] = client->sendRequest(request, kTimeoutSeconds);
+  if (result != drogon::ReqResult::Ok) return UnbindAnswer{false, answerFor(result)};
+  if (!response) return UnbindAnswer{false, "bad-reply"};
+  const int status = static_cast<int>(response->getStatusCode());
+  return UnbindAnswer{(status >= 200 && status < 300) || status == 404, std::to_string(status)};
+}
+
 }

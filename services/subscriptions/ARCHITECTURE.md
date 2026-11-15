@@ -13,8 +13,8 @@ chain only tests trust ([App Store test signer](#app-store-test-signer)); `stora
 the service's own database: it migrates it, keeps what the stores sent, applies observations in one
 transaction each and reads the feed and each account ([Storage](#storage)); `subscriptions`, the server
 binary, opens the ledger before it listens, answers health on both of its listeners, keeps and applies the
-App Store's notifications on its public one, serves the backend the feed, the account read, the claim and the
-refresh behind a bearer secret on its internal one, applies every minute what the inbox holds unsettled and
+App Store's notifications on its public one, serves the backend the feed, the account read, the claim, the
+refresh and an account's erasure behind a bearer secret on its internal one, applies every minute what the inbox holds unsettled and
 writes the hints claims owe the App Store, logs every request and reports to Sentry ([Server](#server)).
 In production the public listener answers `GET /health` and the App Store notification door, and 404s
 every other path; no App Store Connect setting sends notifications to the door yet, and no deployment holds
@@ -26,7 +26,7 @@ its image beside the server's, and every deploy provisions its database and star
 
 | Crate | What it is for (spec §9) |
 |---|---|
-| `domain` | D-1…D-9, `observe`, `grantsAccess` and the entitlement fold; no I/O, no async |
+| `domain` | D-1…D-9, `observe`, `erase`, `grantsAccess` and the entitlement fold; no I/O, no async |
 | `app_store` | signature verification, notification and transaction decoding into observations, the App Store Server API client |
 | `storage` | Postgres: the inbox, subscriptions, periods, events and the feed read |
 | `server` | the composition root, built as the binary `subscriptions`: both listeners, the sweep, configuration |
@@ -63,8 +63,9 @@ clock, no randomness. Its files, by kind:
 | File | Holds |
 |---|---|
 | `values.rs` | Instants (epoch milliseconds), spans, money, the text ids and the closed names: `Store`, `Environment`, `Plan`. `Money::from_units` writes an amount a store counts in units (Apple's milliunits) with its currency's ISO 4217 minor units, keeping any digit beyond them. A store's ids, `StoreSubscriptionId` and `StoreTransactionId`, and `AccountId`, the account a store's hint names, print as `(redacted)` in `Debug`, so no log line or panic message formats one (spec §10) |
-| `subscription.rs` | The record: `Subscription`, its `Status` as the newest observation stated it, a `State` that carries only its own facts, `Period`, and access (`access_until`, `grants_access`) |
+| `subscription.rs` | The record: `Subscription`, its `Status` as the newest observation stated it, a `State` that carries only its own facts, `Period` and whom its events are told under once its binding moved on (`LeftWith`), and access (`access_until`, `grants_access`) |
 | `observe.rs` | `Observation`, what a caller hands `observe`, the `Change` it returns, `Event` and `Refusal` |
+| `erasure.rs` | `erase`, the domain's step for an account's erasure (§6.4), for one lineage, returning a `Change` as `observe` does |
 | `entitlement.rs` | `AccountEntitlement`, one `Entitlement` block per environment, folded from the ledger alone |
 
 The action that applies an observation, `storage`'s apply ([Writing](#writing)), calls `observe` once:
@@ -90,13 +91,20 @@ by their content with the cancel time aside (INV-6). A statement that renewal is
 saying since when, as most of the App Store's are, leaves the cancel time as it stands, and a turn-off
 that arrives after a newer statement fills it in and records `updated`.
 
-`observe` records `unbound` only when a new purchase moves an ended lineage to another account
-(R-11). That move leaves each period the ledger holds with the account that paid for it, in the
-period's `left_with`, so a later event of the period, as its refund, is told under that account; a
-period without `left_with` follows its subscription's binding. Account erasure (§6.4) unbinds every
-subscription an account holds and records `unbound` for each; the domain has no step for it yet, and
-the erasure node adds one beside `observe`. A claim by an erased account, resolved by the caller as
-`Claimant::Erased`, is refused with `account_erased` before any other rule of §4.
+A period's `left_with` says whom its events are told under once its subscription's binding moved on
+without it; a period without one follows the binding. `observe` records `unbound` only when a new
+purchase moves an ended lineage to another account (R-11): that move leaves each period the ledger holds
+with the account that paid for it, `LeftWith::Account`, so a later event of the period, as its refund, is
+told under that account. A claim by an erased account, resolved by the caller as `Claimant::Erased`, is
+refused with `account_erased` before any other rule of §4.
+
+`erase(ledger, account, at)` is the step for an account's erasure (§6.4), for one lineage. A subscription
+bound to the account is unbound and records `unbound` under it at the erasure's instant; every period the
+account held or paid for, the one a move left with it too, is restated `LeftWith::NoOne`, so no later
+event of it names an account. It answers `None` when the lineage holds nothing of the account, as on an
+erasure repeated. A binding of an unbound subscription records again only the periods that follow it
+(INV-13): one left with an account or with no one stays theirs, so an account that claims an erased
+account's subscription (R-9) is told the periods paid since the erasure and none before.
 
 Known limits:
 
@@ -105,8 +113,8 @@ Known limits:
 - An ended lineage never bound and bought again with a hint binds by the ordinary rule: at `startedAt`,
   with its earlier periods recorded again (INV-13).
 
-`tests/vectors/` holds the lifecycle stories every implementation of the domain passes, and
-`crates/domain/tests/vectors.rs` runs them. `crates/domain/tests/observe.rs` holds the property tests
+`tests/vectors/` holds the lifecycle stories every implementation of the domain passes, observations and
+erasures, and `crates/domain/tests/vectors.rs` runs them. `crates/domain/tests/observe.rs` holds the property tests
 of INV-4, INV-5 and INV-6 and one that replays the feed through §6.3's funding in any order.
 
 ## App Store signature verification
@@ -544,6 +552,7 @@ therefore does not start.
 | `0005_erased_accounts.sql` | `erased_accounts` |
 | `0006_store_hints.sql` | `store_hints` |
 | `0007_store_hint_attempts.sql` | `store_hints.attempts`, `next_attempt_at` and `abandoned_at` |
+| `0008_left_with_no_one.sql` | `periods.left_with_no_one`, `events.period_left_with_no_one`, and the index of `periods` by `left_with` |
 
 ### Records
 
@@ -559,11 +568,11 @@ redacted (spec §10).
 |---|---|
 | `inbox` | Each notification a store door kept, keyed by `(store, notification_id)`, with its environment and the signed payload as received. `settled_at` and `outcome` are set together, once: `applied`, a refusal's code, the code a door settles a notification with when it states nothing to apply, or `failed`. `attempts` counts the applies that failed for a reason a retry cannot change, and `next_attempt_at` is when the next may run |
 | `subscriptions` | One row per lineage, unique by `(store, environment, store_subscription_id)`: every field of the domain's `Subscription`, and `verified_at` |
-| `periods` | One row per store transaction of a lineage. Only `refunded_at`, `observed_at` and `left_with`, the account that paid for it once a new purchase moved its subscription (R-11), change after it is written (INV-7) |
+| `periods` | One row per store transaction of a lineage. Only `refunded_at`, `observed_at` and whom it is left with change after it is written (INV-7): `left_with`, the account that paid for it once a new purchase moved its subscription (R-11), or `left_with_no_one` once the account that held or paid for it was erased (§6.4), never both |
 | `events` | Append-only, keyed by `seq`. Each row keeps its subscription's store, environment and offer kind as the transaction that recorded it left them, and a period event its period as the event states it, so the feed reads no other table's current state |
 | `entitlement_subscriptions` | For each event that names an account, that account's subscriptions as the transaction left them: what the event's entitlement folds over |
-| `erased_accounts` | The accounts the backend erased (§6.4) |
-| `store_hints` | The account hints the ledger owes the stores, each with its lineage: written in the transaction that binds a subscription by claim, cleared once the store has taken it, and dropped once the subscription is bound to another account or the account is erased (§4). `attempts` counts the store's refusals of it, `next_attempt_at` is when it may be written again, and `abandoned_at` is set at the fifth, after which it is never written |
+| `erased_accounts` | The accounts the backend erased (§6.4), each with `erased_at`, when the ledger first recorded it |
+| `store_hints` | The account hints the ledger owes the stores, each with its lineage: written in the transaction that binds a subscription by claim, cleared once the store has taken it, dropped once the subscription is bound to another account, and dropped in the transaction that erases its account (§4, §6.4). `attempts` counts the store's refusals of it, `next_attempt_at` is when it may be written again, and `abandoned_at` is set at the fifth, after which it is never written |
 
 ### Writing
 
@@ -577,10 +586,10 @@ redacted (spec §10).
 | `settle(kept, code)` | Settles a notification that states nothing to apply with the code of what it was; a settled notification keeps its first outcome |
 | `postpone(kept, by_millis)` | Leaves a kept notification unsettled and out of `unsettled` for that long: one that waits on what no retry brings sooner, such as its subscription's status. A redelivery still hands it back |
 | `unsettled(limit)` | The kept notifications not yet settled and not waiting after a failed attempt or a postponement, the longest kept first: what the sweep applies (§7 step 1) |
-| `store_hints(limit)`, `clear_store_hint(hint)` | The account hints owed to the stores, the longest owed first: each whose subscription is bound to its account, which is not erased. Clearing one once its store took it; a hint owed since to another account stays |
-| `forget_stale_store_hints()` | Drops every hint no longer owed, its subscription bound to another account or its account erased, and answers how many |
+| `store_hints(limit)`, `clear_store_hint(hint)` | The account hints owed to the stores, the longest owed first: each whose subscription is bound to its account. Clearing one once its store took it; a hint owed since to another account stays |
+| `forget_stale_store_hints()` | Drops every hint no longer owed, its subscription bound to another account since, and answers how many |
 | `count_store_hint_refusal(hint)` | Counts a refusal by the store a retry cannot change: the hint waits 1, 2, 4 and 8 hours, and the fifth settles it abandoned, which it answers |
-| `record_erasure(account)` | Records the account as erased; recording it again changes nothing. It unbinds nothing: the domain has no step for unbinding ([Domain](#domain)) |
+| `erase_account(account)` | The erasure of §6.4, in one transaction: below. It answers an `Erasure`: whether this call recorded the account first, `erased_at`, each lineage it changed with its events' seqs, and how many owed hints it dropped. An erasure repeated changes nothing and answers the first `erased_at` |
 
 Only the ledger makes a `KeptNotification`, so nothing applies a notification the inbox does not hold.
 `Observed` is what a caller hands over: the observation; the account its hint names, as a UUID, so a
@@ -617,8 +626,25 @@ records none. A claim retried after its answer was lost replays, and answers the
 written it. A commit whose answer never arrives fails as `outcome_unknown`, never `ledger_unreachable`, since
 the transaction may have committed.
 
-Locks are taken in one order, accounts, then lineage, then seq, and recording an erasure holds its
-account's lock alone, so no binding to an account commits beside its erasure. The row lock is
+An erasure is one transaction too:
+
+1. Hold the account's advisory lock alone, record it in `erased_accounts` unless it is there, and read its
+   `erased_at`.
+2. Read the lineages holding anything of it, a subscription bound to it or a period `left_with` it, in
+   the order of `(store, environment, store_subscription_id)`, and lock each as an apply does, in that
+   order.
+3. Call `domain::erase` for each and write what it changes: the subscription unbound, its periods
+   restated with no one.
+4. Drop every hint owed to a store for the account.
+5. Take the seqs of every change's events under the seq lock and append them, each `unbound` with the
+   account's subscriptions as the transaction leaves them, none. Commit.
+
+Only a move away from the account changes what a lineage holds of it between steps 2 and 3, and a lineage
+moved away still holds the periods the account paid for, so the read of step 2 finds every lineage the
+erasure changes. Two erasures lock the lineages they share in the same order.
+
+Locks are taken in one order, accounts, then lineage, then seq, and an erasure holds its account's lock
+alone, so no binding to an account commits beside its erasure. The row lock is
 `for no key update` because a transaction holding the seq lock inserts entitlement rows whose foreign
 key takes a key-share lock on each subscription of the account, which `for update` refuses: the two
 transactions would deadlock.
@@ -945,8 +971,8 @@ report under `sweep.inbox` and their code, at most once in ten minutes for each.
 (`AppStoreDoor::store_hints_due`, `AppStoreDoor::write_store_hint`). A pass:
 
 1. **Drops** every hint no longer owed (`Ledger::forget_stale_store_hints`): its subscription is bound to
-   another account since, or its account was erased. No account's id reaches a store for a subscription it
-   does not hold.
+   another account since. An account's erasure drops its hints itself ([Writing](#writing)). No account's id
+   reaches a store for a subscription it does not hold.
 2. **Reads** `Ledger::store_hints` 100 at a time, the longest owed first, but for hints waiting after a
    refusal or abandoned.
 3. **Writes** each as the lineage's app account token (Set App Account Token), and clears it once Apple took
@@ -983,8 +1009,9 @@ Each hint written writes one `store.hint` line: `operation`, `store`, `environme
 
 ### Internal doors
 
-`internal` holds the backend's reads (spec §5.2), and `internal::doors` merges them with the store doors'
-claim and refresh ([above](#the-claim-and-refresh-doors)) under one bearer layer; the internal router serves
+`internal` holds the backend's reads and an account's erasure (spec §5.2), each over the ledger as
+`internal::BackendLedger` reaches it, and `internal::doors` merges them with the store doors' claim and refresh
+([above](#the-claim-and-refresh-doors)) under one bearer layer; the internal router serves
 them, so none exists on the public listener. Each is behind the bearer secret: a request without
 `Authorization: Bearer <secret>`, with another secret, or reaching a service started without one answers
 401 `{"code":"unauthorized"}` with `WWW-Authenticate: Bearer`, and says nothing of which. The secret is compared in time that depends on the
@@ -994,17 +1021,19 @@ lengths alone. `/health` asks for none, for the image's `HEALTHCHECK`.
 |---|---|
 | `GET /internal/v1/feed?after=<seq>&limit=<n>` | 200, `Ledger::feed(after, limit)` as `feed.json` shows a page. Both are required, `after` from 0 and `limit` from 1 to 500; any other query is 400 `{"code":"invalid_query"}` |
 | `POST /internal/v1/app-store/claims`, `POST /internal/v1/subscriptions/{subscriptionId}/refresh` | the claim and the refresh ([above](#the-claim-and-refresh-doors)), as `internal-app-store-claim.json` and `internal-subscription-refresh.json` show each answer |
+| `DELETE /internal/v1/accounts/{accountId}` | `Ledger::erase_account` ([Writing](#writing)), as `internal-account-erasure.json` shows each answer: 204 with no body whether it unbound anything or the account was erased already, 400 `{"code":"invalid_account_id"}` for an id as the read below refuses it, before the ledger is reached, and 503 `{"code":"unavailable"}` when the ledger did not answer, which the backend tries again. It runs as a task of its own, so a backend that leaves cancels neither the erasure nor its line |
 | `GET /internal/v1/accounts/{accountId}` | 200, `Ledger::account` as `account.json` shows it: `{entitlement, subscriptions}`, the entitlement, and each subscription bound to the account with the entitlement's fields of it, then `environment`, `boundAt`, `boundBy`, `periods` as the feed carries a period, and `events`, each `{seq, type, occurredAt, recordedAt, accountId, period}`. An id that is not a UUID in its canonical spelling, lowercase and hyphenated, is 400 `{"code":"invalid_account_id"}`; an account the ledger holds nothing of answers its empty entitlement and `[]` |
 
 A read the ledger does not answer is 503 `{"code":"unavailable"}` and an Issue under `feed.read` or
-`account.read` ([Logs and Sentry](#logs-and-sentry)); the backend's follower reads again. The wire shapes
-are `internal/responses.rs`, each written from the ledger's own types. `crates/server/tests/contract.rs`
-serves every example of `feed.json`, `entitlement.json` and `account.json` from the ledger's types, writes
-every answer of `internal-app-store-claim.json` and `internal-subscription-refresh.json` from the doors'
-own, and compares the bodies byte for byte, key order included. It also tells the feed's story through
-`Ledger::apply`, every transaction up to seq 26, and checks the pages that hold it, the three account reads
-of it and the claim's answer, first and retried, against the fixtures; the erasure at seq 27 has no step in
-the domain yet.
+`account.read`, and an erasure under `account.unbind` ([Logs and Sentry](#logs-and-sentry)); the backend reads
+or erases again. The wire shapes are `internal/responses.rs`, each written from the ledger's own types.
+`crates/server/tests/contract.rs` serves every example of `feed.json`, `entitlement.json` and `account.json`
+from the ledger's types, writes every refusal and 200 of `internal-app-store-claim.json`,
+`internal-subscription-refresh.json` and `internal-account-erasure.json` from the doors' own, and compares the
+bodies byte for byte, key order included. It also tells the feed's story through `Ledger::apply`, every
+transaction up to seq 26, then the erasure at seq 27 through its door, twice, and checks every page of it,
+the four account reads of it, the claim's answer, first and retried, and both erasures' answers against the
+fixtures.
 
 ### Logs and Sentry
 
@@ -1028,7 +1057,11 @@ per refresh ([above](#the-claim-and-refresh-doors)), and the sweep one `store.hi
 ([The sweep](#the-sweep)). Each read an internal door has the ledger answer writes `feed.read` or
 `account.read`, inside the request's span, with `operation`, `outcome` `ok` and its `entries` or
 `subscriptions`; a feed page without entries writes it at `debug`, any other at `info`. A refused read
-writes its request line alone. No line names an account, the query or the secret.
+writes its request line alone. Each erasure writes one `account.unbind` line inside the request's span, with
+`operation`, `outcome`, `answered` and `duration_ms`: `erased`, or `already_erased` for an account the ledger
+had recorded, at `info` with how many subscriptions it `unbound`, `periods` it left with no one, `hints_dropped`
+and `events` it recorded; `refused` with `code` `invalid_account_id` at `info`; `ledger_failed` with the
+failure's `code` and `sqlstate` at `error`, reported. No line names an account, the query or the secret.
 
 Lines from every crate of the workspace (`telemetry::SERVICE_CRATES`) also go to Sentry as Logs; a
 vendor's lines stay on stdout. A line at `error` creates no Issue. Issues come from explicit
@@ -1041,7 +1074,8 @@ reports, each logged with the event's `sentry_event_id` (absent while Sentry is 
   door's `store.notification` line does. A `telemetry::Throttle` reports each operation and code at
   most once an interval, for what can recur as often as something outside the service likes.
   `telemetry::report_failure` reports and writes `<operation> failed` at `error`, for `ledger.open`,
-  `feed.read` and `account.read`.
+  `feed.read` and `account.read`; an erasure the ledger did not answer is reported under `account.unbind` and
+  its code, its own line carrying the event's id.
 - A panic after start is reported with its location and stack and without its message, and logged as
   `panic`. The stack ends at
 the panicking frame, and the service's crates are its in-app frames. A panic inside a request also

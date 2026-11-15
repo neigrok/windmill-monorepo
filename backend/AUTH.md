@@ -202,10 +202,13 @@ the account's own, plus feedback left signed out with its address; an open accou
 stays whatever address it typed) and, per product, in the `AccountErasure` list `main.cpp` passes
 it. Roadmap's takes the account's trees and everything keyed to them, other people's progress on
 those trees included, since the trees are gone; its hook then retires their live rooms, so no
-reader is served one, no fork copies one, and no save writes one back. Three kinds of row stay: the
+reader is served one, no fork copies one, and no save writes one back. The subscriptions share records
+the unbind the erasure owes the subscription service, whose sweep calls it once the erasure commits
+([subscriptions.md](../docs/foundation/subscriptions.md) §6.4). Four kinds of row stay: the
 AI accounting relations keep the account's id, with no address or content
 ([AI_ALLOWANCES.md](AI_ALLOWANCES.md)); pending sign-in credentials belong to the address and go
-at their expiry; account-closure receipts retain their narrow result until their 35-day expiry.
+at their expiry; account-closure receipts retain their narrow result until their 35-day expiry; the
+owed unbind keeps the id alone until the subscription service takes it.
 The retention sweep collects both expiring kinds. `PgAuthRepositoryTest` inventories every table
 with an account-shaped column and fails on unexpected survivors.
 

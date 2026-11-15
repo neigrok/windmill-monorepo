@@ -831,6 +831,19 @@ create table if not exists subscription_feed_cursor (
 );
 insert into subscription_feed_cursor (one) values (true) on conflict (one) do nothing;
 
+-- The unbind each erased account owes the subscription service (subscriptions.md §6.4): written in the transaction that
+-- erases the account and deleted once the service takes it, so an outage of the service never leaves a subscription
+-- bound to an erased account. It keeps the erased account's id alone, and no foreign key to users, whose row that
+-- erasure deletes. A null `next_attempt_ms` is due at once; each attempt the service did not take counts in `attempts`
+-- and waits until `next_attempt_ms`, and `reported_at_ms` is when the unbind was last reported while owed.
+create table if not exists owed_subscription_unbinds (
+  account_id      uuid primary key,
+  owed_since_ms   bigint not null default (extract(epoch from clock_timestamp()) * 1000)::bigint,
+  attempts        integer not null default 0 check (attempts >= 0),
+  next_attempt_ms bigint,
+  reported_at_ms  bigint
+);
+
 -- ── Roadmap (products/roadmap), continued ────────────────────────────────────────────────────
 
 -- ── Tending runs (server-side agent edits) ──────────────────────────────────────────────────

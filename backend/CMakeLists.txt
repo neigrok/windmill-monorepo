@@ -61,8 +61,10 @@ add_library(windmill_platform
   platform/subscriptions/PeriodFunding.cpp
   platform/subscriptions/PgEntitlementCopy.cpp
   platform/subscriptions/PgLifecycleEvents.cpp
+  platform/subscriptions/PgOwedUnbinds.cpp
   platform/subscriptions/SubscriptionApi.cpp
   platform/subscriptions/SubscriptionServiceClient.cpp
+  platform/subscriptions/UnbindSweep.cpp
   platform/subscriptions/WindmillOne.cpp
   platform/domain/AiFuse.cpp
   platform/domain/AiUsage.cpp
@@ -648,6 +650,7 @@ add_executable(windmill_adapters_tests
   test/platform/subscriptions/PgLifecycleEventsTest.cpp
   test/platform/subscriptions/SubscriptionApiTest.cpp
   test/platform/subscriptions/SubscriptionServiceClientTest.cpp
+  test/platform/subscriptions/UnbindSweepTest.cpp
   test/platform/adapters/http/AiAllowanceApiTest.cpp
   test/platform/adapters/json/AiBudgetJsonTest.cpp
   test/platform/adapters/json/JsonTextTest.cpp

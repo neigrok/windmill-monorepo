@@ -1,4 +1,5 @@
 #include "platform/adapters/postgres/PgAuthRepository.h"
+#include "platform/subscriptions/PgOwedUnbinds.h"
 #include "products/roadmap/adapters/postgres/PgTreeRepository.h"
 
 #include "test/PgTestPool.h"
@@ -110,6 +111,10 @@ void eraseLeftovers(PgAuthRepository& repo) {
   }
   repo.eraseAccount(UserId{kErased}, kClosedAt);
   repo.eraseAccount(UserId{kKept}, kClosedAt);
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
+  w.exec(withAccounts("DELETE FROM owed_subscription_unbinds WHERE account_id IN ('SAM', 'EVE')"));
+  w.commit();
 }
 
 // Every column through which a row can belong to an account: its id under any of the names the schema gives it, any
@@ -164,12 +169,17 @@ int count(const std::string& sql) {
 
 TEST(pg_auth_erasing_a_closed_account_leaves_no_row_any_product_keys_to_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  PgAuthRepository repo{pgTestPool(), nullptr, {roadmapAccountErasure()}};
+  int unbindsOwed = 0;
+  PgAuthRepository repo{pgTestPool(), nullptr,
+                        {roadmapAccountErasure(), subscriptions::unbindOnErasure([&] { ++unbindsOwed; })}};
   eraseLeftovers(repo);
+  unbindsOwed = 0;
   // Kept on purpose: the AI accounting relations keep an opaque account id with no address or content
-  // (AI_ALLOWANCES.md); sign-in credentials and closure receipts are collected at their own expiry.
+  // (AI_ALLOWANCES.md); sign-in credentials and closure receipts are collected at their own expiry; the unbind the
+  // erasure owes the subscription service keeps the id until the service takes it (subscriptions.md §6.4).
   const std::set<std::string> kept = {"ai_usage", "ai_budget_grants", "ai_budget_device_accounts", "ai_budget_balances",
-                                      "ai_budget_reservations", "ai_budget_alerts", "magic_links", "apple_tickets", "account_closures"};
+                                      "ai_budget_reservations", "ai_budget_alerts", "magic_links", "apple_tickets", "account_closures",
+                                      "owed_subscription_unbinds"};
   {
     PgLease c{*pgTestPool()};
     pqxx::work w{*c};
@@ -302,6 +312,8 @@ INSERT INTO ai_budget_device_accounts (device_id, account_id, bound_at_ms) VALUE
   CHECK_EQ(count("ai_budget_grants WHERE account_id = 'SAM' AND id = 'erase-pgtest-grant'"), 1);
   CHECK_EQ(count("ai_budget_device_accounts WHERE account_id = 'SAM' AND device_id = 'erase-pgtest-device'"), 1);
   CHECK_EQ(count("account_closures WHERE account_id = 'SAM'"), 1);
+  CHECK_EQ(count("owed_subscription_unbinds WHERE account_id = 'SAM' AND attempts = 0 AND next_attempt_ms IS NULL"), 1);
+  CHECK_EQ(unbindsOwed, 1);
   CHECK_EQ(count("users WHERE id = 'EVE'"), 1);
   CHECK_EQ(count("trees WHERE id = 't_erase_eve'"), 1);
   CHECK_EQ(count("tree_nodes WHERE tree_id = 't_erase_eve'"), 1);
