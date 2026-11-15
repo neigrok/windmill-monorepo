@@ -153,8 +153,7 @@ class CoachAnonymousChatTests {
             Cap("subject_exhausted", CoachTurnRefusal.Allowance("subject_exhausted", spent = true), "You have used all of your AI allowance.", "allowance"),
             Cap("free_day_exhausted", CoachTurnRefusal.Allowance("free_day_exhausted"), "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.", "allowance"),
             Cap("free_month_exhausted", CoachTurnRefusal.FreeMonthExhausted(null), "Coach is paused for everyone this month.", "allowance"),
-            Cap("concurrency_exhausted", CoachTurnRefusal.Allowance("concurrency_exhausted"), "Another AI request is still in progress. Try again when it finishes.", "allowance"),
-            Cap("funding_required", CoachTurnRefusal.Allowance("funding_required"), "Your plan has no funded AI allowance for this period.", "allowance"),
+            Cap("concurrency_exhausted", CoachTurnRefusal.Allowance("concurrency_exhausted"), "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", "allowance"),
             Cap(TurnRefusal.rateLimited, CoachTurnRefusal.RateLimited, "You can ask again later.", "daily"),
         )) {
             val telling = TellingRecorder()

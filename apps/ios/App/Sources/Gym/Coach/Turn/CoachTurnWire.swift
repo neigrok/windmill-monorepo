@@ -128,7 +128,7 @@ nonisolated struct TurnRefusal: Error, Equatable, Sendable {
   // The closing error of a stream another stream of the same turn took over (§6.5): the turn runs on, this stream is done.
   static let streamReplaced = "coach-stream-replaced"
   static let allowanceCodes: Set<String> = ["subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted",
-                                            "funding_required", "debt_outstanding", "device_bound", "invalid_installation"]
+                                            "debt_outstanding", "device_bound", "invalid_installation"]
   // Every §6.5 code: the bound an event's `code` carries one of.
   static let codes: Set<String> = allowanceCodes.union(["coach-bad-request", "coach-update-required", "coach-turn-conflict", turnUnknown,
                                                         "coach-turn-order", "coach-turn-volume", "coach-rate-limited", "coach-replica-syncing",

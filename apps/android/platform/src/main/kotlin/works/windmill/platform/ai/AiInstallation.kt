@@ -47,7 +47,7 @@ class AiInstallationStorageFailure : IOException("Installation access could not 
 // The server declares anonymous AI or an allowance unavailable with a 503 and one of these codes; an AI door expects it.
 object AiAvailability {
     val allowanceCodes = setOf("subject_exhausted", "free_month_exhausted", "free_day_exhausted",
-        "concurrency_exhausted", "funding_required", "debt_outstanding", "unconfigured")
+        "concurrency_exhausted", "debt_outstanding", "unconfigured")
     const val anonymousUnavailable = "anonymous_ai_unavailable"
 
     fun declaredUnavailable(failure: WindmillApiException): Boolean = failure is WindmillApiException.Refused &&

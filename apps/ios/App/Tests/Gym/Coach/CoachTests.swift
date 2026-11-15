@@ -159,22 +159,27 @@ import SyncTesting
     }
     #expect(CoachTurnRefusal.allowance("subject_exhausted").recovery(anonymous: true) == .signIn)
     #expect(CoachTurnRefusal.allowance("subject_exhausted").recovery(anonymous: false) == nil, "Signed in, a spent allowance offers nothing while paid plans are closed")
-    for code in ["free_day_exhausted", "concurrency_exhausted", "funding_required", "unconfigured"] {
+    for code in ["free_day_exhausted", "concurrency_exhausted", "unconfigured"] {
       #expect(CoachTurnRefusal(code: code).recovery(anonymous: true) == nil && CoachTurnRefusal(code: code).recovery(anonymous: false) == nil)
     }
     #expect(CoachTurnRefusal(code: "free_month_exhausted", resetsAtMs: 1_793_491_200_000) == .freeMonthExhausted(resetsAtMs: 1_793_491_200_000))
     #expect([CoachTurnRefusal.freeMonthExhausted(resetsAtMs: nil), .rateLimited].map { $0.recovery(anonymous: false) } == [.ownAgent, .ownAgent])
     #expect([CoachTurnRefusal.offline, .logArriving, .updateRequired].map { $0.recovery(anonymous: true) } == [.tryAgain, nil, .update])
     #expect([CoachTurnRefusal(code: "subject_exhausted"), CoachTurnRefusal(code: "coach-rate-limited"), CoachTurnRefusal(code: "coach-update-required"),
-             CoachTurnRefusal(code: "invalid_installation"), CoachTurnRefusal(code: "coach-busy", status: 503), CoachTurnRefusal(code: "", status: 404)]
-      == [.allowance("subject_exhausted"), .rateLimited, .updateRequired, .installation("invalid_installation"), .said("coach-busy"), .absent])
+             CoachTurnRefusal(code: "invalid_installation"), CoachTurnRefusal(code: "coach-busy", status: 503), CoachTurnRefusal(code: "", status: 404),
+             CoachTurnRefusal(code: "funding_required", status: 503)]
+      == [.allowance("subject_exhausted"), .rateLimited, .updateRequired, .installation("invalid_installation"), .said("coach-busy"), .absent,
+          .said("funding_required")], "funding_required is Talk's refusal, never Coach's")
+    #expect(TurnInterrupted("funding_required").code == "other")
     #expect([CoachTurnRefusal.allowance("subject_exhausted"), .freeMonthExhausted(resetsAtMs: nil), .rateLimited, .absent].map { $0.capped } == [true, true, true, true])
     #expect([CoachTurnRefusal.offline, .logArriving, .updateRequired, .installation("device_bound"), .said("coach-busy")].map { $0.capped }
       == [false, false, false, false, false])
-    #expect([CoachTurnRefusal.offline, .logArriving, .installation("invalid_installation"), .installation("device_bound"), .updateRequired].map(\.sentence) == [
+    #expect([CoachTurnRefusal.offline, .logArriving, .installation("invalid_installation"), .installation("device_bound"), .updateRequired,
+             .allowance("concurrency_exhausted")].map(\.sentence) == [
       "No connection. Your question is kept here.",
       "Your log is still arriving on this phone. Ask again in a moment.", "This phone can’t ask Coach signed out any more. Sign in to continue.",
       "This phone is linked to an account. Sign in to ask Coach.", "This version can’t ask Coach any more. Update Windmill to continue.",
+      "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.",
     ])
   }
 
@@ -188,12 +193,12 @@ import SyncTesting
     }
     let reset = "You can use Coach again on Nov 1 at 12:00\u{202F}AM.", pool = "You can use Coach again on Oct 21 at 12:00\u{202F}AM."
     #expect(try said("subject_exhausted", remaining: "0.000000000", reserved: "0") == ["You have used all of your AI allowance.", reset])
-    #expect(try said("subject_exhausted", remaining: "0", reserved: "0.05") == ["The rest of your AI allowance is held by a request still in progress.", nil])
+    #expect(try said("subject_exhausted", remaining: "0", reserved: "0.05") == ["Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began.", nil])
     #expect(try said("subject_exhausted", remaining: "0.01", reserved: "0") == ["This request needs more AI capacity than your remaining allowance.", nil])
     #expect(try said("free_day_exhausted", remaining: "0.05", reserved: "0") == ["Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.", pool])
     #expect(try said("free_month_exhausted", remaining: "0.05", reserved: "0") == ["Coach’s shared free AI capacity is unavailable for this month. Signing in does not bypass this limit.", pool])
-    #expect(try said("concurrency_exhausted", remaining: "0.04", reserved: "0.01") == ["Another AI request is still in progress. Try again when it finishes.", nil])
-    #expect(try said("funding_required", remaining: "0", reserved: "0") == ["Your plan has no funded AI allowance for this period.", nil])
+    #expect(try said("concurrency_exhausted", remaining: "0.04", reserved: "0.01") == ["Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", nil])
+    #expect(try said("funding_required", remaining: "0", reserved: "0") == ["Coach’s AI allowance is unavailable right now.", nil])
     #expect(try said("debt_outstanding", remaining: "0", reserved: "0") == ["Coach’s AI allowance is unavailable right now.", nil])
     #expect(try said("device_bound", remaining: "0.05", reserved: "0") == ["This phone’s AI access belongs to an account.", nil])
     let tokyo = GymDate(Moment(now: Instant(ms: 1_792_152_000_000), zone: FixedZone(offsetSeconds: 9 * 3_600)), locale: Locale(identifier: "en_US"))
