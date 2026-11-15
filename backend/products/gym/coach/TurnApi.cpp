@@ -116,8 +116,8 @@ drogon::HttpStatusCode statusOf(const std::string& code) {
     return drogon::k409Conflict;
   if (code == "coach-update-required") return drogon::k426UpgradeRequired;
   if (code == "coach-rate-limited" || code == "subject_exhausted" || code == "free_day_exhausted" ||
-      code == "free_month_exhausted" || code == "concurrency_exhausted" || code == "funding_required" ||
-      code == "debt_outstanding") return drogon::k429TooManyRequests;
+      code == "free_month_exhausted" || code == "concurrency_exhausted" || code == "debt_outstanding")
+    return drogon::k429TooManyRequests;
   return drogon::k503ServiceUnavailable;
 }
 

@@ -37,7 +37,6 @@ drogon::HttpResponsePtr refusalOf(const AskReply& reply) {
         : allowance.code == AiBudgetCode::ConcurrencyExhausted
             ? "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes "
               "after it began."
-        : allowance.code == AiBudgetCode::FundingRequired ? "Your plan has no funded AI allowance for this period."
         : "Coach's AI allowance is unavailable right now.";
     body["allowance"] = toJson(allowance);
     auto response = jsonResponse(body);

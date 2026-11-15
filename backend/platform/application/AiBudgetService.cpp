@@ -84,9 +84,10 @@ AiBudgetView AiBudgetService::view(const AiBudgetPrincipal& principal) {
 }
 
 AiBudgetResult AiBudgetService::reserve(const std::string& id, const AiBudgetPrincipal& principal,
-                                      long long amountNanos, std::optional<AiOutputBudget> outputBudget) {
+                                      long long amountNanos, std::optional<AiOutputBudget> outputBudget,
+                                      AiBudgetFunding funding) {
   return observeAiBudgetWrite("ai.budget.reserve", [&] {
-    const AiBudgetRequest request{id, principal, amountNanos, clock_(), outputBudget};
+    const AiBudgetRequest request{id, principal, amountNanos, clock_(), outputBudget, funding};
     if (!request.valid()) return AiBudgetResult{AiBudgetCode::Invalid};
     releaseLapsed(principal.subject, request.atMs, "ai", [] { return true; });
     return repository_.reserve(request, limits_());
@@ -177,6 +178,16 @@ AiBudgetGrantResult AiBudgetService::fund(const AiBudgetGrant& grant) {
     const auto limits = limits_();
     if (!grant.valid() || !limits.valid()) return AiBudgetGrantResult{AiBudgetCode::Invalid};
     return repository_.fund(grant, limits);
+  });
+}
+
+AiBudgetGrantResult AiBudgetService::refund(const std::string& fundingReference, std::optional<long long> refundedAtMs,
+                                            const std::optional<AiBudgetStatement>& statement) {
+  return observeAiBudgetWrite("ai.budget.refund", [&] {
+    if (!validAiBudgetId(fundingReference) || (refundedAtMs && !AiBudgetPeriod::at(*refundedAtMs)) ||
+        (statement && !statement->valid()))
+      return AiBudgetGrantResult{AiBudgetCode::Invalid};
+    return repository_.refund(fundingReference, refundedAtMs, statement);
   });
 }
 

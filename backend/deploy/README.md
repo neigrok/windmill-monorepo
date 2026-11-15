@@ -613,6 +613,13 @@ read again or a rebuild after a restore records none twice. Windmill One and `GE
 copy whether or not the follower runs, so an account the feed has not reached holds Windmill One only through
 `WINDMILL_OWNER_EMAILS`.
 
+Each paid production period the feed records funds that account's AI allowance for the period, and a refund
+closes it (§6.3), so the follower needs the AI ledger: with both set and `AI_ALLOWANCES_ENABLED` off the
+server refuses to start, since a cursor moved past a period never funds it. A paid period left unfunded,
+because another account holds it or nothing of it is left beside the grants the account holds, writes a
+`subscription.fund` (or, for a reopen, `subscription.refund`) `conflict` line and files a Sentry warning of
+that name; the page still applies.
+
 Two GitHub variables, both empty by default, decide what the copy is read against. `WINDMILL_SANDBOX_EMAILS`
 names the accounts whose sandbox purchases count (the team's testers and the App Review account); every
 other sandbox purchase entitles no one (§6.2). `SUBSCRIPTIONS_PURCHASABLE_STORES` names the stores the paid

@@ -101,7 +101,14 @@ drogon::HttpResponsePtr VoiceApi::allowanceRefusalBeforeAudio(const User& caller
     return error(drogon::k429TooManyRequests, "talk has had its turn for now");
   }
   try {
-    const AiBudgetView allowance = entitlements_->aiAllowanceView(caller.id, caller.email.value);
+    AiBudgetView allowance = entitlements_->aiAllowanceView(caller.id, caller.email.value);
+    // A take draws only on a funded Windmill One grant, never on the free allowance a subscription falls back to
+    // without one in force, so what that allowance holds is no reason to give.
+    if (allowance.tier != AiBudgetTier::WindmillOne) {
+      allowance.code = AiBudgetCode::FundingRequired;
+      allowance.budgetResetsAtMs.reset();
+      return allowanceRefusal(allowance);
+    }
     return allowance.code == AiBudgetCode::Ok ? nullptr : allowanceRefusal(allowance);
   } catch (...) {
     return accountingUnavailable();

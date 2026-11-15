@@ -32,7 +32,7 @@ struct FakeAiBudgetRepository : AiBudgetRepository {
     if (principal.tier != AiBudgetTier::WindmillOne) return result;
     result.grant.reset();
     for (const auto& [id, grant] : grants) {
-      if (grant.accountId != principal.subject.id || !grant.period.contains(atMs)) continue;
+      if (grant.accountId != principal.subject.id || !grant.inForceAt(atMs)) continue;
       if (grant.source == AiBudgetFundingSource::Owner && !principal.owner) continue;
       result.grant = grant;
       if (grant.source == AiBudgetFundingSource::Subscription) break;
@@ -40,9 +40,11 @@ struct FakeAiBudgetRepository : AiBudgetRepository {
     if (!result.grant && principal.owner)
       result.grant = AiBudgetGrant{"owner-period", principal.subject.id, AiBudgetFundingSource::Owner,
                                   result.period, limits.paidPeriodNanos, "owner-period"};
-    result.window = result.grant && result.grant->source == AiBudgetFundingSource::Owner
+    // No grant in force: the free signed-in allowance, read as for any account.
+    if (!result.grant) return result;
+    result.window = result.grant->source == AiBudgetFundingSource::Owner
         ? AiBudgetWindow::CalendarMonth : AiBudgetWindow::BillingPeriod;
-    if (result.grant) result.period = result.grant->period;
+    result.period = result.grant->period;
     return result;
   }
   AiBudgetResult reserve(const AiBudgetRequest& request, const AiBudgetLimits& limits) override {
@@ -84,9 +86,23 @@ struct FakeAiBudgetRepository : AiBudgetRepository {
   AiBudgetResult reconcileOverrun(const std::string&) override { return {AiBudgetCode::InvalidState, {}}; }
   AiBudgetGrantResult fund(const AiBudgetGrant& grant, const AiBudgetLimits&) override {
     if (failFund) throw std::runtime_error("private billing content");
-    const auto [row, inserted] = grants.emplace(grant.id, grant);
-    if (inserted) return {AiBudgetCode::Ok, grant};
-    return {row->second == grant ? AiBudgetCode::Replay : AiBudgetCode::Conflict, row->second};
+    auto funded = fundAiBudgetGrant(grant, held());
+    if (funded.code == AiBudgetCode::Ok || funded.code == AiBudgetCode::Replay) grants.insert_or_assign(funded.grant->id, *funded.grant);
+    return funded;
+  }
+  AiBudgetGrantResult refund(const std::string& reference, std::optional<long long> refundedAtMs,
+                             const std::optional<AiBudgetStatement>& statement) override {
+    for (auto& [id, grant] : grants) {
+      if (grant.source != AiBudgetFundingSource::Subscription || grant.fundingReference != reference) continue;
+      const auto code = refundAiBudgetGrant(grant, refundedAtMs, statement, held());
+      return {code, grant};
+    }
+    return {AiBudgetCode::NotFound};
+  }
+  std::vector<AiBudgetGrant> held() const {
+    std::vector<AiBudgetGrant> all;
+    for (const auto& [id, grant] : grants) all.push_back(grant);
+    return all;
   }
   std::optional<std::string> boundAccount(const std::string& device) override {
     if (failRead) throw std::runtime_error("private database detail");

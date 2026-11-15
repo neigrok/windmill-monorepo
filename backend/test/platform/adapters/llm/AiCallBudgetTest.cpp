@@ -440,7 +440,7 @@ TEST(ai_call_budget_only_terminal_provider_replies_have_complete_usage) {
   }
 }
 
-TEST(ai_call_budget_admits_small_free_requests_but_refuses_large_requests_and_unfunded_paid) {
+TEST(ai_call_budget_admits_small_free_requests_refuses_large_ones_and_keeps_unfunded_paid_off_grant_only_rounds) {
   FakeAiBudgetRepository repository;
   auto service = std::make_shared<AiBudgetService>(repository, [] { return AiBudgetLimits{}; },
                                                    [] { return 1'792'000'000'000LL; });
@@ -467,10 +467,18 @@ TEST(ai_call_budget_admits_small_free_requests_but_refuses_large_requests_and_un
   request["messages"][0]["content"] = std::string(600'000, 'a');
   CHECK_EQ(budget.begin(spend, request).refusal, std::string{"subject_exhausted"});
   CHECK_EQ(repository.reservations.size(), 1u);
+  // Windmill One with no grant in force: a round only a grant may fund is refused, and any other draws on the free
+  // signed-in allowance.
   subscriptions.subscribe(account.id);
   request["messages"][0]["content"] = "Hi";
-  CHECK_EQ(budget.begin(spend, request).refusal, std::string{"funding_required"});
+  CHECK_EQ(budget.begin(spend, std::optional<long long>{10'000'000}, AiBudgetFunding::GrantOnly).refusal,
+           std::string{"funding_required"});
   CHECK_EQ(repository.reservations.size(), 1u);
+  const auto free = budget.begin(spend, request);
+  REQUIRE(free.reservation);
+  CHECK_EQ(free.reservation->tier, AiBudgetTier::LoggedIn);
+  CHECK_FALSE(free.reservation->grantId);
+  CHECK_EQ(repository.reservations.size(), 2u);
   CHECK(failures.reports.empty());
 }
 
@@ -524,10 +532,10 @@ TEST(ai_call_budget_round_whose_hold_lapsed_while_out_books_nothing_and_files_no
   AiCallBudget budget{service, entitlements, accounts, failures};
   AiSpend spend;
   spend.user = user.id;
-  const auto settled = budget.begin(spend, std::optional<long long>{10'000'000}, AiCallFunding::anyAllowance);
+  const auto settled = budget.begin(spend, std::optional<long long>{10'000'000}, AiBudgetFunding::AnyAllowance);
   REQUIRE(settled.reservation);
   now += kAiBudgetHoldLifetimeMs;
-  const auto ambiguous = budget.begin(spend, std::optional<long long>{10'000'000}, AiCallFunding::anyAllowance);
+  const auto ambiguous = budget.begin(spend, std::optional<long long>{10'000'000}, AiBudgetFunding::AnyAllowance);
   REQUIRE(ambiguous.reservation);
   now += kAiBudgetHoldLifetimeMs;
   CHECK_EQ(service->releaseLapsed(), 1);

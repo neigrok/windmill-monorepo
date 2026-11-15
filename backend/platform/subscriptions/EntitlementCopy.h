@@ -51,10 +51,12 @@ struct FeedEntryConsumer {
 };
 
 // The kind that writes in short transactions of its own before the page commits, as funding does: the AI ledger's
-// lock must never be held for a whole page. It reads the page, and cannot write through it.
-struct FeedEntrySideConsumer {
-  virtual ~FeedEntrySideConsumer() = default;
-  virtual void consume(const PageTxn& page, const FeedEntry& entry) = 0;
+// lock must never be held for a whole page. It is handed the page's entries whole, in order, once every entry went
+// through the page's own consumers, so it can act on what the page leaves rather than on each step of it. It reads the
+// page, and cannot write through it.
+struct FeedPageSideConsumer {
+  virtual ~FeedPageSideConsumer() = default;
+  virtual void consume(const PageTxn& page, const std::vector<FeedEntry>& entries) = 0;
 };
 
 // The copy as a request reads it: one account's entitlement as the feed last stated it, or none for an account the feed
