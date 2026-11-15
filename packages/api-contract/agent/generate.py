@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Declarative story authoring imports no implementation and runs no policy.
 import copy
+import argparse
 import json
 from pathlib import Path
 
@@ -220,5 +221,14 @@ def stories():
     return out
 
 if __name__ == '__main__':
-    for value in stories():
-        (ROOT / 'turns' / (value['name'] + '.json')).write_text(json.dumps(value, indent=2, ensure_ascii=False) + '\n')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--check', action='store_true')
+    args = parser.parse_args()
+    documents = {value['name'] + '.json': json.dumps(value, indent=2, ensure_ascii=False) + '\n' for value in stories()}
+    if args.check:
+        if set(documents) != {path.name for path in (ROOT / 'turns').glob('*.json')}: raise ValueError('story file set differs')
+        for name, document in documents.items():
+            if (ROOT / 'turns' / name).read_text() != document: raise ValueError(name + ': stale story')
+        print(f'{len(documents)} Coach story files match their declarations')
+    else:
+        for name, document in documents.items(): (ROOT / 'turns' / name).write_text(document)
