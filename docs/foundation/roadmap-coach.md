@@ -306,7 +306,8 @@ it.
 | Scope | A direct write names the conversation's roadmap |
 
 The profile names one group the gate allows once in a turn: `propose_roadmap_change`, for each
-roadmap. Gym's rule on minted ids has no part here (§6).
+roadmap. It counts toward the write cap every ability that runs and is not a read. Gym's rule on
+minted ids has no part here (§6).
 
 **Tabs and the record.**
 
