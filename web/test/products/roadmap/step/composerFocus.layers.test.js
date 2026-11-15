@@ -95,7 +95,7 @@ async function run(mode, action) {
       await page.waitForFunction(() => window.entryReady);
       await page.evaluate((value) => window.mount(value), mode);
       await page.getByRole('button', { name: 'Open layer', exact: true }).click();
-      await page.getByRole('dialog').waitFor();
+      await page.getByRole(mode === 'detail' ? 'article' : 'dialog').waitFor();
       await action(page);
     });
   } finally {
@@ -144,9 +144,14 @@ test('Chromium Sheet keeps closing on a prevented Escape that reaches its layer'
 
 test('Chromium Tab edges: nested DeleteConfirmation keeps native inner movement, wraps and restores its opener', async () => {
   await run('detail', async (page) => {
-    await page.getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
+    const step = page.getByRole('article');
+    const more = step.getByRole('button', { name: STEP_DETAIL.more, exact: true });
+    assert.equal(await step.getAttribute('aria-modal'), null);
+    await more.click();
     await page.getByRole('menuitem', { name: STEP_DETAIL.deleteStep, exact: true }).click();
     await page.getByRole('alertdialog').waitFor();
+    assert.equal(await more.evaluate((node) => !!node.closest('[inert]')), true);
+    assert.equal(await step.locator('.st-step-document-scroll').evaluate((node) => node.inert), true);
     await page.getByRole('button', { name: DELETE_CONFIRM.cancel, exact: true }).focus();
     await page.keyboard.press('Shift+Tab');
     assert.equal(await focused(page), DELETE_CONFIRM.delete);
@@ -156,7 +161,9 @@ test('Chromium Tab edges: nested DeleteConfirmation keeps native inner movement,
     assert.equal(await focused(page), DELETE_CONFIRM.delete);
     await page.keyboard.press('Escape');
     await page.getByRole('alertdialog').waitFor({ state: 'detached' });
-    await page.waitForFunction(() => document.activeElement.matches('.st-board-step-menu > button'));
+    await page.waitForFunction((label) => document.activeElement.getAttribute('aria-label') === label, STEP_DETAIL.more);
+    assert.equal(await more.evaluate((node) => node === document.activeElement), true);
+    assert.equal(await step.evaluate((node) => !!node.closest('[inert]')), false);
     assert.equal(await focused(page), STEP_DETAIL.more);
   });
 });

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chromium, webkit } from 'playwright';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { ANONYMOUS_OWNER } from '../../../src/products/roadmap/copy.js';
+import { ANONYMOUS_OWNER, STEP_DETAIL } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost({ browserTypes: { chromium, webkit } });
 
@@ -275,19 +275,31 @@ hostTest('Chromium: a Graph refusal stays below the identity Guide, and the moda
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: at 744px opening a step panel leaves the Guide in the identity row', async () => {
+hostTest('Chromium: at 744px the step document preserves the hidden Guide identity and restores its entry on Close', async () => {
   const { page, errors } = await openHost({ width: 744, height: 1024 });
   try {
     await page.evaluate(() => window.session.setGuide('One step a week.'));
-    await page.getByRole('button', { name: 'Guide: One step a week.' }).waitFor();
+    const guide = page.getByRole('button', { name: 'Guide: One step a week.' });
+    await guide.waitFor();
+    const entry = await guide.elementHandle();
     const before = await box(page, '.st-guide-entry');
     assert.equal(before.width, 44);
-    await page.evaluate(() => window.scene.select('wind'));
-    await page.locator('.st-detail-panel--open').waitFor();
-    const panel = await box(page, '.st-detail-panel--open');
-    assert.deepEqual(await box(page, '.st-guide-entry'), before);
-    assert.equal(before.bottom <= panel.top, true);
+    await page.evaluate(() => window.scene.activate('wind'));
+    const step = page.getByRole('article', { name: 'Read the wind', exact: true });
+    await step.waitFor();
+    assert.equal(await step.getAttribute('aria-modal'), null);
+    assert.deepEqual(await entry.evaluate((node) => ({ mounted: node.isConnected, inIdentity: !!node.closest('.st-roadmap-identity'), inert: !!node.closest('[inert]') })),
+      { mounted: true, inIdentity: true, inert: true });
+    assert.equal(await entry.isVisible(), false);
     assert.equal(await page.locator('.st-guide-entry').count(), 1);
+    await step.getByRole('button', { name: STEP_DETAIL.close, exact: true }).click();
+    await step.waitFor({ state: 'detached' });
+    await guide.waitFor();
+    assert.equal(await entry.evaluate((node) => node === document.querySelector('.st-guide-entry') && !node.closest('[inert]')), true);
+    assert.deepEqual(await box(page, '.st-guide-entry'), before);
+    await guide.click();
+    await page.getByRole('dialog', { name: 'Guide', exact: true }).waitFor();
+    assert.deepEqual(await guideEvents(page), [{ step: 'open', door: 'row', view: 'graph', role: 'owner', above: 'none' }]);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { hostTest, openHost, startRoadmapHost } from './skillTreeViewHost.js';
-import { ROADMAP_VERBS } from '../../../src/products/roadmap/copy.js';
+import { ROADMAP_VERBS, STEP_DETAIL } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost();
 
@@ -35,8 +35,12 @@ hostTest('Chromium: one unfinished step has Next · 1 and a completed roadmap ha
   const { page, errors } = await openHost({ single: true });
   try {
     assert.equal(await page.getByRole('button', { name: 'Next · 1', exact: true }).count(), 1);
-    await page.evaluate(() => window.scene.select('course'));
-    await page.getByRole('button', { name: 'Complete', exact: true }).click();
+    await page.evaluate(() => window.scene.activate('course'));
+    const step = page.getByRole('article', { name: 'Choose a course', exact: true });
+    await step.getByRole('button', { name: 'Complete', exact: true }).click();
+    await step.getByRole('button', { name: STEP_DETAIL.close, exact: true }).click();
+    await step.waitFor({ state: 'detached' });
+    await page.locator('.st-roadmap-identity').waitFor();
     await page.waitForFunction(() => document.querySelector('.st-roadmap-progress')?.getAttribute('aria-label') === '1 of 1 step done');
     assert.equal(await page.getByRole('button', { name: 'Next · 1', exact: true }).count(), 0);
     assert.deepEqual(errors, []);
@@ -112,6 +116,11 @@ for (const width of [390, 744]) {
   hostTest(`Chromium: touch Activity rows at ${width}px wear the drawn sunken avatar, inset badge and 11px kind dot`, async () => {
     const { page, errors } = await openHost({ width, surface: 'board' });
     try {
+      await page.locator('.st-board-card[data-step-id="wind"]').click();
+      const step = page.getByRole('article', { name: 'Read the wind', exact: true });
+      await step.getByRole('button', { name: 'Complete', exact: true }).click();
+      await step.getByRole('button', { name: STEP_DETAIL.close, exact: true }).click();
+      await step.waitFor({ state: 'detached' });
       if (width === 744) {
         await page.keyboard.press('a');
       } else {
@@ -150,16 +159,28 @@ for (const width of [390, 744]) {
 }
 
 for (const width of [744, 1024, 1440]) {
-  hostTest(`Chromium: with a step selected on the Graph at ${width}px, More and What's next stand over its panel`, async () => {
-    const { page, errors } = await openHost({ width, surface: 'tree' });
+  hostTest(`Chromium: after a Graph document closes at ${width}px, More and What's next remain reachable`, async () => {
+    const { page, errors } = await openHost({ width, surface: 'tree', shell: true });
     const onTop = (locator) => locator.evaluate((element) => {
       const box = element.getBoundingClientRect();
       return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2))
         && element.contains(document.elementFromPoint(box.right - 8, box.top + box.height / 2));
     });
     try {
-      await page.evaluate(() => window.scene.select('wind'));
-      await page.locator('.st-detail-panel--open').waitFor();
+      await page.evaluate(() => window.scene.activate('wind'));
+      const step = page.getByRole('article', { name: 'Read the wind', exact: true });
+      await step.waitFor();
+      assert.equal(await step.getAttribute('aria-modal'), null);
+      assert.equal(await page.locator('.st-product-canvas').evaluate((node) => node.inert), true);
+      assert.equal(await page.locator('.st-roadmap-identity').isVisible(), false);
+      assert.equal(await page.locator('.wm-head').evaluate((node) => !node.closest('[inert]')), true);
+      const coach = page.getByRole('button', { name: /^(Expand|Collapse) Coach$/ });
+      assert.equal(await onTop(coach), true);
+      await coach.click();
+      assert.equal(await step.isVisible(), true);
+      await step.getByRole('button', { name: STEP_DETAIL.close, exact: true }).click();
+      await step.waitFor({ state: 'detached' });
+      assert.equal(await page.locator('.st-product-canvas').evaluate((node) => node.inert), false);
       await page.locator('[data-roadmap-more]').click();
       assert.equal(await onTop(page.locator('.st-roadmap-menu [role="menuitem"]').first()), true);
       await page.keyboard.press('Escape');
