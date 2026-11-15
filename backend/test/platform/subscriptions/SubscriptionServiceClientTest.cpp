@@ -24,7 +24,8 @@ using namespace wm::subscriptions::test;
 
 namespace {
 // The service's internal port, stood up on 127.0.0.1 at a port the OS picks: each connection is answered with the next
-// canned reply and closed, and each request's bytes are kept. A connection that never comes is given up after 5 s.
+// canned reply and closed, and each request's bytes, its body included, are kept. A connection that never comes is given
+// up after 5 s.
 class StubService {
 public:
   explicit StubService(std::vector<std::string> replies) : listener_(::socket(AF_INET, SOCK_STREAM, 0)) {
@@ -43,7 +44,7 @@ public:
         const int peer = ::accept(listener_, nullptr, nullptr);
         std::string request;
         char buffer[4096];
-        while (request.find("\r\n\r\n") == std::string::npos) {
+        while (request.find("\r\n\r\n") == std::string::npos || request.size() < headEnd(request) + bodyLength(request)) {
           const ssize_t read = ::recv(peer, buffer, sizeof buffer, 0);
           if (read <= 0) break;
           request.append(buffer, static_cast<std::size_t>(read));
@@ -65,6 +66,15 @@ public:
   std::vector<std::string> requests() {
     if (server_.joinable()) server_.join();
     return requests_;
+  }
+
+  static std::size_t headEnd(const std::string& request) { return request.find("\r\n\r\n") + 4; }
+
+  static std::size_t bodyLength(const std::string& request) {
+    std::string head = request.substr(0, headEnd(request));
+    std::transform(head.begin(), head.end(), head.begin(), [](unsigned char c) { return std::tolower(c); });
+    const std::size_t field = head.find("\r\ncontent-length:");
+    return field == std::string::npos ? 0 : std::stoul(head.substr(field + 17));
   }
 
   static std::string reply(int status, const std::string& body) {
@@ -179,6 +189,90 @@ TEST(subscription_service_address_is_both_variables_or_neither) {
            std::string("SUBSCRIPTIONS_INTERNAL_TOKEN is required with SUBSCRIPTIONS_INTERNAL_URL"));
   CHECK_EQ(refusal(nullptr, "internal-secret"),
            std::string("SUBSCRIPTIONS_INTERNAL_URL is required with SUBSCRIPTIONS_INTERNAL_TOKEN"));
+}
+
+// Each answer internal-app-store-claim.json pins, as the service serves it: its claim is posted with the account the
+// caller's session names and the bearer secret, as one compact body, and the answer reads as its seq or its refusal's
+// code. The longest transaction a claim forwards leaves the body within what the service takes.
+TEST(subscription_service_client_claims_for_the_account_and_reads_every_answer_the_contract_pins) {
+  const Json::Value contract = contractFile("internal-app-store-claim.json");
+  std::vector<std::string> replies;
+  for (const Json::Value& example : contract["examples"])
+    replies.push_back(StubService::reply(example["status"].asInt(), dump(example["body"])));
+  replies.push_back(StubService::reply(200, dump(contract["examples"][0]["body"])));
+  StubService service{replies};
+  SubscriptionServiceClient client{ServiceAddress{service.url() + "/subscriptions", "internal-secret"}};
+  const UserId account{contract["request"]["accountId"].asString()};
+  const SignedTransaction signedTransaction = *SignedTransaction::read("eyJhbGciOiJFUzI1NiJ9.eyJ0eCI6IjEifQ.c2ln");
+  const std::string segment((SignedTransaction::kBytes - 2) / 3, 'e');
+  const SignedTransaction longest = *SignedTransaction::read(
+      segment + "." + segment + "." + std::string(SignedTransaction::kBytes - 2 - 2 * segment.size(), 'e'));
+
+  std::vector<std::string> answers;
+  for (std::size_t asked = 0; asked + 1 < replies.size(); ++asked) {
+    const ClaimAnswer answer = client.claim(account, signedTransaction);
+    answers.push_back(answer.refusal ? *answer.refusal : "seq " + std::to_string(answer.seq));
+  }
+  client.claim(account, longest);
+  CHECK(answers == (std::vector<std::string>{"seq 7", "seq 7", "bound_to_another_account", "account_erased",
+                                             "invalid_transaction", "unavailable", "store_unavailable",
+                                             "store_api_unavailable"}));
+
+  const std::vector<std::string> requests = service.requests();
+  REQUIRE_EQ(requests.size(), replies.size());
+  Json::Value forwarded(Json::objectValue);
+  forwarded["accountId"] = account.str();
+  forwarded["signedTransaction"] = signedTransaction.text();
+  for (std::size_t n = 0; n + 1 < requests.size(); ++n) {
+    const std::string& request = requests[n];
+    CHECK(request.starts_with("POST /subscriptions/internal/v1/app-store/claims HTTP/1.1\r\n"));
+    CHECK(lowered(request).find("\r\nauthorization: bearer internal-secret\r\n") != std::string::npos);
+    CHECK(lowered(request).find("\r\ncontent-type: application/json") != std::string::npos);
+    CHECK_EQ(request.substr(request.find("\r\n\r\n") + 4), dump(forwarded));
+  }
+  const std::string longestBody = requests.back().substr(requests.back().find("\r\n\r\n") + 4);
+  CHECK_EQ(longestBody.size(), SignedTransaction::kBytes + kClaimEnvelopeBytes);
+  CHECK(longestBody.size() <= kServiceBodyBytes);
+}
+
+// The status is read before the body: a body too large for the service is a refusal of its own, the request the
+// service gave up on is its `timeout`, and what the contract does not describe is no answer, named by its status, a
+// body that is not one, or a service nobody listens for.
+TEST(subscription_service_client_reads_the_status_before_the_body_of_a_claim_answer) {
+  StubService service{{StubService::reply(413, "length limit exceeded"),
+                       StubService::reply(503, R"({"error":"timeout"})"),
+                       StubService::reply(502, "<html>PRIVATE_BAD_GATEWAY</html>"),
+                       StubService::reply(400, R"({"code":"invalid_request"})"),
+                       StubService::reply(401, R"({"code":"unauthorized"})"),
+                       StubService::reply(500, R"({"code":"invalid_transaction"})"),
+                       StubService::reply(409, R"({"code":"unavailable"})"),
+                       StubService::reply(503, "PRIVATE_NOT_JSON"),
+                       StubService::reply(200, R"({"entitlement":{}})"),
+                       StubService::reply(200, R"({"seq":-1,"entitlement":{}})"),
+                       StubService::reply(200, "PRIVATE_NOT_JSON")}};
+  SubscriptionServiceClient client{ServiceAddress{service.url(), "internal-secret"}};
+  std::string url;
+  {
+    StubService closed{{}};
+    url = closed.url();
+  }
+  SubscriptionServiceClient nowhere{ServiceAddress{url, "internal-secret"}};
+  const UserId account{"9387ec65-ab17-4b8c-b145-fd0d622966db"};
+  const SignedTransaction signedTransaction = *SignedTransaction::read("eyJhbGciOiJFUzI1NiJ9.eyJ0eCI6IjEifQ.c2ln");
+  const auto answerOf = [&](SubscriptionServiceClient& asked) -> std::string {
+    try {
+      const ClaimAnswer answer = asked.claim(account, signedTransaction);
+      return answer.refusal ? "refused " + *answer.refusal : "seq";
+    } catch (const ClaimUnanswered& unanswered) {
+      return unanswered.answer;
+    }
+  };
+
+  std::string answers;
+  for (int asked = 0; asked < 11; ++asked) answers += answerOf(client) + " ";
+  answers += answerOf(nowhere);
+  CHECK_EQ(answers, std::string("refused too_large refused timeout 502 400 401 500 409 503 malformed malformed malformed "
+                                "unreachable"));
 }
 
 TEST(subscription_service_client_erases_an_account_with_its_bearer_secret_and_only_a_204_settles_it) {

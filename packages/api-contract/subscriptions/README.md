@@ -52,9 +52,11 @@ and the spec's rules. Subscriptions CI (`.github/workflows/subscriptions.yml`) r
   period}`, whichever account each was told under.
 - The claim examples belong to the feed's claim: `internal-app-store-claim.json` answers `seq` 7 and
   the entitlement it carries, and `app-store-claim.json` answers the `SubscriptionResponse` that copy
-  shows. `internal-subscription-refresh.json` refreshes the buyer's subscription once the feed is told, and
-  answers its newest event's `seq`. `internal-account-erasure.json` erases the buyer, the erasure the feed tells at
-  `seq` 27: it answers 204 with no body, and the same when the account was erased already.
+  shows, or, as `recorded_copy_behind` (202), the copy as it stood before the claim with nothing to buy beside it,
+  when the door's wait for the follower runs out (§5.3). `internal-subscription-refresh.json` refreshes the buyer's
+  subscription once the feed is told, and answers its newest event's `seq`. `internal-account-erasure.json` erases the
+  buyer, the erasure the feed tells at `seq` 27: it answers 204 with no body, and the same when the account was erased
+  already.
 - The feed's erasure at 27 is `unbound` under the buyer, whose entitlement then holds nothing; the periods the buyer
   paid for stay in the ledger with no one (§6.4).
 - A refusal is `{code}`, and each file has one example of every refusal its door answers. Every 503 of the

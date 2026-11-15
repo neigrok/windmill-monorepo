@@ -364,20 +364,32 @@ Devices never call this service. The backend authenticates the caller and serves
   `purchasable` is empty while the account has Windmill One (§6.1, owners included), and while the
   `Entitlement` shown holds any subscription that is not `expired` or `revoked` (in `grace`, `on_hold`
   or `paused`, or with a cancellation pending), so no surface offers one account a second live
-  subscription. Otherwise a store is listed only while the backend's configuration opens the paid line
+  subscription. It is empty, too, in the answer to a claim the service recorded that the copy has not
+  reached yet, so no surface offers a purchase beside one being finished. Otherwise a store is listed
+  only while the backend's configuration opens the paid line
   on it. Every store is closed by default, so opening the line is one switch the owner sets and can
   unset. An app whose purchases land in sandbox (a TestFlight or Xcode build) offers a buy control
   only when `allowlisted` is true as well, so no one buys a sandbox subscription that counts for
   nothing.
-- `POST /v1/subscription/app-store/claims` with `AppStoreClaimRequest` `{signedTransaction}`, forwarded
-  to §5.2 with the caller's account id. On the service's 200 the door asks the follower to reach the
-  answer's `seq` (§6.1), waits for it at most 5 s, and answers 200 with the `SubscriptionResponse`
-  from the copy; a wait that runs out answers from the copy as it stands. Otherwise it answers
-  `{code}`: 409 `bound_to_another_account`, 400 `invalid_transaction` for a transaction that does not
-  verify, 503 `subscriptions_unavailable` when the service cannot be reached or answers 503.
-- A device finishes the transaction on 200 and 409. On 400 and 503 it keeps the transaction
-  unfinished and claims it again at its next launch. A 400 for a transaction StoreKit verified is
-  reported to Sentry by the device.
+- `POST /v1/subscription/app-store/claims` with `AppStoreClaimRequest` `{signedTransaction}`, a JWS in
+  compact serialization of at most 32 KiB, forwarded to §5.2 with the account id the caller's session
+  names, never one the body names. An account's claims reach the service one at a time, the next
+  waiting behind the one there. On the service's 200 the door asks the follower to reach the answer's
+  `seq` (§6.1), waits for it at most 5 s, and answers 200 with the `SubscriptionResponse` from the
+  copy, so the answer is what every gate reads. A wait that runs out answers 202 with the copy as it
+  stands, which may not show the claim yet, and nothing to buy beside it (INV-12). Otherwise it
+  answers `{code}`: 409 `bound_to_another_account`, 400 `invalid_transaction` for a transaction that
+  does not verify, a body that holds no such JWS, or one the service would not read, 503
+  `subscriptions_unavailable` while the backend does not follow the feed, when the service cannot be
+  reached or answers 503, and when the claim waited too long to be taken or the server is stopping. A
+  caller not signed in, and one whose account the service has recorded as erased (§6.4), is answered
+  401, as every door answers a session whose account is gone. An address past 20 claims a minute is
+  answered 429 `rate_limited`. Every claim is answered within the 50 s a reply has
+  (`backend/platform/adapters/http/ReplyWait.h`).
+- A device finishes the transaction on 200, 202 and 409. On 202 it shows the purchase as being
+  finished and reads `GET /v1/subscription` again until `windmillOne` is true. On 400, 429 and 503 it
+  keeps the transaction unfinished and claims it again at its next launch, and on 401 once an account
+  is signed in. A 400 for a transaction StoreKit verified is reported to Sentry by the device.
 
 ## §6 The backend's half
 
@@ -527,7 +539,8 @@ One worker. Step 1 runs at start and every minute, the others hourly:
   control only to a signed-in account, and only as INV-12 allows. (R-2) A TestFlight or Xcode build
   buys in sandbox, so it also needs `allowlisted` (INV-12).
 - After a verified purchase or a restore, the app posts the transaction's signed representation to
-  the claim door and finishes the transaction as §5.3 says.
+  the claim door and finishes the transaction as §5.3 says: on a 202 the purchase is shown as being
+  finished, never as not bought, until `GET /v1/subscription` shows `windmillOne`.
 - A period's bounds are the dates its transaction states for the stretch it pays for (D-4), not the
   instant Apple charged it. Which transaction fields carry them waits on confirmation against sandbox
   in m3-verify-sandbox-lifecycle.
@@ -607,7 +620,11 @@ The backend's role cannot read it.
   cursor that has not advanced while the service reports newer events, and a page whose epoch or
   `latestSeq` starts a rebuild (§6.1).
 - The backend's claim door logs `subscription.claim` with its outcome or refusal code; a wait for the
-  follower that runs out is logged as `copy_behind`.
+  follower that runs out is logged as `copy_behind`, a claim that waited too long to be taken as
+  `expired`. A service that gives no answer the contract describes is logged as `unanswered_<answer>`
+  and reported once per answer per window under `subscription.claim.unanswered`, and a claimed seq past
+  the newest event of the ledger a read begun after the claim found the copy caught up with once per
+  window under `subscription.claim.seq_unreached`.
 - The backend's unbind sweep logs `subscription.unbind` per attempt at a deleted account's unbind (§6.4),
   with its outcome, `ok` or `owed`, and the service's answer as its `code`. An unbind still owed is an Issue
   once it has been owed five minutes, then at most once an hour for each account, never once per attempt,

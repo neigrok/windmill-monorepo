@@ -336,8 +336,8 @@ internal route cannot be exposed by a path rule.
 
 ### §6.1 Public: what a caller reaches
 
-The public routes are served on Windmill's API origin. The proxy forwards exactly `/v1/calls/*` and
-`/v1/allowance` to the service's public port, ahead of the backend's own `/v1/*` rule, and removes
+The public routes are served on Windmill's API origin. The proxy forwards exactly `/v1/calls/*`,
+`/v1/pictures/*` and `/v1/allowance` to the service's public port, ahead of the backend's own `/v1/*` rule, and removes
 the `Cookie` and `X-Windmill-Installation` headers, so no credential of the backend reaches the
 service. It passes WebSocket upgrades on those paths through and logs no header. Every route takes
 the pass as `Authorization: Bearer <pass>`, the WebSocket as §6.6 says, and answers
@@ -349,6 +349,7 @@ the pass as `Authorization: Bearer <pass>`, the WebSocket as §6.6 says, and ans
 | `GET /v1/calls/{callId}/transcription` | a WebSocket carrying audio (§6.6) | transcript events (§6.6) |
 | `GET /v1/calls/{callId}` | | `{callId, capability, state, stop, code, served, charged, endedAt}` |
 | `GET /v1/calls/{callId}/result` | | the call's answer again, while it lingers (§6.4) |
+| `PUT /v1/pictures/{pictureId}` | a picture's bytes (§6.7) | 204 |
 | `GET /v1/allowance` | | `AllowanceResponse` (§6.3) |
 
 - `callId` is minted by the caller from a cryptographic random source: 22 to 64 characters of
@@ -385,6 +386,8 @@ the pass as `Authorization: Bearer <pass>`, the WebSocket as §6.6 says, and ans
   image by URL, a sampling parameter, a forced tool choice, more than `MAX_IMAGES` images or one that
   is not JPEG or PNG, a body nested deeper than `MAX_JSON_DEPTH`, and a `tool` message that does not
   answer every `toolCall` of the assistant message before it and nothing else.
+- An image part holds the picture's bytes as above, or `{"picture": "<pictureId>"}`, naming a
+  picture the caller uploaded (§6.7).
 - `tools[].input` is a JSON Schema and every tool is sent to the provider in strict mode. A model
   may call several tools in one answer. A tool's result is text.
 - `carry` is an opaque string the service returned with that assistant message, sealed with a key
@@ -479,7 +482,7 @@ does.
 - A reader that is slow or gone never slows the read from the provider (INV-8).
 - **INV-13.** Prompts, messages, tool inputs and results, images, audio, transcripts and every
   provider answer live in the service's memory only. A request's content is dropped once it is sent;
-  an answer's, when its linger ends. None is written to the database, a log line, a Sentry report, a
+  an answer's, when its linger ends; a picture a caller uploaded, when its hold ends (§6.7). None is written to the database, a log line, a Sentry report, a
   core file or any other store, and none is sent anywhere but to the provider that counts or serves
   the call.
 
@@ -592,6 +595,29 @@ Afterwards:
 - A live session holds one of its principal's calls in flight while it is open. The process carries
   at most `LIVE_SESSIONS_MAX` of them, counted apart from `CALLS_IN_FLIGHT_MAX`; beyond that a new
   one is `busy`.
+
+### §6.7 Pictures a caller uploads
+
+A conversation that holds a picture sends it in every round. So that a device uploads it once, the
+service holds a picture for a short time. (R-12)
+
+`PUT /v1/pictures/{pictureId}` takes the pass, a `Content-Type` of `image/jpeg` or `image/png`, and
+the picture's bytes, at most `MAX_PICTURE`. The caller mints `pictureId` as it mints a `callId`. The
+answer is 204. A `pictureId` the principal already holds answers 204 and keeps the bytes it has.
+
+- A picture is held in memory, keyed by the principal and the `pictureId`, until `PICTURE_HOLD` has
+  passed since it was uploaded or last named by a call. Each principal's pictures are bounded by
+  `PICTURES_PER_PRINCIPAL` and all of them by `PICTURES_TOTAL`, oldest first out. A restart loses
+  them all. None is written anywhere (INV-13).
+- A text request names one in an image part (§6.2). It counts toward `MAX_IMAGES` and toward the
+  reservation as a picture sent inline does.
+- A request that names a picture the service does not hold is refused before admission as 410
+  `picture_gone`. It costs nothing, and its `callId` may be used again: the caller uploads the
+  picture and sends the request once more.
+- An upload calls no provider and costs nothing. It counts as a read (§5.7), and is refused as
+  `too_large` above `MAX_PICTURE`, as `invalid_request` when it is not a JPEG or a PNG, and as
+  `rate_limited` or `busy`.
+- A picture is read only by the principal that uploaded it.
 
 ## §7 One call, in order
 
@@ -785,6 +811,7 @@ Configuration, with the values the service ships with:
 | `MAX_SESSION`, `LIVE_IDLE` | 55 min, 60 s | `MAX_TURN`, `MIN_TURN` | 60 s, 1 s of audio |
 | `LIVE_OPEN`, `LIVE_EXTEND` | 10 s, 5 s | `LIVE_CLOSE_WAIT`, `TURN_WAIT` | 10 s, 30 s |
 | `LIVE_BURST`, `LIVE_SILENT` | 10 s, 180 s | `LIVE_PONG`, `LIVE_SESSIONS_MAX` | 20 s, 64 |
+| `MAX_PICTURE`, `PICTURE_HOLD` | 2 MiB, 30 min | `PICTURES_PER_PRINCIPAL`, `PICTURES_TOTAL` | 8 MiB, 256 MiB |
 
 ## §10 Observability
 
@@ -824,7 +851,7 @@ Configuration, with the values the service ships with:
 | A provider, breaking answers part-way | Each such call ends `assumed` and costs its reservation; a live session costs the audio it carried. The provider's fuse may trip and pause it; the other provider's calls go on. |
 | The database | Every new call is refused as `accounting_unavailable`. A call in flight is read to its end and settled when the database returns, or ended `assumed`. |
 | The provider's counting door | Text reservations fall back to one token a byte and grow severalfold, so a call near the end of a budget is refused that would have fitted. |
-| This service, restarted | New calls are refused as `busy` until the calls in flight finish, at most `DRAIN` (§7). Live sessions are cut. Lingering answers are lost. |
+| This service, restarted | New calls are refused as `busy` until the calls in flight finish, at most `DRAIN` (§7). Live sessions are cut. Lingering answers and held pictures are lost. |
 | This service, down | Coach and Talk stop. Sync, the journal and the log are untouched. |
 | The network edge cutting a long answer | The call goes on; its caller asks for the `callId` again (§6.4). |
 | A live session's connection cut | The service commits what it forwarded and settles. The transcript so far lingers for the caller to fetch (§6.6). |
@@ -838,14 +865,16 @@ designed when the service is built, one integration at a time.
 - **I-1 Identity.** The backend is the only issuer of passes. It signs one for a signed-in session or
   for an installation credential, stating `plan` from `Entitlements::hasWindmillOne` and `ownerGrant`
   for owner access and for an allowlisted sandbox subscriber. It applies its network limits before it
-  signs for an installation, and signs none for an installation bound to an account.
+  signs for an installation, and signs none for an installation bound to an account. The door is
+  specified in the [Coach engine](coach-engine.md) §4.1.
 - **I-2 Devices call directly.** When a person is waiting on an answer, their device calls this
   service itself. The backend is not in that path.
 - **I-3 Coach runs on the device.** The loop, the gate on Coach's writes, the system prompt and the
   tool list belong to the device on every surface. Gym Coach and roadmap Coach are one engine with a
-  different prompt and tools, and each product keeps its own conversations. This replaces principles
-  4 and 5 of [phone-hosted Coach abilities](mobile/gym_coach.md), which is rewritten when the move is
-  designed.
+  different prompt and tools, and each product keeps its own conversations. The
+  [Coach engine](coach-engine.md) specifies the engine, and
+  [Gym Coach on the AI service](gym-coach-on-ai-service.md) gym's move onto it, which replaces
+  principles 3, 4 and 5 of [phone-hosted Coach abilities](mobile/gym_coach.md).
 - **I-4 Tending becomes roadmap Coach.** Roadmap's server-side agent retires. Roadmap Coach runs its
   abilities on the browser's own copy of a roadmap, and its changes travel by synchronization, as
   [Roadmap Coach](roadmap-coach.md) specifies.
@@ -889,6 +918,7 @@ The owner's rulings. All are settled.
 | R-9 | How long a call's row is kept | 90 days, after which only the budgets' sums remain. (2026-11-14) |
 | R-10 | Whether installations and free accounts share one daily pool | Shared. The tier table can give each its own. (2026-11-14) |
 | R-11 | Whether the transcription provider may keep what a session carried | Zero data retention is not arranged; the owner cannot arrange it. What a Talk session carried is kept at the provider for 30 days for abuse monitoring and is not used for training, as its data page said on 2026-11-14. The product says so wherever Talk is offered (I-5). (2026-11-14) |
+| R-12 | Whether the service may hold a picture between calls | Yes, in memory only and for a short time, so that a device uploads a picture once for a turn of several rounds (§6.7). (2026-11-15) |
 
 What this service does differently from the backend's ledger, beyond moving it:
 

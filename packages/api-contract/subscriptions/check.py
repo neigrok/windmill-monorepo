@@ -394,9 +394,11 @@ for file, refusals in REFUSALS.items():
 
 public_claim, internal_claim = loaded["app-store-claim.json"], loaded["internal-app-store-claim.json"]
 check(list(public_claim["request"]) == ["signedTransaction"], "app-store-claim: AppStoreClaimRequest is {signedTransaction}")
-check([x["status"] for x in public_claim["examples"]].count(200) == 2, "app-store-claim: bound, and bound already")
+check([(x["name"], x["status"]) for x in public_claim["examples"] if x["status"] < 400]
+      == [("bound_to_caller", 200), ("already_bound_to_caller", 200), ("recorded_copy_behind", 202)],
+      "app-store-claim: bound, bound already, and recorded with the copy behind (202)")
 for example in public_claim["examples"]:
-    if example["status"] == 200:
+    if example["status"] < 400:
         check_subscription_response(example["body"], f"app-store-claim/{example['name']}")
 check(list(internal_claim["request"]) == ["accountId", "signedTransaction"],
       "internal-app-store-claim: the request is {accountId, signedTransaction}")
@@ -434,6 +436,12 @@ check(len(unbound) == 1 and unbound[0]["seq"] == max(entry["seq"] for entry in e
 check(named("app-store-claim.json")["bound_to_caller"]["body"]["governing"]
       == named("internal-app-store-claim.json")["bound_to_caller"]["body"]["entitlement"]["production"]["governing"],
       "app-store-claim/bound_to_caller answers the copy the internal answer leads to (§5.3)")
+recorded = named("app-store-claim.json")["recorded_copy_behind"]["body"]
+check(recorded["purchasable"] == [] and recorded["offer"] is None,
+      "app-store-claim/recorded_copy_behind offers nothing beside the recorded claim (INV-12)")
+check({**recorded, "purchasable": None, "offer": None}
+      == {**named("subscription.json")["never_subscribed_line_open"]["body"], "purchasable": None, "offer": None},
+      "app-store-claim/recorded_copy_behind shows the copy as it stood before the claim, which held nothing (§5.3)")
 
 
 # Privacy: ids are UUIDs; no email, signed payload or store transaction id; instants are epoch milliseconds

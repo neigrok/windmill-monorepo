@@ -121,8 +121,9 @@ def period(periodId, start, end, refundedAt=None):
     return {"id": periodId, "start": start, "end": end, "price": PRICE, "offerKind": None, "refundedAt": refundedAt}
 
 
-# GET /v1/subscription as the backend answers it from its copy (§5.3, INV-12)
-def subscription_response(account_entitlement, now, allowlisted=False, line_open=True, owner=False):
+# GET /v1/subscription as the backend answers it from its copy (§5.3, INV-12); `claim_recorded` is a claim the service
+# recorded that the copy has not reached yet, beside which nothing is offered
+def subscription_response(account_entitlement, now, allowlisted=False, line_open=True, owner=False, claim_recorded=False):
     grants = lambda shown: shown["accessUntil"] is not None and now < shown["accessUntil"]
     production, sandbox = account_entitlement["production"], account_entitlement["sandbox"]
     environment = "sandbox" if allowlisted and grants(sandbox) and not grants(production) else "production"
@@ -130,7 +131,7 @@ def subscription_response(account_entitlement, now, allowlisted=False, line_open
     has_windmill_one = owner or grants(production) or (allowlisted and grants(sandbox))
     governing = shown["governing"]
     holds_live = (governing is not None and governing["state"] not in ENDED) or bool(shown["others"])
-    purchasable = ["app_store"] if line_open and not has_windmill_one and not holds_live else []
+    purchasable = ["app_store"] if line_open and not has_windmill_one and not holds_live and not claim_recorded else []
     return {"windmillOne": has_windmill_one, "environment": environment, "allowlisted": allowlisted, **shown,
             "manage": None if governing is None else {"store": governing["store"], "url": MANAGE_URL[governing["store"]]},
             "purchasable": purchasable, "offer": OFFER if purchasable else None}
@@ -334,6 +335,9 @@ pages = [("from_zero", 0, 6), ("claimed_then_sandbox", 6, 6), ("refunded_then_re
 
 claimed = ledger.at(CLAIM_SEQ)
 claim_answer = subscription_response(claimed["entitlement"], CLAIMED + MINUTE)
+# The same claim once the door's wait for the follower ran out: recorded, and the copy as it stood before, holding
+# nothing of it yet
+recorded_copy_behind = subscription_response(entitlement(CLAIMANT, []), CLAIMED + MINUTE, claim_recorded=True)
 internal_answer = {"seq": claimed["seq"], "entitlement": claimed["entitlement"]}
 refused = lambda status, code: {"status": status, "body": {"code": code}}
 # A refresh of the buyer's subscription once the feed is told: its newest event's seq
@@ -354,6 +358,7 @@ FILES = {
     "app-store-claim.json": {"request": {"signedTransaction": SIGNED_TRANSACTION}, "examples": [
         {"name": "bound_to_caller", "status": 200, "body": claim_answer},
         {"name": "already_bound_to_caller", "status": 200, "body": claim_answer},
+        {"name": "recorded_copy_behind", "status": 202, "body": recorded_copy_behind},
         {"name": "bound_to_another_account", **refused(409, "bound_to_another_account")},
         {"name": "transaction_not_verified", **refused(400, "invalid_transaction")},
         {"name": "service_unavailable", **refused(503, "subscriptions_unavailable")}]},
