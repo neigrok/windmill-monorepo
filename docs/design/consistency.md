@@ -3,7 +3,8 @@
 Open disagreements between drawings, the written rules and code, and the questions they leave for
 the owner. Remove an entry when its fix lands; current behaviour belongs in the code. Source checks
 establish code shape, not rendered acceptance. Figma review tasks below need a fresh file inspection
-before editing.
+before editing. Evidence for a rendered Figma state includes its screenshot and the relevant layers' visibility
+through their ancestors; hidden draft or alternate-state layers do not establish what the frame shows.
 
 ## Shared system
 
@@ -602,16 +603,17 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   *Try again* or *Copy draft*, uses 14 px phone failure text and offers *Done* after copying. Update its description
   and variants from the approved recovery behavior. [17.33](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69855)
   draws active Save after *Load latest*; the clean draft's Save is focusable but `aria-disabled` and 45% opaque. Carry
-  that state into the current phone page. 17.36 contains a nonempty first draft and correctly enables Save; its
-  *Cancel an empty guide* title needs clarification.
+  that state into the current phone page. [17.36](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69864)
+  likewise shows active Save on an empty draft; its nonempty text layer is hidden. Draw the disabled action for that
+  visible empty state.
   [17.12](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=715-41080) draws the device disclosure with
   outdated wording. Current device copy is *Only on this device until you sign in.*; account copy is *Your agents
   and people you share this tree with can read the guide.* Refresh the desktop instances and handoff copy.
   Current containers still need phone *Draft copied*, simultaneous changed-elsewhere and save failure, and dark
   recovery examples. Copied/conflict lines use `--surface-sunken`, failures use `--color-danger-bg`, and the copied
   tick uses `--color-brand`. *Done* returns to *Copy draft* without dismissing the draft. Annotate the current focus
-  behavior: pointer footer actions receive focus, keyboard save retains field focus, and Cmd/Ctrl+Enter invokes
-  Save or Try again, never Copy or Done.
+  behavior: activating Save or its recovery action focuses that button; Load latest focuses the field.
+  Cmd/Ctrl+Enter preserves current focus while invoking Save or Try again, never Copy or Done.
   Clipboard refusal leaves *Copy draft* and the draft unchanged without a message. Loss of ownership shows the
   refused line before sending a request, although its copy says the server refused the save. Document these
   delivered cases; a new clipboard recovery UI or changed ownership-loss wording needs an owner decision.
