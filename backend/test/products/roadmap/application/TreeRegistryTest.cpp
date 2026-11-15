@@ -1732,16 +1732,16 @@ TEST(a_retry_after_a_lost_commit_answer_records_the_subtree_in_the_live_parent_r
   const SubtreeAnswer retried = s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1"));
   REQUIRE(std::holds_alternative<SubtreeCreation>(retried));
   CHECK_FALSE(std::get<SubtreeCreation>(retried).created);
-  std::map<NodeId, TreeId> pointers;
+  FollowedSteps followed;
   {
     std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
     const TreeRoom* room = s.rooms.open(tid("t_p"));
     CHECK(room->subtrees() == (std::map<NodeId, TreeId>{{nid("rig"), child}}));
     CHECK_EQ(room->head(), Seq{1});
-    pointers = room->pointersFor(me);
+    followed = room->followedStepsFor(me);
   }
-  CHECK(pointers == (std::map<NodeId, TreeId>{{nid("rig"), child}}));
-  const ProgressReceipt receipt = s.marks.mark(tid("t_p"), pointers, me,
+  CHECK(followed == (FollowedSteps{me, {{nid("rig"), child}}}));
+  const ProgressReceipt receipt = s.marks.mark(tid("t_p"), followed, me,
                                                {ProgressWrite{nid("rig"), ProgressStatus::complete, {}, Hlc{50, 0, "r_a"}}},
                                                StampedBy::replica, 50);
   CHECK(receipt.outcomes.at(0).refused);

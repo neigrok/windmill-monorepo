@@ -49,8 +49,8 @@ bool isSessionKey(const std::string& key) {
   return true;
 }
 
-// One beacon entry, or nullopt for a malformed one — a bad entry drops alone, never its siblings.
-// Props must stay a flat object within the 1KB budget.
+// One beacon entry, or nullopt for a malformed one or one naming an event only the server records — a bad entry drops
+// alone, never its siblings. Props must stay a flat object within the 1KB budget.
 std::optional<FunnelEvent> eventOf(const Json::Value& entry, const std::string& platform) {
   if (!entry.isObject()) return std::nullopt;
   const Json::Value& name = entry["name"];
@@ -58,6 +58,7 @@ std::optional<FunnelEvent> eventOf(const Json::Value& entry, const std::string& 
   const Json::Value& props = entry["props"];
   const Json::Value& id = entry["id"];
   if (!name.isString() || !isSnakeName(name.asString())) return std::nullopt;
+  if (kServerOriginEvents.count(name.asString())) return std::nullopt;
   if (!clientMs.isNumeric()) return std::nullopt;
   const double ms = clientMs.asDouble();
   if (!std::isfinite(ms) || ms < 0 || ms > 4.0e12) return std::nullopt;  // a sane epoch-ms, not inf/garbage
@@ -80,7 +81,7 @@ std::optional<FunnelEvent> eventOf(const Json::Value& entry, const std::string& 
 }
 
 EventsApi::EventsApi(std::shared_ptr<EventRepository> events, std::shared_ptr<AuthService> auth,
-                     std::shared_ptr<AmplitudeClient> amplitude,
+                     std::shared_ptr<EventForwarder> amplitude,
                      std::shared_ptr<FailureReporter> failures)
     : events_(std::move(events)), auth_(std::move(auth)), amplitude_(std::move(amplitude)),
       failures_(std::move(failures)) {}
@@ -97,6 +98,10 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
   const Json::Value& entries = root["events"];
   if (!sessionKey.isString() || !isSessionKey(sessionKey.asString()) || !entries.isArray()) {
     callback(error(drogon::k400BadRequest, "a beacon batch is {sessionKey, events: [...]}"));
+    return;
+  }
+  if (isServerOriginDevice(sessionKey.asString())) {
+    callback(error(drogon::k400BadRequest, "this session key is the server's own"));
     return;
   }
   const Json::Value& platform = root["platform"];
@@ -116,19 +121,6 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     if (event) accepted.push_back(std::move(*event));
   }
   if (!accepted.empty()) {
-    const auto reportFailure = [&](const std::string& where, const std::exception& exception) {
-      if (!currentWriteRequestId().empty()) {
-        reportCurrentWriteFailure(exception);
-        return;
-      }
-      LOG_ERROR << "event batch failed at " << where;
-      if (!failures_) return;
-      try {
-        failures_->report("telemetry", where, "event batch could not be delivered");
-      } catch (const std::exception&) {
-        LOG_ERROR << "event failure report dropped";
-      }
-    };
     try {
       if (events_->countInLastDay(sessionKey.asString()) >= kMaxEventsPerSessionDay) {
         callback(error(drogon::k429TooManyRequests, "this session has beaconed enough for today"));
@@ -136,18 +128,20 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
       }
       events_->append(sessionKey.asString(), caller, accepted);
     } catch (const std::exception& failure) {
-      reportFailure("events.persist", failure);
+      if (!currentWriteRequestId().empty()) {
+        reportCurrentWriteFailure(failure);
+      } else {
+        LOG_ERROR << "event batch failed at events.persist";
+        try {
+          if (failures_) failures_->report("telemetry", "events.persist", "event batch could not be delivered");
+        } catch (const std::exception&) {
+          LOG_ERROR << "event failure report dropped";
+        }
+      }
       callback(error(drogon::k500InternalServerError, "events not recorded"));
       return;
     }
-    // The batch is already persisted, so a throw here must not turn a stored 202 into a 500.
-    if (amplitude_) {
-      try {
-        amplitude_->forward(sessionKey.asString(), caller, accepted);
-      } catch (const std::exception& failure) {
-        reportFailure("amplitude.forward", failure);
-      }
-    }
+    if (amplitude_) amplitude_->forward(sessionKey.asString(), caller, accepted);
   }
 
   Json::Value body(Json::objectValue);

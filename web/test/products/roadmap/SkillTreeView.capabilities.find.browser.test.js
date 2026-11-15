@@ -6,7 +6,7 @@ import { LABELS, removeChip } from '../../../src/products/roadmap/copy.js';
 
 startRoadmapHost();
 
-const everyWidth = [320, 390, 744, 1440];
+const everyWidth = [320, 390, 744, 1023, 1440];
 const bothRoles = ['owner', 'reader'];
 
 function cardIds(page) {

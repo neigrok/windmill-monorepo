@@ -72,7 +72,8 @@ static int runMcpHttp(wm::ObservabilityLifetime& lifetime) {
   auto edits = std::make_shared<NodeEdits>(*registry, *progress, *bus, *clock);
   auto treeRegistry =
       std::make_shared<TreeRegistry>(*trees, *progressRepo, *registryTokens, genesis, *registry, *edits, *clock);
-  auto tools = std::make_shared<RoadmapTools>(*registry, *progress, *clock, *treeRegistry, *edits,
+  auto owners = std::make_shared<OwnerProgress>(*progressRepo, *trees, *clock);
+  auto tools = std::make_shared<RoadmapTools>(*registry, *progress, *owners, *clock, *treeRegistry, *edits,
                                               appOriginFromEnvironment());
 
   // Per-user OAuth access tokens are issued by the API host; the shared token, if set, is a

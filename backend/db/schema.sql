@@ -441,8 +441,11 @@ create index if not exists oauth_tokens_refresh on oauth_tokens (refresh_hash);
 -- detectable and revokes the grant.
 alter table oauth_tokens add column if not exists rotated_ms bigint;
 
--- Append-only. session_key is the client-minted per-browser id; user_id is resolved server-side,
--- never trusted from the body, null for a ghost.
+-- Append-only. A client batch's session_key is the client-minted per-browser id and its user_id is
+-- resolved server-side, never trusted from the body, null for a ghost. An event the server records
+-- itself (a subscription's lifecycle) carries the account it names in user_id, or, when this backend
+-- holds no such account, a server-made device key in session_key, never both; client_ms is when it
+-- happened.
 create table if not exists events (
   id          bigserial primary key,
   ts          timestamptz not null default now(),
@@ -452,11 +455,19 @@ create table if not exists events (
   name        text not null,
   props       jsonb
 );
+-- The key an event the server recorded itself is recorded once under (server_event_keys); null for a client's.
+alter table events add column if not exists server_key text;
 create index if not exists events_name_ts on events (name, ts);
 -- The per-session ingest bound must stay a range scan over one session, never a scan of the stream.
 create index if not exists events_session_ts on events (session_key, ts);
 -- An account's erasure finds its events by owner.
 create index if not exists events_user on events (user_id) where user_id is not null;
+-- The key of every event the server recorded itself, a digest that names no person. It outlives the
+-- row, which retention and an account's erasure delete, so a source read again, as a restored
+-- subscription feed is, records no event twice.
+create table if not exists server_event_keys (
+  key text primary key
+);
 
 -- session_key is a client-minted correlation id, never identity; user_id is resolved server-side,
 -- never trusted from the body, null for a ghost.

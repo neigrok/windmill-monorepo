@@ -39,3 +39,20 @@ test('an editor-only sign-in question names the unsaved writing without claiming
   elementsOf(view.tree.props.footer).find((element) => textOf(element.props.children) === 'Discard').props.onClick();
   assert.equal(view.tree.props.title, 'Discard 1 unsaved change?');
 });
+
+test('sign-out carries each product’s notice of what it discards, with the download that keeps it', async (t) => {
+  const { SyncDecisions } = await loadScreen('shell/auth/SyncDecisions.jsx');
+  const downloads = [];
+  const notice = { line: 'A recording waiting in Talk will be discarded.',
+    download: { label: 'Download recording', href: 'blob:take', filename: 'talk.webm', onDownload: () => downloads.push('talk') } };
+  const view = renderHook(t, () => SyncDecisions({ question: { unsent: 0, counted: [] }, notices: [notice] }));
+
+  assert.equal(textOf(view.tree.props.children),
+    'Your pages and log stay in your account and leave this device.A recording waiting in Talk will be discarded. Download recording');
+  const link = elementsOf(view.tree.props.children).find((element) => element.type === 'a');
+  assert.deepEqual([link.props.href, link.props.download], ['blob:take', 'talk.webm']);
+  link.props.onClick();
+  assert.deepEqual(downloads, ['talk']);
+  const signIn = renderHook(t, () => SyncDecisions({ question, work, notices: [notice] }));
+  assert.equal(elementsOf(signIn.tree.props.children).some((element) => element.type === 'a'), false, 'a sign-in question discards nothing of Talk');
+});

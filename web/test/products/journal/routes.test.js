@@ -60,3 +60,21 @@ test('only unwritten journal work is adopted without a personal-data question', 
     assert.equal(journalRoutes.sync.adoptionCount(engine), answer === 'add' ? 0 : 1);
   }
 });
+
+// Sign-out discards what Talk held, so the question says it and offers the recording first; the account change then
+// forgets it, so a recording never reaches the next account.
+test('a kept Talk take gives the sign-out question its line and download, and an account change forgets it', async () => {
+  const { talkStore } = await import('../../../src/products/journal/talk/talkStore.js');
+  const take = { url: 'blob:take', filename: 'talk-2026-11-15-1402.webm', released: 0, release() { this.released += 1; } };
+  assert.equal(journalRoutes.signOutNotice(), null);
+  talkStore.kept(talkStore.begin(), take, { until: null });
+
+  const { download, ...notice } = journalRoutes.signOutNotice();
+  assert.deepEqual(notice, { line: 'A recording waiting in Talk will be discarded.' });
+  assert.deepEqual({ ...download, onDownload: typeof download.onDownload },
+    { label: 'Download recording', href: 'blob:take', filename: 'talk-2026-11-15-1402.webm', onDownload: 'function' });
+  journalRoutes.forgetDevice({ previous: 'a', next: null });
+
+  assert.equal(take.released, 1);
+  assert.equal(journalRoutes.signOutNotice(), null);
+});

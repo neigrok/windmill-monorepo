@@ -465,7 +465,8 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
     RoomRegistry registry(trees, log, bus);
     NodeEdits edits{registry, progress, bus, clock};
     TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
-    RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
+    OwnerProgress owners{progressRepo, trees, clock};
+    RoadmapTools tools{registry, progress, owners, clock, treeRegistry, edits, "https://app.example"};
     Json::Value pointed = created;
     pointed["opens"] = kFork.str();
     CHECK_FALSE(tools.callTool("create_node", pointed, sam).isError);
@@ -479,7 +480,8 @@ TEST(pg_create_node_on_a_deleted_id_opens_nothing_after_a_restart) {
   RoomRegistry restarted(trees, log, bus);
   NodeEdits edits{restarted, progress, bus, clock};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, restarted, edits, clock};
-  RoadmapTools tools{restarted, progress, clock, treeRegistry, edits, "https://app.example"};
+  OwnerProgress owners{progressRepo, trees, clock};
+  RoadmapTools tools{restarted, progress, owners, clock, treeRegistry, edits, "https://app.example"};
   CHECK_FALSE(tools.callTool("create_node", created, sam).isError);
   Json::Value read = parse(R"({"fields":["id","opens"]})");
   read["treeId"] = kTree.str();
@@ -521,7 +523,8 @@ TEST(pg_a_deleted_node_repainted_with_its_kind_comes_back_under_the_kind_after_a
     RoomRegistry registry(trees, log, bus);
     NodeEdits edits{registry, progress, bus, clock};
     TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
-    RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
+    OwnerProgress owners{progressRepo, trees, clock};
+    RoadmapTools tools{registry, progress, owners, clock, treeRegistry, edits, "https://app.example"};
     CHECK_FALSE(tools.callTool("add_kind", arguments(R"({"id":"k","hue":"sky"})"), sam).isError);
     CHECK_FALSE(tools.callTool("import_subgraph", arguments(R"({"nodes":[{"id":"a","label":"A","kind":"k"},
       {"id":"b","label":"B","kind":"k"}]})"), sam).isError);
@@ -534,7 +537,8 @@ TEST(pg_a_deleted_node_repainted_with_its_kind_comes_back_under_the_kind_after_a
   RoomRegistry restarted(trees, log, bus);
   NodeEdits edits{restarted, progress, bus, clock};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, restarted, edits, clock};
-  RoadmapTools tools{restarted, progress, clock, treeRegistry, edits, "https://app.example"};
+  OwnerProgress owners{progressRepo, trees, clock};
+  RoadmapTools tools{restarted, progress, owners, clock, treeRegistry, edits, "https://app.example"};
   CHECK_FALSE(tools.callTool("import_subgraph", arguments(R"({"nodes":[{"id":"b"}]})"), sam).isError);
   CHECK_EQ(test::body(tools.callTool("get_nodes", arguments(R"({"nodeIds":["a","b"],"fields":["id","color","kind"]})"), sam))["nodes"],
            parse(R"([{"id":"a","color":"plum","kind":"k"},{"id":"b","color":"plum","kind":"k"}])"));
@@ -752,7 +756,7 @@ TEST(pg_a_node_follows_the_tree_it_opens_takes_no_mark_from_its_owner_and_the_re
   RoomRegistry registry(trees, log, bus);
   NodeEdits edits{registry, progress, bus, clock};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
+  RoadmapTools tools{registry, progress, ownerProgress, clock, treeRegistry, edits, "https://app.example"};
   trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
   trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
   const auto shown = [&] {
@@ -949,7 +953,8 @@ TEST(pg_get_diagnostics_tells_the_owner_a_loop_of_trees_and_a_dangling_pointer_a
   RoomRegistry registry(trees, log, bus);
   NodeEdits edits{registry, progress, bus, clock};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
+  OwnerProgress owners{progressRepo, trees, clock};
+  RoadmapTools tools{registry, progress, owners, clock, treeRegistry, edits, "https://app.example"};
   trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
   trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
   const auto call = [&](const TreeId& tree, const UserId& user, const char* tool, const std::string& arguments) {
@@ -1303,7 +1308,8 @@ TEST(pg_removing_a_tree_takes_the_step_that_opens_it_with_its_edge_and_mark_and_
   RoomRegistry registry(trees, log, bus);
   NodeEdits edits{registry, progress, bus, clock};
   TreeRegistry treeRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, registry, edits, clock};
-  RoadmapTools tools{registry, progress, clock, treeRegistry, edits, "https://app.example"};
+  OwnerProgress owners{progressRepo, trees, clock};
+  RoadmapTools tools{registry, progress, owners, clock, treeRegistry, edits, "https://app.example"};
   trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Main", kSam);
   trees.create(kFork, LooseGraph().exportState(), LegendState{}, "Deep dive", kSam);
   const auto call = [&](const char* tool, const std::string& arguments) {
@@ -1338,7 +1344,8 @@ TEST(pg_removing_a_tree_takes_the_step_that_opens_it_with_its_edge_and_mark_and_
   ProgressService restartedProgress{progressRepo, trees};
   NodeEdits restartedEdits{restarted, restartedProgress, bus, clock};
   TreeRegistry restartedRegistry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, restarted, restartedEdits, clock};
-  RoadmapTools restartedTools{restarted, restartedProgress, clock, restartedRegistry, restartedEdits, "https://app.example"};
+  OwnerProgress restartedOwners{progressRepo, trees, clock};
+  RoadmapTools restartedTools{restarted, restartedProgress, restartedOwners, clock, restartedRegistry, restartedEdits, "https://app.example"};
   Json::Value read = parse(R"({"fields":["id","state","prerequisites"]})");
   read["treeId"] = kTree.str();
   CHECK_EQ(test::body(restartedTools.callTool("get_tree", read, ToolCaller{kSam, ToolScope::everything()}))["tree"]["nodes"],
@@ -1798,7 +1805,8 @@ TEST(pg_every_read_judges_a_pointer_valid_at_a_standing_root_of_the_owners_alone
     CHECK(std::get<SubtreeCreation>(forest.create(pointing, step)).created);
 
   // The create that revives a deleted owning step may echo its own subtree, hidden at the time: it passes and lands.
-  RoadmapTools tools{forest.rooms, forest.progress, forest.clock, forest.registry, forest.edits, "https://app.example"};
+  OwnerProgress owners{forest.progressRepo, forest.trees, forest.clock};
+  RoadmapTools tools{forest.rooms, forest.progress, owners, forest.clock, forest.registry, forest.edits, "https://app.example"};
   Json::Value echo = parse(R"({"id":"swim","label":"Swim"})");
   echo["treeId"] = kParent.str();
   echo["opens"] = kGrandchild.str();
@@ -2617,4 +2625,28 @@ TEST(pg_a_subtrees_access_is_one_statement_of_primary_key_probes) {
   CHECK_EQ(probes["trees_pkey"], 1.0 + kMaxTreeDepth + 1);  // the tree, then its 8 parents and the root's no-parent
   CHECK_EQ(probes["tree_nodes_pkey"], static_cast<double>(kMaxTreeDepth));
   CHECK_EQ(parse(explained[0][0].as<std::string>())[0]["Plan"]["Actual Rows"].asInt(), kMaxTreeDepth + 1);
+}
+
+// A subtree's create commits only under a root that stands. One that races the root's removal waits on the root's row
+// while the removal's transaction holds it, and once the removal has committed it stores nothing and answers the parent
+// gone, which the registry answers as an absent tree.
+TEST(pg_a_subtrees_create_racing_its_roots_removal_stores_nothing_under_the_removed_root) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  resetSubtrees();
+  Forest forest;
+  forest.plant(kParent, kAda, {{"rig", nullptr}});
+  REQUIRE(std::holds_alternative<SubtreeCreation>(forest.create(kParent, "rig", kChild)));
+  forest.edit(kChild, kAda, {{"knot", nullptr}});
+  PgLease removal{*pgTestPool()};
+  pqxx::work removing{*removal};
+  removing.exec_params("UPDATE trees SET deleted_at = now() WHERE id = $1", kParent.str());
+
+  std::future<std::variant<Subtree, SubtreeConflict>> created = std::async(std::launch::async, [&forest] {
+    return forest.trees.createSubtree(kGrandchild, OwningStep{kChild, nid("knot")}, LegendState{}, 2);
+  });
+  CHECK(created.wait_for(std::chrono::milliseconds(300)) == std::future_status::timeout);
+  removing.commit();
+  REQUIRE(created.wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+  CHECK(created.get() == (std::variant<Subtree, SubtreeConflict>{SubtreeConflict::parentGone}));
+  CHECK_EQ(childrenOf(kChild), 0L);
 }

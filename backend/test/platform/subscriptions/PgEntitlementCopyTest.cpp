@@ -1,13 +1,16 @@
 #include "platform/subscriptions/PgEntitlementCopy.h"
 
+#include "platform/adapters/postgres/PgAuthRepository.h"
 #include "test/PgTestPool.h"
 #include "test/platform/subscriptions/FeedFixture.h"
 #include "test/testing.h"
 
 #include <pqxx/pqxx>
 
+#include <chrono>
 #include <cstdlib>
 #include <string>
+#include <thread>
 
 // Opt-in integration cases: a live Postgres built by db/schema.sql and WM_PG_TEST set (RUNNING.md §7); otherwise each
 // reports skip.
@@ -98,4 +101,52 @@ TEST(pg_entitlement_copy_never_takes_a_row_back_to_an_older_entry_but_a_rebuild_
   CHECK_EQ(rowsAsText(), std::string("3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=3 production=1799056800000\n"));
   CHECK_EQ(copy.find(UserId{"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"})->body, entitlementExample("active"));
   CHECK_EQ(copy.cursor(), (FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 3}));
+}
+
+TEST(pg_entitlement_copy_a_rebuild_and_the_final_erasure_of_an_account_it_holds_both_complete) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
+  sql("DELETE FROM account_entitlements");
+  sql("UPDATE subscription_feed_cursor SET epoch = NULL, seq = 0");
+  sql("DELETE FROM users WHERE id IN ('3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61', '9387ec65-ab17-4b8c-b145-fd0d622966db', "
+      "'c806aea4-76c0-4868-acbc-3aa7db2b8dd0')");
+  sql("INSERT INTO users (id, email, deleted_at, closes_at) VALUES ('9387ec65-ab17-4b8c-b145-fd0d622966db', "
+      "'copy-9387ec65@example.com', now() - interval '40 days', now() - interval '1 day')");
+  PgEntitlementCopy copy{pgTestPool()};
+  consume(copy, "from_zero", {6});
+  CHECK_EQ(rowsAsText(), std::string("9387ec65-ab17-4b8c-b145-fd0d622966db seq=6 production=1799236800000\n"));
+
+  // The rebuild has emptied the copy when the account's erasure begins, and writes the account's row again after.
+  PgAuthRepository accounts{pgTestPool()};
+  std::string erased = "not run";
+  {
+    const auto txn = copy.begin(FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 6}, true);
+    std::thread eraser([&] {
+      const auto now = std::chrono::system_clock::now().time_since_epoch();
+      try {
+        erased = accounts.eraseAccount(UserId{"9387ec65-ab17-4b8c-b145-fd0d622966db"},
+                                       std::chrono::duration_cast<std::chrono::milliseconds>(now).count())
+                     ? "erased"
+                     : "nothing to erase";
+      } catch (const std::exception& error) {
+        erased = std::string("threw: ") + error.what();
+      }
+    });
+    bool waiting = false;
+    for (int look = 0; look < 100 && !waiting; ++look) {
+      PgLease lease{*pgTestPool()};
+      pqxx::read_transaction probe{*lease};
+      waiting = probe.exec("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() "
+                           "AND wait_event_type = 'Lock'")[0][0].as<int>() > 0;
+      if (!waiting) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    CHECK(waiting);
+    for (const FeedEntry& entry : FeedPage{contractExample("feed.json", "from_zero")["body"]}.entries)
+      copy.consume(*txn, entry);
+    txn->commit();
+    eraser.join();
+  }
+
+  CHECK_EQ(erased, std::string("erased"));
+  CHECK_EQ(rowsAsText(), std::string());
+  CHECK_EQ(copy.cursor(), (FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 6}));
 }

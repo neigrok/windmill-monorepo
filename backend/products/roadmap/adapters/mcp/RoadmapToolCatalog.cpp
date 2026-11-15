@@ -137,11 +137,11 @@ Json::Value batchReceipt() {
 // a removed edge is re-added by naming it, and a client that stops to confirm each of them teaches
 // people to click through the warning the delete-level tools need. An idempotent write is one a
 // resend with the same arguments leaves unchanged; create_tree and create_node mint an id, so a
-// resend plants a second one.
+// resend plants a second one. create_subtree is keyed by its step, so a resend answers the subtree the first made.
 const std::set<std::string> kDestructiveWrites = {"import_subgraph"};
 const std::set<std::string> kIdempotentWrites = {
-    "delete_tree", "update_tree", "delete_node", "add_kind", "remove_kind", "update_kind", "import_subgraph",
-    "change_edges"};
+    "create_subtree", "delete_tree", "update_tree", "delete_node", "add_kind", "remove_kind", "update_kind",
+    "import_subgraph", "change_edges"};
 
 // `read` answers questions, `write` changes the document, and `delete` destroys something a
 // person authored. `delete` is never implied by `write`: a connection without that level does
@@ -184,6 +184,7 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     answered["seq"] = typed("integer");
     answered["nodes"] = listOf(typed("object"));
     answered["missingNodeIds"] = listOf(typed("string"));
+    answered["openedTreesUnavailable"] = typed("boolean");
     declaration.descriptor["outputSchema"] = object(answered, {"treeId", "seq", "nodes", "missingNodeIds"});
     tools.push_back(std::move(declaration));
   }
@@ -260,12 +261,24 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["title"] = typed("string");
     p["kinds"] = legendKinds();
     tools.push_back(tool("create_tree", Access::write,
-        "Create an empty roadmap that you own. Send `kinds` to plant your own legend in place of the default one.",
+        "Create an empty top-level roadmap that you own; create_subtree makes one under a step. Send `kinds` to plant "
+        "your own legend in place of the default one.",
         p, {}));
   }
   {
+    Json::Value p(Json::objectValue);
+    p["nodeId"] = typed("string");
+    p["kinds"] = legendKinds();
+    tools.push_back(treeTool("create_subtree", Access::write,
+        "Give a step its own subtree: an empty roadmap the step opens and completes with. Send the parent roadmap's "
+        "legend as `kinds` to inherit it; without them the subtree gets the default legend, and a retry keeps the first "
+        "legend.",
+        p, {"nodeId"}));
+  }
+  {
     tools.push_back(tool("list_trees", Access::read,
-        "List the roadmaps you own, most recently active first, each with the id the other tools take as `treeId`.",
+        "List the top-level roadmaps you own, most recently active first, each with the id the other tools take as "
+        "`treeId`. A subtree is reached from the step that owns it.",
         Json::Value(Json::objectValue), {}));
   }
   {
@@ -319,13 +332,14 @@ std::vector<ToolDeclaration> roadmapToolCatalog() {
     p["kind"] = kind();
     p["query"] = typed("string", "Text to find in a node's id, label or description, in any case.");
     p["state"] = oneOf(kNodeStates);
+    p["owns"] = typed("boolean", "True for the steps that own a subtree, false for the steps that own none.");
     p["fields"] = fields(nodeVocabulary());
     p["limit"] = limit();
     p["cursor"] = cursor();
     tools.push_back(treeTool("find_nodes", Access::read,
-        "Search a roadmap's nodes by hue, kind, state or text, best match first; every filter set must match. "
-        "`state: \"available\"` answers what you can work on now. Use it to find nodes without reading the whole "
-        "roadmap.",
+        "Search a roadmap's nodes by hue, kind, state, text or owned subtree, best match first; every filter set must "
+        "match. `state: \"available\"` answers what you can work on now. Use it to find nodes without reading the "
+        "whole roadmap.",
         p, {}));
   }
   {

@@ -466,7 +466,7 @@ test('Chromium: tablet row controls have no hover tooltips', async () => {
   const page = await openRow(744, { band: 'tablet', view: 'tree' });
   try {
     await withBrowserErrors(page, async () => {
-      for (const name of ['New step', 'More', 'Next · 2']) {
+      for (const name of ['Board', 'Graph', 'New step', 'More', 'Next · 2']) {
         const trigger = page.getByRole('button', { name, exact: true });
         await trigger.hover();
         assert.equal(await trigger.locator('..').locator(':scope > span').count(), 0);

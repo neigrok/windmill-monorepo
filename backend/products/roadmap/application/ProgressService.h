@@ -1,6 +1,7 @@
 #pragma once
 
 #include "products/roadmap/domain/Ids.h"
+#include "products/roadmap/domain/OpenedTrees.h"
 #include "products/roadmap/domain/Tree.h"
 #include "products/roadmap/ports/ProgressRepository.h"
 #include "products/roadmap/ports/TreeRepository.h"
@@ -54,11 +55,12 @@ class ProgressService {
 public:
   ProgressService(ProgressRepository& repo, TreeRepository& trees);
 
-  // A door's marks on `tree`, handed over once the strand is released, with the pointers the room handed
-  // `user` (TreeRoom::pointersFor). A mark on a node that follows its tree (domain/OpenedTrees.h) is refused
-  // and each advisory reads the followed completed set, off one read made after the marks are written. What
-  // each mark did is the write's own answer, so a mark another door lands meanwhile is never misreported.
-  ProgressReceipt mark(const TreeId& tree, const std::map<NodeId, TreeId>& pointers, const UserId& user,
+  // A door's marks on `tree`, handed over once the strand is released, with the steps the room judges `user`'s marks by
+  // (TreeRoom::followedStepsFor), whose trees are read as the owner's. A mark on a step that follows its tree
+  // (domain/OpenedTrees.h) is refused, for its owner and for every reader of a step that owns a subtree alike, and each
+  // advisory reads the completed set those steps show, off one read made after the marks are written. What each mark did
+  // is the write's own answer, so a mark another door lands meanwhile is never misreported.
+  ProgressReceipt mark(const TreeId& tree, const FollowedSteps& followed, const UserId& user,
                        const std::vector<ProgressWrite>& writes, StampedBy stampedBy, std::uint64_t receivedAtMs);
 
   Progress progressOf(const TreeId& treeId, const UserId& user);

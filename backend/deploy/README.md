@@ -601,7 +601,10 @@ stdout did not take the counts.
 The server follows the subscription service's feed into `account_entitlements`, its own copy of every
 account's entitlement ([subscriptions.md](../../docs/foundation/subscriptions.md) §6.1), once
 `SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are both set. With neither it logs at
-start that the follower is off; with one alone it refuses to start, naming the other.
+start that the follower is off; with one alone it refuses to start, naming the other. The same pages
+record the subscription lifecycle events into `events` and forward them to Amplitude
+([OBSERVABILITY.md](../OBSERVABILITY.md)); a key in `server_event_keys` is an event recorded, so a page
+read again or a rebuild after a restore records none twice.
 
 In production both come from one GitHub secret, `SUBSCRIPTIONS_INTERNAL_TOKEN`: 64 lowercase hex
 characters (`openssl rand -hex 32`), which the deploy refuses in any other non-empty form. The deploy

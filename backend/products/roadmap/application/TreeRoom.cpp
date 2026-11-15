@@ -336,9 +336,9 @@ std::size_t TreeRoom::lateEntriesFor(const VersionVector& since, Seq position) c
   return entries;
 }
 
-std::map<NodeId, TreeId> TreeRoom::pointersFor(const std::optional<UserId>& caller) const {
-  if (!canWrite(caller, owner())) return {};
-  return pointers();
+FollowedSteps TreeRoom::followedStepsFor(const std::optional<UserId>& caller) const {
+  if (!canWrite(caller, owner())) return FollowedSteps{owner(), subtrees()};
+  return FollowedSteps{owner(), pointers()};
 }
 
 std::vector<NodeId> TreeRoom::prerequisitesOf(const NodeId& node) const {
