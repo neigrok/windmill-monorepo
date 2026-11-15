@@ -473,8 +473,9 @@ service `DELETE /internal/v1/accounts/{accountId}`. The backend records it in `o
 in the erasure's own transaction, calls the door once that transaction commits, and repeats it until the
 service takes it, so a service outage never leaves a subscription bound to an erased account. A 204, which
 the service answers whether it unbound anything or had erased the account already, settles it, and so
-does a 404, which is reported; any other answer, or none, leaves it owed, tried again 1, 2, 4 … minutes
-later and at most an hour apart, and reported at most once an hour while it stays owed (§10).
+does a 404, which is reported; any other answer, or none, leaves it owed, tried again by the sweep's next
+minute pass after a wait that doubles from one minute to at most an hour, and reported at most once an
+hour while it stays owed (§10).
 
 In one transaction the service records the account as erased, so a hint naming it never binds again
 (§4); unbinds every subscription bound to it, recording `unbound` under the account at the erasure, so its

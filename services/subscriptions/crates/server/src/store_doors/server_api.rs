@@ -295,8 +295,8 @@ impl AppStoreDoor {
     }
 
     // The hints the sweep writes this pass: every hint no longer owed is dropped first, its subscription bound to
-    // another account since (§4), then at most `limit` of the rest are read, the longest owed
-    // first. Each is logged as a `store.hint` line, and a ledger that does not answer is reported once in a while.
+    // another account since (§4), then at most `limit` of the rest are read, the longest owed first. Each is logged as
+    // a `store.hint` line, and a ledger that does not answer is reported once in a while.
     pub async fn store_hints_due(&self, limit: i64) -> Result<Vec<StoreHint>, StorageError> {
         let read = async {
             let forgotten = self.ledger.forget_stale_store_hints().await?;

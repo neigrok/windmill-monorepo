@@ -110,8 +110,9 @@ Known limits:
 
 - A period from before an R-11 move that the ledger first hears of after it is recorded under the new
   account, since the domain keeps no history of bindings.
-- An ended lineage never bound and bought again with a hint binds by the ordinary rule: at `startedAt`,
-  with its earlier periods recorded again (INV-13).
+- An ended lineage that is unbound, never bound or unbound by an erasure, and bought again with a hint
+  binds by the ordinary rule: at `startedAt`, with the earlier periods that follow its binding recorded
+  again (INV-13).
 
 `tests/vectors/` holds the lifecycle stories every implementation of the domain passes, observations and
 erasures, and `crates/domain/tests/vectors.rs` runs them. `crates/domain/tests/observe.rs` holds the property tests

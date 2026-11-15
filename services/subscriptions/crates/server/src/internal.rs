@@ -12,6 +12,7 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use domain::EventKind;
 use sentry::{Hub, SentryFutureExt};
 use serde::Deserialize;
 use serde_json::json;
@@ -271,7 +272,8 @@ impl Unbind {
                 let unbound = erasure
                     .lineages
                     .iter()
-                    .filter(|lineage| !lineage.change.events.is_empty())
+                    .flat_map(|lineage| &lineage.change.events)
+                    .filter(|event| event.kind == EventKind::Unbound)
                     .count();
                 let periods: usize = erasure
                     .lineages

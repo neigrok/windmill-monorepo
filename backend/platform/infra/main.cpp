@@ -356,18 +356,16 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
             });
   // The subscription service's internal doors (docs/foundation/subscriptions.md §5.2), which the feed follower below and
   // an erasure's unbind call. Off while neither variable is set; one without the other refuses to start.
-  std::optional<subscriptions::ServiceAddress> serviceAddress;
+  std::shared_ptr<subscriptions::SubscriptionServiceClient> subscriptionService;
   try {
-    serviceAddress = subscriptions::ServiceAddress::from(std::getenv("SUBSCRIPTIONS_INTERNAL_URL"),
-                                                         std::getenv("SUBSCRIPTIONS_INTERNAL_TOKEN"));
+    if (const auto address = subscriptions::ServiceAddress::from(std::getenv("SUBSCRIPTIONS_INTERNAL_URL"),
+                                                                 std::getenv("SUBSCRIPTIONS_INTERNAL_TOKEN"))) {
+      subscriptionService = std::make_shared<subscriptions::SubscriptionServiceClient>(*address);
+      lifetime.watch(subscriptionService);
+    }
   } catch (const std::invalid_argument& missing) {
     std::fprintf(stderr, "refusing to start: %s\n", missing.what());
     return 1;
-  }
-  std::shared_ptr<subscriptions::SubscriptionServiceClient> subscriptionService;
-  if (serviceAddress) {
-    subscriptionService = std::make_shared<subscriptions::SubscriptionServiceClient>(*serviceAddress);
-    lifetime.watch(subscriptionService);
   }
   // An erasure owes the service the unbind of everything the account held (§6.4): recorded in the erasing transaction
   // whether or not the service is reached, then repeated until the service takes it, at once and every minute once the

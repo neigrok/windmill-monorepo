@@ -184,7 +184,7 @@ psql -h /tmp -U windmill_subscriptions windmill_subscriptions \
 
 The feed ends with `unbound` under the account, its entitlement holding nothing, and the periods it paid for stay
 with no one. Each call writes one `account.unbind` line. A backend that erases the account while the service is down
-keeps the unbind in `owed_subscription_unbinds` and its sweep tries it again, a minute later at first
+keeps the unbind in `owed_subscription_unbinds` and its sweep tries it again, a minute or two later at first
 (`subscription.unbind`, [OBSERVABILITY.md](OBSERVABILITY.md)).
 
 ### Engine server for the iOS simulator
