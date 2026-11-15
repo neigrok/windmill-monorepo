@@ -4,13 +4,16 @@ use std::time::Duration;
 
 use domain::{
     AccountEntitlement, AccountId, BillingInterval, Binding, BoundBy, Environment, Instant,
-    Lineage, Money, NextCharge, Observation, ObservedPeriod, Ownership, PeriodChange, Plan,
-    ProductId, Renewal, Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId,
+    LeftWith, Lineage, Money, NextCharge, Observation, ObservedPeriod, Ownership, PeriodChange,
+    Plan, ProductId, Renewal, Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId,
     Storefront, Subscription,
 };
 use futures_util::FutureExt;
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
-use storage::{AccountRecord, Applied, Ledger, Observed, RecordedEvent, SubscriptionRecord};
+use storage::{
+    AccountClaim, AccountRecord, Applied, ErasedLineage, Erasure, Ledger, Observed, RecordedEvent,
+    SubscriptionRecord,
+};
 use url::Url;
 use uuid::Uuid;
 
@@ -47,8 +50,8 @@ async fn a_hint_naming_an_erased_account_binds_no_one() {
         let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
         let (erased, live) = (Uuid::new_v4(), Uuid::new_v4());
 
-        ledger.record_erasure(erased).await.unwrap();
-        ledger.record_erasure(erased).await.unwrap();
+        let first = ledger.erase_account(erased).await.unwrap();
+        let again = ledger.erase_account(erased).await.unwrap();
         let from_the_erased = subscription_of(apply(&ledger, "from-erased", Some(erased)).await);
         let from_the_live = subscription_of(apply(&ledger, "from-live", Some(live)).await);
 
@@ -58,6 +61,17 @@ async fn a_hint_naming_an_erased_account_binds_no_one() {
             .await
             .unwrap();
         assert_eq!(tombstones, [erased]);
+        assert_eq!(
+            again,
+            Erasure {
+                newly_erased: false,
+                ..first.clone()
+            }
+        );
+        assert_eq!(
+            (first.newly_erased, first.lineages, first.hints_dropped),
+            (true, Vec::new(), 0)
+        );
         assert_eq!(
             (from_the_erased.binding, from_the_live.binding.clone()),
             (
@@ -84,7 +98,7 @@ async fn a_hint_naming_an_erased_account_binds_no_one() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
-async fn an_erasure_waits_for_an_apply_that_binds_its_account() {
+async fn an_erasure_waits_for_an_apply_that_binds_its_account_then_unbinds_what_it_bound() {
     with_empty_database(async |url| {
         let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
         let mut control = PgConnection::connect(&url).await.unwrap();
@@ -110,7 +124,7 @@ async fn an_erasure_waits_for_an_apply_that_binds_its_account() {
         .await;
         let erasing = tokio::spawn({
             let ledger = ledger.clone();
-            async move { ledger.record_erasure(account).await }
+            async move { ledger.erase_account(account).await }
         });
         until("the erasure waits or commits", async || {
             erasing.is_finished() || waiting(&mut control).await == 2
@@ -125,7 +139,7 @@ async fn an_erasure_waits_for_an_apply_that_binds_its_account() {
             .await
             .unwrap();
         let bound = subscription_of(applying.await.unwrap());
-        erasing.await.unwrap().unwrap();
+        let erasure = erasing.await.unwrap().unwrap();
         let erased_after: i64 = sqlx::query_scalar("select count(*) from erased_accounts")
             .fetch_one(&mut control)
             .await
@@ -133,8 +147,18 @@ async fn an_erasure_waits_for_an_apply_that_binds_its_account() {
 
         assert_eq!((erased_while_applying, erased_after), (0, 1));
         assert_eq!(
-            bound.binding.map(|binding| binding.account_id),
-            Some(AccountId::new(account.to_string()))
+            bound.binding.as_ref().map(|binding| &binding.account_id),
+            Some(&AccountId::new(account.to_string()))
+        );
+        let unbound: Vec<Option<AccountId>> = erasure
+            .lineages
+            .iter()
+            .map(|lineage| lineage.change.subscription.account_id().cloned())
+            .collect();
+        assert_eq!(unbound, [None]);
+        assert_eq!(
+            ledger.entitlement(account).await.unwrap(),
+            AccountEntitlement::of(AccountId::new(account.to_string()), Vec::new())
         );
         ledger.close().await;
     })
@@ -214,6 +238,103 @@ async fn an_account_read_holds_each_subscription_bound_to_it_with_its_periods_an
             ledger.account(Uuid::new_v4()).await.unwrap().subscriptions,
             Vec::new()
         );
+        ledger.close().await;
+    })
+    .await;
+}
+
+#[tokio::test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn an_erasure_unbinds_the_account_s_subscriptions_drops_its_owed_hints_and_tells_the_feed() {
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let (account, another) = (Uuid::new_v4(), Uuid::new_v4());
+        apply(&ledger, "bought", Some(account)).await;
+        apply(&ledger, "theirs", Some(another)).await;
+        apply(&ledger, "claimed", None).await;
+        let claimed = ledger
+            .apply(Observed {
+                observation: purchase("claimed"),
+                hint: None,
+                claim: Some(AccountClaim {
+                    account_id: account,
+                    at: Instant::from_epoch_millis(1_798_765_200_000),
+                }),
+                pulled_at: None,
+            })
+            .await
+            .unwrap();
+        let owed_before = ledger.store_hints(10).await.unwrap().len();
+        let newest_before = ledger.feed(0, 500).await.unwrap().latest_seq;
+
+        let erasure = ledger.erase_account(account).await.unwrap();
+
+        let erased = AccountId::new(account.to_string());
+        let mut lineages: Vec<&str> = erasure
+            .lineages
+            .iter()
+            .map(|ErasedLineage { change, .. }| {
+                change.subscription.lineage.store_subscription_id.as_str()
+            })
+            .collect();
+        lineages.sort_unstable();
+        assert_eq!(lineages, ["bought", "claimed"]);
+        assert_eq!((owed_before, erasure.hints_dropped), (1, 1));
+        assert_eq!(ledger.store_hints(10).await.unwrap(), Vec::new());
+        let told = ledger.feed(newest_before, 500).await.unwrap().entries;
+        let told: Vec<_> = told
+            .iter()
+            .map(|entry| {
+                (
+                    entry.event.kind.name(),
+                    entry.event.account_id.clone(),
+                    entry.event.occurred_at,
+                    entry.entitlement.clone(),
+                )
+            })
+            .collect();
+        let unbound = (
+            "unbound",
+            Some(erased.clone()),
+            erasure.erased_at,
+            Some(AccountEntitlement::of(erased.clone(), Vec::new())),
+        );
+        assert_eq!(told, [unbound.clone(), unbound]);
+        let Applied::Recorded { change, .. } = claimed else {
+            panic!("the claim answered {claimed:?}");
+        };
+        for lineage in ["bought", "claimed"] {
+            let held = ledger
+                .lineage(&Lineage {
+                    store: Store::AppStore,
+                    environment: Environment::Production,
+                    store_subscription_id: StoreSubscriptionId::new(lineage),
+                })
+                .await
+                .unwrap();
+            assert_eq!(held.subscription.unwrap().binding, None, "{lineage}");
+            let left_with: Vec<_> = held
+                .periods
+                .iter()
+                .map(|period| period.left_with.clone())
+                .collect();
+            assert_eq!(left_with, [Some(LeftWith::NoOne)], "{lineage}");
+        }
+        assert_eq!(
+            ledger
+                .entitlement(another)
+                .await
+                .unwrap()
+                .production
+                .governing
+                .map(|governing| governing.lineage),
+            Some(Lineage {
+                store: Store::AppStore,
+                environment: Environment::Production,
+                store_subscription_id: StoreSubscriptionId::new("theirs"),
+            })
+        );
+        assert_eq!(change.hint_for_store, Some(erased));
         ledger.close().await;
     })
     .await;

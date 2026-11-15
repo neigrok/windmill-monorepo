@@ -367,6 +367,11 @@ FILES = {
         {"name": "ledger_unavailable", **refused(503, "unavailable")},
         {"name": "store_unavailable", **refused(503, "store_unavailable")},
         {"name": "store_api_unavailable", **refused(503, "store_api_unavailable")}]},
+    "internal-account-erasure.json": {"request": {"accountId": BUYER}, "examples": [
+        {"name": "erased", "status": 204, "body": None},
+        {"name": "already_erased", "status": 204, "body": None},
+        {"name": "invalid_account_id", **refused(400, "invalid_account_id")},
+        {"name": "ledger_unavailable", **refused(503, "unavailable")}]},
     "internal-subscription-refresh.json": {"request": {"subscriptionId": SUB}, "examples": [
         {"name": "refreshed", "status": 200, "body": {"seq": refreshed_seq}},
         {"name": "unknown_subscription", **refused(404, "unknown_subscription")},

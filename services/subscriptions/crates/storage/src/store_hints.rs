@@ -11,18 +11,17 @@ const OWE: &str = "insert into store_hints (subscription_id, store, environment,
      account_id) values ($1::uuid, $2, $3, $4, $5::uuid) \
      on conflict (subscription_id) do update set account_id = excluded.account_id, owed_since = now_millis(), \
      attempts = 0, next_attempt_at = null, abandoned_at = null";
-// A hint is owed while its subscription is bound to the account it names and that account is not erased (§4, §6.4),
-// and due unless the store refused it lately or for good.
+// A hint is owed while its subscription is bound to the account it names (§4), and due unless the store refused it
+// lately or for good. An account's erasure drops every hint owed for it in its own transaction (§6.4).
 const SELECT_OWED: &str = "select h.subscription_id, h.store, h.environment, h.store_subscription_id, h.account_id \
      from store_hints h join subscriptions s on s.id = h.subscription_id and s.account_id = h.account_id \
-     where not exists (select from erased_accounts e where e.account_id = h.account_id) \
-     and h.abandoned_at is null and (h.next_attempt_at is null or h.next_attempt_at <= now_millis()) \
+     where h.abandoned_at is null and (h.next_attempt_at is null or h.next_attempt_at <= now_millis()) \
      order by h.owed_since, h.subscription_id limit $1";
 const FORGET_STALE: &str = "delete from store_hints h \
-     where not exists (select from subscriptions s where s.id = h.subscription_id and s.account_id = h.account_id) \
-     or exists (select from erased_accounts e where e.account_id = h.account_id)";
+     where not exists (select from subscriptions s where s.id = h.subscription_id and s.account_id = h.account_id)";
 const FORGET_OTHER_ACCOUNTS: &str = "delete from store_hints \
      where subscription_id = $1::uuid and account_id is distinct from $2::uuid";
+const FORGET_ACCOUNT: &str = "delete from store_hints where account_id = $1::uuid";
 const CLEAR: &str =
     "delete from store_hints where subscription_id = $1::uuid and account_id = $2::uuid";
 // The n-th refusal a retry cannot change makes the hint wait 2^(n-1) hours, 1, 2, 4 and 8, and the fifth settles it
@@ -51,7 +50,7 @@ pub struct StoreHint {
 
 impl Ledger {
     // At most `limit` hints owed, the longest owed first: the sweep writes each to its store and clears it. A hint whose
-    // subscription is bound to another account since, or whose account was erased, is not one.
+    // subscription is bound to another account since is not one.
     pub async fn store_hints(&self, limit: i64) -> Result<Vec<StoreHint>, StorageError> {
         let rows: Vec<StoreHintRow> = sqlx::query_as(SELECT_OWED)
             .bind(limit)
@@ -72,8 +71,7 @@ impl Ledger {
             .collect()
     }
 
-    // Drops every hint no longer owed: its subscription is bound to another account, or its account was erased. It
-    // answers how many it dropped.
+    // Drops every hint no longer owed, its subscription bound to another account since, and answers how many it dropped.
     pub async fn forget_stale_store_hints(&self) -> Result<u64, StorageError> {
         let mut transaction = self.begin_write().await?;
         let forgotten = sqlx::query(FORGET_STALE).execute(&mut *transaction).await?;
@@ -124,6 +122,19 @@ pub(crate) async fn forget_other_accounts(
         .execute(connection)
         .await?;
     Ok(())
+}
+
+// Drops every hint owed to the stores for the account, in the transaction that records its erasure (§4, §6.4), and
+// answers how many it dropped.
+pub(crate) async fn forget_account(
+    connection: &mut PgConnection,
+    account_id: &AccountId,
+) -> Result<u64, StorageError> {
+    let forgotten = sqlx::query(FORGET_ACCOUNT)
+        .bind(account_id.as_str())
+        .execute(connection)
+        .await?;
+    Ok(forgotten.rows_affected())
 }
 
 // Owes the subscription's store the account as its hint, in the transaction that binds the subscription to it.

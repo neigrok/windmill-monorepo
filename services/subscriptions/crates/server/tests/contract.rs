@@ -1,6 +1,6 @@
 // The internal doors against the wire's golden fixtures, packages/api-contract/subscriptions: feed.json, entitlement.json,
-// account.json, and the answers of internal-app-store-claim.json and internal-subscription-refresh.json. Each body is
-// the fixture's, byte for byte, key order included.
+// account.json, and the answers of internal-app-store-claim.json, internal-subscription-refresh.json and
+// internal-account-erasure.json. Each body is the fixture's, byte for byte, key order included.
 
 use std::env;
 use std::panic::{AssertUnwindSafe, resume_unwind};
@@ -22,12 +22,12 @@ use server::config::Config;
 use server::internal::responses::{
     ClaimResponse, EntitlementResponse, RefreshResponse, RefusalResponse,
 };
-use server::internal::{self, Reads};
+use server::internal::{self, BackendLedger};
 use server::listeners::{Bounds, Listener, Readiness};
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
 use storage::{
-    AccountClaim, AccountRecord, Applied, FeedEntry, FeedPage, Ledger, Observed, RecordedEvent,
-    StorageError, SubscriptionRecord,
+    AccountClaim, AccountRecord, Applied, Erasure, FeedEntry, FeedPage, Ledger, Observed,
+    RecordedEvent, StorageError, SubscriptionRecord,
 };
 use tower::ServiceExt;
 use url::Url;
@@ -53,7 +53,7 @@ impl Readiness for OnePage {
     }
 }
 
-impl Reads for OnePage {
+impl BackendLedger for OnePage {
     async fn feed(&self, after: i64, limit: i64) -> Result<FeedPage, StorageError> {
         assert_eq!((after, limit), self.request);
         Ok(self.page.clone())
@@ -61,6 +61,10 @@ impl Reads for OnePage {
 
     async fn account(&self, _account_id: Uuid) -> Result<AccountRecord, StorageError> {
         panic!("a feed read reads no account")
+    }
+
+    async fn erase_account(&self, _account_id: Uuid) -> Result<Erasure, StorageError> {
+        panic!("a feed read erases no account")
     }
 }
 
@@ -77,7 +81,7 @@ impl Readiness for OneAccount {
     }
 }
 
-impl Reads for OneAccount {
+impl BackendLedger for OneAccount {
     async fn feed(&self, _after: i64, _limit: i64) -> Result<FeedPage, StorageError> {
         panic!("an account read reads no feed")
     }
@@ -86,9 +90,23 @@ impl Reads for OneAccount {
         assert_eq!(account_id, self.account_id);
         Ok(self.record.clone())
     }
+
+    async fn erase_account(&self, _account_id: Uuid) -> Result<Erasure, StorageError> {
+        panic!("an account read erases no account")
+    }
 }
 
-async fn read<L: Readiness + Reads>(ledger: L, path: &str) -> String {
+async fn read<L: Readiness + BackendLedger>(ledger: L, path: &str) -> String {
+    let (status, body) = send(ledger, Request::get(path)).await;
+    assert_eq!(status, StatusCode::OK, "{path}");
+    body
+}
+
+// One request to the internal listener with the bearer secret, answered with its status and its body as sent.
+async fn send<L: Readiness + BackendLedger>(
+    ledger: L,
+    request: axum::http::request::Builder,
+) -> (StatusCode, String) {
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
@@ -106,16 +124,16 @@ async fn read<L: Readiness + Reads>(ledger: L, path: &str) -> String {
             Bounds::default(),
         )
         .oneshot(
-            Request::get(path)
+            request
                 .header("authorization", "Bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::OK, "{path}");
+    let status = response.status();
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    String::from_utf8(body.to_vec()).unwrap()
+    (status, String::from_utf8(body.to_vec()).unwrap())
 }
 
 #[tokio::test]
@@ -180,18 +198,20 @@ async fn every_account_read_is_the_contracts() {
     }
 }
 
-// Each answer of the claim and the refresh, written from the service's own types: the 200s from the ledger's, a
-// refusal as its code.
+// Each answer of the claim, the refresh and the erasure, written from the service's own types: the 200s from the
+// ledger's, a refusal as its code. The erasure's 204 has no body, which the story below reads from the door.
 #[test]
-fn every_claim_and_refresh_answer_is_the_contracts() {
+fn every_claim_refresh_and_erasure_answer_is_the_contracts() {
     let mut answered = Vec::new();
     for file in [
         "internal-app-store-claim.json",
         "internal-subscription-refresh.json",
+        "internal-account-erasure.json",
     ] {
         for example in fixture(file)["examples"].as_array().unwrap() {
             let body = &example["body"];
             let served = match (file, example["status"].as_u64().unwrap()) {
+                (_, 204) => continue,
                 ("internal-app-store-claim.json", 200) => serde_json::to_string(&ClaimResponse {
                     seq: body["seq"].as_i64().unwrap(),
                     entitlement: EntitlementResponse::from(&entitlement(&body["entitlement"])),
@@ -207,18 +227,18 @@ fn every_claim_and_refresh_answer_is_the_contracts() {
         }
     }
 
-    assert_eq!(answered.len(), 13);
+    assert_eq!(answered.len(), 15);
     for (served, contract) in answered {
         assert_eq!(served, contract);
     }
 }
 
-// The feed's story told through Ledger::apply, every transaction of it up to the erasure at seq 27, which has no step
-// in the domain yet. Ids are minted at random, so each is read as the fixture's before the bodies are compared; the
-// ledger's clock is set to each transaction's recordedAt.
+// The feed's story told through Ledger::apply, every transaction of it, then the erasure at seq 27 through its door,
+// twice. Ids are minted at random, so each is read as the fixture's before the bodies are compared; the ledger's clock
+// is set to each transaction's recordedAt.
 #[tokio::test]
 #[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
-async fn the_ledger_tells_the_contracts_story_up_to_the_erasure() {
+async fn the_ledger_tells_the_contracts_story() {
     let feed = fixture("feed.json");
     let accounts = fixture("account.json");
     let pages = feed["examples"].as_array().unwrap();
@@ -241,8 +261,12 @@ async fn the_ledger_tells_the_contracts_story_up_to_the_erasure() {
         1_805_724_000_000,
     );
     let (grace_ends, recovered) = (1_803_031_200_000, 1_803_304_800_000);
-    let (p2_refunded, p2_refund_reversed, turned_off) =
-        (1_803_898_800_000, 1_804_608_000_000, 1_804_708_800_000);
+    let (p2_refunded, p2_refund_reversed, turned_off, erased) = (
+        1_803_898_800_000,
+        1_804_608_000_000,
+        1_804_708_800_000,
+        1_806_580_800_000_i64,
+    );
     let (unhinted, unhinted_end, claimed, q1_refunded) = (
         1_796_472_000_000,
         1_799_150_400_000,
@@ -451,6 +475,16 @@ async fn the_ledger_tells_the_contracts_story_up_to_the_erasure() {
             ..renewal_off
         };
         tell(end3 + 4_000, expired, buyer_hint, None, &[]).await;
+        let buyer_expired = read(ledger.clone(), &format!("/internal/v1/accounts/{buyer}")).await;
+        control
+            .execute(AssertSqlSafe(format!("update story_clock set at = {erased}")))
+            .await
+            .unwrap();
+        let mut erasures = Vec::new();
+        for _ in 0..2 {
+            let erasure = Request::delete(format!("/internal/v1/accounts/{buyer}"));
+            erasures.push(send(ledger.clone(), erasure).await);
+        }
         let as_told = |served: String| {
             renamed
                 .iter()
@@ -464,17 +498,24 @@ async fn the_ledger_tells_the_contracts_story_up_to_the_erasure() {
             "refunded_then_renewed",
             "payment_trouble",
             "older_period_refunded",
+            "account_erased",
+            "caught_up",
         ] {
             let example = pages.iter().find(|example| example["name"] == json!(name)).unwrap();
             let (after, limit) = (&example["request"]["after"], &example["request"]["limit"]);
             let served = read(ledger.clone(), &format!("/internal/v1/feed?after={after}&limit={limit}")).await;
-            let mut told: Value = serde_json::from_str(&as_told(served)).unwrap();
-            assert_eq!(told["latestSeq"], json!(26), "{name}");
-            told["latestSeq"] = example["body"]["latestSeq"].clone();
-            told_pages.push((told.to_string(), example["body"].to_string()));
+            told_pages.push((as_told(served), example["body"].to_string()));
         }
-        let mut told_accounts = Vec::new();
-        for (name, account) in [("expired", buyer), ("claimed_then_refunded", claimant), ("sandbox", tester)] {
+        let mut told_accounts = vec![(
+            as_told(buyer_expired),
+            accounts["examples"][0]["body"].to_string(),
+        )];
+        assert_eq!(accounts["examples"][0]["name"], json!("expired"));
+        for (name, account) in [
+            ("claimed_then_refunded", claimant),
+            ("sandbox", tester),
+            ("holds_nothing", buyer),
+        ] {
             let served = read(ledger.clone(), &format!("/internal/v1/accounts/{account}")).await;
             let contract = accounts["examples"]
                 .as_array()
@@ -500,7 +541,28 @@ async fn the_ledger_tells_the_contracts_story_up_to_the_erasure() {
             },
         );
 
-        for (told, contract) in told_pages.into_iter().chain(told_accounts).chain(told_claims) {
+        let erasure_fixture = fixture("internal-account-erasure.json");
+        assert_eq!(erasure_fixture["request"]["accountId"], json!(buyer.to_string()));
+        let told_erasures = erasures.into_iter().zip(["erased", "already_erased"]).map(|((status, body), name)| {
+            let contract = erasure_fixture["examples"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|example| example["name"] == json!(name))
+                .unwrap();
+            let body = if body.is_empty() { Value::Null } else { serde_json::from_str(&body).unwrap() };
+            (
+                json!({ "status": status.as_u16(), "body": body }).to_string(),
+                json!({ "status": contract["status"], "body": contract["body"] }).to_string(),
+            )
+        });
+
+        for (told, contract) in told_pages
+            .into_iter()
+            .chain(told_accounts)
+            .chain(told_claims)
+            .chain(told_erasures)
+        {
             assert_eq!(told, contract);
         }
         ledger.close().await;

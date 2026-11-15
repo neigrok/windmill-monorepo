@@ -29,6 +29,7 @@ REFUSALS = {
     "internal-app-store-claim.json": {400: {"invalid_transaction"}, 409: {"bound_to_another_account", "account_erased"},
                                       503: UNAVAILABLE},
     "internal-subscription-refresh.json": {404: {"unknown_subscription"}, 503: UNAVAILABLE},
+    "internal-account-erasure.json": {400: {"invalid_account_id"}, 503: {"unavailable"}},
 }
 MANAGE_URL = {"app_store": "https://apps.apple.com/account/subscriptions"}
 OFFER = {"aiAllowance": {"amount": "7.00", "currency": "USD"}}
@@ -58,7 +59,7 @@ MINOR_UNITS = {**dict.fromkeys(["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF",
 JWS = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 
 FILES = ["entitlement.json", "subscription.json", "feed.json", "app-store-claim.json", "internal-app-store-claim.json",
-         "internal-subscription-refresh.json", "account.json"]
+         "internal-subscription-refresh.json", "internal-account-erasure.json", "account.json"]
 loaded = {name: json.loads((ROOT / name).read_text()) for name in FILES}
 passed, failed = [], []
 
@@ -380,9 +381,9 @@ for name, example in accounts.items():
     check(read["entitlement"] == (recorded_at_seq[newest_seq]["entitlement"] if newest_seq else carried[-1]),
           f"{where}: the entitlement the feed carries after the account's newest event")
 
-# the claim and refresh doors: each refusal is {code}, a code of its status, and every code has its example
+# the claim, refresh and erasure doors: each refusal is {code}, a code of its status, and every code has its example
 for file, refusals in REFUSALS.items():
-    refused = [example for example in loaded[file]["examples"] if example["status"] != 200]
+    refused = [example for example in loaded[file]["examples"] if example["status"] >= 400]
     for example in refused:
         codes = refusals.get(example["status"], set())
         check(list(example["body"]) == ["code"] and example["body"]["code"] in codes,
@@ -421,6 +422,15 @@ for example in refresh["examples"]:
     newest = max((e["seq"] for e in entries if e["subscriptionId"] == refresh["request"]["subscriptionId"]), default=None)
     check(list(example["body"]) == ["seq"] and example["body"]["seq"] == newest,
           f"internal-subscription-refresh/{example['name']}: 200 is {{seq}}, the subscription's newest event (§5.2)")
+erasure = loaded["internal-account-erasure.json"]
+check(list(erasure["request"]) == ["accountId"], "internal-account-erasure: the path names {accountId}")
+check([(x["status"], x["body"]) for x in erasure["examples"] if x["status"] < 400] == [(204, None), (204, None)],
+      "internal-account-erasure: erased, and erased already, answer the same 204 with no body (§6.4)")
+unbound = [entry for entry in entries if entry["type"] == "unbound" and entry["accountId"] == erasure["request"]["accountId"]]
+check(len(unbound) == 1 and unbound[0]["seq"] == max(entry["seq"] for entry in entries)
+      and unbound[0]["entitlement"] == {"accountId": erasure["request"]["accountId"], **{
+          environment: {"plan": None, "accessUntil": None, "governing": None, "others": []} for environment in ENVIRONMENTS}},
+      "internal-account-erasure: the feed's last entry unbinds the erased account, whose entitlement holds nothing")
 check(named("app-store-claim.json")["bound_to_caller"]["body"]["governing"]
       == named("internal-app-store-claim.json")["bound_to_caller"]["body"]["entitlement"]["production"]["governing"],
       "app-store-claim/bound_to_caller answers the copy the internal answer leads to (§5.3)")
