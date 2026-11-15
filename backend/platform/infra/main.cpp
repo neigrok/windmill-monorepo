@@ -497,16 +497,15 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   installWriteReporter(sentry);
 
   // The paid line, which GET /v1/subscription offers (§5.3): SUBSCRIPTIONS_PURCHASABLE_STORES names the stores it is open
-  // on, comma-separated. Unset closes it on every store; a name D-1 does not hold refuses to start.
-  std::optional<subscriptions::PaidLine> paidLine;
-  try {
-    const char* purchasableStoresEnv = std::getenv("SUBSCRIPTIONS_PURCHASABLE_STORES");
-    paidLine.emplace(purchasableStoresEnv ? purchasableStoresEnv : "", aiLimits.paidPeriodNanos);
-  } catch (const std::invalid_argument& unknown) {
-    std::fprintf(stderr, "refusing to start: %s\n", unknown.what());
-    return 1;
+  // on, comma-separated. Unset closes it on every store. A name the backend does not know stays closed and is reported
+  // once, never refusing to start: a typo in a variable must not take the whole backend down at the next deploy.
+  const char* purchasableStoresEnv = std::getenv("SUBSCRIPTIONS_PURCHASABLE_STORES");
+  const subscriptions::PaidLine paidLine{purchasableStoresEnv ? purchasableStoresEnv : "", aiLimits.paidPeriodNanos};
+  if (paidLine.namesUnknownStore) {
+    LOG_ERROR << "subscriptions: SUBSCRIPTIONS_PURCHASABLE_STORES names a store the backend does not know; it stays closed";
+    sentry->report("config", "subscription.paid_line", "unknown_store");
   }
-  auto subscriptionApi = std::make_shared<subscriptions::SubscriptionApi>(authService, entitlements, *paidLine, sentry);
+  auto subscriptionApi = std::make_shared<subscriptions::SubscriptionApi>(authService, entitlements, paidLine, sentry);
 
   // The subscription service's feed, followed into the backend's own copy of every Windmill One entitlement
   // (docs/foundation/subscriptions.md §6.1). Off while neither variable is set; one without the other refuses to start.

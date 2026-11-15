@@ -865,6 +865,25 @@ class DeployWorkflowTest(unittest.TestCase):
                 self.assertIn(f"{name}=", rendered({**unset, **{other: "" for other in settings}}))
                 self.assertIn(f"{name}=configured", rendered({**unset, **{other: "configured" for other in settings}}))
 
+    def test_the_open_stores_render_only_as_names_the_server_knows(self):
+        text = (SCRIPT.parents[2] / ".github/workflows/deploy.yml").read_text()
+        start = text.index("          stores=")
+        guard = textwrap.dedent(text[start:text.index("          # printf so values are written literally", start)])
+        refused = (1, "Refusing to render — SUBSCRIPTIONS_PURCHASABLE_STORES must list app_store, play_store or paddle,"
+                      " comma-separated.\n")
+        for value, outcome in (("", (0, "")), ("app_store", (0, "")), (" app_store , paddle", (0, "")),
+                               ("play_store,paddle,app_store,", (0, "")), ("appstore", refused), ("App_Store", refused),
+                               ("app_store;paddle", refused), ("app_store,,paddle", refused),
+                               ("app_store,google_play", refused)):
+            with self.subTest(value=value):
+                result = subprocess.run(["bash", "-euo", "pipefail", "-c", guard], capture_output=True, text=True,
+                                        env={**os.environ, "SUBSCRIPTIONS_PURCHASABLE_STORES": value})
+                self.assertEqual((result.returncode, result.stdout + result.stderr), outcome)
+        unset = subprocess.run(["bash", "-euo", "pipefail", "-c", guard], capture_output=True, text=True,
+                               env={key: value for key, value in os.environ.items()
+                                    if key != "SUBSCRIPTIONS_PURCHASABLE_STORES"})
+        self.assertEqual((unset.returncode, unset.stdout + unset.stderr), (0, ""))
+
     def test_backend_readiness_probes_admit_the_current_schema_without_pinning_an_old_client(self):
         root = SCRIPT.parents[2]
         workflow = (root / ".github/workflows/backend.yml").read_text()

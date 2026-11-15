@@ -4,6 +4,8 @@
 #include "test/testing.h"
 
 #include <chrono>
+#include <optional>
+#include <stdexcept>
 #include <string>
 
 using namespace wm;
@@ -96,6 +98,36 @@ TEST(an_account_the_feed_never_named_holds_windmill_one_only_as_an_owner) {
   const Entitlements nobody{copy, clock, usage};
   CHECK_EQ(answers(nobody, UserId{"u1"}, "sam@example.com"), std::string("free logged_in shows production"));
   CHECK_EQ(nobody.isOwner("sam@example.com"), false);
+}
+
+// An owner holds Windmill One without the copy being read: a copy that cannot be read takes nothing from an owner, and
+// fails everyone else's read loudly rather than answering free.
+TEST(an_owner_holds_windmill_one_and_its_ai_tier_without_the_copy_being_read) {
+  struct UnreadableCopy : subscriptions::EntitlementReader {
+    int reads = 0;
+    std::optional<subscriptions::EntitlementResponse> find(const UserId&) override {
+      ++reads;
+      throw std::runtime_error("the copy cannot be read");
+    }
+  } copy;
+  FakeClock clock;
+  FakeAiUsageRepository usage;
+  const Entitlements entitlements{copy, clock, usage, {.owners = EmailList{"owner@example.com"}}};
+
+  CHECK(entitlements.hasWindmillOne(UserId{"owner"}, "owner@example.com"));
+  const AiBudgetPrincipal principal = entitlements.aiPrincipalFor(UserId{"owner"}, "Owner@Example.com");
+  CHECK(principal.tier == AiBudgetTier::WindmillOne);
+  CHECK(principal.owner);
+  CHECK_EQ(copy.reads, 0);
+
+  bool refused = false;
+  try {
+    entitlements.hasWindmillOne(UserId{"someone"}, "someone@example.com");
+  } catch (const std::runtime_error&) {
+    refused = true;
+  }
+  CHECK(refused);
+  CHECK_EQ(copy.reads, 1);
 }
 
 TEST(a_free_account_spends_up_to_the_free_ceiling_and_not_past_it) {

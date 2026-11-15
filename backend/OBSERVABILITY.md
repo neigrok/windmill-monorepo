@@ -433,6 +433,7 @@ listed separately because their only server writes are authentication refresh or
 | Anonymous Coach result expiry | `background.gym-coach-onboarding-retention` | committed expiry writes only | unexpected retention failures |
 | `GET /v1/ai/allowance` | `ai.allowance.read` | HTTP status via access log, WARN for its `ai_allowance_disabled` 503; no balance in telemetry | static failure detail on unavailable accounting |
 | `GET /v1/subscription` (`platform/subscriptions/SubscriptionApi.cpp`, read from the entitlement copy) | `subscription.read` | HTTP status via access log, and an ERROR completion `failed` when the copy cannot be read, answered 503 `subscription_unavailable`; no entitlement, store, account or address in telemetry | `failed`: unexpected, with the exception type |
+| The paid line at start (`platform/infra/main.cpp`, `SUBSCRIPTIONS_PURCHASABLE_STORES`) | `subscription.paid_line` | one ERROR `subscriptions: SUBSCRIPTIONS_PURCHASABLE_STORES names a store the backend does not know; it stays closed` line when the variable names a store outside `app_store`, `play_store` and `paddle`; the server starts and keeps that store closed. Neither the line nor the report carries the value | one report per start, detail `unknown_store` |
 | Coach JSON/SSE allowance refusal | `ask.run` | bounded `subject_exhausted`, `free_day_exhausted`, `free_month_exhausted`, `concurrency_exhausted`, `funding_required` or `debt_outstanding` | expected refusals create no Issue |
 
 Standalone MCP accepts unprefixed tool aliases; completions use canonical operations

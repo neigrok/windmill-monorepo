@@ -4,7 +4,6 @@
 #include "test/platform/subscriptions/FeedFixture.h"
 #include "test/testing.h"
 
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -14,10 +13,11 @@ using namespace wm::subscriptions::test;
 
 namespace {
 
+// The stores a line opens in order, and whether it was given a name it does not know.
 std::string stores(const PaidLine& line) {
   std::string listed;
   for (const std::string& store : line.openStores) listed += (listed.empty() ? "" : ",") + store;
-  return listed;
+  return "[" + listed + "]" + (line.namesUnknownStore ? " unknown" : "");
 }
 
 // The parts of a SubscriptionResponse INV-12 rules, on one line.
@@ -27,22 +27,16 @@ std::string offered(const Json::Value& body) {
 
 }
 
-TEST(the_paid_line_opens_the_stores_its_variable_names_in_d1_order_and_refuses_one_it_does_not_know) {
-  CHECK_EQ(stores(PaidLine{"", 0}), std::string(""));
-  CHECK_EQ(stores(PaidLine{" , ", 0}), std::string(""));
-  CHECK_EQ(stores(PaidLine{"app_store", 0}), std::string("app_store"));
-  CHECK_EQ(stores(PaidLine{" paddle ,app_store, app_store", 0}), std::string("app_store,paddle"));
-  CHECK_EQ(stores(PaidLine{"play_store,paddle,app_store", 0}), std::string("app_store,play_store,paddle"));
-
-  for (const char* typed : {"App_Store", "app_store,google_play", "appstore"}) {
-    std::string refusal;
-    try {
-      PaidLine{typed, 0};
-    } catch (const std::invalid_argument& error) {
-      refusal = error.what();
-    }
-    CHECK_EQ(refusal.rfind("SUBSCRIPTIONS_PURCHASABLE_STORES names a store the backend does not know: ", 0), std::size_t{0});
-  }
+// A name the backend does not know opens nothing and is flagged, so a typo leaves its store closed and the server
+// serving: the line opens only what it can name.
+TEST(the_paid_line_opens_the_stores_its_variable_names_in_d1_order_and_keeps_an_unknown_one_closed) {
+  std::vector<std::string> lines;
+  for (const char* typed : {"", " , ", "app_store", " paddle ,app_store, app_store", "play_store,paddle,app_store",
+                            "appstore", "App_Store", "app_store,google_play", "paddle;app_store"})
+    lines.push_back(stores(PaidLine{typed, 0}));
+  CHECK(lines == (std::vector<std::string>{"[]", "[]", "[app_store]", "[app_store,paddle]",
+                                           "[app_store,play_store,paddle]", "[] unknown", "[] unknown",
+                                           "[app_store] unknown", "[] unknown"}));
 }
 
 // INV-12: nothing to buy while the account has Windmill One, owners included, or while the Entitlement shown holds a

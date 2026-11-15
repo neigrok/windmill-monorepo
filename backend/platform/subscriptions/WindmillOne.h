@@ -36,10 +36,11 @@ struct Standing {
 // what a month of Windmill One funds.
 struct PaidLine {
   // `purchasableStores` is SUBSCRIPTIONS_PURCHASABLE_STORES: D-1 store names, comma-separated. A name D-1 does not hold
-  // throws std::invalid_argument naming the variable, so a typo refuses to start rather than leave the line shut.
+  // opens nothing, so a typo leaves that store closed and the server serving; `namesUnknownStore` says one was given.
   PaidLine(std::string_view purchasableStores, long long aiAllowanceNanos);
 
   std::vector<std::string> openStores;  // in D-1's order
+  bool namesUnknownStore = false;
   long long aiAllowanceNanos = 0;
 };
 

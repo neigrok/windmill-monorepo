@@ -198,6 +198,14 @@ jobs:
             fi
           fi
 
+          # The stores the paid line is open on (docs/foundation/subscriptions.md §5.3). A server given a name it does not
+          # know keeps that store closed, so a typo is refused here, before anything reaches the host.
+          stores='^ *((app_store|play_store|paddle) *(,|$) *)*$'
+          if [[ ! "${SUBSCRIPTIONS_PURCHASABLE_STORES:-}" =~ $stores ]]; then
+            echo "Refusing to render — SUBSCRIPTIONS_PURCHASABLE_STORES must list app_store, play_store or paddle, comma-separated."
+            exit 1
+          fi
+
           # printf so values are written literally. Optional keys write empty; compose defaults apply.
           : > rendered.env
           {

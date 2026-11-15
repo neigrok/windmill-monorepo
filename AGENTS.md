@@ -14,7 +14,8 @@ surface writes gym and journal data through the sync engine.
 
 The paid line — Windmill One — is one backend predicate, `Entitlements::hasWindmillOne`. It cannot
 be bought: `paidPlansOpen()` in `web/src/shell/billing/checkout.js` returns `false`, so no surface
-offers a checkout, and `BillingApi` answers 503 while no Paddle price id is configured.
+offers a checkout; `BillingApi`'s checkout door always answers 503; and `GET /v1/subscription` names
+no store to buy through until `SUBSCRIPTIONS_PURCHASABLE_STORES` opens one, which it does not by default.
 
 This is a monorepo grouped by surface, then product. **Read `STRUCTURE.md` for the layout and the
 one dependency rule** (platform is product-neutral; products depend on platform, never the reverse;

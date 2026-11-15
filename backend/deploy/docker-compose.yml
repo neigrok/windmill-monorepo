@@ -123,7 +123,7 @@ services:
       # Windmill One (docs/foundation/subscriptions.md §5.3, §6.2). The accounts whose sandbox purchases count, the
       # team's testers and the App Review account, comma-separated; empty → a sandbox purchase entitles no one. The
       # stores GET /v1/subscription offers a buy control for (app_store, play_store, paddle); empty → the paid line is
-      # closed on every store, and a name the server does not know refuses to start.
+      # closed on every store, and a name the server does not know stays closed and is reported at start.
       WINDMILL_SANDBOX_EMAILS: ${WINDMILL_SANDBOX_EMAILS:-}
       SUBSCRIPTIONS_PURCHASABLE_STORES: ${SUBSCRIPTIONS_PURCHASABLE_STORES:-}
       # Tending (server-side agent edits). Ships DARK: empty/absent → every run refuses with

@@ -56,14 +56,18 @@ subscriptions::Standing Entitlements::standingOf(const UserId& user, const std::
           static_cast<std::int64_t>(clock_.nowMs())};
 }
 
+// An owner holds Windmill One without the copy being read, so no failure to read it ever takes an owner's access.
 bool Entitlements::hasWindmillOne(const UserId& user, const std::string& email) const {
+  if (isOwner(email)) return true;
   return standingOf(user, email).hasWindmillOne();
 }
 
 AiBudgetPrincipal Entitlements::aiPrincipalFor(const UserId& user, const std::string& email) const {
+  const AiBudgetSubject subject{AiBudgetSubjectKind::Account, user.str()};
+  if (isOwner(email)) return {subject, AiBudgetTier::WindmillOne, true};
   const subscriptions::Standing standing = standingOf(user, email);
   const auto tier = standing.hasWindmillOne() ? AiBudgetTier::WindmillOne : AiBudgetTier::LoggedIn;
-  return {{AiBudgetSubjectKind::Account, user.str()}, tier, standing.fundedAsOwner()};
+  return {subject, tier, standing.fundedAsOwner()};
 }
 
 AiBudgetView Entitlements::aiAllowanceView(const UserId& user, const std::string& email) const {

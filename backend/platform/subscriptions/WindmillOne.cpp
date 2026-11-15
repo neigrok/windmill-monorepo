@@ -5,14 +5,14 @@
 #include <algorithm>
 #include <array>
 #include <set>
-#include <stdexcept>
 #include <utility>
 
 namespace wm::subscriptions {
 
 namespace {
-// D-1's stores in order, each with the page where its customer manages what it sold them. A store with no such page at
-// a fixed address has none, and the subscriptions it sold show no manage link.
+// D-1's stores in order, each with the page where its customer manages what it sold them, linked only for a store that
+// sells Windmill One. The Play Store's page (play.google.com/store/account/subscriptions) waits until Play sells it, and
+// Paddle has no page at a fixed address, so a subscription either sold shows no manage link.
 struct Store {
   const char* name;
   const char* managePage;
@@ -96,12 +96,9 @@ PaidLine::PaidLine(std::string_view purchasableStores, long long aiAllowanceNano
     if (!word.empty()) named.insert(std::move(word));
     at = end + 1;
   }
-  for (const std::string& word : named) {
-    const bool known = std::any_of(kStores.begin(), kStores.end(), [&](const Store& store) { return word == store.name; });
-    if (!known) throw std::invalid_argument("SUBSCRIPTIONS_PURCHASABLE_STORES names a store the backend does not know: " + word);
-  }
   for (const Store& store : kStores)
     if (named.count(store.name)) openStores.emplace_back(store.name);
+  namesUnknownStore = openStores.size() < named.size();
 }
 
 SubscriptionResponse::SubscriptionResponse(const Standing& standing, const PaidLine& line) : body(Json::objectValue) {
