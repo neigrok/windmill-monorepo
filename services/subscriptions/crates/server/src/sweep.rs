@@ -22,8 +22,8 @@ const PAGE: i64 = 100;
 const REPORTED_EVERY: Duration = Duration::from_secs(10 * 60);
 
 // The sweep (spec §7): on start and every `every`, a minute in the service, step 1, the inbox, and beside it the hints
-// claims owe the stores, each on a clock of its own. The hint step runs as a task of its own, so the inbox's step never waits on a store's API, as
-// slow as it may answer and however many hints it refuses. Steps 2 to 4 are not built.
+// claims owe the stores, each on a clock of its own. The hint step runs as a task of its own, so the inbox's step never
+// waits on a store's API, however slowly it answers and however many hints it refuses. Steps 2 to 4 are not built.
 pub struct Sweep {
     inbox: InboxSweep,
     store_hints: StoreHintSweep,
