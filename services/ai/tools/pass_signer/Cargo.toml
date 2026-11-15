@@ -1,0 +1,17 @@
+[package]
+name = "ai-pass-signer"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "pass_signer"
+path = "src/main.rs"
+
+[dependencies]
+base64 = "0.22.1"
+ed25519-dalek = "2.2.0"
+serde_json = "1.0.154"
+
+[lints]
+workspace = true

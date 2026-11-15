@@ -1,11 +1,11 @@
 # Deploying windmill-backend
 
-Backend CI publishes the server, embedder and subscription service images. The deploy workflow runs
+Backend CI publishes the server, embedder, subscription and AI service images. The deploy workflow runs
 the stack on one VPS under `docker compose`. That second workflow runs itself, and refuses to run on
 anything but a SUCCESSFUL `push`-triggered Backend CI/CD on `main` — a red `ctest`, a branch, or a
 pull request all stop at the image. It deploys the sha that passed, never `:latest`, so two pushes in
 a row cannot ship each other's binary. A manual dispatch runs from `main` and requires a full image
-commit SHA. The server, the migration and the subscription service are pinned to the inspected Docker
+commit SHA. The server, migration, subscription and AI services are pinned to the inspected Docker
 content IDs before promotion.
 Every candidate carries `sync-compatibility.json`, generated from the same composed registries as its
 binary. A missing manifest or unreadable live hello stops deployment before migration, environment
@@ -20,7 +20,7 @@ the last merge that touched the web and re-run it if it was cancelled.
 
 ```
  push to main ─▶ test (ctest in builder image)
-                   └▶ build-and-push (server, embedder and subscriptions images ─▶ ghcr.io)
+                   └▶ build-and-push (server, embedder, subscriptions and AI images ─▶ ghcr.io)
                         └▶ deploy.yml, automatically, on that run's success
 
  (or by hand) run deploy.yml ─▶ render ~/windmill/.env ─▶ ship compose + Caddyfile ─▶ prune + pull + up + migrate
@@ -29,11 +29,13 @@ the last merge that touched the web and re-run it if it was cancelled.
  ┌──────────────────── docker compose (private network) ────────────────────┐
  │  caddy :80/:443  ─▶  server :8080   (HTTP + WebSocket + MCP at /mcp)      │
  │       │          ─▶  subscriptions :8082 (/v1/stores/* only)              │
+ │       │          ─▶  ai :8084 (/v1/calls/* and /v1/allowance)               │
  │       │          ─▶  /srv/windmill-web (the rsynced SPA, file_server)     │
  │       │              subscriptions :8083 (internal-doors: server only)    │
+ │       │              ai :8085 (internal; this network only)               │
  │       │              embedder :8081  (journal echo vectors; model mount)  │
  │       │              migrate (one-shot: applies db/schema.sql)            │
- │       │              subscriptions-db (one-shot: the subscription db)     │
+ │       │              subscriptions-db, then ai-db (one-shot ledgers)     │
  │       │              db     :5432   postgres 16  (volume: pgdata)         │
  └───────┴──────────────────────────────────────────────────────────────────┘
    only :80/:443 are exposed, and only to Cloudflare's ranges
@@ -45,15 +47,17 @@ the last merge that touched the web and re-run it if it was cancelled.
 | --- | --- |
 | Build (Drogon + libpqxx, compile, `ctest`) | `backend/Dockerfile` |
 | Build + test + publish the images (on push to `main`) | `/.github/workflows/backend.yml` |
+| The AI service image and its own checks | `/services/ai/Dockerfile`, `/.github/workflows/ai.yml` |
 | The subscription service's image and its own checks | `/services/subscriptions/Dockerfile`, `/.github/workflows/subscriptions.yml` |
 | Deploy to the VPS (automatic on a green Backend CI/CD; renders `~/windmill/.env`) | `/.github/workflows/deploy.yml` |
 | VPS runtime topology | `deploy/docker-compose.yml` |
-| Promote the candidate files, prove Caddy loaded them, report the subscription database's provisioning and start the subscription service (runs on the VPS) | `deploy/deploy-production.sh` |
+| Promote the candidate files, prove Caddy loaded them, verify both ledger databases and start their services (runs on the VPS) | `deploy/deploy-production.sh` |
 | Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
 | Count how the roadmap's pointers between trees meet one owned subtree per step (by hand, never during a deploy; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
 | Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
-| TLS + reverse proxy, and the test that drives it against stand-ins for both upstreams | `deploy/Caddyfile`, `test/deploy/caddyfile_routes_test.py` |
+| TLS + reverse proxy, and the test that drives it against stand-ins for all public upstreams | `deploy/Caddyfile`, `test/deploy/caddyfile_routes_test.py` |
 | The subscription service's database, its role and its `pg_hba.conf` rules (the `subscriptions-db` one-shot; shipped as `subscriptions-db.next` and promoted with the compose file) | `deploy/subscriptions-db/` |
+| The AI ledger's database, role and HBA rules, serialized after subscription provisioning | `deploy/ai-db/` |
 | Env keys the deploy renders | `deploy/.env.example` |
 
 ## One-time VPS bootstrap
@@ -100,6 +104,9 @@ The deploy job creates `~/windmill/` and everything under it.
 | `SSH_PORT` | SSH port (e.g. `22`) |
 | `SSH_KEY` | CI deploy **private** key (whole PEM) |
 | `POSTGRES_PASSWORD` | Postgres password |
+| `AI_DB_PASSWORD` | AI database role password, 64 lowercase hex characters |
+| `AI_CARRY_KEY` | 32 random bytes encoded as unpadded base64url |
+| `AI_FUNDING_SECRET`, `AI_OPERATOR_SECRET` | Distinct 32–256 character bearer secrets; ASCII letters, digits, `_`, `-` |
 | `SUBSCRIPTIONS_DB_PASSWORD` | The subscription database role's password, 64 lowercase hex characters ([below](#the-subscription-database)) |
 
 **Variables** — same page → Variables:
@@ -110,6 +117,7 @@ The deploy job creates `~/windmill/` and everything under it.
 | `DOMAIN_API` | alias for the API host, e.g. `api.example.com` |
 | `ACME_EMAIL` | Let's Encrypt contact address |
 | `RESEND_FROM` | verified sender address |
+| `AI_PASS_KEYS` | JSON object mapping key IDs to 32-byte public keys encoded as unpadded base64url; `{}` keeps public AI admission dark |
 | `WINDMILL_MCP_ALLOWED_ORIGINS` | comma-separated Origins, or empty for all |
 
 Those two tables are the minimum that makes the deploy run, not the whole set. Every other key —
@@ -127,7 +135,7 @@ must be public.
   workflow is the by-hand path. It rewrites `~/windmill/.env` wholesale from GitHub secrets +
   variables — only `POSTGRES_PASSWORD` is preserved from the host — and refuses before touching the
   box if `DOMAIN_APP`, `DOMAIN_API`, `ACME_EMAIL`, `POSTGRES_PASSWORD`, `SUBSCRIPTIONS_DB_PASSWORD` or
-  `RESEND_FROM` is unset.
+  `RESEND_FROM`, `AI_DB_PASSWORD`, `AI_CARRY_KEY`, `AI_FUNDING_SECRET` or `AI_OPERATOR_SECRET` is unset.
   `CF_IPS` is configured nowhere: the job fetches Cloudflare's live edge list, falls back to the
   committed default in `deploy/docker-compose.yml`, and refuses on the same guard if both come back
   empty — an empty allow-list would make Caddy 403 the whole site.
@@ -138,10 +146,11 @@ must be public.
   removed by the cutoff must return `426 upgrade-required` at hello, push, pull and WebSocket
   upgrade. The runtime receipt names the checks that passed. Last, the `subscriptions-db` one-shot must
   pass ([below](#the-subscription-database)) and the subscription service must turn healthy on its pinned
-  image ([below](#the-subscription-service)). Credentials and failed command output are never
+  image ([below](#the-subscription-service)). Then AI provisioning and its service must pass
+  ([below](#the-ai-service)). Credentials and failed command output are never
   dumped. This proves configuration reached PID 1 and the selected
   image serves HTTP; output-cap enforcement requires a binary that supports that setting.
-- **Logs**: `cd ~/windmill && docker compose logs -f server` (or `caddy`, `db`, `embedder`, `subscriptions`).
+- **Logs**: `cd ~/windmill && docker compose logs -f server` (or `caddy`, `db`, `embedder`, `subscriptions`, `ai`).
 - **Status**: `docker compose ps`.
 - **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. The
   server and `embedder-<sha>` images must exist, and the server image must contain its compatibility
@@ -174,7 +183,7 @@ must be public.
 - **Native Apple sign-in**: the identity-token exchange defaults off (`APPLE_NATIVE_ENABLED=0`);
   [AUTH.md](../AUTH.md) names its audience and app configuration.
 - **Backup**: the dispatch-only `gym-backup.yml` writes a custom-format dump of the products database,
-  and of the subscription database once it is provisioned ([below](#the-subscription-database)), to
+  and separate dumps of the subscription and AI databases once provisioned, to
   `~/windmill/backups/` on the VPS, checks that `pg_restore --list` names each one's database, and
   records each sha256.
   Dumps made before the cutover-copy purge retain those copies. The repository defines no scheduled
@@ -187,6 +196,78 @@ must be public.
   disk → `report` prints `df`, Docker usage, image and container sizes and `~/windmill` by folder;
   `clean` also prunes images and build cache and, where the deploy user has passwordless sudo, trims the
   systemd journal to 200 MB. Neither touches volumes, containers or `~/windmill/backups`.
+
+## The AI service
+
+The AI container serves public port 8084 and internal port 8085 on the private Compose network.
+Caddy routes exactly `/v1/calls/*` and `/v1/allowance` to 8084 before the backend catch-all, and
+preserves WebSocket upgrades. It strips the product session cookie and installation header. Caddy's
+global runtime log encoder removes request objects and headers, including on upstream errors, so
+neither passes in `Sec-WebSocket-Protocol` nor caller IDs in URLs enter those logs.
+
+`windmill_ai` is a separate database owned by the nonsuperuser role `windmill_ai`. The `ai-db`
+one-shot runs after `subscriptions-db`, giving the shared HBA file one writer at a time. Its rules
+admit only that role to its ledger, reject every other role (including the backend's superuser),
+and deny its role access to all other databases. Before reloading, it validates that the backend
+can still connect; after reloading, it probes that path and restores the old HBA file on failure.
+Both TCP and local socket paths use these rules. The AI process migrates its ledger on startup.
+
+A deployment validates the AI credentials and pins `ai-<sha>` to its immutable image ID before
+promoting any files. When that tag is absent, an existing pinned AI image may be retained; a fresh
+host is refused. AI provisioning and startup happen after backend verification, so an AI startup
+failure makes deployment red while the backend continues serving. The process has a read-only root,
+a small memory-backed `/tmp`, no host ports, no Linux capabilities, no privilege escalation and
+core dumps disabled. Its image contains the release identity used by Sentry.
+
+Docker allows AI 720 seconds to stop, beyond its 660-second drain and 600-second text-call deadline.
+The infrastructure check asserts this ordering. The deploy waits for graceful replacement and then
+for ledger-backed health. `/health` is readiness of the process and ledger; it does not contact a
+provider. The optional `AI_ANTHROPIC_KEY`, `AI_OPENAI_KEY` and `AI_AZURE_KEY` reach only this container.
+Existing backend provider credentials remain while their feature callers have not migrated.
+
+The new required secrets must be configured before this deployment path runs. Generate each database
+and internal bearer secret separately with `openssl rand -hex 32`. Generate the carry key with
+`openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'`. Keep that key stable across releases so
+existing carry remains readable. `AI_PASS_KEYS={}` is the default; opening caller admission requires
+production issuer public keys. Transcription also needs an active One grant and a configured
+provider. Its billing verification is a deployment acceptance gate in the service runbook; no
+deployment command performs a billable provider call.
+
+The backup workflow dumps this database as its own role, verifies `pg_restore --list` identifies
+`windmill_ai`, and records a checksum separately from product and subscription dumps. Recover an AI
+HBA block that was edited manually by removing only the lines between `# BEGIN windmill_ai` and
+`# END windmill_ai` from the cluster's HBA file as its OS user, reloading Postgres, then rerunning
+`ai-db`; do not remove the subscription block.
+
+### Restore the AI database
+
+Replacing production accounting data needs the owner's approval. Pause deployments and persist
+`AI_PASS_KEYS={}` in both the deployment configuration and the host's `.env` before restoring.
+Keep the previous public-key set securely for the later decision to reopen admission. Stop AI;
+the product and subscription services can keep serving.
+
+From `~/windmill`, verify the dump's recorded checksum and `pg_restore --list` identifies
+`windmill_ai`. Then restore through its own role:
+
+```sh
+set -eu
+AI_RESTORE_DUMP="$PWD/backups/<ai-backup>.dump"
+export PGPASSWORD=$(sed -n 's/^AI_DB_PASSWORD=//p' .env)
+docker compose stop ai
+docker compose exec -T db dropdb -U windmill windmill_ai
+docker compose run --rm --no-deps -T ai-db
+docker compose exec -T -e PGPASSWORD db pg_restore -U windmill_ai -d windmill_ai \
+  --single-transaction --exit-on-error --no-owner --no-acl < "$AI_RESTORE_DUMP"
+docker compose up -d --no-deps --pull never ai
+docker compose exec -T ai curl -fsS http://127.0.0.1:8085/health
+```
+
+Startup migrates the restored database and ends orphan reservations conservatively. Results were
+memory-only and cannot be restored. Inspect assumed calls and pinned budgets through the internal
+doors in [the AI runbook](../../services/ai/RUNBOOK.md). Keep caller admission closed until the
+owner has reconciled the interval after the backup with provider accounting: a backup cannot
+recover missing calls or their charges, and restoring an older fuse total is not evidence of new
+spending capacity. Reopening admission is a separate decision after that accounting gap is settled.
 
 ## What a deploy does to the running server
 
@@ -382,9 +463,10 @@ alone, and 404s every other path; no App Store Connect setting sends notificatio
   `operation` tag, such as `ledger.open`, names a failure.
 - **Restart**: `docker compose restart subscriptions`. It stops within Docker's 10 s and exits 0.
 - **In a deploy**: `deploy-production.sh` pins the service to the content ID it pulled
-  (`SUBSCRIPTIONS_IMAGE` in `.env`) before anything changes, brings everything else up without it, and
-  starts it last, with `docker compose up -d --no-deps subscriptions`, once the backend is verified and
-  `subscriptions-db` has passed. It waits up to 60 s for `healthy`, checks that the container runs the
+  (`SUBSCRIPTIONS_IMAGE` in `.env`) before anything changes and starts it with
+  `docker compose up -d --no-deps --pull never subscriptions` once the backend is verified and
+  `subscriptions-db` has passed. AI provisioning follows the subscription service's health check.
+  It waits up to 60 s for `healthy`, checks that the container runs the
   pinned content ID, and prints `PASS subscription service: healthy on its pinned image`. Otherwise it
   prints `FAIL subscription service …; the backend is deployed and serving` and the run is red, with the
   container it started left as it is and nothing rolled back; while the service is down, Caddy answers

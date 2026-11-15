@@ -1,0 +1,12 @@
+[package]
+name = "ai-domain"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[test]]
+name = "vectors"
+path = "../../tests/vectors/domain.rs"
+
+[lints]
+workspace = true

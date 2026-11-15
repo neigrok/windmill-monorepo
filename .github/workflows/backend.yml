@@ -1,9 +1,7 @@
 name: Backend CI/CD
 
-# services/embedder and services/subscriptions ship from here as images under the SAME package, tagged
-# `embedder-<sha>` and `subscriptions-<sha>`: one package means one visibility setting, the host pulls
-# with no login, and every commit this deploys has all three images. The subscription service's own
-# checks are subscriptions.yml, which this workflow calls: a red check publishes and deploys nothing.
+# The backend, embedder, subscriptions and AI images share one package and commit identity.
+# Both Rust services run their own reusable CI workflows; every check gates all published images.
 
 on:
   push:
@@ -12,6 +10,8 @@ on:
       - 'backend/**'
       - 'services/embedder/**'
       - 'services/subscriptions/**'
+      - 'services/ai/**'
+      - 'packages/api-contract/ai/**'
       - 'packages/api-contract/sync/*.registry.json'
       - 'packages/api-contract/sync/composition.json'
       - 'packages/api-contract/sync/corpus/**'
@@ -25,15 +25,20 @@ on:
       - '.github/workflows/backend.yml'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/subscriptions.yml'
+      - '.github/workflows/ai.yml'
       - '!backend/**/*.md'
       - '!services/embedder/**/*.md'
       - '!services/subscriptions/**/*.md'
+      - '!services/ai/**/*.md'
+      - '!packages/api-contract/ai/**/*.md'
   # The restore proof drives the web sync engine, so a pull request that changes it runs here too.
   pull_request:
     paths:
       - 'backend/**'
       - 'services/embedder/**'
       - 'services/subscriptions/**'
+      - 'services/ai/**'
+      - 'packages/api-contract/ai/**'
       - 'packages/api-contract/sync/*.registry.json'
       - 'packages/api-contract/sync/composition.json'
       - 'packages/api-contract/sync/corpus/**'
@@ -49,9 +54,12 @@ on:
       - '.github/workflows/backend.yml'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/subscriptions.yml'
+      - '.github/workflows/ai.yml'
       - '!backend/**/*.md'
       - '!services/embedder/**/*.md'
       - '!services/subscriptions/**/*.md'
+      - '!services/ai/**/*.md'
+      - '!packages/api-contract/ai/**/*.md'
   workflow_dispatch:
     inputs:
       verify_live_coach:
@@ -377,8 +385,11 @@ jobs:
   subscriptions:
     uses: ./.github/workflows/subscriptions.yml
 
+  ai:
+    uses: ./.github/workflows/ai.yml
+
   build-and-push:
-    needs: [test, postgres, subscriptions-db, subscriptions]
+    needs: [test, postgres, subscriptions-db, subscriptions, ai]
     if: github.event_name != 'pull_request' && !inputs.verify_live_coach && !inputs.verify_live_anonymous_coach
     runs-on: ubuntu-latest
     permissions:
@@ -424,3 +435,13 @@ jobs:
             ${{ env.IMAGE }}:subscriptions-latest
           cache-from: type=gha,scope=subscriptions
           cache-to: type=gha,mode=max,scope=subscriptions
+      - uses: docker/build-push-action@v7
+        with:
+          context: services/ai
+          build-args: SENTRY_RELEASE=${{ github.sha }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:ai-${{ github.sha }}
+            ${{ env.IMAGE }}:ai-latest
+          cache-from: type=gha,scope=ai
+          cache-to: type=gha,mode=max,scope=ai
