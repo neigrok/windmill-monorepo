@@ -26,6 +26,7 @@ test('every SubscriptionResponse the contract shows is read whole, and holds Win
     ['never_subscribed_line_open', false, false],
     ['allowlisted_never_subscribed_line_open', false, false],
     ['never_subscribed_line_closed', false, false],
+    ['owner_line_open', false, false],
     ['charged_twice', true, false],
     ['sandbox_allowlisted', true, false],
     ['sandbox_not_allowlisted_line_open', false, false],

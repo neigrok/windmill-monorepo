@@ -330,15 +330,18 @@ it recorded any; a claim retried after its answer was lost answers the same `seq
 
 Devices never call this service. The backend authenticates the caller and serves:
 
-- `GET /v1/subscription` → `SubscriptionResponse`, answered from the backend's own copy (§6.1): one
-  `Entitlement` of the account (§5.2), with `environment`, naming which one it is; `allowlisted`,
-  whether the account is on the sandbox allowlist, so its sandbox purchases count (§6.2); `manage`
+- `GET /v1/subscription` → `SubscriptionResponse`, answered from the backend's own copy (§6.1):
+  `windmillOne`, whether the account holds Windmill One; one `Entitlement` of the account (§5.2),
+  with `environment`, naming which one it is; `allowlisted`, whether the account is on the sandbox
+  allowlist, so its sandbox purchases count (§6.2); `manage`
   (`{"store": "app_store", "url": "https://apps.apple.com/account/subscriptions"}`, the governing
   subscription's store, null when there is none); `purchasable`, the stores this account may buy
   through now; and `offer`. The `Entitlement` shown is the production one, unless the account is on
   the sandbox allowlist and its sandbox `Entitlement` grants access while its production one does
   not. An account off the allowlist never sees its sandbox `Entitlement`. An owner's `Entitlement` is
   chosen the same way.
+- `windmillOne` is what `Entitlements::hasWindmillOne` (§6.1) answers for the account as the
+  response is built, true for an owner whatever its `Entitlement` shows.
 - `offer` is what a month of Windmill One funds, which the buy sheet shows:
   `{"aiAllowance": {"amount": "7.00", "currency": "USD"}}`, read from the backend's configuration
   (`AI_ONE_PERIOD_USD`, [USD AI allowances](../../backend/AI_ALLOWANCES.md)). It is non-null exactly
