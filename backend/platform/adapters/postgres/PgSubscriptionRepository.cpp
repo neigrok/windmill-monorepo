@@ -15,10 +15,9 @@ void PgSubscriptionRepository::upsertCustomer(const PaddleCustomer& customer) {
   // land on one row — the email is simply refreshed to whatever Paddle last said.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  txn.exec_params(
-      "INSERT INTO paddle_customers (customer_id, email) VALUES ($1, $2) "
-      "ON CONFLICT (customer_id) DO UPDATE SET email = excluded.email, updated_at = now()",
-      customer.customerId, customer.email);
+  txn.exec("INSERT INTO paddle_customers (customer_id, email) VALUES ($1, $2) "
+           "ON CONFLICT (customer_id) DO UPDATE SET email = excluded.email, updated_at = now()",
+           pqxx::params{customer.customerId, customer.email});
   txn.commit();
 }
 
@@ -42,7 +41,8 @@ void PgSubscriptionRepository::upsertSubscription(const PaddleSubscription& subs
   // carries no custom_data) must never erase the binding we already know.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  if (!subscription.userId.empty() && txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR KEY SHARE", subscription.userId).empty())
+  if (!subscription.userId.empty() &&
+      txn.exec("SELECT id FROM users WHERE id=$1::uuid FOR KEY SHARE", pqxx::params{subscription.userId}).empty())
     throw std::runtime_error("account no longer exists");
   // The trailing WHERE is the staleness guard: a retry of an OLDER event must not overwrite state a
   // NEWER one wrote. A row with no recorded time, or an event carrying none, still applies.
@@ -67,7 +67,8 @@ void PgSubscriptionRepository::upsertSubscription(const PaddleSubscription& subs
 std::optional<PaddleCustomer> PgSubscriptionRepository::findCustomer(const std::string& customerId) {
   PgLease conn{*pool_};
   pqxx::read_transaction txn{*conn};
-  const auto rows = txn.exec_params("SELECT customer_id,email FROM paddle_customers WHERE customer_id=$1", customerId);
+  const pqxx::result rows =
+      txn.exec("SELECT customer_id, email FROM paddle_customers WHERE customer_id=$1", pqxx::params{customerId});
   if (rows.empty()) return std::nullopt;
   return PaddleCustomer{rows[0]["customer_id"].as<std::string>(), rows[0]["email"].as<std::string>()};
 }
@@ -75,12 +76,12 @@ std::optional<PaddleCustomer> PgSubscriptionRepository::findCustomer(const std::
 std::optional<PaddleSubscription> PgSubscriptionRepository::findSubscription(const std::string& subscriptionId) {
   PgLease conn{*pool_};
   pqxx::read_transaction txn{*conn};
-  const auto rows = txn.exec_params(
+  const pqxx::result rows = txn.exec(
       "SELECT subscription_id, customer_id, coalesce(user_id::text, '') AS user_id, status, price_id, product_id, "
       "coalesce(to_json(scheduled_change_at)#>>'{}', '') AS scheduled_change_at, "
       "coalesce(to_json(occurred_at)#>>'{}', '') AS occurred_at "
       "FROM paddle_subscriptions WHERE subscription_id=$1",
-      subscriptionId);
+      pqxx::params{subscriptionId});
   if (rows.empty()) return std::nullopt;
   return PaddleSubscription{rows[0]["subscription_id"].as<std::string>(),
                             rows[0]["customer_id"].as<std::string>(),
