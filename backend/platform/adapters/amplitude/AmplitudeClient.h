@@ -19,13 +19,12 @@ namespace wm {
 Json::Value amplitudeEvents(const std::string& sessionKey, const std::optional<UserId>& user,
                             const std::vector<FunnelEvent>& events, const std::string& idSeed = "");
 
-// Forwards each funnel event the beacon lands to Amplitude's HTTP V2 API over a private event-loop
-// thread, so the /v1/events handler never blocks. The client's session key is the device_id and the
-// session-resolved user (nullopt for a ghost) is the user_id. An empty API key makes every forward a
-// no-op. Transient delivery failures retry up to three attempts, then report an Issue. The host
-// defaults to US ingestion —
-// pass api.eu.amplitude.com for an EU-region project, since the wrong region silently drops events.
-class AmplitudeClient {
+// Forwards each stored event to Amplitude's HTTP V2 API over a private event-loop thread, so its
+// caller never blocks. The session key is the device_id and the attributed user (nullopt for a
+// ghost) is the user_id. An empty API key makes every forward a no-op. Transient delivery failures
+// retry up to three attempts, then report an Issue. The host defaults to US ingestion — pass
+// api.eu.amplitude.com for an EU-region project, since the wrong region silently drops events.
+class AmplitudeClient : public EventForwarder {
 public:
   ~AmplitudeClient() { stop(); }
   void stop() {
@@ -44,7 +43,7 @@ public:
   // from device_id + time + name + index — so server-side events that all share one device_id would
   // collide within a millisecond. Empty keeps the original key exactly.
   void forward(const std::string& sessionKey, const std::optional<UserId>& user,
-               const std::vector<FunnelEvent>& events, const std::string& idSeed = "");
+               const std::vector<FunnelEvent>& events, const std::string& idSeed = "") override;
 
 private:
   std::string apiKey_;

@@ -15,7 +15,9 @@ const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-sync-test`, plugins: [{ name: 'sync-test-page', configureServer(server) {
     server.middlewares.use('/sync-test', (_request, response) => { response.setHeader('Content-Type', 'text/html'); response.end(testHtml); });
   } }], server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url))] } } });
-  await server.listen(0);
+  const listening = once(server.httpServer, 'listening');
+  server.httpServer.listen(0, '127.0.0.1');
+  await listening;
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   browser = await chromium.launch({ channel: 'chromium', headless: true, ignoreDefaultArgs: ['--disable-back-forward-cache'] });
 })();
@@ -412,7 +414,9 @@ test('Chromium: a real bfcache restore reopens the engine and keeps existing obs
       window.addEventListener('pageshow', (event) => { restoredFromCache = event.persisted; });
     });
     await serving('/sync-test/away');
-    await page.goto(`${origin}/sync-test/away`, { waitUntil: 'commit', timeout: 5000 });
+    await page.goto(`${origin}/sync-test/away`, { waitUntil: 'domcontentloaded', timeout: 5000 });
+    assert.deepEqual(await page.evaluate(() => ({ path: location.pathname, ready: document.readyState !== 'loading' })),
+      { path: '/sync-test/away', ready: true });
     await serving();
     await page.goBack({ waitUntil: 'commit', timeout: 5000 });
     try { await page.waitForFunction(() => window.restoredFromCache && !engine.closed && events.some(({ event }) => event === 'restored'), null, { timeout: 6000 }); }

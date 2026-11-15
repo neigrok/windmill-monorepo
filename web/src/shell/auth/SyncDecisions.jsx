@@ -3,7 +3,9 @@ import { Button, Dialog } from '../../design-system';
 import { t } from '../i18n/entry/index.js';
 
 // `work` is the asking product's `sync.signedOutWork`: its record type, `counted(3)` ("3 pages") and plural noun `many`.
-export function SyncDecisions({ question, work, busy, error, onDecision, onCancel }) {
+// `notices` are the products' `signOutNotice()` answers: a line on what signing out discards from this tab, and the
+// download that keeps it.
+export function SyncDecisions({ question, work, notices = [], busy, error, onDecision, onCancel }) {
   const [discarding, setDiscarding] = useState(false);
   if (!question) return null;
   const signin = question.kind === 'signed-out';
@@ -30,6 +32,9 @@ export function SyncDecisions({ question, work, busy, error, onDecision, onCance
       : <p>{t('shell.syncDecisions.addBody', { work: count, total: held + pending, existing: work.many })}</p>
       : count ? <p>{t('shell.syncDecisions.signOutUnsent', { count })}</p>
         : <p>{t('shell.syncDecisions.signOutClean')}</p>}
+    {!signin && notices.map(({ line, download }) => <p key={line}>
+      {line} <a href={download.href} download={download.filename} onClick={download.onDownload}>{download.label}</a>
+    </p>)}
     {error && <p role="alert">{t('shell.syncDecisions.failed')}</p>}
   </Dialog>;
 }

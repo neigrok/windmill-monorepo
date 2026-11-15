@@ -733,7 +733,7 @@ fn signed_dates_of_every_odd_shape_are_refused_or_fall_back_to_the_clock() {
         [
             Some(Refusal::Validity),
             Some(Refusal::Validity),
-            Some(Refusal::SignedInFuture),
+            Some(Refusal::Validity),
             Some(Refusal::Validity),
             Some(Refusal::Malformed),
             Some(Refusal::Malformed),

@@ -1322,12 +1322,15 @@ TEST(create_subtree_in_a_deleted_tree_is_refused_no_such_tree) {
   checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), uid("me"), SubtreeRefusal::noSuchTree);
 }
 
-TEST(create_subtree_in_a_tree_the_caller_reads_but_cannot_write_is_refused_not_writer) {
+TEST(create_subtree_in_a_tree_the_caller_reads_but_cannot_write_is_refused_as_every_write_door_refuses_it) {
   Setup s;
   AtTheDoor door;
   seedParent(s, "t_p", uid("owner"));
   s.trees.byId["t_p"].visibility = Visibility::public_;
-  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), uid("intruder"), SubtreeRefusal::notWriter);
+  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), uid("intruder"), SubtreeRefusal::notYours);
+  door.lines.clear();
+  s.trees.byId["t_p"].owner = std::nullopt;
+  checkRefusedWithNothingWritten(s, door, tid("t_p"), nid("rig"), uid("intruder"), SubtreeRefusal::nobodysTree);
 }
 
 TEST(create_subtree_in_an_absent_tree_or_a_private_one_of_someone_else_is_refused_no_such_tree) {
@@ -1729,16 +1732,16 @@ TEST(a_retry_after_a_lost_commit_answer_records_the_subtree_in_the_live_parent_r
   const SubtreeAnswer retried = s.registry.createSubtree(tid("t_p"), nid("rig"), me, proposing("t_00000000000000c1"));
   REQUIRE(std::holds_alternative<SubtreeCreation>(retried));
   CHECK_FALSE(std::get<SubtreeCreation>(retried).created);
-  std::map<NodeId, TreeId> pointers;
+  FollowedSteps followed;
   {
     std::lock_guard<std::mutex> strand(s.rooms.strandFor(tid("t_p")));
     const TreeRoom* room = s.rooms.open(tid("t_p"));
     CHECK(room->subtrees() == (std::map<NodeId, TreeId>{{nid("rig"), child}}));
     CHECK_EQ(room->head(), Seq{1});
-    pointers = room->pointersFor(me);
+    followed = room->followedStepsFor(me);
   }
-  CHECK(pointers == (std::map<NodeId, TreeId>{{nid("rig"), child}}));
-  const ProgressReceipt receipt = s.marks.mark(tid("t_p"), pointers, me,
+  CHECK(followed == (FollowedSteps{me, {{nid("rig"), child}}}));
+  const ProgressReceipt receipt = s.marks.mark(tid("t_p"), followed, me,
                                                {ProgressWrite{nid("rig"), ProgressStatus::complete, {}, Hlc{50, 0, "r_a"}}},
                                                StampedBy::replica, 50);
   CHECK(receipt.outcomes.at(0).refused);

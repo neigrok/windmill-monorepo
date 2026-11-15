@@ -39,13 +39,13 @@ TEST(ai_allowance_reads_fixed_point_account_month_and_refuses_ambiguous_credenti
   accounts.usersById[user.id.str()] = user;
   accounts.usersByEmail[user.email.value] = user;
   accounts.insertSession(tokens.digestOf("s-good"), user.id, clock.now + 1'000'000, "", "", clock.now);
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
   FakeAiUsageRepository usage;
   FakeAiBudgetRepository repository;
   repository.totals.subject = {25'000'000, 50'000'000, 0};
   AiBudgetLimits limits;
   auto service = std::make_shared<AiBudgetService>(repository, [&] { return limits; }, [&] { return clock.now; });
-  auto entitlements = std::make_shared<Entitlements>(subscriptions, usage, "", std::vector<std::string>{}, service);
+  auto entitlements = std::make_shared<Entitlements>(subscriptions, clock, usage, Allowlists{}, std::vector<std::string>{}, service);
   auto failures = std::make_shared<ReadFailures>();
   struct ReportScope {
     explicit ReportScope(const std::shared_ptr<ReadFailures>& reports) { installWriteReporter(reports); }

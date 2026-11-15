@@ -86,8 +86,9 @@ another grant, is refused as a conflict. A store refund the feed reports closes 
 spent capacity is not recovered, and the refund's reversal reopens it unless that would overlap
 another grant. A feed-funded grant keeps the epoch and seq of the newest statement of its period it
 was brought to, and a refund or reversal no later than that in the same epoch changes nothing
-([subscriptions.md](../docs/foundation/subscriptions.md) §6.3). An owner
-accessing the allowance receives a $7 calendar-month grant when no subscription grant is current.
+([subscriptions.md](../docs/foundation/subscriptions.md) §6.3). An owner, or a sandbox tester only a
+sandbox subscription entitles (§6.2), accessing the allowance receives a $7 calendar-month grant
+when no subscription grant is current.
 An active subscription grant takes precedence over an owner grant; their remaining amounts are
 never combined. An expired subscription period does not prevent the owner's calendar fallback.
 Unused subscription capacity survives a calendar-month boundary and expires at its funded period

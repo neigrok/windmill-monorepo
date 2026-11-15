@@ -265,7 +265,7 @@ test('Ask AI reports a failed or lost request and an unreadable answer under one
 });
 
 const TWO_ROADMAPS = json({ trees: [{ id: 't_a', title: 'Learn to sail', updatedAt: 2 }, { id: 't_b', title: 'Bake bread', updatedAt: 1 }] });
-const TREE_B = json({ data: { id: 't_b', title: 'Bake bread', nodes: [{ id: 'n', label: 'Knead', prerequisites: [] }], kinds: [] }, visibility: 'private', mine: true });
+const TREE_B = json({ data: { id: 't_b', title: 'Bake bread', nodes: [{ id: 'n', label: 'Knead', prerequisites: [] }], kinds: [] }, root: 't_b', parent: null, path: [], depth: 0, visibility: 'private', mine: true });
 const exportAnswers = (treeA, progressB = json({ marks: [] })) => ({
   'GET /v1/me': json({ error: 'nope' }, 401),
   'GET /v1/trees': TWO_ROADMAPS,

@@ -2156,14 +2156,20 @@ name = "server"
 version = "0.0.0"
 dependencies = [
  "app_store",
+ "app_store_test_signer",
  "axum",
+ "base64 0.23.1",
  "domain",
  "futures-util",
  "hyper",
  "hyper-util",
+ "rcgen",
  "reqwest",
+ "ring",
  "sentry",
+ "serde",
  "serde_json",
+ "sqlx",
  "storage",
  "tokio",
  "tokio-util",
@@ -2171,6 +2177,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 
@@ -2471,6 +2478,7 @@ version = "0.0.0"
 dependencies = [
  "domain",
  "futures-util",
+ "serde_json",
  "sqlx",
  "tokio",
  "url",
@@ -2679,6 +2687,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

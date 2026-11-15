@@ -20,6 +20,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace wm;
@@ -39,7 +40,7 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, *clock, oauth, footprint, revocations, "https://windmill.works");
   std::shared_ptr<FakeTranscriber> transcriber = std::make_shared<FakeTranscriber>();
-  std::shared_ptr<FakeSubscriptionRepository> subs = std::make_shared<FakeSubscriptionRepository>();
+  std::shared_ptr<FakeEntitlementCopy> subs = std::make_shared<FakeEntitlementCopy>();
   FakeAiUsageRepository usage;
   FakeAiBudgetRepository allowances;
   AiBudgetLimits limits;
@@ -50,7 +51,7 @@ struct Harness {
 
   // `ledger` turns the durable USD allowances on, the mode Windmill One is funded in.
   explicit Harness(bool ledger = false)
-      : entitlements(std::make_shared<Entitlements>(*subs, usage, "", std::vector<std::string>{},
+      : entitlements(std::make_shared<Entitlements>(*subs, *clock, usage, Allowlists{}, std::vector<std::string>{},
                                                     ledger ? budgets : nullptr)),
         api(transcriber, entitlements, auth, clock) {}
 
@@ -196,21 +197,30 @@ TEST(voice_refuses_a_take_past_the_audio_cap_before_the_vendor_sees_it) {
   CHECK_EQ(h.transcriber->calls, 0);
 }
 
-TEST(voice_refuses_an_account_that_has_talked_its_day_away) {
+// Five maximum takes is 30 MB — the day's bytes exactly — and the sixth is refused with the moment the refill holds it:
+// a day's bytes refill over 86,400 s, so a sixth of them takes 17,280 s and half that holds a take half the size. Each
+// take is answered before the next is sent, so this is the ration and not the in-flight cap. The bucket refills on the
+// steady clock while the case runs, so each wait may come in up to a second short.
+TEST(voice_refuses_an_account_that_has_talked_its_day_away_and_says_when_a_take_fits_again) {
   Harness h;
   UserId me = h.signIn("s-live");
   h.subs->subscribe(me);
-
-  // Five maximum takes is 30 MB — the day's bytes exactly — and the sixth is refused. Each is answered before the next is sent, so this is the ration and not the in-flight cap.
   const std::string take(kMaxAudioBytes, 'a');
   for (int i = 0; i < 5; ++i)
     CHECK_EQ(send(h.api, post(take, "s-live"))->getStatusCode(), drogon::k200OK);
 
-  drogon::HttpResponsePtr response = send(h.api, post(take, "s-live"));
+  for (const auto& [bytes, waitMs] : {std::pair{kMaxAudioBytes, 17'280'000LL}, std::pair{kMaxAudioBytes / 2, 8'640'000LL}}) {
+    const auto response = send(h.api, post(std::string(bytes, 'a'), "s-live"));
 
-  CHECK_EQ(response->getStatusCode(), drogon::k429TooManyRequests);
-  CHECK_EQ((*response->getJsonObject())["error"].asString(),
-           std::string("talk has had its turn for today"));
+    CHECK_EQ(response->getStatusCode(), drogon::k429TooManyRequests);
+    Json::Value body = *response->getJsonObject();
+    const long long retryAtMs = body["retryAtMs"].asInt64();
+    body.removeMember("retryAtMs");
+    CHECK_EQ(dump(body), std::string{R"({"code":"voice_ration_spent","error":"talk has had its turn for now"})"});
+    CHECK(retryAtMs > static_cast<long long>(h.clock->now) + waitMs - 1'000);
+    CHECK(retryAtMs <= static_cast<long long>(h.clock->now) + waitMs);
+    CHECK_EQ(response->getHeader("Retry-After"), std::to_string(waitMs / 1000));
+  }
   CHECK_EQ(h.transcriber->calls, 5);
 }
 
@@ -382,7 +392,7 @@ TEST(voice_with_allowances_on_a_refused_take_gives_its_audio_back_to_the_day) {
   const auto spent = send(h.api, post(take, "s-live"));
 
   CHECK_EQ(spent->getStatusCode(), drogon::k429TooManyRequests);
-  CHECK_EQ(dump(*spent->getJsonObject()), std::string{R"({"error":"talk has had its turn for today"})"});
+  CHECK_EQ((*spent->getJsonObject())["code"].asString(), std::string{"voice_ration_spent"});
   CHECK_EQ(h.transcriber->calls, 11);
 }
 

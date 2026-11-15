@@ -120,6 +120,12 @@ services:
       # never to see the surfaces it ships) and the journal's 20-page corpus floor is waived for
       # them. Empty → nobody is an owner and every gate behaves exactly as it did before.
       WINDMILL_OWNER_EMAILS: ${WINDMILL_OWNER_EMAILS:-}
+      # Windmill One (docs/foundation/subscriptions.md §5.3, §6.2). The accounts whose sandbox purchases count, the
+      # team's testers and the App Review account, comma-separated; empty → a sandbox purchase entitles no one. The
+      # stores GET /v1/subscription offers a buy control for (app_store, play_store, paddle); empty → the paid line is
+      # closed on every store, and a name the server does not know stays closed and is reported at start.
+      WINDMILL_SANDBOX_EMAILS: ${WINDMILL_SANDBOX_EMAILS:-}
+      SUBSCRIPTIONS_PURCHASABLE_STORES: ${SUBSCRIPTIONS_PURCHASABLE_STORES:-}
       # Tending (server-side agent edits). Ships DARK: empty/absent → every run refuses with
       # "not turned on", the designed first face. Set to "true" to arm it once the agent loop lands.
       TENDING_ENABLED: ${TENDING_ENABLED:-}

@@ -122,9 +122,9 @@ struct Harness {
   FakePlanAgent agent;
   FakeClock clock;
   FakeTokens tokens;
-  FakeSubscriptionRepository subs;
+  FakeEntitlementCopy subs;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subs, usage};
+  Entitlements entitlements{subs, clock, usage};
 
   Harness() { plant("t", UserId{"u"}, Visibility::private_); }
 

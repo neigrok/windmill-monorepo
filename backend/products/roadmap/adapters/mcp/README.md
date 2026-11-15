@@ -183,7 +183,11 @@ from the products actually connected. **An empty scope is the account-wide grant
 Tending does not go through the composite: `TendingService` holds roadmap's host directly
 (`ScopedToolHost.h`). The two narrowings stack — `ScopedToolHost` pins a run to one tree, the
 composite pins a credential to its grant. A run is not offered `update_tree` either: it reads the
-tree's guide through `get_tree` and never sets it. Nor is it offered the tree a node opens: the
+tree's guide through `get_tree` and never sets it. Nor is it offered `create_subtree`, or `branches` on `delete_node`
+and `import_subgraph`: a step's subtree is removed by its owner, never by a run, which is refused one it names in those
+words with nothing deleted. Nor is it told where the tree sits among trees: its `get_tree` reply carries no `root`,
+`parent`, `path` or `depth` (see A step's subtree), which it drops from the reply as it drops the guides above. The
+`subtree` a step owns is the tended tree's own, and a run reads it. Nor is it offered the tree a node opens: the
 schemas it is handed carry no `opens` argument and no `opens` field, so a run neither reads nor sets
 a pointer, an import through it leaves the pointers the tree holds as they are, and a node it
 creates, or brings back from a delete, opens none. The `state` it reads is the owner's: a node
@@ -195,8 +199,9 @@ one is read; the two reads `TendingService` makes of the tree's `seq` send it `f
 `get_diagnostics` reply carries the graph's diagnostics and neither `treeLoops` nor
 `danglingPointers`, which name other trees: a run is not offered `includePointers`, every
 `get_diagnostics` it makes is sent with it `false`, and no pointer is followed. One
-table in `ScopedToolHost.cpp` names what a run is not offered: tools by name, and words wherever a
-schema carries them, each with the value it is sent as when the tool needs one. A withheld name a
+table in `ScopedToolHost.cpp` names what a run is not offered: tools by name, words wherever a
+schema carries them, each with the value it is sent as when the tool needs one, and the keys of a
+reply's `tree` that say where the tree sits, left out of what the run reads. A withheld name a
 run calls anyway is refused before any write is observed; a withheld argument or field is refused
 in its own sentence with nothing written. A tend starts only on a tree its caller can write.
 
@@ -212,12 +217,13 @@ The table uses product-local names; external MCP prefixes each with `roadmap_`.
 | | Tool | Effect |
 | --- | --- | --- |
 | registry | `create_tree` · `list_trees` · `delete_tree` | plant / discover / soft-delete a roadmap you own; `list_trees` lists your roots, a subtree counting in its parent as the step that owns it; `delete_tree` also deletes the steps of your other trees that open it, each tree's as `delete_node` with `prune: true` deletes nodes (`NodeEdits::deleteNodes`), and answers `{deleted, id, removed: [{treeId, nodeIds}]}` with what became of them per tree, in tree id order: `removed`, deleted and saved; `unsaved: [treeId]`, deleted in the tree's room and sent to its pages but not saved — gone now and kept gone by the save the server retries, back without your marks should it restart first; `incomplete: [treeId]`, nothing deleted, the steps kept pointing nowhere, to clear or delete by hand. The last two are present only when they name a tree. The answer's `branch: {subtrees, steps}` counts what the removal took — every standing subtree under the roadmap, and the steps of the roadmap and of each — counted once the removal passed its gates, so a refused call counts nothing, and left out when that read fails; a removal is final. When the steps that open it cannot be read, nothing is removed and the call is refused under `cascade-unavailable`, to try again (`SPEC.md`, `DELETE /v1/trees/{id}`); a subtree's id is refused under `not-a-root`, naming the step it hangs from: a subtree goes and comes back with that step; `create_tree` refuses a `title` past 200 characters (`title is 250 characters, 50 over the 200 cap`) and plants no tree; it plants the legend sent in `kinds` (1–6 of `import_subgraph`'s kind items, each id and hue once, replacing the default Build/Learn/Milestone whole and in order; `[]`, a repeated id or hue, or seven refuse the call and plant nothing) and answers `{treeId, url, kinds: [{id, hue, label}]}`, the legend planted; each `list_trees` row carries the tree's `url` too (see `url`); a node later written with neither `color` nor `kind` is terracotta, so a legend with no terracotta kind leaves such a node under no kind |
+| registry | `create_subtree` | give an existing step its subtree (see A step's subtree): `nodeId` names the step, and `kinds` the legend the subtree is born with, judged as `create_tree`'s; without it the subtree gets the default legend, since the server never copies the parent's. Answers `{created, subtree: {id, root, parent: {tree, step}, depth}, parentSeq}`, and sent again the subtree the step owns with `created: false`, writing nothing, completing `unchanged` and saying in `kindsError` that kinds it sent were not planted |
 | registry | `update_tree` | rename the tree with `title`, set its guide with `guide`, or both — at least one, each set only when sent; on a root both land as one frame at one seq or neither does (`TreeRegistry::describe`). A subtree's title is its owning step's label, written in its parent first and its guide after, in its own room, so a guide that fails leaves the label landed (see "A step that owns a subtree"). A title past 200 characters, counted as it was sent, is refused (`title is 250 characters, 50 over the 200 cap`) with nothing set; within the cap it follows `rename`'s rule (`TreeRegistry::titleFrom`: trimmed, a blank refused as "a tree always has a name"), and one equal to the name the tree has is not written and answers `unchanged: true` with the head; a tree that already holds a longer title keeps it and reads as it is; a guide is written whenever it is sent, even as the tree holds it, which is also how a fork's owner makes an inherited guide theirs; the guide is a plain-text note on what the tree is and how to work it, at most 5000 characters, and `""` or only whitespace clears it. Owner only; answers `{applied, seq}`, `seq` the head after the call, and leaves no op row; an open page receives the frame with the new title or guide |
-| read | `get_tree` | title + `url` (see `url`) + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + `guides` on the first page (see `guides`) + nodes (label, icon, color, `kind`, description, links, `opens`, `url`) + per-node prerequisites + seq; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
-| read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields, explicit `missingNodeIds`, seq and complete-result byte limit |
+| read | `get_tree` | title + `url` (see `url`) + where the tree sits, `root`, `parent`, `path` and `depth`, on every page (see A step's subtree) + `guide: {text, yours}` (the only read that carries it, on every page; `yours` is true when the caller owns the tree and wrote its current guide, false on a guide a fork copied from someone else's tree until its owner writes one) + `guides` on the first page (see `guides`) + nodes (label, icon, color, `kind`, description, links, `opens`, `subtree`, `url`) + per-node prerequisites + seq; its default fields are `id`, `label`, `color`, `prerequisites` and `subtree`; `includeEdges: true` adds every live edge as a flat `edges: [{from, to}]` |
+| read | `get_nodes` | 1–200 exact unique ids in requested order, selected fields (by default `id`, `label`, `color` and `prerequisites`), explicit `missingNodeIds`, seq and complete-result byte limit |
 | read | `get_diagnostics` | `cycles` / `dangling` / `selfEdges` / `maskedWork`, each list its first 50 in a stated order (cycles by the first node id of each; dangling and self-edges by `from`, then `to`; masked work by node id) with `cyclesOmitted` / `danglingOmitted` / `selfEdgesOmitted` / `maskedWorkOmitted` counting the rest, absent at none (`Listed`), and a cycle `{count, nodes}`, its member count and first ten members (`Cycle::counted`); smells, each one line with the `count` of nodes it covers and the first ten as `nodes` (one per kind some node has: `label-too-long`, `empty-icon`, `high-in-degree`; one `unclaimed-hue` line per hue no legend kind wears, with the `hue`; or one node-less `empty-legend` line for a tree whose legend holds no kind), so the list is bounded whatever the tree's size; the nodes of a smell past its first ten are found by `find_nodes` with `color` for an unclaimed hue, and by `get_tree` with `fields` `["id","icon"]`, `["id","label"]` or `["id","prerequisites"]` for the others, which `find_nodes` does not filter on; an `unclaimed-hue` line goes when its nodes take a kind's hue (an `update_nodes` row's `kind`) or a kind comes to wear the hue; on a tree the caller owns also `treeLoops` and `danglingPointers` (see `opens`) |
 | read | `get_progress` | the caller's completed node ids, and `outOfOrder` — the subset of completed whose mark carried `outOfOrder: true`, from an `update_nodes` row or an import's `progress` row; every list holds only nodes the tree holds (`Progress::restrictedTo`), so a mark on a node someone deleted stays stored, is not answered, and shows again when the node comes back; a tree that is absent and one the caller cannot read are refused alike, `no such tree "<id>"`, as `get_tree` refuses them |
-| read | `find_nodes` | search by `color`/`kind`, the derived `state`, and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
+| read | `find_nodes` | search by `color`/`kind`, the derived `state`, whether a step owns a subtree (`owns`), and/or a `query` substring (id + label + description), best match first — `{state: "available"}` is the frontier |
 | edit | `update_nodes` | the one tool that edits or marks nodes (`applyBatchEdit`): 1–200 rows, each `nodeId` and any of `label`, `color`/`kind`, `description` or `appendDescription`, `icon`, `links` or `addLinks`, `opens`, and the caller's mark (`status` with `outOfOrder`, read by `readMark`). `appendDescription` joins onto the existing body after a blank line, the cap held against the result; `addLinks` joins links after the ones held, in the order sent (a held url, whitespace around it aside, keeps its place and takes the label sent with it; a url sent twice is refused; the 32-link cap held against the result); `""` clears an `icon`, which is how an `empty-icon` smell is fixed, and an `opens`. The tree fields land as one op — `changedPart` per row, with `changedNodeIds`/`unchangedNodeIds` partitioning the rows that sent a tree field — each row judged against the node as the batch finds it. Marks land after it, as an import's `progress[]` does, answered in `progress` rows with `prerequisitesMet` judged against the overlay the whole call leaves; `outOfOrder: true` on a completion is kept on the mark and answered as `acknowledged: true`, and a mark the caller already holds answers `unchanged: true` on its row. `unchanged: true` beside the rows says the whole call changed nothing: no tree op landed and no row recorded a mark the caller did not hold, so it never sits beside a row that recorded one. A call of marks alone answers `treeId`, `seq`, `applied`, `dryRun` and its rows, and no key that speaks of the tree's fields: neither node list and no diagnostics. `applied` is false for a dry run, and for a call that landed no tree op and recorded no mark because each was refused. When a tree op lands in the call, marks that then fail answer `progressApplied: false` and are reported as `roadmap.update_nodes.marks`; when none does — no tree field sent, or only fields the nodes hold — the marks are the call, and their refusal or failure is the call's. On a tree the caller owns, a mark on a node that opens another tree of theirs is refused (see `opens`): its row answers `refused`, naming the node and no tree, and the receipt lists it in `progressRefused` with `progressError` and `progressApplied: false`; when the marks are the call and each was refused, nothing is written, the reply is no error and answers `applied: false`, and the call completes as `opens-a-tree`. A field is sent when it holds a value: a `null` `kind` or `outOfOrder` is left out, and a `null` in a field that takes none is refused. A mark is the caller's own overlay and needs the write grant on the connection and read access to the tree, so a call carrying only marks works on any tree the caller reads; a call carrying any tree field passes the owner's write gate whole, and on another account's tree is refused with no mark landed. A stale `expectedSeq` refuses the whole call, marks included; `dryRun` previews the tree batch and lands no mark, answering none, as an import's dry run answers none (it reports only `progressSkipped`, which update_nodes refuses instead) |
 | edit | `change_edges` | the one edge tool: 1–500 combined additions/removals, existing endpoints for additions, absent removals are no-ops, a dangling or self edge is removed by naming it in `remove`, optional `expectedSeq` and `dryRun`; a lone change logs as its own `AddEdge` or `RemoveEdge` row; a move — one edge removed and one added that keeps its source or its target, both landing — as the one `ReconnectEdge` that moves an edge (`planEdgeChanges`), which the Activity feed tells as a reroute; any other mix as one `Batch`; one seq, landing whole or not at all; a call that names no edge is told how to list the tree's edges |
 | edit | `create_node` | add a node — its hue as `color` or legend `kind`, `prerequisites[]`, `description`, `links`, `opens` all optional; answers `id` and the `kind` it wears. Each prerequisite is an edge: a create that would take the tree past 20000 edges is refused whole, in the sentence `change_edges` uses |
@@ -250,7 +256,8 @@ only what a call cannot be formed without, by four rules that `ToolErrorContract
   or two sentences. It carries no reply shape, refusal, limit or edge case. The exception is a fact
   a caller needs before its first call to avoid damage: what `import_subgraph` removes, that
   `delete_tree` cannot be undone, that `delete_node` clears the caller's marks and hides a subtree,
-  that `update_kind` repaints nodes, and that a mark on a node that opens a tree is not recorded.
+  that `update_kind` repaints nodes, that a mark on a node that opens a tree is not recorded, and that
+  `create_subtree` gives the subtree the parent's legend only when it is sent.
   One refusal is named too, because a first call runs into it: `create_node` and the `nodes` of
   `import_subgraph` say a new node names a `kind` or `color` when the legend has no terracotta kind.
 - **A parameter** is described only where its name, type and enum do not say what to send, in one
@@ -259,7 +266,7 @@ only what a call cannot be formed without, by four rules that `ToolErrorContract
   deprecated alias is `deprecated: true` and nothing else. No schema uses `$ref` or `$defs`, which
   not every client resolves, so a shared shape is written out in each tool.
   `mcp_the_catalog_stays_short_and_words_a_parameter_one_way` holds a tool's description to 260
-  bytes, a parameter's to 120, each parameter to one wording, and the 17 entries to 24000 bytes.
+  bytes, a parameter's to 120, each parameter to one wording, and the 18 entries to 24000 bytes.
 - **A bound** is published only where no refusal names it: the `default` of `limit`
   (`mcp_the_catalog_publishes_a_bound_only_where_no_refusal_names_it`). Every cap is the sentence
   of its refusal (The error contract), each pinned by a call past it in
@@ -470,17 +477,17 @@ A node may point at another tree: `opens` holds that tree's id.
   (below). On the others, absent leaves the pointer, `""` clears it and a value
   sets it. `null` is absent, save in an `update_nodes` row, which refuses it as it refuses a `null`
   label. `opens` alone is something to set.
-- **The target is checked at this door only.** Every non-empty `opens` in a call must be valid — a
-  root that stands and is the caller's (`SPEC.md`, Model, Legacy pointers) — judged on one read for
+- **The target is checked at this door only.** Which rule judges an `opens` depends on the step it is sent. A step that
+  owns a subtree, present or deleted, is judged by its register alone, whatever the `opens` names (A step that owns a
+  subtree, below), so such a pointer never refuses the rest of the call. Every other non-empty `opens` in a call must be
+  valid — a root that stands and is the caller's (`SPEC.md`, Model, Legacy pointers) — judged on one read for
   the whole call (`TreeRegistry::pointerTargets`), before the room is written and before a `dryRun`
   answers. Otherwise the whole call is refused naming the argument path and the id — `opens`,
   `updates[3].opens`, `nodes[2].opens`. A subtree of the caller's whose branch stands is refused as
   one, in words that say the step that owns it opens it and `list_trees` lists the roots a node may
   open, under the outcome `opens-a-subtree`. A tree that is not there, a deleted one, a hidden
   subtree and someone else's are refused in one sentence, so the refusal confirms no id, under the
-  outcome `opens-not-yours`. A step that owns a subtree, present or deleted, passes with its own
-  subtree's id before that read, an echo that lands nothing, so the call that revives it may carry it.
-  A node may open the tree it is in while that tree is a root. The read is made
+  outcome `opens-not-yours`. A node may open the tree it is in while that tree is a root. The read is made
   under the strand of the tree being written, not the target's, so the door refuses a pointer at a
   tree that does not stand *when it checks*: an edit racing that tree's removal can leave the step pointing at it after
   the removal has taken the steps that opened it. Such a step points nowhere: it reads as an ordinary
@@ -518,18 +525,20 @@ A node may point at another tree: `opens` holds that tree's id.
   recorded any mark, or landed a tree op, is `ok`. An import is `ok` when its graft landed, and
   `opens-a-tree` when the graft changed nothing (`unchanged: true`) and its `progress[]` recorded
   no mark and was refused at least one.
-- **Every other reader sees an ordinary node.** A reader who cannot write the tree, signed in or
-  not, is answered no `opens`, and the node's `state` follows their own mark and its prerequisites
-  as any node's does. Their mark on it is recorded and answered byte for byte as on a node that
-  opens nothing, with `prerequisitesMet` judged on their own marks. A node whose pointer is not
-  valid is ordinary for its owner too.
-- **A step that owns a subtree.** No door creates a subtree yet (`SPEC.md`, Model, Subtrees). A step
+- **Every other reader sees an ordinary node, but for a step that owns a subtree.** A reader who cannot write the tree,
+  signed in or not, is answered no `opens`, and a node whose pointer names a tree follows their own mark and its
+  prerequisites as any node's does. Their mark on it is recorded and answered byte for byte as on a node that opens
+  nothing, with `prerequisitesMet` judged on their own marks. A node whose pointer is not valid is ordinary for its owner
+  too. A step that owns a subtree is not ordinary for anyone (A step's subtree).
+- **A step that owns a subtree.** `create_subtree` gives a step one here, and `PUT /v1/trees/{tree}/steps/{step}/subtree`
+  on REST (see A step's subtree; `SPEC.md`, Model, Subtrees). A step
   that owns one opens it, whatever its `opens` holds, so for its owner it is answered and judged
   exactly as a node with a valid pointer: `opens` names the subtree, titled by the step's own label,
   `state`, the `state` filter and `list_trees`' `done` follow it, an empty subtree is unfinished, and
-  the step takes no mark. Its `opens` takes no write either (`SPEC.md`, Model, Legacy pointers): an
-  `opens` a call sends it that would change its register — a value the register does not hold, other
-  than the step's own subtree's id, `""` included — is refused for that step alone and the rest of the
+  the step takes no mark — from anyone (A step's subtree). Its `opens` takes no write either (`SPEC.md`, Model, Legacy
+  pointers): an `opens` a call sends it that would change its register — a value the register does not hold, other
+  than the step's own subtree's id, `""` included, whatever tree it names or whether it names one — is refused for that
+  step alone and the rest of the
   call applies: `create_node` on the step or reviving it, `update_nodes` and `import_subgraph`, a
   `dryRun` of either too. The receipt lists each such step in `opensRefused`, in the order the call
   sent them, and says in `opensError` that their `opens` was left as it was and that another roadmap is
@@ -557,10 +566,12 @@ A node may point at another tree: `opens` holds that tree's id.
   statement over `trees`, `tree_nodes` and the caller's `node_progress`, answering one row per
   tree and tree it opens), made only for a caller who can write the tree, when `fields` names
   `state` or `opens` or `find_nodes` filters on `state` or the call has a mark to judge
-  (`update_nodes`, an import's `progress[]`), and when the tree holds a pointer. `get_tree`,
+  (`update_nodes`, an import's `progress[]`), and when the tree holds a pointer; for anyone else the
+  owner's subtrees are followed in the same cases, and when `fields` names `subtree`, once a step owns
+  one (A step's subtree). `get_tree`,
   `get_nodes` and `find_nodes` take the tree from the room under its strand; `update_nodes` marks and
-  an import's `progress[]` take only the nodes that open a tree, which the room hands to a caller who
-  can write it and to nobody else (`TreeRoom::pointersFor`), so no mark copies the tree out. All
+  an import's `progress[]` take only the steps that follow a tree, which the room hands over as the
+  caller is judged (`TreeRoom::followedStepsFor`), so no mark copies the tree out. All
   five read and write the repositories after letting the strand go, so no other read of the tree
   waits on those statements. The import's clear of marks on removed nodes, `delete_node` and
   `delete_tree`'s deletion of the steps that open its tree read and write the caller's marks while
@@ -617,7 +628,7 @@ A node may point at another tree: `opens` holds that tree's id.
   (An edit that changes nothing), and one that changes the pointer is a change there and is
   followed here (`changedPart`, `pointersSetSince`).
 - **The receipt's follow is short.** The edit is applied before it, and the reply waits on that
-  read alone, so the read is given 750 ms of its own (`kReceiptFollowBudget`; a statement limit
+  read alone, so the read is given 750 ms of its own (`kReplyFollowBudget`; a statement limit
   for that one transaction, `TreeRepository::openedFrom`), not the pool's 5 s. Past it the receipt
   carries the graph's diagnostics and `pointerDiagnosticsUnavailable: true`, and the follow
   completes as `roadmap.receipt.follow`, door `mcp`, outcome `timeout`, at WARN: an expected
@@ -626,6 +637,68 @@ A node may point at another tree: `opens` holds that tree's id.
 - **A tend** is answered neither key and follows no pointer (`ScopedToolHost.cpp`).
 - `import_subgraph` takes the id as a string, where `get_tree` answers the object: a copied slice
   sends `opens.treeId`, and a node sent the object is refused in a sentence that says so.
+
+## A step's subtree
+
+A step can own a subtree: a tree of its own, owned by that step of its parent, with its root's owner and access, at
+most 8 levels below its root (`SPEC.md`, Model, Subtrees).
+
+- **Create.** `create_subtree {treeId, nodeId, kinds?}`, under the write grant, calls `TreeRegistry::createSubtree`
+  for the step `nodeId` of `treeId`, the operation REST's `PUT /v1/trees/{tree}/steps/{step}/subtree` calls too
+  (`SPEC.md`, HTTP surface); the two answer one shape, MCP's without the subtree's own `seq`. It takes no id for the subtree: the registry mints one. `kinds` is checked as
+  `create_tree`'s — `checkKinds` at the door, then `admitBornKinds` in the registry — and is the legend the subtree is
+  born with; without it the subtree gets the default legend. The server never copies the parent's legend, so the tool's
+  description tells the agent to send the parent's `kinds` to inherit it, and that a retry keeps the first legend. It
+  answers `{created, subtree: {id, root, parent: {tree, step}, depth}, parentSeq}`: `parentSeq` is the seq of the
+  parent's `subtree` event. Keyed by the step, a call sent again answers the subtree the step owns with `created: false`
+  and the parent's head, having written nothing, so a retry after a lost reply is safe; one that sent `kinds` adds
+  `kindsError`, which says the subtree keeps the legend it was created with. Each refusal is answered in words, with
+  nothing created and nothing told, under its code: `no-such-tree` in the absent-tree sentence, for a tree the caller may
+  not read as for one that is not there; `not-yours` and `nobodys-tree` for a tree they may read and do not own, in the words every write tool
+  answers them (`writeRefusalFor`); `step-gone` in the
+  sentence `update_nodes` gives a missing node; `depth-limit`; `step-opens-a-tree` for a step whose pointer is valid, to
+  be cleared first; `save-pending` while the parent's save is held, after which the same call creates; and
+  `kinds-refused` with the admission's sentence. The store creates under a root that stands alone: it holds the root's
+  row against its removal (`PgTreeRepository::createSubtree`), so a create racing `delete_tree` of the root waits for it
+  and is then refused `no-such-tree`. An argument the door cannot read (`nodeId` missing, `kinds` that is no list of
+  kinds) is refused before the registry is asked, and writes the call's `mcp.roadmap_create_subtree` line alone. Every
+  call that reaches the registry writes its `roadmap.subtree.create` line at door `mcp` beside the call's line, both under
+  one outcome: `ok` for a subtree created, `unchanged` at INFO for one the step already owned, and the refusal's code.
+- **Where a tree sits.** Every page of `get_tree` answers, in `tree`, `root`, `parent: {tree, step}` (`null` for a
+  root), `path: [{tree, step, title}]` — the trees above it, root first, each with the step the way passes through and
+  its name — and `depth`, to anyone who may read the tree: whoever may read a tree may read every tree above it. A
+  root's is its own room's; a subtree's is read through its parents once the strand is released, with its name
+  (`TreeRegistry::placeOf`), and a read that fails fails the call.
+- **The step's child.** A step that owns a standing subtree answers the node field `subtree: {id, done, total, state}`:
+  `done` of `total` the subtree's present steps complete for the owner, and `state` `complete` or `open`. It is in
+  `get_tree`'s default fields and a `fields` value of `get_nodes` and `find_nodes`, whose defaults leave it out, and
+  goes to anyone who may read the tree. `find_nodes {owns: true}` keeps the steps that own a subtree and `false` the
+  rest, applied after the ranked selection and before the page, as `state` is. An agent goes down by `subtree.id` and
+  back up by `parent`, with no scan of the account.
+- **One source for everyone.** The counts and the step's completion are the owner's, for the owner and for every reader
+  alike: a reader's `state` of the step, the `state` filter and the `prerequisitesMet` of their marks follow the owner's
+  completion of the subtree that `subtree` shows, whatever mark the reader holds, and the step takes no hand mark from
+  anyone — a reader's on `update_nodes` and on the socket is refused `opens-a-tree` as the owner's is there and on an
+  import's `progress[]`, which is the owner's door alone (`TreeRoom::followedStepsFor`, `ProgressService::mark`), in a
+  row that says the step shows its owner's progress. The reader's own marks on every other step are theirs.
+- **The follow, and when it is not made.** The writer's read follows the trees the tree's steps open itself, within
+  750 ms (`kReplyFollowBudget`) under `roadmap.tree.follow` at door `mcp`; every other reader is told off one follow of
+  the owner's subtrees within 750 ms (`OwnerProgress::followed`), which shares its cool-off with every door. A follow
+  is made only when a field or a filter asks for what it says. One that runs out of time (a WARN line) or fails (an
+  ERROR line and the request's one report) fails no read: the read answers as for an owner whose trees are unread —
+  `subtree` its id alone, no `opens`, and each step that follows a tree not complete — and adds
+  `openedTreesUnavailable: true`, which is otherwise absent.
+- **Edits keep the boundary.** No write makes a tree a step's child: an `opens` sent a step that owns no subtree names a
+  root of the caller's (`opens`, above), so one aimed at a subtree — a peer's, the one another step owns, or the one the
+  step is in — is refused `opens-a-subtree`, another account's tree `opens-not-yours`, whole and with nothing written,
+  broadcast or logged to the op log, a dry run's too. A pointer at a root of the caller's, a peer or the root above, is
+  the legacy pointer between roots, which opens that root and never owns it. A step that owns a subtree keeps it
+  whatever a call sends: any `opens` that would change its register, whatever it names, is refused for that step alone
+  (`opensRefused`, `owns-a-subtree`) with the rest of the call applied, an omitted one keeps it, a read sent back names
+  its own subtree, an echo, and a revive brings the subtree back with the step. Prerequisites stay on one canvas: an id
+  an import names that only another tree holds is a dangling edge of the tree imported into.
+- **A tend** is offered no `create_subtree` and no `branches`, and answered no `root`, `parent`, `path` or `depth`
+  (`ScopedToolHost.cpp`).
 
 ## `guides`
 

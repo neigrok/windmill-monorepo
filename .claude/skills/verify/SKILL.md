@@ -22,12 +22,20 @@ cd backend && set -a && . ./.env && set +a && WINDMILL_MCP_USER=<uuid> ./build/w
 cd web && npm run dev
 
 # 4. Subscription service, when the change touches it — its own database and role first
-#    (backend/RUNNING.md §2); it migrates the ledger before it listens
+#    (backend/RUNNING.md §2); it migrates the ledger before it listens. The test root lets its App
+#    Store door believe what app_store_test_signer signs; without it the door trusts Apple's root alone
 cd services/subscriptions && SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 \
   SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0.0.1:8083 SENTRY_ENVIRONMENT=local \
   SUBSCRIPTIONS_DATABASE_URL="postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions" \
+  SUBSCRIPTIONS_APP_STORE_TEST_ROOT=tests/fixtures/app_store/test-chain/root.cer \
   cargo run --bin subscriptions
 curl -s localhost:8083/health   # {"status":"ready"} while the ledger answers, 503 otherwise
+
+# 5. A notification as Apple posts it, from services/subscriptions/: 200, kept and applied
+#    (backend/RUNNING.md, "The subscription service", reads the inbox and events back)
+SIGNED=$(cargo run -q -p app_store_test_signer < tests/fixtures/app_store/test-payloads/started.json)
+curl -s -w '%{http_code}\n' localhost:8082/v1/stores/app-store/notifications \
+  -H 'content-type: application/json' -d "{\"signedPayload\":\"$SIGNED\"}"
 ```
 
 Env comes from `backend/.env` (gitignored; `.env.example` documents every variable). Do not paste
@@ -35,6 +43,9 @@ a multi-variable incantation onto the command line.
 
 - Stop the server **by port**: `lsof -ti tcp:<port> -sTCP:LISTEN | xargs kill`. Never `pkill -f windmill_server`
   — several agents share this machine and it takes all of their backends too.
+- Stop a test run you started **by the PID you started**, or by the full path of the binary in your own build
+  directory (`pgrep -f "$PWD/build-x/windmill_adapters_tests"`). Never by its name alone: other sessions run the same
+  suites, and `pgrep -f windmill_adapters_tests | xargs kill` kills their runs and the shells that hold them.
 - **Pin the two ports: backend 8088, vite 5173.** Outside a production build
   `web/src/shell/apiBase.js` falls back to `http://localhost:8088` (and
   `ws://localhost:8088/v1/socket`) unless `VITE_API_BASE_URL` is set, and the server's own origin

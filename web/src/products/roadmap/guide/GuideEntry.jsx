@@ -9,12 +9,12 @@ import { guideExcerpt, hasGuide } from './GuideDraft.js';
 import { useArrivalFade } from './useGuide.js';
 import './guide.css';
 
-export function GuideEntry({ guide, band, view }) {
+export function GuideEntry({ guide, band, view, door = 'row' }) {
   const [tooltip, setTooltip] = useState(false);
   const phone = band === 'phone';
   const written = hasGuide(guide.text);
   const above = guide.above.length;
-  const unknown = !phone && guide.aboveUnread;
+  const unknown = guide.aboveUnread;
   const reads = written || above > 0 || unknown;
   const title = reads ? (guide.owner ? GUIDE.title : GUIDE.authorsNote) : GUIDE.add;
   const firstLine = guideExcerpt(guide.text);
@@ -35,7 +35,7 @@ export function GuideEntry({ guide, band, view }) {
   }, [guide.arrival, phone]);
   const open = (event) => {
     const keyboard = event.detail === 0;
-    track('roadmap_guide', { step: 'open', door: 'row', view, role: guide.owner ? 'owner' : 'reader', above: guide.aboveUnread ? 'unread' : above > 0 ? 'some' : 'none' });
+    track('roadmap_guide', { step: 'open', door, view, role: guide.owner ? 'owner' : 'reader', above: guide.aboveUnread ? 'unread' : above > 0 ? 'some' : 'none' });
     if (reads) {
       guide.open(null, keyboard);
       return;
@@ -44,15 +44,30 @@ export function GuideEntry({ guide, band, view }) {
     flushSync(() => guide.open({ offset: 0 }, keyboard));
   };
 
+  if (door === 'sheet') {
+    const label = unknown ? t('roadmap.guide.parentUnknownLabel')
+      : above > 0 ? t('roadmap.guide.parentsLabel', { label: GUIDE.title, count: above }) : title;
+    const line = unknown ? t('roadmap.guide.unknownPhone')
+      : above > 0 ? t('roadmap.guide.parentsPhone', { count: above }) : title;
+    return (
+      <button ref={guide.entry} type="button" className="st-guide-sheet-entry" aria-label={label}
+        aria-haspopup="dialog" aria-expanded={Boolean(guide.opened)} onClick={open}>
+        <BookOpen size={20} strokeWidth={2} aria-hidden />
+        <span>{line}</span>
+        <ChevronRight size={20} strokeWidth={2} aria-hidden />
+      </button>
+    );
+  }
+
   if (phone) {
     return (
-      <button ref={guide.entry} type="button" className="st-guide-row" aria-label={name} aria-describedby={above > 0 ? aboveId : undefined}
+      <button ref={guide.entry} type="button" className="st-guide-row" aria-label={unknown ? t('roadmap.guide.parentUnknownLabel') : name} aria-describedby={!unknown && above > 0 ? aboveId : undefined}
         aria-haspopup="dialog" onClick={open}>
         <Glyph size={20} strokeWidth={1.67} aria-hidden />
         <span className="st-guide-row-text">
           <span className="st-guide-row-heading">
             <span className="st-guide-row-title">{title}</span>
-            {above > 0 && <span id={aboveId} className="st-guide-row-above">{t('roadmap.guide.aboveCount', { count: above })}</span>}
+            {!unknown && above > 0 && <span id={aboveId} className="st-guide-row-above">{t('roadmap.guide.aboveCount', { count: above })}</span>}
           </span>
           {written && <span ref={excerpt} className="st-guide-row-excerpt">{guide.text}</span>}
         </span>

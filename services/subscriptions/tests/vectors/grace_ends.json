@@ -118,7 +118,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-01T10:00:05Z"
+              "observedAt": "2027-01-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -153,7 +154,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-01T10:00:05Z"
+              "observedAt": "2027-01-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -278,7 +280,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-01T10:00:05Z"
+              "observedAt": "2027-01-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -313,7 +316,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-01T10:00:05Z"
+              "observedAt": "2027-01-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -432,7 +436,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-02-01T10:00:03Z"
+              "observedAt": "2027-02-01T10:00:03Z",
+              "leftWith": null
             }
           }
         ],
@@ -560,7 +565,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-02-01T10:00:03Z"
+              "observedAt": "2027-02-01T10:00:03Z",
+              "leftWith": null
             }
           }
         ],
@@ -706,7 +712,8 @@
               },
               "offerKind": null,
               "refundedAt": "2027-02-05T10:00:00Z",
-              "observedAt": "2027-02-05T10:00:00Z"
+              "observedAt": "2027-02-05T10:00:00Z",
+              "leftWith": null
             }
           }
         ],
@@ -727,7 +734,8 @@
               },
               "offerKind": null,
               "refundedAt": "2027-02-05T10:00:00Z",
-              "observedAt": "2027-02-05T10:00:00Z"
+              "observedAt": "2027-02-05T10:00:00Z",
+              "leftWith": null
             }
           },
           {
@@ -869,7 +877,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-02-15T10:00:04Z"
+              "observedAt": "2027-02-15T10:00:04Z",
+              "leftWith": null
             }
           }
         ],

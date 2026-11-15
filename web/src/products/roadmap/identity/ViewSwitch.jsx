@@ -32,7 +32,7 @@ const OPTIONS = [
   { view: 'tree', label: VIEW_SWITCH.graph },
 ];
 
-export function ViewSwitch({ view, onSwitch, phone = false, graphUnavailable = false, onGraphUnavailable }) {
+export function ViewSwitch({ view, onSwitch, phone = false, tooltip = true, graphUnavailable = false, onGraphUnavailable }) {
   return (
     <div className={`st-board-switch ${phone ? 'st-board-switch--phone' : 'st-board-switch--wide'}`} role="group" aria-label={VIEW_SWITCH.group}>
       {OPTIONS.map((option) => {
@@ -51,7 +51,7 @@ export function ViewSwitch({ view, onSwitch, phone = false, graphUnavailable = f
             {GLYPHS[option.view]}
           </button>
         );
-        return phone ? button : <Tooltip key={option.view} label={option.label} side="bottom">{button}</Tooltip>;
+        return phone || !tooltip ? button : <Tooltip key={option.view} label={option.label} side="bottom">{button}</Tooltip>;
       })}
     </div>
   );

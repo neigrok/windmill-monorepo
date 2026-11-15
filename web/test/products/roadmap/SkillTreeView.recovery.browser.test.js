@@ -302,6 +302,7 @@ for (const browserName of ['chromium', 'webkit']) {
   hostTest(`${browserName}: unavailable localStorage never establishes device ownership`, async () => {
     const { page, errors } = await openHost({ browserName, width: 744, surface: 'board', role: 'reader', auth: 'ghost', appUrl: true, loadFailure: true, storageRefused: true });
     try {
+      await page.waitForFunction(() => window.issues.some((issue) => issue.operation === 'roadmap-recovery-list'));
       assert.equal(await page.locator('.st-recovery-trigger').count(), 0);
       assert.deepEqual(await page.evaluate(() => window.issues.filter((issue) => issue.operation === 'roadmap-recovery-list')), [
         { operation: 'roadmap-recovery-list', stack: true, tags: { place: 'device', reason: 'index' } },

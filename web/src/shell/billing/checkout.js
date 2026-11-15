@@ -1,4 +1,4 @@
-// Billing's client half: read this account's subscription and open a checkout for it.
+// A Paddle checkout for this account. No surface opens one while `paidPlansOpen()` is false.
 
 import { API_BASE } from '../apiBase.js';
 
@@ -17,16 +17,6 @@ export function billingConfigured() {
 // While this is false no surface may offer a checkout; every buy control must read it first.
 export function paidPlansOpen() {
   return false;
-}
-
-export async function fetchSubscription() {
-  try {
-    const response = await fetch(`${API_BASE}/v1/subscription`, { credentials: 'include' });
-    if (!response.ok) return null;
-    return await response.json();
-  } catch {
-    return null;
-  }
 }
 
 async function startCheckout() {

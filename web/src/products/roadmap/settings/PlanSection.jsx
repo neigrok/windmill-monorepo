@@ -3,20 +3,28 @@
 import React from 'react';
 import { Button } from '../../../design-system';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
-import { beginUpgrade, billingConfigured, fetchSubscription } from '../../../shell/billing/checkout.js';
+import { beginUpgrade, billingConfigured } from '../../../shell/billing/checkout.js';
+import { fetchSubscription, holdsWindmillOne } from '../../../shell/billing/subscription.js';
 import { t } from '../i18n/settings/index.js';
 
 const PLAN_COPY = {
-  active: { name: t('roadmap.plan.windmillOne'), note: t('roadmap.plan.activeNote') },
-  trialing: { name: t('roadmap.plan.windmillOne'), note: t('roadmap.plan.trialingNote') },
-  past_due: { name: t('roadmap.plan.windmillOne'), note: t('roadmap.plan.pastDueNote') },
+  windmillOne: { name: t('roadmap.plan.windmillOne'), note: t('roadmap.plan.activeNote') },
   paused: { name: t('roadmap.plan.paused'), note: t('roadmap.plan.pausedNote') },
-  canceled: { name: t('roadmap.plan.free'), note: t('roadmap.plan.canceledNote') },
+  ended: { name: t('roadmap.plan.free'), note: t('roadmap.plan.canceledNote') },
   none: { name: t('roadmap.plan.free'), note: t('roadmap.plan.noneNote') },
 };
 
-const asDate = (iso) => {
-  const at = new Date(iso);
+// Windmill One while the subscription shown holds it, otherwise what that subscription became.
+function planOf(subscription) {
+  if (holdsWindmillOne(subscription)) return 'windmillOne';
+  const state = subscription?.governing?.state;
+  if (state === 'paused') return 'paused';
+  if (state === 'expired' || state === 'revoked') return 'ended';
+  return 'none';
+}
+
+const asDate = (ms) => {
+  const at = new Date(ms);
   if (Number.isNaN(at.getTime())) return '';
   return at.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 };
@@ -37,16 +45,18 @@ export function PlanSection() {
   const upgrade = async () => {
     setFailed(false);
     setOpening(true);
-    // The webhook lands a moment after the payment clears, so re-read rather than guess the state.
+    // The subscription reaches the backend's copy a moment after the payment clears, so re-read rather than guess.
     if (!(await beginUpgrade({ onCompleted: refresh }))) setFailed(true);
     setOpening(false);
   };
 
   if (!billingConfigured()) return null;
 
-  const status = subscription?.status ?? 'none';
-  const copy = PLAN_COPY[status] ?? PLAN_COPY.none;
-  const ending = subscription?.scheduledChangeAt ? asDate(subscription.scheduledChangeAt) : '';
+  const plan = planOf(subscription);
+  const copy = PLAN_COPY[plan];
+  const ending = plan === 'windmillOne' && subscription.governing?.autoRenew === false ? asDate(subscription.accessUntil) : '';
+  // This page buys through Paddle, and offers it only while the backend names it purchasable (INV-12).
+  const purchasable = Boolean(subscription?.purchasable.includes('paddle'));
 
   return (
     <Section title={t('roadmap.plan.title')}>
@@ -59,8 +69,8 @@ export function PlanSection() {
             </div>
           )}
         </div>
-        {!loading && subscription?.active && !ending && <span style={styles.tag}>{t('roadmap.plan.activeTag')}</span>}
-        {!loading && !subscription?.active && (
+        {!loading && plan === 'windmillOne' && !ending && <span style={styles.tag}>{t('roadmap.plan.activeTag')}</span>}
+        {!loading && purchasable && (
           <Button size="sm" onClick={upgrade} disabled={opening}>
             {opening ? t('roadmap.plan.opening') : t('roadmap.plan.upgrade')}
           </Button>

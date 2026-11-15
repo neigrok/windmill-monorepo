@@ -242,6 +242,9 @@ pub struct Period {
     pub offer_kind: Option<OfferKind>,
     pub refunded_at: Option<Instant>,
     pub observed_at: Instant,
+    // The account that paid for it, once a new purchase moved its subscription to another (R-11): its events stay
+    // with that account. None while it follows its subscription's binding.
+    pub left_with: Option<AccountId>,
 }
 
 closed_names! {

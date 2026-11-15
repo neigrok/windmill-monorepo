@@ -116,7 +116,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-01T10:00:05Z"
+              "observedAt": "2027-01-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -144,7 +145,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-01T10:00:05Z"
+              "observedAt": "2027-01-01T10:00:05Z",
+              "leftWith": null
             }
           }
         ],
@@ -211,7 +213,9 @@
       },
       "hint": "erased",
       "claim": {
-        "accountId": "account-cy",
+        "claimant": {
+          "live": "account-cy"
+        },
         "at": "2027-01-03T12:00:00Z"
       },
       "expect": {
@@ -270,7 +274,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-03T11:59:58Z"
+              "observedAt": "2027-01-03T11:59:58Z",
+              "leftWith": null
             }
           }
         ],
@@ -298,7 +303,8 @@
               },
               "offerKind": null,
               "refundedAt": null,
-              "observedAt": "2027-01-03T11:59:58Z"
+              "observedAt": "2027-01-03T11:59:58Z",
+              "leftWith": null
             }
           }
         ],

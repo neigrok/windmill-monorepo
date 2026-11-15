@@ -27,13 +27,16 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   refused `owns-a-subtree` only to a caller who can write the tree, since every other caller's write
   meets the write gate first, and the refusal names the step and nothing of its subtree. What a pointer comes to follows the same line: for
   a caller `canWrite` admits, a node that opens a tree of theirs is complete when that tree is, in
-  MCP `state`, the registry counts and the `opens` object of `GET` tree; for every other reader the
-  node is an ordinary one whose state follows their own mark, the `opens` key is absent, and the
-  opened trees are not read for that state; the writer's own read of them is made after the tree's
-  strand is released, so no other read of the tree waits on it. A progress mark follows the same
-  line: only a caller `canWrite` admits is refused a mark on a node that opens a tree of theirs,
-  and the opened trees are read only for that caller; every other reader's mark on that node is
-  recorded and answered byte for byte as on a node that opens nothing. The owner's overlay is the
+  MCP `state`, the registry counts and the `opens` object of `GET` tree; for every other reader a
+  node whose pointer names a tree is an ordinary one whose state follows their own mark, the `opens`
+  key is absent, and the opened trees are not read for that state; the writer's own read of them is
+  made after the tree's strand is released, so no other read of the tree waits on it. A progress mark
+  follows the same line: only a caller `canWrite` admits is refused a mark on a node that opens a tree
+  of theirs, and the opened trees are read only for that caller; every other reader's mark on that
+  node is recorded and answered byte for byte as on a node that opens nothing. A step that owns a
+  subtree is not such a node: its subtree is readable by whoever reads the tree, so every reader is
+  shown the owner's completion of it, in MCP `state` beside its `subtree` counts, and refused a mark
+  on it, off a follow of the owner's subtrees alone. The owner's overlay is the
   one thing such a reader is shown of a pointer: a step that opens a tree of the owner's reads
   `complete` while that tree is complete for the owner and has no row otherwise, whatever mark it
   holds, so a step that opens a tree that is not complete reads as a step nobody marked. That answer
@@ -94,9 +97,11 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   nobody's to write**: the seeded demo tree (`t_9e407a96b5330ebe`, `owner_id NULL`, `public`) is
   world-readable and editable by no one. Every write path runs `canRead` first, so a refusal never
   confirms that a private id names something; a readable tree the caller does not own answers `403`.
-  One door does not hold to it yet. A create under a client-minted id (`POST /v1/trees`, a fork's
+  Two doors do not hold to it yet. A create under a client-minted id (`POST /v1/trees`, a fork's
   requested id) answers `409` when that id is another account's tree, private or not, or a hidden
-  subtree's.
+  subtree's. `PUT /v1/trees/{tree}/steps/{step}/subtree` keeps a `proposedId` no row holds and
+  mints another for one any row holds, anyone's, so the id it answers tells the parent's owner
+  whether the proposed id was taken. Tree ids are random, so neither can be walked.
 - **Forks** require read access to the source and create new trees owned by the recipient — the root
   and its standing branch — and do not require write access to the source. A subtree is never forked
   alone.
@@ -104,10 +109,11 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   owner-gated. They gate on `canRead` alone, and each caller writes only their own per-user overlay
   (`node_progress` is keyed by `user_id`). Any signed-in reader may mark any tree they can read — the
   demo included — and nobody's marks are visible in anyone else's overlay. The `canRead` gate is
-  there so a mark cannot confirm which node ids a private tree holds. One mark is not recorded: the
+  there so a mark cannot confirm which node ids a private tree holds. Two marks are not recorded: the
   tree's writer's on a node that opens a tree of theirs, which is complete when that tree is
-  (`SPEC.md`, Model). A tend marks as the owner and is refused the same way, in a sentence that
-  names the node and no tree.
+  (`SPEC.md`, Model), and anyone's on a step that owns a subtree, which shows its owner's completion
+  of that subtree to every reader, as the step's `subtree` counts do. A tend marks as the owner and is
+  refused the same way, in a sentence that names the node and no tree.
 
 `owner_id` is written by exactly three statements, the `INSERT` in `create`, the `INSERT` in `fork`
 and the `INSERT` in `createSubtree` (`products/roadmap/adapters/postgres/PgTreeRepository.cpp`),
@@ -124,13 +130,22 @@ each parent room tells, as its writes land, which of its owning steps are presen
 hides its branch on every gate at once and its revive shows it again. A subtree's own `visibility`
 column is not read. So whoever may read a tree may read every standing subtree under it and every tree
 above it, which is why the `subtree` frame, the subscribe answer's `subtrees` and a node read's
-`subtree` go to a tree's readers with the subtrees' ids, and why a tree read answers its readers the
-`path` down from its root. A change only a root takes — a visibility change, a removal, a fork, a
+`subtree` — MCP's among them — go to a tree's readers with the subtrees' ids and the owner's counts,
+and why a tree read, MCP `get_tree`'s too, answers its readers the `path` down from its root. A tend
+is answered no `path`, `parent`, `root` or `depth`: `ScopedToolHost` drops them from its replies, as
+it withholds the guides above, and it is not offered `branches`: a step's subtree is removed by its
+owner, never by a tend. A step that owns a subtree shows every reader its owner's completion of it,
+and takes no mark from anyone. Creating a subtree is a write of the parent: MCP `create_subtree`
+first checks its arguments and judges its `kinds`, which answer the same for an absent id as for a
+tree the caller cannot read, so they say nothing of it; then it answers a tree the caller may not read
+as an absent one, `no-such-tree`, and one they may read and do not own `not-yours`, or `nobodys-tree`
+for a tree nobody owns, in the words every write tool answers, before it reads
+anything else of the tree. A tend is not offered it. A change only a root takes — a visibility change, a removal, a fork, a
 create at its id — aimed at a subtree is refused `not-a-root`, after the read gate, so it tells only
 someone who may read the subtree where it hangs; a hidden subtree answers it as an absent tree, but
-for the create-at-id door above, which answers it `409` (`POST /v1/trees`). A
-deletion of an owning step names its subtree (`branches`) or is refused `branch-unconfirmed` after the
-write gate. Pointers stay the writer's alone.
+for the two create-at-id doors above, which answer it `409` (`POST /v1/trees`) and a minted id in
+its place (a subtree's create). A deletion of an owning step names its subtree (`branches`) or is
+refused `branch-unconfirmed` after the write gate. Pointers stay the writer's alone.
 
 ## Per surface
 

@@ -10,7 +10,7 @@ import { useComposerViewport } from '../step/composerFocus.js';
 import { ACTIVITY, COMPACT_COUNT_THRESHOLD, LABELS, ROADMAP_SHEET, ROADMAP_VERBS, STEP_DETAIL, exactProgress, progressFigure, progressLabel, roadmapMatches, roadmapsHeading } from '../copy.js';
 import './identity.css';
 
-export function RoadmapSheet({ sheet, view, band, onAskAI, onShare, onExport, onSettings, onClose }) {
+export function RoadmapSheet({ sheet, view, band, guide = null, guideOpen = false, onAskAI, onShare, onExport, onSettings, onClose }) {
   const { current, listTrees } = sheet;
   const [loaded, setLoaded] = useState(null);
   const roadmapsId = useId();
@@ -102,7 +102,7 @@ export function RoadmapSheet({ sheet, view, band, onAskAI, onShare, onExport, on
 
   return (
     <Sheet host={document.body} variant="roadmap" className={sheetClass}
-      style={searchable && !activityPage ? viewport.style : undefined}
+      style={{ ...(searchable && !activityPage ? viewport.style : {}), opacity: guideOpen ? 0 : undefined }}
       title={activityPage ? ACTIVITY.heading : ROADMAP_SHEET.title} onClose={close}
       onPointerDownCapture={() => { consumedSwipe.current = false; }}
       onClickCapture={(event) => {
@@ -141,6 +141,7 @@ export function RoadmapSheet({ sheet, view, band, onAskAI, onShare, onExport, on
           {!matching && <>
             <h3 className="st-roadmap-sheet-name">{current.title}</h3>
             {current.total >= COMPACT_COUNT_THRESHOLD && <p className="st-roadmap-sheet-progress">{currentProgress}</p>}
+            {guide}
             {verbs.length > 0 && (
               <div className="st-roadmap-sheet-verbs">
                 {verbs.map(({ verb, label, Icon, callback }) => (

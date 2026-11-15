@@ -62,7 +62,8 @@ static int runMcp() {
   NodeEdits edits(registry, progress, bus, clock);
   TreeRegistry treeRegistry(trees, progressRepo, registryTokens, genesis, registry, edits, clock);
 
-  RoadmapTools tools(registry, progress, clock, treeRegistry, edits, appOriginFromEnvironment());
+  OwnerProgress owners(progressRepo, trees, clock);
+  RoadmapTools tools(registry, progress, owners, clock, treeRegistry, edits, appOriginFromEnvironment());
   const std::vector<ToolModule> modules{{tools, roadmapInstructions()}};
   CompositeToolHost surface(modules);
   McpServer server(surface, windmillServerInfo(surface), roadmapResources());

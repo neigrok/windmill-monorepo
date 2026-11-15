@@ -79,10 +79,18 @@ impl Listener {
         }
     }
 
-    pub fn router<R: Readiness>(self, config: &Config, readiness: R, bounds: Bounds) -> Router {
+    // Health and the doors this listener serves, such as the store doors on the public one.
+    pub fn router<R: Readiness>(
+        self,
+        config: &Config,
+        readiness: R,
+        doors: Router,
+        bounds: Bounds,
+    ) -> Router {
         let routes = Router::new()
             .route("/health", get(health::<R>))
-            .with_state(readiness);
+            .with_state(readiness)
+            .merge(doors);
         let routes = match self {
             Listener::Public => routes,
             Listener::Internal if config.panic_route_enabled => {
