@@ -7,6 +7,7 @@
 // Exit code 0 means every check passed. Results go to stdout, one line per check.
 
 import { chromium } from 'playwright';
+import { installReadOnlyGuard, installRoadmapObserver, settleVisuals, waitForConfirmed } from './roadmap-rig/browser-proof.mjs';
 
 const DEFAULT_PUBLIC_ROADMAP = 't_9e407a96b5330ebe';
 const BANDS = [
@@ -15,17 +16,10 @@ const BANDS = [
   { name: 'desktop', width: 1440, height: 900, phone: false },
 ];
 const WAIT_MS = 30000;
-const INTAKE = /\/v1\/events(\?|$)/;
-const SENTRY_HOSTS = /(^|\.)(sentry\.io|sentry\.invalid)$/;
-// Production's edge injects Cloudflare's script on a healthy page, so it counts as analytics and never as a failure.
-const CLOUDFLARE_HOST = /(^|\.)cloudflareinsights\.com$/;
-// The block itself: that script reports its emptied body as a failed integrity check.
-const BLOCKED_SCRIPT_COMPLAINT = /cloudflareinsights\.com/;
 // What a signed-out reader's page answers 4xx to by design. Anything else is a failure.
 const EXPECTED_REFUSALS = [
   { path: /^\/v1\/me$/, status: 401 },
 ];
-const WRITE_FRAMES = /"t":"(subgraph|progress)"/;
 const ROOT_LANDING_APP = '.rootBand';
 const ROADMAP_LANDING_APP = '.beats';
 // Every element but the canvas hides for the Graph's shot, so its pixels are what WebGL drew and no caption or chrome.
@@ -46,34 +40,15 @@ function argumentsOf(argv) {
   };
 }
 
-// For what the page can't wait on itself: true once `check` holds, false when the wait runs out.
-async function holdsWithin(page, check) {
-  const deadline = Date.now() + WAIT_MS;
-  while (Date.now() < deadline) {
-    if (await check()) return true;
-    await page.waitForTimeout(250);
-  }
-  return false;
-}
-
-function parsedJson(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
 // One fresh signed-out browser context, watching everything a reader's page should never do.
 class Visit {
   constructor({ browser, band, site, serviceWorkers }) {
     this.browser = browser;
     this.band = band;
-    this.site = site;
     this.serviceWorkers = serviceWorkers;
     this.problems = [];
-    this.blocked = { intake: 0, sentry: 0, analytics: 0 };
-    this.session = { sockets: 0, answered: false };
+    this.stage = 'navigation';
+    this.origins = [new URL(site.base).origin, new URL(site.api).origin];
   }
 
   async open() {
@@ -82,59 +57,34 @@ class Visit {
       viewport: { width, height }, isMobile: phone, hasTouch: phone, deviceScaleFactor: phone ? 3 : 1,
       reducedMotion: 'reduce', serviceWorkers: this.serviceWorkers,
     });
-    await this.context.route(
-      (url) => INTAKE.test(url.pathname) || SENTRY_HOSTS.test(url.hostname) || CLOUDFLARE_HOST.test(url.hostname),
-      (route) => this.onBlocked(route),
-    );
+    this.guard = await installReadOnlyGuard(this.context, { origins: this.origins });
+    this.blocked = this.guard.blocked;
+    await this.context.addInitScript(installRoadmapObserver, { origins: this.origins });
     this.page = await this.context.newPage();
     this.page.setDefaultTimeout(WAIT_MS);
-    this.page.on('pageerror', (error) => this.problems.push(`pageerror: ${error.message}`));
+    this.page.on('pageerror', () => this.problems.push('page-error'));
     this.page.on('console', (message) => this.onConsole(message));
     this.page.on('response', (response) => this.onResponse(response));
     this.page.on('requestfailed', (request) => this.onRequestFailed(request));
-    this.page.on('request', (request) => this.onRequest(request));
     this.page.on('websocket', (socket) => this.onSocket(socket));
     return this.page;
   }
 
-  onBlocked(route) {
-    const request = route.request();
-    const { hostname, pathname } = new URL(request.url());
-    if (INTAKE.test(pathname)) {
-      this.blocked.intake += 1;
-      const beacon = parsedJson(request.postData());
-      if (beacon?.events?.some((event) => event.name === 'client_error')) this.problems.push('a client_error beacon');
-      return route.fulfill({ status: 202, contentType: 'application/json', body: '{}' });
-    }
-    if (SENTRY_HOSTS.test(hostname)) {
-      this.blocked.sentry += 1;
-      const report = parsedJson(String(request.postData()).split('\n')[2]);
-      this.problems.push(`a Sentry report: ${report?.exception?.values?.[0]?.value ?? 'unreadable'}`);
-    } else {
-      this.blocked.analytics += 1;
-    }
-    return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
-  }
-
   onSocket(socket) {
-    this.session.sockets += 1;
     socket.on('framesent', ({ payload }) => {
-      if (WRITE_FRAMES.test(String(payload))) this.problems.push('wrote over the socket');
-    });
-    socket.on('framereceived', ({ payload }) => {
-      const frame = parsedJson(String(payload));
-      if (frame?.t === 'subgraph' && frame.intent === 'delta') this.session.answered = true;
+      let frame;
+      try { frame = JSON.parse(String(payload)); } catch { return; }
+      if (['subgraph', 'progress'].includes(frame?.t)) this.problems.push('wrote over the socket');
     });
   }
 
   // The reply to the session's subscribe: what takes a room from syncing to live.
-  async sessionAnswered() {
-    if (await holdsWithin(this.page, () => this.session.answered)) return;
-    throw new Error(this.session.sockets > 0 ? "the session's socket never got its reply" : 'the session never opened a socket');
+  async sessionAnswered(treeId) {
+    await this.page.evaluate((options) => window.__roadmapProof.waitForBaseline(options), { treeId, reach: 'reader', timeoutMs: WAIT_MS });
   }
 
   ours(url) {
-    return url.startsWith(this.site.base) || url.startsWith(this.site.api);
+    return this.origins.includes(new URL(url).origin);
   }
 
   expectedRefusal(url, status) {
@@ -146,32 +96,28 @@ class Visit {
     if (message.type() !== 'error') return;
     const { url } = message.location();
     if (url && this.ours(url) && this.expectedRefusal(url)) return;
-    if (BLOCKED_SCRIPT_COMPLAINT.test(message.text())) return;
-    this.problems.push(`console error: ${message.text().slice(0, 300)}`);
+    this.problems.push('console-error');
   }
 
   onResponse(response) {
     const url = response.url();
     if (!this.ours(url) || response.status() < 400 || this.expectedRefusal(url, response.status())) return;
-    this.problems.push(`${response.status()} ${response.request().method()} ${new URL(url).pathname}`);
+    this.problems.push(`http-response-${response.status()}`);
   }
 
   onRequestFailed(request) {
     const url = request.url();
     if (!this.ours(url) || request.failure()?.errorText === 'net::ERR_ABORTED') return;
-    this.problems.push(`request failed: ${request.method()} ${new URL(url).pathname} ${request.failure()?.errorText}`);
-  }
-
-  onRequest(request) {
-    const url = request.url();
-    if (!this.ours(url) || INTAKE.test(new URL(url).pathname) || ['GET', 'HEAD', 'OPTIONS'].includes(request.method())) return;
-    this.problems.push(`wrote: ${request.method()} ${new URL(url).pathname}`);
+    this.problems.push('http-request-failed');
   }
 
   // Leaving the page while the routes still stand, so the flush on page hide meets the block too.
   async close() {
     await this.page.goto('about:blank');
     await this.context.close();
+    if (this.guard.clientErrors) this.problems.push('a client_error beacon');
+    if (this.blocked.sentry) this.problems.push('a Sentry attempt');
+    if (this.guard.writes.length) this.problems.push('an HTTP mutation was blocked');
   }
 }
 
@@ -207,18 +153,21 @@ async function paintedShare(page) {
 
 async function graphPainted(page) {
   await page.locator('canvas.st-canvas').waitFor();
-  if (!(await holdsWithin(page, async () => await paintedShare(page) >= PAINTED_SHARE))) throw new Error('the Graph painted nothing');
+  await page.evaluate(settleVisuals);
+  await waitForConfirmed(() => paintedShare(page), (share) => share >= PAINTED_SHARE,
+    { timeoutMs: WAIT_MS, intervalMs: 250, label: 'painted-roadmap' });
 }
 
 async function appMounted(page, selector) {
   await page.locator(selector).first().waitFor({ state: 'attached' })
-    .catch(() => { throw new Error(`the app never mounted: no ${selector} over the no-JS body`); });
+    .catch(() => { throw new Error('the app never mounted over the no-JS body'); });
 }
 
 async function switchToBoard(page, role) {
   await page.locator('.st-roadmap-identity button[aria-label="Board"]').click();
   await identity(page, role, 'board').waitFor();
   await boardCards(page).first().waitFor();
+  await page.evaluate(settleVisuals);
 }
 
 async function openFirstStep(page) {
@@ -226,8 +175,9 @@ async function openFirstStep(page) {
   const title = (await card.locator('.st-board-card-title').innerText()).trim();
   await card.click();
   await stepDocument(page).waitFor();
+  await page.evaluate(settleVisuals);
   const shown = (await stepDocument(page).innerText()).trim();
-  if (!shown.includes(title)) throw new Error(`the step page does not name "${title}"`);
+  if (!shown.includes(title)) throw new Error('the step page does not name the selected step');
   if (!(await page.evaluate(() => window.location.hash)).includes('step=')) throw new Error('the open step is not in the address');
 }
 
@@ -257,72 +207,96 @@ async function reopenWithForward(page) {
 
 async function demoWalk(page, { band, site, visit }) {
   await page.goto(`${site.base}/#/demo`);
+  visit.stage = 'graph';
   await identity(page, 'demo', 'tree').waitFor();
   await page.locator('.st-roadmap-sample').waitFor();
   await graphPainted(page);
-  await visit.sessionAnswered();
+  visit.stage = 'subscription-baseline';
+  await visit.sessionAnswered(DEFAULT_PUBLIC_ROADMAP);
+  visit.stage = 'board';
   await switchToBoard(page, 'demo');
+  visit.stage = 'step';
   await openFirstStep(page);
+  visit.stage = 'history';
   await closeWithBack(page);
   await reopenWithForward(page);
   await closeWithBack(page);
+  visit.stage = 'fork-door';
   await openAndCloseFork(page, band);
 }
 
 async function publicRoadmapWalk(page, { site, visit }) {
   await page.goto(`${site.base}/t/${site.roadmap}`);
+  visit.stage = 'graph';
   await identity(page, 'reader', 'tree').waitFor();
   await graphPainted(page);
-  await visit.sessionAnswered();
+  visit.stage = 'subscription-baseline';
+  await visit.sessionAnswered(site.roadmap);
+  visit.stage = 'reader-board';
   await switchToBoard(page, 'reader');
   for (const control of ['button[aria-label="New step"]', '.st-board-swipe-complete']) {
     if (await page.locator(control).count()) throw new Error(`a reader's Board offers ${control}`);
   }
+  visit.stage = 'reader-step';
   await openFirstStep(page);
   for (const action of ['Complete', 'Edit step', 'Reset']) {
     if (await stepDocument(page).getByRole('button', { name: action, exact: true }).count()) throw new Error(`a reader's step offers ${action}`);
   }
+  visit.stage = 'history';
   await closeWithBack(page);
   await reopenWithForward(page);
   await closeWithBack(page);
 }
 
 async function stepLinkWalk(page, { site, visit }) {
+  visit.stage = 'public-tree-read';
   const reply = await page.request.get(`${site.api}/v1/trees/${site.roadmap}`);
   if (!reply.ok()) throw new Error(`the public roadmap answered ${reply.status()}`);
   const { data, visibility } = await reply.json();
-  if (visibility !== 'public') throw new Error(`the roadmap is ${visibility}, not public`);
+  if (visibility !== 'public') throw new Error('the roadmap is not public');
   const step = data.nodes[0];
+  visit.stage = 'step-link';
   await page.goto(`${site.base}/t/${site.roadmap}#?step=${encodeURIComponent(step.id)}`);
   await stepDocument(page).waitFor();
-  if (!(await stepDocument(page).innerText()).includes(step.label)) throw new Error(`the link did not land on "${step.label}"`);
-  await visit.sessionAnswered();
+  if (!(await stepDocument(page).innerText()).includes(step.label)) throw new Error('the link did not land on its step');
+  visit.stage = 'subscription-baseline';
+  await visit.sessionAnswered(site.roadmap);
+  visit.stage = 'step-settlement';
+  await page.evaluate(settleVisuals);
 }
 
 function landingWalk(path, app) {
-  return async (page, { site }) => {
+  return async (page, { site, visit }) => {
     await page.goto(`${site.base}${path}`);
+    visit.stage = 'landing-mount';
     await appMounted(page, app);
     await page.locator('h1').first().waitFor({ state: 'attached' });
+    await page.evaluate(settleVisuals);
   };
 }
 
 // Every other walk blocks the worker; this one lets it take the page and prime its shell, then comes back to a landing and a room through it.
 async function returningVisitWalk(page, { site, visit }) {
   await page.goto(`${site.base}/`);
+  visit.stage = 'landing-mount';
   await appMounted(page, ROOT_LANDING_APP);
+  visit.stage = 'service-worker-control';
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null)
     .catch(() => { throw new Error('the service worker never took the page'); });
   const primed = () => page.evaluate(async () => (await caches.keys()).some((name) => name.startsWith('windmill-generation-')));
-  if (!(await holdsWithin(page, primed))) throw new Error('the service worker never primed its offline shell');
+  visit.stage = 'service-worker-shell';
+  await waitForConfirmed(primed, (value) => value, { timeoutMs: WAIT_MS, intervalMs: 250, label: 'service-worker-shell' });
+  visit.stage = 'returning-landing';
   const landing = await page.goto(`${site.base}/`);
   if (!landing.fromServiceWorker()) throw new Error('the returning visit did not come through the service worker');
   if (!landing.ok()) throw new Error(`the service worker answered a returning visit with ${landing.status()}`);
   await appMounted(page, ROOT_LANDING_APP);
+  visit.stage = 'returning-roadmap';
   await page.goto(`${site.base}/t/${site.roadmap}`);
   await identity(page, 'reader', 'tree').waitFor();
   await graphPainted(page);
-  await visit.sessionAnswered();
+  visit.stage = 'subscription-baseline';
+  await visit.sessionAnswered(site.roadmap);
 }
 
 const WALKS = [
@@ -339,33 +313,39 @@ async function runWalk({ browser, band, site, walk, label, serviceWorkers = 'blo
   const started = Date.now();
   try {
     await walk(page, { band, site, visit });
-  } catch (error) {
-    visit.problems.push(error.message.split('\n')[0]);
+  } catch {
+    visit.problems.push(`walk-failed-at-${visit.stage}`);
   }
   await visit.close();
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
   const failed = visit.problems.length > 0;
   console.log(`${failed ? 'FAIL' : 'ok  '} ${String(band.width).padStart(4)} · ${label} (${seconds}s; blocked ${visit.blocked.intake} beacons, ${visit.blocked.sentry} Sentry, ${visit.blocked.analytics} analytics)`);
-  for (const problem of visit.problems) console.log(`       ${problem}`);
+  for (const problem of new Set(visit.problems)) console.log(`       ${problem} (${visit.problems.filter((value) => value === problem).length})`);
   return { blocked: visit.blocked, failed };
 }
 
 async function main() {
   const site = argumentsOf(process.argv);
-  console.log(`Smoke against ${site.base} with public roadmap ${site.roadmap}`);
+  console.log('Smoke roadmap checks');
   const browser = await chromium.launch({ headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const results = [];
-  for (const band of BANDS) {
-    for (const [label, walk] of WALKS) results.push(await runWalk({ browser, band, site, walk, label }));
+  try {
+    for (const band of BANDS) {
+      for (const [label, walk] of WALKS) results.push(await runWalk({ browser, band, site, walk, label }));
+    }
+    results.push(await runWalk({
+      browser, band: BANDS.at(-1), site, walk: returningVisitWalk, serviceWorkers: 'allow',
+      label: 'a returning visit through the service worker reaches the landing and a room',
+    }));
+  } finally {
+    await browser.close();
   }
-  results.push(await runWalk({
-    browser, band: BANDS.at(-1), site, walk: returningVisitWalk, serviceWorkers: 'allow',
-    label: 'a returning visit through the service worker reaches the landing and a room',
-  }));
-  await browser.close();
   const failures = results.filter((result) => result.failed).length;
   console.log(`${results.length - failures} of ${results.length} checks passed`);
   if (failures > 0) process.exitCode = 1;
 }
 
-await main();
+await main().catch(() => {
+  console.error('FAIL smoke-infrastructure');
+  process.exitCode = 1;
+});

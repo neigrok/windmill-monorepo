@@ -31,6 +31,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { evalJson, installRoadmapObserver, settleVisuals, waitForConfirmed } from './browser-proof.mjs';
 
 const args = {};
 for (let i = 2; i < process.argv.length; i += 1) {
@@ -53,6 +54,8 @@ const reducedMotion = !!args['reduced-motion'];
 const chromePath = args.chrome ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const debugPort = Number(args.port ?? 9222);
 const layoutName = args.layout ?? null;
+const theme = args.theme ?? null;
+if (theme !== null && !['light', 'dark'].includes(theme)) { console.error('--theme must be light or dark'); process.exit(2); }
 const focusVerb = !!args.focus;
 const focusSelector = args['focus-selector'] ?? (focusVerb ? '.st-view-action' : null);
 const focusText = args['focus-text'] ?? (focusVerb ? 'Focus' : null);
@@ -121,14 +124,6 @@ class Cdp {
     });
   }
   close() { this.ws.close(); }
-}
-
-// Everything the page returns comes back as a JSON string (returnByValue chokes on DOM objects).
-async function evalJson(cdp, expression) {
-  const r = await cdp.send('Runtime.evaluate', { expression: `(() => { try { return JSON.stringify((${expression})()); } catch (e) { return JSON.stringify({ __error: String(e && e.stack || e) }); } })()`, returnByValue: true, awaitPromise: true });
-  if (r.exceptionDetails) throw new Error(`page threw: ${r.exceptionDetails.text} ${JSON.stringify(r.exceptionDetails.exception?.description ?? '')}`);
-  const v = r.result.value;
-  return v === undefined ? undefined : JSON.parse(v);
 }
 
 // ---- page-side helpers (injected once) --------------------------------------------------------
@@ -378,8 +373,7 @@ async function fitTap(cdp, nodeId, dx) {
 }
 
 async function shot(cdp, name) {
-  // Two animation frames so the GPU canvas has painted the camera we just set.
-  await evalJson(cdp, `() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))`);
+  await evalJson(cdp, settleVisuals.toString());
   const png = await cdp.send('Page.captureScreenshot', { format: 'png', fromSurface: true });
   fs.writeFileSync(path.join(outDir, `${name}.png`), Buffer.from(png.data, 'base64'));
   const m = await evalJson(cdp, MEASURE);
@@ -409,22 +403,27 @@ try {
   if (reducedMotion) await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   await cdp.send('Network.setCookie', { name: 'wm_session', value: cookie, domain: 'localhost', path: '/' });
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `(${installRoadmapObserver.toString()})(${JSON.stringify({ origins: [origin] })});
+      if (/^https?:$/.test(location.protocol) && self === top) {
+        localStorage.setItem('windmill:view:last', JSON.stringify({ ${JSON.stringify(treeId)}: 'tree' }));
+        localStorage.removeItem('windmill:last-place');
+        if (${JSON.stringify(theme)} !== null) localStorage.setItem('windmill:appearance', ${JSON.stringify(theme)});
+      }`,
+  });
 
-  // Load the app route once (a real document load from about:blank), write the per-tree view
-  // preference so the phone opens the canvas rather than the owner's default Board, clear any saved
-  // camera, then reload so the route decides with those prefs in place. The profile is fresh, so
-  // there is no saved place to begin with; the removeItem is belt and braces.
   const appUrl = `${origin}/${layoutName ? `?layout=${encodeURIComponent(layoutName)}` : ''}#/app/${treeId}`;
   const firstLoad = cdp.waitFor('Page.loadEventFired');
   await cdp.send('Page.navigate', { url: appUrl });
   await firstLoad;
-  await cdp.send('Runtime.evaluate', { expression: `localStorage.setItem('windmill:view:last', JSON.stringify({ ${JSON.stringify(treeId)}: 'tree' })); localStorage.removeItem('windmill:last-place');`, returnByValue: true });
-  const secondLoad = cdp.waitFor('Page.loadEventFired');
-  await cdp.send('Page.reload', { ignoreCache: false });
-  await secondLoad;
-  await sleep(300);
   const hashNow = await evalJson(cdp, `() => location.href`);
   if (!hashNow.includes(`#/app/${treeId}`)) throw new Error(`page is at ${hashNow}, not the app route`);
+  await waitForConfirmed(
+    () => evalJson(cdp, `() => ({ theme: document.documentElement.dataset.theme ?? 'light', view: document.querySelector('.st-roadmap-identity')?.dataset.view })`),
+    (state) => state.view === 'tree' && (theme === null || state.theme === theme),
+    { timeoutMs: 20000, label: 'requested-roadmap-view' },
+  );
+  measures.baseline = await evalJson(cdp, `() => window.__roadmapProof.waitForBaseline(${JSON.stringify({ treeId, timeoutMs: 20000 })})`);
   await installHelpers(cdp);
   const settle = await waitForScene(cdp, 'overview');
   fs.writeFileSync(path.join(outDir, 'settle.json'), JSON.stringify(settle, null, 2));

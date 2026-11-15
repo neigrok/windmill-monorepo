@@ -214,6 +214,10 @@ is first opened rather than editing rows and restarting.
 Use the [roadmap capture rig](../../../web/scripts/roadmap-rig/APPARATUS.md) for authenticated
 desktop/phone screenshots, selection checks and caption measurements. It waits for explicit scene
 settlement; the canvas's continuous animation loop makes page-idle checks unsuitable.
+Use its [shared browser proof contract](../../../web/scripts/roadmap-rig/APPARATUS.md#shared-browser-proof)
+for visible-font/finite-animation settlement, current-subscribe baselines, live HTTP read-only
+guards and bounded confirmation polls. Socket write observation detects transmission; it does
+not prevent it. Confirm the requested theme/view before settling pixels.
 
 The rig uses SwiftShader and cannot establish hardware frame rate. Use a hardware-backed browser
 for timing and native interactions. Check the reduced-motion preference before judging animation.

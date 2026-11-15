@@ -44,8 +44,10 @@ node --experimental-websocket capture.mjs --origin http://localhost:5175 \
 ```
 
 Each run creates a fresh Chrome profile, supplies the session, sets device dimensions and opens
-the app in tree view. It waits for a populated canvas, no active ceremony/settle/glide and a
-stable camera before capturing.
+the app in tree view. It confirms the requested view and optional theme, waits for the real
+subscription baseline, then waits for a populated canvas, no active ceremony/settle/glide and a
+camera stable for 600 ms. Each shot also loads visible text's computed fonts, waits for finite
+animations and awaits two animation frames.
 
 | Option | Effect |
 |---|---|
@@ -53,6 +55,7 @@ stable camera before capturing.
 | `--phone` | 390×844 at DPR 3 with mobile and touch emulation. |
 | `--select <nodeId>` | Node used for focus and selection checks; default `skilltree-scene`. |
 | `--layout <name>` | Uses the normal layout query parameter. |
+| `--theme light\|dark` | Sets and confirms the requested appearance; omitted leaves the app's default. |
 | `--focus` | Captures Focus and All steps states as well as initial and selected views. |
 | `--caption-mode fixed` | Measures the current captions at their fixed CSS-pixel size. |
 | `--reduced-motion` | Enables the reduced-motion preference. |
@@ -63,6 +66,46 @@ Each view produces a PNG and JSON measurements. `measures.json` includes camera,
 visibility/collisions, node sizes, bounds, selection and hit-floor outcomes. `settle.json` records
 the wait; `console.json` records browser messages; `error.txt` records a tree-load failure.
 Captions count only when computed display, visibility and opacity make them visible.
+
+## Shared browser proof
+
+`browser-proof.mjs` is import-safe and shared by capture and the production smoke. Browser launch,
+accounts, SQL/REST readers, artifacts and Graph camera internals belong to each caller.
+
+- `settleVisuals({ timeoutMs })` is a self-contained browser callback for `page.evaluate`, or
+  `evalJson(cdp, settleVisuals.toString())` over raw CDP. It loads visible text with its computed
+  font style, weight, size and family and its actual glyphs, awaits `document.fonts.ready`, finite
+  animations and two animation frames. Infinite animation loops do not block it. The default
+  deadline is 10 seconds. Callers first assert the requested theme/view; visual settlement does
+  not establish navigation or the Graph's camera settlement.
+- Install `installRoadmapObserver({ origins })` before navigation with `context.addInitScript` or
+  CDP's `Page.addScriptToEvaluateOnNewDocument`. It ignores non-HTTP documents and child frames,
+  preserves real WebSockets, and observes only `/v1/session` on the exact supplied origins.
+  `window.__roadmapProof.waitForBaseline({ treeId, reach, timeoutMs })` accepts a `subgraph` with
+  `intent: delta` replying to the current subscribe on an open socket. Live frames, unrelated
+  trees and superseded subscriptions cannot satisfy it. Replies to repeated same-tree subscribes
+  are associated in send order, since the wire has no subscription request id. Evidence retains
+  tree/reach/generation and write kinds, never node content. Socket writes are observed **after
+  transmission**; this observer does not prevent them.
+- `installReadOnlyGuard(context, { origins, sentryHosts })` installs context HTTP routing before
+  navigation. Exact first-party origins identify `/v1/events` (202), same-origin `/cdn-cgi/rum`
+  (200) and other HTTP mutations (recorded and aborted before transmission). Sentry hosts,
+  including optional exact local fixture hostnames, and Cloudflare telemetry receive 200 without
+  transmission. Analytics script GETs continue with their original bytes and integrity checks.
+  The result exposes counts, a `clientErrors` count and mutation categories, without bodies or
+  URLs. Keep pageerror/console listeners: the guard does not waive application failures. The
+  capture command uses an authenticated local fixture and does not install this live-read guard.
+  The smoke reports bounded failure categories, stages and counts rather than raw page errors,
+  console messages, request URLs or roadmap text.
+- `waitForConfirmed(read, predicate, { timeoutMs, intervalMs, label })` polls an authoritative
+  caller-owned reader and returns the matched value. Defaults are 10 seconds and 50 ms. Labels
+  are static lower-case operation names such as `saved-record`; errors never include the last
+  value or a reader's raw exception. The overall deadline includes a pending read, but cannot
+  cancel that I/O: callers also bound SQL commands and network requests.
+
+The local fixture gate is `node --test --test-timeout=180000
+web/test/scripts/roadmap-rig/browser-proof.test.mjs` from the repository root. It uses Chromium
+and local fixture ports 5317/8317; reserve those ports for this test process.
 
 ## Stop and interpret
 
@@ -77,3 +120,10 @@ Captures use SwiftShader. Geometry and DOM measurements remain useful, but pixel
 from hardware rendering and these runs cannot establish GPU frame rate or interactive latency.
 Use a hardware-backed browser for timing. A node_modules symlink into another checkout can also
 put fonts outside Vite's allowed filesystem root; install dependencies in the worktree itself.
+
+Capture geometry still has legacy assumptions: the default caption mode is scaled, the reported
+focus minimum is 0.6, disc measurements omit renderer size floors, and the session cookie is
+scoped to localhost. Use `--caption-mode fixed` for current captions and a localhost fixture.
+Treat derived disc sizes and focus descriptions as provisional; this work does not verify the
+whole geometry apparatus. Their correction is tracked by
+[align-capture-geometry in the dogfood tree](https://windmill.works/#/app/t_9362d9bc883e0a1e?step=align-capture-geometry).
