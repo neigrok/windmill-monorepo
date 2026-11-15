@@ -44,7 +44,7 @@ server lines, the demo tree and the starter quests' content are data and stay as
 | Band | Width | Board | Graph chrome |
 |---|---|---|---|
 | Phone | below 744px | One column at a time behind tabs in a bottom band | Direct node activation; camera under the row |
-| Tablet | 744–1023px | One side column folds to a rail | Tablet panel; camera pill at the bottom right |
+| Tablet | 744–1023px | One side column folds to a rail | Shared step document; retained naming/tools panel; camera pill at the bottom right |
 | Desktop | 1024px and up | Three columns | Step document and selection bar; camera pill |
 
 | Role | Who | Can |
@@ -259,8 +259,8 @@ which steps own one. A subtree the load did not read stands unread until the roo
 pointer, which only a room the server answers as the tree's writer does: what a reader is told of a subtree waits on the
 owner's trees being followed, so a reader's room waits for its next load. Such a step completes with its subtree, takes
 no hand mark and wears the tree's marks on every surface the pointer's opening does, with the subtree's own words where
-the board draws them: Open subtree for Open tree, and on the step page and modal, where Complete sat, how far it is
-(*No steps yet*, *1 of 1 done*) beside Open subtree. A reader gets that band too. The step page has no Tree section for
+the board draws them: Open subtree for Open tree, and in the shared step document's pinned actions, how far it is
+(*No steps yet*, *1 of 1 done*) beside Open subtree. A reader gets those actions too. The document has no Tree section for
 it: its pointer takes no write, so nothing is attached, changed or detached there.
 
 The doors lead into a subtree for anyone who reads the roadmap, holder or not (`useTreeVisit` with `visitor`: a room that
