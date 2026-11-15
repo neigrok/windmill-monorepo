@@ -119,11 +119,29 @@ test('only an owner\'s own marks enter the ledger; a demo\'s marks stay off the 
     const { acts, calls } = roomFixture(t, { overrides });
     acts.reset('wind');
     assert.deepEqual(calls.filter(([kind]) => kind === 'ledger'), []);
-    assert.equal(calls.filter(([kind]) => kind === 'write').length, overrides.demo ? 0 : 1);
+    assert.deepEqual(calls.filter(([kind]) => kind === 'write'), []);
   }
   const reader = roomFixture(t, { mine: false });
   reader.acts.reset('wind');
   assert.deepEqual(reader.calls.filter(([kind]) => kind === 'ledger'), []);
+  assert.deepEqual(reader.calls.filter(([kind]) => kind === 'write'), []);
+});
+
+test('demotion rejects new marks and a retained completion Undo without writes or events', (t) => {
+  const { acts, calls } = roomFixture(t);
+  const before = acts.snapshot;
+  acts.complete('wind', { at: 100 });
+  const undo = calls.find(([kind]) => kind === 'toast')[2].action.run;
+  const completed = acts.snapshot;
+  acts.update({ ...acts.collaborators, demotion: { code: 'not-yours' } });
+  calls.length = 0;
+  undo();
+  acts.restore('wind', before);
+  acts.reset('wind');
+  acts.complete('dock');
+  acts.markDone(new Set(['dock']));
+  assert.equal(acts.snapshot, completed);
+  assert.deepEqual(calls, []);
 });
 
 test('a remote mark adopts the owner\'s lane and says what moved; anyone else keeps what they are shown', (t) => {
@@ -206,4 +224,42 @@ test('with no ledger yet, a roadmap that read nothing of its trees starts none f
   acts.complete('maya', { quiet: true });
 
   assert.deepEqual(calls.filter(([kind]) => kind === 'ledger'), []);
+});
+
+test('a progress rebaseline refuses Complete, Reset, bulk marks and retained Undo before changing state or reporting success', (t) => {
+  const { acts, calls } = roomFixture(t);
+  const before = acts.snapshot;
+  acts.complete('wind', { at: 100 });
+  const undo = calls.find(([kind]) => kind === 'toast')[2].action.run;
+  const completed = acts.snapshot;
+  acts.collaborators.sessionRef.current.rebaselining = new Set(['progress']);
+  calls.length = 0;
+
+  assert.equal(acts.progressBlocked, true);
+  assert.equal(acts.complete('dock'), false);
+  assert.equal(acts.reset('wind'), false);
+  assert.equal(acts.restore('wind', before), false);
+  acts.markDone(new Set(['dock']));
+  undo();
+  assert.equal(acts.snapshot, completed);
+  assert.deepEqual(calls, []);
+
+  acts.collaborators.sessionRef.current.rebaselining = null;
+  assert.equal(acts.progressBlocked, false);
+  assert.deepEqual(acts.restore('wind', before).completed, new Set());
+  assert.deepEqual(calls, [['write', 'wind', 'none'], ['ledger', 'sail', []]]);
+});
+
+test('a structure-only rebaseline accepts completion and its Undo into the separate progress lane', (t) => {
+  const { acts, calls } = roomFixture(t);
+  acts.collaborators.sessionRef.current.rebaselining = new Set(['structure']);
+  const before = acts.snapshot;
+  assert.equal(acts.progressBlocked, false);
+  assert.deepEqual(acts.complete('wind', { quiet: true, at: 100 }), { completed: new Set(['wind']), completedAt: { wind: 100 } });
+  assert.deepEqual(acts.restore('wind', before).completed, new Set());
+  assert.deepEqual(calls, [
+    ['write', 'wind', 'complete'], ['ledger', 'sail', ['wind']],
+    ['emit', 'completed', 'wind'], ['emit', 'unlocked', 'dock'],
+    ['write', 'wind', 'none'], ['ledger', 'sail', []],
+  ]);
 });

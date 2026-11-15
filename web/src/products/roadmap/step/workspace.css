@@ -332,10 +332,10 @@
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
-.st-board-step-page .st-board-workspace-missing > div {
+.st-step-read-shell.is-phone .st-board-workspace-missing > div {
   flex-direction: column;
 }
-.st-board-step-page .st-board-workspace-missing button {
+.st-step-read-shell.is-phone .st-board-workspace-missing button {
   width: 100%;
 }
 .st-board-note-editor--phone {
@@ -407,9 +407,6 @@
 .st-board-workspace-task:focus-within > .st-board-workspace-remove {
   opacity: 1;
   pointer-events: auto;
-}
-.st-board-step-page .st-board-workspace-history > .st-board-workspace-history-title {
-  font: 700 18px/24px var(--font-display);
 }
 .st-board-workspace-text,
 .st-board-workspace-missing .st-board-step-action {

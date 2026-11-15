@@ -74,7 +74,7 @@ async function open(width, space = initial, history = []) {
   await page.goto(`${origin}/workspace-test`);
   await page.waitForFunction(() => window.entryReady);
   await page.evaluate(({ space, history }) => window.openWorkspace(space, history), { space, history });
-  await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+  await page.locator('.st-step-section-links').getByRole('button', { name: /workspace/i }).click();
   return page;
 }
 
@@ -240,7 +240,7 @@ test('empty and partial workspaces only offer missing types; History groups use 
   try {
     assert.equal(await page.getByText('Add something for this step.').count(), 1);
     assert.deepEqual(await page.locator('.st-board-workspace-missing button').allTextContents(), ['Add subtask', 'Add note', 'Add link']);
-    await page.getByRole('tab', { name: 'History', exact: true }).click();
+    await page.locator('.st-step-section-links').getByRole('button', { name: /history/i }).click();
     assert.deepEqual(await page.locator('.st-board-workspace-day').allTextContents(), ['Today', 'Yesterday']);
     assert.deepEqual(await page.locator('.st-board-workspace-event time').allTextContents(), ['1h', '1d']);
     assert.deepEqual(await page.locator('.st-board-workspace-event .st-event-obj').evaluateAll((labels) => labels.map((label) => ({
@@ -301,15 +301,15 @@ test('note formatting and link sheet edit only the draft, with Escape confined t
   } finally { await page.close(); }
 });
 
-test('phone Add note saves to the pinned Edit note opener and empty History is explicit', async () => {
+test('phone Add note saves to its workspace Edit note opener and empty History is explicit', async () => {
   const page = await open(390, { subtasks: [], note: '', links: [] });
   try {
-    await page.locator('.st-board-step-page-pinned').getByRole('button', { name: 'Add note', exact: true }).click();
+    await page.locator('.st-board-workspace-missing').getByRole('button', { name: 'Add note', exact: true }).click();
     await page.getByRole('textbox', { name: 'Note', exact: true }).fill('First note');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await page.clock.runFor(20);
-    await page.waitForFunction(() => document.activeElement?.textContent === 'Edit note' && Boolean(document.activeElement.closest('.st-board-step-page-pinned')));
-    await page.getByRole('tab', { name: 'History', exact: true }).click();
+    await page.waitForFunction(() => document.activeElement?.textContent === 'Edit' && Boolean(document.activeElement.closest('.st-board-workspace-note-heading')));
+    await page.locator('.st-step-section-links').getByRole('button', { name: /history/i }).click();
     assert.equal(await page.locator('.st-board-workspace-empty-history').textContent(), 'No changes yet');
   } finally { await page.close(); }
 });
@@ -439,8 +439,8 @@ test('Enter in a nested formatted link splits its source without exposing or dup
 test('phone History heading uses the display token', async () => {
   const page = await open(390);
   try {
-    await page.getByRole('tab', { name: 'History', exact: true }).click();
-    const heading = page.locator('.st-board-workspace-history-title');
+    await page.locator('.st-step-section-links').getByRole('button', { name: /history/i }).click();
+    const heading = page.locator('.st-step-history-section > h3');
     assert.equal(await heading.evaluate((element) => {
       const sample = document.createElement('span');
       sample.style.fontFamily = 'var(--font-display)';

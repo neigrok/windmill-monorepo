@@ -84,7 +84,7 @@ for (const width of [320, 390]) {
         await roadmap.getByRole('button', { name: ROADMAP_VERBS.activity, exact: true }).click();
         await activity.locator('button.st-event').first().click();
         await activity.waitFor({ state: 'detached' });
-        await page.locator('.st-board-step-layer [role="dialog"]').waitFor();
+        await page.locator('.st-board-step-layer article').waitFor();
         assert.equal(await page.locator('.st-roadmap-identity').getAttribute('data-view'), surface);
         assert.equal(await page.locator('.st-board-step-layer').evaluate((element) => element.contains(document.activeElement)), true);
         assert.deepEqual(errors, []);
@@ -120,11 +120,11 @@ for (const surface of ['board', 'tree']) {
       const row = panel.locator('button.st-event').filter({ hasText: 'Choose a course' }).first();
       await row.click();
       await panel.waitFor({ state: 'detached' });
-      const step = page.locator('.st-board-step-layer [role="dialog"]');
+      const step = page.locator('.st-board-step-layer article');
       await step.waitFor();
       assert.equal(await step.evaluate((element) => document.getElementById(element.getAttribute('aria-labelledby')).textContent), 'Choose a course');
       assert.equal(await page.locator('.st-roadmap-identity').getAttribute('data-view'), surface);
-      await page.waitForFunction(() => document.querySelector('.st-board-step-layer [role="dialog"]')?.contains(document.activeElement));
+      await page.waitForFunction(() => document.querySelector('.st-board-step-layer article')?.contains(document.activeElement));
       assert.equal(await step.evaluate((element) => element.contains(document.activeElement)), true);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }

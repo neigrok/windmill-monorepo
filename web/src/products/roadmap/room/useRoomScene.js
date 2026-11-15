@@ -4,8 +4,10 @@ import { GraphUnavailable, SkillTreeScene } from '../scene/SkillTreeScene.js';
 import { track } from '../../../telemetry/beacon.js';
 
 // The canvas's scene, constructed once per set of write handlers; only the desktop editor's scene takes gestures that write.
-export function useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint, onPickNothing, showToast }) {
+export function useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint, onPickNothing, onNodeActivate, showToast }) {
   const { canvasRef, rootRef } = anchors;
+  const activationRef = useRef(onNodeActivate);
+  activationRef.current = onNodeActivate;
   const unavailableRef = useRef(false);
   const [graphAvailability, setGraphAvailability] = useState('pending');
   const [scene, setScene] = useState(null);
@@ -41,6 +43,7 @@ export function useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, 
           if (selectedIdsRef.current.size > 0 || selectedEdgesRef.current.size > 0) setSelectedId(null);
           else onPickNothing();
         },
+        onNodeActivate: (id) => activationRef.current?.(id),
         onNodeHover: setHoveredId,
         onCeremonyToast: (message, options) => showToast(message, { ...options, surface: 'graph' }),
         ...writes,

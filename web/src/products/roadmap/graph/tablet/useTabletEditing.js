@@ -12,7 +12,7 @@ export function activeSurface({ multiMode, aim, removing, selectedNode }) {
 }
 
 // The tablet owner's Graph: tap to connect, tap a link to remove it, hold to select several; each write offers its own Undo.
-export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selectedNode, projectionRef, selection, editing }) {
+export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selectedNode, projectionRef, selection, editing, onActivate }) {
   const { multiMode, selectedIdRef, setSelectedId, enterMulti, toggleMember } = selection;
   const { announce, handleRename, handleCreateChild, handleConnect, handleDeleteEdge, handleSetKind } = editing;
   const [aim, setAim] = useState(null); // { sourceId, direction: 'unlocks'|'needs' } | null
@@ -42,6 +42,7 @@ export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selecte
 
   const addStepUnder = useCallback((parentId) => {
     const added = handleCreateChild(parentId);
+    if (!added) return;
     announce(added, 'add', GRAPH_TOAST.stepAdded, () => {
       if (selectedIdRef.current === added.id) setSelectedId(null);
     });
@@ -74,13 +75,13 @@ export function useTabletEditing({ tabletEditor, scene, tree, nodesById, selecte
         announce(written, 'link_add', GRAPH_TOAST.linked);
         return;
       }
-      if (nodeId) { setRemoving(null); setSelectedId(nodeId); return; }
+      if (nodeId) { setRemoving(null); setSelectedId(nodeId); onActivate?.(nodeId); return; }
       const edge = scene.pickEdge(x, y);
       if (edge) { setAim(null); setSelectedId(null); setRemoving({ from: edge.from, to: edge.to }); return; }
       setSelectedId(null);
     });
     return () => scene.setEditTap(null);
-  }, [scene, tabletEditor, multiMode, aim, tree, nodesById, handleConnect, announce, setSelectedId, toggleMember]);
+  }, [scene, tabletEditor, multiMode, aim, tree, nodesById, handleConnect, announce, setSelectedId, toggleMember, onActivate]);
 
   useEffect(() => {
     if (!scene) return undefined;

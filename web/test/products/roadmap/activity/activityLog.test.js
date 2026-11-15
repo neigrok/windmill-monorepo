@@ -26,6 +26,7 @@ test('a seeded completion carries the stamp the completion was recorded at', () 
     ['b', NOW - 26 * HOUR],
     ['c', NOW - 2 * HOUR],
   ]);
+  assert.deepEqual(log.events.map((event) => event.actor), [null, null, null]);
 });
 
 test('a completion we hold no stamp for is undated, and sorts oldest in dependency order', () => {

@@ -15,7 +15,7 @@ function openSheet(page) {
 }
 
 for (const width of phones) {
-  hostTest(`§2.5 Reader Fork: the Graph's pill, the bar and the Board's offer at ${width}px`, async () => {
+  hostTest(`§2.5 Reader Fork: the Graph's pill before and after selection and the Board's offer at ${width}px`, async () => {
     const { page, errors } = await openHost({ width, role: 'reader' });
     try {
       const fork = page.getByRole('button', { name: FORK_OFFER, exact: true });
@@ -23,7 +23,7 @@ for (const width of phones) {
       await page.getByRole('heading', { name: 'Make it yours', exact: true }).waitFor();
       await page.keyboard.press('Escape');
       await page.evaluate(() => window.scene.select('wind'));
-      await page.locator('[data-graph-step-primary]').click();
+      await fork.click();
       await page.getByRole('heading', { name: 'Make it yours', exact: true }).waitFor();
       await page.keyboard.press('Escape');
       await page.locator('.st-roadmap-identity').getByRole('button', { name: 'Board', exact: true }).click();

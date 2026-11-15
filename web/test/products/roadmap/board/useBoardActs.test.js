@@ -1017,3 +1017,18 @@ test('an Undo whose receipt is spent says nothing, and one that throws reports',
   thrown.c.toast.action.run();
   assert.deepEqual(thrown.calls.slice(3), [['quiet'], ['report', 'roadmap-tree-attach']]);
 });
+
+test('a refused completion produces no Board success toast or event', () => {
+  const { acts, c, calls } = fixture({ completeStep: () => false });
+  assert.equal(acts.complete('wind', 'key'), false);
+  assert.equal(c.toast, undefined);
+  assert.deepEqual(calls, []);
+});
+
+test('a refused retained completion Undo reveals nothing and reports no success', () => {
+  const { acts, c, calls } = fixture({ restoreStep: () => false });
+  assert.equal(acts.complete('wind', 'key'), true);
+  calls.length = 0;
+  c.toast.action.run();
+  assert.deepEqual(calls, [['quiet']]);
+});

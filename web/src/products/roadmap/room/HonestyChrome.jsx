@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Button } from '../../../design-system';
 import { prefersReducedMotion } from '../theme.js';
 import { t } from '../i18n/index.js';
@@ -35,10 +35,11 @@ export function StatusChip({ children }) {
 }
 
 export function VisitorNotice({ edits = 0, author = null, onFork, onDismiss, onSignIn }) {
+  const card = useRef(null);
   // Capture + stopPropagation: Esc dismisses this card only, never a node or dialog underneath.
   useEffect(() => {
     const onKey = (event) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || card.current?.closest('[inert]')) return;
       event.stopPropagation();
       onDismiss?.();
     };
@@ -48,6 +49,7 @@ export function VisitorNotice({ edits = 0, author = null, onFork, onDismiss, onS
 
   return (
     <div
+      ref={card}
       role="status"
       style={{
         position: 'absolute',

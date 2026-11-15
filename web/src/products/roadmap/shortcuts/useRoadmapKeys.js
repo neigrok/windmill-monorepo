@@ -8,6 +8,7 @@ const modified = (event) => event.metaKey || event.ctrlKey;
 
 // `room` is the room as it stands: what covers it, what it holds and what it can do.
 export function handleRoomKey(event, room) {
+  if (event.defaultPrevented) return;
   if (room.canTend) {
     if (event.key === 'Escape' && room.tendOpen) {
       event.preventDefault();
@@ -27,6 +28,10 @@ export function handleRoomKey(event, room) {
   if (room.covered()) return;
 
   const typing = isTyping(document.activeElement);
+  if (event.key === 'Enter' && !typing && !event.shiftKey && !event.altKey && !modified(event) && room.activateStep?.(event)) {
+    event.preventDefault();
+    return;
+  }
   const boardAction = boardKey(event, { typing });
   if (boardAction === 'activity') {
     if (!room.activityEnabled) return;

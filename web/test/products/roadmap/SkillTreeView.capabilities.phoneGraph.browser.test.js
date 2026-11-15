@@ -14,26 +14,22 @@ function identityView(page) {
 }
 
 for (const width of phones) {
-  hostTest(`§2.5 Phone Graph: open a step's details (owner): the bar's Open step at ${width}px`, async () => {
+  hostTest(`§2.5 Phone Graph: open a step's details (owner): direct activation at ${width}px`, async () => {
     const { page, errors } = await openHost({ width });
     try {
-      await page.evaluate(() => window.scene.select('wind'));
-      await page.getByRole('button', { name: OPEN_STEP, exact: true }).click();
-      await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
+      await page.evaluate(() => window.scene.activate('wind'));
+      await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
       assert.equal(await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).count(), 1);
       assert.equal(await identityView(page), 'tree');
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });
 
-  hostTest(`§2.5 Phone Graph: open a step's details (G8-H1): the bar's title opens a reader's read-only page, Fork stays primary, at ${width}px`, async () => {
+  hostTest(`§2.5 Phone Graph: open a step's details (G8-H1): activation opens a reader's document, at ${width}px`, async () => {
     const { page, errors } = await openHost({ width, role: 'reader' });
     try {
-      await page.evaluate(() => window.scene.select('wind'));
-      const bar = page.locator('[data-graph-step-bar]');
-      assert.equal(await bar.locator('[data-graph-step-primary]').textContent(), FORK_OFFER);
-      await bar.getByRole('button', { name: 'Read the wind', exact: true }).click();
-      await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
+      await page.evaluate(() => window.scene.activate('wind'));
+      await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
       assert.equal(await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).count(), 0);
       assert.equal(await page.getByRole('button', { name: STEP_DETAIL.complete, exact: true }).count(), 0);
       assert.equal(await identityView(page), 'tree');
@@ -45,29 +41,25 @@ for (const width of phones) {
     const { page, errors } = await openHost({ width });
     try {
       assert.deepEqual(await page.evaluate(() => [window.longPress, window.editTap]), [null, null]);
-      await page.evaluate(() => window.scene.select('dock'));
-      await page.getByRole('button', { name: OPEN_STEP, exact: true }).click();
+      await page.evaluate(() => window.scene.activate('dock'));
       await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
       await page.locator('.st-board-draft-needs').click();
       await page.getByRole('checkbox', { name: /^Read the wind/ }).click();
       await page.getByRole('checkbox', { name: /^Choose a course/ }).click();
       await page.getByRole('button', { name: PICKER.apply, exact: true }).click();
       await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
-      await page.getByRole('dialog', { name: 'Leave the dock', exact: true }).waitFor();
+      await page.getByRole('article', { name: 'Leave the dock', exact: true }).waitFor();
       assert.deepEqual(await page.evaluate(() => window.session.lattice.toTreeData().nodes.find(({ id }) => id === 'dock').prerequisites), ['course']);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });
 
-  hostTest(`§2.5 Phone Graph: demo mark any step done (G8-M5): the bar offers Fork and the read-only page no mark at ${width}px`, async () => {
+  hostTest(`§2.5 Phone Graph: demo mark any step done (G8-M5): the read-only document offers no mark at ${width}px`, async () => {
     const { page, errors } = await openHost({ width, role: 'reader', demo: true, coached: true });
     try {
-      await page.evaluate(() => window.scene.select('wind'));
-      const bar = page.locator('[data-graph-step-bar]');
-      assert.equal(await bar.locator('[data-graph-step-primary]').textContent(), FORK_OFFER);
+      await page.evaluate(() => window.scene.activate('wind'));
       assert.equal(await page.locator('.st-sheet, .st-step-panel').count(), 0);
-      await bar.getByRole('button', { name: 'Read the wind', exact: true }).click();
-      await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
+      await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
       assert.equal(await page.getByRole('button', { name: STEP_DETAIL.complete, exact: true }).count(), 0);
       assert.equal(await page.getByRole('button', { name: 'Mark done', exact: true }).count(), 0);
       assert.deepEqual(errors, []);
@@ -111,21 +103,14 @@ for (const width of phones) {
     } finally { await page.close(); }
   });
 
-  hostTest(`§2.5 Phone Graph: inside the Shell the coach card seats clear of the selected-step bar at ${width}px`, async () => {
+  hostTest(`Phone Graph: direct activation hides the demo coach with its origin at ${width}px`, async () => {
     const { page, errors } = await openHost({ width, height: 844, role: 'reader', demo: true, coached: true, shell: true });
     try {
       await page.getByRole('button', { name: DEMO_COPY.coachButton, exact: true }).waitFor({ timeout: 8000 });
-      await page.evaluate((x) => {
-        window.scene.projectToScreen = () => ({ x, y: 560 });
-        window.scene.select('wind');
-      }, width / 2);
-      const bar = page.locator('[data-graph-step-bar]');
-      await bar.waitFor();
-      await page.evaluate(() => window.dispatchEvent(new Event('resize')));
-      await page.waitForFunction(() => document.querySelector('.wm-coach-card').getBoundingClientRect().bottom
-        <= document.querySelector('[data-graph-step-bar]').getBoundingClientRect().top);
-      await bar.getByRole('button', { name: 'Read the wind', exact: true }).click({ timeout: 2000 });
-      await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
+      await page.evaluate(() => window.scene.activate('wind'));
+      await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
+      assert.equal(await page.locator('.wm-coach-card').isVisible(), false);
+      assert.equal(await page.locator('[data-graph-step-bar]').count(), 0);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
   });

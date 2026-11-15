@@ -179,19 +179,19 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | A state's action | `roadmap_board_state_action` | `state: error`, `action: retry` |
 | A state's action | `roadmap_board_state_action` | `state: empty`, `action: newStep` |
 | A state's action | `roadmap_board_state_action` | `state: complete`, `action: share/newStep` |
-| Go into another tree of the holder's. Down into the tree a step opens: the card's pill, the swipe's Open, the toast a C raises, the step page or modal, the Graph's dock, the tablet panel or the phone Graph's bar. Up into a tree above: its name over its guide in the guide's note. `place` is where the room's holder acts: `account` on a tree the server keeps, `device` on one that lives only on this device, signed in or not, as for every `place` below | `roadmap_tree_open` | `door: pill/swipe/toast/step/dock/panel/bar/guide`, `view: board/graph`, `band: phone/tablet/desktop`, `place: device/account` |
+| Go into another tree of the holder's. Down into the tree a step opens: the card's pill, the swipe's Open, the toast a C raises, the shared step document or a Graph naming panel. Up into a tree above: its name over its guide in the guide's note. `place` is where the room's holder acts: `account` on a tree the server keeps, `device` on one that lives only on this device, signed in or not, as for every `place` below | `roadmap_tree_open` | `door: pill/swipe/toast/step/dock/panel/bar/guide`, `view: board/graph`, `band: phone/tablet/desktop`, `place: device/account` |
 | Come back to the roadmap a tree was gone into from, by the Back chip or the browser's Back, once per going in. A return after going Forward into the tree again is an ordinary visit: no `roadmap_tree_back`, the view opens by its usual door, and a step open on that entry is counted as reached by a link | `roadmap_tree_back` | `band: phone/tablet/desktop`, `place: device/account` |
-| Go into the subtree a step owns, by the same surfaces a tree is gone into by but the guide's names: the card's pill, the swipe's Open, the toast a C raises, the step page or modal, the Graph's dock, the tablet panel or the phone Graph's bar. Its owner and anyone who reads the roadmap, on a share's address too; `role` says which | `roadmap_subtree_open` | `door: pill/swipe/toast/step/dock/panel/bar`, `view: board/graph`, `band: phone/tablet/desktop`, `role: owner/reader` |
+| Go into the subtree a step owns, by the same surfaces a tree is gone into by but the guide's names: the card's pill, the swipe's Open, the toast a C raises, the shared nonmodal step document or the Graph's remaining tree controls. Its owner and anyone who reads the roadmap, on a share's address too; `role` says which | `roadmap_subtree_open` | `door: pill/swipe/toast/step/dock/panel/bar`, `view: board/graph`, `band: phone/tablet/desktop`, `role: owner/reader` |
 | Come back up from a subtree to the roadmap its owning step stands in, once per going in: by the Back chip or the browser's Back where the person came down that step, or by the chip from a subtree reached any other way, which opens the owning step there | `roadmap_subtree_back` | `band: phone/tablet/desktop`, `role: owner/reader` |
 | Open the tree picker from a step's Tree section: the + on a step that opens no tree, or Change tree under the section's ⋯. Fork tree pressed on a roadmap the person can only read | `roadmap_tree_attach` | `step: open/fork`, `band: phone/tablet/desktop`, `view: board/graph`, `place: device/account` |
 | A roadmap address in Find a tree came to one of the person's own roadmaps, one they can only read, or none they can read: once for each roadmap the field named while the picker stood open. Only this app's `/t/<id>` and `/#/app/<id>` addresses and a bare tree id are addresses, read when pasted or once the field has been still for 300 ms. On a tree that lives only on this device, an address of a tree of this device's is `own` and any other `unreadable`, with no request made | `roadmap_tree_attach` | `step: paste`, `outcome: own/readable/unreadable`, `band: phone/tablet/desktop`, `view: board/graph`, `place: device/account` |
 | A tree attached to a step that opened none, changed for another, or detached, and whether a hand's mark on the step was set aside or returned. `refused` when the session took no write, and `failed` when the write threw; either keeps the picker's choice and says *Couldn’t change the tree. Try again.* A step that already opens the tree chosen, as when a peer set it meanwhile, emits nothing | `roadmap_tree_attach` | `step: attach/change/detach`, `mark: kept/none`, `outcome?: refused/failed`, `band: phone/tablet/desktop`, `view: board/graph`, `place: device/account` |
 | Undo on the toast of an attach, a change or a detach. ⌘Z and ⇧⌘Z after one are `roadmap_board_undo` (`undoKey`, `redoKey`), not this | `roadmap_tree_attach` | `step: undo`, `band: phone/tablet/desktop`, `view: board/graph`, `place: device/account` |
 | Try again on the tree picker's line for a list that could not be read, or for an address whose read failed | `roadmap_tree_attach` | `step: retry`, `read: list/paste`, `band: phone/tablet/desktop`, `view: board/graph`, `place: device/account` |
-| Open a step | `roadmap_board_step_open` | `surface: modal/page`, `column: locked/upNext/done`, `door: card/graph/activity/step/link` |
-| Step page or modal action | `roadmap_board_step_action` | `surface: modal/page`, `action: complete/completeFromSubtasks/reset/undo/openInGraph/viewBranch/delete/edit/editNote/select` |
-| Step section | `roadmap_board_step_action` | `surface: modal/page`, `action: section`, `section: overview/workspace/history` |
-| Copy a step's link | `roadmap_board_step_action` | `surface: modal/page`, `action: copyLink`, `outcome: ok/failed` |
+| Open a step | `roadmap_board_step_open` | `surface: document`, `column: locked/upNext/done`, `door: card/graph/activity/step/link` |
+| Shared step document action; completion, reset and Undo require current owner authority. A retained Undo after demotion writes and emits nothing | `roadmap_board_step_action` | `surface: document`, `action: complete/completeFromSubtasks/reset/undo/openInGraph/viewBranch/delete/edit/editNote/select/addStep/connect/expandCoach/collapseCoach` |
+| Scroll to a step section | `roadmap_board_step_action` | `surface: document`, `action: section`, `section: workspace/history` |
+| Copy a step's link | `roadmap_board_step_action` | `surface: document`, `action: copyLink`, `outcome: ok/failed` |
 | Reset from the Graph's dock or tablet panel | `roadmap_board_step_action` | `surface: dock/panel`, `action: reset` |
 | Complete by swipe, C, the dock, the tablet panel or the demo's coach | `roadmap_board_complete` | `door: swipe/key/dock/panel/coach` |
 | Complete from the Graph's selection bar | `roadmap_board_complete` | `door: bulk`, `count: 0/1/2-5/6-20/21+` |
@@ -226,15 +226,15 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Reveal the bulk bar's kinds | `roadmap_board_bulk` | `step: kinds` |
 | Bulk act on the Board | `roadmap_board_bulk` | `step: recolor/delete`, `count: 0/1/2-5/6-20/21+` |
 | Bulk act on the Graph | `roadmap_board_bulk` | `step: recolor/delete`, `count: 0/1/2-5/6-20/21+`, `view: graph` |
-| Workspace in the step page or modal | `roadmap_board_workspace` | `action: subtaskAdd/subtaskToggle/subtaskDelete/linkAdd/linkDelete/noteSave/noteDiscard/undo` |
-| Workspace in the Graph's dock | `roadmap_board_workspace` | `action: subtaskAdd/subtaskToggle/subtaskEdit/subtaskDelete/linkAdd/linkDelete/noteSave`, `surface: dock` |
+| Workspace in the shared step document | `roadmap_board_workspace` | `action: subtaskAdd/subtaskToggle/subtaskDelete/linkAdd/linkDelete/noteSave/noteDiscard/undo` |
+| Workspace in the Graph's blank-step naming dock | `roadmap_board_workspace` | `action: subtaskAdd/subtaskToggle/subtaskEdit/subtaskDelete/linkAdd/linkDelete/noteSave`, `surface: dock` |
 | A verb on the identity row | `roadmap_verb` | `verb: askAI/share/newStep/fork/find/next/more`, `door: row`, `view: board/graph`, `band: tablet/desktop` |
 | A verb in More | `roadmap_verb` | `verb: askAI/share/activity/export/settings/shortcuts`, `door: more`, `view: board/graph`, `band: tablet/desktop` |
 | A verb in the roadmap sheet | `roadmap_verb` | `verb: askAI/share/activity/export/settings`, `door: sheet`, `view: board/graph`, `band: phone` |
 | A and ⌘K | `roadmap_verb` | `verb: activity/askAI`, `door: key`, `view: board/graph`, `band: tablet/desktop` |
 | A row in the desktop Activity feed | `roadmap_verb` | `verb: activity`, `door: feed`, `view: graph`, `band: desktop` |
 | Phone reader Board's Fork offer | `roadmap_verb` | `verb: fork`, `door: offer`, `view: board`, `band: phone` |
-| Phone Graph's Fork, on the bar or the pill | `roadmap_verb` | `verb: fork`, `door: bar/pill`, `view: graph`, `band: phone` |
+| Phone Graph's Fork pill | `roadmap_verb` | `verb: fork`, `door: pill`, `view: graph`, `band: phone` |
 | Fork from the read-only notice | `roadmap_verb` | `verb: fork`, `door: notice`, `view: board/graph`, `band: phone/tablet/desktop` |
 | Share from a milestone's ceremony | `roadmap_verb` | `verb: share`, `door: ceremony`, `view: graph`, `band: phone/tablet/desktop` |
 | Ask AI sent, or its Why? opened | `roadmap_verb` | `verb: askAI`, `step: send/why` |
@@ -272,7 +272,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Gallery Show more or Try again pressed; a page retry emits only its retry press | `roadmap_gallery` | `step: more/retry`, `read: initial/page` |
 | Fork landed | `fork_claim` | `mode: email/instant/browse` |
 | Sync status: offline episode | `roadmap_sync_offline` | `step: shown/cleared`, `pending: 0/1/2-5/6-20/21+` |
-| Refusal shown, retried or discarded | `roadmap_sync_refused` | `step: shown/retry/discard`, `lane: structure/progress`, `code: tree-too-large/bad-frame/no-such-tree/server-error/other` |
+| Refusal shown, retried or discarded from Board, Graph or the owner step document | `roadmap_sync_refused` | `step: shown/retry/discard`, `lane: structure/progress`, `code: tree-too-large/bad-frame/no-such-tree/server-error/other` |
 | Device line shown | `roadmap_device_line` | `step: shown`, `line: anonymous/lapsed`, `place: row/shell` |
 | Device line's phone row tapped | `roadmap_device_line` | `step: sign_in`, `line: anonymous/lapsed`, `place: row` |
 | The demo's roadmap opened | `demo_open` | `treeId: t_9e407a96b5330ebe` |
@@ -328,7 +328,12 @@ A step is a thing a reader did or was told. These emit nothing:
   no such read.
 
 `roadmap_sync_refused` `shown` fires once for the refused frame, across re-flushes, and `discard` only after the session
-confirms it. `roadmap_sync_offline` fires once per offline episode. `roadmap_device_line` `shown` fires once per visit.
+confirms it. Moving the notice into the step document emits no extra event; it uses the room's existing callbacks.
+A pending Discard retains its notice until the callback settles, and failed replacement emits no successful discard.
+A progress-lane rebaseline disables progress controls until its baseline arrives. Refused Complete, Reset and Undo
+change no optimistic marks or ledger and emit no success event; a structure-only rebaseline keeps progress available.
+The existing `roadmap-sync-discard` boundary reports unexpected replacement failures; readers receive no owner
+recovery controls. `roadmap_sync_offline` fires once per offline episode. `roadmap_device_line` `shown` fires once per visit.
 
 ### Technical failures
 
@@ -339,13 +344,13 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 |---|---|---|
 | `roadmap-board` | The Board's render | The Graph, focus on the switch; choosing Board tries again |
 | `roadmap-identity` | The identity row's render | `ViewSwitch` at the row's position |
-| `roadmap-board-step` | The step page or modal's render | The step closes |
+| `roadmap-board-step` | The shared step document's render | The step closes |
 | `roadmap-board-composer` | The composer's render | The composer closes |
 | `roadmap-board-create` | A create exception, its toast's Undo failing, or no session on an editable surface | The draft and its Retry stay; the failed Undo's toast closes |
 | `roadmap-board-edit` | An edit exception, or no session on an editable surface | The draft and its Retry stay |
 | `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session | Selection stays |
 | `roadmap-board-delete` | An unexpected held-delete release | The step returns, and its toast says *Couldn't delete* with Retry |
-| `roadmap-step-restore` | A completion's Undo: a Board or Graph toast, or the step page's inline offer | The offer leaves |
+| `roadmap-step-restore` | A completion's Undo: a Board or Graph toast, or the step document's inline offer | The offer leaves |
 | `roadmap-graph-undo` | A Graph toast's Undo, or the Board's Undo of a pasted plan, reverting its receipt | The toast closes |
 | `roadmap-tend-undo` | Undo on an Ask AI answer | The toast closes |
 | `roadmap-export` | Building or downloading an export | `roadmap_export` `failed`, no file |

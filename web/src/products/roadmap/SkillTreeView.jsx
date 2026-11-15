@@ -69,7 +69,6 @@ import { KindLegend } from './graph/tree/KindLegend.jsx';
 import { useLegend } from './graph/tree/useLegend.js';
 import { useWorkspace } from './graph/tree/useWorkspace.js';
 import { useGraphGeometry } from './graph/useGraphGeometry.js';
-import { useGraphStepBar } from './graph/useGraphStepBar.js';
 import { useViewMode } from './room/useViewMode.js';
 import { frontierTarget } from './graph/viewport.js';
 
@@ -90,6 +89,8 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [framing] = useState(cameraFraming);
   const { sceneRef, sessionRef, projectionRef, peersRef } = room;
   const { canvasRef, rootRef, identityRef, boardLayerRef, legendDockRef } = anchors;
+  const activationRef = useRef(null);
+  const activateGraphNode = useCallback((id) => activationRef.current?.(id), []);
 
   // Who is looking, and what this device keeps for them.
   const knownReaderRef = useRef(false);
@@ -127,7 +128,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const { undo, redo, bulkDelete, deleteSelected, handleDeleteEdge, handleCreateRoot, graftImported, bulkRecolor, composerOpen, closeComposer, openComposer } = editing;
 
   // The canvas, then the tree it draws.
-  const { scene, graphAvailability, panning, hoveredId } = useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint: structure.reorderHint, onPickNothing: closeActivity, showToast });
+  const { scene, graphAvailability, panning, hoveredId } = useRoomScene({ anchors, sceneRef, desktopEditorRef, breakpoint, editing, selection, reorderHint: structure.reorderHint, onPickNothing: closeActivity, onNodeActivate: activateGraphNode, showToast });
   const graphUnavailable = graphAvailability === 'unavailable';
   const load = useRoomLoad({
     treeId, accountId: account?.id ?? null, demo, shared, demotion, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity,
@@ -162,7 +163,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const tabletEditor = owner && breakpoint === 'tablet';
   const who = { owner, reader, role: demo ? 'demo' : owner ? 'owner' : 'reader', demo, shared, phone, breakpoint, desktopEditor, tabletEditor };
   const { canTend, tendOpen, setTendOpen, tendDraft, setTendDraft, tendWorking, tendFailure, submitTend } = useRoomTend({ treeId, treeMine, status, shared, demo, demotion, room, showToast });
-  const tablet = useTabletEditing({ tabletEditor, scene, tree, nodesById, selectedNode, projectionRef, selection, editing });
+  const tablet = useTabletEditing({ tabletEditor, scene, tree, nodesById, selectedNode, projectionRef, selection, editing, onActivate: activateGraphNode });
   const { stopEditing } = tablet;
 
   // The view: Board or Graph.
@@ -292,7 +293,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     viewBranch: (id) => setBoardQuery((query) => query.inBranch(id)),
     onGraphStepOpen: () => { framing.firstFrameRef.current = null; },
   });
-  const { detailId, focusGraph, focusLayer } = stepPage;
+  const { detailId, focusLayer } = stepPage;
   const shownDetailId = detailId !== null && boardTree?.nodesById.has(detailId) ? detailId : null;
   const newStepFromBoard = useCallback((door = 'verbs') => {
     if (!owner) return;
@@ -303,16 +304,29 @@ export function SkillTreeView({ treeId, demo = false }) {
   const shownComposer = composerDoor.shown;
   if (boardComposer !== null && shownComposer === null) setBoardComposer(null);
   const stepCovering = detailId !== null || boardComposer !== null;
+  activationRef.current = (id) => {
+    if (!canvasView || stepCovering || selection.multiMode || tablet.aim || !boardTree?.nodesById.has(id)) return;
+    stepPage.openFromGraph(id);
+  };
+  useEffect(() => {
+    if (!scene) return;
+    if (stepCovering || boardActive) scene.stop();
+    else scene.start();
+  }, [scene, stepCovering, boardActive]);
   // A step's link opens for anyone only where the roadmap itself does: public or unlisted, on the server.
   const stepShareUrl = !demo && (treeVisibility === 'public' || treeVisibility === 'unlisted') ? treeShareUrl(treeId) : null;
 
-  // The row, the phone's bar and where each piece of chrome stands.
+  // The identity row and Graph chrome.
   const phoneGraph = phone && canvasView;
   useEffect(() => {
     if (phoneGraph && selectedId) sceneRef.current?.revealNode(selectedId);
   }, [phoneGraph, selectedId]);
   const forkPresent = (reader || demo) && !demotion?.cardOpen && !inSubtree;
-  const { graphStep, forkPillShown, openGraphFork, rememberGraphFocus } = useGraphStepBar({ phoneGraph, selection, selectedNode, selectedState, covered: stepCovering, forkPresent, forkOpen, setForkOpen, rootRef, canvasRef, focusGraph });
+  const forkPillShown = forkPresent && phoneGraph;
+  const openGraphFork = () => {
+    track('roadmap_verb', { verb: 'fork', door: 'pill', view: 'graph', band: 'phone' });
+    setForkOpen(true);
+  };
   const verbs = useRowVerbs({
     treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable, address: stepAddress,
     graphStepReturnRef: stepPage.graphStepReturnRef, anchors, room, revealOnGraph, setSelectedId, setShareOpen, showToast,
@@ -320,9 +334,11 @@ export function SkillTreeView({ treeId, demo = false }) {
   const legendWithCounts = useMemo(() => withCounts(legend, tree?.nodes ?? []), [legend, tree]);
   const legendVisible = useMemo(() => inUseCount(legend, tree?.nodes ?? []) >= 2, [legend, tree]) || legendKit.legendForceOpen;
   const activityOpen = owner && feedVisible;
-  const dockOpen = !phone && (composerOpen || (canvasView && (!!selectedNode || activityOpen)));
+  const namingStep = Boolean(selectedNode && selectedId === editing.autoFocusNameId && !selectedNode.label.trim());
+  const tabletTool = tabletEditor && ['bulk', 'aim', 'remove'].includes(tablet.surface);
+  const dockOpen = !phone && (composerOpen || (canvasView && (namingStep || activityOpen || tabletTool)));
   const geometry = useGraphGeometry({
-    breakpoint, canvasView, dockOpen, refusal, forkPillShown, graphStepShown: Boolean(graphStep), scene, selectedId, renderModel,
+    breakpoint, canvasView, dockOpen, refusal, forkPillShown, graphStepShown: false, scene, selectedId, renderModel,
     toastKey: toast?.key ?? null, tendOpen, activityOpen, legendVisible, anchors, framing,
   });
   const { topbarBottom, setTopbarBottom, insets } = geometry;
@@ -363,6 +379,12 @@ export function SkillTreeView({ treeId, demo = false }) {
     canTend, tendOpen, setTendOpen, desktopEditor, boardActive, band: breakpoint, undo, redo, focusCamera, showAllSteps,
     activityEnabled: verbs.activityEnabled, openActivity: verbs.openRowActivity,
     covered: keyboardCovered,
+    activateStep: (event) => {
+      if (!canvasView || event.target !== canvasRef.current || selectedIds.size !== 1 || selectedEdges.size !== 0 || selection.multiMode || tablet.aim || tablet.removing || sceneRef.current?.selectedEdge) return false;
+      if (!selectedId || !boardTree?.nodesById.has(selectedId)) return false;
+      stepPage.openFromGraph(selectedId);
+      return true;
+    },
     // G follows the switch from 744px, for either role.
     switchViews: !graphUnavailable && !phone && onSwitchView ? () => switchView(boardActive ? 'tree' : 'board') : null,
     toggleShortcuts: () => setShortcutsOpen((visible) => !visible),
@@ -412,8 +434,12 @@ export function SkillTreeView({ treeId, demo = false }) {
   ) : null;
   return (
     <TreeDoor.Provider value={treeVisit.open}>
-    <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef} onFocusCapture={rememberGraphFocus}>
+    <div className={`st-root ${panning ? 'panning' : ''}`} ref={rootRef}>
+      <div className="st-product-canvas" inert={stepCovering ? '' : undefined} style={{ position: 'absolute', inset: 0, visibility: stepCovering ? 'hidden' : undefined }}>
       <canvas
+        tabIndex={canvasView ? 0 : -1}
+        data-graph-focus
+        aria-label={t('roadmap.step.graphCanvas')}
         ref={canvasRef}
         className={`st-canvas ${hoveredId ? 'st-canvas--hover' : ''} ${decidedView !== null ? 'st-canvas--layer' : ''}`}
         style={boardActive ? { opacity: 0, pointerEvents: 'none' } : undefined}
@@ -476,7 +502,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               selectedId={selectedId}
               onSelect={stepPage.openFromBoard}
               onAnchor={setSelectedId}
-              refusal={refusal}
+              refusal={stepCovering ? null : refusal}
               deviceLine={phone ? deviceLine : null}
               guide={phone && !owner && boardActive ? guideEntry : null}
               onFork={phone && forkPresent ? openFork : null}
@@ -510,55 +536,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      {shownDetailId !== null && (
-        <ErrorBoundary fallback={null} onCrash={stepPage.crash}>
-          <StepDetail
-            tree={boardTree}
-            completed={completed}
-            completedAt={completedAt}
-            address={stepAddress}
-            breakpoint={breakpoint}
-            roadmapTitle={tree.title}
-            editable={owner}
-            deletable={deletable(boardTree, [detailId])}
-            onEdit={owner ? (id) => composerDoor.openEdit(id) : undefined}
-            treeActs={treeActs}
-            stepLink={stepShareUrl && `${stepShareUrl}${hashWithStep('', detailId)}`}
-            workspace={workspaceByNode[detailId] ?? emptyWorkspace()}
-            workspaceActions={workspaceActions}
-            history={activity.selectedHistory}
-            onOpenStep={(id) => stepAddress.open(id, 'step')}
-            onBack={stepAddress.back}
-            onClose={stepPage.close}
-            onComplete={(id) => progressActs.complete(id, { quiet: true })}
-            onReset={(id) => progressActs.reset(id)}
-            onRestore={(id, snapshot) => {
-              setBoardQuiet((current) => current + 1);
-              progressActs.restore(id, snapshot);
-            }}
-            onOpenInGraph={boardActive && !graphUnavailable ? stepPage.openInGraph : null}
-            onSelect={boardSelectionOpen && deletable(boardTree, [detailId]) ? stepPage.select : null}
-            onViewBranch={stepPage.viewBranch}
-            onDelete={stepPage.deleteStep}
-            onDeletePrompt={(step) => boardActs.deletePrompt(step)}
-            onNotify={showToast}
-          />
-        </ErrorBoundary>
-      )}
-
-      {shownComposer !== null && (
-        <ErrorBoundary fallback={null} onCrash={(error) => {
-          reportRoadmapFailure('roadmap-board-composer', error);
-          setBoardComposer(null);
-          focusLayer();
-        }}>
-          <StepComposer key={shownComposer.editing ?? 'create'} tree={boardTree} completed={completed} legend={legend} band={breakpoint}
-            editing={shownComposer.editing ?? null} savingBlocked={Boolean(syncSnapshot?.rebaselining)} onEdit={(request) => composerDoor.saveEdit(request)}
-            onCreate={(request) => boardActs.create(request)} onClose={() => setBoardComposer(null)} />
-        </ErrorBoundary>
-      )}
-
-      {geometry.graphRefusalShown && (
+      {geometry.graphRefusalShown && !stepCovering && (
         <div ref={geometry.attachGraphRefusal} className={`st-graph-refusal${phone ? ' st-graph-refusal--phone' : ''}`}
           style={geometry.graphRefusalStyle}>
           <RefusedSync band={breakpoint} {...refusal} />
@@ -567,7 +545,7 @@ export function SkillTreeView({ treeId, demo = false }) {
 
       <GraphChrome band={breakpoint} view={canvasView ? 'tree' : 'board'} rowBottom={topbarBottom}
         onTopBottom={geometry.setGraphChromeBottom}
-        step={graphStep}
+        step={null}
         ctaEcho={demo && ctaEcho}
         onOpenStep={stepPage.openFromGraph}
         onBarBottom={geometry.setGraphBarBottom}
@@ -637,6 +615,7 @@ export function SkillTreeView({ treeId, demo = false }) {
       {canvasView && activityPanel}
 
       <GraphDocks
+        namingStep={namingStep}
         who={who}
         open={dockOpen}
         top={geometry.dockTop}
@@ -731,13 +710,6 @@ export function SkillTreeView({ treeId, demo = false }) {
         />
       )}
 
-      {seat === 'room' && (
-        <div className={`st-graph-toast${phone ? ' st-graph-toast--phone' : ''}`} style={shownDetailId === null ? geometry.graphToastStyle : undefined}>
-          <BoardToast toast={toast} phone={phone} blocked={phone && Boolean(refusal)} onToastShown={toastShown} onToastReveal={revealGraphToast}
-            onToastUndo={undoGraphToast} />
-        </div>
-      )}
-
       {toast?.surface === 'tend' && (
         <TendToast key={toast.key} toast={toast} overCanvas={canvasView} style={geometry.graphToastStyle}
           onShown={toastShown} onPause={pauseToast} onAct={() => runToastAction(toast)} />
@@ -778,6 +750,67 @@ export function SkillTreeView({ treeId, demo = false }) {
           </div>
         </div>
       )}
+      </div>
+      {seat === 'room' && (
+        <div className={`st-graph-toast${phone ? ' st-graph-toast--phone' : ''}`} style={shownDetailId === null ? geometry.graphToastStyle : undefined}>
+          <BoardToast toast={toast} phone={phone} blocked={phone && Boolean(refusal)} onToastShown={toastShown} onToastReveal={revealGraphToast}
+            onToastUndo={undoGraphToast} />
+        </div>
+      )}
+
+      {shownDetailId !== null && (
+        <ErrorBoundary fallback={null} onCrash={stepPage.crash}>
+          <StepDetail
+            tree={boardTree}
+            completed={completed}
+            completedAt={completedAt}
+            address={stepAddress}
+            breakpoint={breakpoint}
+            roadmapTitle={tree.title}
+            editable={owner}
+            refusal={refusal}
+            progressBlocked={Boolean(syncSnapshot?.progressBlocked)}
+            deletable={deletable(boardTree, [detailId])}
+            onEdit={owner ? (id) => composerDoor.openEdit(id) : undefined}
+            treeActs={treeActs}
+            stepLink={stepShareUrl && `${stepShareUrl}${hashWithStep('', detailId)}`}
+            kindLabel={legend.find((kind) => kind.hue === boardTree.nodesById.get(detailId)?.color)?.label}
+            workspace={owner ? workspaceByNode[detailId] ?? emptyWorkspace() : undefined}
+            workspaceActions={owner ? workspaceActions : undefined}
+            history={activity.selectedHistory}
+            onOpenStep={(id) => stepAddress.open(id, 'step')}
+            onBack={stepAddress.back}
+            onClose={stepPage.close}
+            onComplete={(id) => progressActs.complete(id, { quiet: true })}
+            onReset={(id) => progressActs.reset(id)}
+            onRestore={(id, snapshot) => {
+              setBoardQuiet((current) => current + 1);
+              return progressActs.restore(id, snapshot);
+            }}
+            onOpenInGraph={!graphUnavailable ? stepPage.openInGraph : null}
+            onSelect={boardSelectionOpen && deletable(boardTree, [detailId]) ? stepPage.select : null}
+            onViewBranch={stepPage.viewBranch}
+            onDelete={stepPage.deleteStep}
+            onDeletePrompt={(step) => boardActs.deletePrompt(step)}
+            onAddStep={tabletEditor ? (id) => { stepAddress.close(); tablet.addStepUnder(id); } : undefined}
+            onConnect={tabletEditor ? (id) => { stepAddress.close(); tablet.enterAim(id); } : undefined}
+            onNotify={showToast}
+          />
+        </ErrorBoundary>
+      )}
+
+      {shownComposer !== null && (
+        <ErrorBoundary fallback={null} onCrash={(error) => {
+          reportRoadmapFailure('roadmap-board-composer', error);
+          setBoardComposer(null);
+          focusLayer();
+        }}>
+          <StepComposer key={shownComposer.editing ?? 'create'} tree={boardTree} completed={completed} legend={legend} band={breakpoint}
+            editing={shownComposer.editing ?? null} savingBlocked={Boolean(syncSnapshot?.rebaselining)} onEdit={(request) => composerDoor.saveEdit(request)}
+            onCreate={(request) => boardActs.create(request)} onClose={() => setBoardComposer(null)} />
+        </ErrorBoundary>
+      )}
+
     </div>
     </TreeDoor.Provider>
   );

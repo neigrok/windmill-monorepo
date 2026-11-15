@@ -80,6 +80,8 @@ export function KindChoice({ kinds, value, onChoose, label, follow = true, onPre
 
 export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete, onDone }) {
   const [open, setOpen] = useState(false);
+  const openRef = useRef(open);
+  openRef.current = open;
   const bar = useRef(null);
   const recolor = useRef(null);
   const applying = useRef(null);
@@ -99,7 +101,7 @@ export function BulkBar({ count, kinds, sharedKind, onKinds, onRecolor, onDelete
       clearTimeout(applying.current);
       applying.current = null;
       setOpen(expanded);
-      if (!expanded) recolor.current?.focus();
+      if (openRef.current && !expanded) recolor.current?.focus();
     };
     window.addEventListener('popstate', back);
     return () => window.removeEventListener('popstate', back);

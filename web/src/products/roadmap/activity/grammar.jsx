@@ -46,7 +46,7 @@ export function ActorAvatar({ event, size = 22 }) {
   if (!event.actor) {
     return (
       <span className="st-event-avatar st-event-avatar--system" style={{ width: size, height: size }}>
-        <Icon name="unlock" size={Math.round(size * 0.52)} />
+        <Icon name={VERB_STYLE[event.verb]?.icon ?? 'sparkles'} size={Math.round(size * 0.52)} />
       </span>
     );
   }
@@ -74,7 +74,7 @@ export function EventSentence({ event, node }) {
   const object = <ObjectLabel event={event} node={node} />;
   const actor = event.actor ? <b>{event.actor}</b> : '';
   switch (event.verb) {
-    case 'completed': return t('roadmap.activity.completed', { actor, object });
+    case 'completed': return event.actor ? t('roadmap.activity.completed', { actor, object }) : t('roadmap.activity.completedUnknown', { object });
     case 'started': return t('roadmap.activity.started', { actor, object });
     case 'added': return t('roadmap.activity.added', { actor, object });
     case 'renamed': return t('roadmap.activity.renamed', { actor, object });

@@ -30,14 +30,16 @@ hostTest('Chromium: every write the Graph makes without a form names what it cha
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: the Graph dock names its door for complete and reset, and multi-select starts and ends once', async () => {
+hostTest('Chromium: the shared Graph document names complete and reset, and multi-select starts and ends once', async () => {
   const { page, errors } = await openHost({ width: 1440 });
   try {
-    await page.evaluate(() => window.scene.select('wind'));
+    await page.evaluate(() => window.scene.activate('wind'));
     await page.getByRole('button', { name: 'Complete', exact: true }).click();
-    assert.deepEqual(await events(page, 'roadmap_board_complete'), [{ door: 'dock' }]);
+    assert.deepEqual(await events(page, 'roadmap_board_complete'), []);
     await page.getByRole('button', { name: 'Reset', exact: true }).click();
-    assert.deepEqual(await events(page, 'roadmap_board_step_action'), [{ surface: 'dock', action: 'reset' }]);
+    assert.deepEqual(await events(page, 'roadmap_board_step_action'), [{ surface: 'document', action: 'complete' }, { surface: 'document', action: 'reset' }]);
+    await page.getByRole('article').focus();
+    await page.keyboard.press('Escape');
     await page.evaluate(() => window.scene.options.onSelectionToggle('dock'));
     await page.locator('.st-roadmap-identity').waitFor();
     await page.waitForFunction(() => window.events.some((event) => event.name === 'roadmap_board_select'));
@@ -67,12 +69,12 @@ hostTest('Chromium: ⌘K names its door, and an Ask AI question reports its send
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: the tablet panel names its door for complete', async () => {
+hostTest('Chromium: the tablet document names its complete action', async () => {
   const { page, errors } = await openHost({ width: 800, surface: 'tree' });
   try {
-    await page.evaluate(() => window.scene.select('wind'));
-    await page.getByRole('button', { name: 'Mark done', exact: true }).click();
-    assert.deepEqual(await events(page, 'roadmap_board_complete'), [{ door: 'panel' }]);
+    await page.evaluate(() => window.scene.activate('wind'));
+    await page.getByRole('button', { name: 'Complete', exact: true }).click();
+    assert.deepEqual(await events(page, 'roadmap_board_step_action'), [{ surface: 'document', action: 'complete' }]);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

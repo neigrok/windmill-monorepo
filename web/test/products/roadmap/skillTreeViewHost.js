@@ -8,7 +8,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import { beacon } from './browserFixture.js';
 
-// The real identity row exercises the host contract; scene and HTTP boundaries are deterministic fakes.
+// The real identity row exercises the host contract; HTTP and the default scene are deterministic fakes.
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const treeData = {
   id: 't_sail', title: 'Learn to sail', author: 'Ada Lovelace', kinds: [], nodes: [
@@ -151,6 +151,7 @@ export class SkillTreeScene {
     };
     this.announceCeremony = (message, options) => { window.ceremonies.push({ message, action: options?.action?.label ?? null }); };
     this.select = (id) => options.onNodePick(id);
+    this.activate = (id) => { options.onNodePick(id); options.onNodeActivate?.(id); };
     this.setArrivalSummary = (summary) => { window.arrivalSummary = summary; };
     this.suppressArrival = () => { window.arrivalSuppressed = true; };
     this.projectToScreen = () => ({ x: 20, y: 300 });
@@ -177,14 +178,14 @@ const subscribe = (handler) => { listeners.add(handler); return () => listeners.
 window.setFixtureAuth = (next) => { status = next; for (const listener of listeners) listener(); };
 export const useAuth = () => {
   const current = useSyncExternalStore(subscribe, () => status);
-  return { status: current, user: current === 'signed-in' ? user : null, account: current === 'signed-in' ? account : null, refresh };
+  return { status: current, user: current === 'signed-in' ? user : null, account: current === 'signed-in' ? account : null, confirmed: true, refresh };
 };
 `;
 const HOST_PLUGIN = { name: 'roadmap-host-contract-test', enforce: 'pre',
   resolveId(id, importer) {
     if (id === '/roadmap-host-entry.js') return '\0host-entry';
     const file = id.startsWith('.') && importer ? resolve(dirname(importer), id) : id;
-    if (file.endsWith('/scene/SkillTreeScene.js')) return '\0host-scene';
+    if (file.endsWith('/scene/SkillTreeScene.js') && importer !== '\0host-scene') return '\0host-scene';
     if (file.endsWith('/shell/auth/AuthProvider.jsx')) return '\0host-auth';
     if (file.endsWith('/shell/auth/SignInDoor.jsx')) return '\0host-signin';
     if (file.endsWith('/telemetry/beacon.js')) return '\0host-events';
@@ -202,9 +203,19 @@ const HOST_PLUGIN = { name: 'roadmap-host-contract-test', enforce: 'pre',
 
 // One development bundle per file, served from memory: a fresh browser context has no cache, so a dev server would answer
 // every module of the host again for every page a test opens.
-async function bundleHost() {
+async function bundleHost(realScene) {
+  const plugin = { ...HOST_PLUGIN, load(id) {
+    if (realScene && id === '\0host-scene') return `
+      import { SkillTreeScene as Scene, GraphUnavailable } from '/src/products/roadmap/scene/SkillTreeScene.js';
+      export { GraphUnavailable };
+      export class SkillTreeScene extends Scene {
+        constructor(...args) { super(...args); window.scene = this; }
+      }
+    `;
+    return HOST_PLUGIN.load(id);
+  } };
   const { output } = await build({
-    configFile: false, root, logLevel: 'silent', mode: 'development', plugins: [HOST_PLUGIN],
+    configFile: false, root, logLevel: 'silent', mode: 'development', plugins: [plugin],
     build: {
       write: false, minify: false, sourcemap: false, cssCodeSplit: false, modulePreload: false,
       rollupOptions: { input: '/roadmap-host-entry.js', output: { entryFileNames: 'host-entry.js' } },
@@ -221,7 +232,7 @@ function publicFile(pathname) {
 }
 
 function hostPage(view, stylesheet) {
-  return '<!doctype html><meta name="viewport" content="width=device-width"><script>try{localStorage.clear();localStorage.setItem("windmill:view:last",JSON.stringify({t_sail:' + JSON.stringify(view) + '}));}catch{}</script>'
+  return '<!doctype html><meta name="viewport" content="width=device-width"><script>try{localStorage.clear();localStorage.setItem("windmill:view:last",JSON.stringify({t_sail:' + JSON.stringify(view) + '}));if(window.workspaceFixture)localStorage.setItem("windmill:workspace:t_sail",JSON.stringify(window.workspaceFixture));}catch{}</script>'
     + `<link rel="stylesheet" href="${stylesheet}"><div id="root" style="height:100vh"></div><script type="module" src="/host-entry.js"></script>`;
 }
 
@@ -230,9 +241,9 @@ let server, ready;
 const browsers = new Map();
 let firstPage = true;
 
-export function startRoadmapHost({ browserTypes = { chromium } } = {}) {
+export function startRoadmapHost({ browserTypes = { chromium }, realScene = false } = {}) {
   ready = (async () => {
-    const files = await bundleHost();
+    const files = await bundleHost(realScene);
     const stylesheet = [...files.keys()].find((path) => path.endsWith('.css'));
     server = createServer((request, response) => {
       const url = new URL(request.url, 'http://localhost');
@@ -253,7 +264,8 @@ export function startRoadmapHost({ browserTypes = { chromium } } = {}) {
     await new Promise((listening) => server.listen(0, '127.0.0.1', listening));
     origin = `http://127.0.0.1:${server.address().port}`;
     for (const [name, type] of Object.entries(browserTypes)) {
-      browsers.set(name, await type.launch({ headless: true }));
+      const args = realScene && name === 'chromium' ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] : [];
+      browsers.set(name, await type.launch({ headless: true, args }));
     }
   })();
   after(async () => {
@@ -273,12 +285,13 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ browserName = 'chromium', width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, runtimeBoardCrash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false, noWebgl2 = false, born = false, sceneFailure = false, address = null, auth = null, loadFailure = false, deviceTrees = false } = {}) {
+export async function openHost({ browserName = 'chromium', width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, runtimeBoardCrash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false, noWebgl2 = false, born = false, sceneFailure = false, address = null, auth = null, loadFailure = false, deviceTrees = false, workspace = null } = {}) {
   await ready;
   const page = await browsers.get(browserName).newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
   page.setDefaultNavigationTimeout(30000);
   firstPage = false;
+  if (workspace) await page.addInitScript((value) => { window.workspaceFixture = value; }, workspace);
 
   const errors = [];
   const requests = [];
@@ -331,6 +344,7 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
       body = { trees: [{ id: 't_other', title: 'Spanish basics', done: 12, total: 40, dominantKind: 'sky' }, ...others] };
     }
     if (path.endsWith('/activity')) body = { events: [] };
+    if (path.endsWith('/guides')) body = { guides: [] };
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
   const params = new URLSearchParams({ role, surface });

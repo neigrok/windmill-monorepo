@@ -10,7 +10,7 @@ const everyWidth = [320, 390, 744, 1440];
 
 async function openStep(page, id) {
   await page.locator(`.st-board-card[data-step-id="${id}"]`).evaluate((card) => card.click());
-  await page.locator('.st-board-step-layer [role="dialog"]').waitFor();
+  await page.locator('.st-board-step-layer article').waitFor();
 }
 
 async function openColumn(page, width, column) {
@@ -40,7 +40,7 @@ for (const width of everyWidth) {
       await page.getByRole('textbox', { name: COMPOSER.description }).fill('Watch the water.');
       await page.getByRole('dialog', { name: EDIT_STEP.title, exact: true }).getByRole('radio', { name: 'Sky', exact: true }).click();
       await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
-      await page.getByRole('dialog', { name: 'Read gusts', exact: true }).waitFor();
+      await page.getByRole('article', { name: 'Read gusts', exact: true }).waitFor();
       assert.deepEqual(await savedStep(page, 'wind'), { label: 'Read gusts', description: 'Watch the water.', color: 'sky', prerequisites: ['course'] });
       assert.equal(await page.locator('.st-ticker').count(), 0);
       assert.deepEqual(errors, []);
@@ -66,7 +66,7 @@ for (const width of everyWidth) {
       await page.getByRole('checkbox', { name: /^Choose a course/ }).click();
       await page.getByRole('button', { name: PICKER.apply, exact: true }).click();
       await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
-      await page.getByRole('dialog', { name: 'Leave the dock', exact: true }).waitFor();
+      await page.getByRole('article', { name: 'Leave the dock', exact: true }).waitFor();
       assert.deepEqual((await savedStep(page, 'dock')).prerequisites, ['course', 'wind']);
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
@@ -89,18 +89,16 @@ for (const width of everyWidth) {
   });
 }
 
-hostTest('A rename on the Graph\'s dock announces on the ticker, and the ticker stands only over the Graph', async () => {
+hostTest('Graph activation edits through the shared composer without a second editor tenant', async () => {
   const { page, errors } = await openHost({ surface: 'tree' });
   try {
-    await page.evaluate(() => window.scene.select('wind'));
-    await page.locator('.st-detail-panel--open .st-step-name').click();
-    const name = page.locator('.st-step-name-input');
-    await name.fill('Read gusts');
-    await name.press('Enter');
-    await page.locator('.st-ticker').waitFor();
-    await page.getByRole('radio', { name: 'Board', exact: true }).or(page.getByRole('button', { name: 'Board', exact: true })).first().click();
-    await page.locator('.st-roadmap-identity[data-view="board"]').waitFor();
-    assert.equal(await page.locator('.st-ticker').count(), 0);
+    await page.evaluate(() => window.scene.activate('wind'));
+    await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
+    await page.getByRole('textbox', { name: COMPOSER.name, exact: true }).fill('Read gusts');
+    await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
+    await page.getByRole('article', { name: 'Read gusts' }).waitFor();
+    assert.equal(await page.locator('.st-detail-panel--open').count(), 0);
+    assert.deepEqual(await savedStep(page, 'wind'), { label: 'Read gusts', description: undefined, color: 'terracotta', prerequisites: ['course'] });
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

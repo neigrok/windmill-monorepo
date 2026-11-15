@@ -9,7 +9,7 @@ import { ActivityLog } from '../activity/ActivityLog.js';
 import { ActorAvatar, EventSentence, relativeTime } from '../activity/grammar.jsx';
 import { DiscardDraft } from './DiscardDraft.jsx';
 import { coverBeneath, DetailFocusContext, useComposerFocus, useComposerViewport } from './composerFocus.js';
-import { WORKSPACE, WORKSPACE_EMPTY, NEW_LINK, HISTORY_EMPTY, NOTE_EDITOR, STEP_DETAIL, subtaskTally } from '../copy.js';
+import { WORKSPACE, WORKSPACE_EMPTY, NEW_LINK, HISTORY_EMPTY, NOTE_EDITOR, subtaskTally } from '../copy.js';
 import './workspace.css';
 
 const FORMATS = [['bold', Bold], ['italic', Italic], ['link', Link], ['list', List]];
@@ -194,11 +194,10 @@ export const StepWorkspace = forwardRef(function StepWorkspace({ nodeId, title, 
   );
 });
 
-export function StepHistory({ history, nodeId, phone, now = Date.now() }) {
+export function StepHistory({ history, nodeId, now = Date.now() }) {
   const groups = new ActivityLog(history).groupedForNode(nodeId, now);
   return (
     <div className="st-board-workspace-history">
-      {phone && <h3 className="st-board-workspace-history-title">{STEP_DETAIL.sections.history}</h3>}
       {groups.length === 0 && <p className="st-board-workspace-empty-history">{HISTORY_EMPTY}</p>}
       {groups.map((group) => (
         <section key={group.label}>

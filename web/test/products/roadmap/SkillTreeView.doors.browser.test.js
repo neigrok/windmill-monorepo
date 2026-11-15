@@ -130,7 +130,7 @@ for (const [name, pathOnly] of [['a path-only address', true], ['a hash route', 
       const address = () => page.evaluate(() => location.pathname + location.hash);
       const route = pathOnly ? '/roadmap-host-test' : '/roadmap-host-test#/app/t_sail';
       const step = pathOnly ? '/roadmap-host-test#?step=wind' : '/roadmap-host-test#/app/t_sail?step=wind';
-      const dialog = page.getByRole('dialog', { name: 'Read the wind', exact: true });
+      const dialog = page.getByRole('article', { name: 'Read the wind', exact: true });
       await page.locator('.st-board-card[data-step-id="wind"]').click();
       await dialog.waitFor();
       assert.equal(await address(), step);

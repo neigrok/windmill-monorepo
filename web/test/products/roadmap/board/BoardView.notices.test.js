@@ -241,15 +241,28 @@ for (const width of [1440, 390]) {
       await card.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: 200, button: 0 });
       await card.dispatchEvent('click');
       assert.equal(await page.locator('.st-board-bulk').count(), 0);
-      assert.equal(await page.getByRole('dialog').count(), 0);
+      assert.equal(await page.getByRole('article').count(), 0);
       await card.click();
-      await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
-      assert.equal(await page.getByRole('dialog').getByRole('tab').count(), 0);
+      const step = page.getByRole('article', { name: 'Read the wind', exact: true });
+      await step.waitFor();
+      assert.equal(await step.getAttribute('aria-modal'), null);
+      assert.equal(await page.getByRole('dialog').count(), 0);
+      assert.equal(await step.getByRole('tablist').count(), 0);
+      assert.equal(await step.locator('.st-board-workspace').count(), 0);
       await page.getByRole('button', { name: 'More', exact: true }).click();
       assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['Copy link', 'Open in Graph']);
-      for (const name of ['Workspace', 'History', 'Edit step', 'Complete', 'Reset', 'Delete step']) {
+      for (const name of ['Workspace', 'Edit step', 'Complete', 'Reset', 'Delete step']) {
         assert.equal(await page.getByRole('button', { name, exact: true }).count(), 0);
       }
+      await page.keyboard.press('Escape');
+      assert.deepEqual(await step.locator('.st-step-section-links button').allTextContents(), ['History']);
+      await step.getByRole('button', { name: 'History', exact: true }).click();
+      await page.clock.runFor(200);
+      assert.equal(await step.getByRole('heading', { name: 'History', exact: true }).count(), 1);
+      assert.deepEqual(await page.evaluate(() => window.calls ?? []), []);
+      assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_step_action')), [
+        { name: 'roadmap_board_step_action', props: { surface: 'document', action: 'section', section: 'history' } },
+      ]);
     });
   });
 }
