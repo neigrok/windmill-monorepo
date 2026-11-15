@@ -32,6 +32,11 @@ public:
   const FeedCursor& target() const { return target_; }  // its epoch is the ledger's the page was read under
   bool rebuilding() const { return rebuilding_; }        // a rebuild from zero, whose copy began the page empty
 
+  // Whether the backend still holds the account, read in the page's transaction, which then keeps it from an erasure
+  // until the page commits, so nothing a consumer writes for it beside the page outlives the account unseen. The copy
+  // writes no row for an account it does not hold, and funding funds none (§6.3).
+  virtual bool accountStands(const UserId& account) const = 0;
+
 protected:
   virtual void persist() = 0;  // the page's rows and the cursor, in one commit
 
