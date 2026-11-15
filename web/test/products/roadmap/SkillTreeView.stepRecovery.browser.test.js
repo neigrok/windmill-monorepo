@@ -323,3 +323,151 @@ hostTest('Chromium: a visible refusal follows Coach width without reopening the 
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+for (const action of ['Complete', 'Reset']) {
+  hostTest(`Chromium: progress Discard disables ${action} through baseline acceptance and removes its invalid outcome`, async () => {
+    const { page, errors } = await openHost({ width: 744, fixedClock: true });
+    try {
+      await page.evaluate(() => window.scene.activate('wind'));
+      await page.getByRole('button', { name: 'Complete', exact: true }).click();
+      if (action === 'Reset') {
+        await page.evaluate(() => {
+          window.serverProgress = window.session.progress.toFrame();
+          window.session.receiveProgress(window.serverProgress);
+        });
+        await page.getByRole('button', { name: 'Reset', exact: true }).click();
+      }
+      await page.evaluate(() => {
+        const session = window.session;
+        session.progressInFlight.set('progress-refused', session.progress.toFrame());
+        session.receiveReject({ frameId: 'progress-refused', code: 'bad-frame' });
+        const replace = session.store.replaceLane.bind(session.store);
+        session.store.replaceLane = (...args) => new Promise((resolve) => {
+          window.finishReplacement = () => resolve(replace(...args));
+        });
+      });
+      await page.getByRole('alert').getByRole('button', { name: /^Discard/ }).click();
+      const button = page.getByRole('button', { name: action, exact: true });
+      assert.equal(await page.evaluate(() => window.session.discardPending), true);
+      assert.equal(await button.isDisabled(), true);
+      assert.equal(await page.locator('.st-board-step-outcome').textContent(), '');
+      assert.equal(await page.locator('.st-board-step-undo').count(), 0);
+      const events = await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_step_action'));
+      await button.evaluate((node) => node.click());
+      await page.evaluate(() => window.finishReplacement());
+      await page.waitForFunction(() => !window.session.discardPending);
+      assert.equal(await page.evaluate(() => window.session.rebaselining.has('progress')), true);
+      assert.equal(await button.isDisabled(), true);
+      assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_step_action')), events);
+      await page.evaluate(() => window.session.receiveProgressGraft(window.serverProgress));
+      await page.waitForFunction(() => !window.session.rebaselining);
+      assert.equal(await button.isDisabled(), false);
+      assert.equal(await page.locator('.st-board-step-outcome').textContent(), '');
+      assert.equal(await page.locator('.st-board-step-status-label').textContent(), action === 'Complete' ? 'Up next' : 'Done');
+      await button.click();
+      assert.equal(await page.locator('.st-board-step-status-label').textContent(), action === 'Complete' ? 'Done' : 'Up next');
+      assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_step_action')), [
+        ...events, { name: 'roadmap_board_step_action', props: { surface: 'document', action: action.toLowerCase() } },
+      ]);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+}
+
+hostTest('Chromium: progress Discard blocks a still-valid completion Undo until its baseline arrives', async () => {
+  const { page, errors } = await openHost({ width: 744, fixedClock: true });
+  try {
+    await page.evaluate(() => window.scene.activate('wind'));
+    await page.getByRole('button', { name: 'Complete', exact: true }).click();
+    await page.evaluate(() => {
+      const session = window.session;
+      window.serverProgress = session.progress.toFrame();
+      session.receiveProgress(window.serverProgress);
+      session.markProgress('dock', 'complete');
+      session.progressInFlight.set('progress-refused', session.progress.toFrame());
+      session.receiveReject({ frameId: 'progress-refused', code: 'bad-frame' });
+      const replace = session.store.replaceLane.bind(session.store);
+      session.store.replaceLane = (...args) => new Promise((resolve) => {
+        window.finishReplacement = () => resolve(replace(...args));
+      });
+    });
+    await page.getByRole('alert').getByRole('button', { name: /^Discard/ }).click();
+    const undo = page.locator('.st-board-step-undo');
+    assert.equal(await undo.isDisabled(), true);
+    await undo.evaluate((node) => node.click());
+    await page.evaluate(() => window.finishReplacement());
+    await page.getByRole('alert').waitFor({ state: 'detached' });
+    assert.equal(await undo.isDisabled(), true);
+    assert.equal(await page.evaluate(() => window.session.progress.overlay().completed.has('wind')), true);
+    assert.deepEqual(await page.evaluate(() => window.events.filter(({ name, props }) => name === 'roadmap_board_step_action' && props.action === 'undo')), []);
+    await page.evaluate(() => window.session.receiveProgressGraft(window.serverProgress));
+    assert.equal(await undo.isDisabled(), false);
+    await undo.click();
+    assert.equal(await page.evaluate(() => window.session.progress.overlay().completed.has('wind')), false);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+hostTest('Chromium: structure Discard still accepts completion while replacement is pending', async () => {
+  const workspace = { wind: { note: 'Private preparation note', subtasks: [], links: [] } };
+  const { page, errors } = await openHost({ width: 744, fixedClock: true, workspace });
+  try {
+    await page.evaluate(() => {
+      window.scene.activate('wind');
+      const session = window.session;
+      session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
+      session.inFlight.set('structure-refused', session.lattice.toFrame());
+      session.receiveReject({ frameId: 'structure-refused', code: 'bad-frame' });
+      const replace = session.store.replaceLane.bind(session.store);
+      session.store.replaceLane = (...args) => new Promise((resolve) => {
+        window.finishReplacement = () => resolve(replace(...args));
+      });
+    });
+    await page.getByRole('alert').getByRole('button', { name: /^Discard/ }).click();
+    const complete = page.getByRole('button', { name: 'Complete', exact: true });
+    assert.equal(await complete.isDisabled(), false);
+    await complete.click();
+    assert.equal(await page.evaluate(() => window.session.progress.overlay().completed.has('wind')), true);
+    await page.evaluate(() => window.finishReplacement());
+    await page.getByRole('alert').waitFor({ state: 'detached' });
+    await page.evaluate(() => window.session.receiveState({ ...window.serverTree, seq: 2 }));
+    assert.equal(await page.locator('.st-board-step-status-label').textContent(), 'Done');
+    await page.locator('.st-board-step-undo').click();
+    assert.equal(await page.evaluate(() => window.session.progress.overlay().completed.has('wind')), false);
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('windmill:workspace:t_sail'))), workspace);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+for (const width of [744, 1440]) {
+  for (const action of ['Complete', 'Reset']) {
+    hostTest(`Chromium: the ${width}px Graph naming handoff reports ${action} only after progress accepts it`, async () => {
+      const { page, errors } = await openHost({ width: 1440 });
+      try {
+        await page.evaluate((action) => {
+          window.createdStep = window.scene.options.onCreateChild('course').id;
+          if (action === 'Reset') {
+            window.session.markProgress(window.createdStep, 'complete');
+            window.session.emitProjection('progress');
+          }
+          window.session.rebaselining = new Set(['progress']);
+          window.session.emitStatus();
+        }, action);
+        await page.setViewportSize({ width, height: 1000 });
+        const label = width === 744 ? action === 'Complete' ? 'Mark done' : 'Mark not done' : action;
+        const button = page.getByRole('button', { name: label, exact: true }).filter({ visible: true });
+        await button.click();
+        assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => ['roadmap_board_complete', 'roadmap_board_step_action'].includes(name))), []);
+        assert.equal(await page.evaluate(() => window.session.progress.overlay().completed.has(window.createdStep)), action === 'Reset');
+        await page.evaluate(() => window.session.receiveProgressGraft(window.serverProgress));
+        await button.click();
+        assert.equal(await page.evaluate(() => window.session.progress.overlay().completed.has(window.createdStep)), action === 'Complete');
+        const surface = width === 744 ? 'panel' : 'dock';
+        assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => ['roadmap_board_complete', 'roadmap_board_step_action'].includes(name))), [action === 'Complete'
+          ? { name: 'roadmap_board_complete', props: { door: surface } }
+          : { name: 'roadmap_board_step_action', props: { surface, action: 'reset' } }]);
+        assert.deepEqual(errors, []);
+      } finally { await page.close(); }
+    });
+  }
+}

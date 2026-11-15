@@ -769,6 +769,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             roadmapTitle={tree.title}
             editable={owner}
             refusal={refusal}
+            progressBlocked={Boolean(syncSnapshot?.progressBlocked)}
             deletable={deletable(boardTree, [detailId])}
             onEdit={owner ? (id) => composerDoor.openEdit(id) : undefined}
             treeActs={treeActs}
@@ -784,7 +785,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             onReset={(id) => progressActs.reset(id)}
             onRestore={(id, snapshot) => {
               setBoardQuiet((current) => current + 1);
-              progressActs.restore(id, snapshot);
+              return progressActs.restore(id, snapshot);
             }}
             onOpenInGraph={!graphUnavailable ? stepPage.openInGraph : null}
             onSelect={boardSelectionOpen && deletable(boardTree, [detailId]) ? stepPage.select : null}

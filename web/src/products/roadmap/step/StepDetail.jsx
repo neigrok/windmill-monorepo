@@ -45,6 +45,7 @@ export function StepDetail({
   roadmapTitle,
   editable = false,
   refusal = null,
+  progressBlocked = false,
   deletable = false,
   stepLink = null,
   workspace,
@@ -128,6 +129,8 @@ export function StepDetail({
     if (treePicker) setTreePicker(false);
   }
 
+  if (outcome && facts.marked !== (outcome.kind === 'complete')) setOutcome(null);
+
   if (checked && !workspace?.subtasks?.some((item) => item.id === checked.id && item.done)) {
     setChecked(null);
   }
@@ -186,7 +189,7 @@ export function StepDetail({
     if (!editable || layer.closest('[inert]')) return;
     const active = document.activeElement;
     if (active !== document.body && active?.isConnected && active !== previousFocus) return;
-    const target = layer.querySelector('.st-board-step-undo') ?? layer.querySelector('.st-board-step-identity-title');
+    const target = layer.querySelector('.st-board-step-undo:not(:disabled)') ?? layer.querySelector('.st-board-step-identity-title');
     target?.focus();
   }, [refusalShown, editable]);
 
@@ -254,25 +257,25 @@ export function StepDetail({
 
   // Completion and Undo retain this document and report their outcome beside its pinned actions.
   const complete = (action) => {
-    if (!editableRef.current || currentStep.current !== id) return;
+    if (!editableRef.current || progressBlocked || currentStep.current !== id) return;
     const before = { completed, completedAt };
-    onComplete(id);
+    if (onComplete(id) === false) return;
     setOutcome({ kind: 'complete', line: completedOutcome({ unlocked: facts.opens.map(titleOf) }), undoable: true, before });
     act(action);
   };
 
   const reset = () => {
-    if (!editableRef.current || currentStep.current !== id) return;
+    if (!editableRef.current || progressBlocked || currentStep.current !== id) return;
     const before = { completed, completedAt };
-    onReset(id);
+    if (onReset(id) === false) return;
     setOutcome({ kind: 'reset', line: resetOutcome({ relocked: facts.relocks }), undoable: true, before });
     act('reset');
   };
 
   const undo = () => {
-    if (!editableRef.current || currentStep.current !== id || !outcome?.undoable) return;
+    if (!editableRef.current || progressBlocked || currentStep.current !== id || !outcome?.undoable) return;
     try {
-      onRestore(id, outcome.before);
+      if (onRestore(id, outcome.before) === false) return;
       act('undo');
     } catch (error) {
       reportRoadmapFailure('roadmap-step-restore', error);
@@ -481,7 +484,7 @@ export function StepDetail({
                 <StepWorkspace key={id} ref={workspaceRef} nodeId={id} title={titleOf(facts.step)} workspace={workspace}
                   actions={workspaceActions} phone={phone} onEditing={setNoteEditing} onEditNote={() => act('editNote')}
                   onChecked={(item) => { if (phone) setChecked(item.done ? null : { id: item.id, label: item.label }); }} />
-                {offersCompletion(workspace, facts) && <SubtaskOffer onComplete={() => complete('completeFromSubtasks')} />}
+                {offersCompletion(workspace, facts) && <SubtaskOffer disabled={progressBlocked} onComplete={() => complete('completeFromSubtasks')} />}
               </section>}
               <section id={`${sectionsId}-history`} className="st-step-history-section">
                 <h3 className="st-step-section-title"><Clock size={16} aria-hidden />{STEP_DETAIL.sections.history}</h3>
@@ -496,8 +499,8 @@ export function StepDetail({
           <footer className="st-step-pinned-actions">
             {!(phone && outcome) && <span className="st-step-shared-label"><Users size={14} aria-hidden />{t('roadmap.step.sharedStep')}</span>}
             <p className="st-board-step-outcome" role="status">{outcome?.line ?? ''}</p>
-            {editable && outcome?.undoable && <button type="button" className="st-board-step-undo st-board-step-action st-board-step-action--secondary" onClick={undo}><Undo2 size={18} aria-hidden />{LABELS.undo}</button>}
-            {editable && !noteEditing && <StepActions facts={facts} phone={phone} onComplete={() => complete('complete')} onReset={reset} onOpenTree={openTree} />}
+            {editable && outcome?.undoable && <button type="button" className="st-board-step-undo st-board-step-action st-board-step-action--secondary" disabled={progressBlocked} onClick={undo}><Undo2 size={18} aria-hidden />{LABELS.undo}</button>}
+            {editable && !noteEditing && <StepActions facts={facts} phone={phone} progressBlocked={progressBlocked} onComplete={() => complete('complete')} onReset={reset} onOpenTree={openTree} />}
             {!editable && facts.opening?.owned && openTree && <div className="st-board-step-buttons"><TreeBand facts={facts} onOpenTree={openTree} /></div>}
           </footer>
           {phone && <div className="st-step-phone-coach" aria-hidden />}
@@ -733,7 +736,7 @@ function treeRule({ opening, column, needs, roadmap }, detachable) {
 
 // Up next offers Complete; Done offers Reset, secondary, previewing what it returns to Locked. A step that opens a tree
 // offers neither: where they sat it says what completes it, beside the way into the tree.
-function StepActions({ facts, phone, onComplete, onReset, onOpenTree }) {
+function StepActions({ facts, phone, progressBlocked, onComplete, onReset, onOpenTree }) {
   const [previewing, setPreviewing] = useState(false);
   const preview = previewing && facts.takesMark && facts.column === 'done' ? resetPreview({ relocked: facts.relocks }) : null;
   if (facts.takesMark && facts.column === 'locked') return null;
@@ -743,7 +746,7 @@ function StepActions({ facts, phone, onComplete, onReset, onOpenTree }) {
       <div className="st-board-step-buttons">
         {!facts.takesMark && <TreeBand facts={facts} onOpenTree={onOpenTree} />}
         {facts.takesMark && facts.column === 'upNext' && (
-          <button type="button" className="st-board-step-action st-board-step-action--primary" onClick={onComplete}>
+          <button type="button" className="st-board-step-action st-board-step-action--primary" disabled={progressBlocked} onClick={onComplete}>
             {STEP_DETAIL.complete}
           </button>
         )}
@@ -751,6 +754,7 @@ function StepActions({ facts, phone, onComplete, onReset, onOpenTree }) {
           <button
             type="button"
             className="st-board-step-action st-board-step-action--secondary"
+            disabled={progressBlocked}
             onClick={onReset}
             onPointerEnter={phone ? undefined : () => setPreviewing(true)}
             onPointerLeave={() => setPreviewing(false)}
@@ -788,12 +792,12 @@ function TreeBand({ facts, onOpenTree }) {
   );
 }
 
-function SubtaskOffer({ onComplete }) {
+function SubtaskOffer({ onComplete, disabled }) {
   return (
     <div className="st-board-step-offer">
       <span className="st-board-step-offer-glyph"><StepIcons.offer /></span>
       <span className="st-board-step-offer-body">{STEP_DETAIL.subtaskOffer.body}</span>
-      <button type="button" className="st-board-step-offer-action" onClick={onComplete}>{STEP_DETAIL.subtaskOffer.action}</button>
+      <button type="button" className="st-board-step-offer-action" disabled={disabled} onClick={onComplete}>{STEP_DETAIL.subtaskOffer.action}</button>
     </div>
   );
 }

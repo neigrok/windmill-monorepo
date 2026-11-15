@@ -104,6 +104,8 @@
 .st-step-pinned-actions .st-board-step-preview { font-size: 12px; }
 .st-step-pinned-actions .st-board-step-outcome { min-width: 0; }
 .st-step-pinned-actions .st-board-step-undo { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.st-step-document .st-board-step-action:disabled,
+.st-step-document .st-board-step-offer-action:disabled { opacity: 0.5; cursor: not-allowed; }
 .st-step-read-title .st-board-step-identity-title:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 .st-step-coach { width: 56px; flex-shrink: 0; border-left: 1px solid var(--border-default); background: var(--st-step-paper); box-sizing: border-box; }
 .st-step-coach.is-expanded { width: 400px; }

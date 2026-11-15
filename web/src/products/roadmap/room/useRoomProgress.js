@@ -35,6 +35,10 @@ export class RoomProgress {
     return !demo && !shared && !demotion && Boolean(seedRef.current?.mine);
   }
 
+  get progressBlocked() {
+    return Boolean(this.collaborators.sessionRef.current?.rebaselining?.has('progress'));
+  }
+
   // What stands complete under these marks: the marks themselves until the roadmap has loaded.
   completedUnder(progress) {
     const tree = this.collaborators.treeRef.current;
@@ -62,20 +66,16 @@ export class RoomProgress {
     returnLedger.save(treeId, { completed: [...completed], at: Date.now() });
   }
 
-  push(nodeIds, wireStatus) {
-    const { demo, sessionRef } = this.collaborators;
-    if (!demo) sessionRef.current?.markProgress(nodeIds, wireStatus);
-  }
-
   // A step that opens a tree takes no mark: no door offers one, and a call that reaches here for one changes and sends nothing.
   mark(ids, target, wire = ids, at = Date.now()) {
-    if (!this.collaborators.demo && !this.ownMarks) return this.snapshot;
+    if (this.progressBlocked || (!this.collaborators.demo && !this.ownMarks)) return false;
     const steps = this.collaborators.treeRef.current?.nodesById;
-    if (ids.some((id) => !takesMark(steps?.get(id)))) return this.snapshot;
+    if (ids.some((id) => !takesMark(steps?.get(id)))) return false;
     const next = advanceProgress(this.snapshot, ids, target, at);
+    const { demo, sessionRef } = this.collaborators;
+    if (!demo) sessionRef.current?.markProgress(wire, target);
     this.commit(next);
     this.witness(next, { ids, target });
-    this.push(wire, target);
     return next;
   }
 
@@ -111,7 +111,7 @@ export class RoomProgress {
     const before = this.snapshot;
     const shown = tree ?? c.treeRef.current;
     const next = this.mark([id], 'complete', id, at);
-    if (next === before) return next;
+    if (next === false) return false;
     const changes = progressChanges(shown, before, next);
     this.announceChanges({ completed: [id], unlocked: changes.unlocked });
     if (quiet || door === 'board') return next;
@@ -131,7 +131,7 @@ export class RoomProgress {
         const current = this.collaborators;
         if (!current.demo && !this.ownMarks) return;
         try {
-          this.restore(id, before);
+          if (this.restore(id, before) === false) return;
           current.track('roadmap_graph_toast', { act: 'complete', step: 'undo' });
         } catch (error) {
           current.report('roadmap-step-restore', error);
@@ -147,7 +147,7 @@ export class RoomProgress {
     if (!targets.length) return;
     const before = this.snapshot;
     const next = this.mark(targets, 'complete');
-    if (next === before) return;
+    if (next === false) return;
     this.collaborators.track('roadmap_board_complete', { door: 'bulk', count: countBucket(targets.length) });
     this.announceChanges({ completed: targets, unlocked: progressChanges(this.collaborators.treeRef.current, before, next).unlocked });
     const offer = this.milestoneOffer(before, next);
@@ -155,12 +155,13 @@ export class RoomProgress {
   }
 
   reset(id) {
-    if (id) this.mark([id], 'none', id);
+    if (!id) return false;
+    return this.mark([id], 'none', id);
   }
 
   // The mark goes back with no ceremony or activity, but the lattice dates every mark: an Undo of Reset completes at the Undo's time.
   restore(id, snapshot) {
-    this.mark([id], snapshot.completed.has(id) ? 'complete' : 'none', id);
+    return this.mark([id], snapshot.completed.has(id) ? 'complete' : 'none', id);
   }
 
   adoptLoaded(overlay) {

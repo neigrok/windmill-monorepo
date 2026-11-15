@@ -45,8 +45,8 @@ export function GraphDocks({
   };
   const markSelected = () => {
     if (!selectedId) return;
+    if (progressActs.complete(selectedId) === false) return;
     track('roadmap_board_complete', { door: 'dock' });
-    progressActs.complete(selectedId);
   };
 
   return (
@@ -65,8 +65,8 @@ export function GraphDocks({
               onOpenLegend={onLegendPicker}
               onMarkComplete={markSelected}
               onReset={(id) => {
+                if (progressActs.reset(id) === false) return;
                 track('roadmap_board_step_action', { surface: 'dock', action: 'reset' });
-                progressActs.reset(id);
               }}
               deletable={stepDeletable}
               onDelete={editing.deleteNodeAt}
@@ -108,12 +108,12 @@ export function GraphDocks({
           autoFocusName={autoFocusName}
           deletable={stepDeletable}
           onMarkDone={(id) => {
+            if (progressActs.complete(id) === false) return;
             track('roadmap_board_complete', { door: 'panel' });
-            progressActs.complete(id);
           }}
           onUnmarkDone={(id) => {
+            if (progressActs.reset(id) === false) return;
             track('roadmap_board_step_action', { surface: 'panel', action: 'reset' });
-            progressActs.reset(id);
           }}
           onDelete={editing.deleteNodeAt}
           onJump={onJump}

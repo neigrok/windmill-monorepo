@@ -273,7 +273,7 @@ test('status snapshots are frozen, stable and cover both lanes, socket transitio
   const seen = [];
   const stop = session.subscribeStatus((value) => seen.push(value));
   assert.deepEqual(seen, [{ phase: 'live', online: true, structurePending: 0, progressPending: 0,
-    structureInFlight: 0, progressInFlight: 0, structureGestures: 0, progressGestures: 0, rebaselining: false, refused: null, receiptVersion: 0 }]);
+    structureInFlight: 0, progressInFlight: 0, structureGestures: 0, progressGestures: 0, rebaselining: false, progressBlocked: false, refused: null, receiptVersion: 0 }]);
   assert.equal(session.statusSnapshot(), seen[0]);
   assert.equal(Object.isFrozen(seen[0]), true);
   session.dispatch({ kind: 'RenameNode', id: 'root', label: 'Local' });
@@ -293,6 +293,28 @@ test('status snapshots are frozen, stable and cover both lanes, socket transitio
   const count = seen.length;
   session.close();
   assert.equal(seen.length, count);
+});
+
+test('status publishes progress acceptance when its baseline arrives before the structure baseline', (t) => {
+  const { session, saves } = connectedSession(t);
+  const seen = [];
+  session.subscribeStatus((value) => seen.push(value));
+  const record = structuredClone(saves.at(-1));
+  record.epochs.structure += 1;
+  record.epochs.progress += 1;
+  session.adoptEpochs(record);
+  const blocked = seen.at(-1);
+  assert.deepEqual({ rebaselining: blocked.rebaselining, progressBlocked: blocked.progressBlocked },
+    { rebaselining: true, progressBlocked: true });
+  const count = seen.length;
+
+  session.receiveProgressGraft({ marks: [] });
+
+  assert.equal(seen.length, count + 1);
+  assert.deepEqual(seen.at(-1), { ...blocked, progressBlocked: false });
+  assert.deepEqual([...session.rebaselining], ['structure']);
+  session.markProgress('root', 'complete');
+  assert.deepEqual([...session.progress.overlay().completed], ['root']);
 });
 
 test('refusals retain both lanes, exclude ownership/session codes, and clear at lane drain', (t) => {
@@ -598,7 +620,7 @@ test('close publishes offline with empty in-flight maps while retaining the unac
   session.subscribeStatus((state) => states.push(state));
   session.close();
   assert.deepEqual(states.at(-1), { phase: 'offline', online: true, structurePending: 1, progressPending: 1,
-    structureInFlight: 0, progressInFlight: 0, structureGestures: 1, progressGestures: 1, rebaselining: false, refused: null, receiptVersion: 0 });
+    structureInFlight: 0, progressInFlight: 0, structureGestures: 1, progressGestures: 1, rebaselining: false, progressBlocked: false, refused: null, receiptVersion: 0 });
   assert.equal(session.statusHandlers.size, 0);
 });
 
@@ -717,7 +739,7 @@ test('discard immediately projects the confirmed tree and suppresses transport w
   assert.deepEqual(projected, [['root', 'child'], ['root']]);
   const expected = { phase: 'syncing', online: true, structurePending: 0, progressPending: 0,
     structureInFlight: 0, progressInFlight: 0, structureGestures: 0, progressGestures: 0,
-    rebaselining: true, refused: null, receiptVersion: 0 };
+    rebaselining: true, progressBlocked: false, refused: null, receiptVersion: 0 };
   assert.deepEqual(session.statusSnapshot(), expected);
   const value = structuredClone(saves.at(-1));
   value.epochs.structure += 1;

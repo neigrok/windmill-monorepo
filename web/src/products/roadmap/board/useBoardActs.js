@@ -128,6 +128,7 @@ export class BoardActs {
     }
     const before = c.progress;
     const after = c.completeStep(id, { door: 'board', at: c.now() });
+    if (after === false) return false;
     const outcome = completionOutcome(tree, before, after, id);
     c.showToast(outcome.message, {
       surface: 'board', act: 'complete', reveal: outcome.reveal, holdMs: 6000,
@@ -135,7 +136,7 @@ export class BoardActs {
         const current = this.collaborators;
         try {
           current.onQuiet();
-          current.restoreStep(id, before);
+          if (current.restoreStep(id, before) === false) return;
           current.onReveal(id);
           current.track('roadmap_board_undo', { act: 'complete' });
         } catch (error) {
