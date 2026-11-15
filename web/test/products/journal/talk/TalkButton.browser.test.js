@@ -129,8 +129,9 @@ const read = (code, { reserved = '0.000000000', remaining = '0.000000000', reset
 });
 const spent = { status: 429, body: { code: 'subject_exhausted', reason: 'allowance_exhausted',
   error: 'your AI allowance is fully used or reserved', allowance: read('subject_exhausted') } };
-const renewing = { environment: 'production', allowlisted: false, plan: 'windmill_one', accessUntil: Date.UTC(2026, 11, 4),
-  governing: { autoRenew: true }, others: [], manage: null, purchasable: [], offer: null };
+const renewing = { windmillOne: true, environment: 'production', allowlisted: false, plan: 'windmill_one',
+  accessUntil: Date.UTC(2026, 11, 4), governing: { autoRenew: true }, others: [], manage: null, purchasable: [],
+  offer: null };
 
 // A room whose server answers each take from `takes`, in order — an answer, 'unreachable', or a function the route is
 // handed — the allowance read with `allowance` and the plan with `plan`. Time stands still until the test moves it.

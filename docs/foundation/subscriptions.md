@@ -341,7 +341,9 @@ Devices never call this service. The backend authenticates the caller and serves
   not. An account off the allowlist never sees its sandbox `Entitlement`. An owner's `Entitlement` is
   chosen the same way.
 - `windmillOne` is what `Entitlements::hasWindmillOne` (§6.1) answers for the account as the
-  response is built, true for an owner whatever its `Entitlement` shows.
+  response is built, true for an owner whatever its `Entitlement` shows. A client reads access from
+  it alone, never computing it from `accessUntil` and its own clock: `accessUntil` is only a date to
+  show.
 - `offer` is what a month of Windmill One funds, which the buy sheet shows:
   `{"aiAllowance": {"amount": "7.00", "currency": "USD"}}`, read from the backend's configuration
   (`AI_ONE_PERIOD_USD`, [USD AI allowances](../../backend/AI_ALLOWANCES.md)). It is non-null exactly
