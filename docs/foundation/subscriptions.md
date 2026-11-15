@@ -250,7 +250,9 @@ period leaves a running subscription `active` (§8).
 - When a claim binds a subscription whose hint is absent or names an erased account, the service
   writes the caller's id to the store as the hint (the App Store's Set App Account Token), so the
   store's later statements name the account. The binding's transaction records the hint as owed, and the
-  sweep writes it and clears it once the store took it (§7).
+  sweep writes it and clears it once the store took it (§7). A hint is written only while the subscription
+  is bound to its account and that account is not erased; one whose binding moved, as a new purchase moves
+  it (R-11), or whose account was erased is dropped unwritten.
 
 ## §5 Doors
 

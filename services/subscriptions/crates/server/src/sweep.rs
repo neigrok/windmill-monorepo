@@ -31,7 +31,7 @@ impl Sweep {
     pub fn new(ledger: Ledger, app_store: AppStoreDoor) -> Sweep {
         Sweep {
             inbox: InboxSweep::new(ledger.clone(), app_store.clone()),
-            store_hints: StoreHintSweep::new(ledger, app_store),
+            store_hints: StoreHintSweep::new(app_store),
         }
     }
 
@@ -127,13 +127,12 @@ impl InboxSweep {
 // pass. A hint its store did not take stays owed for the next pass, and a failure every hint would meet now, as an API
 // that does not answer, ends the pass. Without a key for the store's API nothing is read.
 pub struct StoreHintSweep {
-    ledger: Ledger,
     app_store: AppStoreDoor,
 }
 
 impl StoreHintSweep {
-    pub fn new(ledger: Ledger, app_store: AppStoreDoor) -> StoreHintSweep {
-        StoreHintSweep { ledger, app_store }
+    pub fn new(app_store: AppStoreDoor) -> StoreHintSweep {
+        StoreHintSweep { app_store }
     }
 
     // One pass; each hint written logs its own `store.hint` line.
@@ -142,10 +141,9 @@ impl StoreHintSweep {
         if !self.app_store.writes_store_hints() {
             return pass;
         }
-        let hints = match self.ledger.store_hints(PAGE).await {
+        let hints = match self.app_store.store_hints_due(PAGE).await {
             Ok(hints) => hints,
             Err(failure) => {
-                self.app_store.report_store_hints_unread(&failure);
                 pass.unread = Some(failure);
                 return pass;
             }

@@ -293,8 +293,9 @@ fn story(file: &str) -> Value {
     serde_json::from_str(&fs::read_to_string(stories).unwrap()).unwrap()
 }
 
-// A description with no account hint anywhere: a purchase made without the app setting one.
-fn without_hint(mut description: Value) -> Value {
+// A description whose every payload states the account hint given, or none: a purchase made without the app setting
+// one.
+fn with_hint(mut description: Value, account: Option<&str>) -> Value {
     let holders = [
         "/notification/data/signedTransactionInfo",
         "/notification/data/signedRenewalInfo",
@@ -304,10 +305,17 @@ fn without_hint(mut description: Value) -> Value {
     ];
     for holder in holders {
         if let Some(Value::Object(payload)) = description.pointer_mut(holder) {
-            payload.remove("appAccountToken");
+            match account {
+                Some(account) => payload.insert("appAccountToken".to_owned(), json!(account)),
+                None => payload.remove("appAccountToken"),
+            };
         }
     }
     description
+}
+
+fn without_hint(description: Value) -> Value {
+    with_hint(description, None)
 }
 
 fn signed(description: Value, at: i64) -> String {
@@ -597,7 +605,7 @@ fn the_sweep_writes_the_hint_a_claim_owes_keeps_one_apple_did_not_take_and_clear
             assert_eq!(claimed, StatusCode::OK);
             captured.take(&["store.claim"]);
 
-            let sweep = StoreHintSweep::new(ledger.clone(), door.clone());
+            let sweep = StoreHintSweep::new(door.clone());
             let stop = CancellationToken::new();
             apple.answers_token_puts(StatusCode::INTERNAL_SERVER_ERROR);
             let mut passes = vec![sweep.pass(&stop).await, sweep.pass(&stop).await];
@@ -882,7 +890,7 @@ fn without_a_key_for_apple_s_api_a_claim_and_a_refresh_answer_503_and_an_owed_hi
             )
             .await,
         ];
-        let pass = StoreHintSweep::new(ledger.clone(), keyless)
+        let pass = StoreHintSweep::new(keyless)
             .pass(&CancellationToken::new())
             .await;
         let lines = captured.take(&["store.claim", "store.refresh"]);
@@ -1158,7 +1166,7 @@ fn apple_down_and_the_ledger_down_are_two_issues_each_reported_in_its_own_slot()
         );
         let transaction = signed(without_hint(story("purchase-transaction.json")), start);
         let claims = "/internal/v1/app-store/claims";
-        let sweep = StoreHintSweep::new(ledger.clone(), door.clone());
+        let sweep = StoreHintSweep::new(door.clone());
         let stop = CancellationToken::new();
         assert_eq!(
             post(&internal, claims, claim(ada, &transaction), true)
@@ -1235,4 +1243,165 @@ fn apple_down_and_the_ledger_down_are_two_issues_each_reported_in_its_own_slot()
         .map(|fingerprint| fingerprint.map(str::to_owned).to_vec())
         .to_vec()
     );
+}
+
+// Each subscription the ledger holds: its original transaction, the account it is bound to, and how.
+async fn bindings(url: &str) -> Vec<(String, Option<String>, Option<String>)> {
+    let mut connection = PgConnection::connect(url).await.unwrap();
+    sqlx::query_as(
+        "select store_subscription_id, account_id::text, bound_by from subscriptions order by store_subscription_id",
+    )
+    .fetch_all(&mut connection)
+    .await
+    .unwrap()
+}
+
+// R-11: Ada claims a purchase made without a hint, so the ledger owes Apple her id. Before the sweep writes it the
+// lineage ends and Bo, on the same Apple Account, buys it again with his own: the move to Bo drops Ada's hint in its
+// own transaction, and the sweep writes nothing.
+#[test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+fn a_rebuy_that_moves_the_lineage_drops_the_hint_owed_for_the_account_it_left() {
+    let start = 1_793_491_200_000_i64;
+    let day = 86_400_000;
+    let ada = "9387ec65-ab17-4b8c-b145-fd0d622966db";
+    let bo = "2c5e8f1a-7d3b-4c9e-a6f2-0b8d4e1c7a95";
+    let ((owed_after_the_claim, bound, owed_after_the_rebuy, pass, tokens), events) =
+        reported(with_empty_database(async |url| {
+            let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+            let clock = Clock::at(start);
+            let (apple, apple_url) = Apple::serve().await;
+            let door = door(&ledger, &clock, Some(&apple_url));
+            let (public, internal) = routers(&ledger, &door);
+            notify(&public, &ledger, without_hint(story("started.json")), start).await;
+            apple.answers_status(
+                StatusCode::OK,
+                signed(without_hint(story("subscription-status.json")), start),
+            );
+            let transaction = signed(without_hint(story("purchase-transaction.json")), start);
+            let (claimed, _) = post(
+                &internal,
+                "/internal/v1/app-store/claims",
+                claim(ada, &transaction),
+                true,
+            )
+            .await;
+            assert_eq!(claimed, StatusCode::OK);
+            let owed_after_the_claim = owed(&url).await;
+
+            // Thirty days on it expires; ten days later Bo resubscribes with his own hint.
+            clock.set(start + 30 * day);
+            notify(
+                &public,
+                &ledger,
+                without_hint(story("expired.json")),
+                start + 30 * day,
+            )
+            .await;
+            let mut rebuy = with_hint(story("started.json"), Some(bo));
+            rebuy["notification"]["subtype"] = json!("RESUBSCRIBE");
+            let transaction = &mut rebuy["notification"]["data"]["signedTransactionInfo"];
+            transaction["transactionId"] = json!("2000000000000003");
+            transaction["webOrderLineItemId"] = json!("2000000000000103");
+            transaction["originalPurchaseDate"] = json!("now-40d");
+            rebuy["notification"]["data"]["signedRenewalInfo"]["recentSubscriptionStartDate"] =
+                json!("now");
+            clock.set(start + 40 * day);
+            notify(&public, &ledger, rebuy, start + 40 * day).await;
+            let bound = bindings(&url).await;
+            let owed_after_the_rebuy = owed(&url).await;
+            let pass = StoreHintSweep::new(door.clone())
+                .pass(&CancellationToken::new())
+                .await;
+            (
+                owed_after_the_claim,
+                bound,
+                owed_after_the_rebuy,
+                pass,
+                apple.tokens(),
+            )
+        }));
+
+    assert_eq!(
+        owed_after_the_claim,
+        vec![("2000000000000001".to_owned(), ada.to_owned())]
+    );
+    assert_eq!(
+        bound,
+        vec![(
+            "2000000000000001".to_owned(),
+            Some(bo.to_owned()),
+            Some("purchase".to_owned())
+        )]
+    );
+    assert_eq!(owed_after_the_rebuy, Vec::new());
+    assert_eq!(pass, HintPass::default());
+    assert_eq!(tokens, Vec::new());
+    assert_eq!(events.len(), 0, "{events:#?}");
+}
+
+// The backend erases Ada while her claim's hint is still owed: the sweep drops the hint and never writes her id.
+#[test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+fn an_erased_account_s_owed_hint_is_dropped_and_never_written_to_apple() {
+    let start = 1_793_491_200_000_i64;
+    let ada = "9387ec65-ab17-4b8c-b145-fd0d622966db";
+    let ((owed_after_the_erasure, pass, owed_after_the_pass, tokens, lines), events) =
+        reported(with_empty_database(async |url| {
+            let (captured, _logs) = Captured::start();
+            let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+            let clock = Clock::at(start);
+            let (apple, apple_url) = Apple::serve().await;
+            let door = door(&ledger, &clock, Some(&apple_url));
+            let (public, internal) = routers(&ledger, &door);
+            notify(&public, &ledger, without_hint(story("started.json")), start).await;
+            apple.answers_status(
+                StatusCode::OK,
+                signed(without_hint(story("subscription-status.json")), start),
+            );
+            let transaction = signed(without_hint(story("purchase-transaction.json")), start);
+            let (claimed, _) = post(
+                &internal,
+                "/internal/v1/app-store/claims",
+                claim(ada, &transaction),
+                true,
+            )
+            .await;
+            assert_eq!(claimed, StatusCode::OK);
+            ledger
+                .record_erasure(Uuid::parse_str(ada).unwrap())
+                .await
+                .unwrap();
+            let owed_after_the_erasure = owed(&url).await;
+            captured.take(&["store.hint"]);
+            let pass = StoreHintSweep::new(door.clone())
+                .pass(&CancellationToken::new())
+                .await;
+            (
+                owed_after_the_erasure,
+                pass,
+                owed(&url).await,
+                apple.tokens(),
+                captured.take(&["store.hint"]),
+            )
+        }));
+
+    assert_eq!(
+        owed_after_the_erasure,
+        vec![("2000000000000001".to_owned(), ada.to_owned())]
+    );
+    assert_eq!(pass, HintPass::default());
+    assert_eq!(owed_after_the_pass, Vec::new());
+    assert_eq!(tokens, Vec::new());
+    assert_eq!(
+        lines,
+        vec![json!({
+            "level": "INFO",
+            "message": "store.hint",
+            "operation": "store.hint",
+            "outcome": "forgotten",
+            "hints": 1,
+        })]
+    );
+    assert_eq!(events.len(), 0, "{events:#?}");
 }

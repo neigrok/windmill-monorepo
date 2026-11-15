@@ -10,8 +10,15 @@ use crate::subscriptions::named;
 const OWE: &str = "insert into store_hints (subscription_id, store, environment, store_subscription_id, \
      account_id) values ($1::uuid, $2, $3, $4, $5::uuid) \
      on conflict (subscription_id) do update set account_id = excluded.account_id, owed_since = now_millis()";
-const SELECT_OWED: &str = "select subscription_id, store, environment, store_subscription_id, account_id \
-     from store_hints order by owed_since, subscription_id limit $1";
+// A hint is owed while its subscription is bound to the account it names and that account is not erased (§4, §6.4).
+const SELECT_OWED: &str = "select h.subscription_id, h.store, h.environment, h.store_subscription_id, h.account_id \
+     from store_hints h join subscriptions s on s.id = h.subscription_id and s.account_id = h.account_id \
+     where not exists (select from erased_accounts e where e.account_id = h.account_id) \
+     order by h.owed_since, h.subscription_id limit $1";
+const FORGET_STALE: &str = "delete from store_hints h \
+     where not exists (select from subscriptions s where s.id = h.subscription_id and s.account_id = h.account_id) \
+     or exists (select from erased_accounts e where e.account_id = h.account_id)";
+const FORGET_OTHER_ACCOUNTS: &str = "delete from store_hints where subscription_id = $1::uuid and account_id is distinct from $2::uuid";
 const CLEAR: &str =
     "delete from store_hints where subscription_id = $1::uuid and account_id = $2::uuid";
 
@@ -24,7 +31,8 @@ pub struct StoreHint {
 }
 
 impl Ledger {
-    // At most `limit` hints owed, the longest owed first: the sweep writes each to its store and clears it.
+    // At most `limit` hints owed, the longest owed first: the sweep writes each to its store and clears it. A hint whose
+    // subscription is bound to another account since, or whose account was erased, is not one.
     pub async fn store_hints(&self, limit: i64) -> Result<Vec<StoreHint>, StorageError> {
         let rows: Vec<StoreHintRow> = sqlx::query_as(SELECT_OWED)
             .bind(limit)
@@ -45,6 +53,13 @@ impl Ledger {
             .collect()
     }
 
+    // Drops every hint no longer owed: its subscription is bound to another account, or its account was erased. It
+    // answers how many it dropped.
+    pub async fn forget_stale_store_hints(&self) -> Result<u64, StorageError> {
+        let forgotten = sqlx::query(FORGET_STALE).execute(&self.pool).await?;
+        Ok(forgotten.rows_affected())
+    }
+
     // The store took the hint. A hint owed to another account since stays owed.
     pub async fn clear_store_hint(&self, hint: &StoreHint) -> Result<(), StorageError> {
         sqlx::query(CLEAR)
@@ -54,6 +69,20 @@ impl Ledger {
             .await?;
         Ok(())
     }
+}
+
+// Drops the hints owed for the subscription to any account but the one it is bound to now, in the transaction that
+// moves its binding, as a new purchase does (R-11).
+pub(crate) async fn forget_other_accounts(
+    connection: &mut PgConnection,
+    subscription: &Subscription,
+) -> Result<(), StorageError> {
+    sqlx::query(FORGET_OTHER_ACCOUNTS)
+        .bind(subscription.id.as_str())
+        .bind(subscription.account_id().map(AccountId::as_str))
+        .execute(connection)
+        .await?;
+    Ok(())
 }
 
 // Owes the subscription's store the account as its hint, in the transaction that binds the subscription to it.

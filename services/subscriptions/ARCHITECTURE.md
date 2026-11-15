@@ -562,7 +562,7 @@ redacted (spec §10).
 | `events` | Append-only, keyed by `seq`. Each row keeps its subscription's store, environment and offer kind as the transaction that recorded it left them, and a period event its period as the event states it, so the feed reads no other table's current state |
 | `entitlement_subscriptions` | For each event that names an account, that account's subscriptions as the transaction left them: what the event's entitlement folds over |
 | `erased_accounts` | The accounts the backend erased (§6.4) |
-| `store_hints` | The account hints the ledger owes the stores, each with its lineage: written in the transaction that binds a subscription by claim, cleared once the store has taken it (§4) |
+| `store_hints` | The account hints the ledger owes the stores, each with its lineage: written in the transaction that binds a subscription by claim, cleared once the store has taken it, and dropped once the subscription is bound to another account or the account is erased (§4) |
 
 ### Writing
 
@@ -576,7 +576,8 @@ redacted (spec §10).
 | `settle(kept, code)` | Settles a notification that states nothing to apply with the code of what it was; a settled notification keeps its first outcome |
 | `postpone(kept, by_millis)` | Leaves a kept notification unsettled and out of `unsettled` for that long: one that waits on what no retry brings sooner, such as its subscription's status. A redelivery still hands it back |
 | `unsettled(limit)` | The kept notifications not yet settled and not waiting after a failed attempt or a postponement, the longest kept first: what the sweep applies (§7 step 1) |
-| `store_hints(limit)`, `clear_store_hint(hint)` | The account hints owed to the stores, the longest owed first, and clearing one once its store took it; a hint owed since to another account stays |
+| `store_hints(limit)`, `clear_store_hint(hint)` | The account hints owed to the stores, the longest owed first: each whose subscription is bound to its account, which is not erased. Clearing one once its store took it; a hint owed since to another account stays |
+| `forget_stale_store_hints()` | Drops every hint no longer owed, its subscription bound to another account or its account erased, and answers how many |
 | `record_erasure(account)` | Records the account as erased; recording it again changes nothing. It unbinds nothing: the domain has no step for unbinding ([Domain](#domain)) |
 
 Only the ledger makes a `KeptNotification`, so nothing applies a notification the inbox does not hold.
@@ -601,7 +602,8 @@ transaction, the action of [Domain](#domain):
    `Refusal` writes nothing.
 4. Write the subscription when it differs from the one held, each period written or restated,
    `verified_at` when the state was pulled, and the hint owed to the store when the change binds by
-   claim. A replay writes no row (INV-4).
+   claim. A change that moves the binding, as a new purchase does (R-11), drops each hint owed for the
+   subscription to another account. A replay writes no row (INV-4).
 5. Take the events' seqs under the seq lock ([below](#the-seq-lock)), read the subscriptions of each
    account the events name, and append each event with its account's.
 6. For a notification, settle its inbox row. Commit.
@@ -935,8 +937,10 @@ the pass reports, at `debug` when it met no row and at `info` otherwise. A failu
 notification, an unverifiable copy, an unconfirmed latest transaction and an inbox the pass cannot read
 report under `sweep.inbox` and their code, at most once in ten minutes for each.
 
-`StoreHintSweep` writes the account hints the ledger owes the stores (spec §4), `Ledger::store_hints` 100 at
-a time, the longest owed first, each through its store's door: `AppStoreDoor::write_store_hint` puts the
+`StoreHintSweep` writes the account hints the ledger owes the stores (spec §4) through each store's door. A
+pass first drops every hint no longer owed (`Ledger::forget_stale_store_hints`), then reads
+`Ledger::store_hints` 100 at a time, the longest owed first, so no account's id reaches a store for a
+subscription bound to another account since, or after the account was erased: `AppStoreDoor::write_store_hint` puts the
 account as the lineage's app account token (Set App Account Token) and, once Apple took it, clears it with
 `Ledger::clear_store_hint`. A hint Apple did not take stays owed for the next pass, and a failure every hint
 would meet now (`ApiFailure::of_the_api`, as an Apple that does not answer) or a hint the ledger could not
@@ -950,6 +954,7 @@ Each hint written writes one `store.hint` line: `operation`, `store`, `environme
 | `outcome` | `code` | Level | Reported |
 |---|---|---|---|
 | `written` | | `info` | no |
+| `forgotten` | none; `hints` counts the hints a pass dropped | `info` | no |
 | `write_failed` | the `ApiFailure`'s | `error` | yes, at most once in ten minutes for each code |
 | `clear_failed` | the `StorageError`'s | `error` | yes, the same |
 | `unread` | the `StorageError`'s: the owed hints could not be read | `error` | yes, the same |

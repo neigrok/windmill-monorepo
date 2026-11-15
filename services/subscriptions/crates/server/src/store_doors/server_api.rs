@@ -302,22 +302,45 @@ impl AppStoreDoor {
         written
     }
 
-    // The owed hints the ledger could not read for the sweep, logged and reported as the hints' own operation.
-    pub fn report_store_hints_unread(&self, failure: &StorageError) {
-        let sentry_event_id = self.recurring_failures.report(
-            sentry::Level::Error,
-            HINT,
-            failure.code(),
-            failure.sqlstate(),
-        );
-        tracing::error!(
-            operation = HINT,
-            outcome = "unread",
-            code = failure.code(),
-            sqlstate = failure.sqlstate(),
-            sentry_event_id,
-            "{HINT}"
-        );
+    // The hints the sweep writes this pass: every hint no longer owed is dropped first, its subscription bound to
+    // another account since or its account erased (§4), then at most `limit` of the rest are read, the longest owed
+    // first. Each is logged as a `store.hint` line, and a ledger that does not answer is reported once in a while.
+    pub async fn store_hints_due(&self, limit: i64) -> Result<Vec<StoreHint>, StorageError> {
+        let read = async {
+            let forgotten = self.ledger.forget_stale_store_hints().await?;
+            let due = self.ledger.store_hints(limit).await?;
+            Ok::<_, StorageError>((forgotten, due))
+        };
+        match read.await {
+            Ok((forgotten, due)) => {
+                if forgotten > 0 {
+                    tracing::info!(
+                        operation = HINT,
+                        outcome = "forgotten",
+                        hints = forgotten,
+                        "{HINT}"
+                    );
+                }
+                Ok(due)
+            }
+            Err(failure) => {
+                let sentry_event_id = self.recurring_failures.report(
+                    sentry::Level::Error,
+                    HINT,
+                    failure.code(),
+                    failure.sqlstate(),
+                );
+                tracing::error!(
+                    operation = HINT,
+                    outcome = "unread",
+                    code = failure.code(),
+                    sqlstate = failure.sqlstate(),
+                    sentry_event_id,
+                    "{HINT}"
+                );
+                Err(failure)
+            }
+        }
     }
 }
 
