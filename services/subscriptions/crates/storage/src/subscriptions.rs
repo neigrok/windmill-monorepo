@@ -31,7 +31,7 @@ macro_rules! subscription_values {
     };
 }
 
-pub(crate) use {subscription_columns, subscription_values};
+pub(crate) use subscription_columns;
 
 const LOCK_LINEAGE: &str = "select pg_advisory_xact_lock(hashtextextended(\
      format('lineage %s %s %s', $1::text, $2::text, $3::text), 0))";
@@ -252,10 +252,7 @@ pub(crate) async fn bound_to(
 pub(crate) type PgQuery<'q> = Query<'q, Postgres, PgArguments>;
 
 // Binds a subscription to the parameters subscription_values names, in the order of subscription_columns.
-pub(crate) fn bind_subscription<'q>(
-    query: PgQuery<'q>,
-    subscription: &Subscription,
-) -> PgQuery<'q> {
+fn bind_subscription<'q>(query: PgQuery<'q>, subscription: &Subscription) -> PgQuery<'q> {
     let Subscription {
         id,
         lineage,
