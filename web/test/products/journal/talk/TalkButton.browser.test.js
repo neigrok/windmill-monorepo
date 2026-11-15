@@ -285,13 +285,23 @@ test('an allowance read that is spent says so before any take, and a plan that e
   ]);
 });
 
-test('a busy allowance offers Try again, which sends the kept take once more and writes it down', async (t) => {
+test('an allowance held or busy offers Try again, which sends the kept take once more and writes it down', async (t) => {
+  const held = { status: 429, body: { code: 'subject_exhausted', reason: 'allowance_exhausted',
+    error: 'your AI allowance is fully used or reserved', allowance: read('subject_exhausted', { reserved: '0.060000000' }) } };
   const busy = { status: 503, body: { code: 'concurrency_exhausted', reason: 'unavailable', error: 'busy',
     allowance: read('concurrency_exhausted') } };
-  const talk = await room(t, { allowance: null, takes: [busy, { status: 200, body: { text: ' rain all morning ' } }] });
+  const talk = await room(t, { allowance: null, takes: [held, busy, { status: 200, body: { text: ' rain all morning ' } }] });
 
   await talk.talk(12);
   await talk.page.locator('.journal-talk-take').waitFor();
+  assert.deepEqual(await talk.shown(), {
+    state: 'The rest of your AI allowance is held by an earlier request whose cost is not yet confirmed.',
+    detail: 'It frees when that request’s cost is confirmed, at most 10 minutes after it began.', take: '0:12',
+    kept: 'Held in this tab only.', acts: ['Try again', 'Download recording'], undo: null,
+  });
+
+  await talk.page.getByRole('button', { name: 'Try again' }).click();
+  await talk.page.locator('.journal-talk-state', { hasText: 'every slot' }).waitFor();
   assert.deepEqual(await talk.shown(), {
     state: 'Your earlier AI requests hold every slot you have.',
     detail: 'Each frees when its cost is confirmed, at most 10 minutes after it began.', take: '0:12',
@@ -302,15 +312,20 @@ test('a busy allowance offers Try again, which sends the kept take once more and
   await talk.sheet.waitFor({ state: 'detached' });
 
   assert.deepEqual(await talk.page.evaluate(() => window.written), ['rain all morning']);
-  assert.deepEqual(talk.sent, [{ type: 'audio/webm', bytes: 32044 }, { type: 'audio/webm', bytes: 32044 }]);
+  assert.deepEqual(talk.sent, Array(3).fill({ type: 'audio/webm', bytes: 32044 }));
   assert.equal(await talk.guarded(), false);
   assert.equal(await talk.page.locator('.journal-talk-tool.has-take').count(), 0);
   assert.deepEqual(await talk.events(), [
+    { name: 'journal_talk_refused', props: { code: 'subject_exhausted', reason: 'held', moment: 'take' } },
+    { name: 'journal_talk_take', props: { action: 'retry' } },
     { name: 'journal_talk_refused', props: { code: 'concurrency_exhausted', reason: 'unavailable', moment: 'take' } },
+    { name: 'journal_talk_retry', props: { outcome: 'refused' } },
     { name: 'journal_talk_take', props: { action: 'retry' } },
     { name: 'journal_talk_take', props: { action: 'written' } },
     { name: 'journal_talk_retry', props: { outcome: 'written' } },
   ]);
+  assert.deepEqual(await talk.issues(), []);
+  assert.deepEqual(talk.errors, []);
 });
 
 // The server is the authority on the session: its 401 asks for sign-in even while the account still reads signed in,

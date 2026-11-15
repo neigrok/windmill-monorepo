@@ -379,7 +379,8 @@ struct CoachTab: View {
       }
       if refused {
         if let allowance = coach.spentAllowance(record) {
-          CoachNoticeView(notice: CoachNotice(.allowance(allowance.code), anonymous: coach.anonymous, dates: gym.dates, detail: allowance.detail(gym.dates)), recover: recover)
+          let refusal = allowance.code == "subject_exhausted" ? CoachTurnRefusal.shortfall(allowance.shortfall) : .allowance(allowance.code)
+          CoachNoticeView(notice: CoachNotice(refusal, anonymous: coach.anonymous, dates: gym.dates, detail: allowance.detail(gym.dates)), recover: recover)
         }
       } else if let code = record.refusalCode ?? record.response?.errorCode, record.results.isEmpty {
         Text(CoachCopy.refusal(code)).font(.footnote).foregroundStyle(GymPalette.inkDim)
@@ -428,7 +429,7 @@ struct CoachNotice: Equatable {
   }
 
   // A refusal's notice: its sentence, the day a paused shared pool comes back where the server named it, the allowance's
-  // own detail, and *Sign in to continue.* over the sign-in a spent allowance offers (01.10).
+  // own detail, and *Sign in to continue.* over the sign-in a refusing allowance offers (01.10).
   init(_ refusal: CoachTurnRefusal, anonymous: Bool, dates: GymDate, detail: String? = nil) {
     recovery = refusal.recovery(anonymous: anonymous)
     var lines = [refusal.sentence]
@@ -437,11 +438,11 @@ struct CoachNotice: Equatable {
       lines = [String(localized: "\(refusal.sentence) It comes back on \(day).")]
     }
     if let detail { lines.append(detail) }
-    if case .allowance = refusal, recovery == .signIn { lines.append(String(localized: "Sign in to continue.")) }
+    if case .shortfall = refusal, recovery == .signIn { lines.append(String(localized: "Sign in to continue.")) }
     self.lines = lines
     identifier = switch refusal {
     case .rateLimited: "coach-daily-cap"
-    case .allowance: "coach-allowance"
+    case .shortfall, .allowance: "coach-allowance"
     default: "coach-notice"
     }
   }

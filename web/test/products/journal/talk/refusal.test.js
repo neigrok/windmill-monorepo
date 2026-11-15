@@ -48,7 +48,7 @@ test('every answer the voice route can give has its face, its way out and its la
     { face: 'tooLittleLeft', sentence: 'A take needs more AI allowance than you have left.', detail: dated, acts: keep,
       until: resetsAtMs, returnsAt: resetsAtMs, code: 'subject_exhausted', reason: 'request_exceeds_remaining' }],
     [429, { code: 'subject_exhausted', reason: 'allowance_exhausted', allowance: allowance('subject_exhausted', { reserved: '0.060000000' }) },
-      { face: 'held', sentence: 'The rest of your AI allowance is held by a request still in progress.',
+      { face: 'held', sentence: 'The rest of your AI allowance is held by an earlier request whose cost is not yet confirmed.',
         detail: 'It frees when that request’s cost is confirmed, at most 10 minutes after it began.', acts: again, until: null,
         returnsAt: null, code: 'subject_exhausted', reason: 'held' }],
     [503, { code: 'concurrency_exhausted', reason: 'unavailable', allowance: allowance('concurrency_exhausted') },

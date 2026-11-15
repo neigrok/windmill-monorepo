@@ -17,6 +17,8 @@ import SyncSchema
 nonisolated enum CoachTurnRefusal: Equatable, Sendable {
   case offline
   case logArriving
+  // `subject_exhausted`, by what holds the request where the refusal carried the allowance.
+  case shortfall(AiAllowance.Shortfall?)
   case allowance(String)
   case freeMonthExhausted(resetsAtMs: Int64?)
   case rateLimited
@@ -25,8 +27,9 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
   case installation(String)
   case said(String)
 
-  init(code: String, status: Int? = nil, resetsAtMs: Int64? = nil) {
+  init(code: String, status: Int? = nil, resetsAtMs: Int64? = nil, allowance: AiAllowance? = nil) {
     switch code {
+    case "subject_exhausted": self = .shortfall(allowance?.shortfall)
     case "free_month_exhausted": self = .freeMonthExhausted(resetsAtMs: resetsAtMs)
     case "invalid_installation", "installation_bound", "device_bound": self = .installation(code)
     case _ where TurnRefusal.allowanceCodes.contains(code): self = .allowance(code)
@@ -42,6 +45,7 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
     case .allowance(let code), .installation(let code), .said(let code): code
     case .offline: "offline"
     case .logArriving: "coach-replica-syncing"
+    case .shortfall: "subject_exhausted"
     case .freeMonthExhausted: "free_month_exhausted"
     case .rateLimited: "coach-rate-limited"
     case .updateRequired: "coach-update-required"
@@ -53,6 +57,7 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
     switch self {
     case .offline: String(localized: "No connection. Your question is kept here.")
     case .logArriving: String(localized: "Your log is still arriving on this phone. Ask again in a moment.")
+    case .shortfall(let shortfall): AiAllowance.sentence(shortfall)
     case .allowance(let code): AiAllowance.sentence(code)
     case .freeMonthExhausted: String(localized: "Coach is paused for everyone this month.")
     case .rateLimited: CoachCopy.daily(waitMs: nil)
@@ -64,14 +69,14 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
     }
   }
 
-  // The one door the notice offers: sign-in where the phone's own AI access is spent or belongs to an account, the lifter's
-  // own agent where Coach's shared capacity is paused, the update, or Send again. Signed in, a spent allowance
-  // offers nothing while paid plans are closed.
+  // The one door the notice offers: sign-in where the phone's own AI allowance refused the send or its AI access belongs to
+  // an account, the lifter's own agent where Coach's shared capacity is paused, the update, or Send again. Signed in, an
+  // allowance that refused the send offers nothing while paid plans are closed.
   func recovery(anonymous: Bool) -> CoachRecovery? {
     switch self {
     case .offline: .tryAgain
-    case .logArriving, .absent, .said: nil
-    case .allowance(let code): anonymous && code == "subject_exhausted" ? .signIn : nil
+    case .logArriving, .absent, .said, .allowance: nil
+    case .shortfall: anonymous ? .signIn : nil
     case .freeMonthExhausted, .rateLimited: .ownAgent
     case .updateRequired: .update
     case .installation: anonymous ? .signIn : nil
@@ -81,7 +86,7 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
   // The composer stays closed on a cap the server refills and on a deployment without Coach; everything else asks again.
   var capped: Bool {
     switch self {
-    case .allowance, .freeMonthExhausted, .rateLimited, .absent: true
+    case .shortfall, .allowance, .freeMonthExhausted, .rateLimited, .absent: true
     case .offline, .logArriving, .updateRequired, .installation, .said: false
     }
   }
@@ -90,7 +95,7 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
   var askOutcome: (outcome: String, cap: String?) {
     switch self {
     case .offline: ("offline", nil)
-    case .allowance, .freeMonthExhausted: ("capped", "allowance")
+    case .shortfall, .allowance, .freeMonthExhausted: ("capped", "allowance")
     case .rateLimited: ("capped", "daily")
     case .absent: ("absent", nil)
     case .logArriving, .updateRequired, .installation, .said: ("refused", nil)
@@ -306,10 +311,10 @@ nonisolated struct TurnInterrupted: Error {
               try await answer(batch, running, tally: &tally)
             case .done(let state, let truncated):
               end(running, state: state, truncated: truncated, code: nil, tally: tally, started: started); return
-            case .error(let code) where code == TurnRefusal.streamReplaced:
+            case .error(let code, _) where code == TurnRefusal.streamReplaced:
               throw TurnWireFault.streamReplaced
-            case .error(let code):
-              end(running, state: .failed, truncated: false, code: code, tally: tally, started: started); return
+            case .error(let code, let allowance):
+              end(running, state: .failed, truncated: false, code: code, allowance: allowance, tally: tally, started: started); return
             }
           }
           throw TurnWireFault.endedWithoutTerminal
@@ -448,15 +453,17 @@ nonisolated struct TurnInterrupted: Error {
   // MARK: - End
 
   // Coach §4.4: the terminal state, the text and the receipt its calls derive, in one transaction; then what the events say
-  // of it. How the turn ended is the message's own line in the room; a failed turn's §6.5 code becomes the refusal said at
-  // the conversation's end when it names a cap or a door, and the cause of an interrupted one only the `coach_turn` event carries.
-  func end(_ running: Running, state: MessageState, truncated: Bool, code: String?, tally: CoachTurnTally, started: ContinuousClock.Instant) {
+  // of it. How the turn ended is the message's own line in the room; a failed turn's §6.5 code, read with the allowance its
+  // frame carried, becomes the refusal said at the conversation's end when it names a cap or a door, and the cause of an
+  // interrupted one only the `coach_turn` event carries.
+  func end(_ running: Running, state: MessageState, truncated: Bool, code: String?, allowance: AiAllowance? = nil, tally: CoachTurnTally,
+           started: ContinuousClock.Instant) {
     textFlush?.cancel(); textFlush = nil
     let text = streamed
     do { _ = try runner.run(EndTurn(running.turn.coach, state: state, text: text, truncated: truncated)) } catch { report(TurnInterrupted.storage, error) }
     guard self.running == running else { return }
     self.running = nil; stopping = false; reconnecting = false; work = nil
-    let refused = state == .failed ? code.map { CoachTurnRefusal(code: $0) } : nil
+    let refused = state == .failed ? code.map { CoachTurnRefusal(code: $0, allowance: allowance) } : nil
     refusal = refused.flatMap { if case .said = $0 { nil } else { $0 } }
     error = nil
     var ended = ["screen": "coach", "outcome": Self.outcome(of: state)]
@@ -474,7 +481,7 @@ nonisolated struct TurnInterrupted: Error {
     do { _ = try runner.run(WithdrawTurn(turn: running.turn)) } catch { report(TurnInterrupted.storage, error) }
     guard self.running == running else { return }
     self.running = nil; stopping = false; reconnecting = false; work = nil
-    let refused = CoachTurnRefusal(code: refusal.code, status: refusal.status, resetsAtMs: refusal.budgetResetsAtMs)
+    let refused = CoachTurnRefusal(code: refusal.code, status: refusal.status, resetsAtMs: refusal.budgetResetsAtMs, allowance: refusal.allowance)
     self.refusal = refused; error = nil
     var ended = ["screen": "coach", "outcome": refused.askOutcome.outcome]
     if let cap = refused.askOutcome.cap { ended["cap"] = cap }

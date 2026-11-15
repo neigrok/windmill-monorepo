@@ -567,8 +567,12 @@ A free daily pause must identify the daily boundary rather than the individual m
 A positive balance does not promise that a particular request can fit its reservation, so
 `subject_exhausted` alone does not say a balance is gone: only a read with nothing remaining and
 nothing reserved does. Android says "You have used all of your AI allowance." only then, and otherwise
-"Coach’s AI allowance is unavailable right now.", with the same recovery. iOS still says the first
-sentence for every `subject_exhausted` a turn meets.
+"Coach’s AI allowance is unavailable right now.", with the same recovery. iOS reads the allowance the
+refusal body or `error` frame carries and says the first sentence only then, "Your earlier AI requests
+hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began."
+with nothing remaining and something reserved, "This request needs more AI capacity than your remaining
+allowance." with something remaining, and "Your AI allowance has no room for this request." where no
+allowance came, with the same recovery.
 
 ### §7.2 Metering and implementation boundary
 
