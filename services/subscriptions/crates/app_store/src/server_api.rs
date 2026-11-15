@@ -23,8 +23,9 @@ const TOKEN_LIFETIME: Duration = Duration::from_secs(5 * 60);
 // answers its own 503 rather than the listener's timeout.
 const REQUEST_BOUND: Duration = Duration::from_secs(3);
 
-// Apple's 404s that it says a later try may pass: AccountNotFoundRetryableError and AppNotFoundRetryableError.
-const RETRYABLE_NOT_FOUND: [i64; 2] = [4_040_002, 4_040_004];
+// Apple's 404s that it says a later try may pass: AccountNotFoundRetryableError, AppNotFoundRetryableError and
+// OriginalTransactionIdNotFoundRetryableError.
+const RETRYABLE_NOT_FOUND: [i64; 3] = [4_040_002, 4_040_004, 4_040_006];
 
 // The App Store Server API, called with Windmill's in-app purchase key: a subscription's status, and the account
 // token Apple names in a lineage's later transactions (spec §4, §8). It verifies nothing Apple signs; the verifier does.

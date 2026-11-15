@@ -424,7 +424,7 @@ success is one `ApiFailure`, whose `code` is all a line carries:
 | `Unreachable` | `unreachable` | No answer within 3 s: nothing listened, the connection broke or Apple stalled | yes |
 | `Unauthorized` | `unauthorized` | 401: Apple refused the token, so the key, its id or its issuer is not the one App Store Connect issued | yes |
 | `RateLimited` | `rate_limited` | 429 | yes |
-| `StoreError` | `store_error` | A 5xx, or a 404 whose `errorCode` Apple names retryable, 4040002 or 4040004 | yes |
+| `StoreError` | `store_error` | A 5xx, or a 404 whose `errorCode` Apple names retryable: 4040002, 4040004 or 4040006 | yes |
 | `NotFound` | `not_found` | Any other 404, or a status answer that lists no entry for the lineage | no |
 | `BadRequest` | `bad_request` | Any other answer that is not a success, a redirect among them | no |
 | `Malformed` | `malformed` | A success whose body is not the shape Apple documents | no |
@@ -441,7 +441,11 @@ The calls, hosts, token and error codes follow Apple's App Store Server API refe
 [Set App Account Token](https://developer.apple.com/documentation/appstoreserverapi/set-app-account-token),
 [StatusResponse](https://developer.apple.com/documentation/appstoreserverapi/statusresponse),
 [LastTransactionsItem](https://developer.apple.com/documentation/appstoreserverapi/lasttransactionsitem) and
-[Generating JSON Web Tokens for API requests](https://developer.apple.com/documentation/appstoreserverapi/generating-json-web-tokens-for-api-requests).
+[Generating JSON Web Tokens for API requests](https://developer.apple.com/documentation/appstoreserverapi/generating-json-web-tokens-for-api-requests),
+and the retryable 404s
+[AccountNotFoundRetryableError](https://developer.apple.com/documentation/appstoreserverapi/accountnotfoundretryableerror),
+[AppNotFoundRetryableError](https://developer.apple.com/documentation/appstoreserverapi/appnotfoundretryableerror) and
+[OriginalTransactionIdNotFoundRetryableError](https://developer.apple.com/documentation/appstoreserverapi/originaltransactionidnotfoundretryableerror).
 
 ## App Store test signer
 
