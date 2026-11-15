@@ -144,7 +144,7 @@ async function room(t, { theme = 'dark', allowance = read('ok', { remaining: '6.
   page.on('pageerror', (error) => errors.push(error.message));
   const sent = [];
   await page.addInitScript(fakeMicrophone);
-  await page.clock.install({ time: Date.UTC(2026, 10, 15, 14, 2) });
+  await page.clock.install({ time: Date.UTC(2026, 10, 15, 14, 0) });
   await page.clock.pauseAt(Date.UTC(2026, 10, 15, 14, 2));
   await page.route(/\/v1\/ai\/allowance$/, async (route) => {
     await reads;
