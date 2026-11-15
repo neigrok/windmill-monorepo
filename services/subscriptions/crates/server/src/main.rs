@@ -4,9 +4,9 @@ use std::time::{Duration, SystemTime};
 use std::{env, fs, io};
 
 use app_store::verification::SignedDataVerifier;
-use axum::Router;
 use futures_util::FutureExt;
 use server::config::Config;
+use server::internal;
 use server::listeners::{Bounds, Listener};
 use server::store_doors::{self, AppStoreDoor};
 use server::sweep::InboxSweep;
@@ -42,6 +42,7 @@ fn main() -> ExitCode {
         release = config.release.as_deref(),
         panic_route_enabled = config.panic_route_enabled,
         app_store_test_root = config.app_store_test_root.is_some(),
+        internal_token_set = config.internal_token.is_some(),
         "starting"
     );
 
@@ -116,7 +117,7 @@ async fn serve(config: Config, verifier: SignedDataVerifier) -> ExitCode {
         tracing::info!(listener = listener.label(), address = %bound, "listening");
         let doors = match listener {
             Listener::Public => store_doors::router(app_store.clone()),
-            Listener::Internal => Router::new(),
+            Listener::Internal => internal::doors(config.internal_token.clone(), ledger.clone()),
         };
         let router = listener.router(&config, ledger.clone(), doors, bounds);
         let stop = stop.clone();

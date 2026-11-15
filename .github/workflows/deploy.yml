@@ -63,6 +63,9 @@ jobs:
           # The password of windmill_subscriptions, the subscription service's database role: the
           # subscriptions-db one-shot sets it and the service signs in with it (backend/deploy/README.md).
           SUBSCRIPTIONS_DB_PASSWORD: ${{ secrets.SUBSCRIPTIONS_DB_PASSWORD }}
+          # The bearer secret of the subscription service's internal doors, handed to the server and the service.
+          # Empty ⇒ the server's feed follower stays off and the doors answer 401 (backend/deploy/README.md).
+          SUBSCRIPTIONS_INTERNAL_TOKEN: ${{ secrets.SUBSCRIPTIONS_INTERNAL_TOKEN }}
           DOMAIN_APP: ${{ vars.DOMAIN_APP }}
           DOMAIN_API: ${{ vars.DOMAIN_API }}
           ACME_EMAIL: ${{ vars.ACME_EMAIL }}
@@ -190,6 +193,11 @@ jobs:
             echo "Refusing to render — SUBSCRIPTIONS_DB_PASSWORD must be 64 lowercase hex characters (openssl rand -hex 32)."
             exit 1
           fi
+          # A bearer secret is written to .env as it is, so it holds nothing compose would read as markup.
+          if [[ -n "$SUBSCRIPTIONS_INTERNAL_TOKEN" && ! "$SUBSCRIPTIONS_INTERNAL_TOKEN" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Refusing to render — SUBSCRIPTIONS_INTERNAL_TOKEN must be empty or 64 lowercase hex characters (openssl rand -hex 32)."
+            exit 1
+          fi
 
           if [ "$AI_INSTALLATIONS_ENABLED" = true ] || [ "$AI_INSTALLATIONS_ENABLED" = 1 ]; then
             if { [ "$AI_ALLOWANCES_ENABLED" != true ] && [ "$AI_ALLOWANCES_ENABLED" != 1 ]; } || [ "${#AI_INSTALLATION_IP_HMAC_KEY}" -lt 32 ]; then
@@ -210,7 +218,7 @@ jobs:
           : > rendered.env
           {
             printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG:-latest}"
-            for key in POSTGRES_PASSWORD SUBSCRIPTIONS_DB_PASSWORD DOMAIN_APP DOMAIN_API ACME_EMAIL CF_IPS \
+            for key in POSTGRES_PASSWORD SUBSCRIPTIONS_DB_PASSWORD SUBSCRIPTIONS_INTERNAL_TOKEN DOMAIN_APP DOMAIN_API ACME_EMAIL CF_IPS \
                        RESEND_API_KEY RESEND_FROM RESEND_WEBHOOK_SECRET ANTHROPIC_API_KEY OPENAI_API_KEY \
                        TENDING_ENABLED COACH_MAX_OUTPUT_TOKENS AI_ALLOWANCES_ENABLED AI_ANONYMOUS_LIFETIME_USD \
                        AI_LOGGED_IN_MONTHLY_USD AI_ONE_PERIOD_USD AI_FREE_MONTHLY_USD \

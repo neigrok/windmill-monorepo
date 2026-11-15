@@ -25,6 +25,7 @@ use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::config::Config;
+use crate::internal::FEED_ROUTE;
 
 // How long a client may take, and how much it may send, before the listener gives up on it.
 #[derive(Clone, Copy, Debug)]
@@ -79,7 +80,7 @@ impl Listener {
         }
     }
 
-    // Health and the doors this listener serves, such as the store doors on the public one.
+    // Health and the doors this listener serves: the store doors on the public one, the backend's on the internal one.
     pub fn router<R: Readiness>(
         self,
         config: &Config,
@@ -312,8 +313,8 @@ impl Drop for RequestLine {
             None => request_line!(warn),
             Some((status, _)) if status.is_server_error() => request_line!(error),
             Some((status, _)) if status.is_client_error() => request_line!(warn),
-            // A health probe fires every few seconds forever and says nothing when it is healthy.
-            Some(_) if route == "/health" => request_line!(debug),
+            // A health probe and the backend's follower ask every few seconds forever; answered, they say nothing.
+            Some(_) if route == "/health" || route == FEED_ROUTE => request_line!(debug),
             Some(_) => request_line!(info),
         }
     }

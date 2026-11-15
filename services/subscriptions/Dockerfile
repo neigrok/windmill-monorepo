@@ -44,9 +44,10 @@ EXPOSE 8082 8083
 
 USER subscriptions
 
-# The internal listener's /health, on whatever port SUBSCRIPTIONS_INTERNAL_ADDRESS names at run time. It
-# answers ready only while the ledger's database answers.
+# The internal listener's /health, at the address SUBSCRIPTIONS_INTERNAL_ADDRESS names at run time: 0.0.0.0 reaches
+# the container's own, and a compose alias the one network the listener binds. It answers ready only while the
+# ledger's database answers.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -fsS -o /dev/null "http://127.0.0.1:${SUBSCRIPTIONS_INTERNAL_ADDRESS##*:}/health" || exit 1
+  CMD curl -fsS -o /dev/null "http://${SUBSCRIPTIONS_INTERNAL_ADDRESS}/health" || exit 1
 
 CMD ["subscriptions"]

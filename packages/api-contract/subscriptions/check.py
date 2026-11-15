@@ -36,6 +36,9 @@ PAGE_FIELDS = ["epoch", "entries", "latestSeq"]
 ENTRY_FIELDS = ["seq", "type", "occurredAt", "recordedAt", "subscriptionId", "accountId", "store", "environment",
                 "offerKind", "period", "entitlement"]
 PERIOD_FIELDS = ["id", "start", "end", "price", "offerKind", "refundedAt"]
+ACCOUNT_FIELDS = ["entitlement", "subscriptions"]
+BOUND_FIELDS = SUBSCRIPTION_FIELDS + ["environment", "boundAt", "boundBy", "periods", "events"]
+ACCOUNT_EVENT_FIELDS = ["seq", "type", "occurredAt", "recordedAt", "accountId", "period"]
 
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 # ISO 4217 minor units where they are not two; an amount carries exactly its currency's.
@@ -45,7 +48,8 @@ MINOR_UNITS = {**dict.fromkeys(["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF",
                **dict.fromkeys(["CLF", "UYW"], 4)}
 JWS = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 
-FILES = ["entitlement.json", "subscription.json", "feed.json", "app-store-claim.json", "internal-app-store-claim.json"]
+FILES = ["entitlement.json", "subscription.json", "feed.json", "app-store-claim.json", "internal-app-store-claim.json",
+         "account.json"]
 loaded = {name: json.loads((ROOT / name).read_text()) for name in FILES}
 passed, failed = [], []
 
@@ -282,16 +286,83 @@ for entry in entries:
 for subscriptionId, periods in lineage.items():
     for a, b in zip(periods, periods[1:]):
         check(a["end"] <= b["start"], f"feed: the periods of {subscriptionId} never overlap (D-4)")
+# A transaction that changes autoRenew, as its entitlement shows the subscription, records renewal_turned_off or
+# renewal_turned_on whatever else it records, a revocation included (§3.4)
+renewing = {}
+transactions = {}
+for entry in entries:
+    transactions.setdefault((entry["recordedAt"], entry["subscriptionId"]), []).append(entry)
+for (recordedAt, subscriptionId), told in transactions.items():
+    after = told[-1]["entitlement"]
+    shown = [s for environment in ENVIRONMENTS if after
+             for s in [after[environment]["governing"]] + after[environment]["others"]
+             if s and s["subscriptionId"] == subscriptionId]
+    if not shown:
+        continue
+    before, now = renewing.get(subscriptionId), shown[0]["autoRenew"]
+    if before is not None and before != now:
+        word = "renewal_turned_on" if now else "renewal_turned_off"
+        check(word in [entry["type"] for entry in told],
+              f"feed#{told[0]['seq']}: a transaction that turns renewal {'on' if now else 'off'} records {word} (§3.4)")
+    renewing[subscriptionId] = now
 for i, entry in enumerate(entries):
     if entry["type"] == "renewed":
         new = next(e for e in entries[i:] if e["type"] == "period_recorded")
         last = [e["period"] for e in entries[:i] if e["type"] == "period_recorded"
                 and e["subscriptionId"] == entry["subscriptionId"]][-1]
         check(new["period"]["start"] == last["end"], f"feed#{entry['seq']}: a renewal starts where the last period ends (D-4)")
-for name, seq in [("active", 3), ("revoked", 15), ("sandbox_active", 13), ("grace", 18), ("on_hold", 19),
-                  ("cancelled_access_continues", 24), ("expired", 25), ("never_subscribed", 26)]:
+for name, seq in [("active", 3), ("revoked", 16), ("sandbox_active", 13), ("grace", 19), ("on_hold", 20),
+                  ("cancelled_access_continues", 25), ("expired", 26), ("never_subscribed", 27)]:
     check(entitlements[name]["body"] == next(e["entitlement"] for e in entries if e["seq"] == seq),
           f"entitlement/{name}: the entitlement the feed carries at seq {seq} (README)")
+
+# account.json: each read is the ledger's account as the feed tells it
+accounts = named("account.json")
+check(sorted(accounts) == ["claimed_then_refunded", "expired", "holds_nothing", "sandbox"],
+      "account: every example the README promises, no other")
+recorded_at_seq = {entry["seq"]: entry for entry in entries}
+for name, example in accounts.items():
+    read, accountId, where = example["body"], example["request"]["accountId"], f"account/{name}"
+    check(list(read) == ACCOUNT_FIELDS, f"{where}: an account read is {{entitlement, subscriptions}}")
+    check_entitlement_response(read["entitlement"], f"{where}.entitlement")
+    check(read["entitlement"]["accountId"] == accountId, f"{where}: the entitlement of the account the request names")
+    ids = [s["subscriptionId"] for s in read["subscriptions"]]
+    check(ids == sorted(set(ids)), f"{where}: subscriptions ordered by subscriptionId")
+    told_under_it = []
+    for s in read["subscriptions"]:
+        at, status = f"{where}/{s['subscriptionId']}", {field: s[field] for field in SUBSCRIPTION_FIELDS}
+        check(list(s) == BOUND_FIELDS, f"{at}: the entitlement's fields of it, then environment, boundAt, boundBy, "
+                                       f"periods and events, in order")
+        check(s["environment"] in ENVIRONMENTS and s["boundBy"] in ("purchase", "claim"),
+              f"{at}: an environment, bound by purchase or claim (D-7)")
+        check_subscription(status, s["environment"], at)
+        block = read["entitlement"][s["environment"]]
+        check(status in [block["governing"]] + block["others"] or status["state"] in ENDED,
+              f"{at}: the entitlement shows it as listed, unless it ended and does not govern (§5.2)")
+        seqs = [event["seq"] for event in s["events"]]
+        check(seqs and seqs == [entry["seq"] for entry in entries
+                                if entry["subscriptionId"] == s["subscriptionId"] and entry["seq"] <= seqs[-1]],
+              f"{at}: every event of it up to its newest, in seq order")
+        for event in s["events"]:
+            entry = recorded_at_seq.get(event["seq"])
+            check(list(event) == ACCOUNT_EVENT_FIELDS and entry is not None
+                  and entry["subscriptionId"] == s["subscriptionId"]
+                  and event == {field: entry[field] for field in ACCOUNT_EVENT_FIELDS},
+                  f"{at}#{event['seq']}: the event the feed carries at its seq")
+        newest = {event["period"]["id"]: event["period"] for event in s["events"] if event["period"]}
+        check(s["periods"] == sorted(newest.values(), key=lambda p: p["start"]),
+              f"{at}: each period as its newest event states it, by start")
+        check(any(event["type"] == "bound" and event["accountId"] == accountId and event["occurredAt"] == s["boundAt"]
+                  for event in s["events"]), f"{at}: bound to the account at boundAt (§3.4)")
+        told_under_it += [event for event in s["events"] if event["accountId"] == accountId]
+    for environment in ENVIRONMENTS:
+        block = read["entitlement"][environment]
+        check(all(shown["subscriptionId"] in ids for shown in [block["governing"]] + block["others"] if shown),
+              f"{where}.{environment}: the entitlement folds over the subscriptions listed")
+    newest_seq = max((event["seq"] for event in told_under_it), default=None)
+    carried = [entry["entitlement"] for entry in entries if entry["accountId"] == accountId]
+    check(read["entitlement"] == (recorded_at_seq[newest_seq]["entitlement"] if newest_seq else carried[-1]),
+          f"{where}: the entitlement the feed carries after the account's newest event")
 
 # the claim doors
 public_claim, internal_claim = loaded["app-store-claim.json"], loaded["internal-app-store-claim.json"]

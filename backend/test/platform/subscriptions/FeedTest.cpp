@@ -45,11 +45,11 @@ TEST(subscription_feed_pages_of_the_contract_chain_into_one_ledger_by_the_cursor
   CHECK_EQ(walked, std::string(
       "from_zero ->6 1:started 2:bound 3:period_recorded 4:started 5:period_recorded 6:bound\n"
       "claimed_then_sandbox ->13 7:period_recorded 9:started 10:bound 11:period_recorded 12:renewed 13:period_recorded\n"
-      "refunded_then_renewed ->17 14:period_refunded 15:revoked 16:renewed 17:period_recorded\n"
-      "payment_trouble ->21 18:payment_failed 19:updated 20:payment_recovered 21:period_recorded\n"
-      "older_period_refunded ->25 22:period_refunded 23:period_refund_reversed 24:renewal_turned_off 25:expired\n"
-      "account_erased ->26 caught up 26:unbound\n"
-      "caught_up ->26 caught up\n"));
+      "refunded_then_renewed ->18 14:renewal_turned_off 15:period_refunded 16:revoked 17:renewed 18:period_recorded\n"
+      "payment_trouble ->22 19:payment_failed 20:updated 21:payment_recovered 22:period_recorded\n"
+      "older_period_refunded ->26 23:period_refunded 24:period_refund_reversed 25:renewal_turned_off 26:expired\n"
+      "account_erased ->27 caught up 27:unbound\n"
+      "caught_up ->27 caught up\n"));
 }
 
 TEST(subscription_feed_entries_carry_the_entitlement_of_the_account_they_name_after_their_transaction) {
@@ -61,9 +61,9 @@ TEST(subscription_feed_entries_carry_the_entitlement_of_the_account_they_name_af
   for (const FeedPage& page : pages)
     for (const FeedEntry& entry : page.entries) bySeq[entry.seq] = &entry;
 
-  const std::vector<std::pair<Seq, const char*>> named{{3, "active"}, {13, "sandbox_active"}, {15, "revoked"},
-                                                       {18, "grace"}, {19, "on_hold"}, {24, "cancelled_access_continues"},
-                                                       {25, "expired"}, {26, "never_subscribed"}};
+  const std::vector<std::pair<Seq, const char*>> named{{3, "active"}, {13, "sandbox_active"}, {16, "revoked"},
+                                                       {19, "grace"}, {20, "on_hold"}, {25, "cancelled_access_continues"},
+                                                       {26, "expired"}, {27, "never_subscribed"}};
   for (const auto& [seq, name] : named) {
     REQUIRE(bySeq[seq]->entitlement.has_value());
     CHECK_EQ(bySeq[seq]->entitlement->body, entitlementExample(name));
@@ -94,17 +94,18 @@ TEST(subscription_feed_entries_carry_the_entitlement_of_the_account_they_name_af
       "13 c806aea4 production=- sandbox=1796742600000\n"
       "14 9387ec65 production=- sandbox=-\n"
       "15 9387ec65 production=- sandbox=-\n"
-      "16 3f6c2a1e production=1801735200000 sandbox=-\n"
+      "16 9387ec65 production=- sandbox=-\n"
       "17 3f6c2a1e production=1801735200000 sandbox=-\n"
-      "18 3f6c2a1e production=1803031200000 sandbox=-\n"
-      "19 3f6c2a1e production=- sandbox=-\n"
-      "20 3f6c2a1e production=1805810400000 sandbox=-\n"
+      "18 3f6c2a1e production=1801735200000 sandbox=-\n"
+      "19 3f6c2a1e production=1803031200000 sandbox=-\n"
+      "20 3f6c2a1e production=- sandbox=-\n"
       "21 3f6c2a1e production=1805810400000 sandbox=-\n"
       "22 3f6c2a1e production=1805810400000 sandbox=-\n"
       "23 3f6c2a1e production=1805810400000 sandbox=-\n"
-      "24 3f6c2a1e production=1805724000000 sandbox=-\n"
-      "25 3f6c2a1e production=- sandbox=-\n"
-      "26 3f6c2a1e production=- sandbox=-\n"));
+      "24 3f6c2a1e production=1805810400000 sandbox=-\n"
+      "25 3f6c2a1e production=1805724000000 sandbox=-\n"
+      "26 3f6c2a1e production=- sandbox=-\n"
+      "27 3f6c2a1e production=- sandbox=-\n"));
 }
 
 TEST(subscription_feed_entries_carry_every_field_the_contract_gives_an_event) {
@@ -145,19 +146,20 @@ TEST(subscription_feed_entries_carry_every_field_the_contract_gives_an_event) {
       "11 period_recorded occurred=1796742000000 recorded=1796742002000 subscription=c0498d34 account=c806aea4 app_store sandbox offer=- period=5f28ab82 [1796742000000,1796742300000) price=12.00 USD offer=- refunded=-\n"
       "12 renewed occurred=1796742300000 recorded=1796742302000 subscription=c0498d34 account=c806aea4 app_store sandbox offer=-\n"
       "13 period_recorded occurred=1796742300000 recorded=1796742302000 subscription=c0498d34 account=c806aea4 app_store sandbox offer=- period=db0e7f48 [1796742300000,1796742600000) price=12.00 USD offer=- refunded=-\n"
-      "14 period_refunded occurred=1797780600000 recorded=1797780602000 subscription=77f866f6 account=9387ec65 app_store production offer=- period=8f04068f [1796472000000,1799150400000) price=12.00 USD offer=- refunded=1797780600000\n"
-      "15 revoked occurred=1797780600000 recorded=1797780602000 subscription=77f866f6 account=9387ec65 app_store production offer=-\n"
-      "16 renewed occurred=1798966800000 recorded=1798966810000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
-      "17 period_recorded occurred=1798966800000 recorded=1798966810000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=4c7a19e3 [1798970400000,1801648800000) price=12.00 USD offer=- refunded=-\n"
-      "18 payment_failed occurred=1801648800000 recorded=1801648803000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
-      "19 updated occurred=1803031200000 recorded=1803031203000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
-      "20 payment_recovered occurred=1803304800000 recorded=1803304803000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
-      "21 period_recorded occurred=1803304800000 recorded=1803304803000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=d9aaabda [1803304800000,1805724000000) price=12.00 USD offer=- refunded=-\n"
-      "22 period_refunded occurred=1803898800000 recorded=1803898802000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=4c7a19e3 [1798970400000,1801648800000) price=12.00 USD offer=- refunded=1803898800000\n"
-      "23 period_refund_reversed occurred=1804608000000 recorded=1804608002000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=4c7a19e3 [1798970400000,1801648800000) price=12.00 USD offer=- refunded=-\n"
-      "24 renewal_turned_off occurred=1804708800000 recorded=1804708802000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
-      "25 expired occurred=1805724000000 recorded=1805724004000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
-      "26 unbound occurred=1806580800000 recorded=1806580800000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"));
+      "14 renewal_turned_off occurred=1797780600000 recorded=1797780602000 subscription=77f866f6 account=9387ec65 app_store production offer=-\n"
+      "15 period_refunded occurred=1797780600000 recorded=1797780602000 subscription=77f866f6 account=9387ec65 app_store production offer=- period=8f04068f [1796472000000,1799150400000) price=12.00 USD offer=- refunded=1797780600000\n"
+      "16 revoked occurred=1797780600000 recorded=1797780602000 subscription=77f866f6 account=9387ec65 app_store production offer=-\n"
+      "17 renewed occurred=1798966800000 recorded=1798966810000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "18 period_recorded occurred=1798966800000 recorded=1798966810000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=4c7a19e3 [1798970400000,1801648800000) price=12.00 USD offer=- refunded=-\n"
+      "19 payment_failed occurred=1801648800000 recorded=1801648803000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "20 updated occurred=1803031200000 recorded=1803031203000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "21 payment_recovered occurred=1803304800000 recorded=1803304803000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "22 period_recorded occurred=1803304800000 recorded=1803304803000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=d9aaabda [1803304800000,1805724000000) price=12.00 USD offer=- refunded=-\n"
+      "23 period_refunded occurred=1803898800000 recorded=1803898802000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=4c7a19e3 [1798970400000,1801648800000) price=12.00 USD offer=- refunded=1803898800000\n"
+      "24 period_refund_reversed occurred=1804608000000 recorded=1804608002000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=- period=4c7a19e3 [1798970400000,1801648800000) price=12.00 USD offer=- refunded=-\n"
+      "25 renewal_turned_off occurred=1804708800000 recorded=1804708802000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "26 expired occurred=1805724000000 recorded=1805724004000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"
+      "27 unbound occurred=1806580800000 recorded=1806580800000 subscription=a7d40c52 account=3f6c2a1e app_store production offer=-\n"));
 
   // A free trial's period: no price, and an offer on the event and its period alike.
   Json::Value trial = contractExample("feed.json", "from_zero")["body"];
@@ -203,12 +205,12 @@ TEST(subscription_feed_a_word_the_contract_does_not_name_yet_is_carried_and_list
 }
 
 TEST(subscription_feed_cursor_sees_a_restored_ledger_by_its_epoch_or_by_a_ledger_that_ends_below_it) {
-  const FeedCursor following{"c09a3ab3-2732-4415-ba88-825ff868cf13", 26};
+  const FeedCursor following{"c09a3ab3-2732-4415-ba88-825ff868cf13", 27};
   CHECK_EQ(following.restoreIn(recorded("ledger_restored")), std::optional<std::string>("epoch"));
   CHECK_FALSE(following.restoreIn(recorded("caught_up")).has_value());
 
   Json::Value shorter = contractExample("feed.json", "caught_up")["body"];
-  shorter["latestSeq"] = 21;
+  shorter["latestSeq"] = 22;
   CHECK_EQ(following.restoreIn(FeedPage{shorter}), std::optional<std::string>("latest_seq_below_cursor"));
 
   const FeedCursor neverRead;
@@ -220,7 +222,7 @@ TEST(subscription_feed_cursor_refuses_a_page_that_does_not_continue_it) {
   const FeedCursor at13{"c09a3ab3-2732-4415-ba88-825ff868cf13", 13};
   CHECK_EQ(answerOf([&] { at13.past(recorded("claimed_then_sandbox")); }), std::string("out-of-order"));
   CHECK_EQ(answerOf([&] { at13.past(recorded("ledger_restored")); }), std::string("epoch-changed"));
-  CHECK_EQ(at13.past(recorded("refunded_then_renewed")), (FeedCursor{"c09a3ab3-2732-4415-ba88-825ff868cf13", 17}));
+  CHECK_EQ(at13.past(recorded("refunded_then_renewed")), (FeedCursor{"c09a3ab3-2732-4415-ba88-825ff868cf13", 18}));
   CHECK_EQ(FeedCursor{}.past(recorded("ledger_restored")), (FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 0}));
 }
 
