@@ -146,10 +146,16 @@ must be public.
 - **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. The
   server and `embedder-<sha>` images must exist, and the server image must contain its compatibility
   manifest. A commit with no `subscriptions-<sha>`, as one built before Backend CI published the service,
-  deploys its backend and keeps the image the live subscription service runs, printing `NOTE subscription
-  service: no image could be pulled for this commit, so it keeps the one it runs, sha256:…`. On a host where
-  no subscription service runs, it is refused before anything changes with `FAIL no subscription service
-  image could be pulled for this commit, and none runs here to keep`. Only the images go back: the run renders `.env` and ships `docker-compose.yml`, the Caddyfile and
+  deploys its backend and leaves the running subscription container as it is, never recreating it, printing
+  `NOTE subscription service: no image could be pulled for this commit, so its running container is kept as
+  it is, on sha256:…` and `PASS subscription service: its running container kept, not recreated, healthy on
+  its image`. On a host where no subscription container runs, it is refused before anything changes with
+  `FAIL no subscription service image could be pulled for this commit, and none runs here to keep`. A
+  `subscriptions-<sha>` built before the internal doors (`subscriptions · the backend reads the feed and each
+  account behind the internal listener's secret`) cannot read the alias compose gives it in
+  `SUBSCRIPTIONS_INTERNAL_ADDRESS`: rolled back to, it exits at start with `SUBSCRIPTIONS_INTERNAL_ADDRESS is
+  malformed` and restarts in a loop, the run turns red at its health check, and Caddy answers `/v1/stores/*`
+  with 502; dispatch with that commit or a newer one. Only the images go back: the run renders `.env` and ships `docker-compose.yml`, the Caddyfile and
   `deploy-production.sh` from the branch it is dispatched on (`main` only), and `migrate` applies the
   selected image's own `db/schema.sql`.
   A lower minimum is a compatibility change too and requires exact manual acknowledgement. That
@@ -378,7 +384,7 @@ listener answers `GET /health` and 404s every other path, every path under `/v1/
   prints `FAIL subscription service …; the backend is deployed and serving` and the run is red, with the
   container it started left as it is and nothing rolled back; while the service is down, Caddy answers
   `/v1/stores/*` with 502. A `subscriptions-db` FAIL ends the run before this step and leaves the running
-  service as it was. A commit without its own `subscriptions-<sha>` keeps the live service's image
+  service as it was. A commit without its own `subscriptions-<sha>` keeps the live service's container as it runs
   ([Rollback](#day-to-day)).
 - **What gates it**: Backend CI calls the service's own checks, `subscriptions.yml`, as a job its image
   publish needs, so a red check publishes no image and deploys nothing. A commit under
