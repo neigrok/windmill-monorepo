@@ -39,7 +39,7 @@ reaches over MCP, which stay on the server.
 | Conversations on a phone | `thread` and `message` records | unchanged |
 | Conversations on the web | the server's own tables | `thread` and `message` records |
 | A picture on the web | uploaded and stored by the server | kept in the browser, as a phone keeps one |
-| The words of the prompt | one text in the backend's source | one file every app ships |
+| The words the model reads | texts in the backend's source | files every app ships |
 
 What does not move: the catalog and its corpora, the executors on the phones, proposals and their
 Apply, the records and their merge rules, installation identity, and every board the phones are
@@ -62,7 +62,7 @@ principles 1, 2 and 6 stand.
 
 ## §3 Gym's profile
 
-What gym gives the engine, for each seat.
+What gym gives the engine, for each seat. Its name is `gym.coach` and its version starts at 1.
 
 | | `bound` | `anon` |
 |---|---|---|
@@ -70,25 +70,39 @@ What gym gives the engine, for each seat.
 | Effort | `medium` | `low` |
 | Output cap and floor | 2,000 and 1,024 tokens | 2,000 and 1,024 tokens |
 | Label | `coach` | `coach` |
-| Abilities offered | every ability of the catalog whose `agent` is `runs` or `proposes` and which the server declares | the same, less those whose `seats` is `bound` |
+| Tools | every ability of the catalog whose `agent` is `runs` or `proposes` and which the server declares | the same, less those whose `seats` is `bound` |
 
-- **The prompt** is one file, `packages/api-contract/gym/coach/prompt.md`: the text the phones' turns
-  are given today, with nothing put into it at run time. Every app ships it. A person can read it
-  there; it holds no secret. (R-8)
+- **The words** are files in `packages/api-contract/gym/coach/`, which every app ships:
+  - `prompt.md`, the system prompt the phones' turns are given today, with nothing put into it at
+    run time;
+  - the words of the first content: the sentence that leads each context read, the line that marks
+    the earlier conversation, and the question that stands for a picture sent with none;
+  - the sentence the model reads beside each refusal code.
+
+  Today all three are in the backend's source. A person can read them in the app; they hold no
+  secret. (R-8)
 - **The catalog** is `packages/api-contract/gym/catalog.json` at `catalog/2`, unchanged. The model
   reads each ability's `description` from the copy the app ships, so the iPhone's generated catalog
   carries it, which it does not today.
 - **The limits** are those of [phone-hosted Coach abilities](mobile/gym_coach.md) Appendix A:
-  `MAX_MODEL_CALLS` 8, `MAX_ABILITY_CALLS` 12, and the engine's `MAX_WRITES` is its `MAX_ADDS`, 6.
+  `MAX_MODEL_CALLS` 8 and `MAX_ABILITY_CALLS` 12. The write cap is its `MAX_ADDS`, 6, and counts the
+  abilities whose class is `add`.
 - **The groups** the gate allows once in a turn (Coach engine §6): one routine proposal
-  (`propose_routine_change` or `propose_routine_removal`), one workout proposal
-  (`propose_workout_change`), one `save_note`.
+  (`propose_routine_change` or `propose_routine_removal`) and one workout proposal
+  (`propose_workout_change`), each refused as `one-proposal`; and one `save_note`, refused as
+  `one-note`.
 - The web offers no `propose_workout_change`: its room is closed while a workout is open, and no
   board draws a workout proposal there.
-- The AI service sends every tool to the provider in strict mode
-  ([AI service §6.2](ai-service.md#62-the-wire)). The backend does not. The catalog's schemas were
-  written for strict mode; that the provider accepts all of them is checked against it before any
-  surface ships (§10).
+
+**Tool schemas and the provider.** The AI service sends every tool to the provider in strict mode
+([AI service §6.2](ai-service.md#62-the-wire)); the backend sends none so. The catalog's schemas
+cannot be sent that way. Read on Anthropic's documentation on 2026-11-15: strict mode refuses the
+bounds the catalog states on numbers, strings and lists (`minimum`, `maximum`, `maxLength`,
+`maxItems`), and allows 24 optional parameters across a request's strict tools, where the tools of
+a `bound` turn have 31. A round of gym's would be refused by the
+provider. Gym's tools are therefore sent without strict mode, which needs the AI service to let a
+caller say so for a tool; the gate's Shape rule checks every input on the device, as the server's
+gate does today. (R-11)
 
 ## §4 The turn
 
@@ -101,50 +115,64 @@ The host admits a send locally, as [phone-hosted Coach abilities](mobile/gym_coa
 says, and writes the records of its step 2. Then:
 
 - **Context.** The four list reads, and the open workout's `get_session`, run through the executor
-  and recorded as calls on the Coach message, within `CONTEXT_READ_BYTES`. They enter the first
-  content as text: for each, its name, its input and its result in canonical form.
+  and recorded as calls on the Coach message, within `CONTEXT_READ_BYTES`. Each enters the first
+  content as its lead sentence and its result in canonical form.
 - **History.** The newest completed turns, at most `CONTEXT_TURNS` and `CONTEXT_BYTES`.
 - **Pictures.** The model copies of this message's picture and the previous lifter message's, at
-  most `CONTEXT_PICTURES`, each an image part.
+  most `CONTEXT_PICTURES`, each an image part. A picture travels with every round of its turn, since
+  the service keeps nothing between calls. (R-12)
 
-The first content is built in the order the server builds it today, so the same question with the
-same replica gives the model the same words.
+The first content is the one the server builds today, word for word, from the files of §3. Where
+those words name a phone, they are rewritten to name no device before the web ships.
 
 ### §4.2 Ability calls
 
 - The host runs a call through the replica executor, which commits the call's writes and records
   the call on the Coach message in one local write, as it does today.
 - A result returns to the model as its canonical bytes (RFC 8785), within `TOOL_RESULT_BYTES`. A
-  refusal returns as its code.
+  refusal returns as its code and sentence.
 - **Ids.** The host mints every new record id as a seeded id from the `turnId` and a turn-wide
   ordinal, as the server's gate does today (G-7), and replaces an id the model supplies.
-- The executor's refusal when the Coach message is not this replica's own `running` message stands,
-  and ends the turn.
+- The executor runs a call only on this replica's own Coach message, and only while its writer has
+  not ended it. A message another device marked `interrupted` is still the writer's to answer
+  (Coach engine §5).
 
 ### §4.3 The shares
 
 `share_session` and `revoke_share` make and remove a record only the server can make: a link a
 stranger can open. In a `bound` turn the host runs them by calling
-`POST` and `DELETE /v1/gym/sessions/{id}/share`, the door the Share sheet calls, and answers the
-model with the ability's result built from the door's answer. An `anon` turn is offered neither.
-The corpus cases for the shares hold the host's result to the one the server's executor gives.
+`POST` and `DELETE /v1/gym/sessions/{id}/share`, the door the Share sheet calls. The first answers
+what the ability's result states, and the second answers nothing, so its result is built from the
+call. The door answers one refusal for an unknown workout and for a workout with no share, and the
+host gives the model the one code. An `anon` turn is offered neither.
 
-### §4.4 Text and the end
+### §4.4 Text, the mark and the end
 
 - Text reaches the Coach message in coalesced writes at the pace each surface sets: every 250 ms
   on the iPhone; every 5 s on Android, whose room draws the answer so far from the engine; every
   second on the web.
+- The mark is the device row `runningTurn` with, beside it, the round in flight and where its text
+  begins (Coach engine D-6). The registry declares `runningTurn` as the message's id alone, so it
+  gains a row.
 - The end is one local write: the state, the whole text, `truncated`, the receipt derived from the
   calls, and the mark cleared.
 - No server ends a turn. The server-origin door `interrupt` and the sweep that calls it retire, and
-  a turn its device never ends is ended by another of the person's devices
-  ([Coach engine](coach-engine.md) §5).
+  a turn its device never ends is ended by another of the person's devices (Coach engine §5).
+
+### §4.5 A proposal's conversation
+
+A proposal's `threadId` is the server's field to write, and only the web's server Coach writes it;
+a proposal a phone mints has none. After the move nothing writes it. Every surface places a proposal
+under the answer whose call created it, from the call's record, as the phones do today.
 
 - **INV-1.** A write Coach makes is the write the lifter's own gesture makes: the same action,
   through the same replica, synced, held and claimed the same way. This is principle 6 of
   phone-hosted Coach abilities, now true of the web.
 - **INV-2.** No ability applies or dismisses a proposal, on any surface. Apply and dismiss stay the
   lifter's gestures and the server's commands.
+- **INV-3.** The server relies on nothing the device's gate checks. What it accepts of a device's
+  writes it checks when it admits them: a proposal's diff, a note's bounds and count, a record's
+  shape.
 
 ## §5 The web
 
@@ -161,8 +189,9 @@ The web's Coach becomes the Coach the phones have. This is the largest part of t
 - A picture is kept in the browser: its original and its model copy in the device row
   `picture:<id>`, which the registry already declares. It leaves the browser only as the model copy
   inside a round, and its `pictures` entry is `localOnly`.
-- The browser's mark is the device row `runningTurn`, one for a browser, so a browser runs one gym
-  turn at a time across its tabs.
+- The browser's mark is one for a browser, so a browser runs one gym turn at a time across its
+  tabs.
+- Signing out removes what Coach kept in the browser: drafts, pictures and the mark.
 
 **What a person on the web gets, and loses:**
 
@@ -171,25 +200,32 @@ The web's Coach becomes the Coach the phones have. This is the largest part of t
 | Conversations | the web's own; a phone's never appear | one History with the phones |
 | A new routine | a draft in the answer, saved by **Save routine** | created at once, with its card, as on a phone (R-7) |
 | Changing a movement | Coach may edit one | not offered: `update_exercise` is `withheld` (R-7) |
-| Setting up a first routine | Coach asks with chips for days and equipment | no chips: Coach asks in words (R-7) |
-| How much one may ask | three questions at once, ten a day, and the allowance | the allowance alone (R-7) |
-| A picture | stored on the server, shown on every device | held in the browser that sent it |
+| How much one may ask | three questions back to back, refilling at ten a day, and the allowance | the allowance alone (R-7) |
+| A question's length | 1,000 bytes | 8,000, as on a phone |
+| Reloading or closing the tab mid-answer | the answer goes on and is there on return | an answer in its last round is recovered on return; a turn still calling abilities ends *Interrupted* (Coach engine R-4) |
+| Stop | cuts the round short | takes effect after the round in flight, which is paid for |
+| A picture | stored on the server, shown in every browser | held in the browser that sent it, gone when that browser clears its storage |
+| Deleting a conversation | a request the room holds back for 9 s | a record's delete, held and undone as any record's is |
 | A turn's records | written by the server | written by the browser; another tab or device shows it answering elsewhere |
 
-- Existing web conversations are not carried into the records. (R-6)
+- Existing web conversations are not carried into the records, and a draft waiting for
+  **Save routine** on the day the web moves is lost with them. (R-6)
 - Coach on the web stays closed while a workout is open, and signed out the gym room stays a sign-in
   door. Neither is this move's to change.
+- A workout proposal a phone made appears in the shared History, where the web has no card for it.
 - The room, History, a created routine's card, the read receipt, a turn answering elsewhere, the
-  ends of a turn and the access states of §6 each need an approved board before they are built.
+  ends of a turn, a picture held elsewhere, a phone's workout proposal and the access states of §6
+  each need an approved board before they are built.
 
 ## §6 Identity, the pass and access
 
 - **Identity is unchanged.** A phone holds an installation credential, issued and bound by the
-  routes of [phone-hosted Coach abilities](mobile/gym_coach.md) §8. A signed-in device asks the
-  pass door with its session, and a phone sends its installation credential beside it, so the pass
-  can name the installation it was. A signed-out phone asks with the installation credential alone.
-- **The allowance** a device reads is the AI service's (`GET /v1/allowance`).
-  `GET /v1/ai/installations/current` answers the binding and no allowance.
+  routes of [phone-hosted Coach abilities](mobile/gym_coach.md) §8, which go on answering as they
+  do. A signed-in device asks the pass door with its session, and a phone sends its installation
+  credential beside it, so the pass can name the installation it was. A signed-out phone asks with
+  the installation credential alone.
+- **The allowance** a device on the engine reads is the AI service's (`GET /v1/allowance`), never
+  the one the installation routes answer.
 - **Binding and the first account pass.** A phone binds its installation at sign-in. Until the
   backend holds that binding, an account's pass names no installation, and the device's spend of
   the month before sign-in is not yet counted in the account's month. The gap is bounded by one
@@ -199,6 +235,9 @@ The web's Coach becomes the Coach the phones have. This is the largest part of t
   routes and need no word: `debt_outstanding`, `coach-rate-limited`, `coach-busy`,
   `coach-vendor-error`, `coach-update-required`, `ask-daily-limit`, `ask-out-of-budget` and the
   other `ask-` and `coach-turn-` codes.
+- **One call at a time.** A free account has one call in flight, so a person whose phone is
+  answering is refused as busy in a browser until it has finished. Today the same limit refuses the
+  second device's turn.
 - A plan is not shown on a phone, and nothing in this move shows one.
 
 ## §7 What the backend still does
@@ -218,29 +257,36 @@ on the server, never some of each.
 1. The AI service serves the text door in production, and the backend's pass door is live.
 2. Each surface ships a build whose Coach runs on the device. A build before it goes on calling the
    server's Coach, which goes on being metered by the backend's ledger.
-3. On a day the owner sets, the server's Coach closes: the turn routes, `/v1/gym/ask` and the
-   routes beside it, and anonymous onboarding answer that the app must be updated, which the
-   released phones already show as *Update*. (R-5)
-4. The server's Coach, its tables and its tests are deleted (§9).
+3. On a day the owner sets, the server's Coach closes. Its routes stay as tombstones that answer
+   410 `client-update-required`, as the backend's other retired routes do, which the released
+   phones show as *Update*. A route that is simply gone answers 404, which every released build
+   shows as a Windmill without Coach. (R-5)
+4. The server's Coach, its tables and its tests are deleted (§9). The tombstones stay.
 
-Between steps 2 and 3 a person with an old build and a new one is metered by two ledgers and holds
-two allowances. The AI service's ledger starts empty for everyone
+Between steps 2 and 3 two ledgers meter Coach. A person with an old build and a new one holds two
+allowances, an installation holds its lifetime allowance twice, and Windmill's free pools stand
+twice: a day's and a month's in each ledger. The AI service's ledger starts empty for everyone
 ([AI service I-8](ai-service.md#12-integrations)). (R-5)
 
-The backend's ledger, its Anthropic client and its key outlive this move: Talk, Echoes and
-roadmap's tending still call them.
+An old build and a new one write the same `thread` and `message` records, each by its own loop, and
+a conversation begun on one continues on the other.
+
+The backend's ledger and its provider clients outlive this move: Talk, Echoes, and roadmap's tending
+and compose still use them.
 
 ## §9 What retires
 
-- **The turn wire:** `POST /v1/gym/coach/turns`, its resume, results and stop routes, the server's
-  loop and gate (`backend/products/gym/coach/`), the tombstones and the sweep, and the server-origin
-  door `interrupt`.
+- **The turn wire:** `POST /v1/gym/coach/turns`, its resume, results and stop routes; the server's
+  loop and gate in `backend/products/gym/coach/`, the tombstones of stopped turns and the sweep; and
+  the server-origin door `interrupt`. `AbilityCatalog`, which holds the MCP tools to the catalog,
+  stays.
 - **The web's server Coach:** `POST /v1/gym/ask`, the threads, attachments, stop and routine-confirm
   routes, the tables `gym_ask_threads`, `gym_ask_turns`, `gym_ask_generations`, `gym_ask_attachments`
   and `gym_ask_deleted_threads` with the conversations in them (R-6), the question ration, and the
-  receipts kept only for its recovery.
+  server's writing of a proposal's `threadId`. The receipts of a saved note and of an edited
+  movement stay: MCP writes them too.
 - **Anonymous onboarding:** `POST /v1/gym/coach/onboarding` and its read, and what it stores.
-- **The prompt** in the backend's source, and the adapters that give Coach a model.
+- **The words** in the backend's source, and the adapters that give Coach a model.
 - **The address limit on generations**, which becomes the pass door's.
 - **The corpus** `packages/api-contract/gym/turns/`, the stories of a wire that is gone. Their
   stories are told again in the engine's vectors.
@@ -256,13 +302,15 @@ every proposal door.
 
 - Each engine replays the engine's vectors; each executor claims `abilities/` and `rules/`, the
   web's included (§5).
-- The catalog is sent to the provider's counting door in strict mode, once by hand with the AI
-  service's own key, and every ability's schema must be accepted. A schema the provider refuses is
-  changed in the catalog, under a new catalog version when its meaning changes.
+- Every tool of the profile is sent to the provider in a real round, once by hand with the AI
+  service's own key, on each seat. The provider counts tokens without compiling a schema, so a
+  count proves nothing here.
 - Each surface drives a turn end to end against a local stack: the backend signing passes, the AI
   service, and a provider the test plays. The stories are a question answered, an ability that
-  writes, a proposal applied, a share, a picture, Stop, an allowance used up, and a connection lost
-  mid-round.
+  writes, a proposal applied, a share, a picture, Stop, an allowance used up, a connection lost
+  mid-round and found again, and an app killed in its last round.
+- A turn with two pictures and several rounds is driven over a slow uplink, and what it shows is
+  written down before a phone ships (R-12).
 - One turn on each surface is driven by hand in production with a real provider before the cutover
   day, and its evidence names what it cost.
 
@@ -270,8 +318,8 @@ every proposal door.
 
 - Each surface emits `coach_turn` and `coach_ability`
   ([phone-hosted Coach abilities](mobile/gym_coach.md) §10.2) from the engine's telemetry port, and
-  `gym_ask_started` and `gym_ask_outcome` as the phones do. The web emits none of them today and
-  gains all four.
+  `gym_ask_started` and `gym_ask_outcome` as the phones do. A turn on the web emits no event today
+  and gains all four.
 - Failures report to Sentry under each surface's own turn operation and under `ai-call` and
   `ai-pass` ([Coach engine](coach-engine.md) §10).
 - The backend's `coach_turn` and `coach_batch` lines end with the turn wire. Its line for Coach is
@@ -280,25 +328,30 @@ every proposal door.
 
 ## §12 What must be built beneath
 
-Reading the backend, the two phone apps and the web against this document on 2026-11-15 found these
-gaps. Each is work of this build.
+Reading the backend, the two phone apps, the web and the AI service as built against this document
+on 2026-11-15 found these gaps. Each is work of this build.
 
-- The iPhone's generated catalog drops each ability's `description`, and no app holds the prompt.
+- The AI service sends every tool in strict mode and gives a caller no way to say otherwise (§3).
+- The iPhone's generated catalog drops each ability's `description`, and no app holds the words the
+  model reads. The sentences beside refusal codes and around the first content exist only in the
+  server's loop.
 - The iPhone keeps its turn in the app target; it has no engine module that names no product.
   Android's `:agent` is one, and holds the wire's driver, not a loop.
 - The web has no catalog types, no executor, no `thread` or `message` entity, no agent or AI layer
-  and no lock a turn could hold. Its Coach emits no event and files no report.
+  and no lock a turn could hold. A turn there emits no event and files no report.
 - The web keeps a Coach draft and a photo in the browser under the account's name and removes
   neither at sign-out.
-- The Share door's answer is not known to carry everything the abilities' results state.
-- The server's record rules are not known to admit `interrupted` written by a replica other than
-  the message's writer.
+- The mark has no place for a round, and the registry declares it as an id alone.
+- The sync engine's clients are not known to give a product the server's time of a record's last
+  write, which a stale turn is measured by.
 - The server's gate applies rules G-4 to G-7 that no phone applies; each moves into the device.
-- The backend sends tools without strict mode, so no schema of the catalog has met it.
 - The iPhone does not handle a sign-in that rebinds the signed-out replica or one waiting on its
   decision, which Android does; the engine's rule for a seat change must hold on both.
-- A web bundle from before the cutover that a browser still holds meets a closed route, and nothing
-  tells it to reload.
+- A web bundle from before the cutover that a browser still holds does not read
+  `client-update-required`, and nothing tells it to reload.
+
+Read in the code and not run: the server admits `interrupted` written on a `running` Coach message
+by any of the account's replicas, which a stale turn's end needs.
 
 ## §13 Rulings
 
@@ -308,9 +361,11 @@ gaps. Each is work of this build.
 | R-2 | One Coach or one a product | One engine; gym keeps its own prompt, abilities and conversations. (2026-11-14) |
 | R-3 | Where abilities run | On the device's copy by default, every change travelling by synchronization. An ability that calls the backend is a rare exception. (2026-11-14) |
 | R-4 | Which Coach moves first | Open. Assumed: gym's, before roadmap's is built, so that the engine is proven on the product people use and a person never holds two allowances for Coach. |
-| R-5 | Builds released before the move | Open. Assumed: on a day the owner sets, the server's Coach closes and an old build asks for an update; until then an old build is metered by the backend and a new one by the AI service. The other way is for the backend to keep serving old builds by calling the AI service itself, which keeps one ledger and adds a call between services while a person waits. |
+| R-5 | Builds released before the move | Open. Assumed: on a day the owner sets, the server's Coach closes and an old build asks for an update; until then an old build is metered by the backend and a new one by the AI service, and Windmill's free pools stand twice. The other way is for the backend to keep serving old builds by calling the AI service itself, which keeps one ledger and adds a call between services while a person waits. |
 | R-6 | The web's existing conversations | Open. Assumed: deleted with the server's Coach, as the phones' earlier conversations were not carried into the records. Routines, notes and applied proposals they led to stay. |
-| R-7 | Whether the web's Coach takes the phones' rules | Open. Assumed: yes, since an ability has one agent rule on every door. A new routine is created at once, Coach edits no movement, asks setup questions in words, and the question ration ends. |
-| R-8 | Where the prompt lives | Open. Assumed: in each app's bundle, from one shared file. A change to it reaches a phone with a release, where today it reaches every surface with a deploy, and a person can read it. |
+| R-7 | Whether the web's Coach takes the phones' rules | Open. Assumed: yes, since an ability has one agent rule on every door. A new routine is created at once, Coach edits no movement, and the question ration ends. What else a person on the web gains and loses is §5's table. |
+| R-8 | Where the prompt lives | Open. Assumed: in each app's bundle, from shared files. A change to it reaches a phone with a release, where today it reaches every surface with a deploy, and a person can read it. A build whose Coach is found broken is retired by its profile's version (Coach engine §4.1). |
 | R-9 | Coach's shares | Open. Assumed: the two share abilities call the Share door, the one exception to R-3 gym has. |
 | R-10 | Effort and output cap | Open. Assumed: as the backend sets them today, in §3's table. |
+| R-11 | Tool schemas the provider's strict mode refuses | Open. Assumed: the AI service lets a caller send a tool without strict mode, and gym sends all of its so. The other way is a new catalog version written to strict mode's limits, which changes what an ability's input can leave out on every door. |
+| R-12 | A picture sent with every round | Open. Assumed: accepted, with the model copy's bounds as they are, so a turn with two pictures sends up to 2.7 MiB a round. Measured on a slow uplink before a phone ships. |

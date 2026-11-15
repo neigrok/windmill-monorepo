@@ -386,8 +386,7 @@ and the model continues.
 - **G-1 Offered.** The name is in the declared catalog version with `agent` other than
   `withheld`.
 - **G-2 Seat.** The ability's `seats` admits the turn's seat.
-- **G-3 Shape.** The input validates against the ability's schema at every depth. Tools are sent to
-  the vendor in strict mode.
+- **G-3 Shape.** The input validates against the ability's schema at every depth.
 - **G-4 One proposal per target.** At most one `proposes` call succeeds per turn for each target
   kind: one for a routine (`propose_routine_change` or `propose_routine_removal`) and one for the open
   workout (`propose_workout_change`). One answer may carry one of each; the lifter decides them
@@ -714,8 +713,8 @@ the server Coach's legacy conversations stay in the gym backend's Coach tables a
 - The read receipt counts what the executor returned to the model in the turn, context reads
   included, by identity, under the read receipt's four rules
   ([brand foundations](../../design/brand-foundations.md), Gym).
-- `results` lists the ids of records the turn created. A proposal of either kind minted in the turn carries
-  `threadId`.
+- `results` lists the ids of records the turn created. A proposal a phone mints carries no `threadId`: the
+  field is the server's to write, and the room places a proposal by the call that created it.
 - A receipt stores ids only. The room reads names and serials from the records when it draws.
 - The receipt and the step line derive from `calls`, never from the model's text.
 - A call's record holds the identities its read served that no earlier call of the turn holds.
@@ -777,10 +776,9 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 - `proposal` and `workoutProposal` records mintable by a replica, with `changes` computed by the shared diff rule and
   re-checked by the server on admission;
 - `thread` and `message` as full records with the fields and merge rule of §9.1, `localOnly`
-  pictures held in `picture:<id>` device rows, and a proposal's `threadId` a `ref<thread>` its
-  replica writes. Gym's registry declares `thread`, `message`, `runningTurn` and `picture:<id>`
-  (engine A.2, §2.4); a proposal's `threadId` stays a plain string until the server Coach's legacy
-  conversations are gone;
+  pictures held in `picture:<id>` device rows. Gym's registry declares `thread`, `message`,
+  `runningTurn` and `picture:<id>` (engine A.2, §2.4); a proposal's `threadId` is a plain string only
+  the server writes, for the server Coach's conversations;
 - the derived reads of INV-5 computed on the replica.
 
 ---
