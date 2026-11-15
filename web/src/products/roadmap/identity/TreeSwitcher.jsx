@@ -84,7 +84,9 @@ export function TreeSwitcher({ current, listTrees, onNew, onRename, onPreviewTit
     if (!target) return;
     focusRef.current = null;
     const row = rowRefs.current.get(target.id);
-    const action = target.action ? row?.querySelector(`[data-switcher-action="${target.action}"]`) : null;
+    const tree = mergeCurrent(treesRef.current, currentRef.current).find((item) => item.id === target.id);
+    const action = target.action && seamOf(tree ?? {}) !== null
+      ? row?.querySelector(`[data-switcher-action="${target.action}"]`) : null;
     (action ?? row ?? menuRef.current ?? triggerRef.current)?.focus();
   });
 

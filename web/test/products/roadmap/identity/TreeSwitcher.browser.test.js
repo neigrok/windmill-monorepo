@@ -477,8 +477,8 @@ for (const engine of ['Chromium', 'WebKit']) {
     }
   });
 
-  for (const action of ['rename', 'delete']) {
-    test(`${engine}: a device claim while ${action} is open cannot use a server mutation callback`, async () => {
+  for (const [action, claimAtEnter] of [['rename', false], ['rename', true], ['delete', false]]) {
+    test(`${engine}: a device claim while ${action} is open cannot use a server mutation callback${claimAtEnter ? ' when Enter preempts the claim render' : ''}`, async () => {
       await withSwitcher([{ id: 'device', title: 'Device roadmap', origin: 'device', claimed: false }], async (page) => {
         await page.locator('#fixture [aria-haspopup="menu"]').tap();
         if (action === 'rename') {
@@ -487,7 +487,12 @@ for (const engine of ['Chromium', 'WebKit']) {
         } else {
           await page.getByRole('button', { name: 'Delete Device roadmap' }).tap();
         }
-        await page.evaluate(() => window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId: 'device' } })));
+        await page.evaluate((claimAtEnter) => {
+          const claim = () => window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId: 'device' } }));
+          // A claim can reach the registry before React renders it, then Enter closes the editor first.
+          if (claimAtEnter) return void document.addEventListener('keydown', claim, { capture: true, once: true });
+          claim();
+        }, claimAtEnter);
         if (action === 'rename') await page.keyboard.press('Enter');
         else await page.getByRole('button', { name: 'Delete', exact: true }).tap();
         assert.deepEqual(await page.evaluate(() => ({ renames: window.renames ?? [], deletes: window.deletes ?? [], previews: window.previews ?? [], events: window.events, hash: location.hash })), {
