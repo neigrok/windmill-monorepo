@@ -96,10 +96,10 @@ test('a save over a guide changed elsewhere since writing began leaves a conflic
   assert.deepEqual(quiet.calls.slice(1), [['event', 'roadmap_guide', { step: 'save', outcome: 'saved', length: '1-500' }]]);
 });
 
-test('a save by someone who is not the owner writes through no door and answers that it was refused', async () => {
+test('a save by someone who is not the owner writes through no door and distinguishes the local refusal', async () => {
   const { save, calls } = saveWith({ owner: false });
-  assert.equal(await save(new GuideDraft('One step a week.', 'Two steps a week.')), 'refused');
-  assert.deepEqual(calls, [['event', 'roadmap_guide', { step: 'save', outcome: 'failed', length: '1-500', reason: 'refused' }]]);
+  assert.equal(await save(new GuideDraft('One step a week.', 'Two steps a week.')), 'not-owner');
+  assert.deepEqual(calls, [['event', 'roadmap_guide', { step: 'save', outcome: 'failed', length: '1-500', reason: 'not-owner' }]]);
 });
 
 // The read of the guides above as written, its collaborators recorded: what was asked, what was held and what reported.

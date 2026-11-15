@@ -443,7 +443,7 @@ the modal's body and gives inherited guides their room while keeping the draft v
 field fills the available body and the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
 the guide, which closes the note unless guides from above remain to read or parent status remains unknown. While a save is in flight the frame holds:
 the field is read-only and nothing leaves until it settles. A save by someone who is no longer the owner writes through
-no door and is refused. While the note holds
+no door and answers `not-owner`. While the note holds
 the window, Escape, ⌘↩ and Tab work wherever focus stands; ⌘↩ presses Save or Try again and no other act, and a held
 key is one press. The note keeps its draft, and the focus a stop held, across a change of band, and closes
 when the tree changes or the route excludes Guide. A role change retains the active draft and its recovery state;
@@ -456,9 +456,12 @@ status line above the field on desktop and in the footer on phones: a guide chan
 offers Load latest, which replaces the draft, so Cancel then leaves at once; on phones the line also says what Save
 replaces, and it waits while a save is in flight. A save no door took keeps the draft and leaves one line
 (`role="alert"`) where the footer says who reads the guide, and its act takes Save's place: Try again for `offline`,
-`server` and `device`, which runs the same save, and Copy draft for `refused`, which puts the whole draft on the
-clipboard and, once it is there, says Draft copied with Done. Done keeps the draft and returns to Copy draft, so a
-changed draft leaves only through Cancel and Discard draft?. A clipboard that refuses leaves Copy draft standing. The
+`server` and `device`, which runs the same save, and Copy draft for `refused` or `not-owner`. The local owner guard says
+“You can’t save this guide.” on a neutral surface; server refusal keeps its server wording. Copy draft copies the
+current whole draft; a failure says “Couldn’t copy your draft.” with Copy draft, and success says Draft copied with
+Done. Both preserve the original refusal, which Done restores without closing the draft. Changed drafts leave only
+through Cancel and Discard draft?. Every failed copy announces again. Clipboard results after editing, Load latest,
+leaving or a newer copy attempt leave the UI unchanged; every attempt still emits its bounded outcome. The
 line moves no focus: after ⌘↩ focus stays in the field, where typing goes on and clears the line, and after a press on
 the footer's button the button keeps it, with a ring on phones when a key put it there, and a phone's keyboard goes
 down. From 744px the line and the actions share one tinted block and the field rests on its plain edge; on phones the
