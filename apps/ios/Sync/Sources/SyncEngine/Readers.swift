@@ -119,6 +119,14 @@ final class TransactionReader: CommitContext {
     }
   }
 
+  func freshness() throws -> SyncFreshness {
+    try reading {
+      guard isOpen else { throw TransactionReader.ended }
+      guard try firstPullComplete() else { return SyncFreshness() }
+      return core.freshness(scope, meta: meta)
+    }
+  }
+
   func firstPullComplete() throws -> Bool {
     try reading {
       guard isOpen else { throw TransactionReader.ended }

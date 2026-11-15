@@ -11,6 +11,7 @@ enum SourceRules {
     "JournalDomain": productDomainImports,
     "SyncCore": ["CryptoKit"],
     "SyncAPI": ["SyncCore"],
+    "Agent": ["SyncCore"],
     "SyncSchema": ["SyncCore"],
   ]
   static let productDomainImports: Set<String> = ["SyncCore", "SyncAPI", "SyncSchema", "DomainKit"]
@@ -26,7 +27,7 @@ enum SourceRules {
   static let unsafePrefixes = ["Unsafe", "unsafe", "withUnsafe"]
   static let branches: Set<String> = ["#if", "#elseif", "#available", "#unavailable", "@available"]
 
-  static let noUserInterfaceLayers: Set<Layer> = [.kit, .kitTestSupport, .productDomain, .engineAPI, .engineRuntime, .engineTestSupport]
+  static let noUserInterfaceLayers: Set<Layer> = [.agent, .kit, .kitTestSupport, .productDomain, .engineAPI, .engineRuntime, .engineTestSupport]
   static let userInterfaceFrameworks: Set<String> = [
     "SwiftUI", "UIKit", "AppKit", "Combine", "AuthenticationServices", "StoreKit", "SafariServices", "LinkPresentation", "QuickLook",
     "PhotosUI", "MapKit", "AVKit", "WebKit", "PassKit",

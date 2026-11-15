@@ -18,6 +18,7 @@ public protocol ScopeReader {
   func device(_ key: String) throws -> JSON?
   // §7.9: the scope's first pull is complete, or the replica does not pull it.
   func firstPullComplete() throws -> Bool
+  func freshness() throws -> SyncFreshness
   func confirmed(_ type: String, _ id: RecordID) throws -> Record?
   func checkpoint() throws -> ScopeCheckpoint
   func devices(prefix: String) throws -> JSON.Object
@@ -108,4 +109,14 @@ public struct QueuedCommand: Sendable {
   public init(gestureId: String, command: Command, canSupersede: Bool, isAdmitted: Bool = false) {
     self.gestureId = gestureId; self.command = command; self.canSupersede = canSupersede; self.isAdmitted = isAdmitted
   }
+}
+
+public struct SyncFreshness: Sendable, Equatable {
+  public let serverNow: Int64?
+  public let live: Bool
+  public init(serverNow: Int64? = nil, live: Bool = false) { self.serverNow = serverNow; self.live = live }
+}
+
+extension ScopeReader {
+  public func freshness() throws -> SyncFreshness { SyncFreshness() }
 }
