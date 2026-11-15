@@ -279,6 +279,10 @@
     "waitsMs": [],
     "telemetry": [
       {
+        "kind": "failure",
+        "operation": "ai-call"
+      },
+      {
         "kind": "turn",
         "state": "failed",
         "seat": "bound",
