@@ -16,15 +16,20 @@
 
 namespace wm::subscriptions::test {
 
-// An example of a golden fixture in packages/api-contract/subscriptions: its name, its body and, for a feed page,
-// the request it answers.
-inline Json::Value contractExample(const std::string& file, const std::string& name) {
+// A golden fixture of packages/api-contract/subscriptions, whole: its examples and, for a door, the request it takes.
+inline Json::Value contractFile(const std::string& file) {
   std::ifstream in(std::string(WM_SUBSCRIPTIONS_CONTRACT_DIR) + "/" + file);
   std::stringstream text;
   text << in.rdbuf();
-  const std::optional<Json::Value> examples = parseWhole(text.str());
-  if (!examples) throw std::runtime_error(file + " is not JSON");
-  for (const Json::Value& example : (*examples)["examples"])
+  const std::optional<Json::Value> contract = parseWhole(text.str());
+  if (!contract) throw std::runtime_error(file + " is not JSON");
+  return *contract;
+}
+
+// An example of a golden fixture: its name, its body and, for a feed page, the request it answers.
+inline Json::Value contractExample(const std::string& file, const std::string& name) {
+  const Json::Value contract = contractFile(file);
+  for (const Json::Value& example : contract["examples"])
     if (example["name"].asString() == name) return example;
   throw std::runtime_error(file + " holds no example " + name);
 }

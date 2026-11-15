@@ -96,19 +96,24 @@ void SubscriptionServiceClient::stop() {
   });
 }
 
-FeedPage SubscriptionServiceClient::page(Seq after, int limit) {
+std::pair<drogon::ReqResult, drogon::HttpResponsePtr> SubscriptionServiceClient::send(
+    const drogon::HttpRequestPtr& request) {
   const std::optional<std::string> address = host_.empty() ? std::nullopt : addressOf(host_);
-  if (!address) throw FeedUnavailable("unreachable");
+  if (!address) return {drogon::ReqResult::BadServerAddress, nullptr};
   auto client = drogon::HttpClient::newHttpClient(*address, port_, https_, loop_.getLoop());
+  request->addHeader("host", authority_);
+  request->addHeader("authorization", "Bearer " + token_);
+  return client->sendRequest(request, kTimeoutSeconds);
+}
+
+FeedPage SubscriptionServiceClient::page(Seq after, int limit) {
   auto request = drogon::HttpRequest::newHttpRequest();
   request->setMethod(drogon::Get);
   request->setPath(prefix_ + "/internal/v1/feed");
   request->setParameter("after", std::to_string(after));
   request->setParameter("limit", std::to_string(limit));
-  request->addHeader("host", authority_);
-  request->addHeader("authorization", "Bearer " + token_);
 
-  const auto [result, response] = client->sendRequest(request, kTimeoutSeconds);
+  const auto [result, response] = send(request);
   if (result != drogon::ReqResult::Ok) throw FeedUnavailable(answerFor(result));
   if (!response) throw FeedUnavailable("bad-reply");
   const int status = static_cast<int>(response->getStatusCode());
@@ -116,6 +121,22 @@ FeedPage SubscriptionServiceClient::page(Seq after, int limit) {
   const std::optional<Json::Value> body = parseWhole(std::string(response->getBody()));
   if (!body) throw FeedUnavailable("malformed");
   return FeedPage{*body};
+}
+
+ClaimAnswer SubscriptionServiceClient::claim(const UserId& account, const std::string& signedTransaction) {
+  Json::Value claim(Json::objectValue);
+  claim["accountId"] = account.str();
+  claim["signedTransaction"] = signedTransaction;
+  auto request = drogon::HttpRequest::newHttpJsonRequest(claim);
+  request->setMethod(drogon::Post);
+  request->setPath(prefix_ + "/internal/v1/app-store/claims");
+
+  const auto [result, response] = send(request);
+  if (result != drogon::ReqResult::Ok) throw ClaimUnanswered(answerFor(result));
+  if (!response) throw ClaimUnanswered("bad-reply");
+  const std::optional<Json::Value> body = parseWhole(std::string(response->getBody()));
+  if (!body) throw ClaimUnanswered("malformed");
+  return ClaimAnswer{static_cast<int>(response->getStatusCode()), *body};
 }
 
 }

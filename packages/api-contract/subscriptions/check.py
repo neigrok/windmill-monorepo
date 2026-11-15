@@ -393,7 +393,9 @@ for file, refusals in REFUSALS.items():
 
 public_claim, internal_claim = loaded["app-store-claim.json"], loaded["internal-app-store-claim.json"]
 check(list(public_claim["request"]) == ["signedTransaction"], "app-store-claim: AppStoreClaimRequest is {signedTransaction}")
-check([x["status"] for x in public_claim["examples"]].count(200) == 2, "app-store-claim: bound, and bound already")
+check([x["name"] for x in public_claim["examples"] if x["status"] == 200]
+      == ["bound_to_caller", "already_bound_to_caller", "copy_behind"],
+      "app-store-claim: bound, bound already, and bound with the copy behind")
 for example in public_claim["examples"]:
     if example["status"] == 200:
         check_subscription_response(example["body"], f"app-store-claim/{example['name']}")
@@ -424,6 +426,9 @@ for example in refresh["examples"]:
 check(named("app-store-claim.json")["bound_to_caller"]["body"]["governing"]
       == named("internal-app-store-claim.json")["bound_to_caller"]["body"]["entitlement"]["production"]["governing"],
       "app-store-claim/bound_to_caller answers the copy the internal answer leads to (§5.3)")
+check(named("app-store-claim.json")["copy_behind"]["body"]
+      == named("subscription.json")["never_subscribed_line_open"]["body"],
+      "app-store-claim/copy_behind answers the copy as it stood before the claim, which held nothing (§5.3)")
 
 
 # Privacy: ids are UUIDs; no email, signed payload or store transaction id; instants are epoch milliseconds

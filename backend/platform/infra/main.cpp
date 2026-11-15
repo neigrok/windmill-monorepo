@@ -507,7 +507,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     LOG_ERROR << "subscriptions: SUBSCRIPTIONS_PURCHASABLE_STORES names a store the backend does not know; it stays closed";
     sentry->report("config", "subscription.paid_line", "unknown_store");
   }
-  auto subscriptionApi = std::make_shared<subscriptions::SubscriptionApi>(authService, entitlements, paidLine, sentry);
 
   std::shared_ptr<AiBudgetAlerts> aiBudgetAlerts;
   if (aiBudgets) {
@@ -605,6 +604,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // (docs/foundation/subscriptions.md §6.1), its lifecycle events recorded into the events store (§10). Off while
   // neither variable is set; one without the other refuses to start.
   std::optional<subscriptions::ServiceAddress> subscriptionService;
+  std::optional<subscriptions::ClaimForwarding> claimForwarding;
   try {
     subscriptionService = subscriptions::ServiceAddress::from(std::getenv("SUBSCRIPTIONS_INTERNAL_URL"),
                                                               std::getenv("SUBSCRIPTIONS_INTERNAL_TOKEN"));
@@ -628,9 +628,16 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     lifetime.watch(feedFollower, subscriptionFeed, entitlementCopy, lifecycleEvents, eventRepo, amplitude, periodFunding,
                    aiBudgets, aiBudgetRepo, sentry);
     feedFollower->start();
+    // A device's App Store claim, forwarded to the service and answered once the follower brings the copy to it (§5.3).
+    auto claimWorkers = std::make_shared<WorkerPool>("subscription-claim", 2, 16,
+                                                     std::make_shared<FailureWindow>(*sentry, "worker_pool.saturated"));
+    lifetime.onStop([claimWorkers] { claimWorkers->stopAndJoin(); }, feedFollower, subscriptionFeed, entitlements, sentry);
+    claimForwarding = subscriptions::ClaimForwarding{subscriptionFeed, feedFollower, claimWorkers};
   } else {
     LOG_INFO << "subscriptions: the feed follower is off (SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN unset)";
   }
+  auto subscriptionApi = std::make_shared<subscriptions::SubscriptionApi>(authService, entitlements, paidLine, sentry,
+                                                                          claimForwarding);
 
   auto feedbackRepo = std::make_shared<PgFeedbackRepository>(pool);
   auto feedbackApi = std::make_shared<FeedbackApi>(feedbackRepo, authService);
@@ -998,6 +1005,12 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         subscriptionApi->get(req, std::move(cb));
       },
       {drogon::Get});
+  routes.registerWriteHandler(
+      "subscription.claim", "/v1/subscription/app-store/claims",
+      [subscriptionApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        subscriptionApi->claimAppStore(req, std::move(cb));
+      },
+      {drogon::Post});
 
   // Redirects, not fetches, so no CORS.
   routes.registerWriteHandler("auth.google.start",

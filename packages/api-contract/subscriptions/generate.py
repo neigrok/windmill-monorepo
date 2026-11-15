@@ -334,6 +334,8 @@ pages = [("from_zero", 0, 6), ("claimed_then_sandbox", 6, 6), ("refunded_then_re
 
 claimed = ledger.at(CLAIM_SEQ)
 claim_answer = subscription_response(claimed["entitlement"], CLAIMED + MINUTE)
+# The same claim once the door's wait for the follower ran out: the copy as it stood before, holding nothing yet
+copy_behind = subscription_response(entitlement(CLAIMANT, []), CLAIMED + MINUTE)
 internal_answer = {"seq": claimed["seq"], "entitlement": claimed["entitlement"]}
 refused = lambda status, code: {"status": status, "body": {"code": code}}
 # A refresh of the buyer's subscription once the feed is told: its newest event's seq
@@ -354,6 +356,7 @@ FILES = {
     "app-store-claim.json": {"request": {"signedTransaction": SIGNED_TRANSACTION}, "examples": [
         {"name": "bound_to_caller", "status": 200, "body": claim_answer},
         {"name": "already_bound_to_caller", "status": 200, "body": claim_answer},
+        {"name": "copy_behind", "status": 200, "body": copy_behind},
         {"name": "bound_to_another_account", **refused(409, "bound_to_another_account")},
         {"name": "transaction_not_verified", **refused(400, "invalid_transaction")},
         {"name": "service_unavailable", **refused(503, "subscriptions_unavailable")}]},

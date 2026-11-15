@@ -24,7 +24,8 @@ using namespace wm::subscriptions::test;
 
 namespace {
 // The service's internal port, stood up on 127.0.0.1 at a port the OS picks: each connection is answered with the next
-// canned reply and closed, and each request's bytes are kept. A connection that never comes is given up after 5 s.
+// canned reply and closed, and each request's bytes, its body included, are kept. A connection that never comes is given
+// up after 5 s.
 class StubService {
 public:
   explicit StubService(std::vector<std::string> replies) : listener_(::socket(AF_INET, SOCK_STREAM, 0)) {
@@ -43,7 +44,7 @@ public:
         const int peer = ::accept(listener_, nullptr, nullptr);
         std::string request;
         char buffer[4096];
-        while (request.find("\r\n\r\n") == std::string::npos) {
+        while (request.find("\r\n\r\n") == std::string::npos || request.size() < headEnd(request) + bodyLength(request)) {
           const ssize_t read = ::recv(peer, buffer, sizeof buffer, 0);
           if (read <= 0) break;
           request.append(buffer, static_cast<std::size_t>(read));
@@ -65,6 +66,15 @@ public:
   std::vector<std::string> requests() {
     if (server_.joinable()) server_.join();
     return requests_;
+  }
+
+  static std::size_t headEnd(const std::string& request) { return request.find("\r\n\r\n") + 4; }
+
+  static std::size_t bodyLength(const std::string& request) {
+    std::string head = request.substr(0, headEnd(request));
+    std::transform(head.begin(), head.end(), head.begin(), [](unsigned char c) { return std::tolower(c); });
+    const std::size_t field = head.find("\r\ncontent-length:");
+    return field == std::string::npos ? 0 : std::stoul(head.substr(field + 17));
   }
 
   static std::string reply(int status, const std::string& body) {
@@ -179,4 +189,67 @@ TEST(subscription_service_address_is_both_variables_or_neither) {
            std::string("SUBSCRIPTIONS_INTERNAL_TOKEN is required with SUBSCRIPTIONS_INTERNAL_URL"));
   CHECK_EQ(refusal(nullptr, "internal-secret"),
            std::string("SUBSCRIPTIONS_INTERNAL_URL is required with SUBSCRIPTIONS_INTERNAL_TOKEN"));
+}
+
+// Each answer internal-app-store-claim.json pins, as the service serves it: its claim is posted with the account the
+// caller's session names and the bearer secret, and the answer reads as its seq or its refusal's code.
+TEST(subscription_service_client_claims_for_the_account_and_reads_every_answer_the_contract_pins) {
+  const Json::Value contract = contractFile("internal-app-store-claim.json");
+  std::vector<std::string> replies;
+  for (const Json::Value& example : contract["examples"])
+    replies.push_back(StubService::reply(example["status"].asInt(), dump(example["body"])));
+  StubService service{replies};
+  SubscriptionServiceClient client{ServiceAddress{service.url() + "/subscriptions", "internal-secret"}};
+  const UserId account{contract["request"]["accountId"].asString()};
+  const std::string signedTransaction = contract["request"]["signedTransaction"].asString();
+
+  std::vector<std::string> answers;
+  for (std::size_t asked = 0; asked < replies.size(); ++asked) {
+    const ClaimAnswer answer = client.claim(account, signedTransaction);
+    answers.push_back(answer.refusal ? *answer.refusal : "seq " + std::to_string(answer.seq));
+  }
+  CHECK(answers == (std::vector<std::string>{"seq 7", "seq 7", "bound_to_another_account", "account_erased",
+                                             "invalid_transaction", "unavailable", "store_unavailable",
+                                             "store_api_unavailable"}));
+
+  const std::vector<std::string> requests = service.requests();
+  REQUIRE_EQ(requests.size(), replies.size());
+  for (const std::string& request : requests) {
+    CHECK(request.starts_with("POST /subscriptions/internal/v1/app-store/claims HTTP/1.1\r\n"));
+    CHECK(lowered(request).find("\r\nauthorization: bearer internal-secret\r\n") != std::string::npos);
+    CHECK(lowered(request).find("\r\ncontent-type: application/json") != std::string::npos);
+    CHECK(parseWhole(request.substr(request.find("\r\n\r\n") + 4)) == std::optional<Json::Value>(contract["request"]));
+  }
+}
+
+// What the contract does not describe is no answer: a refusal it does not name, a status it never answers, a body that
+// is not one, and a service nobody listens for.
+TEST(subscription_service_client_reads_a_claim_answer_the_contract_does_not_describe_as_unanswered) {
+  StubService service{{StubService::reply(400, R"({"code":"invalid_request"})"),
+                       StubService::reply(401, R"({"code":"unauthorized"})"),
+                       StubService::reply(500, R"({"code":"invalid_transaction"})"),
+                       StubService::reply(409, R"({"code":"unavailable"})"),
+                       StubService::reply(200, R"({"entitlement":{}})"),
+                       StubService::reply(200, "PRIVATE_NOT_JSON")}};
+  SubscriptionServiceClient client{ServiceAddress{service.url(), "internal-secret"}};
+  std::string url;
+  {
+    StubService closed{{}};
+    url = closed.url();
+  }
+  SubscriptionServiceClient nowhere{ServiceAddress{url, "internal-secret"}};
+  const UserId account{"9387ec65-ab17-4b8c-b145-fd0d622966db"};
+  const auto answerOf = [&](SubscriptionServiceClient& asked) -> std::string {
+    try {
+      asked.claim(account, "PRIVATE_SIGNED_TRANSACTION");
+    } catch (const ClaimUnanswered& unanswered) {
+      return unanswered.answer;
+    }
+    return "answered";
+  };
+
+  std::string answers;
+  for (int asked = 0; asked < 6; ++asked) answers += answerOf(client) + " ";
+  answers += answerOf(nowhere);
+  CHECK_EQ(answers, std::string("400 401 500 409 malformed malformed unreachable"));
 }
