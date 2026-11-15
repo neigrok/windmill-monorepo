@@ -1298,6 +1298,32 @@ for (const engine of ['Chromium', 'WebKit']) {
 }
 
 for (const engine of ['Chromium', 'WebKit']) {
+  for (const width of [390, 744]) {
+    test(`${engine}: a pointer retry returns native clipboard success to More at ${width}px`, async () => {
+      await start();
+      const errors = [];
+      const page = await openRoom({ engine, viewport: { width, height: 960 }, permissions: engine === 'Chromium' ? ['clipboard-read', 'clipboard-write'] : [] }, errors);
+      try {
+        await page.evaluate(() => {
+          window.nativeCopy = navigator.clipboard.writeText.bind(navigator.clipboard);
+          navigator.clipboard.writeText = async () => { throw new DOMException('Synthetic denial', 'NotAllowedError'); };
+        });
+        await card(page, 'Read the wind').click();
+        await page.getByRole('button', { name: 'More', exact: true }).click();
+        await page.getByRole('menuitem', { name: 'Copy link', exact: true }).click();
+        const recovery = page.getByRole('region', { name: 'Couldn’t copy link', exact: true });
+        await recovery.getByRole('button', { name: 'Show link', exact: true }).click();
+        await recovery.getByRole('button', { name: 'Select link', exact: true }).click();
+        await page.evaluate(() => { navigator.clipboard.writeText = window.nativeCopy; });
+        await recovery.getByRole('button', { name: 'Try again', exact: true }).click();
+        await recovery.waitFor({ state: 'detached' });
+        assert.equal(await focusedName(page), 'More');
+        assert.deepEqual(await calls(page), ['notify Link copied']);
+        assert.deepEqual(errors, []);
+      } finally { await page.context().close(); }
+    });
+  }
+
   test(`${engine}: copy recovery uses the native clipboard success path without a recovery card`, async () => {
     await start();
     const errors = [];

@@ -584,7 +584,10 @@ export function StepDetail({
                 <input ref={copyField} id={copyFieldId} type="text" readOnly value={copyScope.link} spellCheck={false} />
               </>}
               <div className="st-step-copy-actions">
-                <button ref={copyRetry} type="button" className="st-board-step-action st-board-step-action--secondary" aria-disabled={copyBusy} onClick={() => copyLink()}>{t('roadmap.common.tryAgain')}</button>
+                <button ref={copyRetry} type="button" className="st-board-step-action st-board-step-action--secondary" aria-disabled={copyBusy} onClick={(event) => {
+                  event.currentTarget.focus({ preventScroll: true });
+                  copyLink();
+                }}>{t('roadmap.common.tryAgain')}</button>
                 <button type="button" className="st-board-step-action st-board-step-action--secondary" onClick={() => {
                   if (copyRecovery.revealed) {
                     copyField.current.focus();
