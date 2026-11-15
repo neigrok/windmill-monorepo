@@ -44,9 +44,9 @@ struct PaidLine {
   long long aiAllowanceNanos = 0;
 };
 
-// §5.3 SubscriptionResponse: the Entitlement shown and which environment it is, whether the account is on the sandbox
-// allowlist, where its governing subscription is managed, the stores it may buy through now (INV-12) and the offer beside
-// them, which is there exactly when a store is.
+// §5.3 SubscriptionResponse: whether the account holds Windmill One, as every gate reads it; the Entitlement shown and
+// which environment it is, whether the account is on the sandbox allowlist, where its governing subscription is managed,
+// the stores it may buy through now (INV-12) and the offer beside them, which is there exactly when a store is.
 struct SubscriptionResponse {
   SubscriptionResponse(const Standing& standing, const PaidLine& line);
 

@@ -104,33 +104,41 @@ std::string address(const std::string& account) {
 }
 
 // Each example of subscription.json, read at the instant its generator reads it, over the entitlement.json row it was
-// made from: the reply is the example, byte for byte as the reply writer writes it.
+// made from: the reply is the example, byte for byte as the reply writer writes it, and its `windmillOne` is what
+// Entitlements::hasWindmillOne answers for the account then.
 TEST(subscription_read_answers_every_contract_example_from_the_copy_s_row) {
   if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
+  enum class Listed { Nowhere, SandboxTesters, Owners };
   struct Example {
     const char* name;
     const char* entitlement;
     UnixMs now;
-    bool allowlisted;
+    Listed listed;
     const char* purchasableStores;
   };
   const Example examples[] = {
-      {"active", "active", 1'796'378'400'000, false, "app_store"},                                  // T0 + DAY
-      {"cancelled_access_continues", "cancelled_access_continues", 1'804'795'200'000, false, "app_store"},  // TURNED_OFF + DAY
-      {"grace", "grace", 1'801'821'600'000, false, "app_store"},                                    // END2 + 2 DAY
-      {"on_hold", "on_hold", 1'803'117'600'000, false, "app_store"},                                // GRACE_ENDS + DAY
-      {"expired_line_open", "expired", 1'805'810'400'000, false, "app_store"},                      // END3 + DAY
-      {"revoked_line_open", "revoked", 1'797'867'000'000, false, "app_store"},                      // Q1_REFUNDED + DAY
-      {"never_subscribed_line_open", "never_subscribed", 1'806'667'200'000, false, "app_store"},    // ERASED + DAY
-      {"allowlisted_never_subscribed_line_open", "never_subscribed", 1'806'667'200'000, true, "app_store"},
-      {"never_subscribed_line_closed", "never_subscribed", 1'806'667'200'000, false, ""},
-      {"charged_twice", "charged_twice", 1'797'069'600'000, false, "app_store"},                    // 2026-12-12T10:00
-      {"sandbox_allowlisted", "sandbox_active_production_expired", 1'799'766'120'000, true, "app_store"},  // + 2 MINUTE
-      {"sandbox_not_allowlisted_line_open", "sandbox_active_production_expired", 1'799'766'120'000, false, "app_store"},
+      {"active", "active", 1'796'378'400'000, Listed::Nowhere, "app_store"},                        // T0 + DAY
+      {"cancelled_access_continues", "cancelled_access_continues", 1'804'795'200'000, Listed::Nowhere,
+       "app_store"},                                                                                 // TURNED_OFF + DAY
+      {"grace", "grace", 1'801'821'600'000, Listed::Nowhere, "app_store"},                          // END2 + 2 DAY
+      {"on_hold", "on_hold", 1'803'117'600'000, Listed::Nowhere, "app_store"},                      // GRACE_ENDS + DAY
+      {"expired_line_open", "expired", 1'805'810'400'000, Listed::Nowhere, "app_store"},            // END3 + DAY
+      {"revoked_line_open", "revoked", 1'797'867'000'000, Listed::Nowhere, "app_store"},            // Q1_REFUNDED + DAY
+      {"never_subscribed_line_open", "never_subscribed", 1'806'667'200'000, Listed::Nowhere, "app_store"},  // ERASED + DAY
+      {"allowlisted_never_subscribed_line_open", "never_subscribed", 1'806'667'200'000, Listed::SandboxTesters,
+       "app_store"},
+      {"never_subscribed_line_closed", "never_subscribed", 1'806'667'200'000, Listed::Nowhere, ""},
+      {"owner_line_open", "never_subscribed", 1'806'667'200'000, Listed::Owners, "app_store"},
+      {"charged_twice", "charged_twice", 1'797'069'600'000, Listed::Nowhere, "app_store"},          // 2026-12-12T10:00
+      {"sandbox_allowlisted", "sandbox_active_production_expired", 1'799'766'120'000, Listed::SandboxTesters,
+       "app_store"},                                                                                 // + 2 MINUTE
+      {"sandbox_not_allowlisted_line_open", "sandbox_active_production_expired", 1'799'766'120'000, Listed::Nowhere,
+       "app_store"},
   };
   Reader reader;
   std::vector<std::string> named;
   std::vector<std::string> served;
+  std::vector<std::string> agreed;
   for (const Example& example : examples) {
     named.push_back(example.name);
     Reader::sql("DELETE FROM account_entitlements");
@@ -138,7 +146,9 @@ TEST(subscription_read_answers_every_contract_example_from_the_copy_s_row) {
     reader.seed(entitlement);
     reader.clock.now = example.now;
     const std::string account = entitlement["accountId"].asString();
-    const Allowlists lists{.sandboxTesters = EmailList{example.allowlisted ? address(account) : ""}};
+    const Allowlists lists{.owners = EmailList{example.listed == Listed::Owners ? address(account) : ""},
+                           .sandboxTesters = EmailList{example.listed == Listed::SandboxTesters ? address(account) : ""}};
+    const Entitlements entitlements{reader.copy, reader.clock, reader.usage, lists};
 
     const drogon::HttpResponsePtr reply = reader.read(account, lists, example.purchasableStores);
     REQUIRE(reply);
@@ -147,25 +157,29 @@ TEST(subscription_read_answers_every_contract_example_from_the_copy_s_row) {
     CHECK_EQ(reply->getHeader("cache-control"), std::string("no-store"));
     CHECK(parseWhole(bytesOf(reply)) == std::optional<Json::Value>(expected));
     if (bytesOf(reply) == bytesOf(jsonResponse(expected))) served.push_back(example.name);
+    if (expected["windmillOne"] == Json::Value(entitlements.hasWindmillOne(UserId{account}, address(account))))
+      agreed.push_back(example.name);
   }
   CHECK(served == named);
+  CHECK(agreed == named);
   CHECK(reader.reports->seen.empty());
 }
 
 // The live copy holds no row until the service serves its feed: every account reads as one that never subscribed, with
-// nothing to buy while every store is closed, and an owner the same.
-TEST(subscription_read_of_an_account_with_no_row_answers_no_plan_and_nothing_to_buy) {
+// nothing to buy while every store is closed, and an owner as holding Windmill One with no plan.
+TEST(subscription_read_of_an_account_with_no_row_answers_no_plan_and_windmill_one_only_to_an_owner) {
   if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
   Reader reader;
   const std::string account = "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61";
-  const std::string closed = bytesOf(jsonResponse(contractExample("subscription.json", "never_subscribed_line_closed")["body"]));
+  const std::string owner = bytesOf(jsonResponse(contractExample("subscription.json", "owner_line_open")["body"]));
 
-  CHECK_EQ(bytesOf(reader.read(account, {}, "")), closed);
-  CHECK_EQ(bytesOf(reader.read(account, {.owners = EmailList{address(account)}}, "")), closed);
-  // An owner holds Windmill One, so nothing is offered to buy even on an open line (INV-12).
-  CHECK_EQ(bytesOf(reader.read(account, {.owners = EmailList{address(account)}}, "app_store")), closed);
+  CHECK_EQ(bytesOf(reader.read(account, {}, "")),
+           bytesOf(jsonResponse(contractExample("subscription.json", "never_subscribed_line_closed")["body"])));
   CHECK_EQ(bytesOf(reader.read(account, {}, "app_store")),
            bytesOf(jsonResponse(contractExample("subscription.json", "never_subscribed_line_open")["body"])));
+  // An owner holds Windmill One, so nothing is offered to buy even on an open line (INV-12).
+  CHECK_EQ(bytesOf(reader.read(account, {.owners = EmailList{address(account)}}, "")), owner);
+  CHECK_EQ(bytesOf(reader.read(account, {.owners = EmailList{address(account)}}, "app_store")), owner);
 }
 
 TEST(subscription_read_refuses_a_caller_who_is_not_signed_in) {
@@ -176,15 +190,22 @@ TEST(subscription_read_refuses_a_caller_who_is_not_signed_in) {
   CHECK_EQ(bytesOf(reply), bytesOf(error(drogon::k401Unauthorized, "sign in first")));
 }
 
-// A copy that cannot be read is a failure the server reports, and the device is told the read is unavailable.
+// A copy that cannot be read is a failure the server reports, and the device is told the read is unavailable, an owner's
+// device too: the response shows the copy's Entitlement, which an owner's access does not need.
 TEST(subscription_read_reports_a_copy_it_cannot_read) {
   if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
   Reader reader;
   const std::string account = "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61";
   Reader::sql("INSERT INTO account_entitlements (account_id, entitlement, seq) VALUES ('" + account + "', '[]', 1)");
+  const std::string unavailable = bytesOf(error(drogon::k503ServiceUnavailable, "Your subscription can't be read right now.",
+                                                "subscription_unavailable"));
+
   const drogon::HttpResponsePtr reply = reader.read(account, {}, "");
+  const drogon::HttpResponsePtr ownerReply = reader.read(account, {.owners = EmailList{address(account)}}, "");
   CHECK_EQ(reply->getStatusCode(), drogon::k503ServiceUnavailable);
-  CHECK_EQ((*reply->getJsonObject())["code"].asString(), std::string("subscription_unavailable"));
-  CHECK(reader.reports->seen == std::vector<std::string>{"platform subscription.read"});
+  CHECK_EQ(bytesOf(reply), unavailable);
+  CHECK_EQ(ownerReply->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK_EQ(bytesOf(ownerReply), unavailable);
+  CHECK(reader.reports->seen == (std::vector<std::string>{"platform subscription.read", "platform subscription.read"}));
   Reader::sql("DELETE FROM account_entitlements");
 }

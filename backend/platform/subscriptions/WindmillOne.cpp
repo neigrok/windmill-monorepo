@@ -102,8 +102,10 @@ PaidLine::PaidLine(std::string_view purchasableStores, long long aiAllowanceNano
 }
 
 SubscriptionResponse::SubscriptionResponse(const Standing& standing, const PaidLine& line) : body(Json::objectValue) {
+  const bool windmillOne = standing.hasWindmillOne();
   const Environment environment = standing.shown();
   const Json::Value& shown = standing.entitlement ? standing.entitlement->body[nameOf(environment)] : noSubscription();
+  body["windmillOne"] = windmillOne;
   body["environment"] = nameOf(environment);
   body["allowlisted"] = standing.allowlisted;
   for (const char* field : {"plan", "accessUntil", "governing", "others"}) body[field] = shown[field];
@@ -112,7 +114,7 @@ SubscriptionResponse::SubscriptionResponse(const Standing& standing, const PaidL
   bool holdsLive = live(shown["governing"]);
   for (const Json::Value& other : shown["others"]) holdsLive = holdsLive || live(other);
   Json::Value purchasable(Json::arrayValue);
-  if (!standing.hasWindmillOne() && !holdsLive)
+  if (!windmillOne && !holdsLive)
     for (const std::string& store : line.openStores) purchasable.append(store);
   body["purchasable"] = purchasable;
 
