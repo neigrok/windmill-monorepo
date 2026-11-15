@@ -159,11 +159,13 @@ impl Clock {
     }
 }
 
-// An Apple of the test's own: it answers a status pull with what the test set, and records each account token put.
+// An Apple of the test's own: it answers a status pull with what the test set, and records each account token put,
+// after a stall the test sets.
 #[derive(Clone)]
 struct Apple {
     status: Arc<Mutex<(StatusCode, String)>>,
     token_answer: Arc<Mutex<StatusCode>>,
+    stall: Arc<Mutex<Duration>>,
     pulled: Arc<Mutex<Vec<String>>>,
     tokens: Arc<Mutex<Vec<(String, Value)>>>,
 }
@@ -173,6 +175,7 @@ impl Apple {
         let apple = Apple {
             status: Arc::new(Mutex::new((StatusCode::NOT_FOUND, String::new()))),
             token_answer: Arc::new(Mutex::new(StatusCode::OK)),
+            stall: Arc::new(Mutex::new(Duration::ZERO)),
             pulled: Arc::new(Mutex::new(Vec::new())),
             tokens: Arc::new(Mutex::new(Vec::new())),
         };
@@ -197,6 +200,10 @@ impl Apple {
         *self.token_answer.lock().unwrap() = status;
     }
 
+    fn stalls(&self, stall: Duration) {
+        *self.stall.lock().unwrap() = stall;
+    }
+
     fn pulled(&self) -> Vec<String> {
         std::mem::take(&mut self.pulled.lock().unwrap())
     }
@@ -208,6 +215,8 @@ impl Apple {
 
 async fn pull(State(apple): State<Apple>, uri: Uri) -> (StatusCode, String) {
     apple.pulled.lock().unwrap().push(uri.path().to_owned());
+    let stall = *apple.stall.lock().unwrap();
+    tokio::time::sleep(stall).await;
     apple.status.lock().unwrap().clone()
 }
 
@@ -217,6 +226,8 @@ async fn put_token(State(apple): State<Apple>, uri: Uri, body: String) -> Status
         .lock()
         .unwrap()
         .push((uri.path().to_owned(), serde_json::from_str(&body).unwrap()));
+    let stall = *apple.stall.lock().unwrap();
+    tokio::time::sleep(stall).await;
     *apple.token_answer.lock().unwrap()
 }
 
@@ -645,7 +656,7 @@ fn the_sweep_writes_the_hint_a_claim_owes_keeps_one_apple_did_not_take_and_clear
             "store": "app_store",
             "environment": "sandbox",
             "outcome": "write_failed",
-            "code": "store_error",
+            "code": "api_server_error",
         });
         if let Some(id) = sentry_event_id {
             line["sentry_event_id"] = id;
@@ -672,7 +683,7 @@ fn the_sweep_writes_the_hint_a_claim_owes_keeps_one_apple_did_not_take_and_clear
         vec![(
             "Error".to_owned(),
             "store.hint".to_owned(),
-            "store_error".to_owned()
+            "api_server_error".to_owned()
         )]
     );
 }
@@ -1109,8 +1120,8 @@ fn a_pull_that_gives_no_state_to_apply_answers_503_and_is_an_issue_at_most_once_
     assert_eq!(
         lines,
         vec![
-            failed("store_error", ids[0]),
-            failed("store_error", None),
+            failed("api_server_error", ids[0]),
+            failed("api_server_error", None),
             failed("inconsistent", ids[2]),
             failed("malformed", ids[3]),
         ]
@@ -1118,12 +1129,110 @@ fn a_pull_that_gives_no_state_to_apply_answers_503_and_is_an_issue_at_most_once_
     assert_eq!(feed, Vec::new());
     assert_eq!(
         reported_as(&events),
-        ["store_error", "inconsistent", "malformed"]
+        ["api_server_error", "inconsistent", "malformed"]
             .map(|code| (
                 "Error".to_owned(),
                 "store.claim".to_owned(),
                 code.to_owned()
             ))
             .to_vec()
+    );
+}
+
+#[test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+fn apple_down_and_the_ledger_down_are_two_issues_each_reported_in_its_own_slot() {
+    let start = 1_793_491_200_000_i64;
+    let ada = "9387ec65-ab17-4b8c-b145-fd0d622966db";
+    let ((claims, hints), events) = reported(with_empty_database(async |url| {
+        let (captured, _logs) = Captured::start();
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let clock = Clock::at(start);
+        let (apple, apple_url) = Apple::serve().await;
+        let door = door(&ledger, &clock, Some(&apple_url));
+        let (public, internal) = routers(&ledger, &door);
+        notify(&public, &ledger, without_hint(story("started.json")), start).await;
+        apple.answers_status(
+            StatusCode::OK,
+            signed(without_hint(story("subscription-status.json")), start),
+        );
+        let transaction = signed(without_hint(story("purchase-transaction.json")), start);
+        let claims = "/internal/v1/app-store/claims";
+        let sweep = StoreHintSweep::new(ledger.clone(), door.clone());
+        let stop = CancellationToken::new();
+        assert_eq!(
+            post(&internal, claims, claim(ada, &transaction), true)
+                .await
+                .0,
+            StatusCode::OK
+        );
+
+        // Apple stalls past the client's bound: a claim's pull and a hint's write each meet it.
+        apple.stalls(Duration::from_secs(4));
+        post(&internal, claims, claim(ada, &transaction), true).await;
+        sweep.pass(&stop).await;
+        // Apple answers again and the ledger stops answering.
+        apple.stalls(Duration::ZERO);
+        ledger.close().await;
+        post(&internal, claims, claim(ada, &transaction), true).await;
+        sweep.pass(&stop).await;
+
+        let outcomes = |lines: Vec<Value>| -> Vec<(String, String, bool)> {
+            lines
+                .iter()
+                .map(|line| {
+                    (
+                        line["outcome"].as_str().unwrap().to_owned(),
+                        line["code"].as_str().unwrap_or_default().to_owned(),
+                        line["sentry_event_id"].is_string(),
+                    )
+                })
+                .collect()
+        };
+        let lines = captured.take(&["store.claim", "store.hint"]);
+        let (claim_lines, hint_lines): (Vec<Value>, Vec<Value>) = lines
+            .into_iter()
+            .partition(|line| line["message"] == "store.claim");
+        (outcomes(claim_lines), outcomes(hint_lines))
+    }));
+
+    let row =
+        |outcome: &str, code: &str, reported: bool| (outcome.to_owned(), code.to_owned(), reported);
+    assert_eq!(
+        claims,
+        vec![
+            row("applied", "", false),
+            row("pull_failed", "api_unreachable", true),
+            row("apply_failed", "ledger_unreachable", true),
+        ]
+    );
+    assert_eq!(
+        hints,
+        vec![
+            row("write_failed", "api_unreachable", true),
+            row("unread", "ledger_unreachable", true),
+        ]
+    );
+    let filed: Vec<Vec<String>> = events
+        .iter()
+        .map(|event| {
+            event
+                .fingerprint
+                .to_vec()
+                .into_iter()
+                .map(|part| part.into_owned())
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        filed,
+        [
+            ["store.claim", "api_unreachable"],
+            ["store.hint", "api_unreachable"],
+            ["store.claim", "ledger_unreachable"],
+            ["store.hint", "ledger_unreachable"],
+        ]
+        .map(|fingerprint| fingerprint.map(str::to_owned).to_vec())
+        .to_vec()
     );
 }

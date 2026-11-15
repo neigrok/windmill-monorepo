@@ -417,17 +417,18 @@ The environment picks the host, `Hosts::apple()`: `https://api.storekit.apple.co
 `https://api.storekit-sandbox.apple.com` for sandbox; a test deployment hands both one address of its own
 ([Configuration](#configuration)). A request ends within 3 s, connecting included, under the internal
 listener's 5 s; it follows no redirect, and no error message Apple sends is read. An answer that is not a
-success is one `ApiFailure`, whose `code` is all a line carries:
+success is one `ApiFailure`, whose `code` is all a line carries. Each code starts `api_`, so none reads as the
+verifier's or the ledger's code beside it in a line, a Sentry fingerprint or a throttle's slot:
 
 | `ApiFailure` | `code` | When | Of the API |
 |---|---|---|---|
-| `Unreachable` | `unreachable` | No answer within 3 s: nothing listened, the connection broke or Apple stalled | yes |
-| `Unauthorized` | `unauthorized` | 401: Apple refused the token, so the key, its id or its issuer is not the one App Store Connect issued | yes |
-| `RateLimited` | `rate_limited` | 429 | yes |
-| `StoreError` | `store_error` | A 5xx, or a 404 whose `errorCode` Apple names retryable: 4040002, 4040004 or 4040006 | yes |
-| `NotFound` | `not_found` | Any other 404, or a status answer that lists no entry for the lineage | no |
-| `BadRequest` | `bad_request` | Any other answer that is not a success, a redirect among them | no |
-| `Malformed` | `malformed` | A success whose body is not the shape Apple documents | no |
+| `Unreachable` | `api_unreachable` | No answer within 3 s: nothing listened, the connection broke or Apple stalled | yes |
+| `Unauthorized` | `api_unauthorized` | 401: Apple refused the token, so the key, its id or its issuer is not the one App Store Connect issued | yes |
+| `RateLimited` | `api_rate_limited` | 429 | yes |
+| `ServerError` | `api_server_error` | A 5xx, or a 404 whose `errorCode` Apple names retryable: 4040002, 4040004 or 4040006 | yes |
+| `NotFound` | `api_not_found` | Any other 404, or a status answer that lists no entry for the lineage | no |
+| `BadRequest` | `api_bad_request` | Any other answer that is not a success, a redirect among them | no |
+| `Malformed` | `api_malformed` | A success whose body is not the shape Apple documents | no |
 
 `of_the_api()` is true of a failure any request would meet now, whatever it asks: the sweep stops writing
 hints at one rather than try each ([The sweep](#the-sweep)). The client verifies nothing it pulls: the door
@@ -609,7 +610,7 @@ transaction, the action of [Domain](#domain):
 subscription's newest event once the transaction commits, read under the lineage's lock when the change
 records none. A claim retried after its answer was lost replays, and answers the same `newest_seq` and
 `{seq, entitlement}` (§5.2); the hint it owes the store stays in `store_hints` until the sweep has
-written it. A commit whose answer never arrives fails as `outcome_unknown`, never `unreachable`, since
+written it. A commit whose answer never arrives fails as `outcome_unknown`, never `ledger_unreachable`, since
 the transaction may have committed.
 
 Locks are taken in one order, accounts, then lineage, then seq, and recording an erasure holds its
@@ -643,11 +644,12 @@ after the lock is taken, so they include every transaction committed before.
 ### Failures
 
 A database failure is a `StorageError`: a code and, where the server sent one, its SQLSTATE. The
-server's message is never kept, because it can quote a statement or a value.
+server's message is never kept, because it can quote a statement or a value. A ledger nothing answers is
+`ledger_unreachable`, not the App Store Server API's `api_unreachable`, under any operation that meets both.
 
 | Code | When |
 |---|---|
-| `unreachable` | no connection within its bound: nothing listens, the network refused or TLS failed |
+| `ledger_unreachable` | no connection within its bound: nothing listens, the network refused or TLS failed |
 | `busy` | after start, no connection within 5 s, because every connection is in use or the database opened no new one, or a write waited longer than 5 s for a lock (`55P03`); the health check, on a connection of its own, tells a busy ledger from an unreachable one |
 | `outcome_unknown` | a commit's answer never arrived: the transaction may have committed, and a retry shows which |
 | `refused` | the server would not let the role in: a `pg_hba.conf` rule (`28000`), a wrong password (`28P01`), no such database (`3D000`) |

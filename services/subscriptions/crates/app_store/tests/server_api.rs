@@ -333,23 +333,73 @@ async fn every_answer_but_a_success_is_one_failure_and_says_whether_the_api_is_a
     assert_eq!(
         failures,
         vec![
-            (401, "unauthorized", true, written(ApiFailure::Unauthorized)),
-            (429, "rate_limited", true, written(ApiFailure::RateLimited)),
-            (404, "not_found", false, written(ApiFailure::NotFound)),
-            (404, "not_found", false, written(ApiFailure::NotFound)),
-            (404, "store_error", true, written(ApiFailure::StoreError)),
-            (404, "store_error", true, written(ApiFailure::StoreError)),
-            (404, "store_error", true, written(ApiFailure::StoreError)),
-            (404, "not_found", false, written(ApiFailure::NotFound)),
-            (500, "store_error", true, written(ApiFailure::StoreError)),
-            (503, "store_error", true, written(ApiFailure::StoreError)),
-            (400, "bad_request", false, written(ApiFailure::BadRequest)),
-            (403, "bad_request", false, written(ApiFailure::BadRequest)),
-            (302, "bad_request", false, written(ApiFailure::BadRequest)),
-            (200, "malformed", false, None),
-            (200, "not_found", false, None),
-            (200, "not_found", false, None),
-            (0, "unreachable", true, None),
+            (
+                401,
+                "api_unauthorized",
+                true,
+                written(ApiFailure::Unauthorized)
+            ),
+            (
+                429,
+                "api_rate_limited",
+                true,
+                written(ApiFailure::RateLimited)
+            ),
+            (404, "api_not_found", false, written(ApiFailure::NotFound)),
+            (404, "api_not_found", false, written(ApiFailure::NotFound)),
+            (
+                404,
+                "api_server_error",
+                true,
+                written(ApiFailure::ServerError)
+            ),
+            (
+                404,
+                "api_server_error",
+                true,
+                written(ApiFailure::ServerError)
+            ),
+            (
+                404,
+                "api_server_error",
+                true,
+                written(ApiFailure::ServerError)
+            ),
+            (404, "api_not_found", false, written(ApiFailure::NotFound)),
+            (
+                500,
+                "api_server_error",
+                true,
+                written(ApiFailure::ServerError)
+            ),
+            (
+                503,
+                "api_server_error",
+                true,
+                written(ApiFailure::ServerError)
+            ),
+            (
+                400,
+                "api_bad_request",
+                false,
+                written(ApiFailure::BadRequest)
+            ),
+            (
+                403,
+                "api_bad_request",
+                false,
+                written(ApiFailure::BadRequest)
+            ),
+            (
+                302,
+                "api_bad_request",
+                false,
+                written(ApiFailure::BadRequest)
+            ),
+            (200, "api_malformed", false, None),
+            (200, "api_not_found", false, None),
+            (200, "api_not_found", false, None),
+            (0, "api_unreachable", true, None),
         ]
     );
 }

@@ -65,7 +65,8 @@ pub struct SignedStatus {
     pub signed_renewal_info: Option<String>,
 }
 
-// How a call failed, as a code a log line may carry: Apple's error message is never read.
+// How a call failed, as a code a log line may carry, each `api_`, so none reads as the ledger's or the verifier's code
+// beside it: Apple's error message is never read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiFailure {
     // No answer within REQUEST_BOUND: nothing listened, the connection broke or Apple stalled.
@@ -75,7 +76,7 @@ pub enum ApiFailure {
     // 429.
     RateLimited,
     // A 5xx, or a 404 Apple says a later try may pass.
-    StoreError,
+    ServerError,
     // A 404 for good, or an answer that lists no such subscription.
     NotFound,
     // Any other answer that is not a success: Apple took the request as invalid.
@@ -87,13 +88,13 @@ pub enum ApiFailure {
 impl ApiFailure {
     pub fn code(self) -> &'static str {
         match self {
-            ApiFailure::Unreachable => "unreachable",
-            ApiFailure::Unauthorized => "unauthorized",
-            ApiFailure::RateLimited => "rate_limited",
-            ApiFailure::StoreError => "store_error",
-            ApiFailure::NotFound => "not_found",
-            ApiFailure::BadRequest => "bad_request",
-            ApiFailure::Malformed => "malformed",
+            ApiFailure::Unreachable => "api_unreachable",
+            ApiFailure::Unauthorized => "api_unauthorized",
+            ApiFailure::RateLimited => "api_rate_limited",
+            ApiFailure::ServerError => "api_server_error",
+            ApiFailure::NotFound => "api_not_found",
+            ApiFailure::BadRequest => "api_bad_request",
+            ApiFailure::Malformed => "api_malformed",
         }
     }
 
@@ -104,7 +105,7 @@ impl ApiFailure {
             ApiFailure::Unreachable
                 | ApiFailure::Unauthorized
                 | ApiFailure::RateLimited
-                | ApiFailure::StoreError
+                | ApiFailure::ServerError
         )
     }
 }
@@ -221,12 +222,12 @@ impl ServerApi {
                 let retryable = serde_json::from_slice::<ErrorResponse>(&body)
                     .is_ok_and(|error| RETRYABLE_NOT_FOUND.contains(&error.error_code));
                 Err(if retryable {
-                    ApiFailure::StoreError
+                    ApiFailure::ServerError
                 } else {
                     ApiFailure::NotFound
                 })
             }
-            _ if status.is_server_error() => Err(ApiFailure::StoreError),
+            _ if status.is_server_error() => Err(ApiFailure::ServerError),
             _ => Err(ApiFailure::BadRequest),
         }
     }

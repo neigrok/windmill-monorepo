@@ -158,7 +158,7 @@ It answers `{"seq":4,"entitlement":…}`: the feed holds `started` and `period_r
 `bound` and `period_recorded` under `ACCOUNT`, and `store_hints` the account owed to Apple. The same claim
 again answers the same `seq` and records nothing; another account's answers `409
 {"code":"bound_to_another_account"}`. The sweep tries the owed hint each minute; this Apple answers its
-`PUT` with 501, so the hint stays owed and each try logs `store.hint` `write_failed` `store_error`. A refresh
+`PUT` with 501, so the hint stays owed and each try logs `store.hint` `write_failed` `api_server_error`. A refresh
 of the subscription, its id the feed's `subscriptionId`, pulls the same status again and answers its newest
 `seq`:
 
