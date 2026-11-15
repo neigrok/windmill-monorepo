@@ -735,7 +735,7 @@ class CoachTurnsTests {
                 assertNull(phone.turns.withdrawn.value)
                 assertEquals("Private question", checkNotNull(phone.message(turn.lifter)).text)
                 assertEquals(MessageState.failed, checkNotNull(phone.message(turn.coach)).state)
-                assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "capped", "cap" to "allowance")), phone.telling.named("gym_ask_outcome"))
+                assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "capped", "cap" to "allowance", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
                 assertEquals(listOf("subject_exhausted"), phone.telling.named("coach_turn").map { it["code"] })
                 assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
             }
@@ -764,7 +764,7 @@ class CoachTurnsTests {
                 assertEquals(listOf(CoachRecovery.signIn, null), listOf(refusal.recovery(anonymous = true), refusal.recovery(anonymous = false)))
                 assertEquals(WithdrawnTurn("Private question", null, null), phone.turns.withdrawn.value)
                 assertEquals(emptyList<CoachMessage>(), phone.messages())
-                assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "capped", "cap" to "allowance")), phone.telling.named("gym_ask_outcome"))
+                assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "capped", "cap" to "allowance", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
                 assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
             }
         }
