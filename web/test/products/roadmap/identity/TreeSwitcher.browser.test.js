@@ -500,7 +500,7 @@ for (const engine of ['Chromium', 'WebKit']) {
           events: [{ name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } }], hash: '',
         });
         const row = page.getByRole('menuitem').filter({ hasText: 'Device roadmap' });
-        await page.waitForFunction((element) => document.activeElement === element, await row.elementHandle());
+        await page.waitForFunction((element) => document.activeElement === element && element.querySelectorAll('button').length === 0, await row.elementHandle());
         assert.equal(await row.evaluate((element) => document.activeElement === element), true);
         assert.equal(await row.getByRole('button').count(), 0);
       }, { engine, width: 744, touch: true });
