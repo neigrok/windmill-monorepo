@@ -26,7 +26,7 @@ for (const browserName of ['chromium', 'webkit']) {
         assert.equal(await page.locator('.wm-head').evaluate((node) => node.getBoundingClientRect().height), 52);
         const controls = [];
         for (const control of await recovery.locator('button,input').all()) {
-          await control.evaluate((node) => node.scrollIntoView({ block: 'center' }));
+          await control.scrollIntoViewIfNeeded();
           controls.push(await control.evaluate((node) => {
             const box = node.getBoundingClientRect();
             const card = node.closest('.st-step-copy-recovery').getBoundingClientRect();
