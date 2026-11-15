@@ -5,6 +5,8 @@ the owner. Remove an entry when its fix lands; current behaviour belongs in the 
 establish code shape, not rendered acceptance. Figma review tasks below need a fresh file inspection
 before editing. Evidence for a rendered Figma state includes its screenshot and the relevant layers' visibility
 through their ancestors; hidden draft or alternate-state layers do not establish what the frame shows.
+Reused frames must also check state-dependent titles and responsive copy against the current source branches;
+matching the container does not establish that its inherited text is current.
 
 ## Shared system
 
@@ -592,10 +594,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Roadmap
 
-- **Guide · recovery coverage and component contracts (17, 38–42).** Canonical
+- **Guide · recovery coverage and component contracts (17, 38, 39, 42, 44).** Canonical
   [17.00](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=719-42451) specifies the desktop modal and names
-  17.18–17.39 superseded; several field-note and recovery frames still carry production labels. Reconcile those
-  labels and transfer missing recovery examples into the current modal or owner phone page from 38/42. Reader
+  17.18–17.39 superseded while still referring to reader states in 17.25–17.30; several field-note and recovery frames
+  carry production labels. Reconcile the labels individually, preserving current reader references. Reader
   sheets, desktop changed-elsewhere (17.07), device editing (17.12), inherited identity (39) and phone unknown-parent
   states (42) already have drawings. Owner phone Save retains the approved `#884321`/white styling.
   The [Guide save-failed component](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=781-43205) still
@@ -609,8 +611,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   [17.12](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=715-41080) draws the device disclosure with
   outdated wording. Current device copy is *Only on this device until you sign in.*; account copy is *Your agents
   and people you share this tree with can read the guide.* Refresh the desktop instances and handoff copy.
-  Current containers still need phone *Draft copied*, simultaneous changed-elsewhere and save failure, and dark
-  recovery examples. Copied/conflict lines use `--surface-sunken`, failures use `--color-danger-bg`, and the copied
+  [Proposal 44](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1241-25026) draws clean disabled Save,
+  phone *Draft copied*, simultaneous changed-elsewhere and save failure, dark recovery and 320 px wrapping in current
+  containers. These examples await owner approval; approved source drawings and library variants remain unchanged.
+  Copied/conflict lines use `--surface-sunken`, failures use `--color-danger-bg`, and the copied
   tick uses `--color-brand`. *Done* returns to *Copy draft* without dismissing the draft. Annotate the current focus
   behavior: activating Save or its recovery action focuses that button; Load latest focuses the field.
   Cmd/Ctrl+Enter preserves current focus while invoking Save or Try again, never Copy or Done.
