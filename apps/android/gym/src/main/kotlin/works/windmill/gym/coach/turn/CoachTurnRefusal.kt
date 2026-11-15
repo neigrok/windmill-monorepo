@@ -45,7 +45,6 @@ sealed interface CoachTurnRefusal {
             allowance == "subject_exhausted" && spent -> Words.Message(R.string.gym_coach_allowance_spent)
             allowance == "free_day_exhausted" -> Words.Message(R.string.gym_coach_free_day_exhausted)
             allowance == "concurrency_exhausted" -> Words.Message(R.string.gym_coach_concurrency_exhausted)
-            allowance == "funding_required" -> Words.Message(R.string.gym_coach_funding_required)
             else -> Words.Message(R.string.gym_coach_allowance_unavailable)
         }
         is FreeMonthExhausted -> Words.Message(R.string.gym_coach_free_month_exhausted)

@@ -126,8 +126,7 @@
     </plurals>
     <string name="gym_coach_allowance_spent">You have used all of your AI allowance.</string>
     <string name="gym_coach_free_day_exhausted">Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.</string>
-    <string name="gym_coach_concurrency_exhausted">Another AI request is still in progress. Try again when it finishes.</string>
-    <string name="gym_coach_funding_required">Your plan has no funded AI allowance for this period.</string>
+    <string name="gym_coach_concurrency_exhausted">Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.</string>
     <string name="gym_coach_allowance_unavailable">Coach’s AI allowance is unavailable right now.</string>
     <string name="gym_coach_free_month_exhausted">Coach is paused for everyone this month.</string>
     <string name="gym_coach_rate_limited">You can ask again later.</string>

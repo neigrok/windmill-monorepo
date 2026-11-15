@@ -336,7 +336,9 @@ WM_ANDROID_WIRE_TEST=1 WM_WIRE_BASE=http://127.0.0.1:8096 \
 ```
 
 Stop listeners by the selected port, drop the test database, stop the emulator and any ADB/Gradle
-daemon started for the check, and remove temporary credentials. Verification counts and installed
+daemon started for the check, and remove temporary credentials. `./gradlew --stop` stops every daemon
+of that Gradle version for the user, other agents' included; give each run its own `GRADLE_USER_HOME`
+so that `--stop` stops only its own. Verification counts and installed
 app observations belong in the task report, rather than a lasting evidence file.
 
 ## Localization

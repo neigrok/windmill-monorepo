@@ -1,5 +1,6 @@
 // The account's subscription as `GET /v1/subscription` answers it from the backend's copy
-// (docs/foundation/subscriptions.md §5.3): the Entitlement shown, where to manage it, and the stores it may buy through now.
+// (docs/foundation/subscriptions.md §5.3): whether it holds Windmill One, the Entitlement shown, where to manage it, and
+// the stores it may buy through now.
 
 import { API_BASE } from '../apiBase.js';
 import { routeFamily } from '../../telemetry/beacon.js';
@@ -13,7 +14,8 @@ const objectOrNull = (value) => value === null || (typeof value === 'object' && 
 // otherwise null.
 export function readSubscription(body) {
   if (body === null || !objectOrNull(body)) return null;
-  const shaped = ENVIRONMENTS.has(body.environment)
+  const shaped = typeof body.windmillOne === 'boolean'
+    && ENVIRONMENTS.has(body.environment)
     && typeof body.allowlisted === 'boolean'
     && (body.plan === null || typeof body.plan === 'string')
     && (body.accessUntil === null || Number.isSafeInteger(body.accessUntil))
@@ -25,9 +27,10 @@ export function readSubscription(body) {
   return shaped ? body : null;
 }
 
-// Whether the Entitlement shown holds Windmill One at `nowMs`: a plan, until its accessUntil (§3.3).
-export function holdsWindmillOne(subscription, nowMs = Date.now()) {
-  return Boolean(subscription?.plan) && subscription.accessUntil !== null && nowMs < subscription.accessUntil;
+// Whether the account holds Windmill One, owners included, as the server answered. `accessUntil` only dates it and is
+// never read against this device's clock.
+export function holdsWindmillOne(subscription) {
+  return subscription?.windmillOne === true;
 }
 
 // A static operation and a bounded reason (`server`, `shape`); never a body.
