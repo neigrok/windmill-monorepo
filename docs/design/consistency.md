@@ -610,33 +610,11 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Roadmap Coach · not drawn.** No board draws Coach for a person who only reads a roadmap, a card whose proposal
   was applied and then undone, a replaced card, or the sign-in question when both the device and the account hold
   conversations.
-- **Guide · recovery coverage and component contracts (17, 38, 39, 42, 44).** Canonical
-  [17.00](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=719-42451) specifies the desktop modal and names
-  17.18–17.39 superseded while still referring to reader states in 17.25–17.30; several field-note and recovery frames
-  carry production labels. Reconcile the labels individually, preserving current reader references. Reader
-  sheets, desktop changed-elsewhere (17.07), device editing (17.12), inherited identity (39) and phone unknown-parent
-  states (42) already have drawings. Owner phone Save retains the approved `#884321`/white styling.
-  The [Guide save-failed component](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=781-43205) still
-  describes Save staying and a 12 px phone line, with older refusal/offline copy. Current recovery replaces Save with
-  *Try again* or *Copy draft*, uses 14 px phone failure text and offers *Done* after copying. Update its description
-  and variants from the approved recovery behavior. [17.33](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69855)
-  draws active Save after *Load latest*; the clean draft's Save is focusable but `aria-disabled` and 45% opaque. Carry
-  that state into the current phone page. [17.36](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69864)
-  likewise shows active Save on an empty draft; its nonempty text layer is hidden. Draw the disabled action for that
-  visible empty state.
-  [17.12](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=715-41080) draws the device disclosure with
-  outdated wording. Current device copy is *Only on this device until you sign in.*; account copy is *Your agents
-  and people you share this tree with can read the guide.* Refresh the desktop instances and handoff copy.
-  [Approved 44](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1241-25026) draws clean disabled Save,
-  phone *Draft copied*, simultaneous changed-elsewhere and save failure, dark recovery and 320 px wrapping in current
-  containers. The owner approved 44.00–44.06 on 2026-11-15; library variants still need reconciliation.
-  Copied/conflict lines use `--surface-sunken`, failures use `--color-danger-bg`, and the copied
-  tick uses `--color-brand`. *Done* returns to *Copy draft* without dismissing the draft. Annotate the current focus
-  behavior: activating Save or its recovery action focuses that button; Load latest focuses the field.
-  Cmd/Ctrl+Enter preserves current focus while invoking Save or Try again, never Copy or Done.
-  Clipboard refusal leaves *Copy draft* and the draft unchanged without a message. Loss of ownership shows the
-  refused line before sending a request, although its copy says the server refused the save. Document these
-  delivered cases; a new clipboard recovery UI or changed ownership-loss wording needs an owner decision.
+- **Guide · clipboard refusal and ownership-loss wording.** Clipboard refusal leaves *Copy draft* and the
+  draft unchanged without a message. Loss of ownership shows the refused line before sending a request, although
+  its copy says the server refused the save. A new clipboard recovery UI or changed ownership-loss wording needs
+  an owner-approved drawing. [44 · Guide recovery](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1241-25026)
+  documents the approved current recovery states.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a
