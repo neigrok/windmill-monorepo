@@ -66,6 +66,8 @@ jobs:
           # The bearer secret of the subscription service's internal doors, handed to the server and the service.
           # Empty ⇒ the server's feed follower stays off and the doors answer 401 (backend/deploy/README.md).
           SUBSCRIPTIONS_INTERNAL_TOKEN: ${{ secrets.SUBSCRIPTIONS_INTERNAL_TOKEN }}
+          # The App Store Server API's in-app purchase key (.p8 PEM); unset ⇒ claims and refreshes answer 503.
+          SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY: ${{ secrets.SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY }}
           AI_DB_PASSWORD: ${{ secrets.AI_DB_PASSWORD }}
           AI_PASS_KEYS: ${{ vars.AI_PASS_KEYS || '{}' }}
           AI_CARRY_KEY: ${{ secrets.AI_CARRY_KEY }}
@@ -106,6 +108,8 @@ jobs:
           # Windmill One's sandbox testers and the stores its paid line is open on. Unset ⇒ none, and closed.
           WINDMILL_SANDBOX_EMAILS: ${{ vars.WINDMILL_SANDBOX_EMAILS }}
           SUBSCRIPTIONS_PURCHASABLE_STORES: ${{ vars.SUBSCRIPTIONS_PURCHASABLE_STORES }}
+          SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID: ${{ vars.SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID }}
+          SUBSCRIPTIONS_APP_STORE_API_KEY_ID: ${{ vars.SUBSCRIPTIONS_APP_STORE_API_KEY_ID }}
           PADDLE_ENV: ${{ vars.PADDLE_ENV }}
           PADDLE_PRICE_ID: ${{ vars.PADDLE_PRICE_ID }}
           RESEND_FROM: ${{ vars.RESEND_FROM }}
@@ -282,10 +286,13 @@ jobs:
                        JOURNAL_ECHO_ADMIN_TOKEN \
                        APPLE_NATIVE_ENABLED APPLE_CLIENT_ID \
                        WINDMILL_OWNER_EMAILS WINDMILL_SANDBOX_EMAILS SUBSCRIPTIONS_PURCHASABLE_STORES \
+                       SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID SUBSCRIPTIONS_APP_STORE_API_KEY_ID \
                        WINDMILL_COOKIE_RETIRED_DOMAINS \
                        WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do
               printf '%s=%s\n' "$key" "${!key}"
             done
+            # A PEM spans lines, which one .env line cannot hold; the service reads it with its line breaks removed.
+            printf 'SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY=%s\n' "$(printf '%s' "${SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY:-}" | tr -d '\r\n')"
           } >> rendered.env
 
           printf '%s\n' "$SSH_KEY" > deploy_key && chmod 600 deploy_key
