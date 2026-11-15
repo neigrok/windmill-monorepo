@@ -20,7 +20,16 @@ LIFECYCLE_EVENTS = {"started", "renewed", "renewal_turned_off", "renewal_turned_
                     "payment_recovered", "pause_scheduled", "paused", "resumed", "plan_change_scheduled",
                     "plan_changed", "period_extended", "expired", "revoked", "revocation_reversed", "updated",
                     "bound", "unbound"}
-REFUSALS = {409: "bound_to_another_account", 400: "invalid_transaction", 503: "subscriptions_unavailable"}
+# Each door's refusals, by status: the codes a reader must handle. Every 503 means the same to a reader, try again later;
+# its code tells an operator why.
+UNAVAILABLE = {"unavailable", "store_unavailable", "store_api_unavailable"}
+REFUSALS = {
+    "app-store-claim.json": {400: {"invalid_transaction"}, 409: {"bound_to_another_account"},
+                             503: {"subscriptions_unavailable"}},
+    "internal-app-store-claim.json": {400: {"invalid_transaction"}, 409: {"bound_to_another_account", "account_erased"},
+                                      503: UNAVAILABLE},
+    "internal-subscription-refresh.json": {404: {"unknown_subscription"}, 503: UNAVAILABLE},
+}
 MANAGE_URL = {"app_store": "https://apps.apple.com/account/subscriptions"}
 OFFER = {"aiAllowance": {"amount": "7.00", "currency": "USD"}}
 
@@ -49,7 +58,7 @@ MINOR_UNITS = {**dict.fromkeys(["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF",
 JWS = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 
 FILES = ["entitlement.json", "subscription.json", "feed.json", "app-store-claim.json", "internal-app-store-claim.json",
-         "account.json"]
+         "internal-subscription-refresh.json", "account.json"]
 loaded = {name: json.loads((ROOT / name).read_text()) for name in FILES}
 passed, failed = [], []
 
@@ -371,24 +380,30 @@ for name, example in accounts.items():
     check(read["entitlement"] == (recorded_at_seq[newest_seq]["entitlement"] if newest_seq else carried[-1]),
           f"{where}: the entitlement the feed carries after the account's newest event")
 
-# the claim doors
+# the claim and refresh doors: each refusal is {code}, a code of its status, and every code has its example
+for file, refusals in REFUSALS.items():
+    refused = [example for example in loaded[file]["examples"] if example["status"] != 200]
+    for example in refused:
+        codes = refusals.get(example["status"], set())
+        check(list(example["body"]) == ["code"] and example["body"]["code"] in codes,
+              f"{file.removesuffix('.json')}/{example['name']}: a {example['status']} code ({example['body']})")
+    check(sorted((example["status"], example["body"]["code"]) for example in refused)
+          == sorted((status, code) for status, codes in refusals.items() for code in codes),
+          f"{file.removesuffix('.json')}: one example of every refusal")
+
 public_claim, internal_claim = loaded["app-store-claim.json"], loaded["internal-app-store-claim.json"]
 check(list(public_claim["request"]) == ["signedTransaction"], "app-store-claim: AppStoreClaimRequest is {signedTransaction}")
-check(sorted(x["status"] for x in public_claim["examples"]) == [200, 200, 400, 409, 503], "app-store-claim: every answer")
+check([x["status"] for x in public_claim["examples"]].count(200) == 2, "app-store-claim: bound, and bound already")
 for example in public_claim["examples"]:
-    where = f"app-store-claim/{example['name']}"
     if example["status"] == 200:
-        check_subscription_response(example["body"], where)
-    else:
-        check(example["body"] == {"code": REFUSALS[example["status"]]}, f"{where}: the {example['status']} code")
+        check_subscription_response(example["body"], f"app-store-claim/{example['name']}")
 check(list(internal_claim["request"]) == ["accountId", "signedTransaction"],
       "internal-app-store-claim: the request is {accountId, signedTransaction}")
-check(sorted(x["status"] for x in internal_claim["examples"]) == [200, 200, 400, 409],
-      "internal-app-store-claim: every answer")
+check([x["status"] for x in internal_claim["examples"]].count(200) == 2,
+      "internal-app-store-claim: bound, and bound already")
 for example in internal_claim["examples"]:
     where = f"internal-app-store-claim/{example['name']}"
     if example["status"] != 200:
-        check(example["body"] == {"code": REFUSALS[example["status"]]}, f"{where}: the {example['status']} code")
         continue
     answer = example["body"]
     check(list(answer) == ["seq", "entitlement"], f"{where}: 200 is {{seq, entitlement}}")
@@ -398,6 +413,14 @@ for example in internal_claim["examples"]:
     check(claimed is not None and claimed["entitlement"] == answer["entitlement"]
           and not any(e["seq"] > claimed["seq"] and e["recordedAt"] == claimed["recordedAt"] for e in entries),
           f"{where}: seq is the claim's last event, whose entitlement it answers (§5.2)")
+refresh = loaded["internal-subscription-refresh.json"]
+check(list(refresh["request"]) == ["subscriptionId"], "internal-subscription-refresh: the path names {subscriptionId}")
+for example in refresh["examples"]:
+    if example["status"] != 200:
+        continue
+    newest = max((e["seq"] for e in entries if e["subscriptionId"] == refresh["request"]["subscriptionId"]), default=None)
+    check(list(example["body"]) == ["seq"] and example["body"]["seq"] == newest,
+          f"internal-subscription-refresh/{example['name']}: 200 is {{seq}}, the subscription's newest event (§5.2)")
 check(named("app-store-claim.json")["bound_to_caller"]["body"]["governing"]
       == named("internal-app-store-claim.json")["bound_to_caller"]["body"]["entitlement"]["production"]["governing"],
       "app-store-claim/bound_to_caller answers the copy the internal answer leads to (§5.3)")

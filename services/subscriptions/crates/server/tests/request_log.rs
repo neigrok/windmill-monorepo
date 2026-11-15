@@ -150,7 +150,7 @@ async fn each_request_writes_one_line_naming_its_route_and_nothing_it_carried() 
                 "level": "WARN",
                 "message": "ledger did not answer",
                 "operation": "ledger.check",
-                "code": "unreachable",
+                "code": "ledger_unreachable",
                 "span": {
                     "name": "request",
                     "listener": "internal",

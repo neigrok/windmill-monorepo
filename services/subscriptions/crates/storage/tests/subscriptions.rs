@@ -40,7 +40,7 @@ async fn with_empty_database(test: impl AsyncFnOnce(String)) {
 
 #[tokio::test]
 #[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
-async fn every_state_and_name_the_domain_has_reads_back_as_written() {
+async fn every_state_and_name_the_domain_has_reads_back_as_written_by_lineage_and_by_id() {
     with_empty_database(async |url| {
         let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
         let at = |day: i64| Instant::from_epoch_millis(1_798_761_600_000 + day * 86_400_000);
@@ -146,6 +146,7 @@ async fn every_state_and_name_the_domain_has_reads_back_as_written() {
 
         let mut written = Vec::new();
         let mut read = Vec::new();
+        let mut read_by_id = Vec::new();
         for observed in cases {
             let lineage = observed.observation.lineage.clone();
             let Applied::Recorded { change, .. } = ledger.apply(observed).await.unwrap() else {
@@ -159,11 +160,13 @@ async fn every_state_and_name_the_domain_has_reads_back_as_written() {
                     PeriodChange::Restated(_) => panic!("a new lineage restates nothing"),
                 })
                 .collect();
+            let id = Uuid::parse_str(change.subscription.id.as_str()).unwrap();
             written.push(domain::Ledger {
                 subscription: Some(change.subscription),
                 periods,
             });
             read.push(ledger.lineage(&lineage).await.unwrap());
+            read_by_id.push(ledger.subscription(id).await.unwrap());
         }
 
         assert_eq!(
@@ -171,6 +174,14 @@ async fn every_state_and_name_the_domain_has_reads_back_as_written() {
             6 + 2 * EndReason::ALL.len() + 5 + OfferKind::ALL.len() + 1
         );
         assert_eq!(read, written);
+        assert_eq!(
+            read_by_id,
+            written
+                .iter()
+                .map(|held| held.subscription.clone())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(ledger.subscription(Uuid::new_v4()).await.unwrap(), None);
         ledger.close().await;
     })
     .await;

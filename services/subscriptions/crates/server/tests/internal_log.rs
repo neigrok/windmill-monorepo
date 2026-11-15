@@ -3,6 +3,7 @@
 use std::io;
 use std::sync::{Arc, Mutex};
 
+use axum::Router;
 use axum::body::Body;
 use axum::http::Request;
 use domain::{
@@ -100,7 +101,11 @@ async fn each_read_writes_its_route_template_and_its_outcome_and_never_the_accou
     let internal = Listener::Internal.router(
         &config,
         OneEvent::default(),
-        internal::doors(config.internal_token.clone(), OneEvent::default()),
+        internal::doors(
+            config.internal_token.clone(),
+            OneEvent::default(),
+            Router::new(),
+        ),
         Bounds::default(),
     );
     let captured = Captured(Arc::new(Mutex::new(Vec::new())));

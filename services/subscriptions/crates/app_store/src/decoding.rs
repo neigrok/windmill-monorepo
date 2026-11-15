@@ -1,10 +1,12 @@
 use domain::{
-    BillingInterval, EndReason, Ending, Environment, Instant, Lineage, Money, NextCharge,
-    Observation, ObservedPeriod, Offer, OfferKind, Ownership, Plan, ProductId, Renewal, Span,
-    State, Status, Store, StoreSubscriptionId, StoreTransactionId, Storefront,
+    BillingInterval, EndReason, Ending, Instant, Lineage, Money, NextCharge, Observation,
+    ObservedPeriod, Offer, OfferKind, Ownership, Plan, ProductId, Renewal, Span, State, Status,
+    Store, StoreSubscriptionId, StoreTransactionId, Storefront,
 };
 
-use crate::verification::{self, AccountToken, Notification, TransactionInfo};
+use crate::verification::{
+    AccountToken, Notification, RenewalInfo, SubscriptionStatus, TransactionInfo,
+};
 
 // §8: the one product Windmill sells on the App Store, a month of Windmill One.
 const WINDMILL_ONE_MONTHLY: &str = "works.windmill.app.one.monthly";
@@ -106,6 +108,29 @@ impl Unsupported {
 // App Store Server Notifications V2: the type and subtype say which notification it is; the state comes from its data.
 pub fn decode(notification: &Notification) -> Decoded {
     read(notification).unwrap_or_else(Decoded::Unsupported)
+}
+
+// The status a pull reads from the App Store Server API, which holds the subscription's latest transaction by Apple's
+// definition, stamped at the earlier of the two signings Apple made in answering.
+pub fn decode_status(status: &SubscriptionStatus) -> Decoded {
+    let signings = [
+        status.transaction.signed_date,
+        status
+            .renewal_info
+            .as_ref()
+            .and_then(|renewal_info| renewal_info.signed_date),
+    ];
+    let Some(observed_at) = signings.into_iter().flatten().min() else {
+        return Decoded::Unsupported(Unsupported::Incomplete);
+    };
+    state_of(
+        Reading::OF_THE_LATEST,
+        Instant::from_epoch_millis(observed_at),
+        status.status,
+        &status.transaction,
+        status.renewal_info.as_ref(),
+    )
+    .unwrap_or_else(Decoded::Unsupported)
 }
 
 // A signed transaction a phone hands to the claim door, stamped at its own signing (§4, §5.2).
@@ -215,8 +240,26 @@ fn read(notification: &Notification) -> Result<Decoded, Unsupported> {
         .transaction
         .as_ref()
         .ok_or(Unsupported::Incomplete)?;
+    state_of(
+        reading,
+        observed_at,
+        notification.status,
+        transaction,
+        notification.renewal_info.as_ref(),
+    )
+}
+
+// The subscription's whole state as one statement of its transaction, renewal info and status gives it, or the period
+// alone when the transaction is not shown to be the latest.
+fn state_of(
+    reading: Reading,
+    observed_at: Instant,
+    status: Option<i32>,
+    transaction: &TransactionInfo,
+    renewal_info: Option<&RenewalInfo>,
+) -> Result<Decoded, Unsupported> {
     let purchase = Purchase::read(transaction, observed_at, reading.refund)?;
-    let Some(renewal_info) = &notification.renewal_info else {
+    let Some(renewal_info) = renewal_info else {
         return Ok(Decoded::AwaitsStatus {
             statement: purchase.statement(None),
             awaiting: Awaiting::LatestUnconfirmed,
@@ -264,7 +307,7 @@ fn read(notification: &Notification) -> Result<Decoded, Unsupported> {
         Some(_) => return Err(Unsupported::UnknownValue),
         None => return Err(Unsupported::Incomplete),
     };
-    let state = match notification.status {
+    let state = match status {
         Some(1) => State::Active {
             pause_scheduled_for: None,
         },
@@ -431,10 +474,7 @@ impl Purchase {
         Ok(Purchase {
             lineage: Lineage {
                 store: Store::AppStore,
-                environment: match transaction.environment {
-                    verification::Environment::Production => Environment::Production,
-                    verification::Environment::Sandbox => Environment::Sandbox,
-                },
+                environment: transaction.environment.into(),
                 store_subscription_id: StoreSubscriptionId::new(
                     storable(transaction.original_transaction_id.expose())
                         .ok_or(Unsupported::Incomplete)?,

@@ -48,6 +48,11 @@ const SELECT_LINEAGE_LOCKED: &str = concat!(
     " from subscriptions where store = $1 and environment = $2 and store_subscription_id = $3 \
      for no key update"
 );
+const SELECT_BY_ID: &str = concat!(
+    "select ",
+    subscription_columns!(),
+    " from subscriptions where id = $1::uuid"
+);
 const SELECT_BOUND_TO: &str = concat!(
     "select ",
     subscription_columns!(),
@@ -89,6 +94,15 @@ impl Ledger {
         let held = load(&mut transaction, lineage, SELECT_LINEAGE).await?;
         transaction.commit().await?;
         Ok(held)
+    }
+
+    // The subscription the ledger keeps under its own id, as a refresh names it.
+    pub async fn subscription(&self, id: Uuid) -> Result<Option<Subscription>, StorageError> {
+        let row: Option<SubscriptionRow> = sqlx::query_as(SELECT_BY_ID)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        row.map(Subscription::try_from).transpose()
     }
 }
 

@@ -45,13 +45,16 @@ dependencies = [
 name = "app_store"
 version = "0.0.0"
 dependencies = [
+ "axum",
  "base64 0.23.1",
  "domain",
  "rcgen",
+ "reqwest",
  "ring",
  "serde",
  "serde_json",
  "time",
+ "tokio",
  "x509-parser",
 ]
 

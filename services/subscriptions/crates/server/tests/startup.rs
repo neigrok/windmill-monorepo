@@ -77,7 +77,7 @@ fn a_ledger_that_does_not_answer_stops_the_start_before_either_listener_binds() 
             "level": "ERROR",
             "message": "ledger.open failed",
             "operation": "ledger.open",
-            "code": "unreachable",
+            "code": "ledger_unreachable",
         })
     );
 }

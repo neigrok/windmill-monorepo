@@ -1,5 +1,5 @@
 // The internal doors' wire shapes (spec §5.2), written from the ledger's own types; packages/api-contract/subscriptions
-// pins the feed's and the entitlement's.
+// pins each of them.
 
 use domain::{AccountEntitlement, Entitlement, Event, Instant, Money, Period, Span, Subscription};
 use serde::Serialize;
@@ -303,6 +303,19 @@ impl From<&RecordedEvent> for EventResponse {
             period: event.kind.period().map(PeriodResponse::from),
         }
     }
+}
+
+// The internal claim's answer (§5.2): the claimed subscription's newest seq, and the caller's entitlement after it.
+#[derive(Serialize)]
+pub struct ClaimResponse {
+    pub seq: i64,
+    pub entitlement: EntitlementResponse,
+}
+
+// A refresh's answer: the subscription's newest seq once the pulled state applied.
+#[derive(Serialize)]
+pub struct RefreshResponse {
+    pub seq: i64,
 }
 
 // What a door answers when it refuses: a code, and nothing about the request.
