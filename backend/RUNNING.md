@@ -196,10 +196,12 @@ curl -s localhost:8088/v1/subscription -H "authorization: Bearer $SESSION"
 ```
 
 The claim answers 200 with the account's `SubscriptionResponse`, `windmillOne` true in `sandbox`, and
-`GET /v1/subscription` answers the same. The same claim again answers alike; another account's answers
-`409 {"code":"bound_to_another_account"}`, a caller with no session 401, and a service without its key, a
-service that is down or a backend with the follower off `503 {"code":"subscriptions_unavailable"}`. Each
-claim writes one `subscription.claim` line ([OBSERVABILITY.md](OBSERVABILITY.md)).
+`GET /v1/subscription` answers the same; it answers 202 instead when the follower has not brought the copy to the
+claim within 5 s. The same claim again answers alike; another account's answers
+`409 {"code":"bound_to_another_account"}`, a caller with no session 401, a body that holds no compact JWS
+`400 {"code":"invalid_transaction"}`, and a service without its key, a service that is down or a backend with the
+follower off `503 {"code":"subscriptions_unavailable"}`. Each claim writes one `subscription.claim` line
+([OBSERVABILITY.md](OBSERVABILITY.md)).
 
 ### Engine server for the iOS simulator
 

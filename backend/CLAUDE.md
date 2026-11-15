@@ -21,10 +21,10 @@ worker (`FeedFollower`), the Postgres copy, the recorder of the feed's lifecycle
 service's internal doors, what the service's claim door answers (`AppStoreClaim.h`), an account's hold on Windmill One
 read from its row and what a device is shown of it (`WindmillOne.h`), which `Entitlements::hasWindmillOne` answers
 from, and the doors a device calls (`SubscriptionApi`, §5.3): `GET /v1/subscription` and
-`POST /v1/subscription/app-store/claims`, which forwards a signed transaction to the service and answers from the
-copy once the follower brings it there. The follower is off while `SUBSCRIPTIONS_INTERNAL_URL` and
-`SUBSCRIPTIONS_INTERNAL_TOKEN` are unset, and then a claim answers 503; the server refuses to start with them set and
-`AI_ALLOWANCES_ENABLED` off; the copy is read either way.
+`POST /v1/subscription/app-store/claims`, which forwards a signed transaction to the service, an account's claims one
+at a time, and answers from the copy once the follower brings it there, or 202 as the copy stands. The follower is off
+while `SUBSCRIPTIONS_INTERNAL_URL` and `SUBSCRIPTIONS_INTERNAL_TOKEN` are unset, and then a claim answers 503; the
+server refuses to start with them set and `AI_ALLOWANCES_ENABLED` off; the copy is read either way.
 
 `products/<p>/` is one product each (roadmap, journal, gym, and the sync engine's test-only probe),
 with four shared layers: `domain/` (pure), `application/` (services over
