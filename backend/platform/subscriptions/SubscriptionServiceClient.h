@@ -4,6 +4,7 @@
 
 #include <trantor/net/EventLoopThread.h>
 
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -33,8 +34,13 @@ public:
   static constexpr double kTimeoutSeconds = 10.0;
 
 private:
-  std::string origin_;  // scheme://host[:port], what drogon dials
-  std::string prefix_;  // a path the service is mounted under, "" in the usual case
+  // The URL's parts. The host is looked up at every read: trantor keeps each name it resolves for ten minutes in
+  // drogon's client, and the service's address on the compose network changes whenever its container is recreated.
+  bool https_ = false;
+  std::string host_;
+  std::uint16_t port_ = 80;
+  std::string authority_;  // host[:port] as the URL writes it, every request's Host
+  std::string prefix_;     // a path the service is mounted under, "" in the usual case
   std::string token_;
   std::once_flag stopped_;
   trantor::EventLoopThread loop_;

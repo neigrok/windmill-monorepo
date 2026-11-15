@@ -162,6 +162,8 @@ A renewal, a failed charge or a refund happens with no device present, so the su
 records those events itself ([subscriptions.md](../docs/foundation/subscriptions.md) §10), into the same
 `events` table and through the same forwarder: `subscription_started`, `subscription_renewed`,
 `subscription_renewal_turned_off`, `subscription_payment_failed`, `subscription_expired` and
+`subscription_revoked`, one for each such event the ledger tells: a refund that revokes a subscription
+still renewing turns its renewal off too, so it sends `subscription_renewal_turned_off` and then
 `subscription_revoked`. Each carries exactly `store` (`app_store`, `play_store`, `paddle` or `unknown`),
 `environment` (`production` or `sandbox`) and `offer_kind` (`none`, `free_trial`, `introductory`,
 `promotional`, `offer_code`, `win_back` or `unknown`); a word the feed's contract does not name yet reads

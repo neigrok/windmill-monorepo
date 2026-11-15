@@ -71,14 +71,19 @@ variable at start unless `SENTRY_ENVIRONMENT` is `local`, `development`, `test` 
 door trusts Apple's root alone, as production does.
 
 ```sh
+TOKEN=$(openssl rand -hex 32)
 SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0.0.1:8083 \
   SUBSCRIPTIONS_DATABASE_URL="postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions" \
   SUBSCRIPTIONS_APP_STORE_TEST_ROOT=tests/fixtures/app_store/test-chain/root.cer \
-  SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
+  SUBSCRIPTIONS_INTERNAL_TOKEN="$TOKEN" SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
 ```
 
-In a second terminal, from the same directory, sign one of the example notifications
-(`tests/fixtures/app_store/test-payloads/`) and post it as Apple does:
+`SUBSCRIPTIONS_INTERNAL_TOKEN` is the bearer secret of the backend's reads on the internal port; without it
+they answer 401. The backend follows the feed with the same secret in its `.env` beside
+`SUBSCRIPTIONS_INTERNAL_URL=http://127.0.0.1:8083`.
+
+In a second terminal, from the same directory and with the same `TOKEN`, sign one of the example
+notifications (`tests/fixtures/app_store/test-payloads/`) and post it as Apple does:
 
 ```sh
 SIGNED=$(cargo run -q -p app_store_test_signer < tests/fixtures/app_store/test-payloads/started.json)
@@ -88,7 +93,14 @@ psql -h /tmp -U windmill_subscriptions windmill_subscriptions \
   -c 'select environment, outcome from inbox' -c 'select seq, type from events order by seq'
 ```
 
-The inbox holds the notification `applied`, and the events are `started`, `bound` and `period_recorded`.
+The inbox holds the notification `applied`, and the events are `started`, `bound` and `period_recorded`,
+which the feed serves to the bearer, and the public port does not:
+
+```sh
+curl -s "localhost:8083/internal/v1/feed?after=0&limit=500" -H "authorization: Bearer $TOKEN"
+curl -s -o /dev/null -w '%{http_code}\n' "localhost:8082/internal/v1/feed?after=0&limit=500"   # 404
+```
+
 The same `SIGNED` posted again answers 200 and adds nothing; a service started without
 `SUBSCRIPTIONS_APP_STORE_TEST_ROOT` answers it `400 {"error":"refused"}` and keeps nothing, and its
 `store.notification` line says `untrusted_chain`. Each delivery writes one such line to the service's

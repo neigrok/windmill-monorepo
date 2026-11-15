@@ -554,6 +554,9 @@ The backend's role cannot read it.
 - Every write logs one structured line: operation, store, environment, outcome or refusal code,
   duration. Operations: `store.notification`, `store.claim`, `store.refresh`, `account.unbind`,
   `sweep.inbox`, `sweep.due`, `sweep.drift`, `sweep.history`.
+- The backend's two reads on the internal listener are reads, not writes, and each logs one line with
+  its outcome too: `feed.read` for a page of the feed, `account.read` for an account. A read the
+  ledger does not answer reports to Sentry under its name; a refused read is its request's line alone.
 - Unexpected failures report to Sentry under those names. A signature that does not verify is a
   logged refusal, not an Issue. `drift` reports as a warning.
 - The backend's follower logs `subscription.follow` per page, `subscription.fund` per funding call and

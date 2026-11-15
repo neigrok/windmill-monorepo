@@ -213,11 +213,11 @@ constexpr const char* kSpanned =
     "e2b8f0a4-7c19-4d6e-a3f5-91c0d7b42e86 account=3f6c2a1e 1796292000000-1798970400000 amount=7000000000 closed=- "
     "statement=EPOCH/3\n"
     "8f04068f-6d76-4afc-bba4-6d7927bc7c4e account=9387ec65 1796472000000-1799150400000 amount=7000000000 "
-    "closed=1797780600000 statement=EPOCH/14\n"
+    "closed=1797780600000 statement=EPOCH/15\n"
     "4c7a19e3-b2d0-4f85-9e6a-3d81f5c0a2b7 account=3f6c2a1e 1798970400000-1801648800000 amount=7000000000 closed=- "
-    "statement=EPOCH/23\n"
+    "statement=EPOCH/24\n"
     "d9aaabda-5edd-4f39-a5ab-ec4c8e295161 account=3f6c2a1e 1803304800000-1805724000000 amount=7000000000 closed=- "
-    "statement=EPOCH/21\n";
+    "statement=EPOCH/22\n";
 
 // `text` with every EPOCH read as `epoch`.
 std::string underEpoch(std::string text, const std::string& epoch) {
@@ -247,12 +247,12 @@ TEST(pg_subscription_fund_the_chained_pages_fund_exactly_the_paid_production_per
   Ledger ledger{feed};
   LedgerLines lines;
 
-  // Seq 5 is recorded before its subscription names an account, 11 and 13 are sandbox, 18 and 19 are grace and on
-  // hold: none funds. Seq 14 closes 8f04068f at its refund. 22 refunds 4c7a19e3 after its end and 23, on the same page,
+  // Seq 5 is recorded before its subscription names an account, 11 and 13 are sandbox, 19 and 20 are grace and on
+  // hold: none funds. Seq 15 closes 8f04068f at its refund. 23 refunds 4c7a19e3 after its end and 24, on the same page,
   // reverses that: only the reversal acts, and the grant it leaves open is brought to it.
   while (ledger.follower.follow() == FollowStep::applied) {}
   CHECK_EQ(grantsAsText(), underEpoch(kSpanned, "c09a3ab3"));
-  CHECK_EQ(cursorAsText(), std::string("c09a3ab3/26"));
+  CHECK_EQ(cursorAsText(), std::string("c09a3ab3/27"));
   CHECK_EQ(lines.taken(), (std::vector<std::string>{
       "subscription.fund ok/info background", "subscription.follow ok/info background",
       "subscription.fund ok/info background", "subscription.follow ok/info background",
@@ -266,25 +266,25 @@ TEST(pg_subscription_fund_the_chained_pages_fund_exactly_the_paid_production_per
   // grant to the new epoch, funding nothing twice and never passing through 4c7a19e3's refund.
   for (const char* name : {"from_zero", "claimed_then_sandbox", "refunded_then_renewed", "payment_trouble",
                            "older_period_refunded", "account_erased", "caught_up"})
-    feed.serve(contractExample("feed.json", name)["request"]["after"].asUInt64(), restored(name, 26));
+    feed.serve(contractExample("feed.json", name)["request"]["after"].asUInt64(), restored(name, 27));
   CHECK_EQ(nameOf(ledger.follower.follow()), std::string("rebuilt"));
   CHECK_EQ(grantsAsText(), underEpoch(kSpanned, "2dd74022"));
-  CHECK_EQ(cursorAsText(), std::string("2dd74022/26"));
+  CHECK_EQ(cursorAsText(), std::string("2dd74022/27"));
   CHECK_EQ(lines.taken(), (std::vector<std::string>{
       "subscription.fund replay/warn background", "subscription.refund ok/info background",
       "subscription.fund replay/warn background", "subscription.refund ok/info background",
       "subscription.follow rebuilt/warn background"}));
 
-  // Then restored from a backup taken at seq 21 under that same epoch: 4c7a19e3's last statement there is its recording,
+  // Then restored from a backup taken at seq 22 under that same epoch: 4c7a19e3's last statement there is its recording,
   // older than the reversal its grant holds, and nothing goes back to it.
   feed.serve({"ledger_restored"});
-  feed.serve(0, restored("from_zero", 21));
-  feed.serve(6, restored("claimed_then_sandbox", 21));
-  feed.serve(13, restored("refunded_then_renewed", 21));
-  feed.serve(17, restored("payment_trouble", 21));
+  feed.serve(0, restored("from_zero", 22));
+  feed.serve(6, restored("claimed_then_sandbox", 22));
+  feed.serve(13, restored("refunded_then_renewed", 22));
+  feed.serve(18, restored("payment_trouble", 22));
   CHECK_EQ(nameOf(ledger.follower.follow()), std::string("rebuilt"));
   CHECK_EQ(grantsAsText(), underEpoch(kSpanned, "2dd74022"));
-  CHECK_EQ(cursorAsText(), std::string("2dd74022/21"));
+  CHECK_EQ(cursorAsText(), std::string("2dd74022/22"));
   CHECK_EQ(lines.taken(), (std::vector<std::string>{
       "subscription.fund replay/warn background", "subscription.refund replay/warn background",
       "subscription.fund replay/warn background", "subscription.fund replay/warn background",
@@ -587,7 +587,7 @@ TEST(pg_subscription_fund_sandbox_trial_unpaid_refunded_unbound_and_unknown_peri
   sandboxRefund["seq"] = Json::UInt64(8);
   sandboxRefund["type"] = "period_refunded";
   sandboxRefund["period"]["refundedAt"] = sandboxRefund["occurredAt"];
-  Json::Value grace = ledgerEntry(18);
+  Json::Value grace = ledgerEntry(19);
   grace["seq"] = Json::UInt64(9);
   FakeFeed feed;
   feed.serve(0, pageOf({ledgerEntry(1), trial, unpriced, refunded, unbound, gifted, sandbox, sandboxRefund, grace}));

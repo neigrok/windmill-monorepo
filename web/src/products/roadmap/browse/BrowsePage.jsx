@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { useViewMode } from '../room/useViewMode.js';
 import { forkTree } from '../persistence/TreeRegistry.js';
 import { GalleryCard, GALLERY_CARD_CSS } from '../share/GalleryCard.jsx';
 import { ForkDoor } from '../share/ForkDoor.jsx';
-import { reportUnexpectedFailure } from '../reportFailure.js';
+import { reportRoadmapFailure, reportUnexpectedFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
 import { GalleryIndex, galleryHeader } from './galleryIndex.js';
 import { fetchGallery } from './GalleryClient.js';
@@ -15,6 +15,12 @@ const SKELETON_AFTER_MS = 400;
 const ARRIVAL_MS = 150;
 const SKELETON_CARDS = [0, 1, 2, 3, 4, 5];
 
+function reportReadFailure(error, read) {
+  const reason = error?.code === 'shape' ? 'shape' : error?.status === 0 ? 'network' : 'server';
+  const report = reason === 'shape' ? reportRoadmapFailure : reportUnexpectedFailure;
+  report('roadmap-gallery-load', error, { read, reason });
+}
+
 export function BrowsePage() {
   const { user, status } = useAuth();
   const { breakpoint } = useViewMode();
@@ -24,6 +30,7 @@ export function BrowsePage() {
   const [forkingId, setForkingId] = useState('');
   const [forkFailedId, setForkFailedId] = useState('');
   const [doorFor, setDoorFor] = useState('');
+  const pageRead = useRef(null);
 
   const signedIn = status === 'signed-in' && Boolean(user);
 
@@ -34,17 +41,22 @@ export function BrowsePage() {
       .then((page) => {
         clearTimeout(reveal);
         if (!live) return;
+        track('roadmap_gallery', { step: 'load', outcome: page.entries.length ? 'available' : 'empty' });
         setIndex((current) => current.join(page));
         setSkeleton((current) => (current === 'shown' ? 'leaving' : 'hidden'));
       })
-      .catch(() => {
+      .catch((error) => {
         clearTimeout(reveal);
         if (!live) return;
+        reportReadFailure(error, 'initial');
+        track('roadmap_gallery', { step: 'load', outcome: 'failed' });
         setIndex((current) => current.failed());
         setSkeleton('hidden');
       });
     return () => { live = false; clearTimeout(reveal); };
   }, [attempt]);
+
+  useEffect(() => () => { pageRead.current = null; }, []);
 
   useEffect(() => {
     if (skeleton !== 'leaving') return undefined;
@@ -52,19 +64,34 @@ export function BrowsePage() {
     return () => clearTimeout(settled);
   }, [skeleton]);
 
-  function showMore() {
-    if (!index.hasMore || index.status === 'paging') return;
+  function loadPage(step) {
+    if (!index.hasMore || index.status === 'paging' || pageRead.current) return;
+    const request = {};
+    pageRead.current = request;
+    track('roadmap_gallery', { step, read: 'page' });
     setIndex(index.paging());
     fetchGallery({ cursor: index.cursor })
-      .then((page) => setIndex((current) => current.join(page)))
-      .catch(() => setIndex((current) => current.failed()));
+      .then((page) => {
+        if (pageRead.current !== request) return;
+        pageRead.current = null;
+        track('roadmap_gallery', { step: 'page', outcome: page.entries.length ? 'available' : 'empty' });
+        setIndex((current) => current.join(page));
+      })
+      .catch((error) => {
+        if (pageRead.current !== request) return;
+        pageRead.current = null;
+        reportReadFailure(error, 'page');
+        track('roadmap_gallery', { step: 'page', outcome: 'failed' });
+        setIndex((current) => current.failed());
+      });
   }
 
   function retry() {
     if (index.hasMore) {
-      showMore();
+      loadPage('retry');
       return;
     }
+    track('roadmap_gallery', { step: 'retry', read: 'initial' });
     setIndex(new GalleryIndex());
     setSkeleton('hidden');
     setAttempt((n) => n + 1);
@@ -153,7 +180,7 @@ export function BrowsePage() {
           </div>
         ) : index.hasMore ? (
           <div className="wm-br-quiet">
-            <button type="button" className="wm-br-more" onClick={showMore} disabled={index.status === 'paging'}>
+            <button type="button" className="wm-br-more" onClick={() => loadPage('more')} disabled={index.status === 'paging'}>
               {index.status === 'paging' ? t('roadmap.browse.loading') : t('roadmap.browse.showMore')}
             </button>
           </div>
@@ -176,21 +203,22 @@ export default BrowsePage;
 const CSS = `
   .wm-br { position:fixed; inset:0; overflow-y:auto; background:var(--surface-canvas);
            font-family:var(--font-body); color:var(--text-primary); }
-  .wm-br-plaque { position:sticky; top:var(--space-6); margin-left:var(--space-6); z-index:5;
-                  display:inline-flex; align-items:center; gap:var(--space-2);
-                  padding:var(--space-2) var(--space-3); text-decoration:none; color:inherit;
+  .wm-br-plaque { position:sticky; top:var(--space-6); margin:var(--space-6) 0 30px var(--space-6); z-index:5;
+                  display:flex; width:max-content; align-items:center; gap:var(--space-2);
+                  padding:calc(var(--space-2) - 1px) calc(var(--space-3) - 1px); text-decoration:none; color:inherit;
                   background:color-mix(in srgb, var(--surface-card) 88%, transparent);
                   border:1px solid var(--border-subtle); border-radius:var(--radius-full);
                   box-shadow:var(--shadow-sm); }
   .wm-br-glyph { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px;
                  border-radius:50%; background:var(--color-brand-soft); color:var(--color-brand-hover); }
-  .wm-br-wordmark { font-family:var(--font-display); font-weight:800; font-size:var(--text-base); }
+  .wm-br-wordmark { min-width:65px; font-family:var(--font-display); font-weight:800;
+                    font-size:var(--text-base); line-height:var(--leading-base); }
 
   .wm-br-main { max-width:1080px; margin:0 auto; padding:var(--space-8) var(--space-6) var(--space-10); }
-  .wm-br-title { font-family:var(--font-display); font-weight:700; font-size:clamp(26px, 3.4vw, 34px);
-                 margin:var(--space-6) 0 var(--space-2); }
-  .wm-br-sub { max-width:620px; font-size:var(--text-base); line-height:1.6; color:var(--text-secondary); margin:0; }
-  .wm-br-line { display:flex; align-items:center; gap:8px; font-size:var(--text-sm); font-weight:700;
+  .wm-br-title { font-family:var(--font-display); font-weight:700; font-size:34px; line-height:48px;
+                 letter-spacing:var(--tracking-tight); margin:0 0 var(--space-2); }
+  .wm-br-sub { max-width:620px; font-size:var(--text-base); line-height:26px; color:var(--text-secondary); margin:0; }
+  .wm-br-line { display:flex; align-items:center; gap:8px; font-size:var(--text-sm); line-height:var(--leading-sm); font-weight:700;
                 color:var(--text-tertiary); margin:var(--space-3) 0 var(--space-6); }
   .wm-br-line a { color:var(--text-link); text-decoration:none; font-weight:700; }
   .wm-br-line a:hover { color:var(--text-link-hover); }
@@ -210,11 +238,12 @@ const CSS = `
   .wm-br-skel.is-leaving { position:absolute; left:0; right:0; top:0; opacity:0; pointer-events:none;
                            transition:opacity ${ARRIVAL_MS}ms linear; }
 
-  .wm-br-bare { border:1px dashed var(--border-default); border-radius:var(--radius-xl);
-                padding:var(--space-8) var(--space-6); text-align:center; }
-  .wm-br-bare h2 { font-family:var(--font-display); font-weight:700; font-size:var(--text-xl); margin:0; }
-  .wm-br-bare p { max-width:430px; margin:10px auto 0; font-size:var(--text-sm); line-height:1.65; color:var(--text-secondary); }
-  .wm-br-bare a { display:inline-block; margin-top:var(--space-4); font-size:var(--text-sm); font-weight:700;
+  .wm-br-bare { display:flex; flex-direction:column; align-items:center;
+                border:1px dashed var(--border-default); border-radius:var(--radius-xl);
+                padding:calc(var(--space-8) - 1px) calc(var(--space-6) - 1px); text-align:center; }
+  .wm-br-bare h2 { font-family:var(--font-display); font-weight:700; font-size:var(--text-xl); line-height:25px; margin:0; }
+  .wm-br-bare p { max-width:430px; margin:10px 0 0; font-size:var(--text-sm); line-height:23px; color:var(--text-secondary); }
+  .wm-br-bare a { margin-top:var(--space-4); font-size:var(--text-sm); line-height:var(--leading-sm); font-weight:700;
                   color:var(--text-link); text-decoration:none; }
 
   .wm-br-quiet { display:flex; align-items:center; justify-content:center; gap:12px; margin-top:var(--space-6); }

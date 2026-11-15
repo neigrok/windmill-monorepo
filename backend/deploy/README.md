@@ -30,7 +30,7 @@ the last merge that touched the web and re-run it if it was cancelled.
  │  caddy :80/:443  ─▶  server :8080   (HTTP + WebSocket + MCP at /mcp)      │
  │       │          ─▶  subscriptions :8082 (/v1/stores/* only)              │
  │       │          ─▶  /srv/windmill-web (the rsynced SPA, file_server)     │
- │       │              subscriptions :8083 (internal; this network only)    │
+ │       │              subscriptions :8083 (internal-doors: server only)    │
  │       │              embedder :8081  (journal echo vectors; model mount)  │
  │       │              migrate (one-shot: applies db/schema.sql)            │
  │       │              subscriptions-db (one-shot: the subscription db)     │
@@ -146,10 +146,16 @@ must be public.
 - **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. The
   server and `embedder-<sha>` images must exist, and the server image must contain its compatibility
   manifest. A commit with no `subscriptions-<sha>`, as one built before Backend CI published the service,
-  deploys its backend and keeps the image the live subscription service runs, printing `NOTE subscription
-  service: no image could be pulled for this commit, so it keeps the one it runs, sha256:…`. On a host where
-  no subscription service runs, it is refused before anything changes with `FAIL no subscription service
-  image could be pulled for this commit, and none runs here to keep`. Only the images go back: the run renders `.env` and ships `docker-compose.yml`, the Caddyfile and
+  deploys its backend and leaves the running subscription container as it is, never recreating it, printing
+  `NOTE subscription service: no image could be pulled for this commit, so its running container is kept as
+  it is, on sha256:…` and `PASS subscription service: its running container kept, not recreated, healthy on
+  its image`. On a host where no subscription container runs, it is refused before anything changes with
+  `FAIL no subscription service image could be pulled for this commit, and none runs here to keep`. A
+  `subscriptions-<sha>` built before the internal doors (`subscriptions · the backend reads the feed and each
+  account behind the internal listener's secret`) cannot read the alias compose gives it in
+  `SUBSCRIPTIONS_INTERNAL_ADDRESS`: rolled back to, it exits at start with `SUBSCRIPTIONS_INTERNAL_ADDRESS is
+  malformed` and restarts in a loop, the run turns red at its health check, and Caddy answers `/v1/stores/*`
+  with 502; dispatch with that commit or a newer one. Only the images go back: the run renders `.env` and ships `docker-compose.yml`, the Caddyfile and
   `deploy-production.sh` from the branch it is dispatched on (`main` only), and `migrate` applies the
   selected image's own `db/schema.sql`.
   A lower minimum is a compatibility change too and requires exact manual acknowledgement. That
@@ -358,14 +364,17 @@ alone, and 404s every other path; no App Store Connect setting sends notificatio
   port, 8082, and nothing else; the server never sees such a path. Under `/v1/stores/app-store/` it
   answers 403 to any client whose `CF-Connecting-IP` is outside 17.0.0.0/8, the one subnet Apple documents
   for App Store Server Notifications, so a probe of the door from anywhere else is refused at the edge; to
-  probe the service itself, `docker compose exec -T subscriptions curl` it on its own port. The internal port, 8083, is published
-  nowhere and no Caddy route names it, so only containers on this compose network reach it.
+  probe the service itself, `docker compose exec -T subscriptions curl` it on its own port. The internal port,
+  8083, is published nowhere and no Caddy route names it. The internal listener binds `subscriptions-internal`,
+  the service's alias on `internal-doors`, an `internal: true` network only the server shares, so Caddy and
+  the embedder cannot reach it; its doors also ask for `SUBSCRIPTIONS_INTERNAL_TOKEN`
+  ([below](#windmill-one-the-entitlement-copy)).
 - **Healthy** means the image's `HEALTHCHECK`, a `curl` of the internal listener's `/health` every 10 s,
   answers 200 `{"status":"ready"}`: the service opened and migrated its ledger before it listened, and the
   ledger answers. Three failures in a row make it `unhealthy`. Docker restarts the container when its
   process exits (`restart: unless-stopped`), never because it is unhealthy.
 - **Status**: `docker compose ps subscriptions` shows `(healthy)`, and
-  `docker compose exec -T subscriptions curl -s localhost:8083/health` prints the answer.
+  `docker compose exec -T subscriptions curl -s subscriptions-internal:8083/health` prints the answer.
 - **Logs**: `docker compose logs -f subscriptions`, one JSON object per line: `ledger open` with the
   ledger's epoch at start, then one line per request, one `store.notification` line per App Store
   delivery with its `outcome` and `code`, and one `sweep.inbox` line for each sweep pass that met a row. Its Logs and failure reports go to the server's
@@ -380,7 +389,7 @@ alone, and 404s every other path; no App Store Connect setting sends notificatio
   prints `FAIL subscription service …; the backend is deployed and serving` and the run is red, with the
   container it started left as it is and nothing rolled back; while the service is down, Caddy answers
   `/v1/stores/*` with 502. A `subscriptions-db` FAIL ends the run before this step and leaves the running
-  service as it was. A commit without its own `subscriptions-<sha>` keeps the live service's image
+  service as it was. A commit without its own `subscriptions-<sha>` keeps the live service's container as it runs
   ([Rollback](#day-to-day)).
 - **What gates it**: Backend CI calls the service's own checks, `subscriptions.yml`, as a job its image
   publish needs, so a red check publishes no image and deploys nothing. A commit under
@@ -512,7 +521,7 @@ place of the published `subscriptions-<sha>`. From the repository root, with Doc
     "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" windmill-subscriptions:local > "$REHEARSAL_ENV"
   rehearse up -d --wait subscriptions
   rehearse logs subscriptions-db subscriptions
-  rehearse exec -T subscriptions curl -s localhost:8083/health
+  rehearse exec -T subscriptions curl -s subscriptions-internal:8083/health
   if rehearse exec -T db psql -U windmill windmill_subscriptions -c 'select 1'; then
     echo 'FAIL the backend role reached windmill_subscriptions'
     exit 1
@@ -618,6 +627,19 @@ line is open on (`app_store`, `play_store`, `paddle`), the one switch that lets 
 control (INV-12); empty keeps it closed on every store. The deploy refuses to render a value that names anything but
 those three, before anything reaches the host; a server given one all the same keeps that name closed, serves, and
 logs and reports it at start (`subscription.paid_line`).
+
+In production both come from one GitHub secret, `SUBSCRIPTIONS_INTERNAL_TOKEN`: 64 lowercase hex
+characters (`openssl rand -hex 32`), which the deploy refuses in any other non-empty form. The deploy
+renders it into `.env`, and compose hands it to the server and to the subscription service, whose
+internal doors ask for it as a bearer. Compose sets the server's `SUBSCRIPTIONS_INTERNAL_URL`, to
+`http://subscriptions-internal:8083`, only while the token is set. With the secret unset or empty both
+containers get the variables as empty strings: the server reads an empty `SUBSCRIPTIONS_INTERNAL_URL` and
+`SUBSCRIPTIONS_INTERNAL_TOKEN` as unset, so the follower stays off, and every internal door answers 401. The
+deploy after the secret is set turns the follower on, and it reads the feed from zero. That deploy starts the
+server before it replaces the subscription container, so until it does the follower writes `subscription follow:
+the feed is unavailable (401)`; every later deploy recreates the container, and the read that meets it gone
+writes `(unreachable)` once. The follower reads again 30 s after either, and files a stall Issue only past 60 s
+without progress.
 
 **A page the backend cannot apply stops the copy for every account, by design.** A page applies whole
 or not at all, and the follower skips no entry, since a skipped entry would leave someone's paid state
