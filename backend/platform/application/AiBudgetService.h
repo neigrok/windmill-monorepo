@@ -24,7 +24,8 @@ public:
   int releaseLapsed(const std::function<bool()>& stopping = {});
   AiBudgetResult reconcileOverrun(const std::string& id);
   AiBudgetGrantResult fund(const AiBudgetGrant& grant);
-  AiBudgetGrantResult refund(const std::string& fundingReference, std::optional<long long> refundedAtMs);
+  AiBudgetGrantResult refund(const std::string& fundingReference, std::optional<long long> refundedAtMs,
+                             const std::optional<AiBudgetStatement>& statement = std::nullopt);
   std::optional<std::string> boundAccount(const std::string& deviceId) const;
   AiBudgetCode bindDevice(const std::string& deviceId, const std::string& accountId);
   std::vector<AiBudgetAlert> claimAlerts(int limit = 20, long long leaseMs = 60'000);

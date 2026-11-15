@@ -181,11 +181,13 @@ AiBudgetGrantResult AiBudgetService::fund(const AiBudgetGrant& grant) {
   });
 }
 
-AiBudgetGrantResult AiBudgetService::refund(const std::string& fundingReference, std::optional<long long> refundedAtMs) {
+AiBudgetGrantResult AiBudgetService::refund(const std::string& fundingReference, std::optional<long long> refundedAtMs,
+                                            const std::optional<AiBudgetStatement>& statement) {
   return observeAiBudgetWrite("ai.budget.refund", [&] {
-    if (!validAiBudgetId(fundingReference) || (refundedAtMs && !AiBudgetPeriod::at(*refundedAtMs)))
+    if (!validAiBudgetId(fundingReference) || (refundedAtMs && !AiBudgetPeriod::at(*refundedAtMs)) ||
+        (statement && !statement->valid()))
       return AiBudgetGrantResult{AiBudgetCode::Invalid};
-    return repository_.refund(fundingReference, refundedAtMs);
+    return repository_.refund(fundingReference, refundedAtMs, statement);
   });
 }
 

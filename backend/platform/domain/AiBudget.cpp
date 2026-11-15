@@ -169,13 +169,20 @@ bool AiBudgetPrincipal::valid() const {
   return validAiBudgetSubject(subject, tier) && (!owner || tier == AiBudgetTier::WindmillOne);
 }
 
+bool AiBudgetStatement::valid() const { return validAiBudgetId(epoch) && seq > 0; }
+
+bool AiBudgetStatement::after(const AiBudgetStatement& reflected) const {
+  return epoch != reflected.epoch || seq > reflected.seq;
+}
+
 bool AiBudgetGrant::valid() const {
   if (!validAiBudgetId(id) || !validAiBudgetId(accountId) || !validAiBudgetId(fundingReference) || amountNanos <= 0)
     return false;
   if (period.endMs <= period.startMs || !period.contains(period.startMs)) return false;
   if (source == AiBudgetFundingSource::Subscription)
-    return !closedAtMs || (AiBudgetPeriod::at(*closedAtMs) && *closedAtMs <= period.endMs);
-  return source == AiBudgetFundingSource::Owner && !closedAtMs && AiBudgetPeriod::at(period.startMs) == period;
+    return (!closedAtMs || (AiBudgetPeriod::at(*closedAtMs) && *closedAtMs <= period.endMs)) &&
+           (!statement || statement->valid());
+  return source == AiBudgetFundingSource::Owner && !closedAtMs && !statement && AiBudgetPeriod::at(period.startMs) == period;
 }
 
 bool AiBudgetGrant::inForceAt(long long atMs) const {
@@ -417,26 +424,40 @@ AiBudgetGrantResult fundAiBudgetGrant(const AiBudgetGrant& grant, const std::vec
   });
   if (stored.size() > 1) return {AiBudgetCode::Conflict};
   if (stored.size() == 1) {
-    auto retry = grant;
-    retry.id = stored.front().id;
-    retry.closedAtMs = stored.front().closedAtMs;
-    return {retry == stored.front() ? AiBudgetCode::Replay : AiBudgetCode::Conflict, stored.front()};
+    auto prior = stored.front();
+    // The same funding for the same account: its stretch, as it was stored, may start later where it renewed early.
+    const bool same = prior.accountId == grant.accountId && prior.source == grant.source &&
+                      prior.fundingReference == grant.fundingReference && prior.period.endMs == grant.period.endMs &&
+                      grant.period.startMs <= prior.period.startMs;
+    if (!same) return {AiBudgetCode::Conflict, std::move(prior)};
+    if (grant.statement && (!prior.statement || grant.statement->after(*prior.statement))) prior.statement = grant.statement;
+    return {AiBudgetCode::Replay, std::move(prior)};
   }
+  // A store may charge a renewal before the period it pays for begins, and state the period from that charge.
+  auto funded = grant;
+  for (const AiBudgetGrant& other : held) {
+    if (other.id == grant.id || other.accountId != grant.accountId || other.source != grant.source) continue;
+    const long long until = other.closedAtMs.value_or(other.period.endMs);
+    if (other.period.startMs <= grant.period.startMs && grant.period.startMs < until) funded.period.startMs = until;
+  }
+  if (funded.period.startMs >= funded.period.endMs) return {AiBudgetCode::Conflict};
   const bool overlapping = std::any_of(held.begin(), held.end(), [&](const AiBudgetGrant& other) {
-    return grant.overlaps(other);
+    return funded.overlaps(other);
   });
   if (overlapping) return {AiBudgetCode::Conflict};
-  return {AiBudgetCode::Ok, grant};
+  return {AiBudgetCode::Ok, std::move(funded)};
 }
 
 AiBudgetCode refundAiBudgetGrant(AiBudgetGrant& grant, std::optional<long long> refundedAtMs,
-                                const std::vector<AiBudgetGrant>& held) {
+                                const std::optional<AiBudgetStatement>& statement, const std::vector<AiBudgetGrant>& held) {
   if (!grant.valid() || grant.source != AiBudgetFundingSource::Subscription ||
-      (refundedAtMs && !AiBudgetPeriod::at(*refundedAtMs)))
+      (refundedAtMs && !AiBudgetPeriod::at(*refundedAtMs)) || (statement && !statement->valid()))
     return AiBudgetCode::Invalid;
+  if (statement && grant.statement && !statement->after(*grant.statement)) return AiBudgetCode::Replay;
   auto refunded = grant;
   refunded.closedAtMs = refundedAtMs ? std::optional<long long>{std::min(grant.period.endMs, *refundedAtMs)} : std::nullopt;
-  if (refunded.closedAtMs == grant.closedAtMs) return AiBudgetCode::Replay;
+  if (statement) refunded.statement = statement;
+  if (refunded == grant) return AiBudgetCode::Replay;
   const bool holdsMore = refunded.closedAtMs.value_or(grant.period.endMs) > grant.closedAtMs.value_or(grant.period.endMs);
   const bool overlapping = std::any_of(held.begin(), held.end(), [&](const AiBudgetGrant& other) {
     return refunded.overlaps(other);

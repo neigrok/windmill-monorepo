@@ -48,9 +48,8 @@ It is written in Rust. It runs as its own container on the production host besid
   `originalTransactionId`, a Play purchase-token lineage, a Paddle `sub_…`.
 - **D-4 Period.** One stretch `[start, end)` the customer paid for or was granted, as the store states
   it, with the store transaction that created it, its price and currency, and its refund time while the
-  store has taken the money back. A renewal's period starts where the previous one ends, not at the
-  instant the store charged it, so the periods a store states for one subscription do not overlap; one
-  that does is written as stated all the same, since a period is its store transaction (INV-7).
+  store has taken the money back. A period is written as the store states it, even where it overlaps
+  the one before (INV-7); §6.3 says how funding treats an overlap.
 - **D-5 Observation.** A verified statement by a store of one subscription's whole state at one
   instant (`observedAt`, the store's own stamp). Every adapter produces observations and nothing else.
 - **D-6 Event.** A normalized fact recorded when an observation changes a subscription. Events are
@@ -360,11 +359,11 @@ A backend worker reads `/internal/v1/feed` from its stored epoch and cursor. Eac
 transaction, which holds the stored cursor and advances it when the page commits. Each entry goes, in
 order, through the consumers that write through that transaction, first the copy, which replaces the
 named account's row in `account_entitlements` with the entry's `EntitlementResponse`, both environments
-included; then through those that write in short transactions of their own before the page commits:
-funding (§6.3), whose ledger lock every Coach admission takes, so it is never held for a whole page.
-Every consumer is idempotent: a failure in either kind rolls the page back and the page is read again,
-and a rebuild reads every entry again. Each is told whether the page belongs to a rebuild and the epoch
-it brings the copy to. Once the copy reaches `latestSeq` the worker reads again at most 5 s later, or at
+included; then the page, its entries whole and in order, goes through those that write in short
+transactions of their own before it commits: funding (§6.3), whose ledger lock every Coach admission
+takes, so it is never held for a whole page. Every consumer is idempotent: a failure in either kind rolls
+the page back and the page is read again, and a rebuild reads every entry again, as one page holding the
+whole ledger. Each is told whether the page belongs to a rebuild and the epoch it brings the copy to. Once the copy reaches `latestSeq` the worker reads again at most 5 s later, or at
 once when the claim door asks for a `seq` (§5.3); the `seq` is reached only when a read that began after
 the request has seen the ledger's epoch and left the copy at or past it, so a restored ledger is
 rebuilt before a claim is answered from the copy.
@@ -402,24 +401,36 @@ is funded as owner access is. (R-6)
 Subscription state alone funds nothing; the period events of the feed do. A grant's reference is its
 period's `id`, so no store id reaches the backend. (R-4, R-5)
 
+- Of a period's events in one page only the last acts: it states the period as the page leaves it. A
+  rebuild, one page holding the whole ledger, so brings each grant to its period's last statement
+  without passing through the ones before.
 - A `period_recorded` entry that names an account, for a production period with a positive captured
   price and no `refundedAt`, funds one grant spanning the period through `AiBudgetService::fund`, in a
   transaction of its own before the page commits (§6.1). Any other `period_recorded` funds nothing:
   `grace` adds no period, a free-trial period carries no payment, and a refunded period was paid back.
+- A period whose start falls inside a grant the account holds, as a renewal the store charged and dated
+  before the period it renews ended, is funded from that grant's `closedAt`, or its end, to its own end.
+  One that leaves nothing, or still holds an instant another grant of the account holds, answers
+  `Conflict`.
 - `fund` answers `Replay` to a period it already funded for that account, whatever the grant's
-  `closedAt`, so a rebuild (INV-11) funds nothing twice. It answers `Conflict` to a period already
-  funded for another account (an operator transfer, or erasure and a claim by another account), which
-  is not funded again, and to a period that overlaps a grant the account holds. §6.1 says what the
-  follower does with each answer.
+  `closedAt` or amount, and the grant keeps what it was funded with, its stretch included, so a rebuild (INV-11) funds nothing
+  twice. It answers `Conflict` to a period already funded for another account (an operator transfer, or
+  erasure and a claim by another account), which is not funded again. §6.1 says what the follower does
+  with each answer.
 - A `period_refunded` entry closes the grant whose reference is the period's `id`: its `closedAt`
   becomes `min(end, refundedAt)`. A closed grant funds nothing after `closedAt` and counts toward the
   overlap rule only until `closedAt`; spent capacity is not recovered. A close for a grant that does
   not exist changes nothing.
+- A grant keeps the epoch and `seq` of the newest statement of its period it was brought to. A refund
+  or reversal no later than it in the same epoch changes nothing, so no read of the feed takes a grant
+  back to an older statement. Across a restored ledger's new epoch no order holds: the rebuild brings
+  each grant to its period's last statement in the restored ledger, which may be older than one the
+  backup lost, until the service records the store's word again. A `period_recorded` never reopens or
+  reshapes a grant, and a grant for a period the restored ledger does not hold stays as it was.
 - A `period_refund_reversed` entry reopens that grant by clearing its `closedAt`. A reopen that would
   overlap another grant of the account answers `Conflict` and leaves the grant closed. For a period
   with no grant, as one first heard of refunded, it funds the period as a `period_recorded` entry
-  would; `fund` is idempotent, so the funded grants are the same in whatever order the store's
-  statements arrived.
+  would.
 - An account that holds Windmill One through a subscription and has no funded grant in force, as in
   `grace`, in the renewal slack or after a `Conflict`, is admitted under the free signed-in
   allowance.

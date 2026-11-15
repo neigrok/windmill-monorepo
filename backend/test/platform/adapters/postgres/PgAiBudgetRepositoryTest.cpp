@@ -442,10 +442,13 @@ TEST(pg_ai_budget_a_refund_closes_a_grant_to_the_free_allowance_keeps_its_spend_
   const auto grantText = [&] {
     PgLease conn{*pgTestPool()};
     pqxx::read_transaction txn{*conn};
-    const pqxx::result rows = txn.exec("SELECT id, coalesce(closed_at_ms::text, '-') FROM ai_budget_grants ORDER BY id");
+    const pqxx::result rows = txn.exec(
+        "SELECT id, period_start_ms, coalesce(closed_at_ms::text, '-'), "
+        "coalesce(statement_epoch || '/' || statement_seq, '-') FROM ai_budget_grants ORDER BY id");
     std::string text;
     for (std::size_t index = 0; index < rows.size(); ++index)
-      text += rows[index][0].as<std::string>() + " closed=" + rows[index][1].as<std::string>() + "\n";
+      text += rows[index][0].as<std::string>() + " from=" + rows[index][1].as<std::string>() + " closed=" +
+              rows[index][2].as<std::string>() + " statement=" + rows[index][3].as<std::string>() + "\n";
     return text;
   };
 
@@ -463,13 +466,15 @@ TEST(pg_ai_budget_a_refund_closes_a_grant_to_the_free_allowance_keeps_its_spend_
   CHECK_EQ(repository.markDispatched("paid").code, AiBudgetCode::Ok);
   CHECK_EQ(repository.settle("paid", 2'000'000'000).code, AiBudgetCode::Ok);
 
-  const auto closed = repository.refund("period-one", refundedAt);
+  const auto closed = repository.refund("period-one", refundedAt, AiBudgetStatement{"epoch", 2});
   CHECK_EQ(closed.code, AiBudgetCode::Ok);
   REQUIRE(closed.grant);
   CHECK_EQ(closed.grant->closedAtMs, std::optional<long long>{refundedAt});
-  CHECK_EQ(repository.refund("period-one", refundedAt).code, AiBudgetCode::Replay);
-  CHECK_EQ(repository.refund("no-such-period", refundedAt).code, AiBudgetCode::NotFound);
-  CHECK_EQ(grantText(), "period-one closed=" + std::to_string(refundedAt) + "\n");
+  CHECK_EQ(repository.refund("period-one", refundedAt, AiBudgetStatement{"epoch", 2}).code, AiBudgetCode::Replay);
+  CHECK_EQ(repository.refund("period-one", std::nullopt, AiBudgetStatement{"epoch", 1}).code, AiBudgetCode::Replay);
+  CHECK_EQ(repository.refund("no-such-period", refundedAt, std::nullopt).code, AiBudgetCode::NotFound);
+  CHECK_EQ(grantText(), "period-one from=" + std::to_string(start) + " closed=" + std::to_string(refundedAt) +
+                            " statement=epoch/2\n");
 
   // Up to the close the grant still funds; from it on the account is back on the free allowance, and a grant-only call
   // is refused. The grant's spend stays spent.
@@ -487,24 +492,51 @@ TEST(pg_ai_budget_a_refund_closes_a_grant_to_the_free_allowance_keeps_its_spend_
 
   // The reversal reopens the grant with its spend, and funding it again replays whatever its close.
   CHECK_EQ(repository.fund(grant, limits).code, AiBudgetCode::Replay);
-  const auto reopened = repository.refund("period-one", std::nullopt);
+  const auto reopened = repository.refund("period-one", std::nullopt, AiBudgetStatement{"epoch", 3});
   CHECK_EQ(reopened.code, AiBudgetCode::Ok);
-  CHECK_EQ(reopened.grant, std::optional<AiBudgetGrant>{grant});
+  AiBudgetGrant atThree = grant;
+  atThree.statement = AiBudgetStatement{"epoch", 3};
+  CHECK_EQ(reopened.grant, std::optional<AiBudgetGrant>{atThree});
   const auto back = repository.snapshot(principal, refundedAt, limits);
-  CHECK_EQ(back.grant, std::optional<AiBudgetGrant>{grant});
+  CHECK_EQ(back.grant, std::optional<AiBudgetGrant>{atThree});
   CHECK_EQ(back.subject.spentNanos, 2'000'000'000);
-  CHECK_EQ(grantText(), "period-one closed=-\n");
+  CHECK_EQ(grantText(), "period-one from=" + std::to_string(start) + " closed=- statement=epoch/3\n");
 
   // A refund after the period ended closes it at its end; while closed, a second subscription's overlapping period may
   // fund, and the reversal that would overlap it answers Conflict and leaves the grant closed.
-  CHECK_EQ(repository.refund("period-one", grant.period.endMs + 5).code, AiBudgetCode::Ok);
-  CHECK_EQ(repository.refund("period-one", start + 86'400'000LL).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.refund("period-one", grant.period.endMs + 5, AiBudgetStatement{"epoch", 4}).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.refund("period-one", start + 86'400'000LL, AiBudgetStatement{"epoch", 5}).code, AiBudgetCode::Ok);
   const AiBudgetGrant second{"period-two", "refunded", AiBudgetFundingSource::Subscription,
                              {start + 20 * 86'400'000LL, start + 50 * 86'400'000LL}, limits.paidPeriodNanos,
-                             "period-two"};
+                             "period-two", std::nullopt, AiBudgetStatement{"epoch", 6}};
   CHECK_EQ(repository.fund(second, limits).code, AiBudgetCode::Ok);
-  CHECK_EQ(repository.refund("period-one", std::nullopt).code, AiBudgetCode::Conflict);
-  CHECK_EQ(grantText(), "period-one closed=" + std::to_string(start + 86'400'000LL) + "\nperiod-two closed=-\n");
+  CHECK_EQ(repository.refund("period-one", std::nullopt, AiBudgetStatement{"epoch", 7}).code, AiBudgetCode::Conflict);
+  CHECK_EQ(grantText(), "period-one from=" + std::to_string(start) + " closed=" + std::to_string(start + 86'400'000LL) +
+                            " statement=epoch/5\nperiod-two from=" + std::to_string(second.period.startMs) +
+                            " closed=- statement=epoch/6\n");
+
+  // Refunded before they began, period-one and period-two hold nothing: a period of period-one's stretch funds whole,
+  // and a renewal dated inside that one funds from its end. Funded again with a later statement, it is brought to it.
+  CHECK_EQ(repository.refund("period-one", start - 1, AiBudgetStatement{"epoch", 8}).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.refund("period-two", second.period.startMs, AiBudgetStatement{"epoch", 9}).code, AiBudgetCode::Ok);
+  const AiBudgetGrant again{"period-three", "refunded", AiBudgetFundingSource::Subscription, grant.period,
+                            limits.paidPeriodNanos, "period-three", std::nullopt, AiBudgetStatement{"epoch", 10}};
+  CHECK_EQ(repository.fund(again, limits), (AiBudgetGrantResult{AiBudgetCode::Ok, again}));
+  AiBudgetGrant renewal{"period-four", "refunded", AiBudgetFundingSource::Subscription,
+                        {grant.period.endMs - 3'600'000, grant.period.endMs + 30 * 86'400'000LL},
+                        limits.paidPeriodNanos, "period-four", std::nullopt, AiBudgetStatement{"epoch", 11}};
+  const auto renewed = repository.fund(renewal, limits);
+  CHECK_EQ(renewed.code, AiBudgetCode::Ok);
+  REQUIRE(renewed.grant);
+  CHECK_EQ(renewed.grant->period, (AiBudgetPeriod{grant.period.endMs, renewal.period.endMs}));
+  renewal.statement = AiBudgetStatement{"epoch", 12};
+  CHECK_EQ(repository.fund(renewal, limits).code, AiBudgetCode::Replay);
+  CHECK_EQ(grantText(), "period-four from=" + std::to_string(grant.period.endMs) + " closed=- statement=epoch/12\n"
+                        "period-one from=" + std::to_string(start) + " closed=" + std::to_string(start - 1) +
+                            " statement=epoch/8\n"
+                        "period-three from=" + std::to_string(start) + " closed=- statement=epoch/10\n"
+                        "period-two from=" + std::to_string(second.period.startMs) + " closed=" +
+                            std::to_string(second.period.startMs) + " statement=epoch/9\n");
 }
 
 TEST(pg_ai_budget_subscription_priority_preserves_owner_balance_and_funds_monthly_fallback) {

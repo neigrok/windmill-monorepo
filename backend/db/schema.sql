@@ -520,9 +520,11 @@ create table if not exists ai_budget_grants (
   period_start_ms    bigint not null,
   period_end_ms      bigint not null check (period_end_ms > period_start_ms),
   amount_nanos       bigint not null check (amount_nanos > 0),
-  unique (source, funding_reference),
-  unique (account_id, source, period_start_ms, period_end_ms)
+  unique (source, funding_reference)
 );
+-- One account and source never funds an instant twice: the overlap rule decides it under the ledger's lock, holding each
+-- grant up to its close, so a period of the same stretch as a grant refunded before it began is funded.
+alter table ai_budget_grants drop constraint if exists ai_budget_grants_account_id_source_period_start_ms_period_e_key;
 create index if not exists ai_budget_grants_account_period
   on ai_budget_grants (account_id, period_start_ms, period_end_ms);
 -- A store's refund of the period a subscription grant funds (docs/foundation/subscriptions.md §6.3): the grant funds
@@ -533,6 +535,18 @@ do $$ begin
       where conrelid = 'ai_budget_grants'::regclass and conname = 'ai_budget_grant_closed') then
     alter table ai_budget_grants add constraint ai_budget_grant_closed
       check (closed_at_ms is null or (source = 'subscription' and closed_at_ms >= 0 and closed_at_ms <= period_end_ms));
+  end if;
+end $$;
+-- The newest statement of its period a subscription grant was brought to: the feed's epoch and seq. A statement no later
+-- in the same epoch changes nothing, so a rebuild never moves a grant back to an older one.
+alter table ai_budget_grants add column if not exists statement_epoch text;
+alter table ai_budget_grants add column if not exists statement_seq bigint;
+do $$ begin
+  if not exists (select 1 from pg_constraint
+      where conrelid = 'ai_budget_grants'::regclass and conname = 'ai_budget_grant_statement') then
+    alter table ai_budget_grants add constraint ai_budget_grant_statement
+      check ((statement_epoch is null) = (statement_seq is null)
+             and (statement_seq is null or (source = 'subscription' and statement_seq > 0)));
   end if;
 end $$;
 

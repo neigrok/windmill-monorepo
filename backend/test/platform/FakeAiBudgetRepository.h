@@ -87,13 +87,14 @@ struct FakeAiBudgetRepository : AiBudgetRepository {
   AiBudgetGrantResult fund(const AiBudgetGrant& grant, const AiBudgetLimits&) override {
     if (failFund) throw std::runtime_error("private billing content");
     auto funded = fundAiBudgetGrant(grant, held());
-    if (funded.code == AiBudgetCode::Ok) grants.emplace(grant.id, grant);
+    if (funded.code == AiBudgetCode::Ok || funded.code == AiBudgetCode::Replay) grants.insert_or_assign(funded.grant->id, *funded.grant);
     return funded;
   }
-  AiBudgetGrantResult refund(const std::string& reference, std::optional<long long> refundedAtMs) override {
+  AiBudgetGrantResult refund(const std::string& reference, std::optional<long long> refundedAtMs,
+                             const std::optional<AiBudgetStatement>& statement) override {
     for (auto& [id, grant] : grants) {
       if (grant.source != AiBudgetFundingSource::Subscription || grant.fundingReference != reference) continue;
-      const auto code = refundAiBudgetGrant(grant, refundedAtMs, held());
+      const auto code = refundAiBudgetGrant(grant, refundedAtMs, statement, held());
       return {code, grant};
     }
     return {AiBudgetCode::NotFound};

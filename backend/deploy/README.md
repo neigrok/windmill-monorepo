@@ -596,8 +596,9 @@ start that the follower is off; with one alone it refuses to start, naming the o
 period the feed records funds that account's AI allowance for the period, and a refund closes it (§6.3), so
 the follower needs the AI ledger: with both set and `AI_ALLOWANCES_ENABLED` off the server refuses to start,
 since a cursor moved past a period never funds it. A paid period left unfunded, because another account
-holds it or it overlaps a grant the account holds, writes a `subscription.fund` (or `subscription.refund`)
-`conflict` line and files a Sentry warning of that name; the page still applies.
+holds it or nothing of it is left beside the grants the account holds, writes a `subscription.fund` (or,
+for a reopen, `subscription.refund`) `conflict` line and files a Sentry warning of that name; the page
+still applies.
 
 **A page the backend cannot apply stops the copy for every account, by design.** A page applies whole
 or not at all, and the follower skips no entry, since a skipped entry would leave someone's paid state

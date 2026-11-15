@@ -103,7 +103,7 @@ struct BudgetRepository : AiBudgetRepository {
     markCurrentWrite();
     return {AiBudgetCode::Ok, grant};
   }
-  AiBudgetGrantResult refund(const std::string&, std::optional<long long>) override {
+  AiBudgetGrantResult refund(const std::string&, std::optional<long long>, const std::optional<AiBudgetStatement>&) override {
     ++calls;
     return {AiBudgetCode::NotFound};
   }

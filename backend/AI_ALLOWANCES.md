@@ -77,11 +77,16 @@ payment and an explicit billing period. Customer, subscription, price and accoun
 agree, and missing account mirrors receive a retryable refusal.
 
 Each grant carries its source, account, funded period, amount and funding reference. Funding again
-a reference already funded for that account replays, whatever the grant's close; under another
-account, or over an instant another grant of the account and source holds, it is refused as a
-conflict. A store refund the feed reports closes its grant at `min(end, refundedAt)`: from then it
-funds nothing and holds no instant against the overlap rule, spent capacity is not recovered, and
-the refund's reversal reopens it unless that would overlap another grant. An owner
+a reference already funded for that account replays, whatever the grant's close or amount, and the
+grant keeps what it was funded with; under another account it is refused as a conflict. Grants of
+one account and source never hold an instant in common: a period starting inside a grant the account
+holds is funded from that grant's close or end to its own end, and one left empty, or overlapping
+another grant, is refused as a conflict. A store refund the feed reports closes its grant at
+`min(end, refundedAt)`: from then it funds nothing and holds no instant against the overlap rule,
+spent capacity is not recovered, and the refund's reversal reopens it unless that would overlap
+another grant. A feed-funded grant keeps the epoch and seq of the newest statement of its period it
+was brought to, and a refund or reversal no later than that in the same epoch changes nothing
+([subscriptions.md](../docs/foundation/subscriptions.md) §6.3). An owner
 accessing the allowance receives a $7 calendar-month grant when no subscription grant is current.
 An active subscription grant takes precedence over an owner grant; their remaining amounts are
 never combined. An expired subscription period does not prevent the owner's calendar fallback.
@@ -194,9 +199,9 @@ its dispatched hold until it lapses.
 
 Talk requires Windmill One, checked before any audio is read, and a take draws only on a funded
 grant, never on the free pools: an account whose allowance is not Windmill One's grant, as a
-subscription with no grant in force, is refused `funding_required` before any audio is read, with
-the allowance it does draw on, and the take's admission refuses any call without a grant in force
-the same way. The route answers the allowance's own codes: 429 `subject_exhausted` for
+subscription with no grant in force, is refused `funding_required` before any audio is read,
+whatever that allowance holds, with the allowance it does draw on, and the take's admission refuses
+any call without a grant in force the same way. The route answers the allowance's own codes: 429 `subject_exhausted` for
 a spent or too-small allowance, 503 for `funding_required`, `concurrency_exhausted`,
 `debt_outstanding` and the other ledger codes, each with the allowance object Coach's refusals
 carry, and 503 `ai_accounting_unavailable` when the ledger cannot be asked. A transcriber

@@ -26,11 +26,12 @@ struct FollowerTiming {
   int pageLimit = 500;
 };
 
-// The consumers after the copy, run per entry in this order: those writing through the page's transaction, then those
-// writing in short transactions of their own (§6.1). A later node adds its consumer here, and the follower is unchanged.
+// The consumers after the copy (§6.1): those writing through the page's transaction, each entry through them in order,
+// then those writing in short transactions of their own, each handed the page. A later node adds its consumer here, and
+// the follower is unchanged.
 struct FurtherConsumers {
   std::vector<std::reference_wrapper<FeedEntryConsumer>> inPage;
-  std::vector<std::reference_wrapper<FeedEntrySideConsumer>> beside;
+  std::vector<std::reference_wrapper<FeedPageSideConsumer>> beside;
 };
 
 // What one read of the feed came to.
@@ -67,8 +68,9 @@ public:
   bool reach(Seq seq, std::chrono::milliseconds wait);
 
 private:
-  // The page's one transaction toward `to`: every entry through every consumer in order, then the commit. Nothing
-  // applies when another follower moved the cursor since `from` was read.
+  // The page's one transaction toward `to`: every entry through the page's consumers in order, the page through the
+  // side consumers, then the commit. Nothing applies when another follower moved the cursor since `from` was read. A
+  // rebuild is one such page, holding the whole ledger.
   FollowStep apply(const FeedCursor& from, const std::vector<FeedEntry>& entries, const FeedCursor& to, bool rebuilding,
                    WriteObservation& observation);
   FollowStep rebuild(const FeedCursor& from, const std::string& cause, WriteObservation& observation);
@@ -82,7 +84,7 @@ private:
   SubscriptionFeed& feed_;
   EntitlementCopy& copy_;
   std::vector<std::reference_wrapper<FeedEntryConsumer>> inPage_;
-  std::vector<std::reference_wrapper<FeedEntrySideConsumer>> beside_;
+  std::vector<std::reference_wrapper<FeedPageSideConsumer>> beside_;
   const FollowerTiming timing_;
   const Now now_;
   FailureReporter& reporter_;

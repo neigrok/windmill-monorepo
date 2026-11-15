@@ -77,6 +77,16 @@ struct AiBudgetBalance {
   long long remainingNanos(long long limitNanos) const;
 };
 
+// Where a statement of a grant's period stands in the feed that carried it: the epoch of the ledger it was read from and
+// its seq. Within one epoch a later seq is a later statement; across epochs no order holds, and the newer ledger's wins.
+struct AiBudgetStatement {
+  std::string epoch;
+  long long seq = 0;
+  bool valid() const;
+  bool after(const AiBudgetStatement& reflected) const;
+  bool operator==(const AiBudgetStatement&) const = default;
+};
+
 struct AiBudgetGrant {
   std::string id;
   std::string accountId;
@@ -85,6 +95,7 @@ struct AiBudgetGrant {
   long long amountNanos = 0;
   std::string fundingReference;
   std::optional<long long> closedAtMs;  // a store's refund: the subscription grant funds nothing from then on
+  std::optional<AiBudgetStatement> statement;  // the newest statement of its period the grant was brought to
   bool valid() const;
   bool inForceAt(long long atMs) const;
   // Both hold an instant, each holding its period up to its close: one account and source never funds an instant twice.
@@ -157,6 +168,7 @@ struct AiBudgetResult {
 struct AiBudgetGrantResult {
   AiBudgetCode code = AiBudgetCode::Invalid;
   std::optional<AiBudgetGrant> grant;
+  bool operator==(const AiBudgetGrantResult&) const = default;
 };
 
 struct AiBudgetView {
@@ -206,12 +218,15 @@ AiBudgetCode transitionAiBudget(AiBudgetReservation& reservation, AiBudgetState 
 // left. Windmill absorbs whatever the vendor billed for it.
 AiBudgetCode releaseLapsedAiBudget(AiBudgetReservation& reservation, long long atMs);
 AiBudgetCode reconcileAiBudgetOverrun(AiBudgetReservation& reservation);
-// `grant` beside `held`, the grants sharing its id, its source and reference, or its account and source: Replay with the
-// stored grant when one is this funding, whatever its close; Conflict when one is another or holds an instant it would.
+// `grant` beside `held`, the grants sharing its id, its source and reference, or its account and source. Replay, with the
+// stored grant brought to a newer statement, when one is this funding of this stretch for this account, whatever its
+// close or amount; Conflict when one is any other. A period starting inside a grant it holds is funded from that grant's
+// close or end; one left empty, or holding an instant another grant holds, is Conflict.
 AiBudgetGrantResult fundAiBudgetGrant(const AiBudgetGrant& grant, const std::vector<AiBudgetGrant>& held);
 // A refund closes a subscription grant at min(end, refundedAt) and its reversal, none, reopens it; spent capacity stays
-// spent. A change that holds an instant more must overlap none of `held`, or answers Conflict and changes nothing.
+// spent. A statement no later than the one the grant was brought to is Replay and changes nothing. A change that holds
+// an instant more must overlap none of `held`, or answers Conflict and changes nothing.
 AiBudgetCode refundAiBudgetGrant(AiBudgetGrant& grant, std::optional<long long> refundedAtMs,
-                                const std::vector<AiBudgetGrant>& held);
+                                const std::optional<AiBudgetStatement>& statement, const std::vector<AiBudgetGrant>& held);
 
 }

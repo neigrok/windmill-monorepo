@@ -417,7 +417,7 @@ TEST(pg_subscription_follow_reach_returns_once_the_copy_holds_the_seq_and_gives_
       "c806aea4-76c0-4868-acbc-3aa7db2b8dd0 seq=13 production=- sandbox=1796742600000\n"));
 }
 
-TEST(pg_subscription_follow_side_consumers_write_apart_from_the_page_before_it_commits_and_know_a_rebuild) {
+TEST(pg_subscription_follow_side_consumers_take_the_page_after_its_own_consumers_before_it_commits_and_know_a_rebuild) {
   if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
   freshCopy();
   FakeFeed feed;
@@ -430,34 +430,36 @@ TEST(pg_subscription_follow_side_consumers_write_apart_from_the_page_before_it_c
     explicit Records(std::vector<std::string>& order) : order(order) {}
     void consume(PageTxn&, const FeedEntry& entry) override { order.push_back("page:" + std::to_string(entry.seq)); }
   } records{order};
-  // As funding does: its own short transaction per entry, which sees the copy as last committed, never the page's
-  // own writes; it fails once at seq 7.
-  struct Funding : FeedEntrySideConsumer {
+  // As funding does: the page's entries whole, each in a short transaction of its own, which sees the copy as last
+  // committed, never the page's own writes; it fails once at seq 7.
+  struct Funding : FeedPageSideConsumer {
     std::vector<std::string>& order;
     std::vector<std::string> seen;
     bool failed = false;
     explicit Funding(std::vector<std::string>& order) : order(order) {}
-    void consume(const PageTxn& page, const FeedEntry& entry) override {
-      order.push_back("side:" + std::to_string(entry.seq));
-      std::string row = "-";
-      if (entry.accountId) {
-        PgLease lease{*pgTestPool()};
-        pqxx::read_transaction own{*lease};
-        const pqxx::result rows = own.exec("SELECT seq FROM account_entitlements WHERE account_id = $1::uuid",
-                                           pqxx::params{entry.accountId->str()});
-        row = rows.empty() ? "none" : rows[0][0].as<std::string>();
+    void consume(const PageTxn& page, const std::vector<FeedEntry>& entries) override {
+      for (const FeedEntry& entry : entries) {
+        order.push_back("side:" + std::to_string(entry.seq));
+        std::string row = "-";
+        if (entry.accountId) {
+          PgLease lease{*pgTestPool()};
+          pqxx::read_transaction own{*lease};
+          const pqxx::result rows = own.exec("SELECT seq FROM account_entitlements WHERE account_id = $1::uuid",
+                                             pqxx::params{entry.accountId->str()});
+          row = rows.empty() ? "none" : rows[0][0].as<std::string>();
+        }
+        seen.push_back(std::to_string(entry.seq) + " " + row + " " + (page.rebuilding() ? "rebuild " : "page ") +
+                       page.target().epoch.substr(0, 8) + "/" + std::to_string(page.target().seq));
+        if (entry.seq == 7 && !std::exchange(failed, true)) throw std::runtime_error("PRIVATE_FUNDING_DETAIL");
       }
-      seen.push_back(std::to_string(entry.seq) + " " + row + " " + (page.rebuilding() ? "rebuild " : "page ") +
-                     page.target().epoch.substr(0, 8) + "/" + std::to_string(page.target().seq));
-      if (entry.seq == 7 && !std::exchange(failed, true)) throw std::runtime_error("PRIVATE_FUNDING_DETAIL");
     }
   } funding{order};
   Reports reports;
   FeedFollower follower{feed, copy, FurtherConsumers{.inPage = {records}, .beside = {funding}}, reports};
 
   CHECK_EQ(nameOf(follower.follow()), std::string("applied"));
-  CHECK_EQ(order, (std::vector<std::string>{"page:1", "side:1", "page:2", "side:2", "page:3", "side:3", "page:4", "side:4",
-                                            "page:5", "side:5", "page:6", "side:6"}));
+  CHECK_EQ(order, (std::vector<std::string>{"page:1", "page:2", "page:3", "page:4", "page:5", "page:6",
+                                            "side:1", "side:2", "side:3", "side:4", "side:5", "side:6"}));
   CHECK_EQ(nameOf(follower.follow()), std::string("failed"));
   CHECK_EQ(copyAsText(), std::string(
       "cursor c09a3ab3-2732-4415-ba88-825ff868cf13/6\n"

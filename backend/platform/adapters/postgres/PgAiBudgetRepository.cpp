@@ -34,8 +34,8 @@ std::string subjectKind(AiBudgetSubjectKind kind) {
 
 // Every column a grant is read back from, in the order grantFrom reads them.
 constexpr const char* kSelectGrants =
-    "SELECT id, account_id, source, period_start_ms, period_end_ms, amount_nanos, funding_reference, closed_at_ms "
-    "FROM ai_budget_grants ";
+    "SELECT id, account_id, source, period_start_ms, period_end_ms, amount_nanos, funding_reference, closed_at_ms, "
+    "statement_epoch, statement_seq FROM ai_budget_grants ";
 
 template<class Row>
 AiBudgetGrant grantFrom(const Row& row) {
@@ -49,6 +49,7 @@ AiBudgetGrant grantFrom(const Row& row) {
   grant.amountNanos = row[5].template as<long long>();
   grant.fundingReference = row[6].template as<std::string>();
   if (!row[7].is_null()) grant.closedAtMs = row[7].template as<long long>();
+  if (!row[8].is_null()) grant.statement = AiBudgetStatement{row[8].template as<std::string>(), row[9].template as<long long>()};
   if (!grant.valid()) throw std::runtime_error("Invalid stored AI grant");
   return grant;
 }
@@ -67,13 +68,29 @@ void ensureBudget(pqxx::work& txn, const Budget& budget) {
                         budget.period.endMs, budget.limit});
 }
 
+std::optional<std::string> statementEpoch(const AiBudgetGrant& grant) {
+  if (!grant.statement) return std::nullopt;
+  return grant.statement->epoch;
+}
+
+std::optional<long long> statementSeq(const AiBudgetGrant& grant) {
+  if (!grant.statement) return std::nullopt;
+  return grant.statement->seq;
+}
+
 void insertGrant(pqxx::work& txn, const AiBudgetGrant& grant) {
-  txn.exec("INSERT INTO ai_budget_grants "
-           "(id, account_id, source, period_start_ms, period_end_ms, amount_nanos, funding_reference) "
-           "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+  txn.exec("INSERT INTO ai_budget_grants (id, account_id, source, period_start_ms, period_end_ms, amount_nanos, "
+           "funding_reference, statement_epoch, statement_seq) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
            pqxx::params{grant.id, grant.accountId, std::string(aiBudgetFundingSourceName(grant.source)),
-                        grant.period.startMs, grant.period.endMs, grant.amountNanos, grant.fundingReference});
+                        grant.period.startMs, grant.period.endMs, grant.amountNanos, grant.fundingReference,
+                        statementEpoch(grant), statementSeq(grant)});
   ensureBudget(txn, {AiBudgetScope::FundedPeriod, grant.id, grant.period, grant.amountNanos});
+}
+
+// What a refund or a newer statement changes of a stored grant: its close and the statement it was brought to.
+void saveGrantStanding(pqxx::work& txn, const AiBudgetGrant& grant) {
+  txn.exec("UPDATE ai_budget_grants SET closed_at_ms = $2, statement_epoch = $3, statement_seq = $4 WHERE id = $1",
+           pqxx::params{grant.id, grant.closedAtMs, statementEpoch(grant), statementSeq(grant)});
 }
 
 AiBudgetState stateNamed(const std::string& name) {
@@ -468,16 +485,19 @@ AiBudgetGrantResult PgAiBudgetRepository::fund(const AiBudgetGrant& grant, const
       std::string(kSelectGrants) + "WHERE id = $1 OR (source = $2 AND (funding_reference = $3 OR account_id = $4))",
       pqxx::params{grant.id, std::string(aiBudgetFundingSourceName(grant.source)), grant.fundingReference,
                    grant.accountId}));
-  auto funded = fundAiBudgetGrant(grant, held);
-  if (funded.code != AiBudgetCode::Ok) return funded;
-  insertGrant(txn, grant);
+  const auto funded = fundAiBudgetGrant(grant, held);
+  // A replay changes nothing stored, unless its grant was brought to a newer statement.
+  const bool asStored = funded.grant && std::find(held.begin(), held.end(), *funded.grant) != held.end();
+  if (asStored || (funded.code != AiBudgetCode::Ok && funded.code != AiBudgetCode::Replay)) return funded;
+  if (funded.code == AiBudgetCode::Ok) insertGrant(txn, *funded.grant);
+  else saveGrantStanding(txn, *funded.grant);
   txn.commit();
   markCurrentWrite();
   return funded;
 }
 
-AiBudgetGrantResult PgAiBudgetRepository::refund(const std::string& fundingReference,
-                                                 std::optional<long long> refundedAtMs) {
+AiBudgetGrantResult PgAiBudgetRepository::refund(const std::string& fundingReference, std::optional<long long> refundedAtMs,
+                                                 const std::optional<AiBudgetStatement>& statement) {
   if (!validAiBudgetId(fundingReference)) return {AiBudgetCode::Invalid};
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
@@ -489,9 +509,9 @@ AiBudgetGrantResult PgAiBudgetRepository::refund(const std::string& fundingRefer
   auto grant = grantFrom(named[0]);
   const auto held = grantsFrom(txn.exec(std::string(kSelectGrants) + "WHERE account_id = $1 AND source = 'subscription'",
                                         pqxx::params{grant.accountId}));
-  const auto code = refundAiBudgetGrant(grant, refundedAtMs, held);
+  const auto code = refundAiBudgetGrant(grant, refundedAtMs, statement, held);
   if (code != AiBudgetCode::Ok) return {code, std::move(grant)};
-  txn.exec("UPDATE ai_budget_grants SET closed_at_ms = $2 WHERE id = $1", pqxx::params{grant.id, grant.closedAtMs});
+  saveGrantStanding(txn, grant);
   txn.commit();
   markCurrentWrite();
   return {AiBudgetCode::Ok, std::move(grant)};

@@ -282,31 +282,31 @@ TEST(ai_budget_a_subscription_grant_is_funded_once_and_a_refund_closes_it_until_
   const AiBudgetGrant july{"july", "account", AiBudgetFundingSource::Subscription, {2'000, 3'000},
                            limits.paidPeriodNanos, "july"};
   CHECK_EQ(fundAiBudgetGrant(june, {}).code, AiBudgetCode::Ok);
-  CHECK_EQ(fundAiBudgetGrant(july, {june}).code, AiBudgetCode::Ok);
+  CHECK_EQ(fundAiBudgetGrant(july, {june}), (AiBudgetGrantResult{AiBudgetCode::Ok, july}));
 
-  // Funded again, it replays with the stored grant, whatever its close; under another account or amount it conflicts.
+  // Funded again for its account, it replays with the stored grant, whatever its close or amount; under another
+  // account it conflicts.
   AiBudgetGrant stored = june;
   stored.closedAtMs = 1'500;
-  const auto replay = fundAiBudgetGrant(june, {stored, july});
-  CHECK_EQ(replay.code, AiBudgetCode::Replay);
-  CHECK_EQ(replay.grant, std::optional<AiBudgetGrant>{stored});
-  AiBudgetGrant elsewhere = june;
-  elsewhere.accountId = "another";
-  CHECK_EQ(fundAiBudgetGrant(elsewhere, {june}).code, AiBudgetCode::Conflict);
+  CHECK_EQ(fundAiBudgetGrant(june, {stored, july}), (AiBudgetGrantResult{AiBudgetCode::Replay, stored}));
   AiBudgetGrant larger = june;
   larger.amountNanos += 1;
-  CHECK_EQ(fundAiBudgetGrant(larger, {june}).code, AiBudgetCode::Conflict);
+  CHECK_EQ(fundAiBudgetGrant(larger, {june}), (AiBudgetGrantResult{AiBudgetCode::Replay, june}));
+  AiBudgetGrant elsewhere = june;
+  elsewhere.accountId = "another";
+  CHECK_EQ(fundAiBudgetGrant(elsewhere, {june}), (AiBudgetGrantResult{AiBudgetCode::Conflict, june}));
+  AiBudgetGrant restretched = june;
+  restretched.period.endMs += 1;
+  CHECK_EQ(fundAiBudgetGrant(restretched, {june}), (AiBudgetGrantResult{AiBudgetCode::Conflict, june}));
+  restretched = june;
+  restretched.period.startMs += 1;
+  CHECK_EQ(fundAiBudgetGrant(restretched, {june}), (AiBudgetGrantResult{AiBudgetCode::Conflict, june}));
   AiBudgetGrant opened = june;
   opened.closedAtMs = 1'500;
   CHECK_EQ(fundAiBudgetGrant(opened, {}).code, AiBudgetCode::Invalid);
 
-  // An overlapping period of the same account and source conflicts, until a close leaves it the instants it needs.
-  const AiBudgetGrant second{"second", "account", AiBudgetFundingSource::Subscription, {1'500, 2'500},
-                             limits.paidPeriodNanos, "second"};
-  CHECK_EQ(fundAiBudgetGrant(second, {june}).code, AiBudgetCode::Conflict);
-  CHECK_EQ(fundAiBudgetGrant(second, {stored}).code, AiBudgetCode::Ok);
-  AiBudgetGrant owner = second;
-  owner.source = AiBudgetFundingSource::Owner;
+  // Overlap is within one account and source.
+  AiBudgetGrant owner{"second", "account", AiBudgetFundingSource::Owner, {1'500, 2'500}, limits.paidPeriodNanos, "second"};
   CHECK_FALSE(owner.overlaps(june));
   owner.source = AiBudgetFundingSource::Subscription;
   owner.accountId = "another";
@@ -314,42 +314,127 @@ TEST(ai_budget_a_subscription_grant_is_funded_once_and_a_refund_closes_it_until_
 
   // A refund closes at min(end, refundedAt), restated it moves, and its reversal reopens.
   AiBudgetGrant grant = june;
-  CHECK_EQ(refundAiBudgetGrant(grant, 1'400, {grant}), AiBudgetCode::Ok);
+  CHECK_EQ(refundAiBudgetGrant(grant, 1'400, std::nullopt, {grant}), AiBudgetCode::Ok);
   CHECK_EQ(grant.closedAtMs, std::optional<long long>{1'400});
   CHECK(grant.inForceAt(1'399));
   CHECK_FALSE(grant.inForceAt(1'400));
-  CHECK_EQ(refundAiBudgetGrant(grant, 1'400, {grant}), AiBudgetCode::Replay);
-  CHECK_EQ(refundAiBudgetGrant(grant, 1'200, {grant}), AiBudgetCode::Ok);
+  CHECK_EQ(refundAiBudgetGrant(grant, 1'400, std::nullopt, {grant}), AiBudgetCode::Replay);
+  CHECK_EQ(refundAiBudgetGrant(grant, 1'200, std::nullopt, {grant}), AiBudgetCode::Ok);
   CHECK_EQ(grant.closedAtMs, std::optional<long long>{1'200});
-  CHECK_EQ(refundAiBudgetGrant(grant, 9'000, {grant}), AiBudgetCode::Ok);
+  CHECK_EQ(refundAiBudgetGrant(grant, 9'000, std::nullopt, {grant}), AiBudgetCode::Ok);
   CHECK_EQ(grant.closedAtMs, std::optional<long long>{2'000});
-  CHECK_EQ(refundAiBudgetGrant(grant, std::nullopt, {grant}), AiBudgetCode::Ok);
+  CHECK_EQ(refundAiBudgetGrant(grant, std::nullopt, std::nullopt, {grant}), AiBudgetCode::Ok);
   CHECK_EQ(grant, june);
-  CHECK_EQ(refundAiBudgetGrant(grant, std::nullopt, {grant}), AiBudgetCode::Replay);
+  CHECK_EQ(refundAiBudgetGrant(grant, std::nullopt, std::nullopt, {grant}), AiBudgetCode::Replay);
 
   // A change that would hold an instant another grant of the account holds answers Conflict and leaves it closed.
+  const AiBudgetGrant second{"second", "account", AiBudgetFundingSource::Subscription, {1'500, 2'500},
+                             limits.paidPeriodNanos, "second"};
   grant.closedAtMs = 1'500;
-  CHECK_EQ(refundAiBudgetGrant(grant, std::nullopt, {grant, second}), AiBudgetCode::Conflict);
-  CHECK_EQ(refundAiBudgetGrant(grant, 1'800, {grant, second}), AiBudgetCode::Conflict);
+  CHECK_EQ(refundAiBudgetGrant(grant, std::nullopt, std::nullopt, {grant, second}), AiBudgetCode::Conflict);
+  CHECK_EQ(refundAiBudgetGrant(grant, 1'800, std::nullopt, {grant, second}), AiBudgetCode::Conflict);
   CHECK_EQ(grant.closedAtMs, std::optional<long long>{1'500});
-  CHECK_EQ(refundAiBudgetGrant(grant, 1'100, {grant, second}), AiBudgetCode::Ok);
+  CHECK_EQ(refundAiBudgetGrant(grant, 1'100, std::nullopt, {grant, second}), AiBudgetCode::Ok);
   CHECK_EQ(grant.closedAtMs, std::optional<long long>{1'100});
 
   // A grant closed before it began holds nothing; owner grants are never refunded, and instants must be ones.
-  CHECK_EQ(refundAiBudgetGrant(grant, 500, {grant}), AiBudgetCode::Ok);
+  CHECK_EQ(refundAiBudgetGrant(grant, 500, std::nullopt, {grant}), AiBudgetCode::Ok);
   CHECK_FALSE(grant.inForceAt(1'000));
   AiBudgetGrant empty = grant;
   empty.id = "empty";
   CHECK_FALSE(empty.overlaps(june));
   CHECK_FALSE(june.overlaps(empty));
-  CHECK_EQ(refundAiBudgetGrant(grant, -1, {grant}), AiBudgetCode::Invalid);
+  CHECK_EQ(refundAiBudgetGrant(grant, -1, std::nullopt, {grant}), AiBudgetCode::Invalid);
   AiBudgetGrant calendar{"owner", "account", AiBudgetFundingSource::Owner, *AiBudgetPeriod::at(0),
                          limits.paidPeriodNanos, "owner:owner"};
-  CHECK_EQ(refundAiBudgetGrant(calendar, 1'000, {calendar}), AiBudgetCode::Invalid);
+  CHECK_EQ(refundAiBudgetGrant(calendar, 1'000, std::nullopt, {calendar}), AiBudgetCode::Invalid);
   calendar.closedAtMs = 1'000;
   CHECK_FALSE(calendar.valid());
   grant.closedAtMs = 2'001;
   CHECK_FALSE(grant.valid());
+}
+
+TEST(ai_budget_a_period_of_a_grants_stretch_funds_once_that_grant_holds_none_of_it) {
+  const AiBudgetLimits limits;
+  const AiBudgetGrant first{"first", "account", AiBudgetFundingSource::Subscription, {1'000, 2'000},
+                            limits.paidPeriodNanos, "first"};
+  const AiBudgetGrant again{"again", "account", AiBudgetFundingSource::Subscription, {1'000, 2'000},
+                            limits.paidPeriodNanos, "again"};
+  CHECK_EQ(fundAiBudgetGrant(again, {first}).code, AiBudgetCode::Conflict);
+  for (const long long refundedAt : {1'000LL, 400LL}) {
+    AiBudgetGrant refunded = first;
+    refunded.closedAtMs = refundedAt;
+    CHECK_EQ(fundAiBudgetGrant(again, {refunded}), (AiBudgetGrantResult{AiBudgetCode::Ok, again}));
+  }
+  AiBudgetGrant partly = first;
+  partly.closedAtMs = 1'300;
+  AiBudgetGrant rest = again;
+  rest.period.startMs = 1'300;
+  CHECK_EQ(fundAiBudgetGrant(again, {partly}), (AiBudgetGrantResult{AiBudgetCode::Ok, rest}));
+}
+
+TEST(ai_budget_a_renewal_dated_before_its_period_began_is_funded_from_the_end_of_the_grant_it_starts_in) {
+  const AiBudgetLimits limits;
+  const auto grantOf = [&](const char* id, long long startMs, long long endMs) {
+    return AiBudgetGrant{id, "account", AiBudgetFundingSource::Subscription, {startMs, endMs}, limits.paidPeriodNanos, id};
+  };
+  const AiBudgetGrant held = grantOf("held", 1'000, 2'000);
+  CHECK_EQ(fundAiBudgetGrant(grantOf("early", 1'900, 3'000), {held}),
+           (AiBudgetGrantResult{AiBudgetCode::Ok, grantOf("early", 2'000, 3'000)}));
+  AiBudgetGrant refunded = held;
+  refunded.closedAtMs = 1'500;
+  CHECK_EQ(fundAiBudgetGrant(grantOf("early", 1'400, 2'600), {refunded}),
+           (AiBudgetGrantResult{AiBudgetCode::Ok, grantOf("early", 1'500, 2'600)}));
+
+  // Nothing left of it, what is left still overlapping another grant, or a start before the grant: Conflict.
+  CHECK_EQ(fundAiBudgetGrant(grantOf("inside", 1'100, 1'900), {held}).code, AiBudgetCode::Conflict);
+  CHECK_EQ(fundAiBudgetGrant(grantOf("early", 1'900, 3'000), {held, grantOf("later", 2'500, 2'600)}).code,
+           AiBudgetCode::Conflict);
+  CHECK_EQ(fundAiBudgetGrant(grantOf("before", 900, 1'500), {held}).code, AiBudgetCode::Conflict);
+
+  // Funded again, it replays as stored; the grant it started in reopens only over instants nobody holds.
+  const AiBudgetGrant stored = grantOf("early", 1'500, 2'600);
+  CHECK_EQ(fundAiBudgetGrant(grantOf("early", 1'400, 2'600), {refunded, stored}),
+           (AiBudgetGrantResult{AiBudgetCode::Replay, stored}));
+  CHECK_EQ(refundAiBudgetGrant(refunded, std::nullopt, std::nullopt, {refunded, stored}), AiBudgetCode::Conflict);
+  CHECK_EQ(refunded.closedAtMs, std::optional<long long>{1'500});
+}
+
+TEST(ai_budget_a_grant_is_never_taken_back_to_an_older_statement_of_its_epoch) {
+  const AiBudgetLimits limits;
+  AiBudgetGrant grant{"period", "account", AiBudgetFundingSource::Subscription, {1'000, 2'000},
+                      limits.paidPeriodNanos, "period", 1'400, AiBudgetStatement{"epoch-one", 5}};
+  const AiBudgetGrant brought = grant;
+  for (const long long seq : {4LL, 5LL})
+    CHECK_EQ(refundAiBudgetGrant(grant, std::nullopt, AiBudgetStatement{"epoch-one", seq}, {grant}),
+             AiBudgetCode::Replay);
+  CHECK_EQ(grant, brought);
+  CHECK_EQ(refundAiBudgetGrant(grant, std::nullopt, AiBudgetStatement{"epoch-one", 6}, {grant}), AiBudgetCode::Ok);
+  CHECK_EQ(grant.closedAtMs, std::optional<long long>{});
+  CHECK_EQ(grant.statement, (std::optional<AiBudgetStatement>{AiBudgetStatement{"epoch-one", 6}}));
+
+  // A restored ledger's epoch holds no order with the old one: its statement is the grant's next one.
+  CHECK_EQ(refundAiBudgetGrant(grant, 1'400, AiBudgetStatement{"epoch-two", 3}, {grant}), AiBudgetCode::Ok);
+  CHECK_EQ(grant.closedAtMs, std::optional<long long>{1'400});
+  CHECK_EQ(refundAiBudgetGrant(grant, 1'400, AiBudgetStatement{"epoch-two", 3}, {grant}), AiBudgetCode::Replay);
+  // A later statement that leaves the close as it is still brings the grant to it.
+  CHECK_EQ(refundAiBudgetGrant(grant, 1'400, AiBudgetStatement{"epoch-two", 9}, {grant}), AiBudgetCode::Ok);
+  CHECK_EQ(grant.statement, (std::optional<AiBudgetStatement>{AiBudgetStatement{"epoch-two", 9}}));
+  CHECK_EQ(refundAiBudgetGrant(grant, 1'400, AiBudgetStatement{"epoch-two", 0}, {grant}), AiBudgetCode::Invalid);
+
+  // Funding it again replays, bringing it to a later statement and never back to an earlier one; its close stays.
+  AiBudgetGrant recorded = grant;
+  recorded.closedAtMs.reset();
+  recorded.statement = AiBudgetStatement{"epoch-two", 12};
+  AiBudgetGrant later = grant;
+  later.statement = recorded.statement;
+  CHECK_EQ(fundAiBudgetGrant(recorded, {grant}), (AiBudgetGrantResult{AiBudgetCode::Replay, later}));
+  recorded.statement = AiBudgetStatement{"epoch-two", 2};
+  CHECK_EQ(fundAiBudgetGrant(recorded, {grant}), (AiBudgetGrantResult{AiBudgetCode::Replay, grant}));
+  AiBudgetGrant calendar{"owner", "account", AiBudgetFundingSource::Owner, *AiBudgetPeriod::at(0),
+                         limits.paidPeriodNanos, "owner:owner"};
+  calendar.statement = AiBudgetStatement{"epoch-two", 1};
+  CHECK_FALSE(calendar.valid());
 }
 
 TEST(ai_budget_owner_funding_has_the_calendar_period_without_stacking_on_subscription_funding) {
