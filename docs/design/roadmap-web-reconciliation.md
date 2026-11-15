@@ -16,7 +16,7 @@ List drawings, old phone sheets and tabbed step layouts are marked superseded. T
 from 18/19/27/40 is delivered, including completion, private workspace, history, relationships and deletion.
 Inline editing and creation from 19/20 remain separate implementation targets; the document retains nested editors.
 The deployed Tend interface is superseded as a target by the right-side Coach, whose functionality is deferred.
-Link-copy proposals 15.01–15.02 and 25.01–25.02 point to approved 37.01–37.15.
+Link-copy proposals 15.01–15.02 and 25.01–25.02 point to the implemented recovery in approved 37.01–37.15.
 
 Web and Web Mobile are separate. Product primitives live on Components; helper-local settings and
 shortcut primitives remain beside their variants. Shared Shell/Home drawings are thin links to their
@@ -63,6 +63,7 @@ No-render branches are documented as gates rather than invented screens.
 | 25 | Graph Mac/Windows and Board shortcuts, editor/reader and phone subset | [12.01–12.16](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1109-534) | `shortcuts/ShortcutsDialog.jsx; shortcuts/shortcutMap.js; skilltree.css` |
 | 26 | Shared nonmodal read document, owner/reader, inline Workspace/History and Coach placeholder | [19.01](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=756-53402), [27.02–27.03](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=756-53413), [40](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1156-79681) | `step/StepDetail.jsx; step/StepWorkspace.jsx; step/read.css; SkillTreeView.jsx` |
 | 27 | Refused sync recovery inside the document | [43](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1211-104922) | `step/StepDetail.jsx; sync/SyncNotices.jsx; room/useRoomProgress.js` |
+| 28 | Step-link clipboard failure, selectable address, retry and focus return | [37](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1116-74911) | `step/StepDetail.jsx; step/read.css` |
 
 ## Route map and legitimate external owners
 

@@ -85,6 +85,14 @@ export function StepDetail({
   const workspaceRef = useRef(null);
   const scrollRef = useRef(null);
   const sectionScroll = useRef(null);
+  // Returning to the same address starts a new lifetime; an old clipboard request cannot re-enter it.
+  const copyScope = useMemo(() => ({ id, link: stepLink }), [id, stepLink]);
+  const currentCopyScope = useRef(copyScope);
+  const copyAttempt = useRef(null);
+  const copyOrigin = useRef(null);
+  const copyCard = useRef(null);
+  const copyRetry = useRef(null);
+  const copyField = useRef(null);
   const currentStep = useRef(id);
   currentStep.current = id;
   const editableRef = useRef(editable);
@@ -97,6 +105,8 @@ export function StepDetail({
   const titleId = useId();
   const pickerTitleId = useId();
   const sectionsId = useId();
+  const copyTitleId = useId();
+  const copyFieldId = useId();
   const [stepShown, setStepShown] = useState(id);
   const [coachOpen, setCoachOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1440);
   const [compactNotice, setCompactNotice] = useState(phone);
@@ -106,9 +116,13 @@ export function StepDetail({
   const [noteEditing, setNoteEditing] = useState(false);
   const [checked, setChecked] = useState(null);
   const [treePicker, setTreePicker] = useState(false);
+  const [copyRecovery, setCopyRecovery] = useState(null);
+  const [copyBusy, setCopyBusy] = useState(false);
   originRef.current = trail[0];
   leaveRef.current = onClose;
   editingRef.current = editable && noteEditing;
+
+  if (copyRecovery && copyRecovery.scope !== copyScope) setCopyRecovery(null);
 
   if (stepShown !== id) {
     setStepShown(id);
@@ -159,11 +173,24 @@ export function StepDetail({
   const detailFocus = useMemo(() => ({ restore: restoreDetailFocus }), [restoreDetailFocus]);
 
   useLayoutEffect(() => {
+    currentCopyScope.current = copyScope;
+    return () => { currentCopyScope.current = null; };
+  }, [copyScope]);
+
+  useLayoutEffect(() => {
     const article = layerRef.current.querySelector('article');
-    const measure = () => setCompactNotice(article.clientWidth < 600);
+    const measure = () => {
+      setCompactNotice(article.clientWidth < 600);
+      const available = scrollRef.current.clientHeight;
+      // Preserve a full 44px control and its surrounding border in a short read region.
+      const inset = Math.min(12, Math.max(0, (available - 46) / 2));
+      article.style.setProperty('--st-step-copy-inset', `${inset}px`);
+      article.style.setProperty('--st-step-copy-height', `${Math.max(0, available - inset * 2)}px`);
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(article);
+    observer.observe(scrollRef.current);
     return () => observer.disconnect();
   }, []);
 
@@ -218,6 +245,12 @@ export function StepDetail({
       });
     };
   }, []);
+
+  useLayoutEffect(() => {
+    if (!copyRecovery || currentCopyScope.current !== copyRecovery.scope || copyCard.current?.closest('[inert]')) return;
+    if (!copyRecovery.revealed && (!copyRecovery.focusOnShow || editingRef.current)) return;
+    (copyRecovery.revealed ? copyField : copyRetry).current?.focus();
+  }, [copyRecovery]);
 
   useEffect(() => {
     cancelAnimationFrame(sectionScroll.current);
@@ -283,14 +316,47 @@ export function StepDetail({
     setOutcome(null);
   };
 
-  const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(stepLink);
-      if (currentStep.current === id) onNotify(LINK_COPIED);
-      act('copyLink', { outcome: 'ok' });
-    } catch {
-      act('copyLink', { outcome: 'failed' });
+  const restoreCopyFocus = () => {
+    for (const control of [copyOrigin.current?.control, copyOrigin.current?.menu]) {
+      if (!control?.isConnected || control.closest('[inert]') || !control.getClientRects().length) continue;
+      control.focus({ preventScroll: true });
+      return;
     }
+  };
+  const dismissCopyRecovery = () => {
+    if (copyAttempt.current) copyAttempt.current.dismissed = true;
+    setCopyRecovery(null);
+    act('copyLinkRecovery', { step: 'dismiss' });
+    restoreCopyFocus();
+  };
+  const copyLink = async (control, menu) => {
+    if (!stepLink || currentCopyScope.current !== copyScope || copyAttempt.current) return;
+    const attempt = { scope: copyScope, focusOnFailure: true, dismissed: false };
+    copyAttempt.current = attempt;
+    setCopyBusy(true);
+    if (control) copyOrigin.current = { control, menu };
+    if (copyRecovery) act('copyLinkRecovery', { step: 'retry' });
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(copyScope.link);
+      copied = true;
+    } catch (error) {
+      if (error?.name !== 'NotAllowedError' && error?.name !== 'SecurityError') reportRoadmapFailure('roadmap-step-copy', error);
+    }
+    copyAttempt.current = null;
+    act('copyLink', { outcome: copied ? 'ok' : 'failed' });
+    if (!currentCopyScope.current) return;
+    setCopyBusy(false);
+    if (currentCopyScope.current !== attempt.scope || attempt.dismissed) return;
+    if (copied) {
+      if (copyCard.current?.contains(document.activeElement)) restoreCopyFocus();
+      setCopyRecovery(null);
+      onNotify(LINK_COPIED);
+      return;
+    }
+    if (copyRecovery) return;
+    setCopyRecovery({ scope: copyScope, revealed: false, focusOnShow: attempt.focusOnFailure });
+    act('copyLinkRecovery', { step: 'shown' });
   };
 
   // The Tree section's control takes focus back once its picker, menu or sheet has gone: the + or the ⋯, whichever stands.
@@ -361,7 +427,7 @@ export function StepDetail({
   const menuItems = [
     editable && onAddStep && { label: t('roadmap.tablet.addStep'), icon: StepIcons.add, run: () => { act('addStep'); onAddStep(id); } },
     editable && onConnect && { label: t('roadmap.tablet.connect'), icon: StepIcons.graph, run: () => { act('connect'); onConnect(id); } },
-    stepLink && { label: STEP_DETAIL.copyLink, icon: StepIcons.copyLink, run: copyLink },
+    stepLink && { label: STEP_DETAIL.copyLink, icon: StepIcons.copyLink, disabled: copyBusy, run: copyLink },
     onOpenInGraph && { label: STEP_DETAIL.openInGraph, icon: StepIcons.graph, run: openInGraph },
     onSelect && {
       label: STEP_DETAIL.select, icon: StepIcons.select,
@@ -386,6 +452,7 @@ export function StepDetail({
     event.stopPropagation();
     if (closeTreePicker.current) { closeTreePicker.current(); return; }
     if (editingRef.current) { workspaceRef.current?.close(); return; }
+    if (copyRecovery) { dismissCopyRecovery(); return; }
     leaveRef.current();
   };
   const jumpTo = (section) => {
@@ -431,9 +498,11 @@ export function StepDetail({
     try { await notice.onDiscard(); }
     finally { setDiscardNotice(null); }
   };
+  const preserveInteractionFocus = () => { if (copyAttempt.current) copyAttempt.current.focusOnFailure = false; };
   return (
     <DetailFocusContext.Provider value={detailFocus}>
-      <div ref={layerRef} className={`st-board-step-layer st-step-read-shell${phone ? ' is-phone' : ''}`} onClickCapture={swallowSecondPress}>
+      <div ref={layerRef} className={`st-board-step-layer st-step-read-shell${phone ? ' is-phone' : ''}`} onClickCapture={swallowSecondPress} onKeyDown={copyRecovery ? onKeyDown : undefined}
+        onPointerDownCapture={preserveInteractionFocus} onKeyDownCapture={preserveInteractionFocus} onFocusCapture={preserveInteractionFocus}>
         <article className="st-step-document" aria-labelledby={titleId} tabIndex={-1} onKeyDown={onKeyDown}>
           <header className="st-step-toolbar">
             <button type="button" className="st-step-breadcrumb" aria-label={backTo({ screen: backLabel })} onClick={onBack}>
@@ -492,10 +561,46 @@ export function StepDetail({
               </section>
             </div>
           </div>
-          <span className="st-board-step-checked-announcement" role="status" aria-live="polite" aria-atomic="true">{liveChecked && !noteEditing ? checkedToast({ item: checked.label }) : ''}</span>
+          <span className="st-step-announcement st-board-step-checked-announcement" role="status" aria-live="polite" aria-atomic="true">{liveChecked && !noteEditing ? checkedToast({ item: checked.label }) : ''}</span>
           {liveChecked && !noteEditing && <div className="st-board-step-checked"><StepIcons.statusDone /><span>{checkedToast({ item: checked.label })}</span>
             <button type="button" onClick={() => { workspaceActions.onToggleSubtask(id, checked.id); setChecked(null); track('roadmap_board_workspace', { action: 'undo' }); }}>{LABELS.undo}</button>
           </div>}
+          <div className="st-step-copy-anchor">
+            <span className="st-step-announcement st-step-copy-announcement" role="status" aria-live="polite" aria-atomic="true">{copyRecovery ? t('roadmap.step.copyFailed') : ''}</span>
+            {copyRecovery && <section ref={copyCard} className="st-step-copy-recovery" aria-labelledby={copyTitleId}
+              onKeyDown={(event) => {
+                if (event.key !== 'Escape' || event.defaultPrevented) return;
+                event.preventDefault();
+                event.stopPropagation();
+                dismissCopyRecovery();
+              }}>
+              <header>
+                <h3 id={copyTitleId}>{t('roadmap.step.copyFailed')}</h3>
+                <button type="button" className="st-board-step-icon-button" aria-label={t('roadmap.common.close')} onClick={dismissCopyRecovery}><StepIcons.close /></button>
+              </header>
+              <p>{copyRecovery.revealed ? t('roadmap.step.copyManually') : t('roadmap.step.copyRecovery')}</p>
+              {copyRecovery.revealed && <>
+                <label htmlFor={copyFieldId}>{t('roadmap.step.currentLink')}</label>
+                <input ref={copyField} id={copyFieldId} type="text" readOnly value={copyScope.link} spellCheck={false} />
+              </>}
+              <div className="st-step-copy-actions">
+                <button ref={copyRetry} type="button" className="st-board-step-action st-board-step-action--secondary" aria-disabled={copyBusy} onClick={(event) => {
+                  event.currentTarget.focus({ preventScroll: true });
+                  copyLink();
+                }}>{t('roadmap.common.tryAgain')}</button>
+                <button type="button" className="st-board-step-action st-board-step-action--secondary" onClick={() => {
+                  if (copyRecovery.revealed) {
+                    copyField.current.focus();
+                    copyField.current.select();
+                    act('copyLinkRecovery', { step: 'select' });
+                    return;
+                  }
+                  setCopyRecovery({ ...copyRecovery, revealed: true });
+                  act('copyLinkRecovery', { step: 'reveal' });
+                }}>{copyRecovery.revealed ? t('roadmap.step.selectLink') : t('roadmap.step.showLink')}</button>
+              </div>
+            </section>}
+          </div>
           <footer className="st-step-pinned-actions">
             {!(phone && outcome) && <span className="st-step-shared-label"><Users size={14} aria-hidden />{t('roadmap.step.sharedStep')}</span>}
             <p className="st-board-step-outcome" role="status">{outcome?.line ?? ''}</p>
@@ -846,11 +951,13 @@ function StepMenu({ items, confirm }) {
               key={item.label}
               type="button"
               role="menuitem"
+              aria-disabled={item.disabled || undefined}
               className={`st-board-step-menu-item${item.danger ? ' st-board-step-menu-item--danger' : ''}`}
-              onClick={() => {
+              onClick={(event) => {
+                if (item.disabled) return;
                 setOpen(false);
                 opener.current.focus();
-                item.run();
+                item.run(event.currentTarget, opener.current);
               }}
             >
               <item.icon />

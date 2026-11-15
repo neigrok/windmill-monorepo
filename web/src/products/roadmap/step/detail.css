@@ -663,7 +663,7 @@ button.st-board-step-tree {
   height: 100%;
 }
 
-.st-board-step-checked-announcement {
+.st-step-announcement {
   position: absolute;
   width: 1px;
   height: 1px;

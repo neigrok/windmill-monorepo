@@ -689,7 +689,9 @@ instance. Description remains plain text with the existing 5000-code-point limit
 links. The owner-only workspace is device-local; authorized readers receive shared text, relationships and history.
 
 Coach is an empty placeholder: a 56px collapsed rail or a 400px desktop, 340px laptop or 280px tablet panel, with
-heading and Collapse. Phones keep a blank placeholder above the safe area and pinned actions. It has no composer,
+heading and Collapse. Phones keep a blank placeholder below the pinned actions, retaining the safe-area inset.
+Its empty height can shrink on short screens so the actions stay visible and recovery controls can scroll into view.
+It has no composer,
 conversation, history, proposals or backend behavior.
 
 `StepFacts` derives status, relationships and completion outcomes from the whole tree. Complete and Reset stay in
@@ -700,6 +702,14 @@ callbacks check current authority before writing or emitting an Undo event.
 The menu retains Copy link, Open in Graph, Select and Delete where available; owner up-next and done steps retain
 View branch. Tablet owners can leave the document for the existing Add step or Connect tool. Newly created blank
 Graph nodes keep their naming handoff; bulk, aim, edge removal, paste and Activity retain their own surfaces.
+
+Copy link is available for public or unlisted, non-demo step addresses. A failed clipboard write opens the
+nonmodal recovery from approved [37](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1116-74911):
+retry the current address, reveal its full read-only value, or select it for manual copying. A pending native
+write disables Copy until it settles; changing the step or its address invalidates that attempt's UI result.
+Dismissal returns focus to the original control or More. A late refusal preserves a newer interaction and
+inherits nested modal isolation. Completion Undo and private Workspace stay intact. Expected browser
+permission refusals emit a failed outcome; unexpected failures report the static `roadmap-step-copy` operation.
 
 Edit step opens the existing `StepComposer` through `StepDraft`, `BoardActs.edit` and `EditNode`, retaining every
 field, dirty/discard handling, remote-change reconciliation, prerequisite checks, held deletes and write refusals.
