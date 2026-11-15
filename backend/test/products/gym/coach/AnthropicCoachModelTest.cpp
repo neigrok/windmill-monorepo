@@ -24,9 +24,10 @@ TEST(a_stopped_phone_turn_settles_its_round_at_once_at_the_input_and_the_output_
                                                   [] { return 1'792'000'000'000LL; });
   fake::FakeAuthRepository accounts;
   const auto lifter = accounts.createUser(Email{"phone@example.com"}, "Phone");
-  fake::FakeSubscriptionRepository subscriptions;
+  fake::FakeEntitlementCopy subscriptions;
+  fake::FakeClock clock;
   fake::FakeAiUsageRepository ledger;
-  Entitlements entitlements{subscriptions, ledger, {}, {}, budgets};
+  Entitlements entitlements{subscriptions, clock, ledger, {}, {}, budgets};
   struct Failures : FailureReporter {
     int reports = 0;
     void report(const std::string&, const std::string&, const std::string&) override { ++reports; }

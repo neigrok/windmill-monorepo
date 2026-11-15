@@ -119,9 +119,10 @@ struct Allowances {
   std::shared_ptr<AiBudgetService> budgets = std::make_shared<AiBudgetService>(
       repository, [this] { return limits; }, [] { return 1'792'000'000'000LL; });
   FakeAuthRepository accounts;
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
+  FakeClock clock;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage, "owner@example.com", {}, budgets};
+  Entitlements entitlements{subscriptions, clock, usage, {.owners = EmailList{"owner@example.com"}}, {}, budgets};
   Failures failures;
   std::shared_ptr<AiCallBudget> calls = std::make_shared<AiCallBudget>(budgets, entitlements, accounts, failures);
   User owner = accounts.createUser(Email{"owner@example.com"}, "Owner");

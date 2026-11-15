@@ -728,9 +728,11 @@ TEST(pg_ai_budget_estimated_provider_calls_settle_actuals_without_freezing_funde
   auto service = std::make_shared<AiBudgetService>(repository, [limits] { return limits; }, [at] { return at; });
   wm::fake::FakeAuthRepository accounts;
   const auto account = accounts.createUser(Email{"free@example.com"}, "Free");
-  wm::fake::FakeSubscriptionRepository subscriptions;
+  wm::fake::FakeEntitlementCopy subscriptions;
+  wm::fake::FakeClock clock;
+  clock.now = at;
   wm::fake::FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage, {}, {}, service};
+  Entitlements entitlements{subscriptions, clock, usage, {}, {}, service};
   auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, *observation.reporter);
   const auto principal = entitlements.aiPrincipalFor(account.id, account.email.value);
   AiSpend spend;

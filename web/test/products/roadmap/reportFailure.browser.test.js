@@ -123,10 +123,11 @@ for (const [answer, issues, outcome] of [
   test(`a gallery Fork answered ${answer.status ?? answer} reports ${issues.length} and emits ${outcome}`, async () => {
     await withDoor('browse', { 'GET /v1/gallery': GALLERY, 'POST /v1/trees/t_g/fork': answer }, async (page) => {
       await page.getByRole('button', { name: /Fork/ }).first().click();
-      await page.waitForFunction(() => window.events.some((event) => event.props?.outcome));
+      await page.waitForFunction(() => window.events.some((event) => event.name === 'fork_attempt' && event.props?.outcome));
       assert.deepEqual(await said(page), {
         issues,
         events: [
+          { name: 'roadmap_gallery', props: { step: 'load', outcome: 'available' } },
           { name: 'fork_attempt', props: { mode: 'browse' } },
           { name: 'fork_attempt', props: { mode: 'browse', outcome } },
         ],

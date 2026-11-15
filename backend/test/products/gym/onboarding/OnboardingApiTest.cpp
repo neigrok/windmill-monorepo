@@ -20,9 +20,9 @@ struct HttpHarness {
   fake::FakeAccountFootprint footprint;
   fake::FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth=std::make_shared<AuthService>(accounts,email,h.tokens,h.clock,oauth,footprint,revocations,"http://localhost");
-  fake::FakeSubscriptionRepository subscriptions;
+  fake::FakeEntitlementCopy subscriptions;
   fake::FakeAiUsageRepository usage;
-  std::shared_ptr<Entitlements> entitlements=std::make_shared<Entitlements>(subscriptions,usage,std::string{},std::vector<std::string>{},h.budgets);
+  std::shared_ptr<Entitlements> entitlements=std::make_shared<Entitlements>(subscriptions,h.clock,usage,Allowlists{},std::vector<std::string>{},h.budgets);
   std::shared_ptr<AiInstallations> identity;
   std::shared_ptr<AiInstallationApi> installations;
   OnboardingApi api;

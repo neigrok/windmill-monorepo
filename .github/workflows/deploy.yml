@@ -93,6 +93,9 @@ jobs:
           JOURNAL_ECHO_ADMIN_TOKEN: ${{ secrets.JOURNAL_ECHO_ADMIN_TOKEN }}
           WINDMILL_OWNER_EMAILS: ${{ vars.WINDMILL_OWNER_EMAILS }}
           # Config (variables; safe compose defaults when unset):
+          # Windmill One's sandbox testers and the stores its paid line is open on. Unset ⇒ none, and closed.
+          WINDMILL_SANDBOX_EMAILS: ${{ vars.WINDMILL_SANDBOX_EMAILS }}
+          SUBSCRIPTIONS_PURCHASABLE_STORES: ${{ vars.SUBSCRIPTIONS_PURCHASABLE_STORES }}
           PADDLE_ENV: ${{ vars.PADDLE_ENV }}
           PADDLE_PRICE_ID: ${{ vars.PADDLE_PRICE_ID }}
           RESEND_FROM: ${{ vars.RESEND_FROM }}
@@ -203,6 +206,14 @@ jobs:
             fi
           fi
 
+          # The stores the paid line is open on (docs/foundation/subscriptions.md §5.3). A server given a name it does not
+          # know keeps that store closed, so a typo is refused here, before anything reaches the host.
+          stores='^ *((app_store|play_store|paddle) *(,|$) *)*$'
+          if [[ ! "${SUBSCRIPTIONS_PURCHASABLE_STORES:-}" =~ $stores ]]; then
+            echo "Refusing to render — SUBSCRIPTIONS_PURCHASABLE_STORES must list app_store, play_store or paddle, comma-separated."
+            exit 1
+          fi
+
           # printf so values are written literally. Optional keys write empty; compose defaults apply.
           : > rendered.env
           {
@@ -224,7 +235,8 @@ jobs:
                        JOURNAL_NUDGE_ENABLED JOURNAL_NUDGE_ALLOWLIST JOURNAL_NUDGE_ADMIN_TOKEN \
                        JOURNAL_ECHO_ADMIN_TOKEN \
                        APPLE_NATIVE_ENABLED APPLE_CLIENT_ID \
-                       WINDMILL_OWNER_EMAILS WINDMILL_COOKIE_RETIRED_DOMAINS \
+                       WINDMILL_OWNER_EMAILS WINDMILL_SANDBOX_EMAILS SUBSCRIPTIONS_PURCHASABLE_STORES \
+                       WINDMILL_COOKIE_RETIRED_DOMAINS \
                        WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do
               printf '%s=%s\n' "$key" "${!key}"
             done

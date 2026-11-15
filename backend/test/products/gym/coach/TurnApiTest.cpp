@@ -36,7 +36,7 @@ struct ApiHarness {
   wm::fake::FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth = std::make_shared<AuthService>(accounts, email, authTokens, h.clock, oauth, footprint,
                                                                    revocations, "https://windmill.works");
-  std::shared_ptr<Entitlements> entitlements = std::make_shared<Entitlements>(h.subscriptions, h.usage);
+  std::shared_ptr<Entitlements> entitlements = std::make_shared<Entitlements>(h.subscriptions, h.clock, h.usage);
   std::shared_ptr<AiInstallationApi> installations = std::make_shared<AiInstallationApi>(
       h.installations, auth, entitlements, h.failures, AiInstallationProxy::Direct);
   // The service the routes serve: the harness's, or one with no installations where no USD allowances exist.

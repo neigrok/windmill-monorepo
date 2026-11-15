@@ -1,7 +1,9 @@
 #include "platform/subscriptions/PgEntitlementCopy.h"
 
 #include "platform/adapters/postgres/PgAuthRepository.h"
+#include "platform/application/Entitlements.h"
 #include "test/PgTestPool.h"
+#include "test/platform/Fakes.h"
 #include "test/platform/subscriptions/FeedFixture.h"
 #include "test/testing.h"
 
@@ -149,4 +151,59 @@ TEST(pg_entitlement_copy_a_rebuild_and_the_final_erasure_of_an_account_it_holds_
   CHECK_EQ(erased, std::string("erased"));
   CHECK_EQ(rowsAsText(), std::string());
   CHECK_EQ(copy.cursor(), (FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 6}));
+}
+
+// With the subscription service down nothing follows its feed, and Windmill One still answers from the row the feed last
+// wrote, lapsing on time with nothing running (INV-10, INV-3).
+TEST(pg_entitlement_copy_answers_windmill_one_with_the_service_down_and_lapses_by_the_clock) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
+  sql("DELETE FROM account_entitlements");
+  sql("INSERT INTO users (id, email) VALUES ('3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61', 'follow-3f6c2a1e@example.com') "
+      "ON CONFLICT (id) DO NOTHING");
+  PgEntitlementCopy copy{pgTestPool()};
+  consume(copy, "from_zero", {3});
+  fake::FakeClock clock;
+  fake::FakeAiUsageRepository usage;
+  const Entitlements entitlements{copy, clock, usage};
+  const UserId buyer{"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"};
+
+  std::string seen;
+  for (const UnixMs at : {1'799'056'799'999ULL, 1'799'056'800'000ULL}) {
+    clock.now = at;
+    seen += std::to_string(at) + (entitlements.hasWindmillOne(buyer, "follow-3f6c2a1e@example.com") ? " one\n" : " free\n");
+  }
+  CHECK_EQ(seen, std::string("1799056799999 one\n1799056800000 free\n"));
+  CHECK_FALSE(entitlements.hasWindmillOne(UserId{"9387ec65-ab17-4b8c-b145-fd0d622966db"}, "claimant@example.com"));
+}
+
+// Access reads the row's columns, not its body (db/schema.sql): an operator who clears production_access_until ends that
+// access with the body still saying otherwise, and a column the body does not echo grants until it lapses.
+TEST(pg_entitlement_copy_reads_access_from_the_row_s_columns_and_shows_its_body) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
+  sql("DELETE FROM account_entitlements");
+  sql("INSERT INTO users (id, email) VALUES ('3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61', 'follow-3f6c2a1e@example.com') "
+      "ON CONFLICT (id) DO NOTHING");
+  PgEntitlementCopy copy{pgTestPool()};
+  consume(copy, "from_zero", {3});
+  fake::FakeClock clock;
+  clock.now = 1'796'378'400'000;
+  fake::FakeAiUsageRepository usage;
+  const Entitlements entitlements{copy, clock, usage};
+  const UserId buyer{"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"};
+  const auto answer = [&] { return entitlements.hasWindmillOne(buyer, "follow-3f6c2a1e@example.com") ? "one\n" : "free\n"; };
+
+  std::string seen = answer();
+  sql("UPDATE account_entitlements SET production_access_until = NULL");
+  seen += answer();
+  CHECK_EQ(copy.find(buyer)->body, entitlementExample("active"));
+  {
+    PgLease lease{*pgTestPool()};
+    pqxx::work txn{*lease};
+    txn.exec("UPDATE account_entitlements SET production_access_until = 1800000000000, entitlement = $1::json",
+             pqxx::params{dump(entitlementExample("never_subscribed"))});
+    txn.commit();
+  }
+  seen += answer();
+  CHECK_EQ(seen, std::string("one\nfree\none\n"));
+  sql("DELETE FROM account_entitlements");
 }

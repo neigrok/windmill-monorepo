@@ -89,9 +89,9 @@ TEST(ai_installation_headers_never_downgrade_invalid_accounts_or_mint_over_exist
   FakeAiBudgetRepository budgetRows;
   const AiBudgetLimits limits;
   auto budgets = std::make_shared<AiBudgetService>(budgetRows, [=] { return limits; }, [&] { return clock.now; });
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
   FakeAiUsageRepository usage;
-  auto entitlements = std::make_shared<Entitlements>(subscriptions, usage, "", std::vector<std::string>{}, budgets);
+  auto entitlements = std::make_shared<Entitlements>(subscriptions, clock, usage, Allowlists{}, std::vector<std::string>{}, budgets);
   InstallationRows rows;
   auto installations = std::make_shared<AiInstallations>(rows, budgets, installationTokens, clock, std::string(32, 'k'));
   auto failures = std::make_shared<InstallationFailures>();
@@ -171,9 +171,9 @@ TEST(ai_installation_binding_survives_disabled_anonymous_admission_without_a_net
   FakeAiBudgetRepository budgetRows;
   const AiBudgetLimits limits;
   auto budgets = std::make_shared<AiBudgetService>(budgetRows, [=] { return limits; }, [&] { return clock.now; });
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
   FakeAiUsageRepository usage;
-  auto entitlements = std::make_shared<Entitlements>(subscriptions, usage, "", std::vector<std::string>{}, budgets);
+  auto entitlements = std::make_shared<Entitlements>(subscriptions, clock, usage, Allowlists{}, std::vector<std::string>{}, budgets);
   InstallationRows rows;
   AiInstallations enabled{rows, budgets, installationTokens, clock, std::string(32, 'k')};
   const auto bound = enabled.issue("192.0.2.1");
@@ -244,9 +244,9 @@ TEST(ai_installation_issue_completes_once_under_its_route) {
   FakeAiBudgetRepository budgetRows;
   const AiBudgetLimits limits;
   auto budgets = std::make_shared<AiBudgetService>(budgetRows, [=] { return limits; }, [&] { return clock.now; });
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
   FakeAiUsageRepository usage;
-  auto entitlements = std::make_shared<Entitlements>(subscriptions, usage, "", std::vector<std::string>{}, budgets);
+  auto entitlements = std::make_shared<Entitlements>(subscriptions, clock, usage, Allowlists{}, std::vector<std::string>{}, budgets);
   InstallationRows rows;
   auto failures = std::make_shared<InstallationFailures>();
   std::vector<WriteCompletion> lines;
@@ -307,9 +307,9 @@ TEST(ai_installation_budget_is_explicit_and_keeps_legacy_anonymous_calls_closed)
   const auto issued = installations.issue("192.0.2.1");
   REQUIRE(issued.principal);
   FakeAuthRepository accounts;
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage, {}, {}, budgets};
+  Entitlements entitlements{subscriptions, clock, usage, {}, {}, budgets};
   InstallationFailures failures;
   AiCallBudget budget{budgets, entitlements, accounts, failures};
   AiSpend spend;

@@ -751,8 +751,9 @@ create table if not exists sync_requests (
 create index if not exists sync_requests_started_at on sync_requests (started_at);
 
 -- ── Paddle billing ──────────────────────────────────────────────────────────────────────────
--- Every notification upserts here: access gating reads this database and never the Paddle API. An
--- account bridges to a Paddle customer by email (citext, matching users.email).
+-- Every notification upserts here, and funding a Paddle payment reads this database, never the Paddle API. No
+-- access is read from it: Windmill One is read from account_entitlements. An account bridges to a Paddle customer by
+-- email (citext, matching users.email).
 create table if not exists paddle_customers (
   customer_id text primary key,   -- "ctm_..."
   email       citext not null,
@@ -761,8 +762,8 @@ create table if not exists paddle_customers (
 );
 create index if not exists paddle_customers_email on paddle_customers (email);
 
--- No foreign key to paddle_customers: deliveries are unordered, so an orphan row is legal and
--- reads as "no access".
+-- No foreign key to paddle_customers: deliveries are unordered, so an orphan row is legal, and a payment
+-- for it funds nothing until its customer lands.
 create table if not exists paddle_subscriptions (
   subscription_id     text primary key,  -- "sub_..."
   customer_id         text not null,
@@ -778,8 +779,8 @@ create table if not exists paddle_subscriptions (
 create index if not exists paddle_subscriptions_customer on paddle_subscriptions (customer_id);
 -- Deliveries can land out of order: the upsert refuses to move occurred_at backwards.
 alter table paddle_subscriptions add column if not exists occurred_at timestamptz;
--- Checkout stamps custom_data.user_id and the webhook lands it here. Gating reads it first and
--- falls back to the email match when it is null.
+-- Checkout stamps custom_data.user_id and the webhook lands it here. Funding refuses a payment whose
+-- stamped account is not the one its customer's email names.
 alter table paddle_subscriptions add column if not exists user_id uuid;
 create index if not exists paddle_subscriptions_user on paddle_subscriptions (user_id);
 
