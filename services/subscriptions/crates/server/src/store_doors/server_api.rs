@@ -16,7 +16,7 @@ use domain::{Environment, Lineage, Observation, Store};
 use sentry::{Hub, SentryFutureExt};
 use serde::Deserialize;
 use serde_json::json;
-use storage::{AccountClaim, Applied, Observed, StorageError, StoreHint};
+use storage::{AccountClaim, Applied, HintRefusal, Observed, StorageError, StoreHint};
 use tracing::Instrument;
 use uuid::Uuid;
 
@@ -273,8 +273,8 @@ impl AppStoreDoor {
     }
 
     // §4: the account a claim bound, written to the App Store as the lineage's app account token, then cleared from
-    // what the ledger owes. A hint the App Store did not take stays owed for the sweep's next pass. One `store.hint`
-    // line logs it.
+    // what the ledger owes. A failure of the API as a whole leaves the hint as it was, owed for the next pass; a
+    // refusal of this hint makes it wait, and its fifth abandons it. One `store.hint` line logs it.
     pub async fn write_store_hint(&self, hint: &StoreHint) -> HintWritten {
         let started = Instant::now();
         let written = match &self.api {
@@ -287,10 +287,15 @@ impl AppStoreDoor {
                 )
                 .await
             {
-                Err(failure) => HintWritten::WriteFailed(failure),
+                Err(failure) if failure.of_the_api() => HintWritten::WriteFailed(failure),
+                Err(failure) => match self.ledger.count_store_hint_refusal(hint).await {
+                    Ok(HintRefusal::WaitsToRetry) => HintWritten::Refused(failure),
+                    Ok(HintRefusal::Abandoned) => HintWritten::Abandoned(failure),
+                    Err(unrecorded) => HintWritten::Unrecorded(unrecorded),
+                },
                 Ok(()) => match self.ledger.clear_store_hint(hint).await {
                     Ok(()) => HintWritten::Written,
-                    Err(failure) => HintWritten::ClearFailed(failure),
+                    Err(unrecorded) => HintWritten::Unrecorded(unrecorded),
                 },
             },
         };
@@ -523,56 +528,77 @@ pub enum HintWritten {
     Written,
     // The deployment holds no key for the App Store Server API.
     StoreApiUnavailable,
-    // The App Store did not take it; it stays owed.
+    // The API failed as it would for any hint, as when Apple does not answer: the hint is owed as it was.
     WriteFailed(ApiFailure),
-    // The App Store took it and the ledger still owes it; the next pass writes it again.
-    ClearFailed(StorageError),
+    // Apple refused this hint: it waits 1, 2, 4 or 8 hours before it is written again.
+    Refused(ApiFailure),
+    // Apple refused it a fifth time: it is never written again.
+    Abandoned(ApiFailure),
+    // The ledger did not record what Apple answered; the hint is owed as it was, and a hint Apple took is written
+    // again, which sets the same token.
+    Unrecorded(StorageError),
 }
 
 impl HintWritten {
     // Whether the next hint would fail the same way now, so the pass ends here.
     pub fn ends_the_pass(&self) -> bool {
         match self {
-            HintWritten::Written => false,
-            HintWritten::StoreApiUnavailable | HintWritten::ClearFailed(_) => true,
-            HintWritten::WriteFailed(failure) => failure.of_the_api(),
+            HintWritten::Written | HintWritten::Refused(_) | HintWritten::Abandoned(_) => false,
+            HintWritten::StoreApiUnavailable
+            | HintWritten::WriteFailed(_)
+            | HintWritten::Unrecorded(_) => true,
         }
     }
 
+    // A refusal that waits is a warning alone; an abandoned hint is an Issue of its own; a failing Apple or ledger
+    // reports at most once in a while.
     fn log(&self, environment: Environment, elapsed: Duration, recurring_failures: &Throttle) {
         let store = Store::AppStore.name();
         let environment = environment.name();
+        let duration_ms = (elapsed.as_secs_f64() * 100_000.0).round() / 100.0;
         let (outcome, code, sqlstate) = match self {
             HintWritten::Written => ("written", None, None),
             HintWritten::StoreApiUnavailable => ("store_api_unavailable", None, None),
             HintWritten::WriteFailed(failure) => ("write_failed", Some(failure.code()), None),
-            HintWritten::ClearFailed(failure) => {
-                ("clear_failed", Some(failure.code()), failure.sqlstate())
+            HintWritten::Refused(failure) => ("refused", Some(failure.code()), None),
+            HintWritten::Abandoned(failure) => ("abandoned", Some(failure.code()), None),
+            HintWritten::Unrecorded(failure) => {
+                ("unrecorded", Some(failure.code()), failure.sqlstate())
             }
         };
-        let duration_ms = (elapsed.as_secs_f64() * 100_000.0).round() / 100.0;
-        let Some(code) = code else {
-            tracing::info!(
-                operation = HINT,
-                store,
-                environment,
-                outcome,
-                duration_ms,
-                "{HINT}"
-            );
-            return;
+        let sentry_event_id = match (self, code) {
+            (HintWritten::Abandoned(_), Some(code)) => {
+                telemetry::report(sentry::Level::Error, HINT, code, None)
+            }
+            (HintWritten::WriteFailed(_) | HintWritten::Unrecorded(_), Some(code)) => {
+                recurring_failures.report(sentry::Level::Error, HINT, code, sqlstate)
+            }
+            _ => None,
         };
-        let sentry_event_id = recurring_failures.report(sentry::Level::Error, HINT, code, sqlstate);
-        tracing::error!(
-            operation = HINT,
-            store,
-            environment,
-            outcome,
-            code,
-            sqlstate,
-            duration_ms,
-            sentry_event_id,
-            "{HINT}"
-        );
+        // tracing fixes a line's level at the call, so the line is written once, placed below.
+        macro_rules! hint_line {
+            ($level:ident) => {
+                tracing::$level!(
+                    operation = HINT,
+                    store,
+                    environment,
+                    outcome,
+                    code,
+                    sqlstate,
+                    duration_ms,
+                    sentry_event_id,
+                    "{HINT}"
+                )
+            };
+        }
+        match self {
+            HintWritten::Written => hint_line!(info),
+            HintWritten::StoreApiUnavailable | HintWritten::Refused(_) => hint_line!(warn),
+            HintWritten::WriteFailed(_)
+            | HintWritten::Abandoned(_)
+            | HintWritten::Unrecorded(_) => {
+                hint_line!(error)
+            }
+        }
     }
 }

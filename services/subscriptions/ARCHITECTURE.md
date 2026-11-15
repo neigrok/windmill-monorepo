@@ -543,6 +543,7 @@ therefore does not start.
 | `0004_events.sql` | `ledger.latest_seq`, `events`, their index by subscription and `entitlement_subscriptions` |
 | `0005_erased_accounts.sql` | `erased_accounts` |
 | `0006_store_hints.sql` | `store_hints` |
+| `0007_store_hint_attempts.sql` | `store_hints.attempts`, `next_attempt_at` and `abandoned_at` |
 
 ### Records
 
@@ -562,7 +563,7 @@ redacted (spec §10).
 | `events` | Append-only, keyed by `seq`. Each row keeps its subscription's store, environment and offer kind as the transaction that recorded it left them, and a period event its period as the event states it, so the feed reads no other table's current state |
 | `entitlement_subscriptions` | For each event that names an account, that account's subscriptions as the transaction left them: what the event's entitlement folds over |
 | `erased_accounts` | The accounts the backend erased (§6.4) |
-| `store_hints` | The account hints the ledger owes the stores, each with its lineage: written in the transaction that binds a subscription by claim, cleared once the store has taken it, and dropped once the subscription is bound to another account or the account is erased (§4) |
+| `store_hints` | The account hints the ledger owes the stores, each with its lineage: written in the transaction that binds a subscription by claim, cleared once the store has taken it, and dropped once the subscription is bound to another account or the account is erased (§4). `attempts` counts the store's refusals of it, `next_attempt_at` is when it may be written again, and `abandoned_at` is set at the fifth, after which it is never written |
 
 ### Writing
 
@@ -578,6 +579,7 @@ redacted (spec §10).
 | `unsettled(limit)` | The kept notifications not yet settled and not waiting after a failed attempt or a postponement, the longest kept first: what the sweep applies (§7 step 1) |
 | `store_hints(limit)`, `clear_store_hint(hint)` | The account hints owed to the stores, the longest owed first: each whose subscription is bound to its account, which is not erased. Clearing one once its store took it; a hint owed since to another account stays |
 | `forget_stale_store_hints()` | Drops every hint no longer owed, its subscription bound to another account or its account erased, and answers how many |
+| `count_store_hint_refusal(hint)` | Counts a refusal by the store a retry cannot change: the hint waits 1, 2, 4 and 8 hours, and the fifth settles it abandoned, which it answers |
 | `record_erasure(account)` | Records the account as erased; recording it again changes nothing. It unbinds nothing: the domain has no step for unbinding ([Domain](#domain)) |
 
 Only the ledger makes a `KeptNotification`, so nothing applies a notification the inbox does not hold.
@@ -918,17 +920,19 @@ older than it adds no period of its own until the notification history read (spe
 
 ### The sweep
 
-`sweep::Sweep` is the one worker of spec §7. It passes once at start, so what the last run kept and left
-unsettled is applied first, then every minute: `InboxSweep`, step 1, then `StoreHintSweep`, the hints claims
-owe the stores. Steps 2 to 4 are not built.
+`sweep::Sweep` is the worker of spec §7: two steps, each passing once at start, so what the last run kept and
+left unsettled is applied first, then a minute after each pass (`sweep::EVERY`, which `main.rs` hands it).
+`InboxSweep`, step 1, and `StoreHintSweep`, the hints claims owe the stores, run on clocks of their own, the
+hint step as a task of its own: the inbox's step reads only the ledger, and never waits on a store's API, however
+slowly it answers or however many hints it refuses. At SIGTERM each step stops between two rows, and the sweep returns
+once both have. Steps 2 to 4 are not built.
 
 `InboxSweep` reads `Ledger::unsettled` 100
 rows at a time and applies each through the door's own step 4 (`AppStoreDoor::apply_kept`), from the
 inbox's copy, which it verifies again, without the door's age rule. A copy that no longer verifies, as one
 kept under a test root a deployment has stopped trusting, is settled with the verifier's code. A pass goes
 on to the next page while the last one moved any row; one whose every row failed ends, and the next pass
-tries again. It stops between two rows at SIGTERM. A notification the inbox holds for a store no door of
-this build serves is postponed an hour.
+tries again. A notification the inbox holds for a store no door of this build serves is postponed an hour.
 
 Each pass writes one `sweep.inbox` line: `rows`, and for each outcome its count (`applied`, `settled`,
 `awaiting`, `duplicate`, `failed`, `refused` for unsupported or unverifiable ones, `without_door`), then
@@ -937,27 +941,45 @@ the pass reports, at `debug` when it met no row and at `info` otherwise. A failu
 notification, an unverifiable copy, an unconfirmed latest transaction and an inbox the pass cannot read
 report under `sweep.inbox` and their code, at most once in ten minutes for each.
 
-`StoreHintSweep` writes the account hints the ledger owes the stores (spec §4) through each store's door. A
-pass first drops every hint no longer owed (`Ledger::forget_stale_store_hints`), then reads
-`Ledger::store_hints` 100 at a time, the longest owed first, so no account's id reaches a store for a
-subscription bound to another account since, or after the account was erased: `AppStoreDoor::write_store_hint` puts the
-account as the lineage's app account token (Set App Account Token) and, once Apple took it, clears it with
-`Ledger::clear_store_hint`. A hint Apple did not take stays owed for the next pass, and a failure every hint
-would meet now (`ApiFailure::of_the_api`, as an Apple that does not answer) or a hint the ledger could not
-clear ends the pass. Without the in-app purchase key it reads nothing, and every hint stays owed. The sweep
-is the one writer of hints: a claim answers without waiting on Apple, a write that fails is retried by the
-same step as the first, and no hint is written twice at once.
+`StoreHintSweep` writes the account hints the ledger owes the stores (spec §4) through each store's door
+(`AppStoreDoor::store_hints_due`, `AppStoreDoor::write_store_hint`). A pass:
+
+1. **Drops** every hint no longer owed (`Ledger::forget_stale_store_hints`): its subscription is bound to
+   another account since, or its account was erased. No account's id reaches a store for a subscription it
+   does not hold.
+2. **Reads** `Ledger::store_hints` 100 at a time, the longest owed first, but for hints waiting after a
+   refusal or abandoned.
+3. **Writes** each as the lineage's app account token (Set App Account Token), and clears it once Apple took
+   it (`Ledger::clear_store_hint`).
+
+What Apple answers decides what becomes of the hint:
+
+- A failure of the API as a whole (`ApiFailure::of_the_api`: Apple does not answer, refuses the key, limits
+  the rate or fails itself) counts against no hint and ends the pass; the next pass writes the hint again.
+- A refusal of this hint (`api_not_found`, `api_bad_request`, `api_malformed`) counts against it
+  (`Ledger::count_store_hint_refusal`), as a notification's failed apply does: it waits 1, 2, 4, then 8 hours,
+  and the fifth refusal settles it abandoned, never written again and reported once.
+- A ledger that does not record the answer ends the pass; the hint stays owed, and a hint Apple took is
+  written again, which sets the same token.
+
+Without the in-app purchase key it reads nothing, and every hint stays owed. The sweep is the one writer of
+hints: a claim answers without waiting on Apple, a write that fails is retried by the same step as the first,
+and no hint is written twice at once. A binding that moves while a hint's write is in flight, in the
+milliseconds between its read and Apple's answer, is the one way the old account's id can still reach Apple.
 
 Each hint written writes one `store.hint` line: `operation`, `store`, `environment`, `outcome`, `code`,
-`sqlstate`, `duration_ms` and `sentry_event_id`. It names no account or transaction.
+`sqlstate`, `duration_ms` and `sentry_event_id`; a pass that drops hints writes one line of `outcome`
+`forgotten` with their count, `hints`. No line names an account or a transaction.
 
 | `outcome` | `code` | Level | Reported |
 |---|---|---|---|
 | `written` | | `info` | no |
 | `forgotten` | none; `hints` counts the hints a pass dropped | `info` | no |
-| `write_failed` | the `ApiFailure`'s | `error` | yes, at most once in ten minutes for each code |
-| `clear_failed` | the `StorageError`'s | `error` | yes, the same |
-| `unread` | the `StorageError`'s: the owed hints could not be read | `error` | yes, the same |
+| `refused` | the `ApiFailure`'s: Apple refused this hint, which waits | `warn` | no |
+| `abandoned` | the `ApiFailure`'s: the fifth refusal | `error` | yes, once for each hint |
+| `write_failed` | the `ApiFailure`'s: the API failed as a whole | `error` | yes, at most once in ten minutes for each code |
+| `unrecorded` | the `StorageError`'s: the ledger did not record what Apple answered | `error` | yes, the same |
+| `unread` | the `StorageError`'s: the owed hints could not be dropped or read | `error` | yes, the same |
 
 ### Internal doors
 

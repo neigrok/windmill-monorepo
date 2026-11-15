@@ -10,7 +10,7 @@ use server::config::{AppStoreApiKey, Config};
 use server::internal;
 use server::listeners::{Bounds, Listener};
 use server::store_doors::{self, AppStoreDoor};
-use server::sweep::Sweep;
+use server::sweep::{self, Sweep};
 use server::telemetry;
 use storage::{Ledger, StorageError};
 use tokio::net::TcpListener;
@@ -163,7 +163,8 @@ async fn serve(config: Config, verifier: SignedDataVerifier) -> ExitCode {
     }
 
     // On start, so what the last run kept and left unsettled is applied first, then every minute.
-    let sweep = tokio::spawn(Sweep::new(ledger.clone(), app_store.clone()).run(stop.clone()));
+    let sweep =
+        tokio::spawn(Sweep::new(ledger.clone(), app_store.clone(), sweep::EVERY).run(stop.clone()));
 
     let signal = tokio::select! {
         _ = terminate.recv() => "SIGTERM",

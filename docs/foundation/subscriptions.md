@@ -472,8 +472,9 @@ One worker. Step 1 runs at start and every minute, the others hourly:
    change, such as a value the database refuses, makes the row wait 1, 2, 4, then 8 hours before its
    next attempt, so it holds up no row behind it, and its fifth such failure settles it `failed`, which
    the sweep reports. A row whose state waits on a status pull (§8) waits an hour between attempts.
-   Then write each account hint the ledger owes a store (§4), the longest owed first; one the store
-   does not take stays owed for the next pass.
+   Beside it, on a clock of its own and never holding it up, write each account hint the ledger owes a
+   store (§4), the longest owed first. A hint the store refuses waits 1, 2, 4, then 8 hours, and its fifth
+   refusal abandons it, which the sweep reports; a failure of the store's API counts against no hint.
 2. Pull the store's state for every subscription whose `accessUntil` falls within the next hour or
    has passed while its state still grants access or is `on_hold`.
 3. Pull every subscription not `expired` or `revoked` whose `verifiedAt` is older than seven days. A

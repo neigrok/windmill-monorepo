@@ -12,7 +12,8 @@ use crate::telemetry::Throttle;
 
 const OPERATION: &str = "sweep.inbox";
 
-const EVERY: Duration = Duration::from_secs(60);
+// How often each step passes in the service (spec §7).
+pub const EVERY: Duration = Duration::from_secs(60);
 
 // Rows read at once. A pass reads page after page while each settles or postpones some of its rows.
 const PAGE: i64 = 100;
@@ -20,38 +21,52 @@ const PAGE: i64 = 100;
 // A failure that lasts reports once in this long, though every pass meets it.
 const REPORTED_EVERY: Duration = Duration::from_secs(10 * 60);
 
-// The sweep (spec §7), one worker: on start and every minute, step 1, the inbox, then the hints a claim owes the stores.
-// Steps 2 to 4 are not built.
+// The sweep (spec §7): on start and every `every`, a minute in the service, step 1, the inbox, and beside it the hints
+// claims owe the stores, each on a clock of its own. The hint step runs as a task of its own, so the inbox's step never waits on a store's API, as
+// slow as it may answer and however many hints it refuses. Steps 2 to 4 are not built.
 pub struct Sweep {
     inbox: InboxSweep,
     store_hints: StoreHintSweep,
+    every: Duration,
 }
 
 impl Sweep {
-    pub fn new(ledger: Ledger, app_store: AppStoreDoor) -> Sweep {
+    pub fn new(ledger: Ledger, app_store: AppStoreDoor, every: Duration) -> Sweep {
         Sweep {
-            inbox: InboxSweep::new(ledger.clone(), app_store.clone()),
+            inbox: InboxSweep::new(ledger, app_store.clone()),
             store_hints: StoreHintSweep::new(app_store),
+            every,
         }
     }
 
-    // Passes until `stop`, which also ends a pass between two rows. A pass that panics is reported by the panic hook,
-    // and the next one runs on time.
+    // Both steps pass until `stop`, and the sweep returns once both have.
     pub async fn run(self, stop: CancellationToken) {
-        let mut ticks = tokio::time::interval(EVERY);
-        ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
-        loop {
-            tokio::select! {
-                _ = ticks.tick() => {}
-                () = stop.cancelled() => return,
-            }
-            let _ = AssertUnwindSafe(self.inbox.pass(&stop))
-                .catch_unwind()
-                .await;
-            let _ = AssertUnwindSafe(self.store_hints.pass(&stop))
-                .catch_unwind()
-                .await;
+        let Sweep {
+            inbox,
+            store_hints,
+            every,
+        } = self;
+        let hints = tokio::spawn(store_hints.run(stop.clone(), every));
+        inbox.run(stop, every).await;
+        let _ = hints.await;
+    }
+}
+
+// One step's passes: one at once, then one `every` after each, until `stop`, which also ends a pass between two rows.
+// A pass that panics is reported by the panic hook, and the next one runs on time.
+async fn passing<F: Future>(
+    every: Duration,
+    stop: &CancellationToken,
+    mut pass: impl FnMut() -> F,
+) {
+    let mut ticks = tokio::time::interval(every);
+    ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            _ = ticks.tick() => {}
+            () = stop.cancelled() => return,
         }
+        let _ = AssertUnwindSafe(pass()).catch_unwind().await;
     }
 }
 
@@ -70,6 +85,11 @@ impl InboxSweep {
             app_store,
             reports: Throttle::every(REPORTED_EVERY),
         }
+    }
+
+    pub async fn run(self, stop: CancellationToken, every: Duration) {
+        let (sweep, stop) = (&self, &stop);
+        passing(every, stop, move || sweep.pass(stop)).await;
     }
 
     // One pass, written as one `sweep.inbox` line.
@@ -123,9 +143,9 @@ impl InboxSweep {
     }
 }
 
-// The hints a claim owes the stores (§4), written through each store's door: the longest owed first, at most a page a
-// pass. A hint its store did not take stays owed for the next pass, and a failure every hint would meet now, as an API
-// that does not answer, ends the pass. Without a key for the store's API nothing is read.
+// The hints claims owe the stores (§4), written through each store's door: the longest owed first, at most a page a
+// pass, but for those waiting after a refusal. A failure every hint would meet now, as an API that does not answer,
+// ends the pass and counts against no hint. Without a key for the store's API nothing is read.
 pub struct StoreHintSweep {
     app_store: AppStoreDoor,
 }
@@ -133,6 +153,11 @@ pub struct StoreHintSweep {
 impl StoreHintSweep {
     pub fn new(app_store: AppStoreDoor) -> StoreHintSweep {
         StoreHintSweep { app_store }
+    }
+
+    pub async fn run(self, stop: CancellationToken, every: Duration) {
+        let (sweep, stop) = (&self, &stop);
+        passing(every, stop, move || sweep.pass(stop)).await;
     }
 
     // One pass; each hint written logs its own `store.hint` line.
@@ -160,7 +185,11 @@ impl StoreHintSweep {
             let ends_the_pass = written.ends_the_pass();
             match written {
                 HintWritten::Written => pass.written += 1,
-                _ => pass.failed += 1,
+                HintWritten::Refused(_) => pass.refused += 1,
+                HintWritten::Abandoned(_) => pass.abandoned += 1,
+                HintWritten::StoreApiUnavailable
+                | HintWritten::WriteFailed(_)
+                | HintWritten::Unrecorded(_) => pass.failed += 1,
             }
             if ends_the_pass {
                 break;
@@ -170,9 +199,13 @@ impl StoreHintSweep {
     }
 }
 
+// What one hint pass came to: how many hints were written, refused and left to wait, refused a fifth time and
+// abandoned, or met a failure that ended the pass.
 #[derive(Debug, Default, PartialEq)]
 pub struct HintPass {
     pub written: usize,
+    pub refused: usize,
+    pub abandoned: usize,
     pub failed: usize,
     pub unread: Option<StorageError>,
 }
