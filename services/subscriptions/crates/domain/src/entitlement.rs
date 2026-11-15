@@ -23,6 +23,14 @@ impl AccountEntitlement {
             sandbox: Entitlement::of(sandbox),
         }
     }
+
+    // Each environment's governing subscription and its others: at most one ended subscription for each, whatever the
+    // account ever held. Folded again they make this same entitlement, so they are all a copy of it has to keep.
+    pub fn subscriptions(&self) -> impl Iterator<Item = &Subscription> {
+        [&self.production, &self.sandbox]
+            .into_iter()
+            .flat_map(|entitlement| entitlement.governing.iter().chain(&entitlement.others))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

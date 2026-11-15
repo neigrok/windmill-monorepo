@@ -6,9 +6,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use domain::{
-    AccountEntitlement, BillingInterval, Environment, Instant, Lineage, Money, NextCharge,
-    Observation, ObservedPeriod, Ownership, Plan, ProductId, Renewal, Span, State, Status, Store,
-    StoreSubscriptionId, StoreTransactionId, Storefront, Subscription, SubscriptionId,
+    AccountEntitlement, AccountId, BillingInterval, EndReason, Ending, Environment, Instant,
+    Lineage, Money, NextCharge, Observation, ObservedPeriod, Ownership, Plan, ProductId, Renewal,
+    Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId, Storefront, Subscription,
+    SubscriptionId,
 };
 use futures_util::FutureExt;
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
@@ -162,6 +163,92 @@ async fn concurrent_applies_record_every_event_once_in_commit_order() {
 
 #[tokio::test]
 #[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn an_event_keeps_the_subscriptions_its_entitlement_carries_and_none_its_account_held_before()
+{
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let buyer = Uuid::new_v4();
+        let mut held: HashMap<SubscriptionId, Subscription> = HashMap::new();
+        let mut carried: Vec<(i64, Vec<String>)> = Vec::new();
+        // Thirty subscriptions bought and ended one after another, then two in force at once.
+        let story = (0..30)
+            .map(|month| ended(&format!("ended {month:02}"), month))
+            .chain([renewing("in force a", 30), renewing("in force b", 30)]);
+        for observation in story {
+            let Applied::Recorded { change, seqs, .. } =
+                apply(ledger.clone(), observation, Some(buyer)).await
+            else {
+                panic!("the apply recorded nothing");
+            };
+            held.insert(change.subscription.id.clone(), change.subscription.clone());
+            let entitlement = AccountEntitlement::of(
+                AccountId::new(buyer.to_string()),
+                held.values().cloned().collect(),
+            );
+            let mut ids: Vec<String> = entitlement
+                .subscriptions()
+                .map(|subscription| subscription.id.as_str().to_owned())
+                .collect();
+            ids.sort();
+            carried.extend(seqs.into_iter().map(|seq| (seq, ids.clone())));
+        }
+        let mut connection = PgConnection::connect(&url).await.unwrap();
+        let stored: Vec<(i64, Vec<String>)> = sqlx::query_as(
+            "select seq, array_agg(id::text order by id::text) from entitlement_subscriptions \
+             group by seq order by seq",
+        )
+        .fetch_all(&mut connection)
+        .await
+        .unwrap();
+
+        assert_eq!(stored, carried);
+        assert_eq!(
+            stored.iter().map(|(_, ids)| ids.len()).max(),
+            Some(2),
+            "an event keeps each subscription in force and one governing one, whatever its account held"
+        );
+        ledger.close().await;
+    })
+    .await;
+}
+
+#[tokio::test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn an_event_kept_with_every_subscription_its_account_held_reads_the_same_entitlement() {
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let buyer = Uuid::new_v4();
+        for observation in [
+            ended("ended 0", 0),
+            ended("ended 1", 1),
+            renewing("in force", 2),
+        ] {
+            apply(ledger.clone(), observation, Some(buyer)).await;
+        }
+        let as_kept = ledger.feed(0, 100).await.unwrap();
+        // Each lineage is written once, so its row now is the one every event since its first held of it.
+        let mut connection = PgConnection::connect(&url).await.unwrap();
+        let added = sqlx::query(
+            "insert into entitlement_subscriptions \
+             select (jsonb_populate_record(null::entitlement_subscriptions, \
+                                           to_jsonb(s) || jsonb_build_object('seq', e.seq))).* \
+             from events e join subscriptions s on s.account_id = e.account_id \
+             where (select min(seq) from events f where f.subscription_id = s.id) <= e.seq \
+             and not exists (select from entitlement_subscriptions k where k.seq = e.seq and k.id = s.id)",
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+
+        assert!(added.rows_affected() > 0);
+        assert_eq!(ledger.feed(0, 100).await.unwrap(), as_kept);
+        ledger.close().await;
+    })
+    .await;
+}
+
+#[tokio::test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
 async fn an_entitlement_row_is_held_to_every_check_a_subscription_is() {
     with_empty_database(async |url| {
         Ledger::open(&url.parse().unwrap())
@@ -265,6 +352,24 @@ fn seqs_of(applied: Applied) -> Vec<i64> {
 
 fn seqs(entries: &[FeedEntry]) -> Vec<i64> {
     entries.iter().map(|entry| entry.seq).collect()
+}
+
+// A subscription first heard of as its `month`-th month ended with renewal off.
+fn ended(lineage: &str, month: i64) -> Observation {
+    let mut observation = renewing(lineage, month);
+    let end = observation.status.current_period.end;
+    observation.observed_at = end;
+    observation.status.state = State::Expired(Ending {
+        at: end,
+        reason: EndReason::Cancelled,
+    });
+    observation.status.renewal = Renewal {
+        auto_renew: false,
+        next_charge: None,
+        next_product_id: None,
+        cancel_requested_at: None,
+    };
+    observation
 }
 
 // An active, renewing subscription in its `month`-th month, stating that month's period.
