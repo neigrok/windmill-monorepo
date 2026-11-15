@@ -140,15 +140,15 @@ class TurnWireTests {
 
     @Test fun capsAreTheCodesTheServerRefills() {
         fun capped(code: String) = TurnRefusal(503, code, null).capped
-        assertEquals(listOf(true, true, true, true, true, true, true),
-            listOf("subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "funding_required", "debt_outstanding", "coach-rate-limited").map(::capped))
-        assertEquals(listOf(false, false, false, false), listOf("device_bound", "invalid_installation", "coach-busy", "coach-vendor-error").map(::capped))
+        assertEquals(listOf(true, true, true, true, true, true),
+            listOf("subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "debt_outstanding", "coach-rate-limited").map(::capped))
+        assertEquals(listOf(false, false, false, false, false), listOf("device_bound", "invalid_installation", "coach-busy", "coach-vendor-error", "funding_required").map(::capped))
     }
 
     @Test fun onlyA5xxTheServerDidNotMeanIsItsFault() {
         fun fault(status: Int, code: String) = TurnRefusal(status, code, null).serverFault
-        assertEquals(listOf(true, true, true, true),
-            listOf(fault(503, TurnRefusal.vendorError), fault(500, TurnRefusal.vendorError), fault(500, "an unknown thing"), fault(502, "unavailable")))
+        assertEquals(listOf(true, true, true, true, true),
+            listOf(fault(503, TurnRefusal.vendorError), fault(500, TurnRefusal.vendorError), fault(500, "an unknown thing"), fault(502, "unavailable"), fault(503, "funding_required")))
         assertEquals(listOf(false, false, false, false, false, false),
             listOf(fault(503, TurnRefusal.busy), fault(503, "subject_exhausted"), fault(503, TurnRefusal.rateLimited), fault(429, TurnRefusal.vendorError), fault(404, TurnRefusal.turnUnknown), fault(503, TurnRefusal.anonymousUnavailable)))
     }

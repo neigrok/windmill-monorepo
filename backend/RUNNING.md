@@ -35,9 +35,9 @@ createuser -h /tmp windmill_subscriptions
 createdb -h /tmp -O windmill_subscriptions windmill_subscriptions
 ```
 
-Its URL is `postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions`; the service's
-[ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#run) runs it. The production rules that
-keep the backend's role out of this database are not part of the local cluster.
+Its URL is `postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions`;
+[§4](#the-subscription-service) runs the service. The production rules that keep the backend's role out
+of this database are not part of the local cluster.
 
 The AI service (`services/ai`) uses a third database, `windmill_ai`, owned by its own role:
 
@@ -75,6 +75,147 @@ finds it with no configuration. The default is `:8080`, which Docker Desktop usu
 
 Everything else is optional and each feature stays dark without its key — copy `.env.example` to
 `.env` and `set -a; source .env; set +a` before the binary.
+
+### The subscription service
+
+Run from `services/subscriptions/`, once its database exists (§2); it migrates the ledger before it
+listens. `SUBSCRIPTIONS_APP_STORE_TEST_ROOT` makes its App Store notification door trust the test chain
+beside Apple's root, so a notification `app_store_test_signer` signs is believed. The service refuses that
+variable at start unless `SENTRY_ENVIRONMENT` is `local`, `development`, `test` or `ci`; without it the
+door trusts Apple's root alone, as production does.
+
+```sh
+TOKEN=$(openssl rand -hex 32)
+SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0.0.1:8083 \
+  SUBSCRIPTIONS_DATABASE_URL="postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions" \
+  SUBSCRIPTIONS_APP_STORE_TEST_ROOT=tests/fixtures/app_store/test-chain/root.cer \
+  SUBSCRIPTIONS_INTERNAL_TOKEN="$TOKEN" SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
+```
+
+`SUBSCRIPTIONS_INTERNAL_TOKEN` is the bearer secret of the backend's reads on the internal port; without it
+they answer 401. The backend follows the feed with the same secret in its `.env` beside
+`SUBSCRIPTIONS_INTERNAL_URL=http://127.0.0.1:8083`.
+
+In a second terminal, from the same directory and with the same `TOKEN`, sign one of the example
+notifications (`tests/fixtures/app_store/test-payloads/`) and post it as Apple does:
+
+```sh
+SIGNED=$(cargo run -q -p app_store_test_signer < tests/fixtures/app_store/test-payloads/started.json)
+curl -s -w '%{http_code}\n' localhost:8082/v1/stores/app-store/notifications \
+  -H 'content-type: application/json' -d "{\"signedPayload\":\"$SIGNED\"}"              # 200
+psql -h /tmp -U windmill_subscriptions windmill_subscriptions \
+  -c 'select environment, outcome from inbox' -c 'select seq, type from events order by seq'
+```
+
+The inbox holds the notification `applied`, and the events are `started`, `bound` and `period_recorded`,
+which the feed serves to the bearer, and the public port does not:
+
+```sh
+curl -s "localhost:8083/internal/v1/feed?after=0&limit=500" -H "authorization: Bearer $TOKEN"
+curl -s -o /dev/null -w '%{http_code}\n' "localhost:8082/internal/v1/feed?after=0&limit=500"   # 404
+```
+
+The same `SIGNED` posted again answers 200 and adds nothing; a service started without
+`SUBSCRIPTIONS_APP_STORE_TEST_ROOT` answers it `400 {"error":"refused"}` and keeps nothing, and its
+`store.notification` line says `untrusted_chain`. Each delivery writes one such line to the service's
+stdout, and the sweep one `sweep.inbox` line a minute
+([ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#the-app-store-notification-door)). Locally
+the service is reached directly; in production Caddy lets only Apple's subnet reach the door. Stop the
+service by its ports.
+
+#### A claim and a refresh
+
+The claim door and the refresh take the subscription's state from the App Store Server API, so they need
+an in-app purchase key and an Apple to call; without the key they answer `503
+{"code":"store_api_unavailable"}`. Locally the run serves Apple itself: a directory holding the status
+Get All Subscription Statuses answers, signed under the test chain, which `SUBSCRIPTIONS_APP_STORE_API_TEST_URL`
+names (refused outside `local`, `development`, `test` and `ci`), and any P-256 key, since that Apple checks
+no token. Sign the status first, so the notification posted after it is the newer statement. In a third
+terminal, from `services/subscriptions/`:
+
+```sh
+APPLE=$(mktemp -d) && mkdir -p "$APPLE/inApps/v1/subscriptions"
+jq 'del(.statusResponse.data[0].lastTransactions[0][].appAccountToken?)' \
+  tests/fixtures/app_store/test-payloads/subscription-status.json \
+  | cargo run -q -p app_store_test_signer > "$APPLE/inApps/v1/subscriptions/2000000000000001"
+python3 -m http.server 8084 --bind 127.0.0.1 --directory "$APPLE"
+```
+
+Start the service as above with the key and that Apple beside the other variables:
+
+```sh
+SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0.0.1:8083 \
+  SUBSCRIPTIONS_DATABASE_URL="postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions" \
+  SUBSCRIPTIONS_APP_STORE_TEST_ROOT=tests/fixtures/app_store/test-chain/root.cer \
+  SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID=local SUBSCRIPTIONS_APP_STORE_API_KEY_ID=local \
+  SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)" \
+  SUBSCRIPTIONS_APP_STORE_API_TEST_URL=http://127.0.0.1:8084 \
+  SUBSCRIPTIONS_INTERNAL_TOKEN="$TOKEN" SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
+```
+
+Post the purchase without its hint, then claim it for an account, as the backend does for the phone that
+bought it:
+
+```sh
+SIGNED=$(jq 'del(.notification.data[].appAccountToken?)' tests/fixtures/app_store/test-payloads/started.json \
+  | cargo run -q -p app_store_test_signer)
+curl -s localhost:8082/v1/stores/app-store/notifications -H 'content-type: application/json' \
+  -d "{\"signedPayload\":\"$SIGNED\"}"
+TRANSACTION=$(jq 'del(.transaction.appAccountToken)' tests/fixtures/app_store/test-payloads/purchase-transaction.json \
+  | cargo run -q -p app_store_test_signer)
+ACCOUNT=$(uuidgen | tr A-Z a-z)
+curl -s localhost:8083/internal/v1/app-store/claims -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' -d "{\"accountId\":\"$ACCOUNT\",\"signedTransaction\":\"$TRANSACTION\"}"
+```
+
+It answers `{"seq":4,"entitlement":…}`: the feed holds `started` and `period_recorded` under no account, then
+`bound` and `period_recorded` under `ACCOUNT`, and `store_hints` the account owed to Apple. The same claim
+again answers the same `seq` and records nothing; another account's answers `409
+{"code":"bound_to_another_account"}`. The sweep tries the owed hint each minute; this Apple answers its
+`PUT` with 501, so the hint stays owed and each try logs `store.hint` `write_failed` `api_server_error`. A refresh
+of the subscription, its id the feed's `subscriptionId`, pulls the same status again and answers its newest
+`seq`:
+
+```sh
+curl -s -X POST "localhost:8083/internal/v1/subscriptions/$SUBSCRIPTION_ID/refresh" -H "authorization: Bearer $TOKEN"
+```
+
+Each claim and refresh writes one `store.claim` or `store.refresh` line
+([ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#the-claim-and-refresh-doors)).
+
+#### A claim through the backend
+
+A phone claims through the backend, never the internal port: the backend forwards the signed transaction
+under the account its session names and answers from its copy once the follower has brought it there
+([subscriptions.md](../docs/foundation/subscriptions.md) §5.3). With the service running with its key and
+Apple as above and the purchase posted without its hint, start the backend beside it in place of the
+internal claim. The follower needs the AI ledger, whose alerts need an owner and a mail key, and the test
+signer signs in sandbox, so the account that claims is a sandbox tester. From `backend/`, on a database
+`db/schema.sql` built (§2):
+
+```sh
+SUBSCRIPTIONS_INTERNAL_URL=http://127.0.0.1:8083 SUBSCRIPTIONS_INTERNAL_TOKEN="$TOKEN" \
+  AI_ALLOWANCES_ENABLED=true WINDMILL_OWNER_EMAILS=owner@example.com AI_ALLOWANCE_ALERT_EMAIL=owner@example.com \
+  RESEND_API_KEY=local RESEND_BASE_URL=http://127.0.0.1:8100 WINDMILL_SANDBOX_EMAILS=ios-dev@example.com \
+  WINDMILL_HOST=127.0.0.1 PORT=8088 ./build/windmill_server
+```
+
+Sign `ios-dev@example.com` in with a code as [the engine server](#engine-server-for-the-ios-simulator) does,
+its `session` being `SESSION`, and claim the same `TRANSACTION`:
+
+```sh
+curl -s localhost:8088/v1/subscription/app-store/claims -H "authorization: Bearer $SESSION" \
+  -H 'content-type: application/json' -d "{\"signedTransaction\":\"$TRANSACTION\"}"
+curl -s localhost:8088/v1/subscription -H "authorization: Bearer $SESSION"
+```
+
+The claim answers 200 with the account's `SubscriptionResponse`, `windmillOne` true in `sandbox`, and
+`GET /v1/subscription` answers the same; it answers 202 instead when the follower has not brought the copy to the
+claim within 5 s. The same claim again answers alike; another account's answers
+`409 {"code":"bound_to_another_account"}`, a caller with no session 401, a body that holds no compact JWS
+`400 {"code":"invalid_transaction"}`, and a service without its key, a service that is down or a backend with the
+follower off `503 {"code":"subscriptions_unavailable"}`. Each claim writes one `subscription.claim` line
+([OBSERVABILITY.md](OBSERVABILITY.md)).
 
 ### Engine server for the iOS simulator
 

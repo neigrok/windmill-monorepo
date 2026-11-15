@@ -32,9 +32,10 @@ void armReachingBack(FakeEchoRepository& echoes, FakeEmbedder& embedder) {
 
 // The background AI bucket. Empty means every account is under its ceiling; `spend` plants a journal bill big enough to close it.
 struct SweepLedger {
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
+  FakeClock clock;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage};
+  Entitlements entitlements{subscriptions, clock, usage};
 
   void spend(long long nanos) { usage.spentByProduct["journal"] = nanos; }
 };
@@ -871,9 +872,9 @@ TEST(ai_cost_refusals_defer_echoes_without_issues_and_resume_when_capacity_retur
     echoes.addUser(user);
     echoes.plantSpan(user, oldDay, 11, oldText, embedder.embed({oldText})[0]);
     echoes.addDuePage(user, newDay, newText);
-    FakeSubscriptionRepository subscriptions;
+    FakeEntitlementCopy subscriptions;
     FakeAiUsageRepository usage;
-    Entitlements entitlements{subscriptions, usage};
+    Entitlements entitlements{subscriptions, clock, usage};
     EchoSweep sweep{echoes, segmenter, embedder, curator, clock, entitlements, {}, {}};
     segmenter.callSucceeds = !segmentRefused;
     segmenter.failure = "subject_exhausted";

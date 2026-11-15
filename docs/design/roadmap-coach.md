@@ -5,14 +5,15 @@ until the owner sees them: Q4, mandatory review; Q6, signed out; Q7, one History
 02.6, 03.1, 03.7, 04.4, 05.1, 06.1, 06.2, 07.1, 07.2 and 08.1. The boards are on the Roadmap file's
 [🧪 Roadmap Coach](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=668-5126) page. The
 [wave NOTE](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4928) records the eleven rulings.
-The [engineering NOTE](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4965) covers tools,
-context and allowance plumbing. Every caption and section NOTE names the SwiftUI or web element of each part.
+How it is built is in [Roadmap Coach](../foundation/roadmap-coach.md), which replaces the
+[engineering NOTE](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4965) where they differ.
+Every caption and section NOTE names the SwiftUI or web element of each part.
 
 Roadmap Coach replaces tending, the roadmap's AI that edits the tree at once from one sentence. Coach is a
 chat that knows your roadmaps and your progress. It answers questions ("what should I do next", "is my
 plan realistic"), and it changes a roadmap only through proposals that you review and apply. A plain
 command about one step is the exception: it is written at once, with a receipt and Undo. Coach follows
-the Gym Coach: the same turn wire, card, access states, allowance and words, tuned for roadmaps and
+the Gym Coach: the same card, access states, allowance and words, tuned for roadmaps and
 self-development, with roadmap tools as its local executors.
 
 ## Sections

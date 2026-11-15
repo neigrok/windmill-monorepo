@@ -67,17 +67,17 @@ async fn each_request_writes_one_line_naming_its_route_and_nothing_it_carried() 
     );
 
     Listener::Internal
-        .router(&config, Answering, Bounds::default())
+        .router(&config, Answering, Router::new(), Bounds::default())
         .oneshot(Request::get("/health").body(Body::empty()).unwrap())
         .await
         .unwrap();
     Listener::Internal
-        .router(&config, Silent, Bounds::default())
+        .router(&config, Silent, Router::new(), Bounds::default())
         .oneshot(Request::get("/health").body(Body::empty()).unwrap())
         .await
         .unwrap();
     Listener::Public
-        .router(&config, Answering, Bounds::default())
+        .router(&config, Answering, Router::new(), Bounds::default())
         .oneshot(
             Request::post("/internal/v1/accounts/acct_secret/claims?token=secret")
                 .header("authorization", "Bearer secret")
@@ -150,7 +150,7 @@ async fn each_request_writes_one_line_naming_its_route_and_nothing_it_carried() 
                 "level": "WARN",
                 "message": "ledger did not answer",
                 "operation": "ledger.check",
-                "code": "unreachable",
+                "code": "ledger_unreachable",
                 "span": {
                     "name": "request",
                     "listener": "internal",

@@ -127,6 +127,10 @@ contents. Native acceptance and a same-key update check precede publication. See
   [The AI service](docs/foundation/ai-service.md), which takes over the AI allowance ledger and every
   provider call, is implemented under `services/ai`; its [architecture](services/ai/ARCHITECTURE.md) names the
   running boundaries. Existing feature callers remain in the backend until their integrations move.
+  [Roadmap Coach](docs/foundation/roadmap-coach.md), which replaces tending with a Coach whose
+  abilities run on the browser's copy of a roadmap; the [Coach engine](docs/foundation/coach-engine.md),
+  which runs a Coach turn on the device; and [Gym Coach on the AI service](docs/foundation/gym-coach-on-ai-service.md),
+  which moves gym Coach onto that engine on every surface, are specified and not built.
 - [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
   model loop the web uses. [The iOS app](apps/ios/App/README.md) also documents
   signed-in routine onboarding.

@@ -13,7 +13,8 @@ public:
 
   AiBudgetView view(const AiBudgetPrincipal& principal);
   AiBudgetResult reserve(const std::string& id, const AiBudgetPrincipal& principal, long long amountNanos,
-                         std::optional<AiOutputBudget> outputBudget = std::nullopt);
+                         std::optional<AiOutputBudget> outputBudget = std::nullopt,
+                         AiBudgetFunding funding = AiBudgetFunding::AnyAllowance);
   AiBudgetResult markDispatched(const std::string& id);
   AiBudgetResult markUncertain(const std::string& id);
   AiBudgetResult settle(const std::string& id, long long actualNanos);
@@ -23,6 +24,8 @@ public:
   int releaseLapsed(const std::function<bool()>& stopping = {});
   AiBudgetResult reconcileOverrun(const std::string& id);
   AiBudgetGrantResult fund(const AiBudgetGrant& grant);
+  AiBudgetGrantResult refund(const std::string& fundingReference, std::optional<long long> refundedAtMs,
+                             const std::optional<AiBudgetStatement>& statement = std::nullopt);
   std::optional<std::string> boundAccount(const std::string& deviceId) const;
   AiBudgetCode bindDevice(const std::string& deviceId, const std::string& accountId);
   std::vector<AiBudgetAlert> claimAlerts(int limit = 20, long long leaseMs = 60'000);

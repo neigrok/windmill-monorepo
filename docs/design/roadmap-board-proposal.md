@@ -1,16 +1,17 @@
 # Roadmap Board proposal
 
-Status: ✅ Ready for dev, owner approved 2026-10-31. The build is tracked under dogfood node
-`roadmap-board-web-build`. The Board and the Graph are the only views. The Graph's flows also stand on the
-Roadmap file's Web and Web Mobile pages, beside the List boards the designer deletes in the 🚀 pass. The
-[review](roadmap-board-review.md) holds the rulings, the findings and the limits.
+The Board and Graph are the only views. This document records their current behavior; the
+[flow index](../index.md#approved-shared-step-editor) identifies the delivered shared step document
+and remaining approved targets. The [alignment subtree](https://windmill.works/#/app/t_63c2c557d482dece)
+tracks delivery. The [review](roadmap-board-review.md) holds the Board rulings and retained review references.
 
 Drawn on two pages of the Roadmap file:
 [✅ Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) (below
 744px) and [✅ Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
 (744px and up). Start at the [phone Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433)
 and the [desktop Board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543).
-Boards carry ✅ or 🔨; proposals awaiting the owner sit in the 💡 *Finishing states* sections, beside the ✅ held-delete frames 25.04 and 15.07. Desktop boards come in light and dark pairs; phone dark specimens sit in
+Delivered boards carry 🚀; approved work carries ✅ or 🔨. Unapproved proposals retain their own status.
+Desktop boards come in light and dark pairs; phone dark specimens sit in
 their sections and in section 19.
 
 ## The idea
@@ -27,13 +28,13 @@ shape and distance. Both read one roadmap and one model.
 - Nothing is dragged. No assignees, deadlines or new status field.
 - **Steps left.** A Locked step's distance is the count of unfinished steps in its transitive
   prerequisite closure. The card says *Needs Read the wind · 1 to go*; with several missing direct
-  prerequisites, *Needs Sail a triangle +1 · 4 to go*. The step page and modal use the same number.
+  prerequisites, *Needs Sail a triangle +1 · 4 to go*. The shared step document uses the same number.
   No other count of the same distance appears.
 - **Unlocks.** An Up next card names the step that completing it moves to Up next:
   *Unlocks Leave the dock*. A card that would move nothing has no reason line.
 - **Reset** changes only that step. Its unfinished dependents regroup; completed descendants stay
   Done, as `model/progress.js` keeps them.
-- **Subtasks never complete a step.** When the last subtask is checked, the page or modal offers
+- **Subtasks never complete a step.** When the last subtask is checked, the shared document offers
   *All subtasks done · Complete step*, one tap, never automatic.
 - **Roadmap order** is the default for Locked and Up next: fewest steps to go first, then most
   unlocks. Done lists the most recently completed first.
@@ -44,11 +45,11 @@ shape and distance. Both read one roadmap and one model.
 
 ## Layout by band
 
-| Band | Board | Verbs | Filter | Step | Picker |
+| Band | Board | Verbs | Filter | Step | Prerequisites picker |
 |---|---|---|---|---|---|
-| Phone, below 744 | One column; identity top, controls in the bottom band | Title-tap roadmap sheet | Filter sheet | Pushed page | Full screen |
-| Tablet, 744–1023 | Two columns plus a rail | Compact icon row | Inline strip | Modal, 680 | Anchored panel |
-| Desktop, 1024 and up | Three columns | Full row | Inline strip | Modal, 760 | Anchored panel |
+| Phone, below 744 | One column; identity top, controls in the bottom band | Title-tap roadmap sheet | Filter sheet | Shared document | Full screen |
+| Tablet, 744–1023 | Two columns plus a rail | Compact icon row | Inline strip | Shared document | Page |
+| Desktop, 1024 and up | Three columns | Full row | Inline strip | Shared document | Page below 1440; anchored panel from 1440 |
 
 **Phone.** Identity: roadmap title, progress, Board/Graph switch. The bottom band holds the
 segments with counts (*Locked 3 · Up next 2 · Done 3*), Sort, *Find a step*, Filter and a 44px
@@ -80,25 +81,25 @@ switched-to state.
   active option; *3/8* reads *3 of 8 steps done*; a heading reads *Up next, 2 steps*.
 - The view glyphs are one pair on every band: three outlined columns for Board, a branching tree for Graph (01.02).
 
-## Step page and modal
+## Shared step document
 
-- Phone: a pushed page. Desktop: a URL-addressable modal. Tabs sit under the title: Overview,
-  Workspace, History. Actions are pinned at the bottom.
-- Overview: description, status row with a leading glyph, step links, Prerequisites (*1 / 1*),
-  Unlocks, *View branch*.
-- Up next: *Edit step* and the primary **Complete**. Locked: *Locked · 1 to go*, each unfinished
-  prerequisite on a sunken row marked with its column, on the page and in the modal, *Edit step* only. Done: *Edit step* and a secondary
-  **Reset**.
+- Card or Graph node activation opens one URL-addressable nonmodal document on every band. The Shell
+  stays operable. Workspace and History are inline; actions stay pinned below the scrollable content.
+- Shared content includes description, state, links, Requires, Opens and attached trees.
+  Owners also have *View branch* for Up next and Done steps.
+- Editable steps retain the nested editor through the heading pencil. Up next offers **Complete**;
+  Done offers **Reset**. Locked steps retain their prerequisite explanation and editing action.
 - **Complete and Reset stay in place.** The status row flips with an inline **Undo** that lasts the
-  hold window; a secondary line names the outcome. No toast from a page or a modal. Reset is always
+  hold window; a secondary line names the outcome. Completion and reset use the document's pinned outcome. Reset is always
   secondary and quiet.
-- The `…` menu holds the same three verbs on both pages: *Copy link · Open in Graph · Delete step*.
+- The `…` menu exposes *Copy link*, *Open in Graph*, selection and deletion only where their current
+  link, view and edit permissions allow them. A sole root cannot be deleted.
 - **Delete step:** a confirm with the cost line from `copy.js`
   (*Removes this step · 1 branch resplices*), then a delete held for nine seconds with Undo, as
   `guidelines/system-architecture.md` §3 requires on the web, then the regrouped Board.
 - A step pushed from a step names the previous screen in its back label.
-- A shared step link lands everyone on the Board with that step open: the modal on desktop, the
-  pushed page on phones. A reader sees Overview and History, a link icon, and no workspace.
+- A shared step link lands on the Board with the shared document open. A reader sees shared content
+  and History without private Workspace or owner controls.
 - Workspace: subtasks, the note and personal links. The note editor commits with **Save**; *Done*
   is a state word.
 
@@ -158,12 +159,13 @@ step and how many steps are up next.
   **Save**; Cancel.
 - Kind offers six choices inline: the legend kinds by name and the unnamed hues by hue name (Build,
   Learn, Milestone, Brick, Sky, Plum). A choice changes only the draft.
-- The Graph's step panel offers the same six choices. A choice saves at once and hovering previews it on the node. The desktop dock adds *Manage kinds* beside them; the tablet panel has no link, because the legend is read-only there.
+- Ordinary Graph activation opens the shared document; its heading pencil opens the nested editor.
+  Graph naming and tool panels remain for their dedicated gestures; they do not replace the shared read view.
 - The prerequisite picker shows each candidate's state, groups steps that cannot be prerequisites
   (*Comes after this step*), keeps the selection across queries in a chip strip, and enables Apply
-  only when the draft changes. It writes nothing; the form's commit does. Phone: search sits above
-  the keyboard; the keyboard rises only when the roadmap is large. Desktop and tablet: an anchored
-  panel with search on top, chips under it, results below, Cancel and Apply at the bottom, the draft
+  only when the draft changes. It writes nothing; the form's commit does. Below 1440px it opens as a
+  composer page; on phones, search sits above the keyboard, which rises only for a large roadmap.
+  From 1440px it is an anchored panel with search on top, chips under it, results below, Cancel and Apply at the bottom, the draft
   still visible.
 - Title collisions are told apart by context: *after Tidal streams*, or *a starting step*. No IDs
   appear anywhere.
@@ -181,7 +183,7 @@ This must be true for 5,000 steps:
   assumed (72–122px).
 - Counts come from the model, never from rendered rows. Search and kind filters run on the model
   before the window.
-- Each column keeps its scroll offset across Board ⇄ Graph, the modal and regroup ceremonies.
+- Each column keeps its scroll offset across Board ⇄ Graph, the shared document and regroup ceremonies.
 - Budget: 5,000 steps open the Board in under 1s on a mid laptop; scrolling holds 60fps.
 
 ## Strings
@@ -193,8 +195,8 @@ One string per event.
 | Complete from Board, unlocks one | *Read the wind done · Leave the dock up next* · **Undo** |
 | Complete from Board, unlocks n>1 | *Read the wind done · 2 up next* · **Undo** |
 | Complete from Board, unlocks none | *Read the wind done* · **Undo** |
-| Complete on page or modal (secondary line) | *Leave the dock is up next* / *2 steps up next* / omitted |
-| Reset on page or modal (secondary line) | *2 steps locked again* / omitted. No toast. |
+| Complete in the shared document (secondary line) | *Leave the dock is up next* / *2 steps up next* / omitted |
+| Reset in the shared document (secondary line) | *2 steps locked again* / omitted. No toast. |
 | Reset preview before tapping | *Reset returns 2 steps to Locked* |
 | Create | *Reefing basics added · Locked* · **Undo**; when a filter clears: *Reefing basics added · filter cleared* · **Undo** |
 | Delete (held) | *Rig the boat deleted* · **Undo**; the confirm's cost line carries the resplice count |

@@ -7,6 +7,7 @@
       "name": "bound_to_caller",
       "status": 200,
       "body": {
+        "windmillOne": true,
         "environment": "production",
         "allowlisted": false,
         "plan": "windmill_one",
@@ -52,6 +53,7 @@
       "name": "already_bound_to_caller",
       "status": 200,
       "body": {
+        "windmillOne": true,
         "environment": "production",
         "allowlisted": false,
         "plan": "windmill_one",
@@ -89,6 +91,22 @@
           "store": "app_store",
           "url": "https://apps.apple.com/account/subscriptions"
         },
+        "purchasable": [],
+        "offer": null
+      }
+    },
+    {
+      "name": "recorded_copy_behind",
+      "status": 202,
+      "body": {
+        "windmillOne": false,
+        "environment": "production",
+        "allowlisted": false,
+        "plan": null,
+        "accessUntil": null,
+        "governing": null,
+        "others": [],
+        "manage": null,
         "purchasable": [],
         "offer": null
       }

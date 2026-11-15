@@ -55,9 +55,9 @@ struct RecordedFailures : FailureReporter {
 
 // Coach as main.cpp builds it, over the one gym door, for a lifter with one finished workout of squats.
 struct Coach : doortest::Harness {
-  FakeSubscriptionRepository subs;
+  FakeEntitlementCopy subs;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subs, usage};
+  Entitlements entitlements{subs, clock, usage};
   FakeAsk agent;
   std::shared_ptr<RecordedFailures> reports = std::make_shared<RecordedFailures>();
   AskService ask{training, repo.threads, clock, agent, tools, entitlements, reports};
@@ -73,7 +73,7 @@ struct Coach : doortest::Harness {
     door.finish(user, session, 1'700'000'900'000);
   }
 
-  void subscribe() { subs.subscribe(user, "active"); }
+  void subscribe() { subs.subscribe(user); }
 
   void seedRoutine(const RoutineId& id = rtId(), const std::string& name = "Push A", int position = 0) {
     door.createRoutine(user, RoutineWrite{id, name, position, {benchEntry()}}, std::nullopt);

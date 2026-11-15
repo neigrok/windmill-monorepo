@@ -97,19 +97,14 @@ for (const key of ['?', 'Meta+k']) {
   });
 }
 
-hostTest('Chromium: Graph completion Undo returns to its Complete action after unrelated row activity', async () => {
+hostTest('Chromium: Graph document completion and Undo recover focus to their status', async () => {
   const { page, errors } = await openHost();
   try {
-    await page.evaluate(() => window.scene.select('wind'));
-    const complete = page.getByRole('button', { name: 'Complete', exact: true });
-    await complete.click();
-    await page.locator('.st-graph-toast').waitFor();
-    await page.locator('.st-roadmap-identity').getByRole('button', { name: 'More', exact: true }).click();
-    await page.keyboard.press('Escape');
-    await page.locator('.st-board-toast-undo').click();
-    await complete.waitFor();
-    await page.waitForFunction(() => document.activeElement?.textContent === 'Complete');
-    assert.equal(await complete.evaluate((element) => document.activeElement === element), true);
+    await page.evaluate(() => window.scene.activate('wind'));
+    await page.getByRole('button', { name: 'Complete', exact: true }).click();
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await page.waitForFunction(() => document.activeElement?.matches('.st-board-step-status'));
+    assert.equal(await page.locator('.st-board-step-status-label').textContent(), 'Up next');
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
@@ -186,16 +181,16 @@ hostTest('Chromium: empty Board creation cancel returns to the empty-state New s
   } finally { await page.close(); }
 });
 
-hostTest('Chromium: tablet Mark not done uses the canon focus ring after keyboard completion', async () => {
+hostTest('Chromium: tablet Reset uses the canon focus ring after keyboard completion', async () => {
   const { page, errors } = await openHost({ width: 744 });
   try {
-    await page.evaluate(() => window.scene.select('wind'));
-    const complete = page.getByRole('button', { name: 'Mark done', exact: true });
+    await page.evaluate(() => window.scene.activate('wind'));
+    const complete = page.getByRole('button', { name: 'Complete', exact: true });
     await complete.focus();
     await page.keyboard.press('Enter');
-    const reset = page.getByRole('button', { name: 'Mark not done', exact: true });
+    const reset = page.getByRole('button', { name: 'Reset', exact: true });
     await reset.waitFor();
-    await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Mark not done');
+    await reset.focus();
     assert.deepEqual(await reset.evaluate((element) => {
       const style = getComputedStyle(element);
       const sample = document.createElement('span');
@@ -252,7 +247,7 @@ for (const width of [744, 1440]) {
     try {
       await page.locator('.st-board-card[data-step-id="wind"]').focus();
       await page.keyboard.press('Enter');
-      await page.locator('.st-board-step-layer [role="dialog"]').waitFor();
+      await page.locator('.st-board-step-layer article').waitFor();
       await page.keyboard.press('Escape');
       await page.locator('.st-board-step-layer').waitFor({ state: 'detached' });
       await page.keyboard.press('g');

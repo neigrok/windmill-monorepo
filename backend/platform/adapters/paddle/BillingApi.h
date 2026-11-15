@@ -17,9 +17,9 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// Paddle billing's HTTP edge: the webhook Paddle delivers to, and the subscription a signed-in
-// browser reads. Webhooks are the source of truth — every verified delivery upserts the local
-// mirror — so the read answers from this database and never round-trips the Paddle API.
+// Paddle billing's HTTP edge: the webhook Paddle delivers to, which upserts the local mirror and funds AI allowances
+// from verified payments, and the checkout door, which stays closed. The mirror decides no access: Windmill One is read
+// from the subscription service's copy (platform/subscriptions).
 class BillingApi {
 public:
   BillingApi(SubscriptionRepository& subscriptions, std::shared_ptr<AuthService> auth, Clock& clock,
@@ -27,7 +27,6 @@ public:
              AuthRepository* accounts = nullptr, long long fundedPeriodNanos = 7'000'000'000);
 
   void webhook(const drogon::HttpRequestPtr& req, HttpCallback&& callback);         // POST /v1/paddle/webhook
-  void mySubscription(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // GET  /v1/subscription
   void startCheckout(const drogon::HttpRequestPtr& req, HttpCallback&& callback);   // POST /v1/billing/checkout
 
 private:

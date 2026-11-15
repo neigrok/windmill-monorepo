@@ -11,7 +11,7 @@ export function useStepPage({ treeId, tree, loading, address, setSelectedId, vie
   const detailId = tree?.treeId === treeId && address.id !== null && tree.nodesById.has(address.id) ? address.id : null;
 
   const focusGraph = useCallback(() => {
-    const primary = rootRef.current?.querySelector('[data-graph-step-primary]');
+    const primary = rootRef.current?.querySelector('canvas[data-graph-focus]');
     const pressed = identityRef.current?.querySelector('.st-board-switch-option[aria-pressed="true"]');
     (primary ?? pressed)?.focus({ preventScroll: true });
   }, []);
@@ -27,7 +27,11 @@ export function useStepPage({ treeId, tree, loading, address, setSelectedId, vie
   useEffect(() => {
     if (detailId !== null || !graphStepReturnRef.current) return undefined;
     graphStepReturnRef.current = false;
-    const frame = requestAnimationFrame(focusGraph);
+    const frame = requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active !== document.body && active?.isConnected && !active.closest('[inert]')) return;
+      focusGraph();
+    });
     return () => cancelAnimationFrame(frame);
   }, [detailId, focusGraph]);
 
@@ -59,6 +63,7 @@ export function useStepPage({ treeId, tree, loading, address, setSelectedId, vie
       if (origin && tree?.nodesById.has(origin)) setSelectedId(origin);
     },
     openInGraph: (id) => {
+      graphStepReturnRef.current = true;
       address.close();
       setSelectedId(id);
       switchView('tree');
@@ -73,7 +78,9 @@ export function useStepPage({ treeId, tree, loading, address, setSelectedId, vie
       setBoardSelect({ id, key: selectKey.current });
     },
     viewBranch: (id) => {
+      graphStepReturnRef.current = false;
       address.close();
+      switchView('board');
       viewBranch(id);
     },
     deleteStep: (id) => {

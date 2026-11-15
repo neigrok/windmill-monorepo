@@ -9,14 +9,17 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ring::signature::{ECDSA_P256_SHA256_FIXED, UnparsedPublicKey};
 use serde::de::DeserializeOwned;
 
+use crate::server_api::SignedStatus;
+
 use chain::TrustedRoots;
 pub use payloads::{
-    AccountToken, Environment, Notification, RenewalInfo, TransactionId, TransactionInfo,
+    AccountToken, Environment, Notification, RenewalInfo, SubscriptionStatus, TransactionId,
+    TransactionInfo,
 };
 use payloads::{JwsHeader, NotificationPayload, SigningDate};
 
 const APPLE_ROOT_CA_G3: &[u8] = include_bytes!("../roots/AppleRootCA-G3.cer");
-const WINDMILL_BUNDLE_ID: &str = "works.windmill.app";
+pub(crate) const WINDMILL_BUNDLE_ID: &str = "works.windmill.app";
 const CLOCK_SKEW_MILLIS: i64 = 60_000;
 
 pub struct SignedDataVerifier {
@@ -29,6 +32,14 @@ impl SignedDataVerifier {
     pub fn windmill(clock: impl Fn() -> SystemTime + Send + Sync + 'static) -> Self {
         Self::new(&[APPLE_ROOT_CA_G3], WINDMILL_BUNDLE_ID, clock)
             .expect("Apple Root CA - G3 is a certificate with a P-384 key")
+    }
+
+    // The production configuration that also trusts a root only a test deployment holds, such as the test chain's.
+    pub fn windmill_also_trusting(
+        test_root: &[u8],
+        clock: impl Fn() -> SystemTime + Send + Sync + 'static,
+    ) -> Result<Self, InvalidRoots> {
+        Self::new(&[APPLE_ROOT_CA_G3, test_root], WINDMILL_BUNDLE_ID, clock)
     }
 
     pub fn new(
@@ -93,6 +104,40 @@ impl SignedDataVerifier {
         Ok(transaction)
     }
 
+    // A subscription's entry in the App Store Server API's answer for `environment`: its transaction and renewal info
+    // verified as a notification's are, each stating that environment.
+    pub fn verify_status(
+        &self,
+        environment: Environment,
+        signed: &SignedStatus,
+    ) -> Result<SubscriptionStatus, Refusal> {
+        let transaction = self.verify_transaction(&signed.signed_transaction_info)?;
+        let renewal_info = signed
+            .signed_renewal_info
+            .as_deref()
+            .map(|signed| self.verify_signed::<RenewalInfo>(signed))
+            .transpose()?;
+        let stated = [
+            Some(transaction.environment),
+            renewal_info
+                .as_ref()
+                .map(|renewal_info| renewal_info.environment),
+        ];
+        if stated
+            .into_iter()
+            .flatten()
+            .any(|stated| stated != environment)
+        {
+            return Err(Refusal::Environment);
+        }
+        Ok(SubscriptionStatus {
+            environment,
+            status: signed.status,
+            transaction,
+            renewal_info,
+        })
+    }
+
     fn verify_signed<T: DeserializeOwned>(&self, jws: &str) -> Result<T, Refusal> {
         let (signing_input, signature) = jws.rsplit_once('.').ok_or(Refusal::Malformed)?;
         let (header, payload) = signing_input.split_once('.').ok_or(Refusal::Malformed)?;
@@ -108,14 +153,15 @@ impl SignedDataVerifier {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_millis() as i64);
         let signed_at = signed_date.unwrap_or(now);
-        if signed_at > now.saturating_add(CLOCK_SKEW_MILLIS) {
-            return Err(Refusal::SignedInFuture);
-        }
         let leaf_key = self.roots.verify_chain(&header.x5c, signed_at)?;
 
         UnparsedPublicKey::new(&ECDSA_P256_SHA256_FIXED, leaf_key)
             .verify(signing_input.as_bytes(), &decode_segment(signature)?)
             .map_err(|_| Refusal::Signature)?;
+        // Checked once the signature holds, so a payload refused for its date was signed by a trusted chain.
+        if signed_at > now.saturating_add(CLOCK_SKEW_MILLIS) {
+            return Err(Refusal::SignedInFuture);
+        }
         decode_json(&payload)
     }
 }
@@ -146,6 +192,15 @@ pub enum Refusal {
 }
 
 impl Refusal {
+    // Whether the payload this refuses verified under a trusted chain first: a statement the store signed, refused
+    // for what it says.
+    pub fn after_signature(self) -> bool {
+        matches!(
+            self,
+            Refusal::SignedInFuture | Refusal::BundleId | Refusal::Environment
+        )
+    }
+
     pub fn code(self) -> &'static str {
         match self {
             Refusal::Malformed => "malformed",
@@ -188,7 +243,7 @@ impl std::error::Error for InvalidRoots {}
 mod tests {
     use std::time::SystemTime;
 
-    use super::{Environment, RenewalInfo, SignedDataVerifier, TransactionId};
+    use super::{Environment, InvalidRoots, RenewalInfo, SignedDataVerifier, TransactionId};
 
     #[test]
     fn a_renewal_info_apple_signed_for_another_app_passes_the_chain_and_signature_under_the_pinned_root()
@@ -216,5 +271,21 @@ mod tests {
             environment: Environment::Sandbox,
         };
         assert!(verified == Ok(expected), "refused: {:?}", verified.err());
+    }
+
+    #[test]
+    fn the_configuration_that_also_trusts_a_test_root_keeps_trusting_apple_s_and_takes_only_a_certificate()
+     {
+        let signed =
+            include_str!("../../../tests/fixtures/app_store/go-iap-renewal-info.jws").trim();
+        let test_root = include_bytes!("../../../tests/fixtures/app_store/test-chain/root.cer");
+
+        let verifier =
+            SignedDataVerifier::windmill_also_trusting(test_root, SystemTime::now).unwrap();
+        let not_a_certificate =
+            SignedDataVerifier::windmill_also_trusting(b"not a certificate", SystemTime::now);
+
+        assert!(verifier.verify_signed::<RenewalInfo>(signed).is_ok());
+        assert!(matches!(not_a_certificate, Err(InvalidRoots)));
     }
 }

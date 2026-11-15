@@ -91,7 +91,9 @@ docker builder prune -af > /dev/null
 python3 "$(dirname "$0")/sync_compatibility.py" preflight "$candidate_env" sync-cutover.json "$verification/sync.json"
 # The subscription service runs the image built for this commit, pinned to the content ID it was pulled as, like
 # the server and the migration. A commit that has none, as an image built before Backend CI published the service,
-# keeps the image the live service runs: its container keeps it on the host through the prune.
+# keeps the container the live service runs, untouched: recreating it under the candidate compose could start an
+# older image on configuration it cannot read. Its container also keeps its image on the host through the prune.
+kept_subscriptions=
 if "${candidate[@]}" pull subscriptions; then
   subscriptions_image=$("${candidate[@]}" config --format json |
     python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["subscriptions"]["image"])')
@@ -102,13 +104,13 @@ if "${candidate[@]}" pull subscriptions; then
   fi
 else
   subscriptions_id=
-  [[ ! -f .env ]] || subscriptions_id=$(sed -n 's/^SUBSCRIPTIONS_IMAGE=//p' .env)
-  if [[ ! "$subscriptions_id" =~ ^sha256:[a-f0-9]{64}$ ]] ||
-     ! docker image inspect --format '{{.Id}}' "$subscriptions_id" > /dev/null 2>&1; then
+  [[ ! -f .env ]] || kept_subscriptions=$(docker compose ps -q subscriptions 2> /dev/null || true)
+  [[ -z "$kept_subscriptions" ]] || subscriptions_id=$(docker inspect --format '{{.Image}}' "$kept_subscriptions")
+  if [[ ! "$subscriptions_id" =~ ^sha256:[a-f0-9]{64}$ ]]; then
     printf 'FAIL no subscription service image could be pulled for this commit, and none runs here to keep\n' >&2
     exit 1
   fi
-  printf 'NOTE subscription service: no image could be pulled for this commit, so it keeps the one it runs, %s\n' \
+  printf 'NOTE subscription service: no image could be pulled for this commit, so its running container is kept as it is, on %s\n' \
     "$subscriptions_id"
 fi
 sed '/^SUBSCRIPTIONS_IMAGE=/d' "$candidate_env" > "$verification/candidate.env"
@@ -259,13 +261,18 @@ case "$outcome" in
       "${outcome%% *}" >&2
     exit 1 ;;
 esac
-# The subscription service starts on the database its provisioning has just passed. One that does not turn
-# healthy on its pinned image turns this run red; it is not rolled back, and the backend stays deployed and serving.
-if ! docker compose up -d --no-deps --pull never subscriptions; then
-  printf 'FAIL subscription service did not start; the backend is deployed and serving\n' >&2
-  exit 1
+# The subscription service starts on the database its provisioning has just passed, or a kept one goes on as it
+# runs. One that is not healthy on its pinned image turns this run red; it is not rolled back, and the backend stays
+# deployed and serving.
+if [[ -n "$kept_subscriptions" ]]; then
+  subscriptions=$kept_subscriptions
+else
+  if ! docker compose up -d --no-deps --pull never subscriptions; then
+    printf 'FAIL subscription service did not start; the backend is deployed and serving\n' >&2
+    exit 1
+  fi
+  subscriptions=$(docker compose ps -aq subscriptions)
 fi
-subscriptions=$(docker compose ps -aq subscriptions)
 for ((attempt=0; attempt<60; attempt++)); do
   health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
     "$subscriptions")
@@ -280,7 +287,11 @@ if [[ "$(docker inspect --format '{{.Image}}' "$subscriptions")" != "$(sed -n 's
   printf 'FAIL running subscription service image differs from intended image; the backend is deployed and serving\n' >&2
   exit 1
 fi
-printf 'PASS subscription service: healthy on its pinned image\n'
+if [[ -n "$kept_subscriptions" ]]; then
+  printf 'PASS subscription service: its running container kept, not recreated, healthy on its image\n'
+else
+  printf 'PASS subscription service: healthy on its pinned image\n'
+fi
 # This HBA writer starts only after subscriptions-db has finished. AI failure leaves the backend serving.
 if ! docker compose up -d --no-deps --pull never ai-db; then
   printf 'FAIL AI database provisioning did not start; the backend is deployed and serving\n' >&2

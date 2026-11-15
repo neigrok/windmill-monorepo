@@ -35,9 +35,9 @@ struct Harness {
   FakeSegmenter segmenter;
   FakeEmbedder embedder;
   FakeCurator curator;
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage};
+  Entitlements entitlements{subscriptions, *clock, usage};
   FakeJournalRepository pages;
   std::shared_ptr<EchoSweep> sweep;
   std::shared_ptr<EchoExplainer> explainer;

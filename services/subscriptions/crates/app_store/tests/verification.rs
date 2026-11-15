@@ -1,8 +1,9 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use app_store::server_api::SignedStatus;
 use app_store::verification::{
     AccountToken, Environment, Notification, Refusal, RenewalInfo, SignedDataVerifier,
-    TransactionId, TransactionInfo,
+    SubscriptionStatus, TransactionId, TransactionInfo,
 };
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
@@ -311,6 +312,132 @@ fn a_transaction_a_phone_hands_over_verifies_on_its_own() {
 }
 
 #[test]
+fn a_status_entry_verifies_with_both_its_payloads_each_stating_the_environment_asked() {
+    let chain = TestChain::issue(ChainShape::default());
+    let impostor = TestChain::issue(ChainShape::default());
+    let transaction = |bundle_id: &str, environment: &str| {
+        chain.sign(&json!({
+            "transactionId": "2000000000000002",
+            "originalTransactionId": "2000000000000001",
+            "bundleId": bundle_id,
+            "productId": "works.windmill.app.one.monthly",
+            "purchaseDate": 1_793_491_200_000_i64,
+            "expiresDate": 1_796_083_200_000_i64,
+            "signedDate": 1_793_491_260_000_i64,
+            "environment": environment
+        }))
+    };
+    let renewal_info = json!({
+        "originalTransactionId": "2000000000000001",
+        "autoRenewStatus": 1,
+        "renewalDate": 1_796_083_200_000_i64,
+        "signedDate": 1_793_491_261_000_i64,
+        "environment": "Production"
+    });
+    let entry = |signed_transaction_info: String, signed_renewal_info: String| SignedStatus {
+        status: Some(1),
+        signed_transaction_info,
+        signed_renewal_info: Some(signed_renewal_info),
+    };
+    let verifier = chain.verifier();
+
+    let verified = verifier.verify_status(
+        Environment::Production,
+        &entry(
+            transaction("works.windmill.app", "Production"),
+            chain.sign(&renewal_info),
+        ),
+    );
+    let refused = [
+        verifier.verify_status(
+            Environment::Sandbox,
+            &entry(
+                transaction("works.windmill.app", "Production"),
+                chain.sign(&renewal_info),
+            ),
+        ),
+        verifier.verify_status(
+            Environment::Production,
+            &entry(
+                transaction("works.windmill.app", "Sandbox"),
+                chain.sign(&renewal_info),
+            ),
+        ),
+        verifier.verify_status(
+            Environment::Production,
+            &entry(
+                transaction("com.example.other", "Production"),
+                chain.sign(&renewal_info),
+            ),
+        ),
+        verifier.verify_status(
+            Environment::Production,
+            &entry(
+                transaction("works.windmill.app", "Production"),
+                jws("ES256", &chain.x5c(), &impostor.leaf_key, &renewal_info),
+            ),
+        ),
+    ]
+    .map(Result::err);
+
+    let expected = SubscriptionStatus {
+        environment: Environment::Production,
+        status: Some(1),
+        transaction: TransactionInfo {
+            transaction_id: TransactionId::new("2000000000000002"),
+            original_transaction_id: TransactionId::new("2000000000000001"),
+            bundle_id: "works.windmill.app".to_owned(),
+            product_id: "works.windmill.app.one.monthly".to_owned(),
+            product_type: None,
+            purchase_date: 1_793_491_200_000,
+            original_purchase_date: None,
+            expires_date: Some(1_796_083_200_000),
+            signed_date: Some(1_793_491_260_000),
+            environment: Environment::Production,
+            storefront: None,
+            price: None,
+            currency: None,
+            app_account_token: None,
+            in_app_ownership_type: None,
+            transaction_reason: None,
+            offer_type: None,
+            offer_discount_type: None,
+            billing_plan_type: None,
+            is_upgraded: None,
+            revocation_date: None,
+            revocation_reason: None,
+            revocation_type: None,
+        },
+        renewal_info: Some(RenewalInfo {
+            original_transaction_id: TransactionId::new("2000000000000001"),
+            product_id: None,
+            auto_renew_product_id: None,
+            auto_renew_status: Some(1),
+            expiration_intent: None,
+            is_in_billing_retry_period: None,
+            grace_period_expires_date: None,
+            price_increase_status: None,
+            renewal_date: Some(1_796_083_200_000),
+            renewal_price: None,
+            currency: None,
+            offer_type: None,
+            signed_date: Some(1_793_491_261_000),
+            environment: Environment::Production,
+        }),
+    };
+    assert!(verified == Ok(expected), "refused: {:?}", verified.err());
+    assert_eq!(
+        refused,
+        [
+            Some(Refusal::Environment),
+            Some(Refusal::Environment),
+            Some(Refusal::BundleId),
+            Some(Refusal::Signature),
+        ]
+    );
+}
+
+#[test]
 fn a_payload_with_one_altered_byte_is_refused() {
     let chain = TestChain::issue(ChainShape::default());
     let verifier = chain.verifier();
@@ -567,6 +694,40 @@ fn a_payload_signed_later_than_the_clock_allows_is_refused() {
     assert_eq!(
         (within_a_minute, past_a_minute),
         (None, Some(Refusal::SignedInFuture))
+    );
+}
+
+#[test]
+fn a_signing_in_the_future_is_judged_only_once_the_signature_holds() {
+    let trusted = TestChain::issue(ChainShape::default());
+    let foreign = TestChain::issue(ChainShape::default());
+    let transaction = json!({
+        "transactionId": "2000000000000001",
+        "originalTransactionId": "2000000000000001",
+        "bundleId": "works.windmill.app",
+        "productId": "works.windmill.one.monthly",
+        "purchaseDate": 1_790_812_800_000_i64,
+        "signedDate": 1_793_491_320_001_i64,
+        "environment": "Production"
+    });
+
+    let refusals = [
+        trusted
+            .verifier()
+            .verify_transaction(&trusted.sign(&transaction))
+            .err(),
+        trusted
+            .verifier()
+            .verify_transaction(&foreign.sign(&transaction))
+            .err(),
+    ];
+
+    assert_eq!(
+        refusals.map(|refusal| refusal.map(|refusal| (refusal, refusal.after_signature()))),
+        [
+            Some((Refusal::SignedInFuture, true)),
+            Some((Refusal::Untrusted, false))
+        ]
     );
 }
 

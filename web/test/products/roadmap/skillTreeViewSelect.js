@@ -60,7 +60,7 @@ export function selectCases({ browserType }) {
       assert.equal(await page.evaluate((selector) => window.selectionStatus === document.querySelector(selector), liveSelector), true);
       assert.deepEqual(await page.evaluate(() => window.events.filter(({ name, props }) => name === 'roadmap_board_select'
         || (name === 'roadmap_board_step_action' && props.action === 'select'))), [
-        { name: 'roadmap_board_step_action', props: { surface: 'page', action: 'select' } },
+        { name: 'roadmap_board_step_action', props: { surface: 'document', action: 'select' } },
         { name: 'roadmap_board_select', props: { step: 'start' } },
         { name: 'roadmap_board_select', props: { step: 'end', via: 'done' } },
       ]);
@@ -69,6 +69,31 @@ export function selectCases({ browserType }) {
   });
 
   if (browserName !== 'chromium') return;
+
+  hostTest('Chromium: an inert Board selection leaves Escape to the shared document', async () => {
+    const { page, errors } = await openHost({ width: 390, surface: 'board', broad: true });
+    try {
+      await page.locator(cardSelector('wind')).click();
+      await selectFromMenu(page);
+      await selectedFocus(page, 'wind');
+      await page.evaluate(() => {
+        history.pushState({ ...history.state, boardStep: { trail: ['wind'], pushed: 1 } }, '', location.hash + '?step=wind');
+        dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+      });
+      const document = page.getByRole('article', { name: 'Read the wind', exact: true });
+      await document.waitFor();
+      await document.focus();
+      await page.keyboard.press('Escape');
+      await document.waitFor({ state: 'detached' });
+      await selectedFocus(page, 'wind');
+      assert.deepEqual(await page.evaluate(() => window.events.filter(({ name }) => name === 'roadmap_board_select')),
+        [{ name: 'roadmap_board_select', props: { step: 'start' } }]);
+      await page.keyboard.press('Escape');
+      await ended(page, 'wind');
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+
 
   for (const consumed of [true, false]) {
     hostTest(`Chromium: Board crash clears a ${consumed ? 'consumed' : 'pending'} Select request before remount`, async () => {
@@ -185,7 +210,7 @@ export function selectCases({ browserType }) {
       const target = board.done.cards.slice(DONE_RECENT_LIMIT).find(({ id }) => id !== 'course').id;
       assert.equal(await page.locator(cardSelector(target)).count(), 0);
       await page.evaluate((id) => { location.hash = '#/app/t_sail?step=' + encodeURIComponent(id); }, target);
-      await page.locator('.st-board-step-page').waitFor();
+      await page.locator('.st-step-document').waitFor();
       await selectFromMenu(page);
       await selectedFocus(page, target);
       assert.equal(await page.locator('.st-board-phone-pane.is-shown').getAttribute('data-column'), 'done');

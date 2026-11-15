@@ -48,6 +48,11 @@ const SELECT_LINEAGE_LOCKED: &str = concat!(
     " from subscriptions where store = $1 and environment = $2 and store_subscription_id = $3 \
      for no key update"
 );
+const SELECT_BY_ID: &str = concat!(
+    "select ",
+    subscription_columns!(),
+    " from subscriptions where id = $1::uuid"
+);
 const SELECT_BOUND_TO: &str = concat!(
     "select ",
     subscription_columns!(),
@@ -90,6 +95,15 @@ impl Ledger {
         transaction.commit().await?;
         Ok(held)
     }
+
+    // The subscription the ledger keeps under its own id, as a refresh names it.
+    pub async fn subscription(&self, id: Uuid) -> Result<Option<Subscription>, StorageError> {
+        let row: Option<SubscriptionRow> = sqlx::query_as(SELECT_BY_ID)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        row.map(Subscription::try_from).transpose()
+    }
 }
 
 // §3.4 step 1: the lineage, locked against every other writer until the transaction ends, even before its first
@@ -122,17 +136,23 @@ async fn load(
         return Ok(domain::Ledger::default());
     };
     let subscription = Subscription::try_from(row)?;
-    let periods: Vec<PeriodRow> = sqlx::query_as(SELECT_PERIODS)
-        .bind(subscription.id.as_str())
-        .fetch_all(&mut *connection)
-        .await?;
+    let periods = periods_of(connection, &subscription.id).await?;
     Ok(domain::Ledger {
         subscription: Some(subscription),
-        periods: periods
-            .into_iter()
-            .map(Period::try_from)
-            .collect::<Result<_, _>>()?,
+        periods,
     })
+}
+
+// The subscription's periods, by start.
+pub(crate) async fn periods_of(
+    connection: &mut PgConnection,
+    subscription_id: &SubscriptionId,
+) -> Result<Vec<Period>, StorageError> {
+    let rows: Vec<PeriodRow> = sqlx::query_as(SELECT_PERIODS)
+        .bind(subscription_id.as_str())
+        .fetch_all(connection)
+        .await?;
+    rows.into_iter().map(Period::try_from).collect()
 }
 
 // Writes what a change makes of its lineage: the subscription when it differs from the one held, and each period

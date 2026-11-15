@@ -217,6 +217,7 @@ export class SyncSession {
       structureGestures: this.rebaselining?.has('structure') ? 0 : Object.keys(this.gestures.structure).length,
       progressGestures: this.rebaselining?.has('progress') ? 0 : Object.keys(retainedGestures('progress', owedProgress, this.gestures.progress)).length,
       rebaselining: this.rebaselining != null,
+      progressBlocked: Boolean(this.rebaselining?.has('progress')),
       refused: this.refusals.values().next().value ?? null,
       receiptVersion: this.receiptVersion,
     };

@@ -198,15 +198,15 @@ AiCallBudget::AiCallBudget(std::shared_ptr<AiBudgetService> budgets, Entitlement
 
 AiCallAdmission AiCallBudget::begin(const AiSpend& spend, const Json::Value& request, int minOutputTokens) {
   const MessagesPrice price = messagesPrice(spend, request, minOutputTokens);
-  return beginAccount(spend, price.amountNanos, price.outputBudget, AiCallFunding::anyAllowance);
+  return beginAccount(spend, price.amountNanos, price.outputBudget, AiBudgetFunding::AnyAllowance);
 }
 
-AiCallAdmission AiCallBudget::begin(const AiSpend& spend, std::optional<long long> ceilingNanos, AiCallFunding funding) {
+AiCallAdmission AiCallBudget::begin(const AiSpend& spend, std::optional<long long> ceilingNanos, AiBudgetFunding funding) {
   return beginAccount(spend, ceilingNanos, std::nullopt, funding);
 }
 
 AiCallAdmission AiCallBudget::beginAccount(const AiSpend& spend, std::optional<long long> amountNanos,
-                                           std::optional<AiOutputBudget> outputBudget, AiCallFunding funding) {
+                                           std::optional<AiOutputBudget> outputBudget, AiBudgetFunding funding) {
   WriteObservation observation{"ai.call.admit", "platform", "vendor", "", &failures_};
   WriteContext context{observation};
   try {
@@ -219,14 +219,8 @@ AiCallAdmission AiCallBudget::beginAccount(const AiSpend& spend, std::optional<l
       observation.finish("unauthenticated");
       return {{}, "unauthenticated"};
     }
-    const auto principal = entitlements_.aiPrincipalFor(account->id, account->email.value);
-    // The reservation is booked under this principal, so a Windmill One principal can only ever draw on its grant.
-    if (funding == AiCallFunding::windmillOne && principal.tier != AiBudgetTier::WindmillOne) {
-      observation.finish("funding_required");
-      return {{}, "funding_required"};
-    }
     observation.skip();
-    return admit(principal, amountNanos, outputBudget);
+    return admit(entitlements_.aiPrincipalFor(account->id, account->email.value), amountNanos, outputBudget, funding);
   } catch (...) {
     observation.failUnknown();
     return {{}, "ai_accounting_unavailable"};
@@ -246,7 +240,7 @@ AiCallAdmission AiCallBudget::beginInstallation(const AiInstallationPrincipal& i
 }
 
 AiCallAdmission AiCallBudget::admit(const AiBudgetPrincipal& principal, std::optional<long long> amountNanos,
-                                    std::optional<AiOutputBudget> outputBudget) {
+                                    std::optional<AiOutputBudget> outputBudget, AiBudgetFunding funding) {
   WriteObservation observation{"ai.call.admit", "platform", "vendor", "", &failures_};
   WriteContext context{observation};
   try {
@@ -254,7 +248,7 @@ AiCallAdmission AiCallBudget::admit(const AiBudgetPrincipal& principal, std::opt
       observation.finish("unsupported_ai_pricing");
       return {{}, "unsupported_ai_pricing"};
     }
-    const auto reservation = budgets_->reserve(drogon::utils::getUuid(), principal, *amountNanos, outputBudget);
+    const auto reservation = budgets_->reserve(drogon::utils::getUuid(), principal, *amountNanos, outputBudget, funding);
     if (const auto& offer = outputBudget) {
       LOG_INFO << "ai_output_admission input_nanos=" << offer->inputNanos
                << " output_token_nanos=" << offer->outputTokenNanos << " min_tokens=" << offer->minTokens

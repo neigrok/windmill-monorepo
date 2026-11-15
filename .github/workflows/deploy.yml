@@ -63,6 +63,9 @@ jobs:
           # The password of windmill_subscriptions, the subscription service's database role: the
           # subscriptions-db one-shot sets it and the service signs in with it (backend/deploy/README.md).
           SUBSCRIPTIONS_DB_PASSWORD: ${{ secrets.SUBSCRIPTIONS_DB_PASSWORD }}
+          # The bearer secret of the subscription service's internal doors, handed to the server and the service.
+          # Empty ⇒ the server's feed follower stays off and the doors answer 401 (backend/deploy/README.md).
+          SUBSCRIPTIONS_INTERNAL_TOKEN: ${{ secrets.SUBSCRIPTIONS_INTERNAL_TOKEN }}
           AI_DB_PASSWORD: ${{ secrets.AI_DB_PASSWORD }}
           AI_PASS_KEYS: ${{ vars.AI_PASS_KEYS || '{}' }}
           AI_CARRY_KEY: ${{ secrets.AI_CARRY_KEY }}
@@ -100,6 +103,9 @@ jobs:
           JOURNAL_ECHO_ADMIN_TOKEN: ${{ secrets.JOURNAL_ECHO_ADMIN_TOKEN }}
           WINDMILL_OWNER_EMAILS: ${{ vars.WINDMILL_OWNER_EMAILS }}
           # Config (variables; safe compose defaults when unset):
+          # Windmill One's sandbox testers and the stores its paid line is open on. Unset ⇒ none, and closed.
+          WINDMILL_SANDBOX_EMAILS: ${{ vars.WINDMILL_SANDBOX_EMAILS }}
+          SUBSCRIPTIONS_PURCHASABLE_STORES: ${{ vars.SUBSCRIPTIONS_PURCHASABLE_STORES }}
           PADDLE_ENV: ${{ vars.PADDLE_ENV }}
           PADDLE_PRICE_ID: ${{ vars.PADDLE_PRICE_ID }}
           RESEND_FROM: ${{ vars.RESEND_FROM }}
@@ -197,6 +203,11 @@ jobs:
             echo "Refusing to render — SUBSCRIPTIONS_DB_PASSWORD must be 64 lowercase hex characters (openssl rand -hex 32)."
             exit 1
           fi
+          # A bearer secret is written to .env as it is, so it holds nothing compose would read as markup.
+          if [[ -n "$SUBSCRIPTIONS_INTERNAL_TOKEN" && ! "$SUBSCRIPTIONS_INTERNAL_TOKEN" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Refusing to render — SUBSCRIPTIONS_INTERNAL_TOKEN must be empty or 64 lowercase hex characters (openssl rand -hex 32)."
+            exit 1
+          fi
 
           python3 - <<'PYAI'
           import base64
@@ -239,11 +250,19 @@ jobs:
             fi
           fi
 
+          # The stores the paid line is open on (docs/foundation/subscriptions.md §5.3). A server given a name it does not
+          # know keeps that store closed, so a typo is refused here, before anything reaches the host.
+          stores='^ *((app_store|play_store|paddle) *(,|$) *)*$'
+          if [[ ! "${SUBSCRIPTIONS_PURCHASABLE_STORES:-}" =~ $stores ]]; then
+            echo "Refusing to render — SUBSCRIPTIONS_PURCHASABLE_STORES must list app_store, play_store or paddle, comma-separated."
+            exit 1
+          fi
+
           # printf so values are written literally. Optional keys write empty; compose defaults apply.
           : > rendered.env
           {
             printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG:-latest}"
-            for key in POSTGRES_PASSWORD SUBSCRIPTIONS_DB_PASSWORD AI_DB_PASSWORD AI_PASS_KEYS AI_CARRY_KEY \
+            for key in POSTGRES_PASSWORD SUBSCRIPTIONS_DB_PASSWORD SUBSCRIPTIONS_INTERNAL_TOKEN AI_DB_PASSWORD AI_PASS_KEYS AI_CARRY_KEY \
                        AI_FUNDING_SECRET AI_OPERATOR_SECRET AI_ANTHROPIC_KEY AI_OPENAI_KEY AI_AZURE_KEY \
                        AI_AZURE_URL AI_AZURE_DEPLOYMENT DOMAIN_APP DOMAIN_API ACME_EMAIL CF_IPS \
                        RESEND_API_KEY RESEND_FROM RESEND_WEBHOOK_SECRET ANTHROPIC_API_KEY OPENAI_API_KEY \
@@ -262,7 +281,8 @@ jobs:
                        JOURNAL_NUDGE_ENABLED JOURNAL_NUDGE_ALLOWLIST JOURNAL_NUDGE_ADMIN_TOKEN \
                        JOURNAL_ECHO_ADMIN_TOKEN \
                        APPLE_NATIVE_ENABLED APPLE_CLIENT_ID \
-                       WINDMILL_OWNER_EMAILS WINDMILL_COOKIE_RETIRED_DOMAINS \
+                       WINDMILL_OWNER_EMAILS WINDMILL_SANDBOX_EMAILS SUBSCRIPTIONS_PURCHASABLE_STORES \
+                       WINDMILL_COOKIE_RETIRED_DOMAINS \
                        WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do
               printf '%s=%s\n' "$key" "${!key}"
             done

@@ -100,7 +100,7 @@ for (const width of [1440, 1024, 744, 390]) {
     const { page, errors } = await openHost({ width, noWebgl2: true });
     try {
       await page.locator('.st-board-card[data-step-id="wind"]').click();
-      await page.locator('.st-board-step-layer [role="dialog"]').waitFor();
+      await page.locator('.st-board-step-layer article').waitFor();
       await page.locator('.st-board-step-layer').getByRole('button', { name: STEP_DETAIL.more, exact: true }).click();
       assert.equal(await page.getByRole('menuitem', { name: STEP_DETAIL.openInGraph, exact: true }).count(), 0);
       await page.keyboard.press('Escape');
@@ -199,7 +199,7 @@ hostTest('Chromium: a scene-less owner can complete, Undo, create and edit', asy
     await page.getByRole('button', { name: STEP_DETAIL.editStep, exact: true }).click();
     await page.getByRole('textbox', { name: COMPOSER.name, exact: true }).fill('Read gusts');
     await page.getByRole('button', { name: EDIT_STEP.save, exact: true }).click();
-    await page.getByRole('dialog', { name: 'Read gusts', exact: true }).waitFor();
+    await page.getByRole('article', { name: 'Read gusts', exact: true }).waitFor();
     assert.deepEqual(await page.evaluate(() => window.issues), []);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }

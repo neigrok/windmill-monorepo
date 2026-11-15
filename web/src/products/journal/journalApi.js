@@ -73,16 +73,4 @@ export const journalApi = {
   async patchNudge(patch) {
     return json(await call('/nudge', { method: 'PATCH', body: JSON.stringify(patch) }));
   },
-
-  // Audio bytes in, text out. 403 when not subscribed; 503 when no vendor is wired or the AI allowance cannot fund
-  // the take; 429 when the allowance or the day's audio is spent. No page is created.
-  async transcribe(audioBlob, mimeType) {
-    const response = await call('/transcribe', {
-      method: 'POST',
-      body: audioBlob,
-      headers: { 'content-type': mimeType || 'application/octet-stream' },
-    });
-    if (!response.ok) throw new JournalError(response.status);
-    return (await response.json()).text;
-  },
 };

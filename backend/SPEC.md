@@ -113,9 +113,11 @@ rejected for structure. Validity is a read model, not a gate.
   unread at once without trying, and the first follow after it that answers ends it. The cool-offs
   live in the process's memory, keyed by owner, at most 1,024 of them (`kMaxCoolingOff`), the one
   begun first let go to make room.
-- A node with a valid pointer takes no mark from a caller who can write the tree. The room hands
-  that caller, and nobody else, the nodes that open a tree (`TreeRoom::pointersFor`); `following`
-  names the ones whose pointer is valid, and `ProgressService::mark`, which both doors that write
+- A node with a valid pointer takes no mark from a caller who can write the tree, and a step that owns
+  a subtree takes none from anyone. The room hands that caller the nodes that open a tree, and anyone
+  else the steps that own a subtree alone, each read among the owner's trees
+  (`TreeRoom::followedStepsFor`); `following` names the ones whose pointer is valid or whose subtree
+  stands, and `ProgressService::mark`, which both doors that write
   progress call, leaves a mark on one of them, `complete` or `none`, out of the write and answers it
   refused under the code `opens-a-tree`: MCP `update_nodes` and the `progress[]` of an
   `import_subgraph` say so (`adapters/mcp/README.md`), and a socket `progress` frame's ack lists it
@@ -218,8 +220,10 @@ rejected for structure. Validity is a read model, not a gate.
   below; Authorization). The place is written once, when the tree is created, and
   never changed, and a subtree is always a new tree under a standing one: a subtree has one parent,
   never moves, never closes a loop and is never another account's. A step owns at most one subtree.
-  The store enforces all of it whatever writes it (Persistence). `PUT /v1/trees/{tree}/steps/{step}/subtree` creates
-  one (HTTP surface), through `TreeRegistry::createSubtree` (below).
+  The store enforces all of it whatever writes it (Persistence). `PUT /v1/trees/{tree}/steps/{step}/subtree` (HTTP
+  surface) and MCP `create_subtree` create one, through `TreeRegistry::createSubtree` (below): keyed by the step, so a
+  retry answers the subtree it already owns `created: false`, and born with the legend the call sends or the default
+  one, never a copy of the parent's (`adapters/mcp/README.md`, A step's subtree).
 
   A subtree reads as one step of its parent:
 
@@ -249,16 +253,24 @@ rejected for structure. Validity is a read model, not a gate.
   - **Place.** A tree read answers `root`, `parent: {tree, step} | null`, `path: [{tree, step,
     title}]` — the trees above it, root first, each with its step the way passes through and its
     name — and `depth`, to anyone who may read it; a root answers `parent: null`, `path: []` and
-    `depth: 0`.
+    `depth: 0`. MCP `get_tree` answers them in `tree` on every page; a tend is answered none of them
+    (`ScopedToolHost`), as it is answered no guide of a tree above.
   - **The owning step's child.** A step that owns a subtree opens it, whatever its pointer holds
-    (`OpenedTrees`), so it takes no hand mark at any door (`opens-a-tree`), and its writer is
+    (`OpenedTrees`), so it takes no hand mark at any door from anyone, its owner or a reader (`opens-a-tree`;
+    `TreeRoom::followedStepsFor`), and its writer is
     answered its subtree wherever a pointer is answered. Every node read of `GET /v1/trees/{id}`
-    carries `subtree: {id, done, total, state}` on such a step, to anyone who may read the tree:
+    carries `subtree: {id, done, total, state}` on such a step, to anyone who may read the tree, and so
+    do MCP `get_tree`, whose default fields name it, and `get_nodes` and `find_nodes` when `fields` does:
     `done` of `total` the subtree's present steps, those complete for the owner, and `state`
     `complete` or `open`. A subtree is complete when it holds at least one step and every one is,
     however deep, so an empty one is unfinished and a leaf reopened reopens every owning step above
-    it; nothing of it is stored. The subscribe answer lists the subtree each step owns (WebSocket
-    surface), which heals a `subtree` frame a client missed.
+    it; nothing of it is stored. A reader is shown that one source: the step's MCP `state`, the `state`
+    filter and their marks' `prerequisitesMet` follow the owner's completion of the subtree, whatever mark
+    the reader holds, as `GET …/progress` shows them the owner's derived completion. MCP `find_nodes {owns:
+    true}` keeps the steps that own one. An MCP read whose follow of the trees the steps open is not made in
+    time answers `subtree` with its id alone, each such step not complete, and `openedTreesUnavailable`
+    (`adapters/mcp/README.md`, A step's subtree). The subscribe answer lists the subtree each step owns
+    (WebSocket surface), which heals a `subtree` frame a client missed.
   - **Lists show roots only.** A subtree is no row of `GET /v1/trees`, MCP `list_trees`, the gallery or
     reminder readiness; it counts in its parent as the one step that owns it, and a reminder names
     that step by its label.
@@ -341,7 +353,9 @@ rejected for structure. Validity is a read model, not a gate.
   The child is stored with its legend, and the parent's head moved to its next seq, in one
   transaction (`TreeRepository::createSubtree`) that holds the owner's account as `create` does: an
   empty tree with an empty title, at seq 0, its own room, born with the kinds it was sent or, with
-  none, the default legend. A step another writer filled between the site and the store is read
+  none, the default legend. That transaction first holds the root's row in the mode the root's removal
+  takes it, so a create racing the removal of its root waits for it and then stores nothing, answered
+  as an absent tree, and a removal that begins after it takes the child with the branch. A step another writer filled between the site and the store is read
   again and answered as owned, and an id another writer took is replaced by a minted one; a second
   conflict is a failure. The stored seq is then the parent's `subtree` event, which every
   subscriber of the parent is sent (WebSocket surface); it changes no register and leaves no
@@ -385,12 +399,14 @@ rejected for structure. Validity is a read model, not a gate.
   completes `ok`; any other write completes as it would without the refused pointer. Every write line but
   a dry run's counts the refused pointers as `refused` (`OBSERVABILITY.md`).
 
-  MCP judges a new pointer's target before it writes anything. An owning step's echo of its own subtree,
-  present or deleted, as the step's room holds it, passes first and lands nothing, so the create or the
-  import that revives the step may carry it. A pointer at any other subtree of the caller's whose branch
-  stands is refused whole as `opens-a-subtree`, in words that say its owning step opens it and
-  `list_trees` lists the roots a step may open; one at a tree that is absent, hidden or someone else's is
-  refused `opens-not-yours`, in one sentence for all three.
+  MCP judges a new pointer's target before it writes anything, on a step that owns no subtree. A pointer
+  sent a step that owns one, present or deleted, is judged by the register rule above alone, whatever it
+  names: an echo of its own subtree passes and lands nothing, so the create or the import that revives the
+  step may carry it, and any other is refused for that step with the rest of the call applied. A pointer
+  any other step is sent at a subtree of the caller's whose branch stands is refused whole as
+  `opens-a-subtree`, in words that say its owning step opens it and `list_trees` lists the roots a step may
+  open; one at a tree that is absent, hidden or someone else's is refused `opens-not-yours`, in one
+  sentence for all three.
 
   So a pointer whose target becomes a subtree reads as leading nowhere from then on, with no rewrite; a
   step comes to own a subtree only while its pointer leads nowhere, and its register is frozen from
@@ -1069,8 +1085,9 @@ that can, `reader` for any other) ·
 
 `subtree` says a subtree was created under `step` (Model, Subtrees). It takes the tree's next seq and
 goes to every subscriber, reader and writer alike, carrying the same bytes: whoever may read the tree
-may read its subtrees, whose access is its root's. The web client takes its seq as it takes a live frame's
-(`docs/GRAPH_SYNC_DESIGN.md`) and stands the new subtree, empty, on its step.
+may read its subtrees, whose access is its root's. Both doors that create a subtree, REST's and MCP's, send one for
+each subtree they create. The web client takes its seq as it takes a live frame's (`docs/GRAPH_SYNC_DESIGN.md`) and
+stands the new subtree, empty, on its step.
 
 The subscribe answer carries `subtrees: [{step, id, depth}]`, one per present step that owns a
 subtree, read under the strand with the delta, so a client that missed a `subtree` frame heals on its

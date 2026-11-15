@@ -1,40 +1,42 @@
 # Roadmap web reconciliation
 
-Current evidence: 2026-10-24. Canonical delivery drawings are on separate
+Retained delivery specimens live on separate
 [Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=130-2) and
 [Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-2) pages.
-The finite source audit covers all 23 current Roadmap screen/state families below. Web has 54
-reconciled flow/state boards plus three support blocks in ten sections; Web Mobile has 39
-reconciled boards plus two owner links in ten sections. These are composition and state specimens,
-not 98 distinct routes. Shared state families use component variants instead of duplicate full screens.
+The [flow index](../index.md#approved-shared-step-editor) identifies the approved implementation targets;
+this map connects retained specimens to deployed source, not an exhaustive set of current designs.
 
 ## Status and ownership
 
-🚀 In production marks a drawing reconciled with the current implementation. Source comparison
-establishes conditional states; runtime evidence is recorded separately. The marker does not claim
-a remote deployment check, every branch exercised, bug-free behavior, or new human design approval.
-All current Roadmap flow/state boards are reconciled. 🧩 identifies reusable components and owner
-links. Existing AI Review/Apply remains a 💡 proposal awaiting human review. The Board has its own pages
-([proposal](roadmap-board-proposal.md)); the List boards on Web Mobile describe a view the product no longer has, and the
-designer deletes them in the 🚀 pass.
+🚀 In production identifies delivered flows; 🔨 identifies approved work in development. Only the owner
+sets ✅ Ready for dev. 🧩 identifies reusable components and owner links. Superseded development targets
+retain their recorded status as context without authorizing their old layout for new work.
+
+List drawings, old phone sheets and tabbed step layouts are marked superseded. The shared read document
+from 18/19/27/40 is delivered, including completion, private workspace, history, relationships and deletion.
+Inline editing and creation from 19/20 remain separate implementation targets; the document retains nested editors.
+The deployed Tend interface is superseded as a target by the right-side Coach, whose functionality is deferred.
+Link-copy proposals 15.01–15.02 and 25.01–25.02 point to approved 37.01–37.15.
 
 Web and Web Mobile are separate. Product primitives live on Components; helper-local settings and
 shortcut primitives remain beside their variants. Shared Shell/Home drawings are thin links to their
 canonical owner, avoiding competing copies. Numbered flow sections and the [thin index](../index.md#roadmap--web)
-provide navigation. This phase changes drawings and documentation only.
+provide navigation.
 
 The model is locked/available/complete. Bubble is the default layout. Owners default to the Board on
 every band and visitors to the Graph; birth trees open on the Graph, and an owner's empty tree on the
-Board. Phone is below 744px, tablet 744–1023px, desktop 1024px and up. Tablet panel 320px, desktop
-inspector 360px. No checkout is offered: `paidPlansOpen()` is false and PlanSection is not registered.
+Board. Phone is below 744px, tablet 744–1023px, desktop 1024px and up. Ordinary step activation opens the
+shared document. The 320px tablet panel and 360px desktop inspector remain for Graph naming and tools.
+The document's right-side Coach placeholder is 56px collapsed, or 280/340/400px expanded across tablet,
+1024–1439px and 1440px-up widths. No checkout is offered: `paidPlansOpen()` is false and PlanSection is not registered.
 
-## Exhaustive current-family map
+## Reference family map
 
 Paths are relative to `web/src/products/roadmap/`. An exact node can be a complete screen, an overlay,
 or a reusable state specimen. Repeated server-error strings share their named component faces.
 No-render branches are documented as gates rather than invented screens.
 
-| ID | Current family | Figma nodes | Source |
+| ID | Deployed family / retained specimen | Figma nodes | Source |
 |---|---|---|---|
 | 01 | Resolution, load/error, desktop empty, HomeCard | [35:24](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=35-24), [41:31](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=41-31), [36:91](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=36-91) | `SkillTreeApp.jsx; SkillTreeView.jsx; HomeCard.jsx` |
 | 02 | Local/synced/lapsed, capacity/refused save, ownership demotion | [47:49](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=47-49) | `room/HonestyChrome.jsx; SkillTreeView.jsx` |
@@ -43,10 +45,10 @@ No-render branches are documented as gates rather than invented screens.
 | 05 | Paste/append, parsing/legend, optional name, ghost, all Shape phases | [44:71](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=44-71), [44:145](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=44-145), [183:957](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-957), [185:2376](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2376), [185:2444](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2444), [183:899](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-899) | `paste/PasteComposer.jsx; paste/NewTreeBirth.jsx` |
 | 06 | Switcher/rename/delete, minimap, legend editing | [19:65](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=19-65), [21:65](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=21-65), [23:23](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=23-23), [23:70](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=23-70), [183:1259](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1259) | `identity/TreeSwitcher.jsx; graph/tree/KindLegend.jsx` |
 | 07 | Canvas states, selection, connection/reorder/marquee, peer cursor | [36:91](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=36-91), [28:18](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=28-18), [2:20](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=2-20), [13:36](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=13-36), [183:1259](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1259) | `scene/; presence/PresenceLayer.jsx; SkillTreeView.jsx` |
-| 08 | Desktop available/complete/locked/rename, annotation, history | [33:105](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=33-105), [183:1099](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1099) | `graph/StepPanel.jsx; activity/EventRow.jsx` |
-| 09 | Private note/link/subtasks, add/rename inputs | [34:131](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=34-131), [13:3](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=13-3), [183:1099](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1099) | `graph/tree/NodeWorkspace.jsx; graph/tree/Checklist.jsx; graph/tree/useWorkspace.js` |
-| 10 | Reader available/locked/complete, relations, demo exception | [34:80](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=34-80), [32:73](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=32-73), [194:1008](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=194-1008) | `graph/StepPanel.jsx; SkillTreeView.jsx` |
-| 11 | Tablet panel: Light/Dark, progress variants, name/root | [160:11](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-11), [160:110](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-110), [160:209](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-209), [160:253](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-253), [160:298](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-298), [183:1904](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1904), [183:625](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-625) | `graph/tablet/TabletEditor.jsx; graph/tablet/TabletPanel.jsx` |
+| 08 | Desktop shared document; retained superseded inspector specimens | [33:105](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=33-105), [183:1099](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1099) | `step/StepDetail.jsx; step/read.css; activity/EventRow.jsx` |
+| 09 | Private note/link/subtasks, add/rename inputs | [34:131](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=34-131), [13:3](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=13-3), [183:1099](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1099) | `step/StepWorkspace.jsx; graph/tree/useWorkspace.js` |
+| 10 | Reader shared document; retained superseded panel specimens | [34:80](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=34-80), [32:73](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=32-73), [194:1008](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=194-1008) | `step/StepDetail.jsx; SkillTreeView.jsx` |
+| 11 | Retained superseded tablet detail; naming/tools panel remains | [160:11](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-11), [160:110](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-110), [160:209](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-209), [160:253](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-253), [160:298](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-298), [183:1904](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1904), [183:625](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-625) | `step/StepDetail.jsx; graph/tablet/TabletEditor.jsx; graph/tablet/TabletPanel.jsx` |
 | 12 | Tablet connect needs/unlocks, remove-link and bulk modes | [183:561](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-561), [183:625](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-625), [182:348](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=182-348) | `graph/tablet/TabletPanel.jsx; graph/tablet/useTabletEditing.js` |
 | 15 | Grouped activity/history | [162:324](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-324), [162:341](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-341), [162:349](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-349), [185:291](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-291), [194:1675](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=194-1675) | `activity/ActivityFeed.jsx; activity/EventRow.jsx; activity/grammar.jsx` |
 | 16 | Undo/Restore, ticker, milestone, return recap, cycle/layout failure | [26:473](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=26-473), [26:502](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=26-502), [31:32](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=31-32), [185:394](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-394), [184:1947](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1947) | `SkillTreeView.jsx; model/progress.js; model/milestones.js` |
@@ -59,6 +61,8 @@ No-render branches are documented as gates rather than invented screens.
 | 23 | Reminder enabled/off/suppressed, schedule/timezone, save/refusal and absence gates | [162:296](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-296), [184:1307](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1307), [185:1359](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1359) | `settings/ReminderSection.jsx; reminders/remindersClient.js` |
 | 24 | AI settings meter, optional PRO, history/empty, absence gates | [162:315](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-315), [184:1307](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1307), [185:1400](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1400), [185:1459](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1459) | `settings/TendingSection.jsx; tending/receipts.js` |
 | 25 | Graph Mac/Windows and Board shortcuts, editor/reader and phone subset | [12.01–12.16](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1109-534) | `shortcuts/ShortcutsDialog.jsx; shortcuts/shortcutMap.js; skilltree.css` |
+| 26 | Shared nonmodal read document, owner/reader, inline Workspace/History and Coach placeholder | [19.01](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=756-53402), [27.02–27.03](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=756-53413), [40](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1156-79681) | `step/StepDetail.jsx; step/StepWorkspace.jsx; step/read.css; SkillTreeView.jsx` |
+| 27 | Refused sync recovery inside the document | [43](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1211-104922) | `step/StepDetail.jsx; sync/SyncNotices.jsx; room/useRoomProgress.js` |
 
 ## Route map and legitimate external owners
 
@@ -80,58 +84,12 @@ Route evidence: `web/src/shell/App.jsx`, `web/src/shell/chrome/Shell.jsx`, Roadm
 and `SkillTreeApp.jsx`. External-owner links are ownership boundaries, not a claim that those files
 were exhaustively reconciled during this Roadmap phase.
 
-## Runtime evidence and limits
+## Evidence and remaining work
 
-The source audit used commit `92be064a`; current Roadmap source and styles were checked against the
-latest integration base. No production user data, provider keys, email or telemetry credentials
-were used. Isolated fixture services and session material were removed after capture.
+The [Roadmap alignment subtree](https://windmill.works/#/app/t_63c2c557d482dece) records current
+implementation, review, runtime and deployment evidence for each delivery. The
+[consistency ledger](consistency.md#roadmap) records unresolved design and implementation differences.
+A retained drawing does not establish that every conditional branch has been exercised.
 
-- `/tmp/windmill-roadmap-reconcile-runtime/manifest.json`: desktop/phone canvas, selection,
-  Focus/All steps, signed-in light/dark List and inline detail; desktop rename and Complete→Reset;
-  Publish+copy→public, gallery inclusion and Make private. Fixture restored private. Settings/export
-  idle captured. The phone completion mutation itself was not exercised.
-- `/tmp/windmill-roadmap-reconcile/`: anonymous shelf, blank birth, parsed paste and local tree;
-  Figma before/after comparisons. `web-room-{light,dark}.png` are inner-viewport crops; full owner
-  Shell was checked against signed runtime captures and route source.
-- `/tmp/windmill-roadmap-fork-runtime/evidence.json` and `fork-{desktop,phone,tablet}-open.png`:
-  anonymous ForkDoor geometry. Shared-tree desktop 1440 uses a full-width bottom sheet 293px high;
-  phone 390 uses a 335px sheet; tablet 834 uses a centered 420×336 dialog. No email was sent.
-- `/tmp/windmill-roadmap-shortcuts-runtime/evidence.json`: desktop/phone, owner/reader, Mac/Windows;
-  toggles and Escape exercised, no page errors. Narrow/current keycap overlap is preserved and
-  recorded in the ledger.
-
-AI Shape/Tend provider outcomes, export completion/errors, reminder delivery, allowance histories,
-rare failures and advanced gestures are source-reconciled fixtures, not live integration tests.
-Reminder and AI gates were not forced. Conditional states do not promise every account sees them.
-Static native graphs approximate WebGL lighting; editable quest thumbnails derive from the current
-roster/layout source. Gallery portrait slots are data-dependent payload areas. Still drawings and
-SwiftShader/reduced-motion captures do not establish animation timing or hardware performance.
-
-## Visual review and simplification
-
-The read-only acceptance pass checked all 25 families against source. The focused fix pass corrected
-conditional paste name fields, locked progress actions, owner/visitor boundaries, mobile deletion
-wording, restoration versus AI receipt detail, gallery copy, activity day grouping and selected-node
-event fixtures.
-Populated history and Activity now share the native EventRow component; fork, mobile action modes,
-Shape phases, feedback and Tend input reuse native state families. Superseded shared Shell/Home
-copies are owner links. No complete-screen image fills substitute for editable UI.
-
-Representative final evidence in `/tmp/windmill-roadmap-reconcile/`: `figma-night-final.png`,
-`figma-list-after.png`, `figma-mobile-owner-final.png`, `figma-mobile-complete-final.png`,
-`final-183-1099.png`, `final-45-428.png`, `final-183-625.png`, `final-194-1008.png`,
-`figma-web-coverage-final.png`, and `figma-web-mobile-coverage-final.png`. Settings/shortcuts checks
-are `/tmp/roadmap-settings-final.png`,
-`/tmp/roadmap-settings-mobile-final.png`, `/tmp/roadmap-shortcuts-final.png`,
-`/tmp/roadmap-shortcuts-mobile.png`. Layout QA checks text clipping, overlap, theme resolution,
-responsive bounds, ownership messaging and source action vocabulary.
-
-## Tracked implementation/design drift
-
-The [consistency ledger](consistency.md#roadmap) retains publication/gallery-copy disagreement,
-AI failure prompt-retention copy, mobile empty-tree recovery, the published input sizing adapter,
-DOM/canvas fruit treatment and Marketing capability copy.
-A current bug can be accurately drawn and marked reconciled; that does not resolve the bug.
-
-[`web/OBSERVABILITY.md`](../../web/OBSERVABILITY.md) tables every Board and Graph step against its
-event. Reconciliation is tracked by `roadmap-web-figma-coverage-20261024` in tree `t_9362d9bc883e0a1e`.
+Still drawings and SwiftShader/reduced-motion captures cannot establish hardware animation performance.
+[`web/OBSERVABILITY.md`](../../web/OBSERVABILITY.md) lists the events and failure reporting for Board and Graph flows.

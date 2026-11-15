@@ -64,7 +64,7 @@ data class TurnRefusal(val status: Int, val code: String, val budgetResetsAtMs: 
         private val installationCodes = setOf("device_bound", "invalid_installation")
         private val meant = setOf(busy, anonymousUnavailable)
         val allowanceCodes = setOf("subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted",
-            "funding_required", "debt_outstanding") + installationCodes
+            "debt_outstanding") + installationCodes
         val codes = allowanceCodes + setOf("coach-bad-request", "coach-update-required", "coach-turn-conflict", turnUnknown, turnOrder,
             "coach-turn-volume", rateLimited, "coach-replica-syncing", busy, vendorError, streamReplaced, turnStopped, anonymousUnavailable)
 

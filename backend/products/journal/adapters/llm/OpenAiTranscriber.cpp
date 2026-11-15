@@ -119,7 +119,7 @@ void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
   std::optional<AiBudgetReservation> reservation;
   if (budget_) {
     const AiCallAdmission admission =
-        budget_->begin(spend, transcriptionCeilingNanos(model_), AiCallFunding::windmillOne);
+        budget_->begin(spend, transcriptionCeilingNanos(model_), AiBudgetFunding::GrantOnly);
     if (!admission.reservation) {
       done(Transcription::refused(admission.refusal));
       return;

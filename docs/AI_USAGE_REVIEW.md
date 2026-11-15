@@ -49,10 +49,13 @@ individual budget. Principal debt survives period and tier changes, and so does 
 liability until it lapses, released at zero 10 minutes after its admission.
 An installation-to-account binding is permanent and blocks further anonymous use of that credential.
 
-Subscription status alone does not fund usage. A verified, completed positive payment for the
-configured monthly One price creates an idempotent grant for its explicit period. Grants cannot
-overlap within one account and funding source. A current subscription grant takes priority over an
-owner grant; their capacity is never combined. An expired subscription does not block owner
+Subscription status alone does not fund usage. Each paid production store period the subscription
+feed carries funds one idempotent grant for that period, its reference the period's id
+(`docs/foundation/subscriptions.md` §6.3). Grants cannot overlap within one account and funding
+source: a period that starts inside a grant the account holds is funded from that grant's end. A
+refund closes the period's grant at the refund time and keeps what was spent; its reversal reopens
+it. A current subscription grant takes priority over an owner grant; their capacity is never
+combined. An expired subscription does not block owner
 calendar funding. Unused funded capacity can cross a calendar boundary but expires at
 the funded period end. Checkout remains closed.
 
@@ -91,11 +94,10 @@ enabled USD policy. Their data is not backfilled into invented durable reservati
 
 ## Billing and product gaps
 
-The web subscription mirror does not fully represent owner access; effective entitlement and
-funded allowance must be loaded independently. Customer billing management still needs confirmed
+`GET /v1/subscription` says whether the account holds Windmill One, an owner's included
+(`windmillOne`); the funded allowance is read separately from the allowance route. Customer billing management still needs confirmed
 renewal dates, scheduled actions and supported management routes. No top-up or allowance overage
 purchase is available. The customer usage display is undrawn in its current policy
 ([consistency ledger](design/consistency.md) 6u).
 
-Funded grants do not yet react to refunds, chargebacks or payment adjustments. Paid customer
-activation requires that lifecycle policy and implementation as well as supported billing controls.
+Paid customer activation still requires supported billing controls.

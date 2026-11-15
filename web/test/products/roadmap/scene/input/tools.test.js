@@ -12,6 +12,7 @@ function context({ picked = null, crowded = false, edge = null, editTap = null }
     zoomIntoCrowd: (x, y, pointerType) => { if (crowded) log.push(['zoomIntoCrowd', x, y, pointerType]); return crowded; },
     pickEdge: () => edge,
     select: (id) => log.push(['select', id]),
+    activate: (id) => log.push(['activate', id]),
     selectEdge: (e) => log.push(['selectEdge', e]),
     hover() {},
     hoverEdge() {},
@@ -25,10 +26,10 @@ const tap = (tool, pointerType = 'mouse') => {
   return tool.onPointerUp({ x: 10, y: 20 }, { pointerType });
 };
 
-test('NavigateTool — a tap selects the picked step; nothing else runs', () => {
+test('NavigateTool — an ordinary tap selects and explicitly activates its picked step', () => {
   const { ctx, log } = context({ picked: 'n1', crowded: true, edge: { from: 'a', to: 'b' } });
   assert.equal(tap(new NavigateTool(ctx)), undefined);
-  assert.deepEqual(log, [['select', 'n1']]);
+  assert.deepEqual(log, [['select', 'n1'], ['activate', 'n1']]);
 });
 
 test('NavigateTool — a tap in a crowd zooms instead of picking an edge or clearing, and says so', () => {
@@ -58,5 +59,38 @@ test('ReadOnlyTool — the crowd zoom comes before the phone owner\'s mode routi
 
   const viewer = context({ picked: 'n1' });
   tap(new ReadOnlyTool(viewer.ctx), 'touch');
-  assert.deepEqual(viewer.log, [['select', 'n1']]);
+  assert.deepEqual(viewer.log, [['select', 'n1'], ['activate', 'n1']]);
+});
+
+for (const Tool of [NavigateTool, ReadOnlyTool]) {
+  test(`${Tool.name}: modifiers and drags never activate a selected node`, () => {
+    for (const modifier of ['shiftKey', 'metaKey', 'ctrlKey', 'altKey']) {
+      const { ctx, log } = context({ picked: 'n1' });
+      const tool = new Tool(ctx);
+      const event = { pointerType: 'mouse', [modifier]: true };
+      tool.onPointerDown({ x: 10, y: 20 }, event);
+      tool.onPointerUp({ x: 10, y: 20 }, event);
+      assert.deepEqual(log, [['select', 'n1']]);
+    }
+    const { ctx, log } = context({ picked: 'n1' });
+    const tool = new Tool(ctx);
+    tool.onPointerDown({ x: 10, y: 20 }, { pointerType: 'touch' });
+    tool.onPointerDrag({ x: 80, y: 20 });
+    tool.onPointerUp({ x: 80, y: 20 }, { pointerType: 'touch' });
+    assert.deepEqual(log, []);
+  });
+}
+
+test('NavigateTool: a completed reorder never activates, while an unlifted press does', () => {
+  const { ctx, log } = context({ picked: 'n1' });
+  ctx.beginReorder = () => log.push('begin');
+  ctx.commitReorder = () => log.push('commit');
+  const tool = new NavigateTool(ctx);
+  tool.onPointerDown({ x: 10, y: 20 }, {});
+  tool.onPointerDrag({ x: 80, y: 20 });
+  tool.onPointerUp({ x: 80, y: 20 }, {});
+  assert.deepEqual(log, ['begin', 'commit']);
+  log.length = 0;
+  tap(tool);
+  assert.deepEqual(log, [['select', 'n1'], ['activate', 'n1']]);
 });

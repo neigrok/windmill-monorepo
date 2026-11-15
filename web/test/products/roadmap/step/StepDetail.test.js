@@ -74,7 +74,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
     if (tree === null) return null;
     const open = address.id !== null && tree.nodesById.has(address.id);
     return React.createElement(TreeDoor.Provider, { value: (id, door) => call('tree ' + id + ' ' + door) }, React.createElement('div', { style: { position: 'fixed', inset: 0 } },
-      React.createElement('div', { className: 'st-view-layer--board is-active', style: { position: 'absolute', inset: 0, zIndex: 18 } },
+      React.createElement('div', { className: 'st-view-layer--board is-active', inert: open ? '' : undefined, style: { position: 'absolute', inset: 0, zIndex: 18, visibility: open ? 'hidden' : undefined } },
         React.createElement(BoardView, { tree, completed: progress.completed, completedAt: progress.completedAt, selectedId,
           onSelect: (id) => { setSelectedId(id); address.open(id, 'card'); }, onAnchor: setSelectedId, breakpoint, active: true,
           onSwitchView: noop, query, onQuery: setQuery, quiet })),
@@ -180,7 +180,7 @@ async function openRoom({ viewport, nodes = learnToSailNodes, editable = true, w
   await page.goto(`${origin}/step-detail-test${start}`);
   await page.waitForFunction(() => window.entryReady);
   await page.evaluate((options) => openRoom(options), { nodes, completed: ['course', 'parts', 'rig'], editable, workspaces, kinds, linked, others, editingEnabled, opens });
-  await page.locator('.st-board-card:visible').first().waitFor();
+  await page.locator('.st-board').waitFor({ state: 'attached' });
   return page;
 }
 
@@ -192,8 +192,8 @@ const focusedName = (page) => page.evaluate(() => {
   return element.getAttribute('aria-label') ?? element.querySelector('.st-board-card-title')?.textContent ?? element.textContent;
 });
 const status = (page) => page.evaluate(() => {
-  const row = document.querySelector('.st-board-step-status');
-  return [...row.querySelectorAll('.st-board-step-status-label, .st-board-step-undo, .st-board-step-outcome')].map((part) => part.textContent).filter(Boolean);
+  const step = document.querySelector('.st-step-document');
+  return ['.st-board-step-status-label', '.st-board-step-undo', '.st-board-step-outcome'].map((selector) => step.querySelector(selector)?.textContent).filter(Boolean);
 });
 const column = (page, name) => page.evaluate((name) => [...document.querySelectorAll(`[data-column="${name}"] .st-board-card-title`)].map((title) => title.textContent), name);
 const waitForColumn = (page, name, titles) => page.waitForFunction(({ name, titles }) => {
@@ -237,9 +237,9 @@ for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 
         status: 'Up next', row: ['Wind drills', '3 of 8 done'], rule: 'Done when every step in Wind drills is done.',
         band: 'Completes with its tree', actions: ['Open tree'],
       });
-      await page.getByRole('tab', { name: STEP_DETAIL.sections.workspace, exact: true }).click();
-      assert.deepEqual((await treeParts(page)).actions, viewport.width < 744 ? ['Add note', 'Open tree'] : ['Open tree']);
-      await page.getByRole('tab', { name: STEP_DETAIL.sections.overview, exact: true }).click();
+      await page.locator('.st-step-section-links').getByRole('button', { name: /Workspace/i }).click();
+      assert.deepEqual((await treeParts(page)).actions, ['Open tree']);
+
       await page.locator('.st-board-step-layer').getByRole('button', { name: 'Open Wind drills · 3 of 8 done', exact: true }).click();
       await page.locator('.st-board-step-buttons').getByRole('button', { name: 'Open tree', exact: true }).click();
       await page.keyboard.press('Escape');
@@ -270,7 +270,7 @@ for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 
         band: 'Won’t complete by itself', actions: [],
       });
       assert.equal(await page.locator('button.st-board-step-tree').count(), 0);
-      assert.equal(await page.locator('.st-board-step-layer').getByRole('button', { name: /^Open/ }).count(), 0);
+      assert.equal(await page.locator('.st-board-step-layer').getByRole('button', { name: /^Open tree$/ }).count(), 0);
       await page.keyboard.press('Escape');
       if (viewport.width < 744) await page.getByRole('tab', { name: /^Up next/ }).click();
 
@@ -333,58 +333,66 @@ test('Chromium: the real step menu places Select after Graph and before Delete a
         await page.getByRole('menu').waitFor({ state: 'detached' });
         assert.deepEqual(await calls(page), ['select wind']);
         assert.deepEqual(await events(page), [
-          'roadmap_board_step_open {"surface":"page","column":"upNext","door":"card"}',
-          'roadmap_board_step_action {"surface":"page","action":"select"}',
+          'roadmap_board_step_open {"surface":"document","column":"upNext","door":"card"}',
+          'roadmap_board_step_action {"surface":"document","action":"select"}',
         ]);
       });
     } finally { await page.close(); }
   }
 });
 
-test('Chromium: Enter on a card opens the labelled modal, Tab stays inside it, Escape closes it and focus returns to the card', async () => {
+test('Chromium: the named document keeps Coach reachable and closes to its originating card', async () => {
   await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
     await card(page, 'Read the wind').focus();
     await page.keyboard.press('Enter');
-    const dialog = page.getByRole('dialog', { name: 'Read the wind' });
-    await dialog.waitFor();
-    assert.deepEqual([await hash(page), await page.evaluate(() => document.activeElement.getAttribute('role'))], ['#/app/sail?step=wind', 'dialog']);
-
-    const stops = [];
-    for (let press = 0; press < 9; press += 1) {
-      await page.keyboard.press('Tab');
-      stops.push(await focusedName(page));
-    }
-    assert.deepEqual(stops, ['More', 'Close', 'Overview', 'Sailing basics', 'Name the boat parts, done', 'Leave the dock, locked', 'View branch', 'Complete', 'More']);
-    await page.keyboard.press('Shift+Tab');
-    assert.equal(await focusedName(page), 'Complete');
-
+    const document = page.getByRole('article', { name: 'Read the wind' });
+    await document.waitFor();
+    assert.deepEqual(await document.evaluate((element) => [element === window.document.activeElement, element.getAttribute('aria-modal')]), [true, null]);
+    assert.equal(await document.getByRole('tablist').count(), 0);
+    const coach = page.getByRole('button', { name: 'Collapse Coach' });
+    await coach.focus();
     await page.keyboard.press('Escape');
-    await dialog.waitFor({ state: 'detached' });
-    await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
-    assert.deepEqual([await focusedName(page), await hash(page), await events(page)],
-      ['Read the wind', '#/app/sail', ['roadmap_board_step_open {"surface":"modal","column":"upNext","door":"card"}']]);
+    assert.equal(await document.count(), 1);
+    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: 'Expand Coach' }).waitFor();
+    await document.focus();
+    await page.keyboard.press('Escape');
+    await document.waitFor({ state: 'detached' });
+    await page.waitForFunction(() => document.activeElement?.dataset.stepId === 'wind');
+    assert.deepEqual([await focusedName(page), await hash(page)], ['Read the wind', '#/app/sail']);
     assert.deepEqual(errors, []);
-  } finally {
-    await page.context().close();
-  }
+  } finally { await page.context().close(); }
 });
 
-test('Chromium: from 744px the modal takes the 696px form, 24px in from the window', async () => {
-  await start();
-  const errors = [];
-  const page = await openRoom({ viewport: { width: 744, height: 960 } }, errors);
-  try {
-    await card(page, 'Read the wind').click();
-    const box = await page.locator('.st-board-step-modal').boundingBox();
-    assert.deepEqual([box.x, box.y, box.width, box.height], [24, 80, 696, 800]);
-    assert.deepEqual(errors, []);
-  } finally {
-    await page.context().close();
-  }
-});
+for (const width of [744, 1024, 1440]) {
+  test(`Chromium ${width}: Coach consumes its approved width and document columns follow product width`, async () => {
+    await start();
+    const errors = [];
+    const page = await openRoom({ viewport: { width, height: 960 } }, errors);
+    try {
+      await card(page, 'Read the wind').click();
+      const article = page.locator('article');
+      const measure = () => page.evaluate(() => {
+        const product = document.querySelector('article').getBoundingClientRect();
+        const description = document.querySelector('.st-step-description-section').getBoundingClientRect();
+        const relations = document.querySelector('.st-step-relationships').getBoundingClientRect();
+        return { width: product.width, split: relations.left > description.left };
+      });
+      if (width === 1440) await page.getByRole('button', { name: 'Collapse Coach' }).click();
+      assert.deepEqual(await measure(), { width: width - 56, split: width - 56 >= 1000 });
+      await article.evaluate((element) => { window.sameArticle = element; });
+      await page.getByRole('button', { name: 'Expand Coach' }).click();
+      const coachWidth = width === 744 ? 280 : width === 1024 ? 340 : 400;
+      assert.deepEqual(await measure(), { width: width - coachWidth, split: width - coachWidth >= 1000 });
+      assert.equal(await article.evaluate((element) => element === window.sameArticle), true);
+      assert.equal(await page.getByRole('textbox').count(), 0);
+      assert.deepEqual(errors, []);
+    } finally { await page.context().close(); }
+  });
+}
 
 test('Chromium: an inline Undo that throws reports its static operation and its offer leaves, with no event claiming it worked', async () => {
   await start();
@@ -404,7 +412,7 @@ test('Chromium: an inline Undo that throws reports its static operation and its 
   }
 });
 
-test('Chromium: Complete and Reset act in place — the modal stays, the status flips with Undo, a line names what moved, nothing toasts', async () => {
+test('Chromium: Complete and Reset retain the document, update its status and pin Undo with the outcome without a toast', async () => {
   await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
@@ -419,7 +427,7 @@ test('Chromium: Complete and Reset act in place — the modal stays, the status 
     assert.deepEqual([await status(page), await column(page, 'upNext')], [['Up next'], ['Read the wind', 'Tie a bowline']]);
 
     await page.getByRole('button', { name: 'Name the boat parts, done' }).click();
-    await page.getByRole('dialog', { name: 'Name the boat parts' }).waitFor();
+    await page.getByRole('article', { name: 'Name the boat parts' }).waitFor();
     await page.getByRole('button', { name: 'Reset' }).hover();
     assert.equal(await page.locator('.st-board-step-preview').textContent(), 'Reset returns 2 steps to Locked');
     await page.getByRole('button', { name: 'Reset' }).click();
@@ -428,11 +436,11 @@ test('Chromium: Complete and Reset act in place — the modal stays, the status 
       [['Up next', 'Undo', '2 steps locked again'], ['Read the wind', 'Tie a bowline', 'Leave the dock', 'Sail a triangle', 'Sail solo']]);
 
     assert.deepEqual([await calls(page), await events(page)], [['complete wind', 'restore wind', 'reset parts'], [
-      'roadmap_board_step_open {"surface":"modal","column":"upNext","door":"card"}',
-      'roadmap_board_step_action {"surface":"modal","action":"complete"}',
-      'roadmap_board_step_action {"surface":"modal","action":"undo"}',
-      'roadmap_board_step_open {"surface":"modal","column":"done","door":"step"}',
-      'roadmap_board_step_action {"surface":"modal","action":"reset"}',
+      'roadmap_board_step_open {"surface":"document","column":"upNext","door":"card"}',
+      'roadmap_board_step_action {"surface":"document","action":"complete"}',
+      'roadmap_board_step_action {"surface":"document","action":"undo"}',
+      'roadmap_board_step_open {"surface":"document","column":"done","door":"step"}',
+      'roadmap_board_step_action {"surface":"document","action":"reset"}',
     ]]);
     assert.deepEqual(errors, []);
   } finally {
@@ -463,124 +471,30 @@ test('Chromium: a locked step leads with what it still needs; on both surfaces e
   const errors = [];
   const desktop = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   const phone = await openRoom({ viewport: { width: 390, height: 844 } }, errors);
-  const overview = (page) => page.evaluate(() => [...document.querySelectorAll('.st-board-step-panel > *')].map((part) => part.innerText.replace(/\n+/g, ' | ')));
   try {
     await card(desktop, 'Leave the dock').click();
-    assert.deepEqual([await overview(desktop), await desktop.locator('.st-board-step-modal-actions').count()], [[
-      'Cast off safely and steer clear of the dock.',
-      'Locked · 1 to go',
-      'Prerequisites | 1 / 2 | Rig the boat | Read the wind | Up next',
-      'Unlocks | 1 | Sail a triangle',
-    ], 0]);
+    assert.equal(await desktop.locator('.st-board-step-description').textContent(), 'Cast off safely and steer clear of the dock.');
+    assert.deepEqual(await status(desktop), ['Locked · 1 to go']);
+    assert.deepEqual(await desktop.locator('.st-board-step-row--need').allInnerTexts(), ['Read the wind\nUp next']);
 
     await phone.getByRole('tab', { name: 'Locked, 3 steps' }).click();
     await card(phone, 'Leave the dock').click();
     assert.deepEqual(await phone.locator('.st-board-step-row--need').allInnerTexts(), ['Read the wind\nUp next']);
     await phone.getByRole('button', { name: 'Read the wind, up next' }).click();
-    await phone.getByRole('dialog', { name: 'Read the wind' }).waitFor();
-    assert.equal(await phone.locator('.st-board-step-page-back').getAttribute('aria-label'), 'Back to Leave the dock');
-    await phone.locator('.st-board-step-page-back').click();
-    await phone.getByRole('dialog', { name: 'Leave the dock' }).waitFor();
-    assert.equal(await phone.locator('.st-board-step-page-back').getAttribute('aria-label'), 'Back to Learn to sail');
+    await phone.getByRole('article', { name: 'Read the wind' }).waitFor();
+    assert.equal(await phone.locator('.st-step-breadcrumb').getAttribute('aria-label'), 'Back to Leave the dock');
+    await phone.locator('.st-step-breadcrumb').click();
+    await phone.getByRole('article', { name: 'Leave the dock' }).waitFor();
+    assert.equal(await phone.locator('.st-step-breadcrumb').getAttribute('aria-label'), 'Back to Learn to sail');
     assert.deepEqual(await events(phone), [
       'roadmap_board_column {"column":"locked"}',
-      'roadmap_board_step_open {"surface":"page","column":"locked","door":"card"}',
-      'roadmap_board_step_open {"surface":"page","column":"upNext","door":"step"}',
+      'roadmap_board_step_open {"surface":"document","column":"locked","door":"card"}',
+      'roadmap_board_step_open {"surface":"document","column":"upNext","door":"step"}',
     ]);
     assert.deepEqual(errors, []);
   } finally {
     await desktop.context().close();
     await phone.context().close();
-  }
-});
-
-// Every part of the overview as drawn, in order and relative to the modal's content.
-const modalOverview = (page) => page.evaluate(() => {
-  const content = document.querySelector('.st-board-step-modal-content').getBoundingClientRect();
-  const box = (element) => {
-    const rect = element.getBoundingClientRect();
-    return [Math.round(rect.left - content.left), Math.round(rect.top - content.top), Math.round(rect.width), Math.round(rect.height)];
-  };
-  const query = (selector) => document.querySelector(`.st-board-step-modal-content ${selector}`);
-  const glyph = query('.st-board-step-status-glyph svg');
-  const probe = document.createElement('i');
-  probe.style.color = 'var(--text-secondary)';
-  document.body.append(probe);
-  const secondary = getComputedStyle(probe).color;
-  probe.remove();
-  const [labelLeft, labelTop, , labelHeight] = box(query('.st-board-step-status-label'));
-  return {
-    order: [...document.querySelectorAll('.st-board-step-panel > *')].map((part) => part.className),
-    description: box(query('.st-board-step-description')),
-    status: box(query('.st-board-step-status-row')),
-    glyph: box(glyph),
-    glyphInSecondary: getComputedStyle(glyph).color === secondary,
-    label: [labelLeft, labelTop, labelHeight],
-    relations: [...document.querySelectorAll('.st-board-step-relations')].map((relation) => box(relation)),
-    headings: [...document.querySelectorAll('.st-board-step-relations .st-board-step-heading')].map((heading) => box(heading)),
-  };
-});
-
-test('Chromium: the modal draws an Up next step\'s status row under its description (03.01)', async () => {
-  await start();
-  const errors = [];
-  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
-  try {
-    await card(page, 'Read the wind').click();
-    assert.deepEqual(await modalOverview(page), {
-      order: ['st-board-step-description', 'st-board-step-status st-board-step-status--upNext', 'st-board-step-links', 'st-board-step-relations', 'st-board-step-relations', 'st-board-step-explore'],
-      description: [0, 0, 720, 20], status: [0, 32, 720, 44], glyph: [0, 45, 18, 18], glyphInSecondary: true, label: [26, 44, 20],
-      relations: [[0, 168, 720, 101], [0, 281, 720, 101]],
-      headings: [[0, 181, 720, 24], [0, 294, 720, 24]],
-    });
-    assert.deepEqual(errors, []);
-  } finally {
-    await page.context().close();
-  }
-});
-
-test('Chromium: the modal draws a locked step\'s status on 24px and its unmet need on a sunken row with its column (03.07)', async () => {
-  await start();
-  const errors = [];
-  const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
-  try {
-    await card(page, 'Leave the dock').click();
-    await page.evaluate(() => document.fonts.ready);
-    assert.deepEqual(await modalOverview(page), {
-      order: ['st-board-step-description', 'st-board-step-status st-board-step-status--locked', 'st-board-step-relations', 'st-board-step-relations'],
-      description: [0, 0, 720, 20], status: [0, 32, 720, 24], glyph: [0, 34, 20, 20], glyphInSecondary: true, label: [28, 32, 24],
-      relations: [[0, 68, 720, 165], [0, 245, 720, 101]],
-      headings: [[0, 81, 720, 24], [0, 258, 720, 24]],
-    });
-    assert.deepEqual(await page.evaluate(() => {
-      const content = document.querySelector('.st-board-step-modal-content').getBoundingClientRect();
-      const row = document.querySelector('.st-board-step-modal-content .st-board-step-row--need');
-      const box = (selector) => {
-        const rect = row.querySelector(selector).getBoundingClientRect();
-        return [Math.round(rect.left - content.left), Math.round(rect.top - content.top), Math.round(rect.width), Math.round(rect.height)];
-      };
-      const whole = row.getBoundingClientRect();
-      const probe = document.createElement('i');
-      probe.style.background = 'var(--surface-sunken)';
-      document.body.append(probe);
-      const sunken = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      return {
-        count: document.querySelectorAll('.st-board-step-row--need').length,
-        text: row.innerText,
-        row: [Math.round(whole.left - content.left), Math.round(whole.top - content.top), Math.round(whole.width), Math.round(whole.height)],
-        glyph: box('.st-board-step-row-glyph svg'),
-        state: box('.st-board-step-row-state'),
-        chevron: box('.st-board-step-row-chevron svg'),
-        sunken: getComputedStyle(row).backgroundColor === sunken,
-        radius: getComputedStyle(row).borderRadius,
-      };
-    }), {
-      count: 1, text: 'Read the wind\nUp next', row: [0, 181, 720, 52], glyph: [12, 198, 18, 18], state: [635, 198, 47, 18], chevron: [690, 198, 18, 18], sunken: true, radius: '12px',
-    });
-    assert.deepEqual(errors, []);
-  } finally {
-    await page.context().close();
   }
 });
 
@@ -595,12 +509,12 @@ test('Chromium: on the phone a step is a pushed page, and Back returns to the sa
     await pane.evaluate((element) => { element.scrollTop = 600; });
     const scrolled = await pane.evaluate((element) => element.scrollTop);
     await card(page, 'Knot 9').click();
-    const dialog = page.getByRole('dialog', { name: 'Knot 9' });
+    const dialog = page.getByRole('article', { name: 'Knot 9' });
     await dialog.waitFor();
-    assert.deepEqual([await page.locator('.st-board-step-page-back-label').textContent(), await page.locator('.st-view-layer--board').evaluate((layer) => layer.inert)],
+    assert.deepEqual([await page.locator('.st-step-breadcrumb span:first-of-type').textContent(), await page.locator('.st-view-layer--board').evaluate((layer) => layer.inert)],
       ['Learn to sail', true]);
 
-    await page.locator('.st-board-step-page-back').click();
+    await page.locator('.st-step-breadcrumb').click();
     await dialog.waitFor({ state: 'detached' });
     await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
     assert.deepEqual([
@@ -622,7 +536,7 @@ test('Chromium: checking the last subtask offers Complete step; the subtasks alo
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, workspaces }, errors);
   try {
     await card(page, 'Read the wind').click();
-    await page.getByRole('tab', { name: 'Workspace' }).click();
+    await page.locator('.st-step-section-links').getByRole('button', { name: /Workspace/i }).click();
     assert.equal(await page.locator('.st-board-step-offer').count(), 0);
     await page.getByText('Try a small turn').click();
     await page.locator('.st-board-step-offer').waitFor();
@@ -631,7 +545,7 @@ test('Chromium: checking the last subtask offers Complete step; the subtasks alo
     await waitForColumn(page, 'done', ['Read the wind', 'Rig the boat', 'Name the boat parts', 'Choose a sailing course']);
     assert.deepEqual([await calls(page), await column(page, 'done'), (await events(page)).at(-1)],
       [['complete wind'], ['Read the wind', 'Rig the boat', 'Name the boat parts', 'Choose a sailing course'],
-        'roadmap_board_step_action {"surface":"modal","action":"completeFromSubtasks"}']);
+        'roadmap_board_step_action {"surface":"document","action":"completeFromSubtasks"}']);
     assert.deepEqual(errors, []);
   } finally {
     await page.context().close();
@@ -655,13 +569,13 @@ test('Chromium: the step menu copies the step’s link with Link copied and open
     await page.getByRole('button', { name: 'More' }).click();
     await page.getByRole('menuitem', { name: 'Open in Graph' }).click();
     assert.deepEqual([await calls(page), (await events(page)).slice(1)], [['notify Link copied', 'graph wind'], [
-      'roadmap_board_step_action {"surface":"modal","action":"copyLink","outcome":"ok"}',
-      'roadmap_board_step_action {"surface":"modal","action":"openInGraph"}',
+      'roadmap_board_step_action {"surface":"document","action":"copyLink","outcome":"ok"}',
+      'roadmap_board_step_action {"surface":"document","action":"openInGraph"}',
     ]]);
 
     await card(reader, 'Read the wind').click();
     await reader.getByRole('button', { name: 'More' }).click();
-    assert.deepEqual([await items(reader), await reader.getByRole('dialog').getByRole('tablist').count(), await reader.locator('.st-board-step-page-pinned').count()],
+    assert.deepEqual([await items(reader), await reader.getByRole('article').getByRole('tablist').count(), await reader.locator('.st-step-pinned-actions button').count()],
       [['Copy link', 'Open in Graph'], 0, 0]);
     assert.deepEqual(errors, []);
   } finally {
@@ -678,13 +592,13 @@ test('Chromium: View branch closes the step and scopes the Board to it; a locked
     await card(page, 'Leave the dock').click();
     assert.equal(await page.getByRole('button', { name: 'View branch' }).count(), 0);
     await page.keyboard.press('Escape');
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.getByRole('article').waitFor({ state: 'detached' });
     await card(page, 'Read the wind').click();
     await page.getByRole('button', { name: 'View branch' }).click();
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.getByRole('article').waitFor({ state: 'detached' });
     assert.deepEqual([await calls(page), await column(page, 'locked'), await column(page, 'upNext'), await hash(page), (await events(page)).at(-1)], [
       ['branch wind'], ['Leave the dock', 'Sail a triangle', 'Sail solo'], ['Read the wind'], '#/app/sail',
-      'roadmap_board_step_action {"surface":"modal","action":"viewBranch"}',
+      'roadmap_board_step_action {"surface":"document","action":"viewBranch"}',
     ]);
     assert.deepEqual(errors, []);
   } finally {
@@ -696,31 +610,31 @@ const activeIs = (page) => page.evaluate(() => {
   const element = document.activeElement;
   if (element === document.body) return 'body';
   if (element.matches('.st-board-step-status')) return `status: ${element.querySelector('.st-board-step-status-label').textContent}`;
-  if (element.matches('[role="dialog"]')) return 'dialog';
+  if (element.matches('article')) return 'article';
   return element.getAttribute('aria-label') ?? element.textContent;
 });
 
-test('Chromium: crossing 744px with a step open swaps the modal for the page and back on one live layer: focus, Back and Escape still work', async () => {
+test('Chromium: crossing 744px retains one document on one live layer: focus, Back and Escape still work', async () => {
   await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);
   try {
     await card(page, 'Read the wind').click();
-    await page.getByRole('dialog', { name: 'Read the wind' }).waitFor();
+    await page.getByRole('article', { name: 'Read the wind' }).waitFor();
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.locator('.st-board-step-page').waitFor();
+    await page.locator('.st-step-document').waitFor();
     assert.deepEqual([await activeIs(page), await page.locator('.st-board-step-layer').count(), await page.locator('.st-board-step-layer').evaluate((layer) => layer.inert)],
-      ['dialog', 1, false]);
-    await page.locator('.st-board-step-page-back').click();
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
+      ['article', 1, false]);
+    await page.locator('.st-step-breadcrumb').click();
+    await page.getByRole('article').waitFor({ state: 'detached' });
 
     await card(page, 'Read the wind').click();
-    await page.locator('.st-board-step-page').waitFor();
+    await page.locator('.st-step-document').waitFor();
     await page.setViewportSize({ width: 1440, height: 960 });
-    await page.locator('.st-board-step-modal').waitFor();
-    assert.equal(await activeIs(page), 'dialog');
+    await page.locator('.st-step-document').waitFor();
+    assert.equal(await activeIs(page), 'article');
     await page.keyboard.press('Escape');
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.getByRole('article').waitFor({ state: 'detached' });
     await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
     assert.deepEqual([await focusedName(page), await hash(page)], ['Read the wind', '#/app/sail']);
     assert.deepEqual(errors, []);
@@ -743,18 +657,18 @@ test('Chromium: focus never falls to the page — Complete, Undo, Reset and the 
     await page.keyboard.press('Enter');
     assert.equal(await activeIs(page), 'status: Up next');
 
-    await page.getByRole('tab', { name: 'Workspace' }).click();
+    await page.locator('.st-step-section-links').getByRole('button', { name: /Workspace/i }).click();
     await page.getByText('Try a small turn').click();
     await page.getByRole('button', { name: 'Complete step' }).focus();
     await page.keyboard.press('Enter');
-    assert.deepEqual([await page.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected'), await activeIs(page), await status(page)],
-      ['true', 'status: Done', ['Done', 'Undo', 'Leave the dock is up next']]);
+    assert.deepEqual([await activeIs(page), await status(page)],
+      ['status: Done', ['Done', 'Undo', 'Leave the dock is up next']]);
     await page.getByRole('button', { name: 'Reset' }).focus();
     await page.keyboard.press('Enter');
     assert.equal(await activeIs(page), 'status: Up next');
 
     await page.keyboard.press('Escape');
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.getByRole('article').waitFor({ state: 'detached' });
     assert.deepEqual(await calls(page), ['complete wind', 'restore wind', 'complete wind', 'reset wind']);
     assert.deepEqual(errors, []);
   } finally {
@@ -773,14 +687,14 @@ test('Chromium: Undo expiry recovers to status, subtask Cancel returns to its op
     await page.clock.runFor(6100);
     assert.equal(await activeIs(page), 'status: Done');
 
-    await page.getByRole('tab', { name: 'Workspace' }).click();
+    await page.locator('.st-step-section-links').getByRole('button', { name: /Workspace/i }).click();
     await page.getByRole('button', { name: 'Add subtask', exact: true }).click();
     await page.getByRole('textbox', { name: 'Add subtask', exact: true }).waitFor();
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => document.activeElement.matches('.st-board-workspace-add-task'));
     assert.equal(await activeIs(page), 'Add subtask');
     await page.keyboard.press('Escape');
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.getByRole('article').waitFor({ state: 'detached' });
     assert.deepEqual(errors, []);
   } finally {
     await page.context().close();
@@ -816,42 +730,17 @@ test('Chromium: Delete from ⋯ hands focus to the columns’ tab stop, drops th
     await page.getByRole('button', { name: 'More' }).click();
     await page.getByRole('menuitem', { name: 'Delete step' }).click();
     assert.equal(await page.getByRole('alertdialog').textContent(), 'Delete Read the wind?Removes this step · 1 branch resplicesCancelDelete');
-    assert.equal(await page.getByRole('dialog').count(), 1);
+    assert.equal(await page.getByRole('article').count(), 1);
     await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
-    try {
-      await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
-    } catch (error) {
-      const state = await page.evaluate(() => {
-        const describe = (element) => element && ({
-          tag: element.tagName,
-          classes: element.className,
-          step: element.closest('[data-step-id]')?.dataset.stepId ?? null,
-          column: element.closest('[data-column]')?.dataset.column ?? null,
-          role: element.getAttribute('role'),
-          tabIndex: element.tabIndex,
-          inert: Boolean(element.closest('[inert]')),
-          coveredBy: element.closest('[inert]')?.className ?? null,
-          visible: getComputedStyle(element).visibility,
-          rendered: element.getClientRects().length > 0,
-        });
-        return {
-          hash: location.hash,
-          active: describe(document.activeElement),
-          board: describe(document.querySelector('.st-view-layer--board')),
-          layers: [...document.querySelectorAll('.st-board-step-layer, .st-board-composer-layer')].map(describe),
-          panes: [...document.querySelectorAll('[data-column]')].map(describe),
-          stops: [...document.querySelectorAll('.st-board-card, .st-board [tabindex="0"], .st-board-find-input')].map(describe),
-        };
-      });
-      error.message += `\nDelete focus timeout DOM: ${JSON.stringify(state)}`;
-      throw error;
-    }
-    assert.deepEqual([await focusedName(page), await page.evaluate(() => document.activeElement.tabIndex), await hash(page)],
-      ['Leave the dock', 0, '#/app/sail']);
+    await page.getByRole('article').waitFor({ state: 'detached' });
+    await page.waitForFunction(() => document.activeElement?.matches('[data-column="locked"]'));
+    assert.deepEqual(await page.evaluate(() => [document.activeElement.dataset.column, document.activeElement.tabIndex, Boolean(document.activeElement.closest('[inert]')), location.hash]), ['locked', -1, false, '#/app/sail']);
+    await page.locator('.st-board-card[tabindex="0"]').filter({ hasText: 'Leave the dock' }).waitFor();
+    await page.keyboard.press('Tab');
+    assert.deepEqual([await focusedName(page), await page.evaluate(() => document.activeElement.tabIndex)], ['Leave the dock', 0]);
     await page.evaluate(() => restoreSteps());
     await card(page, 'Read the wind').waitFor();
-    assert.deepEqual([await page.getByRole('dialog').count(), (await events(page)).filter((line) => line.startsWith('roadmap_board_step_open')).length], [0, 1]);
+    assert.deepEqual([await page.getByRole('article').count(), (await events(page)).filter((line) => line.startsWith('roadmap_board_step_open')).length], [0, 1]);
     assert.deepEqual(errors, []);
   } finally {
     await page.context().close();
@@ -868,9 +757,9 @@ test('Chromium: a stale step link leaves the URL without opening anything', asyn
     await page.goto(`${origin}/step-detail-test#/app/sail?step=gone`);
     await page.waitForFunction(() => window.entryReady);
     await page.evaluate((nodes) => openRoom({ nodes, completed: ['course', 'parts', 'rig'] }), learnToSailNodes);
-    await page.locator('.st-board-card:visible').first().waitFor();
+    await page.locator('.st-board').waitFor({ state: 'attached' });
     await page.waitForFunction(() => window.location.hash === '#/app/sail');
-    assert.deepEqual([await page.getByRole('dialog').count(), await events(page)], [0, []]);
+    assert.deepEqual([await page.getByRole('article').count(), await events(page)], [0, []]);
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
@@ -886,7 +775,7 @@ test('Chromium: View branch from a step the visit reached by rows hands focus to
     await page.getByRole('button', { name: 'Name the boat parts, done' }).click();
     await page.getByRole('button', { name: 'Read the wind, up next' }).click();
     await page.getByRole('button', { name: 'View branch' }).click();
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.getByRole('article').waitFor({ state: 'detached' });
     await page.waitForFunction(() => document.activeElement?.classList.contains('st-board-card'));
     assert.deepEqual([await focusedName(page), await card(page, 'Tie a bowline').count(), await hash(page)], ['Read the wind', 0, '#/app/sail']);
     assert.deepEqual(errors, []);
@@ -917,8 +806,8 @@ test('Chromium: arriving at a step link from another roadmap opens the step once
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, others: sea, start: '#/app/sea' }, errors);
   try {
     await page.evaluate(() => { window.location.hash = '#/app/sail?step=wind'; });
-    await page.getByRole('dialog', { name: 'Read the wind' }).waitFor();
-    assert.deepEqual([await hash(page), await events(page)], ['#/app/sail?step=wind', ['roadmap_board_step_open {"surface":"modal","column":"upNext","door":"link"}']]);
+    await page.getByRole('article', { name: 'Read the wind' }).waitFor();
+    assert.deepEqual([await hash(page), await events(page)], ['#/app/sail?step=wind', ['roadmap_board_step_open {"surface":"document","column":"upNext","door":"link"}']]);
     assert.deepEqual(errors, []);
   } finally {
     await page.context().close();
@@ -930,11 +819,11 @@ test('Chromium: Back from another roadmap into a step link keeps the step and op
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 }, others: sea, start: '#/app/sail?step=wind' }, errors);
   try {
-    await page.getByRole('dialog', { name: 'Read the wind' }).waitFor();
+    await page.getByRole('article', { name: 'Read the wind' }).waitFor();
     await page.evaluate(() => { window.location.hash = '#/app/sea'; });
-    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.getByRole('article').waitFor({ state: 'detached' });
     await page.evaluate(() => window.history.back());
-    await page.getByRole('dialog', { name: 'Read the wind' }).waitFor();
+    await page.getByRole('article', { name: 'Read the wind' }).waitFor();
     assert.equal(await hash(page), '#/app/sail?step=wind');
     assert.deepEqual(errors, []);
   } finally {
@@ -953,7 +842,7 @@ test('Chromium: delete confirmation cancels without writing on phone and desktop
       await page.getByRole('menuitem', { name: 'Delete step' }).click();
       await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click();
       assert.equal(await page.getByRole('alertdialog').count(), 0);
-      assert.equal(await page.getByRole('dialog').count(), 1);
+      assert.equal(await page.getByRole('article').count(), 1);
       assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'More');
       assert.deepEqual(errors, []);
     } finally { await page.context().close(); }
@@ -978,7 +867,7 @@ test('Chromium: the sole root keeps Delete unavailable; one of several roots can
 });
 
 for (const moveFocus of [false, true]) {
-  test(`Chromium: deleting the phone pane's last card focuses its segment during regroup${moveFocus ? ' without stealing a later focus move' : ' then follows the surviving card'}`, async () => {
+  test(`Chromium: deleting the phone pane's last card focuses its segment during regroup${moveFocus ? ' without stealing a later focus move' : ' then retains its column'}`, async () => {
     await start();
     const errors = [];
     const nodes = learnToSailNodes.filter((step) => !['bowline', 'solo'].includes(step.id));
@@ -991,7 +880,7 @@ for (const moveFocus of [false, true]) {
       await page.clock.install({ time: new Date(time.getTime() - 60000) });
       await page.clock.pauseAt(time);
       await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).evaluate((button) => button.click());
-      await page.getByRole('dialog').waitFor({ state: 'detached' });
+      await page.getByRole('article').waitFor({ state: 'detached' });
       await page.clock.runFor(32);
       assert.deepEqual(await page.evaluate(() => [
         document.activeElement.matches('.st-board-phone-segment'),
@@ -1002,8 +891,7 @@ for (const moveFocus of [false, true]) {
       if (moveFocus) {
         assert.equal(await page.evaluate(() => document.activeElement.matches('.st-board-find-input')), true);
       } else {
-        await page.waitForFunction(() => document.activeElement?.dataset.stepId === 'dock');
-        assert.deepEqual([await focusedName(page), await page.evaluate(() => document.activeElement.tabIndex)], ['Leave the dock', 0]);
+        assert.equal(await page.evaluate(() => document.activeElement.matches('.st-board-phone-segment')), true);
       }
       assert.deepEqual(errors, []);
     } finally {
@@ -1015,51 +903,21 @@ for (const moveFocus of [false, true]) {
 
 for (const width of [390, 744, 1440]) {
   for (const [id, title, primary] of [['wind', 'Read the wind', 'Complete'], ['parts', 'Name the boat parts', 'Reset'], ['dock', 'Leave the dock', null]]) {
-    test(`Chromium ${width}: ${id} actions follow the tab and column`, async () => {
+    test(`Chromium ${width}: ${id} keeps its actions while scrolling through document sections`, async () => {
       await start();
       const errors = [];
       const page = await openRoom({ viewport: { width, height: 960 }, start: `#/app/sail?step=${id}`, editingEnabled: true }, errors);
       try {
-        await page.getByRole('dialog', { name: title, exact: true }).waitFor();
-        const actions = page.locator(width < 744 ? '.st-board-step-page-pinned' : '.st-board-step-modal-actions');
-        for (const tab of ['Overview', 'Workspace', 'History']) {
-          await page.getByRole('tab', { name: tab, exact: true }).click();
-          await page.waitForFunction((label) => document.querySelector('.st-board-step-sections [aria-selected="true"]')?.textContent === label, tab);
-          await page.evaluate(() => document.fonts.ready);
-          const secondary = width < 744 && tab === 'Workspace' ? 'Add note' : 'Edit step';
-          assert.deepEqual(await actions.getByRole('button').allTextContents(), primary ? [secondary, primary] : [secondary]);
-          if (width < 744) {
-            assert.deepEqual(await page.locator('.st-board-step-identity').evaluate((identity) => ({
-              titleSize: getComputedStyle(identity.querySelector('h2')).fontSize,
-              rails: identity.querySelectorAll('.st-board-step-identity-rail').length,
-            })), { titleSize: tab === 'Overview' ? '32px' : '20px', rails: tab === 'Overview' ? 1 : 0 });
-            if (primary) {
-              assert.deepEqual(await actions.locator('.st-board-step-buttons').evaluate((row) => {
-                const [secondary, primary] = row.querySelectorAll('button');
-                const text = document.createRange();
-                text.selectNodeContents(secondary);
-                return {
-                  fontSize: getComputedStyle(secondary).fontSize,
-                  secondaryWidth: secondary.getBoundingClientRect().width,
-                  primaryWidth: primary.getBoundingClientRect().width,
-                  gap: getComputedStyle(row).gap,
-                  textLines: text.getClientRects().length,
-                };
-              }), { fontSize: '14px', secondaryWidth: 76, primaryWidth: 274, gap: '8px', textLines: 1 });
-            }
-          }
-          if (primary === null) {
-            const button = actions.getByRole('button', { name: secondary, exact: true });
-            assert.equal(await button.evaluate((element) => element.classList.contains('st-board-step-action--secondary')), true);
-            if (width < 744) {
-              assert.equal(await button.evaluate((element) => Math.abs(element.getBoundingClientRect().width - element.parentElement.getBoundingClientRect().width) < 1), true);
-            }
-          }
+        await page.getByRole('article', { name: title, exact: true }).waitFor();
+        for (const section of ['Workspace', 'History']) {
+          await page.locator('.st-step-section-links').getByRole('button', { name: new RegExp(section, 'i') }).click();
+          assert.deepEqual(await page.locator('.st-step-pinned-actions').getByRole('button').allTextContents(), primary ? [primary] : []);
+          assert.equal(await page.getByRole('button', { name: 'Edit step', exact: true }).count(), 1);
+          assert.equal(await page.locator('.st-step-workspace-section').count(), 1);
+          assert.equal(await page.locator('.st-step-history-section').count(), 1);
         }
         assert.deepEqual(errors, []);
-      } finally {
-        await page.context().close();
-      }
+      } finally { await page.context().close(); }
     });
   }
 
@@ -1068,8 +926,8 @@ for (const width of [390, 744, 1440]) {
     const errors = [];
     const page = await openRoom({ viewport: { width, height: 960 }, start: '#/app/sail?step=wind' }, errors);
     try {
-      await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
-      await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+      await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
+      await page.locator('.st-step-section-links').getByRole('button', { name: /Workspace/i }).click();
       const buttons = page.locator('.st-board-workspace-missing .st-board-step-action');
       await buttons.first().waitFor();
       await page.evaluate(() => document.fonts.ready);
@@ -1114,8 +972,8 @@ for (const width of [390, 744, 1440]) {
       assert.equal(await hash(page), '#/app/sail?step=wind');
       assert.equal(await page.locator('.st-board-step-layer').count(), 1);
       await page.getByRole('button', { name: 'Save', exact: true }).click();
-      await page.getByRole('dialog', { name: 'Watch the wind', exact: true }).waitFor();
-      await page.waitForFunction(() => document.activeElement.textContent === 'Edit step');
+      await page.getByRole('article', { name: 'Watch the wind', exact: true }).waitFor();
+      await page.waitForFunction(() => document.activeElement.getAttribute('aria-label') === 'Edit step');
       assert.equal(await activeIs(page), 'Edit step');
       assert.deepEqual(await page.evaluate(() => window.editRequests), [{
         id: 'wind', label: 'Watch the wind', description: 'Learn to spot shifts in wind direction.', color: 'sky', prerequisites: ['parts'],
@@ -1125,8 +983,8 @@ for (const width of [390, 744, 1440]) {
       await page.getByRole('button', { name: 'Edit step', exact: true }).click();
       await page.getByRole('dialog', { name: 'Edit step', exact: true }).waitFor();
       await page.keyboard.press('Escape');
-      await page.getByRole('dialog', { name: 'Watch the wind', exact: true }).waitFor();
-      await page.waitForFunction(() => document.activeElement.textContent === 'Edit step');
+      await page.getByRole('article', { name: 'Watch the wind', exact: true }).waitFor();
+      await page.waitForFunction(() => document.activeElement.getAttribute('aria-label') === 'Edit step');
       assert.equal(await hash(page), '#/app/sail?step=wind');
       await page.keyboard.press('Escape');
       await page.locator('.st-board-step-layer').waitFor({ state: 'detached' });
@@ -1143,8 +1001,8 @@ for (const width of [390, 744, 1440]) {
       workspaces: { wind: { subtasks: [], note: 'Watch the water', links: [] } } }, errors);
     try {
       await card(page, 'Read the wind').click();
-      await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
-      const opener = width < 744 ? 'Edit note' : 'Edit';
+      await page.locator('.st-step-section-links').getByRole('button', { name: /Workspace/i }).click();
+      const opener = 'Edit';
       await page.getByRole('button', { name: opener, exact: true }).click();
       await page.getByRole('textbox', { name: 'Note', exact: true }).fill('Watch the sails');
       await page.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -1163,7 +1021,7 @@ for (const width of [390, 744, 1440]) {
       await page.locator('.st-board-note-editor').waitFor({ state: 'detached' });
       await page.waitForFunction((label) => document.activeElement.textContent === label, opener);
       assert.equal(await activeIs(page), opener);
-      assert.equal(await page.getByRole('tab', { name: 'Workspace', exact: true }).getAttribute('aria-selected'), 'true');
+      assert.equal(await page.locator('.st-step-workspace-section').count(), 1);
       assert.deepEqual(errors, []);
     } finally {
       await page.context().close();
@@ -1176,9 +1034,9 @@ for (const width of [390, 744, 1440]) {
     const page = await openRoom({ viewport: { width, height: 960 }, editable: false, editingEnabled: true }, errors);
     try {
       await card(page, 'Read the wind').click();
-      await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
-      assert.deepEqual(await page.locator('.st-board-step-modal-actions, .st-board-step-page-pinned, .st-board-workspace').allTextContents(), []);
-      assert.equal(await page.getByRole('tab', { name: 'Workspace', exact: true }).count(), 0);
+      await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
+      assert.deepEqual(await page.locator('.st-step-pinned-actions button, .st-board-workspace').allTextContents(), []);
+      assert.equal(await page.locator('.st-step-section-links').getByRole('button', { name: /Workspace/i }).count(), 0);
       assert.equal(await page.getByRole('button', { name: 'Edit step', exact: true }).count(), 0);
       assert.deepEqual(errors, []);
     } finally {
@@ -1195,14 +1053,14 @@ test('Chromium: system Back closes the phone detail without saving its local not
     workspaces: { wind: { subtasks: [], note: 'Keep this note', links: [] } } }, errors);
   try {
     await card(page, 'Read the wind').click();
-    await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
-    await page.getByRole('button', { name: 'Edit note', exact: true }).click();
+    await page.locator('.st-step-section-links').getByRole('button', { name: /Workspace/i }).click();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
     await page.getByRole('textbox', { name: 'Note', exact: true }).fill('Unsaved draft');
     await page.goBack();
     await page.locator('.st-board-step-layer').waitFor({ state: 'detached' });
     assert.deepEqual(await calls(page), []);
     await card(page, 'Read the wind').click();
-    await page.getByRole('tab', { name: 'Workspace', exact: true }).click();
+    await page.locator('.st-step-section-links').getByRole('button', { name: /Workspace/i }).click();
     assert.equal(await page.locator('.st-board-workspace-note').textContent(), 'Keep this note');
     assert.deepEqual(errors, []);
   } finally {

@@ -33,10 +33,16 @@ constexpr int kVoiceInFlightTotal = 8;
 // May this take start: a byte bucket refilling at `kVoiceBytesPerDay` a day, plus the two in-flight
 // counters. In memory and therefore best-effort — a deploy refills it. The money is held by the
 // account's AI allowance and by the process fuse.
-enum class VoiceTake {
-  ok,
-  busy,   // too many takes already with the vendor: a wait
-  spent,  // the day's bytes are gone: not a wait
+struct VoiceTake {
+  enum Verdict {
+    ok,
+    busy,   // too many takes already with the vendor: a wait
+    spent,  // the day's bytes are gone: a wait as long as the refill, `fitsIn`
+  };
+
+  Verdict verdict;
+  // How long the bucket takes to refill enough to hold this take; zero unless spent.
+  std::chrono::milliseconds fitsIn{0};
 };
 
 class VoiceRation {

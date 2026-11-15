@@ -1064,9 +1064,6 @@
     "Already on Windmill?" : {
 
     },
-    "Another AI request is still in progress. Try again when it finishes." : {
-
-    },
     "Answer in progress" : {
 
     },
@@ -2928,9 +2925,6 @@
     "The rack could not be changed. Try again." : {
 
     },
-    "The rest of your AI allowance is held by a request still in progress." : {
-
-    },
     "The routine" : {
 
     },
@@ -3455,6 +3449,12 @@
     "Your draft is kept on this phone. Shorten this page before it can be backed up." : {
 
     },
+    "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began." : {
+
+    },
+    "Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began." : {
+
+    },
     "Your full training history needs a connection to finish syncing." : {
 
     },
@@ -3489,9 +3489,6 @@
 
     },
     "Your pages and log stay in your account and leave this phone." : {
-
-    },
-    "Your plan has no funded AI allowance for this period." : {
 
     },
     "Your routines are saved. Check the response to restore their links." : {

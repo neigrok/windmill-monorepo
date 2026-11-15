@@ -36,10 +36,25 @@ const NEWEST_SEQ: &str =
     "select coalesce(max(seq), 0) from events where subscription_id = $1::uuid";
 
 const SELECT_LEDGER: &str = "select epoch, latest_seq from ledger";
-const SELECT_EVENTS: &str = "select seq, type, occurred_at, recorded_at, subscription_id, account_id, store, \
-     environment, subscription_offer_kind, period_id, period_store_transaction_id, period_starts_at, \
-     period_ends_at, period_price_amount, period_price_currency, period_offer_kind, period_refunded_at, \
-     period_observed_at, period_left_with from events where seq > $1 order by seq limit $2";
+// The columns of an event, each one EventRow reads.
+macro_rules! event_columns {
+    () => {
+        "seq, type, occurred_at, recorded_at, subscription_id, account_id, store, environment, \
+         subscription_offer_kind, period_id, period_store_transaction_id, period_starts_at, period_ends_at, \
+         period_price_amount, period_price_currency, period_offer_kind, period_refunded_at, period_observed_at, \
+         period_left_with"
+    };
+}
+const SELECT_EVENTS: &str = concat!(
+    "select ",
+    event_columns!(),
+    " from events where seq > $1 order by seq limit $2"
+);
+const SELECT_EVENTS_OF_SUBSCRIPTION: &str = concat!(
+    "select ",
+    event_columns!(),
+    " from events where subscription_id = $1::uuid order by seq"
+);
 const SELECT_ENTITLEMENT_SUBSCRIPTIONS: &str = concat!(
     "select seq, ",
     subscription_columns!(),
@@ -52,6 +67,14 @@ pub struct FeedPage {
     pub epoch: Uuid,
     pub entries: Vec<FeedEntry>,
     pub latest_seq: i64,
+}
+
+// D-6: an event as the ledger recorded it, stamped with its seq and recordedAt.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecordedEvent {
+    pub seq: i64,
+    pub recorded_at: Instant,
+    pub event: Event,
 }
 
 // One event as the feed carries it: with its subscription's store, environment and offer kind, and its account's
@@ -176,6 +199,18 @@ pub(crate) async fn append(
     Ok(seqs)
 }
 
+// Every event of the subscription, in seq order, whichever account each was told under.
+pub(crate) async fn recorded_for(
+    connection: &mut PgConnection,
+    subscription_id: &SubscriptionId,
+) -> Result<Vec<RecordedEvent>, StorageError> {
+    let rows: Vec<EventRow> = sqlx::query_as(SELECT_EVENTS_OF_SUBSCRIPTION)
+        .bind(subscription_id.as_str())
+        .fetch_all(connection)
+        .await?;
+    rows.into_iter().map(RecordedEvent::try_from).collect()
+}
+
 // The seq of the subscription's newest event, 0 before its first. Read under its lineage's lock, it stays the
 // newest until the transaction ends.
 pub(crate) async fn newest_seq(
@@ -215,43 +250,65 @@ struct EventRow {
 impl EventRow {
     // The entry this row records, its entitlement folded over the subscriptions it names.
     fn into_entry(self, subscriptions: Vec<Subscription>) -> Result<FeedEntry, StorageError> {
+        let store = named(Store::from_name, &self.store)?;
+        let environment = named(Environment::from_name, &self.environment)?;
+        let offer_kind = self
+            .subscription_offer_kind
+            .as_deref()
+            .map(|kind| named(OfferKind::from_name, kind))
+            .transpose()?;
+        let RecordedEvent {
+            seq,
+            recorded_at,
+            event,
+        } = RecordedEvent::try_from(self)?;
+        let entitlement = event
+            .account_id
+            .clone()
+            .map(|account_id| AccountEntitlement::of(account_id, subscriptions));
+        Ok(FeedEntry {
+            seq,
+            recorded_at,
+            event,
+            store,
+            environment,
+            offer_kind,
+            entitlement,
+        })
+    }
+}
+
+impl TryFrom<EventRow> for RecordedEvent {
+    type Error = StorageError;
+
+    fn try_from(row: EventRow) -> Result<RecordedEvent, StorageError> {
         let unreadable = || StorageError::Unreadable;
-        let period = match self.period_id {
+        let period = match row.period_id {
             None => None,
             Some(id) => Some(Period::try_from(PeriodRow {
                 id,
-                store_transaction_id: self.period_store_transaction_id.ok_or_else(unreadable)?,
-                starts_at: self.period_starts_at.ok_or_else(unreadable)?,
-                ends_at: self.period_ends_at.ok_or_else(unreadable)?,
-                price_amount: self.period_price_amount.ok_or_else(unreadable)?,
-                price_currency: self.period_price_currency.ok_or_else(unreadable)?,
-                offer_kind: self.period_offer_kind,
-                refunded_at: self.period_refunded_at,
-                observed_at: self.period_observed_at.ok_or_else(unreadable)?,
-                left_with: self.period_left_with,
+                store_transaction_id: row.period_store_transaction_id.ok_or_else(unreadable)?,
+                starts_at: row.period_starts_at.ok_or_else(unreadable)?,
+                ends_at: row.period_ends_at.ok_or_else(unreadable)?,
+                price_amount: row.period_price_amount.ok_or_else(unreadable)?,
+                price_currency: row.period_price_currency.ok_or_else(unreadable)?,
+                offer_kind: row.period_offer_kind,
+                refunded_at: row.period_refunded_at,
+                observed_at: row.period_observed_at.ok_or_else(unreadable)?,
+                left_with: row.period_left_with,
             })?),
         };
-        let account_id = self
-            .account_id
-            .map(|account_id| AccountId::new(account_id.to_string()));
-        Ok(FeedEntry {
-            seq: self.seq,
-            recorded_at: Instant::from_epoch_millis(self.recorded_at),
+        Ok(RecordedEvent {
+            seq: row.seq,
+            recorded_at: Instant::from_epoch_millis(row.recorded_at),
             event: Event {
-                kind: event_kind(&self.kind, period)?,
-                occurred_at: Instant::from_epoch_millis(self.occurred_at),
-                subscription_id: SubscriptionId::new(self.subscription_id.to_string()),
-                account_id: account_id.clone(),
+                kind: event_kind(&row.kind, period)?,
+                occurred_at: Instant::from_epoch_millis(row.occurred_at),
+                subscription_id: SubscriptionId::new(row.subscription_id.to_string()),
+                account_id: row
+                    .account_id
+                    .map(|account_id| AccountId::new(account_id.to_string())),
             },
-            store: named(Store::from_name, &self.store)?,
-            environment: named(Environment::from_name, &self.environment)?,
-            offer_kind: self
-                .subscription_offer_kind
-                .as_deref()
-                .map(|kind| named(OfferKind::from_name, kind))
-                .transpose()?,
-            entitlement: account_id
-                .map(|account_id| AccountEntitlement::of(account_id, subscriptions)),
         })
     }
 }

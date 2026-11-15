@@ -79,13 +79,18 @@ export class NavigateTool extends Tool {
     }
     if (drag.reorderId) {
       if (drag.reordering) { this.ctx.commitReorder(pos.x, pos.y); return; }
-      this.ctx.select(drag.reorderId); // a press that never lifted is a plain select
+      this.ctx.select(drag.reorderId);
+      if (!event?.shiftKey && !event?.metaKey && !event?.ctrlKey && !event?.altKey) this.ctx.activate?.(drag.reorderId);
       return;
     }
     const { moved, vx, vy } = drag;
     if (moved) { this.ctx.camera.launchInertia(vx, vy); return; }
     const id = drag.pickedId;
-    if (id) { this.ctx.select(id); return; }
+    if (id) {
+      this.ctx.select(id);
+      if (!event?.shiftKey && !event?.metaKey && !event?.ctrlKey && !event?.altKey) this.ctx.activate?.(id);
+      return;
+    }
     if (this.ctx.zoomIntoCrowd(pos.x, pos.y, event?.pointerType)) return true; // too crowded to pick one apart: the tap zooms in instead of missing
     const edge = this.ctx.pickEdge(pos.x, pos.y);
     if (edge) { this.ctx.selectEdge(edge); return; }
@@ -110,7 +115,7 @@ export class NavigateTool extends Tool {
   }
 }
 
-// The shared-tree viewer: one finger pans 1:1 with no inertia fling, a tap selects, hover is node-only and there is no edge selection.
+// Read-only navigation: one finger pans, a tap activates, hover is node-only and there is no edge selection.
 export class ReadOnlyTool extends NavigateTool {
   onPointerMove(pos, event) {
     const now = performance.now();
@@ -125,8 +130,9 @@ export class ReadOnlyTool extends NavigateTool {
     this.drag = null;
     if (moved) return;
     if (id === null && this.ctx.zoomIntoCrowd(pos.x, pos.y, event?.pointerType)) return true;
-    if (this.ctx.editTap?.(pos.x, pos.y, id)) return; // an owner editing on a phone routes the picked step by mode
+    if (this.ctx.editTap?.(pos.x, pos.y, id)) return; // tablet owner tools route the picked step by mode
     this.ctx.select(id);
+    if (id && !event?.shiftKey && !event?.metaKey && !event?.ctrlKey && !event?.altKey) this.ctx.activate?.(id);
   }
 
   onDoubleClick() {} // touch double-tap zoom lives in the InputController

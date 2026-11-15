@@ -55,9 +55,10 @@ TEST(ai_call_output_cap_matches_reservation_and_changes_with_next_round_context_
   auto service = std::make_shared<AiBudgetService>(repository, [=] { return limits; }, [] { return 1'792'000'000'000LL; });
   FakeAuthRepository accounts;
   const auto account = accounts.createUser(Email{"free@example.com"}, "Free");
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
+  FakeClock clock;
   FakeAiUsageRepository ledger;
-  Entitlements entitlements{subscriptions, ledger, {}, {}, service};
+  Entitlements entitlements{subscriptions, clock, ledger, {}, {}, service};
   Failures failures;
   auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
   AiSpend spend;
@@ -135,9 +136,10 @@ TEST(ai_call_adaptive_truncation_settles_without_tools_and_transport_retains_hol
     auto service = std::make_shared<AiBudgetService>(repository, [] { return AiBudgetLimits{}; }, [] { return 1'792'000'000'000LL; });
     FakeAuthRepository accounts;
     const auto account = accounts.createUser(Email{"free@example.com"}, "Free");
-    FakeSubscriptionRepository subscriptions;
+    FakeEntitlementCopy subscriptions;
+    FakeClock clock;
     FakeAiUsageRepository ledger;
-    Entitlements entitlements{subscriptions, ledger, {}, {}, service};
+    Entitlements entitlements{subscriptions, clock, ledger, {}, {}, service};
     Failures failures;
     auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
     AiSpend spend;
@@ -318,9 +320,10 @@ TEST(ai_call_budget_resolves_account_tier_and_never_dispatches_anonymous_or_exha
   auto service = std::make_shared<AiBudgetService>(repository, [&] { return limits; }, [] { return 1'792'000'000'000LL; });
   FakeAuthRepository accounts;
   const auto user = accounts.createUser(Email{"owner@example.com"}, "Owner");
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
+  FakeClock clock;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage, "owner@example.com", {}, service};
+  Entitlements entitlements{subscriptions, clock, usage, {.owners = EmailList{"owner@example.com"}}, {}, service};
   Failures failures;
   auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
   AiSpend spend;
@@ -357,9 +360,10 @@ TEST(ai_call_budget_settles_complete_usage_and_keeps_missing_or_partial_usage_re
   auto service = std::make_shared<AiBudgetService>(repository, [&] { return limits; }, [] { return 1'792'000'000'000LL; });
   FakeAuthRepository accounts;
   const auto user = accounts.createUser(Email{"sam@example.com"}, "Sam");
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
+  FakeClock clock;
   FakeAiUsageRepository ledger;
-  Entitlements entitlements{subscriptions, ledger, "sam@example.com"};
+  Entitlements entitlements{subscriptions, clock, ledger, {.owners = EmailList{"sam@example.com"}}};
   Failures failures;
   auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
   AiSpend spend;
@@ -436,15 +440,16 @@ TEST(ai_call_budget_only_terminal_provider_replies_have_complete_usage) {
   }
 }
 
-TEST(ai_call_budget_admits_small_free_requests_but_refuses_large_requests_and_unfunded_paid) {
+TEST(ai_call_budget_admits_small_free_requests_refuses_large_ones_and_keeps_unfunded_paid_off_grant_only_rounds) {
   FakeAiBudgetRepository repository;
   auto service = std::make_shared<AiBudgetService>(repository, [] { return AiBudgetLimits{}; },
                                                    [] { return 1'792'000'000'000LL; });
   FakeAuthRepository accounts;
   const auto account = accounts.createUser(Email{"free@example.com"}, "Free");
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
+  FakeClock clock;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage, {}, {}, service};
+  Entitlements entitlements{subscriptions, clock, usage, {}, {}, service};
   Failures failures;
   AiCallBudget budget{service, entitlements, accounts, failures};
   AiSpend spend;
@@ -462,10 +467,18 @@ TEST(ai_call_budget_admits_small_free_requests_but_refuses_large_requests_and_un
   request["messages"][0]["content"] = std::string(600'000, 'a');
   CHECK_EQ(budget.begin(spend, request).refusal, std::string{"subject_exhausted"});
   CHECK_EQ(repository.reservations.size(), 1u);
+  // Windmill One with no grant in force: a round only a grant may fund is refused, and any other draws on the free
+  // signed-in allowance.
   subscriptions.subscribe(account.id);
   request["messages"][0]["content"] = "Hi";
-  CHECK_EQ(budget.begin(spend, request).refusal, std::string{"funding_required"});
+  CHECK_EQ(budget.begin(spend, std::optional<long long>{10'000'000}, AiBudgetFunding::GrantOnly).refusal,
+           std::string{"funding_required"});
   CHECK_EQ(repository.reservations.size(), 1u);
+  const auto free = budget.begin(spend, request);
+  REQUIRE(free.reservation);
+  CHECK_EQ(free.reservation->tier, AiBudgetTier::LoggedIn);
+  CHECK_FALSE(free.reservation->grantId);
+  CHECK_EQ(repository.reservations.size(), 2u);
   CHECK(failures.reports.empty());
 }
 
@@ -477,9 +490,10 @@ TEST(ai_call_budget_settles_an_unconsumed_round_at_zero_and_holds_an_ambiguous_o
   auto service = std::make_shared<AiBudgetService>(repository, [&] { return limits; }, [] { return 1'792'000'000'000LL; });
   FakeAuthRepository accounts;
   const auto user = accounts.createUser(Email{"sam@example.com"}, "Sam");
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
+  FakeClock clock;
   FakeAiUsageRepository ledger;
-  Entitlements entitlements{subscriptions, ledger, "sam@example.com"};
+  Entitlements entitlements{subscriptions, clock, ledger, {.owners = EmailList{"sam@example.com"}}};
   Failures failures;
   auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
   AiSpend spend;
@@ -510,17 +524,18 @@ TEST(ai_call_budget_round_whose_hold_lapsed_while_out_books_nothing_and_files_no
   auto service = std::make_shared<AiBudgetService>(repository, [] { return AiBudgetLimits{}; }, [&] { return now; });
   FakeAuthRepository accounts;
   const auto user = accounts.createUser(Email{"sam@example.com"}, "Sam");
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
+  FakeClock clock;
   FakeAiUsageRepository ledger;
-  Entitlements entitlements{subscriptions, ledger, {}};
+  Entitlements entitlements{subscriptions, clock, ledger};
   Failures failures;
   AiCallBudget budget{service, entitlements, accounts, failures};
   AiSpend spend;
   spend.user = user.id;
-  const auto settled = budget.begin(spend, std::optional<long long>{10'000'000}, AiCallFunding::anyAllowance);
+  const auto settled = budget.begin(spend, std::optional<long long>{10'000'000}, AiBudgetFunding::AnyAllowance);
   REQUIRE(settled.reservation);
   now += kAiBudgetHoldLifetimeMs;
-  const auto ambiguous = budget.begin(spend, std::optional<long long>{10'000'000}, AiCallFunding::anyAllowance);
+  const auto ambiguous = budget.begin(spend, std::optional<long long>{10'000'000}, AiBudgetFunding::AnyAllowance);
   REQUIRE(ambiguous.reservation);
   now += kAiBudgetHoldLifetimeMs;
   CHECK_EQ(service->releaseLapsed(), 1);
@@ -546,9 +561,10 @@ TEST(ai_call_budget_a_cancelled_round_settles_at_once_at_its_input_estimate_or_i
                                                    [] { return 1'792'000'000'000LL; });
   FakeAuthRepository accounts;
   const auto user = accounts.createUser(Email{"stopper@example.com"}, "Stopper");
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
+  FakeClock clock;
   FakeAiUsageRepository ledger;
-  Entitlements entitlements{subscriptions, ledger, {}, {}, service};
+  Entitlements entitlements{subscriptions, clock, ledger, {}, {}, service};
   Failures failures;
   auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
   AiSpend spend;

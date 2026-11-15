@@ -157,6 +157,7 @@ export class SkillTreeScene {
       // Returning true makes the InputController swallow the lift, so no tap follows the hold.
       onLongPress: (id) => (id != null && this.longPress ? (this.longPress(id), true) : false),
       select: (id) => this.select(id),
+      activate: (id) => this.options.onNodeActivate?.(id),
       selectEdge: (edge) => { this.selectEdge(edge); this.options.onEdgePick?.(edge); },
       hover: (id) => this.hover(id),
       hoverEdge: (edge) => this.hoverEdge(edge),

@@ -1,8 +1,8 @@
 # Roadmap Board design review
 
-Status: ✅ **Ready for dev**, owner approved 2026-10-31. The [proposal](roadmap-board-proposal.md) describes the
-current design; this file holds the verdict, the rulings and decisions behind it, how each review
-finding is resolved, and what remains open.
+The [Board behavior](roadmap-board-proposal.md) and [flow index](../index.md#approved-shared-step-editor)
+describe the current product and remaining targets. This file retains the owner-approved Board rulings
+and review references; named page/modal/tabbed specimens are superseded by the shared step document.
 
 Pages: [✅ Board · Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900)
 and [✅ Board · Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901). Both

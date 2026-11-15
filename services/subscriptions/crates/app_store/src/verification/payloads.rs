@@ -6,6 +6,24 @@ pub enum Environment {
     Sandbox,
 }
 
+impl From<Environment> for domain::Environment {
+    fn from(environment: Environment) -> domain::Environment {
+        match environment {
+            Environment::Production => domain::Environment::Production,
+            Environment::Sandbox => domain::Environment::Sandbox,
+        }
+    }
+}
+
+impl From<domain::Environment> for Environment {
+    fn from(environment: domain::Environment) -> Environment {
+        match environment {
+            domain::Environment::Production => Environment::Production,
+            domain::Environment::Sandbox => Environment::Sandbox,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(transparent)]
 pub struct TransactionId(String);
@@ -43,6 +61,15 @@ pub struct Notification {
     pub environment: Environment,
     pub status: Option<i32>,
     pub transaction: Option<TransactionInfo>,
+    pub renewal_info: Option<RenewalInfo>,
+}
+
+// One subscription's status as the App Store Server API states it, its transaction and renewal info verified.
+#[derive(PartialEq)]
+pub struct SubscriptionStatus {
+    pub environment: Environment,
+    pub status: Option<i32>,
+    pub transaction: TransactionInfo,
     pub renewal_info: Option<RenewalInfo>,
 }
 

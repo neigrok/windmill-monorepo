@@ -71,6 +71,28 @@ lists it under `progressRefused`, and an import's `progress[]` lists it under `p
 Mark the steps of the tree it opens instead. A mark the node already held is kept, still answered as `status`, and decides nothing.
 `prerequisitesMet` reads the same completed set as `state`.
 
+## Subtrees
+
+A step can own a subtree: a roadmap of its own that the step opens, titled by the step's label; the
+step is complete once the subtree holds a step and every step of it is complete.
+`roadmap_create_subtree` gives an existing step one, empty. It
+does not copy the parent's legend: send the parent tree's `kinds` to inherit it, or the subtree gets
+the default legend. Sent again, it answers the subtree the step already owns, `created: false`, and
+that subtree keeps the legend it was created with; `kindsError` says so when the call sent `kinds`.
+`roadmap_list_trees` lists top-level roadmaps only. `roadmap_get_tree` answers `subtree: {id, done,
+total, state}` on each step that owns one: read that id with `roadmap_get_tree` to go down. Every
+tree it reads answers `parent: {tree, step}` to go back up, `null` for a top-level roadmap, with
+`root`, `depth` and `path`, the trees above it root first. `roadmap_get_nodes` and
+`roadmap_find_nodes` answer `subtree` when `fields` asks for it, and `roadmap_find_nodes {owns:
+true}` finds the steps that own one. Deleting such a step hides its subtree with it, so
+`roadmap_delete_node` takes it only when `branches` names the subtree.
+
+The `subtree` counts are the owner's progress, and so is the step's completion: on a roadmap
+someone shared with you, such a step's `state` follows the owner's work on its subtree, not your
+marks, and it takes no mark from you either. Your own marks on every other step are yours.
+`openedTreesUnavailable: true` says the trees the steps open could not be read just now: `subtree`
+answers its id alone and each step that follows a tree reads as not complete; read again later.
+
 ## Reads and edits
 
 Reads use lean projections: an omitted description is not an empty description. Request `fields`
@@ -122,8 +144,8 @@ std::string roadmapInstructions() {
 
 std::vector<McpResource> roadmapResources() {
   return {{"windmill://quickstart", "quickstart", "Windmill quickstart",
-           "A tree's guide, how guides add, roadmap edge direction, progress, diagnostics, projections, the tree a "
-           "node opens and batch semantics.",
+           "A tree's guide, how guides add, roadmap edge direction, progress, subtrees, diagnostics, projections, the "
+           "tree a node opens and batch semantics.",
            "text/markdown", kQuickstart}};
 }
 

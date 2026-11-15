@@ -20,15 +20,10 @@ for (const width of [320, 390, 744, 1440]) {
         await alert.waitFor();
         assert.equal(await alert.getByText(REFUSED_SYNC.body, { exact: true }).count(), 1);
         if (surface === 'tree' && width < 744) {
-          await page.waitForFunction(() => {
-            const card = document.querySelector('.st-graph-refusal')?.getBoundingClientRect();
-            const sheet = document.querySelector('[data-graph-step-bar]')?.getBoundingClientRect();
-            return card && sheet && card.bottom <= sheet.top && window.cameraInsets.bottom >= window.innerHeight - card.top;
-          });
+          assert.equal(await page.locator('[data-graph-step-bar]').count(), 0);
           assert.equal(await page.locator('.st-graph-refusal').evaluate((element) => {
             const card = element.getBoundingClientRect();
-            const sheet = document.querySelector('[data-graph-step-bar]').getBoundingClientRect();
-            return card.bottom <= sheet.top;
+            return card.bottom <= innerHeight && card.top >= 0;
           }), true);
         }
 
@@ -106,11 +101,11 @@ for (const width of [390, 1440]) {
 }
 
 for (const width of [744, 900, 1024, 1280, 1440]) {
-  hostTest(`Chromium: Graph refusal clears the selected-step dock at ${width}px`, async () => {
+  hostTest(`Chromium: Graph refusal remains reachable after a selection at ${width}px`, async () => {
     const { page, errors } = await openHost({ width });
     try {
       await page.evaluate(() => window.scene.select('wind'));
-      await page.locator('.st-detail-panel--open').waitFor();
+      assert.equal(await page.locator('.st-detail-panel--open').count(), 0);
       await page.evaluate(() => {
         const session = window.session;
         session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
@@ -118,11 +113,6 @@ for (const width of [744, 900, 1024, 1280, 1440]) {
         session.receiveReject({ frameId: 'fixture-refused', code: 'server-error' });
       });
       await page.getByRole('alert').getByText(REFUSED_SYNC.body, { exact: true }).waitFor();
-      await page.waitForFunction(() => {
-        const refusal = document.querySelector('.st-graph-refusal').getBoundingClientRect();
-        const dock = document.querySelector('.st-detail-panel--open').getBoundingClientRect();
-        return dock.top >= refusal.bottom;
-      });
       assert.deepEqual(await page.getByRole('alert').getByRole('button').evaluateAll((buttons) => buttons.map((button) => {
         const box = button.getBoundingClientRect();
         return { name: button.textContent.trim(), reachable: button.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)) };
@@ -132,13 +122,13 @@ for (const width of [744, 900, 1024, 1280, 1440]) {
   });
 }
 
-hostTest('Chromium: a structure discard preserves the Graph completion Undo', async () => {
+hostTest('Chromium: a structure rebaseline preserves the open Graph document completion Undo', async () => {
   const { page, errors } = await openHost({ fixedClock: true });
   try {
-    await page.evaluate(() => window.scene.select('wind'));
+    await page.evaluate(() => window.scene.activate('wind'));
     await page.getByRole('button', { name: 'Complete', exact: true }).click();
     await page.clock.runFor(300);
-    await page.locator('.st-graph-toast .st-board-toast-undo').waitFor();
+    await page.locator('.st-board-step-undo').waitFor();
     await page.evaluate(() => {
       const session = window.session;
       session.dispatch({ kind: 'RenameNode', id: 'wind', label: 'Read gusts' });
@@ -150,8 +140,8 @@ hostTest('Chromium: a structure discard preserves the Graph completion Undo', as
     await page.waitForFunction(() => !window.session.discardPending && window.session.rebaselining?.has('structure'));
     await page.evaluate(() => window.session.receiveState({ ...window.serverTree, seq: 2 }));
     await page.waitForFunction(() => window.session.ready);
-    await page.locator('.st-graph-toast .st-board-toast-undo').click();
-    await page.getByRole('button', { name: 'Complete', exact: true }).waitFor();
+    await page.locator('.st-board-step-undo').click();
+    await page.waitForFunction(() => !window.session.progress.overlay().completed.has('wind'));
     assert.equal(await page.evaluate(() => window.session.progress.overlay().completed.has('wind')), false);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }

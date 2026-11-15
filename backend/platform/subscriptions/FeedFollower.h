@@ -26,11 +26,12 @@ struct FollowerTiming {
   int pageLimit = 500;
 };
 
-// The consumers after the copy, run per entry in this order: those writing through the page's transaction, then those
-// writing in short transactions of their own (§6.1). A later node adds its consumer here, and the follower is unchanged.
+// The consumers after the copy (§6.1): those writing through the page's transaction, each entry through them in order,
+// then those writing in short transactions of their own, each handed the page. A later node adds its consumer here, and
+// the follower is unchanged.
 struct FurtherConsumers {
   std::vector<std::reference_wrapper<FeedEntryConsumer>> inPage;
-  std::vector<std::reference_wrapper<FeedEntrySideConsumer>> beside;
+  std::vector<std::reference_wrapper<FeedPageSideConsumer>> beside;
 };
 
 // What one read of the feed came to.
@@ -42,6 +43,14 @@ enum class FollowStep {
   unavailable,  // the feed could not be read; the copy answers as it stands
   failed,       // a page could not be applied, and rolled back whole; it is read again
   overtaken,    // another follower moved the cursor while the page was read; nothing applied
+};
+
+// What a wait for the copy to reach a seq came to (§5.3).
+enum class Reach {
+  reached,        // a read that began after the ask left the copy at or past the seq under the ledger's epoch
+  behind,         // the wait ran out first
+  pastTheLedger,  // the wait ran out, and a read that began after the ask found the copy caught up with a ledger whose
+                  // newest event is below the seq: the seq is not one the ledger holds
 };
 
 // Follows the service's feed into the copy on a thread of its own (§6.1), each page applied in one transaction. A
@@ -63,12 +72,13 @@ public:
   FollowStep follow();
 
   // Asks for a read now and waits at most `wait` for one that began after the call to leave the copy at or past `seq`
-  // under the ledger's epoch; true when one did. Blocks the caller, so never call it from a request loop.
-  bool reach(Seq seq, std::chrono::milliseconds wait);
+  // under the ledger's epoch. Blocks the caller, so never call it from a request loop.
+  Reach reach(Seq seq, std::chrono::milliseconds wait);
 
 private:
-  // The page's one transaction toward `to`: every entry through every consumer in order, then the commit. Nothing
-  // applies when another follower moved the cursor since `from` was read.
+  // The page's one transaction toward `to`: every entry through the page's consumers in order, the page through the
+  // side consumers, then the commit. Nothing applies when another follower moved the cursor since `from` was read. A
+  // rebuild is one such page, holding the whole ledger.
   FollowStep apply(const FeedCursor& from, const std::vector<FeedEntry>& entries, const FeedCursor& to, bool rebuilding,
                    WriteObservation& observation);
   FollowStep rebuild(const FeedCursor& from, const std::string& cause, WriteObservation& observation);
@@ -82,7 +92,7 @@ private:
   SubscriptionFeed& feed_;
   EntitlementCopy& copy_;
   std::vector<std::reference_wrapper<FeedEntryConsumer>> inPage_;
-  std::vector<std::reference_wrapper<FeedEntrySideConsumer>> beside_;
+  std::vector<std::reference_wrapper<FeedPageSideConsumer>> beside_;
   const FollowerTiming timing_;
   const Now now_;
   FailureReporter& reporter_;
@@ -101,6 +111,7 @@ private:
   std::uint64_t reading_ = 0;
   std::uint64_t confirmedRead_ = 0;
   Seq confirmedSeq_ = 0;
+  std::optional<Seq> confirmedLatestSeq_;  // the ledger's newest event as the read that confirmed the copy saw it
   bool asked_ = false;
   std::atomic<bool> stopping_{false};
   std::thread thread_;

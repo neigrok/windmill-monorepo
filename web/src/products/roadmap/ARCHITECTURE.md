@@ -18,7 +18,7 @@ point for the component showcase.
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
 | `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, in the owner’s Roadmap sheet on phones, below the head for phone readers) and the note it opens |
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
-| `step/` | The step page and modal, workspace, composer and its picker, the tree picker and its choices, and the step's address |
+| `step/` | The shared step document, workspace, composer and its picker, the tree picker and its choices, and the step's address |
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
 | `layout/` | Deterministic layout engines behind `index.js` |
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools |
@@ -43,9 +43,9 @@ server lines, the demo tree and the starter quests' content are data and stay as
 
 | Band | Width | Board | Graph chrome |
 |---|---|---|---|
-| Phone | below 744px | One column at a time behind tabs in a bottom band | Selected-step bar; camera under the row |
-| Tablet | 744–1023px | One side column folds to a rail | Tablet panel; camera pill at the bottom right |
-| Desktop | 1024px and up | Three columns | Step dock and selection bar; camera pill |
+| Phone | below 744px | One column at a time behind tabs in a bottom band | Direct node activation; camera under the row |
+| Tablet | 744–1023px | One side column folds to a rail | Shared step document; retained naming/tools panel; camera pill at the bottom right |
+| Desktop | 1024px and up | Three columns | Step document and selection bar; camera pill |
 
 | Role | Who | Can |
 |---|---|---|
@@ -203,9 +203,9 @@ the person's own marks to what the ledger holds, and a load in that state leaves
 |---|---|
 | Card | A pill between the reason and the excerpt: done of total with a bar, *No steps*, *Loops back* or *Not found*, led by the tree's title where it differs from the step's. A press on it goes in. On phones an Up next card's swipe reveals Open in place of Complete |
 | C on a card | Completes nothing: a toast says what completes the step, with Open tree where the tree can be gone into. A tree that is not found has the toast without the action, and an `unread` one has no toast |
-| Step page and modal | A Tree section after the relations: the row goes in, and one line says what completes the step. Where Complete sat: the same in a few words, beside Open tree, primary while going in is the next thing to do |
+| Shared step document | A Tree section after the relations: the row goes in, and one line says what completes the step. Where Complete sat: the same in a few words, beside Open tree, primary while going in is the next thing to do |
 | Graph node | The tree's mark at its centre (a loop's, or an alert where nothing is found) and done of total on the sub-task arc |
-| Dock, tablet panel, phone bar | Done of total, and Open tree in place of Complete |
+| Blank-step naming panel | Done of total, and Open tree in place of Complete |
 
 An `unread` opening shows the mark and Open tree and says nothing else: no pill, no row, no words. `Opening.leads`
 says whether a door can lead there. A dangling one (`Not found`) and a step that opens the tree it stands in have no
@@ -259,8 +259,8 @@ which steps own one. A subtree the load did not read stands unread until the roo
 pointer, which only a room the server answers as the tree's writer does: what a reader is told of a subtree waits on the
 owner's trees being followed, so a reader's room waits for its next load. Such a step completes with its subtree, takes
 no hand mark and wears the tree's marks on every surface the pointer's opening does, with the subtree's own words where
-the board draws them: Open subtree for Open tree, and on the step page and modal, where Complete sat, how far it is
-(*No steps yet*, *1 of 1 done*) beside Open subtree. A reader gets that band too. The step page has no Tree section for
+the board draws them: Open subtree for Open tree, and in the shared step document's pinned actions, how far it is
+(*No steps yet*, *1 of 1 done*) beside Open subtree. A reader gets those actions too. The document has no Tree section for
 it: its pointer takes no write, so nothing is attached, changed or detached there.
 
 The doors lead into a subtree for anyone who reads the roadmap, holder or not (`useTreeVisit` with `visitor`: a room that
@@ -285,7 +285,7 @@ acts for, where the roadmap's session can take a write (loaded, and not rebaseli
 server keeps its copy with nobody signed in and a lapsed session, see no control. `trees` reads the trees where the holder's lives (`place`). With it the Tree section stands on every step: *None* and a + on one
 that opens no tree, and a ⋯ on its heading on one that does, the heading and the ⋯ alone while the tree is `unread`.
 
-The + and Change tree open `TreePicker`: a page in the step modal from 744px and a full-screen page over the Shell
+The + and Change tree open `TreePicker`: a nested dialog in the step document from 744px and a full-screen page over the Shell
 on phones, with the field and the commit in the reach band. `TreeChoices` is its model: the person's roadmaps on the
 server but the one they are in (`listServerTrees`, the switcher's order), one choice, the tree the step opens
 arriving chosen, and Find a tree narrowing by title as the prerequisites picker does. On a tree that lives only on this
@@ -476,7 +476,16 @@ original text after Unicode lowercasing. Its current row comes from the host pro
 locked counts from the same unfiltered Board model as Next. At 1,000 or more total steps it uses
 `exactProgress` when both state counts are supplied, otherwise the truthful done/total `progressLabel`. Other
 roadmaps come from `listAllTrees`. Readers never receive the owner sheet. `TreeSwitcher` is the row's
-equivalent from 744px and owns rename and delete.
+equivalent from 744px and owns rename and delete. Its row actions appear on hover or while the row contains
+keyboard focus, and stay visible on coarse-pointer tablets at 744–1023px, with 44px targets. Rename commits on
+Enter or blur; Escape cancels and returns focus to Rename. Keep or Escape in a delete confirmation returns focus
+to Delete; the next Escape closes the menu and returns focus to its trigger. Removing another tree moves focus
+to a surviving row if focus is still in the removed row. Removing the current tree closes the same menu and follows
+the existing route resolver only while the person has stayed in that menu and route. Mutation callbacks recheck
+the current row's origin and claim state, so a device claim during an edit or confirmation cannot turn a device
+operation into a server operation. Delete completions remove from the current registry, preserving later claims,
+titles and deletions. Each tree permits one pending delete; a held Enter cannot confirm or repeat it, and a fresh
+activation can retry a failed request.
 
 **The switcher's delete.** A row's trash turns the row into its confirmation: the question (*Delete Learn to sail?
 This can’t be undone*), then Delete and Keep. A server that removes, with a tree, the steps in the person's other
@@ -655,46 +664,47 @@ virtualization while selecting so focus can reach them.
 
 ### Step detail
 
-A card opens its step (`StepDetail.jsx`): from 744px a modal over the scrimmed roadmap, 760px wide and 24px in
-from the window below that; below 744px a page pushed over the current view. The Board keeps its pane and
-scroll beneath it, and the Graph keeps its selection and camera. Crossing 744px swaps the frame inside the
-same layer.
+Cards, explicit Graph node clicks or taps, Graph Enter, related steps, activity and deep links reach one shared
+`StepDetail` document. Selection alone, Next, camera reveals, hydration and structural gestures do not activate it.
+The origin product canvas stays mounted, hidden and inert, retaining Board scroll or Graph camera and selection;
+the Graph render loop stops while covered. The Shell and placeholder Coach remain reachable. The document has no
+modal role, scrim, Tab trap or document-wide Escape listener. Escape inside it closes the whole visit unless a
+nested editor or picker handles it first. Those nested controls isolate the surrounding document, Shell and Coach,
+restore their prior inertness, and return focus to their opener. Hidden origin notices do not intercept Escape.
 
-The open step rides the hash as `?step=<id>` (`stepAddress.js`). Each step opened from a card or from another
-step is a history entry, so Back steps out one step at a time and the page's back row names the screen it
-returns to; closing pops the whole visit, and a link lands owner and visitor alike on the Board with that step
-open. A view reads a step only on its own roadmap's route, and once that roadmap has loaded without the step,
-the step leaves the URL in place, so restoring it reopens nothing.
+The open step rides the hash as `?step=<id>` (`stepAddress.js`). Each activation and related step is a history entry;
+Back leaves one step, Close leaves the visit, and a direct link uses replace-removal. Unrelated hash fields and
+history state survive. A route drops a missing step only after its own tree loads. Undo of a deleted step never
+reopens it. Close restores the originating Board card or a surviving column; the Graph has a stable focusable
+canvas. A later deliberate focus move is respected.
 
-While open the layer makes everything beneath it inert and wraps Tab inside itself; Escape, wherever focus is,
-closes the topmost editor or confirmation before the detail. Closing returns focus to the card the visit began
-on, or to the columns' tab stop once that card has gone. Select hands focus to the selected card instead, and
-closing leaves that deliberate target alone. After a held delete, roving recovery skips the
-deleted card even while regroup still displays it; on phones, if no surviving card is visible yet, focus rests
-on the selected column tab until its stop appears.
+The document's heading, Description, Requires, Opens, Tree, My workspace and History share one scroll area between
+the toolbar and pinned actions. Below 1000px of product width
+(after Coach), these stack; at or above 1000px the relationships occupy the right column. Workspace and History
+summary rows scroll to existing sections in 180ms, immediately with reduced motion. Resizing retains one editor
+instance. Description remains plain text with the existing 5000-code-point limit and shared links remain plain
+links. The owner-only workspace is device-local; authorized readers receive shared text, relationships and history.
 
-`StepFacts.js` reads the step off the whole roadmap, whatever the Board filters: its column, prerequisites,
-the steps it unlocks, what Complete would open and how many steps Reset would lock. Complete and Reset act in
-place and toast nothing: the status row flips with an inline Undo for six seconds and a line names what moved,
-and hovering or focusing Reset previews what it returns to Locked. Undo puts back the step's mark with no
-ceremony or activity, but not its completion time: the progress lattice dates every mark it sends, so an Undo
-of Reset completes the step at the Undo's time and it heads Done. On the Workspace section, a step whose every
-subtask is checked offers Complete step, which returns to the overview's status row; subtasks never complete
-it.
+Coach is an empty placeholder: a 56px collapsed rail or a 400px desktop, 340px laptop or 280px tablet panel, with
+heading and Collapse. Phones keep a blank placeholder above the safe area and pinned actions. It has no composer,
+conversation, history, proposals or backend behavior.
 
-The ⋯ menu copies the step's link (the roadmap's share address plus its step) only while the roadmap is public
-or unlisted, opens the step in the Graph when it stands over the Board and the Graph is available, offers Select
-to a phone owner over the Board for a deletable step, then offers Delete to an owner unless deleting the step
-would leave the roadmap no root. With nothing to offer the menu hides. The owner's up next and done steps offer View branch. A visitor gets the overview and the menu without
-Delete. Owners get Edit step beside Complete or Reset, or alone while locked; the phone Workspace action is
-Add note or Edit note.
+`StepFacts` derives status, relationships and completion outcomes from the whole tree. Complete and Reset stay in
+place with a six-second Undo and an outcome line in the pinned actions. Undo restores the mark without ceremony or activity;
+the progress lattice dates the new mark. Finished subtasks offer Complete step but never complete it themselves.
+Demotion removes write controls and private editing state without clearing stored workspace. Retained progress
+callbacks check current authority before writing or emitting an Undo event.
+The menu retains Copy link, Open in Graph, Select and Delete where available; owner up-next and done steps retain
+View branch. Tablet owners can leave the document for the existing Add step or Connect tool. Newly created blank
+Graph nodes keep their naming handoff; bulk, aim, edge removal, paste and Activity retain their own surfaces.
 
-Workspace and History use `StepWorkspace.jsx`: named checkboxes, the shared note renderer, personal links and
-static activity rows grouped through `ActivityLog`. The note editor keeps a local draft and saves once through
-workspace actions; a changed Cancel asks to discard, and system Back or a remote closure silently discards.
-Neither editor adds a navigation guard. Formatting uses pure `formatNote`; the editor keeps source ranges from
-the shared renderer, and each browser edit changes only its mapped source span, preserving untouched note
-bytes. A phone subtask check offers an in-page Undo for six seconds; desktop checks stay quiet.
+Edit step opens the existing `StepComposer` through `StepDraft`, `BoardActs.edit` and `EditNode`, retaining every
+field, dirty/discard handling, remote-change reconciliation, prerequisite checks, held deletes and write refusals.
+My workspace and History use `StepWorkspace`: named checkboxes, the private note renderer, personal links and
+static activity rows. Completion snapshots name no actor; locally authored and server-authored events retain their
+known attribution. The note editor saves once, changed Cancel asks to discard, and system Back or remote closure
+silently discards. Its source-range formatter preserves untouched note bytes. Phone subtask checks retain their
+six-second Undo.
 
 ### Held delete
 
@@ -762,9 +772,9 @@ nothing. The dock previews a hovered kind on the node and adds Manage kinds besi
 ## The Graph
 
 From 744px the camera controls form a bottom-right pill whose viewport block clears the dock or tablet panel;
-phone camera controls sit beneath the measured row. From 744px the selected-step dock sits beneath the
-measured identity and any refusal banner, so neither is covered, and the row's menus stand over it. The tablet Graph keeps its panel editor, aim,
-link removal and multi-select surfaces.
+phone camera controls sit beneath the measured row. The blank-step naming dock and tablet tools sit beneath the
+measured identity and any refusal banner. Ordinary node activation opens the shared step document. The tablet Graph
+keeps aim, link removal and multi-select surfaces; the document's menu provides Add step and Connect.
 
 A roadmap keeps a root, by one rule for every door: `takesEveryRoot` in `board/acts.js`, which `deletable` builds on, asked of
 the tree a held delete leaves standing. A sole root, the last root under a hold and a select-all on a many-rooted roadmap all
@@ -774,21 +784,13 @@ they hold such a selection, the Graph's writes refuse it, and a Delete key on it
 The owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order, including a one-step roadmap, and
 hides at zero. Picking a row selects and reveals that canvas step.
 
-On the phone Graph, a single selected step shows a bottom bar with its title and derived state. Owners open
-its step page from Open step; readers and the demo open it from the title and keep Fork as the primary action.
-The detail opens over the Graph, and Back preserves selection. The bar replaces the reader's Fork pill while
-visible. Its measured height clears the canvas, refusal card and Graph toast. Focus in the bar moves to the row's
-pressed switch option when a tap deselects, and that tap's compatibility mousedown keeps it there. The phone Board receives its
-Fork opener through `onFork`, without pill padding. From 744px Fork opens the centred dialog; phones open the
-sheet.
+The phone reader's Fork pill remains on the Graph. Explicit node activation opens the shared document directly;
+there is no intermediate selected-step bar. From 744px Fork opens the centred dialog; phones open the sheet.
 
-Graph toasts keep their intrinsic width, centring in the free canvas when they fit or across the canvas
-otherwise; `graphToastPlacement` owns measured clearance from the camera, minimap, panel and legend. Phone
-Graph toasts hold the bottom slot, above the selected-step bar and any refusal card. Created steps reveal after the scene receives
-their model and the selected-step panel's insets.
-
-The demo's coach chip takes Escape only while it is the top thing on screen, and its card seats clear of the phone's
-Fork pill and selected-step bar.
+Graph toasts keep their intrinsic width and clear the camera, minimap, active naming or tool panel and legend.
+Phone toasts clear any refusal card. Room toasts remain outside the hidden product canvas so the shared document's
+Copy link and attachment outcomes remain visible above its pinned actions. Created nodes reveal only after their
+model reaches the scene. The demo coach chip hides with the origin while a document is open.
 
 ## Toasts and Undo
 
@@ -1012,13 +1014,21 @@ Below 360px Saving and Saved are announced only, and Offline uses a named icon b
 whose controlled Tooltip opens below the slot for four seconds, until another tap, an outside tap or Escape.
 
 **Refusals.** The host passes refusal code, refused-lane gesture count and stable Retry and Discard actions to
-the shared `RefusedSync` on both views. The notice owns capacity-specific Retry suppression and uses the
+the shared `RefusedSync` on both views and the owner step document. While a step is open, only the document mounts
+the notice, below its toolbar, reserving its actual height above the independently scrolling content. Below 600px of
+document width, including a tablet beside expanded Coach, it uses the stacked notice. The notice owns capacity-specific Retry suppression and uses the
 refused-lane count for its message and Discard label. The Graph measures its notice into the camera's usable
-viewport and clears the selected-step dock from 744px; on the phone Graph the refusal card clears the
-selected-step bar or the reader's Fork pill. Retry clears the refusal and reconnects through the existing
+viewport and clears an active naming dock or tablet tool from 744px; on the phone Graph the refusal card clears the
+reader's Fork pill. Retry clears the refusal and reconnects through the existing
 graft and flush path. Phone toasts wait while a refusal stands so Retry and Discard stay reachable, except a held delete and
 its failure: a hold must run and its Undo stay reachable, so that toast stands above the refused card, as the bar's stacking in
 03.13 does, with no overlap at 390 or 320.
+The step document retains the notice with disabled actions while its existing Discard callback settles, then follows
+the published refusal state. A failed replacement keeps its actions available. When an activated notice leaves,
+focus returns to completion Undo if present or the step heading, respecting a later focus move and nested dialogs.
+StepComposer and TreePicker keep unresolved notices beneath their modal isolation and retain their drafts and focus
+contracts. Recovery never clears private Workspace. This follows approved
+[flow 43](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1211-104922).
 Progress-based completion Undo stays available during a structure-only replacement and rebaseline, its durable
 save waiting for the replacement's new epoch. Structure edits stay blocked during rebaselining, a
 progress-lane replacement blocks progress editing, and the composer keeps its draft with saving disabled. An

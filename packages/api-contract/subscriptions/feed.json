@@ -272,7 +272,7 @@
             }
           }
         ],
-        "latestSeq": 26
+        "latestSeq": 27
       }
     },
     {
@@ -639,20 +639,71 @@
             }
           }
         ],
-        "latestSeq": 26
+        "latestSeq": 27
       }
     },
     {
       "name": "refunded_then_renewed",
       "request": {
         "after": 13,
-        "limit": 4
+        "limit": 5
       },
       "body": {
         "epoch": "c09a3ab3-2732-4415-ba88-825ff868cf13",
         "entries": [
           {
             "seq": 14,
+            "type": "renewal_turned_off",
+            "occurredAt": 1797780600000,
+            "recordedAt": 1797780602000,
+            "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+            "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+            "store": "app_store",
+            "environment": "production",
+            "offerKind": null,
+            "period": null,
+            "entitlement": {
+              "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+              "production": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": {
+                  "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+                  "store": "app_store",
+                  "state": "revoked",
+                  "startedAt": 1796472000000,
+                  "currentPeriod": {
+                    "start": 1796472000000,
+                    "end": 1799150400000
+                  },
+                  "accessUntil": null,
+                  "autoRenew": false,
+                  "nextChargeAt": null,
+                  "nextCharge": null,
+                  "nextProductId": null,
+                  "cancelRequestedAt": null,
+                  "paymentFailedAt": null,
+                  "graceEndsAt": null,
+                  "pauseScheduledFor": null,
+                  "pausedAt": null,
+                  "resumesAt": null,
+                  "offerKind": null,
+                  "offerEndsAt": null,
+                  "endedAt": 1797780600000,
+                  "endReason": "refunded"
+                },
+                "others": []
+              },
+              "sandbox": {
+                "plan": null,
+                "accessUntil": null,
+                "governing": null,
+                "others": []
+              }
+            }
+          },
+          {
+            "seq": 15,
             "type": "period_refunded",
             "occurredAt": 1797780600000,
             "recordedAt": 1797780602000,
@@ -713,7 +764,7 @@
             }
           },
           {
-            "seq": 15,
+            "seq": 16,
             "type": "revoked",
             "occurredAt": 1797780600000,
             "recordedAt": 1797780602000,
@@ -764,7 +815,7 @@
             }
           },
           {
-            "seq": 16,
+            "seq": 17,
             "type": "renewed",
             "occurredAt": 1798966800000,
             "recordedAt": 1798966810000,
@@ -818,7 +869,7 @@
             }
           },
           {
-            "seq": 17,
+            "seq": 18,
             "type": "period_recorded",
             "occurredAt": 1798966800000,
             "recordedAt": 1798966810000,
@@ -882,20 +933,20 @@
             }
           }
         ],
-        "latestSeq": 26
+        "latestSeq": 27
       }
     },
     {
       "name": "payment_trouble",
       "request": {
-        "after": 17,
+        "after": 18,
         "limit": 4
       },
       "body": {
         "epoch": "c09a3ab3-2732-4415-ba88-825ff868cf13",
         "entries": [
           {
-            "seq": 18,
+            "seq": 19,
             "type": "payment_failed",
             "occurredAt": 1801648800000,
             "recordedAt": 1801648803000,
@@ -946,7 +997,7 @@
             }
           },
           {
-            "seq": 19,
+            "seq": 20,
             "type": "updated",
             "occurredAt": 1803031200000,
             "recordedAt": 1803031203000,
@@ -997,7 +1048,7 @@
             }
           },
           {
-            "seq": 20,
+            "seq": 21,
             "type": "payment_recovered",
             "occurredAt": 1803304800000,
             "recordedAt": 1803304803000,
@@ -1051,7 +1102,7 @@
             }
           },
           {
-            "seq": 21,
+            "seq": 22,
             "type": "period_recorded",
             "occurredAt": 1803304800000,
             "recordedAt": 1803304803000,
@@ -1115,20 +1166,20 @@
             }
           }
         ],
-        "latestSeq": 26
+        "latestSeq": 27
       }
     },
     {
       "name": "older_period_refunded",
       "request": {
-        "after": 21,
+        "after": 22,
         "limit": 4
       },
       "body": {
         "epoch": "c09a3ab3-2732-4415-ba88-825ff868cf13",
         "entries": [
           {
-            "seq": 22,
+            "seq": 23,
             "type": "period_refunded",
             "occurredAt": 1803898800000,
             "recordedAt": 1803898802000,
@@ -1192,7 +1243,7 @@
             }
           },
           {
-            "seq": 23,
+            "seq": 24,
             "type": "period_refund_reversed",
             "occurredAt": 1804608000000,
             "recordedAt": 1804608002000,
@@ -1256,7 +1307,7 @@
             }
           },
           {
-            "seq": 24,
+            "seq": 25,
             "type": "renewal_turned_off",
             "occurredAt": 1804708800000,
             "recordedAt": 1804708802000,
@@ -1307,7 +1358,7 @@
             }
           },
           {
-            "seq": 25,
+            "seq": 26,
             "type": "expired",
             "occurredAt": 1805724000000,
             "recordedAt": 1805724004000,
@@ -1358,20 +1409,20 @@
             }
           }
         ],
-        "latestSeq": 26
+        "latestSeq": 27
       }
     },
     {
       "name": "account_erased",
       "request": {
-        "after": 25,
+        "after": 26,
         "limit": 500
       },
       "body": {
         "epoch": "c09a3ab3-2732-4415-ba88-825ff868cf13",
         "entries": [
           {
-            "seq": 26,
+            "seq": 27,
             "type": "unbound",
             "occurredAt": 1806580800000,
             "recordedAt": 1806580800000,
@@ -1398,31 +1449,31 @@
             }
           }
         ],
-        "latestSeq": 26
+        "latestSeq": 27
       }
     },
     {
       "name": "caught_up",
       "request": {
-        "after": 26,
+        "after": 27,
         "limit": 500
       },
       "body": {
         "epoch": "c09a3ab3-2732-4415-ba88-825ff868cf13",
         "entries": [],
-        "latestSeq": 26
+        "latestSeq": 27
       }
     },
     {
       "name": "ledger_restored",
       "request": {
-        "after": 26,
+        "after": 27,
         "limit": 500
       },
       "body": {
         "epoch": "2dd74022-4cb9-42f8-8746-0a186269b54e",
         "entries": [],
-        "latestSeq": 21
+        "latestSeq": 22
       }
     }
   ]

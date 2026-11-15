@@ -124,13 +124,13 @@ TEST(pg_subscription_follow_an_incremental_follow_equals_a_rebuild_from_zero) {
   std::string steps;
   for (int read = 0; read < 7; ++read) steps += nameOf(follower.follow()) + " ";
   CHECK_EQ(steps, std::string("applied applied applied applied applied applied caughtUp "));
-  CHECK_EQ(feed.reads(), (std::vector<std::pair<Seq, int>>{{0, 500}, {6, 500}, {13, 500}, {17, 500}, {21, 500},
-                                                            {25, 500}, {26, 500}}));
+  CHECK_EQ(feed.reads(), (std::vector<std::pair<Seq, int>>{{0, 500}, {6, 500}, {13, 500}, {18, 500}, {22, 500},
+                                                            {26, 500}, {27, 500}}));
   const std::string followed = copyAsText();
   CHECK_EQ(followed, std::string(
-      "cursor c09a3ab3-2732-4415-ba88-825ff868cf13/26\n"
-      "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=26 production=- sandbox=-\n"
-      "9387ec65-ab17-4b8c-b145-fd0d622966db seq=15 production=- sandbox=-\n"
+      "cursor c09a3ab3-2732-4415-ba88-825ff868cf13/27\n"
+      "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=27 production=- sandbox=-\n"
+      "9387ec65-ab17-4b8c-b145-fd0d622966db seq=16 production=- sandbox=-\n"
       "c806aea4-76c0-4868-acbc-3aa7db2b8dd0 seq=13 production=- sandbox=1796742600000\n"));
   CHECK_EQ(copy.find(UserId{"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"})->body, entitlementExample("never_subscribed"));
   CHECK_EQ(copy.find(UserId{"9387ec65-ab17-4b8c-b145-fd0d622966db"})->body, entitlementExample("revoked"));
@@ -139,14 +139,14 @@ TEST(pg_subscription_follow_an_incremental_follow_equals_a_rebuild_from_zero) {
   // The same ledger, restored whole under a new epoch: the follower reads it again from zero and replaces the copy.
   for (const char* name : {"from_zero", "claimed_then_sandbox", "refunded_then_renewed", "payment_trouble",
                            "older_period_refunded", "account_erased", "caught_up"})
-    feed.serve(contractExample("feed.json", name)["request"]["after"].asUInt64(), restored(name, 26));
+    feed.serve(contractExample("feed.json", name)["request"]["after"].asUInt64(), restored(name, 27));
   CHECK_EQ(nameOf(follower.follow()), std::string("rebuilt"));
 
   std::string rebuilt = followed;
   rebuilt.replace(rebuilt.find("c09a3ab3-2732-4415-ba88-825ff868cf13"), 36, "2dd74022-4cb9-42f8-8746-0a186269b54e");
   CHECK_EQ(copyAsText(), rebuilt);
   CHECK_EQ(feed.reads().size(), std::size_t{14});
-  CHECK_EQ(feed.reads().back(), (std::pair<Seq, int>{25, 500}));
+  CHECK_EQ(feed.reads().back(), (std::pair<Seq, int>{26, 500}));
   CHECK_EQ(reports.lines, (std::vector<std::string>{"platform subscription.follow.restored cause=epoch"}));
   CHECK_FALSE(lines.sharesARequestWith(reports.requestIds));
   CHECK_EQ(lines.taken(), (std::vector<std::string>{
@@ -188,29 +188,29 @@ TEST(pg_subscription_follow_a_restored_ledger_replaces_the_copy_whole_while_the_
   while (follower.follow() == FollowStep::applied) {}
   const std::string beforeRestore = copyAsText();
 
-  // A backup taken at seq 21 is restored: the read after 26 meets a new epoch and a ledger that ends at 21.
+  // A backup taken at seq 22 is restored: the read after 27 meets a new epoch and a ledger that ends at 22.
   feed.serve({"ledger_restored"});
-  feed.serve(0, restored("from_zero", 21));
-  feed.serve(6, restored("claimed_then_sandbox", 21));
-  feed.serve(13, restored("refunded_then_renewed", 21));
-  feed.serve(17, restored("payment_trouble", 21));
+  feed.serve(0, restored("from_zero", 22));
+  feed.serve(6, restored("claimed_then_sandbox", 22));
+  feed.serve(13, restored("refunded_then_renewed", 22));
+  feed.serve(18, restored("payment_trouble", 22));
   std::vector<std::string> answeredMidway;
   feed.onRead = [&](Seq after) { answeredMidway.push_back(std::to_string(after) + " " + copyAsText()); };
   CHECK_EQ(nameOf(follower.follow()), std::string("rebuilt"));
   feed.onRead = nullptr;
 
-  CHECK_EQ(answeredMidway, (std::vector<std::string>{"26 " + beforeRestore, "0 " + beforeRestore, "6 " + beforeRestore,
-                                                     "13 " + beforeRestore, "17 " + beforeRestore}));
+  CHECK_EQ(answeredMidway, (std::vector<std::string>{"27 " + beforeRestore, "0 " + beforeRestore, "6 " + beforeRestore,
+                                                     "13 " + beforeRestore, "18 " + beforeRestore}));
   CHECK_EQ(copyAsText(), std::string(
-      "cursor 2dd74022-4cb9-42f8-8746-0a186269b54e/21\n"
-      "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=21 production=1805810400000 sandbox=-\n"
-      "9387ec65-ab17-4b8c-b145-fd0d622966db seq=15 production=- sandbox=-\n"
+      "cursor 2dd74022-4cb9-42f8-8746-0a186269b54e/22\n"
+      "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=22 production=1805810400000 sandbox=-\n"
+      "9387ec65-ab17-4b8c-b145-fd0d622966db seq=16 production=- sandbox=-\n"
       "c806aea4-76c0-4868-acbc-3aa7db2b8dd0 seq=13 production=- sandbox=1796742600000\n"));
 
   // A second restore, to a backup that ends at 6, before the sandbox account was named: it keeps no row.
   now += 6min;
   Json::Value earlier = restored("caught_up", 6);
-  feed.serve(21, earlier);
+  feed.serve(22, earlier);
   feed.serve(0, restored("from_zero", 6));
   CHECK_EQ(nameOf(follower.follow()), std::string("rebuilt"));
   CHECK_EQ(copyAsText(), std::string(
@@ -264,7 +264,7 @@ TEST(pg_subscription_follow_a_consumer_that_fails_rolls_the_page_back_and_the_pa
   feed.serve({"from_zero"});
   PgEntitlementCopy copy{pgTestPool()};
 
-  // A consumer after the copy, as funding will be: it sees the copy's write of the same entry in the page's
+  // A consumer after the copy that writes through the page: it sees the copy's write of the same entry in the page's
   // transaction, and fails once at seq 3.
   struct Funding : FeedEntryConsumer {
     std::vector<std::string> seen;
@@ -366,7 +366,7 @@ TEST(pg_subscription_follow_a_cursor_that_stops_while_the_ledger_reports_newer_e
   freshCopy();
   FakeFeed feed;
   feed.serve({"from_zero"});
-  // After 6 the service answers no entries while its ledger holds 26.
+  // After 6 the service answers no entries while its ledger holds 27.
   feed.serve(6, contractExample("feed.json", "caught_up")["body"]);
   PgEntitlementCopy copy{pgTestPool()};
   Reports reports;
@@ -380,7 +380,7 @@ TEST(pg_subscription_follow_a_cursor_that_stops_while_the_ledger_reports_newer_e
   CHECK(reports.lines.empty());
   now += 30s;
   CHECK_EQ(nameOf(follower.follow()), std::string("behind"));
-  CHECK_EQ(reports.lines, (std::vector<std::string>{"platform subscription.follow.stalled cause=behind behind=20"}));
+  CHECK_EQ(reports.lines, (std::vector<std::string>{"platform subscription.follow.stalled cause=behind behind=21"}));
   CHECK_EQ(lines.taken(), (std::vector<std::string>{"ok/info platform background", "behind/warn platform background",
                                                     "behind/warn platform background"}));
 }
@@ -396,19 +396,19 @@ TEST(pg_subscription_follow_reach_returns_once_the_copy_holds_the_seq_and_gives_
   FeedFollower follower{feed, copy, {}, reports, FollowerTiming{.poll = 20s, .retry = 20s, .stallAfter = 60s}};
   follower.start();
 
-  CHECK(follower.reach(6, 5s));
+  CHECK(follower.reach(6, 5s) == Reach::reached);
 
   const auto beforeTimeout = std::chrono::steady_clock::now();
-  CHECK_FALSE(follower.reach(7, 300ms));
+  CHECK(follower.reach(7, 300ms) == Reach::behind);
   const auto waited = std::chrono::steady_clock::now() - beforeTimeout;
   CHECK(waited >= 300ms);
   CHECK(waited < 3s);
 
   // The claim's events land; asked, the follower reads them at once rather than at its next retry.
   feed.serve({"claimed_then_sandbox"});
-  CHECK(follower.reach(7, 5s));
+  CHECK(follower.reach(7, 5s) == Reach::reached);
   // The copy holds 13, but no read has begun since this call: the copy alone never answers that a seq is reached.
-  CHECK_FALSE(follower.reach(13, 0ms));
+  CHECK(follower.reach(13, 0ms) == Reach::behind);
   follower.stop();
   CHECK_EQ(copyAsText(), std::string(
       "cursor c09a3ab3-2732-4415-ba88-825ff868cf13/13\n"
@@ -417,7 +417,7 @@ TEST(pg_subscription_follow_reach_returns_once_the_copy_holds_the_seq_and_gives_
       "c806aea4-76c0-4868-acbc-3aa7db2b8dd0 seq=13 production=- sandbox=1796742600000\n"));
 }
 
-TEST(pg_subscription_follow_side_consumers_write_apart_from_the_page_before_it_commits_and_know_a_rebuild) {
+TEST(pg_subscription_follow_side_consumers_take_the_page_after_its_own_consumers_before_it_commits_and_know_a_rebuild) {
   if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
   freshCopy();
   FakeFeed feed;
@@ -430,34 +430,36 @@ TEST(pg_subscription_follow_side_consumers_write_apart_from_the_page_before_it_c
     explicit Records(std::vector<std::string>& order) : order(order) {}
     void consume(PageTxn&, const FeedEntry& entry) override { order.push_back("page:" + std::to_string(entry.seq)); }
   } records{order};
-  // As funding will: its own short transaction per entry, which sees the copy as last committed, never the page's
-  // own writes; it fails once at seq 7.
-  struct Funding : FeedEntrySideConsumer {
+  // As funding does: the page's entries whole, each in a short transaction of its own, which sees the copy as last
+  // committed, never the page's own writes; it fails once at seq 7.
+  struct Funding : FeedPageSideConsumer {
     std::vector<std::string>& order;
     std::vector<std::string> seen;
     bool failed = false;
     explicit Funding(std::vector<std::string>& order) : order(order) {}
-    void consume(const PageTxn& page, const FeedEntry& entry) override {
-      order.push_back("side:" + std::to_string(entry.seq));
-      std::string row = "-";
-      if (entry.accountId) {
-        PgLease lease{*pgTestPool()};
-        pqxx::read_transaction own{*lease};
-        const pqxx::result rows = own.exec("SELECT seq FROM account_entitlements WHERE account_id = $1::uuid",
-                                           pqxx::params{entry.accountId->str()});
-        row = rows.empty() ? "none" : rows[0][0].as<std::string>();
+    void consume(const PageTxn& page, const std::vector<FeedEntry>& entries) override {
+      for (const FeedEntry& entry : entries) {
+        order.push_back("side:" + std::to_string(entry.seq));
+        std::string row = "-";
+        if (entry.accountId) {
+          PgLease lease{*pgTestPool()};
+          pqxx::read_transaction own{*lease};
+          const pqxx::result rows = own.exec("SELECT seq FROM account_entitlements WHERE account_id = $1::uuid",
+                                             pqxx::params{entry.accountId->str()});
+          row = rows.empty() ? "none" : rows[0][0].as<std::string>();
+        }
+        seen.push_back(std::to_string(entry.seq) + " " + row + " " + (page.rebuilding() ? "rebuild " : "page ") +
+                       page.target().epoch.substr(0, 8) + "/" + std::to_string(page.target().seq));
+        if (entry.seq == 7 && !std::exchange(failed, true)) throw std::runtime_error("PRIVATE_FUNDING_DETAIL");
       }
-      seen.push_back(std::to_string(entry.seq) + " " + row + " " + (page.rebuilding() ? "rebuild " : "page ") +
-                     page.target().epoch.substr(0, 8) + "/" + std::to_string(page.target().seq));
-      if (entry.seq == 7 && !std::exchange(failed, true)) throw std::runtime_error("PRIVATE_FUNDING_DETAIL");
     }
   } funding{order};
   Reports reports;
   FeedFollower follower{feed, copy, FurtherConsumers{.inPage = {records}, .beside = {funding}}, reports};
 
   CHECK_EQ(nameOf(follower.follow()), std::string("applied"));
-  CHECK_EQ(order, (std::vector<std::string>{"page:1", "side:1", "page:2", "side:2", "page:3", "side:3", "page:4", "side:4",
-                                            "page:5", "side:5", "page:6", "side:6"}));
+  CHECK_EQ(order, (std::vector<std::string>{"page:1", "page:2", "page:3", "page:4", "page:5", "page:6",
+                                            "side:1", "side:2", "side:3", "side:4", "side:5", "side:6"}));
   CHECK_EQ(nameOf(follower.follow()), std::string("failed"));
   CHECK_EQ(copyAsText(), std::string(
       "cursor c09a3ab3-2732-4415-ba88-825ff868cf13/6\n"
@@ -487,6 +489,30 @@ TEST(pg_subscription_follow_side_consumers_write_apart_from_the_page_before_it_c
       "c806aea4-76c0-4868-acbc-3aa7db2b8dd0 seq=13 production=- sandbox=1796742600000\n"));
 }
 
+// A seq past the newest event of a ledger the copy is caught up with is one the ledger does not hold. Only a read that
+// began after the ask says so: a copy caught up before it, and no read since, is only behind.
+TEST(pg_subscription_follow_reach_names_a_seq_past_the_ledger_only_from_a_read_that_began_after_it_asked) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
+  freshCopy();
+  FakeFeed feed;
+  Json::Value upToSix = contractExample("feed.json", "from_zero")["body"];
+  upToSix["latestSeq"] = Json::UInt64{6};
+  Json::Value caughtUp = contractExample("feed.json", "caught_up")["body"];
+  caughtUp["latestSeq"] = Json::UInt64{6};
+  feed.serve(0, upToSix);
+  feed.serve(6, caughtUp);
+  PgEntitlementCopy copy{pgTestPool()};
+  Reports reports;
+  FeedFollower follower{feed, copy, {}, reports, FollowerTiming{.poll = 20s, .retry = 20s, .stallAfter = 60s}};
+  follower.start();
+
+  CHECK(follower.reach(6, 5s) == Reach::reached);
+  CHECK(follower.reach(999, 300ms) == Reach::pastTheLedger);
+  feed.stopServing(6);
+  CHECK(follower.reach(999, 300ms) == Reach::behind);
+  follower.stop();
+}
+
 TEST(pg_subscription_follow_reach_counts_only_a_read_that_began_after_it_and_saw_the_ledgers_epoch) {
   if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
   freshCopy();
@@ -497,29 +523,29 @@ TEST(pg_subscription_follow_reach_counts_only_a_read_that_began_after_it_and_saw
   Reports reports;
   FeedFollower follower{feed, copy, {}, reports, FollowerTiming{.poll = 20s, .retry = 20s, .stallAfter = 60s}};
   follower.start();
-  CHECK(follower.reach(26, 5s));
+  CHECK(follower.reach(27, 5s) == Reach::reached);
 
-  // The service is restored from a backup at 21 and cannot be read yet: the copy's 26 belongs to the old ledger, and a
-  // claim's 22 is not reached by it.
-  feed.stopServing(26);
-  CHECK_FALSE(follower.reach(22, 300ms));
+  // The service is restored from a backup at 22 and cannot be read yet: the copy's 27 belongs to the old ledger, and a
+  // claim's 23 is not reached by it.
+  feed.stopServing(27);
+  CHECK(follower.reach(23, 300ms) == Reach::behind);
 
-  // The service answers again, restored at 21 under a new epoch, holding a claim recorded at 22.
-  Json::Value claim = restored("caught_up", 22);
+  // The service answers again, restored at 22 under a new epoch, holding a claim recorded at 23.
+  Json::Value claim = restored("caught_up", 23);
   Json::Value entry = contractExample("feed.json", "from_zero")["body"]["entries"][2];
-  entry["seq"] = Json::UInt64(22);
+  entry["seq"] = Json::UInt64(23);
   claim["entries"].append(entry);
-  feed.serve(0, restored("from_zero", 22));
-  feed.serve(6, restored("claimed_then_sandbox", 22));
-  feed.serve(13, restored("refunded_then_renewed", 22));
-  feed.serve(17, restored("payment_trouble", 22));
-  feed.serve(21, claim);
-  feed.serve(26, restored("caught_up", 22));
-  CHECK(follower.reach(22, 5s));
+  feed.serve(0, restored("from_zero", 23));
+  feed.serve(6, restored("claimed_then_sandbox", 23));
+  feed.serve(13, restored("refunded_then_renewed", 23));
+  feed.serve(18, restored("payment_trouble", 23));
+  feed.serve(22, claim);
+  feed.serve(27, restored("caught_up", 23));
+  CHECK(follower.reach(23, 5s) == Reach::reached);
   CHECK_EQ(copyAsText(), std::string(
-      "cursor 2dd74022-4cb9-42f8-8746-0a186269b54e/22\n"
-      "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=22 production=1799056800000 sandbox=-\n"
-      "9387ec65-ab17-4b8c-b145-fd0d622966db seq=15 production=- sandbox=-\n"
+      "cursor 2dd74022-4cb9-42f8-8746-0a186269b54e/23\n"
+      "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=23 production=1799056800000 sandbox=-\n"
+      "9387ec65-ab17-4b8c-b145-fd0d622966db seq=16 production=- sandbox=-\n"
       "c806aea4-76c0-4868-acbc-3aa7db2b8dd0 seq=13 production=- sandbox=1796742600000\n"));
   follower.stop();
 }
@@ -536,10 +562,10 @@ TEST(pg_subscription_follow_a_rebuild_never_takes_a_prefix_of_the_ledger_for_the
   while (follower.follow() == FollowStep::applied) {}
   const std::string followed = copyAsText();
 
-  // Restored whole under a new epoch, but the page after 6 comes back empty while the ledger holds 26.
-  feed.serve(26, restored("caught_up", 26));
-  feed.serve(0, restored("from_zero", 26));
-  feed.serve(6, restored("caught_up", 26));
+  // Restored whole under a new epoch, but the page after 6 comes back empty while the ledger holds 27.
+  feed.serve(27, restored("caught_up", 27));
+  feed.serve(0, restored("from_zero", 27));
+  feed.serve(6, restored("caught_up", 27));
   FollowLines lines;
   CHECK_EQ(nameOf(follower.follow()), std::string("unavailable"));
   CHECK_EQ(copyAsText(), followed);

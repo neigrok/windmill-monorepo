@@ -10,6 +10,13 @@ const { ActorAvatar, EventSentence } = await import('../../../../src/products/ro
 const { ACTIVITY } = await import('../../../../src/products/roadmap/copy.js');
 const render = (component, props) => renderToStaticMarkup(React.createElement(component, props));
 
+test('a completion snapshot names no actor while known actors retain their attribution', () => {
+  const event = { verb: 'completed', label: 'Choose a course', actor: null };
+  assert.equal(render(EventSentence, { event, node: null }), '<span class="st-event-obj st-event-obj--dead">Choose a course</span> completed');
+  assert.equal(render(EventSentence, { event: { ...event, actor: 'Ada' }, node: null }), '<b>Ada</b> completed <span class="st-event-obj st-event-obj--dead">Choose a course</span>');
+  assert.equal(render(EventSentence, { event: { ...event, actor: 'You' }, node: null }), '<b>You</b> completed <span class="st-event-obj st-event-obj--dead">Choose a course</span>');
+});
+
 test('touch Activity renders the exact shipped empty state outside the Tab order', () => {
   assert.equal(render(ActivityRows, { groups: [], nodesById: new Map(), onOpenStep() {} }),
     `<div class="st-roadmap-activity-rows" tabindex="-1"><p class="st-activity-empty">${ACTIVITY.empty}</p></div>`);

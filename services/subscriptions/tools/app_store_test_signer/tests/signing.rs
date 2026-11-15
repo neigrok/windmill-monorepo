@@ -1,6 +1,7 @@
 use std::fs;
 use std::time::{Duration, UNIX_EPOCH};
 
+use app_store::server_api::SignedStatus;
 use app_store::verification::{Environment, SignedDataVerifier};
 use app_store_test_signer::{Description, TEST_ROOT, sign};
 use base64::Engine;
@@ -42,9 +43,37 @@ fn every_test_payload_verifies_under_the_test_root_and_apples_root_refuses_it_an
             let name = path.file_name().unwrap().to_str().unwrap();
             let description: Description =
                 serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-            let is_transaction = matches!(description, Description::Transaction(_));
+            let kind = match description {
+                Description::Notification(_) => "notification",
+                Description::Transaction(_) => "transaction",
+                Description::StatusResponse(_) => "status response",
+            };
             let signed = sign(description, now).unwrap();
-            if is_transaction {
+            if kind == "status response" {
+                let response: Value = serde_json::from_str(&signed).unwrap();
+                let entry = &response["data"][0]["lastTransactions"][0];
+                let status = SignedStatus {
+                    status: entry["status"].as_i64().map(|status| status as i32),
+                    signed_transaction_info: entry["signedTransactionInfo"].as_str().unwrap().to_owned(),
+                    signed_renewal_info: entry["signedRenewalInfo"].as_str().map(str::to_owned),
+                };
+                let verified = under_test_root
+                    .verify_status(Environment::Sandbox, &status)
+                    .unwrap_or_else(|refusal| panic!("{name} refused: {refusal}"));
+                let refused = under_apples_root
+                    .verify_status(Environment::Sandbox, &status)
+                    .err()
+                    .unwrap();
+                return format!(
+                    "{name},status {} {:?} with transaction {} {:?} and renewal info {:?},{refused}",
+                    verified.status.unwrap(),
+                    verified.environment,
+                    verified.transaction.transaction_id.expose(),
+                    verified.transaction.environment,
+                    verified.renewal_info.as_ref().unwrap().environment,
+                );
+            }
+            if kind == "transaction" {
                 let verified = under_test_root
                     .verify_transaction(&signed)
                     .unwrap_or_else(|refusal| panic!("{name} refused: {refusal}"));
@@ -97,7 +126,8 @@ refund-reversed.json,REFUND_REVERSED - status 1 Sandbox with transaction 2000000
 refunded.json,REFUND - status 5 Sandbox with transaction 2000000000000002 Sandbox and renewal info Sandbox,untrusted_chain untrusted_chain untrusted_chain
 renewal-turned-off.json,DID_CHANGE_RENEWAL_STATUS AUTO_RENEW_DISABLED status 1 Sandbox with transaction 2000000000000002 Sandbox and renewal info Sandbox,untrusted_chain untrusted_chain untrusted_chain
 renewed.json,DID_RENEW - status 1 Sandbox with transaction 2000000000000002 Sandbox and renewal info Sandbox,untrusted_chain untrusted_chain untrusted_chain
-started.json,SUBSCRIBED INITIAL_BUY status 1 Sandbox with transaction 2000000000000001 Sandbox and renewal info Sandbox,untrusted_chain untrusted_chain untrusted_chain"
+started.json,SUBSCRIBED INITIAL_BUY status 1 Sandbox with transaction 2000000000000001 Sandbox and renewal info Sandbox,untrusted_chain untrusted_chain untrusted_chain
+subscription-status.json,status 1 Sandbox with transaction 2000000000000001 Sandbox and renewal info Sandbox,untrusted_chain"
     );
 }
 
@@ -235,6 +265,83 @@ fn a_standalone_transaction_states_the_sandbox_windmills_bundle_and_its_signing_
             "environment": "Sandbox",
             "signedDate": now
         })
+    );
+}
+
+#[test]
+fn a_status_response_stays_json_and_each_payload_inside_it_takes_the_response_s_environment_and_bundle()
+ {
+    let now = 1_794_614_400_000_i64;
+    let description = serde_json::from_value(json!({
+        "statusResponse": {
+            "environment": "Production",
+            "data": [{
+                "subscriptionGroupIdentifier": "21000001",
+                "lastTransactions": [{
+                    "originalTransactionId": "2000000000000001",
+                    "status": 4,
+                    "signedTransactionInfo": {
+                        "transactionId": "2000000000000002",
+                        "originalTransactionId": "2000000000000001",
+                        "expiresDate": "now-1d"
+                    },
+                    "signedRenewalInfo": {
+                        "originalTransactionId": "2000000000000001",
+                        "gracePeriodExpiresDate": "now+15d"
+                    }
+                }]
+            }]
+        }
+    }))
+    .unwrap();
+
+    let signed = sign(description, UNIX_EPOCH + Duration::from_millis(now as u64)).unwrap();
+
+    let mut response: Value = serde_json::from_str(&signed).unwrap();
+    let entry = &mut response["data"][0]["lastTransactions"][0];
+    let (transaction_header, transaction) =
+        decode(entry["signedTransactionInfo"].as_str().unwrap());
+    let (renewal_header, renewal_info) = decode(entry["signedRenewalInfo"].as_str().unwrap());
+    entry["signedTransactionInfo"] = json!("signed");
+    entry["signedRenewalInfo"] = json!("signed");
+    assert_eq!(
+        (
+            transaction_header["alg"].clone(),
+            renewal_header["alg"].clone()
+        ),
+        (json!("ES256"), json!("ES256"))
+    );
+    assert_eq!(
+        (response, transaction, renewal_info),
+        (
+            json!({
+                "environment": "Production",
+                "bundleId": "works.windmill.app",
+                "data": [{
+                    "subscriptionGroupIdentifier": "21000001",
+                    "lastTransactions": [{
+                        "originalTransactionId": "2000000000000001",
+                        "status": 4,
+                        "signedTransactionInfo": "signed",
+                        "signedRenewalInfo": "signed"
+                    }]
+                }]
+            }),
+            json!({
+                "transactionId": "2000000000000002",
+                "originalTransactionId": "2000000000000001",
+                "expiresDate": now - 86_400_000,
+                "environment": "Production",
+                "bundleId": "works.windmill.app",
+                "signedDate": now
+            }),
+            json!({
+                "originalTransactionId": "2000000000000001",
+                "gracePeriodExpiresDate": now + 15 * 86_400_000,
+                "environment": "Production",
+                "signedDate": now
+            }),
+        )
     );
 }
 

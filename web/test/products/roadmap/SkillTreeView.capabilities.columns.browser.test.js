@@ -11,7 +11,7 @@ const bothRoles = ['owner', 'reader'];
 
 async function openStep(page, id) {
   await page.locator(`.st-board-card[data-step-id="${id}"]`).evaluate((card) => card.click());
-  await page.locator('.st-board-step-layer [role="dialog"]').waitFor();
+  await page.locator('.st-board-step-layer article').waitFor();
 }
 
 for (const width of everyWidth) {
@@ -30,12 +30,12 @@ for (const width of everyWidth) {
       const { page, errors } = await openHost({ width, role, surface: 'board' });
       try {
         await openStep(page, 'wind');
-        await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
+        await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
         await page.getByRole('button', { name: 'Leave the dock, locked', exact: true }).click();
-        await page.getByRole('dialog', { name: 'Leave the dock', exact: true }).waitFor();
+        await page.getByRole('article', { name: 'Leave the dock', exact: true }).waitFor();
         if (width < 744) await page.getByRole('button', { name: backTo({ screen: 'Read the wind' }), exact: true }).click();
         else await page.goBack();
-        await page.getByRole('dialog', { name: 'Read the wind', exact: true }).waitFor();
+        await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
         assert.deepEqual(errors, []);
       } finally { await page.close(); }
     });

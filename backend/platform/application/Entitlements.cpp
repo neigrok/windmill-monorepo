@@ -1,69 +1,73 @@
 #include "platform/application/Entitlements.h"
 
-#include "platform/domain/Billing.h"
-
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
-#include <optional>
 #include <string>
 #include <utility>
 
 namespace wm {
 
 namespace {
-// The floor of the trailing window; the ledger's rows are stamped by Postgres `now()`, so no Clock
-// is injected.
+// The floor of the trailing window. The ledger's rows are stamped by Postgres `now()`, so it reads the system clock,
+// not the injected one that access is read against.
 long long windowFloorMs() {
   const auto since = std::chrono::system_clock::now().time_since_epoch();
   return std::chrono::duration_cast<std::chrono::milliseconds>(since).count() - kAiWindowMs;
 }
+
+std::string folded(std::string_view text) {
+  std::string out;
+  for (const char c : text) {
+    if (c == ' ' || c == '\t') continue;
+    out.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c + ('a' - 'A')) : c);
+  }
+  return out;
+}
 }
 
-Entitlements::Entitlements(SubscriptionRepository& subscriptions, AiUsageRepository& usage,
-                           std::string owners, std::vector<std::string> passiveOperations,
-                           std::shared_ptr<AiBudgetService> budgets)
-    : budgets_(std::move(budgets)), subscriptions_(subscriptions), usage_(usage),
-      passiveOperations_(std::move(passiveOperations)), owners_(std::move(owners)) {}
-
-// No mirrored subscription is no access.
-bool Entitlements::isOwner(const std::string& email) const {
-  if (owners_.empty() || email.empty()) return false;
-
-  // Compared lowercased and trimmed, since the list is typed by a person into a deploy variable.
-  // Split on commas only — no address contains one.
-  const auto folded = [](std::string text) {
-    std::string out;
-    for (const char c : text) {
-      if (c == ' ' || c == '\t') continue;
-      out.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c + ('a' - 'A')) : c);
-    }
-    return out;
-  };
-  const std::string wanted = folded(email);
-  if (wanted.empty()) return false;
-
+EmailList::EmailList(std::string_view listed) {
   std::size_t at = 0;
-  while (at <= owners_.size()) {
-    const std::size_t end = std::min(owners_.find(',', at), owners_.size());
-    if (folded(owners_.substr(at, end - at)) == wanted) return true;
+  while (at <= listed.size()) {
+    const std::size_t end = std::min(listed.find(',', at), listed.size());
+    std::string address = folded(listed.substr(at, end - at));
+    if (!address.empty()) addresses_.push_back(std::move(address));
     at = end + 1;
   }
-  return false;
 }
 
-bool Entitlements::hasWindmillOne(const UserId& user, const std::string& email) const {
-  // The owner list is the only grant here that is not a subscription.
-  if (isOwner(email)) return true;
+bool EmailList::contains(std::string_view email) const {
+  const std::string wanted = folded(email);
+  return !wanted.empty() && std::find(addresses_.begin(), addresses_.end(), wanted) != addresses_.end();
+}
 
-  const std::optional<PaddleSubscription> subscription = subscriptions_.findFor(user, email);
-  return subscription && grantsAccess(subscription->status);
+Entitlements::Entitlements(subscriptions::EntitlementReader& copy, Clock& clock, AiUsageRepository& usage,
+                           Allowlists lists, std::vector<std::string> passiveOperations,
+                           std::shared_ptr<AiBudgetService> budgets)
+    : budgets_(std::move(budgets)), copy_(copy), clock_(clock), usage_(usage),
+      passiveOperations_(std::move(passiveOperations)), lists_(std::move(lists)) {}
+
+bool Entitlements::isOwner(const std::string& email) const {
+  return lists_.owners.contains(email);
+}
+
+subscriptions::Standing Entitlements::standingOf(const UserId& user, const std::string& email) const {
+  return {isOwner(email), lists_.sandboxTesters.contains(email), copy_.find(user),
+          static_cast<std::int64_t>(clock_.nowMs())};
+}
+
+// An owner holds Windmill One without the copy being read, so no failure to read it ever takes an owner's access.
+bool Entitlements::hasWindmillOne(const UserId& user, const std::string& email) const {
+  if (isOwner(email)) return true;
+  return standingOf(user, email).hasWindmillOne();
 }
 
 AiBudgetPrincipal Entitlements::aiPrincipalFor(const UserId& user, const std::string& email) const {
-  const bool owner = isOwner(email);
-  const auto tier = hasWindmillOne(user, email) ? AiBudgetTier::WindmillOne : AiBudgetTier::LoggedIn;
-  return {{AiBudgetSubjectKind::Account, user.str()}, tier, owner};
+  const AiBudgetSubject subject{AiBudgetSubjectKind::Account, user.str()};
+  if (isOwner(email)) return {subject, AiBudgetTier::WindmillOne, true};
+  const subscriptions::Standing standing = standingOf(user, email);
+  const auto tier = standing.hasWindmillOne() ? AiBudgetTier::WindmillOne : AiBudgetTier::LoggedIn;
+  return {subject, tier, standing.fundedAsOwner()};
 }
 
 AiBudgetView Entitlements::aiAllowanceView(const UserId& user, const std::string& email) const {

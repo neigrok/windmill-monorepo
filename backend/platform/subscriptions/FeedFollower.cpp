@@ -82,10 +82,9 @@ FollowStep FeedFollower::apply(const FeedCursor& from, const std::vector<FeedEnt
     observation.skip();
     return FollowStep::overtaken;
   }
-  for (const FeedEntry& entry : entries) {
+  for (const FeedEntry& entry : entries)
     for (FeedEntryConsumer& consumer : inPage_) consumer.consume(*txn, entry);
-    for (FeedEntrySideConsumer& consumer : beside_) consumer.consume(*txn, entry);
-  }
+  for (FeedPageSideConsumer& consumer : beside_) consumer.consume(*txn, entries);
   txn->commit();
   observation.wrote();
   observation.finish(rebuilding ? "rebuilt" : "ok");
@@ -118,14 +117,16 @@ FollowStep FeedFollower::rebuild(const FeedCursor& from, const std::string& caus
   return apply(from, ledger, rebuilt, true, observation);
 }
 
-bool FeedFollower::reach(Seq seq, std::chrono::milliseconds wait) {
+Reach FeedFollower::reach(Seq seq, std::chrono::milliseconds wait) {
   std::unique_lock lock{mutex_};
   const std::uint64_t asked = readsBegun_;
   const auto held = [&] { return confirmedRead_ > asked && confirmedSeq_ >= seq; };
   asked_ = true;
   wake_.notify_all();
   moved_.wait_for(lock, wait, [&] { return held() || stopping_; });
-  return held();
+  if (held()) return Reach::reached;
+  const bool caughtUp = confirmedRead_ > asked && confirmedLatestSeq_ && confirmedSeq_ >= *confirmedLatestSeq_;
+  return caughtUp && *confirmedLatestSeq_ < seq ? Reach::pastTheLedger : Reach::behind;
 }
 
 void FeedFollower::noticeUnknownWords(const FeedPage& page) {
@@ -148,6 +149,7 @@ void FeedFollower::confirm(Seq seq) {
     std::lock_guard lock{mutex_};
     confirmedRead_ = reading_;
     confirmedSeq_ = seq;
+    confirmedLatestSeq_ = latestSeq_;
   }
   moved_.notify_all();
 }

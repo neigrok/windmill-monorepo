@@ -16,7 +16,8 @@ class AiInfrastructureTest(unittest.TestCase):
         guard = textwrap.dedent(workflow[start:workflow.index('          if [ "$AI_INSTALLATIONS_ENABLED"', start)])
         environment = {**os.environ, **{key: "configured" for key in
             ("DOMAIN_APP", "DOMAIN_API", "ACME_EMAIL", "POSTGRES_PASSWORD", "RESEND_FROM", "CF_IPS")},
-            "SUBSCRIPTIONS_DB_PASSWORD": "a" * 64, "AI_DB_PASSWORD": "c" * 64, "AI_PASS_KEYS": "{}",
+            "SUBSCRIPTIONS_DB_PASSWORD": "a" * 64, "SUBSCRIPTIONS_INTERNAL_TOKEN": "",
+            "AI_DB_PASSWORD": "c" * 64, "AI_PASS_KEYS": "{}",
             "AI_CARRY_KEY": "A" * 43, "AI_FUNDING_SECRET": "f" * 32, "AI_OPERATOR_SECRET": "o" * 32}
         for key in ("AI_DB_PASSWORD", "AI_CARRY_KEY", "AI_FUNDING_SECRET", "AI_OPERATOR_SECRET"):
             result = subprocess.run(["bash", "-euo", "pipefail", "-c", guard],

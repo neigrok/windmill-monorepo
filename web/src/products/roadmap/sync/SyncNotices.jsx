@@ -5,7 +5,7 @@ import { isCapacityRefusal } from './refusals.js';
 import { REFUSED_SYNC, REFUSED_CAPACITY, refusedSyncBody, discardChanges } from '../copy.js';
 import './sync-notices.css';
 
-export function RefusedSync({ band, code, count = 1, onRetry, onDiscard }) {
+export function RefusedSync({ band, code, count = 1, onRetry, onDiscard, disabled = false }) {
   const phone = band === 'phone';
   const buttonSize = phone ? 'sm' : 'md';
   const capacity = isCapacityRefusal({ code });
@@ -19,11 +19,11 @@ export function RefusedSync({ band, code, count = 1, onRetry, onDiscard }) {
         {capacity && <span className="board-refused-sync-detail"> {detail}</span>}
       </p>
       <div className="board-refused-sync-actions">
-        <Button variant={capacity ? 'secondary' : 'ghost'} size={buttonSize} onClick={onDiscard}>
+        <Button variant={capacity ? 'secondary' : 'ghost'} size={buttonSize} onClick={onDiscard} disabled={disabled}>
           {discardChanges({ count })}
         </Button>
         {!capacity && onRetry && (
-          <Button variant={phone ? 'primary' : 'secondary'} size={buttonSize} onClick={onRetry}>
+          <Button variant={phone ? 'primary' : 'secondary'} size={buttonSize} onClick={onRetry} disabled={disabled}>
             {REFUSED_SYNC.retry}
           </Button>
         )}
