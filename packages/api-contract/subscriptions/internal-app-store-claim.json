@@ -110,10 +110,38 @@
       }
     },
     {
+      "name": "account_erased",
+      "status": 409,
+      "body": {
+        "code": "account_erased"
+      }
+    },
+    {
       "name": "transaction_not_verified",
       "status": 400,
       "body": {
         "code": "invalid_transaction"
+      }
+    },
+    {
+      "name": "ledger_unavailable",
+      "status": 503,
+      "body": {
+        "code": "unavailable"
+      }
+    },
+    {
+      "name": "store_unavailable",
+      "status": 503,
+      "body": {
+        "code": "store_unavailable"
+      }
+    },
+    {
+      "name": "store_api_unavailable",
+      "status": 503,
+      "body": {
+        "code": "store_api_unavailable"
       }
     }
   ]

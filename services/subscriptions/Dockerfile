@@ -25,8 +25,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
  && cp target/release/subscriptions /usr/local/bin/subscriptions
 
 ########################  runtime  ########################
-# The builder's Debian release, so the binary finds the glibc it linked against. ca-certificates lets
-# Sentry's TLS verify ingest's certificate; curl serves the health check.
+# The builder's Debian release, so the binary finds the glibc it linked against. ca-certificates lets the
+# TLS of Sentry and of the App Store Server API verify their certificates; curl serves the health check.
 FROM debian:trixie-slim
 
 RUN apt-get update \

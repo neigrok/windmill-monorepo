@@ -1,9 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use app_store::decoding::{Decoded, PeriodStatement, decode, decode_claim};
+use app_store::decoding::{Decoded, PeriodStatement, decode, decode_claim, decode_status};
 use app_store::verification::{
-    AccountToken, Environment, Notification, RenewalInfo, TransactionInfo,
+    AccountToken, Environment, Notification, RenewalInfo, SubscriptionStatus, TransactionInfo,
 };
 use domain::{
     AccountHint, Accounts, Instant, Ledger, Money, Observation, ObservedPeriod, PeriodId, Span,
@@ -24,7 +24,7 @@ fn every_app_store_vector_passes() {
         .collect();
     vectors.sort();
     assert!(
-        vectors.len() >= 112,
+        vectors.len() >= 115,
         "{} holds {} vectors, fewer than the ones written",
         directory.display(),
         vectors.len()
@@ -85,19 +85,27 @@ fn a_cancel_time_stated_once_survives_the_notifications_that_cannot_state_it() {
 fn run(path: &Path) -> Result<(), String> {
     let name = path.file_name().expect("a file name").to_string_lossy();
     let vector = read(path);
-    let produced = match (vector.get("notification"), vector.get("claim")) {
-        (Some(notification_fields), None) => {
+    let produced = match (
+        vector.get("notification"),
+        vector.get("claim"),
+        vector.get("status"),
+    ) {
+        (Some(notification_fields), None, None) => {
             exactly(&vector, &["note", "notification", "expect"]);
             decoded_json(decode(&notification(notification_fields)))
         }
-        (None, Some(transaction_fields)) => {
+        (None, Some(transaction_fields), None) => {
             exactly(&vector, &["note", "claim", "expect"]);
             match decode_claim(&transaction(transaction_fields)) {
                 Ok(statement) => json!({ "periodStatement": statement_json(&statement) }),
                 Err(unsupported) => json!({ "unsupported": unsupported.code() }),
             }
         }
-        _ => panic!("{name} holds a notification or a claim, not both"),
+        (None, None, Some(status_fields)) => {
+            exactly(&vector, &["note", "status", "expect"]);
+            decoded_json(decode_status(&status(status_fields)))
+        }
+        _ => panic!("{name} holds one of a notification, a claim and a status"),
     };
     compare(&name, field(&vector, "expect"), &produced)
 }
@@ -132,6 +140,21 @@ fn notification(value: &Value) -> Notification {
         status: optional(value, "status"),
         transaction: (!field(value, "transaction").is_null())
             .then(|| transaction(field(value, "transaction"))),
+        renewal_info: optional::<RenewalInfo>(value, "renewalInfo"),
+    }
+}
+
+// A pulled status as SignedDataVerifier hands it over.
+fn status(value: &Value) -> SubscriptionStatus {
+    exactly(
+        value,
+        &["environment", "status", "transaction", "renewalInfo"],
+    );
+    SubscriptionStatus {
+        environment: serde_json::from_value::<Environment>(field(value, "environment").clone())
+            .expect("Production or Sandbox"),
+        status: optional(value, "status"),
+        transaction: transaction(field(value, "transaction")),
         renewal_info: optional::<RenewalInfo>(value, "renewalInfo"),
     }
 }

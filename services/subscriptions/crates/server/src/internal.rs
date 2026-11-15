@@ -1,4 +1,4 @@
-mod responses;
+pub mod responses;
 
 use std::fmt;
 use std::str::FromStr;
@@ -87,14 +87,24 @@ impl fmt::Debug for BearerSecret {
     }
 }
 
-// The backend's read doors, each behind the bearer secret. Without a secret every one of them answers 401, so the
-// doors are shut until the deployment sets one.
-pub fn doors<R: Reads>(secret: Option<BearerSecret>, reads: R) -> Router {
+// The backend's doors (§5.2), each behind the bearer secret: its reads, and the store doors' routes that pull a store's
+// state, `store_doors::internal_router`. Without a secret every one of them answers 401, so the doors are shut until
+// the deployment sets one.
+pub fn doors<R: Reads>(secret: Option<BearerSecret>, reads: R, store_doors: Router) -> Router {
     Router::new()
         .route(FEED_ROUTE, get(feed::<R>))
         .route("/internal/v1/accounts/{accountId}", get(account::<R>))
         .with_state(reads)
+        .merge(store_doors)
         .route_layer(middleware::from_fn_with_state(secret, bearer))
+}
+
+// An id as the contract writes every one: a UUID in its canonical spelling, lowercase and hyphenated. A door takes no
+// other spelling.
+pub fn canonical_id(text: &str) -> Option<Uuid> {
+    Uuid::try_parse(text)
+        .ok()
+        .filter(|parsed| parsed.hyphenated().to_string() == text)
 }
 
 // Refuses with no word of why: no secret is set, none was presented, or another was.
@@ -164,17 +174,16 @@ async fn feed<R: Reads>(
     Json(FeedPageResponse::from(&page)).into_response()
 }
 
-// `GET /internal/v1/accounts/{accountId}`, the id in its canonical spelling, lowercase and hyphenated, as the contract
-// writes every id. The account id is a hint a store carries, so no line or refusal names it (§10).
+// `GET /internal/v1/accounts/{accountId}`, the id in its canonical spelling. The account id is a hint a store carries,
+// so no line or refusal names it (§10).
 async fn account<R: Reads>(
     State(reads): State<R>,
     account_id: Result<Path<String>, PathRejection>,
 ) -> Response {
-    let Some(account_id) = account_id.ok().and_then(|Path(account_id)| {
-        Uuid::try_parse(&account_id)
-            .ok()
-            .filter(|parsed| parsed.hyphenated().to_string() == account_id)
-    }) else {
+    let Some(account_id) = account_id
+        .ok()
+        .and_then(|Path(account_id)| canonical_id(&account_id))
+    else {
         return refused(StatusCode::BAD_REQUEST, "invalid_account_id");
     };
     let record = match reads.account(account_id).await {

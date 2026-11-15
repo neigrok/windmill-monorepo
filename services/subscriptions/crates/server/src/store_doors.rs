@@ -4,7 +4,12 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+mod server_api;
+
+pub use server_api::HintWritten;
+
 use app_store::decoding::{self, Awaiting, Decoded};
+use app_store::server_api::ServerApi;
 use app_store::verification::{self, Notification, SignedDataVerifier};
 use axum::body::Bytes;
 use axum::extract::State;
@@ -40,8 +45,9 @@ pub const POSTPONED_FOR: Duration = Duration::from_secs(60 * 60);
 // always finds one. A burst waits here, in memory, rather than at the pool's 5 s bound for a connection.
 const APPLIES_AT_ONCE: usize = Ledger::CONNECTIONS as usize / 2;
 
-// A store's statement refused although its signature held is worth knowing of, at most this often.
-const REFUSED_STATEMENTS_REPORTED_EVERY: Duration = Duration::from_secs(10 * 60);
+// A store's statement refused although its signature held, and a failure of its API, are worth knowing of at most this
+// often: something outside the service decides how often they happen.
+const REPORTED_EVERY: Duration = Duration::from_secs(10 * 60);
 
 // The public doors through which the stores' statements reach the ledger (spec §5.1).
 pub fn router(app_store: AppStoreDoor) -> Router {
@@ -53,12 +59,27 @@ pub fn router(app_store: AppStoreDoor) -> Router {
         .with_state(app_store)
 }
 
-// App Store Server Notifications V2, from both environments: the environment is the verified payload's. The sweep
-// applies what the door kept and left unsettled through the same step (§7).
+// The backend's doors that pull a store's state into the ledger (spec §5.2), which the internal listener serves
+// behind its bearer secret.
+pub fn internal_router(app_store: AppStoreDoor) -> Router {
+    Router::new()
+        .route("/internal/v1/app-store/claims", post(server_api::claim))
+        .route(
+            "/internal/v1/subscriptions/{subscriptionId}/refresh",
+            post(server_api::refresh),
+        )
+        .with_state(app_store)
+}
+
+// The App Store's way into the ledger: its notifications on the public listener (§5.1), and on the internal one a
+// claim and a refresh, whose state the door pulls from the App Store Server API (§5.2). The sweep applies what the
+// door kept and left unsettled through the same step, and writes the hints a claim owes the App Store (§7).
 #[derive(Clone)]
 pub struct AppStoreDoor {
     ledger: Ledger,
     verifier: Arc<SignedDataVerifier>,
+    // Absent while the deployment holds no in-app purchase key: nothing is pulled and no hint is written.
+    api: Option<Arc<ServerApi>>,
     clock: Arc<dyn Fn() -> SystemTime + Send + Sync>,
     deliveries: TaskTracker,
     // Verification is CPU work, run off the async workers and at most once per core, so payloads nobody signed
@@ -66,6 +87,8 @@ pub struct AppStoreDoor {
     verifications: Arc<Semaphore>,
     applies: Arc<Semaphore>,
     refused_statements: Arc<Throttle>,
+    // What can fail as often as Apple or the ledger stays down: a pull, a hint written or cleared.
+    recurring_failures: Arc<Throttle>,
 }
 
 // What Apple posts: the notification as one signed payload.
@@ -99,18 +122,28 @@ impl AppStoreDoor {
     pub fn new(
         ledger: Ledger,
         verifier: SignedDataVerifier,
+        api: Option<ServerApi>,
         clock: impl Fn() -> SystemTime + Send + Sync + 'static,
     ) -> AppStoreDoor {
         let cores = thread::available_parallelism().map_or(1, NonZero::get);
         AppStoreDoor {
             ledger,
             verifier: Arc::new(verifier),
+            api: api.map(Arc::new),
             clock: Arc::new(clock),
             deliveries: TaskTracker::new(),
             verifications: Arc::new(Semaphore::new(cores)),
             applies: Arc::new(Semaphore::new(APPLIES_AT_ONCE)),
-            refused_statements: Arc::new(Throttle::every(REFUSED_STATEMENTS_REPORTED_EVERY)),
+            refused_statements: Arc::new(Throttle::every(REPORTED_EVERY)),
+            recurring_failures: Arc::new(Throttle::every(REPORTED_EVERY)),
         }
+    }
+
+    fn now(&self) -> domain::Instant {
+        let millis = (self.clock)()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_millis() as i64);
+        domain::Instant::from_epoch_millis(millis)
     }
 
     // Waits for every delivery under way to finish applying, once the listener accepts no more.
@@ -179,26 +212,24 @@ impl AppStoreDoor {
             return Arrival::Refused(Refused::Body);
         };
         // A client that leaves before its payload is verified is owed nothing: the door keeps nothing of it.
+        let verifying = signed_payload.clone();
         let verified = tokio::select! {
-            verified = self.verify(signed_payload.clone()) => verified,
+            verified = self.verified(move |verifier| verifier.verify_notification(&verifying)) => verified,
             () = answer.closed() => return Arrival::Left,
         };
         let notification = match verified {
             Ok(notification) => notification,
             Err(refusal) => return Arrival::Refused(Refused::Unverified(refusal)),
         };
-        let environment = match notification.environment {
-            verification::Environment::Production => Environment::Production,
-            verification::Environment::Sandbox => Environment::Sandbox,
-        };
+        let environment = Environment::from(notification.environment);
         // The inbox keys the notification by its UUID, and no text the ledger keeps can hold NUL.
         if notification.notification_uuid.contains('\0') {
             return Arrival::Refused(Refused::NotificationUuid(environment));
         }
-        let now = (self.clock)()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |since| since.as_millis() as i64);
-        let oldest = now.saturating_sub(SIGNED_DATE_MAX_AGE.as_millis() as i64);
+        let oldest = self
+            .now()
+            .epoch_millis()
+            .saturating_sub(SIGNED_DATE_MAX_AGE.as_millis() as i64);
         if notification
             .signed_date
             .is_some_and(|signed_at| signed_at < oldest)
@@ -243,7 +274,10 @@ impl AppStoreDoor {
 
     // The verifier on the blocking pool, one payload per core at a time. The turn is the blocking task's own, so a
     // verification its caller stopped waiting for still holds it until it ends.
-    async fn verify(&self, signed_payload: String) -> Result<Notification, verification::Refusal> {
+    async fn verified<T: Send + 'static>(
+        &self,
+        verify: impl FnOnce(&SignedDataVerifier) -> T + Send + 'static,
+    ) -> T {
         let turn = self
             .verifications
             .clone()
@@ -253,7 +287,7 @@ impl AppStoreDoor {
         let verifier = self.verifier.clone();
         let hub = Hub::current();
         let verified = tokio::task::spawn_blocking(move || {
-            let verified = Hub::run(hub, || verifier.verify_notification(&signed_payload));
+            let verified = Hub::run(hub, || verify(&verifier));
             drop(turn);
             verified
         })
@@ -267,8 +301,9 @@ impl AppStoreDoor {
     // Step 4 for a notification the inbox holds, read from the inbox's own copy: a redelivery whose bytes differ, or a
     // row the sweep found unsettled. The door's own rules held when it was kept and are not asked again.
     pub async fn apply_kept(&self, kept: &KeptNotification) -> KeptOutcome {
+        let signed_payload = kept.notification().signed_payload.clone();
         match self
-            .verify(kept.notification().signed_payload.clone())
+            .verified(move |verifier| verifier.verify_notification(&signed_payload))
             .await
         {
             Ok(notification) => self.apply(&notification, kept).await,

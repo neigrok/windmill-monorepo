@@ -11,4 +11,4 @@ pub use apply::{AccountClaim, Applied, Observed};
 pub use events::{FeedEntry, FeedPage, RecordedEvent};
 pub use inbox::{KeptNotification, Notification, Receipt};
 pub use ledger::{DatabaseUrl, Ledger, MalformedDatabaseUrl, StorageError};
-pub use store_hints::StoreHint;
+pub use store_hints::{HintRefusal, StoreHint};

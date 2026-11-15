@@ -72,7 +72,7 @@ fn the_command_refuses_stdin_that_describes_no_app_store_payload() {
         (
             Some(1),
             String::new(),
-            "app_store_test_signer: stdin holds no description: unknown variant `receipt`, expected `notification` or `transaction` at line 1 column 10\n"
+            "app_store_test_signer: stdin holds no description: unknown variant `receipt`, expected one of `notification`, `transaction`, `statusResponse` at line 1 column 10\n"
                 .to_owned()
         )
     );

@@ -1,10 +1,12 @@
-// The internal doors against the wire's golden fixtures, packages/api-contract/subscriptions: feed.json, entitlement.json
-// and account.json. Each body is the fixture's, byte for byte, key order included.
+// The internal doors against the wire's golden fixtures, packages/api-contract/subscriptions: feed.json, entitlement.json,
+// account.json, and the answers of internal-app-store-claim.json and internal-subscription-refresh.json. Each body is
+// the fixture's, byte for byte, key order included.
 
 use std::env;
 use std::panic::{AssertUnwindSafe, resume_unwind};
 use std::path::Path;
 
+use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use domain::{
@@ -17,6 +19,9 @@ use domain::{
 use futures_util::FutureExt;
 use serde_json::{Value, json};
 use server::config::Config;
+use server::internal::responses::{
+    ClaimResponse, EntitlementResponse, RefreshResponse, RefusalResponse,
+};
 use server::internal::{self, Reads};
 use server::listeners::{Bounds, Listener, Readiness};
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
@@ -97,7 +102,7 @@ async fn read<L: Readiness + Reads>(ledger: L, path: &str) -> String {
         .router(
             &config,
             ledger.clone(),
-            internal::doors(config.internal_token.clone(), ledger),
+            internal::doors(config.internal_token.clone(), ledger, Router::new()),
             Bounds::default(),
         )
         .oneshot(
@@ -172,6 +177,39 @@ async fn every_account_read_is_the_contracts() {
         let served = read(ledger, &format!("/internal/v1/accounts/{account_id}")).await;
 
         assert_eq!(served, example["body"].to_string(), "{}", example["name"]);
+    }
+}
+
+// Each answer of the claim and the refresh, written from the service's own types: the 200s from the ledger's, a
+// refusal as its code.
+#[test]
+fn every_claim_and_refresh_answer_is_the_contracts() {
+    let mut answered = Vec::new();
+    for file in [
+        "internal-app-store-claim.json",
+        "internal-subscription-refresh.json",
+    ] {
+        for example in fixture(file)["examples"].as_array().unwrap() {
+            let body = &example["body"];
+            let served = match (file, example["status"].as_u64().unwrap()) {
+                ("internal-app-store-claim.json", 200) => serde_json::to_string(&ClaimResponse {
+                    seq: body["seq"].as_i64().unwrap(),
+                    entitlement: EntitlementResponse::from(&entitlement(&body["entitlement"])),
+                }),
+                (_, 200) => serde_json::to_string(&RefreshResponse {
+                    seq: body["seq"].as_i64().unwrap(),
+                }),
+                _ => serde_json::to_string(&RefusalResponse {
+                    code: Box::leak(body["code"].as_str().unwrap().to_owned().into_boxed_str()),
+                }),
+            };
+            answered.push((served.unwrap(), body.to_string()));
+        }
+    }
+
+    assert_eq!(answered.len(), 13);
+    for (served, contract) in answered {
+        assert_eq!(served, contract);
     }
 }
 
@@ -287,7 +325,10 @@ async fn the_ledger_tells_the_contracts_story_up_to_the_erasure() {
                 claim,
                 pulled_at: None,
             };
-            let Applied::Recorded { change, .. } = ledger.apply(observed).await.unwrap() else {
+            let Applied::Recorded {
+                change, newest_seq, ..
+            } = ledger.apply(observed).await.unwrap()
+            else {
                 panic!("the story's apply recorded nothing");
             };
             for (seq, served) in named {
@@ -315,13 +356,14 @@ async fn the_ledger_tells_the_contracts_story_up_to_the_erasure() {
                 };
                 renamed.push((served, told.as_str().unwrap().to_owned()));
             }
+            newest_seq
         };
 
         let buyer_hint = Some(buyer);
         tell(t0 + 4_000, bought.clone(), buyer_hint, None, &[(1, "subscription"), (3, "buyer-1")]).await;
         tell(unhinted + 3_000, unhinted_bought.clone(), None, None, &[(4, "subscription"), (5, "unhinted-1")])
             .await;
-        let claim = AccountClaim {
+        let claim = || AccountClaim {
             account_id: claimant,
             at: Instant::from_epoch_millis(claimed),
         };
@@ -329,7 +371,18 @@ async fn the_ledger_tells_the_contracts_story_up_to_the_erasure() {
             observed_at: claimed,
             ..unhinted_bought.clone()
         };
-        tell(claimed, claimed_state, None, Some(claim), &[]).await;
+        // The claim door answers the claimed subscription's newest seq and the caller's entitlement after it, and the
+        // same claim retried after its answer was lost answers the same (§5.2).
+        let mut claim_answers = Vec::new();
+        for recorded_at in [claimed, claimed + 1_000] {
+            let seq = tell(recorded_at, claimed_state.clone(), None, Some(claim()), &[]).await;
+            let entitlement = ledger.entitlement(claimant).await.unwrap();
+            let answer = ClaimResponse {
+                seq,
+                entitlement: EntitlementResponse::from(&entitlement),
+            };
+            claim_answers.push(serde_json::to_string(&answer).unwrap());
+        }
         PgConnection::connect(&url)
             .await
             .unwrap()
@@ -433,7 +486,21 @@ async fn the_ledger_tells_the_contracts_story_up_to_the_erasure() {
             told_accounts.push((as_told(served), contract));
         }
 
-        for (told, contract) in told_pages.into_iter().chain(told_accounts) {
+        let claims = fixture("internal-app-store-claim.json");
+        let told_claims = claim_answers.into_iter().zip(["bound_to_caller", "already_bound_to_caller"]).map(
+            |(served, name)| {
+                let contract = claims["examples"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|example| example["name"] == json!(name))
+                    .unwrap()["body"]
+                    .to_string();
+                (as_told(served), contract)
+            },
+        );
+
+        for (told, contract) in told_pages.into_iter().chain(told_accounts).chain(told_claims) {
             assert_eq!(told, contract);
         }
         ledger.close().await;

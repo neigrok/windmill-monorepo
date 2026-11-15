@@ -1,6 +1,6 @@
 use domain::{
     AccountHint, Accounts, Change, Claim, Claimant, Instant, Observation, PeriodId, Refusal,
-    SubscriptionId, observe,
+    Subscription, SubscriptionId, observe,
 };
 use sqlx::PgConnection;
 use uuid::Uuid;
@@ -136,6 +136,9 @@ async fn apply_in(
     subscriptions::save(connection, held.as_ref(), &change).await?;
     if let Some(pulled_at) = pulled_at {
         subscriptions::stamp_verified(connection, &change.subscription.id, pulled_at).await?;
+    }
+    if held.as_ref().and_then(Subscription::account_id) != change.subscription.account_id() {
+        store_hints::forget_other_accounts(connection, &change.subscription).await?;
     }
     if let Some(account_id) = &change.hint_for_store {
         store_hints::owe(connection, &change.subscription, account_id).await?;

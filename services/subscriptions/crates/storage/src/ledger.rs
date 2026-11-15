@@ -202,7 +202,7 @@ impl StorageError {
 
     pub fn code(&self) -> &'static str {
         match self {
-            StorageError::Unreachable => "unreachable",
+            StorageError::Unreachable => "ledger_unreachable",
             StorageError::Refused { .. } => "refused",
             StorageError::Migration { .. } => "migration",
             StorageError::Busy => "busy",

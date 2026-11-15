@@ -1,9 +1,26 @@
-use server::config::{Config, ConfigError, Problem};
+use app_store::server_api::ApiKey;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
+use ring::rand::SystemRandom;
+use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair};
+use server::config::{AppStoreApiKey, Config, ConfigError, Problem};
 use storage::DatabaseUrl;
 use tracing_subscriber::filter::LevelFilter;
 
+// An in-app purchase key as App Store Connect's .p8 file holds it: a P-256 key in PKCS#8 PEM.
+fn p8() -> String {
+    let pkcs8 =
+        EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &SystemRandom::new())
+            .unwrap();
+    format!(
+        "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----\n",
+        STANDARD.encode(pkcs8.as_ref())
+    )
+}
+
 #[test]
 fn every_variable_is_read_into_one_config() {
+    let private_key = p8();
     let environment = [
         ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
         ("SUBSCRIPTIONS_INTERNAL_ADDRESS", "0.0.0.0:8083"),
@@ -20,6 +37,16 @@ fn every_variable_is_read_into_one_config() {
         (
             "SUBSCRIPTIONS_APP_STORE_TEST_ROOT",
             "tests/fixtures/app_store/test-chain/root.cer",
+        ),
+        (
+            "SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID",
+            "57246542-96fe-1a63-e053-0824d011072a",
+        ),
+        ("SUBSCRIPTIONS_APP_STORE_API_KEY_ID", "2X9R4HXF34"),
+        ("SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY", &private_key),
+        (
+            "SUBSCRIPTIONS_APP_STORE_API_TEST_URL",
+            "http://127.0.0.1:18662",
         ),
         (
             "SUBSCRIPTIONS_INTERNAL_TOKEN",
@@ -50,6 +77,12 @@ fn every_variable_is_read_into_one_config() {
             sentry_log_level: LevelFilter::WARN,
             panic_route_enabled: true,
             app_store_test_root: Some("tests/fixtures/app_store/test-chain/root.cer".into()),
+            app_store_api: AppStoreApiKey::Set(ApiKey {
+                issuer_id: "57246542-96fe-1a63-e053-0824d011072a".to_owned(),
+                key_id: "2X9R4HXF34".to_owned(),
+                private_key: private_key.parse().unwrap(),
+            }),
+            app_store_api_test_url: Some("http://127.0.0.1:18662".parse().unwrap()),
             internal_token: Some("7c1f0e9a4b2d8c6e5f3a1b0c9d8e7f6a".parse().unwrap()),
         })
     );
@@ -71,6 +104,10 @@ fn an_empty_optional_variable_counts_as_unset() {
         ("SENTRY_LOG_LEVEL", ""),
         ("SUBSCRIPTIONS_PANIC_ROUTE_ENABLED", ""),
         ("SUBSCRIPTIONS_APP_STORE_TEST_ROOT", ""),
+        ("SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID", ""),
+        ("SUBSCRIPTIONS_APP_STORE_API_KEY_ID", ""),
+        ("SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY", ""),
+        ("SUBSCRIPTIONS_APP_STORE_API_TEST_URL", ""),
         ("SUBSCRIPTIONS_INTERNAL_TOKEN", ""),
     ];
 
@@ -97,13 +134,16 @@ fn an_empty_optional_variable_counts_as_unset() {
             sentry_log_level: LevelFilter::INFO,
             panic_route_enabled: false,
             app_store_test_root: None,
+            app_store_api: AppStoreApiKey::Unset,
+            app_store_api_test_url: None,
             internal_token: None,
         })
     );
 }
 
 #[test]
-fn the_configuration_never_prints_the_database_password_or_the_internal_token() {
+fn the_configuration_never_prints_the_database_password_the_internal_token_or_the_private_key() {
+    let private_key = p8();
     let config = Config::from_environment(|variable| match variable {
         "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("0.0.0.0:8082".to_owned()),
         "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("0.0.0.0:8083".to_owned()),
@@ -115,13 +155,55 @@ fn the_configuration_never_prints_the_database_password_or_the_internal_token() 
         "SUBSCRIPTIONS_INTERNAL_TOKEN" => {
             Some("secret-token-0123456789abcdef0123456789".to_owned())
         }
+        "SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID" => Some("issuer".to_owned()),
+        "SUBSCRIPTIONS_APP_STORE_API_KEY_ID" => Some("key".to_owned()),
+        "SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY" => Some(private_key.clone()),
         _ => None,
     })
     .unwrap();
 
     let printed = format!("{config:?}");
+    let key_body = private_key.lines().nth(1).unwrap();
+    assert!(config.app_store_api.key().is_some());
     assert!(!printed.contains("secret-password"), "{printed}");
     assert!(!printed.contains("secret-token"), "{printed}");
+    assert!(!printed.contains(&key_body[..16]), "{printed}");
+}
+
+#[test]
+fn a_key_set_in_part_turns_the_api_off_naming_what_it_lacks() {
+    let private_key = p8();
+    let cases = [
+        (
+            vec![("SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID", "issuer")],
+            vec![
+                "SUBSCRIPTIONS_APP_STORE_API_KEY_ID",
+                "SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY",
+            ],
+        ),
+        (
+            vec![
+                ("SUBSCRIPTIONS_APP_STORE_API_KEY_ID", "key"),
+                ("SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY", &private_key),
+            ],
+            vec!["SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID"],
+        ),
+    ];
+    for (set, lacking) in cases {
+        let config = Config::from_environment(|variable| match variable {
+            "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("0.0.0.0:8082".to_owned()),
+            "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("0.0.0.0:8083".to_owned()),
+            "SUBSCRIPTIONS_DATABASE_URL" => Some("postgresql://ledger@db/ledger".to_owned()),
+            "SENTRY_ENVIRONMENT" => Some("production".to_owned()),
+            _ => set
+                .iter()
+                .find(|(name, _)| *name == variable)
+                .map(|(_, value)| value.to_string()),
+        })
+        .unwrap();
+
+        assert_eq!(config.app_store_api, AppStoreApiKey::Lacking(lacking));
+    }
 }
 
 #[test]
@@ -187,6 +269,17 @@ fn a_malformed_value_is_refused_by_its_name_and_never_repeated() {
             "SUBSCRIPTIONS_INTERNAL_TOKEN",
             "secret with a space, which no header carries as it is",
         ),
+        (
+            "SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY",
+            "-----BEGIN PRIVATE KEY-----\nc2VjcmV0LWtleQ==\n-----END PRIVATE KEY-----",
+        ),
+        ("SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY", "secret-key"),
+        ("SUBSCRIPTIONS_APP_STORE_API_TEST_URL", "ftp://secret-host/"),
+        (
+            "SUBSCRIPTIONS_APP_STORE_API_TEST_URL",
+            "mailto:secret@example.com",
+        ),
+        ("SUBSCRIPTIONS_APP_STORE_API_TEST_URL", "secret host"),
     ] {
         let environment = [
             ("SUBSCRIPTIONS_PUBLIC_ADDRESS", "0.0.0.0:8082"),
@@ -266,6 +359,10 @@ fn what_only_tests_need_is_allowed_only_in_test_deployments() {
             "SUBSCRIPTIONS_APP_STORE_TEST_ROOT",
             "tests/fixtures/app_store/test-chain/root.cer",
         ),
+        (
+            "SUBSCRIPTIONS_APP_STORE_API_TEST_URL",
+            "http://127.0.0.1:18662",
+        ),
     ] {
         for (environment_name, allowed) in [
             ("local", true),
@@ -297,7 +394,10 @@ fn what_only_tests_need_is_allowed_only_in_test_deployments() {
 
             match config {
                 Ok(config) => assert!(
-                    allowed && (config.panic_route_enabled || config.app_store_test_root.is_some()),
+                    allowed
+                        && (config.panic_route_enabled
+                            || config.app_store_test_root.is_some()
+                            || config.app_store_api_test_url.is_some()),
                     "{variable} in {environment_name:?}"
                 ),
                 Err(refusal) => {

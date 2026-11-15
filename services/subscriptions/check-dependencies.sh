@@ -52,6 +52,19 @@ while IFS= read -r dependency; do
   fi
 done <<<"$domain_dependencies"
 
+# What the tests build serializes as the binary does: serde_json resolves with the same features in the binary and in
+# `cargo test` across the workspace, so a body built as a Value keeps one key order in both.
+serde_json_features() {
+  cargo tree --locked "$@" -i serde_json 2>/dev/null | grep -o 'serde_json feature "[a-z_]*"' | sort -u
+}
+in_the_binary="$(serde_json_features -p server -e features,normal)"
+in_the_tests="$(serde_json_features --workspace -e features)"
+if [[ "$in_the_binary" != "$in_the_tests" ]]; then
+  echo "check-dependencies.sh: serde_json's features differ between the binary and the tests:" >&2
+  diff <(echo "$in_the_binary") <(echo "$in_the_tests") >&2 || true
+  broken=1
+fi
+
 if (( broken )); then
   exit 1
 fi

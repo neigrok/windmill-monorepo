@@ -3,14 +3,16 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use app_store::server_api::{ApiKey, PrivateKey};
+use reqwest::Url;
 use sentry::types::Dsn;
 use storage::DatabaseUrl;
 use tracing_subscriber::filter::LevelFilter;
 
 use crate::internal::BearerSecret;
 
-// The deployments that may turn on what only tests need, the forced-panic route and the App Store test root, matched
-// trimmed and in any case.
+// The deployments that may turn on what only tests need, the forced-panic route, the App Store test root and an Apple of
+// the test's own, matched trimmed and in any case.
 const TEST_DEPLOYMENTS: [&str; 4] = ["local", "development", "test", "ci"];
 
 #[derive(Debug, PartialEq)]
@@ -25,7 +27,27 @@ pub struct Config {
     pub sentry_log_level: LevelFilter,
     pub panic_route_enabled: bool,
     pub app_store_test_root: Option<PathBuf>,
+    pub app_store_api: AppStoreApiKey,
+    pub app_store_api_test_url: Option<Url>,
     pub internal_token: Option<BearerSecret>,
+}
+
+// The in-app purchase key the App Store Server API is called with, from its three variables. One left unset turns the
+// API off and the service starts without it, naming what is missing when another is set.
+#[derive(Debug, PartialEq)]
+pub enum AppStoreApiKey {
+    Unset,
+    Lacking(Vec<&'static str>),
+    Set(ApiKey),
+}
+
+impl AppStoreApiKey {
+    pub fn key(&self) -> Option<&ApiKey> {
+        match self {
+            AppStoreApiKey::Set(key) => Some(key),
+            AppStoreApiKey::Unset | AppStoreApiKey::Lacking(_) => None,
+        }
+    }
 }
 
 impl Config {
@@ -49,6 +71,8 @@ impl Config {
                 .optional("SUBSCRIPTIONS_PANIC_ROUTE_ENABLED")?
                 .unwrap_or(false),
             app_store_test_root: variables.optional("SUBSCRIPTIONS_APP_STORE_TEST_ROOT")?,
+            app_store_api: variables.app_store_api_key()?,
+            app_store_api_test_url: variables.base_url("SUBSCRIPTIONS_APP_STORE_API_TEST_URL")?,
             internal_token: variables.optional("SUBSCRIPTIONS_INTERNAL_TOKEN")?,
         };
         let environment = config.environment.trim().to_ascii_lowercase();
@@ -61,6 +85,10 @@ impl Config {
             (
                 "SUBSCRIPTIONS_APP_STORE_TEST_ROOT",
                 config.app_store_test_root.is_some(),
+            ),
+            (
+                "SUBSCRIPTIONS_APP_STORE_API_TEST_URL",
+                config.app_store_api_test_url.is_some(),
             ),
         ];
         if let Some((variable, _)) = test_only
@@ -114,6 +142,49 @@ impl<F: Fn(&str) -> Option<String>> Variables<F> {
         })
     }
 
+    fn app_store_api_key(&self) -> Result<AppStoreApiKey, ConfigError> {
+        let issuer_id: Option<String> = self.optional("SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID")?;
+        let key_id: Option<String> = self.optional("SUBSCRIPTIONS_APP_STORE_API_KEY_ID")?;
+        let private_key: Option<PrivateKey> =
+            self.optional("SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY")?;
+        Ok(match (issuer_id, key_id, private_key) {
+            (Some(issuer_id), Some(key_id), Some(private_key)) => AppStoreApiKey::Set(ApiKey {
+                issuer_id,
+                key_id,
+                private_key,
+            }),
+            (None, None, None) => AppStoreApiKey::Unset,
+            (issuer_id, key_id, private_key) => AppStoreApiKey::Lacking(
+                [
+                    ("SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID", issuer_id.is_none()),
+                    ("SUBSCRIPTIONS_APP_STORE_API_KEY_ID", key_id.is_none()),
+                    (
+                        "SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY",
+                        private_key.is_none(),
+                    ),
+                ]
+                .into_iter()
+                .filter(|(_, unset)| *unset)
+                .map(|(variable, _)| variable)
+                .collect(),
+            ),
+        })
+    }
+
+    // An http or https URL a request path can follow.
+    fn base_url(&self, variable: &'static str) -> Result<Option<Url>, ConfigError> {
+        let url: Option<Url> = self.optional(variable)?;
+        match url {
+            Some(url) if !matches!(url.scheme(), "http" | "https") || url.cannot_be_a_base() => {
+                Err(ConfigError {
+                    variable,
+                    problem: Problem::Malformed,
+                })
+            }
+            url => Ok(url),
+        }
+    }
+
     // A socket address, or a host and port whose name resolves at start, as a compose network alias does: the internal
     // listener then binds the one network the backend shares with it, and no other. Of a name's several addresses, as
     // localhost's, it takes the first IPv4, the one clients here dial.
@@ -135,7 +206,7 @@ impl<F: Fn(&str) -> Option<String>> Variables<F> {
 }
 
 // Names the variable, never its value: a value may be a secret, such as the key in SENTRY_DSN, the password in
-// SUBSCRIPTIONS_DATABASE_URL or SUBSCRIPTIONS_INTERNAL_TOKEN.
+// SUBSCRIPTIONS_DATABASE_URL, SUBSCRIPTIONS_INTERNAL_TOKEN or SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY.
 #[derive(Debug, PartialEq)]
 pub struct ConfigError {
     pub variable: &'static str,

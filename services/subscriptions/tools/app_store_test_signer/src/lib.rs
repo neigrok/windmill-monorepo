@@ -38,8 +38,11 @@ const DATE_FIELDS: [&str; 8] = [
 pub enum Description {
     Notification(Map<String, Value>),
     Transaction(Map<String, Value>),
+    // The App Store Server API's answer to Get All Subscription Statuses, which is no JWS: the payloads inside it are.
+    StatusResponse(Map<String, Value>),
 }
 
+// A notification or a transaction as its compact JWS; a status response as its JSON, each payload inside it signed.
 pub fn sign(description: Description, now: SystemTime) -> Result<String, InvalidDate> {
     let leaf = TestLeaf::new();
     let now = now
@@ -56,6 +59,7 @@ pub fn sign(description: Description, now: SystemTime) -> Result<String, Invalid
                 ("signedDate", now.into()),
             ],
         ),
+        Description::StatusResponse(response) => leaf.sign_status_response(response, now),
     }
 }
 
@@ -94,27 +98,13 @@ impl TestLeaf {
                     ("bundleId", WINDMILL_BUNDLE_ID.into()),
                 ],
             );
-            let environment = data["environment"].clone();
-            let nested = [
-                (
-                    "signedTransactionInfo",
-                    vec![
-                        ("environment", environment.clone()),
-                        ("bundleId", data["bundleId"].clone()),
-                        ("signedDate", now.into()),
-                    ],
-                ),
-                (
-                    "signedRenewalInfo",
-                    vec![("environment", environment), ("signedDate", now.into())],
-                ),
-            ];
-            for (field, defaults) in nested {
-                if let Some(Value::Object(payload)) = data.get_mut(field) {
-                    let signed = self.sign_payload(mem::take(payload), now, defaults)?;
-                    data[field] = signed.into();
-                }
-            }
+            let (environment, bundle_id) = (data["environment"].clone(), data["bundleId"].clone());
+            let mut holder = Value::Object(mem::take(data));
+            self.sign_nested(&mut holder, &environment, &bundle_id, now)?;
+            let Value::Object(signed) = holder else {
+                unreachable!("the data stays an object");
+            };
+            *data = signed;
         }
         self.sign_payload(
             notification,
@@ -125,6 +115,72 @@ impl TestLeaf {
                 ("signedDate", now.into()),
             ],
         )
+    }
+
+    fn sign_status_response(
+        &self,
+        mut response: Map<String, Value>,
+        now: i64,
+    ) -> Result<String, InvalidDate> {
+        fill(
+            &mut response,
+            [
+                ("environment", SANDBOX.into()),
+                ("bundleId", WINDMILL_BUNDLE_ID.into()),
+            ],
+        );
+        let (environment, bundle_id) = (
+            response["environment"].clone(),
+            response["bundleId"].clone(),
+        );
+        let groups = match response.get_mut("data") {
+            Some(Value::Array(groups)) => groups.iter_mut(),
+            _ => [].iter_mut(),
+        };
+        for group in groups {
+            let Some(Value::Array(entries)) = group.get_mut("lastTransactions") else {
+                continue;
+            };
+            for entry in entries {
+                self.sign_nested(entry, &environment, &bundle_id, now)?;
+            }
+        }
+        Ok(Value::Object(response).to_string())
+    }
+
+    // The transaction and renewal info a notification's data or a status entry holds, each signed in place with the
+    // environment, and the transaction with the bundle id, of what holds them.
+    fn sign_nested(
+        &self,
+        holder: &mut Value,
+        environment: &Value,
+        bundle_id: &Value,
+        now: i64,
+    ) -> Result<(), InvalidDate> {
+        let nested = [
+            (
+                "signedTransactionInfo",
+                vec![
+                    ("environment", environment.clone()),
+                    ("bundleId", bundle_id.clone()),
+                    ("signedDate", now.into()),
+                ],
+            ),
+            (
+                "signedRenewalInfo",
+                vec![
+                    ("environment", environment.clone()),
+                    ("signedDate", now.into()),
+                ],
+            ),
+        ];
+        for (field, defaults) in nested {
+            if let Some(Value::Object(payload)) = holder.get_mut(field) {
+                let signed = self.sign_payload(mem::take(payload), now, defaults)?;
+                holder[field] = signed.into();
+            }
+        }
+        Ok(())
     }
 
     fn sign_payload(

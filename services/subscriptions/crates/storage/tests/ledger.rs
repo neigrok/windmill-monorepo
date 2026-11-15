@@ -67,6 +67,7 @@ async fn an_empty_database_is_migrated_and_given_one_epoch_that_opening_again_ke
                 (4, "events".to_owned(), true),
                 (5, "erased accounts".to_owned(), true),
                 (6, "store hints".to_owned(), true),
+                (7, "store hint attempts".to_owned(), true),
             ]
         );
         let second_row = connection
