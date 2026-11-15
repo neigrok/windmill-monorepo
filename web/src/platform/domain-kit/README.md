@@ -72,3 +72,10 @@ meaning; it does not establish that a command's result has been pulled in the cu
 Persisted runner tests cover stale-tab transactional reads, predictions over confirmed records,
 checkpoint rejection states, opaque identities and anonymous supersession across an aborted commit
 and reopening.
+## Ability catalogs
+
+`abilities.js` reads plain catalog data with `Ability` and `Catalog`; `JsonSchema` implements the
+same recursive subset as Kotlin's domain-kit `Abilities.kt`. Required fields keep their declared
+order; object members use canonical key order. String lengths count Unicode scalars and patterns
+match the whole value. Unknown schema keywords pass. Platform tests load the shared gym catalog as
+data, with no product-code dependency.
