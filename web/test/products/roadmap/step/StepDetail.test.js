@@ -1,7 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 import { createServer } from 'vite';
 
 import { STEP_DETAIL } from '../../../../src/products/roadmap/copy.js';
@@ -55,6 +55,10 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
     const [selectedId, setSelectedId] = useState(null);
     const [editing, setEditing] = useState(null);
     const [spaces, setSpaces] = useState(workspaces);
+    const [linkPrefix, setLinkPrefix] = useState(linked ? 'https://windmill.test/t/sail#?step=' : null);
+    const [refusal, setRefusal] = useState(null);
+    window.setLinkPrefix = setLinkPrefix;
+    window.refuseSync = () => setRefusal({ code: 'server-error', count: 1, onRetry: () => setRefusal(null), onDiscard: () => setRefusal(null) });
     const [query, setQuery] = useState(() => new BoardQuery({ kinds }));
     const [quiet, setQuiet] = useState(0);
     const [breakpoint, setBreakpoint] = useState(() => bandOf(window.innerWidth));
@@ -80,7 +84,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
           onSwitchView: noop, query, onQuery: setQuery, quiet })),
       open && React.createElement(StepDetail, {
         tree, completed: progress.completed, completedAt: progress.completedAt, address, breakpoint, roadmapTitle: 'Learn to sail',
-        editable, deletable: tree.roots().length !== 1 || tree.roots()[0].id !== address.id, stepLink: linked ? 'https://windmill.test/t/sail#?step=' + address.id : null,
+        editable, deletable: tree.roots().length !== 1 || tree.roots()[0].id !== address.id, stepLink: linkPrefix ? linkPrefix + address.id : null, refusal,
         workspace: spaces[address.id] ?? { subtasks: [], note: '', links: [] },
         workspaceActions: { onToggleSubtask: (nodeId, subtaskId) => setSpaces((current) => ({ ...current, [nodeId]: toggleSubtask(current[nodeId], subtaskId) })),
           onAddSubtask: noop, onEditSubtask: noop, onDeleteSubtask: noop, onSetNote: (nodeId) => call('note ' + nodeId), onAddLink: noop, onDeleteLink: noop },
@@ -120,7 +124,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
 window.entryReady = true;
 `;
 
-let server, browser, origin;
+let server, browser, webkitBrowser, origin;
 let ready;
 function start() {
   ready ??= (async () => {
@@ -149,15 +153,15 @@ function start() {
         });
       },
     }], optimizeDeps: { include: ['react', 'react-dom/client', 'lucide-react'] },
-    server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../../', import.meta.url))] } } });
-  await server.listen(0);
+    server: { host: '127.0.0.1', port: Number(process.env.WM_STEP_DETAIL_PORT ?? 0), fs: { allow: [fileURLToPath(new URL('../../../../../', import.meta.url))] } } });
+  await server.listen();
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   browser = await chromium.launch({ headless: true });
   })();
   return ready;
 }
 after(async () => {
-  try { await ready; } finally { await browser?.close(); await server?.close(); }
+  try { await ready; } finally { await browser?.close(); await webkitBrowser?.close(); await server?.close(); }
 });
 
 const learnToSailNodes = [
@@ -172,8 +176,9 @@ const learnToSailNodes = [
   { id: 'solo', label: 'Sail solo', prerequisites: ['triangle', 'bowline'], color: 'gold' },
 ];
 
-async function openRoom({ viewport, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], linked = true, others = {}, start = '#/app/sail', clock = false, permissions = [], editingEnabled = false, opens = {} }, errors) {
-  const context = await browser.newContext({ viewport, permissions });
+async function openRoom({ viewport, nodes = learnToSailNodes, editable = true, workspaces = {}, kinds = [], linked = true, others = {}, start = '#/app/sail', clock = false, permissions = [], editingEnabled = false, opens = {}, engine = 'Chromium' }, errors) {
+  if (engine === 'WebKit') webkitBrowser ??= await webkit.launch({ headless: true });
+  const context = await (engine === 'WebKit' ? webkitBrowser : browser).newContext({ viewport, permissions });
   const page = await context.newPage();
   page.on('pageerror', (error) => errors.push(error.message));
   if (clock) await page.clock.install();
@@ -1066,4 +1071,340 @@ test('Chromium: system Back closes the phone detail without saving its local not
   } finally {
     await page.context().close();
   }
+});
+
+for (const engine of ['Chromium', 'WebKit']) {
+  test(`${engine}: copy recovery shows a clipboard refusal and focuses Try again after the phone menu closes`, async () => {
+    await start();
+    const errors = [];
+    const page = await openRoom({ engine, viewport: { width: 390, height: 844 } }, errors);
+    try {
+      await page.evaluate(() => { navigator.clipboard.writeText = () => { throw new DOMException('private clipboard detail', 'NotAllowedError'); }; });
+      await card(page, 'Read the wind').click();
+      await page.getByRole('button', { name: 'More' }).click();
+      await page.getByRole('menuitem', { name: 'Copy link' }).click();
+      await page.waitForFunction(() => window.events.some((line) => line.includes('"outcome":"failed"')));
+      await page.locator('.st-step-copy-recovery').waitFor({ timeout: 3000 });
+      assert.equal(await page.getByRole('heading', { name: 'Couldn’t copy link', exact: true }).count(), 1);
+      await page.waitForFunction(() => document.activeElement.textContent === 'Try again');
+      assert.deepEqual([await page.getByRole('menu').count(), await calls(page), await page.evaluate(() => window.reports ?? []), await events(page)], [0, [], [], [
+        'roadmap_board_step_open {"surface":"document","column":"upNext","door":"card"}',
+        'roadmap_board_step_action {"surface":"document","action":"copyLink","outcome":"failed"}',
+        'roadmap_board_step_action {"surface":"document","action":"copyLinkRecovery","step":"shown"}',
+      ]]);
+      assert.deepEqual(errors, []);
+    } finally { await page.context().close(); }
+  });
+
+  test(`${engine}: copy recovery retries, reveals the full address, selects it and reports success once`, async () => {
+    await start();
+    const errors = [];
+    const page = await openRoom({ engine, viewport: { width: 744, height: 960 } }, errors);
+    try {
+      await page.evaluate(() => {
+        window.copyRequests = [];
+        navigator.clipboard.writeText = async (link) => {
+          window.copyRequests.push(link);
+          if (window.copyRequests.length === 1) throw new DOMException('private clipboard detail', 'NotAllowedError');
+          if (window.copyRequests.length === 2) throw new Error('private clipboard detail');
+        };
+        window.setLinkPrefix('https://windmill.test/t/sail?preserve=the-full-current-address-and-its-entire-query#?step=');
+      });
+      await card(page, 'Read the wind').click();
+      await page.getByRole('button', { name: 'More' }).click();
+      await page.getByRole('menuitem', { name: 'Copy link' }).click();
+      const recovery = page.getByRole('region', { name: 'Couldn’t copy link', exact: true });
+      await recovery.waitFor();
+      assert.equal(await recovery.textContent(), 'Couldn’t copy linkTry again or select the link manually.Try againShow link');
+      assert.equal(await recovery.getByRole('textbox').count(), 0);
+      await page.waitForFunction(() => document.activeElement.textContent === 'Try again');
+      await page.evaluate(() => {
+        window.copyAnnouncements = [];
+        const status = [...document.querySelectorAll('[role="status"]')].find((node) => node.textContent === 'Couldn’t copy link');
+        new MutationObserver(() => window.copyAnnouncements.push(status.textContent)).observe(status, { childList: true, characterData: true, subtree: true });
+      });
+      await recovery.getByRole('button', { name: 'Try again' }).click();
+      await page.waitForFunction(() => (window.reports ?? []).length === 1);
+      assert.equal(await recovery.textContent(), 'Couldn’t copy linkTry again or select the link manually.Try againShow link');
+      await recovery.getByRole('button', { name: 'Show link' }).click();
+      const field = recovery.getByRole('textbox', { name: 'Step link', exact: true });
+      await page.waitForFunction(() => document.activeElement.matches('input[readonly]'));
+      assert.deepEqual(await field.evaluate((input) => [input.value, input.readOnly]), ['https://windmill.test/t/sail?preserve=the-full-current-address-and-its-entire-query#?step=wind', true]);
+      await recovery.getByRole('button', { name: 'Select link' }).click();
+      assert.deepEqual(await field.evaluate((input) => [document.activeElement === input, input.selectionStart, input.selectionEnd]), [true, 0, 94]);
+      await page.keyboard.press(engine === 'WebKit' ? 'Alt+Tab' : 'Tab');
+      assert.equal(await focusedName(page), 'Try again');
+      await page.keyboard.press(engine === 'WebKit' ? 'Alt+Tab' : 'Tab');
+      assert.equal(await focusedName(page), 'Select link');
+      await page.keyboard.press(engine === 'WebKit' ? 'Alt+Tab' : 'Tab');
+      assert.equal(await focusedName(page), 'Complete');
+      assert.deepEqual(await page.evaluate(() => window.copyAnnouncements), []);
+      await recovery.getByRole('button', { name: 'Try again' }).focus();
+      await page.keyboard.press('Enter');
+      await recovery.waitFor({ state: 'detached' });
+      assert.equal(await focusedName(page), 'More');
+      assert.deepEqual(await page.evaluate(() => [window.copyRequests, window.reports, window.calls]), [
+        Array(3).fill('https://windmill.test/t/sail?preserve=the-full-current-address-and-its-entire-query#?step=wind'),
+        ['roadmap-step-copy'], ['notify Link copied'],
+      ]);
+      assert.deepEqual((await events(page)).slice(1), [
+        'roadmap_board_step_action {"surface":"document","action":"copyLink","outcome":"failed"}',
+        'roadmap_board_step_action {"surface":"document","action":"copyLinkRecovery","step":"shown"}',
+        'roadmap_board_step_action {"surface":"document","action":"copyLinkRecovery","step":"retry"}',
+        'roadmap_board_step_action {"surface":"document","action":"copyLink","outcome":"failed"}',
+        'roadmap_board_step_action {"surface":"document","action":"copyLinkRecovery","step":"reveal"}',
+        'roadmap_board_step_action {"surface":"document","action":"copyLinkRecovery","step":"select"}',
+        'roadmap_board_step_action {"surface":"document","action":"copyLinkRecovery","step":"retry"}',
+        'roadmap_board_step_action {"surface":"document","action":"copyLink","outcome":"ok"}',
+      ]);
+      assert.deepEqual(errors, []);
+    } finally { await page.context().close(); }
+  });
+
+  for (const dismiss of ['Escape', 'Close']) {
+    test(`${engine}: copy recovery ${dismiss} restores More, cancels late retry feedback and prevents simultaneous clipboard writes`, async () => {
+      await start();
+      const errors = [];
+      const page = await openRoom({ engine, viewport: { width: 390, height: 844 } }, errors);
+      try {
+        await page.evaluate(() => {
+          window.copyRequests = [];
+          navigator.clipboard.writeText = (link) => new Promise((resolve, reject) => {
+            window.copyRequests.push(link);
+            window.finishCopy = resolve;
+            window.refuseCopy = () => reject(new DOMException('private detail', 'NotAllowedError'));
+          });
+        });
+        await card(page, 'Read the wind').click();
+        for (let attempt = 0; attempt < 2; attempt++) {
+          await page.getByRole('button', { name: 'More' }).click();
+          await page.getByRole('menuitem', { name: 'Copy link' }).click();
+        }
+        assert.deepEqual(await page.evaluate(() => window.copyRequests), ['https://windmill.test/t/sail#?step=wind']);
+        await page.evaluate(() => window.refuseCopy());
+        const recovery = page.getByRole('region', { name: 'Couldn’t copy link', exact: true });
+        await recovery.waitFor();
+        await page.waitForFunction(() => document.activeElement.textContent === 'Try again');
+        await recovery.getByRole('button', { name: 'Try again' }).click();
+        await page.keyboard.press('Enter');
+        assert.equal(await recovery.getByRole('button', { name: 'Try again' }).getAttribute('aria-disabled'), 'true');
+        assert.deepEqual(await page.evaluate(() => window.copyRequests), Array(2).fill('https://windmill.test/t/sail#?step=wind'));
+        if (dismiss === 'Escape') await page.keyboard.press('Escape');
+        else await recovery.getByRole('button', { name: 'Close', exact: true }).click();
+        await recovery.waitFor({ state: 'detached' });
+        assert.equal(await focusedName(page), 'More');
+        await page.evaluate(() => window.refuseCopy());
+        await page.waitForFunction(() => window.events.filter((line) => line.includes('"outcome":"failed"')).length === 2);
+        assert.deepEqual([await recovery.count(), await calls(page), await focusedName(page), await hash(page)], [0, [], 'More', '#/app/sail?step=wind']);
+        assert.deepEqual((await events(page)).slice(1), [
+          'roadmap_board_step_action {"surface":"document","action":"copyLink","outcome":"failed"}',
+          'roadmap_board_step_action {"surface":"document","action":"copyLinkRecovery","step":"shown"}',
+          'roadmap_board_step_action {"surface":"document","action":"copyLinkRecovery","step":"retry"}',
+          'roadmap_board_step_action {"surface":"document","action":"copyLinkRecovery","step":"dismiss"}',
+          'roadmap_board_step_action {"surface":"document","action":"copyLink","outcome":"failed"}',
+        ]);
+        await page.keyboard.press('Escape');
+        await page.getByRole('article').waitFor({ state: 'detached' });
+        assert.deepEqual(errors, []);
+      } finally { await page.context().close(); }
+    });
+  }
+
+  for (const change of ['step', 'link', 'eligibility', 'close']) {
+    test(`${engine}: copy recovery ignores delayed results after ${change} changes, including a return to the same step address`, async () => {
+      await start();
+      for (const result of ['ok', 'failed']) {
+        const errors = [];
+        const page = await openRoom({ engine, viewport: { width: 1440, height: 960 } }, errors);
+        try {
+          await page.evaluate(() => {
+            navigator.clipboard.writeText = () => new Promise((resolve, reject) => {
+              window.finishCopy = (result) => result === 'ok' ? resolve() : reject(new DOMException('private detail', 'NotAllowedError'));
+            });
+          });
+          await card(page, 'Read the wind').click();
+          await page.getByRole('button', { name: 'More' }).click();
+          await page.getByRole('menuitem', { name: 'Copy link' }).click();
+          if (change === 'step') {
+            await page.getByRole('button', { name: 'Name the boat parts, done' }).click();
+            await page.getByRole('article', { name: 'Name the boat parts', exact: true }).waitFor();
+            await page.getByRole('button', { name: 'Read the wind, up next' }).click();
+          } else if (change === 'close') {
+            await page.getByRole('button', { name: 'Close', exact: true }).click();
+            await page.getByRole('article').waitFor({ state: 'detached' });
+            await card(page, 'Read the wind').click();
+          } else {
+            await page.evaluate((change) => window.setLinkPrefix(change === 'link' ? 'https://windmill.test/t/other#?step=' : null), change);
+            await page.getByRole('button', { name: 'More' }).click();
+            assert.equal(await page.getByRole('menuitem', { name: 'Copy link' }).count(), change === 'link' ? 1 : 0);
+            await page.keyboard.press('Escape');
+            await page.evaluate(() => window.setLinkPrefix('https://windmill.test/t/sail#?step='));
+          }
+          await page.getByRole('article', { name: 'Read the wind', exact: true }).waitFor();
+          await page.getByRole('button', { name: 'Collapse Coach' }).focus();
+          await page.evaluate((result) => window.finishCopy(result), result);
+          await page.waitForFunction((result) => window.events.some((line) => line === `roadmap_board_step_action {"surface":"document","action":"copyLink","outcome":"${result}"}`), result);
+          assert.deepEqual([await calls(page), await page.locator('.st-step-copy-recovery').count(), await focusedName(page)], [[], 0, 'Collapse Coach']);
+          assert.deepEqual((await events(page)).filter((line) => line.includes('copyLink')), [`roadmap_board_step_action {"surface":"document","action":"copyLink","outcome":"${result}"}`]);
+          assert.deepEqual(errors, []);
+        } finally { await page.context().close(); }
+      }
+    });
+  }
+
+  test(`${engine}: copy recovery keeps a nested editor, sync refusal, Coach and completion Undo intact`, async () => {
+    await start();
+    const errors = [];
+    const page = await openRoom({ engine, viewport: { width: 744, height: 960 }, editingEnabled: true }, errors);
+    try {
+      await page.evaluate(() => {
+        navigator.clipboard.writeText = () => new Promise((_resolve, reject) => { window.refuseCopy = () => reject(new DOMException('private detail', 'NotAllowedError')); });
+      });
+      await card(page, 'Read the wind').click();
+      await page.getByRole('button', { name: 'Complete', exact: true }).click();
+      await page.evaluate(() => window.refuseSync());
+      await page.getByRole('alert').waitFor();
+      await page.getByRole('button', { name: 'More' }).click();
+      await page.getByRole('menuitem', { name: 'Copy link' }).click();
+      await page.getByRole('button', { name: 'Edit step', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await page.getByRole('dialog', { name: 'Edit step', exact: true }).waitFor();
+      await page.getByRole('textbox', { name: 'Name', exact: true }).focus();
+      await page.evaluate(() => window.refuseCopy());
+      await page.waitForFunction(() => document.querySelector('.st-step-copy-recovery'));
+      assert.equal(await page.getByRole('textbox', { name: 'Name', exact: true }).evaluate((input) => input === document.activeElement), true);
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog', { name: 'Edit step', exact: true }).waitFor({ state: 'detached' });
+      await page.waitForFunction(() => document.activeElement.getAttribute('aria-label') === 'Edit step', null, { timeout: 4000 });
+      assert.equal(await page.getByRole('region', { name: 'Couldn’t copy link', exact: true }).count(), 1);
+      await page.getByRole('button', { name: 'Expand Coach' }).click();
+      await page.getByRole('button', { name: 'Collapse Coach' }).click();
+      await page.getByRole('alert').getByRole('button', { name: 'Retry', exact: true }).click();
+      await page.getByRole('alert').waitFor({ state: 'detached' });
+      await page.getByRole('button', { name: 'Undo', exact: true }).click();
+      assert.deepEqual(await calls(page), ['complete wind', 'restore wind']);
+      assert.equal(await page.locator('.st-board-step-status-label').textContent(), 'Up next');
+      await page.getByRole('button', { name: 'Expand Coach' }).focus();
+      await page.keyboard.press('Escape');
+      await page.getByRole('region', { name: 'Couldn’t copy link', exact: true }).waitFor({ state: 'detached' });
+      assert.equal(await focusedName(page), 'More');
+      assert.deepEqual(errors, []);
+    } finally { await page.context().close(); }
+  });
+}
+
+for (const engine of ['Chromium', 'WebKit']) {
+  test(`${engine}: copy recovery uses the native clipboard success path without a recovery card`, async () => {
+    await start();
+    const errors = [];
+    const page = await openRoom({ engine, viewport: { width: 390, height: 844 }, permissions: engine === 'Chromium' ? ['clipboard-read', 'clipboard-write'] : [] }, errors);
+    try {
+      await card(page, 'Read the wind').click();
+      await page.getByRole('button', { name: 'More' }).click();
+      await page.getByRole('menuitem', { name: 'Copy link' }).click();
+      await page.waitForFunction(() => window.events.some((line) => line.includes('"action":"copyLink"')));
+      assert.deepEqual([await calls(page), (await events(page)).slice(1), await page.locator('.st-step-copy-recovery').count()], [['notify Link copied'], [
+        'roadmap_board_step_action {"surface":"document","action":"copyLink","outcome":"ok"}',
+      ], 0]);
+      if (engine === 'Chromium') assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'https://windmill.test/t/sail#?step=wind');
+      assert.deepEqual(errors, []);
+    } finally { await page.context().close(); }
+  });
+
+  test(`${engine}: copy recovery removes a revealed address when its link changes or eligibility is revoked`, async () => {
+    await start();
+    const errors = [];
+    const page = await openRoom({ engine, viewport: { width: 390, height: 844 }, editable: false }, errors);
+    try {
+      await page.evaluate(() => { navigator.clipboard.writeText = async () => { throw new DOMException('private detail', 'SecurityError'); }; });
+      await card(page, 'Read the wind').click();
+      for (const next of ['https://windmill.test/t/another#?step=', null]) {
+        await page.getByRole('button', { name: 'More' }).click();
+        assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['Copy link', 'Open in Graph']);
+        await page.getByRole('menuitem', { name: 'Copy link' }).click();
+        await page.getByRole('button', { name: 'Show link' }).click();
+        await page.getByRole('textbox', { name: 'Step link', exact: true }).waitFor();
+        await page.evaluate((next) => window.setLinkPrefix(next), next);
+        await page.locator('.st-step-copy-recovery').waitFor({ state: 'detached' });
+        assert.deepEqual([await page.getByRole('textbox').count(), await page.evaluate(() => window.reports ?? [])], [0, []]);
+      }
+      await page.getByRole('button', { name: 'More' }).click();
+      assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['Open in Graph']);
+      assert.deepEqual(errors, []);
+    } finally { await page.context().close(); }
+  });
+
+  for (const options of [{ width: 320, height: 844 }, { width: 390, height: 844 }, { width: 744, height: 960 }, { width: 744, height: 960, expanded: true }, { width: 1440, height: 960 }]) {
+    for (const theme of ['light', 'dark']) {
+      test(`${engine}: copy recovery fits ${theme} ${options.width}px ${options.expanded ? 'expanded' : 'default'} Coach without covering pinned Undo`, async () => {
+        await start();
+        const errors = [];
+        const page = await openRoom({ engine, viewport: { width: options.width, height: options.height } }, errors);
+        try {
+          await page.evaluate((theme) => {
+            document.documentElement.dataset.theme = theme;
+            navigator.clipboard.writeText = async () => { throw new DOMException('private detail', 'NotAllowedError'); };
+          }, theme);
+          await card(page, 'Read the wind').click();
+          if (options.expanded) await page.getByRole('button', { name: 'Expand Coach' }).click();
+          await page.getByRole('button', { name: 'Complete', exact: true }).click();
+          await page.getByRole('button', { name: 'More' }).click();
+          await page.getByRole('menuitem', { name: 'Copy link' }).click();
+          const recovery = page.getByRole('region', { name: 'Couldn’t copy link', exact: true });
+          await recovery.waitFor();
+          await page.evaluate(() => document.fonts.ready);
+          const geometry = () => recovery.evaluate((node) => {
+            const box = node.getBoundingClientRect();
+            const article = node.closest('article');
+            const documentBox = article.getBoundingClientRect();
+            const actions = article.querySelector('.st-step-pinned-actions').getBoundingClientRect();
+            return {
+              height: Math.round(box.height),
+              inside: box.left >= documentBox.left && box.right <= documentBox.right && box.top >= 0,
+              footerGap: Math.round(actions.top - box.bottom),
+              modal: !!node.closest('[aria-modal="true"]'),
+              controls: [...node.querySelectorAll('button, input')].map((control) => {
+                const bounds = control.getBoundingClientRect();
+                return bounds.width >= 44 && bounds.height >= 44 && control.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
+              }),
+            };
+          });
+          assert.deepEqual(await geometry(), { height: 161, inside: true, footerGap: 12, modal: false, controls: [true, true, true] });
+          if (process.env.WM_COPY_SCREENSHOTS) await page.screenshot({ path: `${process.env.WM_COPY_SCREENSHOTS}/${engine}-${theme}-${options.width}-${options.expanded ? 'expanded' : 'default'}-failure.png` });
+          await recovery.getByRole('button', { name: 'Show link' }).click();
+          assert.deepEqual(await geometry(), { height: 244, inside: true, footerGap: 12, modal: false, controls: [true, true, true, true] });
+          assert.deepEqual(await recovery.getByRole('textbox').evaluate((input) => [getComputedStyle(input).outlineWidth, getComputedStyle(input).outlineStyle]), ['2px', 'solid']);
+          if (process.env.WM_COPY_SCREENSHOTS) await page.screenshot({ path: `${process.env.WM_COPY_SCREENSHOTS}/${engine}-${theme}-${options.width}-${options.expanded ? 'expanded' : 'default'}-reveal.png` });
+          if (process.env.WM_COPY_SCREENSHOTS && theme === 'dark' && options.width === 390) {
+            await recovery.getByRole('button', { name: 'Select link' }).click();
+            await page.screenshot({ path: `${process.env.WM_COPY_SCREENSHOTS}/${engine}-dark-390-selected.png` });
+          }
+          assert.equal(await page.getByRole('button', { name: 'Undo', exact: true }).evaluate((button) => {
+            const box = button.getBoundingClientRect();
+            return button.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+          }), true);
+          assert.deepEqual(errors, []);
+        } finally { await page.context().close(); }
+      });
+    }
+  }
+}
+
+test('Chromium: copy recovery handles a real browser clipboard permission denial without a Sentry issue', async () => {
+  await start();
+  const errors = [];
+  const page = await openRoom({ viewport: { width: 390, height: 844 } }, errors);
+  try {
+    const session = await page.context().newCDPSession(page);
+    await session.send('Browser.setPermission', { permission: { name: 'clipboard-write' }, setting: 'denied', origin });
+    await card(page, 'Read the wind').click();
+    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('menuitem', { name: 'Copy link' }).click();
+    await page.getByRole('region', { name: 'Couldn’t copy link', exact: true }).waitFor();
+    assert.deepEqual([await calls(page), await page.evaluate(() => window.reports ?? []), (await events(page)).slice(1)], [[], [], [
+      'roadmap_board_step_action {"surface":"document","action":"copyLink","outcome":"failed"}',
+      'roadmap_board_step_action {"surface":"document","action":"copyLinkRecovery","step":"shown"}',
+    ]]);
+    assert.deepEqual(errors, []);
+  } finally { await page.context().close(); }
 });
