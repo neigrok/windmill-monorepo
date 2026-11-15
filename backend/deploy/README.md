@@ -723,6 +723,13 @@ the feed is unavailable (401)`; every later deploy recreates the container, and 
 writes `(unreachable)` once. The follower reads again 30 s after either, and files a stall Issue only past 60 s
 without progress.
 
+The subscription service reads Apple's App Store Server API with the in-app purchase key an App Store Connect
+admin mints: the repository variables `SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID` and
+`SUBSCRIPTIONS_APP_STORE_API_KEY_ID`, and the secret `SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY` (the `.p8` PEM). The
+deploy renders the PEM onto one `.env` line with its line breaks removed, which the service reads. With any of the
+three empty, a claim and a refresh answer 503 `store_api_unavailable` (the device sees `subscriptions_unavailable`)
+and the hints owed to Apple wait; the service still starts (`services/subscriptions/ARCHITECTURE.md`).
+
 **A page the backend cannot apply stops the copy for every account, by design.** A page applies whole
 or not at all, and the follower skips no entry, since a skipped entry would leave someone's paid state
 wrong. A page with an entry the contract does not describe, one that does not continue the cursor, or

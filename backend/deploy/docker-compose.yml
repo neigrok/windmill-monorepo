@@ -284,6 +284,10 @@ services:
       SUBSCRIPTIONS_PUBLIC_ADDRESS: 0.0.0.0:8082
       SUBSCRIPTIONS_INTERNAL_ADDRESS: subscriptions-internal:8083
       SUBSCRIPTIONS_INTERNAL_TOKEN: ${SUBSCRIPTIONS_INTERNAL_TOKEN:-}
+      # The App Store Server API key; any of the three empty ⇒ a claim and a refresh answer 503 and owed hints wait.
+      SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID: ${SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID:-}
+      SUBSCRIPTIONS_APP_STORE_API_KEY_ID: ${SUBSCRIPTIONS_APP_STORE_API_KEY_ID:-}
+      SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY: ${SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY:-}
       # SUBSCRIPTIONS_DB_PASSWORD is hex, so it sits in the URL unescaped.
       SUBSCRIPTIONS_DATABASE_URL: postgresql://windmill_subscriptions:${SUBSCRIPTIONS_DB_PASSWORD:-}@db:5432/windmill_subscriptions
       SENTRY_DSN: ${SENTRY_DSN:-}
