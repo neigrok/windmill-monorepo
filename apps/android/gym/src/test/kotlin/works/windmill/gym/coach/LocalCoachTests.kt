@@ -11,6 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import works.windmill.agent.AllowanceShortfall
 import works.windmill.platform.storage.AtomicDocument
 
 class LocalCoachTests {
@@ -123,14 +124,14 @@ class LocalCoachTests {
         val stamp = rewritten.lastModified()
         LocalCoach(rewritten).settle()
         assertEquals("""{"anonymousId":"a","localChats":{"a":{"c":{"id":"c","createdAtMs":$stamp,"updatedAtMs":$stamp}}},"onboarding":{"a":{"r":{"owner":"a","chat":"c","replica":"x","requestId":"r","body":"{}","createdAtMs":1,"response":{"requestId":"r","resultId":"z","status":"failed","routines":[],"errorCode":"subject_exhausted","allowance":{"remaining":"0.00","reserved":"0.00"}}}}}}""", rewritten.readText())
-        assertTrue(LocalCoach(rewritten).retained("a", "c").single().response!!.spent)
+        assertEquals(AllowanceShortfall.spent, LocalCoach(rewritten).retained("a", "c").single().response!!.shortfall)
 
         val without = document("", "")
         val older = File(tmp.newFolder(), "coach").apply { writeText(without) }
         val read = LocalCoach(older)
         assertTrue(read.readable)
         read.settle()
-        assertFalse(read.retained("a", "c").single().response!!.spent)
+        assertNull(read.retained("a", "c").single().response!!.shortfall)
         assertEquals(without, older.readText())
     }
 

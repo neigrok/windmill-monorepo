@@ -24,6 +24,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.spelled
 import works.windmill.gym.string
+import works.windmill.agent.AllowanceShortfall
 import works.windmill.agent.ToolCall
 import works.windmill.agent.ToolOutcome
 import works.windmill.agent.TurnEnd
@@ -711,41 +712,60 @@ class CoachTurnsTests {
         }
     }
 
-    // A round the server refuses says the balance is gone only when its read does: the same code on a positive balance says the allowance is unavailable, with the same sign-in, and neither takes the question back.
-    @Test fun aRefusedRoundSaysAnAllowanceIsUsedOnlyWhenItsReadSaysSo() = runTest {
-        for ((read, refused, words) in listOf(
-            Triple(""","allowance":{"remaining":"0.007075000","reserved":"0.000000000"}""", CoachTurnRefusal.Allowance("subject_exhausted"), "Coach’s AI allowance is unavailable right now.\nSign in to continue."),
-            Triple(""","allowance":{"remaining":"0.000000000","reserved":"0.000000000"}""", CoachTurnRefusal.Allowance("subject_exhausted", spent = true), "You have used all of your AI allowance.\nSign in to continue."),
-            Triple("", CoachTurnRefusal.Allowance("subject_exhausted"), "Coach’s AI allowance is unavailable right now.\nSign in to continue."),
+    // A round the allowance refuses says what holds the request, as the allowance its closing frame carries shows: nothing left, earlier requests whose cost is not yet confirmed, a request larger than what is left, whatever the read's own code, and only what is always true where the frame carries none. Signed out each offers sign-in, signed in nothing, and none takes the question back.
+    @Test fun aRoundTheAllowanceRefusesSaysWhatHoldsTheRequest() = runTest {
+        for ((allowance, shortfall, sentence) in listOf(
+            Triple(""","allowance":{"code":"subject_exhausted","remaining":"0.000000000","reserved":"0.000000000"}""", AllowanceShortfall.spent,
+                "You have used all of your AI allowance."),
+            Triple(""","allowance":{"code":"subject_exhausted","remaining":"0.000000000","reserved":"0.040775000"}""", AllowanceShortfall.held,
+                "Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began."),
+            Triple(""","allowance":{"code":"ok","remaining":"0.007075000","reserved":"0.000000000"}""", AllowanceShortfall.tooLarge,
+                "This request needs more AI capacity than your remaining allowance."),
+            Triple("", null, "Your AI allowance has no room for this request."),
         )) {
-            val server = script("""[{"event":"error","data":{"code":"subject_exhausted"$read}}]""")
+            val server = script("""[{"event":"error","data":{"code":"subject_exhausted"$allowance}}]""")
             TurnPhone(this, folder.newFolder(), server).use { phone ->
                 val turn = checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
                 advanceUntilIdle()
-                assertEquals(refused, phone.turns.refusal.value)
-                assertEquals(words, phone.turns.refusal.value?.said(anonymous = true, clock24 = false).spelled())
-                assertEquals(CoachRecovery.signIn, phone.turns.refusal.value?.recovery(anonymous = true))
+                val refusal = checkNotNull(phone.turns.refusal.value)
+                assertEquals(CoachTurnRefusal.Shortfall(shortfall), refusal)
+                assertEquals("$sentence\nSign in to continue.", refusal.said(anonymous = true, clock24 = false).spelled())
+                assertEquals(sentence, refusal.said(anonymous = false, clock24 = false).spelled())
+                assertEquals(listOf(CoachRecovery.signIn, null), listOf(refusal.recovery(anonymous = true), refusal.recovery(anonymous = false)))
                 assertNull(phone.turns.withdrawn.value)
                 assertEquals("Private question", checkNotNull(phone.message(turn.lifter)).text)
                 assertEquals(MessageState.failed, checkNotNull(phone.message(turn.coach)).state)
+                assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "capped", "cap" to "allowance")), phone.telling.named("gym_ask_outcome"))
+                assertEquals(listOf("subject_exhausted"), phone.telling.named("coach_turn").map { it["code"] })
                 assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
             }
         }
     }
 
-    // The same words before the stream, from the read the refusal's body carries.
-    @Test fun aRefusedOpenSaysAnAllowanceIsUsedOnlyWhenItsBodySaysSo() = runTest {
-        for ((read, refused) in listOf(
-            """{"code":"subject_exhausted","allowance":{"remaining":"0.000000000","reserved":"0.000000000"}}""" to CoachTurnRefusal.Allowance("subject_exhausted", spent = true),
-            """{"code":"subject_exhausted","allowance":{"remaining":"0.000000000","reserved":"0.040775000"}}""" to CoachTurnRefusal.Allowance("subject_exhausted"),
+    // The same words before the stream, from the allowance the refusal's body carries, and the question goes back to the field.
+    @Test fun aRefusedOpenSaysWhatHoldsTheRequest() = runTest {
+        for ((allowance, shortfall, sentence) in listOf(
+            Triple(""","allowance":{"code":"subject_exhausted","remaining":"0.000000000","reserved":"0.000000000"}""", AllowanceShortfall.spent,
+                "You have used all of your AI allowance."),
+            Triple(""","allowance":{"code":"subject_exhausted","remaining":"0.000000000","reserved":"0.040775000"}""", AllowanceShortfall.held,
+                "Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began."),
+            Triple(""","allowance":{"code":"subject_exhausted","remaining":"0.007075000","reserved":"0.000000000"}""", AllowanceShortfall.tooLarge,
+                "This request needs more AI capacity than your remaining allowance."),
+            Triple("", null, "Your AI allowance has no room for this request."),
         )) {
-            val server = script("[]").apply { refuseOpen = TurnRefusal.of(429, read.encodeToByteArray()) }
+            val server = script("[]").apply { refuseOpen = TurnRefusal.of(429, """{"error":"allowance","code":"subject_exhausted"$allowance}""".encodeToByteArray()) }
             TurnPhone(this, folder.newFolder(), server).use { phone ->
                 checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
                 advanceUntilIdle()
-                assertEquals(refused, phone.turns.refusal.value)
+                val refusal = checkNotNull(phone.turns.refusal.value)
+                assertEquals(CoachTurnRefusal.Shortfall(shortfall), refusal)
+                assertEquals("$sentence\nSign in to continue.", refusal.said(anonymous = true, clock24 = false).spelled())
+                assertEquals(sentence, refusal.said(anonymous = false, clock24 = false).spelled())
+                assertEquals(listOf(CoachRecovery.signIn, null), listOf(refusal.recovery(anonymous = true), refusal.recovery(anonymous = false)))
                 assertEquals(WithdrawnTurn("Private question", null, null), phone.turns.withdrawn.value)
                 assertEquals(emptyList<CoachMessage>(), phone.messages())
+                assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "capped", "cap" to "allowance")), phone.telling.named("gym_ask_outcome"))
+                assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
             }
         }
     }

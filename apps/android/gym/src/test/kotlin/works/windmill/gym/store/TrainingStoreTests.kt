@@ -282,7 +282,7 @@ class TrainingStoreTests {
             val other = coach.freshChat()
             val chat = coach.freshChat()
             for ((refusal, said) in listOf(
-                TurnRefusal(429, "subject_exhausted", null) to CoachTurnRefusal.Allowance("subject_exhausted"),
+                TurnRefusal(429, "subject_exhausted", null) to CoachTurnRefusal.Shortfall(null),
                 TurnRefusal(429, "free_day_exhausted", null) to CoachTurnRefusal.Allowance("free_day_exhausted"),
                 TurnRefusal(429, "free_month_exhausted", 1_900_000_000_000L) to CoachTurnRefusal.FreeMonthExhausted(1_900_000_000_000L),
                 TurnRefusal(429, TurnRefusal.rateLimited, null) to CoachTurnRefusal.RateLimited,
