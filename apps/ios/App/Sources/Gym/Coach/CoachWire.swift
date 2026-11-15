@@ -111,13 +111,13 @@ nonisolated enum CoachCopy {
 }
 
 nonisolated extension AiAllowance {
-  // Nothing remains, and no request still in progress holds any of it.
+  // Nothing remains, and no earlier request whose cost is unconfirmed holds any of it.
   var spent: Bool { amount(remaining) == 0 && amount(reserved) == 0 }
   func amount(_ value: String) -> Decimal { Decimal(string: value, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
   var message: String {
     if code == "subject_exhausted" {
       if amount(remaining) > 0 { return String(localized: "This request needs more AI capacity than your remaining allowance.") }
-      if !spent { return String(localized: "The rest of your AI allowance is held by a request still in progress.") }
+      if !spent { return String(localized: "Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began.") }
     }
     return Self.sentence(code)
   }
@@ -127,15 +127,14 @@ nonisolated extension AiAllowance {
     case "subject_exhausted": String(localized: "You have used all of your AI allowance.")
     case "free_month_exhausted": String(localized: "Coach’s shared free AI capacity is unavailable for this month. Signing in does not bypass this limit.")
     case "free_day_exhausted": String(localized: "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.")
-    case "concurrency_exhausted": String(localized: "Another AI request is still in progress. Try again when it finishes.")
-    case "funding_required": String(localized: "Your plan has no funded AI allowance for this period.")
+    case "concurrency_exhausted": String(localized: "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.")
     case "device_bound": String(localized: "This phone’s AI access belongs to an account.")
     default: String(localized: "Coach’s AI allowance is unavailable right now.")
     }
   }
   // When Coach answers again, in the zone `dates` reads days in, said only where a reset brings it back: a spent allowance
   // at its period's end, a shared free pool when its day or month turns. Nothing else lifts at a reset — a request too
-  // large, one in progress, debt.
+  // large, what earlier requests hold, debt.
   func detail(_ dates: GymDate) -> String? {
     let reset: Int64?
     switch code {

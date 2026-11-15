@@ -17,7 +17,7 @@ nonisolated struct AiAllowance: Codable, Equatable, Sendable {
   let resetsAtMs: Int64?
   let budgetResetsAtMs: Int64?
   static let refusalCodes: Set<String> = ["subject_exhausted", "free_month_exhausted", "free_day_exhausted",
-    "concurrency_exhausted", "funding_required", "debt_outstanding", "unconfigured", "device_bound"]
+    "concurrency_exhausted", "debt_outstanding", "unconfigured", "device_bound"]
 }
 
 protocol InstallationCredentialStore {

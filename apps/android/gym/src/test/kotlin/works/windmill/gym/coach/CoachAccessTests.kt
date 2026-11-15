@@ -138,10 +138,14 @@ class CoachAccessTests {
             Board(CoachTurnRefusal.of("subject_exhausted", 429, spent = true), false, "You have used all of your AI allowance.", null),
             Board(CoachTurnRefusal.of("subject_exhausted", 429), true, "Coach’s AI allowance is unavailable right now.\nSign in to continue.", CoachRecovery.signIn),
             Board(CoachTurnRefusal.of("subject_exhausted", 429), false, "Coach’s AI allowance is unavailable right now.", null),
+            Board(CoachTurnRefusal.of("concurrency_exhausted", 429), true, "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", null),
+            Board(CoachTurnRefusal.of("concurrency_exhausted", 429), false, "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", null),
+            Board(CoachTurnRefusal.of("funding_required", 503), false, "Coach didn’t answer. Try again in a moment", null),
         )) {
             assertEquals(board.words, board.refusal.said(board.anonymous, clock24 = false, zone = utc).spelled())
             assertEquals(board.words, board.door, board.refusal.recovery(board.anonymous))
         }
+        assertEquals("funding_required is Talk's refusal, never Coach's", CoachTurnRefusal.Unanswered, CoachTurnRefusal.of("funding_required", 503))
         assertEquals("Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.\nYou can use Coach again on Nov 4 at 3:00.",
             CoachTurnRefusal.of("free_day_exhausted", 429, dayTurns).said(anonymous = false, clock24 = true, zone = utc).spelled())
         assertEquals("You have used all of your AI allowance. It comes back on Nov 4.",

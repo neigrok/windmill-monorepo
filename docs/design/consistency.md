@@ -157,7 +157,7 @@ for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colo
 [`ios/ios-redesign.md`](ios/ios-redesign.md) §2.
 
 - **6u · USD allowance drawings.** Canonical Coach onboarding (`1081:565`) uses the $0.05 lifetime
-  installation allowance and current free/funded policy. Account · Usage · Proposal and
+  installation allowance; the policy is $0.25 (`AI_ANONYMOUS_LIFETIME_USD`). Account · Usage · Proposal and
   Roadmap · AI requests · Proposal still need the current policy, which `backend/AI_ALLOWANCES.md`
   states in USD. Replace remaining drawing question/credit
   figures with server-backed USD and period labels. Customer usage drawings must show
@@ -165,7 +165,7 @@ for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colo
   and concurrency. A hold whose cost is never confirmed is released at zero 10 minutes after its call
   began, so a concurrency refusal is never permanent. The backend's sentence is "Your earlier AI
   requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after
-  it began."; the native Coach strings ("Another AI request is still in progress") do not say so yet. Anonymous lifetime allowance has no reset; One billing periods can cross a
+  it began." Anonymous lifetime allowance has no reset; One billing periods can cross a
   calendar boundary. All hosted AI, including background Echoes, consumes the individual budget.
   Signing in binds the device and includes its current-month anonymous spend in free usage.
   Server-issued installation credentials are implemented; customer USD screens remain unbuilt.
