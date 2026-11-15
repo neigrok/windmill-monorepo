@@ -79,7 +79,7 @@ function BoardView({
   const revealFocus = useRef(null);
   const phone = breakpoint === 'phone';
   const topGap = (phone && (deviceLine || guide))
-    || (breakpoint === 'tablet' && !refusal && (frame === 'columns' || frame === 'empty')) ? '0px'
+    || (breakpoint === 'tablet' && !refusal && (frame === 'columns' || frame === 'empty' || frame === 'error')) ? '0px'
       : !phone && frame === 'loading' && !refusal ? 'var(--space-1)'
         : 'var(--space-3)';
   const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef });
