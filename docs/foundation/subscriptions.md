@@ -604,8 +604,8 @@ The backend's role cannot read it.
   follower that runs out is logged as `copy_behind`, a claim that waited too long to be taken as
   `expired`. A service that gives no answer the contract describes is logged as `unanswered_<answer>`
   and reported once per answer per window under `subscription.claim.unanswered`, and a claimed seq past
-  the newest event of a ledger the copy is caught up with once per window under
-  `subscription.claim.seq_unreached`.
+  the newest event of the ledger a read begun after the claim found the copy caught up with once per
+  window under `subscription.claim.seq_unreached`.
 - A renewal, a failed charge and a refund happen with no device present, so no client can emit them.
   The follower records them as product events in the store the `/v1/events` intake writes and
   forwards from: `subscription_started`, `subscription_renewed`, `subscription_renewal_turned_off`,

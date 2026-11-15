@@ -45,6 +45,14 @@ enum class FollowStep {
   overtaken,    // another follower moved the cursor while the page was read; nothing applied
 };
 
+// What a wait for the copy to reach a seq came to (§5.3).
+enum class Reach {
+  reached,        // a read that began after the ask left the copy at or past the seq under the ledger's epoch
+  behind,         // the wait ran out first
+  pastTheLedger,  // the wait ran out, and a read that began after the ask found the copy caught up with a ledger whose
+                  // newest event is below the seq: the seq is not one the ledger holds
+};
+
 // Follows the service's feed into the copy on a thread of its own (§6.1), each page applied in one transaction. A
 // restored ledger is read whole from zero, then replaces the copy in one transaction: the old copy answers till then.
 class FeedFollower {
@@ -64,12 +72,8 @@ public:
   FollowStep follow();
 
   // Asks for a read now and waits at most `wait` for one that began after the call to leave the copy at or past `seq`
-  // under the ledger's epoch; true when one did. Blocks the caller, so never call it from a request loop.
-  bool reach(Seq seq, std::chrono::milliseconds wait);
-
-  // Where the copy stands when the last read that confirmed it found it caught up with the newest event the ledger
-  // reported then; none while that read found it behind, and before any read confirmed it.
-  std::optional<Seq> caughtUpTo();
+  // under the ledger's epoch. Blocks the caller, so never call it from a request loop.
+  Reach reach(Seq seq, std::chrono::milliseconds wait);
 
 private:
   // The page's one transaction toward `to`: every entry through the page's consumers in order, the page through the

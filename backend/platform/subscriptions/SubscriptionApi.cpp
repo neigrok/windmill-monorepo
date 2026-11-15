@@ -124,12 +124,9 @@ private:
         return answerTo(*answered.refusal);
       }
       // The copy every gate reads is what the device is shown, so it waits for the follower to bring the claim there.
-      bool reached = false;
-      if (!forwarding_.stopping()) {
-        reached = forwarding_.follower->reach(answered.seq, forwarding_.wait);
-        const std::optional<Seq> caughtUp = reached ? std::nullopt : forwarding_.follower->caughtUpTo();
-        if (caughtUp && *caughtUp < answered.seq) seqUnreached_.report("cause=past_the_ledger");
-      }
+      const Reach reach = forwarding_.stopping() ? Reach::behind : forwarding_.follower->reach(answered.seq, forwarding_.wait);
+      if (reach == Reach::pastTheLedger) seqUnreached_.report("cause=past_the_ledger");
+      const bool reached = reach == Reach::reached;
       if (!reached) settleCurrentWriteAs("copy_behind");
       Standing standing = entitlements_->standingOf(claim.caller.id, claim.caller.email.value);
       standing.recordedClaim = !reached;

@@ -396,19 +396,19 @@ TEST(pg_subscription_follow_reach_returns_once_the_copy_holds_the_seq_and_gives_
   FeedFollower follower{feed, copy, {}, reports, FollowerTiming{.poll = 20s, .retry = 20s, .stallAfter = 60s}};
   follower.start();
 
-  CHECK(follower.reach(6, 5s));
+  CHECK(follower.reach(6, 5s) == Reach::reached);
 
   const auto beforeTimeout = std::chrono::steady_clock::now();
-  CHECK_FALSE(follower.reach(7, 300ms));
+  CHECK(follower.reach(7, 300ms) == Reach::behind);
   const auto waited = std::chrono::steady_clock::now() - beforeTimeout;
   CHECK(waited >= 300ms);
   CHECK(waited < 3s);
 
   // The claim's events land; asked, the follower reads them at once rather than at its next retry.
   feed.serve({"claimed_then_sandbox"});
-  CHECK(follower.reach(7, 5s));
+  CHECK(follower.reach(7, 5s) == Reach::reached);
   // The copy holds 13, but no read has begun since this call: the copy alone never answers that a seq is reached.
-  CHECK_FALSE(follower.reach(13, 0ms));
+  CHECK(follower.reach(13, 0ms) == Reach::behind);
   follower.stop();
   CHECK_EQ(copyAsText(), std::string(
       "cursor c09a3ab3-2732-4415-ba88-825ff868cf13/13\n"
@@ -489,6 +489,30 @@ TEST(pg_subscription_follow_side_consumers_take_the_page_after_its_own_consumers
       "c806aea4-76c0-4868-acbc-3aa7db2b8dd0 seq=13 production=- sandbox=1796742600000\n"));
 }
 
+// A seq past the newest event of a ledger the copy is caught up with is one the ledger does not hold. Only a read that
+// began after the ask says so: a copy caught up before it, and no read since, is only behind.
+TEST(pg_subscription_follow_reach_names_a_seq_past_the_ledger_only_from_a_read_that_began_after_it_asked) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
+  freshCopy();
+  FakeFeed feed;
+  Json::Value upToSix = contractExample("feed.json", "from_zero")["body"];
+  upToSix["latestSeq"] = Json::UInt64{6};
+  Json::Value caughtUp = contractExample("feed.json", "caught_up")["body"];
+  caughtUp["latestSeq"] = Json::UInt64{6};
+  feed.serve(0, upToSix);
+  feed.serve(6, caughtUp);
+  PgEntitlementCopy copy{pgTestPool()};
+  Reports reports;
+  FeedFollower follower{feed, copy, {}, reports, FollowerTiming{.poll = 20s, .retry = 20s, .stallAfter = 60s}};
+  follower.start();
+
+  CHECK(follower.reach(6, 5s) == Reach::reached);
+  CHECK(follower.reach(999, 300ms) == Reach::pastTheLedger);
+  feed.stopServing(6);
+  CHECK(follower.reach(999, 300ms) == Reach::behind);
+  follower.stop();
+}
+
 TEST(pg_subscription_follow_reach_counts_only_a_read_that_began_after_it_and_saw_the_ledgers_epoch) {
   if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7");
   freshCopy();
@@ -499,12 +523,12 @@ TEST(pg_subscription_follow_reach_counts_only_a_read_that_began_after_it_and_saw
   Reports reports;
   FeedFollower follower{feed, copy, {}, reports, FollowerTiming{.poll = 20s, .retry = 20s, .stallAfter = 60s}};
   follower.start();
-  CHECK(follower.reach(27, 5s));
+  CHECK(follower.reach(27, 5s) == Reach::reached);
 
   // The service is restored from a backup at 22 and cannot be read yet: the copy's 27 belongs to the old ledger, and a
   // claim's 23 is not reached by it.
   feed.stopServing(27);
-  CHECK_FALSE(follower.reach(23, 300ms));
+  CHECK(follower.reach(23, 300ms) == Reach::behind);
 
   // The service answers again, restored at 22 under a new epoch, holding a claim recorded at 23.
   Json::Value claim = restored("caught_up", 23);
@@ -517,7 +541,7 @@ TEST(pg_subscription_follow_reach_counts_only_a_read_that_began_after_it_and_saw
   feed.serve(18, restored("payment_trouble", 23));
   feed.serve(22, claim);
   feed.serve(27, restored("caught_up", 23));
-  CHECK(follower.reach(23, 5s));
+  CHECK(follower.reach(23, 5s) == Reach::reached);
   CHECK_EQ(copyAsText(), std::string(
       "cursor 2dd74022-4cb9-42f8-8746-0a186269b54e/23\n"
       "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 seq=23 production=1799056800000 sandbox=-\n"
