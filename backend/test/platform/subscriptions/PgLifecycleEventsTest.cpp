@@ -117,7 +117,8 @@ TEST(pg_subscription_lifecycle_the_fixture_ledger_records_each_lifecycle_event_o
 
   while (follower.follow() == FollowStep::applied) {}
 
-  // Nine of the ledger's 26 events are lifecycle events; the bound, period, updated, recovered and unbound ones are not.
+  // Ten of the ledger's 27 events are lifecycle events; the bound, period, updated, recovered and unbound ones are not.
+  // The refund that revokes the claimant's subscription also turns its renewal off, and the ledger records both.
   CHECK_EQ(recordedEvents(), std::string(
       "subscription_started 1796292000000 - "
       "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 {\"store\": \"app_store\", \"offer_kind\": \"none\", \"environment\": \"production\"}\n"
@@ -127,6 +128,8 @@ TEST(pg_subscription_lifecycle_the_fixture_ledger_records_each_lifecycle_event_o
       "c806aea4-76c0-4868-acbc-3aa7db2b8dd0 {\"store\": \"app_store\", \"offer_kind\": \"none\", \"environment\": \"sandbox\"}\n"
       "subscription_renewed 1796742300000 - "
       "c806aea4-76c0-4868-acbc-3aa7db2b8dd0 {\"store\": \"app_store\", \"offer_kind\": \"none\", \"environment\": \"sandbox\"}\n"
+      "subscription_renewal_turned_off 1797780600000 - "
+      "9387ec65-ab17-4b8c-b145-fd0d622966db {\"store\": \"app_store\", \"offer_kind\": \"none\", \"environment\": \"production\"}\n"
       "subscription_revoked 1797780600000 - "
       "9387ec65-ab17-4b8c-b145-fd0d622966db {\"store\": \"app_store\", \"offer_kind\": \"none\", \"environment\": \"production\"}\n"
       "subscription_renewed 1798966800000 - "
@@ -144,12 +147,13 @@ TEST(pg_subscription_lifecycle_the_fixture_ledger_records_each_lifecycle_event_o
       R"([{"device_id":"subscription-39091790c683cbb7c60819fca412780e","event_properties":{"environment":"production","offer_kind":"none","store":"app_store"},"event_type":"subscription_started","insert_id":"subscription-39091790c683cbb7c60819fca412780e:c232e42479e0a1a2a39f47246943c83b","time":1796472000000}])",
       R"([{"event_properties":{"environment":"sandbox","offer_kind":"none","store":"app_store"},"event_type":"subscription_started","insert_id":"6d76e73f40024fe6eadff23b76e16bae","time":1796742000000,"user_id":"c806aea4-76c0-4868-acbc-3aa7db2b8dd0"}])",
       R"([{"event_properties":{"environment":"sandbox","offer_kind":"none","store":"app_store"},"event_type":"subscription_renewed","insert_id":"e5b39f4ee3f9f9e9971b73a582b8df4c","time":1796742300000,"user_id":"c806aea4-76c0-4868-acbc-3aa7db2b8dd0"}])",
+      R"([{"event_properties":{"environment":"production","offer_kind":"none","store":"app_store"},"event_type":"subscription_renewal_turned_off","insert_id":"767994f166c075ce8cd8ada4d7488423","time":1797780600000,"user_id":"9387ec65-ab17-4b8c-b145-fd0d622966db"}])",
       R"([{"event_properties":{"environment":"production","offer_kind":"none","store":"app_store"},"event_type":"subscription_revoked","insert_id":"c5b3aeac3e3136bd5d0f0a09a5f7b568","time":1797780600000,"user_id":"9387ec65-ab17-4b8c-b145-fd0d622966db"}])",
       R"([{"event_properties":{"environment":"production","offer_kind":"none","store":"app_store"},"event_type":"subscription_renewed","insert_id":"43ce59fb286068f6dab570bf4feecc28","time":1798966800000,"user_id":"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"}])",
       R"([{"event_properties":{"environment":"production","offer_kind":"none","store":"app_store"},"event_type":"subscription_payment_failed","insert_id":"90bc45a9d76a91ec898b2e9b7ac7ed36","time":1801648800000,"user_id":"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"}])",
       R"([{"event_properties":{"environment":"production","offer_kind":"none","store":"app_store"},"event_type":"subscription_renewal_turned_off","insert_id":"6b093a3650ef70accda7819875633eb9","time":1804708800000,"user_id":"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"}])",
       R"([{"event_properties":{"environment":"production","offer_kind":"none","store":"app_store"},"event_type":"subscription_expired","insert_id":"b8f85d1339d30e9f91880df02046bb3e","time":1805724000000,"user_id":"3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"}])"}));
-  CHECK_EQ(lines.taken(), std::vector<std::string>(9, "ok/debug"));
+  CHECK_EQ(lines.taken(), std::vector<std::string>(10, "ok/debug"));
   CHECK(reports.lines.empty());
 
   // Each row carries the key it was recorded once under, and every name it records is one the intake refuses a client.
@@ -164,7 +168,8 @@ TEST(pg_subscription_lifecycle_the_fixture_ledger_records_each_lifecycle_event_o
     }
     CHECK_EQ(keys, std::string(
         "6927e7ab1d4daf287bbe9eaf1cb62da8 c232e42479e0a1a2a39f47246943c83b 6d76e73f40024fe6eadff23b76e16bae "
-        "e5b39f4ee3f9f9e9971b73a582b8df4c c5b3aeac3e3136bd5d0f0a09a5f7b568 43ce59fb286068f6dab570bf4feecc28 "
+        "e5b39f4ee3f9f9e9971b73a582b8df4c 767994f166c075ce8cd8ada4d7488423 c5b3aeac3e3136bd5d0f0a09a5f7b568 "
+        "43ce59fb286068f6dab570bf4feecc28 "
         "90bc45a9d76a91ec898b2e9b7ac7ed36 6b093a3650ef70accda7819875633eb9 b8f85d1339d30e9f91880df02046bb3e "));
   }
 }
@@ -235,32 +240,32 @@ TEST(pg_subscription_lifecycle_a_restored_ledger_rebuilds_the_copy_and_records_n
   FeedFollower follower{feed, copy, FurtherConsumers{.inPage = {lifecycle}}, reports};
   while (follower.follow() == FollowStep::applied) {}
   const std::string followed = recordedEvents();
-  REQUIRE_EQ(amplitude.sent.size(), std::size_t{9});
+  REQUIRE_EQ(amplitude.sent.size(), std::size_t{10});
 
-  // A backup taken at seq 21 is restored: the follower reads its ledger whole under the new epoch and rebuilds the copy.
+  // A backup taken at seq 22 is restored: the follower reads its ledger whole under the new epoch and rebuilds the copy.
   feed.serve({"ledger_restored"});
-  feed.serve(0, restored("from_zero", 21));
-  feed.serve(6, restored("claimed_then_sandbox", 21));
-  feed.serve(13, restored("refunded_then_renewed", 21));
-  feed.serve(17, restored("payment_trouble", 21));
+  feed.serve(0, restored("from_zero", 22));
+  feed.serve(6, restored("claimed_then_sandbox", 22));
+  feed.serve(13, restored("refunded_then_renewed", 22));
+  feed.serve(18, restored("payment_trouble", 22));
   CHECK_EQ(follower.follow(), FollowStep::rebuilt);
   CHECK_EQ(recordedEvents(), followed);
-  CHECK_EQ(amplitude.sent.size(), std::size_t{9});
+  CHECK_EQ(amplitude.sent.size(), std::size_t{10});
 
-  // The service hears the store again and the restored ledger grows past 21 with the same two events under other seqs:
+  // The service hears the store again and the restored ledger grows past 22 with the same two events under other seqs:
   // each is the event already recorded.
-  Json::Value regrown = restored("older_period_refunded", 23);
+  Json::Value regrown = restored("older_period_refunded", 24);
   Json::Value entries(Json::arrayValue);
   for (const Json::Value& entry : regrown["entries"])
     if (entry["type"] == "renewal_turned_off" || entry["type"] == "expired") entries.append(entry);
-  entries[0]["seq"] = 22;
-  entries[1]["seq"] = 23;
+  entries[0]["seq"] = 23;
+  entries[1]["seq"] = 24;
   regrown["entries"] = entries;
-  feed.serve(21, regrown);
+  feed.serve(22, regrown);
   CHECK_EQ(follower.follow(), FollowStep::applied);
-  CHECK_EQ(copy.cursor(), (FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 23}));
+  CHECK_EQ(copy.cursor(), (FeedCursor{"2dd74022-4cb9-42f8-8746-0a186269b54e", 24}));
   CHECK_EQ(recordedEvents(), followed);
-  CHECK_EQ(amplitude.sent.size(), std::size_t{9});
+  CHECK_EQ(amplitude.sent.size(), std::size_t{10});
 }
 
 TEST(pg_subscription_lifecycle_an_event_retention_or_erasure_took_is_not_recorded_again_by_a_rebuild) {
@@ -276,7 +281,7 @@ TEST(pg_subscription_lifecycle_an_event_retention_or_erasure_took_is_not_recorde
   Reports reports;
   FeedFollower follower{feed, copy, FurtherConsumers{.inPage = {lifecycle}}, reports};
   for (int read = 0; read < 3; ++read) CHECK_EQ(follower.follow(), FollowStep::applied);
-  REQUIRE_EQ(amplitude.sent.size(), std::size_t{6});
+  REQUIRE_EQ(amplitude.sent.size(), std::size_t{7});
 
   // Retention ages out the first start, and 9387ec65 is erased with its events, as the account's erasure does.
   {
@@ -298,11 +303,11 @@ TEST(pg_subscription_lifecycle_an_event_retention_or_erasure_took_is_not_recorde
       "subscription_renewed 1798966800000 - "
       "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 {\"store\": \"app_store\", \"offer_kind\": \"none\", \"environment\": \"production\"}\n"));
 
-  // The ledger is restored whole, to 26, under a new epoch: the rebuild records the three events the copy had not read,
+  // The ledger is restored whole, to 27, under a new epoch: the rebuild records the three events the copy had not read,
   // and none of those already recorded, whether their rows are still here or not.
   for (const char* name : {"from_zero", "claimed_then_sandbox", "refunded_then_renewed", "payment_trouble",
                            "older_period_refunded", "account_erased", "caught_up"})
-    feed.serve(contractExample("feed.json", name)["request"]["after"].asUInt64(), restored(name, 26));
+    feed.serve(contractExample("feed.json", name)["request"]["after"].asUInt64(), restored(name, 27));
   CHECK_EQ(follower.follow(), FollowStep::rebuilt);
   CHECK_EQ(recordedEvents(), kept + std::string(
       "subscription_payment_failed 1801648800000 - "
@@ -311,7 +316,7 @@ TEST(pg_subscription_lifecycle_an_event_retention_or_erasure_took_is_not_recorde
       "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 {\"store\": \"app_store\", \"offer_kind\": \"none\", \"environment\": \"production\"}\n"
       "subscription_expired 1805724000000 - "
       "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61 {\"store\": \"app_store\", \"offer_kind\": \"none\", \"environment\": \"production\"}\n"));
-  CHECK_EQ(amplitude.sent.size(), std::size_t{9});
+  CHECK_EQ(amplitude.sent.size(), std::size_t{10});
 }
 
 TEST(pg_subscription_lifecycle_records_only_the_allowlist_and_unknown_words_as_unknown) {
