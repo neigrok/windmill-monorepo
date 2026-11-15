@@ -138,8 +138,8 @@ class CoachAccessTests {
             Board(CoachTurnRefusal.of("subject_exhausted", 429, spent = true), false, "You have used all of your AI allowance.", null),
             Board(CoachTurnRefusal.of("subject_exhausted", 429), true, "Coach’s AI allowance is unavailable right now.\nSign in to continue.", CoachRecovery.signIn),
             Board(CoachTurnRefusal.of("subject_exhausted", 429), false, "Coach’s AI allowance is unavailable right now.", null),
-            Board(CoachTurnRefusal.of("concurrency_exhausted", 503), true, "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", null),
-            Board(CoachTurnRefusal.of("concurrency_exhausted", 503), false, "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", null),
+            Board(CoachTurnRefusal.of("concurrency_exhausted", 429), true, "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", null),
+            Board(CoachTurnRefusal.of("concurrency_exhausted", 429), false, "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", null),
             Board(CoachTurnRefusal.of("funding_required", 503), false, "Coach didn’t answer. Try again in a moment", null),
         )) {
             assertEquals(board.words, board.refusal.said(board.anonymous, clock24 = false, zone = utc).spelled())
