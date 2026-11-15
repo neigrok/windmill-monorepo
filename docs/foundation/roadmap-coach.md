@@ -311,7 +311,8 @@ minted ids has no part here (§6).
 
 **Tabs and the record.**
 
-- The mark is the device row `runningTurn:<turnId>`.
+- The mark is the device row `runningTurn:<turnId>`, which holds the round in flight as the engine's
+  mark does.
 - A running turn's text is written to its message at most once a second, so another tab or device
   sees the answer grow.
 - Asking needs a connection; when there is none the question stays in the field. Reading History,
@@ -326,8 +327,9 @@ an installation as `medium`, with the effort gym's Coach asks for and the label
 `CONTEXT_BYTES` 64 KiB. A call asks for at most 2,000 output tokens and at least 1,024. A message, a
 question and a picture keep gym's bounds.
 
-**The prompt** is a file of the web bundle, written with the owner. A person can read it there; it
-holds no secret.
+**The words.** The prompt is a file of the web bundle, written with the owner, and so are the
+words of the first content and the sentence the model reads beside each refusal code. A person can
+read them there; they hold no secret.
 
 ## §9 Records and History
 

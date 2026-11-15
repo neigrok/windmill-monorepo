@@ -60,8 +60,8 @@ the pass door and no turn; its move is designed apart (AI service I-5).
   ([AI service §4](ai-service.md#4-the-pass)).
 - **D-5 AI client.** The code that fetches a pass and makes a call (§4). It knows no turn.
 - **D-6 Mark.** A row the device keeps for itself, which does not sync. It names the turn the
-  device is running, the `callId` of the round in flight, and how much of the Coach message's text
-  had arrived before that round began.
+  device is running, the `callId` of the round in flight, and how many bytes of the Coach message's
+  text, as UTF-8, had arrived before that round began.
 
 ## §3 Where things live
 
@@ -124,11 +124,12 @@ The body is `{"client": "ios" | "android" | "web", "use": "<profile name>", "ver
   `packages/api-contract/ai/passes/vectors.json`.
 - The answer carries `Cache-Control: no-store`. The pass is written to no log line, report or event.
 
-Refusals, each `{code}`. The codes the installation routes already answer keep their meaning:
+Refusals, each in the body the backend's other doors answer, `{error, code}`. The codes the
+installation routes already answer keep their meaning:
 
 | Status | `code` | Meaning |
 |---|---|---|
-| 400 | `invalid_request` | The body is not the one above, or the network address cannot be read |
+| 400 | `invalid_request` | The body is not the one above, the `use` is not one the backend knows, or the network address cannot be read |
 | 401 | `unauthenticated` | No session and no installation credential, or a session that has ended |
 | 401 | `invalid_installation` | The installation credential is not one the backend issued |
 | 409 | `device_bound` | The installation alone asked, and it is bound to an account: sign in |
@@ -163,15 +164,20 @@ the first account pass that names the installation
     call it admitted from its first event, and admits one it never saw;
   - after one arrived, by `GET /v1/calls/{callId}/result?after=<id>` with the last event's `id`.
 
-  The client asks again after 1, 2, 4 and 8 s and then every 8 s, for `ASK_AGAIN_FOR`, which is as
-  long as the service keeps an answer. An asking-again answered `rate_limited` waits and asks once
-  more. One answered `result_gone` means the call was made and its answer is lost; one answered
-  `call_unknown` means the service admitted nothing.
-- **A refusal that passes.** A call refused before admission as `busy`, `paused`, `rate_limited`,
-  `concurrency_exhausted`, `accounting_unavailable` or `provider_unavailable` left nothing behind,
-  and its `callId` may be used again. The client sends it again after 1, 2, 4 and 8 s and then every
-  8 s, for `REFUSAL_RETRY`, and then gives the refusal to the engine. Every other refusal is given
-  at once.
+  The client asks again after 1, 2, 4 and 8 s and then every 8 s, until `ASK_AGAIN_FOR` has passed
+  since the round's first `PUT`: the longest a call can run and the service then keep its answer.
+  An asking-again answered `rate_limited`, `busy` or `accounting_unavailable` waits and asks once
+  more. One answered `result_gone` means the call was made and its answer is lost, and ends the
+  asking. One answered `call_unknown` is a defect: the pass names another principal than the one
+  that made the call.
+- **A refusal that passes.** A call refused as `busy`, `paused`, `rate_limited`,
+  `concurrency_exhausted`, `accounting_unavailable` or `provider_unavailable` is sent again under
+  the same `callId`, after 1, 2, 4 and 8 s and then every 8 s, for `REFUSAL_RETRY`; the client then
+  gives the refusal to the engine. Sending again is safe whatever became of the first: the service
+  answers a call it admitted and admits one it did not. Every other refusal is given at once.
+- **What a refusal proves.** `busy` and `accounting_unavailable` can be answered for a call the
+  service did admit. Every other refusal of a `PUT` whose earlier attempts all had an answer proves
+  that nothing was admitted.
 - **The allowance.** `GET /v1/allowance` answers what the seat has left. An `ended`, a `failed` and
   a refusal carry it too, or null where the service could not read it.
 - The client never makes a call under a second `callId` for the same round (INV-2).
@@ -191,7 +197,8 @@ profile. The engine runs it in this order.
    profile gives them.
 3. **A round**, for each of `1..MAX_MODEL_CALLS`:
    1. If Stop was asked, end the turn `stopped`.
-   2. Mint the round's `callId` and write it to the mark, with the length of the text so far.
+   2. Mint the round's `callId`. In one local write, write the text so far to the Coach message
+      and the `callId` and that text's length to the mark.
    3. Call the text door with the working conversation, the profile's model class, effort, output
       cap and floor, and `cache: true`.
    4. Hand each `text` delta to the tool host as it arrives. The host writes the text so far to the
@@ -213,10 +220,10 @@ profile. The engine runs it in this order.
    mark. Every end keeps the text that arrived and every write an ability made.
 
 **A turn that never began.** A turn is withdrawn, its records removed and its question and picture
-returned to the field, only when the service admitted nothing for round 1 and the engine knows it:
-the pass door refused, the text door refused round 1 before admission, or the service answered
-`call_unknown`. A turn whose round 1 may have been admitted is never withdrawn. When the engine
-cannot learn which it was, the turn ends `interrupted` with its question on the record.
+returned to the field, only when the engine knows the service admitted nothing for round 1: the
+pass door refused before any call was sent, or the text door's refusal proves it (§4.2). A turn
+whose round 1 may have been admitted is never withdrawn: it ends `failed` with the code the engine
+was given, or `interrupted` when it was given none, with its question on the record.
 
 **Stop.** Stop takes effect before the next round or the next ability call. The round in flight is
 read to its end and paid for, as the service reads every call to its end
@@ -226,14 +233,18 @@ pressed while the engine is asking again ends the turn `stopped` with the text t
 
 **The process ends.** A reload, a closed tab, a killed app or a crash loses the working
 conversation (P-5). When the engine next starts and its mark names a Coach message that is still
-`running`, it asks for the marked round once more (§4.2):
+`running`, it reads the marked round's answer with `GET /v1/calls/{callId}/result`. It never sends
+the round's `PUT` again: it no longer holds the request.
 
-- an answer that ends `completed`, `truncated` or `declined` ends the turn so, its text placed
-  after the text the mark says came before that round;
-- an answer that ends `tool_calls`, an answer the service no longer holds, and a call it never saw
-  end the turn `interrupted`, with the text that had arrived.
+- An answer that ends `completed`, `truncated` or `declined` ends the turn so, its text placed
+  after the bytes the mark says came before that round.
+- An answer that is `failed` ends the turn `failed` with its code.
+- Everything else ends the turn `interrupted`, with the text that had arrived: an answer that ends
+  `tool_calls`, an answer the service no longer holds, a pass or a read refused, and no answer
+  within `ASK_AGAIN_FOR`.
 
-A turn is not otherwise resumed, and a round in flight when the process ended is paid for. (R-4)
+A recovered turn is never withdrawn, and a turn is not otherwise resumed. A round in flight when
+the process ended is paid for. (R-4)
 
 **The device sleeps.** A process that stayed alive while its connection dropped asks for the round
 again. A phone holds the platform's lease for work in progress while a turn runs, as
@@ -246,17 +257,19 @@ sign-out sends what the device still holds, so the account's record carries it.
 **A record gone.** A Coach message removed under its running turn, as when the conversation is
 deleted on another device, ends the turn. Nothing is written, and nothing is reported as a failure.
 
-**One writer.** Only the engine instance that opened a turn writes its Coach message's text and
-end. On the web another tab shows the turn as answering elsewhere, and a tab that finds a mark whose
-lock is free treats it as a process that ended. Another device shows a `running` turn as answering
-on another device.
+**One writer.** Only the device that opened a turn writes its Coach message's text and end, and on
+the web only the tab that holds the turn's lock. Another tab shows the turn as answering elsewhere.
+A tab recovers a marked turn only after it has taken that turn's lock, asking for it without
+waiting, so two tabs never recover one turn. Another device shows a `running` turn as answering on
+another device.
 
 **A turn nobody ends.** A device that never returns leaves its turn `running`. Every device of the
 same person, whenever it has synced, MUST end a `running` Coach message that no write has reached
 for `TURN_STALE`, by writing `interrupted` and nothing else. The age is measured on the server's
-clock: from the time the server admitted the message's last write to the time of the device's last
-pull. No device's own clock enters it. A turn that is being answered writes its text every few
-seconds, so it is never stale. (R-5)
+clock: from the server's time of the message's last change, which every sync client holds for a
+record, to the device's clock corrected by the offset its sync connection measures. A device whose
+sync connection is not live ends nothing, and a device's uncorrected clock never enters it. A turn
+that is being answered writes its text every few seconds, so it is never stale. (R-5)
 
 A writer that finds `interrupted` on the message of the turn it is still running goes on. Its
 abilities run, and its own end, written later, stands over `interrupted` as the record's ranked
@@ -305,14 +318,16 @@ for each are the product's.
 | Switched off | the pass door's `anonymous_ai_unavailable`; a 404 from the pass door, which means this server has no AI |
 | Offline | no connection |
 | Did not answer | `provider_unavailable`, `provider_failed`, `accounting_unavailable`, `result_gone` |
-| A defect | `invalid_request`, `too_large`, `provider_rejected`, `funding_required`, `conflict`, `call_unknown` for a round after the first, every `pass_` code but one `pass_expired`: shown as did not answer, and reported |
+| A defect | `invalid_request`, `too_large`, `provider_rejected`, `funding_required`, `conflict`, `call_unknown`, every `pass_` code but one `pass_expired`: shown as did not answer, and reported |
 
 - The engine reads `GET /v1/allowance` when Coach opens, and its `code` says before a question is
   sent whether one could be asked.
 - A principal has a small number of calls in flight
   ([AI service §3](ai-service.md#3-tiers)), so a person answering on one device can be refused as
-  busy on another. A turn never meets its own limit: a round's answer ends only after the call is
-  settled.
+  busy on another. A turn does not meet its own limit, since a round's answer ends only after the
+  call is settled. The one exception is a settlement the service is still retrying, whose answer
+  says `charged` null: the next round can then be refused `concurrency_exhausted`, which passes
+  (§4.2).
 - No screen states an amount of money. A day an allowance returns is the `budgetResetsAt` of the
   allowance.
 
@@ -326,8 +341,8 @@ The engine requires of a product's records, and no more:
   ranks it ([sync engine](engine.md) Appendix A);
 - a mark (D-6);
 - the writer's replica on the Coach message, so another device knows the turn is not its own;
-- the server's time of each record's last write, and of the device's last pull, as the sync engine
-  gives them.
+- the server's time of the Coach message's last change, and the offset between the device's clock
+  and the server's, as the sync engine's clients hold them.
 
 - **INV-4.** Nothing of the working conversation is written to a record or a device row: not an
   assistant message's `carry`, not an ability's full result, not the system prompt. A `callId` is
@@ -374,7 +389,7 @@ order, the mark at each step, and the end.
 |---|---|---|
 | `PASS_LIFETIME` | 10 min, the service's `PASS_MAX_LIFETIME` | the pass door's |
 | `PASS_REFRESH` | 60 s | the AI client's |
-| `ASK_AGAIN_FOR` | 10 min, the service's `RESULT_LINGER` | the AI client's |
+| `ASK_AGAIN_FOR` | 20 min, the service's `CALL_TIMEOUT` and `RESULT_LINGER` together | the AI client's |
 | `REFUSAL_RETRY` | 30 s | the AI client's |
 | `TURN_STALE` | 30 min | the engine's |
 | `MAX_MODEL_CALLS`, `MAX_ABILITY_CALLS`, `MAX_WRITES` | set by the profile | the profile's |
