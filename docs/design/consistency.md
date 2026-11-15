@@ -157,7 +157,7 @@ for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colo
 [`ios/ios-redesign.md`](ios/ios-redesign.md) §2.
 
 - **6u · USD allowance drawings.** Canonical Coach onboarding (`1081:565`) uses the $0.05 lifetime
-  installation allowance and current free/funded policy. Account · Usage · Proposal and
+  installation allowance; the policy is $0.25 (`AI_ANONYMOUS_LIFETIME_USD`). Account · Usage · Proposal and
   Roadmap · AI requests · Proposal still need the current policy, which `backend/AI_ALLOWANCES.md`
   states in USD. Replace remaining drawing question/credit
   figures with server-backed USD and period labels. Customer usage drawings must show
