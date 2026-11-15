@@ -187,16 +187,21 @@ def text_request(value):
         require(isinstance(tool['description'], str), 'invalid tool description')
         require(isinstance(tool['input'], dict) and tool['input'].get('type') == 'object', 'invalid tool schema')
     pending = set()
+    images = 0
     for message in value['messages']:
         role = message.get('role')
         if role == 'user':
             fields(message, 'role parts')
             require(not pending, 'missing tool answers')
             parts(message['parts'])
+            require(all('toolCall' not in part for part in message['parts']), 'user cannot call tools')
+            images += sum('image' in part for part in message['parts'])
+            require(images <= 8, 'too many images')
         elif role == 'assistant':
             fields(message, 'role parts carry')
             require(not pending and isinstance(message['carry'], str), 'invalid assistant continuation')
             parts(message['parts'])
+            require(all('image' not in part for part in message['parts']), 'assistant cannot send images')
             pending = {part['toolCall']['id'] for part in message['parts'] if 'toolCall' in part}
         elif role == 'tool':
             fields(message, 'role results')
@@ -357,6 +362,8 @@ def check(fixture):
 
 def negative_probes(fixture):
     probes = [
+        ('too many pictures', lambda f: f['textPictureRequest']['messages'][0].update(parts=[{'image': {'picture': 'pictureabcdefghijklmn0'}}] * 9)),
+        ('assistant picture', lambda f: f['textPictureRequest']['messages'][1]['parts'].append({'image': {'picture': 'pictureabcdefghijklmn0'}})),
         ('mixed picture reference', lambda f: f['textPictureRequest']['messages'][0]['parts'][1]['image'].update(data='AA==')),
         ('invalid picture ID', lambda f: f['textPictureRequest']['messages'][0]['parts'][1]['image'].update(picture='short')),
         ('unknown picture field', lambda f: f['pictureUploads'][0].update(url='https://invalid.example')),

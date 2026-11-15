@@ -53,6 +53,8 @@ target_compile_definitions(utf8proc PUBLIC UTF8PROC_STATIC)
 # --- platform + roadmap domain and application. The adapters (the messy vendor edges) are
 # folded into these same libraries below.
 add_library(windmill_platform
+  platform/ai_passes/AiPasses.cpp
+  platform/ai_passes/AiPassApi.cpp
   platform/ai_installations/AiInstallations.cpp
   platform/ai_installations/PgAiInstallations.cpp
   platform/ai_installations/AiInstallationApi.cpp
@@ -642,6 +644,8 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/http/AppleLinkingApiTest.cpp
   test/platform/adapters/http/OAuthApiTest.cpp
   test/platform/adapters/http/McpKeyApiTest.cpp
+  test/platform/ai_passes/AiPassesTest.cpp
+  test/platform/ai_passes/AiPassApiTest.cpp
   test/platform/ai_installations/AiInstallationApiTest.cpp
   test/platform/ai_installations/PgAiInstallationsTest.cpp
   test/platform/subscriptions/FeedFollowerTest.cpp
@@ -746,7 +750,7 @@ add_executable(windmill_adapters_tests
   test/products/gym/adapters/postgres/PgBodyweightRepositoryTest.cpp)
 target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_product_sync)
 # The gym door harness re-plants the catalog seed exactly as the schema writes it.
-target_compile_definitions(windmill_adapters_tests PRIVATE WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql"
+target_compile_definitions(windmill_adapters_tests PRIVATE WM_API_CONTRACT_DIR="${WM_API_CONTRACT_DIR}" WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql"
   WM_GYM_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/gym/domain"
   WM_SUBSCRIPTIONS_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/subscriptions")
 add_test(NAME adapters COMMAND windmill_adapters_tests)

@@ -64,6 +64,7 @@ std::string writeCompletionJson(const WriteCompletion& completion) {
   fields["request_id"] = completion.requestId;
   if (completion.refused) fields["refused"] = static_cast<Json::UInt64>(completion.refused);
   if (!completion.code.empty()) fields["code"] = completion.code;
+  for (const auto& [key, value] : completion.metadata) fields[key] = value;
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";
   builder["precisionType"] = "decimal";
@@ -167,6 +168,18 @@ void WriteObservation::ownInfo() {
   if (transport != 0) state_->infoOwner.compare_exchange_strong(transport, serial_);
 }
 
+void WriteObservation::metadata(const std::map<std::string, std::string>& values) {
+  for (const auto& [key, value] : values) {
+    if (key != "client" && key != "use" && key != "version" && key != "principal" && key != "plan") continue;
+    if (value.empty() || value.size() > 64 || value.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-.") != std::string::npos) continue;
+    if (key == "client" && value != "web" && value != "ios" && value != "android" && value != "server") continue;
+    if (key == "principal" && value != "account" && value != "installation") continue;
+    if (key == "plan" && value != "none" && value != "one") continue;
+    if (key == "version" && (value.size() > 10 || value.find_first_not_of("0123456789") != std::string::npos)) continue;
+    completion_.metadata[key] = value;
+  }
+}
+
 void WriteObservation::skip() {
   if (failed_) {
     finish("failed");
@@ -212,7 +225,7 @@ void WriteObservation::failure(const std::string& exceptionType) {
     }
     FailureReporter* target = reporter_ ? reporter_ : reporter.get();
     try {
-      if (target) target->reportWrite(completion_.operation, completion_.product, completion_.door,
+      if (target) target->reportWrite(failureOperation_.empty() ? completion_.operation : failureOperation_, completion_.product, completion_.door,
                                      failedOutcome_, completion_.requestId, exceptionType);
     } catch (...) {}
   }

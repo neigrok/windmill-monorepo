@@ -245,7 +245,9 @@ impl Anthropic {
                                     "source": {"type":"base64", "media_type":image.media_type, "data":image.data},
                                 }));
                             }
-                            Part::ToolCall { .. } => return Err(ValidationError::InvalidRequest),
+                            Part::ToolCall { .. } | Part::Picture { .. } => {
+                                return Err(ValidationError::InvalidRequest);
+                            }
                         }
                     }
                     ("user", content)
@@ -267,7 +269,7 @@ impl Anthropic {
                                         "type":"tool_use", "id":tool_call.id,
                                         "name":tool_call.name, "input":tool_call.input,
                                     })),
-                                    Part::Image { .. } => {
+                                    Part::Image { .. } | Part::Picture { .. } => {
                                         return Err(ValidationError::InvalidRequest);
                                     }
                                 }

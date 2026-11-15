@@ -7,6 +7,7 @@
 #include "platform/application/AiBudgetAlerts.h"
 #include "platform/application/AiBudgetHoldSweep.h"
 #include "platform/ai_installations/AiInstallationApi.h"
+#include "platform/ai_passes/AiPassApi.h"
 #include "platform/ai_installations/PgAiInstallations.h"
 #include "products/gym/onboarding/PgOnboardingRepository.h"
 #include "products/gym/onboarding/OnboardingService.h"
@@ -605,6 +606,24 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.onStop([aiInstallationWorkers] { aiInstallationWorkers->stopAndJoin(); }, aiInstallationApi, authService,
                   aiInstallations, entitlements, sentry);
 
+  std::shared_ptr<AiPassApi> aiPassApi;
+  std::shared_ptr<WorkerPool> aiPassWorkers;
+  if (const char* seed = std::getenv("AI_PASS_PRIVATE_SEED"); seed && *seed) {
+    const auto configured = [](const char* key, const char* fallback) {
+      const char* value = std::getenv(key);
+      return std::string(value && *value ? value : fallback);
+    };
+    const std::string environment = configured("AI_PASS_ENVIRONMENT", secureCookies ? "production" : "development");
+    if (secureCookies && environment != "production") throw std::runtime_error("HTTPS AI passes require production environment");
+    auto passes = std::make_shared<AiPasses>(seed, configured("AI_PASS_KID", ""), environment,
+                                           configured("AI_PASS_MIN_VERSIONS", ""));
+    aiPassApi = std::make_shared<AiPassApi>(passes, authService, aiInstallations, entitlements,
+        std::make_shared<RateLimiter>(30.0 / 60.0, 30.0), *systemClock, allowedOrigins, installationProxy);
+    aiPassWorkers = std::make_shared<WorkerPool>("ai-pass-http", 2, 16);
+    lifetime.onStop([aiPassWorkers] { aiPassWorkers->stopAndJoin(); }, aiPassApi, authService, aiInstallations,
+                    entitlements, systemClock, sentry);
+  }
+
   lifetime.onStop([] {}, aiCallBudget, aiBudgets, aiBudgetRepo, entitlements, authRepo, sentry);
 
   auto productsCatalog = sync::productCatalog();
@@ -906,7 +925,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     resp->setStatusCode(drogon::k204NoContent);
     writeCors(req, resp);
     resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, PATCH, POST, DELETE, OPTIONS");
-    resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization, sync-schema");
+    resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization, sync-schema, x-windmill-installation");
     resp->addHeader("Access-Control-Max-Age", "600");
     return resp;
   });
@@ -967,6 +986,10 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         writeCors(req, resp);
       });
 
+  app.registerPreSendingAdvice([](const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response) {
+    if (httpOperation(request) == "ai.pass.sign") response->addHeader("Cache-Control", "no-store");
+  });
+
   // Token auth, not cookies, so no Allow-Credentials.
   app.registerPostHandlingAdvice(
       [mcpOrigins, mcpPath](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
@@ -1009,6 +1032,18 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         billingApi->startCheckout(req, std::move(cb));
       },
       {drogon::Post});
+  if (aiPassApi) {
+    routes.registerWriteHandler("ai.pass.sign", "/v1/ai/passes",
+        [aiPassApi, aiPassWorkers](const drogon::HttpRequestPtr& request, HttpCallback&& reply) {
+          auto callback = std::make_shared<HttpCallback>(std::move(reply));
+          if (aiPassWorkers->post([aiPassApi, request, callback] {
+            observeHttpWork(request, [&] { aiPassApi->sign(request, std::move(*callback)); });
+          })) return;
+          const auto response = error(drogon::k503ServiceUnavailable, "AI access is busy.", "unavailable");
+          response->addHeader("Cache-Control", "no-store");
+          (*callback)(response);
+        }, {drogon::Post});
+  }
   const auto installationHandler = [aiInstallationApi, aiInstallationWorkers](auto action) {
     return [aiInstallationApi, aiInstallationWorkers, action](const drogon::HttpRequestPtr& request, HttpCallback&& reply) {
       auto callback = std::make_shared<HttpCallback>(std::move(reply));

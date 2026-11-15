@@ -11,7 +11,7 @@ telemetry, access, the HTTP host, the AI usage meter (`domain/AiUsage`, `domain/
 `ports/AiBudgetRepository`). The durable mode owns free daily/monthly pools, lifetime devices,
 funded subscription/owner periods, permanent device binding, concurrency and threshold alerts.
 `platform/ai_installations/` holds server-issued anonymous Coach credentials and network admission.
-Every hosted AI call, including background work, debits its individual allowance in that mode;
+`platform/ai_passes/` holds the optional Ed25519 issuer and `POST /v1/ai/passes`; it reads identity and entitlement facts without funding a grant. Every hosted AI call, including background work, debits its individual allowance in that mode;
 [AI_ALLOWANCES.md](AI_ALLOWANCES.md) defines its rollout switch and unsupported edges.
 `platform/subscriptions/` follows the Windmill One subscription service's feed into `account_entitlements`, the
 backend's own copy of every account's entitlement ([subscriptions.md](../docs/foundation/subscriptions.md) §6.1): the
