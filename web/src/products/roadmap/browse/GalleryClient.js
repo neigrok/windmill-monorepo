@@ -15,8 +15,14 @@ export async function fetchGallery({ cursor = '' } = {}) {
     throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
   }
   if (!response.ok) throw new AuthError('Could not read the gallery', { status: response.status });
+  let text;
   try {
-    const body = await response.json();
+    text = await response.text();
+  } catch {
+    throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });
+  }
+  try {
+    const body = JSON.parse(text);
     return {
       count: body.count ?? 0,
       entries: (body.entries ?? []).map(entryOf),
