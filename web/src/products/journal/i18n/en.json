@@ -141,7 +141,7 @@
   "journal.talk.refused.allowanceUnavailable": "Talk’s AI allowance is unavailable right now.",
   "journal.talk.refused.anotherRequest": "Your earlier AI requests hold every slot you have.",
   "journal.talk.refused.busy": "Talk is busy right now.",
-  "journal.talk.refused.held": "The rest of your AI allowance is held by a request still in progress.",
+  "journal.talk.refused.held": "The rest of your AI allowance is held by an earlier request whose cost is not yet confirmed.",
   "journal.talk.refused.notAvailable": "Talk is not available right now.",
   "journal.talk.refused.signedOut": "You’re signed out.",
   "journal.talk.refused.spent": "You have used all of your AI allowance.",
