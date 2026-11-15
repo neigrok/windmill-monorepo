@@ -26,8 +26,11 @@ and the spec's rules. Subscriptions CI (`.github/workflows/subscriptions.yml`) r
 - Every key is always present: an absent value is `null`, an empty list `[]`.
 - Instants are epoch milliseconds; amounts are decimal strings with an ISO 4217 currency, written
   with that currency's minor units: `12.00` USD, `1800` JPY, `3.990` KWD.
-- Ids and the feed's `epoch` are UUIDs. No fixture holds a store transaction id, a signed payload, an
-  account hint or an email.
+- Ids and the feed's `epoch` are UUIDs in their canonical spelling: lowercase hex, hyphenated, as
+  `3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61`. A door that takes an id in its path takes only that
+  spelling: `GET /internal/v1/accounts/{accountId}` answers 400 `{"code":"invalid_account_id"}` to an
+  upper-case, braced, unhyphenated or `urn:uuid:` one. No fixture holds a store transaction id, a
+  signed payload, an account hint or an email.
 - The `entitlement.json` examples are entitlements the feed carries (`active` is the one at `seq` 3,
   `revoked` at 16, `sandbox_active` at 13, `grace` at 19, `on_hold` at 20, `cancelled_access_continues`
   at 25, `expired` at 26, `never_subscribed` at 27), plus three no page reaches:

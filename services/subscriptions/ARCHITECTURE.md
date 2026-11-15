@@ -649,7 +649,7 @@ lengths alone. `/health` asks for none, for the image's `HEALTHCHECK`.
 | Route | Answer |
 |---|---|
 | `GET /internal/v1/feed?after=<seq>&limit=<n>` | 200, `Ledger::feed(after, limit)` as `feed.json` shows a page. Both are required, `after` from 0 and `limit` from 1 to 500; any other query is 400 `{"code":"invalid_query"}` |
-| `GET /internal/v1/accounts/{accountId}` | 200, `Ledger::account` as `account.json` shows it: `{entitlement, subscriptions}`, the entitlement, and each subscription bound to the account with the entitlement's fields of it, then `environment`, `boundAt`, `boundBy`, `periods` as the feed carries a period, and `events`, each `{seq, type, occurredAt, recordedAt, accountId, period}`. An id that is no UUID is 400 `{"code":"invalid_account_id"}`; an account the ledger holds nothing of answers its empty entitlement and `[]` |
+| `GET /internal/v1/accounts/{accountId}` | 200, `Ledger::account` as `account.json` shows it: `{entitlement, subscriptions}`, the entitlement, and each subscription bound to the account with the entitlement's fields of it, then `environment`, `boundAt`, `boundBy`, `periods` as the feed carries a period, and `events`, each `{seq, type, occurredAt, recordedAt, accountId, period}`. An id that is not a UUID in its canonical spelling, lowercase and hyphenated, is 400 `{"code":"invalid_account_id"}`; an account the ledger holds nothing of answers its empty entitlement and `[]` |
 
 A read the ledger does not answer is 503 `{"code":"unavailable"}` and an Issue under `feed.read` or
 `account.read` ([Logs and Sentry](#logs-and-sentry)); the backend's follower reads again. The wire shapes

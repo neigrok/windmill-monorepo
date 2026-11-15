@@ -208,7 +208,7 @@ async fn the_secret_opens_both_doors_and_each_reads_what_it_was_asked() {
     .await;
     let account = answer(
         internal,
-        Request::get("/internal/v1/accounts/3F6C2A1E-9B7D-4E2A-8C51-0D4F7B2E9A61")
+        Request::get("/internal/v1/accounts/3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61")
             .header("authorization", "bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")
             .body(Body::empty())
             .unwrap(),
@@ -293,6 +293,10 @@ async fn a_query_or_an_account_id_outside_its_bounds_is_refused_before_the_ledge
     for path in [
         "/internal/v1/accounts/acct_3f6c2a1e",
         "/internal/v1/accounts/%FF3f6c2a1e",
+        "/internal/v1/accounts/3F6C2A1E-9B7D-4E2A-8C51-0D4F7B2E9A61",
+        "/internal/v1/accounts/%7B3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61%7D",
+        "/internal/v1/accounts/3f6c2a1e9b7d4e2a8c510d4f7b2e9a61",
+        "/internal/v1/accounts/urn:uuid:3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
     ] {
         let (status, _, body) = answer(
             internal.clone(),
@@ -341,7 +345,7 @@ async fn a_query_or_an_account_id_outside_its_bounds_is_refused_before_the_ledge
         StatusCode::BAD_REQUEST,
         json!({ "code": "invalid_account_id" }),
     );
-    assert_eq!(refusals, [invalid_account.clone(), invalid_account]);
+    assert_eq!(refusals, vec![invalid_account; 6]);
     assert_eq!(
         *ledger.reads.lock().unwrap(),
         ["feed after 0 limit 1", "feed after 0 limit 500"]

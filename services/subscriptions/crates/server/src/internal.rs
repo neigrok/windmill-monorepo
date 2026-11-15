@@ -164,16 +164,17 @@ async fn feed<R: Reads>(
     Json(FeedPageResponse::from(&page)).into_response()
 }
 
-// `GET /internal/v1/accounts/{accountId}`. The account id is a hint a store carries, so no line or refusal names it
-// (§10).
+// `GET /internal/v1/accounts/{accountId}`, the id in its canonical spelling, lowercase and hyphenated, as the contract
+// writes every id. The account id is a hint a store carries, so no line or refusal names it (§10).
 async fn account<R: Reads>(
     State(reads): State<R>,
     account_id: Result<Path<String>, PathRejection>,
 ) -> Response {
-    let Some(account_id) = account_id
-        .ok()
-        .and_then(|Path(account_id)| Uuid::parse_str(&account_id).ok())
-    else {
+    let Some(account_id) = account_id.ok().and_then(|Path(account_id)| {
+        Uuid::try_parse(&account_id)
+            .ok()
+            .filter(|parsed| parsed.hyphenated().to_string() == account_id)
+    }) else {
         return refused(StatusCode::BAD_REQUEST, "invalid_account_id");
     };
     let record = match reads.account(account_id).await {
