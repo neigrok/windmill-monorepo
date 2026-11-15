@@ -1,7 +1,9 @@
 # Windmill backend, one VPS. Postgres holds the data, a one-shot applies the schema, another
-# provisions the subscription service's database, the two service binaries run from the same
-# published image, and Caddy terminates TLS and reverse-proxies both. Only Caddy is exposed to the
-# internet; everything else talks over the private compose network by service name.
+# provisions the subscription service's database, the server, its embedder and the subscription
+# service run from the images Backend CI publishes for one commit, and Caddy terminates TLS and
+# reverse-proxies the server and the subscription service's public port. Only Caddy is exposed to the
+# internet; everything else talks over the private compose network by service name, but for the
+# subscription service's internal doors, which the server alone reaches on internal-doors.
 #
 # Values come from ./.env (rendered by the deploy workflow from GitHub secrets/vars).
 
@@ -38,9 +40,10 @@ services:
   # (services/subscriptions/ARCHITECTURE.md): created, given SUBSCRIPTIONS_DB_PASSWORD and closed to the
   # backend's role by pg_hba.conf rules, on every `up` (subscriptions-db/provision.sh). It rewrites
   # pg_hba.conf, so it mounts the cluster's volume and runs as the cluster's OS user; it never starts a
-  # Postgres of its own, and never leaves in force a pg_hba.conf that turns the backend away. Nothing here
-  # depends on it, so it never holds up the backend; deploy-production.sh reports its outcome. Unset or
-  # empty SUBSCRIPTIONS_DB_PASSWORD → it logs SKIP, exits 0 and changes nothing.
+  # Postgres of its own, and never leaves in force a pg_hba.conf that turns the backend away. Only the
+  # subscription service waits on it, so it never holds up the backend; deploy-production.sh reports its
+  # outcome. Unset or empty SUBSCRIPTIONS_DB_PASSWORD → it logs SKIP, exits 0 and changes nothing; the
+  # deploy refuses to render it empty.
   subscriptions-db:
     image: postgres:16
     restart: "no"
@@ -118,6 +121,12 @@ services:
       # never to see the surfaces it ships) and the journal's 20-page corpus floor is waived for
       # them. Empty → nobody is an owner and every gate behaves exactly as it did before.
       WINDMILL_OWNER_EMAILS: ${WINDMILL_OWNER_EMAILS:-}
+      # Windmill One (docs/foundation/subscriptions.md §5.3, §6.2). The accounts whose sandbox purchases count, the
+      # team's testers and the App Review account, comma-separated; empty → a sandbox purchase entitles no one. The
+      # stores GET /v1/subscription offers a buy control for (app_store, play_store, paddle); empty → the paid line is
+      # closed on every store, and a name the server does not know stays closed and is reported at start.
+      WINDMILL_SANDBOX_EMAILS: ${WINDMILL_SANDBOX_EMAILS:-}
+      SUBSCRIPTIONS_PURCHASABLE_STORES: ${SUBSCRIPTIONS_PURCHASABLE_STORES:-}
       # Tending (server-side agent edits). Ships DARK: empty/absent → every run refuses with
       # "not turned on", the designed first face. Set to "true" to arm it once the agent loop lands.
       TENDING_ENABLED: ${TENDING_ENABLED:-}
@@ -183,11 +192,20 @@ services:
       WINDMILL_API_URL: https://${DOMAIN_APP}
       WINDMILL_MCP_ALLOWED_ORIGINS: ${WINDMILL_MCP_ALLOWED_ORIGINS:-}
       WINDMILL_MCP_TOKEN: ${WINDMILL_MCP_TOKEN:-}
+      # Windmill One's entitlement copy: the server follows the subscription service's feed on internal-doors
+      # once SUBSCRIPTIONS_INTERNAL_TOKEN is set (README.md, "Windmill One: the entitlement copy"). The URL is
+      # set only with the token: with the token empty both arrive empty, which the server reads as unset, and the
+      # follower stays off.
+      SUBSCRIPTIONS_INTERNAL_URL: ${SUBSCRIPTIONS_INTERNAL_TOKEN:+http://subscriptions-internal:8083}
+      SUBSCRIPTIONS_INTERNAL_TOKEN: ${SUBSCRIPTIONS_INTERNAL_TOKEN:-}
       # The /t/:id share pages read the built SPA shell from here (the same host dir Caddy
       # serves) to splice in each shared tree's own unfurl meta for social scrapers.
       WINDMILL_WEB_ROOT: /srv/windmill-web
     volumes:
       - ./web:/srv/windmill-web:ro
+    networks:
+      - default
+      - internal-doors
     command: ["windmill_server"]
     healthcheck:
       test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:8080/ || exit 1"]
@@ -226,6 +244,37 @@ services:
       retries: 20
       start_period: 90s
 
+  # The Windmill One subscription service (services/subscriptions/ARCHITECTURE.md), from the image Backend
+  # CI publishes as `subscriptions-<sha>` beside the server's; deploy-production.sh pins it to the content ID
+  # it pulled, as SUBSCRIPTIONS_IMAGE. It opens and migrates its ledger, windmill_subscriptions, before it
+  # listens. Caddy forwards /v1/stores/* to the public port, 8082, and nothing else. The internal listener,
+  # 8083, binds the service's alias on internal-doors, a network only the server shares, so neither Caddy
+  # nor the embedder reaches it; its doors also ask for SUBSCRIPTIONS_INTERNAL_TOKEN, and answer 401 while
+  # it is empty. The image's HEALTHCHECK asks the internal /health, which is ready while the ledger
+  # answers. SENTRY_RELEASE is the image's own commit, baked in at build, so it is not set here; Sentry's
+  # project and environment are the server's.
+  subscriptions:
+    image: ${SUBSCRIPTIONS_IMAGE:-ghcr.io/neigrok/windmill-monorepo:subscriptions-${IMAGE_TAG:-latest}}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      subscriptions-db:
+        condition: service_completed_successfully
+    environment:
+      SUBSCRIPTIONS_PUBLIC_ADDRESS: 0.0.0.0:8082
+      SUBSCRIPTIONS_INTERNAL_ADDRESS: subscriptions-internal:8083
+      SUBSCRIPTIONS_INTERNAL_TOKEN: ${SUBSCRIPTIONS_INTERNAL_TOKEN:-}
+      # SUBSCRIPTIONS_DB_PASSWORD is hex, so it sits in the URL unescaped.
+      SUBSCRIPTIONS_DATABASE_URL: postgresql://windmill_subscriptions:${SUBSCRIPTIONS_DB_PASSWORD:-}@db:5432/windmill_subscriptions
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_LOG_LEVEL: ${SENTRY_LOG_LEVEL:-info}
+    networks:
+      default: {}
+      internal-doors:
+        aliases: [subscriptions-internal]
+
   caddy:
     image: caddy:2
     restart: unless-stopped
@@ -255,6 +304,13 @@ services:
       - ./web:/srv/windmill-web:ro
       - caddy_data:/data
       - caddy_config:/config
+
+# Every service is on default but for internal-doors, which holds the subscription service's internal listener and
+# the server, its one reader. internal: true gives it no route off the host.
+networks:
+  default: {}
+  internal-doors:
+    internal: true
 
 volumes:
   pgdata:

@@ -341,6 +341,7 @@ select id||' '||coalesce(parent_tree,'-')||' '||coalesce(parent_step,'-')||' '||
         query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
         command([*query, """
 alter table ai_budget_reservations drop constraint ai_budget_output_offer;
+alter table ai_budget_reservations drop constraint ai_budget_released_from, drop column released_from;
 alter table ai_budget_reservations drop column input_cost_nanos, drop column output_token_cost_nanos,
   drop column min_output_tokens, drop column max_output_tokens;
 insert into ai_budget_reservations(id,subject_kind,subject_id,tier,period_start_ms,period_end_ms,
@@ -352,7 +353,8 @@ from (values ('reserved',null::bigint),('dispatched',null),('uncertain',null),('
         legacy_rows = command([*query, legacy_query])
         self.apply_schema()
         self.assertEqual(legacy_rows, command([*query, """
-select (to_jsonb(t)-array['input_cost_nanos','output_token_cost_nanos','min_output_tokens','max_output_tokens'])::text
+select (to_jsonb(t)-array['input_cost_nanos','output_token_cost_nanos','min_output_tokens','max_output_tokens',
+  'released_from'])::text
 from ai_budget_reservations t order by id;
 """]))
         self.assertEqual("5\n", command([*query, """
@@ -383,6 +385,115 @@ where conrelid='ai_budget_reservations'::regclass and conname='ai_budget_output_
         before = self.snapshot()
         self.apply_schema()
         self.assertEqual(identity, command([*query, constraint]))
+        self.assertEqual(before, self.snapshot())
+
+    def test_released_holds_stored_before_released_from_record_the_reserved_state_they_left(self):
+        self.apply_schema()
+        query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
+        command([*query, """
+alter table ai_budget_reservations drop constraint ai_budget_released_from, drop column released_from;
+insert into ai_budget_reservations(id,subject_kind,subject_id,tier,period_start_ms,period_end_ms,
+  admitted_at_ms,amount_nanos,state,actual_nanos)
+select state,'account','legacy-account','logged_in',0,2678400000,1,100,state,actual
+from (values ('reserved',null::bigint),('dispatched',null),('uncertain',null),('settled',50),('released',null)) old(state,actual);
+"""])
+        legacy_query = "select to_jsonb(t)::text from ai_budget_reservations t order by id"
+        legacy_rows = command([*query, legacy_query])
+        constraint = """
+select oid,pg_get_constraintdef(oid),convalidated from pg_constraint
+where conrelid='ai_budget_reservations'::regclass and conname='ai_budget_released_from';
+"""
+        self.apply_schema()
+        self.assertEqual(legacy_rows, command([*query,
+            "select (to_jsonb(t)-'released_from')::text from ai_budget_reservations t order by id"]))
+        self.assertEqual("dispatched -\nreleased reserved\nreserved -\nsettled -\nuncertain -\n", command([*query,
+            "select id||' '||coalesce(released_from,'-') from ai_budget_reservations order by id"]))
+        identity = command([*query, constraint])
+        self.assertRegex(identity, r"^\d+\|CHECK .+\|t\n$")
+        insert = """
+insert into ai_budget_reservations(id,subject_kind,subject_id,tier,period_start_ms,period_end_ms,
+  admitted_at_ms,amount_nanos,state,actual_nanos,released_from)
+values('{id}','account','new-account','logged_in',0,2678400000,1,100,'{state}',{actual},{left});
+"""
+        for values in [dict(id="unrecorded", state="released", actual="null", left="null"),
+                       dict(id="settled-released", state="settled", actual=50, left="'dispatched'")]:
+            with self.subTest(row=values):
+                with self.assertRaisesRegex(RuntimeError, "ai_budget_released_from"):
+                    command([*query, insert.format(**values)])
+        command([*query, insert.format(id="lapsed", state="released", actual="null", left="'uncertain'")])
+        before = self.snapshot()
+        self.apply_schema()
+        self.assertEqual(identity, command([*query, constraint]))
+        self.assertEqual(before, self.snapshot())
+
+    def test_grants_funded_before_refunds_closed_them_stay_open_and_only_subscription_grants_close(self):
+        self.apply_schema()
+        query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
+        command([*query, """
+alter table ai_budget_grants drop constraint ai_budget_grant_closed, drop column closed_at_ms;
+insert into ai_budget_grants(id,account_id,source,funding_reference,period_start_ms,period_end_ms,amount_nanos)
+values ('subscription-grant','legacy-account','subscription','period-one',0,2678400000,7000000000),
+       ('owner-grant','legacy-account','owner','owner:owner-grant',0,2678400000,7000000000);
+"""])
+        legacy_rows = command([*query, "select to_jsonb(t)::text from ai_budget_grants t order by id"])
+        constraint = """
+select oid,pg_get_constraintdef(oid),convalidated from pg_constraint
+where conrelid='ai_budget_grants'::regclass and conname='ai_budget_grant_closed';
+"""
+        self.apply_schema()
+        self.assertEqual(legacy_rows, command([*query,
+            "select (to_jsonb(t)-'closed_at_ms')::text from ai_budget_grants t order by id"]))
+        self.assertEqual("owner-grant -\nsubscription-grant -\n", command([*query,
+            "select id||' '||coalesce(closed_at_ms::text,'-') from ai_budget_grants order by id"]))
+        identity = command([*query, constraint])
+        self.assertRegex(identity, r"^\d+\|CHECK .+\|t\n$")
+        for row, closed in [("owner-grant", 1), ("subscription-grant", 2678400001), ("subscription-grant", -1)]:
+            with self.subTest(row=row, closed=closed):
+                with self.assertRaisesRegex(RuntimeError, "ai_budget_grant_closed"):
+                    command([*query, f"update ai_budget_grants set closed_at_ms={closed} where id='{row}'"])
+        command([*query, "update ai_budget_grants set closed_at_ms=2678400000 where id='subscription-grant'"])
+        before = self.snapshot()
+        self.apply_schema()
+        self.assertEqual(identity, command([*query, constraint]))
+        self.assertEqual(before, self.snapshot())
+
+    def test_grants_stored_under_the_one_stretch_rule_keep_their_rows_and_gain_their_statement(self):
+        self.apply_schema()
+        query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
+        command([*query, """
+alter table ai_budget_grants drop constraint ai_budget_grant_statement, drop column statement_epoch,
+  drop column statement_seq;
+alter table ai_budget_grants add constraint ai_budget_grants_account_id_source_period_start_ms_period_e_key
+  unique (account_id, source, period_start_ms, period_end_ms);
+insert into ai_budget_grants(id,account_id,source,funding_reference,period_start_ms,period_end_ms,amount_nanos,closed_at_ms)
+values ('refunded','legacy-account','subscription','refunded',0,2678400000,7000000000,0);
+"""])
+        legacy_rows = command([*query, "select to_jsonb(t)::text from ai_budget_grants t order by id"])
+        constraints = """
+select conname from pg_constraint where conrelid='ai_budget_grants'::regclass and contype='u' order by conname;
+"""
+        self.apply_schema()
+        self.assertEqual("ai_budget_grants_source_funding_reference_key\n", command([*query, constraints]))
+        self.assertEqual(legacy_rows, command([*query,
+            "select (to_jsonb(t)-'statement_epoch'-'statement_seq')::text from ai_budget_grants t order by id"]))
+        command([*query, """
+insert into ai_budget_grants(id,account_id,source,funding_reference,period_start_ms,period_end_ms,amount_nanos,
+  statement_epoch,statement_seq)
+values ('same-stretch','legacy-account','subscription','same-stretch',0,2678400000,7000000000,'epoch',3);
+"""])
+        insert = """
+insert into ai_budget_grants(id,account_id,source,funding_reference,period_start_ms,period_end_ms,amount_nanos,
+  statement_epoch,statement_seq) values ('{id}','legacy-account','{source}','{id}',0,2678400000,7000000000,{epoch},{seq});
+"""
+        for values in [dict(id="epoch-alone", source="subscription", epoch="'epoch'", seq="null"),
+                       dict(id="seq-alone", source="subscription", epoch="null", seq=3),
+                       dict(id="seq-zero", source="subscription", epoch="'epoch'", seq=0),
+                       dict(id="owner-stated", source="owner", epoch="'epoch'", seq=3)]:
+            with self.subTest(row=values):
+                with self.assertRaisesRegex(RuntimeError, "ai_budget_grant_statement"):
+                    command([*query, insert.format(**values)])
+        before = self.snapshot()
+        self.apply_schema()
         self.assertEqual(before, self.snapshot())
 
 

@@ -311,6 +311,27 @@ TEST(coach_turn_first_content_is_one_user_message_with_a_cache_point_on_its_last
   h.service->stop();
 }
 
+// A Stop that cuts the round short is the lifter's own action: the turn ends stopped and files no Issue.
+TEST(coach_turn_a_round_its_stop_cut_short_ends_the_turn_stopped_and_files_no_issue) {
+  Harness h;
+  h.model->replies = parse(R"([{"stop_reason":"cancelled","content":[{"type":"text","text":"Half an"}]}])");
+  const TurnAdmission admission = h.service->open(h.bound(), openNamed("tn_cut_short_00001"));
+  REQUIRE(admission.turn);
+  h.model->beforeReply = [&](int) { admission.turn->requestStop(); };
+  auto stream = std::make_shared<Recorder>();
+  admission.turn->attach(stream, false);
+  h.model->start();
+  REQUIRE(stream->waitFor(1'000));
+  REQUIRE(stream->isClosed());
+  CHECK_EQ(std::string(nameOf(admission.turn->state())), std::string("stopped"));
+  CHECK_EQ(h.model->requests.size(), 1u);
+  {
+    std::lock_guard lock(h.failures->mutex);
+    CHECK(h.failures->reports.empty());
+  }
+  h.service->stop();
+}
+
 TEST(coach_turn_capacity_is_two_vendor_rounds_and_a_third_open_is_busy) {
   Harness h;
   h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"a"}]},
@@ -936,7 +957,6 @@ TEST(coach_turn_error_frame_names_when_the_refused_budget_returns_and_only_a_fai
       {R"({"refused":"free_month_exhausted"})", "free_month_exhausted", "{" + read + R"(,"budgetResetsAtMs":1793491200000,"code":"free_month_exhausted"})", {}},
       {R"({"refused":"subject_exhausted"})", "subject_exhausted", "{" + read + R"(,"code":"subject_exhausted"})", {}},
       {R"({"refused":"concurrency_exhausted"})", "concurrency_exhausted", "{" + read + R"(,"code":"concurrency_exhausted"})", {}},
-      {R"({"refused":"funding_required"})", "funding_required", "{" + read + R"(,"code":"funding_required"})", {}},
       {R"({"refused":"debt_outstanding"})", "debt_outstanding", "{" + read + R"(,"code":"debt_outstanding"})", {}},
       {R"({"refused":"coach-busy"})", "coach-busy", R"({"code":"coach-busy"})", {}},
       {R"({"refused":"coach-rate-limited"})", "coach-rate-limited", R"({"code":"coach-rate-limited"})", {}},

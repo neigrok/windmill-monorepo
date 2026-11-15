@@ -16,7 +16,10 @@ amounts are exact decimal USD strings.
 
 Every hosted AI call debits the individual allowance, including background Journal processing.
 Account balances are shared across devices and products. Paid calls draw only from a funded grant;
-they cannot drain either free pool. There is no further generic service-wide monthly cap. Admission
+they cannot drain either free pool. A Windmill One account with no funded grant in force (in grace,
+in the renewal slack, after a refund or a refused funding) is admitted under the verified logged-in
+allowance, exactly as an account without Windmill One. There is no further generic service-wide
+monthly cap. Admission
 checks estimated reservations against the free pools or funded grant; estimates are not hard
 spending ceilings, and actual cost can exceed them. The process-hour fuse and product burst limits
 are additional safeguards.
@@ -63,15 +66,29 @@ Routine setup offers only its eight relevant history, notes, catalog, routine an
 tools. This reduces repeated input while preserving the conservative request estimate; ordinary
 Coach conversations retain the full tool catalog.
 
-Subscription funding is accepted only through a verified, successfully completed payment event
-for the configured `PADDLE_PRICE_ID`. The supported event describes one positive, fully paid,
-non-prorated monthly One line, with a captured payment and an explicit billing period. Customer,
-subscription, price and account bindings must agree. A subscription status or entitlement alone
-does not fund an allowance. Missing account mirrors receive a retryable refusal.
+Subscription funding comes from two doors, and a subscription status or entitlement alone funds
+nothing. The subscription service's feed funds one grant for each production period recorded under
+an account with a positive price and no refund, spanning the period, its reference the period's id
+(`platform/subscriptions/PeriodFunding`, [subscriptions.md](../docs/foundation/subscriptions.md)
+§6.3); a sandbox period, a free trial's period priced at nothing and a refunded one fund nothing. A
+verified, successfully completed Paddle payment event for the configured `PADDLE_PRICE_ID` funds
+the period it describes: one positive, fully paid, non-prorated monthly One line, with a captured
+payment and an explicit billing period. Customer, subscription, price and account bindings must
+agree, and missing account mirrors receive a retryable refusal.
 
-Each grant carries its source, account, funded period, amount and funding reference. Duplicate
-funding is idempotent; grants cannot overlap within the same account and funding source. An owner
-accessing the allowance receives a $7 calendar-month grant when no subscription grant is current.
+Each grant carries its source, account, funded period, amount and funding reference. Funding again
+a reference already funded for that account replays, whatever the grant's close or amount, and the
+grant keeps what it was funded with; under another account it is refused as a conflict. Grants of
+one account and source never hold an instant in common: a period starting inside a grant the account
+holds is funded from that grant's close or end to its own end, and one left empty, or overlapping
+another grant, is refused as a conflict. A store refund the feed reports closes its grant at
+`min(end, refundedAt)`: from then it funds nothing and holds no instant against the overlap rule,
+spent capacity is not recovered, and the refund's reversal reopens it unless that would overlap
+another grant. A feed-funded grant keeps the epoch and seq of the newest statement of its period it
+was brought to, and a refund or reversal no later than that in the same epoch changes nothing
+([subscriptions.md](../docs/foundation/subscriptions.md) §6.3). An owner, or a sandbox tester only a
+sandbox subscription entitles (§6.2), accessing the allowance receives a $7 calendar-month grant
+when no subscription grant is current.
 An active subscription grant takes precedence over an owner grant; their remaining amounts are
 never combined. An expired subscription period does not prevent the owner's calendar fallback.
 Unused subscription capacity survives a calendar-month boundary and expires at its funded period
@@ -81,10 +98,10 @@ when the funding price is configured.
 ## Admission and accounting
 
 `AiBudgetService` owns boundary observations; `PgAiBudgetRepository` serializes reservation,
-concurrency, funding, binding and threshold writes. A free reservation requires sufficient
+concurrency, funding, binding, lapse and threshold writes. A free reservation requires sufficient
 individual, free-month and free-day capacity. A paid reservation requires a live grant with enough
 capacity. In-flight reservations, dispatched calls and uncertain calls occupy the principal's
-concurrency slots across tier changes and device binding.
+concurrency slots across tier changes and device binding until they settle or lapse.
 
 Every Claude round estimates input tokens from its actual request and reserves the estimated input
 cost plus the full output cap sent to the provider; a Talk take reserves its model's ceiling
@@ -113,9 +130,36 @@ can clear that liability while retaining actual spend. Periods and grants remain
 month or grant does not fund an old call. Historical debt and in-flight calls continue to affect
 admission after a new funded period begins. Replaying settlement changes and reports nothing.
 
-An ambiguous send, partial stream, missing usage or accounting failure retains its reservation.
-A restart never releases such a call automatically. Only an undispatched reservation may be
-released without known usage.
+A round this server stops on purpose — Coach's Stop, a phone turn's stop, a stopping server — is
+not ambiguous. It settles at once at what it used, and its slot frees at once: the input the
+vendor reported when the message began, plus the output streamed so far. The output is the
+vendor's own count when one arrived, or, when larger, the stream counted as the request estimate
+counts input: a token per three UTF-8 bytes the model wrote (text, thinking, a tool's name and
+input), rounded up, and three a content block (`AnthropicStream.h`). A round stopped before its
+message began settles at its input estimate. Neither ever settles above its hold. A thinking block
+the vendor summarises may count fewer tokens than it billed.
+
+An ambiguous send, a stream the connection cut short, missing usage or accounting failure keeps
+its reservation as `uncertain`, and a call a restart cut off stays `dispatched`. A hold whose cost
+is still unconfirmed 10 minutes after its admission (`kAiBudgetHoldLifetimeMs`, `AiBudget.h`)
+lapses: the ledger releases it at zero, frees its slot and its held amount in every budget, and
+keeps the record with its reserved amount and the state it left (`released_from`: `reserved`,
+`dispatched` or `uncertain`). Windmill absorbs whatever the vendor billed for a lapsed call. Every
+vendor call this server makes has a deadline well inside that bound; the longest is 300 s. Each
+admission and each allowance read first releases its own principal's lapsed holds, those of the
+devices bound to an account included, so a lapsed hold never refuses the next call or shows as
+reserved; `AiBudgetHoldSweep` releases every principal's each minute, at most 200 a pass, so the
+shared free pools stop counting one within a minute of its lapse. A settlement or uncertainty that
+arrives after the release changes nothing. An undispatched reservation may also be released at
+once.
+
+Concurrency never exceeds a principal's slots: a lapsed hold holds its slot until it is released.
+What Windmill can absorb is bounded per principal by its slots × 6 lapses an hour × the
+reservation of each lapsed round, its largest estimated cost. Service-wide only the $20 process-hour
+fuse bounds it, and the fuse is charged only for rounds that returned usage, so it sees part of it.
+Each release logs the count and the reserved amount it let go by the state each hold left; the
+`dispatched` and `uncertain` amounts bound what Windmill absorbed, and a `reserved` hold was never
+sent (OBSERVABILITY.md).
 
 Budget occupancy includes settled cost plus held reservations. Crossings of 50%, 80% and 95% are
 written to a durable outbox in the same transaction as their budget change. Each scope, budget
@@ -148,14 +192,17 @@ measures: the reply's `usage` object (`type: "tokens"`, `input_tokens`, `output_
 vendor billed, and settles the take at that cost, with an unfunded excess kept as overrun debt as
 for any round. A transcript that comes back without usable token usage was heard, and settles at
 the $0.06 ceiling. An error status from the vendor, or a request that never reached a connection or
-TLS session, consumed nothing and settles at zero. A timeout (300 s, `OpenAiTranscriber.cpp`), a
-connection dropped mid-exchange or an unreadable reply keeps the whole hold as uncertain. Stopping
-the server lets takes still with the vendor answer and settle for up to 5 s, inside Docker's 10 s
-stop timeout; one still out after that keeps its dispatched hold.
+TLS session, consumed nothing and settles at zero. A timeout (50 s, `kVendorReplyWait` in
+`platform/adapters/http/ReplyWait.h`), a connection dropped mid-exchange or an unreadable reply keeps
+the whole hold as uncertain until it lapses. Stopping the server lets takes still with the vendor
+answer and settle for up to 5 s, inside Docker's 10 s stop timeout; one still out after that keeps
+its dispatched hold until it lapses.
 
-Talk requires Windmill One, checked before any audio is read, and its admission refuses any
-principal below Windmill One as `funding_required`, so a take draws only on a funded grant and
-never on the free pools. The route answers the allowance's own codes: 429 `subject_exhausted` for
+Talk requires Windmill One, checked before any audio is read, and a take draws only on a funded
+grant, never on the free pools: an account whose allowance is not Windmill One's grant, as a
+subscription with no grant in force, is refused `funding_required` before any audio is read,
+whatever that allowance holds, with the allowance it does draw on, and the take's admission refuses
+any call without a grant in force the same way. The route answers the allowance's own codes: 429 `subject_exhausted` for
 a spent or too-small allowance, 503 for `funding_required`, `concurrency_exhausted`,
 `debt_outstanding` and the other ledger codes, each with the allowance object Coach's refusals
 carry, and 503 `ai_accounting_unavailable` when the ledger cannot be asked. A transcriber
@@ -189,8 +236,8 @@ There is no universal full-context reservation.
 This is approximate admission, not a hard spending ceiling. Actual usage replaces the estimate at
 settlement. Available original funding absorbs a covered underestimate; an unfunded overrun
 creates debt that blocks further admission until reconciled. Missing or ambiguous usage retains
-the hold. A positive remaining balance still does not promise that a particular request can fit.
-For example, an Opus 5 request with an 8,000-token output cap reserves $0.20 for output alone,
+the hold until it lapses. A positive remaining balance still does not promise that a particular
+request can fit. For example, an Opus 5 request with an 8,000-token output cap reserves $0.20 for output alone,
 more than the balance of an allowance with $0.10 left.
 Anonymous previews use Sonnet 5 with a bounded input, one provider request and an affordable
 output cap, and an anonymous phone turn runs every round on Sonnet 5 the same way. Signed-in Coach,
@@ -254,11 +301,16 @@ the feature is off, and 503 `ai_accounting_unavailable` for an accounting read f
 are `Cache-Control: no-store`. Anonymous installation reads use their separate credential endpoint.
 
 The response carries tier, period, configured state, bounded code, limit, used, reserved, remaining,
-`resetsAtMs`, `budgetResetsAtMs` and availability status. Period is `lifetime`, `calendar_month_utc`
+`resetsAtMs`, `budgetResetsAtMs` and availability status. The tier is the allowance the account draws
+on: `logged_in` for a Windmill One account with no funded grant in force. Period is `lifetime`, `calendar_month_utc`
 or `billing_period`; a lifetime allowance has a null individual reset. `budgetResetsAtMs` identifies
 the exhausted free day/month or individual period, so a daily free-pool pause is not presented as
 an individual monthly reset. It does not guarantee that unresolved holds will be released then.
 Neither endpoint nor telemetry exposes aggregate budget amounts.
+
+`concurrency_exhausted` means the principal's earlier calls hold every slot it has, whether they
+are still running or their cost is not yet confirmed. Coach and Talk say so and that each slot frees
+when its cost is confirmed, at most 10 minutes after its call began.
 
 Coach JSON and SSE preserve expected allowance refusal codes and metadata. A request too large
 for positive remaining capacity is distinguished from a fully used allowance by the allowance
@@ -288,15 +340,15 @@ request quotas. Enabling the durable ledger does not invent reservations for ear
   bound that exposure. Do not claim reset-proof identity.
 - Keep per-round token estimation separate from exact USD settlement. Check estimates against
   actual usage; let original funding absorb covered variance while retaining unfunded overrun
-  debt and ambiguous holds. Do not promise a hard cost ceiling. Choose model/output settings that
-  can fit the intended tier.
+  debt and ambiguous holds until they lapse. Do not promise a hard cost ceiling. Choose model/output
+  settings that can fit the intended tier.
 - The account, Coach and tending clients need exact USD, held amounts, distinct allowance periods
   and bounded refusal recovery. Figma still contains question and credit figures.
 - Subscription and owner grants share one ledger. Nonoverlap is enforced within each source, and
   a current subscription grant takes priority over the owner grant. No subscription-status funding
   fallback should be introduced.
-- Refunds, chargebacks and payment adjustments do not revoke or revise a funded grant in this
-  implementation. Define and implement those outcomes before enabling paid customer funding.
+- Paddle refunds, chargebacks and payment adjustments do not revoke or revise a Paddle-funded grant.
+  Define and implement those outcomes before Paddle funding serves customers.
 - The permanent device relation lets account reads include associated anonymous cost without
   copying spend into a second ledger or creating transfer/refund arithmetic.
 - Keep connection-specific SSE delivery at the HTTP edge. Buffered and incremental responses

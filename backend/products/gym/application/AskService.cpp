@@ -578,6 +578,7 @@ void AskService::ask(const UserId& caller, const std::string& email, AskRequest 
     observation->finish(reply.refusal == AskRefusal::aiBudget && reply.allowance
                         ? std::string(aiBudgetCodeName(reply.allowance->code)) :
                         reply.refusal != AskRefusal::none ? askOutcome(reply.refusal) :
+                        reply.generation && reply.generation->status == "stopped" ? "stopped" :
                         !reply.answer.outcomeCode.empty() ? reply.answer.outcomeCode : reply.answer.ok || (reply.generation && reply.generation->status == "running") ? "ok" : "failed");
     done(std::move(reply));
   };
@@ -806,7 +807,7 @@ void AskService::run(const std::shared_ptr<Job>& job) {
       if (reply.answer.outcomeCode == "ai_accounting_unavailable")
         reply.refusal = AskRefusal::aiAccountingUnavailable;
       for (const auto code : {AiBudgetCode::FreeMonthExhausted, AiBudgetCode::FreeDayExhausted,
-                              AiBudgetCode::ConcurrencyExhausted, AiBudgetCode::FundingRequired, AiBudgetCode::DeviceBound,
+                              AiBudgetCode::ConcurrencyExhausted, AiBudgetCode::DeviceBound,
                               AiBudgetCode::SubjectExhausted, AiBudgetCode::DebtOutstanding,
                               AiBudgetCode::Unconfigured}) {
         if (reply.answer.outcomeCode != aiBudgetCodeName(code)) continue;

@@ -22,20 +22,23 @@ public:
   PgPageTxn(PgPool& pool, const FeedCursor& target, bool rebuilding)
       : PageTxn(target, rebuilding), lease_(pool), work_(*lease_),
         cursor_(cursorFrom(work_.exec(std::string(kCursorRow) + " FOR UPDATE"))) {
-    if (rebuilding) work_.exec("DELETE FROM account_entitlements");
+    if (!rebuilding) return;
+    // The accounts before the rows the rebuild empties, the order an erasure takes them in.
+    work_.exec("SELECT 1 FROM users WHERE id IN (SELECT account_id FROM account_entitlements) FOR KEY SHARE");
+    work_.exec("DELETE FROM account_entitlements");
   }
 
   const FeedCursor& cursor() const override { return cursor_; }
 
-  void commit() override {
+  pqxx::work& sql() { return work_; }
+
+private:
+  void persist() override {
     work_.exec("UPDATE subscription_feed_cursor SET epoch = $1, seq = $2",
                pqxx::params{target().epoch, static_cast<std::int64_t>(target().seq)});
     work_.commit();
   }
 
-  pqxx::work& sql() { return work_; }
-
-private:
   PgLease lease_;
   pqxx::work work_;  // declared after the lease, so it destructs first and can still roll back
   FeedCursor cursor_;
@@ -66,7 +69,7 @@ void PgEntitlementCopy::consume(PageTxn& page, const FeedEntry& entry) {
   sqlOf(page).exec(
       "INSERT INTO account_entitlements "
       "(account_id, production_access_until, sandbox_access_until, entitlement, seq) "
-      "SELECT $1::uuid, $2, $3, $4::json, $5 WHERE EXISTS (SELECT 1 FROM users WHERE id = $1::uuid) "
+      "SELECT $1::uuid, $2, $3, $4::json, $5 WHERE EXISTS (SELECT 1 FROM users WHERE id = $1::uuid FOR KEY SHARE) "
       "ON CONFLICT (account_id) DO UPDATE SET production_access_until = excluded.production_access_until, "
       "sandbox_access_until = excluded.sandbox_access_until, entitlement = excluded.entitlement, seq = excluded.seq "
       "WHERE account_entitlements.seq < excluded.seq",
@@ -78,12 +81,23 @@ std::optional<EntitlementResponse> PgEntitlementCopy::find(const UserId& account
   if (!isUuid(account.str())) return std::nullopt;
   PgLease lease{*pool_};
   pqxx::read_transaction txn{*lease};
-  const pqxx::result rows = txn.exec("SELECT entitlement::text FROM account_entitlements WHERE account_id = $1::uuid",
-                                     pqxx::params{account.str()});
+  const pqxx::result rows = txn.exec(
+      "SELECT production_access_until, sandbox_access_until, entitlement::text FROM account_entitlements "
+      "WHERE account_id = $1::uuid",
+      pqxx::params{account.str()});
   if (rows.empty()) return std::nullopt;
-  std::optional<Json::Value> stored = parseWhole(rows[0][0].as<std::string>());
+  std::optional<Json::Value> stored = parseWhole(rows[0][2].as<std::string>());
   if (!stored) throw std::runtime_error("account_entitlements holds an entitlement that is not JSON");
-  return EntitlementResponse{std::move(*stored)};
+  // Access reads the row's columns (db/schema.sql), so a column an operator clears ends that access; the body is what a
+  // surface shows.
+  EntitlementResponse row{std::move(*stored)};
+  const auto instant = [&](int column) -> std::optional<std::int64_t> {
+    if (rows[0][column].is_null()) return std::nullopt;
+    return rows[0][column].as<std::int64_t>();
+  };
+  row.productionAccessUntil = instant(0);
+  row.sandboxAccessUntil = instant(1);
+  return row;
 }
 
 }

@@ -115,6 +115,11 @@
   justify-content: center;
   padding-bottom: var(--space-6);
 }
+@media (min-width: 744px) and (max-width: 1023px) {
+  .st-board-state[role="alert"] {
+    padding-bottom: 0;
+  }
+}
 .st-board-state--empty {
   gap: var(--space-6);
   padding-bottom: 120px;

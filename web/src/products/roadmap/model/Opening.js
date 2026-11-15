@@ -1,11 +1,15 @@
-// What the tree a step opens comes to for the owner of both, as the read that found it, or as the tree picker knew it
+// How trees link to each other: down, from a step to the tree it opens, and up, from a subtree to the step that owns it.
+//
+// What the tree a step opens comes to: the subtree the step owns, which anyone who may read the tree is told, or the
+// tree its pointer names, which only the owner of both is, as the read that found it, or as the tree picker knew it
 // when the person chose it here. Nothing pushes it: it stands until the roadmap is read again, on a load or once the
 // server has confirmed a pointer.
 
 export class Opening {
-  constructor({ treeId, read, valid = false, complete = false, title = '', done = 0, total = 0, loop = false, own = false, provisional = false }) {
+  constructor({ treeId, read, valid = false, complete = false, title = '', done = 0, total = 0, loop = false, own = false, provisional = false, owned = false }) {
     this.treeId = treeId;
     this.read = read;
+    this.owned = owned;
     this.own = own;
     this.provisional = provisional;
     this.valid = valid;
@@ -15,6 +19,14 @@ export class Opening {
     this.total = total;
     this.loop = loop;
     Object.freeze(this);
+  }
+
+  // The subtree a step owns, as a node read carries it (`subtree: {id, done, total, state}`), or by its id alone where
+  // nothing of it was read. It is named by the step's own label, so it never stands beside the step, and it never loops.
+  static owned({ id, done, total, state }) {
+    const read = Number.isInteger(done) && Number.isInteger(total);
+    if (!read) return new Opening({ treeId: id, read: false, owned: true });
+    return new Opening({ treeId: id, read, valid: true, complete: state === 'complete', done, total, owned: true });
   }
 
   // One entry of the answer's `opens`: a pointer that is not valid says only that; a valid one says how far its tree is.
@@ -73,16 +85,35 @@ export class Opening {
   }
 }
 
-// What one load read of the trees a roadmap's steps open, by step. `read` is false where the load read none: the
-// device's own copy, or a server that could not follow the pointers.
+// What one load read of the trees a roadmap's steps open, by step: the pointers in `byStep`, and the subtrees the steps
+// own in `owned`. `read` is false where the load read no pointer: the device's own copy, or a server that could not
+// follow them. `pointers` is false for a room that is not its owner's, which takes no pointer at all.
 export class Openings {
-  constructor(byStep = new Map(), read = false) {
+  constructor(byStep = new Map(), read = false, owned = new Map(), pointers = true) {
     this.byStep = byStep;
     this.read = read;
+    this.owned = owned;
+    this.pointers = pointers;
   }
 
-  static fromWire(opens = {}) {
-    return new Openings(new Map(Object.entries(opens).map(([stepId, entry]) => [stepId, Opening.fromWire(entry)])), true);
+  // A tree read's `opens`, answered to its writer alone, and the `subtree` its nodes carry to anyone who may read it.
+  static fromWire(opens = {}, nodes = []) {
+    const owned = new Map(nodes.flatMap((node) => (typeof node.subtree?.id === 'string' ? [[node.id, Opening.owned(node.subtree)]] : [])));
+    return new Openings(new Map(Object.entries(opens).map(([stepId, entry]) => [stepId, Opening.fromWire(entry)])), true, owned);
+  }
+
+  // What a room that is not its owner's stands: the subtrees, and no step that opens a tree by its pointer.
+  subtreesAlone() {
+    return new Openings(new Map(), true, this.owned, false);
+  }
+
+  // The subtree a step owns, as this load read it or as the session has since been told (`subtrees`, by step: `{id,
+  // fresh}`): one created since the load, `fresh`, is empty, and one the load did not read is unread.
+  ownedBy(stepId, subtrees) {
+    const read = this.owned.get(stepId) ?? null;
+    const told = subtrees.get(stepId);
+    if (!told || told.id === read?.treeId) return read;
+    return told.fresh ? Opening.owned({ id: told.id, done: 0, total: 0, state: 'open' }) : Opening.owned({ id: told.id });
   }
 
   // What a roadmap's steps know of the trees they open, as one word for a signal: none opens one, every one was read,
@@ -93,13 +124,17 @@ export class Openings {
     return openings.every((opening) => opening.read) ? 'read' : 'unread';
   }
 
-  // The projection with every step that opens a tree carrying its opening. Until the projection holds what the server
-  // holds, the load is the newer word: a step it named opens that tree and one it did not opens none, whatever an older
-  // copy on the device says, but for the steps in `own`, whose pointer this device wrote and the server has not
-  // confirmed. From then on the projection's pointer decides. One the load read nothing of, or read for another tree,
-  // takes what `known` holds of it (`<step>><tree>`, as the picker knew it) or is unread.
-  onto(treeData, { joined, own = new Set(), known = new Map() }) {
+  // The projection with every step that opens a tree carrying its opening. A step that owns a subtree opens it, whatever
+  // its pointer holds. For any other, until the projection holds what the server holds, the load is the newer word: a
+  // step it named opens that tree and one it did not opens none, whatever an older copy on the device says, but for the
+  // steps in `own`, whose pointer this device wrote and the server has not confirmed. From then on the projection's
+  // pointer decides. One the load read nothing of, or read for another tree, takes what `known` holds of it
+  // (`<step>><tree>`, as the picker knew it) or is unread.
+  onto(treeData, { joined, own = new Set(), known = new Map(), subtrees = new Map() }) {
     const standing = (step) => {
+      const owned = this.ownedBy(step.id, subtrees);
+      if (owned) return owned;
+      if (!this.pointers) return null;
       const named = this.byStep.get(step.id);
       if (this.read && !joined && !own.has(step.id)) return named ?? null;
       if (!step.opens) return null;
@@ -116,3 +151,39 @@ export class Openings {
     };
   }
 }
+
+// Where a tree sits among the trees: a root, or a subtree that one step of its parent owns, under the path of steps from
+// its root down, each with its tree's name. A tree read answers it to anyone who may read the tree.
+export class TreePlace {
+  constructor({ root, parent = null, path = [], depth = 0 }) {
+    this.root = root;
+    this.parent = parent;
+    this.path = path;
+    this.depth = depth;
+    Object.freeze(this);
+  }
+
+  // The place a tree read answers, or null where the answer is not one: a root says `parent: null` and `path: []`, and a
+  // subtree its parent and the steps above it, root first.
+  static fromWire({ root, parent, path, depth } = {}) {
+    const hop = (entry) => typeof entry?.tree === 'string' && typeof entry?.step === 'string';
+    if (typeof root !== 'string' || !Number.isInteger(depth) || !Array.isArray(path)) return null;
+    if (parent !== null && !hop(parent)) return null;
+    if (!path.every((entry) => hop(entry) && typeof entry.title === 'string')) return null;
+    if ((parent === null) !== (path.length === 0)) return null;
+    return new TreePlace({
+      root, depth,
+      parent: parent && Object.freeze({ tree: parent.tree, step: parent.step }),
+      path: Object.freeze(path.map(({ tree, step, title }) => Object.freeze({ tree, step, title }))),
+    });
+  }
+
+  get subtree() { return this.parent !== null; }
+
+  // The way up from a subtree: its parent, the step there that owns it and the parent's name.
+  get up() {
+    if (!this.parent) return null;
+    return { treeId: this.parent.tree, stepId: this.parent.step, title: this.path.at(-1).title };
+  }
+}
+

@@ -8,12 +8,17 @@ The Rust workspace, its four crates and one tool exist. `domain` models the subs
 the stores' observations into it ([Domain](#domain)); `app_store` verifies App Store signed payloads
 ([below](#app-store-signature-verification)) and decodes them into observations
 ([App Store decoding](#app-store-decoding)), and the tool `app_store_test_signer` signs them under a
-chain only tests trust ([App Store test signer](#app-store-test-signer)); `storage` opens the ledger,
-the service's own database, and migrates it ([Storage](#storage)); `subscriptions`, the server binary,
-opens the ledger before it listens, answers health on both of its listeners, logs every request and
-reports to Sentry ([Server](#server)). The service does not run in production. The production compose
-provisions its database once `SUBSCRIPTIONS_DB_PASSWORD` is set, and does nothing until then
-([deploy README](../../backend/deploy/README.md#the-subscription-database)).
+chain only tests trust ([App Store test signer](#app-store-test-signer)); `storage` keeps the ledger,
+the service's own database: it migrates it, keeps what the stores sent, applies observations in one
+transaction each and reads the feed and each account ([Storage](#storage)); `subscriptions`, the server
+binary, opens the ledger before it listens, answers health on both of its listeners, keeps and applies the
+App Store's notifications on its public one, serves the backend the feed and the account read behind a
+bearer secret on its internal one, applies every minute what the inbox holds unsettled, logs every request
+and reports to Sentry ([Server](#server)).
+In production the public listener answers `GET /health` and the App Store notification door, and 404s
+every other path; no App Store Connect setting sends notifications to the door yet. Backend CI publishes
+its image beside the server's, and every deploy provisions its database and starts it
+([deploy README](../../backend/deploy/README.md#the-subscription-service)).
 
 ## Crates
 
@@ -51,12 +56,12 @@ clock, no randomness. Its files, by kind:
 
 | File | Holds |
 |---|---|
-| `values.rs` | Instants (epoch milliseconds), spans, money, the text ids and the closed names: `Store`, `Environment`, `Plan`. `Money::from_units` writes an amount a store counts in units (Apple's milliunits) with its currency's ISO 4217 minor units, keeping any digit beyond them. A store's ids, `StoreSubscriptionId` and `StoreTransactionId`, print as `(redacted)` in `Debug`, so no log line or panic message formats one (spec §10) |
+| `values.rs` | Instants (epoch milliseconds), spans, money, the text ids and the closed names: `Store`, `Environment`, `Plan`. `Money::from_units` writes an amount a store counts in units (Apple's milliunits) with its currency's ISO 4217 minor units, keeping any digit beyond them. A store's ids, `StoreSubscriptionId` and `StoreTransactionId`, and `AccountId`, the account a store's hint names, print as `(redacted)` in `Debug`, so no log line or panic message formats one (spec §10) |
 | `subscription.rs` | The record: `Subscription`, its `Status` as the newest observation stated it, a `State` that carries only its own facts, `Period`, and access (`access_until`, `grants_access`) |
 | `observe.rs` | `Observation`, what a caller hands `observe`, the `Change` it returns, `Event` and `Refusal` |
 | `entitlement.rs` | `AccountEntitlement`, one `Entitlement` block per environment, folded from the ledger alone |
 
-The action that applies an observation calls `observe` once:
+The action that applies an observation, `storage`'s apply ([Writing](#writing)), calls `observe` once:
 
 1. Load the lineage's `Ledger`: its subscription, if any, and its periods.
 2. Resolve the observation's account hint against the erased accounts into an `AccountHint`, and pass
@@ -80,8 +85,12 @@ saying since when, as most of the App Store's are, leaves the cancel time as it 
 that arrives after a newer statement fills it in and records `updated`.
 
 `observe` records `unbound` only when a new purchase moves an ended lineage to another account
-(R-11). Account erasure (§6.4) unbinds every subscription an account holds and records `unbound` for
-each; the domain has no step for it yet, and the erasure node adds one beside `observe`.
+(R-11). That move leaves each period the ledger holds with the account that paid for it, in the
+period's `left_with`, so a later event of the period, as its refund, is told under that account; a
+period without `left_with` follows its subscription's binding. Account erasure (§6.4) unbinds every
+subscription an account holds and records `unbound` for each; the domain has no step for it yet, and
+the erasure node adds one beside `observe`. A claim by an erased account, resolved by the caller as
+`Claimant::Erased`, is refused with `account_erased` before any other rule of §4.
 
 Known limits:
 
@@ -105,7 +114,7 @@ with a `Refusal`, whose `code()` is the only thing a log line carries about it.
 |---|---|---|
 | 1 | Compact JWS whose header decodes as JSON | `malformed` |
 | 2 | Header `alg` is `ES256` | `algorithm` |
-| 3 | `signedDate` is no later than the clock's time plus 60 seconds; a payload stating none is taken as signed at the clock's time | `signed_in_future` |
+| 3 | `signedDate` is no later than the clock's time plus 60 seconds; a payload stating none is taken as signed at the clock's time. It is read here and judged once rule 9 holds | `signed_in_future` |
 | 4 | Header `x5c` holds exactly three certificates (leaf, intermediate, root) | `chain_length` |
 | 5 | Leaf and intermediate are base64 DER certificates with nothing trailing, and the leaf's key is `id-ecPublicKey` on P-256 | `certificate` |
 | 6 | A pinned root issued the intermediate, and the intermediate, a CA, issued the leaf: issuer name equals the issuer's subject, and the ECDSA signature (P-256 or P-384, SHA-256 or SHA-384) verifies under the issuer's key. `x5c[2]` is not read; the pinned root stands in its place | `untrusted_chain` |
@@ -116,7 +125,9 @@ with a `Refusal`, whose `code()` is the only thing a log line carries about it.
 | 11 | `bundleId` is the expected one. A notification states it, with its environment, in `data`, `summary`, `appData` or `unclaimInfo`, or in `externalPurchaseToken`, whose environment is `Sandbox` when its `externalPurchaseId` starts with `SANDBOX` and `Production` otherwise; a renewal info states none | `bundle_id` |
 | 12 | A nested transaction or renewal info states its notification's environment | `environment` |
 
-Rules 1 to 9 read nothing of the payload but `signedDate`. The decoded types are `Notification`,
+Rules 1 to 9 read nothing of the payload but `signedDate`. `Refusal::after_signature` says whether a
+refusal came once the signature held, so that the store signed what it refuses: true of rules 3, 11 and
+12. The decoded types are `Notification`,
 `TransactionInfo` and `RenewalInfo`, and none implements `Debug`. Transaction ids and original
 transaction ids are `TransactionId`, and the app account token is `AccountToken`. Neither type
 implements `Debug` or `Display`; code reads them only through `expose()`, so no log line or panic
@@ -124,13 +135,15 @@ message can format one. A notification's UUID stays a plain string: it names a n
 purchase or a person, and spec §5.1 keys the inbox by it.
 
 Validity is judged at `signedDate`, and nothing checks revocation. A payload signed under a leaf
-whose key had leaked could therefore be backdated into that leaf's validity. Each door must bound
-the age of the payloads it accepts, and the claim door must re-read the subscription's state from the
-App Store Server API rather than trust the transaction it is handed.
+whose key had leaked could therefore be backdated into that leaf's validity. The notification door
+refuses a `signedDate` older than eight days ([below](#the-app-store-notification-door)), and the claim
+door must re-read the subscription's state from the App Store Server API rather than trust the
+transaction it is handed.
 
 `SignedDataVerifier::windmill(clock)` is the production configuration: the pinned Apple root and the
-bundle id `works.windmill.app`. `SignedDataVerifier::new(roots, bundle_id, clock)` takes other roots
-and another bundle id; the tests in `crates/app_store/tests/` sign under chains they generate, and
+bundle id `works.windmill.app`. `SignedDataVerifier::windmill_also_trusting(test_root, clock)` adds one
+root, which the server takes only in a test deployment ([Configuration](#configuration)).
+`SignedDataVerifier::new(roots, bundle_id, clock)` takes other roots and another bundle id; the tests in `crates/app_store/tests/` sign under chains they generate, and
 `app_store_test_signer` signs under the committed test chain ([below](#app-store-test-signer)). No
 verifier accepts `Xcode` or `LocalTesting` (spec §8).
 
@@ -220,9 +233,9 @@ I/O, no clock. `decode` answers one `Decoded`:
 | Outcome | What it holds | What the caller does |
 |---|---|---|
 | `Observation` | An `Observation` of the subscription's whole state, and the transaction's `appAccountToken` as an `AccountToken` | Resolves the token against the erased accounts into the `AccountHint`, then applies it with `observe` |
-| `AwaitsStatus` | A `PeriodStatement`: the lineage, `observedAt`, ownership, the account token, the one period the transaction states, and the cancel time when the notification states one; and why, an `Awaiting` | Pulls the subscription's status from the App Store Server API, then applies the period, and the cancel time, with the notification's own stamp. `latest_unconfirmed` is also reported to Sentry |
-| `Silent` | `test` or `renewal_extension_summary`: Apple states nothing about any subscription | Logs the code |
-| `Unsupported` | A code: what Windmill does not sell, or a field that decides access or money it cannot read | Keeps the notification in the inbox, logs `unsupported` with the code, reports it; nothing changes |
+| `AwaitsStatus` | A `PeriodStatement`: the lineage, `observedAt`, ownership, the account token, the one period the transaction states, and the cancel time when the notification states one; and why, an `Awaiting` | Keeps the notification unsettled, postponed an hour at a time, until it pulls the subscription's status from the App Store Server API, then applies the period, and the cancel time, with the notification's own stamp. `latest_unconfirmed` is also reported to Sentry |
+| `Silent` | `test` or `renewal_extension_summary`: Apple states nothing about any subscription | Settles the notification with the code and logs it |
+| `Unsupported` | A code: what Windmill does not sell, or a field that decides access or money it cannot read | Keeps the notification in the inbox settled with the code, logs `unsupported` with it, reports it; nothing changes |
 
 `decode_claim` answers a `PeriodStatement` stamped at the transaction's own `signedDate`, or
 `Unsupported`; the claim door takes the state from a pull, never from the transaction (above).
@@ -264,8 +277,10 @@ notification unsupported: `incomplete` when the notification's `signedDate`, its
 transaction's `expiresDate`, `price` or `currency`, the `status`, the `autoRenewStatus`, or the
 `gracePeriodExpiresDate` of a grace is missing; `unknown_value` when the status or `autoRenewStatus`
 is a value Apple does not document, the price is negative or the currency no ISO 4217 code in any
-case; `inconsistent` when the renewal info is another lineage's. Every other field degrades, so a
-refund or an expiry is never dropped for a field access does not depend on:
+case; `inconsistent` when the renewal info is another lineage's; and `incomplete` also when the
+`originalTransactionId` or the `transactionId` holds NUL, which no text the ledger keeps can hold.
+Every other field degrades, so a refund or an expiry is never dropped for a field access does not
+depend on:
 
 | Field Apple leaves out or names in a way it does not document | Reads as |
 |---|---|
@@ -273,7 +288,8 @@ refund or an expiry is never dropped for a field access does not depend on:
 | `type` | Nothing: Windmill One's product id says what was sold |
 | `billingPlanType` other than `MONTHLY` | Nothing |
 | `originalPurchaseDate` | `startedAt` is the transaction's `purchaseDate` |
-| `storefront` | `storefront` null |
+| `storefront`, or one holding NUL | `storefront` null |
+| `autoRenewProductId` holding NUL | `nextProductId` null |
 | `renewalPrice` or the renewal info's `currency`, or an amount they do not make | `nextCharge` null |
 | `offerType`, or `offerType` 1 without `offerDiscountType` | No offer kind |
 | `revocationType` Apple does not document (one left out reads by ownership, below) | End reason `unknown`; the period is refunded only by a `REFUND` |
@@ -365,8 +381,10 @@ Apple's App Store Server Notifications reference, read on 2026-11-14:
 and for local and CI runs that drive a purchase, a renewal or a refund without Apple. The chain is
 committed in [`tests/fixtures/app_store/test-chain/`](tests/fixtures/app_store/test-chain/README.md):
 a P-384 root, a P-384 intermediate carrying Apple's WWDR marker and a P-256 leaf carrying Apple's
-receipt-signing marker, with the leaf's key. A verifier built with `SignedDataVerifier::new` and that
-root believes what it signs; `SignedDataVerifier::windmill` refuses it with `untrusted_chain`.
+receipt-signing marker, with the leaf's key. A verifier built with `SignedDataVerifier::new` or
+`SignedDataVerifier::windmill_also_trusting` and that root believes what it signs, and so does a local or
+CI service whose `SUBSCRIPTIONS_APP_STORE_TEST_ROOT` names it ([Configuration](#configuration));
+`SignedDataVerifier::windmill` refuses it with `untrusted_chain`.
 
 The binary reads a description on stdin and writes the signed payload, a compact JWS, on stdout:
 
@@ -424,8 +442,9 @@ backed up and restored is in the
 [deploy README](../../backend/deploy/README.md#the-subscription-database).
 
 `storage::Ledger::open` connects and brings the schema up to the newest migration before it returns,
-so no `Ledger` exists over an older schema. It holds at most 8 connections, gives a connection 5 s to
-open, and `Ledger::check` gives the database 2 s to answer.
+so no `Ledger` exists over an older schema. It holds at most `Ledger::CONNECTIONS`, 8, and gives a connection 5 s to
+open. `Ledger::check` gives the database 2 s to answer, on a connection of its own, so writers waiting
+on a lock with every connection of the pool never cost the health check its answer.
 
 ### Migrations
 
@@ -440,6 +459,107 @@ therefore does not start.
 | Migration | What it creates |
 |---|---|
 | `0001_ledger.sql` | `ledger`: one row, whose `epoch` (a UUID) is minted when the ledger is created and replaced when it is restored (spec §5.2) |
+| `0002_inbox.sql` | `now_millis()`, the database's clock in epoch milliseconds, and `inbox` |
+| `0003_subscriptions.sql` | `subscriptions` and `periods` |
+| `0004_events.sql` | `ledger.latest_seq`, `events`, their index by subscription and `entitlement_subscriptions` |
+| `0005_erased_accounts.sql` | `erased_accounts` |
+| `0006_store_hints.sql` | `store_hints` |
+
+### Records
+
+Every instant is epoch milliseconds, the unit the domain and every wire count in; the ledger's own
+stamps (`received_at`, `settled_at`, `recorded_at`, `erased_at`) are the database's clock, read through
+`now_millis()`. Ids are `uuid`. Each closed name is checked against the domain's set, a state's facts
+are present exactly in that state (§3.2), and an amount is a decimal string beside its ISO 4217 code,
+so the database holds no value the domain cannot read back. Store ids are kept plain, because the App
+Store Server API is called with the original transaction id; the domain types that carry them print
+redacted (spec §10).
+
+| Table | Holds |
+|---|---|
+| `inbox` | Each notification a store door kept, keyed by `(store, notification_id)`, with its environment and the signed payload as received. `settled_at` and `outcome` are set together, once: `applied`, a refusal's code, the code a door settles a notification with when it states nothing to apply, or `failed`. `attempts` counts the applies that failed for a reason a retry cannot change, and `next_attempt_at` is when the next may run |
+| `subscriptions` | One row per lineage, unique by `(store, environment, store_subscription_id)`: every field of the domain's `Subscription`, and `verified_at` |
+| `periods` | One row per store transaction of a lineage. Only `refunded_at`, `observed_at` and `left_with`, the account that paid for it once a new purchase moved its subscription (R-11), change after it is written (INV-7) |
+| `events` | Append-only, keyed by `seq`. Each row keeps its subscription's store, environment and offer kind as the transaction that recorded it left them, and a period event its period as the event states it, so the feed reads no other table's current state |
+| `entitlement_subscriptions` | For each event that names an account, that account's subscriptions as the transaction left them: what the event's entitlement folds over |
+| `erased_accounts` | The accounts the backend erased (§6.4) |
+| `store_hints` | The account hints the ledger owes the stores, each with its lineage: written in the transaction that binds a subscription by claim, cleared once the store has taken it (§4) |
+
+### Writing
+
+`Ledger`'s write methods are what the doors and the sweep call:
+
+| Method | What it does |
+|---|---|
+| `receive(notification)` | Keeps a verified notification and answers `Receipt::Kept` with a `KeptNotification`. When the inbox holds one by that store's id already it changes nothing and answers `Receipt::Duplicate`, carrying the `KeptNotification` while it is not settled, so the door can apply a redelivery at once (spec §5.1 step 3) |
+| `apply_notification(kept, observed)` | Applies the observation a kept notification states and settles the notification in the same transaction. A notification settled already answers `AlreadySettled`, so the door and every retry of the sweep together apply it once. An apply that fails for a reason a retry cannot change (a value the database refuses, SQLSTATE classes 22, 23 and 42, or a row it cannot read) counts against the notification, which then waits 1, 2, 4 and 8 hours before the next attempt and is settled `failed` at the fifth |
+| `apply(observed)` | Applies the observation of a claim or a pull |
+| `settle(kept, code)` | Settles a notification that states nothing to apply with the code of what it was; a settled notification keeps its first outcome |
+| `postpone(kept, by_millis)` | Leaves a kept notification unsettled and out of `unsettled` for that long: one that waits on what no retry brings sooner, such as its subscription's status. A redelivery still hands it back |
+| `unsettled(limit)` | The kept notifications not yet settled and not waiting after a failed attempt or a postponement, the longest kept first: what the sweep applies (§7 step 1) |
+| `store_hints(limit)`, `clear_store_hint(hint)` | The account hints owed to the stores, the longest owed first, and clearing one once its store took it; a hint owed since to another account stays |
+| `record_erasure(account)` | Records the account as erased; recording it again changes nothing. It unbinds nothing: the domain has no step for unbinding ([Domain](#domain)) |
+
+Only the ledger makes a `KeptNotification`, so nothing applies a notification the inbox does not hold.
+`Observed` is what a caller hands over: the observation; the account its hint names, as a UUID, so a
+door reads a store's token that is not one as no hint; the claim, when a claim door calls; and
+`pulled_at`, when the service read the state from the store's API. `verified_at` is the newest
+`pulled_at` applied.
+
+Every write, the inbox's among them, begins `read committed` whatever the database's default, since the
+seq lock needs each statement to see what committed before it. It waits at most 5 s for any lock
+(`lock_timeout`): a lock is held for milliseconds, so a longer wait means its holder stalled, and the
+write answers `busy` rather than hold a connection behind it. Each of its statements runs at most 10 s
+(`statement_timeout`): twice the lock bound, so the lock bound answers every wait for a lock and this one
+ends a statement stalled for any other reason, and no write holds a connection past it. An apply is one
+transaction, the action of [Domain](#domain):
+
+1. Hold the claiming account and the hinted account, each a shared advisory lock, and resolve each:
+   erased when `erased_accounts` names the account, live otherwise.
+2. Lock the lineage with an advisory lock keyed by it, which also covers a lineage nothing has written
+   yet, lock its row `for no key update`, and load its `domain::Ledger`.
+3. Mint a subscription id and one period id per stated period, random UUIDs, and call `observe`. A
+   `Refusal` writes nothing.
+4. Write the subscription when it differs from the one held, each period written or restated,
+   `verified_at` when the state was pulled, and the hint owed to the store when the change binds by
+   claim. A replay writes no row (INV-4).
+5. Take the events' seqs under the seq lock ([below](#the-seq-lock)), read the subscriptions of each
+   account the events name, and append each event with its account's.
+6. For a notification, settle its inbox row. Commit.
+
+`Applied::Recorded` holds the `Change`, the seq of each of its events, and `newest_seq`, the seq of the
+subscription's newest event once the transaction commits, read under the lineage's lock when the change
+records none. A claim retried after its answer was lost replays, and answers the same `newest_seq` and
+`{seq, entitlement}` (§5.2); the hint it owes the store stays in `store_hints` until the sweep has
+written it. A commit whose answer never arrives fails as `outcome_unknown`, never `unreachable`, since
+the transaction may have committed.
+
+Locks are taken in one order, accounts, then lineage, then seq, and recording an erasure holds its
+account's lock alone, so no binding to an account commits beside its erasure. The row lock is
+`for no key update` because a transaction holding the seq lock inserts entitlement rows whose foreign
+key takes a key-share lock on each subscription of the account, which `for update` refuses: the two
+transactions would deadlock.
+
+### The seq lock
+
+A transaction takes its events' seqs by updating the `ledger` row, `latest_seq = latest_seq + n`, and
+holds that row's lock until it commits. No transaction takes a seq while another that took one has not
+committed, so seq order is commit order and a reader that has seen `seq = n` has seen every event below
+it (INV-8). The seq and the lock are one statement, and `events.seq` has no default, so no event can
+take a seq without the lock, as one could beside an advisory lock around a sequence. A rolled-back
+transaction rolls the counter back with it, so the ledger leaves no gap of its own; readers still allow
+one (§5.2). `recordedAt` is the database's clock read in the same statement, one instant for the
+transaction's events, rising with seq as long as the clock does. Each account's subscriptions are read
+after the lock is taken, so they include every transaction committed before.
+
+### Reading
+
+| Method | What it answers |
+|---|---|
+| `feed(after, limit)` | A `FeedPage`, `{epoch, entries, latest_seq}`, read in one repeatable-read snapshot: at most `limit` events after the seq `after`, in seq order. A `FeedEntry` holds the domain's `Event`, its `seq` and `recorded_at`, the subscription's store, environment and offer kind, and the entitlement, `AccountEntitlement::of` the account over the subscriptions stored with the event, absent exactly when the event names no account (§5.2) |
+| `lineage(lineage)` | What the ledger holds for one lineage: its subscription, if any, and its periods |
+| `entitlement(account)` | The account's entitlement as the ledger holds it now |
+| `account(account)` | An `AccountRecord`, read in one repeatable-read snapshot: each subscription bound to the account, ordered by id, with its periods by start and every event of it in seq order as a `RecordedEvent` (`seq`, `recorded_at`, the domain's `Event`), whichever account the event was told under; and the entitlement folded over those subscriptions |
 
 ### Failures
 
@@ -449,9 +569,12 @@ server's message is never kept, because it can quote a statement or a value.
 | Code | When |
 |---|---|
 | `unreachable` | no connection within its bound: nothing listens, the network refused or TLS failed |
+| `busy` | after start, no connection within 5 s, because every connection is in use or the database opened no new one, or a write waited longer than 5 s for a lock (`55P03`); the health check, on a connection of its own, tells a busy ledger from an unreachable one |
+| `outcome_unknown` | a commit's answer never arrived: the transaction may have committed, and a retry shows which |
 | `refused` | the server would not let the role in: a `pg_hba.conf` rule (`28000`), a wrong password (`28P01`), no such database (`3D000`) |
 | `migration` | the schema could not be brought up to the binary's, or the database holds a migration the binary does not |
-| `database` | anything else the database answered |
+| `unreadable` | a row this build cannot read: a name outside its closed set, or a fact its state requires missing |
+| `database` | anything else the database answered, such as a deadlock (`40P01`), a connection the server ended (`57P01`) or a write's statement past its 10 s (`57014`) |
 
 `storage::DatabaseUrl` reads a `postgres://` or `postgresql://` URL. Its query may carry only `host`
 (a host or a unix socket directory), `port`, `user`, `dbname` and `sslmode`: the driver logs any other
@@ -460,20 +583,21 @@ repeats it.
 
 ## Server
 
-`crates/server` holds three modules, `config`, `listeners` and `telemetry`, and the binary
-`subscriptions`, whose `main.rs` reads the configuration, starts telemetry, opens the ledger and serves
-both listeners until a signal.
+`crates/server` holds six modules, `config`, `internal`, `listeners`, `store_doors`, `sweep` and
+`telemetry`, and the binary `subscriptions`, whose `main.rs` reads the configuration, starts telemetry,
+builds the App Store verifier, opens the ledger, and serves both listeners and runs the sweep until a
+signal.
 
 ### Configuration
 
-Read once at start. An empty value counts as unset. A missing required value, a malformed value or a
-refused combination stops the start with exit code 1 and one log line naming the variable, never its
-value.
+Read once at start. An empty value counts as unset. A missing required value, a malformed value, an
+address naming a host that does not resolve or a refused combination stops the start with exit code 1 and
+one log line naming the variable, never its value.
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `SUBSCRIPTIONS_PUBLIC_ADDRESS` | yes | Socket address of the public listener, such as `0.0.0.0:8082` |
-| `SUBSCRIPTIONS_INTERNAL_ADDRESS` | yes | Socket address of the internal listener, such as `0.0.0.0:8083` |
+| `SUBSCRIPTIONS_PUBLIC_ADDRESS` | yes | Socket address of the public listener, such as `0.0.0.0:8082`, or a host and port whose name resolves at start; of several addresses, as `localhost` has, it binds the first IPv4 |
+| `SUBSCRIPTIONS_INTERNAL_ADDRESS` | yes | The same for the internal listener, such as `0.0.0.0:8083`; production names `subscriptions-internal:8083`, the service's alias on the one compose network the backend shares with it, so the listener binds that network alone |
 | `SUBSCRIPTIONS_DATABASE_URL` | yes | The ledger's database, as a `storage::DatabaseUrl` ([Storage](#failures)), such as `postgresql://windmill_subscriptions:<password>@db:5432/windmill_subscriptions` |
 | `SENTRY_ENVIRONMENT` | yes | The deployment's name, such as `production`; Sentry files every report and log under it |
 | `SENTRY_DSN` | no | Where Sentry reports go; unset turns Sentry off, logged once at start |
@@ -481,10 +605,14 @@ value.
 | `WINDMILL_LOG_LEVEL` | no | The lowest level written to stdout: `trace`, `debug`, `info` (default), `warn`, `error` or `fatal`, in any case, the words the backend reads; `fatal` reads as `error`. sqlx's own lines stay at `warn` or above, because below it they carry the server's raw error text |
 | `SENTRY_LOG_LEVEL` | no | The same words: the lowest level of the service's own lines sent to Sentry as Logs; default `info` |
 | `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` | no | `true` adds `GET /debug/panic` to the internal listener; refused unless `SENTRY_ENVIRONMENT`, trimmed and in any case, is `local`, `development`, `test` or `ci` |
+| `SUBSCRIPTIONS_APP_STORE_TEST_ROOT` | no | The path of a DER certificate the App Store door trusts beside Apple's root, such as the test chain's `tests/fixtures/app_store/test-chain/root.cer`; refused unless `SENTRY_ENVIRONMENT` is one of the same four. A file that is no P-256 or P-384 certificate stops the start with `SUBSCRIPTIONS_APP_STORE_TEST_ROOT names no certificate to trust`. Unset, the door trusts Apple's root alone |
+| `SUBSCRIPTIONS_INTERNAL_TOKEN` | no | The bearer secret of the internal doors ([below](#internal-doors)), the one the backend sends: at least 32 characters, none a space or a control character; production's is 64 lowercase hex. Unset, every internal door answers 401; the `starting` line says whether it is set |
 
 ### Start
 
-The ledger opens before either listener binds, so no door ever answers over an older schema. A ledger
+The App Store verifier is built before the ledger opens, and the ledger opens before either listener
+binds, so no door ever answers over an older schema. The `starting` line says whether
+`app_store_test_root` is trusted. A ledger
 that does not open stops the start with exit code 1, one line `ledger.open failed` carrying its
 `code` and `sqlstate`, and a Sentry Issue ([Logs and Sentry](#logs-and-sentry)). A ledger that
 opens writes `ledger open` with its `epoch`.
@@ -493,12 +621,16 @@ opens writes `ledger open` with its `epoch`.
 
 The image listens on 8082 (public) and 8083 (internal), beside the backend's 8080 and the embedder's
 8081, and speaks HTTP/1.1. Each listener builds its own router, so a route on the internal listener
-does not exist on the public one and answers 404 there.
+does not exist on the public one and answers 404 there. In production Caddy forwards `/v1/stores/*` to
+the public port and nothing else, and the internal listener binds the service's address on
+`internal-doors`, a compose network only the backend shares, so no other container reaches it.
 
 | Listener | Route | Answer |
 |---|---|---|
 | public | `GET /health` | 200 `{"status":"ready"}` while the ledger answers `Ledger::check`, else 503 `{"status":"unavailable"}` |
-| internal | `GET /health` | the same; the image's `HEALTHCHECK` asks it |
+| public | `POST /v1/stores/app-store/notifications` | the App Store notification door ([below](#the-app-store-notification-door)) |
+| internal | `GET /health` | the same; the image's `HEALTHCHECK` asks it, at the address `SUBSCRIPTIONS_INTERNAL_ADDRESS` names |
+| internal | `GET /internal/v1/feed`, `GET /internal/v1/accounts/{accountId}` | the backend's reads, behind the bearer secret ([below](#internal-doors)) |
 | internal | `GET /debug/panic` | panics, only while `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` is `true` |
 
 `listeners::Bounds` holds what a client may take on either listener:
@@ -514,12 +646,147 @@ outlive its request, such as the App Store notification door, spawns that work a
 own.
 
 Both listeners answer health the same way because every door reads or writes the ledger. The routers
-take what they ask as a `listeners::Readiness`, which `Ledger` is, so a test hands them a fake.
+take what they ask as a `listeners::Readiness`, which `Ledger` is, so a test hands them a fake, and each
+takes the doors it serves beside health as a `Router`, which `main.rs` builds: the public one
+`store_doors::router`, the internal one `internal::doors`, whose reads it takes as an `internal::Reads`,
+which `Ledger` is too.
 
-SIGTERM or SIGINT stops both listeners from accepting. Each open connection then finishes its request
-within the bounds above, and the ledger's connections close once no request holds one, for at most
-6 s together; Sentry's last flush takes at most 1 s more and the send in progress at most 2 s, so the
-process exits 0 inside Docker's 10 s, whether or not Sentry answers.
+SIGTERM or SIGINT stops both listeners from accepting and the sweep after the row it is applying. Each
+open connection then finishes its request within the bounds above, the App Store door waits for the
+deliveries it is applying, and the ledger's connections close once nothing holds one, for at most 6 s
+together. Past that bound the service logs `stopped with requests still in flight` with
+`abandoned_deliveries`, and reports `store.notification` `abandoned` when there were any: what they kept
+the next start's sweep applies, and what they had not kept yet Apple sends again; Sentry's last flush takes at most
+1 s more and the send in progress at most 2 s, so the process exits 0 inside Docker's 10 s, whether or
+not Sentry answers.
+
+### The App Store notification door
+
+`store_doors::AppStoreDoor` serves `POST /v1/stores/app-store/notifications`: App Store Server
+Notifications V2 from both environments, the environment being the verified payload's, as the fixed
+pipeline of spec §5.1. The handler hands each delivery to a task of its own and waits only for its
+answer, so neither a client that leaves nor a request past its bound cancels a delivery once its payload
+is verified.
+
+1. **Body.** The listener's bound, 64 KiB, holds `{"signedPayload": "<JWS>"}`. A notification signed
+   under the test chain is about 15 KB, and Apple's chain is a third larger.
+2. **Verify.** `verify_notification` verifies the payload with the transaction and renewal info inside
+   it ([rules](#app-store-signature-verification)), on the blocking pool and at most one payload per core
+   at a time, so payloads nobody signed cost no more than the cores the service has. A delivery whose
+   client leaves before its payload is verified keeps nothing, and the verification it started keeps
+   its turn until it ends. The door adds two rules of its own:
+   the `notificationUUID` holds no NUL, which no text the ledger keeps can hold, and the `signedDate` is
+   at most eight days old.
+3. **Keep.** `Ledger::receive` keeps the signed payload in the inbox under the `notificationUUID`, once.
+4. **Apply.** `decode` decides ([App Store decoding](#app-store-decoding)). An `Observation` is applied
+   by `apply_notification`, in the transaction that settles the notification, with the transaction's
+   `appAccountToken` as the hint when it reads as a UUID and no hint otherwise (spec §4). `Silent` and
+   `Unsupported` settle the notification with their code. `AwaitsStatus` postpones it an hour
+   (`Ledger::postpone`), since no status pull exists yet. A redelivery of a notification the inbox
+   holds unsettled applies it at once, from the inbox's own copy, verified again when the delivered
+   bytes differ from it; one the inbox holds settled changes nothing.
+5. **Answer.** 200 once the inbox holds the notification, whatever step 4 does, and before it runs: what
+   step 4 leaves unsettled, the sweep applies ([below](#the-sweep)).
+
+At most four applies run at once, the door's and the sweep's together: half the ledger's
+`Ledger::CONNECTIONS`, so keeping a notification always finds a connection. A burst waits for its turn
+in memory rather than at the pool's 5 s bound for a connection.
+
+Applies of one subscription take its lineage's lock in the order they reach it, not the order their
+notifications arrived: one answered before the next arrives can still be applied after it, as when the
+store delivers out of order. The subscription and its periods end as the newest statement says either
+way (spec INV-6); the events record what each apply found, so a refund whose reversal was applied first
+records neither.
+
+| Answer | When |
+|---|---|
+| 200, no body | The inbox holds the notification, kept by this delivery or an earlier one |
+| 400 `{"error":"refused"}` | Steps 1 and 2 refused it, and nothing is kept. The line carries why |
+| 503 `{"error":"unavailable"}` | The inbox could not keep it, or its client left before it was verified |
+| 403 | From the edge, not the service: a client outside Apple's 17.0.0.0/8 ([deploy README](../../backend/deploy/README.md#the-subscription-service)) |
+| 413 | A body over 64 KiB, refused by the listener |
+
+Every answer but 200 makes Apple send a production notification again, 1, 12, 24, 48 and 72 hours after
+each failed attempt, 157 hours in all; it sends a sandbox notification once. Apple's notification
+history keeps one signed payload for a notification and its send attempts, so a retry is taken to carry
+the payload as first signed, and eight days covers the schedule with a day and a half for Apple's own
+delays. Since nothing checks revocation, eight days is also how long a leaf's key can still sign after
+its certificate expires.
+
+Each delivery writes one `store.notification` line when its pipeline ends, inside its request's span:
+`operation`, `store`, `environment` once known, `outcome`, `code`, `sqlstate` from the database,
+`answered` (the status it answered), `redelivered` once kept (true when the inbox held it already),
+`payload_differs` on a redelivery, `events` when applied, `duration_ms`, and `sentry_event_id` when
+reported. It names no notification, payload, transaction or account.
+
+A refusal is one of two kinds. Before the signature holds (`body`, `malformed`, `algorithm`,
+`chain_length`, `certificate`, `untrusted_chain`, `apple_marker`, `certificate_validity`, `signature`)
+the payload could be anyone's, and the line is all there is. After it (`signed_in_future`, `bundle_id`,
+`environment`, `notification_uuid`, `signed_too_long_ago`) the store signed what the door refuses, so
+the line is a warning and Sentry hears of it as a warning, at most once in ten minutes for each code.
+The door's own two refusals carry the `environment`; the verifier's do not, since it answers a refusal
+without its payload.
+
+| `outcome` | `code` | Level | Reported |
+|---|---|---|---|
+| `refused` | before the signature held | `info` | no (spec §10) |
+| `refused` | after it | `warn` | a warning, throttled |
+| `left` | | `info` | no |
+| `not_kept` | the `StorageError`'s | `error` | yes |
+| `duplicate` | | `info` | no |
+| `applied` | | `info` | no |
+| `settled` | `test`, `renewal_extension_summary`, or the domain's refusal | `info` | no |
+| `unsupported` | the decoder's | `error` | yes |
+| `unverifiable` | the verifier's: the inbox's copy of a redelivery no longer verifies, and is settled with it | `error` | yes |
+| `awaits_status` | `earlier_transaction` | `warn` | no |
+| `awaits_status` | `latest_unconfirmed` | `error` | yes: its lineage stalls until a status pull |
+| `apply_failed` | the `StorageError`'s | `error` | yes; the notification stays unsettled for the sweep |
+
+```json
+{"timestamp":"2026-11-14T23:52:52.621412Z","level":"INFO","message":"store.notification","operation":"store.notification","store":"app_store","environment":"sandbox","outcome":"applied","answered":200,"redelivered":false,"events":3,"duration_ms":59.9,"span":{"listener":"public","method":"POST","request_id":"564630692fb444819f57d08ad157a5bc","route":"/v1/stores/app-store/notifications","name":"request"}}
+```
+
+A report is `telemetry::report` under `store.notification` and the line's `code`, carrying the request's
+`listener`, `route` and `request_id` tags.
+
+### The sweep
+
+`sweep::InboxSweep` is step 1 of spec §7; steps 2 to 4 are not built. It passes once at start, so what the
+last run kept and left unsettled is applied first, then every minute. A pass reads `Ledger::unsettled` 100
+rows at a time and applies each through the door's own step 4 (`AppStoreDoor::apply_kept`), from the
+inbox's copy, which it verifies again, without the door's age rule. A copy that no longer verifies, as one
+kept under a test root a deployment has stopped trusting, is settled with the verifier's code. A pass goes
+on to the next page while the last one moved any row; one whose every row failed ends, and the next pass
+tries again. It stops between two rows at SIGTERM. A notification the inbox holds for a store no door of
+this build serves is postponed an hour.
+
+Each pass writes one `sweep.inbox` line: `rows`, and for each outcome its count (`applied`, `settled`,
+`awaiting`, `duplicate`, `failed`, `refused` for unsupported or unverifiable ones, `without_door`), then
+`code` and `sqlstate` of the first reported, `duration_ms` and `sentry_event_id`. It is at `error` when
+the pass reports, at `debug` when it met no row and at `info` otherwise. A failure, an unsupported
+notification, an unverifiable copy, an unconfirmed latest transaction and an inbox the pass cannot read
+report under `sweep.inbox` and their code, at most once in ten minutes for each.
+
+### Internal doors
+
+`internal` holds the backend's doors (spec §5.2); the internal router merges them, so none exists on the
+public listener. Each is behind the bearer secret: a request without `Authorization: Bearer <secret>`,
+with another secret, or reaching a service started without one answers 401 `{"code":"unauthorized"}` with
+`WWW-Authenticate: Bearer`, and says nothing of which. The secret is compared in time that depends on the
+lengths alone. `/health` asks for none, for the image's `HEALTHCHECK`.
+
+| Route | Answer |
+|---|---|
+| `GET /internal/v1/feed?after=<seq>&limit=<n>` | 200, `Ledger::feed(after, limit)` as `feed.json` shows a page. Both are required, `after` from 0 and `limit` from 1 to 500; any other query is 400 `{"code":"invalid_query"}` |
+| `GET /internal/v1/accounts/{accountId}` | 200, `Ledger::account` as `account.json` shows it: `{entitlement, subscriptions}`, the entitlement, and each subscription bound to the account with the entitlement's fields of it, then `environment`, `boundAt`, `boundBy`, `periods` as the feed carries a period, and `events`, each `{seq, type, occurredAt, recordedAt, accountId, period}`. An id that is not a UUID in its canonical spelling, lowercase and hyphenated, is 400 `{"code":"invalid_account_id"}`; an account the ledger holds nothing of answers its empty entitlement and `[]` |
+
+A read the ledger does not answer is 503 `{"code":"unavailable"}` and an Issue under `feed.read` or
+`account.read` ([Logs and Sentry](#logs-and-sentry)); the backend's follower reads again. The wire shapes
+are `internal/responses.rs`, each written from the ledger's own types. `crates/server/tests/contract.rs`
+serves every example of `feed.json`, `entitlement.json` and `account.json` from the ledger's types and
+compares the bodies byte for byte, key order included. It also tells the feed's story through `Ledger::apply`,
+every transaction up to seq 26, and checks the pages that hold it and the three account reads of it
+against the fixtures; the erasure at seq 27 has no step in the domain yet.
 
 ### Logs and Sentry
 
@@ -528,7 +795,8 @@ Every line on stdout is one JSON object. Each request writes one line when it en
 `unmatched`), `status`, `outcome`, `duration_ms` and `request_id`. `outcome` is `answered`,
 `panicked`, `timed_out`, or `cancelled` when the client left first; a cancelled line has no `status`.
 The line reads no header, body or raw path. A 5xx line is at `error`, a 4xx or cancelled line at
-`warn`, a ready health answer at `debug` and anything else at `info`:
+`warn`, a ready health answer and an answered feed read at `debug`, since a probe and the backend's
+follower ask every few seconds forever, and anything else at `info`:
 
 ```json
 {"timestamp":"2026-11-14T10:58:01.163207Z","level":"ERROR","message":"request","listener":"internal","method":"GET","route":"/debug/panic","status":500,"outcome":"panicked","duration_ms":4.3,"request_id":"8244ce4ef07341ff85532a1d8dfc7cf9"}
@@ -536,15 +804,24 @@ The line reads no header, body or raw path. A 5xx line is at `error`, a 4xx or c
 
 A health check the ledger does not answer also writes `ledger did not answer` at `warn`, with
 `operation` `ledger.check`, the failure's `code` and `sqlstate`, inside the request's span.
+The App Store door writes one `store.notification` line per delivery
+([above](#the-app-store-notification-door)). Each read an internal door has the ledger answer writes
+`feed.read` or `account.read`, inside the request's span, with `operation`, `outcome` `ok` and its
+`entries` or `subscriptions`; a feed page without entries writes it at `debug`, any other at `info`. A
+refused request writes its request line alone. No line names an account, the query or the secret.
 
 Lines from every crate of the workspace (`telemetry::SERVICE_CRATES`) also go to Sentry as Logs; a
 vendor's lines stay on stdout. A line at `error` creates no Issue. Issues come from explicit
 reports, each logged with the event's `sentry_event_id` (absent while Sentry is off):
 
-- `telemetry::report_failure` reports an unexpected failure of a named operation (spec §10). Its
-  message is the operation, such as `ledger.open`; its tags are `operation`, `code` and, from the
-  database, `sqlstate`; one Issue gathers each operation and code. Its line is `<operation> failed`
-  at `error`. `ledger.open` is the one operation so far.
+- `telemetry::report` reports an unexpected failure of a named operation (spec §10), at `error`, or at
+  `warning` for what is worth knowing of without being one. Its message is the operation, such as
+  `ledger.open`; its tags are `operation`, `code` and, from the database, `sqlstate`; one Issue gathers
+  each operation and code. It answers the event's id, which the caller's own line carries, as the
+  door's `store.notification` line does. A `telemetry::Throttle` reports each operation and code at
+  most once an interval, for what can recur as often as something outside the service likes.
+  `telemetry::report_failure` reports and writes `<operation> failed` at `error`, for `ledger.open`,
+  `feed.read` and `account.read`.
 - A panic after start is reported with its location and stack and without its message, and logged as
   `panic`. The stack ends at
 the panicking frame, and the service's crates are its in-app frames. A panic inside a request also
@@ -553,18 +830,18 @@ request answers 500 `{"error":"internal"}` while the listener keeps answering.
 
 ### Run
 
-The local Postgres gets the ledger's database and role as
-[backend/RUNNING.md](../../backend/RUNNING.md#2-database) shows. Then:
+[backend/RUNNING.md](../../backend/RUNNING.md#the-subscription-service) runs it locally beside the
+backend, with the test root, and posts it a notification the test signer signs.
 
-```sh
-SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0.0.1:8083 \
-  SUBSCRIPTIONS_DATABASE_URL="postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions" \
-  SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
-```
+Its internal doors answer 401 until `SUBSCRIPTIONS_INTERNAL_TOKEN` names a secret, such as
+`openssl rand -hex 32` makes. The backend follows the feed once its `.env` holds the same secret and
+`SUBSCRIPTIONS_INTERNAL_URL=http://127.0.0.1:8083`.
 
-The image builds from this directory and sets both addresses itself. A container reaches the host's
-Postgres over TCP, so it needs a URL with a host and a role that may sign in over it; the deploy
-README's [rehearsal](../../backend/deploy/README.md#rehearse-it-locally) runs it beside its database:
+The image builds from this directory and sets both addresses itself; `SENTRY_RELEASE`, a build
+argument, is the commit Backend CI builds it from. A container reaches the host's Postgres over TCP,
+so it needs a URL with a host and a role that may sign in over it; the deploy README
+[runs the production compose](../../backend/deploy/README.md#run-it-locally) with a local image beside
+its database:
 
 ```sh
 docker build --build-arg SENTRY_RELEASE="$(git rev-parse HEAD)" -t windmill-subscriptions .
@@ -579,7 +856,8 @@ The `Dockerfile` builds on the `rust` image of the same release and fails when t
 ## Checks
 
 `.github/workflows/subscriptions.yml` runs these on every change under `services/subscriptions/`
-other than Markdown, and on changes to the workflow. Locally, from `services/subscriptions/`:
+other than Markdown, and on changes to the workflow. Backend CI calls it as well, and publishes the
+image only once it passes. Locally, from `services/subscriptions/`:
 
 ```sh
 ./check-dependencies.sh
@@ -590,7 +868,8 @@ cargo test --locked
 
 `check-dependencies.sh` needs `jq` and runs from any directory.
 
-The tests that need Postgres, in `crates/storage/tests/ledger.rs`, run only where
+The tests that need Postgres, in `crates/storage/tests/` and `crates/server/tests/` (`contract.rs`,
+`internal.rs` and `store_doors.rs`), run only where
 `SUBSCRIPTIONS_TEST_DATABASE_URL` names a database whose role may create databases; each test creates
 an empty one beside it and drops it after. Without the variable they are compiled as ignored, so the
 summary counts them as not run. Against the local Homebrew Postgres:

@@ -2,6 +2,7 @@
 
 #include "platform/adapters/mcp/McpServer.h"
 #include "products/roadmap/application/NodeEdits.h"
+#include "products/roadmap/application/OwnerProgress.h"
 #include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/application/TreeRegistry.h"
@@ -11,12 +12,13 @@
 namespace wm {
 
 // The roadmap surface exposed over MCP. An edit routes through the tree's room, and its HLC
-// stamp comes from the room's own clock — the same stamp domain a socket edit uses. `appOrigin` is
-// the app's public origin, where the `url` a reply answers points.
+// stamp comes from the room's own clock — the same stamp domain a socket edit uses. `owners` shows a reader what the
+// owner's subtrees come to, as every door shows it. `appOrigin` is the app's public origin, where the `url` a reply
+// answers points.
 class RoadmapTools : public ToolHost {
 public:
-  RoadmapTools(RoomRegistry& registry, ProgressService& progress, Clock& clock, TreeRegistry& treeRegistry,
-               NodeEdits& edits, std::string appOrigin);
+  RoadmapTools(RoomRegistry& registry, ProgressService& progress, OwnerProgress& owners, Clock& clock,
+               TreeRegistry& treeRegistry, NodeEdits& edits, std::string appOrigin);
 
   std::vector<ToolDeclaration> declareTools() const override;
   ToolResult callTool(const std::string& name, const Json::Value& arguments, const ToolCaller& caller) override;
@@ -29,6 +31,7 @@ private:
 
   RoomRegistry& registry_;
   ProgressService& progress_;
+  OwnerProgress& owners_;
   Clock& clock_;
   TreeRegistry& treeRegistry_;
   NodeEdits& edits_;

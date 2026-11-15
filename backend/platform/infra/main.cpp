@@ -5,6 +5,7 @@
 #include "platform/adapters/postgres/PgAccountFootprint.h"
 #include "platform/adapters/paddle/BillingApi.h"
 #include "platform/application/AiBudgetAlerts.h"
+#include "platform/application/AiBudgetHoldSweep.h"
 #include "platform/ai_installations/AiInstallationApi.h"
 #include "platform/ai_installations/PgAiInstallations.h"
 #include "products/gym/onboarding/PgOnboardingRepository.h"
@@ -31,6 +32,7 @@
 #include "platform/adapters/http/McpKeyApi.h"
 #include "platform/adapters/http/OAuthApi.h"
 #include "platform/adapters/http/RateLimiter.h"
+#include "platform/adapters/http/ReplyWait.h"
 #include "products/roadmap/adapters/llm/AnthropicAgent.h"
 #include "products/roadmap/adapters/llm/AnthropicComposer.h"
 #include "platform/adapters/mcp/CompositeToolHost.h"
@@ -113,7 +115,10 @@
 #include "platform/infra/SyncProducts.h"
 #include "products/gym/routes.h"
 #include "platform/subscriptions/FeedFollower.h"
+#include "platform/subscriptions/PeriodFunding.h"
 #include "platform/subscriptions/PgEntitlementCopy.h"
+#include "platform/subscriptions/PgLifecycleEvents.h"
+#include "platform/subscriptions/SubscriptionApi.h"
 #include "platform/subscriptions/SubscriptionServiceClient.h"
 
 #include "platform/adapters/http/SyncApi.h"
@@ -453,12 +458,17 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // bounds spend when Postgres is down.
   auto aiFuse = std::make_shared<AiFuse>(kHourlyFuseNanos);
 
-  // Every paid feature gates through this one seam. WINDMILL_OWNER_EMAILS is a comma-separated
-  // list of addresses that hold Windmill One; unset means nobody is an owner.
+  // Every paid feature gates through this one seam, which reads Windmill One from the backend's own copy of each
+  // account's entitlement whether or not the follower below runs (docs/foundation/subscriptions.md §6.1). Each list is
+  // comma-separated addresses: WINDMILL_OWNER_EMAILS hold Windmill One, and WINDMILL_SANDBOX_EMAILS's sandbox purchases
+  // count (§6.2). Unset means nobody.
+  auto entitlementCopy = std::make_shared<subscriptions::PgEntitlementCopy>(pool);
   const char* ownerEmailsEnv = std::getenv("WINDMILL_OWNER_EMAILS");
-  auto entitlements = std::make_shared<Entitlements>(*subscriptionRepo, *aiUsageRepo,
-                                                     ownerEmailsEnv ? ownerEmailsEnv : "",
-                                                     std::vector<std::string>{"echo.segment", "echo.curate"}, aiBudgets);
+  const char* sandboxEmailsEnv = std::getenv("WINDMILL_SANDBOX_EMAILS");
+  auto entitlements = std::make_shared<Entitlements>(
+      *entitlementCopy, *systemClock, *aiUsageRepo,
+      Allowlists{EmailList{ownerEmailsEnv ? ownerEmailsEnv : ""}, EmailList{sandboxEmailsEnv ? sandboxEmailsEnv : ""}},
+      std::vector<std::string>{"echo.segment", "echo.curate"}, aiBudgets);
 
   // An empty SENTRY_DSN leaves a no-op client.
   auto serverErrors = std::make_shared<PgServerErrorRepository>(pool);
@@ -488,27 +498,16 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
   installWriteReporter(sentry);
 
-  // The subscription service's feed, followed into the backend's own copy of every Windmill One entitlement
-  // (docs/foundation/subscriptions.md §6.1). Off while neither variable is set; one without the other refuses to start.
-  std::optional<subscriptions::ServiceAddress> subscriptionService;
-  try {
-    subscriptionService = subscriptions::ServiceAddress::from(std::getenv("SUBSCRIPTIONS_INTERNAL_URL"),
-                                                              std::getenv("SUBSCRIPTIONS_INTERNAL_TOKEN"));
-  } catch (const std::invalid_argument& missing) {
-    std::fprintf(stderr, "refusing to start: %s\n", missing.what());
-    return 1;
+  // The paid line, which GET /v1/subscription offers (§5.3): SUBSCRIPTIONS_PURCHASABLE_STORES names the stores it is open
+  // on, comma-separated. Unset closes it on every store. A name the backend does not know stays closed and is reported
+  // once, never refusing to start: a typo in a variable must not take the whole backend down at the next deploy.
+  const char* purchasableStoresEnv = std::getenv("SUBSCRIPTIONS_PURCHASABLE_STORES");
+  const subscriptions::PaidLine paidLine{purchasableStoresEnv ? purchasableStoresEnv : "", aiLimits.paidPeriodNanos};
+  if (paidLine.namesUnknownStore) {
+    LOG_ERROR << "subscriptions: SUBSCRIPTIONS_PURCHASABLE_STORES names a store the backend does not know; it stays closed";
+    sentry->report("config", "subscription.paid_line", "unknown_store");
   }
-  if (subscriptionService) {
-    auto subscriptionFeed = std::make_shared<subscriptions::SubscriptionServiceClient>(*subscriptionService);
-    auto entitlementCopy = std::make_shared<subscriptions::PgEntitlementCopy>(pool);
-    auto feedFollower = std::make_shared<subscriptions::FeedFollower>(*subscriptionFeed, *entitlementCopy,
-                                                                      subscriptions::FurtherConsumers{}, *sentry);
-    lifetime.watch(subscriptionFeed);
-    lifetime.watch(feedFollower, subscriptionFeed, entitlementCopy, sentry);
-    feedFollower->start();
-  } else {
-    LOG_INFO << "subscriptions: the feed follower is off (SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN unset)";
-  }
+  auto subscriptionApi = std::make_shared<subscriptions::SubscriptionApi>(authService, entitlements, paidLine, sentry);
 
   std::shared_ptr<AiBudgetAlerts> aiBudgetAlerts;
   if (aiBudgets) {
@@ -521,6 +520,9 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     aiBudgetAlerts = std::make_shared<AiBudgetAlerts>(aiBudgets, emailSender, systemClock, *alertEmail);
     lifetime.watch(aiBudgetAlerts, aiBudgets, aiBudgetRepo, emailSender, resendClient, systemClock);
     aiBudgetAlerts->start();
+    auto aiBudgetHoldSweep = std::make_shared<AiBudgetHoldSweep>(aiBudgets);
+    lifetime.watch(aiBudgetHoldSweep, aiBudgets, aiBudgetRepo, systemClock);
+    aiBudgetHoldSweep->start();
   }
 
   std::shared_ptr<AiCallBudget> aiCallBudget;
@@ -599,6 +601,37 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto eventRepo = std::make_shared<PgEventRepository>(pool);
   auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService, amplitude, sentry);
 
+  // The subscription service's feed, followed into the backend's own copy of every Windmill One entitlement
+  // (docs/foundation/subscriptions.md §6.1), its lifecycle events recorded into the events store (§10). Off while
+  // neither variable is set; one without the other refuses to start.
+  std::optional<subscriptions::ServiceAddress> subscriptionService;
+  try {
+    subscriptionService = subscriptions::ServiceAddress::from(std::getenv("SUBSCRIPTIONS_INTERNAL_URL"),
+                                                              std::getenv("SUBSCRIPTIONS_INTERNAL_TOKEN"));
+  } catch (const std::invalid_argument& missing) {
+    std::fprintf(stderr, "refusing to start: %s\n", missing.what());
+    return 1;
+  }
+  if (subscriptionService) {
+    // Paid periods fund the AI allowance (§6.3): a copy followed without the ledger would pass periods it never funds.
+    if (!aiBudgets) {
+      std::fprintf(stderr, "refusing to start: SUBSCRIPTIONS_INTERNAL_URL needs AI_ALLOWANCES_ENABLED=true\n");
+      return 1;
+    }
+    auto subscriptionFeed = std::make_shared<subscriptions::SubscriptionServiceClient>(*subscriptionService);
+    auto lifecycleEvents = std::make_shared<subscriptions::PgLifecycleEvents>(*eventRepo, *amplitude);
+    auto periodFunding = std::make_shared<subscriptions::PeriodFunding>(*aiBudgets, aiLimits.paidPeriodNanos);
+    auto feedFollower = std::make_shared<subscriptions::FeedFollower>(
+        *subscriptionFeed, *entitlementCopy,
+        subscriptions::FurtherConsumers{.inPage = {*lifecycleEvents}, .beside = {*periodFunding}}, *sentry);
+    lifetime.watch(subscriptionFeed);
+    lifetime.watch(feedFollower, subscriptionFeed, entitlementCopy, lifecycleEvents, eventRepo, amplitude, periodFunding,
+                   aiBudgets, aiBudgetRepo, sentry);
+    feedFollower->start();
+  } else {
+    LOG_INFO << "subscriptions: the feed follower is off (SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN unset)";
+  }
+
   auto feedbackRepo = std::make_shared<PgFeedbackRepository>(pool);
   auto feedbackApi = std::make_shared<FeedbackApi>(feedbackRepo, authService);
 
@@ -649,8 +682,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* mcpOriginsEnv = std::getenv("WINDMILL_MCP_ALLOWED_ORIGINS");
   const std::set<std::string> mcpOrigins = parseOriginList(mcpOriginsEnv ? mcpOriginsEnv : "");
 
-  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *systemClock, *treeRegistry, *nodeEdits,
-                                                 appBaseUrl);
+  auto mcpTools = std::make_shared<RoadmapTools>(*registry, *progressService, *ownerProgress, *systemClock,
+                                                 *treeRegistry, *nodeEdits, appBaseUrl);
 
   // Tending runs a server-side agent over the same tools MCP drives, on the same ANTHROPIC_API_KEY
   // the composer uses. TENDING_ENABLED must be "true"/"1" AND the agent configured to arm it.
@@ -685,7 +718,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                                                          *systemClock, *tokens, *entitlements,
                                                          tendingEnabled);
   lifetime.watch(tendingService, tendRuns, tendingAgent, mcpTools, systemClock, tokens, entitlements,
-                 subscriptionRepo, aiUsageRepo, registry, progressService, progress, treeRegistry, trees, bus);
+                 entitlementCopy, aiUsageRepo, registry, progressService, progress, treeRegistry, trees, bus);
 
   // Weekly reminders, on a dedicated thread — never a drogon request loop, which must not block on
   // libpqxx. Dark twice over: REMINDERS_ENABLED must say so AND the user be named in
@@ -727,7 +760,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto gymAsk = std::make_shared<gym::AskService>(*gymTrainingService, *gymThreads, *systemClock, *gymAskAgent,
                                                *gymTools, *entitlements, sentry);
   lifetime.watch(gymAsk, gymTrainingService, gymThreads, systemClock, gymAskAgent, gymTools, entitlements,
-                 subscriptionRepo, aiUsageRepo, gymLog, gymProgram, gymCatalog, gymNotes, gymBodyweight, tokens, gymDoor, gymPreferences);
+                 entitlementCopy, aiUsageRepo, gymLog, gymProgram, gymCatalog, gymNotes, gymBodyweight, tokens, gymDoor, gymPreferences);
 
   // The phone Coach's turn wire shares Ask's key, endpoint, fuse, sink and budget; its routes are
   // mounted under the same condition as Ask's.
@@ -961,8 +994,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   routes.registerHandler(
       "/v1/subscription",
-      [billingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        billingApi->mySubscription(req, std::move(cb));
+      [subscriptionApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        subscriptionApi->get(req, std::move(cb));
       },
       {drogon::Get});
 
@@ -1219,7 +1252,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                                                       *systemClock, *entitlements,
                                                       SelectionRules{}, SweepBudget{});
   lifetime.watch(journalEchoSweep, journalEchoes, journalSpans, journalSegmenter, journalEmbedder,
-                 journalCurator, systemClock, entitlements, subscriptionRepo, aiUsageRepo);
+                 journalCurator, systemClock, entitlements, entitlementCopy, aiUsageRepo);
   journalEchoSweep->start();
   // Derives on its own thread, never a drogon request thread: a curator call is seconds long.
   auto journalEchoDerivations =
@@ -1319,6 +1352,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // to the handler. The tree socket's frames set it; the sync live channel's messages are far smaller.
   app.setClientMaxWebSocketMessageSize(kMaxSocketMessageBytes);
   app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
+  // A connection waiting on its reply is idle to the framework, and is dropped with the reply at this limit (ReplyWait.h).
+  app.setIdleConnectionTimeout(kIdleConnectionLimit);
   const char* listenHostEnv = std::getenv("WINDMILL_HOST");
   const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";
   app.addListener(listenHost, port);

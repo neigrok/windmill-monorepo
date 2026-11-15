@@ -58,8 +58,12 @@ add_library(windmill_platform
   platform/ai_installations/AiInstallationApi.cpp
   platform/subscriptions/Feed.cpp
   platform/subscriptions/FeedFollower.cpp
+  platform/subscriptions/PeriodFunding.cpp
   platform/subscriptions/PgEntitlementCopy.cpp
+  platform/subscriptions/PgLifecycleEvents.cpp
+  platform/subscriptions/SubscriptionApi.cpp
   platform/subscriptions/SubscriptionServiceClient.cpp
+  platform/subscriptions/WindmillOne.cpp
   platform/domain/AiFuse.cpp
   platform/domain/AiUsage.cpp
   platform/domain/AiBudget.cpp
@@ -258,6 +262,7 @@ add_executable(windmill_domain_tests
   test/platform/domain/MailArmingTest.cpp
   test/platform/domain/OAuthTest.cpp
   test/platform/subscriptions/FeedTest.cpp
+  test/platform/subscriptions/WindmillOneTest.cpp
   test/platform/application/AuthServiceTest.cpp
   test/platform/application/AppleLinkingTest.cpp
   test/platform/application/EntitlementsTest.cpp
@@ -638,7 +643,10 @@ add_executable(windmill_adapters_tests
   test/platform/ai_installations/AiInstallationApiTest.cpp
   test/platform/ai_installations/PgAiInstallationsTest.cpp
   test/platform/subscriptions/FeedFollowerTest.cpp
+  test/platform/subscriptions/PeriodFundingTest.cpp
   test/platform/subscriptions/PgEntitlementCopyTest.cpp
+  test/platform/subscriptions/PgLifecycleEventsTest.cpp
+  test/platform/subscriptions/SubscriptionApiTest.cpp
   test/platform/subscriptions/SubscriptionServiceClientTest.cpp
   test/platform/adapters/http/AiAllowanceApiTest.cpp
   test/platform/adapters/json/AiBudgetJsonTest.cpp
@@ -716,6 +724,7 @@ add_executable(windmill_adapters_tests
   test/products/gym/onboarding/OnboardingApiTest.cpp
   test/products/gym/adapters/http/AskApiTest.cpp
   test/products/gym/coach/TurnApiTest.cpp
+  test/products/gym/coach/AnthropicCoachModelTest.cpp
   test/products/gym/adapters/llm/AnthropicAskTest.cpp
   test/products/gym/application/AskServiceTest.cpp
   test/products/gym/application/TrainingServiceTest.cpp

@@ -102,7 +102,7 @@ TEST(subscription_service_client_reads_a_feed_page_after_the_cursor_with_its_bea
 
   const FeedPage read = client.page(6, 500);
   CHECK_EQ(read.epoch, std::string("c09a3ab3-2732-4415-ba88-825ff868cf13"));
-  CHECK_EQ(read.latestSeq, Seq{26});
+  CHECK_EQ(read.latestSeq, Seq{27});
   REQUIRE_EQ(read.entries.size(), std::size_t{6});
   CHECK_EQ(read.entries.back().seq, Seq{13});
   CHECK_EQ(read.entries.back().entitlement->body, entitlementExample("sandbox_active"));
@@ -137,6 +137,23 @@ TEST(subscription_service_client_reads_a_service_that_is_not_listening_as_an_una
   }
   SubscriptionServiceClient client{ServiceAddress{url, "internal-secret"}};
   CHECK_EQ(answerOf(client), std::string("unreachable"));
+}
+
+TEST(subscription_service_client_looks_its_host_up_at_every_read_and_names_it_as_the_host) {
+  const std::string page = dump(contractExample("feed.json", "caught_up")["body"]);
+  StubService service{{StubService::reply(200, page), StubService::reply(200, page)}};
+  const std::string port = service.url().substr(service.url().rfind(':') + 1);
+  SubscriptionServiceClient client{ServiceAddress{"http://localhost:" + port, "internal-secret"}};
+  SubscriptionServiceClient nowhere{ServiceAddress{"http://subscriptions-internal.invalid:" + port, "internal-secret"}};
+
+  CHECK_EQ(answerOf(client), std::string("read"));
+  CHECK_EQ(answerOf(client), std::string("read"));
+  CHECK_EQ(answerOf(nowhere), std::string("unreachable"));
+
+  const std::vector<std::string> requests = service.requests();
+  REQUIRE_EQ(requests.size(), std::size_t{2});
+  for (const std::string& request : requests)
+    CHECK(lowered(request).find("\r\nhost: localhost:" + port + "\r\n") != std::string::npos);
 }
 
 TEST(subscription_service_address_is_both_variables_or_neither) {

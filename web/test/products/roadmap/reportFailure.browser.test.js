@@ -123,10 +123,11 @@ for (const [answer, issues, outcome] of [
   test(`a gallery Fork answered ${answer.status ?? answer} reports ${issues.length} and emits ${outcome}`, async () => {
     await withDoor('browse', { 'GET /v1/gallery': GALLERY, 'POST /v1/trees/t_g/fork': answer }, async (page) => {
       await page.getByRole('button', { name: /Fork/ }).first().click();
-      await page.waitForFunction(() => window.events.some((event) => event.props?.outcome));
+      await page.waitForFunction(() => window.events.some((event) => event.name === 'fork_attempt' && event.props?.outcome));
       assert.deepEqual(await said(page), {
         issues,
         events: [
+          { name: 'roadmap_gallery', props: { step: 'load', outcome: 'available' } },
           { name: 'fork_attempt', props: { mode: 'browse' } },
           { name: 'fork_attempt', props: { mode: 'browse', outcome } },
         ],
@@ -265,7 +266,7 @@ test('Ask AI reports a failed or lost request and an unreadable answer under one
 });
 
 const TWO_ROADMAPS = json({ trees: [{ id: 't_a', title: 'Learn to sail', updatedAt: 2 }, { id: 't_b', title: 'Bake bread', updatedAt: 1 }] });
-const TREE_B = json({ data: { id: 't_b', title: 'Bake bread', nodes: [{ id: 'n', label: 'Knead', prerequisites: [] }], kinds: [] }, visibility: 'private', mine: true });
+const TREE_B = json({ data: { id: 't_b', title: 'Bake bread', nodes: [{ id: 'n', label: 'Knead', prerequisites: [] }], kinds: [] }, root: 't_b', parent: null, path: [], depth: 0, visibility: 'private', mine: true });
 const exportAnswers = (treeA, progressB = json({ marks: [] })) => ({
   'GET /v1/me': json({ error: 'nope' }, 401),
   'GET /v1/trees': TWO_ROADMAPS,

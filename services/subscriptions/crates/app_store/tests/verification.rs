@@ -571,6 +571,40 @@ fn a_payload_signed_later_than_the_clock_allows_is_refused() {
 }
 
 #[test]
+fn a_signing_in_the_future_is_judged_only_once_the_signature_holds() {
+    let trusted = TestChain::issue(ChainShape::default());
+    let foreign = TestChain::issue(ChainShape::default());
+    let transaction = json!({
+        "transactionId": "2000000000000001",
+        "originalTransactionId": "2000000000000001",
+        "bundleId": "works.windmill.app",
+        "productId": "works.windmill.one.monthly",
+        "purchaseDate": 1_790_812_800_000_i64,
+        "signedDate": 1_793_491_320_001_i64,
+        "environment": "Production"
+    });
+
+    let refusals = [
+        trusted
+            .verifier()
+            .verify_transaction(&trusted.sign(&transaction))
+            .err(),
+        trusted
+            .verifier()
+            .verify_transaction(&foreign.sign(&transaction))
+            .err(),
+    ];
+
+    assert_eq!(
+        refusals.map(|refusal| refusal.map(|refusal| (refusal, refusal.after_signature()))),
+        [
+            Some((Refusal::SignedInFuture, true)),
+            Some((Refusal::Untrusted, false))
+        ]
+    );
+}
+
+#[test]
 fn a_nested_transaction_with_a_bad_signature_is_refused_inside_a_good_notification() {
     let chain = TestChain::issue(ChainShape::default());
     let impostor = TestChain::issue(ChainShape::default());

@@ -24,9 +24,9 @@ namespace {
 // Coach over the gym's real door, with an allowance that never runs out and a scripted model.
 struct CoachDesk {
   doortest::Harness h;
-  wm::fake::FakeSubscriptionRepository subscriptions;
+  wm::fake::FakeEntitlementCopy subscriptions;
   wm::fake::FakeAiUsageRepository usage;
-  wm::Entitlements entitlements{subscriptions, usage};
+  wm::Entitlements entitlements{subscriptions, h.clock, usage};
   fake::FakeAsk agent;
   AskService ask{h.training, h.repo.threads, h.clock, agent, h.tools, entitlements};
 };

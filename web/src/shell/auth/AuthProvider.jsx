@@ -402,7 +402,8 @@ export default function AuthProvider({ children }) {
     </div>}
     {error && !question && !upgradeRequired && <div role="alert">{t('shell.auth.accountChangeFailed')}</div>}
     <SyncDecisions key={`${question?.product ?? 'signout'}:${question?.counted?.join('|') ?? ''}`} question={upgradeRequired ? null : question}
-      work={PRODUCTS.find((product) => product.id === question?.product)?.sync?.signedOutWork} busy={busy} error={error} onDecision={decide}
+      work={PRODUCTS.find((product) => product.id === question?.product)?.sync?.signedOutWork}
+      notices={question ? PRODUCTS.flatMap((product) => product.signOutNotice?.() ?? []) : []} busy={busy} error={error} onDecision={decide}
       onCancel={async () => {
         setBusy(true); setError(false);
         try {

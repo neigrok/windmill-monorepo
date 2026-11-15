@@ -17,7 +17,7 @@ const FULL_DESKTOP_QUERY = '(min-width: 1280px)';
 // `back` is the tree this one was gone into from, with the way back to it: a chip in the first slot from 744px, a
 // chevron with that tree as an eyebrow over the title on a phone.
 export function RoadmapIdentity({
-  band, view, role, title, loading = false, back = null, switcher, progress, onSwitchView, graphUnavailable = false, onGraphUnavailable, find, next,
+  band, view, role, title, loading = false, back = null, switcher, recovery = null, progress, onSwitchView, graphUnavailable = false, onGraphUnavailable, guide = null, sheetGuide = null, guideOpen = false, find, next,
   onAskAI, onShare, onNewStep, onExport, onSettings, onShortcuts, onFork, sheet, onBottom, onActivity, activityOpen = false,
 }) {
   const bar = useRef(null);
@@ -130,7 +130,7 @@ export function RoadmapIdentity({
     <div
       ref={bar}
       tabIndex={-1}
-      className={`st-roadmap-identity st-roadmap-identity--${band}${!phone && !fullDesktop ? ' st-roadmap-identity--folded' : ''}`}
+      className={`st-roadmap-identity st-roadmap-identity--${band}${!phone && !fullDesktop ? ' st-roadmap-identity--folded' : ''}${tablet && view === 'board' && recovery ? ' st-roadmap-identity--recovery' : ''}`}
       data-role={role}
       data-view={view}
     >
@@ -150,6 +150,7 @@ export function RoadmapIdentity({
             {title}
           </button>
         )}
+        {tablet && view === 'board' && recovery}
         {showSwitcher && <div className="st-roadmap-switcher">{switcher}</div>}
         {showHeading && <h1 ref={titleButton} tabIndex={-1} className={`st-roadmap-title${eyebrow ? ' st-roadmap-title--from' : ''}`} title={title}>{eyebrow}{title}</h1>}
       </div>
@@ -159,7 +160,8 @@ export function RoadmapIdentity({
           {progressFigure({ ...progress, compact: phone })}
         </span>
       )}
-      {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} graphUnavailable={graphUnavailable} onGraphUnavailable={onGraphUnavailable} />}
+      {onSwitchView && <ViewSwitch view={view} onSwitch={onSwitchView} phone={phone} tooltip={desktop} graphUnavailable={graphUnavailable} onGraphUnavailable={onGraphUnavailable} />}
+      {!phone && guide}
       {!phone && <>
         <div className="st-roadmap-space" />
         {find && <FindStep {...find} folded={!fullDesktop} tooltip={desktop} onExpand={() => verb('find')} />}
@@ -281,6 +283,8 @@ export function RoadmapIdentity({
       {open === 'sheet' && (
         <RoadmapSheet
           sheet={sheet}
+          guide={sheetGuide}
+          guideOpen={guideOpen}
           view={view}
           band={band}
           onAskAI={onAskAI}

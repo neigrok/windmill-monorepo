@@ -15,11 +15,7 @@ std::optional<long long> anthropicReservationNanos(const Json::Value& request);
 std::optional<AiOutputBudget> anthropicOutputBudget(const Json::Value& request, int minOutputTokens);
 std::optional<long long> anthropicActualNanos(const std::string& model, const Json::Value& usage);
 
-enum class AiCallEnd { settled, unconsumed, uncertain };
-
-// Who may fund a round: any allowance its caller holds, or only a Windmill One grant, for a round that must never draw
-// on the free pools.
-enum class AiCallFunding { anyAllowance, windmillOne };
+enum class AiCallEnd { settled, unconsumed, uncertain, cancelled };
 
 struct AiCallAdmission {
   std::optional<AiBudgetReservation> reservation;
@@ -38,11 +34,13 @@ public:
   AiCallAdmission beginInstallation(const AiInstallationPrincipal& principal, const AiSpend& spend,
                                     const Json::Value& request, int minOutputTokens = 1024);
   // A round its own adapter priced: `ceilingNanos` is the most it can cost, held until it settles, and none is a
-  // price this ledger cannot hold. A Windmill One round refuses any other principal as `funding_required`.
-  AiCallAdmission begin(const AiSpend& spend, std::optional<long long> ceilingNanos, AiCallFunding funding);
+  // price this ledger cannot hold. A round only a grant may fund is refused `funding_required` without one in force.
+  AiCallAdmission begin(const AiSpend& spend, std::optional<long long> ceilingNanos, AiBudgetFunding funding);
   // `settled` books the vendor's reported usage; `unconsumed` books zero — the vendor consumed
   // nothing: it answered an error before any work began, or never received the request; `uncertain`
-  // keeps the hold — the send is ambiguous.
+  // keeps the hold — the send is ambiguous — until it lapses; `cancelled`, a round this server stopped on purpose,
+  // books at once what its usage counts — or, with no message begun, the round's input estimate — never more than
+  // its hold. A round whose hold already lapsed books nothing.
   void finish(const AiBudgetReservation& reservation, const std::string& model,
               const Json::Value& usage, AiCallEnd end);
   // The same for a round its adapter priced: `actualNanos` is what the vendor billed, and none keeps a settled
@@ -51,9 +49,10 @@ public:
 
 private:
   AiCallAdmission beginAccount(const AiSpend& spend, std::optional<long long> amountNanos,
-                               std::optional<AiOutputBudget> outputBudget, AiCallFunding funding);
+                               std::optional<AiOutputBudget> outputBudget, AiBudgetFunding funding);
   AiCallAdmission admit(const AiBudgetPrincipal& principal, std::optional<long long> amountNanos,
-                        std::optional<AiOutputBudget> outputBudget);
+                        std::optional<AiOutputBudget> outputBudget,
+                        AiBudgetFunding funding = AiBudgetFunding::AnyAllowance);
   std::shared_ptr<AiBudgetService> budgets_;
   Entitlements& entitlements_;
   AuthRepository& accounts_;

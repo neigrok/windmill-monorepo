@@ -143,7 +143,7 @@ struct Recorder : TurnSink {
 struct Harness {
   // `durableAllowances`: whether a bound seat reads the USD allowances an anonymous seat always does.
   explicit Harness(bool durableAllowances = false)
-      : entitlements(subscriptions, usage, {}, {}, durableAllowances ? budgets : nullptr) {}
+      : entitlements(subscriptions, clock, usage, {}, {}, durableAllowances ? budgets : nullptr) {}
 
   wm::fake::FakeClock clock;
   OpenSslTokenGenerator tokens;
@@ -154,7 +154,7 @@ struct Harness {
   onboardingtest::Installations installationRepository;
   std::shared_ptr<AiInstallations> installations =
       std::make_shared<AiInstallations>(installationRepository, budgets, tokens, clock, std::string(64, 'k'));
-  wm::fake::FakeSubscriptionRepository subscriptions;
+  wm::fake::FakeEntitlementCopy subscriptions;
   wm::fake::FakeAiUsageRepository usage;
   Entitlements entitlements;
   FakeServer server;

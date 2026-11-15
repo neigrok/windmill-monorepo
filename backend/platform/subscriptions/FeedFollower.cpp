@@ -82,10 +82,9 @@ FollowStep FeedFollower::apply(const FeedCursor& from, const std::vector<FeedEnt
     observation.skip();
     return FollowStep::overtaken;
   }
-  for (const FeedEntry& entry : entries) {
+  for (const FeedEntry& entry : entries)
     for (FeedEntryConsumer& consumer : inPage_) consumer.consume(*txn, entry);
-    for (FeedEntrySideConsumer& consumer : beside_) consumer.consume(*txn, entry);
-  }
+  for (FeedPageSideConsumer& consumer : beside_) consumer.consume(*txn, entries);
   txn->commit();
   observation.wrote();
   observation.finish(rebuilding ? "rebuilt" : "ok");

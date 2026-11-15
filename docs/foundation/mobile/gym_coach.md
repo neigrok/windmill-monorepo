@@ -504,7 +504,6 @@ answers `204`. Any other body — including one for a batch that timed out — i
 | `free_day_exhausted` | Shared free capacity is unavailable for this UTC day. Names the end of that day. |
 | `free_month_exhausted` | Shared free capacity is unavailable for this UTC month. Names the end of that month. |
 | `concurrency_exhausted` | The principal already has its permitted number of unresolved calls. |
-| `funding_required` | One access has no active funded allowance period. |
 | `debt_outstanding` | An unresolved unfunded accounting overrun blocks further admission. |
 | `coach-replica-syncing` | Local only: the replica's history is still arriving. |
 | `not-a-stream` | Local only, Android: every reconnect answered a 2xx that was no event stream, a captive portal's page. |
@@ -513,7 +512,7 @@ answers `204`. Any other body — including one for a batch that timed out — i
 | `coach-stream-replaced` | Another stream took over this turn; sent as the closing `error` of the stream it replaced. |
 
 The allowance codes are `subject_exhausted`, `free_day_exhausted`, `free_month_exhausted`,
-`concurrency_exhausted`, `funding_required` and `debt_outstanding`. Before the stream each answers
+`concurrency_exhausted` and `debt_outstanding`. Before the stream each answers
 `429`: an expected refusal, never a failure of the server. `coach-busy`, `coach-vendor-error` and
 `anonymous_ai_unavailable` answer `503`, the last a refusal the server means: signed-out Coach is off.
 `coach-turn-stopped` answers `409`, a refusal the server means as well. The moment a code names is
@@ -599,7 +598,8 @@ additional safeguard.
 
 A principal may have one unresolved free call or two unresolved paid calls. Reservations,
 dispatched calls and uncertain calls all occupy slots. A vendor error answered before the message
-started consumed nothing and settles at zero; only a send the vendor may have taken stays uncertain.
+started consumed nothing and settles at zero; only a send the vendor may have taken stays uncertain,
+until its hold lapses and is released at zero 10 minutes after admission.
 The backend enforces this across processes, tier changes and permanent device binding. Product burst
 protection remains separate. A process runs two model calls at once; a turn holds that capacity only
 while its round streams, never while it waits on its phone, and at most 64 turns are alive in a

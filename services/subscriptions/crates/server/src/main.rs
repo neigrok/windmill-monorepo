@@ -1,11 +1,15 @@
 use std::panic::AssertUnwindSafe;
 use std::process::ExitCode;
-use std::time::Duration;
-use std::{env, io};
+use std::time::{Duration, SystemTime};
+use std::{env, fs, io};
 
+use app_store::verification::SignedDataVerifier;
 use futures_util::FutureExt;
 use server::config::Config;
+use server::internal;
 use server::listeners::{Bounds, Listener};
+use server::store_doors::{self, AppStoreDoor};
+use server::sweep::InboxSweep;
 use server::telemetry;
 use storage::{Ledger, StorageError};
 use tokio::net::TcpListener;
@@ -15,8 +19,8 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::prelude::*;
 
-// Docker kills 10 s after SIGTERM: 6 s for open connections, the ledger's included, then at most 3 s
-// for Sentry.
+// Docker kills 10 s after SIGTERM: 6 s for open connections, the deliveries being applied and the ledger's
+// connections, then at most 3 s for Sentry.
 const DRAIN_BOUND: Duration = Duration::from_secs(6);
 
 fn main() -> ExitCode {
@@ -37,10 +41,28 @@ fn main() -> ExitCode {
         environment = config.environment,
         release = config.release.as_deref(),
         panic_route_enabled = config.panic_route_enabled,
+        app_store_test_root = config.app_store_test_root.is_some(),
+        internal_token_set = config.internal_token.is_some(),
         "starting"
     );
+
+    // Apple's pinned root, and in a test deployment also the root the test signer signs under.
+    let verifier = match &config.app_store_test_root {
+        None => SignedDataVerifier::windmill(SystemTime::now),
+        Some(path) => match fs::read(path)
+            .map(|root| SignedDataVerifier::windmill_also_trusting(&root, SystemTime::now))
+        {
+            Ok(Ok(verifier)) => verifier,
+            _ => {
+                let variable = "SUBSCRIPTIONS_APP_STORE_TEST_ROOT";
+                tracing::error!(variable, "{variable} names no certificate to trust");
+                return ExitCode::FAILURE;
+            }
+        },
+    };
+
     match Runtime::new() {
-        Ok(runtime) => runtime.block_on(serve(config)),
+        Ok(runtime) => runtime.block_on(serve(config, verifier)),
         Err(error) => {
             tracing::error!(error = ?error.kind(), "runtime refused");
             ExitCode::FAILURE
@@ -48,7 +70,7 @@ fn main() -> ExitCode {
     }
 }
 
-async fn serve(config: Config) -> ExitCode {
+async fn serve(config: Config, verifier: SignedDataVerifier) -> ExitCode {
     let (mut terminate, mut interrupt) = match (
         signal(SignalKind::terminate()),
         signal(SignalKind::interrupt()),
@@ -77,6 +99,7 @@ async fn serve(config: Config) -> ExitCode {
         }
     };
 
+    let app_store = AppStoreDoor::new(ledger.clone(), verifier, SystemTime::now);
     let bounds = Bounds::default();
     let stop = CancellationToken::new();
     let mut running = JoinSet::new();
@@ -92,7 +115,11 @@ async fn serve(config: Config) -> ExitCode {
         };
         let bound = socket.local_addr().unwrap_or(address);
         tracing::info!(listener = listener.label(), address = %bound, "listening");
-        let router = listener.router(&config, ledger.clone(), bounds);
+        let doors = match listener {
+            Listener::Public => store_doors::router(app_store.clone()),
+            Listener::Internal => internal::doors(config.internal_token.clone(), ledger.clone()),
+        };
+        let router = listener.router(&config, ledger.clone(), doors, bounds);
         let stop = stop.clone();
         running.spawn(async move {
             let served = AssertUnwindSafe(listener.serve(socket, router, bounds, stop))
@@ -109,6 +136,9 @@ async fn serve(config: Config) -> ExitCode {
         });
     }
 
+    // On start, so what the last run kept and left unsettled is applied first, then every minute.
+    let sweep = tokio::spawn(InboxSweep::new(ledger.clone(), app_store.clone()).run(stop.clone()));
+
     let signal = tokio::select! {
         _ = terminate.recv() => "SIGTERM",
         _ = interrupt.recv() => "SIGINT",
@@ -118,20 +148,38 @@ async fn serve(config: Config) -> ExitCode {
         }
     };
 
-    // Both listeners stop accepting at once; each then waits for the requests it is answering, and the
-    // ledger's connections close once no request holds one.
+    // Both listeners stop accepting at once and the sweep stops after the row it is applying; each listener then waits
+    // for the requests it is answering, the App Store door for the deliveries it is applying, and the ledger's
+    // connections close once nothing holds one.
     tracing::info!(signal, "stopping");
     stop.cancel();
     let drained = async {
         running.join_all().await;
+        let _ = sweep.await;
+        app_store.drain().await;
         ledger.close().await;
     };
-    match tokio::time::timeout(DRAIN_BOUND, drained).await {
-        Ok(_) => tracing::info!("stopped"),
-        Err(_) => tracing::warn!(
-            drain_bound_s = DRAIN_BOUND.as_secs(),
-            "stopped with requests still in flight"
-        ),
+    if tokio::time::timeout(DRAIN_BOUND, drained).await.is_ok() {
+        tracing::info!("stopped");
+        return ExitCode::SUCCESS;
     }
+    // Whatever was kept and not applied is applied by the next start's sweep; a delivery not kept yet is sent again.
+    let abandoned_deliveries = app_store.deliveries_under_way();
+    let sentry_event_id = (abandoned_deliveries > 0)
+        .then(|| {
+            telemetry::report(
+                sentry::Level::Error,
+                "store.notification",
+                "abandoned",
+                None,
+            )
+        })
+        .flatten();
+    tracing::warn!(
+        drain_bound_s = DRAIN_BOUND.as_secs(),
+        abandoned_deliveries,
+        sentry_event_id,
+        "stopped with requests still in flight"
+    );
     ExitCode::SUCCESS
 }

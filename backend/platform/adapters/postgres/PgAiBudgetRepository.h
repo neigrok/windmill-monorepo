@@ -18,8 +18,12 @@ public:
   AiBudgetResult markUncertain(const std::string& id) override;
   AiBudgetResult settle(const std::string& id, long long actualNanos) override;
   AiBudgetResult release(const std::string& id) override;
+  std::vector<AiBudgetReservation> releaseLapsed(long long atMs, int limit,
+                                                 const std::optional<AiBudgetSubject>& subject) override;
   AiBudgetResult reconcileOverrun(const std::string& id) override;
   AiBudgetGrantResult fund(const AiBudgetGrant& grant, const AiBudgetLimits& limits) override;
+  AiBudgetGrantResult refund(const std::string& fundingReference, std::optional<long long> refundedAtMs,
+                             const std::optional<AiBudgetStatement>& statement) override;
   std::optional<std::string> boundAccount(const std::string& deviceId) override;
   AiBudgetCode bindDevice(const std::string& deviceId, const std::string& accountId,
                          long long atMs, const AiBudgetLimits& limits) override;

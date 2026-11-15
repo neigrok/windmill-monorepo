@@ -61,6 +61,8 @@ import { EmptyGraphCard, GraphChrome, GraphSelectionBar } from './graph/GraphChr
 import { GraphDocks } from './graph/GraphDocks.jsx';
 import { StatusChip, VisitorNotice } from './room/HonestyChrome.jsx';
 import { Minimap } from './graph/Minimap.jsx';
+import { RecoveryTreeSwitcher } from './identity/RecoveryTreeSwitcher.jsx';
+import { LocalTreeRegistry } from './persistence/LocalTreeRegistry.js';
 import { TreeSwitcher } from './identity/TreeSwitcher.jsx';
 import { useTabletEditing } from './graph/tablet/useTabletEditing.js';
 import { KindLegend } from './graph/tree/KindLegend.jsx';
@@ -114,7 +116,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const openShare = useCallback(() => setShareOpen(true), []);
   const openFork = useCallback(() => setForkOpen(true), []);
-  const { progress, progressActs } = useRoomProgress({ ...room, treeId, demo, shared, demotion, emit, showToast, noteCompletion, openShare, band: breakpoint });
+  // Where the tree sits, once the load has read it: the hooks that come before the load read it here. A subtree is shared
+  // as its root is, so it offers no share of its own.
+  const placeRef = useRef(null);
+  const { progress, progressActs } = useRoomProgress({ ...room, treeId, demo, shared, demotion, emit, showToast, noteCompletion, openShare: placeRef.current?.subtree ? null : openShare, band: breakpoint });
   const { completed, completedAt } = progress;
   const structure = useGraphStructure({ room, progressActs, showToast, syncLegendFromTree: legendKit.syncLegendFromTree });
   const { tree, renderModel, bounds, setBounds } = structure;
@@ -134,7 +139,9 @@ export function SkillTreeView({ treeId, demo = false }) {
       else sceneRef.current?.announceCeremony(said);
     },
   });
-  const { loading, loadError, syncSession, treeVisibility, setTreeVisibility, treeMine } = load;
+  const { loading, loadError, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace } = load;
+  placeRef.current = treePlace;
+  const inSubtree = treePlace?.subtree === true;
   // A roadmap that loaded as someone else's reads as a share does, whichever address opened it.
   const knownReader = !loading && Boolean(tree) && !treeMine;
   knownReaderRef.current = knownReader;
@@ -171,7 +178,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     collapse();
   }, [closeComposer, stopEditing, collapse]);
   const holder = useRoomHolder({ owner, treeId, account, confirmed: accountConfirmed, lapsed, claims });
-  const treeVisit = useTreeVisit({ room, arrival, holder, band: breakpoint });
+  const treeVisit = useTreeVisit({ room, arrival, holder, visitor: !demo && !owner, place: treePlace, route: shared ? '#/t/' : '#/app/', role: loading ? null : who.role, band: breakpoint });
   const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, carried: treeVisit, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
   const { decidedView, boardActive, canvasView, shownView, boardFacts, boardAwaitsRoadmap, switchView, onSwitchView } = view;
   room.viewRef.current = shownView;
@@ -209,7 +216,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const guideView = boardActive ? 'board' : 'graph';
   const guideEntry = guide && !boardAwaitsRoadmap ? (
     <ErrorBoundary fallback={null} onCrash={(error) => reportRoadmapFailure('roadmap-guide', error)}>
-      <GuideEntry guide={guide} band={breakpoint} view={guideView} />
+      <GuideEntry guide={guide} band={breakpoint} view={guideView} door={phone && owner ? 'sheet' : 'row'} />
     </ErrorBoundary>
   ) : null;
   const revealOnGraph = useCallback((id) => {
@@ -304,7 +311,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   useEffect(() => {
     if (phoneGraph && selectedId) sceneRef.current?.revealNode(selectedId);
   }, [phoneGraph, selectedId]);
-  const forkPresent = (reader || demo) && !demotion?.cardOpen;
+  const forkPresent = (reader || demo) && !demotion?.cardOpen && !inSubtree;
   const { graphStep, forkPillShown, openGraphFork, rememberGraphFocus } = useGraphStepBar({ phoneGraph, selection, selectedNode, selectedState, covered: stepCovering, forkPresent, forkOpen, setForkOpen, rootRef, canvasRef, focusGraph });
   const verbs = useRowVerbs({
     treeId, tree, boardTree, shownStats, who, view, boardQuery, setBoardQuery, progress, activity, graphUnavailable, address: stepAddress,
@@ -386,6 +393,20 @@ export function SkillTreeView({ treeId, demo = false }) {
     },
   });
 
+  const recovery = useMemo(() => {
+    if (breakpoint !== 'tablet' || !boardActive || !loadError || shared || demo) return null;
+    if (status === 'signed-in' && account?.id) return { place: 'account' };
+    if (status !== 'ghost') return null;
+    try {
+      return new LocalTreeRegistry().readList(null).some((row) => row.id === treeId && !row.claimed) ? { place: 'device' } : null;
+    } catch (error) {
+      return { error };
+    }
+  }, [breakpoint, boardActive, loadError, shared, demo, status, account?.id, treeId]);
+  useEffect(() => {
+    if (recovery?.error) reportRoadmapFailure('roadmap-recovery-list', recovery.error, { place: 'device', reason: 'index' });
+  }, [recovery]);
+
   const activityPanel = activityOpen && breakpoint === 'tablet' ? (
     <ActivityPanel top={geometry.activityPanelTop} groups={activity.activityGroups} nodesById={nodesById} onClose={verbs.closeRowActivity} onOpenStep={verbs.openActivityStep} />
   ) : null;
@@ -416,15 +437,20 @@ export function SkillTreeView({ treeId, demo = false }) {
             title={boardAwaitsRoadmap ? undefined : tree?.title}
             loading={boardAwaitsRoadmap && !loadError}
             back={treeVisit.from === null ? null : { title: treeVisit.from.title, onBack: treeVisit.back }}
-            switcher={owner && !phone && !boardAwaitsRoadmap ? <TreeSwitcher {...verbs.switcher} /> : null}
+            switcher={owner && !phone && !boardAwaitsRoadmap && !inSubtree ? <TreeSwitcher {...verbs.switcher} /> : null}
+            recovery={recovery?.place && <RecoveryTreeSwitcher key={`${account?.id ?? 'device'}:${treeId}`} place={recovery.place}
+              onPickTree={verbs.identitySheet.onPickTree} onNew={verbs.identitySheet.onNewRoadmap} onBrowse={verbs.identitySheet.onBrowse} />}
             progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
             onSwitchView={onSwitchView}
+            guide={!phone ? guideEntry : null}
+            sheetGuide={phone && owner ? guideEntry : null}
+            guideOpen={Boolean(guide?.opened)}
             graphUnavailable={graphUnavailable}
             onGraphUnavailable={explainGraphUnavailable}
             find={!phone && boardFacts.loaded && !boardFacts.empty ? verbs.identityFind : null}
             next={canvasView && owner && !phone && verbs.graphNext?.count > 0 ? verbs.identityNext : null}
             onAskAI={canTend && owner ? () => setTendOpen(true) : null}
-            onShare={!boardAwaitsRoadmap && tree ? verbs.shareFromRow : null}
+            onShare={!boardAwaitsRoadmap && tree && !inSubtree ? verbs.shareFromRow : null}
             onNewStep={owner && boardFacts.loaded ? () => newStepFromBoard('verbs') : null}
             onExport={owner && boardFacts.loaded ? verbs.exportFromRow : null}
             onSettings={owner ? verbs.openRowSettings : null}
@@ -432,7 +458,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             onActivity={verbs.activityEnabled ? verbs.openRowActivity : null}
             activityOpen={activityOpen}
             onFork={!owner && forkPresent ? openFork : null}
-            sheet={phone && owner && boardFacts.loaded ? verbs.identitySheet : null}
+            sheet={phone && owner && boardFacts.loaded && !inSubtree ? verbs.identitySheet : null}
             onBottom={setTopbarBottom}
           />
         </ErrorBoundary>
@@ -452,13 +478,13 @@ export function SkillTreeView({ treeId, demo = false }) {
               onAnchor={setSelectedId}
               refusal={refusal}
               deviceLine={phone ? deviceLine : null}
-              guide={boardActive ? guideEntry : null}
+              guide={phone && !owner && boardActive ? guideEntry : null}
               onFork={phone && forkPresent ? openFork : null}
               breakpoint={breakpoint}
               topInset={topbarBottom}
               active={boardActive}
               onRetry={load.retryLoad}
-              onShare={owner ? openShare : undefined}
+              onShare={owner && !inSubtree ? openShare : undefined}
               onNewStep={owner ? newStepFromBoard : undefined}
               onComplete={owner ? (id, door) => boardActs.complete(id, door) : undefined}
               editable={boardActive && owner}
@@ -546,10 +572,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         onOpenStep={stepPage.openFromGraph}
         onBarBottom={geometry.setGraphBarBottom}
         deviceLine={phone ? deviceLine : null}
-        guide={canvasView ? guideEntry : null}
-        guideTop={geometry.guideTop}
-        guideRight={insets.right}
-        onGuideBox={geometry.publishGuideCard}
+        guide={phone && !owner && canvasView ? guideEntry : null}
         cameraRight={phone || !canvasView ? undefined : insets.blocks.at(-1)?.right}
         cameraBottom={phone || !canvasView ? undefined : insets.blocks.at(-1)?.bottom}
         onZoomIn={() => sceneRef.current?.zoomBy(1.2)}
@@ -740,6 +763,8 @@ export function SkillTreeView({ treeId, demo = false }) {
         onClose={() => setShareOpen(false)}
         visibility={treeVisibility}
         mine={treeMine}
+        title={tree?.title ?? ''}
+        subtrees={tree?.nodes.some((step) => step.opening?.owned) ?? false}
         onStanceChange={setTreeVisibility}
       />
 

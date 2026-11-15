@@ -5,6 +5,7 @@
 
 #include <drogon/utils/Utilities.h>
 #include <trantor/utils/Logger.h>
+#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
@@ -197,15 +198,15 @@ AiCallBudget::AiCallBudget(std::shared_ptr<AiBudgetService> budgets, Entitlement
 
 AiCallAdmission AiCallBudget::begin(const AiSpend& spend, const Json::Value& request, int minOutputTokens) {
   const MessagesPrice price = messagesPrice(spend, request, minOutputTokens);
-  return beginAccount(spend, price.amountNanos, price.outputBudget, AiCallFunding::anyAllowance);
+  return beginAccount(spend, price.amountNanos, price.outputBudget, AiBudgetFunding::AnyAllowance);
 }
 
-AiCallAdmission AiCallBudget::begin(const AiSpend& spend, std::optional<long long> ceilingNanos, AiCallFunding funding) {
+AiCallAdmission AiCallBudget::begin(const AiSpend& spend, std::optional<long long> ceilingNanos, AiBudgetFunding funding) {
   return beginAccount(spend, ceilingNanos, std::nullopt, funding);
 }
 
 AiCallAdmission AiCallBudget::beginAccount(const AiSpend& spend, std::optional<long long> amountNanos,
-                                           std::optional<AiOutputBudget> outputBudget, AiCallFunding funding) {
+                                           std::optional<AiOutputBudget> outputBudget, AiBudgetFunding funding) {
   WriteObservation observation{"ai.call.admit", "platform", "vendor", "", &failures_};
   WriteContext context{observation};
   try {
@@ -218,14 +219,8 @@ AiCallAdmission AiCallBudget::beginAccount(const AiSpend& spend, std::optional<l
       observation.finish("unauthenticated");
       return {{}, "unauthenticated"};
     }
-    const auto principal = entitlements_.aiPrincipalFor(account->id, account->email.value);
-    // The reservation is booked under this principal, so a Windmill One principal can only ever draw on its grant.
-    if (funding == AiCallFunding::windmillOne && principal.tier != AiBudgetTier::WindmillOne) {
-      observation.finish("funding_required");
-      return {{}, "funding_required"};
-    }
     observation.skip();
-    return admit(principal, amountNanos, outputBudget);
+    return admit(entitlements_.aiPrincipalFor(account->id, account->email.value), amountNanos, outputBudget, funding);
   } catch (...) {
     observation.failUnknown();
     return {{}, "ai_accounting_unavailable"};
@@ -245,7 +240,7 @@ AiCallAdmission AiCallBudget::beginInstallation(const AiInstallationPrincipal& i
 }
 
 AiCallAdmission AiCallBudget::admit(const AiBudgetPrincipal& principal, std::optional<long long> amountNanos,
-                                    std::optional<AiOutputBudget> outputBudget) {
+                                    std::optional<AiOutputBudget> outputBudget, AiBudgetFunding funding) {
   WriteObservation observation{"ai.call.admit", "platform", "vendor", "", &failures_};
   WriteContext context{observation};
   try {
@@ -253,7 +248,7 @@ AiCallAdmission AiCallBudget::admit(const AiBudgetPrincipal& principal, std::opt
       observation.finish("unsupported_ai_pricing");
       return {{}, "unsupported_ai_pricing"};
     }
-    const auto reservation = budgets_->reserve(drogon::utils::getUuid(), principal, *amountNanos, outputBudget);
+    const auto reservation = budgets_->reserve(drogon::utils::getUuid(), principal, *amountNanos, outputBudget, funding);
     if (const auto& offer = outputBudget) {
       LOG_INFO << "ai_output_admission input_nanos=" << offer->inputNanos
                << " output_token_nanos=" << offer->outputTokenNanos << " min_tokens=" << offer->minTokens
@@ -285,7 +280,14 @@ AiCallAdmission AiCallBudget::admit(const AiBudgetPrincipal& principal, std::opt
 
 void AiCallBudget::finish(const AiBudgetReservation& reservation, const std::string& model,
                           const Json::Value& usage, AiCallEnd end) {
-  finish(reservation, end == AiCallEnd::settled ? anthropicActualNanos(model, usage) : std::nullopt, end);
+  if (end != AiCallEnd::cancelled) {
+    finish(reservation, end == AiCallEnd::settled ? anthropicActualNanos(model, usage) : std::nullopt, end);
+    return;
+  }
+  const long long held = reservation.amountNanos;
+  const long long beforeAnyOutput = reservation.outputBudget ? reservation.outputBudget->inputNanos : held;
+  const long long used = usage.isNull() ? beforeAnyOutput : anthropicActualNanos(model, usage).value_or(held);
+  finish(reservation, std::min(used, held), end);
 }
 
 void AiCallBudget::finish(const AiBudgetReservation& reservation, std::optional<long long> actualNanos, AiCallEnd end) {
@@ -293,11 +295,19 @@ void AiCallBudget::finish(const AiBudgetReservation& reservation, std::optional<
   WriteContext context{observation};
   try {
     const auto amount = end == AiCallEnd::settled ? actualNanos
+                      : end == AiCallEnd::cancelled
+                          ? std::optional<long long>{actualNanos.value_or(reservation.amountNanos)}
                       : end == AiCallEnd::unconsumed ? std::optional<long long>{0} : std::nullopt;
     const auto result = amount ? budgets_->settle(reservation.id, *amount) : budgets_->markUncertain(reservation.id);
+    // The hold lapsed and was let go while the round was out: what the vendor billed for it is Windmill's.
+    if (result.reservation && result.reservation->state == AiBudgetState::Released) {
+      observation.finish("released");
+      return;
+    }
     if (result.code != AiBudgetCode::Ok && result.code != AiBudgetCode::Replay)
       throw std::runtime_error("AI accounting transition refused");
-    observation.finish(!amount ? "uncertain" : end == AiCallEnd::unconsumed ? "unconsumed" : "settled");
+    observation.finish(!amount ? "uncertain" : end == AiCallEnd::unconsumed ? "unconsumed"
+                       : end == AiCallEnd::cancelled ? "cancelled" : "settled");
   } catch (const std::exception& error) {
     observation.fail(error);
   } catch (...) {

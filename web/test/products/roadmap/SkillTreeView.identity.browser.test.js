@@ -74,8 +74,8 @@ hostTest('Chromium: the 744 Activity panel sits below the filter strip with the 
     await panel.waitFor();
     assert.deepEqual(await panel.evaluate((element) => {
       const strip = document.querySelector('.st-view-layer--board.is-active .st-board-strip').getBoundingClientRect();
-      return { gapBelowStrip: element.getBoundingClientRect().top - strip.bottom, floor: Math.max(172, strip.bottom + 12) === element.getBoundingClientRect().top };
-    }), { gapBelowStrip: 12, floor: true });
+      return { stripTop: strip.top, panelTop: element.getBoundingClientRect().top, gapBelowStrip: element.getBoundingClientRect().top - strip.bottom };
+    }), { stripTop: 116, panelTop: 172, gapBelowStrip: 12 });
     await page.getByRole('button', { name: /Roadmap order/ }).click();
     const newest = page.getByRole('menuitemradio', { name: 'Newest first' });
     await newest.click();

@@ -35,9 +35,9 @@ createuser -h /tmp windmill_subscriptions
 createdb -h /tmp -O windmill_subscriptions windmill_subscriptions
 ```
 
-Its URL is `postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions`; the service's
-[ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#run) runs it. The production rules that
-keep the backend's role out of this database are not part of the local cluster.
+Its URL is `postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions`;
+[§4](#the-subscription-service) runs the service. The production rules that keep the backend's role out
+of this database are not part of the local cluster.
 
 ## 3. Build
 
@@ -61,6 +61,53 @@ finds it with no configuration. The default is `:8080`, which Docker Desktop usu
 
 Everything else is optional and each feature stays dark without its key — copy `.env.example` to
 `.env` and `set -a; source .env; set +a` before the binary.
+
+### The subscription service
+
+Run from `services/subscriptions/`, once its database exists (§2); it migrates the ledger before it
+listens. `SUBSCRIPTIONS_APP_STORE_TEST_ROOT` makes its App Store notification door trust the test chain
+beside Apple's root, so a notification `app_store_test_signer` signs is believed. The service refuses that
+variable at start unless `SENTRY_ENVIRONMENT` is `local`, `development`, `test` or `ci`; without it the
+door trusts Apple's root alone, as production does.
+
+```sh
+TOKEN=$(openssl rand -hex 32)
+SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0.0.1:8083 \
+  SUBSCRIPTIONS_DATABASE_URL="postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions" \
+  SUBSCRIPTIONS_APP_STORE_TEST_ROOT=tests/fixtures/app_store/test-chain/root.cer \
+  SUBSCRIPTIONS_INTERNAL_TOKEN="$TOKEN" SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
+```
+
+`SUBSCRIPTIONS_INTERNAL_TOKEN` is the bearer secret of the backend's reads on the internal port; without it
+they answer 401. The backend follows the feed with the same secret in its `.env` beside
+`SUBSCRIPTIONS_INTERNAL_URL=http://127.0.0.1:8083`.
+
+In a second terminal, from the same directory and with the same `TOKEN`, sign one of the example
+notifications (`tests/fixtures/app_store/test-payloads/`) and post it as Apple does:
+
+```sh
+SIGNED=$(cargo run -q -p app_store_test_signer < tests/fixtures/app_store/test-payloads/started.json)
+curl -s -w '%{http_code}\n' localhost:8082/v1/stores/app-store/notifications \
+  -H 'content-type: application/json' -d "{\"signedPayload\":\"$SIGNED\"}"              # 200
+psql -h /tmp -U windmill_subscriptions windmill_subscriptions \
+  -c 'select environment, outcome from inbox' -c 'select seq, type from events order by seq'
+```
+
+The inbox holds the notification `applied`, and the events are `started`, `bound` and `period_recorded`,
+which the feed serves to the bearer, and the public port does not:
+
+```sh
+curl -s "localhost:8083/internal/v1/feed?after=0&limit=500" -H "authorization: Bearer $TOKEN"
+curl -s -o /dev/null -w '%{http_code}\n' "localhost:8082/internal/v1/feed?after=0&limit=500"   # 404
+```
+
+The same `SIGNED` posted again answers 200 and adds nothing; a service started without
+`SUBSCRIPTIONS_APP_STORE_TEST_ROOT` answers it `400 {"error":"refused"}` and keeps nothing, and its
+`store.notification` line says `untrusted_chain`. Each delivery writes one such line to the service's
+stdout, and the sweep one `sweep.inbox` line a minute
+([ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#the-app-store-notification-door)). Locally
+the service is reached directly; in production Caddy lets only Apple's subnet reach the door. Stop the
+service by its ports.
 
 ### Engine server for the iOS simulator
 
@@ -300,8 +347,9 @@ needs Docker and curl, and checks the Caddyfile first (the `deploy` test).
   (RFC 8441), so that the live socket goes over HTTP/1.1 alone.
 - **§6.8 The idle live socket.** A socket to the server and one through the edge say nothing for
   `LIVE_PING_MS + LIVE_PONG_MS` (35 s) and a second more, and must still be open and answer a `ping`
-  with `pong` within a second. Drogon's idle timeout (60 s) does not reach an upgraded connection, and
-  the production Caddyfile sets no `stream_timeout`, so neither needs a setting for it.
+  with `pong` within a second. The server's idle limit (60 s, `kIdleConnectionLimit` in
+  `platform/adapters/http/ReplyWait.h`) is longer, and the production Caddyfile sets no `stream_timeout`, so
+  neither needs a setting for it.
 
 ```sh
 WM_E2E_DB=wm_sync_test PORT=8089 EDGE_PORT=8443 node test/e2e/deployment_conformance.mjs

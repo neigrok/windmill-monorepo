@@ -8,10 +8,11 @@
 #include "platform/ports/McpKeyRepository.h"
 #include "platform/ports/OAuthRepository.h"
 #include "platform/ports/SessionRevocations.h"
-#include "platform/ports/SubscriptionRepository.h"
 #include "platform/ports/TokenGenerator.h"
+#include "platform/subscriptions/EntitlementCopy.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <optional>
@@ -614,25 +615,32 @@ struct FakeOAuthRepository : OAuthRepository {
   }
 };
 
-// One row per user, whatever status the test plants. `subscribe` defaults to the live status.
-struct FakeSubscriptionRepository : SubscriptionRepository {
-  std::map<std::string, PaddleSubscription> byUser;
+// The copy of every entitlement as rows planted whole. `subscribe` plants the row an active production subscription
+// leaves: access until 2100, far past any FakeClock.
+struct FakeEntitlementCopy : subscriptions::EntitlementReader {
+  std::map<std::string, subscriptions::EntitlementResponse> byAccount;
 
-  void upsertCustomer(const PaddleCustomer&) override {}
-  void upsertSubscription(const PaddleSubscription& subscription) override {
-    byUser[subscription.userId] = subscription;
-  }
-  std::optional<PaddleSubscription> findFor(const UserId& user, const std::string&) override {
-    auto it = byUser.find(user.str());
-    if (it == byUser.end()) return std::nullopt;
+  std::optional<subscriptions::EntitlementResponse> find(const UserId& account) override {
+    const auto it = byAccount.find(account.str());
+    if (it == byAccount.end()) return std::nullopt;
     return it->second;
   }
-  void subscribe(const UserId& user, const std::string& status = "active") {
-    PaddleSubscription subscription;
-    subscription.userId = user.str();
-    subscription.status = status;
-    byUser[user.str()] = subscription;
+
+  void plant(const UserId& account, std::optional<std::int64_t> productionUntil,
+             std::optional<std::int64_t> sandboxUntil = std::nullopt) {
+    Json::Value body(Json::objectValue);
+    body["accountId"] = account.str();
+    for (const auto& [environment, until] : {std::pair{"production", productionUntil}, std::pair{"sandbox", sandboxUntil}}) {
+      Json::Value& block = body[environment];
+      block["plan"] = until ? Json::Value("windmill_one") : Json::Value(Json::nullValue);
+      block["accessUntil"] = until ? Json::Value(Json::Int64{*until}) : Json::Value(Json::nullValue);
+      block["governing"] = Json::Value(Json::nullValue);
+      block["others"] = Json::Value(Json::arrayValue);
+    }
+    byAccount.insert_or_assign(account.str(), subscriptions::EntitlementResponse{body});
   }
+
+  void subscribe(const UserId& account) { plant(account, 4'102'444'800'000); }
 };
 
 // Planted rather than accumulated. `spentByProduct[""]` is the every-product total, a named key is one product's bucket, and `asked` keeps every window the caller requested.

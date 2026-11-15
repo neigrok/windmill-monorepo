@@ -61,13 +61,6 @@ export const guideLabel = ({ owner, excerpt }) => (owner ? t('roadmap.guide.labe
 export const guideCounter = (draft) => (draft.over > 0
   ? t('roadmap.guide.over', { count: formatCount(draft.over) })
   : t('roadmap.guide.left', { count: formatCount(draft.left) }));
-// Whose guides apply from above, as the card's line says it: the two farthest trees by name, then how many more.
-export function guidesFromAbove({ first, second, more }) {
-  if (more > 0) return t('roadmap.guide.fromMore', { first, second, more });
-  if (second !== null) return t('roadmap.guide.fromTwo', { first, second });
-  return t('roadmap.guide.fromOne', { tree: first });
-}
-
 export const LINK_COPIED = t('roadmap.share.linkCopied');
 export const EMPTY_ROADMAP = { title: t('roadmap.emptyRoadmap.title'), body: t('roadmap.emptyRoadmap.body'), action: t('roadmap.emptyRoadmap.action') };
 export const LOAD_ERROR = {
@@ -446,6 +439,11 @@ export const STEP_DETAIL = {
 // The tree a step opens, as its surfaces say it: by what that tree has come to (Opening.face).
 export const TREE = { heading: t('roadmap.tree.heading'), open: t('roadmap.tree.open'), openShort: t('roadmap.tree.openShort') };
 
+// The way into a step's tree, named for what the step opens: the subtree it owns, or the tree its pointer names.
+export function openTreeLabel(opening) {
+  return opening.owned ? t('roadmap.subtree.open') : TREE.open;
+}
+
 // The card's pill and the phone Graph's bar: done of total, or the one thing in the way, after a lead where there is
 // one to say: the tree's title on a pill, the step's column on the bar. Null where nothing was read of the tree.
 export function treeLine(opening, lead = null) {
@@ -463,8 +461,10 @@ export function treeLine(opening, lead = null) {
   return lines[opening.face]();
 }
 
-// The step's Tree row and the Graph's dock: how far the tree is, in full. `roadmap` is the title of the one being read.
+// The step's Tree row and the Graph's dock: how far the tree is, in full. `roadmap` is the title of the one being read. A
+// subtree with no step yet says so.
 export function treeState(opening, roadmap) {
+  if (opening.owned && opening.read && opening.total === 0) return t('roadmap.subtree.noSteps');
   const states = {
     open: () => treeProgress(opening),
     complete: () => treeProgress(opening),
@@ -506,8 +506,8 @@ export function treeBand(opening, { column, toGo = 0 }) {
   return words[opening.face]();
 }
 
-export function openTreeAction({ step }) {
-  return t('roadmap.tree.openAction', { step });
+export function openTreeAction({ step, owned = false }) {
+  return owned ? t('roadmap.subtree.openAction', { step }) : t('roadmap.tree.openAction', { step });
 }
 
 // What the room's toast says once a step's tree is attached, changed or detached, and when the write could not be made.

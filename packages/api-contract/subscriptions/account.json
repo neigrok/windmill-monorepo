@@ -1,0 +1,643 @@
+{
+  "examples": [
+    {
+      "name": "expired",
+      "request": {
+        "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"
+      },
+      "body": {
+        "entitlement": {
+          "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+          "production": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": {
+              "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+              "store": "app_store",
+              "state": "expired",
+              "startedAt": 1796292000000,
+              "currentPeriod": {
+                "start": 1803304800000,
+                "end": 1805724000000
+              },
+              "accessUntil": null,
+              "autoRenew": false,
+              "nextChargeAt": null,
+              "nextCharge": null,
+              "nextProductId": null,
+              "cancelRequestedAt": 1804708800000,
+              "paymentFailedAt": null,
+              "graceEndsAt": null,
+              "pauseScheduledFor": null,
+              "pausedAt": null,
+              "resumesAt": null,
+              "offerKind": null,
+              "offerEndsAt": null,
+              "endedAt": 1805724000000,
+              "endReason": "cancelled"
+            },
+            "others": []
+          },
+          "sandbox": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": null,
+            "others": []
+          }
+        },
+        "subscriptions": [
+          {
+            "subscriptionId": "a7d40c52-1e8b-4f3a-9c26-5b0e8c3a1f94",
+            "store": "app_store",
+            "state": "expired",
+            "startedAt": 1796292000000,
+            "currentPeriod": {
+              "start": 1803304800000,
+              "end": 1805724000000
+            },
+            "accessUntil": null,
+            "autoRenew": false,
+            "nextChargeAt": null,
+            "nextCharge": null,
+            "nextProductId": null,
+            "cancelRequestedAt": 1804708800000,
+            "paymentFailedAt": null,
+            "graceEndsAt": null,
+            "pauseScheduledFor": null,
+            "pausedAt": null,
+            "resumesAt": null,
+            "offerKind": null,
+            "offerEndsAt": null,
+            "endedAt": 1805724000000,
+            "endReason": "cancelled",
+            "environment": "production",
+            "boundAt": 1796292000000,
+            "boundBy": "purchase",
+            "periods": [
+              {
+                "id": "e2b8f0a4-7c19-4d6e-a3f5-91c0d7b42e86",
+                "start": 1796292000000,
+                "end": 1798970400000,
+                "price": {
+                  "amount": "12.00",
+                  "currency": "USD"
+                },
+                "offerKind": null,
+                "refundedAt": null
+              },
+              {
+                "id": "4c7a19e3-b2d0-4f85-9e6a-3d81f5c0a2b7",
+                "start": 1798970400000,
+                "end": 1801648800000,
+                "price": {
+                  "amount": "12.00",
+                  "currency": "USD"
+                },
+                "offerKind": null,
+                "refundedAt": null
+              },
+              {
+                "id": "d9aaabda-5edd-4f39-a5ab-ec4c8e295161",
+                "start": 1803304800000,
+                "end": 1805724000000,
+                "price": {
+                  "amount": "12.00",
+                  "currency": "USD"
+                },
+                "offerKind": null,
+                "refundedAt": null
+              }
+            ],
+            "events": [
+              {
+                "seq": 1,
+                "type": "started",
+                "occurredAt": 1796292000000,
+                "recordedAt": 1796292004000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": null
+              },
+              {
+                "seq": 2,
+                "type": "bound",
+                "occurredAt": 1796292000000,
+                "recordedAt": 1796292004000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": null
+              },
+              {
+                "seq": 3,
+                "type": "period_recorded",
+                "occurredAt": 1796292000000,
+                "recordedAt": 1796292004000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": {
+                  "id": "e2b8f0a4-7c19-4d6e-a3f5-91c0d7b42e86",
+                  "start": 1796292000000,
+                  "end": 1798970400000,
+                  "price": {
+                    "amount": "12.00",
+                    "currency": "USD"
+                  },
+                  "offerKind": null,
+                  "refundedAt": null
+                }
+              },
+              {
+                "seq": 17,
+                "type": "renewed",
+                "occurredAt": 1798966800000,
+                "recordedAt": 1798966810000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": null
+              },
+              {
+                "seq": 18,
+                "type": "period_recorded",
+                "occurredAt": 1798966800000,
+                "recordedAt": 1798966810000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": {
+                  "id": "4c7a19e3-b2d0-4f85-9e6a-3d81f5c0a2b7",
+                  "start": 1798970400000,
+                  "end": 1801648800000,
+                  "price": {
+                    "amount": "12.00",
+                    "currency": "USD"
+                  },
+                  "offerKind": null,
+                  "refundedAt": null
+                }
+              },
+              {
+                "seq": 19,
+                "type": "payment_failed",
+                "occurredAt": 1801648800000,
+                "recordedAt": 1801648803000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": null
+              },
+              {
+                "seq": 20,
+                "type": "updated",
+                "occurredAt": 1803031200000,
+                "recordedAt": 1803031203000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": null
+              },
+              {
+                "seq": 21,
+                "type": "payment_recovered",
+                "occurredAt": 1803304800000,
+                "recordedAt": 1803304803000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": null
+              },
+              {
+                "seq": 22,
+                "type": "period_recorded",
+                "occurredAt": 1803304800000,
+                "recordedAt": 1803304803000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": {
+                  "id": "d9aaabda-5edd-4f39-a5ab-ec4c8e295161",
+                  "start": 1803304800000,
+                  "end": 1805724000000,
+                  "price": {
+                    "amount": "12.00",
+                    "currency": "USD"
+                  },
+                  "offerKind": null,
+                  "refundedAt": null
+                }
+              },
+              {
+                "seq": 23,
+                "type": "period_refunded",
+                "occurredAt": 1803898800000,
+                "recordedAt": 1803898802000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": {
+                  "id": "4c7a19e3-b2d0-4f85-9e6a-3d81f5c0a2b7",
+                  "start": 1798970400000,
+                  "end": 1801648800000,
+                  "price": {
+                    "amount": "12.00",
+                    "currency": "USD"
+                  },
+                  "offerKind": null,
+                  "refundedAt": 1803898800000
+                }
+              },
+              {
+                "seq": 24,
+                "type": "period_refund_reversed",
+                "occurredAt": 1804608000000,
+                "recordedAt": 1804608002000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": {
+                  "id": "4c7a19e3-b2d0-4f85-9e6a-3d81f5c0a2b7",
+                  "start": 1798970400000,
+                  "end": 1801648800000,
+                  "price": {
+                    "amount": "12.00",
+                    "currency": "USD"
+                  },
+                  "offerKind": null,
+                  "refundedAt": null
+                }
+              },
+              {
+                "seq": 25,
+                "type": "renewal_turned_off",
+                "occurredAt": 1804708800000,
+                "recordedAt": 1804708802000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": null
+              },
+              {
+                "seq": 26,
+                "type": "expired",
+                "occurredAt": 1805724000000,
+                "recordedAt": 1805724004000,
+                "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+                "period": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "claimed_then_refunded",
+      "request": {
+        "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db"
+      },
+      "body": {
+        "entitlement": {
+          "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+          "production": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": {
+              "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+              "store": "app_store",
+              "state": "revoked",
+              "startedAt": 1796472000000,
+              "currentPeriod": {
+                "start": 1796472000000,
+                "end": 1799150400000
+              },
+              "accessUntil": null,
+              "autoRenew": false,
+              "nextChargeAt": null,
+              "nextCharge": null,
+              "nextProductId": null,
+              "cancelRequestedAt": null,
+              "paymentFailedAt": null,
+              "graceEndsAt": null,
+              "pauseScheduledFor": null,
+              "pausedAt": null,
+              "resumesAt": null,
+              "offerKind": null,
+              "offerEndsAt": null,
+              "endedAt": 1797780600000,
+              "endReason": "refunded"
+            },
+            "others": []
+          },
+          "sandbox": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": null,
+            "others": []
+          }
+        },
+        "subscriptions": [
+          {
+            "subscriptionId": "77f866f6-f995-40d1-b179-345ae244fcc3",
+            "store": "app_store",
+            "state": "revoked",
+            "startedAt": 1796472000000,
+            "currentPeriod": {
+              "start": 1796472000000,
+              "end": 1799150400000
+            },
+            "accessUntil": null,
+            "autoRenew": false,
+            "nextChargeAt": null,
+            "nextCharge": null,
+            "nextProductId": null,
+            "cancelRequestedAt": null,
+            "paymentFailedAt": null,
+            "graceEndsAt": null,
+            "pauseScheduledFor": null,
+            "pausedAt": null,
+            "resumesAt": null,
+            "offerKind": null,
+            "offerEndsAt": null,
+            "endedAt": 1797780600000,
+            "endReason": "refunded",
+            "environment": "production",
+            "boundAt": 1796547600000,
+            "boundBy": "claim",
+            "periods": [
+              {
+                "id": "8f04068f-6d76-4afc-bba4-6d7927bc7c4e",
+                "start": 1796472000000,
+                "end": 1799150400000,
+                "price": {
+                  "amount": "12.00",
+                  "currency": "USD"
+                },
+                "offerKind": null,
+                "refundedAt": 1797780600000
+              }
+            ],
+            "events": [
+              {
+                "seq": 4,
+                "type": "started",
+                "occurredAt": 1796472000000,
+                "recordedAt": 1796472003000,
+                "accountId": null,
+                "period": null
+              },
+              {
+                "seq": 5,
+                "type": "period_recorded",
+                "occurredAt": 1796472000000,
+                "recordedAt": 1796472003000,
+                "accountId": null,
+                "period": {
+                  "id": "8f04068f-6d76-4afc-bba4-6d7927bc7c4e",
+                  "start": 1796472000000,
+                  "end": 1799150400000,
+                  "price": {
+                    "amount": "12.00",
+                    "currency": "USD"
+                  },
+                  "offerKind": null,
+                  "refundedAt": null
+                }
+              },
+              {
+                "seq": 6,
+                "type": "bound",
+                "occurredAt": 1796547600000,
+                "recordedAt": 1796547600000,
+                "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+                "period": null
+              },
+              {
+                "seq": 7,
+                "type": "period_recorded",
+                "occurredAt": 1796547600000,
+                "recordedAt": 1796547600000,
+                "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+                "period": {
+                  "id": "8f04068f-6d76-4afc-bba4-6d7927bc7c4e",
+                  "start": 1796472000000,
+                  "end": 1799150400000,
+                  "price": {
+                    "amount": "12.00",
+                    "currency": "USD"
+                  },
+                  "offerKind": null,
+                  "refundedAt": null
+                }
+              },
+              {
+                "seq": 14,
+                "type": "renewal_turned_off",
+                "occurredAt": 1797780600000,
+                "recordedAt": 1797780602000,
+                "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+                "period": null
+              },
+              {
+                "seq": 15,
+                "type": "period_refunded",
+                "occurredAt": 1797780600000,
+                "recordedAt": 1797780602000,
+                "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+                "period": {
+                  "id": "8f04068f-6d76-4afc-bba4-6d7927bc7c4e",
+                  "start": 1796472000000,
+                  "end": 1799150400000,
+                  "price": {
+                    "amount": "12.00",
+                    "currency": "USD"
+                  },
+                  "offerKind": null,
+                  "refundedAt": 1797780600000
+                }
+              },
+              {
+                "seq": 16,
+                "type": "revoked",
+                "occurredAt": 1797780600000,
+                "recordedAt": 1797780602000,
+                "accountId": "9387ec65-ab17-4b8c-b145-fd0d622966db",
+                "period": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "sandbox",
+      "request": {
+        "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0"
+      },
+      "body": {
+        "entitlement": {
+          "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+          "production": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": null,
+            "others": []
+          },
+          "sandbox": {
+            "plan": "windmill_one",
+            "accessUntil": 1796742600000,
+            "governing": {
+              "subscriptionId": "c0498d34-cdf6-466c-963e-68d373253766",
+              "store": "app_store",
+              "state": "active",
+              "startedAt": 1796742000000,
+              "currentPeriod": {
+                "start": 1796742300000,
+                "end": 1796742600000
+              },
+              "accessUntil": 1796742600000,
+              "autoRenew": true,
+              "nextChargeAt": 1796742600000,
+              "nextCharge": {
+                "amount": "12.00",
+                "currency": "USD"
+              },
+              "nextProductId": null,
+              "cancelRequestedAt": null,
+              "paymentFailedAt": null,
+              "graceEndsAt": null,
+              "pauseScheduledFor": null,
+              "pausedAt": null,
+              "resumesAt": null,
+              "offerKind": null,
+              "offerEndsAt": null,
+              "endedAt": null,
+              "endReason": null
+            },
+            "others": []
+          }
+        },
+        "subscriptions": [
+          {
+            "subscriptionId": "c0498d34-cdf6-466c-963e-68d373253766",
+            "store": "app_store",
+            "state": "active",
+            "startedAt": 1796742000000,
+            "currentPeriod": {
+              "start": 1796742300000,
+              "end": 1796742600000
+            },
+            "accessUntil": 1796742600000,
+            "autoRenew": true,
+            "nextChargeAt": 1796742600000,
+            "nextCharge": {
+              "amount": "12.00",
+              "currency": "USD"
+            },
+            "nextProductId": null,
+            "cancelRequestedAt": null,
+            "paymentFailedAt": null,
+            "graceEndsAt": null,
+            "pauseScheduledFor": null,
+            "pausedAt": null,
+            "resumesAt": null,
+            "offerKind": null,
+            "offerEndsAt": null,
+            "endedAt": null,
+            "endReason": null,
+            "environment": "sandbox",
+            "boundAt": 1796742000000,
+            "boundBy": "purchase",
+            "periods": [
+              {
+                "id": "5f28ab82-1d7c-4306-bdf4-c36a55bff2c4",
+                "start": 1796742000000,
+                "end": 1796742300000,
+                "price": {
+                  "amount": "12.00",
+                  "currency": "USD"
+                },
+                "offerKind": null,
+                "refundedAt": null
+              },
+              {
+                "id": "db0e7f48-3c90-456f-813d-5010c088b6d9",
+                "start": 1796742300000,
+                "end": 1796742600000,
+                "price": {
+                  "amount": "12.00",
+                  "currency": "USD"
+                },
+                "offerKind": null,
+                "refundedAt": null
+              }
+            ],
+            "events": [
+              {
+                "seq": 9,
+                "type": "started",
+                "occurredAt": 1796742000000,
+                "recordedAt": 1796742002000,
+                "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+                "period": null
+              },
+              {
+                "seq": 10,
+                "type": "bound",
+                "occurredAt": 1796742000000,
+                "recordedAt": 1796742002000,
+                "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+                "period": null
+              },
+              {
+                "seq": 11,
+                "type": "period_recorded",
+                "occurredAt": 1796742000000,
+                "recordedAt": 1796742002000,
+                "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+                "period": {
+                  "id": "5f28ab82-1d7c-4306-bdf4-c36a55bff2c4",
+                  "start": 1796742000000,
+                  "end": 1796742300000,
+                  "price": {
+                    "amount": "12.00",
+                    "currency": "USD"
+                  },
+                  "offerKind": null,
+                  "refundedAt": null
+                }
+              },
+              {
+                "seq": 12,
+                "type": "renewed",
+                "occurredAt": 1796742300000,
+                "recordedAt": 1796742302000,
+                "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+                "period": null
+              },
+              {
+                "seq": 13,
+                "type": "period_recorded",
+                "occurredAt": 1796742300000,
+                "recordedAt": 1796742302000,
+                "accountId": "c806aea4-76c0-4868-acbc-3aa7db2b8dd0",
+                "period": {
+                  "id": "db0e7f48-3c90-456f-813d-5010c088b6d9",
+                  "start": 1796742300000,
+                  "end": 1796742600000,
+                  "price": {
+                    "amount": "12.00",
+                    "currency": "USD"
+                  },
+                  "offerKind": null,
+                  "refundedAt": null
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "holds_nothing",
+      "request": {
+        "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"
+      },
+      "body": {
+        "entitlement": {
+          "accountId": "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61",
+          "production": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": null,
+            "others": []
+          },
+          "sandbox": {
+            "plan": null,
+            "accessUntil": null,
+            "governing": null,
+            "others": []
+          }
+        },
+        "subscriptions": []
+      }
+    }
+  ]
+}

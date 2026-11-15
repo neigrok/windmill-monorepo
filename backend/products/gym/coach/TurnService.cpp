@@ -74,7 +74,7 @@ std::string tally(const std::map<std::string, int>& counts) {
 // balance that is gone from a round that did not fit a positive one (§7.1).
 bool isAllowanceCode(const std::string& code) {
   for (const AiBudgetCode allowance : {AiBudgetCode::SubjectExhausted, AiBudgetCode::FreeDayExhausted, AiBudgetCode::FreeMonthExhausted,
-                                       AiBudgetCode::ConcurrencyExhausted, AiBudgetCode::FundingRequired, AiBudgetCode::DebtOutstanding})
+                                       AiBudgetCode::ConcurrencyExhausted, AiBudgetCode::DebtOutstanding})
     if (code == aiBudgetCodeName(allowance)) return true;
   return false;
 }

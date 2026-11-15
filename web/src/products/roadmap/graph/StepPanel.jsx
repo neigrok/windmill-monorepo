@@ -4,7 +4,7 @@ import { NodeWorkspace, LinkRow, SAFE_URL } from './tree/NodeWorkspace.jsx';
 import { EventRow } from '../activity/EventRow.jsx';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { KindChoice } from '../board/BoardControls.jsx';
-import { COLUMN_TITLES, COMPOSER, LABELS, STEP_DETAIL, TREE, treeState, unlocksWhen } from '../copy.js';
+import { COLUMN_TITLES, COMPOSER, LABELS, STEP_DETAIL, openTreeLabel, treeState, unlocksWhen } from '../copy.js';
 import { OpeningBar, OpeningGlyph } from '../OpeningMarks.jsx';
 import { useTreeDoor } from '../room/useTreeVisit.js';
 import { t } from '../i18n/index.js';
@@ -204,7 +204,7 @@ function EditorStep({ node, roadmap, state, prerequisites, completedAt, history 
         )}
         {openTree && (
           <Button variant={state === 'available' && opening.workable ? 'primary' : 'secondary'} onClick={openTree}>
-            {TREE.open}
+            {openTreeLabel(opening)}
           </Button>
         )}
       </div>

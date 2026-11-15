@@ -78,9 +78,10 @@ function BoardView({
   const consumedSelect = useRef(null);
   const revealFocus = useRef(null);
   const phone = breakpoint === 'phone';
-  const topGap = phone && (deviceLine || guide) ? '0px'
-    : !phone && frame === 'loading' && !guide && !refusal ? 'var(--space-1)'
-      : 'var(--space-3)';
+  const topGap = (phone && (deviceLine || guide))
+    || (breakpoint === 'tablet' && !refusal && (frame === 'columns' || frame === 'empty' || frame === 'error')) ? '0px'
+      : !phone && frame === 'loading' && !refusal ? 'var(--space-1)'
+        : 'var(--space-3)';
   const motion = useRegroup(nextBoard, { quiet, phone, root: boardRef });
   const board = motion.board;
   const canSelect = selectionOpen && nextBoard !== null;
@@ -254,7 +255,7 @@ function BoardView({
       style={{ paddingTop: topInset > 0 ? `calc(${topInset}px + ${topGap})` : undefined }}
     >
       {phone && deviceLine && <DeviceLine text={deviceLine.text} onSignIn={deviceLine.onSignIn} />}
-      {guide}
+      {phone && guide}
       {frame !== 'columns' && !phone && refusedNotice}
       {frame === 'loading' && <BoardSkeleton band={breakpoint} />}
       {frame === 'error' && <LoadError phone={phone} onRetry={retry} />}

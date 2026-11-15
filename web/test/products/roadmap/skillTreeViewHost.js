@@ -28,6 +28,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { SyncSession } from '/src/products/roadmap/sync/SyncSession.js';
 import { SyncStore } from '/src/products/roadmap/sync/SyncStore.js';
+import { LocalTreeRegistry } from '/src/products/roadmap/persistence/LocalTreeRegistry.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTreeView } from '/src/products/roadmap/SkillTreeView.jsx';
 import { Shell } from '/src/shell/chrome/Shell.jsx';
@@ -107,7 +108,23 @@ const props = { treeId: 't_sail', demo: params.has('demo') };
 const content = params.has('shell')
   ? React.createElement(Shell, { location: { pathname: '/app', hash: location.hash, search: location.search }, neutral: { Component: SkillTreeView, props } })
   : React.createElement(SkillTreeView, props);
-createRoot(document.getElementById('root')).render(params.has('sceneFailure') ? React.createElement(ErrorBoundary, null, content) : content);
+async function mount() {
+  if (params.has('deviceTrees')) {
+    const registry = new LocalTreeRegistry();
+    registry.record('t_sail', 'Unread requested title', null);
+    registry.record('t_local', 'Local practice', null);
+    registry.record('t_private', 'Another account secret', 'u_other');
+    if (params.get('auth') === 'signed-in' || (!params.has('auth') && params.get('role') === 'owner')) {
+      registry.attribute(['t_sail', 't_local'], 'u_fixture');
+    }
+    const local = new SyncSession({ treeId: 't_local', title: 'Local practice', registry: null });
+    local.seed({ id: 't_local', title: 'Local practice', kinds: [], nodes: [] });
+    await local.persistNow();
+    local.close();
+  }
+  createRoot(document.getElementById('root')).render(params.has('sceneFailure') ? React.createElement(ErrorBoundary, null, content) : content);
+}
+mount();
 `;
 export const scene = `
 export class GraphUnavailable extends Error {}
@@ -149,11 +166,12 @@ export class SkillTreeScene {
 `;
 const auth = `
 import { useSyncExternalStore } from 'react';
-const owner = new URLSearchParams(location.search).get('role') === 'owner';
+const params = new URLSearchParams(location.search);
+const signedIn = params.get('auth') === 'signed-in' || (!params.has('auth') && params.get('role') === 'owner');
 const account = { id: 'u_fixture' };
 const user = { name: 'Ada' };
 const refresh = async () => null;
-let status = owner ? 'signed-in' : 'ghost';
+let status = signedIn ? 'signed-in' : 'ghost';
 const listeners = new Set();
 const subscribe = (handler) => { listeners.add(handler); return () => listeners.delete(handler); };
 window.setFixtureAuth = (next) => { status = next; for (const listener of listeners) listener(); };
@@ -255,7 +273,7 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ browserName = 'chromium', width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, runtimeBoardCrash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false, noWebgl2 = false, born = false, sceneFailure = false, address = null } = {}) {
+export async function openHost({ browserName = 'chromium', width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, runtimeBoardCrash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false, noWebgl2 = false, born = false, sceneFailure = false, address = null, auth = null, loadFailure = false, deviceTrees = false } = {}) {
   await ready;
   const page = await browsers.get(browserName).newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
@@ -263,6 +281,8 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
   firstPage = false;
 
   const errors = [];
+  const requests = [];
+  page.on('request', (request) => { if (request.url().includes('/v1/')) requests.push(new URL(request.url()).pathname); });
   const { fail } = runningTest.getStore();
   const report = (message) => {
     if (sceneFailure && (message.includes('Fixture renderer construction failure') || message.includes('The above error occurred in the <SkillTreeView> component'))) return;
@@ -273,7 +293,10 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
     void page.close();
   };
   page.on('pageerror', (error) => report(error.stack ?? error.message));
-  page.on('console', (message) => { if (message.type() === 'error') report(message.text()); });
+  page.on('console', (message) => {
+    if (loadFailure && message.text().startsWith('Failed to load resource:') && message.location().url.includes('/v1/trees')) return;
+    if (message.type() === 'error') report(message.text());
+  });
   if (storageRefused) {
     await page.addInitScript(() => {
       for (const name of ['localStorage', 'sessionStorage']) {
@@ -284,9 +307,10 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
   await page.route('**/v1/**', (route) => {
     const path = new URL(route.request().url()).pathname;
     let body = {};
-    if (path === '/v1/me') body = { user: role === 'owner' ? { id: 'u_fixture' } : null };
+    if (path === '/v1/me') body = { user: (auth === 'signed-in' || (!auth && role === 'owner')) ? { id: 'u_fixture' } : null };
     if (path === '/v1/tending') body = { enabled: true, runs: [] };
     if (path === '/v1/trees/t_sail') {
+      if (loadFailure) return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
       const data = structuredClone(treeData);
       if (milestone) data.nodes[1].status = 'complete';
       if (single) data.nodes = [{ ...data.nodes[0], status: 'none' }];
@@ -300,7 +324,7 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
       if (allDone) for (const node of data.nodes) node.status = 'complete';
       if (broad) data.nodes.push(...structuredClone(BROAD_NODES));
       if (coached) data.nodes.push(structuredClone(COACHED_NODE));
-      body = { data, mine: role !== 'reader', visibility: 'public' };
+      body = { data, root: 't_sail', parent: null, path: [], depth: 0, mine: role !== 'reader', visibility: 'public' };
     }
     if (path === '/v1/trees') {
       const others = manyTrees ? Array.from({ length: 11 }, (_, index) => ({ id: `t_many_${index}`, title: `Spanish chapter ${index}`, done: 0, total: 5, dominantKind: 'olive' })) : [];
@@ -310,8 +334,10 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
   const params = new URLSearchParams({ role, surface });
+  if (auth) params.set('auth', auth);
+  if (address === '?view') params.set('view', '1');
   if (role === 'reader' && !appUrl) params.set('view', '1');
-  for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, runtimeBoardCrash, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached, longTitle, noWebgl2, born, sceneFailure })) {
+  for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, runtimeBoardCrash, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached, longTitle, noWebgl2, born, sceneFailure, deviceTrees })) {
     if (enabled) params.set(name, '1');
   }
   if (noWebgl2) {
@@ -335,7 +361,11 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
   await page.goto(`${origin}${path}?${params}${hash}`);
   if (sceneFailure) {
     await page.getByRole('button', { name: 'Reload', exact: true }).waitFor();
-    return { page, errors };
+    return { page, errors, requests };
+  }
+  if (loadFailure) {
+    await page.getByRole('button', { name: 'Try again', exact: true }).waitFor();
+    return { page, errors, requests };
   }
   await page.waitForFunction(() => !!window.session?.ready, null, { timeout: 30000 });
   if (!crash && !demo) await page.locator('.st-roadmap-progress').waitFor({ timeout: 30000 });
@@ -344,5 +374,5 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
     await page.clock.install({ time: new Date('2026-11-03T11:59:00Z') });
     await page.clock.pauseAt(new Date('2026-11-03T12:00:00Z'));
   }
-  return { page, errors };
+  return { page, errors, requests };
 }

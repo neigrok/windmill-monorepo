@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <chrono>
@@ -24,11 +25,15 @@
 namespace wm::test {
 
 // Drogon listening on loopback in this process, so a test sends a request's bytes and gets back the request Drogon's
-// own parser made of them. Each request it hands over is answered with the response the test chose; one Drogon
-// refuses never reaches a test, which reads the refusal instead. The test main stops it before static destruction.
+// own parser made of them. Each request it hands over is answered with the response the test chose, or by the route
+// the test gave it, as a handler would; one Drogon refuses never reaches a test, which reads the refusal instead. The
+// test main stops it before static destruction.
 class DrogonLoopback {
 public:
+  using Answer = std::function<void(const drogon::HttpResponsePtr&)>;
   using Respond = std::function<drogon::HttpResponsePtr(const drogon::HttpRequestPtr&)>;
+  // A handler as Drogon calls one: it answers when it is ready, on any thread.
+  using Route = std::function<void(const drogon::HttpRequestPtr&, Answer&&)>;
 
   // What one request's bytes came to: the whole answer as it crossed the wire, and the request Drogon handed over, or
   // null when it answered without handing one over.
@@ -63,7 +68,7 @@ public:
     return response;
   }
 
-  // One client connection, kept alive across the requests sent on it.
+  // One client connection, kept alive across the requests sent on it. A read waits at most 30 s for its next bytes.
   class Connection {
   public:
     Connection() : loopback_(instance()), fd_(::socket(AF_INET, SOCK_STREAM, 0)) {
@@ -74,6 +79,8 @@ public:
         fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
       }
+      const timeval readBound{30, 0};
+      ::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &readBound, sizeof readBound);
     }
     ~Connection() { ::close(fd_); }
     Connection(const Connection&) = delete;
@@ -82,7 +89,13 @@ public:
     // Sends `bytes`, one whole request, and reads the whole answer: a 100 Continue and the response after it, framed
     // by its Content-Length.
     Exchange exchange(const std::string& bytes, Respond respond = noContent) {
-      loopback_.respondWith(std::move(respond));
+      return exchange(bytes, [respond = std::move(respond)](const drogon::HttpRequestPtr& req, Answer&& answer) {
+        answer(respond(req));
+      });
+    }
+
+    Exchange exchange(const std::string& bytes, Route route) {
+      loopback_.routeTo(std::move(route));
       for (std::size_t sent = 0; sent < bytes.size();) {
         const ssize_t wrote = ::send(fd_, bytes.data() + sent, bytes.size() - sent, 0);
         if (wrote <= 0) throw std::runtime_error("the loopback connection closed mid-request");
@@ -92,7 +105,8 @@ public:
       while (!whole(answer)) {
         char buffer[4096];
         const ssize_t read = ::recv(fd_, buffer, sizeof buffer, 0);
-        if (read <= 0) throw std::runtime_error("the loopback connection closed before its answer: " + answer);
+        if (read == 0) throw std::runtime_error("the loopback connection closed before its answer: " + answer);
+        if (read < 0) throw std::runtime_error("the loopback connection read nothing more for 30 s: " + answer);
         answer.append(buffer, static_cast<std::size_t>(read));
       }
       return Exchange{answer, loopback_.handedOver()};
@@ -173,14 +187,14 @@ private:
   DrogonLoopback() : port_(freePort()) {
     drogon::app().registerController(std::make_shared<Sockets>(*this));
     drogon::app()
-        .setDefaultHandler([this](const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& answer) {
-          Respond respond;
+        .setDefaultHandler([this](const drogon::HttpRequestPtr& req, Answer&& answer) {
+          Route route;
           {
             std::lock_guard lock(mutex_);
             handedOver_.push_back(req);
-            respond = respond_;
+            route = route_;
           }
-          answer(respond(req));
+          route(req, std::move(answer));
         })
         .addListener("127.0.0.1", port_)
         .setThreadNum(1)
@@ -213,9 +227,9 @@ private:
     return address;
   }
 
-  void respondWith(Respond respond) {
+  void routeTo(Route route) {
     std::lock_guard lock(mutex_);
-    respond_ = std::move(respond);
+    route_ = std::move(route);
   }
 
   drogon::HttpRequestPtr handedOver() {
@@ -230,7 +244,7 @@ private:
   std::uint16_t port_;
   std::thread runner_;
   std::mutex mutex_;
-  Respond respond_ = noContent;
+  Route route_ = [](const drogon::HttpRequestPtr& req, Answer&& answer) { answer(noContent(req)); };
   std::deque<drogon::HttpRequestPtr> handedOver_;
   std::optional<std::promise<drogon::WebSocketConnectionPtr>> awaitedSocket_;
 };

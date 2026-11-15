@@ -34,8 +34,9 @@ drogon::HttpResponsePtr refusalOf(const AskReply& reply) {
         : individual ? "Your AI allowance is fully used or reserved."
         : allowance.code == AiBudgetCode::FreeMonthExhausted ? "Coach's shared free AI capacity is unavailable for this month."
         : allowance.code == AiBudgetCode::FreeDayExhausted ? "Coach's shared free AI capacity is unavailable for today."
-        : allowance.code == AiBudgetCode::ConcurrencyExhausted ? "Another AI request is still in progress."
-        : allowance.code == AiBudgetCode::FundingRequired ? "Your plan has no funded AI allowance for this period."
+        : allowance.code == AiBudgetCode::ConcurrencyExhausted
+            ? "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes "
+              "after it began."
         : "Coach's AI allowance is unavailable right now.";
     body["allowance"] = toJson(allowance);
     auto response = jsonResponse(body);

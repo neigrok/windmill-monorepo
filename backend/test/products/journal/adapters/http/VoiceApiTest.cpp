@@ -2,13 +2,26 @@
 
 #include "platform/application/Entitlements.h"
 #include "platform/adapters/json/JsonText.h"
+#include "platform/adapters/llm/AiCallBudget.h"
+#include "products/journal/adapters/llm/OpenAiTranscriber.h"
+#include "test/DrogonLoopback.h"
 #include "test/platform/FakeAiBudgetRepository.h"
 #include "test/platform/Fakes.h"
 #include "test/products/journal/Fakes.h"
 #include "test/testing.h"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <chrono>
+#include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 using namespace wm;
 using namespace wm::fake;
@@ -27,7 +40,7 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, *clock, oauth, footprint, revocations, "https://windmill.works");
   std::shared_ptr<FakeTranscriber> transcriber = std::make_shared<FakeTranscriber>();
-  std::shared_ptr<FakeSubscriptionRepository> subs = std::make_shared<FakeSubscriptionRepository>();
+  std::shared_ptr<FakeEntitlementCopy> subs = std::make_shared<FakeEntitlementCopy>();
   FakeAiUsageRepository usage;
   FakeAiBudgetRepository allowances;
   AiBudgetLimits limits;
@@ -38,7 +51,7 @@ struct Harness {
 
   // `ledger` turns the durable USD allowances on, the mode Windmill One is funded in.
   explicit Harness(bool ledger = false)
-      : entitlements(std::make_shared<Entitlements>(*subs, usage, "", std::vector<std::string>{},
+      : entitlements(std::make_shared<Entitlements>(*subs, *clock, usage, Allowlists{}, std::vector<std::string>{},
                                                     ledger ? budgets : nullptr)),
         api(transcriber, entitlements, auth, clock) {}
 
@@ -70,6 +83,38 @@ drogon::HttpRequestPtr post(const std::string& audio, const std::string& session
   if (!session.empty()) request->addCookie("wm_session", session);
   return request;
 }
+
+// A vendor that takes the connection and never answers: the kernel completes the handshake and holds the request, and
+// nothing reads it.
+class SilentVendor {
+public:
+  SilentVendor() : listener_(::socket(AF_INET, SOCK_STREAM, 0)) {
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t size = sizeof address;
+    if (::bind(listener_, reinterpret_cast<const sockaddr*>(&address), sizeof address) != 0 ||
+        ::getsockname(listener_, reinterpret_cast<sockaddr*>(&address), &size) != 0 || ::listen(listener_, 1) != 0)
+      throw std::runtime_error("the silent vendor could not listen");
+    port_ = ntohs(address.sin_port);
+  }
+  ~SilentVendor() { ::close(listener_); }
+  SilentVendor(const SilentVendor&) = delete;
+  SilentVendor& operator=(const SilentVendor&) = delete;
+
+  std::string origin() const { return "http://127.0.0.1:" + std::to_string(port_); }
+
+private:
+  int listener_;
+  int port_ = 0;
+};
+
+struct Failures : FailureReporter {
+  std::vector<std::string> reports;
+  void report(const std::string& kind, const std::string& where, const std::string& detail) override {
+    reports.push_back(kind + ":" + where + ":" + detail);
+  }
+};
 
 // The reply may arrive after this returns, so the slot it lands in is shared, never a reference to this stack frame. A null answer means the take is still with the vendor.
 drogon::HttpResponsePtr send(VoiceApi& api, const drogon::HttpRequestPtr& request) {
@@ -152,21 +197,30 @@ TEST(voice_refuses_a_take_past_the_audio_cap_before_the_vendor_sees_it) {
   CHECK_EQ(h.transcriber->calls, 0);
 }
 
-TEST(voice_refuses_an_account_that_has_talked_its_day_away) {
+// Five maximum takes is 30 MB — the day's bytes exactly — and the sixth is refused with the moment the refill holds it:
+// a day's bytes refill over 86,400 s, so a sixth of them takes 17,280 s and half that holds a take half the size. Each
+// take is answered before the next is sent, so this is the ration and not the in-flight cap. The bucket refills on the
+// steady clock while the case runs, so each wait may come in up to a second short.
+TEST(voice_refuses_an_account_that_has_talked_its_day_away_and_says_when_a_take_fits_again) {
   Harness h;
   UserId me = h.signIn("s-live");
   h.subs->subscribe(me);
-
-  // Five maximum takes is 30 MB — the day's bytes exactly — and the sixth is refused. Each is answered before the next is sent, so this is the ration and not the in-flight cap.
   const std::string take(kMaxAudioBytes, 'a');
   for (int i = 0; i < 5; ++i)
     CHECK_EQ(send(h.api, post(take, "s-live"))->getStatusCode(), drogon::k200OK);
 
-  drogon::HttpResponsePtr response = send(h.api, post(take, "s-live"));
+  for (const auto& [bytes, waitMs] : {std::pair{kMaxAudioBytes, 17'280'000LL}, std::pair{kMaxAudioBytes / 2, 8'640'000LL}}) {
+    const auto response = send(h.api, post(std::string(bytes, 'a'), "s-live"));
 
-  CHECK_EQ(response->getStatusCode(), drogon::k429TooManyRequests);
-  CHECK_EQ((*response->getJsonObject())["error"].asString(),
-           std::string("talk has had its turn for today"));
+    CHECK_EQ(response->getStatusCode(), drogon::k429TooManyRequests);
+    Json::Value body = *response->getJsonObject();
+    const long long retryAtMs = body["retryAtMs"].asInt64();
+    body.removeMember("retryAtMs");
+    CHECK_EQ(dump(body), std::string{R"({"code":"voice_ration_spent","error":"talk has had its turn for now"})"});
+    CHECK(retryAtMs > static_cast<long long>(h.clock->now) + waitMs - 1'000);
+    CHECK(retryAtMs <= static_cast<long long>(h.clock->now) + waitMs);
+    CHECK_EQ(response->getHeader("Retry-After"), std::to_string(waitMs / 1000));
+  }
   CHECK_EQ(h.transcriber->calls, 5);
 }
 
@@ -237,13 +291,45 @@ TEST(voice_with_allowances_on_answers_a_subscription_no_payment_has_funded_with_
 
   const auto response = send(h.api, post("opus-bytes", "s-live"));
 
+  // The allowance it carries is the free signed-in one the account falls back to, which funds no take.
   CHECK_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
-  CHECK_EQ(dump(*response->getJsonObject()), dump(parse(R"({"code":"funding_required","reason":"unavailable",
+  Json::Value expected = parse(R"({"code":"funding_required","reason":"unavailable",
       "error":"your plan has no funded AI allowance for this period","allowance":{"code":"funding_required",
-      "currency":"USD","period":"billing_period","tier":"windmill_one","configured":false,"limit":null,
-      "used":"0.000000000","reserved":"0.000000000","remaining":"0.000000000","resetsAtMs":null,
-      "budgetResetsAtMs":null}})")));
+      "currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"limit":"0.500000000",
+      "used":"0.000000000","reserved":"0.000000000","remaining":"0.500000000","budgetResetsAtMs":null}})");
+  expected["allowance"]["resetsAtMs"] = Json::Int64(AiBudgetPeriod::at(static_cast<long long>(h.clock->now))->endMs);
+  CHECK_EQ(dump(*response->getJsonObject()), dump(expected));
   CHECK_EQ(h.transcriber->calls, 0);
+}
+
+// What the free allowance holds is no reason a take is refused: a subscriber with no grant in force is told
+// funding_required whether that allowance is spent or a shared free pool is.
+TEST(voice_with_allowances_on_tells_a_subscription_no_payment_has_funded_funding_required_whatever_the_free_allowance_holds) {
+  const auto unfunded = [](const std::function<void(Harness&)>& arrange, const char* used, const char* remaining) {
+    Harness h{true};
+    UserId me = h.signIn("s-live");
+    h.subs->subscribe(me);
+    arrange(h);
+
+    const auto response = send(h.api, post("opus-bytes", "s-live"));
+
+    CHECK_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
+    Json::Value expected = parse(R"({"code":"funding_required","reason":"unavailable",
+        "error":"your plan has no funded AI allowance for this period","allowance":{"code":"funding_required",
+        "currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"limit":"0.500000000",
+        "reserved":"0.000000000","budgetResetsAtMs":null}})");
+    expected["allowance"]["used"] = used;
+    expected["allowance"]["remaining"] = remaining;
+    expected["allowance"]["resetsAtMs"] = Json::Int64(AiBudgetPeriod::at(static_cast<long long>(h.clock->now))->endMs);
+    CHECK_EQ(dump(*response->getJsonObject()), dump(expected));
+    CHECK_EQ(h.transcriber->calls, 0);
+  };
+  unfunded([](Harness& h) { h.allowances.totals.subject.spentNanos = h.limits.loggedInMonthlyNanos; },
+           "0.500000000", "0.000000000");
+  unfunded([](Harness& h) { h.allowances.totals.freeDay.spentNanos = h.limits.freeDailyNanos; },
+           "0.000000000", "0.500000000");
+  unfunded([](Harness& h) { h.allowances.totals.freeMonth.spentNanos = h.limits.freeMonthlyNanos; },
+           "0.000000000", "0.500000000");
 }
 
 // The read showed room, and the transcriber's admission refused anyway: a take holds more than is left, another AI
@@ -270,7 +356,7 @@ TEST(voice_with_allowances_on_answers_a_refused_admission_under_the_code_that_re
   capacity["allowance"]["code"] = "subject_exhausted";
   capacity["allowance"]["budgetResetsAtMs"] = Json::Int64(grant.period.endMs);
   Json::Value busy = parse(R"({"code":"concurrency_exhausted","reason":"unavailable",
-      "error":"another AI request is still in progress"})");
+      "error":"your earlier AI requests hold every slot you have; each frees when its cost is confirmed, at most 10 minutes after it began"})");
   busy["allowance"] = allowance;
   busy["allowance"]["code"] = "concurrency_exhausted";
   for (const Case& scenario : std::vector<Case>{
@@ -306,6 +392,37 @@ TEST(voice_with_allowances_on_a_refused_take_gives_its_audio_back_to_the_day) {
   const auto spent = send(h.api, post(take, "s-live"));
 
   CHECK_EQ(spent->getStatusCode(), drogon::k429TooManyRequests);
-  CHECK_EQ(dump(*spent->getJsonObject()), std::string{R"({"error":"talk has had its turn for today"})"});
+  CHECK_EQ((*spent->getJsonObject())["code"].asString(), std::string{"voice_ration_spent"});
   CHECK_EQ(h.transcriber->calls, 11);
+}
+
+// A vendor slower than the take's wait: the route's 502 is written from the transcriber's loop once the wait is over,
+// and reaches the person on the connection the take came in on. The take may have been heard, so its hold stays. It is
+// sent to a path no test registers a route on, so the loopback's route answers it and not the journal's.
+TEST(voice_answers_502_on_the_takes_own_connection_when_the_vendor_is_slower_than_its_wait) {
+  Harness h{true};
+  UserId me = h.signIn("s-live");
+  h.fund(me);
+  Failures failures;
+  SilentVendor vendor;
+  auto calls = std::make_shared<AiCallBudget>(h.budgets, *h.entitlements, h.authRepo, failures);
+  VoiceApi api{std::make_shared<OpenAiTranscriber>("sk-fixture-only", "gpt-4o-transcribe", nullptr, nullptr, calls,
+                                                   vendor.origin(), std::chrono::seconds{1}),
+               h.entitlements, h.auth, h.clock};
+  test::DrogonLoopback::Connection wire;
+
+  const auto exchange = wire.exchange(
+      "POST /take HTTP/1.1\r\nHost: localhost\r\nCookie: wm_session=s-live\r\n"
+      "Content-Type: audio/webm\r\nContent-Length: 10\r\n\r\nopus-bytes",
+      [&api](const drogon::HttpRequestPtr& req, test::DrogonLoopback::Answer&& answer) {
+        api.transcribe(req, std::move(answer));
+      });
+
+  CHECK(exchange.answer.starts_with("HTTP/1.1 502 Bad Gateway\r\n"));
+  CHECK(exchange.answer.ends_with("\r\n\r\n{\"error\":\"the transcriber could not answer\"}"));
+  REQUIRE_EQ(h.allowances.reservations.size(), 1u);
+  const AiBudgetReservation& held = h.allowances.reservations.begin()->second;
+  CHECK(held.state == AiBudgetState::Uncertain);
+  CHECK_EQ(held.amountNanos, 60'000'000);
+  CHECK(failures.reports.empty());
 }

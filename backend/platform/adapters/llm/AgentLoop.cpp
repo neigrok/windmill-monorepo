@@ -137,10 +137,14 @@ AgentLoopOutcome driveAgentLoop(const AgentLoopSpec& spec, ToolHost& tools, cons
   const Json::Value catalog = agentToolCatalog(tools.listTools(caller));
   Json::Value messages = spec.messages;
 
+  // Told to stop — a person's Stop, a stopping server — the run ends as stopped, never as a failure, also when the
+  // stop cut a round short.
+  const auto toldToStop = [&] { return spec.continueRun && !spec.continueRun(); };
   for (int iteration = 0; iteration < spec.maxIterations; ++iteration) {
-    if (spec.continueRun && !spec.continueRun()) { outcome.error = "stopped"; return outcome; }
+    if (toldToStop()) { outcome.error = "stopped"; return outcome; }
     markAgentCachePoint(messages);  // the growing prefix is written once and read after
     const std::optional<Json::Value> reply = call(messagesRequest(spec, catalog, messages));
+    if (!reply && toldToStop()) { outcome.error = "stopped"; return outcome; }
     if (!reply) {
       outcome.error = "the model call failed or returned an unreadable reply";
       report(spec.where, outcome.error);
@@ -173,6 +177,7 @@ AgentLoopOutcome driveAgentLoop(const AgentLoopSpec& spec, ToolHost& tools, cons
       return outcome;
     }
 
+    if (stopReason.asString() == "cancelled" && toldToStop()) { outcome.error = "stopped"; return outcome; }
     if (stopReason.asString() != "tool_use") {
       // max_tokens, refusal, or any other early stop. A partial answer is a different answer.
       outcome.error = "the model stopped early (stop_reason: " + stopReason.asString() + ")";
@@ -192,7 +197,7 @@ AgentLoopOutcome driveAgentLoop(const AgentLoopSpec& spec, ToolHost& tools, cons
       report(spec.where, outcome.error);
       return outcome;
     }
-    if (spec.continueRun && !spec.continueRun()) { outcome.error = "stopped"; return outcome; }
+    if (toldToStop()) { outcome.error = "stopped"; return outcome; }
     const std::vector<ToolResult> answered = tools.callTools(calls, caller);
     if (answered.size() != calls.size()) {
       outcome.error = "the tool host answered a different number of calls than it was sent";

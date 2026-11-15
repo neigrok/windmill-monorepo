@@ -46,5 +46,7 @@
   "journal.date.weekdayInitial.sun": "S",
   "journal.date.weekdayInitial.thu": "T",
   "journal.date.weekdayInitial.tue": "T",
-  "journal.date.weekdayInitial.wed": "W"
+  "journal.date.weekdayInitial.wed": "W",
+  "journal.talk.act.download": "Download recording",
+  "journal.talk.signOutDiscards": "A recording waiting in Talk will be discarded."
 }

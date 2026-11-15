@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider.jsx';
-import { fetchSubscription } from './checkout.js';
+import { fetchSubscription, holdsWindmillOne } from './subscription.js';
 
 const EntitlementsContext = createContext(null);
 
@@ -27,7 +27,7 @@ export default function EntitlementsProvider({ children }) {
       return false;
     }
     const subscription = await fetchSubscription();
-    const windmillOne = Boolean(subscription?.active);
+    const windmillOne = holdsWindmillOne(subscription);
     if (id === reqRef.current) setState({ windmillOne, settledFor: 'signed-in' });
     return windmillOne;
   }, [status]);

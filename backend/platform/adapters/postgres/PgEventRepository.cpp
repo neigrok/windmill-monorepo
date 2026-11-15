@@ -46,4 +46,23 @@ int PgEventRepository::countInLastDay(const std::string& sessionKey) {
                          sessionKey)[0][0].as<int>();
 }
 
+std::optional<ServerEvent> PgEventRepository::recordOnce(pqxx::work& txn, const ServerEvent& event) {
+  // The key first: one already recorded inserts no key, and so no row. KEY SHARE holds the attributed account until the
+  // commit, so an erasure waits for the row and then deletes it with the rest of the account's events.
+  const std::optional<std::string> user = event.user ? std::optional<std::string>{event.user->str()} : std::nullopt;
+  const pqxx::result stored = txn.exec(
+      "WITH recorded AS (INSERT INTO server_event_keys (key) VALUES ($1) ON CONFLICT (key) DO NOTHING RETURNING key), "
+      "held AS (SELECT id FROM users WHERE id = $4::uuid FOR KEY SHARE) "
+      "INSERT INTO events (client_ms, session_key, user_id, name, props, server_key) "
+      "SELECT $2, CASE WHEN held.id IS NULL THEN $3 END, held.id, $5, $6::jsonb, recorded.key "
+      "FROM recorded LEFT JOIN held ON true "
+      "RETURNING coalesce(session_key, ''), user_id::text",
+      pqxx::params{event.event.id, event.event.clientMs, event.sessionKey, user, event.event.name, event.event.props});
+  if (stored.empty()) return std::nullopt;
+  ServerEvent recorded = event;
+  recorded.sessionKey = stored[0][0].as<std::string>();
+  recorded.user = stored[0][1].is_null() ? std::nullopt : std::optional<UserId>{UserId{stored[0][1].as<std::string>()}};
+  return recorded;
+}
+
 }

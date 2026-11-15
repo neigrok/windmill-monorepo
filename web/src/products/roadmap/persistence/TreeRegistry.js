@@ -1,5 +1,5 @@
-// The account-level list of roadmaps and the door that plants one, credentialed by cookie. Reads
-// degrade to [] whenever the registry can't answer; a 401 surfaces as an AuthError.
+// The account-level list of roadmaps and the door that plants one, credentialed by cookie.
+// listTrees and listAllTrees return arrays; listServerTrees preserves whether the answer is authoritative.
 
 import { AuthError } from '../../../shell/auth/AuthClient.js';
 import { API_BASE } from '../../../shell/apiBase.js';
@@ -41,8 +41,8 @@ export async function listAllTrees() {
 
 // The account's roadmaps on the server alone, newest first as the switcher lists them. Where the list could not be
 // read `authoritative` is false and `status` says how: the server's answer (200 for one that is not a list), or 0 for none.
-export async function listServerTrees() {
-  const server = await fetchServerList();
+export async function listServerTrees({ signal } = {}) {
+  const server = await fetchServerList({ strict: true, signal });
   return { ...server, rows: [...server.rows].sort(newestFirst) };
 }
 
@@ -65,15 +65,18 @@ export async function readTreeCard(treeId) {
 
 // `authoritative` says whether an empty list means anything: a 200 is the account's true list, a
 // 401 or a dead network vouches for nothing.
-async function fetchServerList() {
+async function fetchServerList({ strict = false, signal } = {}) {
   let response;
   try {
-    response = await fetch(`${API_BASE}/v1/trees`, { credentials: 'include' });
+    response = await fetch(`${API_BASE}/v1/trees`, { credentials: 'include', ...(signal ? { signal } : {}) });
   } catch {
     return { rows: [], authoritative: false, status: 0 };
   }
   if (!response.ok) return { rows: [], authoritative: false, status: response.status };
   const body = await response.json().catch(() => null);
+  if (strict && (!Array.isArray(body?.trees) || body.trees.some((row) => !row || typeof row.id !== 'string' || !row.id
+    || (row.title !== undefined && typeof row.title !== 'string'))
+    || new Set(body.trees.map((row) => row.id)).size !== body.trees.length)) return { rows: [], authoritative: false, status: response.status };
   if (body === null || !Array.isArray(body.trees ?? [])) return { rows: [], authoritative: false, status: response.status };
   return { rows: body.trees ?? [], authoritative: true };
 }
