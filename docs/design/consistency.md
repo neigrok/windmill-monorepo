@@ -611,9 +611,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   [17.12](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=715-41080) draws the device disclosure with
   outdated wording. Current device copy is *Only on this device until you sign in.*; account copy is *Your agents
   and people you share this tree with can read the guide.* Refresh the desktop instances and handoff copy.
-  [Proposal 44](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1241-25026) draws clean disabled Save,
+  [Approved 44](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1241-25026) draws clean disabled Save,
   phone *Draft copied*, simultaneous changed-elsewhere and save failure, dark recovery and 320 px wrapping in current
-  containers. These examples await owner approval; approved source drawings and library variants remain unchanged.
+  containers. The owner approved 44.00–44.06 on 2026-11-15; library variants still need reconciliation.
   Copied/conflict lines use `--surface-sunken`, failures use `--color-danger-bg`, and the copied
   tick uses `--color-brand`. *Done* returns to *Copy draft* without dismissing the draft. Annotate the current focus
   behavior: activating Save or its recovery action focuses that button; Load latest focuses the field.
