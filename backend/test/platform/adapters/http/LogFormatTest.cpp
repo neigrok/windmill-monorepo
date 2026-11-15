@@ -34,6 +34,9 @@ TEST(log_privacy_keeps_audited_write_vendor_and_database_completion_lines) {
            std::string("closed accounts: erased 2 past their grace"));
   CHECK_EQ(privacySafeLogBody("subscription follow: the cursor has stalled (cause=behind behind=20)", "FeedFollower.cpp:137"),
            std::string("subscription follow: the cursor has stalled (cause=behind behind=20)"));
+  CHECK_EQ(privacySafeLogBody("subscription claim: the service gave no answer the contract describes (timeout)",
+                              "SubscriptionApi.cpp:101"),
+           std::string("subscription claim: the service gave no answer the contract describes (timeout)"));
   const std::string admission = "ai_output_admission input_nanos=60000000 output_token_nanos=25000 "
       "min_tokens=1024 max_tokens=2000 selected_tokens=1200 code=ok";
   CHECK_EQ(privacySafeLogBody(admission, "AiCallBudget.cpp:200"), admission);

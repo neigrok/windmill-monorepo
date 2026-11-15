@@ -169,6 +169,38 @@ curl -s -X POST "localhost:8083/internal/v1/subscriptions/$SUBSCRIPTION_ID/refre
 Each claim and refresh writes one `store.claim` or `store.refresh` line
 ([ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#the-claim-and-refresh-doors)).
 
+#### A claim through the backend
+
+A phone claims through the backend, never the internal port: the backend forwards the signed transaction
+under the account its session names and answers from its copy once the follower has brought it there
+([subscriptions.md](../docs/foundation/subscriptions.md) §5.3). With the service running with its key and
+Apple as above and the purchase posted without its hint, start the backend beside it in place of the
+internal claim. The follower needs the AI ledger, whose alerts need an owner and a mail key, and the test
+signer signs in sandbox, so the account that claims is a sandbox tester. From `backend/`, on a database
+`db/schema.sql` built (§2):
+
+```sh
+SUBSCRIPTIONS_INTERNAL_URL=http://127.0.0.1:8083 SUBSCRIPTIONS_INTERNAL_TOKEN="$TOKEN" \
+  AI_ALLOWANCES_ENABLED=true WINDMILL_OWNER_EMAILS=owner@example.com AI_ALLOWANCE_ALERT_EMAIL=owner@example.com \
+  RESEND_API_KEY=local RESEND_BASE_URL=http://127.0.0.1:8100 WINDMILL_SANDBOX_EMAILS=ios-dev@example.com \
+  WINDMILL_HOST=127.0.0.1 PORT=8088 ./build/windmill_server
+```
+
+Sign `ios-dev@example.com` in with a code as [the engine server](#engine-server-for-the-ios-simulator) does,
+its `session` being `SESSION`, and claim the same `TRANSACTION`:
+
+```sh
+curl -s localhost:8088/v1/subscription/app-store/claims -H "authorization: Bearer $SESSION" \
+  -H 'content-type: application/json' -d "{\"signedTransaction\":\"$TRANSACTION\"}"
+curl -s localhost:8088/v1/subscription -H "authorization: Bearer $SESSION"
+```
+
+The claim answers 200 with the account's `SubscriptionResponse`, `windmillOne` true in `sandbox`, and
+`GET /v1/subscription` answers the same. The same claim again answers alike; another account's answers
+`409 {"code":"bound_to_another_account"}`, a caller with no session 401, and a service without its key, a
+service that is down or a backend with the follower off `503 {"code":"subscriptions_unavailable"}`. Each
+claim writes one `subscription.claim` line ([OBSERVABILITY.md](OBSERVABILITY.md)).
+
 ### Engine server for the iOS simulator
 
 Run from `backend/`. This serves `windmill_server` on an isolated local database, and the simulator

@@ -369,14 +369,18 @@ Devices never call this service. The backend authenticates the caller and serves
   only when `allowlisted` is true as well, so no one buys a sandbox subscription that counts for
   nothing.
 - `POST /v1/subscription/app-store/claims` with `AppStoreClaimRequest` `{signedTransaction}`, forwarded
-  to §5.2 with the caller's account id. On the service's 200 the door asks the follower to reach the
-  answer's `seq` (§6.1), waits for it at most 5 s, and answers 200 with the `SubscriptionResponse`
-  from the copy; a wait that runs out answers from the copy as it stands. Otherwise it answers
-  `{code}`: 409 `bound_to_another_account`, 400 `invalid_transaction` for a transaction that does not
-  verify, 503 `subscriptions_unavailable` when the service cannot be reached or answers 503.
+  to §5.2 with the account id the caller's session names, never one the body names. On the service's
+  200 the door asks the follower to reach the answer's `seq` (§6.1), waits for it at most 5 s, and
+  answers 200 with the `SubscriptionResponse` from the copy, so the answer is what every gate reads; a
+  wait that runs out answers from the copy as it stands, which may not show the claim yet. Otherwise
+  it answers `{code}`: 409 `bound_to_another_account`, 400 `invalid_transaction` for a transaction that
+  does not verify or a body that holds none, 503 `subscriptions_unavailable` while the backend does not
+  follow the feed, and when the service cannot be reached or answers 503. A caller not signed in, and
+  one whose account the service has recorded as erased (§6.4), is answered 401, as every door answers a
+  session whose account is gone.
 - A device finishes the transaction on 200 and 409. On 400 and 503 it keeps the transaction
-  unfinished and claims it again at its next launch. A 400 for a transaction StoreKit verified is
-  reported to Sentry by the device.
+  unfinished and claims it again at its next launch, and on 401 once an account is signed in. A 400 for
+  a transaction StoreKit verified is reported to Sentry by the device.
 
 ## §6 The backend's half
 
@@ -588,7 +592,8 @@ The backend's role cannot read it.
   cursor that has not advanced while the service reports newer events, and a page whose epoch or
   `latestSeq` starts a rebuild (§6.1).
 - The backend's claim door logs `subscription.claim` with its outcome or refusal code; a wait for the
-  follower that runs out is logged as `copy_behind`.
+  follower that runs out is logged as `copy_behind`. A service that gives no answer the contract
+  describes reports to Sentry under that name.
 - A renewal, a failed charge and a refund happen with no device present, so no client can emit them.
   The follower records them as product events in the store the `/v1/events` intake writes and
   forwards from: `subscription_started`, `subscription_renewed`, `subscription_renewal_turned_off`,

@@ -5,6 +5,7 @@
 #include <json/json.h>
 
 #include <algorithm>
+#include <iterator>
 #include <optional>
 #include <stdexcept>
 #include <string>
