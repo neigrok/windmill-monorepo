@@ -324,9 +324,7 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     }
     let arguments = ProcessInfo.processInfo.arguments
     if path.hasPrefix("/v1/ai/installations") {
-      let allowance: [String: Any] = ["code": "ok", "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true,
-        "limit": "0.250000000", "used": "0.001000000", "reserved": "0.000000000", "remaining": "0.249000000", "resetsAtMs": NSNull(), "budgetResetsAtMs": NSNull()]
-      var response: [String: Any] = ["bound": path.hasSuffix("/bind"), "allowance": allowance]
+      var response: [String: Any] = ["bound": path.hasSuffix("/bind"), "allowance": Self.allowance("ok", used: "0.001000000", remaining: "0.249000000")]
       if path == "/v1/ai/installations" { response["credential"] = String(repeating: "a", count: 43) }
       respond(200, response); return
     }
@@ -337,11 +335,14 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
       // meets every question after the first.
       if arguments.contains("-coach-unavailable") { respond(404, [:], type: "text/html"); return }
       let asked = Self.asked.withLock { $0 += 1; return $0 }
-      if arguments.contains("-coach-allowance-spent"), asked > 1 { respond(429, ["error": "allowance", "code": "subject_exhausted"]); return }
+      if arguments.contains("-coach-allowance-spent"), asked > 1 {
+        respond(429, ["error": "allowance", "code": "subject_exhausted", "allowance": Self.allowance("subject_exhausted", used: "0.250000000", remaining: "0.000000000")])
+        return
+      }
       if arguments.contains("-coach-daily-cap"), asked > 1 { respond(429, ["error": "later", "code": "coach-rate-limited"]); return }
       if case .refused(let status, let code, let resetsAtMs)? = CoachBoard.current?.secondSend, asked > 1 {
         var refusal: [String: Any] = ["error": code, "code": code]
-        if let resetsAtMs { refusal["allowance"] = ["code": code, "budgetResetsAtMs": resetsAtMs] }
+        if let resetsAtMs { refusal["allowance"] = Self.allowance(code, used: "0.001000000", remaining: "0.249000000", budgetResetsAtMs: resetsAtMs) }
         respond(status, refusal); return
       }
       // The open workout the turn read, which a board's change to this workout names, under an id minted from the turn's.
@@ -385,6 +386,11 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     let http = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": type])!
     client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
     client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: response)); client?.urlProtocolDidFinishLoading(self)
+  }
+  // The signed-out seat's lifetime allowance as the allowance read writes it.
+  static func allowance(_ code: String, used: String, remaining: String, budgetResetsAtMs: Int64? = nil) -> [String: Any] {
+    ["code": code, "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true, "limit": "0.250000000", "used": used,
+     "reserved": "0.000000000", "remaining": remaining, "resetsAtMs": NSNull(), "budgetResetsAtMs": budgetResetsAtMs.map { $0 as Any } ?? NSNull()]
   }
   static func frame(_ event: String, _ data: [String: Any]) -> String {
     "event: \(event)\ndata: " + String(decoding: try! JSONSerialization.data(withJSONObject: data), as: UTF8.self) + "\n\n"
