@@ -1645,8 +1645,12 @@ Android. It and the product differ in these places.
   *removed from this workout*; 08.56 *Proposal · Push A · next time*; 07.15 and 07.16 *conversation* as the sign-in noun; the
   specimens *I made 3 routines.* and *I made Incline Dumbbell Press, then*. 08.45 says Android's *Get the update*, not iOS's
   *Update*. 08.68 offers *Use your own AI agent* on a shared free day, which iOS code does not (`CoachTurnRefusal.recovery`).
-  A spent signed-out allowance says *You have used all of your AI allowance.* over *Sign in to continue.* on both phones; on
-  Android one with too little left for a round says *Coach’s AI allowance is unavailable right now.* over the same line. That
+  A spent signed-out allowance says *You have used all of your AI allowance.* over *Sign in to continue.* on both phones; one
+  with too little left for a round says *Coach’s AI allowance is unavailable right now.* on Android and *This request needs
+  more AI capacity than your remaining allowance.* on iOS over the same line, and one whose rest earlier requests hold says
+  Android's same unavailable line and iOS's *Your earlier AI requests hold the rest of your AI allowance until their cost is
+  confirmed, at most 10 minutes after each began.* No board draws iOS's two lines or its *Your AI allowance has no room for
+  this request.*, said where a refusal carries no allowance. That
   allowance is $0.25, and an account's month is $0.50, which counts this phone's spend from the same month, so about $0.25 is left
   after signing in and the line holds. An account truly run out says the same first sentence and *It comes back on {date}.*,
   08.44's words, on Android; iOS's signed-in notice names no date.
