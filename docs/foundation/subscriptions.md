@@ -227,7 +227,8 @@ period leaves a running subscription `active` (§8).
   (§6.4) or an operator transfer, and both record an event.
 - **At purchase.** The app passes the signed-in account's id as the store's account hint. The first
   verified observation carrying a hint binds the subscription to the account it names. First means
-  first applied, so the binding follows arrival and INV-6 leaves it aside. A hint that names an erased
+  first applied: deliveries of one subscription that overlap are applied in the order they take its
+  lock, not the order they arrived, and INV-6 leaves the binding aside. A hint that names an erased
   account (§6.4) counts as no hint.
 - **By claim.** The app posts the store's signed transaction through the backend (§5.3). The service
   verifies it and binds an unbound subscription to the caller. A claim for a subscription already
