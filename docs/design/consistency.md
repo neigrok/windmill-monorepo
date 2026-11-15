@@ -803,10 +803,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   ([design-system note 499:42374](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=499-42374)).
   Web's shared token and static-page chrome use that ring; dark, journal and gym overrides retain
   their own values.
-- **Shared step document · sync refusal recovery.** The origin Board/Graph refusal notice is hidden with
-  its canvas while a step is open. Retry and Discard need a document placement that keeps inline Undo reachable.
-  [Proposal 43](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1211-104922) awaits owner approval;
-  the enabled single-step completion/rebaseline UI regression exposes this gap.
 - **Board · a failed Copy link says nothing.** When the browser refuses the clipboard write from the step menu (01.09, 03.02) the
   build shows nothing. Proposed, awaiting the owner: toast *Couldn't copy the link* · **Show link**, then the link selected with
   **Retry** (phone 25.01–25.02, desktop 15.01–15.02).

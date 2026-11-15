@@ -192,8 +192,8 @@ const focusedName = (page) => page.evaluate(() => {
   return element.getAttribute('aria-label') ?? element.querySelector('.st-board-card-title')?.textContent ?? element.textContent;
 });
 const status = (page) => page.evaluate(() => {
-  const row = document.querySelector('.st-board-step-status');
-  return [...row.querySelectorAll('.st-board-step-status-label, .st-board-step-undo, .st-board-step-outcome')].map((part) => part.textContent).filter(Boolean);
+  const step = document.querySelector('.st-step-document');
+  return ['.st-board-step-status-label', '.st-board-step-undo', '.st-board-step-outcome'].map((selector) => step.querySelector(selector)?.textContent).filter(Boolean);
 });
 const column = (page, name) => page.evaluate((name) => [...document.querySelectorAll(`[data-column="${name}"] .st-board-card-title`)].map((title) => title.textContent), name);
 const waitForColumn = (page, name, titles) => page.waitForFunction(({ name, titles }) => {
@@ -412,7 +412,7 @@ test('Chromium: an inline Undo that throws reports its static operation and its 
   }
 });
 
-test('Chromium: Complete and Reset act in place — the modal stays, the status flips with Undo, a line names what moved, nothing toasts', async () => {
+test('Chromium: Complete and Reset retain the document, update its status and pin Undo with the outcome without a toast', async () => {
   await start();
   const errors = [];
   const page = await openRoom({ viewport: { width: 1440, height: 960 } }, errors);

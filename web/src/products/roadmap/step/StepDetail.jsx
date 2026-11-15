@@ -1,8 +1,8 @@
 // The shared step document; nested editors and pickers own their own dialogs.
 
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Clock, Crosshair, Lock, PanelRightClose, PanelRightOpen, Pencil, Users } from 'lucide-react';
+import { Clock, Crosshair, Lock, PanelRightClose, PanelRightOpen, Pencil, Undo2, Users } from 'lucide-react';
 import './detail.css';
 import { track } from '../../../telemetry/beacon.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
@@ -20,6 +20,7 @@ import { useTreeDoor } from '../room/useTreeVisit.js';
 import { DetailFocusContext } from './composerFocus.js';
 import { wrapTab } from '../../../design-system/feedback/dialogFocus.js';
 import { boardFocusTarget } from '../board/traversal.js';
+import { RefusedSync } from '../sync/SyncNotices.jsx';
 import './read.css';
 import {
   COLUMN_TITLES, LABELS, deleteCostLine, LINK_COPIED, STATE_WORDS, STEP_DETAIL, TREE, checkedToast,
@@ -43,6 +44,7 @@ export function StepDetail({
   breakpoint,
   roadmapTitle,
   editable = false,
+  refusal = null,
   deletable = false,
   stepLink = null,
   workspace,
@@ -72,6 +74,8 @@ export function StepDetail({
   const facts = useMemo(() => new StepFacts(tree, { completed, completedAt }, id), [tree, completed, completedAt, id]);
   const openTree = useTreeDoor(facts.step, 'step');
   const layerRef = useRef(null);
+  const refusalRef = useRef(null);
+  const refusalFocus = useRef(null);
   const originRef = useRef(null);
   const directLink = useRef(door === 'link');
   const deletedRef = useRef(null);
@@ -94,6 +98,8 @@ export function StepDetail({
   const sectionsId = useId();
   const [stepShown, setStepShown] = useState(id);
   const [coachOpen, setCoachOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1440);
+  const [compactNotice, setCompactNotice] = useState(phone);
+  const [discardNotice, setDiscardNotice] = useState(null);
   const [outcome, setOutcome] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [noteEditing, setNoteEditing] = useState(false);
@@ -148,6 +154,41 @@ export function StepDetail({
     else restore();
   }, []);
   const detailFocus = useMemo(() => ({ restore: restoreDetailFocus }), [restoreDetailFocus]);
+
+  useLayoutEffect(() => {
+    const article = layerRef.current.querySelector('article');
+    const measure = () => setCompactNotice(article.clientWidth < 600);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(article);
+    return () => observer.disconnect();
+  }, []);
+
+  const notice = editable ? discardNotice ?? refusal : null;
+  const refusalShown = Boolean(notice);
+  useEffect(() => {
+    refusalFocus.current = null;
+    if (!refusalShown) return undefined;
+    const followFocus = (event) => { refusalFocus.current = refusalRef.current?.contains(event.target) ? document.activeElement : null; };
+    document.addEventListener('focusin', followFocus);
+    document.addEventListener('pointerdown', followFocus, true);
+    return () => {
+      document.removeEventListener('focusin', followFocus);
+      document.removeEventListener('pointerdown', followFocus, true);
+    };
+  }, [refusalShown, id]);
+
+  useLayoutEffect(() => {
+    if (refusalShown || !refusalFocus.current) return;
+    const previousFocus = refusalFocus.current;
+    refusalFocus.current = null;
+    const layer = layerRef.current;
+    if (!editable || layer.closest('[inert]')) return;
+    const active = document.activeElement;
+    if (active !== document.body && active?.isConnected && active !== previousFocus) return;
+    const target = layer.querySelector('.st-board-step-undo') ?? layer.querySelector('.st-board-step-identity-title');
+    target?.focus();
+  }, [refusalShown, editable]);
 
   useEffect(() => {
     const root = layerRef.current?.closest('.st-root');
@@ -211,7 +252,7 @@ export function StepDetail({
 
   const act = (action, extra = {}) => track('roadmap_board_step_action', { surface, action, ...extra });
 
-  // Completion and Undo retain this document and report their outcome beside its status.
+  // Completion and Undo retain this document and report their outcome beside its pinned actions.
   const complete = (action) => {
     if (!editableRef.current || currentStep.current !== id) return;
     const before = { completed, completedAt };
@@ -381,6 +422,12 @@ export function StepDetail({
   const description = facts.step.description?.trim() ?? '';
   const links = (facts.step.links ?? []).filter((link) => SAFE_URL.test(link.url));
   const kind = hueOf(facts.step.color);
+  const discard = async () => {
+    if (discardNotice) return;
+    setDiscardNotice(notice);
+    try { await notice.onDiscard(); }
+    finally { setDiscardNotice(null); }
+  };
   return (
     <DetailFocusContext.Provider value={detailFocus}>
       <div ref={layerRef} className={`st-board-step-layer st-step-read-shell${phone ? ' is-phone' : ''}`} onClickCapture={swallowSecondPress}>
@@ -397,17 +444,20 @@ export function StepDetail({
             {menuItems.length > 0 && <StepMenu items={menuItems} confirm={!phone ? confirm : null} />}
             <button type="button" className="st-board-step-icon-button" aria-label={STEP_DETAIL.close} onClick={onClose}><StepIcons.close /></button>
           </header>
-          <div className="st-step-read-heading">
-            <div className="st-step-read-tags">
-              <span className="st-step-kind-label"><i style={{ background: kind.base }} />{kindLabel || facts.step.color}</span>
-              <StatusRow facts={facts} outcome={outcome} onUndo={undo} />
-            </div>
-            <div className="st-step-read-title">
-              <h2 id={titleId} className="st-board-step-identity-title">{titleOf(facts.step)}</h2>
-              {edit && <button type="button" className="st-board-step-icon-button" aria-label={STEP_DETAIL.editStep} onClick={edit}><Pencil size={16} aria-hidden /></button>}
-            </div>
-          </div>
+          {refusalShown && <div ref={refusalRef} className="st-step-refusal" onClickCapture={() => { refusalFocus.current = document.activeElement; }}>
+            <RefusedSync band={compactNotice ? 'phone' : breakpoint} {...notice} onDiscard={discard} disabled={Boolean(discardNotice)} />
+          </div>}
           <div ref={scrollRef} className="st-step-document-scroll" onWheel={() => cancelAnimationFrame(sectionScroll.current)} onTouchStart={() => cancelAnimationFrame(sectionScroll.current)}>
+            <div className="st-step-read-heading">
+              <div className="st-step-read-tags">
+                <span className="st-step-kind-label"><i style={{ background: kind.base }} />{kindLabel || facts.step.color}</span>
+                <StatusRow facts={facts} />
+              </div>
+              <div className="st-step-read-title">
+                <h2 id={titleId} className="st-board-step-identity-title" tabIndex={-1}>{titleOf(facts.step)}</h2>
+                {edit && <button type="button" className="st-board-step-icon-button" aria-label={STEP_DETAIL.editStep} onClick={edit}><Pencil size={16} aria-hidden /></button>}
+              </div>
+            </div>
             <div className="st-step-document-grid">
               <section className="st-step-description-section">
                 <h3 className="st-step-section-title">{t('roadmap.step.description')}</h3>
@@ -444,7 +494,9 @@ export function StepDetail({
             <button type="button" onClick={() => { workspaceActions.onToggleSubtask(id, checked.id); setChecked(null); track('roadmap_board_workspace', { action: 'undo' }); }}>{LABELS.undo}</button>
           </div>}
           <footer className="st-step-pinned-actions">
-            <span className="st-step-shared-label"><Users size={14} aria-hidden />{t('roadmap.step.sharedStep')}</span>
+            {!(phone && outcome) && <span className="st-step-shared-label"><Users size={14} aria-hidden />{t('roadmap.step.sharedStep')}</span>}
+            <p className="st-board-step-outcome" role="status">{outcome?.line ?? ''}</p>
+            {editable && outcome?.undoable && <button type="button" className="st-board-step-undo st-board-step-action st-board-step-action--secondary" onClick={undo}><Undo2 size={18} aria-hidden />{LABELS.undo}</button>}
             {editable && !noteEditing && <StepActions facts={facts} phone={phone} onComplete={() => complete('complete')} onReset={reset} onOpenTree={openTree} />}
             {!editable && facts.opening?.owned && openTree && <div className="st-board-step-buttons"><TreeBand facts={facts} onOpenTree={openTree} /></div>}
           </footer>
@@ -500,8 +552,8 @@ function Relationships({ facts, onOpenStep, onOpenTree, treeLink, onViewBranch }
   );
 }
 
-// The step's column with a leading glyph; after Complete or Reset, Undo for the hold window and a line naming what moved.
-function StatusRow({ facts, outcome, onUndo }) {
+// The step's derived column with its leading glyph.
+function StatusRow({ facts }) {
   const Glyph = STATUS_GLYPHS[facts.column];
   const label = facts.column === 'locked' ? lockedStatus({ toGo: facts.toGo }) : COLUMN_TITLES[facts.column];
   return (
@@ -509,14 +561,7 @@ function StatusRow({ facts, outcome, onUndo }) {
       <div className="st-board-step-status-row">
         <span className="st-board-step-status-glyph"><Glyph /></span>
         <span className="st-board-step-status-label">{label}</span>
-        {outcome?.undoable && (
-          <>
-            <span className="st-board-step-status-dot" aria-hidden>·</span>
-            <button type="button" className="st-board-step-undo" onClick={onUndo}>{LABELS.undo}</button>
-          </>
-        )}
       </div>
-      <p className="st-board-step-outcome" role="status">{outcome?.line ?? ''}</p>
     </div>
   );
 }

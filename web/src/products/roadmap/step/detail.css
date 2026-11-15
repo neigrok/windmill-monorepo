@@ -63,7 +63,7 @@
   color: var(--text-secondary);
 }
 
-/* ---- Status: glyph, the column, Undo for the hold window, and the line naming what moved. ---- */
+/* Status and completion feedback. */
 .st-board-step-status-row {
   display: flex;
   align-items: center;
@@ -90,11 +90,6 @@
 .st-board-step-status--locked .st-board-step-status-label {
   font-weight: 700;
   line-height: 24px;
-}
-.st-board-step-status-dot {
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--text-secondary);
 }
 .st-board-step-undo {
   min-height: 44px;

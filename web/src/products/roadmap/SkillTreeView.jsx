@@ -502,7 +502,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               selectedId={selectedId}
               onSelect={stepPage.openFromBoard}
               onAnchor={setSelectedId}
-              refusal={refusal}
+              refusal={stepCovering ? null : refusal}
               deviceLine={phone ? deviceLine : null}
               guide={phone && !owner && boardActive ? guideEntry : null}
               onFork={phone && forkPresent ? openFork : null}
@@ -536,7 +536,7 @@ export function SkillTreeView({ treeId, demo = false }) {
         </div>
       )}
 
-      {geometry.graphRefusalShown && (
+      {geometry.graphRefusalShown && !stepCovering && (
         <div ref={geometry.attachGraphRefusal} className={`st-graph-refusal${phone ? ' st-graph-refusal--phone' : ''}`}
           style={geometry.graphRefusalStyle}>
           <RefusedSync band={breakpoint} {...refusal} />
@@ -768,6 +768,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             breakpoint={breakpoint}
             roadmapTitle={tree.title}
             editable={owner}
+            refusal={refusal}
             deletable={deletable(boardTree, [detailId])}
             onEdit={owner ? (id) => composerDoor.openEdit(id) : undefined}
             treeActs={treeActs}

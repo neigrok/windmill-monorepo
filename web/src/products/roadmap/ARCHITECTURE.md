@@ -678,7 +678,8 @@ history state survive. A route drops a missing step only after its own tree load
 reopens it. Close restores the originating Board card or a surviving column; the Graph has a stable focusable
 canvas. A later deliberate focus move is respected.
 
-The document holds Description, Requires, Opens, Tree, My workspace and History. Below 1000px of product width
+The document's heading, Description, Requires, Opens, Tree, My workspace and History share one scroll area between
+the toolbar and pinned actions. Below 1000px of product width
 (after Coach), these stack; at or above 1000px the relationships occupy the right column. Workspace and History
 summary rows scroll to existing sections in 180ms, immediately with reduced motion. Resizing retains one editor
 instance. Description remains plain text with the existing 5000-code-point limit and shared links remain plain
@@ -689,7 +690,7 @@ heading and Collapse. Phones keep a blank placeholder above the safe area and pi
 conversation, history, proposals or backend behavior.
 
 `StepFacts` derives status, relationships and completion outcomes from the whole tree. Complete and Reset stay in
-place with a six-second inline Undo and an outcome line. Undo restores the mark without ceremony or activity;
+place with a six-second Undo and an outcome line in the pinned actions. Undo restores the mark without ceremony or activity;
 the progress lattice dates the new mark. Finished subtasks offer Complete step but never complete it themselves.
 Demotion removes write controls and private editing state without clearing stored workspace. Retained progress
 callbacks check current authority before writing or emitting an Undo event.
@@ -1013,13 +1014,21 @@ Below 360px Saving and Saved are announced only, and Offline uses a named icon b
 whose controlled Tooltip opens below the slot for four seconds, until another tap, an outside tap or Escape.
 
 **Refusals.** The host passes refusal code, refused-lane gesture count and stable Retry and Discard actions to
-the shared `RefusedSync` on both views. The notice owns capacity-specific Retry suppression and uses the
+the shared `RefusedSync` on both views and the owner step document. While a step is open, only the document mounts
+the notice, below its toolbar, reserving its actual height above the independently scrolling content. Below 600px of
+document width, including a tablet beside expanded Coach, it uses the stacked notice. The notice owns capacity-specific Retry suppression and uses the
 refused-lane count for its message and Discard label. The Graph measures its notice into the camera's usable
 viewport and clears an active naming dock or tablet tool from 744px; on the phone Graph the refusal card clears the
 reader's Fork pill. Retry clears the refusal and reconnects through the existing
 graft and flush path. Phone toasts wait while a refusal stands so Retry and Discard stay reachable, except a held delete and
 its failure: a hold must run and its Undo stay reachable, so that toast stands above the refused card, as the bar's stacking in
 03.13 does, with no overlap at 390 or 320.
+The step document retains the notice with disabled actions while its existing Discard callback settles, then follows
+the published refusal state. A failed replacement keeps its actions available. When an activated notice leaves,
+focus returns to completion Undo if present or the step heading, respecting a later focus move and nested dialogs.
+StepComposer and TreePicker keep unresolved notices beneath their modal isolation and retain their drafts and focus
+contracts. Recovery never clears private Workspace. This follows approved
+[flow 43](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1211-104922).
 Progress-based completion Undo stays available during a structure-only replacement and rebaseline, its durable
 save waiting for the replacement's new epoch. Structure edits stay blocked during rebaselining, a
 progress-lane replacement blocks progress editing, and the composer keeps its draft with saving disabled. An

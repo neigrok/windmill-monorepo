@@ -61,7 +61,8 @@
   font: 700 13px/17px var(--font-body);
   cursor: pointer;
 }
-.st-step-read-heading { padding: 20px 24px 16px; }
+.st-step-refusal { flex-shrink: 0; min-width: 0; padding: 8px 24px 0; }
+.st-step-read-heading { padding: 20px 0 16px; }
 .st-step-read-tags { display: flex; align-items: flex-start; gap: 8px; }
 .st-step-kind-label { display: flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 8px; border: 1px solid var(--st-step-rule); border-radius: 7px; font-size: 13px; font-weight: 700; color: var(--text-secondary); text-transform: capitalize; }
 .st-step-kind-label i { width: 9px; height: 9px; border-radius: 50%; }
@@ -70,7 +71,6 @@
 .st-step-read-tags .st-board-step-status--done .st-board-step-status-row { background: var(--kind-olive-soft); }
 .st-step-read-tags .st-board-step-status-label { font-size: 12px; line-height: 16px; }
 .st-step-read-tags .st-board-step-status-glyph svg { width: 14px; height: 14px; }
-.st-step-read-tags .st-board-step-undo { min-height: 28px; }
 .st-step-read-title { display: flex; align-items: center; gap: 4px; margin-top: 10px; }
 .st-step-read-title .st-board-step-identity-title { flex: initial; font-size: 38px; line-height: 48px; }
 .st-step-document-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 24px 24px; }
@@ -102,6 +102,9 @@
 .st-step-pinned-actions .st-board-step-action { min-height: 44px; padding: 0 10px; border-radius: 8px; font-size: 13px; line-height: 17px; }
 .st-step-pinned-actions .st-board-step-action--primary { background: var(--st-step-action); border-color: var(--st-step-action); box-shadow: none; }
 .st-step-pinned-actions .st-board-step-preview { font-size: 12px; }
+.st-step-pinned-actions .st-board-step-outcome { min-width: 0; }
+.st-step-pinned-actions .st-board-step-undo { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.st-step-read-title .st-board-step-identity-title:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 .st-step-coach { width: 56px; flex-shrink: 0; border-left: 1px solid var(--border-default); background: var(--st-step-paper); box-sizing: border-box; }
 .st-step-coach.is-expanded { width: 400px; }
 .st-step-coach header { display: flex; align-items: center; gap: 12px; padding: 12px 6px; }
@@ -117,6 +120,12 @@
   .st-step-description-section, .st-step-workspace-section, .st-step-history-section { grid-column: 1; }
   .st-step-relationships { grid-column: 2; grid-row: 1 / span 3; border-left: 1px solid var(--st-step-rule); padding-left: 16px; }
 }
+@container step-document (max-width: 599px) {
+  .st-step-graph-link { width: 44px; padding: 0; border: 0; background: none; }
+  .st-step-graph-link span { display: none; }
+  .st-step-pinned-actions { gap: 8px; }
+  .st-step-pinned-actions .st-board-step-outcome { flex: 1; }
+}
 @media (744px <= width < 1440px) { .st-step-coach.is-expanded { width: 340px; } }
 @media (744px <= width < 1024px) { .st-step-coach.is-expanded { width: 280px; } }
 .st-step-read-shell.is-phone { background: var(--surface-card); }
@@ -124,7 +133,8 @@
 .is-phone .st-step-breadcrumb { font-size: 15px; }
 .is-phone .st-step-graph-link { padding: 0; width: 44px; border: 0; background: none; }
 .is-phone .st-step-graph-link span { display: none; }
-.is-phone .st-step-read-heading { padding: 24px 22px 16px; }
+.is-phone .st-step-refusal { padding: 8px 16px 0; }
+.is-phone .st-step-read-heading { padding: 24px 0 16px; }
 .is-phone .st-step-kind-label { min-height: 44px; box-sizing: border-box; }
 .is-phone .st-step-read-tags { align-items: center; }
 .is-phone .st-step-read-title { margin-top: 16px; }

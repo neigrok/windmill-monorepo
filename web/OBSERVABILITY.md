@@ -272,7 +272,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Gallery Show more or Try again pressed; a page retry emits only its retry press | `roadmap_gallery` | `step: more/retry`, `read: initial/page` |
 | Fork landed | `fork_claim` | `mode: email/instant/browse` |
 | Sync status: offline episode | `roadmap_sync_offline` | `step: shown/cleared`, `pending: 0/1/2-5/6-20/21+` |
-| Refusal shown, retried or discarded | `roadmap_sync_refused` | `step: shown/retry/discard`, `lane: structure/progress`, `code: tree-too-large/bad-frame/no-such-tree/server-error/other` |
+| Refusal shown, retried or discarded from Board, Graph or the owner step document | `roadmap_sync_refused` | `step: shown/retry/discard`, `lane: structure/progress`, `code: tree-too-large/bad-frame/no-such-tree/server-error/other` |
 | Device line shown | `roadmap_device_line` | `step: shown`, `line: anonymous/lapsed`, `place: row/shell` |
 | Device line's phone row tapped | `roadmap_device_line` | `step: sign_in`, `line: anonymous/lapsed`, `place: row` |
 | The demo's roadmap opened | `demo_open` | `treeId: t_9e407a96b5330ebe` |
@@ -328,7 +328,10 @@ A step is a thing a reader did or was told. These emit nothing:
   no such read.
 
 `roadmap_sync_refused` `shown` fires once for the refused frame, across re-flushes, and `discard` only after the session
-confirms it. `roadmap_sync_offline` fires once per offline episode. `roadmap_device_line` `shown` fires once per visit.
+confirms it. Moving the notice into the step document emits no extra event; it uses the room's existing callbacks.
+A pending Discard retains its notice until the callback settles, and failed replacement emits no successful discard.
+The existing `roadmap-sync-discard` boundary reports unexpected replacement failures; readers receive no owner
+recovery controls. `roadmap_sync_offline` fires once per offline episode. `roadmap_device_line` `shown` fires once per visit.
 
 ### Technical failures
 
