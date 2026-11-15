@@ -2,6 +2,7 @@
 // `--experimental-websocket`.
 //
 //   node --experimental-websocket capture.mjs --origin http://localhost:5173 --tree <id> --cookie <wm_session> --out <dir>
+//        [--api http://localhost:8088]  API origin used by this build; omitted means the same origin as the page
 //        [--width 1440 --height 900] [--phone] [--select <nodeId>] [--reduced-motion] [--chrome <path>] [--port 9222]
 //        [--keep]   (leave Chrome running for inspection)
 //        [--layout <name>]  open the app with ?layout=<name> before the hash, so that engine lays the tree out
@@ -31,7 +32,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { evalJson, installRoadmapObserver, settleVisuals, waitForConfirmed } from './browser-proof.mjs';
+import { evalJson, httpOrigin, installRoadmapObserver, settleVisuals, waitForConfirmed } from './browser-proof.mjs';
 
 const args = {};
 for (let i = 2; i < process.argv.length; i += 1) {
@@ -41,7 +42,8 @@ for (let i = 2; i < process.argv.length; i += 1) {
   if (next !== undefined && !next.startsWith('--')) { args[a.slice(2)] = next; i += 1; } else args[a.slice(2)] = true;
 }
 const need = (k) => { if (!args[k]) { console.error(`--${k} is required`); process.exit(2); } return args[k]; };
-const origin = need('origin').replace(/\/$/, '');
+const origin = httpOrigin(need('origin'));
+const apiOrigin = httpOrigin(args.api ?? origin);
 const treeId = need('tree');
 const cookie = args.cookie ?? process.env.WM_RIG_COOKIE ?? need('cookie');
 const outDir = need('out');
@@ -382,7 +384,7 @@ async function shot(cdp, name) {
 }
 
 // ---- run ---------------------------------------------------------------------------------------
-const measures = { build: { origin, treeId, layout: layoutName, viewport: { width, height, dpr, phone }, selectId, reducedMotionEmulated: reducedMotion, chromeVersion: null } };
+const measures = { build: { origin, apiOrigin, treeId, layout: layoutName, viewport: { width, height, dpr, phone }, selectId, reducedMotionEmulated: reducedMotion, chromeVersion: null } };
 try {
   const target = await pageTarget();
   const cdp = await Cdp.connect(target.webSocketDebuggerUrl);
@@ -404,7 +406,7 @@ try {
   await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   await cdp.send('Network.setCookie', { name: 'wm_session', value: cookie, domain: 'localhost', path: '/' });
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
-    source: `(${installRoadmapObserver.toString()})(${JSON.stringify({ origins: [origin] })});
+    source: `(${installRoadmapObserver.toString()})(${JSON.stringify({ origins: [origin, apiOrigin] })});
       if (/^https?:$/.test(location.protocol) && self === top) {
         localStorage.setItem('windmill:view:last', JSON.stringify({ ${JSON.stringify(treeId)}: 'tree' }));
         localStorage.removeItem('windmill:last-place');

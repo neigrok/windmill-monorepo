@@ -73,7 +73,7 @@ export function installRoadmapObserver({ origins = [location.origin] } = {}) {
       const url = new URL(this.url);
       url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
       this.proofPending = [];
-      this.proofObserved = allowed.has(url.origin) && url.pathname === '/v1/session';
+      this.proofObserved = allowed.has(url.origin) && url.pathname === '/v1/socket';
       if (!this.proofObserved) return;
       sockets += 1;
       this.addEventListener('message', (event) => {
@@ -120,14 +120,17 @@ export function installRoadmapObserver({ origins = [location.origin] } = {}) {
   };
 }
 
+export function httpOrigin(value) {
+  let url;
+  try { url = new URL(value); } catch { throw new Error('Expected an HTTP origin'); }
+  if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    throw new Error('Expected an HTTP origin');
+  }
+  return url.origin;
+}
+
 export async function installReadOnlyGuard(context, { origins, sentryHosts = [] }) {
-  const allowed = new Set(origins.map((origin) => {
-    const url = new URL(origin);
-    if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
-      throw new Error('Expected an HTTP origin for the read-only guard');
-    }
-    return url.origin;
-  }));
+  const allowed = new Set(origins.map(httpOrigin));
   const localSentry = new Set(sentryHosts);
   const evidence = { blocked: { intake: 0, sentry: 0, analytics: 0 }, writes: [], clientErrors: 0 };
   await context.route('**/*', async (route) => {
@@ -153,8 +156,9 @@ export async function installReadOnlyGuard(context, { origins, sentryHosts = [] 
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
       return;
     }
-    if (firstParty && !['GET', 'HEAD', 'OPTIONS'].includes(request.method())) {
-      evidence.writes.push({ kind: 'http-mutation' });
+    // Routing sees the initial request, so an external mutation must not escape through a 307/308 redirect.
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method())) {
+      evidence.writes.push({ kind: firstParty ? 'http-mutation' : 'external-http-mutation' });
       await route.abort('blockedbyclient');
       return;
     }

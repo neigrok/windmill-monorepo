@@ -36,9 +36,11 @@ reads the result back and checks structure and progress counts. The default tree
 
 ```sh
 node --experimental-websocket capture.mjs --origin http://localhost:5175 \
+  --api http://localhost:8088 \
   --tree t_9362d9bc883e0a1e --cookie "$WM_RIG_COOKIE" --out /tmp/roadmap-desktop \
   --port 9222 --layout bubble --focus --caption-mode fixed
 node --experimental-websocket capture.mjs --origin http://localhost:5175 \
+  --api http://localhost:8088 \
   --tree t_9362d9bc883e0a1e --cookie "$WM_RIG_COOKIE" --out /tmp/roadmap-phone \
   --phone --port 9223 --layout bubble --focus --caption-mode fixed
 ```
@@ -48,9 +50,13 @@ the app in tree view. It confirms the requested view and optional theme, waits f
 subscription baseline, then waits for a populated canvas, no active ceremony/settle/glide and a
 camera stable for 600 ms. Each shot also loads visible text's computed fonts, waits for finite
 animations and awaits two animation frames.
+Pass the API origin compiled into the frontend: Vite defaults to `http://localhost:8088`.
+For a same-origin built stack, omit `--api` or supply the same origin as `--origin`. Both options
+accept only HTTP(S) origins without credentials, paths, queries or fragments.
 
 | Option | Effect |
 |---|---|
+| `--api <origin>` | Observes the roadmap socket on this API origin as well as the frontend origin; defaults to `--origin`. |
 | `--width`, `--height`, `--dpr` | Defaults to 1440×900 at DPR 1. |
 | `--phone` | 390×844 at DPR 3 with mobile and touch emulation. |
 | `--select <nodeId>` | Node used for focus and selection checks; default `skilltree-scene`. |
@@ -80,7 +86,7 @@ accounts, SQL/REST readers, artifacts and Graph camera internals belong to each 
   not establish navigation or the Graph's camera settlement.
 - Install `installRoadmapObserver({ origins })` before navigation with `context.addInitScript` or
   CDP's `Page.addScriptToEvaluateOnNewDocument`. It ignores non-HTTP documents and child frames,
-  preserves real WebSockets, and observes only `/v1/session` on the exact supplied origins.
+  preserves real WebSockets, and observes only `/v1/socket` on the exact supplied origins.
   `window.__roadmapProof.waitForBaseline({ treeId, reach, timeoutMs })` accepts a `subgraph` with
   `intent: delta` replying to the current subscribe on an open socket. Live frames, unrelated
   trees and superseded subscriptions cannot satisfy it. Replies to repeated same-tree subscribes
@@ -88,13 +94,17 @@ accounts, SQL/REST readers, artifacts and Graph camera internals belong to each 
   tree/reach/generation and write kinds, never node content. Socket writes are observed **after
   transmission**; this observer does not prevent them.
 - `installReadOnlyGuard(context, { origins, sentryHosts })` installs context HTTP routing before
-  navigation. Exact first-party origins identify `/v1/events` (202), same-origin `/cdn-cgi/rum`
-  (200) and other HTTP mutations (recorded and aborted before transmission). Sentry hosts,
+  navigation. Exact first-party origins identify `/v1/events` (202) and `/cdn-cgi/rum` (200). Sentry hosts,
   including optional exact local fixture hostnames, and Cloudflare telemetry receive 200 without
-  transmission. Analytics script GETs continue with their original bytes and integrity checks.
-  The result exposes counts, a `clientErrors` count and mutation categories, without bodies or
-  URLs. Keep pageerror/console listeners: the guard does not waive application failures. The
-  capture command uses an authenticated local fixture and does not install this live-read guard.
+  transmission. All other HTTP mutations, including requests to external origins, are recorded
+  and aborted before transmission. Blocking the initial external request prevents a 307/308
+  redirect from carrying its body into a first-party origin without another route interception.
+  GET, HEAD and OPTIONS continue; analytics script GETs retain their bytes and integrity checks.
+  Exact-origin classification remains in the evidence: `http-mutation` is first-party and
+  `external-http-mutation` is external. The result exposes counts, a `clientErrors` count and
+  mutation categories, without bodies or URLs. Keep pageerror/console listeners: the guard does
+  not waive application failures. The capture command uses an authenticated local fixture and
+  does not install this live-read guard.
   The smoke reports bounded failure categories, stages and counts rather than raw page errors,
   console messages, request URLs or roadmap text.
 - `waitForConfirmed(read, predicate, { timeoutMs, intervalMs, label })` polls an authoritative
