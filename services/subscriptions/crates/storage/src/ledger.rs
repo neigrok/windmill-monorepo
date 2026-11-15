@@ -11,16 +11,17 @@ use uuid::Uuid;
 // Every schema change, in order, embedded in the binary from services/subscriptions/migrations.
 static MIGRATIONS: Migrator = sqlx::migrate!("../../migrations");
 
-// Connections the service holds at most; the host's Postgres also serves the backend.
-const MAX_CONNECTIONS: u32 = 8;
 // How long a connection may take to open, at start and whenever the pool grows.
 const CONNECT_BOUND: Duration = Duration::from_secs(5);
 // How long a health check waits for the database: under the image's 3 s HEALTHCHECK timeout.
 const CHECK_BOUND: Duration = Duration::from_secs(2);
-// How long a write waits for any lock, the seq lock among them. A door's whole request has 5 s and a lock is
+// How long a write waits for any lock, the seq lock among them, and how long any of its statements may run. A lock is
 // normally held for milliseconds, so a longer wait means a holder has stalled: the write gives its connection back
-// as `busy` rather than every connection queueing behind the holder, and the sweep retries it.
-const LOCK_BOUND: &str = "set local lock_timeout = '5s'";
+// as `busy` rather than every connection queueing behind the holder, and the sweep retries it. A statement runs for
+// milliseconds too; twice the lock bound lets the lock bound answer every wait for a lock, and ends a statement
+// stalled for any other reason, so no write holds a connection past it.
+const WRITE_BOUNDS: &str =
+    "select set_config('lock_timeout', '5s', true), set_config('statement_timeout', '10s', true)";
 
 // The service's own database, `windmill_subscriptions` in production (spec §9). It holds every fact
 // about a paid subscription; a `Ledger` exists only once its schema is this build's.
@@ -31,12 +32,15 @@ pub struct Ledger {
 }
 
 impl Ledger {
+    // Connections the service holds at most; the host's Postgres also serves the backend.
+    pub const CONNECTIONS: u32 = 8;
+
     // Connects, then brings the schema up to the newest migration, so nothing ever reads an older one.
     // A database migrated by a newer build is refused rather than run against.
     pub async fn open(url: &DatabaseUrl) -> Result<Ledger, StorageError> {
         // A pool that has opened no connection yet times out only because the database opened none.
         let pool = PgPoolOptions::new()
-            .max_connections(MAX_CONNECTIONS)
+            .max_connections(Ledger::CONNECTIONS)
             .acquire_timeout(CONNECT_BOUND)
             .connect_with(url.options.clone())
             .await
@@ -75,13 +79,13 @@ impl Ledger {
     }
 
     // Every write runs read committed whatever the database's default, so each statement sees what committed before
-    // it, which the seq lock relies on (INV-8), and waits for no lock longer than LOCK_BOUND.
+    // it, which the seq lock relies on (INV-8), within WRITE_BOUNDS.
     pub(crate) async fn begin_write(&self) -> Result<Transaction<'static, Postgres>, StorageError> {
         let mut transaction = self
             .pool
             .begin_with("begin isolation level read committed")
             .await?;
-        sqlx::query(LOCK_BOUND).execute(&mut *transaction).await?;
+        sqlx::query(WRITE_BOUNDS).execute(&mut *transaction).await?;
         Ok(transaction)
     }
 
@@ -238,7 +242,7 @@ impl From<sqlx::Error> for StorageError {
                         sqlstate: sqlstate.into_owned(),
                     }
                 }
-                // lock_not_available: a lock was not granted within LOCK_BOUND.
+                // lock_not_available: a lock was not granted within WRITE_BOUNDS.
                 Some(sqlstate) if sqlstate == "55P03" => StorageError::Busy,
                 sqlstate => StorageError::Database {
                     sqlstate: sqlstate.map(|sqlstate| sqlstate.into_owned()),

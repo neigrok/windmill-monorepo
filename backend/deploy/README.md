@@ -350,11 +350,15 @@ alone cannot correct those implementations.
 `subscriptions` runs the Windmill One subscription service
 ([ARCHITECTURE.md](../../services/subscriptions/ARCHITECTURE.md)) from
 `ghcr.io/neigrok/windmill-monorepo:subscriptions-<sha>`, the image Backend CI builds from
-`services/subscriptions` for the same commit as the server's. No store is connected: the public
-listener answers `GET /health` and 404s every other path, every path under `/v1/stores/` included.
+`services/subscriptions` for the same commit as the server's. The public listener answers `GET /health`
+and the App Store notification door, `POST /v1/stores/app-store/notifications`, which trusts Apple's root
+alone, and 404s every other path; no App Store Connect setting sends notifications to it yet.
 
 - **Routing**: Caddy forwards `/v1/stores/*`, on both hosts and behind the Cloudflare gate, to the public
-  port, 8082, and nothing else; the server never sees such a path. The internal port, 8083, is published
+  port, 8082, and nothing else; the server never sees such a path. Under `/v1/stores/app-store/` it
+  answers 403 to any client whose `CF-Connecting-IP` is outside 17.0.0.0/8, the one subnet Apple documents
+  for App Store Server Notifications, so a probe of the door from anywhere else is refused at the edge; to
+  probe the service itself, `docker compose exec -T subscriptions curl` it on its own port. The internal port, 8083, is published
   nowhere and no Caddy route names it, so only containers on this compose network reach it.
 - **Healthy** means the image's `HEALTHCHECK`, a `curl` of the internal listener's `/health` every 10 s,
   answers 200 `{"status":"ready"}`: the service opened and migrated its ledger before it listened, and the
@@ -363,7 +367,8 @@ listener answers `GET /health` and 404s every other path, every path under `/v1/
 - **Status**: `docker compose ps subscriptions` shows `(healthy)`, and
   `docker compose exec -T subscriptions curl -s localhost:8083/health` prints the answer.
 - **Logs**: `docker compose logs -f subscriptions`, one JSON object per line: `ledger open` with the
-  ledger's epoch at start, then one line per request. Its Logs and failure reports go to the server's
+  ledger's epoch at start, then one line per request, one `store.notification` line per App Store
+  delivery with its `outcome` and `code`, and one `sweep.inbox` line for each sweep pass that met a row. Its Logs and failure reports go to the server's
   Sentry project under the same environment, with the commit the image was built from as release; the
   `operation` tag, such as `ledger.open`, names a failure.
 - **Restart**: `docker compose restart subscriptions`. It stops within Docker's 10 s and exits 0.
