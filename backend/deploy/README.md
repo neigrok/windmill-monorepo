@@ -143,7 +143,7 @@ must be public.
   `CF_IPS` is configured nowhere: the job fetches Cloudflare's live edge list, falls back to the
   committed default in `deploy/docker-compose.yml`, and refuses on the same guard if both come back
   empty — an empty allow-list would make Caddy 403 the whole site.
-  Success also requires the running server's image reference and content ID to match the pulled
+  Success also requires the running server's image reference and content ID to match the pinned
   image, a hello advertising that image's exact schema/minimum, and the PID 1 allowance mode and
   Coach output cap to match resolved Compose configuration. Readiness is retried up to 30 times;
   each probe has a timeout. The excluded boundary schema and every previously supported schema
@@ -160,8 +160,9 @@ must be public.
   whose inputs at that commit differ from the live deployment's goes back to that commit's image, and
   one whose inputs match keeps the image it runs, which was built from them
   ([What a deploy replaces](#what-a-deploy-replaces)). A backend that goes back needs the server and
-  `embedder-<sha>` images, and the server image must contain its compatibility manifest. A commit with no `subscriptions-<sha>`, as one built before Backend CI published the service,
-  deploys its backend and leaves the running subscription container as it is, never recreating it, printing
+  `embedder-<sha>` images, and the server image must contain its compatibility manifest. A commit
+  with no `subscriptions-<sha>`, as one built before Backend CI published the service, deploys its
+  backend and leaves the running subscription container as it is, never recreating it, printing
   `NOTE subscription service: no image could be pulled for this commit, so its running container is kept as
   it is, on sha256:…` and `PASS subscription service: its running container kept, not recreated, healthy on
   its image`. On a host where no subscription container runs, it is refused before anything changes with
@@ -220,8 +221,8 @@ Both TCP and local socket paths use these rules. The AI process migrates its led
 
 A deployment validates the AI credentials and, before promoting any files, pins `ai-<sha>` to its
 immutable image ID, or keeps the pinned image when nothing it is built from changed. When that tag is
-absent, an existing pinned AI image may be retained; a fresh host is refused. AI provisioning and startup happen after backend verification, so an AI startup
-failure makes deployment red while the backend continues serving. The process has a read-only root,
+absent, an existing pinned AI image may be retained; a fresh host is refused. AI provisioning and
+startup happen after backend verification, so an AI startup failure makes deployment red while the backend continues serving. The process has a read-only root,
 a small memory-backed `/tmp`, no host ports, no Linux capabilities, no privilege escalation and
 core dumps disabled. Its image contains the release identity used by Sentry.
 

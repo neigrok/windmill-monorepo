@@ -90,8 +90,8 @@ docker image prune -af > /dev/null
 docker builder prune -af > /dev/null
 # Backend CI builds every image again for each commit, so content IDs differ where nothing an image is built from did.
 # A unit is unchanged when this commit leaves its inputs as the live deployment has them (image_inputs.py, rendered by
-# the deploy workflow) and the image it is pinned to is still here, as one a container uses is through the prune. An
-# unchanged unit keeps that image and nothing is pulled for it; compose recreates its container only for a value it
+# the deploy workflow) and the image it is pinned to is still here, which the prune leaves any image a container uses.
+# An unchanged unit keeps that image and nothing is pulled for it; compose recreates its container only for a value it
 # reads that changed.
 unchanged() {
   local inputs pinned
