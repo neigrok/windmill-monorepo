@@ -838,14 +838,16 @@ designed when the service is built, one integration at a time.
 - **I-1 Identity.** The backend is the only issuer of passes. It signs one for a signed-in session or
   for an installation credential, stating `plan` from `Entitlements::hasWindmillOne` and `ownerGrant`
   for owner access and for an allowlisted sandbox subscriber. It applies its network limits before it
-  signs for an installation, and signs none for an installation bound to an account.
+  signs for an installation, and signs none for an installation bound to an account. The door is
+  specified in the [Coach engine](coach-engine.md) §4.1.
 - **I-2 Devices call directly.** When a person is waiting on an answer, their device calls this
   service itself. The backend is not in that path.
 - **I-3 Coach runs on the device.** The loop, the gate on Coach's writes, the system prompt and the
   tool list belong to the device on every surface. Gym Coach and roadmap Coach are one engine with a
-  different prompt and tools, and each product keeps its own conversations. This replaces principles
-  4 and 5 of [phone-hosted Coach abilities](mobile/gym_coach.md), which is rewritten when the move is
-  designed.
+  different prompt and tools, and each product keeps its own conversations. The
+  [Coach engine](coach-engine.md) specifies the engine, and
+  [Gym Coach on the AI service](gym-coach-on-ai-service.md) gym's move onto it, which replaces
+  principles 3, 4 and 5 of [phone-hosted Coach abilities](mobile/gym_coach.md).
 - **I-4 Tending becomes roadmap Coach.** Roadmap's server-side agent retires. Roadmap Coach runs its
   abilities on the browser's own copy of a roadmap, and its changes travel by synchronization, as
   [Roadmap Coach](roadmap-coach.md) specifies.

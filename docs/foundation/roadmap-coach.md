@@ -19,11 +19,14 @@ Roadmap room builds the same Coach on them.
 
 **Out of scope:** The screens, which the design canon holds; a screen is built only from a board the
 owner has marked ready, and the boards for the review, signed out and History are still proposals.
-The [AI service](ai-service.md), which makes each model call. Gym Coach's own move onto the device
-(AI service I-3). The iPhone room, which does not exist yet. `POST /v1/compose`. The roadmap tools
+The [AI service](ai-service.md), which makes each model call. The engine that runs a turn, the AI
+client and the pass door, which the [Coach engine](coach-engine.md) holds. Gym Coach's own move onto
+the device ([Gym Coach on the AI service](gym-coach-on-ai-service.md)). The iPhone room, which does
+not exist yet. `POST /v1/compose`. The roadmap tools
 an outside assistant reaches over MCP, which stay on the server as a catalog of their own.
 
-**Depends on:** the AI service's text door, and the backend signing passes for it (AI service I-1).
+**Depends on:** the [Coach engine](coach-engine.md), and through it the AI service's text door and
+the backend signing passes for it (AI service I-1).
 
 ## §1 The rule
 
@@ -38,15 +41,15 @@ The owner's default for every Coach, ruled on 2026-11-14. (R-1)
 - **P-4 A backend ability is an exception with a reason.** An ability may call the backend only for
   a fact synchronization does not carry. The catalog names each one and why. There is one (§4).
 - **P-5 The turn runs on the device.** The loop, the gate and the system prompt are the device's;
-  each model round is one call to the AI service. (R-2)
-- **P-6 One engine, a Coach a product.** The engine that runs a turn names no product. Roadmap
-  gives it a prompt, a catalog and a tool host, and keeps its own conversations. (R-3)
+  each model round is one call to the AI service ([Coach engine](coach-engine.md) P-1). (R-2)
+- **P-6 One engine, a Coach a product.** The [Coach engine](coach-engine.md) that runs a turn names
+  no product. Roadmap gives it a profile and a tool host, and keeps its own conversations. (R-3)
 
 ## §2 Vocabulary
 
-*Ability*, *catalog*, *tool host*, *gate*, *turn*, `turnId`, *model call* and *seat* mean what
-[phone-hosted Coach abilities](mobile/gym_coach.md) D-1 to D-11 define, with the device where that
-document says the server runs the loop. This document adds:
+*Ability*, *catalog*, *tool host*, *turn*, `turnId` and *seat* mean what
+[phone-hosted Coach abilities](mobile/gym_coach.md) D-1 to D-10 define. *Round*, *profile*, *mark*
+and *gate* mean what the [Coach engine](coach-engine.md) defines. This document adds:
 
 - **D-1 Copy.** What the browser holds of one roadmap: its structure and the person's own progress,
   as `web/src/products/roadmap/sync` keeps them, durable across reloads and usable offline.
@@ -61,8 +64,6 @@ document says the server runs the loop. This document adds:
 - **D-7 Conversation scope.** What a conversation is about: one roadmap, or all of the person's.
 - **D-8 Context.** What Coach is told about a roadmap at the start of every turn, before it calls
   anything (§5).
-- **D-9 Profile.** What a product gives the engine: its prompt, catalog, tool host, limits, the
-  model class and the effort it asks for.
 
 Two words are kept apart throughout: a *link* joins a step to a prerequisite; a *web link* is an
 address a step carries.
@@ -75,8 +76,6 @@ packages/api-contract/roadmap/
   abilities/              vectors: a roadmap, an input, the result or the writes it must give
   domain/                 vectors of a turn's opening and end, as gym's folder holds gym's
   limits.json             the caps the server enforces, for every client to check first (§6)
-web/src/platform/agent/   the engine: the turn and the gate's shared rules. Names no product (P-6)
-web/src/platform/ai/      the AI service client: the pass, a call, asking again
 web/src/products/roadmap/
   domain/                 the abilities, each a pure function of a roadmap and an input, with the
                           rules they share with the room's controls
@@ -98,8 +97,7 @@ web/src/products/roadmap/
   keep the same rule (the caps, how a step's state follows its prerequisites), one vector holds both
   to it. What a web link may be is already pinned in `packages/api-contract/roadmap-link-urls.json`
   and is read from there.
-- This document is the engine's home until gym's Coach moves onto it (AI service I-3); what §8 and
-  §9 say of the engine then moves to a document that names no product.
+- The engine and the AI client live where the [Coach engine](coach-engine.md) §3 puts them.
 
 ## §4 The catalog
 
@@ -293,79 +291,45 @@ A proposal is a record (§9): `{id, treeId, threadId, messageId, base, changes[]
 
 ## §8 The turn
 
-The engine runs a turn as [phone-hosted Coach abilities](mobile/gym_coach.md) §4.2 specifies the
-loop, with the device in the server's place and the AI service's text door
-([AI service §6.2](ai-service.md#62-the-wire)) as the model:
+A turn runs as the [Coach engine](coach-engine.md) says: its loop, Stop and what ends a turn (§5),
+its gate (§6), its access states (§7) and its AI client (§4). This section says what roadmap gives
+it.
 
-1. The device writes the person's message and a Coach message in state `running`, whose id is the
-   `turnId`.
-2. It builds the request: the profile's system prompt and tool list from the catalog, the earlier
-   conversation as text (at most 24 turns and 24,000 bytes), then the context and the question, with
-   one picture when the person added one.
-3. It calls the text door under a `callId` minted at random for that round and kept in the tab. A
-   round whose answer was lost is asked for again under the same `callId`, and is not paid for twice
-   while the service still holds the answer.
-4. On `ended` with `stop`:
-   - `completed`: the turn ends `completed`.
-   - `tool_calls`: each call passes the gate, runs on the tool host, and its result goes back with
-     the assistant message and its `carry`; the loop continues.
-   - `truncated`: the turn ends `completed` with `truncated`.
-   - `declined`: the turn ends `declined`.
-5. `pass_expired` is answered by fetching a new pass and asking once more under the same `callId`.
-   Every other refusal, `failed`, and an answer the service no longer holds end the turn `failed`
-   with the code. Writes already made stay made.
-6. Reaching `MAX_MODEL_CALLS` without `completed` ends the turn `failed`.
+**The first content.** The earlier conversation, at most 24 turns and 24,000 bytes; the context
+(§5); one picture when the person added one; and the question.
 
-**The gate.** Every ability call passes these, in order, before it runs. A refused call returns to
-the model as an error result with its code, and the model continues.
+**The gate.** Beyond the engine's rules, roadmap's tool host refuses:
 
-| Rule | | Whose |
-|---|---|---|
-| Offered | The name is in the catalog version the turn opened with and its `agent` is not `withheld` | the engine's (gym's G-1) |
-| Shape | The input validates against the ability's schema at every depth | the engine's (G-3) |
-| Seat | The ability's `seats` admits the turn's seat | the engine's (G-2) |
-| Owner | An ability that writes or proposes needs the roadmap's owner | roadmap's |
-| Scope | A direct write names the conversation's roadmap | roadmap's |
-| One proposal | At most one `propose_roadmap_change` succeeds for each roadmap in a turn | roadmap's |
-| Volume | At most `MAX_ABILITY_CALLS` calls, and at most `MAX_DIRECT_WRITES` that run and are not reads | the engine's rule, the profile's numbers (G-6) |
-| Stop | After Stop, every remaining call is refused | the engine's (G-8) |
+| Rule | |
+|---|---|
+| Owner | An ability that writes or proposes needs the roadmap's owner |
+| Scope | A direct write names the conversation's roadmap |
 
-The engine's rules keep gym's refusal codes. Gym's rule on minted ids (G-7) has no part here (§6).
+The profile names one group the gate allows once in a turn: `propose_roadmap_change`, for each
+roadmap. It counts toward the write cap every ability that runs and is not a read. Gym's rule on
+minted ids has no part here (§6).
 
-**Stop, reloads and tabs.**
+**Tabs and the record.**
 
-- Stop takes effect before the next model call or ability call. The call in flight finishes and is
-  paid for, as the AI service reads every call to its end. A round that ends in an answer completes
-  the turn; a round that ends in tool calls has them discarded and the turn ends `stopped`.
-- The conversation the model needs to continue lives in the tab's memory. A reload, a closed tab or
-  a crash ends the turn `interrupted`; the question stays on the record.
-- The tab running a turn holds a browser lock named for it and writes a device row
-  `runningTurn:<turnId>`. Another tab shows the turn as answering elsewhere. A tab that finds a
-  `running` turn whose lock is free ends it `interrupted`. A turn left `running` by a browser that
-  never returns is ended `interrupted` by any of the person's devices once it is `TURN_STALE` old.
+- The mark is the device row `runningTurn:<turnId>`, which holds the round in flight as the engine's
+  mark does.
 - A running turn's text is written to its message at most once a second, so another tab or device
   sees the answer grow.
 - Asking needs a connection; when there is none the question stays in the field. Reading History,
   reviewing and applying a proposal need none.
 
-**Access.** The words and states a person sees are gym Coach's, as the design rules. The engine
-maps the AI service's codes onto them: an allowance used up (`subject_exhausted`), the shared
-capacity used up (`free_day_exhausted`, `free_month_exhausted`), busy (`concurrency_exhausted`,
-`rate_limited`, `busy`, `paused`) and unavailable (the rest). The day an allowance renews is the
-`budgetResetsAt` of the allowance every answer and refusal carries; no amount is shown. The engine
-reads `GET /v1/allowance` when Coach opens.
+**Access.** The words and states a person sees are gym Coach's, as the design rules. No amount is
+shown.
 
 **The profile's values.** Roadmap asks for the model class `large`, which the AI service serves to
 an installation as `medium`, with the effort gym's Coach asks for and the label
-`roadmap.coach.turn`. `MAX_MODEL_CALLS` is 8, `MAX_ABILITY_CALLS` 12, `MAX_DIRECT_WRITES` 6,
-`CONTEXT_BYTES` 64 KiB, `TURN_STALE` 30 minutes. A call asks for at most 2,000 output tokens and at
-least 1,024. A message, a question and a picture keep gym's bounds.
+`roadmap.coach.turn`. `MAX_MODEL_CALLS` is 8, `MAX_ABILITY_CALLS` 12, `MAX_WRITES` 6 and
+`CONTEXT_BYTES` 64 KiB. A call asks for at most 2,000 output tokens and at least 1,024. A message, a
+question and a picture keep gym's bounds.
 
-**The pass.** The AI client asks the backend for a pass when it has none that is still good and
-presents it on every call. It never stores a pass beyond the tab.
-
-**The prompt** is a file of the web bundle, written with the owner. A person can read it there; it
-holds no secret.
+**The words.** The prompt is a file of the web bundle, written with the owner, and so are the
+words of the first content and the sentence the model reads beside each refusal code. A person can
+read them there; they hold no secret.
 
 ## §9 Records and History
 
@@ -382,8 +346,8 @@ registry holds Coach's records only and builds none of those.
 | `coachProposal` | §7 |
 | `coachWriteFate` | What became of one receipt's write after its turn ended: undone, or refused by the server |
 
-A device also keeps rows of its own, which do not sync: `runningTurn:<turnId>` (§8), `applying`
-(§7) and a picture's original, as gym keeps one.
+A device also keeps rows of its own, which do not sync: the mark (§8), `applying` (§7) and a
+picture's original, as gym keeps one.
 
 - A turn's states are gym's: `running`, then `completed`, `declined`, `failed`, `stopped` or
   `interrupted`. Once a turn has ended, its message's text, calls and receipts are final.
