@@ -6,17 +6,19 @@ dependency rule are in [STRUCTURE.md](../../STRUCTURE.md); this file holds the s
 
 The Rust workspace, its four crates and one tool exist. `domain` models the subscription and folds
 the stores' observations into it ([Domain](#domain)); `app_store` verifies App Store signed payloads
-([below](#app-store-signature-verification)) and decodes them into observations
-([App Store decoding](#app-store-decoding)), and the tool `app_store_test_signer` signs them under a
+([below](#app-store-signature-verification)), decodes them into observations
+([App Store decoding](#app-store-decoding)) and calls the App Store Server API
+([App Store Server API](#app-store-server-api)), and the tool `app_store_test_signer` signs them under a
 chain only tests trust ([App Store test signer](#app-store-test-signer)); `storage` keeps the ledger,
 the service's own database: it migrates it, keeps what the stores sent, applies observations in one
 transaction each and reads the feed and each account ([Storage](#storage)); `subscriptions`, the server
 binary, opens the ledger before it listens, answers health on both of its listeners, keeps and applies the
-App Store's notifications on its public one, serves the backend the feed and the account read behind a
-bearer secret on its internal one, applies every minute what the inbox holds unsettled, logs every request
-and reports to Sentry ([Server](#server)).
+App Store's notifications on its public one, serves the backend the feed, the account read, the claim and the
+refresh behind a bearer secret on its internal one, applies every minute what the inbox holds unsettled and
+writes the hints claims owe the App Store, logs every request and reports to Sentry ([Server](#server)).
 In production the public listener answers `GET /health` and the App Store notification door, and 404s
-every other path; no App Store Connect setting sends notifications to the door yet. Backend CI publishes
+every other path; no App Store Connect setting sends notifications to the door yet, and no deployment holds
+the in-app purchase key the claim and the refresh need, so both answer 503 there. Backend CI publishes
 its image beside the server's, and every deploy provisions its database and starts it
 ([deploy README](../../backend/deploy/README.md#the-subscription-service)).
 
@@ -69,9 +71,9 @@ The action that applies an observation, `storage`'s apply ([Writing](#writing)),
 3. Mint the observation's ids with `Observation::mint_ids`: a subscription id and one period id for
    each period it states. `observe` uses the ones it needs.
 4. Persist the returned `Change` in one transaction: the subscription, each written or restated
-   period, and the events in order, which the ledger stamps with `seq` and `recordedAt`. A `Refusal`
-   persists nothing.
-5. After the commit, write `hint_for_store`, when present, to the store as the account hint.
+   period, the events in order, which the ledger stamps with `seq` and `recordedAt`, and
+   `hint_for_store`, when present, as a hint the ledger owes the store. A `Refusal` persists nothing.
+5. After the commit, the sweep writes each owed hint to its store and clears it ([The sweep](#the-sweep)).
 
 `verifiedAt` is the sweep's bookkeeping: storage stamps it when it applies a pull, and the domain's
 subscription leaves it out, since no single observation can state it (INV-6).
@@ -107,7 +109,8 @@ of INV-4, INV-5 and INV-6 and one that replays the feed through §6.3's funding 
 
 `app_store::verification::SignedDataVerifier` believes an App Store signed payload only when every
 rule below holds. The payload can be a notification, the signed transaction and renewal info inside
-it, or a signed transaction a phone hands to the claim door. A payload that breaks a rule is refused
+it, a signed transaction a phone hands to the claim door, or the transaction and renewal info of a status the
+App Store Server API answers a pull with. A payload that breaks a rule is refused
 with a `Refusal`, whose `code()` is the only thing a log line carries about it.
 
 | # | Rule | Refusal code |
@@ -137,8 +140,13 @@ purchase or a person, and spec §5.1 keys the inbox by it.
 Validity is judged at `signedDate`, and nothing checks revocation. A payload signed under a leaf
 whose key had leaked could therefore be backdated into that leaf's validity. The notification door
 refuses a `signedDate` older than eight days ([below](#the-app-store-notification-door)), and the claim
-door must re-read the subscription's state from the App Store Server API rather than trust the
-transaction it is handed.
+door reads the subscription's state from the App Store Server API rather than trust the transaction it is
+handed ([The claim and refresh doors](#the-claim-and-refresh-doors)).
+
+`verify_status(environment, signed)` verifies a pulled entry, a `server_api::SignedStatus`, into a
+`SubscriptionStatus`: its transaction by rules 1 to 11, its renewal info by rules 1 to 10, and both stating
+the environment asked for, or `environment` (rule 12). Apple's answer around the entry is not signed, so
+`SubscriptionStatus` carries only what the two payloads and the entry's `status` say.
 
 `SignedDataVerifier::windmill(clock)` is the production configuration: the pinned Apple root and the
 bundle id `works.windmill.app`. `SignedDataVerifier::windmill_also_trusting(test_root, clock)` adds one
@@ -226,19 +234,27 @@ Server API client, `chrono`, `serde_with` and `uuid`, which the verifier does no
 ## App Store decoding
 
 `app_store::decoding` is the one place Apple's vocabulary is translated; nothing behind it knows a
-notification type. `decode(&Notification)` reads a verified notification, and
-`decode_claim(&TransactionInfo)` a transaction a phone hands to the claim door. Both are pure: no
-I/O, no clock. `decode` answers one `Decoded`:
+notification type. `decode(&Notification)` reads a verified notification,
+`decode_claim(&TransactionInfo)` a transaction a phone hands to the claim door, and
+`decode_status(&SubscriptionStatus)` a status a pull reads. All three are pure: no I/O, no clock.
+`decode` answers one `Decoded`:
 
 | Outcome | What it holds | What the caller does |
 |---|---|---|
 | `Observation` | An `Observation` of the subscription's whole state, and the transaction's `appAccountToken` as an `AccountToken` | Resolves the token against the erased accounts into the `AccountHint`, then applies it with `observe` |
-| `AwaitsStatus` | A `PeriodStatement`: the lineage, `observedAt`, ownership, the account token, the one period the transaction states, and the cancel time when the notification states one; and why, an `Awaiting` | Keeps the notification unsettled, postponed an hour at a time, until it pulls the subscription's status from the App Store Server API, then applies the period, and the cancel time, with the notification's own stamp. `latest_unconfirmed` is also reported to Sentry |
+| `AwaitsStatus` | A `PeriodStatement`: the lineage, `observedAt`, ownership, the account token, the one period the transaction states, and the cancel time when the notification states one; and why, an `Awaiting` | Keeps the notification unsettled, postponed an hour at a time, for a pull of the subscription's status to give its state and then apply the period, and the cancel time, with the notification's own stamp; the door pulls no status for a notification yet. `latest_unconfirmed` is also reported to Sentry |
 | `Silent` | `test` or `renewal_extension_summary`: Apple states nothing about any subscription | Settles the notification with the code and logs it |
 | `Unsupported` | A code: what Windmill does not sell, or a field that decides access or money it cannot read | Keeps the notification in the inbox settled with the code, logs `unsupported` with it, reports it; nothing changes |
 
 `decode_claim` answers a `PeriodStatement` stamped at the transaction's own `signedDate`, or
-`Unsupported`; the claim door takes the state from a pull, never from the transaction (above).
+`Unsupported`; the claim door takes only the lineage from it, and the state from a pull (above).
+
+`decode_status` reads a pulled status as the notifications that concern the latest transaction are read
+(`SUBSCRIBED` and its row below): Apple's status holds the subscription's latest transaction by definition.
+Its `observedAt` is the earlier of the transaction's and the renewal info's `signedDate`, the instants Apple
+signed them in answering, and a status stating neither is `incomplete`. One whose transaction the renewal
+info does not confirm as the latest answers `AwaitsStatus` with `latest_unconfirmed`, which the door takes
+as a pull that failed.
 
 Only the subscription's latest transaction states its state, and a transaction is the latest when
 its `expiresDate` is the renewal info's `renewalDate`. When it is not, the outcome is `AwaitsStatus`,
@@ -350,6 +366,9 @@ m3-verify-sandbox-lifecycle confirms these against payloads Apple signs:
   `latest_unconfirmed` is reported; this check gates the paid line.
 - The renewal info's `offerType` is the next renewal's offer.
 - `revocationType` is stated on a refunded transaction.
+- A pulled status's transaction and renewal info are signed when Apple answers the pull, so the pull is
+  stamped then. Should Apple answer with payloads signed earlier, a pull older than the ledger's newest
+  statement changes nothing but the binding and the periods (INV-5).
 
 ### Where the mapping comes from
 
@@ -375,6 +394,51 @@ Apple's App Store Server Notifications reference, read on 2026-11-14:
 [gracePeriodExpiresDate](https://developer.apple.com/documentation/appstoreservernotifications/graceperiodexpiresdate),
 [signedDate](https://developer.apple.com/documentation/appstoreservernotifications/signeddate).
 
+## App Store Server API
+
+`app_store::server_api::ServerApi` calls Apple's App Store Server API with Windmill's in-app purchase key,
+an `ApiKey`: its issuer id, its key id, and its private key, a P-256 key in PKCS#8 as the `.p8` file App
+Store Connect hands out holds it in PEM (`PrivateKey`, whose `Debug` prints `PrivateKey(redacted)`). Each
+request carries a JSON Web Token of its own as its bearer, signed ES256 with that key: the header `alg`
+`ES256`, `kid` the key id and `typ` `JWT`; the claims `iss` the issuer id, `iat` the clock's time in seconds,
+`exp` five minutes later (Apple takes at most an hour), `aud` `appstoreconnect-v1` and `bid`
+`works.windmill.app`, the bundle id the verifier pins.
+
+| Call | Request | What it answers |
+|---|---|---|
+| `subscription_status(environment, original_transaction_id)` | Get All Subscription Statuses, `GET /inApps/v1/subscriptions/{originalTransactionId}` | The lineage's entry among every subscription Apple lists for its customer, as a `SignedStatus`: its `status`, and its transaction and renewal info as Apple signed them, unverified |
+| `set_app_account_token(environment, original_transaction_id, token)` | Set App Account Token, `PUT /inApps/v1/transactions/{originalTransactionId}/appAccountToken` with `{"appAccountToken": token}` | Nothing: Apple names the token in the lineage's current transaction and every renewal after it |
+
+The environment picks the host, `Hosts::apple()`: `https://api.storekit.apple.com` for production and
+`https://api.storekit-sandbox.apple.com` for sandbox; a test deployment hands both one address of its own
+([Configuration](#configuration)). A request ends within 3 s, connecting included, under the internal
+listener's 5 s; it follows no redirect, and no error message Apple sends is read. An answer that is not a
+success is one `ApiFailure`, whose `code` is all a line carries:
+
+| `ApiFailure` | `code` | When | Of the API |
+|---|---|---|---|
+| `Unreachable` | `unreachable` | No answer within 3 s: nothing listened, the connection broke or Apple stalled | yes |
+| `Unauthorized` | `unauthorized` | 401: Apple refused the token, so the key, its id or its issuer is not the one App Store Connect issued | yes |
+| `RateLimited` | `rate_limited` | 429 | yes |
+| `StoreError` | `store_error` | A 5xx, or a 404 whose `errorCode` Apple names retryable, 4040002 or 4040004 | yes |
+| `NotFound` | `not_found` | Any other 404, or a status answer that lists no entry for the lineage | no |
+| `BadRequest` | `bad_request` | Any other answer that is not a success, a redirect among them | no |
+| `Malformed` | `malformed` | A success whose body is not the shape Apple documents | no |
+
+`of_the_api()` is true of a failure any request would meet now, whatever it asks: the sweep stops writing
+hints at one rather than try each ([The sweep](#the-sweep)). The client verifies nothing it pulls: the door
+hands each entry to `SignedDataVerifier::verify_status` ([above](#app-store-signature-verification)), then
+to `decode_status` ([App Store decoding](#app-store-decoding)). `crates/app_store/tests/server_api.rs` runs
+both calls against an Apple served on a local port: the token's header, claims and signature, each
+environment's host, and the failure each answer comes to.
+
+The calls, hosts, token and error codes follow Apple's App Store Server API reference, read on 2026-11-15:
+[Get All Subscription Statuses](https://developer.apple.com/documentation/appstoreserverapi/get-all-subscription-statuses),
+[Set App Account Token](https://developer.apple.com/documentation/appstoreserverapi/set-app-account-token),
+[StatusResponse](https://developer.apple.com/documentation/appstoreserverapi/statusresponse),
+[LastTransactionsItem](https://developer.apple.com/documentation/appstoreserverapi/lasttransactionsitem) and
+[Generating JSON Web Tokens for API requests](https://developer.apple.com/documentation/appstoreserverapi/generating-json-web-tokens-for-api-requests).
+
 ## App Store test signer
 
 `app_store_test_signer` signs App Store notifications and transactions under a test chain, for tests
@@ -386,7 +450,8 @@ receipt-signing marker, with the leaf's key. A verifier built with `SignedDataVe
 CI service whose `SUBSCRIPTIONS_APP_STORE_TEST_ROOT` names it ([Configuration](#configuration));
 `SignedDataVerifier::windmill` refuses it with `untrusted_chain`.
 
-The binary reads a description on stdin and writes the signed payload, a compact JWS, on stdout:
+The binary reads a description on stdin and writes the signed payload on stdout: a compact JWS, or for a
+status response its JSON with each payload inside it signed:
 
 ```sh
 cargo run -q -p app_store_test_signer < tests/fixtures/app_store/test-payloads/renewed.json
@@ -394,9 +459,11 @@ cargo run -q -p app_store_test_signer < tests/fixtures/app_store/test-payloads/r
 
 The library behind it, for Rust tests, is `sign(description, now)`, with the root as `TEST_ROOT`.
 
-A description is a JSON object holding one key, `notification` or `transaction`, whose value is that
-payload as Apple's documentation shows it decoded. A notification's `data.signedTransactionInfo` and
-`data.signedRenewalInfo` may hold decoded objects too; each is signed and put back as its JWS. Every
+A description is a JSON object holding one key, `notification`, `transaction` or `statusResponse`, whose
+value is that payload as Apple's documentation shows it decoded; a `statusResponse` is the App Store Server
+API's answer to Get All Subscription Statuses, which a test's own Apple serves. A notification's
+`data.signedTransactionInfo` and `data.signedRenewalInfo`, and those of each entry of a status response's
+`data[].lastTransactions`, may hold decoded objects too; each is signed and put back as its JWS. Every
 JWS has the header `alg` `ES256` with an `x5c` of leaf, intermediate and root, and is signed with the
 leaf's key. A field the description leaves out takes the value below, in the objects the description
 has; the signer adds no object, such as a `data` to a notification without one. A field it states is
@@ -410,7 +477,10 @@ signed as stated, so a test can also sign what the verifier must refuse.
 | nested transaction | `environment`, `bundleId` | its notification's |
 | nested renewal info | `environment` | its notification's |
 | standalone transaction | `environment`, `bundleId` | `Sandbox`, `works.windmill.app` |
-| each of them | `signedDate` | the signing time |
+| status response | `environment`, `bundleId` | `Sandbox`, `works.windmill.app` |
+| status entry's transaction | `environment`, `bundleId` | its response's |
+| status entry's renewal info | `environment` | its response's |
+| each payload signed | `signedDate` | the signing time |
 
 A date Apple states in epoch milliseconds (`signedDate`, `purchaseDate`, `originalPurchaseDate`,
 `expiresDate`, `revocationDate`, `renewalDate`, `gracePeriodExpiresDate`,
@@ -558,6 +628,7 @@ after the lock is taken, so they include every transaction committed before.
 |---|---|
 | `feed(after, limit)` | A `FeedPage`, `{epoch, entries, latest_seq}`, read in one repeatable-read snapshot: at most `limit` events after the seq `after`, in seq order. A `FeedEntry` holds the domain's `Event`, its `seq` and `recorded_at`, the subscription's store, environment and offer kind, and the entitlement, `AccountEntitlement::of` the account over the subscriptions stored with the event, absent exactly when the event names no account (§5.2) |
 | `lineage(lineage)` | What the ledger holds for one lineage: its subscription, if any, and its periods |
+| `subscription(id)` | The subscription the ledger keeps under its own id, if any, as a refresh names it |
 | `entitlement(account)` | The account's entitlement as the ledger holds it now |
 | `account(account)` | An `AccountRecord`, read in one repeatable-read snapshot: each subscription bound to the account, ordered by id, with its periods by start and every event of it in seq order as a `RecordedEvent` (`seq`, `recorded_at`, the domain's `Event`), whichever account the event was told under; and the entitlement folded over those subscriptions |
 
@@ -585,8 +656,10 @@ repeats it.
 
 `crates/server` holds six modules, `config`, `internal`, `listeners`, `store_doors`, `sweep` and
 `telemetry`, and the binary `subscriptions`, whose `main.rs` reads the configuration, starts telemetry,
-builds the App Store verifier, opens the ledger, and serves both listeners and runs the sweep until a
-signal.
+builds the App Store verifier and, while the in-app purchase key is set, the App Store Server API client,
+opens the ledger, and serves both listeners and runs the sweep until a signal. `store_doors` keeps its
+work through the App Store Server API, the claim, the refresh and the hint writes, in
+`store_doors/server_api.rs`.
 
 ### Configuration
 
@@ -606,13 +679,23 @@ one log line naming the variable, never its value.
 | `SENTRY_LOG_LEVEL` | no | The same words: the lowest level of the service's own lines sent to Sentry as Logs; default `info` |
 | `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` | no | `true` adds `GET /debug/panic` to the internal listener; refused unless `SENTRY_ENVIRONMENT`, trimmed and in any case, is `local`, `development`, `test` or `ci` |
 | `SUBSCRIPTIONS_APP_STORE_TEST_ROOT` | no | The path of a DER certificate the App Store door trusts beside Apple's root, such as the test chain's `tests/fixtures/app_store/test-chain/root.cer`; refused unless `SENTRY_ENVIRONMENT` is one of the same four. A file that is no P-256 or P-384 certificate stops the start with `SUBSCRIPTIONS_APP_STORE_TEST_ROOT names no certificate to trust`. Unset, the door trusts Apple's root alone |
+| `SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID` | no | The issuer id App Store Connect shows beside the in-app purchase key the App Store Server API is called with ([App Store Server API](#app-store-server-api)) |
+| `SUBSCRIPTIONS_APP_STORE_API_KEY_ID` | no | That key's id |
+| `SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY` | no | That key's `.p8` file as it is: a P-256 private key in PKCS#8 PEM, `-----BEGIN PRIVATE KEY-----` to `-----END PRIVATE KEY-----`, its line breaks kept or left out. Anything else stops the start with `SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY is malformed` |
+| `SUBSCRIPTIONS_APP_STORE_API_TEST_URL` | no | An `http` or `https` address answering the App Store Server API for both environments, such as an Apple a local run serves itself; refused unless `SENTRY_ENVIRONMENT` is one of the four test deployments. Unset, the client calls Apple's hosts |
 | `SUBSCRIPTIONS_INTERNAL_TOKEN` | no | The bearer secret of the internal doors ([below](#internal-doors)), the one the backend sends: at least 32 characters, none a space or a control character; production's is 64 lowercase hex. Unset, every internal door answers 401; the `starting` line says whether it is set |
+
+The three variables of the key are set together. With any of them unset the App Store Server API is off: the
+claim and the refresh answer 503 `store_api_unavailable`, the hints claims owe stay owed, and the service
+starts, warning `<variable> is not set, so the App Store Server API is off` for each one unset beside one that
+is set.
 
 ### Start
 
 The App Store verifier is built before the ledger opens, and the ledger opens before either listener
 binds, so no door ever answers over an older schema. The `starting` line says whether
-`app_store_test_root` is trusted. A ledger
+`app_store_test_root` is trusted, whether the App Store Server API is on (`app_store_api`), and whether it
+calls an Apple of a test's own (`app_store_api_test_url`). A ledger
 that does not open stops the start with exit code 1, one line `ledger.open failed` carrying its
 `code` and `sqlstate`, and a Sentry Issue ([Logs and Sentry](#logs-and-sentry)). A ledger that
 opens writes `ledger open` with its `epoch`.
@@ -631,6 +714,7 @@ the public port and nothing else, and the internal listener binds the service's 
 | public | `POST /v1/stores/app-store/notifications` | the App Store notification door ([below](#the-app-store-notification-door)) |
 | internal | `GET /health` | the same; the image's `HEALTHCHECK` asks it, at the address `SUBSCRIPTIONS_INTERNAL_ADDRESS` names |
 | internal | `GET /internal/v1/feed`, `GET /internal/v1/accounts/{accountId}` | the backend's reads, behind the bearer secret ([below](#internal-doors)) |
+| internal | `POST /internal/v1/app-store/claims`, `POST /internal/v1/subscriptions/{subscriptionId}/refresh` | the claim and the refresh, behind the same secret ([below](#the-claim-and-refresh-doors)) |
 | internal | `GET /debug/panic` | panics, only while `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` is `true` |
 
 `listeners::Bounds` holds what a client may take on either listener:
@@ -642,14 +726,15 @@ the public port and nothing else, and the internal listener binds the service's 
 | request body | 64 KiB | 413, before any handler reads it |
 
 A handler runs only while its client waits: a client that leaves cancels it. A door whose work must
-outlive its request, such as the App Store notification door, spawns that work as a pipeline of its
-own.
+outlive its request, as the App Store notification door's, the claim's and the refresh's does, spawns that
+work as a pipeline of its own.
 
 Both listeners answer health the same way because every door reads or writes the ledger. The routers
 take what they ask as a `listeners::Readiness`, which `Ledger` is, so a test hands them a fake, and each
 takes the doors it serves beside health as a `Router`, which `main.rs` builds: the public one
 `store_doors::router`, the internal one `internal::doors`, whose reads it takes as an `internal::Reads`,
-which `Ledger` is too.
+which `Ledger` is too, and beside them `store_doors::internal_router`, the claim and the refresh, all behind
+one bearer layer.
 
 SIGTERM or SIGINT stops both listeners from accepting and the sweep after the row it is applying. Each
 open connection then finishes its request within the bounds above, the App Store door waits for the
@@ -682,13 +767,14 @@ is verified.
    by `apply_notification`, in the transaction that settles the notification, with the transaction's
    `appAccountToken` as the hint when it reads as a UUID and no hint otherwise (spec §4). `Silent` and
    `Unsupported` settle the notification with their code. `AwaitsStatus` postpones it an hour
-   (`Ledger::postpone`), since no status pull exists yet. A redelivery of a notification the inbox
-   holds unsettled applies it at once, from the inbox's own copy, verified again when the delivered
-   bytes differ from it; one the inbox holds settled changes nothing.
+   (`Ledger::postpone`), since the door pulls no status for a notification yet. A redelivery of a
+   notification the inbox holds unsettled applies it at once, from the inbox's own copy, verified again
+   when the delivered bytes differ from it; one the inbox holds settled changes nothing.
 5. **Answer.** 200 once the inbox holds the notification, whatever step 4 does, and before it runs: what
    step 4 leaves unsettled, the sweep applies ([below](#the-sweep)).
 
-At most four applies run at once, the door's and the sweep's together: half the ledger's
+At most four applies run at once, the notification door's, the claim's, the refresh's and the sweep's
+together: half the ledger's
 `Ledger::CONNECTIONS`, so keeping a notification always finds a connection. A burst waits for its turn
 in memory rather than at the pool's 5 s bound for a connection.
 
@@ -749,10 +835,82 @@ without its payload.
 A report is `telemetry::report` under `store.notification` and the line's `code`, carrying the request's
 `listener`, `route` and `request_id` tags.
 
+### The claim and refresh doors
+
+`store_doors::internal_router` serves the backend's two writes on the internal listener, behind its bearer
+secret ([Internal doors](#internal-doors)). Each runs as a task of its own, so a client that leaves cancels
+neither its apply nor its line, and both take the state they apply from the App Store Server API
+([App Store Server API](#app-store-server-api)), never from what they are handed. A pull is one pipeline:
+`subscription_status` for the lineage in its environment, `verify_status` on the blocking pool as a
+notification's payloads are verified, `decode_status`, and the observation it gives applied by
+`Ledger::apply` with the transaction's `appAccountToken` as the hint when it reads as a UUID, and
+`pulled_at`, the door's clock, which becomes `verifiedAt`. Apple picks the entry by an id it does not sign, so
+an observation of a lineage other than the one asked for is refused as `inconsistent`.
+
+`POST /internal/v1/app-store/claims` (spec §5.2), `{accountId, signedTransaction}`:
+
+1. **Request.** The body is the request, and `accountId` a UUID in its canonical spelling.
+2. **Verify.** `verify_transaction` believes the signed transaction as Apple's
+   ([rules](#app-store-signature-verification)), under Apple's root and in a test deployment the test root,
+   and `decode_claim` reads its lineage.
+3. **Pull** the lineage's state, as above.
+4. **Apply** it with the claim, the caller's account at the door's clock: `observe` binds an unbound
+   subscription to the caller, records `bound` and the periods again under the account, and owes the store
+   the account as its hint when the purchase carried none or named an erased account; a claim of a
+   subscription bound to the caller changes nothing; one bound to another account, or whose hint names a
+   live other, is refused, as is a claim by an erased account; a purchase the store reports shared binds to
+   no one (spec §4).
+5. **Answer** `{seq, entitlement}`: `Applied::Recorded.newest_seq`, the claimed subscription's newest
+   event, and the caller's entitlement read after the commit. A claim retried after its answer was lost
+   replays, recording nothing, and answers the same `seq`.
+
+`POST /internal/v1/subscriptions/{subscriptionId}/refresh` pulls the state of the subscription the ledger
+keeps under that id, a UUID in its canonical spelling, applies it as above without a claim, and answers
+`{seq}`, the subscription's newest event. It binds only as any observation's hint does (§4).
+
+| Answer | Claim | Refresh |
+|---|---|---|
+| 200 | `{seq, entitlement}` | `{seq}` |
+| 400 `{"code":"invalid_request"}` | the body is not `{accountId, signedTransaction}` | |
+| 400 `{"code":"invalid_account_id"}` | `accountId` is not a canonical UUID | |
+| 400 `{"code":"invalid_subscription_id"}` | | the id is not a canonical UUID |
+| 400 `{"code":"invalid_transaction"}` | the transaction does not verify, or is of what Windmill does not sell | |
+| 404 `{"code":"unknown_subscription"}` | | the ledger keeps no subscription under the id |
+| 409 `{"code":"bound_to_another_account"}`, `{"code":"account_erased"}` | the domain's refusal (§4) | |
+| 503 `{"code":"store_api_unavailable"}` | the deployment holds no in-app purchase key ([Configuration](#configuration)) | the same, or the subscription's store has no API client |
+| 503 `{"code":"store_unavailable"}` | the pull gave no state to apply | the same |
+| 503 `{"code":"unavailable"}` | the ledger did not apply it, or did not read the entitlement after it | the ledger did not read the subscription or apply the state |
+
+Every 503 means the same to the backend: try again later, as a phone keeps the transaction unfinished and
+claims it again at its next launch (§5.3).
+
+Each claim writes one `store.claim` line, and each refresh one `store.refresh` line, inside its request's
+span: `operation`, `store`, `environment` once known, `outcome`, `code`, `sqlstate` from the database,
+`answered`, `events` when applied, `duration_ms`, and `sentry_event_id` when reported. It names no account,
+transaction, subscription or payload.
+
+| `outcome` | `code` | Level | Reported |
+|---|---|---|---|
+| `applied` | | `info` | no |
+| `refused` | `bound_to_another_account`, `account_erased`, `unknown_subscription`, or a verifier's refusal before the signature held | `info` | no |
+| `refused` | `invalid_request`, `invalid_account_id`, `invalid_subscription_id`, a verifier's refusal after the signature held, or the decoder's code | `warn` | no |
+| `store_api_unavailable` | | `warn` | no |
+| `pull_failed` | the `ApiFailure`'s, the verifier's, `inconsistent`, or the decoder's | `error` | yes, at most once in ten minutes for each code |
+| `apply_failed`, `read_failed`, `entitlement_unread` | the `StorageError`'s | `error` | yes |
+
+`crates/server/tests/store_doors_server_api.rs` drives both doors through the internal router against an
+Apple served on a local port.
+
+Known limit: a claim records the periods its pull states, the latest transaction's; a claimed transaction
+older than it adds no period of its own until the notification history read (spec §7 step 4) exists.
+
 ### The sweep
 
-`sweep::InboxSweep` is step 1 of spec §7; steps 2 to 4 are not built. It passes once at start, so what the
-last run kept and left unsettled is applied first, then every minute. A pass reads `Ledger::unsettled` 100
+`sweep::Sweep` is the one worker of spec §7. It passes once at start, so what the last run kept and left
+unsettled is applied first, then every minute: `InboxSweep`, step 1, then `StoreHintSweep`, the hints claims
+owe the stores. Steps 2 to 4 are not built.
+
+`InboxSweep` reads `Ledger::unsettled` 100
 rows at a time and applies each through the door's own step 4 (`AppStoreDoor::apply_kept`), from the
 inbox's copy, which it verifies again, without the door's age rule. A copy that no longer verifies, as one
 kept under a test root a deployment has stopped trusting, is settled with the verifier's code. A pass goes
@@ -767,26 +925,49 @@ the pass reports, at `debug` when it met no row and at `info` otherwise. A failu
 notification, an unverifiable copy, an unconfirmed latest transaction and an inbox the pass cannot read
 report under `sweep.inbox` and their code, at most once in ten minutes for each.
 
+`StoreHintSweep` writes the account hints the ledger owes the stores (spec §4), `Ledger::store_hints` 100 at
+a time, the longest owed first, each through its store's door: `AppStoreDoor::write_store_hint` puts the
+account as the lineage's app account token (Set App Account Token) and, once Apple took it, clears it with
+`Ledger::clear_store_hint`. A hint Apple did not take stays owed for the next pass, and a failure every hint
+would meet now (`ApiFailure::of_the_api`, as an Apple that does not answer) or a hint the ledger could not
+clear ends the pass. Without the in-app purchase key it reads nothing, and every hint stays owed. The sweep
+is the one writer of hints: a claim answers without waiting on Apple, a write that fails is retried by the
+same step as the first, and no hint is written twice at once.
+
+Each hint written writes one `store.hint` line: `operation`, `store`, `environment`, `outcome`, `code`,
+`sqlstate`, `duration_ms` and `sentry_event_id`. It names no account or transaction.
+
+| `outcome` | `code` | Level | Reported |
+|---|---|---|---|
+| `written` | | `info` | no |
+| `write_failed` | the `ApiFailure`'s | `error` | yes, at most once in ten minutes for each code |
+| `clear_failed` | the `StorageError`'s | `error` | yes, the same |
+| `unread` | the `StorageError`'s: the owed hints could not be read | `error` | yes, the same |
+
 ### Internal doors
 
-`internal` holds the backend's doors (spec §5.2); the internal router merges them, so none exists on the
-public listener. Each is behind the bearer secret: a request without `Authorization: Bearer <secret>`,
-with another secret, or reaching a service started without one answers 401 `{"code":"unauthorized"}` with
-`WWW-Authenticate: Bearer`, and says nothing of which. The secret is compared in time that depends on the
+`internal` holds the backend's reads (spec §5.2), and `internal::doors` merges them with the store doors'
+claim and refresh ([above](#the-claim-and-refresh-doors)) under one bearer layer; the internal router serves
+them, so none exists on the public listener. Each is behind the bearer secret: a request without
+`Authorization: Bearer <secret>`, with another secret, or reaching a service started without one answers
+401 `{"code":"unauthorized"}` with `WWW-Authenticate: Bearer`, and says nothing of which. The secret is compared in time that depends on the
 lengths alone. `/health` asks for none, for the image's `HEALTHCHECK`.
 
 | Route | Answer |
 |---|---|
 | `GET /internal/v1/feed?after=<seq>&limit=<n>` | 200, `Ledger::feed(after, limit)` as `feed.json` shows a page. Both are required, `after` from 0 and `limit` from 1 to 500; any other query is 400 `{"code":"invalid_query"}` |
+| `POST /internal/v1/app-store/claims`, `POST /internal/v1/subscriptions/{subscriptionId}/refresh` | the claim and the refresh ([above](#the-claim-and-refresh-doors)), as `internal-app-store-claim.json` and `internal-subscription-refresh.json` show each answer |
 | `GET /internal/v1/accounts/{accountId}` | 200, `Ledger::account` as `account.json` shows it: `{entitlement, subscriptions}`, the entitlement, and each subscription bound to the account with the entitlement's fields of it, then `environment`, `boundAt`, `boundBy`, `periods` as the feed carries a period, and `events`, each `{seq, type, occurredAt, recordedAt, accountId, period}`. An id that is not a UUID in its canonical spelling, lowercase and hyphenated, is 400 `{"code":"invalid_account_id"}`; an account the ledger holds nothing of answers its empty entitlement and `[]` |
 
 A read the ledger does not answer is 503 `{"code":"unavailable"}` and an Issue under `feed.read` or
 `account.read` ([Logs and Sentry](#logs-and-sentry)); the backend's follower reads again. The wire shapes
 are `internal/responses.rs`, each written from the ledger's own types. `crates/server/tests/contract.rs`
-serves every example of `feed.json`, `entitlement.json` and `account.json` from the ledger's types and
-compares the bodies byte for byte, key order included. It also tells the feed's story through `Ledger::apply`,
-every transaction up to seq 26, and checks the pages that hold it and the three account reads of it
-against the fixtures; the erasure at seq 27 has no step in the domain yet.
+serves every example of `feed.json`, `entitlement.json` and `account.json` from the ledger's types, writes
+every answer of `internal-app-store-claim.json` and `internal-subscription-refresh.json` from the doors'
+own, and compares the bodies byte for byte, key order included. It also tells the feed's story through
+`Ledger::apply`, every transaction up to seq 26, and checks the pages that hold it, the three account reads
+of it and the claim's answer, first and retried, against the fixtures; the erasure at seq 27 has no step in
+the domain yet.
 
 ### Logs and Sentry
 
@@ -805,10 +986,12 @@ follower ask every few seconds forever, and anything else at `info`:
 A health check the ledger does not answer also writes `ledger did not answer` at `warn`, with
 `operation` `ledger.check`, the failure's `code` and `sqlstate`, inside the request's span.
 The App Store door writes one `store.notification` line per delivery
-([above](#the-app-store-notification-door)). Each read an internal door has the ledger answer writes
-`feed.read` or `account.read`, inside the request's span, with `operation`, `outcome` `ok` and its
-`entries` or `subscriptions`; a feed page without entries writes it at `debug`, any other at `info`. A
-refused request writes its request line alone. No line names an account, the query or the secret.
+([above](#the-app-store-notification-door)), one `store.claim` line per claim and one `store.refresh` line
+per refresh ([above](#the-claim-and-refresh-doors)), and the sweep one `store.hint` line per hint it writes
+([The sweep](#the-sweep)). Each read an internal door has the ledger answer writes `feed.read` or
+`account.read`, inside the request's span, with `operation`, `outcome` `ok` and its `entries` or
+`subscriptions`; a feed page without entries writes it at `debug`, any other at `info`. A refused read
+writes its request line alone. No line names an account, the query or the secret.
 
 Lines from every crate of the workspace (`telemetry::SERVICE_CRATES`) also go to Sentry as Logs; a
 vendor's lines stay on stdout. A line at `error` creates no Issue. Issues come from explicit
@@ -831,7 +1014,8 @@ request answers 500 `{"error":"internal"}` while the listener keeps answering.
 ### Run
 
 [backend/RUNNING.md](../../backend/RUNNING.md#the-subscription-service) runs it locally beside the
-backend, with the test root, and posts it a notification the test signer signs.
+backend, with the test root, posts it a notification the test signer signs, and claims it against an Apple
+the run serves itself.
 
 Its internal doors answer 401 until `SUBSCRIPTIONS_INTERNAL_TOKEN` names a secret, such as
 `openssl rand -hex 32` makes. The backend follows the feed once its `.env` holds the same secret and
@@ -869,7 +1053,7 @@ cargo test --locked
 `check-dependencies.sh` needs `jq` and runs from any directory.
 
 The tests that need Postgres, in `crates/storage/tests/` and `crates/server/tests/` (`contract.rs`,
-`internal.rs` and `store_doors.rs`), run only where
+`internal.rs`, `store_doors.rs` and `store_doors_server_api.rs`), run only where
 `SUBSCRIPTIONS_TEST_DATABASE_URL` names a database whose role may create databases; each test creates
 an empty one beside it and drops it after. Without the variable they are compiled as ignored, so the
 summary counts them as not run. Against the local Homebrew Postgres:

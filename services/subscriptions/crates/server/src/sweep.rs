@@ -7,7 +7,7 @@ use storage::{Ledger, StorageError};
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
 
-use crate::store_doors::{AppStoreDoor, KeptOutcome, POSTPONED_FOR};
+use crate::store_doors::{AppStoreDoor, HintWritten, KeptOutcome, POSTPONED_FOR};
 use crate::telemetry::Throttle;
 
 const OPERATION: &str = "sweep.inbox";
@@ -20,21 +20,18 @@ const PAGE: i64 = 100;
 // A failure that lasts reports once in this long, though every pass meets it.
 const REPORTED_EVERY: Duration = Duration::from_secs(10 * 60);
 
-// Step 1 of the sweep (spec §7): on start and every minute, each notification the inbox holds unsettled and not
-// waiting after a failed attempt is applied through its door's own step 4, so none waits on its store's redelivery
-// schedule (§5.1). Steps 2 to 4 are not built.
-pub struct InboxSweep {
-    ledger: Ledger,
-    app_store: AppStoreDoor,
-    reports: Throttle,
+// The sweep (spec §7), one worker: on start and every minute, step 1, the inbox, then the hints a claim owes the stores.
+// Steps 2 to 4 are not built.
+pub struct Sweep {
+    inbox: InboxSweep,
+    store_hints: StoreHintSweep,
 }
 
-impl InboxSweep {
-    pub fn new(ledger: Ledger, app_store: AppStoreDoor) -> InboxSweep {
-        InboxSweep {
-            ledger,
-            app_store,
-            reports: Throttle::every(REPORTED_EVERY),
+impl Sweep {
+    pub fn new(ledger: Ledger, app_store: AppStoreDoor) -> Sweep {
+        Sweep {
+            inbox: InboxSweep::new(ledger.clone(), app_store.clone()),
+            store_hints: StoreHintSweep::new(ledger, app_store),
         }
     }
 
@@ -48,7 +45,30 @@ impl InboxSweep {
                 _ = ticks.tick() => {}
                 () = stop.cancelled() => return,
             }
-            let _ = AssertUnwindSafe(self.pass(&stop)).catch_unwind().await;
+            let _ = AssertUnwindSafe(self.inbox.pass(&stop))
+                .catch_unwind()
+                .await;
+            let _ = AssertUnwindSafe(self.store_hints.pass(&stop))
+                .catch_unwind()
+                .await;
+        }
+    }
+}
+
+// Step 1 (§7): each notification the inbox holds unsettled and not waiting after a failed attempt is applied through
+// its door's own step 4, so none waits on its store's redelivery schedule (§5.1).
+pub struct InboxSweep {
+    ledger: Ledger,
+    app_store: AppStoreDoor,
+    reports: Throttle,
+}
+
+impl InboxSweep {
+    pub fn new(ledger: Ledger, app_store: AppStoreDoor) -> InboxSweep {
+        InboxSweep {
+            ledger,
+            app_store,
+            reports: Throttle::every(REPORTED_EVERY),
         }
     }
 
@@ -101,6 +121,62 @@ impl InboxSweep {
         pass.log(started.elapsed(), &self.reports);
         pass
     }
+}
+
+// The hints a claim owes the stores (§4), written through each store's door: the longest owed first, at most a page a
+// pass. A hint its store did not take stays owed for the next pass, and a failure every hint would meet now, as an API
+// that does not answer, ends the pass. Without a key for the store's API nothing is read.
+pub struct StoreHintSweep {
+    ledger: Ledger,
+    app_store: AppStoreDoor,
+}
+
+impl StoreHintSweep {
+    pub fn new(ledger: Ledger, app_store: AppStoreDoor) -> StoreHintSweep {
+        StoreHintSweep { ledger, app_store }
+    }
+
+    // One pass; each hint written logs its own `store.hint` line.
+    pub async fn pass(&self, stop: &CancellationToken) -> HintPass {
+        let mut pass = HintPass::default();
+        if !self.app_store.writes_store_hints() {
+            return pass;
+        }
+        let hints = match self.ledger.store_hints(PAGE).await {
+            Ok(hints) => hints,
+            Err(failure) => {
+                self.app_store.report_store_hints_unread(&failure);
+                pass.unread = Some(failure);
+                return pass;
+            }
+        };
+        for hint in hints {
+            if stop.is_cancelled() {
+                break;
+            }
+            // Only the App Store has a door that writes hints; no other store's subscription binds by claim yet.
+            if hint.lineage.store != Store::AppStore {
+                continue;
+            }
+            let written = self.app_store.write_store_hint(&hint).await;
+            let ends_the_pass = written.ends_the_pass();
+            match written {
+                HintWritten::Written => pass.written += 1,
+                _ => pass.failed += 1,
+            }
+            if ends_the_pass {
+                break;
+            }
+        }
+        pass
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct HintPass {
+    pub written: usize,
+    pub failed: usize,
+    pub unread: Option<StorageError>,
 }
 
 // What one pass came to: how many rows it met with each outcome, and the reportable ones by code.

@@ -10,6 +10,7 @@ the moment it is signed, so a description signed today states today's dates.
 |---|---|---|---|
 | `started.json` | `SUBSCRIBED` `INITIAL_BUY` | 1 | The first purchase, carrying the account hint; its period ends in 30 days |
 | `purchase-transaction.json` | a transaction | | The same purchase's transaction on its own, as the phone posts it to the claim door |
+| `subscription-status.json` | a status response | 1 | The same purchase's status as Get All Subscription Statuses answers it, which a test's own Apple serves to the claim door's and a refresh's pull |
 | `renewed.json` | `DID_RENEW` | 1 | The second period, transaction `2000000000000002`, charged now |
 | `renewal-turned-off.json` | `DID_CHANGE_RENEWAL_STATUS` `AUTO_RENEW_DISABLED` | 1 | The customer turns renewal off 10 days into the second period |
 | `payment-failed-into-grace.json` | `DID_FAIL_TO_RENEW` `GRACE_PERIOD` | 4 | The renewal charge fails as the second period ends; access holds through the 16-day grace (R-7) |

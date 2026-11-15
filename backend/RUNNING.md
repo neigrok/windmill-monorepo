@@ -109,6 +109,66 @@ stdout, and the sweep one `sweep.inbox` line a minute
 the service is reached directly; in production Caddy lets only Apple's subnet reach the door. Stop the
 service by its ports.
 
+#### A claim and a refresh
+
+The claim door and the refresh take the subscription's state from the App Store Server API, so they need
+an in-app purchase key and an Apple to call; without the key they answer `503
+{"code":"store_api_unavailable"}`. Locally the run serves Apple itself: a directory holding the status
+Get All Subscription Statuses answers, signed under the test chain, which `SUBSCRIPTIONS_APP_STORE_API_TEST_URL`
+names (refused outside `local`, `development`, `test` and `ci`), and any P-256 key, since that Apple checks
+no token. Sign the status first, so the notification posted after it is the newer statement. In a third
+terminal, from `services/subscriptions/`:
+
+```sh
+APPLE=$(mktemp -d) && mkdir -p "$APPLE/inApps/v1/subscriptions"
+jq 'del(.statusResponse.data[0].lastTransactions[0][].appAccountToken?)' \
+  tests/fixtures/app_store/test-payloads/subscription-status.json \
+  | cargo run -q -p app_store_test_signer > "$APPLE/inApps/v1/subscriptions/2000000000000001"
+python3 -m http.server 8084 --bind 127.0.0.1 --directory "$APPLE"
+```
+
+Start the service as above with the key and that Apple beside the other variables:
+
+```sh
+SUBSCRIPTIONS_PUBLIC_ADDRESS=127.0.0.1:8082 SUBSCRIPTIONS_INTERNAL_ADDRESS=127.0.0.1:8083 \
+  SUBSCRIPTIONS_DATABASE_URL="postgresql:///windmill_subscriptions?host=/tmp&user=windmill_subscriptions" \
+  SUBSCRIPTIONS_APP_STORE_TEST_ROOT=tests/fixtures/app_store/test-chain/root.cer \
+  SUBSCRIPTIONS_APP_STORE_API_ISSUER_ID=local SUBSCRIPTIONS_APP_STORE_API_KEY_ID=local \
+  SUBSCRIPTIONS_APP_STORE_API_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)" \
+  SUBSCRIPTIONS_APP_STORE_API_TEST_URL=http://127.0.0.1:8084 \
+  SUBSCRIPTIONS_INTERNAL_TOKEN="$TOKEN" SENTRY_ENVIRONMENT=local cargo run --bin subscriptions
+```
+
+Post the purchase without its hint, then claim it for an account, as the backend does for the phone that
+bought it:
+
+```sh
+SIGNED=$(jq 'del(.notification.data[].appAccountToken?)' tests/fixtures/app_store/test-payloads/started.json \
+  | cargo run -q -p app_store_test_signer)
+curl -s localhost:8082/v1/stores/app-store/notifications -H 'content-type: application/json' \
+  -d "{\"signedPayload\":\"$SIGNED\"}"
+TRANSACTION=$(jq 'del(.transaction.appAccountToken)' tests/fixtures/app_store/test-payloads/purchase-transaction.json \
+  | cargo run -q -p app_store_test_signer)
+ACCOUNT=$(uuidgen | tr A-Z a-z)
+curl -s localhost:8083/internal/v1/app-store/claims -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' -d "{\"accountId\":\"$ACCOUNT\",\"signedTransaction\":\"$TRANSACTION\"}"
+```
+
+It answers `{"seq":4,"entitlement":…}`: the feed holds `started` and `period_recorded` under no account, then
+`bound` and `period_recorded` under `ACCOUNT`, and `store_hints` the account owed to Apple. The same claim
+again answers the same `seq` and records nothing; another account's answers `409
+{"code":"bound_to_another_account"}`. The sweep tries the owed hint each minute; this Apple answers its
+`PUT` with 501, so the hint stays owed and each try logs `store.hint` `write_failed` `store_error`. A refresh
+of the subscription, its id the feed's `subscriptionId`, pulls the same status again and answers its newest
+`seq`:
+
+```sh
+curl -s -X POST "localhost:8083/internal/v1/subscriptions/$SUBSCRIPTION_ID/refresh" -H "authorization: Bearer $TOKEN"
+```
+
+Each claim and refresh writes one `store.claim` or `store.refresh` line
+([ARCHITECTURE.md](../services/subscriptions/ARCHITECTURE.md#the-claim-and-refresh-doors)).
+
 ### Engine server for the iOS simulator
 
 Run from `backend/`. This serves `windmill_server` on an isolated local database, and the simulator

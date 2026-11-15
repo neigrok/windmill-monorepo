@@ -9,14 +9,17 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ring::signature::{ECDSA_P256_SHA256_FIXED, UnparsedPublicKey};
 use serde::de::DeserializeOwned;
 
+use crate::server_api::SignedStatus;
+
 use chain::TrustedRoots;
 pub use payloads::{
-    AccountToken, Environment, Notification, RenewalInfo, TransactionId, TransactionInfo,
+    AccountToken, Environment, Notification, RenewalInfo, SubscriptionStatus, TransactionId,
+    TransactionInfo,
 };
 use payloads::{JwsHeader, NotificationPayload, SigningDate};
 
 const APPLE_ROOT_CA_G3: &[u8] = include_bytes!("../roots/AppleRootCA-G3.cer");
-const WINDMILL_BUNDLE_ID: &str = "works.windmill.app";
+pub(crate) const WINDMILL_BUNDLE_ID: &str = "works.windmill.app";
 const CLOCK_SKEW_MILLIS: i64 = 60_000;
 
 pub struct SignedDataVerifier {
@@ -99,6 +102,40 @@ impl SignedDataVerifier {
             return Err(Refusal::BundleId);
         }
         Ok(transaction)
+    }
+
+    // A subscription's entry in the App Store Server API's answer for `environment`: its transaction and renewal info
+    // verified as a notification's are, each stating that environment.
+    pub fn verify_status(
+        &self,
+        environment: Environment,
+        signed: &SignedStatus,
+    ) -> Result<SubscriptionStatus, Refusal> {
+        let transaction = self.verify_transaction(&signed.signed_transaction_info)?;
+        let renewal_info = signed
+            .signed_renewal_info
+            .as_deref()
+            .map(|signed| self.verify_signed::<RenewalInfo>(signed))
+            .transpose()?;
+        let stated = [
+            Some(transaction.environment),
+            renewal_info
+                .as_ref()
+                .map(|renewal_info| renewal_info.environment),
+        ];
+        if stated
+            .into_iter()
+            .flatten()
+            .any(|stated| stated != environment)
+        {
+            return Err(Refusal::Environment);
+        }
+        Ok(SubscriptionStatus {
+            environment,
+            status: signed.status,
+            transaction,
+            renewal_info,
+        })
     }
 
     fn verify_signed<T: DeserializeOwned>(&self, jws: &str) -> Result<T, Refusal> {

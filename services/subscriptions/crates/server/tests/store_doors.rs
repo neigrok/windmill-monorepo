@@ -208,7 +208,7 @@ fn door_and_router(
         _ => None,
     })
     .unwrap();
-    let door = AppStoreDoor::new(ledger.clone(), verifier, clock.reading());
+    let door = AppStoreDoor::new(ledger.clone(), verifier, None, clock.reading());
     let router = Listener::Public.router(
         &config,
         ledger.clone(),
@@ -1320,6 +1320,7 @@ fn draining_the_door_waits_for_the_delivery_it_is_applying() {
             let door = AppStoreDoor::new(
                 ledger.clone(),
                 SignedDataVerifier::windmill_also_trusting(TEST_ROOT, clock.reading()).unwrap(),
+                None,
                 clock.reading(),
             );
             let config = Config::from_environment(|variable| match variable {

@@ -3,13 +3,14 @@ use std::process::ExitCode;
 use std::time::{Duration, SystemTime};
 use std::{env, fs, io};
 
+use app_store::server_api::{Hosts, ServerApi};
 use app_store::verification::SignedDataVerifier;
 use futures_util::FutureExt;
-use server::config::Config;
+use server::config::{AppStoreApiKey, Config};
 use server::internal;
 use server::listeners::{Bounds, Listener};
 use server::store_doors::{self, AppStoreDoor};
-use server::sweep::InboxSweep;
+use server::sweep::Sweep;
 use server::telemetry;
 use storage::{Ledger, StorageError};
 use tokio::net::TcpListener;
@@ -42,9 +43,19 @@ fn main() -> ExitCode {
         release = config.release.as_deref(),
         panic_route_enabled = config.panic_route_enabled,
         app_store_test_root = config.app_store_test_root.is_some(),
+        app_store_api = config.app_store_api.key().is_some(),
+        app_store_api_test_url = config.app_store_api_test_url.is_some(),
         internal_token_set = config.internal_token.is_some(),
         "starting"
     );
+    if let AppStoreApiKey::Lacking(unset) = &config.app_store_api {
+        for variable in unset {
+            tracing::warn!(
+                variable,
+                "{variable} is not set, so the App Store Server API is off"
+            );
+        }
+    }
 
     // Apple's pinned root, and in a test deployment also the root the test signer signs under.
     let verifier = match &config.app_store_test_root {
@@ -99,7 +110,18 @@ async fn serve(config: Config, verifier: SignedDataVerifier) -> ExitCode {
         }
     };
 
-    let app_store = AppStoreDoor::new(ledger.clone(), verifier, SystemTime::now);
+    // Apple's hosts, or in a test deployment an Apple of the test's own answering for both environments.
+    let api = config.app_store_api.key().map(|key| {
+        let hosts = match &config.app_store_api_test_url {
+            None => Hosts::apple(),
+            Some(url) => Hosts {
+                production: url.clone(),
+                sandbox: url.clone(),
+            },
+        };
+        ServerApi::new(key.clone(), hosts, SystemTime::now)
+    });
+    let app_store = AppStoreDoor::new(ledger.clone(), verifier, api, SystemTime::now);
     let bounds = Bounds::default();
     let stop = CancellationToken::new();
     let mut running = JoinSet::new();
@@ -117,7 +139,11 @@ async fn serve(config: Config, verifier: SignedDataVerifier) -> ExitCode {
         tracing::info!(listener = listener.label(), address = %bound, "listening");
         let doors = match listener {
             Listener::Public => store_doors::router(app_store.clone()),
-            Listener::Internal => internal::doors(config.internal_token.clone(), ledger.clone()),
+            Listener::Internal => internal::doors(
+                config.internal_token.clone(),
+                ledger.clone(),
+                store_doors::internal_router(app_store.clone()),
+            ),
         };
         let router = listener.router(&config, ledger.clone(), doors, bounds);
         let stop = stop.clone();
@@ -137,7 +163,7 @@ async fn serve(config: Config, verifier: SignedDataVerifier) -> ExitCode {
     }
 
     // On start, so what the last run kept and left unsettled is applied first, then every minute.
-    let sweep = tokio::spawn(InboxSweep::new(ledger.clone(), app_store.clone()).run(stop.clone()));
+    let sweep = tokio::spawn(Sweep::new(ledger.clone(), app_store.clone()).run(stop.clone()));
 
     let signal = tokio::select! {
         _ = terminate.recv() => "SIGTERM",

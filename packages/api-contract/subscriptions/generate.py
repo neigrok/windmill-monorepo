@@ -336,6 +336,8 @@ claimed = ledger.at(CLAIM_SEQ)
 claim_answer = subscription_response(claimed["entitlement"], CLAIMED + MINUTE)
 internal_answer = {"seq": claimed["seq"], "entitlement": claimed["entitlement"]}
 refused = lambda status, code: {"status": status, "body": {"code": code}}
+# A refresh of the buyer's subscription once the feed is told: its newest event's seq
+refreshed_seq = max(entry["seq"] for entry in ledger.entries if entry["subscriptionId"] == SUB)
 accounts = [("expired", BUYER, buyer_expired), ("claimed_then_refunded", CLAIMANT, ledger.account(CLAIMANT)),
             ("sandbox", TESTER, ledger.account(TESTER)), ("holds_nothing", BUYER, ledger.account(BUYER))]
 
@@ -360,7 +362,17 @@ FILES = {
         {"name": "bound_to_caller", "status": 200, "body": internal_answer},
         {"name": "already_bound_to_caller", "status": 200, "body": internal_answer},
         {"name": "bound_to_another_account", **refused(409, "bound_to_another_account")},
-        {"name": "transaction_not_verified", **refused(400, "invalid_transaction")}]},
+        {"name": "account_erased", **refused(409, "account_erased")},
+        {"name": "transaction_not_verified", **refused(400, "invalid_transaction")},
+        {"name": "ledger_unavailable", **refused(503, "unavailable")},
+        {"name": "store_unavailable", **refused(503, "store_unavailable")},
+        {"name": "store_api_unavailable", **refused(503, "store_api_unavailable")}]},
+    "internal-subscription-refresh.json": {"request": {"subscriptionId": SUB}, "examples": [
+        {"name": "refreshed", "status": 200, "body": {"seq": refreshed_seq}},
+        {"name": "unknown_subscription", **refused(404, "unknown_subscription")},
+        {"name": "ledger_unavailable", **refused(503, "unavailable")},
+        {"name": "store_unavailable", **refused(503, "store_unavailable")},
+        {"name": "store_api_unavailable", **refused(503, "store_api_unavailable")}]},
 }
 
 if __name__ == "__main__":

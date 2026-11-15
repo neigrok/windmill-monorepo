@@ -6,7 +6,9 @@ invariants (`INV-n`) and rulings (`R-n`) are numbered so reviews, code and roadm
 ## §0 Status and scope
 
 **Status:** Being built. The service runs in production with the App Store notification door open on
-its public listener (§5.1), and no App Store Connect setting sends notifications to it yet. What exists
+its public listener (§5.1), and no App Store Connect setting sends notifications to it yet. Its internal
+claim and refresh doors (§5.2) pull state from the App Store Server API with an in-app purchase key that no
+deployment holds yet, so they answer 503 there. What exists
 is in
 [`services/subscriptions/ARCHITECTURE.md`](../../services/subscriptions/ARCHITECTURE.md). Windmill One cannot be bought on any surface. The C++
 backend's `Entitlements::hasWindmillOne` reads its own copy of each account's entitlement (§6.1); the Paddle mirror
@@ -231,7 +233,8 @@ period leaves a running subscription `active` (§8).
   lock, not the order they arrived, and INV-6 leaves the binding aside. A hint that names an erased
   account (§6.4) counts as no hint.
 - **By claim.** The app posts the store's signed transaction through the backend (§5.3). The service
-  verifies it and binds an unbound subscription to the caller. A claim for a subscription already
+  verifies it, pulls the subscription's state from the store's API rather than trust the transaction
+  (§8), and binds an unbound subscription to the caller. A claim for a subscription already
   bound to the caller succeeds without change. A claim for one bound to another account, or whose
   account hint names another account that is not erased, is refused with `bound_to_another_account`
   (R-3). A claim for an unbound subscription whose hint names an erased account binds it to the
@@ -246,7 +249,8 @@ period leaves a running subscription `active` (§8).
   the device's Apple account is recorded and entitles no one.
 - When a claim binds a subscription whose hint is absent or names an erased account, the service
   writes the caller's id to the store as the hint (the App Store's Set App Account Token), so the
-  store's later statements name the account.
+  store's later statements name the account. The binding's transaction records the hint as owed, and the
+  sweep writes it and clears it once the store took it (§7).
 
 ## §5 Doors
 
@@ -285,7 +289,7 @@ Reached only on the container network, with a bearer secret the backend holds.
 | `GET /internal/v1/feed?after=<seq>&limit=<n>` | A page of at most `limit` events after `seq`, in `seq` order; `limit` is at most 500. |
 | `GET /internal/v1/accounts/{accountId}` | The entitlement, every bound subscription, their periods and events. |
 | `POST /internal/v1/app-store/claims` | `{accountId, signedTransaction}` → `{seq, entitlement}`, or a refusal (§4). |
-| `POST /internal/v1/subscriptions/{id}/refresh` | Pull this subscription's state from its store now. |
+| `POST /internal/v1/subscriptions/{id}/refresh` | Pull this subscription's state from its store now and apply it → `{seq}`, or a refusal. |
 | `DELETE /internal/v1/accounts/{accountId}` | Record the account as erased and unbind everything it holds (§6.4). |
 
 The shapes are golden fixtures in
@@ -325,7 +329,12 @@ no account.
 The internal claim answers 200 with `{seq, entitlement}`: the caller's `EntitlementResponse` after the
 claim, and the `seq` of the claimed subscription's newest event, which is the claim's last event when
 it recorded any; a claim retried after its answer was lost answers the same `seq`. It refuses with
-`{code}`: 409 `bound_to_another_account`, 409 `account_erased`, 400 `invalid_transaction`.
+`{code}`: 409 `bound_to_another_account`, 409 `account_erased`, 400 `invalid_transaction`, and 503 when
+it cannot apply the store's state now: `store_api_unavailable` while the service holds no key for the
+store's API, `store_unavailable` when the pull gave no state to apply, `unavailable` when the ledger did
+not answer. A refresh answers 200 with `{seq}`, the subscription's newest event once the pulled state
+applied, 404 `unknown_subscription`, or the same three 503s. Every 503 means the same to a caller: try
+again later.
 
 ### §5.3 What a person's device calls
 
@@ -361,7 +370,7 @@ Devices never call this service. The backend authenticates the caller and serves
   answer's `seq` (§6.1), waits for it at most 5 s, and answers 200 with the `SubscriptionResponse`
   from the copy; a wait that runs out answers from the copy as it stands. Otherwise it answers
   `{code}`: 409 `bound_to_another_account`, 400 `invalid_transaction` for a transaction that does not
-  verify, 503 `subscriptions_unavailable` when the service cannot be reached.
+  verify, 503 `subscriptions_unavailable` when the service cannot be reached or answers 503.
 - A device finishes the transaction on 200 and 409. On 400 and 503 it keeps the transaction
   unfinished and claims it again at its next launch. A 400 for a transaction StoreKit verified is
   reported to Sentry by the device.
@@ -461,6 +470,8 @@ One worker. Step 1 runs at start and every minute, the others hourly:
    change, such as a value the database refuses, makes the row wait 1, 2, 4, then 8 hours before its
    next attempt, so it holds up no row behind it, and its fifth such failure settles it `failed`, which
    the sweep reports. A row whose state waits on a status pull (§8) waits an hour between attempts.
+   Then write each account hint the ledger owes a store (§4), the longest owed first; one the store
+   does not take stays owed for the next pass.
 2. Pull the store's state for every subscription whose `accessUntil` falls within the next hour or
    has passed while its state still grants access or is `on_hold`.
 3. Pull every subscription not `expired` or `revoked` whose `verifiedAt` is older than seven days. A
@@ -494,9 +505,12 @@ One worker. Step 1 runs at start and every minute, the others hourly:
   in m3-verify-sandbox-lifecycle.
 - What the app shows about a subscription comes from `GET /v1/subscription`, never from the device's
   own StoreKit state, so every surface agrees.
-- Server reads use the App Store Server API with an in-app purchase key: subscription statuses,
-  transaction history, notification history (180 days in production, 30 in sandbox) and the test
-  notification. The environment of a call is the one the verified transaction states.
+- The service calls the App Store Server API with an in-app purchase key. It reads subscription
+  statuses, transaction history, notification history (180 days in production, 30 in sandbox) and the
+  test notification, and writes one thing, a lineage's account token (Set App Account Token, §4). The
+  environment of a call is the one the verified transaction states. A claim and a refresh take the
+  subscription's state from a status pull, whose latest transaction and renewal info the service verifies
+  as it verifies a notification's.
 - A signed payload whose environment is `Xcode` or `LocalTesting` is not signed by Apple, and every
   deployment refuses it. Local and CI testing sign `Sandbox` payloads under a test root that only
   their own deployment trusts.
@@ -544,8 +558,8 @@ The backend's role cannot read it.
 ## §10 Observability
 
 - Every write logs one structured line: operation, store, environment, outcome or refusal code,
-  duration. Operations: `store.notification`, `store.claim`, `store.refresh`, `account.unbind`,
-  `sweep.inbox`, `sweep.due`, `sweep.drift`, `sweep.history`.
+  duration. Operations: `store.notification`, `store.claim`, `store.refresh`, `store.hint`,
+  `account.unbind`, `sweep.inbox`, `sweep.due`, `sweep.drift`, `sweep.history`.
 - The backend's two reads on the internal listener are reads, not writes, and each logs one line with
   its outcome too: `feed.read` for a page of the feed, `account.read` for an account. A read the
   ledger does not answer reports to Sentry under its name; a refused read is its request's line alone.

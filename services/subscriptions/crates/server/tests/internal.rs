@@ -103,7 +103,7 @@ async fn every_door_refuses_a_caller_without_the_secret_and_says_nothing_of_why(
     let internal = Listener::Internal.router(
         &config,
         Unread,
-        internal::doors(config.internal_token.clone(), Unread),
+        internal::doors(config.internal_token.clone(), Unread, Router::new()),
         Bounds::default(),
     );
 
@@ -155,7 +155,7 @@ async fn without_a_secret_every_door_stays_shut() {
     let internal = Listener::Internal.router(
         &config,
         Unread,
-        internal::doors(config.internal_token.clone(), Unread),
+        internal::doors(config.internal_token.clone(), Unread, Router::new()),
         Bounds::default(),
     );
 
@@ -190,7 +190,7 @@ async fn without_a_secret_every_door_stays_shut() {
         .router(
             &config,
             Unread,
-            internal::doors(config.internal_token.clone(), Unread),
+            internal::doors(config.internal_token.clone(), Unread, Router::new()),
             Bounds::default(),
         )
         .oneshot(Request::get("/health").body(Body::empty()).unwrap())
@@ -214,7 +214,7 @@ async fn the_secret_opens_both_doors_and_each_reads_what_it_was_asked() {
     let internal = Listener::Internal.router(
         &config,
         ledger.clone(),
-        internal::doors(config.internal_token.clone(), ledger.clone()),
+        internal::doors(config.internal_token.clone(), ledger.clone(), Router::new()),
         Bounds::default(),
     );
 
@@ -287,7 +287,7 @@ async fn a_query_or_an_account_id_outside_its_bounds_is_refused_before_the_ledge
     let internal = Listener::Internal.router(
         &config,
         ledger.clone(),
-        internal::doors(config.internal_token.clone(), ledger.clone()),
+        internal::doors(config.internal_token.clone(), ledger.clone(), Router::new()),
         Bounds::default(),
     );
 
@@ -412,7 +412,7 @@ fn a_read_the_ledger_does_not_answer_is_an_issue_under_its_operation() {
     let internal = Listener::Internal.router(
         &config,
         Failing,
-        internal::doors(config.internal_token.clone(), Failing),
+        internal::doors(config.internal_token.clone(), Failing, Router::new()),
         Bounds::default(),
     );
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -554,7 +554,7 @@ async fn a_feed_read_from_zero_returns_every_event_in_seq_order_across_pages() {
         let internal = Listener::Internal.router(
             &config,
             ledger.clone(),
-            internal::doors(config.internal_token.clone(), ledger.clone()),
+            internal::doors(config.internal_token.clone(), ledger.clone(), Router::new()),
             Bounds::default(),
         );
         let read = async |after: i64, limit: i64| {
