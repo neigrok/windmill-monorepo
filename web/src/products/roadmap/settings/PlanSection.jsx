@@ -14,7 +14,7 @@ const PLAN_COPY = {
   none: { name: t('roadmap.plan.free'), note: t('roadmap.plan.noneNote') },
 };
 
-// Windmill One while the subscription shown holds it, otherwise what that subscription became.
+// Windmill One while the account holds it, otherwise what the subscription shown became.
 function planOf(subscription) {
   if (holdsWindmillOne(subscription)) return 'windmillOne';
   const state = subscription?.governing?.state;
