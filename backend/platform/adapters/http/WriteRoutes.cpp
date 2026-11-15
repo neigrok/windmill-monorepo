@@ -54,7 +54,7 @@ const std::set<std::string> refusalCodes{
     "invalid_payment_identity", "invalid_redirect_uri", "invalid_request", "login_required", "malformed", "not-a-root",
     "rate_limited",
     "replica-foreign", "request-too-large", "routine-save-in-progress", "session-deleted", "session-id-taken",
-    "session-overlap", "set-id-taken", "share-id-taken", "subject_exhausted", "temporarily_unavailable",
+    "session-overlap", "set-id-taken", "share-id-taken", "subject_exhausted", "subscriptions_unavailable", "temporarily_unavailable",
     "unauthenticated", "unavailable", "unconfigured", "unknown-exercise", "unreachable", "unsupported_ai_pricing",
     "unsupported_grant_type", "unsupported_response_type", "upgrade-required", "voice_busy", "voice_ration_spent",
     "voice_unavailable"
@@ -193,6 +193,7 @@ std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std:
   if (operation == "journal.POST.v1.journal.transcribe" &&
       (code == "voice_busy" || code == "voice_unavailable")) return code;
   if (operation == "platform.POST.v1.billing.checkout" && code == "checkout_closed") return code;
+  if (operation == "subscription.claim" && code == "subscriptions_unavailable") return code;
   if (operation == "platform.POST.v1.paddle.webhook" &&
       (code == "funding_binding_pending" || code == "funding_unconfigured")) return code;
   if (operation == "platform.GET.v1.ai.allowance" && code == "ai_allowance_disabled") return code;

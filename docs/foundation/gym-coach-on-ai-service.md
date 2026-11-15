@@ -6,7 +6,7 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified; nothing is built. Gym Coach runs on the server in two forms.
+**Status:** Specified, and approved by the owner on 2026-11-15; nothing is built. Gym Coach runs on the server in two forms.
 [Phone-hosted Coach abilities](mobile/gym_coach.md) is what the iPhone and Android speak: the server
 runs the loop and the phone runs the abilities. The [Coach conversation contract](../gym-coach-contract.md)
 is what the web speaks: the server runs everything. Both are metered by the backend's ledger
@@ -39,9 +39,11 @@ reaches over MCP, which stay on the server.
 | Conversations on a phone | `thread` and `message` records | unchanged |
 | Conversations on the web | the server's own tables | `thread` and `message` records |
 | A picture on the web | uploaded and stored by the server | kept in the browser, as a phone keeps one |
+| A picture on its way to the model | sent to the backend with the turn | uploaded once to the AI service, which holds it in memory for the turn |
+| The catalog | `catalog/2` | `catalog/3`, written to the provider's strict mode, on every door |
 | The words the model reads | texts in the backend's source | files every app ships |
 
-What does not move: the catalog and its corpora, the executors on the phones, proposals and their
+What does not move: what each ability does, the executors on the phones, proposals and their
 Apply, the records and their merge rules, installation identity, and every board the phones are
 built from.
 
@@ -81,7 +83,7 @@ What gym gives the engine, for each seat. Its name is `gym.coach` and its versio
 
   Today all three are in the backend's source. A person can read them in the app; they hold no
   secret. (R-8)
-- **The catalog** is `packages/api-contract/gym/catalog.json` at `catalog/2`, unchanged. The model
+- **The catalog** is `packages/api-contract/gym/catalog.json` at `catalog/3` (below). The model
   reads each ability's `description` from the copy the app ships, so the iPhone's generated catalog
   carries it, which it does not today.
 - **The limits** are those of [phone-hosted Coach abilities](mobile/gym_coach.md) Appendix A:
@@ -94,15 +96,26 @@ What gym gives the engine, for each seat. Its name is `gym.coach` and its versio
 - The web offers no `propose_workout_change`: its room is closed while a workout is open, and no
   board draws a workout proposal there.
 
-**Tool schemas and the provider.** The AI service sends every tool to the provider in strict mode
-([AI service §6.2](ai-service.md#62-the-wire)); the backend sends none so. The catalog's schemas
+**The catalog and the provider's strict mode.** The AI service sends every tool to the provider in
+strict mode ([AI service §6.2](ai-service.md#62-the-wire)); the backend sends none so. `catalog/2`
 cannot be sent that way. Read on Anthropic's documentation on 2026-11-15: strict mode refuses the
 bounds the catalog states on numbers, strings and lists (`minimum`, `maximum`, `maxLength`,
-`maxItems`), and allows 24 optional parameters across a request's strict tools, where the tools of
-a `bound` turn have 31. A round of gym's would be refused by the
-provider. Gym's tools are therefore sent without strict mode, which needs the AI service to let a
-caller say so for a tool; the gate's Shape rule checks every input on the device, as the server's
-gate does today. (R-11)
+`maxItems`), allows 24 optional parameters across a request's strict tools, where the tools of a
+`bound` turn have 31, and allows 16 parameters that take more than one type.
+
+The catalog is therefore rewritten as `catalog/3`, for every door: Coach on each surface, the apps'
+own executors and MCP. (R-11)
+
+- Every input schema of `catalog/3` is one strict mode accepts, and the tools a seat is offered fit
+  its limits together. A check in CI counts both from the file.
+- A bound strict mode cannot state moves into the ability's rule, which refuses a value outside it,
+  and into its description, which tells the model. What an ability does and returns is unchanged.
+- Fewer inputs may be left out. Which become required, and which take null, is fixed when the file
+  is written, ability by ability.
+- The corpora under `abilities/` are written again for `catalog/3`, and every executor claims them:
+  the server's, Swift's, Kotlin's and the web's.
+- An outside assistant sees the new schemas over MCP. A build released before the move goes on
+  opening `catalog/2` turns, which the server serves beside `catalog/3` until the cutover (§8).
 
 ## §4 The turn
 
@@ -119,8 +132,8 @@ says, and writes the records of its step 2. Then:
   content as its lead sentence and its result in canonical form.
 - **History.** The newest completed turns, at most `CONTEXT_TURNS` and `CONTEXT_BYTES`.
 - **Pictures.** The model copies of this message's picture and the previous lifter message's, at
-  most `CONTEXT_PICTURES`, each an image part. A picture travels with every round of its turn, since
-  the service keeps nothing between calls. (R-12)
+  most `CONTEXT_PICTURES`. The device uploads each to the AI service once, and every round of the
+  turn names it (Coach engine §4.2). (R-12)
 
 The first content is the one the server builds today, word for word, from the files of §3. Where
 those words name a phone, they are rewritten to name no device before the web ships.
@@ -189,7 +202,7 @@ The web's Coach becomes the Coach the phones have. This is the largest part of t
   records, and claims `gym/domain/coach-conversation-actions.json`.
 - A picture is kept in the browser: its original and its model copy in the device row
   `picture:<id>`, which the registry already declares. It leaves the browser only as the model copy
-  inside a round, and its `pictures` entry is `localOnly`.
+  the AI service holds for a turn, and its `pictures` entry is `localOnly`.
 - The browser's mark is one for a browser, so a browser runs one gym turn at a time across its
   tabs.
 - Signing out removes what Coach kept in the browser: drafts, pictures and the mark.
@@ -296,7 +309,7 @@ and compose still use them.
 - **Documents:** [phone-hosted Coach abilities](mobile/gym_coach.md) is rewritten to describe what
   is then true, and the [Coach conversation contract](../gym-coach-contract.md) is deleted.
 
-What stays: the catalog, `abilities/` and `rules/`, the server executor for MCP, the records, and
+What stays: the catalog at `catalog/3` with its `abilities/` and `rules/`, the server executor for MCP, the records, and
 every proposal door.
 
 ## §10 Testing
@@ -310,8 +323,6 @@ every proposal door.
   service, and a provider the test plays. The stories are a question answered, an ability that
   writes, a proposal applied, a share, a picture, Stop, an allowance used up, a connection lost
   mid-round and found again, and an app killed in its last round.
-- A turn with two pictures and several rounds is driven over a slow uplink, and what it shows is
-  written down before a phone ships (R-12).
 - One turn on each surface is driven by hand in production with a real provider before the cutover
   day, and its evidence names what it cost.
 
@@ -332,7 +343,8 @@ every proposal door.
 Reading the backend, the two phone apps, the web and the AI service as built against this document
 on 2026-11-15 found these gaps. Each is work of this build.
 
-- The AI service sends every tool in strict mode and gives a caller no way to say otherwise (§3).
+- `catalog/2` breaks the provider's strict mode, which the AI service sends every tool in (§3).
+- The AI service has no door that holds a picture between calls (R-12).
 - The iPhone's generated catalog drops each ability's `description`, and no app holds the words the
   model reads. The sentences beside refusal codes and around the first content exist only in the
   server's loop.
@@ -361,12 +373,12 @@ by any of the account's replicas, which a stale turn's end needs.
 | R-1 | Where the turn runs | On the device, on every surface: the loop, the gate and the prompt. (2026-11-14) |
 | R-2 | One Coach or one a product | One engine; gym keeps its own prompt, abilities and conversations. (2026-11-14) |
 | R-3 | Where abilities run | On the device's copy by default, every change travelling by synchronization. An ability that calls the backend is a rare exception. (2026-11-14) |
-| R-4 | Which Coach moves first | Open. Assumed: gym's, before roadmap's is built, so that the engine is proven on the product people use and a person never holds two allowances for Coach. |
-| R-5 | Builds released before the move | Open. Assumed: on a day the owner sets, the server's Coach closes and an old build asks for an update; until then an old build is metered by the backend and a new one by the AI service, and Windmill's free pools stand twice. The other way is for the backend to keep serving old builds by calling the AI service itself, which keeps one ledger and adds a call between services while a person waits. |
-| R-6 | The web's existing conversations | Open. Assumed: deleted with the server's Coach, as the phones' earlier conversations were not carried into the records. Routines, notes and applied proposals they led to stay. |
-| R-7 | Whether the web's Coach takes the phones' rules | Open. Assumed: yes, since an ability has one agent rule on every door. A new routine is created at once, Coach edits no movement, and the question ration ends. What else a person on the web gains and loses is §5's table. |
-| R-8 | Where the prompt lives | Open. Assumed: in each app's bundle, from shared files. A change to it reaches a phone with a release, where today it reaches every surface with a deploy, and a person can read it. A build whose Coach is found broken is retired by its profile's version (Coach engine §4.1). |
-| R-9 | Coach's shares | Open. Assumed: the two share abilities call the Share door, the one exception to R-3 gym has. |
-| R-10 | Effort and output cap | Open. Assumed: as the backend sets them today, in §3's table. |
-| R-11 | Tool schemas the provider's strict mode refuses | Open. Assumed: the AI service lets a caller send a tool without strict mode, and gym sends all of its so. The other way is a new catalog version written to strict mode's limits, which changes what an ability's input can leave out on every door. |
-| R-12 | A picture sent with every round | Open. Assumed: accepted, with the model copy's bounds as they are, so a turn with two pictures sends up to 2.7 MiB a round. Measured on a slow uplink before a phone ships. |
+| R-4 | Which Coach moves first | Both at once: gym's and roadmap's are built in parallel on the shared engine. Roadmap's goes live only after gym's cutover day (Roadmap Coach R-11). (2026-11-15) |
+| R-5 | Builds released before the move | On a day the owner sets, the server's Coach closes and an old build asks for an update. Until then an old build is metered by the backend and a new one by the AI service, and Windmill's free pools stand twice. (2026-11-15) |
+| R-6 | The web's existing conversations | Deleted with the server's Coach. Routines, notes and applied proposals they led to stay. (2026-11-15) |
+| R-7 | Whether the web's Coach takes the phones' rules | Yes, as §5's table lists. A new routine is created at once, Coach edits no movement, and the question ration ends. (2026-11-15) |
+| R-8 | Where the prompt lives | In each app's bundle, from shared files. A change to it reaches a phone with a release, and a person can read it. A build whose Coach is found broken is retired by its profile's version (Coach engine §4.1). (2026-11-15) |
+| R-9 | Coach's shares | The two share abilities call the Share door, the one exception to R-3 gym has. (2026-11-15) |
+| R-10 | Effort and output cap | As the backend sets them today, in §3's table. (2026-11-15) |
+| R-11 | Tool schemas the provider's strict mode refuses | The catalog is rewritten as `catalog/3` to strict mode's limits, for every door, MCP included. The AI service goes on sending every tool in strict mode. (2026-11-15) |
+| R-12 | A picture in a turn of several rounds | The device uploads it once to the AI service, which holds it in memory for a short time; each round names it ([AI service §6.7](ai-service.md#67-pictures-a-caller-uploads)). It is not sent again with every round. (2026-11-15) |

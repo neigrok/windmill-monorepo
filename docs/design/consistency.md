@@ -606,15 +606,17 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   stamps. 6: the note logs a turn on the backend, which no longer sees one. Rewrite the note; the boards are not
   affected.
 - **Roadmap Coach · an applied proposal the server refuses.** The design rules that an applied proposal is never
-  refused or discarded. The server can refuse any write. The spec's R-10 holds the question for the owner.
+  refused or discarded. A proposal is applied on the device and then synced, and the server can refuse the synced
+  change. The owner ruled on 2026-11-15 ([Roadmap Coach](../foundation/roadmap-coach.md) R-10) that the refusal shows
+  as it does for a person's own edit, with Retry and Discard, and the proposal stays applied. The design's rule and
+  its boards say what Apply does on the device; reword the rule to say so.
+- **Roadmap Coach · the Windmill One button on the web.** Design ruling 8 draws the button in the "allowance used"
+  notice, opening the store sheet (05.6). The owner ruled on 2026-11-15 (Roadmap Coach R-12) that the web shows no
+  such button while Windmill One cannot be bought there: the notice says the allowance is used up and when it
+  returns. The web's 05 boards need that state drawn without the button.
 - **Roadmap Coach · not drawn.** No board draws Coach for a person who only reads a roadmap, a card whose proposal
   was applied and then undone, a replaced card, or the sign-in question when both the device and the account hold
   conversations.
-- **Guide · clipboard refusal and ownership-loss wording.** Clipboard refusal leaves *Copy draft* and the
-  draft unchanged without a message. Loss of ownership shows the refused line before sending a request, although
-  its copy says the server refused the save. A new clipboard recovery UI or changed ownership-loss wording needs
-  an owner-approved drawing. [44 · Guide recovery](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1241-25026)
-  documents the approved current recovery states.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a
@@ -788,9 +790,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   ([design-system note 499:42374](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=499-42374)).
   Web's shared token and static-page chrome use that ring; dark, journal and gym overrides retain
   their own values.
-- **Step editor · link-copy recovery.** Clipboard failure currently emits its failed outcome without visible recovery.
-  Approved [37.01–37.15](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1116-74911)
-  remains unbuilt; it specifies the nonmodal failure card, full selectable link, retry and focus return.
 - **Shell · signed-in avatar size.** The Shared Shell's Signed in variants (290:7065, 290:7079) draw a 28px avatar whose initial sits at the top. The shipped seat renders a 30px avatar centred in a 44px target, matching the Signed out variants (642:20246, 642:20267). Redraw the Signed in variants at 30px.
 - **Board · Shell at 200% text.** The Shell defines no reflow: from 744px `web/src/shell/chrome/chrome.css` keeps room links in
   one row of 44px-high targets with no fill, bold-width reservation and `white-space: nowrap`. Below 744px room links are

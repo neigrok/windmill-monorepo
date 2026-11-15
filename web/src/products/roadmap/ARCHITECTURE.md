@@ -443,7 +443,7 @@ the modal's body and gives inherited guides their room while keeping the draft v
 field fills the available body and the footer rides the keyboard. Save waits for a change and a draft that fits, ⌘↩ saves, and an empty Save removes
 the guide, which closes the note unless guides from above remain to read or parent status remains unknown. While a save is in flight the frame holds:
 the field is read-only and nothing leaves until it settles. A save by someone who is no longer the owner writes through
-no door and is refused. While the note holds
+no door and answers `not-owner`. While the note holds
 the window, Escape, ⌘↩ and Tab work wherever focus stands; ⌘↩ presses Save or Try again and no other act, and a held
 key is one press. The note keeps its draft, and the focus a stop held, across a change of band, and closes
 when the tree changes or the route excludes Guide. A role change retains the active draft and its recovery state;
@@ -456,9 +456,12 @@ status line above the field on desktop and in the footer on phones: a guide chan
 offers Load latest, which replaces the draft, so Cancel then leaves at once; on phones the line also says what Save
 replaces, and it waits while a save is in flight. A save no door took keeps the draft and leaves one line
 (`role="alert"`) where the footer says who reads the guide, and its act takes Save's place: Try again for `offline`,
-`server` and `device`, which runs the same save, and Copy draft for `refused`, which puts the whole draft on the
-clipboard and, once it is there, says Draft copied with Done. Done keeps the draft and returns to Copy draft, so a
-changed draft leaves only through Cancel and Discard draft?. A clipboard that refuses leaves Copy draft standing. The
+`server` and `device`, which runs the same save, and Copy draft for `refused` or `not-owner`. The local owner guard says
+“You can’t save this guide.” on a neutral surface; server refusal keeps its server wording. Copy draft copies the
+current whole draft; a failure says “Couldn’t copy your draft.” with Copy draft, and success says Draft copied with
+Done. Both preserve the original refusal, which Done restores without closing the draft. Changed drafts leave only
+through Cancel and Discard draft?. Every failed copy announces again. Clipboard results after editing, Load latest,
+leaving or a newer copy attempt leave the UI unchanged; every attempt still emits its bounded outcome. The
 line moves no focus: after ⌘↩ focus stays in the field, where typing goes on and clears the line, and after a press on
 the footer's button the button keeps it, with a ring on phones when a key put it there, and a phone's keyboard goes
 down. From 744px the line and the actions share one tinted block and the field rests on its plain edge; on phones the
@@ -686,7 +689,9 @@ instance. Description remains plain text with the existing 5000-code-point limit
 links. The owner-only workspace is device-local; authorized readers receive shared text, relationships and history.
 
 Coach is an empty placeholder: a 56px collapsed rail or a 400px desktop, 340px laptop or 280px tablet panel, with
-heading and Collapse. Phones keep a blank placeholder above the safe area and pinned actions. It has no composer,
+heading and Collapse. Phones keep a blank placeholder below the pinned actions, retaining the safe-area inset.
+Its empty height can shrink on short screens so the actions stay visible and recovery controls can scroll into view.
+It has no composer,
 conversation, history, proposals or backend behavior.
 
 `StepFacts` derives status, relationships and completion outcomes from the whole tree. Complete and Reset stay in
@@ -697,6 +702,14 @@ callbacks check current authority before writing or emitting an Undo event.
 The menu retains Copy link, Open in Graph, Select and Delete where available; owner up-next and done steps retain
 View branch. Tablet owners can leave the document for the existing Add step or Connect tool. Newly created blank
 Graph nodes keep their naming handoff; bulk, aim, edge removal, paste and Activity retain their own surfaces.
+
+Copy link is available for public or unlisted, non-demo step addresses. A failed clipboard write opens the
+nonmodal recovery from approved [37](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1116-74911):
+retry the current address, reveal its full read-only value, or select it for manual copying. A pending native
+write disables Copy until it settles; changing the step or its address invalidates that attempt's UI result.
+Dismissal returns focus to the original control or More. A late refusal preserves a newer interaction and
+inherits nested modal isolation. Completion Undo and private Workspace stay intact. Expected browser
+permission refusals emit a failed outcome; unexpected failures report the static `roadmap-step-copy` operation.
 
 Edit step opens the existing `StepComposer` through `StepDraft`, `BoardActs.edit` and `EditNode`, retaining every
 field, dirty/discard handling, remote-change reconciliation, prerequisite checks, held deletes and write refusals.

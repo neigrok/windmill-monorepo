@@ -40,8 +40,9 @@ TEST(the_paid_line_opens_the_stores_its_variable_names_in_d1_order_and_keeps_an_
                                            "[app_store] unknown", "[] unknown"}));
 }
 
-// INV-12: nothing to buy while the account has Windmill One, owners included, or while the Entitlement shown holds a
-// subscription that has not ended; otherwise every store configuration opens, with the offer beside them.
+// INV-12: nothing to buy while the account has Windmill One, owners included, while the Entitlement shown holds a
+// subscription that has not ended, or while a claim the service recorded has not reached the copy; otherwise every store
+// configuration opens, with the offer beside them.
 TEST(a_subscription_response_offers_the_open_stores_only_to_an_account_with_nothing_live) {
   const PaidLine open{"app_store", 7'000'000'000};
   const EntitlementResponse never{entitlementExample("never_subscribed")};
@@ -60,6 +61,10 @@ TEST(a_subscription_response_offers_the_open_stores_only_to_an_account_with_noth
   CHECK_EQ(offered(SubscriptionResponse{Standing{false, false, onHold, later}, open}.body),
            std::string(R"(windmillOne=false purchasable=[] offer=null manage={"store":"app_store","url":"https://apps.apple.com/account/subscriptions"})"));
   CHECK_EQ(offered(SubscriptionResponse{Standing{false, false, expired, later}, PaidLine{"", 7'000'000'000}}.body),
+           std::string(R"(windmillOne=false purchasable=[] offer=null manage={"store":"app_store","url":"https://apps.apple.com/account/subscriptions"})"));
+  CHECK_EQ(offered(SubscriptionResponse{Standing{false, false, std::nullopt, later, true}, open}.body),
+           std::string("windmillOne=false purchasable=[] offer=null manage=null"));
+  CHECK_EQ(offered(SubscriptionResponse{Standing{false, false, expired, later, true}, open}.body),
            std::string(R"(windmillOne=false purchasable=[] offer=null manage={"store":"app_store","url":"https://apps.apple.com/account/subscriptions"})"));
 }
 

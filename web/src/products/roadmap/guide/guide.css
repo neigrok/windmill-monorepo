@@ -322,7 +322,7 @@
   .st-guide-layer:not(.st-guide-layer--phone) :is(.st-guide-footer, .st-guide-read-footer) {
     padding-top: 8px;
   }
-  .st-guide-layer:not(.st-guide-layer--phone) :is(.st-guide-footer--failed, .st-guide-footer--copied) > .st-guide-closing {
+  .st-guide-layer:not(.st-guide-layer--phone) :is(.st-guide-footer--failed, .st-guide-footer--copied, .st-guide-footer--neutral) > .st-guide-closing {
     padding: 4px;
   }
 }
@@ -640,6 +640,7 @@ button.st-guide-from-name {
   display: contents;
 }
 .st-guide-footer--failed > .st-guide-closing,
+.st-guide-footer--neutral > .st-guide-closing,
 .st-guide-footer--copied > .st-guide-closing {
   display: flex;
   flex: 1 0 100%;
@@ -652,7 +653,8 @@ button.st-guide-from-name {
 .st-guide-footer--failed > .st-guide-closing {
   background: var(--color-danger-bg);
 }
-.st-guide-footer--copied > .st-guide-closing {
+.st-guide-footer--copied > .st-guide-closing,
+.st-guide-footer--neutral > .st-guide-closing {
   background: var(--surface-sunken);
 }
 .st-guide-line {
@@ -669,6 +671,9 @@ button.st-guide-from-name {
 }
 .st-guide-footer--copied .st-guide-line > svg {
   color: var(--color-brand);
+}
+.st-guide-footer--neutral .st-guide-line > svg {
+  color: var(--text-secondary);
 }
 .st-guide-line-words {
   display: flex;
@@ -784,6 +789,7 @@ button.st-guide-from-name {
 }
 /* On phones a recovery line is a block of its own above the actions, under no rule. */
 .st-guide-paper--phone > .st-guide-footer--failed,
+.st-guide-paper--phone > .st-guide-footer--neutral,
 .st-guide-paper--phone > .st-guide-footer--copied {
   border-top-color: transparent;
 }
@@ -801,7 +807,8 @@ button.st-guide-from-name {
 .st-guide-paper--phone .st-guide-footer--failed .st-guide-line {
   background: var(--color-danger-bg);
 }
-.st-guide-paper--phone .st-guide-footer--copied .st-guide-line {
+.st-guide-paper--phone .st-guide-footer--copied .st-guide-line,
+.st-guide-paper--phone .st-guide-footer--neutral .st-guide-line {
   background: var(--surface-sunken);
 }
 .st-guide-paper--phone .st-guide-line-words {
@@ -874,6 +881,7 @@ button.st-guide-from-name {
   cursor: not-allowed;
 }
 .st-guide-footer--failed .st-guide-save,
+.st-guide-footer--neutral .st-guide-save,
 .st-guide-footer--copied .st-guide-save {
   min-width: 104px;
   padding: 0 10px;

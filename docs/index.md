@@ -37,7 +37,7 @@ Workspace and History, relationships, pinned actions and an operable Shell. Deli
 [current interaction handoff](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1157-3166)
 specifies direct node activation, plain description and shared-link data, and an unfinished Coach
 placeholder. Functional Coach remains deferred. Editing and creation still use the existing nested
-composer; the approved inline editing/creation flows and link-copy recovery remain unbuilt.
+composer; the approved inline editing/creation flows remain unbuilt. Link-copy recovery follows section 37.
 
 | Flow | Approved source | Entry → exit |
 |---|---|---|
@@ -47,7 +47,7 @@ composer; the approved inline editing/creation flows and link-copy recovery rema
 | 21 · Laptop workspace | [21](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=822-3609) | Board/Graph entry and focused Graph node → laptop editor |
 | 22 · Coach history and actions | [22](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=832-4672) | Collapsed/expanded right sidebar and editor actions; functional Coach history and sending remain deferred |
 | 27 · Mobile web | [27](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=754-74706) | Board/Graph → shared read document → inline Workspace/History and Back; full inline editing remains unbuilt |
-| 37 · Link-copy recovery | [37.01–37.15](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1116-74911) | Approved, unbuilt: Copy available step link → failure feedback → reveal and retry |
+| 37 · Link-copy recovery | [37.01–37.15](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1116-74911) | Copy available step link → nonmodal failure feedback → reveal/select or retry → original control |
 | 40 · Tablet read document | [40.01–40.14](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1156-79681), [responsive contract](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1157-3169) | 744 px owner/reader, attached tree and keyboard states; 56 px collapsed or 280 px expanded Coach placeholder; the available product column stacks below 1000 px |
 | 43 · Refused sync recovery | [43.01–43.14](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1211-104922) | Refused changes stay below the toolbar → Retry or Discard; structure recovery preserves completion Undo, while progress recovery waits for its baseline |
 
