@@ -795,9 +795,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   ([design-system note 499:42374](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=499-42374)).
   Web's shared token and static-page chrome use that ring; dark, journal and gym overrides retain
   their own values.
-- **Step editor · link-copy recovery.** Clipboard failure currently emits its failed outcome without visible recovery.
-  Approved [37.01–37.15](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1116-74911)
-  remains unbuilt; it specifies the nonmodal failure card, full selectable link, retry and focus return.
 - **Shell · signed-in avatar size.** The Shared Shell's Signed in variants (290:7065, 290:7079) draw a 28px avatar whose initial sits at the top. The shipped seat renders a 30px avatar centred in a 44px target, matching the Signed out variants (642:20246, 642:20267). Redraw the Signed in variants at 30px.
 - **Board · Shell at 200% text.** The Shell defines no reflow: from 744px `web/src/shell/chrome/chrome.css` keeps room links in
   one row of 44px-high targets with no fill, bold-width reservation and `white-space: nowrap`. Below 744px room links are

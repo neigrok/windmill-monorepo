@@ -191,7 +191,8 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Open a step | `roadmap_board_step_open` | `surface: document`, `column: locked/upNext/done`, `door: card/graph/activity/step/link` |
 | Shared step document action; completion, reset and Undo require current owner authority. A retained Undo after demotion writes and emits nothing | `roadmap_board_step_action` | `surface: document`, `action: complete/completeFromSubtasks/reset/undo/openInGraph/viewBranch/delete/edit/editNote/select/addStep/connect/expandCoach/collapseCoach` |
 | Scroll to a step section | `roadmap_board_step_action` | `surface: document`, `action: section`, `section: workspace/history` |
-| Copy a step's link | `roadmap_board_step_action` | `surface: document`, `action: copyLink`, `outcome: ok/failed` |
+| Copy a step's current shareable link, once per clipboard attempt, including retries and results that arrive after the step has closed. A stale result shows no notice or recovery | `roadmap_board_step_action` | `surface: document`, `action: copyLink`, `outcome: ok/failed` |
+| Recover a failed step-link copy: the card appears once, retries writing the same current link, reveals its full read-only field, selects its entire value, or is dismissed with Close or Escape. Only these bounded labels leave; no link, step id, title or exception text | `roadmap_board_step_action` | `surface: document`, `action: copyLinkRecovery`, `step: shown/retry/reveal/select/dismiss` |
 | Reset from the Graph's dock or tablet panel | `roadmap_board_step_action` | `surface: dock/panel`, `action: reset` |
 | Complete by swipe, C, the dock, the tablet panel or the demo's coach | `roadmap_board_complete` | `door: swipe/key/dock/panel/coach` |
 | Complete from the Graph's selection bar | `roadmap_board_complete` | `door: bulk`, `count: 0/1/2-5/6-20/21+` |
@@ -350,6 +351,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-board-edit` | An edit exception, or no session on an editable surface | The draft and its Retry stay |
 | `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session | Selection stays |
 | `roadmap-board-delete` | An unexpected held-delete release | The step returns, and its toast says *Couldn't delete* with Retry |
+| `roadmap-step-copy` | An unexpected clipboard exception. Browser permission and security refusals (`NotAllowedError`, `SecurityError`) emit the failed attempt without an Issue; other failures report only the static operation and sanitized stack | *Couldn’t copy link*, Try again and Show link; a failed retry keeps the card, and success uses *Link copied*. Copy and Try again stay disabled while a write is pending, including across step navigation. A newer interaction keeps its focus when failure arrives; nested modal boundaries cover the recovery. A step or link change, dismissal or unmount makes a late result silent |
 | `roadmap-step-restore` | A completion's Undo: a Board or Graph toast, or the step document's inline offer | The offer leaves |
 | `roadmap-graph-undo` | A Graph toast's Undo, or the Board's Undo of a pasted plan, reverting its receipt | The toast closes |
 | `roadmap-tend-undo` | Undo on an Ask AI answer | The toast closes |

@@ -258,6 +258,7 @@ for (const viewport of [DESKTOP, PHONE]) {
       await listed(page);
       await page.mouse.click(20, 400);
       await page.locator('.st-board-tree-picker').waitFor({ state: 'detached' });
+      await page.waitForFunction(() => document.activeElement.getAttribute('aria-label') === 'Attach a tree');
       assert.equal(await page.locator('.st-board-step-layer').count(), 1);
     }
     assert.deepEqual((await calls(page)).filter((line) => line !== 'list'), []);
