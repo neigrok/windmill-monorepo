@@ -131,7 +131,7 @@ def subscription_response(account_entitlement, now, allowlisted=False, line_open
     governing = shown["governing"]
     holds_live = (governing is not None and governing["state"] not in ENDED) or bool(shown["others"])
     purchasable = ["app_store"] if line_open and not has_windmill_one and not holds_live else []
-    return {"environment": environment, "allowlisted": allowlisted, **shown,
+    return {"windmillOne": has_windmill_one, "environment": environment, "allowlisted": allowlisted, **shown,
             "manage": None if governing is None else {"store": governing["store"], "url": MANAGE_URL[governing["store"]]},
             "purchasable": purchasable, "offer": OFFER if purchasable else None}
 
@@ -320,6 +320,7 @@ responses = [
      subscription_response(entitlements["never_subscribed"], ERASED + DAY, allowlisted=True)),
     ("never_subscribed_line_closed",
      subscription_response(entitlements["never_subscribed"], ERASED + DAY, line_open=False)),
+    ("owner_line_open", subscription_response(entitlements["never_subscribed"], ERASED + DAY, owner=True)),
     ("charged_twice", subscription_response(entitlements["charged_twice"], ms("2026-12-12T10:00:00"))),
     ("sandbox_allowlisted", subscription_response(entitlements["sandbox_active_production_expired"],
                                                   SANDBOX_LATER + 2 * MINUTE, allowlisted=True)),

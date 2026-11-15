@@ -30,8 +30,8 @@ SUBSCRIPTION_FIELDS = ["subscriptionId", "store", "state", "startedAt", "current
                        "endedAt", "endReason"]
 ENTITLEMENT_FIELDS = ["plan", "accessUntil", "governing", "others"]
 ENTITLEMENT_RESPONSE_FIELDS = ["accountId", "production", "sandbox"]
-SUBSCRIPTION_RESPONSE_FIELDS = ["environment", "allowlisted", "plan", "accessUntil", "governing", "others", "manage",
-                                "purchasable", "offer"]
+SUBSCRIPTION_RESPONSE_FIELDS = ["windmillOne", "environment", "allowlisted", "plan", "accessUntil", "governing", "others",
+                                "manage", "purchasable", "offer"]
 PAGE_FIELDS = ["epoch", "entries", "latestSeq"]
 ENTRY_FIELDS = ["seq", "type", "occurredAt", "recordedAt", "subscriptionId", "accountId", "store", "environment",
                 "offerKind", "period", "entitlement"]
@@ -146,6 +146,7 @@ def check_entitlement_response(e, where):
 
 def check_subscription_response(r, where):
     check(list(r) == SUBSCRIPTION_RESPONSE_FIELDS, f"{where}: SubscriptionResponse fields, in order")
+    check(isinstance(r["windmillOne"], bool), f"{where}: windmillOne is a boolean")
     check(r["environment"] in ENVIRONMENTS and isinstance(r["allowlisted"], bool),
           f"{where}: environment names the Entitlement shown; allowlisted is a boolean")
     check_entitlement({field: r[field] for field in ENTITLEMENT_FIELDS}, r["environment"], where)
@@ -154,13 +155,13 @@ def check_subscription_response(r, where):
                                                           "url": MANAGE_URL[governing["store"]]}),
           f"{where}: manage is the governing subscription's store")
     holds_live = (governing is not None and governing["state"] not in ENDED) or bool(r["others"])
-    if r["accessUntil"] is not None or holds_live:
-        check(r["purchasable"] == [], f"{where}: nothing to buy with access or a live subscription (INV-12)")
+    if r["windmillOne"] or holds_live:
+        check(r["purchasable"] == [], f"{where}: nothing to buy with Windmill One or a live subscription (INV-12)")
     check(set(r["purchasable"]) <= STORES, f"{where}: purchasable names stores")
     check(r["offer"] == (OFFER if r["purchasable"] else None),
           f"{where}: offer is One's AI allowance exactly when there is something to buy (§5.3)")
     if r["environment"] == "sandbox":
-        check(r["allowlisted"] and r["accessUntil"] is not None,
+        check(r["allowlisted"] and r["accessUntil"] is not None and r["windmillOne"],
               f"{where}: a sandbox Entitlement is shown only to an allowlisted account it grants (§5.3)")
 
 
@@ -178,15 +179,19 @@ check(len(entitlements["charged_twice"]["body"]["production"]["others"]) == 1,
 responses = named("subscription.json")
 for name, example in responses.items():
     check_subscription_response(example["body"], f"subscription/{name}")
-expected_purchasable = {
-    "active": [], "cancelled_access_continues": [], "grace": [], "on_hold": [], "expired_line_open": ["app_store"],
-    "revoked_line_open": ["app_store"], "never_subscribed_line_open": ["app_store"],
-    "allowlisted_never_subscribed_line_open": ["app_store"], "never_subscribed_line_closed": [], "charged_twice": [],
-    "sandbox_allowlisted": [], "sandbox_not_allowlisted_line_open": ["app_store"]}
-check(sorted(responses) == sorted(expected_purchasable), "subscription: every example the README promises, no other")
-for name, purchasable in expected_purchasable.items():
+# Each example as Entitlements::hasWindmillOne answers it at the instant it was read (§6.1), and what it may buy then
+expected = {
+    "active": (True, []), "cancelled_access_continues": (True, []), "grace": (True, []), "on_hold": (False, []),
+    "expired_line_open": (False, ["app_store"]), "revoked_line_open": (False, ["app_store"]),
+    "never_subscribed_line_open": (False, ["app_store"]), "allowlisted_never_subscribed_line_open": (False, ["app_store"]),
+    "never_subscribed_line_closed": (False, []), "owner_line_open": (True, []), "charged_twice": (True, []),
+    "sandbox_allowlisted": (True, []), "sandbox_not_allowlisted_line_open": (False, ["app_store"])}
+check(sorted(responses) == sorted(expected), "subscription: every example this file expects, no other")
+for name, (windmill_one, purchasable) in expected.items():
     if name in responses:
-        check(responses[name]["body"]["purchasable"] == purchasable, f"subscription/{name}: purchasable {purchasable}")
+        body = responses[name]["body"]
+        check(body["windmillOne"] == windmill_one and body["purchasable"] == purchasable,
+              f"subscription/{name}: windmillOne {windmill_one}, purchasable {purchasable}")
 check(responses["revoked_line_open"]["body"]["governing"]["state"] == "revoked", "subscription/revoked_line_open: revoked")
 check(responses["charged_twice"]["body"]["others"] != [], "subscription/charged_twice: others is not empty")
 check(responses["sandbox_allowlisted"]["body"]["environment"] == "sandbox",
@@ -194,6 +199,8 @@ check(responses["sandbox_allowlisted"]["body"]["environment"] == "sandbox",
 check(not responses["sandbox_not_allowlisted_line_open"]["body"]["allowlisted"]
       and responses["sandbox_not_allowlisted_line_open"]["body"]["environment"] == "production",
       "subscription/sandbox_not_allowlisted_line_open: production shown; a sandbox build offers nothing (INV-12)")
+check(responses["owner_line_open"]["body"]["plan"] is None and responses["owner_line_open"]["body"]["governing"] is None,
+      "subscription/owner_line_open: an owner holds Windmill One with no plan, so nothing is offered on an open line")
 check(responses["allowlisted_never_subscribed_line_open"]["body"]["allowlisted"],
       "subscription/allowlisted_never_subscribed_line_open: a sandbox build may offer the buy control (INV-12)")
 
