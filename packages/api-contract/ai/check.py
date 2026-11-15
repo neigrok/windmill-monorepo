@@ -161,6 +161,10 @@ def parts(value):
         elif 'toolCall' in part:
             tool_call(part['toolCall'])
         elif 'image' in part:
+            if 'picture' in part['image']:
+                fields(part['image'], 'picture')
+                caller_id(part['image']['picture'])
+                continue
             fields(part['image'], 'mediaType data')
             require(part['image']['mediaType'] in {'image/png', 'image/jpeg'}, 'unknown image type')
             try:
@@ -264,13 +268,13 @@ def live_event(value):
 
 
 def check(fixture):
-    fields(fixture, 'allowance allowances refusals prestreamRefusals textRequest calls grantOutcomes textEvents textTerminals liveEvents liveFrames liveTerminals liveFirstFailures internalRequests internalCalls internalPrincipal internalPages corrections shared')
+    fields(fixture, 'allowance allowances refusals prestreamRefusals textRequest textPictureRequest pictureUploads calls grantOutcomes textEvents textTerminals liveEvents liveFrames liveTerminals liveFirstFailures internalRequests internalCalls internalPrincipal internalPages corrections shared')
     allowance(fixture['allowance'])
     require(set(fixture['allowances']) == {'anonymous', 'free', 'one_subscription', 'one_owner', 'one_without_grant', 'subject_exhausted', 'free_month_exhausted', 'free_day_exhausted', 'concurrency_exhausted'}, 'allowance coverage differs')
     for value in fixture['allowances'].values():
         allowance(value)
     require(fixture['allowances']['one_without_grant']['tier'] == 'free', 'plan grace must use free tier')
-    expected_status = {400: {'invalid_request', 'provider_rejected'}, 401: {'pass_missing', 'pass_signature', 'pass_audience', 'pass_malformed', 'pass_expired'}, 403: {'funding_required', 'device_bound'}, 404: {'call_unknown'}, 409: {'conflict'}, 410: {'result_gone'}, 413: {'too_large'}, 429: {'subject_exhausted', 'free_month_exhausted', 'free_day_exhausted', 'concurrency_exhausted', 'rate_limited'}, 503: {'busy', 'paused', 'accounting_unavailable', 'provider_unavailable'}}
+    expected_status = {400: {'invalid_request', 'provider_rejected'}, 401: {'pass_missing', 'pass_signature', 'pass_audience', 'pass_malformed', 'pass_expired'}, 403: {'funding_required', 'device_bound'}, 404: {'call_unknown'}, 409: {'conflict'}, 410: {'result_gone', 'picture_gone'}, 413: {'too_large'}, 429: {'subject_exhausted', 'free_month_exhausted', 'free_day_exhausted', 'concurrency_exhausted', 'rate_limited'}, 503: {'busy', 'paused', 'accounting_unavailable', 'provider_unavailable'}}
     actual_status = {}
     for refusal in fixture['refusals']:
         fields(refusal, 'status body')
@@ -289,6 +293,15 @@ def check(fixture):
         require(value['status'] == (400 if code == 'provider_rejected' else 503) and value['body']['code'] == code, 'prestream refusal differs')
         allowance(value['body']['allowance'])
     text_request(fixture['textRequest'])
+    text_request(fixture['textPictureRequest'])
+    require(len(fixture['pictureUploads']) == 2, 'picture upload coverage differs')
+    for upload in fixture['pictureUploads']:
+        fields(upload, 'pictureId mediaType data status')
+        caller_id(upload['pictureId'])
+        require(upload['status'] == 204, 'picture upload response differs')
+        parts([{'image': {key: upload[key] for key in ['mediaType', 'data']}}])
+    require({upload['mediaType'] for upload in fixture['pictureUploads']} == {'image/jpeg', 'image/png'}, 'picture types incomplete')
+    require(fixture['textPictureRequest']['messages'][0]['parts'][1] == {'image': {'picture': fixture['pictureUploads'][0]['pictureId']}}, 'picture reference differs')
     require({value['state'] for value in fixture['calls']} == {'reserved', 'dispatched', 'settled', 'unconsumed', 'assumed'}, 'call states incomplete')
     for value in fixture['calls']:
         status(value)
@@ -344,6 +357,12 @@ def check(fixture):
 
 def negative_probes(fixture):
     probes = [
+        ('mixed picture reference', lambda f: f['textPictureRequest']['messages'][0]['parts'][1]['image'].update(data='AA==')),
+        ('invalid picture ID', lambda f: f['textPictureRequest']['messages'][0]['parts'][1]['image'].update(picture='short')),
+        ('unknown picture field', lambda f: f['pictureUploads'][0].update(url='https://invalid.example')),
+        ('wrong picture media', lambda f: f['pictureUploads'][0].update(mediaType='image/gif')),
+        ('wrong picture signature', lambda f: f['pictureUploads'][0].update(data='/9j/2Q==')),
+        ('missing picture refusal', lambda f: f['refusals'].__setitem__(slice(None), [item for item in f['refusals'] if item['body']['code'] != 'picture_gone'])),
         ('missing charged', lambda f: f['textTerminals']['completed']['data'].pop('charged')),
         ('floating money', lambda f: f['calls'][2].update(charged=0.001)),
         ('boolean money', lambda f: f['internalCalls']['settled'].update(charged=False)),
