@@ -6,7 +6,7 @@ roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Specified; nothing is built. The only Coach loop that exists runs on the server, for gym
+**Status:** Specified, and approved by the owner on 2026-11-15; nothing is built. The only Coach loop that exists runs on the server, for gym
 ([phone-hosted Coach abilities](mobile/gym_coach.md) §4.2). The build order lives in the Coach engine
 roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node `coach-engine`.
 
@@ -178,6 +178,9 @@ the first account pass that names the installation
 - **What a refusal proves.** `busy` and `accounting_unavailable` can be answered for a call the
   service did admit. Every other refusal of a `PUT` whose earlier attempts all had an answer proves
   that nothing was admitted.
+- **A picture.** The client uploads a picture once, with `PUT /v1/pictures/{pictureId}`, and each
+  round names it ([AI service §6.7](ai-service.md#67-pictures-a-caller-uploads)). A call refused
+  `picture_gone` uploads the picture again and is sent once more under the same `callId`.
 - **The allowance.** `GET /v1/allowance` answers what the seat has left. An `ended`, a `failed` and
   a refusal carry it too, or null where the service could not read it.
 - The client never makes a call under a second `callId` for the same round (INV-2).
@@ -192,7 +195,7 @@ profile. The engine runs it in this order.
    first takes a browser lock named for the `turnId`, and holds it until the turn ends.
 2. **First content.** The tool host gives the history, the context and the pictures. The engine
    builds one user message holding, in order: the history as one text part, the context, each
-   picture as an image part, and the question. Every word around them is the profile's. The
+   picture as an image part that names a picture the client uploaded, and the question. Every word around them is the profile's. The
    request's `system` is the profile's prompt, and its `tools` are the profile's, in the order the
    profile gives them.
 3. **A round**, for each of `1..MAX_MODEL_CALLS`:
@@ -359,7 +362,7 @@ order, the mark at each step, and the end.
 - The stories cover: text alone; two rounds; several calls in one round; each gate rule; round 1
   refused; a later round refused; a refusal that passes and one that does not; each `stop`; `failed`
   with each provider code; a round lost before and after its first event, found again, found gone
-  and found unknown; `pass_expired` once and twice; Stop before a round, during one that completes,
+  and found unknown; `pass_expired` once and twice; a picture the service no longer holds; Stop before a round, during one that completes,
   during one that calls tools and while asking again; the process ending in a last round and in one
   that calls tools; the seat changing; the record gone; a stale turn ended by another device while
   its writer goes on.
@@ -400,6 +403,6 @@ order, the mark at each step, and the end.
 |---|---|---|
 | R-1 | Where the turn runs | On the device: the loop, the gate and the prompt. Each model round is a call to the AI service. (2026-11-14) |
 | R-2 | One Coach or one a product | One engine; a separate Coach in each product with its own prompt, abilities and conversations. (2026-11-14) |
-| R-3 | How long a pass lasts | Open. Assumed: 10 minutes. A sign-out, an erased account and a change of plan therefore reach the AI service within 10 minutes and no sooner (AI service INV-2). |
-| R-4 | A turn whose process ends | Open. Assumed: its answer is recovered when the round in flight was the turn's last and the service still holds it; otherwise the turn ends `interrupted`. Carrying on a turn that was still calling abilities would need the working conversation written to the device, which P-5 rules out. |
-| R-5 | A turn its device never ends | Open. Assumed: any of the person's devices ends it `interrupted` once no write has reached it for 30 minutes by the server's clock. No server ends a turn. |
+| R-3 | How long a pass lasts | 10 minutes. A sign-out, an erased account and a change of plan therefore reach the AI service within 10 minutes and no sooner (AI service INV-2). (2026-11-15) |
+| R-4 | A turn whose process ends | Its answer is recovered when the round in flight was the turn's last and the service still holds it; otherwise the turn ends `interrupted`. Carrying on a turn that was still calling abilities would need the working conversation written to the device, which P-5 rules out. (2026-11-15) |
+| R-5 | A turn its device never ends | Any of the person's devices ends it `interrupted` once no write has reached it for 30 minutes by the server's clock. No server ends a turn. (2026-11-15) |

@@ -6,7 +6,7 @@ roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Specified; nothing is built. The roadmap's AI today is tending: a server-side agent that
+**Status:** Specified, and approved by the owner on 2026-11-15; nothing is built. The roadmap's AI today is tending: a server-side agent that
 edits a roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree
@@ -382,9 +382,9 @@ messages' `carry`, not an ability's full result. A record holds what a person re
 ## §11 Signed out
 
 The design rules that everything works signed out: asking, direct writes, reviewing and applying.
-(R-6) A signed-out person's roadmap already lives on the device, and the browser's sync engine
-already keeps a signed-out person's records and carries them to the account at sign-in. What the
-web lacks is:
+Coach goes live on the web only when it works signed out too. (R-6) A signed-out person's roadmap
+already lives on the device, and the browser's sync engine already keeps a signed-out person's
+records and carries them to the account at sign-in. What the web lacks, and this build adds, is:
 
 - **A credential to ask with.** The AI service admits an installation on a pass the backend signs
   for an installation credential. No such credential exists in the browser.
@@ -393,7 +393,7 @@ web lacks is:
 
 ## §12 What retires, and what stays
 
-When Coach ships on the web for a signed-in person, these go (design ruling 11):
+When Coach ships on the web, these go (design ruling 11):
 
 - `POST /v1/trees/{id}/tend`, `GET /v1/tend/{runId}`, `GET /v1/tending`, the service and prompt
   behind them, the `tend_runs` table and the run quota of 30 and 300 a month;
@@ -468,15 +468,15 @@ states them. This document's own:
 | R-1 | Where Coach's abilities run | On the device's copy by default, with every change travelling by synchronization. An ability that calls the backend is a rare exception. (2026-11-14) |
 | R-2 | Where the turn runs | On the device: the loop, the gate and the prompt. Each model round is a call to the AI service. (2026-11-14) |
 | R-3 | One Coach or one per product | One engine; a separate Coach in each product with its own prompt, abilities and conversations. (2026-11-14) |
-| R-4 | Where conversations and proposals are stored | Open. Assumed: records of the sync engine in a registry of roadmap's own, since they are private and belong to no one roadmap's shared structure. |
-| R-5 | Which abilities call the backend | Open. Assumed: `list_trees` alone, with each roadmap's counts by state, frontier titles and last completion date added to what the backend lists. |
-| R-6 | Signed-out Coach on the web | Open. Assumed: Coach ships first for a signed-in person, and signed out follows once the browser has an installation credential. |
-| R-7 | Whether Coach's writes are told apart from the person's | Open. Assumed: not on the wire or in Activity, where a change Coach made is the person's own. The receipt in the conversation says Coach made it. Telling them apart elsewhere needs the server's log of changes to carry who acted. |
-| R-8 | How "you asked for exactly this" is enforced | Open. Assumed: by the prompt. The catalog's shape keeps a direct write to one step that removes nothing, and the gate keeps it within the turn's volume. |
-| R-9 | What `merge` and `split` do | Open. Assumed: as §7's table says. |
-| R-10 | An applied proposal the server then refuses | Open. The design rules that an applied proposal is never refused or discarded. The server can still refuse any write: a cap reached by an edit elsewhere, a roadmap deleted or no longer the person's. Assumed: the refusal stands as any refusal does, with Retry and Discard, and the record stays `applied`. |
-| R-11 | One allowance while gym's Coach is metered elsewhere | Open. The design rules one allowance across gym and roadmap Coach. Roadmap Coach is metered by the AI service, and gym's Coach by the backend until it moves. Assumed: roadmap Coach ships once every hosted AI call is metered by the AI service, so a person never holds two allowances. |
-| R-12 | The Windmill One button on the web | Open. The design draws it opening the iPhone's store sheet. Assumed: the web shows no such button while Windmill One cannot be bought there. |
+| R-4 | Where conversations and proposals are stored | As records of the sync engine in a registry of roadmap's own, since they are private and belong to no one roadmap's shared structure. (2026-11-15) |
+| R-5 | Which abilities call the backend | `list_trees` alone, with each roadmap's counts by state, frontier titles and last completion date added to what the backend lists. (2026-11-15) |
+| R-6 | Signed-out Coach on the web | It ships together with signed-in Coach: Coach does not go live on the web until both work. (2026-11-15) |
+| R-7 | Whether Coach's writes are told apart from the person's | In the conversation only, where the receipt says Coach made the change. On the wire and in Activity a change Coach made is the person's own. (2026-11-15) |
+| R-8 | How "you asked for exactly this" is enforced | By the prompt. The catalog's shape keeps a direct write to one step that removes nothing, and the gate keeps it within the turn's volume. (2026-11-15) |
+| R-9 | What `merge` and `split` do | As §7's table says. (2026-11-15) |
+| R-10 | An applied proposal the server then refuses | A proposal is applied on the device and then synced, and the server can refuse the synced change: a cap reached by an edit elsewhere, a roadmap deleted or no longer the person's. The refusal stands as it does for a person's own edit, with Retry and Discard, and the record stays `applied`. (2026-11-15) |
+| R-11 | One allowance while gym's Coach is metered elsewhere | Roadmap Coach is built beside gym's move and goes live only after the server's gym Coach has closed ([Gym Coach on the AI service](gym-coach-on-ai-service.md) §8), so a person never holds two allowances for Coach. (2026-11-15) |
+| R-12 | The Windmill One button on the web | The web shows no such button while Windmill One cannot be bought there. It says the allowance is used up and when it returns. (2026-11-15) |
 
 The design draws none of these, and each needs a board before it is built: Coach for a person who
 only reads a roadmap; a card whose proposal was applied and then undone; a replaced card; and the

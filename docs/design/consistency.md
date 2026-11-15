@@ -606,7 +606,14 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   stamps. 6: the note logs a turn on the backend, which no longer sees one. Rewrite the note; the boards are not
   affected.
 - **Roadmap Coach · an applied proposal the server refuses.** The design rules that an applied proposal is never
-  refused or discarded. The server can refuse any write. The spec's R-10 holds the question for the owner.
+  refused or discarded. A proposal is applied on the device and then synced, and the server can refuse the synced
+  change. The owner ruled on 2026-11-15 ([Roadmap Coach](../foundation/roadmap-coach.md) R-10) that the refusal shows
+  as it does for a person's own edit, with Retry and Discard, and the proposal stays applied. The design's rule and
+  its boards say what Apply does on the device; reword the rule to say so.
+- **Roadmap Coach · the Windmill One button on the web.** Design ruling 8 draws the button in the "allowance used"
+  notice, opening the store sheet (05.6). The owner ruled on 2026-11-15 (Roadmap Coach R-12) that the web shows no
+  such button while Windmill One cannot be bought there: the notice says the allowance is used up and when it
+  returns. The web's 05 boards need that state drawn without the button.
 - **Roadmap Coach · not drawn.** No board draws Coach for a person who only reads a roadmap, a card whose proposal
   was applied and then undone, a replaced card, or the sign-in question when both the device and the account hold
   conversations.
