@@ -334,6 +334,8 @@ final class EngineCore: Sendable {
   let pullWants = PullWants()
   // A re-authentication cleared the pause: the live channel's next step opens its socket at once, with `k` reset.
   let liveReopensAtOnce = Atomic(false)
+  let liveReadiness = Mutex<LiveReadiness?>(nil)
+  let seatTransitions = Mutex(0)
   let actor = Mutex(EngineCore.provisionalActor)
   let upgrade = Atomic(false)
   let foreground = Atomic(true)
@@ -526,6 +528,28 @@ final class EngineCore: Sendable {
     return reply
   }
 
+
+  struct LiveReadiness: Sendable {
+    let replica: String
+    let token: SessionToken
+    let scopes: Set<ScopeRef>
+    let connectivity: Int
+    let lifecycle: Int
+  }
+
+  func freshness(_ scope: ScopeRef, meta: ReplicaMeta) -> SyncFreshness {
+    guard seatTransitions.withLock({ $0 == 0 }), isForeground, connectivity.isOnline, !upgradeRequired,
+          meta.state == .bound, !meta.authPaused, let account = meta.account,
+          let live = liveReadiness.withLock({ $0 }), live.replica == meta.replica,
+          live.token == tokens.token(for: account), live.scopes.contains(scope),
+          live.connectivity == connectivityGeneration.withLock({ $0 }),
+          live.lifecycle == lifecycleGeneration.withLock({ $0 }),
+          !doubts.withLock({ $0.inDoubt(scope) }), !meta.offset.samples.isEmpty,
+          let sample = meta.offset.clockReading else { return SyncFreshness() }
+    let now = clock.wall.reading()
+    guard !now.jumped(since: sample) else { return SyncFreshness() }
+    return SyncFreshness(serverNow: meta.physNow(deviceNow: now.wall), live: true)
+  }
 
   // The active replica's meta.
   func seat() throws -> ReplicaMeta? {

@@ -88,6 +88,8 @@ extension SyncEngine {
 
   // Before each transaction that may change the replica the products write to (Coach D-10).
   func changingSeat<Value: Sendable>(_ change: @Sendable () async throws -> Value) async throws -> Value {
+    core.seatTransitions.withLock { $0 += 1 }
+    defer { core.seatTransitions.withLock { $0 -= 1 } }
     var started: [any ProductBinding] = []
     do {
       for binding in core.bindings {
