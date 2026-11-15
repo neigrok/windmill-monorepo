@@ -31,9 +31,9 @@ struct LiveStack {
   FakeEmbedder embedder;
   FakeCurator curator;
   FakeClock clock;
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage};
+  Entitlements entitlements{subscriptions, clock, usage};
   FakeSegmenter segmenter;
   EchoSweep sweep{echoes,  segmenter,    embedder,         curator,
                   clock,   entitlements, SelectionRules{}, SweepBudget{}};

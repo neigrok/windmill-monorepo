@@ -127,9 +127,9 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   const auto routineId = created.payload["id"].asString();
   CHECK_EQ(routineId, "rt_gen_doorcoach_0");
   CHECK(h.repo.program.routines(h.user).empty());
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage};
+  Entitlements entitlements{subscriptions, h.clock, usage};
   FakeAsk agent;
   AskService service{h.training, h.repo.threads, h.clock, agent, h.tools, entitlements};
   generation.status = "completed";
@@ -244,9 +244,9 @@ TEST(gym_engine_coach_confirmation_route_answers_each_outcome_under_one_request_
   generation.status = "completed";
   h.repo.threads.saveGeneration(h.user, thread, generation);
   const auto draft = generation.routineDrafts.front();
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage};
+  Entitlements entitlements{subscriptions, h.clock, usage};
   FakeAsk agent;
   auto service = std::make_shared<AskService>(h.training, h.repo.threads, h.clock, agent, h.tools, entitlements);
   ThreadsApi api{doortest::borrowed(h.threads), h.auth, service};

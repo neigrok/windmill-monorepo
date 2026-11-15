@@ -181,10 +181,11 @@ TEST(compose_with_monthly_budgets_is_unavailable_before_buffered_or_streaming_di
   struct Failures : FailureReporter {
     void report(const std::string&, const std::string&, const std::string&) override {}
   } failures;
-  fake::FakeSubscriptionRepository subscriptions;
+  fake::FakeEntitlementCopy subscriptions;
+  fake::FakeClock clock;
   fake::FakeAiUsageRepository usage;
   fake::FakeAuthRepository accounts;
-  Entitlements entitlements{subscriptions, usage};
+  Entitlements entitlements{subscriptions, clock, usage};
   auto budget = std::make_shared<AiCallBudget>(nullptr, entitlements, accounts, failures);
   auto composer = std::make_shared<AnthropicComposer>("test-key", nullptr, nullptr, nullptr, budget);
   ComposeApi api{composer};

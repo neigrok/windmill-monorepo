@@ -846,6 +846,44 @@ class DeployWorkflowTest(unittest.TestCase):
                                         env={**os.environ, **required, "SUBSCRIPTIONS_DB_PASSWORD": value})
                 self.assertEqual((result.returncode, result.stdout + result.stderr), outcome)
 
+    def test_windmill_one_settings_render_from_variables_to_the_server_and_default_to_closed(self):
+        root = SCRIPT.parents[2]
+        workflow = (root / ".github/workflows/deploy.yml").read_text()
+        compose = (root / "backend/deploy/docker-compose.yml").read_text()
+        server = compose.split("\n  server:\n", 1)[1].split("\n  embedder:\n", 1)[0]
+        render = re.search(r"for key in POSTGRES_PASSWORD[\s\S]*?\n\s*done", workflow).group()
+        rendered = lambda environment: subprocess.run(["bash", "-euc", render], env=environment, check=True,
+                                                      capture_output=True, text=True).stdout.splitlines()
+        settings = ("WINDMILL_SANDBOX_EMAILS", "SUBSCRIPTIONS_PURCHASABLE_STORES")
+        keys = render.partition("; do")[0].replace("\\", "").split()[3:]
+        unset = {key: "" for key in keys if key not in settings}
+        for name in settings:
+            with self.subTest(name=name):
+                self.assertIn(f"          {name}: ${{{{ vars.{name} }}}}\n", workflow)
+                self.assertNotIn(f"secrets.{name}", workflow)
+                self.assertIn(f"      {name}: ${{{name}:-}}\n", server)
+                self.assertIn(f"{name}=", rendered({**unset, **{other: "" for other in settings}}))
+                self.assertIn(f"{name}=configured", rendered({**unset, **{other: "configured" for other in settings}}))
+
+    def test_the_open_stores_render_only_as_names_the_server_knows(self):
+        text = (SCRIPT.parents[2] / ".github/workflows/deploy.yml").read_text()
+        start = text.index("          stores=")
+        guard = textwrap.dedent(text[start:text.index("          # printf so values are written literally", start)])
+        refused = (1, "Refusing to render — SUBSCRIPTIONS_PURCHASABLE_STORES must list app_store, play_store or paddle,"
+                      " comma-separated.\n")
+        for value, outcome in (("", (0, "")), ("app_store", (0, "")), (" app_store , paddle", (0, "")),
+                               ("play_store,paddle,app_store,", (0, "")), ("appstore", refused), ("App_Store", refused),
+                               ("app_store;paddle", refused), ("app_store,,paddle", refused),
+                               ("app_store,google_play", refused)):
+            with self.subTest(value=value):
+                result = subprocess.run(["bash", "-euo", "pipefail", "-c", guard], capture_output=True, text=True,
+                                        env={**os.environ, "SUBSCRIPTIONS_PURCHASABLE_STORES": value})
+                self.assertEqual((result.returncode, result.stdout + result.stderr), outcome)
+        unset = subprocess.run(["bash", "-euo", "pipefail", "-c", guard], capture_output=True, text=True,
+                               env={key: value for key, value in os.environ.items()
+                                    if key != "SUBSCRIPTIONS_PURCHASABLE_STORES"})
+        self.assertEqual((unset.returncode, unset.stdout + unset.stderr), (0, ""))
+
     def test_backend_readiness_probes_admit_the_current_schema_without_pinning_an_old_client(self):
         root = SCRIPT.parents[2]
         workflow = (root / ".github/workflows/backend.yml").read_text()

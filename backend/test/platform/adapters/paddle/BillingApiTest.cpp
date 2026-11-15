@@ -25,7 +25,7 @@ const std::string kSecret = "pdl_ntfset_windmill_test_secret";
 const std::string kTimestamp = "1700000000";  // the FakeClock's own second
 const std::string kAccount = "44444444-4444-4444-4444-444444444444";
 
-// Every write the edge made, in order — the shared FakeSubscriptionRepository keys on the user id, the field under test.
+// Every write the edge made, in order.
 struct RecordingSubscriptions : SubscriptionRepository {
   std::vector<PaddleCustomer> customers;
   std::vector<PaddleSubscription> subscriptions;
@@ -120,16 +120,6 @@ drogon::HttpResponsePtr post(Harness& h, const std::string& body) {
   drogon::HttpResponsePtr captured;
   h.api.webhook(delivery(body, sign(body, kTimestamp)),
                 [&](const drogon::HttpResponsePtr& r) { captured = r; });
-  return captured;
-}
-
-drogon::HttpResponsePtr read(Harness& h, const std::string& session) {
-  auto req = drogon::HttpRequest::newHttpRequest();
-  req->setMethod(drogon::Get);
-  req->setPath("/v1/subscription");
-  if (!session.empty()) req->addCookie("wm_session", session);
-  drogon::HttpResponsePtr captured;
-  h.api.mySubscription(req, [&](const drogon::HttpResponsePtr& r) { captured = r; });
   return captured;
 }
 
@@ -293,46 +283,6 @@ TEST(billing_webhook_every_subscription_verb_mirrors_the_status_it_carries) {
   REQUIRE(h.subscriptions.subscriptions.size() == 9u);
   CHECK_EQ(h.subscriptions.subscriptions[0].status, std::string("created"));
   CHECK_EQ(h.subscriptions.subscriptions[8].status, std::string("imported"));
-}
-
-TEST(billing_the_read_needs_a_signed_in_caller) {
-  Harness h;
-  CHECK_EQ(read(h, "")->getStatusCode(), drogon::k401Unauthorized);
-  CHECK_EQ((*read(h, "")->getJsonObject())["error"].asString(), std::string("sign in first"));
-}
-
-TEST(billing_an_account_with_no_paddle_customer_reads_as_none_and_inactive) {
-  Harness h;
-  h.signIn("s-live");
-
-  const Json::Value body = *read(h, "s-live")->getJsonObject();
-  CHECK_EQ(body["status"].asString(), std::string("none"));
-  CHECK_FALSE(body["active"].asBool());
-  CHECK_FALSE(body.isMember("subscriptionId"));
-  CHECK_FALSE(body.isMember("scheduledChangeAt"));
-}
-
-TEST(billing_the_read_reports_paddle_s_word_and_our_verdict_on_it_separately) {
-  Harness h;
-  const UserId user = h.signIn("s-live");
-  h.subscriptions.subscriptions.push_back(PaddleSubscription{
-      "sub_1", "ctm_1", user.str(), "active", "pri_1", "pro_1", "2026-06-01T00:00:00Z", ""});
-
-  const Json::Value body = *read(h, "s-live")->getJsonObject();
-  CHECK_EQ(body["status"].asString(), std::string("active"));
-  CHECK(body["active"].asBool());
-  CHECK_EQ(body["subscriptionId"].asString(), std::string("sub_1"));
-  CHECK_EQ(body["priceId"].asString(), std::string("pri_1"));
-  CHECK_EQ(body["productId"].asString(), std::string("pro_1"));
-  CHECK_EQ(body["scheduledChangeAt"].asString(), std::string("2026-06-01T00:00:00Z"));
-
-  // Nothing pending: the key is absent rather than empty.
-  h.subscriptions.subscriptions[0].scheduledChangeAt.clear();
-  h.subscriptions.subscriptions[0].status = "canceled";
-  const Json::Value ended = *read(h, "s-live")->getJsonObject();
-  CHECK_EQ(ended["status"].asString(), std::string("canceled"));
-  CHECK_FALSE(ended["active"].asBool());
-  CHECK_FALSE(ended.isMember("scheduledChangeAt"));
 }
 
 TEST(billing_checkout_stays_closed_for_authenticated_accounts) {

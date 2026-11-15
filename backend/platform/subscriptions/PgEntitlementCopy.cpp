@@ -81,12 +81,23 @@ std::optional<EntitlementResponse> PgEntitlementCopy::find(const UserId& account
   if (!isUuid(account.str())) return std::nullopt;
   PgLease lease{*pool_};
   pqxx::read_transaction txn{*lease};
-  const pqxx::result rows = txn.exec("SELECT entitlement::text FROM account_entitlements WHERE account_id = $1::uuid",
-                                     pqxx::params{account.str()});
+  const pqxx::result rows = txn.exec(
+      "SELECT production_access_until, sandbox_access_until, entitlement::text FROM account_entitlements "
+      "WHERE account_id = $1::uuid",
+      pqxx::params{account.str()});
   if (rows.empty()) return std::nullopt;
-  std::optional<Json::Value> stored = parseWhole(rows[0][0].as<std::string>());
+  std::optional<Json::Value> stored = parseWhole(rows[0][2].as<std::string>());
   if (!stored) throw std::runtime_error("account_entitlements holds an entitlement that is not JSON");
-  return EntitlementResponse{std::move(*stored)};
+  // Access reads the row's columns (db/schema.sql), so a column an operator clears ends that access; the body is what a
+  // surface shows.
+  EntitlementResponse row{std::move(*stored)};
+  const auto instant = [&](int column) -> std::optional<std::int64_t> {
+    if (rows[0][column].is_null()) return std::nullopt;
+    return rows[0][column].as<std::int64_t>();
+  };
+  row.productionAccessUntil = instant(0);
+  row.sandboxAccessUntil = instant(1);
+  return row;
 }
 
 }

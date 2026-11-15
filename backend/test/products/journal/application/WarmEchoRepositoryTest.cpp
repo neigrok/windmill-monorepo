@@ -164,9 +164,9 @@ TEST(two_derivations_for_one_user_cost_one_corpus_load) {
   FakeEmbedder embedder;
   FakeCurator curator;
   FakeClock clock;
-  FakeSubscriptionRepository subscriptions;
+  FakeEntitlementCopy subscriptions;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, usage};
+  Entitlements entitlements{subscriptions, clock, usage};
 
   storage.addUser(uid("u1"));
   storage.plantSpan(uid("u1"), ld(kJanuary), 11, kJanuaryLine, embedder.embed({kJanuaryLine})[0]);

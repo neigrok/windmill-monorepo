@@ -600,7 +600,17 @@ account's entitlement ([subscriptions.md](../../docs/foundation/subscriptions.md
 start that the follower is off; with one alone it refuses to start, naming the other. The same pages
 record the subscription lifecycle events into `events` and forward them to Amplitude
 ([OBSERVABILITY.md](../OBSERVABILITY.md)); a key in `server_event_keys` is an event recorded, so a page
-read again or a rebuild after a restore records none twice.
+read again or a rebuild after a restore records none twice. Windmill One and `GET /v1/subscription` read the
+copy whether or not the follower runs, so an account the feed has not reached holds Windmill One only through
+`WINDMILL_OWNER_EMAILS`.
+
+Two GitHub variables, both empty by default, decide what the copy is read against. `WINDMILL_SANDBOX_EMAILS`
+names the accounts whose sandbox purchases count (the team's testers and the App Review account); every
+other sandbox purchase entitles no one (§6.2). `SUBSCRIPTIONS_PURCHASABLE_STORES` names the stores the paid
+line is open on (`app_store`, `play_store`, `paddle`), the one switch that lets a surface offer a buy
+control (INV-12); empty keeps it closed on every store. The deploy refuses to render a value that names anything but
+those three, before anything reaches the host; a server given one all the same keeps that name closed, serves, and
+logs and reports it at start (`subscription.paid_line`).
 
 **A page the backend cannot apply stops the copy for every account, by design.** A page applies whole
 or not at all, and the follower skips no entry, since a skipped entry would leave someone's paid state
