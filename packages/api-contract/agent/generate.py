@@ -226,6 +226,10 @@ def stories():
     opened(s); finish(s,'interrupted','',rounds=0); out.append(s)
     s=story('pass-door-refused'); opened(s); begin(s,0,'',[first(s)]); s['expected']['requests']=[]
     s['service']['passes']=[{'status':401,'code':'unauthenticated'}]; finish(s,'failed','','unauthenticated',withdraw=True); out.append(s)
+    encoded = json.dumps(tool_story('call-id-widths', [{}]))
+    for before, after in zip(CALLS[:2], ['A' * 24, 'B' * 64]):
+        encoded = encoded.replace(before, after)
+    out.append(json.loads(encoded))
     return out
 
 if __name__ == '__main__':
