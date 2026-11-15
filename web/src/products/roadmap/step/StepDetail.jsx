@@ -179,10 +179,14 @@ export function StepDetail({
 
   useLayoutEffect(() => {
     const article = layerRef.current.querySelector('article');
-    const measure = () => setCompactNotice(article.clientWidth < 600);
+    const measure = () => {
+      setCompactNotice(article.clientWidth < 600);
+      article.style.setProperty('--st-step-copy-height', `${Math.max(0, scrollRef.current.clientHeight - 24)}px`);
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(article);
+    observer.observe(scrollRef.current);
     return () => observer.disconnect();
   }, []);
 
@@ -240,7 +244,8 @@ export function StepDetail({
 
   useLayoutEffect(() => {
     if (!copyRecovery || currentCopyScope.current !== copyRecovery.scope || copyCard.current?.closest('[inert]')) return;
-    (copyRecovery.revealed ? copyField : copyRetry).current?.focus({ preventScroll: true });
+    if (!copyRecovery.revealed && (!copyRecovery.focusOnShow || editingRef.current)) return;
+    (copyRecovery.revealed ? copyField : copyRetry).current?.focus();
   }, [copyRecovery]);
 
   useEffect(() => {
@@ -322,7 +327,7 @@ export function StepDetail({
   };
   const copyLink = async (control, menu) => {
     if (!stepLink || currentCopyScope.current !== copyScope || copyAttempt.current) return;
-    const attempt = { scope: copyScope, dismissed: false };
+    const attempt = { scope: copyScope, focusOnFailure: true, dismissed: false };
     copyAttempt.current = attempt;
     setCopyBusy(true);
     if (control) copyOrigin.current = { control, menu };
@@ -346,7 +351,7 @@ export function StepDetail({
       return;
     }
     if (copyRecovery) return;
-    setCopyRecovery({ scope: copyScope, revealed: false });
+    setCopyRecovery({ scope: copyScope, revealed: false, focusOnShow: attempt.focusOnFailure });
     act('copyLinkRecovery', { step: 'shown' });
   };
 
@@ -418,7 +423,7 @@ export function StepDetail({
   const menuItems = [
     editable && onAddStep && { label: t('roadmap.tablet.addStep'), icon: StepIcons.add, run: () => { act('addStep'); onAddStep(id); } },
     editable && onConnect && { label: t('roadmap.tablet.connect'), icon: StepIcons.graph, run: () => { act('connect'); onConnect(id); } },
-    stepLink && { label: STEP_DETAIL.copyLink, icon: StepIcons.copyLink, run: copyLink },
+    stepLink && { label: STEP_DETAIL.copyLink, icon: StepIcons.copyLink, disabled: copyBusy, run: copyLink },
     onOpenInGraph && { label: STEP_DETAIL.openInGraph, icon: StepIcons.graph, run: openInGraph },
     onSelect && {
       label: STEP_DETAIL.select, icon: StepIcons.select,
@@ -489,9 +494,11 @@ export function StepDetail({
     try { await notice.onDiscard(); }
     finally { setDiscardNotice(null); }
   };
+  const preserveInteractionFocus = () => { if (copyAttempt.current) copyAttempt.current.focusOnFailure = false; };
   return (
     <DetailFocusContext.Provider value={detailFocus}>
-      <div ref={layerRef} className={`st-board-step-layer st-step-read-shell${phone ? ' is-phone' : ''}`} onClickCapture={swallowSecondPress} onKeyDown={copyRecovery ? onKeyDown : undefined}>
+      <div ref={layerRef} className={`st-board-step-layer st-step-read-shell${phone ? ' is-phone' : ''}`} onClickCapture={swallowSecondPress} onKeyDown={copyRecovery ? onKeyDown : undefined}
+        onPointerDownCapture={preserveInteractionFocus} onKeyDownCapture={preserveInteractionFocus} onFocusCapture={preserveInteractionFocus}>
         <article className="st-step-document" aria-labelledby={titleId} tabIndex={-1} onKeyDown={onKeyDown}>
           <header className="st-step-toolbar">
             <button type="button" className="st-step-breadcrumb" aria-label={backTo({ screen: backLabel })} onClick={onBack}>
@@ -554,9 +561,9 @@ export function StepDetail({
           {liveChecked && !noteEditing && <div className="st-board-step-checked"><StepIcons.statusDone /><span>{checkedToast({ item: checked.label })}</span>
             <button type="button" onClick={() => { workspaceActions.onToggleSubtask(id, checked.id); setChecked(null); track('roadmap_board_workspace', { action: 'undo' }); }}>{LABELS.undo}</button>
           </div>}
-          <span className="st-board-step-checked-announcement" role="status" aria-live="polite" aria-atomic="true">{copyRecovery ? t('roadmap.step.copyFailed') : ''}</span>
-          {copyRecovery && <div className="st-step-copy-anchor">
-            <section ref={copyCard} className="st-step-copy-recovery" aria-labelledby={copyTitleId}
+          <div className="st-step-copy-anchor">
+            <span className="st-board-step-checked-announcement" role="status" aria-live="polite" aria-atomic="true">{copyRecovery ? t('roadmap.step.copyFailed') : ''}</span>
+            {copyRecovery && <section ref={copyCard} className="st-step-copy-recovery" aria-labelledby={copyTitleId}
               onKeyDown={(event) => {
                 if (event.key !== 'Escape' || event.defaultPrevented) return;
                 event.preventDefault();
@@ -585,8 +592,8 @@ export function StepDetail({
                   act('copyLinkRecovery', { step: 'reveal' });
                 }}>{copyRecovery.revealed ? t('roadmap.step.selectLink') : t('roadmap.step.showLink')}</button>
               </div>
-            </section>
-          </div>}
+            </section>}
+          </div>
           <footer className="st-step-pinned-actions">
             {!(phone && outcome) && <span className="st-step-shared-label"><Users size={14} aria-hidden />{t('roadmap.step.sharedStep')}</span>}
             <p className="st-board-step-outcome" role="status">{outcome?.line ?? ''}</p>
@@ -937,8 +944,10 @@ function StepMenu({ items, confirm }) {
               key={item.label}
               type="button"
               role="menuitem"
+              aria-disabled={item.disabled || undefined}
               className={`st-board-step-menu-item${item.danger ? ' st-board-step-menu-item--danger' : ''}`}
               onClick={(event) => {
+                if (item.disabled) return;
                 setOpen(false);
                 opener.current.focus();
                 item.run(event.currentTarget, opener.current);

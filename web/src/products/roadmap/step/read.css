@@ -73,6 +73,9 @@
   gap: 8px;
   width: 400px;
   max-width: calc(100% - 48px);
+  max-height: var(--st-step-copy-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 16px;
   box-sizing: border-box;
   border: 1px solid var(--border-default);
@@ -81,6 +84,7 @@
   color: var(--text-primary);
   box-shadow: 0 4px 8px rgb(var(--shadow-ink) / 0.13);
 }
+.st-step-copy-recovery > * { flex-shrink: 0; }
 .st-step-copy-recovery header { display: flex; gap: 8px; min-height: 44px; }
 .st-step-copy-recovery h3 { flex: 1; margin: 0; font: 700 16px/23px var(--font-body); }
 .st-step-copy-recovery .st-board-step-icon-button { width: 44px; height: 44px; border-radius: var(--radius-full); }
@@ -91,7 +95,7 @@
 .st-step-copy-recovery input:focus { outline: 2px solid var(--color-brand); outline-offset: -2px; }
 .st-step-copy-actions { display: flex; gap: 8px; }
 .st-step-copy-actions .st-board-step-action { min-height: 44px; padding: 0 12px; border-radius: 8px; border-color: var(--st-step-rule); box-shadow: none; font-size: 13px; line-height: 17px; }
-.st-step-copy-actions [aria-disabled="true"] { opacity: 0.5; cursor: progress; }
+.st-step-copy-actions [aria-disabled="true"], .st-step-read-shell .st-board-step-menu-item[aria-disabled="true"] { opacity: 0.5; cursor: progress; }
 [data-theme="dark"] .st-step-copy-actions .st-board-step-action { border-color: var(--text-primary); }
 .st-step-read-heading { padding: 20px 0 16px; }
 .st-step-read-tags { display: flex; align-items: flex-start; gap: 8px; }
