@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -26,7 +27,7 @@ SUBSCRIPTIONS_UP = ["compose", "up", "-d", "--no-deps", "--pull", "never", "subs
 
 def server_config(environment=".env"):
     env = dict(line.split("=", 1) for line in Path(environment).read_text().splitlines() if "=" in line)
-    return {"image": env.get("SERVER_IMAGE", "ghcr.io/neigrok/windmill-monorepo:" + env["IMAGE_TAG"]), "environment": {
+    return {"image": env.get("SERVER_IMAGE", "ghcr.io/neigrok/windmill-monorepo:" + env.get("BACKEND_TAG", "latest")), "environment": {
         "AI_ALLOWANCES_ENABLED": env.get("AI_ALLOWANCES_ENABLED", "false"),
         "COACH_MAX_OUTPUT_TOKENS": env.get("COACH_MAX_OUTPUT_TOKENS", "2000"),
         "AI_INSTALLATIONS_ENABLED": env.get("AI_INSTALLATIONS_ENABLED", "false"),
@@ -242,7 +243,7 @@ class DeployProductionTest(unittest.TestCase):
         result = self.deploy()
         self.assertEqual((result.returncode, result.stdout, result.stderr),
                          (0, PROVISIONED + "\n" + DEPLOYED, ""))
-        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nBACKEND_TAG=new\nSERVER_IMAGE=sha256:" + "a" * 64 +
                                         "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
@@ -301,6 +302,85 @@ class DeployProductionTest(unittest.TestCase):
         result = self.deploy()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("AI_IMAGE=sha256:" + "e" * 64 + "\n", (self.work / ".env").read_text())
+
+    def fingerprinted_deployment(self, changed, tag="new"):
+        units = ("BACKEND", "SUBSCRIPTIONS", "AI")
+        rendered = "".join(unit + "_INPUTS=" + ("9" if unit in changed else "0") * 64 + "\n" for unit in units)
+        (self.work / ".env").write_text("IMAGE_TAG=" + "1" * 40 + "\nPOSTGRES_PASSWORD=live-secret\n" +
+                                        "".join(unit + "_INPUTS=" + "0" * 64 + "\n" for unit in units) +
+                                        "BACKEND_TAG=" + "1" * 40 + "\nSERVER_IMAGE=sha256:" + "e" * 64 +
+                                        "\nSUBSCRIPTIONS_IMAGE=sha256:" + "c" * 64 + "\nAI_IMAGE=sha256:" + "f" * 64 + "\n")
+        (self.work / "rendered.env").write_text("IMAGE_TAG=" + tag + "\n" + rendered +
+                                                "POSTGRES_PASSWORD=rendered-secret\nDOMAIN_APP=example.test\n" + self.ai_env)
+        (self.work / "Caddyfile.next").write_text((self.work / "Caddyfile").read_text())
+        self.state(commands=[], serverImageId="sha256:" + ("a" if "BACKEND" in changed else "e") * 64,
+                   subscriptionsRunningId="sha256:" + ("b" if "SUBSCRIPTIONS" in changed else "c") * 64,
+                   aiRunningId="sha256:" + ("d" if "AI" in changed else "f") * 64)
+        return rendered
+
+    def test_a_deploy_replaces_only_the_units_whose_inputs_this_commit_changes(self):
+        for changed in ({"AI"}, {"SUBSCRIPTIONS"}, {"BACKEND"}, {"BACKEND", "AI"}, {"BACKEND", "SUBSCRIPTIONS", "AI"}):
+            with self.subTest(changed=sorted(changed)):
+                self.upload_candidate()
+                inputs = self.fingerprinted_deployment(changed)
+                result = self.deploy()
+                notes = (("" if "BACKEND" in changed else
+                          "NOTE backend: nothing it is built from changed, so it keeps its image, built at " + "1" * 40 + "\n") +
+                         ("" if "SUBSCRIPTIONS" in changed else "NOTE subscription service: nothing it is built from "
+                          "changed, so it keeps its image, sha256:" + "c" * 64 + "\n") +
+                         ("" if "AI" in changed else
+                          "NOTE AI service: nothing it is built from changed, so it keeps its image, sha256:" + "f" * 64 + "\n"))
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, notes + PROVISIONED + "\n" + DEPLOYED, ""))
+                self.assertEqual((self.work / ".env").read_text(), "IMAGE_TAG=new\n" + inputs + "DOMAIN_APP=example.test\n" +
+                                 self.ai_env + "POSTGRES_PASSWORD=live-secret\nBACKEND_TAG=" +
+                                 ("new" if "BACKEND" in changed else "1" * 40) +
+                                 "\nSERVER_IMAGE=sha256:" + ("a" if "BACKEND" in changed else "e") * 64 +
+                                 "\nSUBSCRIPTIONS_IMAGE=sha256:" + ("b" if "SUBSCRIPTIONS" in changed else "c") * 64 +
+                                 "\nAI_IMAGE=sha256:" + ("d" if "AI" in changed else "f") * 64 + "\n")
+                commands = self.state()["commands"]
+                self.assertEqual([command[6:] for command in commands if command[5:6] == ["pull"]],
+                                 ([BACKEND_UP[5:]] if "BACKEND" in changed else []) +
+                                 ([["subscriptions"]] if "SUBSCRIPTIONS" in changed else []) +
+                                 ([["ai"]] if "AI" in changed else []))
+                self.assertEqual([command for command in commands if command[:2] == ["compose", "up"]], [
+                    BACKEND_UP, SUBSCRIPTIONS_UP, ["compose", "up", "-d", "--no-deps", "--pull", "never", "ai-db"],
+                    ["compose", "up", "-d", "--no-deps", "--pull", "never", "ai"]])
+
+    def test_a_rollback_returns_each_unit_whose_inputs_differ_to_the_commit_it_names(self):
+        older = "2" * 40
+        inputs = self.fingerprinted_deployment({"BACKEND", "SUBSCRIPTIONS"}, tag=older)
+        result = self.deploy()
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0,
+            "NOTE AI service: nothing it is built from changed, so it keeps its image, sha256:" + "f" * 64 + "\n" +
+            PROVISIONED + "\n" + DEPLOYED, ""))
+        self.assertEqual((self.work / ".env").read_text(), "IMAGE_TAG=" + older + "\n" + inputs + "DOMAIN_APP=example.test\n" +
+                         self.ai_env + "POSTGRES_PASSWORD=live-secret\nBACKEND_TAG=" + older + "\nSERVER_IMAGE=sha256:" +
+                         "a" * 64 + "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "f" * 64 + "\n")
+        self.assertEqual([command[4] for command in self.state()["commands"]
+                          if command[:4] == ["image", "inspect", "--format", "{{.Id}}"]], [
+            "ghcr.io/neigrok/windmill-monorepo:" + older, "ghcr.io/neigrok/windmill-monorepo:subscriptions-" + older,
+            "sha256:" + "f" * 64, "sha256:" + "a" * 64])
+
+    def test_a_backend_the_live_deployment_cannot_vouch_for_is_deployed_at_this_commit(self):
+        for name, live, state in (
+                ("its pinned image is gone", lambda text: text, {"absentImages": ["sha256:" + "e" * 64]}),
+                ("no commit is recorded for it", lambda text: text.replace("BACKEND_TAG=" + "1" * 40 + "\n", ""), {}),
+                ("no inputs are recorded for it", lambda text: text.replace("BACKEND_INPUTS=" + "0" * 64, "BACKEND_INPUTS="), {})):
+            with self.subTest(name):
+                self.upload_candidate()
+                inputs = self.fingerprinted_deployment(set())
+                (self.work / ".env").write_text(live((self.work / ".env").read_text()))
+                self.state(**{"serverImageId": "sha256:" + "a" * 64, "absentImages": [], **state})
+                result = self.deploy()
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0,
+                    "NOTE subscription service: nothing it is built from changed, so it keeps its image, sha256:" + "c" * 64 +
+                    "\nNOTE AI service: nothing it is built from changed, so it keeps its image, sha256:" + "f" * 64 + "\n" +
+                    PROVISIONED + "\n" + DEPLOYED, ""))
+                self.assertEqual((self.work / ".env").read_text(), "IMAGE_TAG=new\n" + inputs + "DOMAIN_APP=example.test\n" +
+                                 self.ai_env + "POSTGRES_PASSWORD=live-secret\nBACKEND_TAG=new\nSERVER_IMAGE=sha256:" +
+                                 "a" * 64 + "\nSUBSCRIPTIONS_IMAGE=sha256:" + "c" * 64 + "\nAI_IMAGE=sha256:" + "f" * 64 + "\n")
+                self.assertEqual([command[6:] for command in self.state()["commands"] if command[5:6] == ["pull"]],
+                                 [BACKEND_UP[5:]])
 
     def approve(self, old, new, image_id=None):
         (self.work / "rendered.env").write_text("IMAGE_TAG=" + "b" * 40 + "\nPOSTGRES_PASSWORD=rendered-secret\nDOMAIN_APP=example.test\n" + self.ai_env)
@@ -362,8 +442,8 @@ class DeployProductionTest(unittest.TestCase):
         self.assertEqual((result.returncode, result.stdout, result.stderr), (0,
             PROVISIONED + "\n" + DEPLOYED, ""))
         self.assertEqual((self.work / ".env").read_text(), "IMAGE_TAG=" + "b" * 40 +
-                         "\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
-                         "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n")
+                         "\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nBACKEND_TAG=" + "b" * 40 +
+                         "\nSERVER_IMAGE=sha256:" + "a" * 64 + "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n")
         commands = self.state()["commands"]
         metadata_read = next(command for command in commands if command[:2] == ["run", "--rm"])
         self.assertEqual(metadata_read, ["run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL",
@@ -419,7 +499,7 @@ class DeployProductionTest(unittest.TestCase):
         (self.work / "Caddyfile.next").write_text("# live Caddyfile\n")
         result = self.deploy()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nBACKEND_TAG=new\nSERVER_IMAGE=sha256:" + "a" * 64 +
                                         "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
@@ -467,7 +547,7 @@ class DeployProductionTest(unittest.TestCase):
         self.state(killAt="up")
         killed = self.deploy()
         self.assertEqual(killed.returncode, -signal.SIGKILL)
-        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nBACKEND_TAG=new\nSERVER_IMAGE=sha256:" + "a" * 64 +
                                         "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                         ".env.bak": "IMAGE_TAG=old\nPOSTGRES_PASSWORD=live-secret\n",
                                         "rendered.env": "IMAGE_TAG=new\nPOSTGRES_PASSWORD=rendered-secret\nDOMAIN_APP=example.test\n" + self.ai_env,
@@ -481,7 +561,7 @@ class DeployProductionTest(unittest.TestCase):
         self.state(commands=[])
         retried = self.deploy()
         self.assertEqual(retried.returncode, 0, retried.stderr)
-        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nBACKEND_TAG=new\nSERVER_IMAGE=sha256:" + "a" * 64 +
                                         "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
@@ -499,7 +579,7 @@ class DeployProductionTest(unittest.TestCase):
         self.assertEqual((result.returncode, result.stdout, result.stderr), (1,
             "FAIL subscriptions database: the role or the database could not be created\n",
             "FAIL subscription database provisioning exited with code 1; the backend is deployed and serving\n"))
-        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nSERVER_IMAGE=sha256:" + "a" * 64 +
+        self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret\nBACKEND_TAG=new\nSERVER_IMAGE=sha256:" + "a" * 64 +
                                         "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
@@ -539,7 +619,7 @@ class DeployProductionTest(unittest.TestCase):
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (1, PROVISIONED + "\n",
                                  "FAIL " + failure + "; the backend is deployed and serving\n"))
                 self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret"
-                                                "\nSERVER_IMAGE=sha256:" + "a" * 64 + "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
+                                                "\nBACKEND_TAG=new\nSERVER_IMAGE=sha256:" + "a" * 64 + "\nSUBSCRIPTIONS_IMAGE=sha256:" + "b" * 64 + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                                 "docker-compose.yml": "# candidate compose\n",
                                                 "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
@@ -561,7 +641,7 @@ class DeployProductionTest(unittest.TestCase):
             "NOTE subscription service: no image could be pulled for this commit, so its running container is kept as "
             "it is, on " + live + "\n" + PROVISIONED + "\n" + kept + deployed, ""))
         self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\n" + self.ai_env + "POSTGRES_PASSWORD=live-secret"
-                                        "\nSERVER_IMAGE=sha256:" + "a" * 64 + "\nSUBSCRIPTIONS_IMAGE=" + live + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
+                                        "\nBACKEND_TAG=new\nSERVER_IMAGE=sha256:" + "a" * 64 + "\nSUBSCRIPTIONS_IMAGE=" + live + "\nAI_IMAGE=sha256:" + "d" * 64 + "\n",
                                         "docker-compose.yml": "# candidate compose\n",
                                         "subscriptions-db": {"provision.sh": "# candidate provisioning\n"},
                                         "ai-db": {"provision.sh": "# candidate AI provisioning\n"},
@@ -900,7 +980,7 @@ class DeployWorkflowTest(unittest.TestCase):
         self.assertIn("on:\n  workflow_dispatch:\n\npermissions:", backup)
         self.assertIn("group: deploy-vps\n  cancel-in-progress: false", backup)
 
-    def test_workflow_requires_an_image_commit_reachable_from_main_and_uses_its_sentry_release(self):
+    def test_workflow_requires_an_image_commit_reachable_from_main(self):
         workflow = SCRIPT.parents[2] / ".github/workflows/deploy.yml"
         text = workflow.read_text()
         start = text.index('          if [[ ! "$IMAGE_TAG"')
@@ -928,8 +1008,149 @@ class DeployWorkflowTest(unittest.TestCase):
             result = subprocess.run(["bash", "-euc", guard], cwd=root,
                                     env={**environment, "IMAGE_TAG": image}, capture_output=True, text=True)
             self.assertEqual((result.returncode, result.stdout, result.stderr), (code, "", error))
-        release = next(line.strip() for line in text.splitlines() if line.strip().startswith("SENTRY_RELEASE:"))
-        self.assertEqual(release, "SENTRY_RELEASE: ${{ inputs.image_tag || github.event.workflow_run.head_sha }}")
+
+    def test_the_render_names_the_commit_with_each_units_inputs_and_leaves_the_release_to_the_backends_commit(self):
+        root = SCRIPT.parents[2]
+        workflow = (root / ".github/workflows/deploy.yml").read_text()
+        start = workflow.index("          : > rendered.env\n")
+        end = workflow.index("          } >> rendered.env\n", start) + len("          } >> rendered.env\n")
+        render = textwrap.dedent(workflow[start:end])
+        keys = re.search(r"for key in (POSTGRES_PASSWORD[\s\S]*?); do", render).group(1).replace("\\", "").split()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        repository = Path(directory.name)
+        environment = {**os.environ, "GIT_AUTHOR_NAME": "Deploy test", "GIT_AUTHOR_EMAIL": "test@example.invalid",
+                       "GIT_COMMITTER_NAME": "Deploy test", "GIT_COMMITTER_EMAIL": "test@example.invalid"}
+        (repository / "backend/deploy").mkdir(parents=True)
+        shutil.copyfile(SCRIPT.with_name("image_inputs.py"), repository / "backend/deploy/image_inputs.py")
+        (repository / "services/ai").mkdir(parents=True)
+        (repository / "services/ai/Dockerfile").write_text("FROM scratch\n")
+        for arguments in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "commit"]):
+            subprocess.run(["git", *arguments], cwd=repository, env=environment, check=True, capture_output=True)
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository, check=True, capture_output=True,
+                                text=True).stdout.strip()
+        result = subprocess.run(["bash", "-euo", "pipefail", "-c", render], cwd=repository, capture_output=True, text=True,
+                                env={"PATH": os.environ["PATH"], "IMAGE_TAG": commit, **{key: "" for key in keys}})
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+        fingerprints = subprocess.run([sys.executable, str(SCRIPT.with_name("image_inputs.py")), commit], cwd=repository,
+                                      check=True, capture_output=True, text=True).stdout.splitlines()
+        rendered = (repository / "rendered.env").read_text().splitlines()
+        self.assertEqual(rendered[:4], ["IMAGE_TAG=" + commit] + fingerprints)
+        self.assertEqual([line.partition("=")[0] for line in fingerprints], ["BACKEND_INPUTS", "SUBSCRIPTIONS_INPUTS", "AI_INPUTS"])
+        self.assertEqual([line for line in rendered if line.startswith(("SENTRY_RELEASE=", "BACKEND_TAG="))], [])
+        compose = (root / "backend/deploy/docker-compose.yml").read_text()
+        server = compose.split("\n  server:\n", 1)[1].split("\n  embedder:\n", 1)[0]
+        self.assertIn("    image: ${SERVER_IMAGE:-ghcr.io/neigrok/windmill-monorepo:${BACKEND_TAG:-latest}}\n", server)
+        self.assertIn("      SENTRY_RELEASE: ${BACKEND_TAG:-}\n", server)
+        self.assertIn("\n    image: ghcr.io/neigrok/windmill-monorepo:embedder-${BACKEND_TAG:-latest}\n", compose)
+
+    def test_a_units_fingerprint_moves_with_what_its_images_are_built_from_and_nothing_else(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        environment = {**os.environ, "GIT_AUTHOR_NAME": "Deploy test", "GIT_AUTHOR_EMAIL": "test@example.invalid",
+                       "GIT_COMMITTER_NAME": "Deploy test", "GIT_COMMITTER_EMAIL": "test@example.invalid"}
+        def git(*arguments):
+            return subprocess.run(["git", *arguments], cwd=root, env=environment, check=True,
+                                  capture_output=True, text=True).stdout.strip()
+        def fingerprints(commit):
+            output = subprocess.run([sys.executable, str(SCRIPT.with_name("image_inputs.py")), commit], cwd=root,
+                                    check=True, capture_output=True, text=True).stdout
+            return dict(line.split("=", 1) for line in output.splitlines())
+        def commit(change, message):
+            change()
+            git("add", "-A")
+            git("commit", "-qm", message)
+            return git("rev-parse", "HEAD")
+        tracked = ("backend/platform/server.cpp", "backend/README.md", "backend/deploy/Caddyfile",
+                   "backend/deploy/docker-compose.yml", "backend/deploy/ai-db/provision.sh",
+                   "backend/deploy/sync_compatibility.py", "backend/test/deploy/ai_db_test.py",
+                   "backend/test/platform/server_test.cpp", "services/embedder/server.js",
+                   "services/subscriptions/src/main.rs", "services/subscriptions/ARCHITECTURE.md", "services/ai/src/main.rs",
+                   "packages/api-contract/sync/gym.registry.json", "packages/api-contract/sync/corpus/case.json",
+                   "packages/api-contract/sync/reference/core/merge.js", "packages/api-contract/gym/catalog.json",
+                   "packages/api-contract/roadmap-socket.json", "packages/api-contract/subscriptions/feed.json",
+                   "packages/api-contract/ai/wire/call.json", "packages/api-contract/domain-kit/vector.json",
+                   "web/src/main.js", ".github/workflows/backend.yml", ".github/workflows/deploy.yml",
+                   ".github/workflows/ai.yml")
+        git("init", "-q", "-b", "main")
+        for path in tracked:
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).write_text("first\n")
+        base = commit(lambda: None, "base")
+        before = fingerprints(base)
+        self.assertEqual(list(before), ["BACKEND_INPUTS", "SUBSCRIPTIONS_INPUTS", "AI_INPUTS"])
+        def moved(sha):
+            after = fingerprints(sha)
+            return {unit.removesuffix("_INPUTS") for unit in after if after[unit] != before[unit]}
+        changes = [(path, lambda path=path: (root / path).write_text("second\n"), units) for path, units in (
+            ("services/ai/src/main.rs", {"AI"}),
+            ("services/subscriptions/src/main.rs", {"SUBSCRIPTIONS"}),
+            ("backend/platform/server.cpp", {"BACKEND"}),
+            ("backend/test/platform/server_test.cpp", {"BACKEND"}),
+            ("backend/deploy/sync_compatibility.py", {"BACKEND"}),
+            ("services/embedder/server.js", {"BACKEND"}),
+            ("packages/api-contract/sync/gym.registry.json", {"BACKEND"}),
+            ("packages/api-contract/sync/corpus/case.json", {"BACKEND"}),
+            ("packages/api-contract/gym/catalog.json", {"BACKEND"}),
+            ("packages/api-contract/roadmap-socket.json", {"BACKEND"}),
+            ("packages/api-contract/subscriptions/feed.json", {"BACKEND"}),
+            (".github/workflows/backend.yml", {"BACKEND", "SUBSCRIPTIONS", "AI"}),
+            ("backend/README.md", set()), ("services/subscriptions/ARCHITECTURE.md", set()),
+            ("backend/deploy/Caddyfile", set()), ("backend/deploy/docker-compose.yml", set()),
+            ("backend/deploy/ai-db/provision.sh", set()), ("backend/test/deploy/ai_db_test.py", set()),
+            ("packages/api-contract/sync/reference/core/merge.js", set()), ("packages/api-contract/ai/wire/call.json", set()),
+            ("packages/api-contract/domain-kit/vector.json", set()), ("web/src/main.js", set()),
+            (".github/workflows/deploy.yml", set()), (".github/workflows/ai.yml", set()),
+            ("services/ai/src/added.rs", {"AI"}))]
+        changes += [
+            ("a deleted backend file", lambda: (root / "backend/platform/server.cpp").unlink(), {"BACKEND"}),
+            ("an executable bit", lambda: (root / "services/subscriptions/src/main.rs").chmod(0o755), {"SUBSCRIPTIONS"})]
+        for name, change, units in changes:
+            with self.subTest(name):
+                git("checkout", "-q", base)
+                self.assertEqual(moved(commit(change, name)), units)
+        git("checkout", "-q", base)
+        commit(lambda: (root / "services/ai/src/main.rs").write_text("second\n"), "change")
+        self.assertEqual(moved(commit(lambda: (root / "services/ai/src/main.rs").write_text("first\n"), "revert")), set())
+        git("checkout", "-q", base)
+        git("checkout", "-qb", "service")
+        commit(lambda: (root / "services/ai/src/main.rs").write_text("second\n"), "service")
+        git("checkout", "-q", "main")
+        commit(lambda: (root / "backend/platform/server.cpp").write_text("second\n"), "backend")
+        git("merge", "-q", "--no-ff", "-m", "merge", "service")
+        self.assertEqual(moved(git("rev-parse", "HEAD")), {"BACKEND", "AI"})
+
+    def test_each_unit_counts_everything_its_images_are_built_from(self):
+        root = SCRIPT.parents[2]
+        specification = importlib.util.spec_from_file_location("image_inputs", SCRIPT.with_name("image_inputs.py"))
+        inputs = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(inputs)
+        build = (root / ".github/workflows/backend.yml").read_text().split("\n  build-and-push:\n", 1)[1]
+        units = {"backend": "BACKEND_INPUTS", "services/embedder": "BACKEND_INPUTS",
+                 "services/subscriptions": "SUBSCRIPTIONS_INPUTS", "services/ai": "AI_INPUTS"}
+        self.assertEqual(re.findall(r"^          context: (\S+)$", build, re.M), list(units))
+        self.assertEqual(re.findall(r"^          build-contexts: (\S+)$", build, re.M), ["contract=packages/api-contract"])
+        for context, unit in units.items():
+            with self.subTest(context=context):
+                listed = subprocess.run(["git", "ls-files", "-z", "--", context], cwd=root, check=True,
+                                        capture_output=True, text=True).stdout.split("\0")
+                self.assertTrue(inputs.counts(inputs.UNITS[unit], ".github/workflows/backend.yml"))
+                self.assertTrue(inputs.counts(inputs.UNITS[unit], context + "/Dockerfile"))
+                self.assertEqual([path for path in listed if path and not path.endswith(".md")
+                                  and not inputs.counts(inputs.UNITS[unit], path)
+                                  and not path.startswith(("backend/deploy/", "backend/test/deploy/"))], [])
+        dockerfile = (root / "backend/Dockerfile").read_text()
+        instructions = "\n".join(line for line in dockerfile.splitlines() if not line.lstrip().startswith("#"))
+        self.assertEqual(set(re.findall(r"\S*deploy/\S*", instructions)), {"deploy/sync_compatibility.py"})
+        contract = root / "packages/api-contract"
+        sources = [source for line in re.findall(r"^COPY --from=contract (.+)$", instructions, re.M)
+                   for source in line.split()[:-1]]
+        copied = [found for source in sources for match in contract.glob(source)
+                  for found in ([match] if match.is_file() else match.rglob("*")) if found.is_file()]
+        self.assertGreater(len(copied), len(sources))
+        self.assertEqual([str(path.relative_to(root)) for path in copied if not path.name.endswith(".md")
+                          and not inputs.counts(inputs.UNITS["BACKEND_INPUTS"], str(path.relative_to(root)))], [])
 
     def test_the_subscription_password_renders_only_as_hex_and_is_never_repeated(self):
         text = (SCRIPT.parents[2] / ".github/workflows/deploy.yml").read_text()

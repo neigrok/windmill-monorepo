@@ -19,7 +19,8 @@ writes the hints claims owe the App Store, logs every request and reports to Sen
 In production the public listener answers `GET /health` and the App Store notification door, and 404s
 every other path; no App Store Connect setting sends notifications to the door yet, and no deployment holds
 the in-app purchase key the claim and the refresh need, so both answer 503 there. Backend CI publishes
-its image beside the server's, and every deploy provisions its database and starts it
+its image beside the server's; every deploy provisions its database and brings the service up, on a
+new image only when the commit changes what it is built from
 ([deploy README](../../backend/deploy/README.md#the-subscription-service)).
 
 ## Crates

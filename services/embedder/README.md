@@ -61,8 +61,9 @@ The image uses `node:20-slim` because the native runtime needs glibc. Installati
 runtime packages and non-target native binaries within the same image layer.
 
 Backend CI publishes the image as `embedder-<sha>` beside the server image. Compose selects both
-with `IMAGE_TAG` and mounts `./web/models:/models:ro` from the deployed web directory. The web deploy
-must land first on a fresh host; compose validation does not detect missing model files. A wrong
+with `BACKEND_TAG`, the backend's commit, and mounts `./web/models:/models:ro` from the deployed web
+directory. The web deploy must land first on a fresh host; compose validation does not detect
+missing model files. A wrong
 mount produces a failed health response while the container remains running.
 
 The service has no compose memory limit. Check host capacity for the model before deployment;
