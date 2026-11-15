@@ -730,13 +730,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   that open it in 2 of your other trees*); a tree deleted in the open menu leaves the other rows' lines, as its steps
   went with it. The line's graph glyph is the Board / Icon component scaled to 14 px on the boards, a 1.17 px stroke;
   web draws it as every tree glyph, at 1.67 px.
-- **Section 29 · drawn on surfaces the web does not have (29.03, 29.04, 29.06–29.09, 29.16–29.21, 29.29–29.31,
-  29.35–29.37, 29.46–29.62, 29.66–29.68 and the laptop frames).** The boards stand every step on the full-page step
-  editor of 19 beside a Coach rail from 744px and a Coach field on phones, which the roadmap room does not show. The web
-  has the step modal and page: a step that owns a subtree shows, where Complete sat, how far its subtree is (*No steps
-  yet*, *0 of 1 done*, *1 of 1 done*) beside Open subtree, for its owner and for a reader, whose step otherwise has no
-  band (29.16, 29.52); it has no Tree section. 29.10's *Remove step…* on the row is the step's own Delete in its menu
-  and the Graph's dock.
+- **Section 29 · editor and Coach scope.** The shared step read document and right-side Coach placeholder are
+  delivered. Full inline editing and functional Coach remain unbuilt. A step that owns a subtree shows its progress
+  (*No steps yet*, *0 of 1 done*, *1 of 1 done*) beside Open subtree in the pinned actions, for owners and readers
+  (29.16, 29.52); it has no Tree section. 29.10's *Remove step…* corresponds to Delete step in the document's menu.
 - **Section 29 · words the web keeps.** The boards say *New node*, *No nodes yet* with *Add first node*, *Mark
   unfinished*, *Remove step…*, *Keep step* and *Remove branch*; the web keeps *New step*, *Your first step* with New
   step, *Reset* and *Delete* where it has those surfaces, and takes the subtree's own words from the boards: *Open
@@ -766,13 +763,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   (*Share My year*, with *Learn to sail is part of My year and is shared with it.* first); the room offers no Share
   inside a subtree. 29b.01 has a C on an owning step's card say *Completes with its subtree*; the build says section 28's
   *Completes with its tree*, with Open subtree.
-- **Phone step page · 20.01 against the build.** 🚀 20.01 (397:28208) draws the counts and chevrons short of the right
-  edge, a two-colour identity rail and no Shell row; the build runs them to the edge under the Shell row.
-- **Tree switcher · delete row.** Rename and delete show on hover only, so a touch tablet from 744 px has no clear way
-  to them. The open trigger has no left padding. Below 744 px no surface removes a tree.
-- **Flow index · step editor.** The [flow index](../index.md#roadmap--web) has no rows for the step editor sections
-  (18–22, 27) on Board · Web.
-- **Web reconciliation evidence.** All 25 current Roadmap screen/state families are mapped in the
+- **Web reconciliation evidence.** Current source families and retained superseded specimens are mapped in the
   [evidence log](roadmap-web-reconciliation.md) and linked from the [flow index](../index.md#roadmap--web).
   🚀 marks source/runtime reconciliation; runtime limits are separate. Native graphs and SwiftShader
   captures do not establish WebGL lighting, animation timing or real-GPU performance.
@@ -797,9 +788,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   ([design-system note 499:42374](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=499-42374)).
   Web's shared token and static-page chrome use that ring; dark, journal and gym overrides retain
   their own values.
-- **Board · a failed Copy link says nothing.** When the browser refuses the clipboard write from the step menu (01.09, 03.02) the
-  build shows nothing. Proposed, awaiting the owner: toast *Couldn't copy the link* · **Show link**, then the link selected with
-  **Retry** (phone 25.01–25.02, desktop 15.01–15.02).
+- **Step editor · link-copy recovery.** Clipboard failure currently emits its failed outcome without visible recovery.
+  Approved [37.01–37.15](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1116-74911)
+  remains unbuilt; it specifies the nonmodal failure card, full selectable link, retry and focus return.
 - **Shell · signed-in avatar size.** The Shared Shell's Signed in variants (290:7065, 290:7079) draw a 28px avatar whose initial sits at the top. The shipped seat renders a 30px avatar centred in a 44px target, matching the Signed out variants (642:20246, 642:20267). Redraw the Signed in variants at 30px.
 - **Board · Shell at 200% text.** The Shell defines no reflow: from 744px `web/src/shell/chrome/chrome.css` keeps room links in
   one row of 44px-high targets with no fill, bold-width reservation and `white-space: nowrap`. Below 744px room links are
@@ -881,8 +872,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   connectivity statement. Readers, the demo and rooms without an Offline publication retain it.
 - **Board and Graph · superseded step layouts.** List vocabulary, old phone sheets and tabbed
   Overview/Workspace/History drawings are marked Superseded development target. The [flow index](../index.md#approved-shared-step-editor)
-  points to approved 18/19/27/40, which are in development. Their completion, workspace, history, relationship,
-  deletion and subtree behavior remains part of the migration contract. Link-copy proposals 15.01–15.02 and
+  points to the delivered shared read document from 18/19/27/40, including completion, workspace, history,
+  relationships, deletion and subtree behavior. Inline editing, creation and functional Coach remain unbuilt.
+  Link-copy proposals 15.01–15.02 and
   25.01–25.02 point to approved 37.01–37.15.
   The shared editor keeps the Shell available and presents reader content without owner controls.
 - **Graph · ticker over the selection bar.** Web 16's ticker and the selection bar share the bottom of the canvas with no drawn
