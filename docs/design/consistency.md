@@ -985,6 +985,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the 4.5:1 floor for 11 px text. The web draws the three in the journal's dim ink (`.journal-talk-kept` in
   `journal.css`): at night the secondary text `#B6B5B0`, 8.56:1; by day the tertiary `#74654F` the board draws. Redraw the
   night lines on `text/secondary`, or rule the board's value back in.
+- **Talk refused sheet · held sentence.** The approved board draws the held face as *The rest of your AI
+  allowance is held by a request still in progress.* A hold may belong to a call whose cost is unconfirmed, not
+  one still running, so the web says *The rest of your AI allowance is held by an earlier request whose cost is
+  not yet confirmed.* (`journal.talk.refused.held`). Update the board's line to the web's.
 - **F34 · Type roles.** Reconcile the journal's unassigned first-run, talk, verdict, nudge,
   week-count and narrow scale styles with the named type ramp.
 - **F36 · Phone tools.** Check the fixed `.journal-tools` rail against the writing measure at
