@@ -181,7 +181,11 @@ export function StepDetail({
     const article = layerRef.current.querySelector('article');
     const measure = () => {
       setCompactNotice(article.clientWidth < 600);
-      article.style.setProperty('--st-step-copy-height', `${Math.max(0, scrollRef.current.clientHeight - 24)}px`);
+      const available = scrollRef.current.clientHeight;
+      // Preserve a full 44px control and its surrounding border in a short read region.
+      const inset = Math.min(12, Math.max(0, (available - 46) / 2));
+      article.style.setProperty('--st-step-copy-inset', `${inset}px`);
+      article.style.setProperty('--st-step-copy-height', `${Math.max(0, available - inset * 2)}px`);
     };
     measure();
     const observer = new ResizeObserver(measure);

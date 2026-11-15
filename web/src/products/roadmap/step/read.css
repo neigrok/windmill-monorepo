@@ -67,7 +67,7 @@
   position: absolute;
   z-index: 4;
   right: 24px;
-  bottom: 12px;
+  bottom: var(--st-step-copy-inset, 12px);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -177,8 +177,8 @@
 .is-phone .st-step-read-tags { align-items: center; }
 .is-phone .st-step-read-title { margin-top: 16px; }
 .is-phone .st-step-read-title .st-board-step-identity-title { flex: initial; font-size: 36px; line-height: 44px; }
-.is-phone .st-step-document-scroll { padding: 0 22px 24px; }
+.is-phone .st-step-document-scroll { min-height: 46px; padding: 0 22px 24px; }
 .is-phone .st-step-pinned-actions { min-height: 64px; padding: 8px 18px; justify-content: space-between; background: var(--surface-canvas); }
 .is-phone .st-step-pinned-actions .st-board-step-action { font-size: 14px; }
-.st-step-phone-coach { min-height: calc(64px + env(safe-area-inset-bottom, 0px)); flex-shrink: 0; background: var(--surface-canvas); }
+.st-step-phone-coach { height: calc(64px + env(safe-area-inset-bottom, 0px)); min-height: env(safe-area-inset-bottom, 0px); flex-shrink: 1; background: var(--surface-canvas); }
 .st-root:has(.st-step-read-shell.is-phone) > .st-graph-toast { bottom: calc(144px + env(safe-area-inset-bottom, 0px)); }
