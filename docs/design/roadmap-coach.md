@@ -12,8 +12,9 @@ Roadmap Coach replaces tending, the roadmap's AI that edits the tree at once fro
 chat that knows your roadmaps and your progress. It answers questions ("what should I do next", "is my
 plan realistic"), and it changes a roadmap only through proposals that you review and apply. A plain
 command about one step is the exception: it is written at once, with a receipt and Undo. Coach follows
-the Gym Coach: the same turn wire, card, access states, allowance and words, tuned for roadmaps and
-self-development, with roadmap tools as its local executors.
+the Gym Coach: the same card, access states, allowance and words, tuned for roadmaps and
+self-development, with roadmap tools as its local executors. How it is built is in
+[Roadmap Coach](../foundation/roadmap-coach.md).
 
 ## Sections
 

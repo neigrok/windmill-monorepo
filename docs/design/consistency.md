@@ -588,6 +588,14 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Roadmap
 
+- **Roadmap Coach · the engineering note against the spec.** The Figma
+  [engineering note](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4965) of 2026-11-08 and
+  [Roadmap Coach](../foundation/roadmap-coach.md) disagree, and the spec stands (owner, 2026-11-14). The note runs the
+  turn on the server over gym's turn wire and runs the web's tools on the server; the spec runs the turn on the device
+  and every ability on the browser's copy. The note takes allowance from the backend's installations and budget; the
+  spec takes it from the [AI service](../foundation/ai-service.md). The note's proposal is a server record with
+  `baseSeq`; the spec's is a synced record whose base is the copy's stamps. The note lists `get_health` and `tidy`,
+  which are retired. Rewrite sections 1, 2, 4 and 5 of the note; the boards are not affected.
 - **Guide · boards against tokens and undrawn desktop states (17).** The [desktop boards](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=856-69888)
   type `#884321` on Save, the field edge, the Read guide link, focus rings and the caret, and no token holds it. Web
   builds Save, the field edge, rings and the caret on `--color-brand` and the link on `--text-link`; Save's white label
