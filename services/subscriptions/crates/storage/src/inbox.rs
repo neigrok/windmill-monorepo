@@ -3,7 +3,7 @@ use std::fmt;
 use domain::{Environment, Store};
 use sqlx::{FromRow, PgConnection};
 
-use crate::ledger::{Ledger, StorageError, commit};
+use crate::ledger::{self, Ledger, PgQuery, StorageError, commit};
 use crate::subscriptions::named;
 
 const KEEP: &str = "insert into inbox (store, notification_id, environment, signed_payload) \
@@ -13,8 +13,12 @@ const SELECT_KEPT_UNSETTLED: &str = "select store, notification_id, environment,
 const SELECT_UNSETTLED: &str = "select store, notification_id, environment, signed_payload from inbox \
      where settled_at is null and (next_attempt_at is null or next_attempt_at <= now_millis()) \
      order by received_at, notification_id limit $1";
-const HOLD_UNSETTLED: &str = "select true from inbox \
-     where store = $1 and notification_id = $2 and settled_at is null for update";
+// A kept notification's lock. Every write of its inbox row holds it first, so the door, a redelivery and the sweep apply
+// it once, and a settle, a postponement or a failed attempt counted beside an apply waits for the apply to end.
+const HOLD_NOTIFICATION: &str = "select pg_advisory_xact_lock(hashtextextended(\
+     format('notification %s %s', $1::text, $2::text), 0))";
+const IS_UNSETTLED: &str = "select exists (select from inbox \
+     where store = $1 and notification_id = $2 and settled_at is null)";
 const SETTLE: &str = "update inbox set settled_at = now_millis(), outcome = $3 \
      where store = $1 and notification_id = $2 and settled_at is null";
 const POSTPONE: &str = "update inbox set next_attempt_at = now_millis() + $3 \
@@ -56,6 +60,12 @@ pub struct KeptNotification(Notification);
 impl KeptNotification {
     pub fn notification(&self) -> &Notification {
         &self.0
+    }
+
+    fn lock(&self) -> PgQuery<'_> {
+        sqlx::query(HOLD_NOTIFICATION)
+            .bind(self.0.store.name())
+            .bind(&self.0.id)
     }
 }
 
@@ -110,6 +120,7 @@ impl Ledger {
         outcome: &'static str,
     ) -> Result<(), StorageError> {
         let mut transaction = self.begin_write().await?;
+        ledger::hold(&mut transaction, kept.lock()).await?;
         settle(&mut transaction, kept, outcome).await?;
         commit(transaction).await
     }
@@ -122,6 +133,7 @@ impl Ledger {
         by_millis: i64,
     ) -> Result<(), StorageError> {
         let mut transaction = self.begin_write().await?;
+        ledger::hold(&mut transaction, kept.lock()).await?;
         sqlx::query(POSTPONE)
             .bind(kept.0.store.name())
             .bind(&kept.0.id)
@@ -136,6 +148,7 @@ impl Ledger {
         kept: &KeptNotification,
     ) -> Result<(), StorageError> {
         let mut transaction = self.begin_write().await?;
+        ledger::hold(&mut transaction, kept.lock()).await?;
         sqlx::query(COUNT_FAILED_ATTEMPT)
             .bind(kept.0.store.name())
             .bind(&kept.0.id)
@@ -145,17 +158,17 @@ impl Ledger {
     }
 }
 
-// Locks the kept notification until the transaction ends; false when it is settled already.
+// Holds the kept notification's lock until the transaction ends; false when it is settled already.
 pub(crate) async fn hold_unsettled(
     connection: &mut PgConnection,
     kept: &KeptNotification,
 ) -> Result<bool, StorageError> {
-    let held: Option<bool> = sqlx::query_scalar(HOLD_UNSETTLED)
+    ledger::hold(connection, kept.lock()).await?;
+    Ok(sqlx::query_scalar(IS_UNSETTLED)
         .bind(kept.0.store.name())
         .bind(&kept.0.id)
-        .fetch_optional(connection)
-        .await?;
-    Ok(held.is_some())
+        .fetch_one(connection)
+        .await?)
 }
 
 pub(crate) async fn settle(

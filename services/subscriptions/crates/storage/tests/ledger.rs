@@ -240,6 +240,56 @@ async fn a_stalled_seq_lock_costs_its_writers_a_busy_answer_and_never_the_health
     .await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn a_write_that_waited_already_waits_for_a_lock_only_what_is_left_of_its_five_seconds() {
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let mut control = PgConnection::connect(&url).await.unwrap();
+        // A period waits to be written for as long as the test holds the advisory lock 7.
+        control
+            .execute(
+                "create function hold_periods() returns trigger language plpgsql as $$ \
+                 begin perform pg_advisory_xact_lock_shared(7); return new; end $$; \
+                 create trigger hold_periods before insert on periods \
+                     for each row execute function hold_periods(); \
+                 select pg_advisory_lock(7);",
+            )
+            .await
+            .unwrap();
+        let mut holder = PgConnection::connect(&url).await.unwrap();
+        holder
+            .execute("begin; select latest_seq from ledger for update")
+            .await
+            .unwrap();
+
+        let writer = tokio::spawn({
+            let ledger = ledger.clone();
+            async move { ledger.apply(purchase("w")).await }
+        });
+        until("the writer waits to write its period", async || {
+            waiting(&mut control).await == 1
+        })
+        .await;
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        control
+            .execute("select pg_advisory_unlock(7)")
+            .await
+            .unwrap();
+        let answer = tokio::time::timeout(Duration::from_millis(3500), writer).await;
+        holder.execute("rollback").await.unwrap();
+
+        assert_eq!(
+            answer
+                .expect("the writer waited for the seq lock past what was left of its 5 s")
+                .unwrap(),
+            Err(StorageError::Busy)
+        );
+        ledger.close().await;
+    })
+    .await;
+}
+
 // How many of the database's connections wait on a lock.
 async fn waiting(control: &mut PgConnection) -> i64 {
     sqlx::query_scalar(

@@ -600,13 +600,19 @@ door reads a store's token that is not one as no hint; the claim, when a claim d
 `pulled_at`, when the service read the state from the store's API. `verified_at` is the newest
 `pulled_at` applied.
 
+Every write of a kept notification's inbox row, `apply_notification`, `settle`, `postpone` and a failed
+attempt counted, holds the notification's advisory lock first, so the door, a redelivery and the sweep apply
+it once, and a settlement, a postponement or a count beside an apply waits for the apply to end.
+
 Every write, the inbox's among them, begins `read committed` whatever the database's default, since the
-seq lock needs each statement to see what committed before it. It waits at most 5 s for any lock
-(`lock_timeout`): a lock is held for milliseconds, so a longer wait means its holder stalled, and the
-write answers `busy` rather than hold a connection behind it. Each of its statements runs at most 10 s
-(`statement_timeout`): twice the lock bound, so the lock bound answers every wait for a lock and this one
-ends a statement stalled for any other reason, and no write holds a connection past it. An apply is one
-transaction, the action of [Domain](#domain):
+seq lock needs each statement to see what committed before it. It holds a notification's, an account's, a
+lineage's or the seq queue's lock ([below](#the-seq-lock)) before it changes what the lock guards, and waits
+5 s at most for those locks, all of them together, counted from its start: a lock is held for milliseconds,
+so a longer wait means its holder stalled, and the write answers `busy` rather than hold a connection behind
+it. Each is an advisory lock, which Postgres grants in one step, taken in a statement of its own once
+`lock_timeout` is set to what is left of the 5 s. Each of its statements runs at most 10 s
+(`statement_timeout`), which ends a statement stalled for any other reason, so no write holds a connection
+past it. An apply is one transaction, the action of [Domain](#domain):
 
 1. Hold the claiming account and the hinted account, each a shared advisory lock, and resolve each:
    erased when `erased_accounts` names the account, live otherwise.
@@ -647,9 +653,9 @@ Only a move away from the account changes what a lineage holds of it between ste
 moved away still holds the periods the account paid for, so the read of step 2 finds every lineage the
 erasure changes. Two erasures lock the lineages they share in the same order.
 
-Locks are taken in one order, accounts, then lineage, then seq, and an erasure holds its account's lock
-alone, so no binding to an account commits beside its erasure. The row lock is
-`for no key update` because a transaction holding the seq lock inserts entitlement rows whose foreign
+Locks are taken in one order, a notification, then accounts, then lineage, then the seq queue and the seq
+lock, and an erasure holds its account's lock alone, so no binding to an account commits beside its erasure.
+The row lock is `for no key update` because a transaction holding the seq lock inserts entitlement rows whose foreign
 key takes a key-share lock on each subscription the account's entitlement carries, which `for update` refuses: the two
 transactions would deadlock.
 
@@ -659,7 +665,11 @@ A transaction takes its events' seqs by updating the `ledger` row, `latest_seq =
 holds that row's lock until it commits. No transaction takes a seq while another that took one has not
 committed, so seq order is commit order and a reader that has seen `seq = n` has seen every event below
 it (INV-8). The seq and the lock are one statement, and `events.seq` has no default, so no event can
-take a seq without the lock, as one could beside an advisory lock around a sequence. A rolled-back
+take a seq without the lock, as one could beside an advisory lock around a sequence. Every write that
+records an event waits for that one row, so each waits first in the seq queue, an advisory lock taken just
+before it, and reaches the row only once no other write holds it: `lock_timeout` bounds the whole wait.
+Waiting for the row itself, a write second in line would wait in two steps, its place in line and then the
+holder's end, each bounded apart, and so up to twice what is left of its lock bound. A rolled-back
 transaction rolls the counter back with it, so the ledger leaves no gap of its own; readers still allow
 one (§5.2). `recordedAt` is the database's clock read in the same statement, one instant for the
 transaction's events, rising with seq as long as the clock does. Each account's subscriptions are read
@@ -686,7 +696,7 @@ server's message is never kept, because it can quote a statement or a value. A l
 | Code | When |
 |---|---|
 | `ledger_unreachable` | no connection within its bound: nothing listens, the network refused or TLS failed |
-| `busy` | after start, no connection within 5 s, because every connection is in use or the database opened no new one, or a write waited longer than 5 s for a lock (`55P03`); the health check, on a connection of its own, tells a busy ledger from an unreachable one |
+| `busy` | after start, no connection within 5 s, because every connection is in use or the database opened no new one, or a write not granted its locks within 5 s of its start (`55P03`); the health check, on a connection of its own, tells a busy ledger from an unreachable one |
 | `outcome_unknown` | a commit's answer never arrived: the transaction may have committed, and a retry shows which |
 | `refused` | the server would not let the role in: a `pg_hba.conf` rule (`28000`), a wrong password (`28P01`), no such database (`3D000`) |
 | `migration` | the schema could not be brought up to the binary's, or the database holds a migration the binary does not |
@@ -772,7 +782,7 @@ the public port and nothing else, and the internal listener binds the service's 
 | request, body and handler | 5 s | 12 s | 503 `{"error":"timeout"}` |
 | request body | 64 KiB | 64 KiB | 413, before any handler reads it |
 
-The internal doors write the ledger, so their request waits past every bound a write keeps, 5 s for a lock and
+The internal doors write the ledger, so their request waits past every bound a write keeps, 5 s for its locks and
 10 s for a statement ([Writing](#writing)): a stalled ledger answers a door's own 503 `{"code":"unavailable"}`, and
 a write that commits late answers as it came to, before the listener's timeout does.
 

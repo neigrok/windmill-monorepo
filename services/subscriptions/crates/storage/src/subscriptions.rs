@@ -4,12 +4,11 @@ use domain::{
     ProductId, Renewal, Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId,
     Storefront, Subscription, SubscriptionId,
 };
-use sqlx::postgres::{PgArguments, PgConnection};
-use sqlx::query::Query;
-use sqlx::{FromRow, Postgres};
+use sqlx::FromRow;
+use sqlx::postgres::PgConnection;
 use uuid::Uuid;
 
-use crate::ledger::{Ledger, StorageError};
+use crate::ledger::{self, Ledger, PgQuery, StorageError};
 
 // The columns of a subscription the domain knows, in the order bind_subscription binds them. The table
 // `entitlement_subscriptions` holds the same ones; verifiedAt is the sweep's bookkeeping beside them.
@@ -118,12 +117,11 @@ pub(crate) async fn lock(
     connection: &mut PgConnection,
     lineage: &Lineage,
 ) -> Result<domain::Ledger, StorageError> {
-    sqlx::query(LOCK_LINEAGE)
+    let lock = sqlx::query(LOCK_LINEAGE)
         .bind(lineage.store.name())
         .bind(lineage.environment.name())
-        .bind(lineage.store_subscription_id.as_str())
-        .execute(&mut *connection)
-        .await?;
+        .bind(lineage.store_subscription_id.as_str());
+    ledger::hold(connection, lock).await?;
     load(connection, lineage, SELECT_LINEAGE_LOCKED).await
 }
 
@@ -248,8 +246,6 @@ pub(crate) async fn bound_to(
         .await?;
     rows.into_iter().map(Subscription::try_from).collect()
 }
-
-pub(crate) type PgQuery<'q> = Query<'q, Postgres, PgArguments>;
 
 // Binds a subscription to the parameters subscription_values names, in the order of subscription_columns.
 fn bind_subscription<'q>(query: PgQuery<'q>, subscription: &Subscription) -> PgQuery<'q> {
