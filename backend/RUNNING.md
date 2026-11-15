@@ -53,6 +53,21 @@ provider keys absent for a dark local process. `AI_TEST_DATABASE_URL` names a di
 database for the Rust tests, which create isolated databases. Production HBA isolation is exercised
 with `python3 backend/test/deploy/ai_db_test.py -v` from the repository root, using Docker Postgres 16.
 
+The backend mounts `POST /v1/ai/passes` only with `AI_PASS_PRIVATE_SEED` set. Configure the 32-byte
+Ed25519 seed as unpadded base64url, `AI_PASS_KID`, `AI_PASS_ENVIRONMENT=development` and
+`AI_PASS_MIN_VERSIONS` as an object of profile names to positive integer minimum versions. Pin its
+public key under the same kid in the service's `AI_PASS_KEYS`. The published test seed in the pass
+vectors is accepted only in development under a `test-` kid. A production backend rejects that
+public key under every kid, and rejects every `test-` kid.
+
+The pass lasts 600,000 ms. Account claims come from `Entitlements::aiPrincipalFor` without grant
+funding. An account pass names a presented installation only when it is bound to that account.
+An installation alone must be unbound and anonymous admission enabled. Its pass consumes the same
+durable address bucket as legacy generations, 30/hour by default; installation issuance remains
+10/day. A separate principal token bucket allows 30 passes/minute, with burst 30. The route strictly
+checks header occurrences and JSON keys; cookie sessions require an allowlisted Origin and JSON.
+Every response is `no-store`. Existing installation and Coach routes keep their contracts.
+
 ## 3. Build
 
 ```sh
@@ -424,11 +439,12 @@ each built by `db/schema.sql`. `DATABASE_URL` holds it alone. `WM_SYNC_DATABASE_
 writes through `GymDoor` (`test/products/gym/sync/GymDoorFixture.h`). The gym HTTP
 and MCP cases that only read run over a read-only fake store (`test/products/gym/Fakes.h`). The sync
 suite wipes sync, probe, gym and journal data as it replays the corpus, store and concurrency cases;
-run these binaries serially.
+run these binaries serially. Create the test databases explicitly as UTF-8; the Unicode contract
+cases must not inherit a SQL_ASCII maintenance database.
 
 ```sh
-createdb -h /tmp wm_rest_test
-createdb -h /tmp wm_sync_test
+createdb -h /tmp --template=template0 --encoding=UTF8 wm_rest_test
+createdb -h /tmp --template=template0 --encoding=UTF8 wm_sync_test
 psql -h /tmp -d wm_rest_test -v ON_ERROR_STOP=1 -f db/schema.sql
 psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \

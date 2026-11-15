@@ -613,6 +613,7 @@ async fn privacy_pipeline(source: &str, probe_orphan: bool) {
             .unwrap(),
         )),
         results: Results::default(),
+        pictures: ai_server::pictures::Pictures::default(),
         rates: Rates::default(),
         refusals: Refusals::default(),
         provider_health: ai_server::telemetry::ProviderHealth::default(),
@@ -624,7 +625,78 @@ async fn privacy_pipeline(source: &str, probe_orphan: bool) {
         clock: Arc::new(|| NOW),
     });
     let router = public_router(service.clone());
-    let request = text_request();
+    let mut request = text_request();
+    let image_data = request["messages"][0]["parts"][1]["image"]["data"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let picture_id = "private_picture_1234567890";
+    request["messages"][0]["parts"][1] = json!({"image":{"picture":picture_id}});
+    let missing = call(
+        &router,
+        "PUT",
+        &format!("/v1/calls/{CALLER}/text"),
+        PRINCIPAL,
+        request.clone(),
+    )
+    .await;
+    assert_eq!(missing.0, 410);
+    assert_eq!(
+        serde_json::from_str::<Value>(&missing.1).unwrap()["code"],
+        "picture_gone"
+    );
+    assert!(
+        service
+            .ledger
+            .lookup(
+                &ai_domain::Principal::new("account", PRINCIPAL.into()).unwrap(),
+                &ai_domain::CallerId::new(CALLER.into()).unwrap()
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(seen.lock().unwrap().is_empty());
+    for bytes in [
+        STANDARD.decode(&image_data).unwrap(),
+        b"\x89PNG\r\n\x1a\nreplacement".to_vec(),
+    ] {
+        let response = router
+            .clone()
+            .oneshot(
+                Request::put(format!("/v1/pictures/{picture_id}"))
+                    .header(header::AUTHORIZATION, format!("Bearer {}", pass(PRINCIPAL)))
+                    .header(header::CONTENT_TYPE, "image/png")
+                    .body(Body::from(bytes))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 204);
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "no-store, no-transform"
+        );
+        assert!(
+            to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+    let other = call(
+        &router,
+        "PUT",
+        &format!("/v1/calls/{CALLER}/text"),
+        "attacker",
+        request.clone(),
+    )
+    .await;
+    assert_eq!(other.0, 410);
+    assert_eq!(
+        serde_json::from_str::<Value>(&other.1).unwrap()["code"],
+        "picture_gone"
+    );
     let first = call(
         &router,
         "PUT",
@@ -764,7 +836,12 @@ async fn privacy_pipeline(source: &str, probe_orphan: bool) {
     stop.cancel();
     public_task.await.unwrap();
     live_provider.await.unwrap();
+    assert_eq!(
+        seen.lock().unwrap()[0]["messages"][0]["content"][1]["source"]["data"],
+        image_data
+    );
     let provider_bodies = serde_json::to_string(&*seen.lock().unwrap()).unwrap();
+    assert!(!provider_bodies.contains(picture_id));
     let live_bodies = serde_json::to_string(&*live_seen.lock().unwrap()).unwrap();
     assert!(provider_bodies.contains(MARKER));
     assert!(live_bodies.contains(MARKER));
@@ -794,6 +871,8 @@ async fn privacy_pipeline(source: &str, probe_orphan: bool) {
         OPERATOR_KEY,
         &pass(PRINCIPAL),
         &STANDARD.encode(MARKER),
+        &image_data,
+        picture_id,
     ] {
         assert!(!dump.contains(private), "database persisted content");
     }

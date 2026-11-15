@@ -499,6 +499,7 @@ impl TestService {
                 )
             }),
             results: Results::default(),
+            pictures: ai_server::pictures::Pictures::default(),
             rates: Rates::default(),
             refusals: Refusals::default(),
             provider_health: Default::default(),

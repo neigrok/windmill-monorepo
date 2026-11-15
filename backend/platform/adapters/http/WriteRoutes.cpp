@@ -52,7 +52,7 @@ const std::set<std::string> refusalCodes{
     "gym-engine-busy", "gym-engine-unavailable", "id-retired", "id-taken",
     "identity-taken", "invalid_client", "invalid_client_metadata", "invalid_email", "invalid_grant",
     "invalid_payment_identity", "invalid_redirect_uri", "invalid_request", "login_required", "malformed", "not-a-root",
-    "rate_limited",
+    "rate_limited", "untrusted-origin", "unsupported-media-type",
     "replica-foreign", "request-too-large", "routine-save-in-progress", "session-deleted", "session-id-taken",
     "session-overlap", "set-id-taken", "share-id-taken", "subject_exhausted", "subscriptions_unavailable", "temporarily_unavailable",
     "unauthenticated", "unavailable", "unconfigured", "unknown-exercise", "unreachable", "unsupported_ai_pricing",
@@ -135,6 +135,7 @@ std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr
   if (request->attributes()->find(kWriteObservationAttribute))
     return request->attributes()->get<std::shared_ptr<WriteObservation>>(kWriteObservationAttribute);
   auto observation = std::make_shared<WriteObservation>(route.operation, route.product, route.door);
+  if (route.operation == "ai.pass.sign") observation->failureOperation("ai-pass");
   request->attributes()->insert(kWriteObservationAttribute, observation);
   request->attributes()->insert("wm.write_operation", route.operation);
   request->attributes()->insert("wm.retired_route", route.retired);
@@ -177,7 +178,7 @@ std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std:
   const std::string code = responseCode(response);
   if (status < 500) return code.empty() ? "http_" + std::to_string(status) : code;
   if (status != 503) return "failed";
-  if ((operation == "ai.installation.issue" || operation == "ai.installation.bind" ||
+  if ((operation == "ai.installation.issue" || operation == "ai.installation.bind" || operation == "ai.pass.sign" ||
        operation == "platform.GET.v1.ai.installations.current" || operation == "gym.coach.onboarding.start") &&
       code == "anonymous_ai_unavailable") return code;
   if (code == "unavailable" || code == "temporarily_unavailable" || code.rfind("gym-", 0) == 0 ||
@@ -218,6 +219,7 @@ bool writeFailureReported(const drogon::HttpRequestPtr& request) {
 void finishWriteRequest(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response) {
   const auto observation = beginWriteRequest(request);
   if (!observation) return;
+  if (httpOperation(request) == "ai.pass.sign" && response) response->addHeader("Cache-Control", "no-store");
   const std::string outcome = writeHttpOutcome(response, httpOperation(request));
   if (outcome == "failed") {
     observation->fail(HttpWriteFailure{});

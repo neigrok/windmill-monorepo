@@ -74,6 +74,7 @@ public:
   std::optional<AiInstallationPrincipal> authenticate(const std::string& credential);
   AiInstallationCode admitGeneration(const AiInstallationPrincipal& principal,
                                     const std::string& requestId, const std::string& canonicalIp);
+  AiInstallationCode admitPass(const AiInstallationPrincipal& principal, const std::string& canonicalIp);
   AiBudgetCode bind(const AiInstallationPrincipal& principal, const UserId& account);
   AiBudgetView allowance(const AiInstallationPrincipal& principal) const;
   void prune();
