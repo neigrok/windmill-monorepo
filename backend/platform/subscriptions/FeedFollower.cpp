@@ -147,8 +147,15 @@ void FeedFollower::confirm(Seq seq) {
     std::lock_guard lock{mutex_};
     confirmedRead_ = reading_;
     confirmedSeq_ = seq;
+    confirmedLatestSeq_ = latestSeq_;
   }
   moved_.notify_all();
+}
+
+std::optional<Seq> FeedFollower::caughtUpTo() {
+  std::lock_guard lock{mutex_};
+  if (!confirmedLatestSeq_ || confirmedSeq_ < *confirmedLatestSeq_) return std::nullopt;
+  return confirmedSeq_;
 }
 
 // §10: a cursor still for `stallAfter` while the ledger has newer events, or the feed cannot be read, is reported.

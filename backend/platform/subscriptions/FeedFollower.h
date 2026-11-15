@@ -67,6 +67,10 @@ public:
   // under the ledger's epoch; true when one did. Blocks the caller, so never call it from a request loop.
   bool reach(Seq seq, std::chrono::milliseconds wait);
 
+  // Where the copy stands when the last read that confirmed it found it caught up with the newest event the ledger
+  // reported then; none while that read found it behind, and before any read confirmed it.
+  std::optional<Seq> caughtUpTo();
+
 private:
   // The page's one transaction toward `to`: every entry through the page's consumers in order, the page through the
   // side consumers, then the commit. Nothing applies when another follower moved the cursor since `from` was read. A
@@ -103,6 +107,7 @@ private:
   std::uint64_t reading_ = 0;
   std::uint64_t confirmedRead_ = 0;
   Seq confirmedSeq_ = 0;
+  std::optional<Seq> confirmedLatestSeq_;  // the ledger's newest event as the read that confirmed the copy saw it
   bool asked_ = false;
   std::atomic<bool> stopping_{false};
   std::thread thread_;

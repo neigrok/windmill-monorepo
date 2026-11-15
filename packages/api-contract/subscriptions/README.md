@@ -51,8 +51,8 @@ and the spec's rules. Subscriptions CI (`.github/workflows/subscriptions.yml`) r
   period}`, whichever account each was told under.
 - The claim examples belong to the feed's claim: `internal-app-store-claim.json` answers `seq` 7 and
   the entitlement it carries, and `app-store-claim.json` answers the `SubscriptionResponse` that copy
-  shows, or, as `copy_behind`, the copy as it stood before the claim, when the door's wait for the follower
-  runs out (§5.3). `internal-subscription-refresh.json` refreshes the buyer's subscription once the feed is told, and
+  shows, or, as `recorded_copy_behind` (202), the copy as it stood before the claim with nothing to buy beside it,
+  when the door's wait for the follower runs out (§5.3). `internal-subscription-refresh.json` refreshes the buyer's subscription once the feed is told, and
   answers its newest event's `seq`.
 - A refusal is `{code}`, and each file has one example of every refusal its door answers. Every 503 of the
   internal claim and the refresh means the same to a reader, try again later; its code, `unavailable`,

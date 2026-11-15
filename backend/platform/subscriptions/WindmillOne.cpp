@@ -114,7 +114,7 @@ SubscriptionResponse::SubscriptionResponse(const Standing& standing, const PaidL
   bool holdsLive = live(shown["governing"]);
   for (const Json::Value& other : shown["others"]) holdsLive = holdsLive || live(other);
   Json::Value purchasable(Json::arrayValue);
-  if (!windmillOne && !holdsLive)
+  if (!windmillOne && !holdsLive && !standing.recordedClaim)
     for (const std::string& store : line.openStores) purchasable.append(store);
   body["purchasable"] = purchasable;
 

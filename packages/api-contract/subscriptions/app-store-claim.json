@@ -96,8 +96,8 @@
       }
     },
     {
-      "name": "copy_behind",
-      "status": 200,
+      "name": "recorded_copy_behind",
+      "status": 202,
       "body": {
         "windmillOne": false,
         "environment": "production",
@@ -107,15 +107,8 @@
         "governing": null,
         "others": [],
         "manage": null,
-        "purchasable": [
-          "app_store"
-        ],
-        "offer": {
-          "aiAllowance": {
-            "amount": "7.00",
-            "currency": "USD"
-          }
-        }
+        "purchasable": [],
+        "offer": null
       }
     },
     {
