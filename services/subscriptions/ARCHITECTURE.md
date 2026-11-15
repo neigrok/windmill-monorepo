@@ -755,26 +755,31 @@ the public port and nothing else, and the internal listener binds the service's 
 | public | `POST /v1/stores/app-store/notifications` | the App Store notification door ([below](#the-app-store-notification-door)) |
 | internal | `GET /health` | the same; the image's `HEALTHCHECK` asks it, at the address `SUBSCRIPTIONS_INTERNAL_ADDRESS` names |
 | internal | `GET /internal/v1/feed`, `GET /internal/v1/accounts/{accountId}` | the backend's reads, behind the bearer secret ([below](#internal-doors)) |
+| internal | `DELETE /internal/v1/accounts/{accountId}` | an account's erasure, behind the same secret ([below](#internal-doors)) |
 | internal | `POST /internal/v1/app-store/claims`, `POST /internal/v1/subscriptions/{subscriptionId}/refresh` | the claim and the refresh, behind the same secret ([below](#the-claim-and-refresh-doors)) |
 | internal | `GET /debug/panic` | panics, only while `SUBSCRIPTIONS_PANIC_ROUTE_ENABLED` is `true` |
 
-`listeners::Bounds` holds what a client may take on either listener:
+`listeners::Bounds` holds what a client may take on a listener, `Listener::bounds` each one's:
 
-| Bound | Value | Past it |
-|---|---|---|
-| request head | 5 s | the connection closes without an answer |
-| request, body and handler | 5 s | 503 `{"error":"timeout"}` |
-| request body | 64 KiB | 413, before any handler reads it |
+| Bound | Public | Internal | Past it |
+|---|---|---|---|
+| request head | 5 s | 5 s | the connection closes without an answer |
+| request, body and handler | 5 s | 12 s | 503 `{"error":"timeout"}` |
+| request body | 64 KiB | 64 KiB | 413, before any handler reads it |
+
+The internal doors write the ledger, so their request waits past every bound a write keeps, 5 s for a lock and
+10 s for a statement ([Writing](#writing)): a stalled ledger answers a door's own 503 `{"code":"unavailable"}`, and
+a write that commits late answers as it came to, before the listener's timeout does.
 
 A handler runs only while its client waits: a client that leaves cancels it. A door whose work must
-outlive its request, as the App Store notification door's, the claim's and the refresh's does, spawns that
-work as a pipeline of its own.
+outlive its request, as the App Store notification door's, the claim's, the refresh's and the erasure's does,
+spawns that work as a pipeline of its own.
 
 Both listeners answer health the same way because every door reads or writes the ledger. The routers
 take what they ask as a `listeners::Readiness`, which `Ledger` is, so a test hands them a fake, and each
 takes the doors it serves beside health as a `Router`, which `main.rs` builds: the public one
-`store_doors::router`, the internal one `internal::doors`, whose reads it takes as an `internal::Reads`,
-which `Ledger` is too, and beside them `store_doors::internal_router`, the claim and the refresh, all behind
+`store_doors::router`, the internal one `internal::doors`, whose reads and erasure it takes as an
+`internal::BackendLedger`, which `Ledger` is too, and beside them `store_doors::internal_router`, the claim and the refresh, all behind
 one bearer layer.
 
 SIGTERM or SIGINT stops both listeners from accepting and the sweep after the row it is applying. Each

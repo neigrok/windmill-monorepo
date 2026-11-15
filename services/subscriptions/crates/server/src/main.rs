@@ -8,7 +8,7 @@ use app_store::verification::SignedDataVerifier;
 use futures_util::FutureExt;
 use server::config::{AppStoreApiKey, Config};
 use server::internal;
-use server::listeners::{Bounds, Listener};
+use server::listeners::Listener;
 use server::store_doors::{self, AppStoreDoor};
 use server::sweep::{self, Sweep};
 use server::telemetry;
@@ -122,7 +122,6 @@ async fn serve(config: Config, verifier: SignedDataVerifier) -> ExitCode {
         ServerApi::new(key.clone(), hosts, SystemTime::now)
     });
     let app_store = AppStoreDoor::new(ledger.clone(), verifier, api, SystemTime::now);
-    let bounds = Bounds::default();
     let stop = CancellationToken::new();
     let mut running = JoinSet::new();
     for listener in [Listener::Public, Listener::Internal] {
@@ -145,6 +144,7 @@ async fn serve(config: Config, verifier: SignedDataVerifier) -> ExitCode {
                 store_doors::internal_router(app_store.clone()),
             ),
         };
+        let bounds = listener.bounds();
         let router = listener.router(&config, ledger.clone(), doors, bounds);
         let stop = stop.clone();
         running.spawn(async move {

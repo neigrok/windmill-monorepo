@@ -1,6 +1,7 @@
 use std::env;
 use std::panic::{AssertUnwindSafe, resume_unwind};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -570,6 +571,65 @@ async fn with_empty_database(test: impl AsyncFnOnce(String)) {
     if let Err(panic) = outcome {
         resume_unwind(panic);
     }
+}
+
+// A stalled lock costs the erasure the write's 5 s lock bound, inside the internal listener's request bound, so the door
+// answers the contract's 503 `unavailable` rather than the listener's timeout; once the lock is free it answers 204.
+#[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn an_erasure_behind_a_stalled_lock_answers_its_own_unavailable_and_once_free_erases() {
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let account = Uuid::new_v4();
+        let mut holder = PgConnection::connect(&url).await.unwrap();
+        holder
+            .execute(AssertSqlSafe(format!(
+                "select pg_advisory_lock(hashtextextended(format('account %s', '{account}'::uuid), 0))"
+            )))
+            .await
+            .unwrap();
+        let config = Config::from_environment(|variable| match variable {
+            "SUBSCRIPTIONS_PUBLIC_ADDRESS" => Some("127.0.0.1:8082".to_owned()),
+            "SUBSCRIPTIONS_INTERNAL_ADDRESS" => Some("127.0.0.1:8083".to_owned()),
+            "SUBSCRIPTIONS_DATABASE_URL" => Some(url.clone()),
+            "SENTRY_ENVIRONMENT" => Some("test".to_owned()),
+            "SUBSCRIPTIONS_INTERNAL_TOKEN" => Some("5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b".to_owned()),
+            _ => None,
+        })
+        .unwrap();
+        let internal = Listener::Internal.router(
+            &config,
+            ledger.clone(),
+            internal::doors(config.internal_token.clone(), ledger.clone(), Router::new()),
+            Listener::Internal.bounds(),
+        );
+        let erase = || {
+            Request::delete(format!("/internal/v1/accounts/{account}"))
+                .header("authorization", "Bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")
+                .body(Body::empty())
+                .unwrap()
+        };
+
+        let stalled = answer(internal.clone(), erase()).await;
+        holder
+            .execute("select pg_advisory_unlock_all()")
+            .await
+            .unwrap();
+        let freed = answer(internal, erase()).await;
+
+        assert_eq!(
+            stalled,
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                None,
+                json!({ "code": "unavailable" })
+            )
+        );
+        assert_eq!(freed, (StatusCode::NO_CONTENT, None, Value::Null));
+        assert!(Listener::Internal.bounds().request > Duration::from_secs(10));
+        ledger.close().await;
+    })
+    .await;
 }
 
 #[tokio::test]
