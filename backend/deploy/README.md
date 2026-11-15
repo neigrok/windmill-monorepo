@@ -463,9 +463,10 @@ alone, and 404s every other path; no App Store Connect setting sends notificatio
   `operation` tag, such as `ledger.open`, names a failure.
 - **Restart**: `docker compose restart subscriptions`. It stops within Docker's 10 s and exits 0.
 - **In a deploy**: `deploy-production.sh` pins the service to the content ID it pulled
-  (`SUBSCRIPTIONS_IMAGE` in `.env`) before anything changes, brings everything else up without it, and
-  starts it last, with `docker compose up -d --no-deps subscriptions`, once the backend is verified and
-  `subscriptions-db` has passed. It waits up to 60 s for `healthy`, checks that the container runs the
+  (`SUBSCRIPTIONS_IMAGE` in `.env`) before anything changes and starts it with
+  `docker compose up -d --no-deps --pull never subscriptions` once the backend is verified and
+  `subscriptions-db` has passed. AI provisioning follows the subscription service's health check.
+  It waits up to 60 s for `healthy`, checks that the container runs the
   pinned content ID, and prints `PASS subscription service: healthy on its pinned image`. Otherwise it
   prints `FAIL subscription service …; the backend is deployed and serving` and the run is red, with the
   container it started left as it is and nothing rolled back; while the service is down, Caddy answers
