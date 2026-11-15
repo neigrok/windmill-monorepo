@@ -10,12 +10,13 @@ The wire shapes of Windmill One's subscription state ([subscriptions.md](../../.
 | `account.json` | `GET /internal/v1/accounts/{accountId}` (§5.2): the entitlement and each subscription bound to the account, with its periods and events | the subscription service | operators |
 | `internal-app-store-claim.json` | `POST /internal/v1/app-store/claims` (§5.2): the request and each answer | the backend's claim door (request), the service (answers) | the service (request), the backend's claim door (answers) |
 | `internal-subscription-refresh.json` | `POST /internal/v1/subscriptions/{subscriptionId}/refresh` (§5.2): the id the path names and each answer | the service (answers) | operators |
+| `internal-account-erasure.json` | `DELETE /internal/v1/accounts/{accountId}` (§5.2, §6.4): the id the path names and each answer | the backend's erasure (request), the service (answers) | the service (request), the backend's erasure (answers) |
 | `subscription.json` | `SubscriptionResponse` of `GET /v1/subscription` (§5.3) | the backend | iOS, web |
 | `app-store-claim.json` | `POST /v1/subscription/app-store/claims` (§5.3): the request and each answer | iOS (request), the backend (answers) | the backend (request), iOS (answers) |
 
 Each file holds `examples`, a list of `{name, body}`; the feed adds each page's `request` (`after`,
 `limit`), the account read each read's `request` (`accountId`), and the claim and refresh files add the one
-`request` and each answer's `status`. A name is a state a
+`request` and each answer's `status`, as does the erasure file. A name is a state a
 reader must handle; a test names the example it checks.
 
 `generate.py` writes every file from one modelled ledger, so a change is made there, never in the JSON:
@@ -52,8 +53,12 @@ and the spec's rules. Subscriptions CI (`.github/workflows/subscriptions.yml`) r
 - The claim examples belong to the feed's claim: `internal-app-store-claim.json` answers `seq` 7 and
   the entitlement it carries, and `app-store-claim.json` answers the `SubscriptionResponse` that copy
   shows, or, as `recorded_copy_behind` (202), the copy as it stood before the claim with nothing to buy beside it,
-  when the door's wait for the follower runs out (§5.3). `internal-subscription-refresh.json` refreshes the buyer's subscription once the feed is told, and
-  answers its newest event's `seq`.
+  when the door's wait for the follower runs out (§5.3). `internal-subscription-refresh.json` refreshes the buyer's
+  subscription once the feed is told, and answers its newest event's `seq`. `internal-account-erasure.json` erases the
+  buyer, the erasure the feed tells at `seq` 27: it answers 204 with no body, and the same when the account was erased
+  already.
+- The feed's erasure at 27 is `unbound` under the buyer, whose entitlement then holds nothing; the periods the buyer
+  paid for stay in the ledger with no one (§6.4).
 - A refusal is `{code}`, and each file has one example of every refusal its door answers. Every 503 of the
-  internal claim and the refresh means the same to a reader, try again later; its code, `unavailable`,
+  internal claim, the refresh and the erasure means the same to a reader, try again later; its code, `unavailable`,
   `store_unavailable` or `store_api_unavailable`, tells an operator why.

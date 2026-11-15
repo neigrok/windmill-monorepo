@@ -140,4 +140,16 @@ ClaimAnswer SubscriptionServiceClient::claim(const UserId& account, const Signed
   return ClaimAnswer{static_cast<int>(response->getStatusCode()), std::string(response->getBody())};
 }
 
+UnbindAnswer SubscriptionServiceClient::unbind(const UserId& account) {
+  auto request = drogon::HttpRequest::newHttpRequest();
+  request->setMethod(drogon::Delete);
+  request->setPath(prefix_ + "/internal/v1/accounts/" + account.str());
+
+  const auto [result, response] = send(request, kTimeoutSeconds);
+  if (result != drogon::ReqResult::Ok) return UnbindAnswer{false, answerFor(result)};
+  if (!response) return UnbindAnswer{false, "bad-reply"};
+  const int status = static_cast<int>(response->getStatusCode());
+  return UnbindAnswer{status == 204, std::to_string(status)};
+}
+
 }

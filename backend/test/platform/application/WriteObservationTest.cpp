@@ -283,6 +283,44 @@ TEST(WriteObservation_a_write_that_refused_parts_of_itself_counts_them_on_its_li
   }
 }
 
+TEST(WriteObservation_a_code_says_more_of_the_outcome_on_its_line_and_a_tagged_failure_is_an_error_event) {
+  Recording recording;
+  wm::WriteObservation owed("subscription.unbind", "platform", "background");
+  owed.code("unreachable");
+  owed.finish("owed");
+  wm::WriteObservation plain("subscription.unbind", "platform", "background");
+  plain.finish();
+  REQUIRE_EQ(recording.lines.size(), 2u);
+  Json::CharReaderBuilder builder;
+  const auto reader = std::unique_ptr<Json::CharReader>(builder.newCharReader());
+  for (const auto& [line, code] : {std::pair{0, Json::Value("unreachable")}, {1, Json::Value()}}) {
+    const std::string json = wm::writeCompletionJson(recording.lines[line]);
+    Json::Value parsed;
+    std::string errors;
+    REQUIRE(reader->parse(json.data(), json.data() + json.size(), &parsed, &errors));
+    CHECK_EQ(parsed["code"], code);
+  }
+  CHECK_EQ(recording.lines[0].severity, wm::WriteSeverity::warn);
+
+  const Json::Value event = wm::SentryClient::taggedEvent("subscription.unbind", "platform", "background", "owed",
+                                                          owed.requestId(), {{"code", "unreachable"}});
+  Json::Value tags(Json::objectValue);
+  tags["operation"] = "subscription.unbind";
+  tags["product"] = "platform";
+  tags["door"] = "background";
+  tags["outcome"] = "owed";
+  tags["request_id"] = owed.requestId();
+  tags["code"] = "unreachable";
+  CHECK_EQ(event["tags"], tags);
+  CHECK_EQ(event["fingerprint"][0].asString() + " " + event["fingerprint"][1].asString(),
+           std::string("subscription.unbind owed"));
+  CHECK_EQ(event["message"]["formatted"].asString(), std::string("subscription.unbind: owed"));
+  // A reporter that knows no tags files the failure as the write it is.
+  wm::reportWriteFailure("subscription.unbind", "platform", "background", "owed", owed.requestId(), {});
+  REQUIRE_EQ(recording.reporter->issues.size(), 1u);
+  CHECK_EQ(recording.reporter->issues[0]["tags"]["outcome"].asString(), std::string("owed"));
+}
+
 TEST(WriteObservation_duration_is_numeric_with_at_most_two_serialized_decimal_places) {
   Recording recording;
   wm::WriteObservation observation("journal.save", "journal", "rest");

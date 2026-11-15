@@ -132,9 +132,15 @@ impl Captured {
                         32
                     );
                     assert_eq!(span_fields.remove("listener"), Some(json!("internal")));
-                    assert_eq!(span_fields.remove("method"), Some(json!("POST")));
                     assert_eq!(span_fields.remove("name"), Some(json!("request")));
-                    fields.insert("route".to_owned(), span_fields.remove("route").unwrap());
+                    let route = span_fields.remove("route").unwrap();
+                    // Each door writes under one method: the erasure deletes its account, every other door posts.
+                    let method = match route.as_str() {
+                        Some("/internal/v1/accounts/{accountId}") => "DELETE",
+                        _ => "POST",
+                    };
+                    assert_eq!(span_fields.remove("method"), Some(json!(method)));
+                    fields.insert("route".to_owned(), route);
                 }
                 line
             })
@@ -998,7 +1004,7 @@ fn a_claim_the_service_cannot_take_is_refused_and_its_line_says_why() {
         let (apple, apple_url) = Apple::serve().await;
         let (_, internal) = routers(&ledger, &door(&ledger, &clock, Some(&apple_url)));
         ledger
-            .record_erasure(Uuid::parse_str(erased).unwrap())
+            .erase_account(Uuid::parse_str(erased).unwrap())
             .await
             .unwrap();
         apple.answers_status(
@@ -1385,13 +1391,14 @@ fn a_rebuy_that_moves_the_lineage_drops_the_hint_owed_for_the_account_it_left() 
     assert_eq!(events.len(), 0, "{events:#?}");
 }
 
-// The backend erases Ada while her claim's hint is still owed: the sweep drops the hint and never writes her id.
+// The backend erases Ada while her claim's hint is still owed: the erasure drops the hint with her binding, so the sweep
+// never writes her id. The erasure repeated answers the same and changes nothing.
 #[test]
 #[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
-fn an_erased_account_s_owed_hint_is_dropped_and_never_written_to_apple() {
+fn an_erased_account_s_owed_hint_is_dropped_with_its_binding_and_never_written_to_apple() {
     let start = 1_793_491_200_000_i64;
     let ada = "9387ec65-ab17-4b8c-b145-fd0d622966db";
-    let ((owed_after_the_erasure, pass, owed_after_the_pass, tokens, lines), events) =
+    let ((erased, owed_after_the_erasure, pass, owed_after_the_pass, tokens, lines), events) =
         reported(with_empty_database(async |url| {
             let (captured, _logs) = Captured::start();
             let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
@@ -1413,40 +1420,59 @@ fn an_erased_account_s_owed_hint_is_dropped_and_never_written_to_apple() {
             )
             .await;
             assert_eq!(claimed, StatusCode::OK);
-            ledger
-                .record_erasure(Uuid::parse_str(ada).unwrap())
-                .await
-                .unwrap();
+            captured.take(&[]);
+            let mut erased = Vec::new();
+            for _ in 0..2 {
+                let response = internal
+                    .clone()
+                    .oneshot(
+                        Request::delete(format!("/internal/v1/accounts/{ada}"))
+                            .header("authorization", "Bearer 5d0c3a9e8f7b6a5d4c3b2a1f0e9d8c7b")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                let status = response.status();
+                let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+                erased.push((status, body.len()));
+            }
             let owed_after_the_erasure = owed(&url).await;
-            captured.take(&["store.hint"]);
             let pass = StoreHintSweep::new(door.clone())
                 .pass(&CancellationToken::new())
                 .await;
             (
+                erased,
                 owed_after_the_erasure,
                 pass,
                 owed(&url).await,
                 apple.tokens(),
-                captured.take(&["store.hint"]),
+                captured.take(&["store.hint", "account.unbind"]),
             )
         }));
 
-    assert_eq!(
-        owed_after_the_erasure,
-        vec![("2000000000000001".to_owned(), ada.to_owned())]
-    );
+    assert_eq!(erased, [(StatusCode::NO_CONTENT, 0); 2]);
+    assert_eq!(owed_after_the_erasure, Vec::new());
     assert_eq!(pass, HintPass::default());
     assert_eq!(owed_after_the_pass, Vec::new());
     assert_eq!(tokens, Vec::new());
+    let unbind = |outcome: &str, unbound: u64, hints_dropped: u64| {
+        json!({
+            "level": "INFO",
+            "message": "account.unbind",
+            "operation": "account.unbind",
+            "outcome": outcome,
+            "answered": 204,
+            "unbound": unbound,
+            "periods": unbound,
+            "hints_dropped": hints_dropped,
+            "events": unbound,
+            "route": "/internal/v1/accounts/{accountId}",
+        })
+    };
     assert_eq!(
         lines,
-        vec![json!({
-            "level": "INFO",
-            "message": "store.hint",
-            "operation": "store.hint",
-            "outcome": "forgotten",
-            "hints": 1,
-        })]
+        vec![unbind("erased", 1, 1), unbind("already_erased", 0, 0)]
     );
     assert_eq!(events.len(), 0, "{events:#?}");
 }

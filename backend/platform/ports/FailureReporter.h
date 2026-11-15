@@ -21,6 +21,13 @@ struct FailureReporter {
   virtual void reportWarning(const std::string& /*operation*/, const std::string& /*product*/,
                              const std::string& /*door*/, const std::string& /*outcome*/,
                              const std::string& /*requestId*/, const std::map<std::string, std::string>& /*tags*/) {}
+  // A failure that threw nothing and that its bounded `tags` say more of, as a write a background pass leaves undone:
+  // a level-error event, grouped by operation and outcome.
+  virtual void reportFailure(const std::string& operation, const std::string& product, const std::string& door,
+                             const std::string& outcome, const std::string& requestId,
+                             const std::map<std::string, std::string>& /*tags*/) {
+    reportWrite(operation, product, door, outcome, requestId, "");
+  }
 };
 
 }

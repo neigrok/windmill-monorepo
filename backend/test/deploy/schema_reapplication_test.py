@@ -71,6 +71,25 @@ class SchemaReapplicationTest(unittest.TestCase):
                     after[name].splitlines(keepends=True), fromfile="first apply", tofile="second apply"))
                 self.assertEqual(before[name], after[name], f"{name} changed:\n{difference}")
 
+    def test_deleting_a_users_row_owes_the_subscription_service_its_unbind_once_after_every_apply(self):
+        self.apply_schema()
+        self.apply_schema()
+        query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
+        self.assertEqual(command([*query, """
+select count(*) from pg_trigger where tgrelid = 'users'::regclass and tgname = 'users_owe_subscription_unbind';
+"""]).strip(), "1")
+        command([*query, """
+insert into users(id,email) values('00000000-0000-4000-8000-000000000044','unbind@example.invalid'),
+  ('00000000-0000-4000-8000-000000000045','kept@example.invalid');
+delete from users where id='00000000-0000-4000-8000-000000000044';
+insert into users(id,email) values('00000000-0000-4000-8000-000000000044','unbind-again@example.invalid');
+delete from users where id='00000000-0000-4000-8000-000000000044';
+"""])
+        self.apply_schema()
+        self.assertEqual(command([*query, """
+select string_agg(account_id::text || ':' || attempts, ',') from owed_subscription_unbinds;
+"""]).strip(), "00000000-0000-4000-8000-000000000044:0")
+
     def test_load_upgrade_preserves_signed_zero_and_absence_and_has_stable_finite_cent_checks(self):
         self.apply_schema()
         query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]

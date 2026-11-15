@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt;
 
 use crate::subscription::{
-    Binding, BoundBy, Lineage, OfferKind, Period, Renewal, State, Status, Subscription,
+    Binding, BoundBy, LeftWith, Lineage, OfferKind, Period, Renewal, State, Status, Subscription,
 };
 use crate::values::{
     AccountId, Instant, Money, PeriodId, Span, StoreTransactionId, SubscriptionId, closed_names,
@@ -314,11 +314,12 @@ pub fn observe(
         )],
         _ => Vec::new(),
     };
-    let told_under = |kind: &EventKind| {
-        kind.period()
-            .and_then(|period| period.left_with.clone())
-            .or_else(|| account_id.clone())
-    };
+    let told_under =
+        |kind: &EventKind| match kind.period().and_then(|period| period.left_with.as_ref()) {
+            None => account_id.clone(),
+            Some(LeftWith::Account(paid_by)) => Some(paid_by.clone()),
+            Some(LeftWith::NoOne) => None,
+        };
     let events = going_on
         .into_iter()
         .map(|moment| event(moment, account_id.clone()))
@@ -433,7 +434,8 @@ fn bind(
 }
 
 // INV-7 and INV-13: write what the ledger lacks, restate what a statement supersedes, leave the periods a move takes
-// from an account with that account (R-11), one event per period.
+// from an account with that account (R-11), one event per period. A first binding records again only the periods that
+// follow it: one left with an account or with no one stays theirs.
 fn record_periods(
     held: &[Period],
     stated: Vec<(ObservedPeriod, PeriodId)>,
@@ -477,13 +479,13 @@ fn record_periods(
             period.left_with.is_none() && held.iter().any(|before| before.id == period.id)
         });
         for period in left_behind {
-            period.left_with = Some(moved_from.clone());
+            period.left_with = Some(LeftWith::Account(moved_from.clone()));
             let restated = changes.iter_mut().find_map(|change| match change {
                 PeriodChange::Restated(restated) if restated.id == period.id => Some(restated),
                 _ => None,
             });
             match restated {
-                Some(restated) => restated.left_with = Some(moved_from.clone()),
+                Some(restated) => restated.left_with = period.left_with.clone(),
                 None => changes.push(PeriodChange::Restated(period.clone())),
             }
         }
@@ -499,7 +501,9 @@ fn record_periods(
             .find(|held| held.transaction == period.transaction);
         let event = match (before.map(|before| before.refunded_at), period.refunded_at) {
             (None, _) => Some((EventKind::PeriodRecorded(period), observed_at)),
-            _ if first_bound => Some((EventKind::PeriodRecorded(period), observed_at)),
+            _ if first_bound && period.left_with.is_none() => {
+                Some((EventKind::PeriodRecorded(period), observed_at))
+            }
             (Some(earlier), Some(refunded_at)) if earlier != Some(refunded_at) => {
                 Some((EventKind::PeriodRefunded(period), refunded_at))
             }

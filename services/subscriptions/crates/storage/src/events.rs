@@ -21,9 +21,9 @@ const TAKE_SEQS: &str =
 const INSERT_EVENT: &str = "insert into events (seq, type, occurred_at, recorded_at, subscription_id, \
      account_id, store, environment, subscription_offer_kind, period_id, period_store_transaction_id, \
      period_starts_at, period_ends_at, period_price_amount, period_price_currency, period_offer_kind, \
-     period_refunded_at, period_observed_at, period_left_with) \
+     period_refunded_at, period_observed_at, period_left_with, period_left_with_no_one) \
      values ($1, $2, $3, $4, $5::uuid, $6::uuid, $7, $8, $9, $10::uuid, $11, $12, $13, $14, $15, $16, $17, $18, \
-     $19::uuid)";
+     $19::uuid, $20)";
 const INSERT_ENTITLEMENT_SUBSCRIPTION: &str = concat!(
     "insert into entitlement_subscriptions (",
     subscription_columns!(),
@@ -42,7 +42,7 @@ macro_rules! event_columns {
         "seq, type, occurred_at, recorded_at, subscription_id, account_id, store, environment, \
          subscription_offer_kind, period_id, period_store_transaction_id, period_starts_at, period_ends_at, \
          period_price_amount, period_price_currency, period_offer_kind, period_refunded_at, period_observed_at, \
-         period_left_with"
+         period_left_with, period_left_with_no_one"
     };
 }
 const SELECT_EVENTS: &str = concat!(
@@ -245,6 +245,7 @@ struct EventRow {
     period_refunded_at: Option<i64>,
     period_observed_at: Option<i64>,
     period_left_with: Option<Uuid>,
+    period_left_with_no_one: bool,
 }
 
 impl EventRow {
@@ -296,6 +297,7 @@ impl TryFrom<EventRow> for RecordedEvent {
                 refunded_at: row.period_refunded_at,
                 observed_at: row.period_observed_at.ok_or_else(unreadable)?,
                 left_with: row.period_left_with,
+                left_with_no_one: row.period_left_with_no_one,
             })?),
         };
         Ok(RecordedEvent {

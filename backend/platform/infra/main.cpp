@@ -118,8 +118,10 @@
 #include "platform/subscriptions/PeriodFunding.h"
 #include "platform/subscriptions/PgEntitlementCopy.h"
 #include "platform/subscriptions/PgLifecycleEvents.h"
+#include "platform/subscriptions/PgOwedUnbinds.h"
 #include "platform/subscriptions/SubscriptionApi.h"
 #include "platform/subscriptions/SubscriptionServiceClient.h"
+#include "platform/subscriptions/UnbindSweep.h"
 
 #include "platform/adapters/http/SyncApi.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
@@ -352,13 +354,45 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                 {"sync_replicas", "account"},         // the sync engine
                 {"sync_requests", "account"},         // the sync engine
             });
+  // The subscription service's internal doors (docs/foundation/subscriptions.md §5.2), which the feed follower below and
+  // an erasure's unbind call. Off while neither variable is set; one without the other refuses to start.
+  std::shared_ptr<subscriptions::SubscriptionServiceClient> subscriptionService;
+  try {
+    if (const auto address = subscriptions::ServiceAddress::from(std::getenv("SUBSCRIPTIONS_INTERNAL_URL"),
+                                                                 std::getenv("SUBSCRIPTIONS_INTERNAL_TOKEN"))) {
+      subscriptionService = std::make_shared<subscriptions::SubscriptionServiceClient>(*address);
+      lifetime.watch(subscriptionService);
+    }
+  } catch (const std::invalid_argument& missing) {
+    std::fprintf(stderr, "refusing to start: %s\n", missing.what());
+    return 1;
+  }
+  // Every delete of a users row owes the service the unbind of everything the account held (§6.4): recorded by a trigger in
+  // the deleting transaction whether or not the service is reached, then repeated until the service takes it, at once
+  // after an erasure and every minute once the sweep starts below.
+  auto owedUnbinds = std::make_shared<subscriptions::PgOwedUnbinds>(pool);
+  std::shared_ptr<subscriptions::UnbindSweep> unbindSweep;
+  if (subscriptionService) {
+    unbindSweep = std::make_shared<subscriptions::UnbindSweep>(*owedUnbinds, *subscriptionService, *systemClock);
+    lifetime.watch(unbindSweep, owedUnbinds, subscriptionService, systemClock);
+  }
+
   // Erasing a closed account takes, beside the platform's own rows, every product row that no foreign
   // key to users cascades from. Gym and journal rows all cascade; roadmap's trees do not, and their
   // live rooms are retired once the erasure commits, so no reader is served one and no save brings
-  // one back.
+  // one back. Once an erasure commits, the unbind it owes the subscription service is tried at once.
   AccountErasure roadmapErasure = roadmapAccountErasure();
   roadmapErasure.committed = [registry](const std::vector<std::string>& trees) { registry->retireErased(trees); };
-  auto authRepo = std::make_shared<PgAuthRepository>(pool, accountFootprint, std::vector<AccountErasure>{roadmapErasure}, oauthRepo);
+  AccountErasure subscriptionErasure = subscriptions::unbindOnErasure([unbindSweep] {
+    if (unbindSweep) {
+      unbindSweep->soon();
+      return;
+    }
+    LOG_WARN << "subscriptions: an erased account's unbind is owed to the subscription service and waits, since the "
+                "unbind sweep is off while SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN are unset";
+  });
+  auto authRepo = std::make_shared<PgAuthRepository>(
+      pool, accountFootprint, std::vector<AccountErasure>{roadmapErasure, subscriptionErasure}, oauthRepo);
   // The sessions live sync sockets hold: every session AuthService revokes closes its sockets at once.
   auto liveSessions = std::make_shared<LiveSessions>();
   auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock,
@@ -601,41 +635,33 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService, amplitude, sentry);
 
   // The subscription service's feed, followed into the backend's own copy of every Windmill One entitlement
-  // (docs/foundation/subscriptions.md §6.1), its lifecycle events recorded into the events store (§10). Off while
-  // neither variable is set; one without the other refuses to start.
-  std::optional<subscriptions::ServiceAddress> subscriptionService;
+  // (docs/foundation/subscriptions.md §6.1), its lifecycle events recorded into the events store (§10), and the claim
+  // door's forwarding (§5.3). Off while the service's address is unset.
   std::optional<subscriptions::ClaimForwarding> claimForwarding;
-  try {
-    subscriptionService = subscriptions::ServiceAddress::from(std::getenv("SUBSCRIPTIONS_INTERNAL_URL"),
-                                                              std::getenv("SUBSCRIPTIONS_INTERNAL_TOKEN"));
-  } catch (const std::invalid_argument& missing) {
-    std::fprintf(stderr, "refusing to start: %s\n", missing.what());
-    return 1;
-  }
   if (subscriptionService) {
     // Paid periods fund the AI allowance (§6.3): a copy followed without the ledger would pass periods it never funds.
     if (!aiBudgets) {
       std::fprintf(stderr, "refusing to start: SUBSCRIPTIONS_INTERNAL_URL needs AI_ALLOWANCES_ENABLED=true\n");
       return 1;
     }
-    auto subscriptionFeed = std::make_shared<subscriptions::SubscriptionServiceClient>(*subscriptionService);
     auto lifecycleEvents = std::make_shared<subscriptions::PgLifecycleEvents>(*eventRepo, *amplitude);
     auto periodFunding = std::make_shared<subscriptions::PeriodFunding>(*aiBudgets, aiLimits.paidPeriodNanos);
     auto feedFollower = std::make_shared<subscriptions::FeedFollower>(
-        *subscriptionFeed, *entitlementCopy,
+        *subscriptionService, *entitlementCopy,
         subscriptions::FurtherConsumers{.inPage = {*lifecycleEvents}, .beside = {*periodFunding}}, *sentry);
-    lifetime.watch(subscriptionFeed);
-    lifetime.watch(feedFollower, subscriptionFeed, entitlementCopy, lifecycleEvents, eventRepo, amplitude, periodFunding,
+    lifetime.watch(feedFollower, subscriptionService, entitlementCopy, lifecycleEvents, eventRepo, amplitude, periodFunding,
                    aiBudgets, aiBudgetRepo, sentry);
     feedFollower->start();
+    unbindSweep->start();
     // A device's App Store claim, forwarded to the service and answered once the follower brings the copy to it (§5.3).
     // The queue holds at most one claim per account, the others waiting behind it in the door.
     auto claimWorkers = std::make_shared<WorkerPool>("subscription-claim", 4, 32,
                                                      std::make_shared<FailureWindow>(*sentry, "worker_pool.saturated"));
-    lifetime.onStop([claimWorkers] { claimWorkers->stopAndJoin(); }, feedFollower, subscriptionFeed, entitlements, sentry);
-    claimForwarding = subscriptions::ClaimForwarding{subscriptionFeed, feedFollower, claimWorkers};
+    lifetime.onStop([claimWorkers] { claimWorkers->stopAndJoin(); }, feedFollower, subscriptionService, entitlements, sentry);
+    claimForwarding = subscriptions::ClaimForwarding{subscriptionService, feedFollower, claimWorkers};
   } else {
-    LOG_INFO << "subscriptions: the feed follower is off (SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN unset)";
+    LOG_INFO << "subscriptions: the feed follower is off (SUBSCRIPTIONS_INTERNAL_URL and SUBSCRIPTIONS_INTERNAL_TOKEN unset), "
+                "and an erased account's unbind waits, owed, until they are set";
   }
 
   auto feedbackRepo = std::make_shared<PgFeedbackRepository>(pool);

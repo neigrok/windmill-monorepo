@@ -13,18 +13,15 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use domain::{Environment, Lineage, Observation, Store};
-use sentry::{Hub, SentryFutureExt};
 use serde::Deserialize;
-use serde_json::json;
 use storage::{AccountClaim, Applied, HintRefusal, Observed, StorageError, StoreHint};
-use tracing::Instrument;
 use uuid::Uuid;
 
 use super::AppStoreDoor;
-use crate::internal::canonical_id;
 use crate::internal::responses::{
     ClaimResponse, EntitlementResponse, RefreshResponse, RefusalResponse,
 };
+use crate::internal::{canonical_id, detached};
 use crate::telemetry::{self, Throttle};
 
 const CLAIM: &str = "store.claim";
@@ -64,16 +61,6 @@ pub(super) async fn refresh(
         refresh.answer()
     })
     .await
-}
-
-// A claim or a refresh runs as a task of its own, so a client that leaves cancels neither its apply nor its line; the
-// handler waits for its answer, and answers 500 only when the task panicked.
-async fn detached(work: impl Future<Output = Response> + Send + 'static) -> Response {
-    let task = tokio::spawn(work.bind_hub(Hub::current()).in_current_span());
-    task.await.unwrap_or_else(|_| {
-        let body = Json(json!({ "error": "internal" }));
-        (StatusCode::INTERNAL_SERVER_ERROR, body).into_response()
-    })
 }
 
 impl AppStoreDoor {
@@ -308,8 +295,8 @@ impl AppStoreDoor {
     }
 
     // The hints the sweep writes this pass: every hint no longer owed is dropped first, its subscription bound to
-    // another account since or its account erased (§4), then at most `limit` of the rest are read, the longest owed
-    // first. Each is logged as a `store.hint` line, and a ledger that does not answer is reported once in a while.
+    // another account since (§4), then at most `limit` of the rest are read, the longest owed first. Each is logged as
+    // a `store.hint` line, and a ledger that does not answer is reported once in a while.
     pub async fn store_hints_due(&self, limit: i64) -> Result<Vec<StoreHint>, StorageError> {
         let read = async {
             let forgotten = self.ledger.forget_stale_store_hints().await?;

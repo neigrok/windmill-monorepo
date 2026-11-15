@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/subscriptions/AccountUnbinds.h"
 #include "platform/subscriptions/AppStoreClaim.h"
 #include "platform/subscriptions/Feed.h"
 
@@ -28,9 +29,9 @@ struct ServiceAddress {
 };
 
 // The backend's client of the subscription service's internal doors (§5.2), reached on the container network. Each
-// call blocks its caller until the service answers, or kTimeoutSeconds pass for a feed read and kClaimAnswerWait for a
-// claim. No body, query or secret reaches a log.
-class SubscriptionServiceClient : public SubscriptionFeed, public AppStoreClaims {
+// call blocks its caller until the service answers, or kTimeoutSeconds pass for a feed read and an erasure and
+// kClaimAnswerWait for a claim. No body, query, account or secret reaches a log.
+class SubscriptionServiceClient : public SubscriptionFeed, public AppStoreClaims, public AccountUnbinder {
 public:
   explicit SubscriptionServiceClient(const ServiceAddress& address);
   ~SubscriptionServiceClient() { stop(); }
@@ -38,6 +39,7 @@ public:
 
   FeedPage page(Seq after, int limit) override;
   ClaimAnswer claim(const UserId& account, const SignedTransaction& signedTransaction) override;
+  UnbindAnswer unbind(const UserId& account) override;
 
   static constexpr double kTimeoutSeconds = 10.0;
 

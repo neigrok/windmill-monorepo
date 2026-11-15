@@ -242,9 +242,17 @@ pub struct Period {
     pub offer_kind: Option<OfferKind>,
     pub refunded_at: Option<Instant>,
     pub observed_at: Instant,
-    // The account that paid for it, once a new purchase moved its subscription to another (R-11): its events stay
-    // with that account. None while it follows its subscription's binding.
-    pub left_with: Option<AccountId>,
+    // None while its events follow its subscription's binding.
+    pub left_with: Option<LeftWith>,
+}
+
+// Whom a period's events are told under once its subscription's binding moved on without it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LeftWith {
+    // The account that paid for it, once a new purchase moved its subscription to another (R-11).
+    Account(AccountId),
+    // No one: the account that held it or paid for it was erased (§6.4).
+    NoOne,
 }
 
 closed_names! {
