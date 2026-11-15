@@ -337,11 +337,14 @@ fn every_example_story_is_answered_once_kept_and_applied_into_the_feed() {
             let clock = Clock::at(start);
             let router = public_router(&ledger, trusting_the_test_root(&clock), &clock);
 
+            // Each moment comes days after the one before, so its notification is applied before the next arrives. The
+            // door answers before it applies, so the story waits for each delivery's line, not only for its answer.
             let mut answers = Vec::new();
             for (description, on_day) in path {
                 clock.set(start + on_day * day);
                 let signed = signed(description.clone(), start + on_day * day);
                 answers.push(post(&router, delivery(&signed)).await);
+                captured.delivered(answers.len()).await;
             }
             let deliveries = captured.delivered(path.len()).await;
 
@@ -430,6 +433,104 @@ fn every_example_story_is_answered_once_kept_and_applied_into_the_feed() {
             ]
         )
     );
+}
+
+#[test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+fn deliveries_of_one_subscription_that_overlap_or_arrive_reversed_leave_it_as_its_newest_statement_says()
+ {
+    let start = 1_793_491_200_000;
+    let day = 86_400_000;
+    // Apple reverses the refund a day after it: the same transaction, so its dates count from a day further back.
+    let mut reversed_a_day_later = story("refund-reversed.json");
+    for (payload, field, date) in [
+        ("signedTransactionInfo", "purchaseDate", "now-11d"),
+        ("signedTransactionInfo", "originalPurchaseDate", "now-41d"),
+        ("signedTransactionInfo", "expiresDate", "now+19d"),
+        ("signedRenewalInfo", "renewalDate", "now+19d"),
+        (
+            "signedRenewalInfo",
+            "recentSubscriptionStartDate",
+            "now-41d",
+        ),
+    ] {
+        reversed_a_day_later["notification"]["data"][payload][field] = json!(date);
+    }
+    let refunded = (story("refunded.json"), 40);
+    let reversed = (reversed_a_day_later, 41);
+
+    // Overlapping, the refund's apply and the reversal's race for the lineage's lock and either may win; reversed,
+    // the refund arrives after the reversal that undoes it.
+    let mut ledgers = Vec::new();
+    for (late_deliveries, wait_between) in [
+        ([refunded.clone(), reversed.clone()], false),
+        ([reversed.clone(), refunded.clone()], true),
+    ] {
+        let (ledger_held, events) = reported(with_empty_database(async |url| {
+            let (captured, _logs) = Captured::start();
+            let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+            let clock = Clock::at(start);
+            let router = public_router(&ledger, trusting_the_test_root(&clock), &clock);
+            for (description, on_day) in [(story("started.json"), 0), (story("renewed.json"), 30)] {
+                clock.set(start + on_day * day);
+                post(
+                    &router,
+                    delivery(&signed(description, start + on_day * day)),
+                )
+                .await;
+                captured.delivered(captured.deliveries().len() + 1).await;
+            }
+
+            clock.set(start + 41 * day);
+            let mut answers = Vec::new();
+            for (description, on_day) in late_deliveries {
+                answers.push(
+                    post(
+                        &router,
+                        delivery(&signed(description, start + on_day * day)),
+                    )
+                    .await,
+                );
+                if wait_between {
+                    captured.delivered(3).await;
+                }
+            }
+            let outcomes: Vec<Value> = captured
+                .delivered(4)
+                .await
+                .iter()
+                .map(|line| line["outcome"].clone())
+                .collect();
+            let mut connection = PgConnection::connect(&url).await.unwrap();
+            let subscription: (String, bool, Option<i64>) =
+                sqlx::query_as("select state, auto_renew, cancel_requested_at from subscriptions")
+                    .fetch_one(&mut connection)
+                    .await
+                    .unwrap();
+            let periods: Vec<(String, Option<i64>)> = sqlx::query_as(
+                "select store_transaction_id, refunded_at from periods order by store_transaction_id",
+            )
+            .fetch_all(&mut connection)
+            .await
+            .unwrap();
+            (answers, outcomes, subscription, periods)
+        }));
+        assert_eq!(events.len(), 0, "{events:#?}");
+        ledgers.push(ledger_held);
+    }
+
+    for (answers, outcomes, subscription, periods) in ledgers {
+        assert_eq!(answers, vec![(StatusCode::OK, String::new()); 2]);
+        assert_eq!(outcomes, vec![json!("applied"); 4]);
+        assert_eq!(subscription, ("active".to_owned(), true, None));
+        assert_eq!(
+            periods,
+            [
+                ("2000000000000001".to_owned(), None),
+                ("2000000000000002".to_owned(), None)
+            ]
+        );
+    }
 }
 
 #[test]

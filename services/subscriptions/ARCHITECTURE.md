@@ -685,6 +685,12 @@ At most four applies run at once, the door's and the sweep's together: half the 
 `Ledger::CONNECTIONS`, so keeping a notification always finds a connection. A burst waits for its turn
 in memory rather than at the pool's 5 s bound for a connection.
 
+Applies of one subscription take its lineage's lock in the order they reach it, not the order their
+notifications arrived: one answered before the next arrives can still be applied after it, as when the
+store delivers out of order. The subscription and its periods end as the newest statement says either
+way (spec INV-6); the events record what each apply found, so a refund whose reversal was applied first
+records neither.
+
 | Answer | When |
 |---|---|
 | 200, no body | The inbox holds the notification, kept by this delivery or an earlier one |
