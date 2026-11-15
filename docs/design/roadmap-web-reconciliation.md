@@ -1,40 +1,39 @@
 # Roadmap web reconciliation
 
-Current evidence: 2026-10-24. Canonical delivery drawings are on separate
+Retained delivery specimens live on separate
 [Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=130-2) and
 [Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-2) pages.
-The finite source audit covers all 23 current Roadmap screen/state families below. Web has 54
-reconciled flow/state boards plus three support blocks in ten sections; Web Mobile has 39
-reconciled boards plus two owner links in ten sections. These are composition and state specimens,
-not 98 distinct routes. Shared state families use component variants instead of duplicate full screens.
+The [flow index](../index.md#approved-shared-step-editor) identifies the approved implementation targets;
+this map connects retained specimens to deployed source, not an exhaustive set of current designs.
 
 ## Status and ownership
 
-🚀 In production marks a drawing reconciled with the current implementation. Source comparison
-establishes conditional states; runtime evidence is recorded separately. The marker does not claim
-a remote deployment check, every branch exercised, bug-free behavior, or new human design approval.
-All current Roadmap flow/state boards are reconciled. 🧩 identifies reusable components and owner
-links. Existing AI Review/Apply remains a 💡 proposal awaiting human review. The Board has its own pages
-([proposal](roadmap-board-proposal.md)); the List boards on Web Mobile describe a view the product no longer has, and the
-designer deletes them in the 🚀 pass.
+🚀 In production identifies delivered flows; 🔨 identifies approved work in development. Only the owner
+sets ✅ Ready for dev. 🧩 identifies reusable components and owner links. Superseded development targets
+retain their recorded status as context without authorizing their old layout for new work.
+
+List drawings, old phone sheets and tabbed step layouts are marked superseded. Approved editor
+18/19/27/40 is in development; completion, workspace, history, relationships and deletion remain required.
+The deployed Tend interface is superseded as a target by the right-side Coach, whose functionality is deferred.
+Link-copy proposals 15.01–15.02 and 25.01–25.02 point to approved 37.01–37.15.
 
 Web and Web Mobile are separate. Product primitives live on Components; helper-local settings and
 shortcut primitives remain beside their variants. Shared Shell/Home drawings are thin links to their
 canonical owner, avoiding competing copies. Numbered flow sections and the [thin index](../index.md#roadmap--web)
-provide navigation. This phase changes drawings and documentation only.
+provide navigation.
 
 The model is locked/available/complete. Bubble is the default layout. Owners default to the Board on
 every band and visitors to the Graph; birth trees open on the Graph, and an owner's empty tree on the
 Board. Phone is below 744px, tablet 744–1023px, desktop 1024px and up. Tablet panel 320px, desktop
 inspector 360px. No checkout is offered: `paidPlansOpen()` is false and PlanSection is not registered.
 
-## Exhaustive current-family map
+## Reference family map
 
 Paths are relative to `web/src/products/roadmap/`. An exact node can be a complete screen, an overlay,
 or a reusable state specimen. Repeated server-error strings share their named component faces.
 No-render branches are documented as gates rather than invented screens.
 
-| ID | Current family | Figma nodes | Source |
+| ID | Deployed family / retained specimen | Figma nodes | Source |
 |---|---|---|---|
 | 01 | Resolution, load/error, desktop empty, HomeCard | [35:24](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=35-24), [41:31](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=41-31), [36:91](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=36-91) | `SkillTreeApp.jsx; SkillTreeView.jsx; HomeCard.jsx` |
 | 02 | Local/synced/lapsed, capacity/refused save, ownership demotion | [47:49](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=47-49) | `room/HonestyChrome.jsx; SkillTreeView.jsx` |
@@ -80,58 +79,12 @@ Route evidence: `web/src/shell/App.jsx`, `web/src/shell/chrome/Shell.jsx`, Roadm
 and `SkillTreeApp.jsx`. External-owner links are ownership boundaries, not a claim that those files
 were exhaustively reconciled during this Roadmap phase.
 
-## Runtime evidence and limits
+## Evidence and remaining work
 
-The source audit used commit `92be064a`; current Roadmap source and styles were checked against the
-latest integration base. No production user data, provider keys, email or telemetry credentials
-were used. Isolated fixture services and session material were removed after capture.
+The [Roadmap alignment subtree](https://windmill.works/#/app/t_63c2c557d482dece) records current
+implementation, review, runtime and deployment evidence for each delivery. The
+[consistency ledger](consistency.md#roadmap) records unresolved design and implementation differences.
+A retained drawing does not establish that every conditional branch has been exercised.
 
-- `/tmp/windmill-roadmap-reconcile-runtime/manifest.json`: desktop/phone canvas, selection,
-  Focus/All steps, signed-in light/dark List and inline detail; desktop rename and Complete→Reset;
-  Publish+copy→public, gallery inclusion and Make private. Fixture restored private. Settings/export
-  idle captured. The phone completion mutation itself was not exercised.
-- `/tmp/windmill-roadmap-reconcile/`: anonymous shelf, blank birth, parsed paste and local tree;
-  Figma before/after comparisons. `web-room-{light,dark}.png` are inner-viewport crops; full owner
-  Shell was checked against signed runtime captures and route source.
-- `/tmp/windmill-roadmap-fork-runtime/evidence.json` and `fork-{desktop,phone,tablet}-open.png`:
-  anonymous ForkDoor geometry. Shared-tree desktop 1440 uses a full-width bottom sheet 293px high;
-  phone 390 uses a 335px sheet; tablet 834 uses a centered 420×336 dialog. No email was sent.
-- `/tmp/windmill-roadmap-shortcuts-runtime/evidence.json`: desktop/phone, owner/reader, Mac/Windows;
-  toggles and Escape exercised, no page errors. Narrow/current keycap overlap is preserved and
-  recorded in the ledger.
-
-AI Shape/Tend provider outcomes, export completion/errors, reminder delivery, allowance histories,
-rare failures and advanced gestures are source-reconciled fixtures, not live integration tests.
-Reminder and AI gates were not forced. Conditional states do not promise every account sees them.
-Static native graphs approximate WebGL lighting; editable quest thumbnails derive from the current
-roster/layout source. Gallery portrait slots are data-dependent payload areas. Still drawings and
-SwiftShader/reduced-motion captures do not establish animation timing or hardware performance.
-
-## Visual review and simplification
-
-The read-only acceptance pass checked all 25 families against source. The focused fix pass corrected
-conditional paste name fields, locked progress actions, owner/visitor boundaries, mobile deletion
-wording, restoration versus AI receipt detail, gallery copy, activity day grouping and selected-node
-event fixtures.
-Populated history and Activity now share the native EventRow component; fork, mobile action modes,
-Shape phases, feedback and Tend input reuse native state families. Superseded shared Shell/Home
-copies are owner links. No complete-screen image fills substitute for editable UI.
-
-Representative final evidence in `/tmp/windmill-roadmap-reconcile/`: `figma-night-final.png`,
-`figma-list-after.png`, `figma-mobile-owner-final.png`, `figma-mobile-complete-final.png`,
-`final-183-1099.png`, `final-45-428.png`, `final-183-625.png`, `final-194-1008.png`,
-`figma-web-coverage-final.png`, and `figma-web-mobile-coverage-final.png`. Settings/shortcuts checks
-are `/tmp/roadmap-settings-final.png`,
-`/tmp/roadmap-settings-mobile-final.png`, `/tmp/roadmap-shortcuts-final.png`,
-`/tmp/roadmap-shortcuts-mobile.png`. Layout QA checks text clipping, overlap, theme resolution,
-responsive bounds, ownership messaging and source action vocabulary.
-
-## Tracked implementation/design drift
-
-The [consistency ledger](consistency.md#roadmap) retains publication/gallery-copy disagreement,
-AI failure prompt-retention copy, mobile empty-tree recovery, the published input sizing adapter,
-DOM/canvas fruit treatment and Marketing capability copy.
-A current bug can be accurately drawn and marked reconciled; that does not resolve the bug.
-
-[`web/OBSERVABILITY.md`](../../web/OBSERVABILITY.md) tables every Board and Graph step against its
-event. Reconciliation is tracked by `roadmap-web-figma-coverage-20261024` in tree `t_9362d9bc883e0a1e`.
+Still drawings and SwiftShader/reduced-motion captures cannot establish hardware animation performance.
+[`web/OBSERVABILITY.md`](../../web/OBSERVABILITY.md) lists the events and failure reporting for Board and Graph flows.

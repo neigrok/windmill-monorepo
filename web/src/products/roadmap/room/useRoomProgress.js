@@ -89,10 +89,11 @@ export class RoomProgress {
     }
   }
 
-  // Once ever per milestone: the ledger survives reloads and an undo and re-complete.
+  // Once ever per milestone: the ledger survives reloads and an undo and re-complete. A room with no share of its own, a
+  // subtree's, offers none.
   milestoneOffer(before, after) {
     const { treeId, treeRef, milestoneLedger, openShare, track: trackEvent, band } = this.collaborators;
-    if (!this.ownMarks || !treeRef.current) return null;
+    if (!this.ownMarks || !treeRef.current || !openShare) return null;
     const fresh = detectMilestones(treeRef.current, this.completedUnder(before), this.completedUnder(after))
       .filter((milestone) => !milestoneLedger.has(treeId, milestone.id));
     const announcement = milestoneAnnouncement(fresh);

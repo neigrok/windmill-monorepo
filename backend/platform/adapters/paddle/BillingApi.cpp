@@ -251,34 +251,4 @@ void BillingApi::webhook(const drogon::HttpRequestPtr& req, HttpCallback&& callb
   callback(jsonResponse(body_));
 }
 
-void BillingApi::mySubscription(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  const std::optional<User> user = callerUserOf(req, *auth_);
-  if (!user) {
-    callback(error(drogon::k401Unauthorized, "sign in first"));
-    return;
-  }
-
-  // One predicate over both bindings, preferring any live subscription — see the repository port.
-  Json::Value body(Json::objectValue);
-  const std::optional<PaddleSubscription> subscription =
-      subscriptions_.findFor(user->id, user->email.value);
-  if (!subscription) {
-    // No Paddle customer yet — every account before its first checkout.
-    body["status"] = "none";
-    body["active"] = false;
-    callback(jsonResponse(body));
-    return;
-  }
-
-  body["status"] = subscription->status;
-  body["active"] = grantsAccess(subscription->status);
-  body["subscriptionId"] = subscription->subscriptionId;
-  body["priceId"] = subscription->priceId;
-  body["productId"] = subscription->productId;
-  // Present only while a pause or cancel is pending.
-  if (!subscription->scheduledChangeAt.empty())
-    body["scheduledChangeAt"] = subscription->scheduledChangeAt;
-  callback(jsonResponse(body));
-}
-
 }

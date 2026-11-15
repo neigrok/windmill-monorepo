@@ -25,10 +25,11 @@ namespace wm {
 // cut. `kind` is the legend kind whose hue the node wears, omitted when no kind wears it. `opens` is
 // the tree the node opens, as {treeId, title, state}: answered only to a caller who can write the tree
 // being read, and only while the opened tree stands and is theirs — a tree id is the read capability
-// of an unlisted tree, and a title is its owner's words. `url` is where the node's step opens on the web
-// for the caller (domain/WebAddress.h).
+// of an unlisted tree, and a title is its owner's words. `subtree` is the subtree a step owns, as
+// {id, done, total, state} off the owner's marks, answered to anyone who may read the tree, whose subtrees are
+// as readable as it is. `url` is where the node's step opens on the web for the caller (domain/WebAddress.h).
 enum class NodeField { id, label, icon, color, kind, order, prerequisites, status, seedStatus,
-                       state, summary, description, links, opens, url };
+                       state, summary, description, links, opens, subtree, url };
 constexpr std::size_t kSummaryChars = 200;
 // The most live edges one get_tree reply lists whole under `includeEdges`; past it the reply
 // answers `edgesOmitted` with the count instead. Listing is linear, so only the edge count gates.
@@ -42,8 +43,12 @@ using ProgressFields = std::set<ProgressField>;
 
 inline const NodeFields kFindNodesFields{NodeField::id, NodeField::label, NodeField::color};
 
+inline const NodeFields kGetNodesFields{NodeField::id, NodeField::label, NodeField::color,
+                                        NodeField::prerequisites};
+
+// A read of the whole tree also shows which steps own a subtree, so an agent drills down without a search.
 inline const NodeFields kGetTreeFields{NodeField::id, NodeField::label, NodeField::color,
-                                       NodeField::prerequisites};
+                                       NodeField::prerequisites, NodeField::subtree};
 
 inline const KindFields kLegendFields{KindField::id, KindField::hue, KindField::label};
 
@@ -116,18 +121,23 @@ const Vocabulary<ProgressField>& progressVocabulary();
 // The states are derived over EVERY node the tree holds, since a prerequisite may sit off the page;
 // `kindByHue` is the legend's hue -> kind id join, one entry per kind; `openings` holds what each
 // node's pointer comes to (domain/OpenedTrees.h), and stays empty for a caller who cannot write the
-// tree; `web` is the tree as the caller opens it, which each node's `url` is built on.
+// tree; `subtrees` what each step that owns a subtree says of it; `web` is the tree as the caller
+// opens it, which each node's `url` is built on. `openedTreesUnread` says the trees the steps open
+// were due a follow that was not made in time, so the parts above that read them say nothing of them.
 struct NodeReadContext {
   Progress marks;
   std::map<NodeId, NodeState> states;
   std::map<NodeColor, KindId> kindByHue;
   std::map<NodeId, Opening> openings;
+  std::map<NodeId, OwnedSubtree> subtrees;
   std::optional<WebTree> web;
+  bool openedTreesUnread = false;
 };
 
 // Field semantics are TreeJson's: empty and absent values are omitted as the document omits
-// them. An unmarked node answers `status: "none"`, `state` is derived for every node, and `opens`
-// is answered only for an opening that is not `missing`.
+// them. An unmarked node answers `status: "none"`, `state` is derived for every node, `opens`
+// is answered only for an opening that is not `missing`, and `subtree` only on a step that owns one: `{id}` alone
+// where the owner's trees were not followed.
 Json::Value projectNode(const NodeSpec& node, const NodeFields& fields, const NodeReadContext& context);
 Json::Value projectKind(const Kind& kind, const KindFields& fields);
 Json::Value projectProgress(const Progress& progress, const ProgressFields& fields);

@@ -25,12 +25,17 @@ namespace wm {
 
 Json::Value nodeToJson(const NodeSpec& node);
 Json::Value toJson(const TreeData& data);
-// The document as a node read answers it: each step among `subtrees` carries `subtree: {id, done, total, state}`, `state`
-// "complete" or "open", or `{id}` alone where the owner's trees were not followed; no other step carries one.
+// What a step that owns a subtree says of it, on every door's node read: {id, done, total, state}, `state` "complete" or
+// "open", or {id} alone where the owner's trees were not followed.
+Json::Value toJson(const OwnedSubtree& owned);
+// The document as a node read answers it: each step among `subtrees` carries its `subtree`; no other step carries one.
 Json::Value toJson(const TreeData& data, const std::map<NodeId, OwnedSubtree>& subtrees);
 // Where a tree sits as GET /v1/trees/{id} answers it: `root`, `parent` as {tree, step} or null, `path` as
 // [{tree, step, title}], root first, and `depth`. Its name is the document's title.
 Json::Value toJson(const Place& place);
+// What creating a subtree answers (PUT /v1/trees/{tree}/steps/{step}/subtree, and MCP create_subtree without the
+// subtree's `seq`): {created, subtree: {id, root, parent: {tree, step}, depth, seq}, parentSeq}.
+Json::Value toJson(const SubtreeCreation& creation);
 Json::Value toJson(const Progress& progress);
 Json::Value toJson(const TreeDiagnostics& diagnostics);
 // A tree's diagnostics as its writer is answered them: the graph's, and beside them `treeLoops` as
@@ -68,6 +73,9 @@ Json::Value toJson(const LegendState& legend);  // the persisted legend document
 // nullopt when the root is not an object, or when a field is present but the wrong type. A document
 // never sets the guide: it rides out with a tree and is written only through its own doors.
 std::optional<TreeData> treeFromJson(const Json::Value& root, const TreeId& id);
+// The kinds a body sends, in its order: none for an absent or null `kinds`, and nullopt when it is not a list of
+// objects whose id, hue, label and description are strings where present.
+std::optional<std::vector<Kind>> kindsFromJson(const Json::Value& kinds);
 GraphState graphStateFromJson(const Json::Value& root);
 LegendState legendStateFromJson(const Json::Value& kinds);
 

@@ -5,12 +5,12 @@ invariants (`INV-n`) and rulings (`R-n`) are numbered so reviews, code and roadm
 
 ## §0 Status and scope
 
-**Status:** Being built. The service runs in production with no store connected: its public listener
-answers only `GET /health`, and every path under `/v1/stores/` answers 404 until the App Store door
-lands. What exists is in
+**Status:** Being built. The service runs in production with the App Store notification door open on
+its public listener (§5.1), and no App Store Connect setting sends notifications to it yet. What exists
+is in
 [`services/subscriptions/ARCHITECTURE.md`](../../services/subscriptions/ARCHITECTURE.md). Windmill One cannot be bought on any surface. The C++
-backend mirrors Paddle subscriptions (`backend/platform/adapters/paddle`) and
-`Entitlements::hasWindmillOne` reads that mirror; this document specifies what replaces it. The build
+backend's `Entitlements::hasWindmillOne` reads its own copy of each account's entitlement (§6.1); the Paddle mirror
+(`backend/platform/adapters/paddle`) decides no access. The build
 order and its owner gates live in the Windmill One roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `windmill-one-subscription-service`.
 
@@ -48,9 +48,8 @@ It is written in Rust. It runs as its own container on the production host besid
   `originalTransactionId`, a Play purchase-token lineage, a Paddle `sub_…`.
 - **D-4 Period.** One stretch `[start, end)` the customer paid for or was granted, as the store states
   it, with the store transaction that created it, its price and currency, and its refund time while the
-  store has taken the money back. A renewal's period starts where the previous one ends, not at the
-  instant the store charged it, so the periods a store states for one subscription do not overlap; one
-  that does is written as stated all the same, since a period is its store transaction (INV-7).
+  store has taken the money back. A period is written as the store states it, even where it overlaps
+  the one before (INV-7); §6.3 says how funding treats an overlap.
 - **D-5 Observation.** A verified statement by a store of one subscription's whole state at one
   instant (`observedAt`, the store's own stamp). Every adapter produces observations and nothing else.
 - **D-6 Event.** A normalized fact recorded when an observation changes a subscription. Events are
@@ -227,7 +226,8 @@ period leaves a running subscription `active` (§8).
   (§6.4) or an operator transfer, and both record an event.
 - **At purchase.** The app passes the signed-in account's id as the store's account hint. The first
   verified observation carrying a hint binds the subscription to the account it names. First means
-  first applied, so the binding follows arrival and INV-6 leaves it aside. A hint that names an erased
+  first applied: deliveries of one subscription that overlap are applied in the order they take its
+  lock, not the order they arrived, and INV-6 leaves the binding aside. A hint that names an erased
   account (§6.4) counts as no hint.
 - **By claim.** The app posts the store's signed transaction through the backend (§5.3). The service
   verifies it and binds an unbound subscription to the caller. A claim for a subscription already
@@ -260,16 +260,18 @@ environments; the environment is read from the verified payload. The door is a f
 1. Read a bounded body.
 2. Verify the signed payload and the signed transaction and renewal info inside it: each certificate
    chain to the pinned Apple root certificates, each signature, that the bundle id is
-   `works.windmill.app`, and that the environment is `Production` or `Sandbox`.
+   `works.windmill.app`, that the environment is `Production` or `Sandbox`, and that it was signed at
+   most eight days ago, which covers Apple's redelivery schedule.
 3. Insert the signed payload into the inbox keyed by the notification's UUID. A duplicate already
    settled answers 200; one not yet settled goes on to step 4.
 4. Build the observation and apply it (§3.4) in one transaction with its periods, events and binding,
    which also settles the inbox row, so a notification is applied once however often it is retried.
 5. Answer 200.
 
-A failure at 1–2 answers 4xx and stores nothing. Once step 3 commits the door answers 200 whatever
-step 4 does: an unsettled inbox row is retried by the sweep (§7), so recovery never waits on the
-store's redelivery schedule. Apple redelivers a production notification five times over a week and a
+A failure at 1–2 answers 4xx and stores nothing; the answer names no reason, which the door logs. Once
+step 3 commits the door answers 200 whatever step 4 does, and answers before step 4 runs: an unsettled
+inbox row is applied by the sweep (§7 step 1) within a minute, so recovery never waits on the store's
+redelivery schedule. Apple redelivers a production notification five times over a week and a
 sandbox notification never. Later stores add `/v1/stores/play-store/notifications` and
 `/v1/stores/paddle/notifications` with the same shape.
 
@@ -328,15 +330,18 @@ it recorded any; a claim retried after its answer was lost answers the same `seq
 
 Devices never call this service. The backend authenticates the caller and serves:
 
-- `GET /v1/subscription` → `SubscriptionResponse`, answered from the backend's own copy (§6.1): one
-  `Entitlement` of the account (§5.2), with `environment`, naming which one it is; `allowlisted`,
-  whether the account is on the sandbox allowlist, so its sandbox purchases count (§6.2); `manage`
+- `GET /v1/subscription` → `SubscriptionResponse`, answered from the backend's own copy (§6.1):
+  `windmillOne`, whether the account holds Windmill One; one `Entitlement` of the account (§5.2),
+  with `environment`, naming which one it is; `allowlisted`, whether the account is on the sandbox
+  allowlist, so its sandbox purchases count (§6.2); `manage`
   (`{"store": "app_store", "url": "https://apps.apple.com/account/subscriptions"}`, the governing
   subscription's store, null when there is none); `purchasable`, the stores this account may buy
   through now; and `offer`. The `Entitlement` shown is the production one, unless the account is on
   the sandbox allowlist and its sandbox `Entitlement` grants access while its production one does
   not. An account off the allowlist never sees its sandbox `Entitlement`. An owner's `Entitlement` is
   chosen the same way.
+- `windmillOne` is what `Entitlements::hasWindmillOne` (§6.1) answers for the account as the
+  response is built, true for an owner whatever its `Entitlement` shows.
 - `offer` is what a month of Windmill One funds, which the buy sheet shows:
   `{"aiAllowance": {"amount": "7.00", "currency": "USD"}}`, read from the backend's configuration
   (`AI_ONE_PERIOD_USD`, [USD AI allowances](../../backend/AI_ALLOWANCES.md)). It is non-null exactly
@@ -368,12 +373,13 @@ A backend worker reads `/internal/v1/feed` from its stored epoch and cursor. Eac
 transaction, which holds the stored cursor and advances it when the page commits. Each entry goes, in
 order, through the consumers that write through that transaction, first the copy, which replaces the
 named account's row in `account_entitlements` with the entry's `EntitlementResponse`, both environments
-included; then through those that write in short transactions of their own before the page commits:
-funding (§6.3), whose ledger lock every Coach admission takes, so it is never held for a whole page.
-Every consumer is idempotent: a failure in either kind rolls the page back and the page is read again,
-and a rebuild reads every entry again. Each is told whether the page belongs to a rebuild and the epoch
-it brings the copy to. Once the copy reaches `latestSeq` the worker reads again at most 5 s later, or at
-once when the claim door asks for a `seq` (§5.3); the `seq` is reached only when a read that began after
+included; then the page, its entries whole and in order, goes through those that write in short
+transactions of their own before it commits: funding (§6.3), whose ledger lock every Coach admission
+takes, so it is never held for a whole page. Every consumer is idempotent: a failure in either kind rolls
+the page back and the page is read again, and a rebuild reads every entry again, as one page holding the
+whole ledger. Each is told whether the page belongs to a rebuild and the epoch it brings the copy to.
+Once the copy reaches `latestSeq` the worker reads again at most 5 s later, or at once when the claim
+door asks for a `seq` (§5.3); the `seq` is reached only when a read that began after
 the request has seen the ledger's epoch and left the copy at or past it, so a restored ledger is
 rebuilt before a claim is answered from the copy.
 
@@ -410,24 +416,36 @@ is funded as owner access is. (R-6)
 Subscription state alone funds nothing; the period events of the feed do. A grant's reference is its
 period's `id`, so no store id reaches the backend. (R-4, R-5)
 
+- Of a period's events in one page only the last acts: it states the period as the page leaves it. A
+  rebuild, one page holding the whole ledger, so brings each grant to its period's last statement
+  without passing through the ones before.
 - A `period_recorded` entry that names an account, for a production period with a positive captured
   price and no `refundedAt`, funds one grant spanning the period through `AiBudgetService::fund`, in a
   transaction of its own before the page commits (§6.1). Any other `period_recorded` funds nothing:
   `grace` adds no period, a free-trial period carries no payment, and a refunded period was paid back.
+- A period whose start falls inside a grant the account holds, as a renewal the store charged and dated
+  before the period it renews ended, is funded from that grant's `closedAt`, or its end, to its own end.
+  One that leaves nothing, or still holds an instant another grant of the account holds, answers
+  `Conflict`.
 - `fund` answers `Replay` to a period it already funded for that account, whatever the grant's
-  `closedAt`, so a rebuild (INV-11) funds nothing twice. It answers `Conflict` to a period already
-  funded for another account (an operator transfer, or erasure and a claim by another account), which
-  is not funded again, and to a period that overlaps a grant the account holds. §6.1 says what the
-  follower does with each answer.
+  `closedAt` or amount, and the grant keeps what it was funded with, its stretch included, so a rebuild
+  (INV-11) funds nothing twice. It answers `Conflict` to a period already funded for another account (an
+  operator transfer, or erasure and a claim by another account), which is not funded again. §6.1 says
+  what the follower does with each answer.
 - A `period_refunded` entry closes the grant whose reference is the period's `id`: its `closedAt`
   becomes `min(end, refundedAt)`. A closed grant funds nothing after `closedAt` and counts toward the
   overlap rule only until `closedAt`; spent capacity is not recovered. A close for a grant that does
   not exist changes nothing.
+- A grant keeps the epoch and `seq` of the newest statement of its period it was brought to. A refund
+  or reversal no later than it in the same epoch changes nothing, so no read of the feed takes a grant
+  back to an older statement. Across a restored ledger's new epoch no order holds: the rebuild brings
+  each grant to its period's last statement in the restored ledger, which may be older than one the
+  backup lost, until the service records the store's word again. A `period_recorded` never reopens or
+  reshapes a grant, and a grant for a period the restored ledger does not hold stays as it was.
 - A `period_refund_reversed` entry reopens that grant by clearing its `closedAt`. A reopen that would
   overlap another grant of the account answers `Conflict` and leaves the grant closed. For a period
   with no grant, as one first heard of refunded, it funds the period as a `period_recorded` entry
-  would; `fund` is idempotent, so the funded grants are the same in whatever order the store's
-  statements arrived.
+  would.
 - An account that holds Windmill One through a subscription and has no funded grant in force, as in
   `grace`, in the renewal slack or after a `Conflict`, is admitted under the free signed-in
   allowance.
@@ -447,13 +465,14 @@ so the close flow MUST say so before it proceeds, and name where to cancel.
 
 ## §7 The sweep
 
-One worker, hourly:
+One worker. Step 1 runs at start and every minute, the others hourly:
 
-1. Apply every inbox row not yet settled. A row settles in the transaction that applies it, or with its
-   code when it states nothing to apply, as Apple's test notification or a type the adapter does not
-   map (§8). An apply that fails for a reason a retry cannot change, such as a value the database
-   refuses, makes the row wait 1, 2, 4, then 8 hours before its next attempt, so it holds up no row
-   behind it, and its fifth such failure settles it `failed`, which the sweep reports.
+1. Apply every inbox row not yet settled, through its door's own §5.1 step 4. A row settles in the
+   transaction that applies it, or with its code when it states nothing to apply, as Apple's test
+   notification or a type the adapter does not map (§8). An apply that fails for a reason a retry cannot
+   change, such as a value the database refuses, makes the row wait 1, 2, 4, then 8 hours before its
+   next attempt, so it holds up no row behind it, and its fifth such failure settles it `failed`, which
+   the sweep reports. A row whose state waits on a status pull (§8) waits an hour between attempts.
 2. Pull the store's state for every subscription whose `accessUntil` falls within the next hour or
    has passed while its state still grants access or is `on_hold`.
 3. Pull every subscription not `expired` or `revoked` whose `verifiedAt` is older than seven days. A
@@ -539,10 +558,14 @@ The backend's role cannot read it.
 - Every write logs one structured line: operation, store, environment, outcome or refusal code,
   duration. Operations: `store.notification`, `store.claim`, `store.refresh`, `account.unbind`,
   `sweep.inbox`, `sweep.due`, `sweep.drift`, `sweep.history`.
+- The backend's two reads on the internal listener are reads, not writes, and each logs one line with
+  its outcome too: `feed.read` for a page of the feed, `account.read` for an account. A read the
+  ledger does not answer reports to Sentry under its name; a refused read is its request's line alone.
 - Unexpected failures report to Sentry under those names. A signature that does not verify is a
   logged refusal, not an Issue. `drift` reports as a warning.
-- The backend's follower logs `subscription.follow` per page and `subscription.fund` per funding call
-  with its outcome (`ok`, `replay`) or refusal code (`conflict`, reported as a warning). It reports a
+- The backend's follower logs `subscription.follow` per page, `subscription.fund` per funding call and
+  `subscription.refund` per close or reopen of a grant, each with its outcome (`ok`, `replay`, `unchanged`
+  for a refund of a period no grant funds) or refusal code (`conflict`, reported as a warning). It reports a
   cursor that has not advanced while the service reports newer events, and a page whose epoch or
   `latestSeq` starts a rebuild (§6.1).
 - The backend's claim door logs `subscription.claim` with its outcome or refusal code; a wait for the
@@ -551,8 +574,9 @@ The backend's role cannot read it.
   The follower records them as product events in the store the `/v1/events` intake writes and
   forwards from: `subscription_started`, `subscription_renewed`, `subscription_renewal_turned_off`,
   `subscription_payment_failed`, `subscription_expired`, `subscription_revoked`, each with `store`,
-  `environment` and `offerKind`. The intake accepts only client batches today; the server-origin
-  write is part of this build.
+  `environment` and `offer_kind`. The intake takes client batches; the follower records each event
+  through the store's server-origin write once (`PgEventRepository::recordOnce`), whatever page or
+  rebuild reads it again.
 - Each device emits the steps a person takes: the buy control shown, purchase started, purchase
   completed, cancelled or failed, claim accepted or refused, restore, and manage opened.
 - Nothing logs or reports a signed payload, a transaction id, an account hint or an email.

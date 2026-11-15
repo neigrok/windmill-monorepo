@@ -807,7 +807,7 @@ void AskService::run(const std::shared_ptr<Job>& job) {
       if (reply.answer.outcomeCode == "ai_accounting_unavailable")
         reply.refusal = AskRefusal::aiAccountingUnavailable;
       for (const auto code : {AiBudgetCode::FreeMonthExhausted, AiBudgetCode::FreeDayExhausted,
-                              AiBudgetCode::ConcurrencyExhausted, AiBudgetCode::FundingRequired, AiBudgetCode::DeviceBound,
+                              AiBudgetCode::ConcurrencyExhausted, AiBudgetCode::DeviceBound,
                               AiBudgetCode::SubjectExhausted, AiBudgetCode::DebtOutstanding,
                               AiBudgetCode::Unconfigured}) {
         if (reply.answer.outcomeCode != aiBudgetCodeName(code)) continue;

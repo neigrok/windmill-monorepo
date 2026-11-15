@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
 
@@ -168,12 +169,38 @@ bool AiBudgetPrincipal::valid() const {
   return validAiBudgetSubject(subject, tier) && (!owner || tier == AiBudgetTier::WindmillOne);
 }
 
+bool AiBudgetStatement::valid() const { return validAiBudgetId(epoch) && seq > 0; }
+
+bool AiBudgetStatement::after(const AiBudgetStatement& reflected) const {
+  return epoch != reflected.epoch || seq > reflected.seq;
+}
+
 bool AiBudgetGrant::valid() const {
   if (!validAiBudgetId(id) || !validAiBudgetId(accountId) || !validAiBudgetId(fundingReference) || amountNanos <= 0)
     return false;
   if (period.endMs <= period.startMs || !period.contains(period.startMs)) return false;
-  if (source == AiBudgetFundingSource::Subscription) return true;
-  return source == AiBudgetFundingSource::Owner && AiBudgetPeriod::at(period.startMs) == period;
+  if (source == AiBudgetFundingSource::Subscription)
+    return (!closedAtMs || (AiBudgetPeriod::at(*closedAtMs) && *closedAtMs <= period.endMs)) &&
+           (!statement || statement->valid());
+  return source == AiBudgetFundingSource::Owner && !closedAtMs && !statement && AiBudgetPeriod::at(period.startMs) == period;
+}
+
+bool AiBudgetGrant::inForceAt(long long atMs) const {
+  return period.contains(atMs) && (!closedAtMs || atMs < *closedAtMs);
+}
+
+bool AiBudgetGrant::overlaps(const AiBudgetGrant& other) const {
+  if (id == other.id || accountId != other.accountId || source != other.source) return false;
+  const long long until = closedAtMs.value_or(period.endMs);
+  const long long otherUntil = other.closedAtMs.value_or(other.period.endMs);
+  return period.startMs < until && other.period.startMs < otherUntil &&
+         period.startMs < otherUntil && other.period.startMs < until;
+}
+
+AiBudgetTier AiBudgetSnapshot::tierFor(const AiBudgetPrincipal& principal, long long atMs) const {
+  if (principal.tier != AiBudgetTier::WindmillOne) return principal.tier;
+  const bool funded = grant && grant->valid() && grant->accountId == principal.subject.id && grant->inForceAt(atMs);
+  return funded ? AiBudgetTier::WindmillOne : AiBudgetTier::LoggedIn;
 }
 
 bool AiOutputBudget::valid() const {
@@ -238,14 +265,13 @@ AiBudgetCode admitAiBudget(const AiBudgetRequest& request, const AiBudgetLimits&
                           const AiBudgetSnapshot& snapshot) {
   if (!request.valid() || !limits.valid() || !snapshot.subject.valid() || snapshot.concurrentCalls < 0)
     return AiBudgetCode::Invalid;
-  const auto tier = request.principal.tier;
+  const auto tier = snapshot.tierFor(request.principal, request.atMs);
   if (tier == AiBudgetTier::Anonymous && snapshot.deviceBound) return AiBudgetCode::DeviceBound;
   if (snapshot.subject.debtNanos) return AiBudgetCode::DebtOutstanding;
+  if (request.funding == AiBudgetFunding::GrantOnly && tier != AiBudgetTier::WindmillOne)
+    return AiBudgetCode::FundingRequired;
 
   if (tier == AiBudgetTier::WindmillOne) {
-    if (!snapshot.grant || !snapshot.grant->valid() ||
-        snapshot.grant->accountId != request.principal.subject.id || !snapshot.grant->period.contains(request.atMs))
-      return AiBudgetCode::FundingRequired;
     const auto window = snapshot.grant->source == AiBudgetFundingSource::Owner
         ? AiBudgetWindow::CalendarMonth : AiBudgetWindow::BillingPeriod;
     if (snapshot.period != snapshot.grant->period || snapshot.window != window) return AiBudgetCode::Invalid;
@@ -276,9 +302,9 @@ AiBudgetResult planAiBudget(const AiBudgetRequest& request, const AiBudgetLimits
   if (request.outputBudget) admission.amountNanos = request.outputBudget->costNanos(request.outputBudget->minTokens);
   const auto code = admitAiBudget(admission, limits, snapshot);
   if (code != AiBudgetCode::Ok) return {code};
+  const auto tier = snapshot.tierFor(request.principal, request.atMs);
   if (request.outputBudget) {
     const auto& offer = *request.outputBudget;
-    const auto tier = request.principal.tier;
     const auto allowance = tier == AiBudgetTier::WindmillOne ? snapshot.grant->amountNanos :
         tier == AiBudgetTier::Anonymous ? limits.anonymousLifetimeNanos : limits.loggedInMonthlyNanos;
     auto available = snapshot.subject.remainingNanos(allowance);
@@ -288,7 +314,7 @@ AiBudgetResult planAiBudget(const AiBudgetRequest& request, const AiBudgetLimits
     const auto tokens = std::min<long long>(offer.maxTokens, (available - offer.inputNanos) / offer.outputTokenNanos);
     admission.amountNanos = offer.costNanos(static_cast<int>(tokens));
   }
-  AiBudgetReservation reservation{request.id, request.principal.subject, request.principal.tier,
+  AiBudgetReservation reservation{request.id, request.principal.subject, tier,
       snapshot.period, admission.amountNanos, AiBudgetState::Reserved, {}, false, request.atMs,
       snapshot.grant ? std::optional<std::string>{snapshot.grant->id} : std::nullopt, request.outputBudget};
   return {AiBudgetCode::Ok, std::move(reservation)};
@@ -304,7 +330,7 @@ std::optional<long long> aiBudgetReturnsAt(std::string_view code, std::optional<
 AiBudgetView aiBudgetView(const AiBudgetPrincipal& principal, long long atMs,
                          const AiBudgetLimits& limits, const AiBudgetSnapshot& snapshot) {
   AiBudgetView view;
-  view.tier = principal.tier;
+  view.tier = snapshot.tierFor(principal, atMs);
   view.window = snapshot.window;
   const AiBudgetRequest request{"view", principal, 1, atMs};
   view.code = admitAiBudget(request, limits, snapshot);
@@ -312,12 +338,8 @@ AiBudgetView aiBudgetView(const AiBudgetPrincipal& principal, long long atMs,
   std::optional<long long> periodEndMs;
   if (snapshot.window != AiBudgetWindow::Lifetime) periodEndMs = snapshot.period.endMs;
   view.budgetResetsAtMs = aiBudgetReturnsAt(aiBudgetCodeName(view.code), periodEndMs, atMs);
-  if (principal.tier == AiBudgetTier::WindmillOne) {
-    if (view.code == AiBudgetCode::FundingRequired || !snapshot.grant) return view;
-    view.limitNanos = snapshot.grant->amountNanos;
-  } else {
-    view.limitNanos = principal.tier == AiBudgetTier::Anonymous ? limits.anonymousLifetimeNanos : limits.loggedInMonthlyNanos;
-  }
+  view.limitNanos = view.tier == AiBudgetTier::WindmillOne ? snapshot.grant->amountNanos
+      : view.tier == AiBudgetTier::Anonymous ? limits.anonymousLifetimeNanos : limits.loggedInMonthlyNanos;
   view.configured = true;
   view.resetsAtMs = periodEndMs;
   view.usedNanos = snapshot.subject.spentNanos;
@@ -391,6 +413,57 @@ AiBudgetCode reconcileAiBudgetOverrun(AiBudgetReservation& reservation) {
     return AiBudgetCode::InvalidState;
   if (reservation.overrunReconciled) return AiBudgetCode::Replay;
   reservation.overrunReconciled = true;
+  return AiBudgetCode::Ok;
+}
+
+AiBudgetGrantResult fundAiBudgetGrant(const AiBudgetGrant& grant, const std::vector<AiBudgetGrant>& held) {
+  if (!grant.valid() || grant.closedAtMs) return {AiBudgetCode::Invalid};
+  std::vector<AiBudgetGrant> stored;
+  std::copy_if(held.begin(), held.end(), std::back_inserter(stored), [&](const AiBudgetGrant& prior) {
+    return prior.id == grant.id || (prior.source == grant.source && prior.fundingReference == grant.fundingReference);
+  });
+  if (stored.size() > 1) return {AiBudgetCode::Conflict};
+  if (stored.size() == 1) {
+    auto prior = stored.front();
+    // The same funding for the same account: its stretch, as it was stored, may start later where it renewed early.
+    const bool same = prior.accountId == grant.accountId && prior.source == grant.source &&
+                      prior.fundingReference == grant.fundingReference && prior.period.endMs == grant.period.endMs &&
+                      grant.period.startMs <= prior.period.startMs;
+    if (!same) return {AiBudgetCode::Conflict, std::move(prior)};
+    if (grant.statement && (!prior.statement || grant.statement->after(*prior.statement))) prior.statement = grant.statement;
+    return {AiBudgetCode::Replay, std::move(prior)};
+  }
+  // A store may charge a renewal before the period it pays for begins, and state the period from that charge.
+  auto funded = grant;
+  for (const AiBudgetGrant& other : held) {
+    if (other.id == grant.id || other.accountId != grant.accountId || other.source != grant.source) continue;
+    const long long until = other.closedAtMs.value_or(other.period.endMs);
+    if (other.period.startMs <= grant.period.startMs && grant.period.startMs < until) funded.period.startMs = until;
+  }
+  if (funded.period.startMs >= funded.period.endMs) return {AiBudgetCode::Conflict};
+  const bool overlapping = std::any_of(held.begin(), held.end(), [&](const AiBudgetGrant& other) {
+    return funded.overlaps(other);
+  });
+  if (overlapping) return {AiBudgetCode::Conflict};
+  return {AiBudgetCode::Ok, std::move(funded)};
+}
+
+AiBudgetCode refundAiBudgetGrant(AiBudgetGrant& grant, std::optional<long long> refundedAtMs,
+                                const std::optional<AiBudgetStatement>& statement, const std::vector<AiBudgetGrant>& held) {
+  if (!grant.valid() || grant.source != AiBudgetFundingSource::Subscription ||
+      (refundedAtMs && !AiBudgetPeriod::at(*refundedAtMs)) || (statement && !statement->valid()))
+    return AiBudgetCode::Invalid;
+  if (statement && grant.statement && !statement->after(*grant.statement)) return AiBudgetCode::Replay;
+  auto refunded = grant;
+  refunded.closedAtMs = refundedAtMs ? std::optional<long long>{std::min(grant.period.endMs, *refundedAtMs)} : std::nullopt;
+  if (statement) refunded.statement = statement;
+  if (refunded == grant) return AiBudgetCode::Replay;
+  const bool holdsMore = refunded.closedAtMs.value_or(grant.period.endMs) > grant.closedAtMs.value_or(grant.period.endMs);
+  const bool overlapping = std::any_of(held.begin(), held.end(), [&](const AiBudgetGrant& other) {
+    return refunded.overlaps(other);
+  });
+  if (holdsMore && overlapping) return AiBudgetCode::Conflict;
+  grant = std::move(refunded);
   return AiBudgetCode::Ok;
 }
 

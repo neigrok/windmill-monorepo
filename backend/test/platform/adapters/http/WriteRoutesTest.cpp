@@ -190,6 +190,11 @@ TEST(write_http_expected_refusals_never_create_issues_and_unsafe_codes_are_disca
            std::string("failed"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k409Conflict, "private", "not-a-root"), "roadmap.DELETE.v1.trees.id"),
            std::string("not-a-root"));
+  const std::string subtree = "roadmap.PUT.v1.trees.tree.steps.step.subtree";
+  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "save-pending"), subtree),
+           std::string("save-pending"));
+  for (const char* code : {"kinds-refused", "no-such-tree", "step-gone", "depth-limit", "step-opens-a-tree"})
+    CHECK_EQ(writeHttpOutcome(error(drogon::k409Conflict, "private", code), subtree), std::string(code));
 }
 
 TEST(write_http_coach_routine_confirmation_refusals_log_their_codes) {
@@ -235,6 +240,7 @@ TEST(write_http_ai_allowance_and_funding_refusals_keep_their_codes_without_issue
       {"roadmap.POST.v1.compose", "compose-unavailable"},
       {"journal.POST.v1.journal.transcribe", "voice_unavailable"},
       {"journal.POST.v1.journal.transcribe", "voice_busy"},
+      {"journal.POST.v1.journal.transcribe", "voice_ration_spent", drogon::k429TooManyRequests},
       {"platform.POST.v1.billing.checkout", "checkout_closed"},
       {"platform.POST.v1.paddle.webhook", "funding_binding_pending"},
       {"platform.POST.v1.paddle.webhook", "funding_unconfigured"},

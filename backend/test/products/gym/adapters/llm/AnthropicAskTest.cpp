@@ -615,9 +615,10 @@ TEST(ask_stop_settles_the_round_at_once_at_the_input_and_the_output_that_streame
                                                   [] { return 1'792'000'000'000LL; });
   fake::FakeAuthRepository accounts;
   const auto lifter = accounts.createUser(Email{"lifter@example.com"}, "Lifter");
-  fake::FakeSubscriptionRepository subscriptions;
+  fake::FakeEntitlementCopy subscriptions;
+  fake::FakeClock clock;
   fake::FakeAiUsageRepository ledger;
-  Entitlements entitlements{subscriptions, ledger, {}, {}, budgets};
+  Entitlements entitlements{subscriptions, clock, ledger, {}, {}, budgets};
   struct Failures : FailureReporter {
     int reports = 0;
     void report(const std::string&, const std::string&, const std::string&) override { ++reports; }

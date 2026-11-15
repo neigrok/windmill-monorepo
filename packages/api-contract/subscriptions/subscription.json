@@ -3,6 +3,7 @@
     {
       "name": "active",
       "body": {
+        "windmillOne": true,
         "environment": "production",
         "allowlisted": false,
         "plan": "windmill_one",
@@ -47,6 +48,7 @@
     {
       "name": "cancelled_access_continues",
       "body": {
+        "windmillOne": true,
         "environment": "production",
         "allowlisted": false,
         "plan": "windmill_one",
@@ -88,6 +90,7 @@
     {
       "name": "grace",
       "body": {
+        "windmillOne": true,
         "environment": "production",
         "allowlisted": false,
         "plan": "windmill_one",
@@ -129,6 +132,7 @@
     {
       "name": "on_hold",
       "body": {
+        "windmillOne": false,
         "environment": "production",
         "allowlisted": false,
         "plan": null,
@@ -170,6 +174,7 @@
     {
       "name": "expired_line_open",
       "body": {
+        "windmillOne": false,
         "environment": "production",
         "allowlisted": false,
         "plan": null,
@@ -218,6 +223,7 @@
     {
       "name": "revoked_line_open",
       "body": {
+        "windmillOne": false,
         "environment": "production",
         "allowlisted": false,
         "plan": null,
@@ -266,6 +272,7 @@
     {
       "name": "never_subscribed_line_open",
       "body": {
+        "windmillOne": false,
         "environment": "production",
         "allowlisted": false,
         "plan": null,
@@ -287,6 +294,7 @@
     {
       "name": "allowlisted_never_subscribed_line_open",
       "body": {
+        "windmillOne": false,
         "environment": "production",
         "allowlisted": true,
         "plan": null,
@@ -308,6 +316,22 @@
     {
       "name": "never_subscribed_line_closed",
       "body": {
+        "windmillOne": false,
+        "environment": "production",
+        "allowlisted": false,
+        "plan": null,
+        "accessUntil": null,
+        "governing": null,
+        "others": [],
+        "manage": null,
+        "purchasable": [],
+        "offer": null
+      }
+    },
+    {
+      "name": "owner_line_open",
+      "body": {
+        "windmillOne": true,
         "environment": "production",
         "allowlisted": false,
         "plan": null,
@@ -322,6 +346,7 @@
     {
       "name": "charged_twice",
       "body": {
+        "windmillOne": true,
         "environment": "production",
         "allowlisted": false,
         "plan": "windmill_one",
@@ -395,6 +420,7 @@
     {
       "name": "sandbox_allowlisted",
       "body": {
+        "windmillOne": true,
         "environment": "sandbox",
         "allowlisted": true,
         "plan": "windmill_one",
@@ -439,6 +465,7 @@
     {
       "name": "sandbox_not_allowlisted_line_open",
       "body": {
+        "windmillOne": false,
         "environment": "production",
         "allowlisted": false,
         "plan": null,

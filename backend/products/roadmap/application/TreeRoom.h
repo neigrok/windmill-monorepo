@@ -6,6 +6,7 @@
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
+#include "products/roadmap/domain/OpenedTrees.h"
 #include "products/roadmap/domain/Subgraph.h"
 #include "products/roadmap/domain/Subtree.h"
 #include "products/roadmap/domain/Tree.h"
@@ -119,11 +120,9 @@ public:
   // Of the pointers a write the server stamps sends, each a step and the tree it names, in the order sent: one naming a
   // tree the register does not hold, nor the subtree (wm::refusedPointers).
   std::vector<NodeId> refusedPointers(const std::vector<std::pair<NodeId, TreeId>>& sent) const;
-  // Whether `step`, present or deleted, owns `subtree`: a pointer it is sent naming it is an echo, which lands nothing.
-  bool owns(const NodeId& step, const TreeId& subtree) const {
-    const auto owned = subtrees_.find(step);
-    return owned != subtrees_.end() && owned->second == subtree;
-  }
+  // Whether `step`, present or deleted, owns a subtree: a pointer it is sent is judged by its register alone
+  // (refusedPointers), never by where it leads.
+  bool ownsASubtree(const NodeId& step) const { return subtrees_.count(step) > 0; }
 
   // A node write's kind read off this room's own legend, under the strand the write then takes, so a
   // kind always lands as the hue it wears in the legend the write is applied to. `node` names the node
@@ -260,9 +259,9 @@ public:
   std::pair<GraphState, LegendState> dirtyState() const;
   void markClean();
 
-  // The tree each step opens (pointers()) as `caller` may be told of it: all of them for a caller who can write the
-  // tree, none for anyone else, whose marks are their own.
-  std::map<NodeId, TreeId> pointersFor(const std::optional<UserId>& caller) const;
+  // The steps whose completion follows a tree, as `caller`'s marks are judged (FollowedSteps): every pointer (pointers())
+  // for a caller who can write the tree, and for anyone else the subtree each step owns, among the owner's trees.
+  FollowedSteps followedStepsFor(const std::optional<UserId>& caller) const;
   // The node's live prerequisites (incoming DAG edges); empty if the node is absent.
   std::vector<NodeId> prerequisitesOf(const NodeId& node) const;
   bool hasNode(const NodeId& node) const;  // present: created, not tombstoned

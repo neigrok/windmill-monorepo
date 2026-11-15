@@ -3,7 +3,7 @@ import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBuc
 import { sharedKind } from '../model/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules, takesMark } from '../model/UnlockRules.js';
-import { LABELS, SAVE_FAILURE, TREE, TREE_TOAST, deleteFailedToast, treeBand } from '../copy.js';
+import { LABELS, SAVE_FAILURE, TREE_TOAST, deleteFailedToast, openTreeLabel, treeBand } from '../copy.js';
 import { BoardQuery } from './Board.js';
 
 export class BoardComposer {
@@ -154,7 +154,7 @@ export class BoardActs {
     if (!said) return;
     c.showToast(said, {
       surface: 'board', act: 'tree', reveal: null, holdMs: 6000,
-      ...(step.opening.leads && c.openTree ? { action: { label: TREE.open, run: () => c.openTree(step.id, 'toast') } } : {}),
+      ...(step.opening.leads && c.openTree ? { action: { label: openTreeLabel(step.opening), run: () => c.openTree(step.id, 'toast') } } : {}),
     });
   }
 

@@ -24,6 +24,7 @@ SUBSCRIPTION_FIELDS = ["subscriptionId", "store", "state", "startedAt", "current
                        "nextChargeAt", "nextCharge", "nextProductId", "cancelRequestedAt", "paymentFailedAt",
                        "graceEndsAt", "pauseScheduledFor", "pausedAt", "resumesAt", "offerKind", "offerEndsAt",
                        "endedAt", "endReason"]
+ACCOUNT_EVENT_FIELDS = ["seq", "type", "occurredAt", "recordedAt", "accountId", "period"]
 
 # Accounts
 BUYER = "3f6c2a1e-9b7d-4e2a-8c51-0d4f7b2e9a61"
@@ -130,9 +131,16 @@ def subscription_response(account_entitlement, now, allowlisted=False, line_open
     governing = shown["governing"]
     holds_live = (governing is not None and governing["state"] not in ENDED) or bool(shown["others"])
     purchasable = ["app_store"] if line_open and not has_windmill_one and not holds_live else []
-    return {"environment": environment, "allowlisted": allowlisted, **shown,
+    return {"windmillOne": has_windmill_one, "environment": environment, "allowlisted": allowlisted, **shown,
             "manage": None if governing is None else {"store": governing["store"], "url": MANAGE_URL[governing["store"]]},
             "purchasable": purchasable, "offer": OFFER if purchasable else None}
+
+
+# D-7: the account a subscription is bound to, since when and how
+class Binding(NamedTuple):
+    accountId: str
+    boundAt: int
+    boundBy: str
 
 
 class Event(NamedTuple):
@@ -158,14 +166,32 @@ class Ledger:
         self.seq += skip
         for event in events:
             record = self.records[event.subscriptionId]
-            accountId = event.accountId or self.binding.get(event.subscriptionId)
-            held = [self.records[s] for s, a in sorted(self.binding.items()) if a == accountId]
+            binding = self.binding.get(event.subscriptionId)
+            accountId = event.accountId or (binding and binding.accountId)
+            held = self.held(accountId)
             self.seq += 1
             self.entries.append({
                 "seq": self.seq, "type": event.type, "occurredAt": event.occurredAt, "recordedAt": recordedAt,
                 "subscriptionId": event.subscriptionId, "accountId": accountId, "store": record["store"],
                 "environment": record["environment"], "offerKind": record["offerKind"], "period": event.period,
                 "entitlement": None if accountId is None else entitlement(accountId, held)})
+
+    def held(self, accountId):
+        return [self.records[s] for s, binding in sorted(self.binding.items()) if binding.accountId == accountId]
+
+    # GET /internal/v1/accounts/{accountId} (§5.2): each subscription bound to the account with its periods, each as
+    # its newest event states it, and every event of it
+    def account(self, accountId):
+        held = self.held(accountId)
+        return {"entitlement": entitlement(accountId, held), "subscriptions": [self.bound(record) for record in held]}
+
+    def bound(self, record):
+        told = [entry for entry in self.entries if entry["subscriptionId"] == record["subscriptionId"]]
+        periods = {entry["period"]["id"]: entry["period"] for entry in told if entry["period"]}
+        binding = self.binding[record["subscriptionId"]]
+        return {**on_the_wire(record), "environment": record["environment"], "boundAt": binding.boundAt,
+                "boundBy": binding.boundBy, "periods": sorted(periods.values(), key=lambda p: p["start"]),
+                "events": [{field: entry[field] for field in ACCOUNT_EVENT_FIELDS} for entry in told]}
 
     def page(self, after, limit):
         return {"epoch": self.epoch, "entries": [e for e in self.entries if e["seq"] > after][:limit],
@@ -190,7 +216,7 @@ ledger = Ledger(EPOCH)
 
 # The buyer purchases with a hint: one observation starts, binds and records the first period
 bought = subscription(SUB, T0, (T0, END1), T0)
-ledger.transaction(T0 + 4 * SECOND, records=[bought], bind={SUB: BUYER}, events=[
+ledger.transaction(T0 + 4 * SECOND, records=[bought], bind={SUB: Binding(BUYER, T0, "purchase")}, events=[
     Event("started", SUB, T0), Event("bound", SUB, T0), Event("period_recorded", SUB, T0, period(P1, T0, END1))])
 
 # A purchase without a hint is recorded unbound, then claimed: the claim re-records its period
@@ -198,14 +224,15 @@ unhinted = subscription(SUB_UNHINTED, UNHINTED, (UNHINTED, UNHINTED_END), UNHINT
 ledger.transaction(UNHINTED + 3 * SECOND, records=[unhinted], events=[
     Event("started", SUB_UNHINTED, UNHINTED),
     Event("period_recorded", SUB_UNHINTED, UNHINTED, period(Q1, UNHINTED, UNHINTED_END))])
-ledger.transaction(CLAIMED, bind={SUB_UNHINTED: CLAIMANT}, events=[
+ledger.transaction(CLAIMED, bind={SUB_UNHINTED: Binding(CLAIMANT, CLAIMED, "claim")}, events=[
     Event("bound", SUB_UNHINTED, CLAIMED),
     Event("period_recorded", SUB_UNHINTED, CLAIMED, period(Q1, UNHINTED, UNHINTED_END))])
 CLAIM_SEQ = ledger.seq
 
 # A tester buys in sandbox, where a month is five minutes; one seq is skipped before it
 sandbox = subscription(SUB_SANDBOX, SANDBOX, (SANDBOX, SANDBOX + 5 * MINUTE), SANDBOX, environment="sandbox")
-ledger.transaction(SANDBOX + 2 * SECOND, records=[sandbox], bind={SUB_SANDBOX: TESTER}, skip=1, events=[
+ledger.transaction(SANDBOX + 2 * SECOND, records=[sandbox], bind={SUB_SANDBOX: Binding(TESTER, SANDBOX, "purchase")},
+                   skip=1, events=[
     Event("started", SUB_SANDBOX, SANDBOX), Event("bound", SUB_SANDBOX, SANDBOX),
     Event("period_recorded", SUB_SANDBOX, SANDBOX, period(S1, SANDBOX, SANDBOX + 5 * MINUTE))])
 sandbox_renewed = changed(sandbox, currentPeriod=(SANDBOX + 5 * MINUTE, SANDBOX + 10 * MINUTE),
@@ -215,10 +242,11 @@ ledger.transaction(SANDBOX + 5 * MINUTE + 2 * SECOND, records=[sandbox_renewed],
     Event("period_recorded", SUB_SANDBOX, SANDBOX + 5 * MINUTE,
           period(S2, SANDBOX + 5 * MINUTE, SANDBOX + 10 * MINUTE))])
 
-# The claimant's period in force is refunded: the period fact and the revocation
+# The claimant's period in force is refunded: renewal ends with it (§3.4), then the period fact and the revocation
 unhinted_revoked = changed(unhinted, state="revoked", autoRenew=False, endedAt=Q1_REFUNDED, endReason="refunded",
                            observedAt=Q1_REFUNDED)
 ledger.transaction(Q1_REFUNDED + 2 * SECOND, records=[unhinted_revoked], events=[
+    Event("renewal_turned_off", SUB_UNHINTED, Q1_REFUNDED),
     Event("period_refunded", SUB_UNHINTED, Q1_REFUNDED, period(Q1, UNHINTED, UNHINTED_END, Q1_REFUNDED)),
     Event("revoked", SUB_UNHINTED, Q1_REFUNDED)])
 
@@ -236,6 +264,8 @@ recovered = changed(on_hold, state="active", currentPeriod=(RECOVERED, END3), pa
                     observedAt=RECOVERED)
 ledger.transaction(RECOVERED + 3 * SECOND, records=[recovered], events=[
     Event("payment_recovered", SUB, RECOVERED), Event("period_recorded", SUB, RECOVERED, period(P3, RECOVERED, END3))])
+# The point a backup is taken at for ledger_restored: the end of the recovery's transaction
+BACKED_UP_SEQ = ledger.seq
 
 # An earlier period is refunded and the refund reversed; the subscription stays active (§3.5)
 ledger.transaction(P2_REFUNDED + 2 * SECOND, records=[changed(recovered, observedAt=P2_REFUNDED)], events=[
@@ -248,6 +278,7 @@ turned_off = changed(recovered, autoRenew=False, cancelRequestedAt=TURNED_OFF, o
 ledger.transaction(TURNED_OFF + 2 * SECOND, records=[turned_off], events=[Event("renewal_turned_off", SUB, TURNED_OFF)])
 expired = changed(turned_off, state="expired", endedAt=END3, endReason="cancelled", observedAt=END3)
 ledger.transaction(END3 + 4 * SECOND, records=[expired], events=[Event("expired", SUB, END3)])
+buyer_expired = ledger.account(BUYER)
 ledger.transaction(ERASED, unbind=[SUB], events=[Event("unbound", SUB, ERASED, accountId=BUYER)])
 
 # Accounts no feed page reaches
@@ -265,12 +296,12 @@ play = changed(second, subscriptionId=SUB_PLAY, store="play_store")
 # The files
 entitlements = {
     "active": ledger.at(3)["entitlement"],
-    "cancelled_access_continues": ledger.at(24)["entitlement"],
-    "grace": ledger.at(18)["entitlement"],
-    "on_hold": ledger.at(19)["entitlement"],
-    "expired": ledger.at(25)["entitlement"],
-    "revoked": ledger.at(15)["entitlement"],
-    "never_subscribed": ledger.at(26)["entitlement"],
+    "cancelled_access_continues": ledger.at(25)["entitlement"],
+    "grace": ledger.at(19)["entitlement"],
+    "on_hold": ledger.at(20)["entitlement"],
+    "expired": ledger.at(26)["entitlement"],
+    "revoked": ledger.at(16)["entitlement"],
+    "never_subscribed": ledger.at(27)["entitlement"],
     "sandbox_active": ledger.at(13)["entitlement"],
     "sandbox_active_production_expired": entitlement(TESTER, [tester_production, tester_sandbox]),
     "charged_twice": entitlement(CHARGED_TWICE, [first, second]),
@@ -289,6 +320,7 @@ responses = [
      subscription_response(entitlements["never_subscribed"], ERASED + DAY, allowlisted=True)),
     ("never_subscribed_line_closed",
      subscription_response(entitlements["never_subscribed"], ERASED + DAY, line_open=False)),
+    ("owner_line_open", subscription_response(entitlements["never_subscribed"], ERASED + DAY, owner=True)),
     ("charged_twice", subscription_response(entitlements["charged_twice"], ms("2026-12-12T10:00:00"))),
     ("sandbox_allowlisted", subscription_response(entitlements["sandbox_active_production_expired"],
                                                   SANDBOX_LATER + 2 * MINUTE, allowlisted=True)),
@@ -296,23 +328,27 @@ responses = [
                                                                 SANDBOX_LATER + 2 * MINUTE)),
 ]
 
-pages = [("from_zero", 0, 6), ("claimed_then_sandbox", 6, 6), ("refunded_then_renewed", 13, 4),
-         ("payment_trouble", 17, 4), ("older_period_refunded", 21, 4), ("account_erased", 25, 500),
-         ("caught_up", 26, 500)]
+pages = [("from_zero", 0, 6), ("claimed_then_sandbox", 6, 6), ("refunded_then_renewed", 13, 5),
+         ("payment_trouble", 18, 4), ("older_period_refunded", 22, 4), ("account_erased", 26, 500),
+         ("caught_up", 27, 500)]
 
 claimed = ledger.at(CLAIM_SEQ)
 claim_answer = subscription_response(claimed["entitlement"], CLAIMED + MINUTE)
 internal_answer = {"seq": claimed["seq"], "entitlement": claimed["entitlement"]}
 refused = lambda status, code: {"status": status, "body": {"code": code}}
+accounts = [("expired", BUYER, buyer_expired), ("claimed_then_refunded", CLAIMANT, ledger.account(CLAIMANT)),
+            ("sandbox", TESTER, ledger.account(TESTER)), ("holds_nothing", BUYER, ledger.account(BUYER))]
 
 FILES = {
     "entitlement.json": {"examples": [{"name": name, "body": body} for name, body in entitlements.items()]},
     "subscription.json": {"examples": [{"name": name, "body": body} for name, body in responses]},
+    "account.json": {"examples": [{"name": name, "request": {"accountId": accountId}, "body": body}
+                                  for name, accountId, body in accounts]},
     "feed.json": {"examples": [
         {"name": name, "request": {"after": after, "limit": limit}, "body": ledger.page(after, limit)}
         for name, after, limit in pages] + [
-        {"name": "ledger_restored", "request": {"after": 26, "limit": 500},
-         "body": {"epoch": EPOCH_RESTORED, "entries": [], "latestSeq": 21}}]},
+        {"name": "ledger_restored", "request": {"after": ledger.seq, "limit": 500},
+         "body": {"epoch": EPOCH_RESTORED, "entries": [], "latestSeq": BACKED_UP_SEQ}}]},
     "app-store-claim.json": {"request": {"signedTransaction": SIGNED_TRANSACTION}, "examples": [
         {"name": "bound_to_caller", "status": 200, "body": claim_answer},
         {"name": "already_bound_to_caller", "status": 200, "body": claim_answer},

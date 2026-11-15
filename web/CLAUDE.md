@@ -1,6 +1,6 @@
 # Web
 
-One Vite/React superapp for roadmap, journal and gym. Brand rules are in the root `CLAUDE.md`;
+One Vite/React superapp for roadmap, journal and gym. Brand rules are in [AGENTS.md](../AGENTS.md);
 [STRUCTURE.md](../STRUCTURE.md) defines dependency direction.
 
 ## Boundaries
@@ -97,6 +97,10 @@ npm run build    # fetch model weights, run tests, build Vite and static landing
 Use `npm run build` as the gate. `prebuild` fetches self-hosted weights into `public/models`;
 `vite build` alone skips that step, tests and static-page generation.
 
+The test runner caps ordinary file concurrency at four, using one fewer than the available CPUs
+with a minimum of one. This bounds concurrent browser and Vite hosts. Runtime fuzz and performance
+files run separately, one at a time.
+
 `vite.config.js` checks that roadmap's `DEFAULT_KINDS` and `GENESIS_STAMP` match
 `packages/api-contract/genesis.js`, preserving agreement between device and server trees.
 
@@ -106,8 +110,8 @@ Verify an existing build against a running local backend from the repository roo
 node web/scripts/serve-built.mjs --root web/dist --port 5300 --backend http://127.0.0.1:8088 --duration 1800
 ```
 
-The server binds `127.0.0.1`, serves the existing files without rebuilding and proxies `/v1`, `/mcp`
-and `/oauth` on the same origin. The backend argument is an HTTP(S) origin without credentials,
+The server binds `127.0.0.1`, serves the existing files without rebuilding and proxies `/v1`, `/mcp`,
+`/oauth` and `/og/` on the same origin. The backend argument is an HTTP(S) origin without credentials,
 path, query or fragment. WebSocket upgrades use fresh upstream connections because Drogon can
 reject an upgrade on a connection reused after an HTTP request. Missing assets return 404; `/app`
 and its extensionless descendants and `/t/:id` use the built index. Shared-tree paths verify the
@@ -171,7 +175,8 @@ measuring tool, not a gate.
 
 The auth provider opens the browser sync engine once for this document and owns cookie cleanup.
 Product preparations run before networking; occupied rooms pin Add/Discard, and sign-out pins
-Keep/Discard after the bounded flush. Account closure records a durable intent and discards that
+Keep/Discard after the bounded flush. A product's `signOutNotice()` adds a line to the sign-out question, with a download
+of what signing out discards from the tab (the journal's kept Talk take), and its `forgetDevice` drops it. Account closure records a durable intent and discards that
 account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh.
 `platform/sync/react.js` exports `useSyncEngine()` and
 `useSyncRecords(scope)`. The anonymous journal uses record observations; Gym retains its account gate.

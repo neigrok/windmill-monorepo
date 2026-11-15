@@ -61,7 +61,20 @@
 # and windmill_server never sees one. Only the public listener, 8082, is named; the internal one,
 # 8083, has no route through this file, so no path rule here can expose a backend door
 # (docs/foundation/subscriptions.md §5). Import it after the gate and before any `/v1/*` handle.
+#
+# The App Store's door answers only Apple's own subnet, 17.0.0.0/8, which Apple documents as the one
+# its notifications come from in both environments ("Enabling App Store Server Notifications",
+# Configure an allow list). Behind the gate the client is CF-Connecting-IP, which Cloudflare writes;
+# anyone else is refused here, before the service spends a verification on them. An IPv6 client is
+# refused too: Apple documents no IPv6 range.
 (store_doors) {
+	@app_store_outside_apple {
+		path /v1/stores/app-store/*
+		not header_regexp CF-Connecting-IP ^17[.][0-9]+[.][0-9]+[.][0-9]+$
+	}
+	handle @app_store_outside_apple {
+		respond 403
+	}
 	@stores path /v1/stores/*
 	handle @stores {
 		reverse_proxy subscriptions:8082

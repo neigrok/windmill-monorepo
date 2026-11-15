@@ -101,6 +101,25 @@ Post-commit notice-cleanup failures use `journal-notice-cleanup` and preserve th
 outcome. Unreadable legacy data uses `journal-migration`, retains its source, and allows startup.
 No page body, scales, date, claim identifier or account is reported.
 
+Journal Talk emits `journal_talk_refused` each time the sheet says why Talk refused, with `code`, `reason` and
+`moment`. `code` is the allowance or voice route's code (`subject_exhausted`, `free_month_exhausted`,
+`free_day_exhausted`, `concurrency_exhausted`, `funding_required`, `device_bound`, `debt_outstanding`, `unconfigured`,
+`ai_accounting_unavailable`, `voice_busy`, `voice_unavailable`, `voice_ration_spent`), `other` for a code outside
+that set, `status_<n>` where the answer carried none, or `unreachable` where nothing answered. `reason` is
+`allowance_exhausted`, `request_exceeds_remaining`, `held` (a spent allowance a request in progress still holds),
+`unavailable` or `none`. `moment` is `take` (a take's answer), `before_take` (the allowance read refused before the
+microphone opened) or `remembered` (a press reopened a refusal the tab holds until its date). The event is sent once,
+when a sheet first shows the face: an answer that lands while the journal room is away is told when the room shows it.
+`journal_talk_take` carries `action`: `written` (a take's words went into today), `download` (from the sheet or the
+sign-out question), `close` (the sheet closed on a kept take), `discard`, `undo`, `retry` or `sign_in`.
+`journal_talk_retry` carries `outcome`: `written`, `refused` or `unreachable`. Sentry hears, under static
+operations, a transcribe (`journal-talk-transcribe`), allowance read (`journal-talk-allowance`) or subscription read
+(`journal-talk-subscription`) that got no answer (`failure`: `unreachable` or `timeout`), a success whose body is not
+what it should carry (`failure: unreadable` and its `status`) or a 5xx the server did not explain (`failure: status` and
+its `status`), a take the browser cannot decode for its waveform (`journal-talk-levels`) and a playback it refuses
+(`journal-talk-playback`). A refusal the server explains is not an Issue. No audio, transcript, duration, date,
+filename or allowance amount is reported.
+
 Gym engine writes emit `gym_action` through the first-party events intake with only `operation`
 and `outcome`. Operations are routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
@@ -162,6 +181,8 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | A state's action | `roadmap_board_state_action` | `state: complete`, `action: share/newStep` |
 | Go into another tree of the holder's. Down into the tree a step opens: the card's pill, the swipe's Open, the toast a C raises, the shared step document or a Graph naming panel. Up into a tree above: its name over its guide in the guide's note. `place` is where the room's holder acts: `account` on a tree the server keeps, `device` on one that lives only on this device, signed in or not, as for every `place` below | `roadmap_tree_open` | `door: pill/swipe/toast/step/dock/panel/guide`, `view: board/graph`, `band: phone/tablet/desktop`, `place: device/account` |
 | Come back to the roadmap a tree was gone into from, by the Back chip or the browser's Back, once per going in. A return after going Forward into the tree again is an ordinary visit: no `roadmap_tree_back`, the view opens by its usual door, and a step open on that entry is counted as reached by a link | `roadmap_tree_back` | `band: phone/tablet/desktop`, `place: device/account` |
+| Go into the subtree a step owns, by the same surfaces a tree is gone into by but the guide's names: the card's pill, the swipe's Open, the toast a C raises, the step page or modal, the Graph's dock, the tablet panel or the phone Graph's bar. Its owner and anyone who reads the roadmap, on a share's address too; `role` says which | `roadmap_subtree_open` | `door: pill/swipe/toast/step/dock/panel/bar`, `view: board/graph`, `band: phone/tablet/desktop`, `role: owner/reader` |
+| Come back up from a subtree to the roadmap its owning step stands in, once per going in: by the Back chip or the browser's Back where the person came down that step, or by the chip from a subtree reached any other way, which opens the owning step there | `roadmap_subtree_back` | `band: phone/tablet/desktop`, `role: owner/reader` |
 | Open the tree picker from a step's Tree section: the + on a step that opens no tree, or Change tree under the section's ⋯. Fork tree pressed on a roadmap the person can only read | `roadmap_tree_attach` | `step: open/fork`, `band: phone/tablet/desktop`, `view: board/graph`, `place: device/account` |
 | A roadmap address in Find a tree came to one of the person's own roadmaps, one they can only read, or none they can read: once for each roadmap the field named while the picker stood open. Only this app's `/t/<id>` and `/#/app/<id>` addresses and a bare tree id are addresses, read when pasted or once the field has been still for 300 ms. On a tree that lives only on this device, an address of a tree of this device's is `own` and any other `unreadable`, with no request made | `roadmap_tree_attach` | `step: paste`, `outcome: own/readable/unreadable`, `band: phone/tablet/desktop`, `view: board/graph`, `place: device/account` |
 | A tree attached to a step that opened none, changed for another, or detached, and whether a hand's mark on the step was set aside or returned. `refused` when the session took no write, and `failed` when the write threw; either keeps the picker's choice and says *Couldn’t change the tree. Try again.* A step that already opens the tree chosen, as when a peer set it meanwhile, emits nothing | `roadmap_tree_attach` | `step: attach/change/detach`, `mark: kept/none`, `outcome?: refused/failed`, `band: phone/tablet/desktop`, `view: board/graph`, `place: device/account` |
@@ -247,6 +268,8 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Fork's email answered with a refusal or a failure | `fork_attempt` | `mode: email`, `outcome: invalid/rate_limited/failed` |
 | Instant Fork failed | `fork_attempt` | `mode: instant`, `outcome: unauthenticated/failed` |
 | Gallery Fork failed | `fork_attempt` | `mode: browse`, `outcome: unauthenticated/failed` |
+| Gallery initial read and each page result, once while still wanted; no identifiers, counts, titles or cursors | `roadmap_gallery` | `step: load/page`, `outcome: available/empty/failed` |
+| Gallery Show more or Try again pressed; a page retry emits only its retry press | `roadmap_gallery` | `step: more/retry`, `read: initial/page` |
 | Fork landed | `fork_claim` | `mode: email/instant/browse` |
 | Sync status: offline episode | `roadmap_sync_offline` | `step: shown/cleared`, `pending: 0/1/2-5/6-20/21+` |
 | Refusal shown, retried or discarded | `roadmap_sync_refused` | `step: shown/retry/discard`, `lane: structure/progress`, `code: tree-too-large/bad-frame/no-such-tree/server-error/other` |
@@ -276,7 +299,11 @@ A step is a thing a reader did or was told. These emit nothing:
 - A C on a card that opens a tree and the toast it raises: nothing was completed. The toast's Open tree is `roadmap_tree_open`.
 - A tree visit with no holder at the room (on a tree the server keeps: a lapsed session, its copy on a device with nobody
   signed in, a page that started with no connection; and a reader): no `roadmap_tree_open`, no `roadmap_tree_back` and
-  no `tree` or `back` door. A step that opens the tree it stands in has no door, so nothing.
+  no `tree` or `back` door. A step that opens the tree it stands in has no door, so nothing. A reader goes into a subtree
+  and back up, so `roadmap_subtree_open` and `roadmap_subtree_back` are theirs too; an owner with no holder (a lapsed
+  session, a start with no connection) has neither.
+- A pointer the server refused on a step that owns a subtree (`subgraphAck.refused`, `owns-a-subtree`): the step's
+  register goes back to what the server confirmed, with no event and no Sentry report, as the web never writes one.
 - A step that was open on the roadmap come back to from a tree: it opens as one reached by going back, with no
   `roadmap_board_step_open`.
 - A mark set aside because its step opens a tree: nothing is sent, counted or refused while the pointer stands.
@@ -323,7 +350,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-tend-undo` | Undo on an Ask AI answer | The toast closes |
 | `roadmap-export` | Building or downloading an export | `roadmap_export` `failed`, no file |
 | `roadmap-export-load` | Settings' Export all reading a roadmap or its marks, by the rules of `roadmap-tree-load` | *Exported 1 of 2 roadmaps.*, or the export's error when none could be read |
-| `roadmap-tree-load` | The server answering 5xx or 200 with no tree, or a request lost while visible, online and still wanted (a refused connection), on the load or on the read that follows a pointer set while the roadmap is open | The load error. On the later read: the step keeps the tree's mark with nothing said of it until a reload |
+| `roadmap-tree-load` | The server answering 5xx or a 200 with no tree or one that does not say where the tree sits (`root`, `parent`, `path`, `depth`), or a request lost while visible, online and still wanted (a refused connection), on the load or on the read that follows a pointer set while the roadmap is open | The load error. On the later read: the step keeps the tree's mark with nothing said of it until a reload |
 | `roadmap-opens-load` | The server could not follow the trees an owner's steps open (`503 opens-unavailable`), on the load or on the read that follows a pointer set while the roadmap is open | On the load: this device's copy of the roadmap, each such step shown as opening a tree with nothing said of it, or the load error where the device holds none. On the later read: the step keeps the tree's mark with nothing said of it until a reload |
 | `roadmap-progress-load` | A server tree's marks, by the rules of `roadmap-tree-load`, or a 200 that is not JSON | The load error and Try again, never a false count |
 | `roadmap-activity-load` | A server tree's activity, by the rules of `roadmap-tree-load`, or a 200 that is not JSON | The room opens with an empty feed |
@@ -334,6 +361,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-device-opens-read` | A read of the trees that live only on this device, under one tag, `name`: the browser's name for what failed (`QuotaExceededError`, `AbortError`, `UnknownError`, …), `corrupt` for a stored record that does not join, or `other`; never a message. A record that does not join reports once per read and stands unread while the rest are read. A device that cannot read its trees at all (its database will not open, or a record cannot be read) reports once per read: as a device tree's room opens or one of its pointers changes, for the tree picker's list there, for the switcher's list, or as a device tree is deleted. The picker's own `roadmap-tree-picker-load` and the switcher's `roadmap-switcher-delete` do not report it again | A corrupt record: its tree is left out of the picker, a pointer at it is unread, and it is neither counted nor taken from by a delete. A device that cannot read at all: each step that opens a tree keeps the tree's mark and Open tree with nothing said of it until a pointer changes or a reload; the picker says *Couldn’t load your trees* with Try again; the switcher's delete asks its question alone, and pressing Delete removes nothing (`roadmap_sheet` `outcome: failed`), the row standing to try again |
 | `roadmap-device-cascade` | Removing a tree that lives only on this device: the write that takes the steps opening it from one of the other trees here, read, joined or saved, the tree this tab has open included, once per removal however many trees failed, under one tag, `name`, as `roadmap-device-opens-read` has it | The tree is gone and the other trees' steps with it. A tree whose write failed keeps its steps on disk, each now opening a tree that is not found and following its mark; on the tree this tab has open they vanish at once and come back after a reload, to detach or delete by hand |
 | `roadmap-fork` | Fork, from a roadmap or the gallery: a server failure, or a request lost while visible and online | Fork's own error |
+| `roadmap-gallery-load` | A still-wanted initial gallery read or page failed, tagged `read: initial/page` and `reason: server/network/shape`. Server failures and transport loss, including an interrupted body after successful headers, report through `reportUnexpectedFailure`; 4xx and offline or hidden transport loss do not. A fully read successful response whose JSON parse or entry projection throws reports as `shape` through `reportRoadmapFailure`. Only static labels leave; no bodies, cursors, URLs, names or raw messages | The gallery's existing error and Try again; a failed page retains its cards, count and cursor for retry |
 | `roadmap-share` | Publishing or making private: a server failure, or a request lost while visible and online | The dialog's own error |
 | `roadmap-switcher-rename` | The switcher's rename: a server failure, a request lost while visible and online, or an exception | The old name returns |
 | `roadmap-switcher-delete` | The switcher's delete: a server failure, a request lost while visible and online, or an exception | The row stays |
@@ -350,10 +378,11 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-socket` | A socket with no inbound frame for ten seconds while online and in view, once per session | The Shell's sync status; reconnects keep trying |
 | `roadmap-sync-dropped` | A write reply or heartbeat pong proves an earlier frame unanswered, once per session, tagged with the first affected `lane: structure/progress` | The write stays pending and is sent again |
 | `roadmap-sync-unlandable` | The socket closed five times running with the lane's first structure frame unanswered, and that frame is heavier than 64 KiB: one the path drops the connection for, as the server does a message past its size limit. A lighter frame is never judged. Once per session, tagged `lane: structure` and the frame's `size` bucket (`under-128k`, `under-256k`, `under-1m`, `over-1m`) | The refused card of a write this browser cannot send; that frame's writes, and the other parts of the acts it carries, stay unsent until Retry, and other writes go on |
-| `roadmap-sync-frame` | A server frame that cannot be parsed or joined, once per session | The frame is dropped; a lane frame resubscribes |
+| `roadmap-sync-frame` | A server frame that cannot be parsed or joined, a subscribe answer among them whose `subtrees` holds an entry with no step or no id, or a `subtree` frame that names no step or no subtree, or a step the tree has never held; once per session | The frame is dropped; a lane frame resubscribes. A `subtree` frame's seq is taken and the subtree kept nowhere, until a subscribe answer says which steps own one |
 | `roadmap-sync-discard` | An unexpected discard failure | The refusal stays |
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
+| `billing-subscription` | The subscription read (`GET /v1/subscription`), kind `billing`, under the tag `reason`: `server` for a 5xx, `shape` for a 200 that is not a SubscriptionResponse. A request lost and a 4xx report nothing | The page reads as holding no Windmill One until the next read, at the next focus |
 
 Expected answers are not Issues: a null receipt, a not-ready session on create or delete, a capacity or missing-tree
 refusal, a refused clipboard, a browser refusing storage (one `[sync]` console warning per document, and writes still reach

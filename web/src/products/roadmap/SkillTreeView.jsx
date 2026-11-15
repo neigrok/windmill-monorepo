@@ -117,7 +117,10 @@ export function SkillTreeView({ treeId, demo = false }) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const openShare = useCallback(() => setShareOpen(true), []);
   const openFork = useCallback(() => setForkOpen(true), []);
-  const { progress, progressActs } = useRoomProgress({ ...room, treeId, demo, shared, demotion, emit, showToast, noteCompletion, openShare, band: breakpoint });
+  // Where the tree sits, once the load has read it: the hooks that come before the load read it here. A subtree is shared
+  // as its root is, so it offers no share of its own.
+  const placeRef = useRef(null);
+  const { progress, progressActs } = useRoomProgress({ ...room, treeId, demo, shared, demotion, emit, showToast, noteCompletion, openShare: placeRef.current?.subtree ? null : openShare, band: breakpoint });
   const { completed, completedAt } = progress;
   const structure = useGraphStructure({ room, progressActs, showToast, syncLegendFromTree: legendKit.syncLegendFromTree });
   const { tree, renderModel, bounds, setBounds } = structure;
@@ -137,7 +140,9 @@ export function SkillTreeView({ treeId, demo = false }) {
       else sceneRef.current?.announceCeremony(said);
     },
   });
-  const { loading, loadError, syncSession, treeVisibility, setTreeVisibility, treeMine } = load;
+  const { loading, loadError, syncSession, treeVisibility, setTreeVisibility, treeMine, treePlace } = load;
+  placeRef.current = treePlace;
+  const inSubtree = treePlace?.subtree === true;
   // A roadmap that loaded as someone else's reads as a share does, whichever address opened it.
   const knownReader = !loading && Boolean(tree) && !treeMine;
   knownReaderRef.current = knownReader;
@@ -174,7 +179,7 @@ export function SkillTreeView({ treeId, demo = false }) {
     collapse();
   }, [closeComposer, stopEditing, collapse]);
   const holder = useRoomHolder({ owner, treeId, account, confirmed: accountConfirmed, lapsed, claims });
-  const treeVisit = useTreeVisit({ room, arrival, holder, band: breakpoint });
+  const treeVisit = useTreeVisit({ room, arrival, holder, visitor: !demo && !owner, place: treePlace, route: shared ? '#/t/' : '#/app/', role: loading ? null : who.role, band: breakpoint });
   const view = useRoomView({ treeId, tree, loading, loadError, who, linkedStep: stepAddress.id, carried: treeVisit, scene, graphAvailability, anchors, onLeave: onLeaveView, onSwitched: onViewSwitched });
   const { decidedView, boardActive, canvasView, shownView, boardFacts, boardAwaitsRoadmap, switchView, onSwitchView } = view;
   room.viewRef.current = shownView;
@@ -316,7 +321,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   useEffect(() => {
     if (phoneGraph && selectedId) sceneRef.current?.revealNode(selectedId);
   }, [phoneGraph, selectedId]);
-  const forkPresent = (reader || demo) && !demotion?.cardOpen;
+  const forkPresent = (reader || demo) && !demotion?.cardOpen && !inSubtree;
   const forkPillShown = forkPresent && phoneGraph;
   const openGraphFork = () => {
     track('roadmap_verb', { verb: 'fork', door: 'pill', view: 'graph', band: 'phone' });
@@ -458,7 +463,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             title={boardAwaitsRoadmap ? undefined : tree?.title}
             loading={boardAwaitsRoadmap && !loadError}
             back={treeVisit.from === null ? null : { title: treeVisit.from.title, onBack: treeVisit.back }}
-            switcher={owner && !phone && !boardAwaitsRoadmap ? <TreeSwitcher {...verbs.switcher} /> : null}
+            switcher={owner && !phone && !boardAwaitsRoadmap && !inSubtree ? <TreeSwitcher {...verbs.switcher} /> : null}
             recovery={recovery?.place && <RecoveryTreeSwitcher key={`${account?.id ?? 'device'}:${treeId}`} place={recovery.place}
               onPickTree={verbs.identitySheet.onPickTree} onNew={verbs.identitySheet.onNewRoadmap} onBrowse={verbs.identitySheet.onBrowse} />}
             progress={boardAwaitsRoadmap || !shownStats ? null : { done: shownStats.done, total: shownStats.total }}
@@ -471,7 +476,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             find={!phone && boardFacts.loaded && !boardFacts.empty ? verbs.identityFind : null}
             next={canvasView && owner && !phone && verbs.graphNext?.count > 0 ? verbs.identityNext : null}
             onAskAI={canTend && owner ? () => setTendOpen(true) : null}
-            onShare={!boardAwaitsRoadmap && tree ? verbs.shareFromRow : null}
+            onShare={!boardAwaitsRoadmap && tree && !inSubtree ? verbs.shareFromRow : null}
             onNewStep={owner && boardFacts.loaded ? () => newStepFromBoard('verbs') : null}
             onExport={owner && boardFacts.loaded ? verbs.exportFromRow : null}
             onSettings={owner ? verbs.openRowSettings : null}
@@ -479,7 +484,7 @@ export function SkillTreeView({ treeId, demo = false }) {
             onActivity={verbs.activityEnabled ? verbs.openRowActivity : null}
             activityOpen={activityOpen}
             onFork={!owner && forkPresent ? openFork : null}
-            sheet={phone && owner && boardFacts.loaded ? verbs.identitySheet : null}
+            sheet={phone && owner && boardFacts.loaded && !inSubtree ? verbs.identitySheet : null}
             onBottom={setTopbarBottom}
           />
         </ErrorBoundary>
@@ -505,7 +510,7 @@ export function SkillTreeView({ treeId, demo = false }) {
               topInset={topbarBottom}
               active={boardActive}
               onRetry={load.retryLoad}
-              onShare={owner ? openShare : undefined}
+              onShare={owner && !inSubtree ? openShare : undefined}
               onNewStep={owner ? newStepFromBoard : undefined}
               onComplete={owner ? (id, door) => boardActs.complete(id, door) : undefined}
               editable={boardActive && owner}
@@ -730,6 +735,8 @@ export function SkillTreeView({ treeId, demo = false }) {
         onClose={() => setShareOpen(false)}
         visibility={treeVisibility}
         mine={treeMine}
+        title={tree?.title ?? ''}
+        subtrees={tree?.nodes.some((step) => step.opening?.owned) ?? false}
         onStanceChange={setTreeVisibility}
       />
 

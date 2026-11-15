@@ -1,7 +1,7 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 import { createServer } from 'vite';
 import { beacon, withBrowserErrors } from '../browserFixture.js';
 
@@ -14,11 +14,25 @@ import '/src/styles/global.css';
 import { TreeSwitcher } from '/src/products/roadmap/identity/TreeSwitcher.jsx';
 window.mount = (rows) => createRoot(document.getElementById('fixture')).render(React.createElement(TreeSwitcher, {
   current: { id: 'sail', title: 'Learn to sail', done: 3, total: 8, dominantKind: 'sky' },
-  listTrees: async () => rows, onNew() {}, onDelete: async () => {},
+  listTrees: async () => rows, onNew() {},
+  onRename: async (...args) => {
+    (window.renames ??= []).push(args);
+    if (window.failRename) throw new Error('Private rename text');
+  },
+  onPreviewTitle: (...args) => { (window.previews ??= []).push(args); },
+  onDelete: async (...args) => {
+    (window.deletes ??= []).push(args);
+    if (window.failDelete) throw new Error('Private delete text');
+    if (window.deferDelete) await new Promise((resolve, reject) => {
+      window.finishDelete = resolve;
+      window.rejectDelete = reject;
+      (window.finishDeletes ??= {})[args[0]] = resolve;
+    });
+  },
 }));
 window.entryReady = true;
 `;
-let server, browser, origin, ready;
+let server, browser, webkitBrowser, origin, ready;
 function start() {
   ready ??= (async () => {
     server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-tree-switcher-test`,
@@ -26,10 +40,12 @@ function start() {
         resolveId(id) {
           if (id === '/tree-switcher-entry.js') return '\0tree-switcher-entry';
           if (id.endsWith('/telemetry/beacon.js')) return '\0tree-switcher-beacon';
+          if (id.endsWith('/telemetry/sentry.js')) return '\0tree-switcher-sentry';
         },
         load(id) {
           if (id === '\0tree-switcher-entry') return entry;
           if (id === '\0tree-switcher-beacon') return beacon;
+          if (id === '\0tree-switcher-sentry') return 'export function captureError(...args) { (window.failures ??= []).push(args); }';
         },
         configureServer(vite) {
           vite.middlewares.use('/tree-switcher-test', (_request, response) => {
@@ -39,17 +55,23 @@ function start() {
         },
       }], optimizeDeps: { include: ['react', 'react-dom/client', 'lucide-react'] },
       server: { host: '127.0.0.1', port: 0 } });
-    await server.listen(0);
+    await new Promise((resolve, reject) => {
+      server.httpServer.once('error', reject);
+      server.httpServer.listen(0, '127.0.0.1', resolve);
+    });
     origin = `http://127.0.0.1:${server.httpServer.address().port}`;
     browser = await chromium.launch({ headless: true });
   })();
   return ready;
 }
-after(async () => { await browser?.close(); await server?.close(); });
+after(async () => { await browser?.close(); await webkitBrowser?.close(); await server?.close(); });
 
-async function withSwitcher(rows, run) {
+async function withSwitcher(rows, run, { engine = 'Chromium', width = 1440, touch = false } = {}) {
   await start();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  if (engine === 'WebKit') webkitBrowser ??= await webkit.launch({ headless: true });
+  const page = await (engine === 'WebKit' ? webkitBrowser : browser).newPage({ viewport: { width, height: 900 }, hasTouch: touch, reducedMotion: 'reduce' });
+  page.setDefaultTimeout(5000);
+  page.setDefaultNavigationTimeout(20000);
   try {
     await withBrowserErrors(page, async () => {
       await page.goto(`${origin}/tree-switcher-test`);
@@ -63,6 +85,427 @@ async function withSwitcher(rows, run) {
 async function openMenu(page) {
   await page.locator('#fixture [aria-haspopup="menu"]').click();
   await page.getByRole('menu').waitFor();
+}
+
+for (const engine of ['Chromium', 'WebKit']) {
+  test(`${engine}: tablet touch exposes 44px switcher actions before hover`, async () => {
+    await withSwitcher([{ id: 'sail', title: 'Learn to sail', origin: 'server' }], async (page) => {
+      await page.locator('#fixture [aria-haspopup="menu"]').tap();
+      const rename = page.getByRole('button', { name: 'Rename Learn to sail' });
+      await rename.waitFor();
+      assert.deepEqual(await rename.evaluate((button) => ({
+        coarse: matchMedia('(pointer: coarse)').matches,
+        opacity: getComputedStyle(button.parentElement).opacity,
+        pointerEvents: getComputedStyle(button).pointerEvents,
+        width: button.getBoundingClientRect().width,
+        height: button.getBoundingClientRect().height,
+      })), { coarse: true, opacity: '1', pointerEvents: 'auto', width: 44, height: 44 });
+    }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: keyboard focus reveals the switcher actions without hover`, async () => {
+    await withSwitcher([{ id: 'sail', title: 'Learn to sail', origin: 'server' }], async (page) => {
+      await page.locator('#fixture [aria-haspopup="menu"]').focus();
+      await page.keyboard.press('Enter');
+      await page.getByRole('menuitem').first().waitFor();
+      await page.keyboard.press(engine === 'WebKit' ? 'Alt+Tab' : 'Tab');
+      await page.keyboard.press(engine === 'WebKit' ? 'Alt+Tab' : 'Tab');
+      const rename = page.getByRole('button', { name: 'Rename Learn to sail' });
+      await page.waitForFunction(() => getComputedStyle(document.activeElement.parentElement).opacity === '1');
+      assert.deepEqual(await rename.evaluate((button) => ({
+        focused: document.activeElement === button,
+        opacity: getComputedStyle(button.parentElement).opacity,
+        pointerEvents: getComputedStyle(button).pointerEvents,
+        outline: getComputedStyle(button).outlineStyle,
+      })), { focused: true, opacity: '1', pointerEvents: 'auto', outline: 'solid' });
+      if (process.env.WM_SWITCHER_SCREENSHOTS) await page.screenshot({ path: `${process.env.WM_SWITCHER_SCREENSHOTS}/${engine.toLowerCase()}-keyboard-focus.png` });
+    }, { engine, width: 744 });
+  });
+
+  test(`${engine}: tablet actions keep titles clear, hit their full targets, and respect row permissions`, async () => {
+    const title = 'A very long roadmap title that must leave both row actions available';
+    for (const width of [744, 834, 1023]) {
+      await withSwitcher([
+        { id: 'sail', title: 'Learn to sail', origin: 'server' },
+        { id: 'long', title, origin: 'server' },
+        { id: 'device', title: 'Device roadmap', origin: 'device', claimed: false },
+        { id: 'claimed', title: 'Claimed roadmap', origin: 'device', claimed: true },
+        { id: 'readonly', title: 'Read only roadmap' },
+      ], async (page) => {
+        await page.locator('#fixture [aria-haspopup="menu"]').tap();
+        await page.getByRole('button', { name: `Rename ${title}` }).waitFor();
+        assert.deepEqual(await page.locator('.st-switcher-actions button').evaluateAll((buttons) => buttons.map((button) => {
+          const { x, y, width, height } = button.getBoundingClientRect();
+          return {
+            name: button.getAttribute('aria-label'), width, height,
+            edges: [[2, height / 2], [width - 2, height / 2], [width / 2, 2], [width / 2, height - 2]]
+              .every(([dx, dy]) => button.contains(document.elementFromPoint(x + dx, y + dy))),
+          };
+        })), ['Learn to sail', title, 'Device roadmap'].flatMap((name) => ['Rename', 'Delete'].map((action) => ({ name: `${action} ${name}`, width: 44, height: 44, edges: true }))));
+        const longRow = page.getByRole('menuitem').filter({ hasText: title });
+        assert.deepEqual(await longRow.evaluate((row) => {
+          const name = row.querySelector('[title]');
+          return { truncated: name.scrollWidth > name.clientWidth, clear: name.getBoundingClientRect().right < row.querySelector('button').getBoundingClientRect().left };
+        }), { truncated: true, clear: true });
+        if (process.env.WM_SWITCHER_SCREENSHOTS && width === 744) {
+          await page.screenshot({ path: `${process.env.WM_SWITCHER_SCREENSHOTS}/${engine.toLowerCase()}-touch-light.png` });
+          await page.evaluate(() => {
+            document.documentElement.setAttribute('data-brand', 'roadmap');
+            document.documentElement.setAttribute('data-theme', 'dark');
+          });
+          await page.waitForFunction(() => getComputedStyle(document.querySelector('[role="menu"]')).backgroundColor === 'rgb(23, 23, 25)');
+          await page.screenshot({ path: `${process.env.WM_SWITCHER_SCREENSHOTS}/${engine.toLowerCase()}-touch-dark.png` });
+        }
+        await page.evaluate(() => window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId: 'device' } })));
+        await page.getByRole('button', { name: 'Rename Device roadmap' }).waitFor({ state: 'detached' });
+        assert.equal(await page.getByRole('button', { name: 'Delete Device roadmap' }).count(), 0);
+        assert.deepEqual(await page.evaluate(() => ({ renames: window.renames ?? [], deletes: window.deletes ?? [], hash: location.hash })), { renames: [], deletes: [], hash: '' });
+      }, { engine, width, touch: true });
+    }
+  });
+
+  test(`${engine}: rename and delete cancellation restore the row action before outer Escape closes`, async () => {
+    await withSwitcher([{ id: 'sail', title: 'Learn to sail', origin: 'server' }], async (page) => {
+      const tab = engine === 'WebKit' ? 'Alt+Tab' : 'Tab';
+      const trigger = page.locator('#fixture [aria-haspopup="menu"]');
+      await trigger.focus();
+      await page.keyboard.press('Enter');
+      await page.getByRole('menuitem').first().waitFor();
+      await page.keyboard.press(tab);
+      await page.keyboard.press(tab);
+      await page.keyboard.press('Enter');
+      const input = page.getByRole('textbox', { name: 'Tree name' });
+      await input.waitFor();
+      assert.deepEqual(await input.evaluate((field) => ({ focused: document.activeElement === field, start: field.selectionStart, end: field.selectionEnd })), { focused: true, start: 0, end: 13 });
+      await input.fill('Cancelled title');
+      if (process.env.WM_SWITCHER_SCREENSHOTS) await page.screenshot({ path: `${process.env.WM_SWITCHER_SCREENSHOTS}/${engine.toLowerCase()}-rename.png` });
+      await page.keyboard.press('Escape');
+      assert.equal(await page.getByRole('button', { name: 'Rename Learn to sail' }).evaluate((button) => document.activeElement === button), true);
+      await page.keyboard.press(tab);
+      await page.keyboard.press('Enter');
+      assert.equal(await page.getByRole('button', { name: 'Delete', exact: true }).evaluate((button) => document.activeElement === button), true);
+      assert.deepEqual(await page.locator('.st-switcher-confirm-actions button').evaluateAll((buttons) => buttons.map((button) => ({ name: button.textContent, width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height }))), [{ name: 'Delete', width: 84, height: 44 }, { name: 'Keep', width: 84, height: 44 }]);
+      assert.equal(await page.getByRole('menuitem').first().textContent(), 'Delete Learn to sail? This can’t be undoneDeleteKeep');
+      if (process.env.WM_SWITCHER_SCREENSHOTS) await page.screenshot({ path: `${process.env.WM_SWITCHER_SCREENSHOTS}/${engine.toLowerCase()}-delete-confirmation.png` });
+      await page.keyboard.press(tab);
+      await page.keyboard.press('Enter');
+      const del = page.getByRole('button', { name: 'Delete Learn to sail' });
+      assert.equal(await del.evaluate((button) => document.activeElement === button), true);
+      await page.keyboard.press('Enter');
+      await page.getByRole('button', { name: 'Keep' }).waitFor();
+      await page.keyboard.press('Escape');
+      assert.equal(await del.evaluate((button) => document.activeElement === button), true);
+      assert.deepEqual(await page.evaluate(() => ({ renames: window.renames ?? [], deletes: window.deletes ?? [], hash: location.hash, events: window.events })), {
+        renames: [], deletes: [], hash: '', events: [{ name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } }],
+      });
+      await page.keyboard.press('Escape');
+      await page.getByRole('menu').waitFor({ state: 'detached' });
+      assert.equal(await trigger.evaluate((button) => document.activeElement === button), true);
+    }, { engine, width: 834 });
+  });
+
+  test(`${engine}: touch rename saves through server and device callbacks without row navigation`, async () => {
+    await withSwitcher([
+      { id: 'sail', title: 'Learn to sail', origin: 'server' },
+      { id: 'device', title: 'Device roadmap', origin: 'device', claimed: false },
+    ], async (page) => {
+      await page.locator('#fixture [aria-haspopup="menu"]').tap();
+      await page.getByRole('button', { name: 'Rename Device roadmap' }).tap();
+      const input = page.getByRole('textbox', { name: 'Tree name' });
+      await input.fill('  Device plan  ');
+      await input.press('Enter');
+      const localRename = page.getByRole('button', { name: 'Rename Device plan' });
+      assert.equal(await localRename.evaluate((button) => document.activeElement === button), true);
+      await page.getByRole('button', { name: 'Rename Learn to sail' }).tap();
+      await input.fill('Sailing plan');
+      await page.getByRole('menuitem').first().locator(':scope > span').first().tap();
+      await page.getByRole('button', { name: 'Rename Sailing plan' }).waitFor();
+      await page.waitForTimeout(250);
+      assert.deepEqual(await page.evaluate(() => ({ renames: window.renames, hash: location.hash, events: window.events })), {
+        renames: [['device', 'Device plan', { local: true }], ['sail', 'Sailing plan', { local: false }]], hash: '',
+        events: ['open', 'rename', 'rename'].map((step) => ({ name: 'roadmap_sheet', props: { step, door: 'switcher' } })),
+      });
+      assert.equal(await page.getByRole('menu').count(), 1);
+    }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: delete keeps its existing callbacks and route while focus follows surviving rows`, async () => {
+    await withSwitcher([
+      { id: 'sail', title: 'Learn to sail', origin: 'server' },
+      { id: 'server', title: 'Another roadmap', origin: 'server' },
+      { id: 'device', title: 'Device roadmap', origin: 'device', claimed: false },
+    ], async (page) => {
+      await page.locator('#fixture [aria-haspopup="menu"]').tap();
+      for (const [title, next] of [['Another roadmap', 'Device roadmap'], ['Device roadmap', 'Learn to sail']]) {
+        await page.getByRole('button', { name: `Delete ${title}` }).tap();
+        await page.getByRole('button', { name: 'Delete', exact: true }).tap();
+        await page.getByRole('button', { name: `Delete ${title}` }).waitFor({ state: 'detached' });
+        assert.equal(await page.getByRole('menuitem').filter({ hasText: next }).evaluate((row) => document.activeElement === row), true);
+        assert.equal(await page.evaluate(() => location.hash), '');
+      }
+      await page.getByRole('button', { name: 'Delete Learn to sail' }).tap();
+      await page.getByRole('button', { name: 'Delete', exact: true }).tap();
+      await page.getByRole('menu').waitFor({ state: 'detached' });
+      assert.equal(await page.locator('#fixture [aria-haspopup="menu"]').evaluate((button) => document.activeElement === button), true);
+      assert.deepEqual(await page.evaluate(() => ({ deletes: window.deletes, hash: location.hash, events: window.events })), {
+        deletes: [['server', { local: false }], ['device', { local: true }], ['sail', { local: false }]], hash: '#/app',
+        events: [
+          { name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } },
+          ...['account', 'device', 'account'].map((place) => ({ name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'none', place } })),
+        ],
+      });
+    }, { engine, width: 1023, touch: true });
+  });
+
+  test(`${engine}: fine pointer reveal and existing desktop and phone action sizes stay intact`, async () => {
+    for (const width of [743, 744, 1024, 1440]) {
+      await withSwitcher([{ id: 'sail', title: 'Learn to sail', origin: 'server' }], async (page) => {
+        await openMenu(page);
+        const actions = page.locator('.st-switcher-actions');
+        await actions.waitFor();
+        assert.equal(await actions.evaluate((element) => getComputedStyle(element).opacity), '0');
+        await page.getByRole('menuitem').first().hover();
+        await page.waitForFunction(() => getComputedStyle(document.querySelector('.st-switcher-actions')).opacity === '1');
+        assert.deepEqual(await page.getByRole('button', { name: 'Rename Learn to sail' }).evaluate((button) => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height })), { width: width === 744 ? 44 : 22, height: width === 744 ? 44 : 22 });
+        await page.locator('#blank').hover();
+        await page.waitForFunction(() => getComputedStyle(document.querySelector('.st-switcher-actions')).opacity === '0');
+      }, { engine, width });
+    }
+  });
+
+  test(`${engine}: row click and double click retain navigation and rename without an action activating the row`, async () => {
+    await withSwitcher([{ id: 'other', title: 'Another roadmap', origin: 'server' }], async (page) => {
+      await openMenu(page);
+      const row = page.getByRole('menuitem').filter({ hasText: 'Another roadmap' });
+      await row.locator('[title]').dblclick();
+      await page.getByRole('textbox', { name: 'Tree name' }).waitFor();
+      await page.waitForTimeout(250);
+      assert.equal(await page.evaluate(() => location.hash), '');
+      await page.keyboard.press('Escape');
+      await row.locator('[title]').click();
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).click();
+      await page.waitForTimeout(250);
+      assert.equal(await page.getByRole('button', { name: 'Keep' }).count(), 1);
+      assert.equal(await page.evaluate(() => location.hash), '');
+      await page.getByRole('button', { name: 'Keep' }).click();
+      await row.locator('[title]').click();
+      await page.waitForFunction(() => location.hash === '#/app/other');
+      assert.deepEqual(await page.evaluate(() => ({ renames: window.renames ?? [], deletes: window.deletes ?? [], events: window.events })), {
+        renames: [], deletes: [], events: ['open', 'switch'].map((step) => ({ name: 'roadmap_sheet', props: { step, door: 'switcher' } })),
+      });
+    }, { engine, width: 834 });
+  });
+
+  test(`${engine}: failed mutations retain static failure operations and bounded events`, async () => {
+    await withSwitcher([{ id: 'device', title: 'Device roadmap', origin: 'device', claimed: false }], async (page) => {
+      await page.evaluate(() => { window.failRename = true; window.failDelete = true; });
+      await page.locator('#fixture [aria-haspopup="menu"]').tap();
+      await page.getByRole('button', { name: 'Rename Device roadmap' }).tap();
+      await page.getByRole('textbox', { name: 'Tree name' }).fill('Private draft');
+      await page.keyboard.press('Enter');
+      await page.getByRole('button', { name: 'Delete Device roadmap' }).tap();
+      await page.getByRole('button', { name: 'Delete', exact: true }).tap();
+      const del = page.getByRole('button', { name: 'Delete Device roadmap' });
+      await del.waitFor();
+      assert.equal(await del.evaluate((button) => document.activeElement === button), true);
+      assert.deepEqual(await page.evaluate(() => ({
+        failures: window.failures.map(([kind, operation, stack, route, tags]) => ({ kind, operation, private: /Private/.test(stack), route, tags })),
+        events: window.events, hash: location.hash,
+      })), {
+        failures: ['rename', 'delete'].map((action) => ({ kind: 'roadmap', operation: `roadmap-switcher-${action}`, private: false, route: '#/app', tags: undefined })),
+        events: [
+          { name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } },
+          { name: 'roadmap_sheet', props: { step: 'rename', door: 'switcher', outcome: 'failed' } },
+          { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', outcome: 'failed', place: 'device' } },
+        ], hash: '',
+      });
+    }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: a delayed delete does not take focus from a later action`, async () => {
+    await withSwitcher([{ id: 'other', title: 'Another roadmap', origin: 'server' }], async (page) => {
+      await page.evaluate(() => { window.deferDelete = true; });
+      await page.locator('#fixture [aria-haspopup="menu"]').tap();
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).tap();
+      await page.getByRole('button', { name: 'Delete', exact: true }).tap();
+      const nextAction = page.getByRole('menuitem', { name: 'New tree', exact: true });
+      await nextAction.focus();
+      await page.evaluate(() => window.finishDelete());
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).waitFor({ state: 'detached' });
+      assert.equal(await nextAction.evaluate((button) => document.activeElement === button), true);
+    }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: pending deletion preserves later claims, renames and other deletions`, async () => {
+    await withSwitcher([
+      { id: 'other', title: 'Another roadmap', origin: 'server' },
+      { id: 'device', title: 'Device roadmap', origin: 'device', claimed: false },
+      { id: 'rename', title: 'Roadmap to rename', origin: 'server' },
+      { id: 'third', title: 'Third roadmap', origin: 'server' },
+    ], async (page) => {
+      await page.evaluate(() => { window.deferDelete = true; });
+      await openMenu(page);
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).click();
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId: 'device' } })));
+      await page.getByRole('button', { name: 'Rename Device roadmap' }).waitFor({ state: 'detached' });
+      await page.getByRole('button', { name: 'Rename Roadmap to rename' }).click();
+      await page.getByRole('textbox', { name: 'Tree name' }).fill('Saved after delete began');
+      await page.keyboard.press('Enter');
+      await page.getByRole('button', { name: 'Delete Third roadmap' }).click();
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      await page.evaluate(() => window.finishDeletes.third());
+      await page.getByRole('button', { name: 'Delete Third roadmap' }).waitFor({ state: 'detached' });
+      await page.evaluate(() => window.finishDeletes.other());
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).waitFor({ state: 'detached' });
+      assert.deepEqual(await page.locator('.st-switcher-row').evaluateAll((rows) => rows.map((row) => ({ title: row.querySelector('[title]')?.textContent, actions: [...row.querySelectorAll('button')].map((button) => button.getAttribute('aria-label')) }))), [
+        { title: 'Learn to sail', actions: [] },
+        { title: 'Device roadmap', actions: [] },
+        { title: 'Saved after delete began', actions: ['Rename Saved after delete began', 'Delete Saved after delete began'] },
+      ]);
+      assert.deepEqual(await page.evaluate(() => ({ renames: window.renames, deletes: window.deletes, events: window.events })), {
+        renames: [['rename', 'Saved after delete began', { local: false }]],
+        deletes: [['other', { local: false }], ['third', { local: false }]],
+        events: [
+          { name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } },
+          { name: 'roadmap_sheet', props: { step: 'rename', door: 'switcher' } },
+          ...Array.from({ length: 2 }, () => ({ name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'none', place: 'account' } })),
+        ],
+      });
+    }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: a claim during confirmation remains in force after another delete`, async () => {
+    await withSwitcher([
+      { id: 'other', title: 'Another roadmap', origin: 'server' },
+      { id: 'device', title: 'Device roadmap', origin: 'device', claimed: false },
+    ], async (page) => {
+      await page.evaluate(() => { window.deferDelete = true; });
+      await openMenu(page);
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).click();
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      await page.getByRole('button', { name: 'Delete Device roadmap' }).click();
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId: 'device' } })));
+      await page.evaluate(() => { window.deferDelete = false; window.finishDelete(); });
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).waitFor({ state: 'detached' });
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      assert.deepEqual(await page.evaluate(() => window.deletes), [['other', { local: false }]]);
+      assert.equal(await page.getByRole('menuitem').filter({ hasText: 'Device roadmap' }).getByRole('button').count(), 0);
+    }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: held Enter cannot confirm deletion or submit duplicate pending mutations`, async () => {
+    await withSwitcher([{ id: 'other', title: 'Another roadmap', origin: 'server' }], async (page) => {
+      await page.evaluate(() => { window.deferDelete = true; });
+      await openMenu(page);
+      const action = page.getByRole('button', { name: 'Delete Another roadmap' });
+      await action.focus();
+      await page.keyboard.down('Enter');
+      await page.getByRole('button', { name: 'Delete', exact: true }).waitFor();
+      for (let repeat = 0; repeat < 3; repeat += 1) await page.keyboard.down('Enter');
+      assert.deepEqual(await page.evaluate(() => window.deletes ?? []), []);
+      await page.keyboard.up('Enter');
+      await page.keyboard.press('Enter');
+      await action.waitFor();
+      for (let press = 0; press < 3; press += 1) await page.keyboard.press('Enter');
+      await action.click();
+      assert.deepEqual(await page.evaluate(() => window.deletes), [['other', { local: false }]]);
+      await action.focus();
+      await page.keyboard.down('Enter');
+      await page.evaluate(() => window.finishDelete());
+      await action.waitFor({ state: 'detached' });
+      await page.keyboard.down('Enter');
+      await page.keyboard.up('Enter');
+      assert.equal(await page.getByRole('menu').count(), 1);
+      assert.equal(await page.evaluate(() => location.hash), '');
+      assert.deepEqual(await page.evaluate(() => window.events), [
+        { name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } },
+        { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'none', place: 'account' } },
+      ]);
+    }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: a failed pending delete permits a fresh intentional retry`, async () => {
+    await withSwitcher([{ id: 'other', title: 'Another roadmap', origin: 'server' }], async (page) => {
+      await page.evaluate(() => { window.deferDelete = true; });
+      await openMenu(page);
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).click();
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      await page.evaluate(() => window.rejectDelete(new Error('Private delete failure')));
+      await page.waitForFunction(() => window.events.some((event) => event.props.outcome === 'failed'));
+      await page.keyboard.press('Enter');
+      await page.getByRole('button', { name: 'Delete', exact: true }).waitFor();
+      await page.keyboard.press('Enter');
+      await page.evaluate(() => window.finishDelete());
+      await page.getByRole('button', { name: 'Delete Another roadmap' }).waitFor({ state: 'detached' });
+      assert.deepEqual(await page.evaluate(() => ({ deletes: window.deletes, events: window.events })), {
+        deletes: [['other', { local: false }], ['other', { local: false }]],
+        events: [
+          { name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } },
+          { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', outcome: 'failed', place: 'account' } },
+          { name: 'roadmap_sheet', props: { step: 'delete', door: 'switcher', openers: 'none', place: 'account' } },
+        ],
+      });
+    }, { engine, width: 744, touch: true });
+  });
+
+  test(`${engine}: a pending current-tree delete respects later route and menu departures`, async () => {
+    for (const departure of ['browse', 'switch', 'close', 'reopen']) {
+      await withSwitcher([
+        { id: 'sail', title: 'Learn to sail', origin: 'server' },
+        { id: 'other', title: 'Another roadmap', origin: 'server' },
+      ], async (page) => {
+        await page.evaluate(() => { window.deferDelete = true; });
+        await openMenu(page);
+        await page.getByRole('button', { name: 'Delete Learn to sail' }).click();
+        await page.getByRole('button', { name: 'Delete', exact: true }).click();
+        if (departure === 'browse') await page.getByRole('menuitem', { name: 'Browse trees planted in public' }).click();
+        if (departure === 'switch') await page.getByRole('menuitem').filter({ hasText: 'Another roadmap' }).locator('[title]').click();
+        if (departure === 'close' || departure === 'reopen') await page.keyboard.press('Escape');
+        await page.getByRole('menu').waitFor({ state: 'detached' });
+        if (departure === 'reopen') {
+          await openMenu(page);
+          await page.getByRole('button', { name: 'Rename Another roadmap' }).focus();
+        }
+        const before = await page.evaluate(() => ({ hash: location.hash, focus: document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent }));
+        await page.evaluate(() => window.finishDelete());
+        await page.waitForFunction(() => window.events.some((event) => event.props.step === 'delete'));
+        assert.deepEqual(await page.evaluate(() => ({ hash: location.hash, focus: document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent })), before);
+        assert.equal(await page.getByRole('menu').count(), departure === 'reopen' ? 1 : 0);
+        assert.deepEqual(await page.evaluate(() => window.deletes), [['sail', { local: false }]]);
+      }, { engine, width: 744, touch: true });
+    }
+  });
+
+  for (const [action, claimAtEnter] of [['rename', false], ['rename', true], ['delete', false]]) {
+    test(`${engine}: a device claim while ${action} is open cannot use a server mutation callback${claimAtEnter ? ' when Enter preempts the claim render' : ''}`, async () => {
+      await withSwitcher([{ id: 'device', title: 'Device roadmap', origin: 'device', claimed: false }], async (page) => {
+        await page.locator('#fixture [aria-haspopup="menu"]').tap();
+        if (action === 'rename') {
+          await page.getByRole('button', { name: 'Rename Device roadmap' }).tap();
+          await page.getByRole('textbox', { name: 'Tree name' }).fill('Claimed draft');
+        } else {
+          await page.getByRole('button', { name: 'Delete Device roadmap' }).tap();
+        }
+        await page.evaluate((claimAtEnter) => {
+          const claim = () => window.dispatchEvent(new CustomEvent('wm-tree-claimed', { detail: { treeId: 'device' } }));
+          // A claim can reach the registry before React renders it, then Enter closes the editor first.
+          if (claimAtEnter) return void document.addEventListener('keydown', claim, { capture: true, once: true });
+          claim();
+        }, claimAtEnter);
+        if (action === 'rename') await page.keyboard.press('Enter');
+        else await page.getByRole('button', { name: 'Delete', exact: true }).tap();
+        assert.deepEqual(await page.evaluate(() => ({ renames: window.renames ?? [], deletes: window.deletes ?? [], previews: window.previews ?? [], events: window.events, hash: location.hash })), {
+          renames: [], deletes: [], previews: action === 'rename' ? [['device', 'Claimed draft'], ['device', 'Device roadmap']] : [],
+          events: [{ name: 'roadmap_sheet', props: { step: 'open', door: 'switcher' } }], hash: '',
+        });
+        const row = page.getByRole('menuitem').filter({ hasText: 'Device roadmap' });
+        await page.waitForFunction((element) => document.activeElement === element && element.querySelectorAll('button').length === 0, await row.elementHandle());
+        assert.equal(await row.evaluate((element) => document.activeElement === element), true);
+        assert.equal(await row.getByRole('button').count(), 0);
+      }, { engine, width: 744, touch: true });
+    });
+  }
 }
 
 async function confirmDeleting(page, title) {
@@ -215,7 +658,6 @@ test('Chromium: from the keyboard, Delete is reached and a screen reader hears t
     assert.deepEqual(await focusedButton(page), { name: 'Delete Learn to sail', description: undefined });
     await page.keyboard.press('Enter');
     await page.getByRole('button', { name: 'Delete', exact: true }).waitFor();
-    for (const key of ['Shift+Tab', 'Shift+Tab']) await page.keyboard.press(key);
     assert.deepEqual(await focusedButton(page), { name: 'Delete', description: 'Also removes 2 steps that open it, in My year and Summer plans' });
   });
 });

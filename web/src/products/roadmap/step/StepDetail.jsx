@@ -24,7 +24,7 @@ import './read.css';
 import {
   COLUMN_TITLES, LABELS, deleteCostLine, LINK_COPIED, STATE_WORDS, STEP_DETAIL, TREE, checkedToast,
   DELETE_CONFIRM, deleteConfirm, backTo, completedOutcome, formatCount, lockedStatus, resetOutcome, resetPreview,
-  openTreeStated, treeBand, treeState, treeTitle,
+  openTreeLabel, openTreeStated, treeBand, treeState, treeTitle,
 } from '../copy.js';
 import { t } from '../i18n/index.js';
 
@@ -271,7 +271,8 @@ export function StepDetail({
     event.preventDefault();
     event.stopPropagation();
   };
-  const treeLink = editable && treeActs ? {
+  // A step that owns a subtree opens it for good: no pointer is attached to it, changed or detached.
+  const treeLink = editable && treeActs && !facts.opening?.owned ? {
     control: treeControl,
     phone,
     layer: layerRef,
@@ -445,6 +446,7 @@ export function StepDetail({
           <footer className="st-step-pinned-actions">
             <span className="st-step-shared-label"><Users size={14} aria-hidden />{t('roadmap.step.sharedStep')}</span>
             {editable && !noteEditing && <StepActions facts={facts} phone={phone} onComplete={() => complete('complete')} onReset={reset} onOpenTree={openTree} />}
+            {!editable && facts.opening?.owned && openTree && <div className="st-board-step-buttons"><TreeBand facts={facts} onOpenTree={openTree} /></div>}
           </footer>
           {phone && <div className="st-step-phone-coach" aria-hidden />}
           {phone && confirm && <DeleteConfirmation confirm={confirm} phone />}
@@ -488,7 +490,7 @@ function Relationships({ facts, onOpenStep, onOpenTree, treeLink, onViewBranch }
           {facts.unlocks.map((related) => <RelationRow key={related.id} related={related} onOpen={onOpenStep} />)}
         </section>
       )}
-      {(facts.opening?.read || treeLink) && <TreeSection facts={facts} onOpen={onOpenTree} link={treeLink} />}
+      {!facts.opening?.owned && (facts.opening?.read || treeLink) && <TreeSection facts={facts} onOpen={onOpenTree} link={treeLink} />}
       {onViewBranch && (
         <div className="st-board-step-explore">
           <button type="button" className="st-board-step-view-branch" onClick={onViewBranch}>{STEP_DETAIL.viewBranch}</button>
@@ -721,7 +723,7 @@ function StepActions({ facts, phone, onComplete, onReset, onOpenTree }) {
 // Going in is primary only while it is the way forward: the step up next, and nothing in its tree's way.
 function TreeBand({ facts, onOpenTree }) {
   const { opening, column, toGo } = facts;
-  const words = treeBand(opening, { column, toGo });
+  const words = opening.owned ? treeState(opening, facts.roadmap) : treeBand(opening, { column, toGo });
   const forward = opening.workable && column === 'upNext';
   const waiting = opening.workable && column === 'locked';
   return (
@@ -734,7 +736,7 @@ function TreeBand({ facts, onOpenTree }) {
       )}
       {onOpenTree && (
         <button type="button" className={`st-board-step-action st-board-step-action--tree st-board-step-action--${forward ? 'primary' : 'secondary'}`} onClick={onOpenTree}>
-          {TREE.open}
+          {openTreeLabel(opening)}
         </button>
       )}
     </>

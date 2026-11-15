@@ -206,8 +206,8 @@ One subscription — Windmill One — across roadmap, journal and gym:
 const bool subscribed = entitlements.hasWindmillOne(caller, email);
 ```
 
-`Entitlements` (`platform/application/Entitlements.h`) wraps the Paddle mirror and the
-`grantsAccess` rule. **Voice** asks for a subscription before any audio is touched and consumes
+`Entitlements` (`platform/application/Entitlements.h`) reads it from the backend's copy of each account's
+entitlement ([subscriptions.md](../../../docs/foundation/subscriptions.md) §6.1). **Voice** asks for a subscription before any audio is touched and consumes
 the active AI allowance. **Echoes** are automatic for every signed-in writer, serve full passages,
 and consume only an internal passive-work budget.
 
@@ -302,12 +302,16 @@ the server; or neither, a failure to transcribe.
 `VoiceApi` settles everything it can refuse before the upload, in this order: 401 signed out · 403
 not a subscriber · 503 no vendor wired · 400 no audio · 413 past `kMaxAudioBytes` (6 MB) · the
 account's AI allowance · 503 busy (`kVoiceInFlightPerAccount` 2, `kVoiceInFlightTotal` 8) · 429 past
-`kVoiceBytesPerDay` (30 MB). A vendor failure is 502, never `200 {"text":""}`.
+`kVoiceBytesPerDay` (30 MB), a bucket that refills steadily over a day, with code `voice_ration_spent`,
+`retryAtMs` and `Retry-After` naming when it holds a take of this size again. A vendor failure is 502,
+never `200 {"text":""}`.
 
 With durable USD allowances on (`backend/AI_ALLOWANCES.md`), the allowance step reads the account's
-allowance and refuses one that is not `ok` with its own code. The transcriber's admission then holds
-the take's ceiling on a Windmill One grant before any audio leaves, refusing any lesser principal as
-`funding_required`, and settles it at the tokens the vendor billed; a refused admission answers under
+allowance and refuses one that is not a Windmill One grant, as the free allowance a subscription with no
+grant in force draws on, as `funding_required` whatever that allowance holds, then one that is not `ok`
+with its own code. The
+transcriber's admission then holds the take's ceiling on a Windmill One grant before any audio leaves,
+refusing any call without one in force as `funding_required`, and settles it at the tokens the vendor billed; a refused admission answers under
 the code that refused it and gives the take's bytes back to `kVoiceBytesPerDay`. Both answer as Coach's allowance refusals do:
 `code`, `reason` (`allowance_exhausted`, `request_exceeds_remaining` or `unavailable`), `error` and
 the `allowance` object, 429 for `subject_exhausted` and 503 for every other ledger code. With them
@@ -315,8 +319,8 @@ off, the step is 429 past the account's trailing-30-day AI allowance.
 
 The `error` sentences are `sign in to talk`, `talk is part of Windmill One`, `voice is not available
 right now` (code `voice_unavailable`), `no audio`, `that take is too long to transcribe`, `voice is
-busy right now` (code `voice_busy`) and `talk has had its turn for today`. The allowance step answers
-`talk has had its turn for now` with allowances off; with them on, `your AI allowance is fully used
+busy right now` (code `voice_busy`) and `talk has had its turn for now` (code `voice_ration_spent`). The
+allowance step answers `talk has had its turn for now` with no code with allowances off; with them on, `your AI allowance is fully used
 or reserved`, `a take needs more AI allowance than you have left`, `your plan has no funded AI
 allowance for this period`, `your earlier AI requests hold every slot you have; each frees when its
 cost is confirmed, at most 10 minutes after it began` or `talk's AI allowance is unavailable right

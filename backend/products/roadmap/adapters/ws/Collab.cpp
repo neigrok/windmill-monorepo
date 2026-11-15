@@ -522,7 +522,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
     writes.push_back(ProgressWrite{node, *status, {}, *at});
   }
 
-  std::map<NodeId, TreeId> pointers;
+  FollowedSteps followed;
   {
     std::lock_guard<std::mutex> lock(registry_.strandFor(TreeId{treeId}));
     try {
@@ -532,7 +532,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
       TreeRoom* room = registry_.open(TreeId{treeId});
       if (!room) return refuse(kNoSuchTree, "no such tree \"" + treeId + "\"");
       for (ProgressWrite& write : writes) write.prerequisites = room->prerequisitesOf(write.node);
-      pointers = room->pointersFor(principal.user);
+      followed = room->followedStepsFor(principal.user);
     } catch (const std::exception& error) {
       reportCurrentWriteFailure(error);
       return;  // an infrastructure failure — its detail is not the socket's to carry
@@ -541,7 +541,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
 
   // Read and written OUTSIDE the strand — a room's lock is never held across a database call.
   const ProgressReceipt receipt =
-      progress_.mark(TreeId{treeId}, pointers, principal.user, writes, StampedBy::replica, nowMs);
+      progress_.mark(TreeId{treeId}, followed, principal.user, writes, StampedBy::replica, nowMs);
   // Only what landed is echoed; a frame where nothing landed is still acked.
   bus_.broadcastProgress(TreeId{treeId}, principal.user, receipt.recorded);
 

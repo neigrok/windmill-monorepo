@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { elementsOf, loadScreen, renderHook, textOf } from '../../gym/harness.mjs';
 
-async function shareRoom(t, { visibility = 'private', mine = true, treeId = 't_example', request, copy } = {}) {
+async function shareRoom(t, { visibility = 'private', mine = true, treeId = 't_example', title = '', subtrees = false, request, copy } = {}) {
   const originalWindow = globalThis.window;
   const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   const originalDocument = globalThis.document;
@@ -25,7 +25,7 @@ async function shareRoom(t, { visibility = 'private', mine = true, treeId = 't_e
     else delete globalThis.navigator;
   });
   const { ShareDialog } = await loadScreen('products/roadmap/share/ShareDialog.jsx');
-  const props = { open: true, visibility, mine, treeId, onClose() {}, onStanceChange(next) {
+  const props = { open: true, visibility, mine, treeId, title, subtrees, onClose() {}, onStanceChange(next) {
     calls.push(['visibility', next]);
     props.visibility = next;
     room.redraw();
@@ -59,6 +59,27 @@ for (const visibility of ['private', 'unlisted']) {
     assert.equal(view.inputs()[0].props.value, 'https://windmill.works/t/t_example');
   });
 }
+
+test('a roadmap whose steps own subtrees says who reads them with it, publishing or published, in the words canon gives publishing', async (t) => {
+  const said = async (visibility, { mine = true, subtrees = true } = {}) => {
+    const view = await shareRoom(t, { visibility, mine, title: 'My year', subtrees });
+    return elementsOf(view.room.tree).filter((item) => item.type === 'p').map(textOf);
+  };
+
+  assert.deepEqual({
+    private: await said('private'),
+    unlisted: await said('unlisted'),
+    public: await said('public'),
+    unlistedRead: await said('unlisted', { mine: false }),
+    none: await said('private', { subtrees: false }),
+  }, {
+    private: ['Publishing makes My year public: anyone can view and fork it, subtrees included, and it can appear in the public gallery.'],
+    unlisted: ['Publishing makes My year public: anyone can view and fork it, subtrees included, and it can appear in the public gallery.'],
+    public: ['My year is public: anyone can view and fork it, subtrees included, and it can appear in the public gallery.'],
+    unlistedRead: ['Anyone with this link can view and fork My year, subtrees included.'],
+    none: ['Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.'],
+  });
+});
 
 test('server refusal never copies or claims success and publishing can be retried', async (t) => {
   let fail = true;

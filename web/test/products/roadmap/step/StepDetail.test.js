@@ -50,7 +50,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
   function Room({ treeId }) {
     const [steps, setSteps] = useState(null);
     useEffect(() => { Promise.resolve().then(() => setSteps(trees[treeId])); }, []);
-    const tree = useMemo(() => (steps === null ? null : new SkillTree(Openings.fromWire(opens).onto({ id: treeId, title: 'Learn to sail', nodes: steps }, { joined: true }))), [steps]);
+    const tree = useMemo(() => (steps === null ? null : new SkillTree(Openings.fromWire(opens, steps).onto({ id: treeId, title: 'Learn to sail', nodes: steps }, { joined: true }))), [steps]);
     const [progress, setProgress] = useState({ completed: new Set(completed), completedAt: Object.fromEntries(completed.map((id, index) => [id, index + 1])) });
     const [selectedId, setSelectedId] = useState(null);
     const [editing, setEditing] = useState(null);
@@ -280,6 +280,34 @@ for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 
       assert.deepEqual(errors, []);
     } finally {
       await page.context().close();
+    }
+  });
+}
+
+for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 }]) {
+  test(`Chromium ${viewport.width}: a step that owns a subtree says how far it is beside Open subtree, to its owner and to a reader, and has no Tree section`, async () => {
+    await start();
+    const owned = { rig: { id: 't_rig', done: 1, total: 2, state: 'open' }, wind: { id: 't_wind', done: 0, total: 0, state: 'open' } };
+    const nodes = learnToSailNodes.map((node) => (owned[node.id] ? { ...node, opens: 't_old', subtree: owned[node.id] } : node));
+    for (const editable of [true, false]) {
+      const errors = [];
+      const page = await openRoom({ viewport, nodes, editable, start: '#/app/sail?step=wind' }, errors);
+      try {
+        await page.locator('.st-board-step-layer').waitFor();
+        assert.deepEqual({ ...await treeParts(page), heading: await page.locator('.st-board-step-layer .st-board-step-heading', { hasText: /^Tree/ }).count() }, {
+          status: 'Up next', row: [null, null], rule: null, band: 'No steps yet',
+          actions: ['Open subtree'],
+          heading: 0,
+        });
+        await page.locator('.st-board-step-buttons').getByRole('button', { name: 'Open subtree', exact: true }).click();
+        await page.keyboard.press('Escape');
+        await card(page, 'Rig the boat').locator('.st-board-card-title').click();
+        assert.deepEqual({ status: (await treeParts(page)).status, band: (await treeParts(page)).band }, { status: 'Up next', band: '1 of 2 done' });
+        assert.deepEqual(await calls(page), ['tree wind step']);
+        assert.deepEqual(errors, []);
+      } finally {
+        await page.context().close();
+      }
     }
   });
 }

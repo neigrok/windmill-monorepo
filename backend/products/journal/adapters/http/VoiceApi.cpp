@@ -8,7 +8,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <optional>
+#include <string>
 #include <utility>
 
 namespace wm {
@@ -52,24 +54,28 @@ VoiceTake VoiceRation::take(const std::string& account, std::size_t bytes) {
   const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
   std::lock_guard<std::mutex> guard{mutex_};
 
-  if (inFlight_ >= kVoiceInFlightTotal) return VoiceTake::busy;
+  if (inFlight_ >= kVoiceInFlightTotal) return {VoiceTake::busy};
 
   auto [entry, opened] = held_.try_emplace(account, Talking{});
   Talking& talking = entry->second;
   if (opened) talking.refilledAt = now;
-  if (talking.inFlight >= kVoiceInFlightPerAccount) return VoiceTake::busy;
+  if (talking.inFlight >= kVoiceInFlightPerAccount) return {VoiceTake::busy};
 
   // Refill first, clamped at full, so an untouched bucket is a fresh day and not a week of credit.
   const double seconds = std::chrono::duration<double>(now - talking.refilledAt).count();
   talking.bytesLeft = std::min(static_cast<double>(kVoiceBytesPerDay),
                                talking.bytesLeft + seconds * kVoiceBytesPerDay / 86'400.0);
   talking.refilledAt = now;
-  if (talking.bytesLeft < static_cast<double>(bytes)) return VoiceTake::spent;
+  if (talking.bytesLeft < static_cast<double>(bytes)) {
+    const double missing = static_cast<double>(bytes) - talking.bytesLeft;
+    return {VoiceTake::spent,
+            std::chrono::milliseconds{static_cast<long long>(std::ceil(missing * 86'400'000.0 / kVoiceBytesPerDay))}};
+  }
 
   talking.bytesLeft -= static_cast<double>(bytes);
   ++talking.inFlight;
   ++inFlight_;
-  return VoiceTake::ok;
+  return {VoiceTake::ok};
 }
 
 void VoiceRation::release(const std::string& account, std::size_t unheardBytes) {
@@ -95,7 +101,14 @@ drogon::HttpResponsePtr VoiceApi::allowanceRefusalBeforeAudio(const User& caller
     return error(drogon::k429TooManyRequests, "talk has had its turn for now");
   }
   try {
-    const AiBudgetView allowance = entitlements_->aiAllowanceView(caller.id, caller.email.value);
+    AiBudgetView allowance = entitlements_->aiAllowanceView(caller.id, caller.email.value);
+    // A take draws only on a funded Windmill One grant, never on the free allowance a subscription falls back to
+    // without one in force, so what that allowance holds is no reason to give.
+    if (allowance.tier != AiBudgetTier::WindmillOne) {
+      allowance.code = AiBudgetCode::FundingRequired;
+      allowance.budgetResetsAtMs.reset();
+      return allowanceRefusal(allowance);
+    }
     return allowance.code == AiBudgetCode::Ok ? nullptr : allowanceRefusal(allowance);
   } catch (...) {
     return accountingUnavailable();
@@ -149,12 +162,19 @@ void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     return;
   }
   const VoiceTake taken = ration_.take(caller->id.str(), audio.size());
-  if (taken == VoiceTake::busy) {
+  if (taken.verdict == VoiceTake::busy) {
     cb(error(drogon::k503ServiceUnavailable, "voice is busy right now", "voice_busy"));
     return;
   }
-  if (taken == VoiceTake::spent) {
-    cb(error(drogon::k429TooManyRequests, "talk has had its turn for today"));
+  if (taken.verdict == VoiceTake::spent) {
+    // `retryAtMs` and Retry-After say when the refill holds a take this size again; a shorter one may fit sooner.
+    Json::Value body(Json::objectValue);
+    body["code"] = "voice_ration_spent";
+    body["error"] = "talk has had its turn for now";
+    body["retryAtMs"] = Json::Int64(static_cast<long long>(clock_->nowMs()) + taken.fitsIn.count());
+    drogon::HttpResponsePtr spent = jsonResponse(body, drogon::k429TooManyRequests);
+    spent->addHeader("Retry-After", std::to_string((taken.fitsIn.count() + 999) / 1000));
+    cb(spent);
     return;
   }
 
