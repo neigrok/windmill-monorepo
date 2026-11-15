@@ -607,9 +607,14 @@ In production both come from one GitHub secret, `SUBSCRIPTIONS_INTERNAL_TOKEN`: 
 characters (`openssl rand -hex 32`), which the deploy refuses in any other non-empty form. The deploy
 renders it into `.env`, and compose hands it to the server and to the subscription service, whose
 internal doors ask for it as a bearer. Compose sets the server's `SUBSCRIPTIONS_INTERNAL_URL`, to
-`http://subscriptions-internal:8083`, only while the token is set. With the secret unset or empty the
-server gets neither, so the follower stays off, and every internal door answers 401. The deploy after the
-secret is set turns the follower on, and it reads the feed from zero.
+`http://subscriptions-internal:8083`, only while the token is set. With the secret unset or empty both
+containers get the variables as empty strings: the server reads an empty `SUBSCRIPTIONS_INTERNAL_URL` and
+`SUBSCRIPTIONS_INTERNAL_TOKEN` as unset, so the follower stays off, and every internal door answers 401. The
+deploy after the secret is set turns the follower on, and it reads the feed from zero. That deploy starts the
+server before it replaces the subscription container, so until it does the follower writes `subscription follow:
+the feed is unavailable (401)`; every later deploy recreates the container, and the read that meets it gone
+writes `(unreachable)` once. The follower reads again 30 s after either, and files a stall Issue only past 60 s
+without progress.
 
 **A page the backend cannot apply stops the copy for every account, by design.** A page applies whole
 or not at all, and the follower skips no entry, since a skipped entry would leave someone's paid state

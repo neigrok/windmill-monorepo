@@ -188,7 +188,8 @@ services:
       WINDMILL_MCP_TOKEN: ${WINDMILL_MCP_TOKEN:-}
       # Windmill One's entitlement copy: the server follows the subscription service's feed on internal-doors
       # once SUBSCRIPTIONS_INTERNAL_TOKEN is set (README.md, "Windmill One: the entitlement copy"). The URL is
-      # set only with the token, so an empty token leaves both unset and the follower off.
+      # set only with the token: with the token empty both arrive empty, which the server reads as unset, and the
+      # follower stays off.
       SUBSCRIPTIONS_INTERNAL_URL: ${SUBSCRIPTIONS_INTERNAL_TOKEN:+http://subscriptions-internal:8083}
       SUBSCRIPTIONS_INTERNAL_TOKEN: ${SUBSCRIPTIONS_INTERNAL_TOKEN:-}
       # The /t/:id share pages read the built SPA shell from here (the same host dir Caddy
