@@ -203,21 +203,22 @@ export default BrowsePage;
 const CSS = `
   .wm-br { position:fixed; inset:0; overflow-y:auto; background:var(--surface-canvas);
            font-family:var(--font-body); color:var(--text-primary); }
-  .wm-br-plaque { position:sticky; top:var(--space-6); margin-left:var(--space-6); z-index:5;
-                  display:inline-flex; align-items:center; gap:var(--space-2);
-                  padding:var(--space-2) var(--space-3); text-decoration:none; color:inherit;
+  .wm-br-plaque { position:sticky; top:var(--space-6); margin:var(--space-6) 0 30px var(--space-6); z-index:5;
+                  display:flex; width:max-content; align-items:center; gap:var(--space-2);
+                  padding:calc(var(--space-2) - 1px) calc(var(--space-3) - 1px); text-decoration:none; color:inherit;
                   background:color-mix(in srgb, var(--surface-card) 88%, transparent);
                   border:1px solid var(--border-subtle); border-radius:var(--radius-full);
                   box-shadow:var(--shadow-sm); }
   .wm-br-glyph { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px;
                  border-radius:50%; background:var(--color-brand-soft); color:var(--color-brand-hover); }
-  .wm-br-wordmark { font-family:var(--font-display); font-weight:800; font-size:var(--text-base); }
+  .wm-br-wordmark { min-width:65px; font-family:var(--font-display); font-weight:800;
+                    font-size:var(--text-base); line-height:var(--leading-base); }
 
   .wm-br-main { max-width:1080px; margin:0 auto; padding:var(--space-8) var(--space-6) var(--space-10); }
-  .wm-br-title { font-family:var(--font-display); font-weight:700; font-size:clamp(26px, 3.4vw, 34px);
-                 margin:var(--space-6) 0 var(--space-2); }
-  .wm-br-sub { max-width:620px; font-size:var(--text-base); line-height:1.6; color:var(--text-secondary); margin:0; }
-  .wm-br-line { display:flex; align-items:center; gap:8px; font-size:var(--text-sm); font-weight:700;
+  .wm-br-title { font-family:var(--font-display); font-weight:700; font-size:34px; line-height:48px;
+                 letter-spacing:var(--tracking-tight); margin:0 0 var(--space-2); }
+  .wm-br-sub { max-width:620px; font-size:var(--text-base); line-height:26px; color:var(--text-secondary); margin:0; }
+  .wm-br-line { display:flex; align-items:center; gap:8px; font-size:var(--text-sm); line-height:var(--leading-sm); font-weight:700;
                 color:var(--text-tertiary); margin:var(--space-3) 0 var(--space-6); }
   .wm-br-line a { color:var(--text-link); text-decoration:none; font-weight:700; }
   .wm-br-line a:hover { color:var(--text-link-hover); }
@@ -237,11 +238,12 @@ const CSS = `
   .wm-br-skel.is-leaving { position:absolute; left:0; right:0; top:0; opacity:0; pointer-events:none;
                            transition:opacity ${ARRIVAL_MS}ms linear; }
 
-  .wm-br-bare { border:1px dashed var(--border-default); border-radius:var(--radius-xl);
-                padding:var(--space-8) var(--space-6); text-align:center; }
-  .wm-br-bare h2 { font-family:var(--font-display); font-weight:700; font-size:var(--text-xl); margin:0; }
-  .wm-br-bare p { max-width:430px; margin:10px auto 0; font-size:var(--text-sm); line-height:1.65; color:var(--text-secondary); }
-  .wm-br-bare a { display:inline-block; margin-top:var(--space-4); font-size:var(--text-sm); font-weight:700;
+  .wm-br-bare { display:flex; flex-direction:column; align-items:center;
+                border:1px dashed var(--border-default); border-radius:var(--radius-xl);
+                padding:calc(var(--space-8) - 1px) calc(var(--space-6) - 1px); text-align:center; }
+  .wm-br-bare h2 { font-family:var(--font-display); font-weight:700; font-size:var(--text-xl); line-height:25px; margin:0; }
+  .wm-br-bare p { max-width:430px; margin:10px 0 0; font-size:var(--text-sm); line-height:23px; color:var(--text-secondary); }
+  .wm-br-bare a { margin-top:var(--space-4); font-size:var(--text-sm); line-height:var(--leading-sm); font-weight:700;
                   color:var(--text-link); text-decoration:none; }
 
   .wm-br-quiet { display:flex; align-items:center; justify-content:center; gap:12px; margin-top:var(--space-6); }
