@@ -59,7 +59,7 @@ class CopyInResourcesTests {
     // A Kotlin source read as code: comments dropped, a template read as `0` since a value is not copy, raw strings plain, line breaks kept.
     private inner class Code(source: String) {
         val text = read(source)
-        private val skeleton = text.replace(string) { "\"" + " ".repeat(it.value.length - 2) + "\"" }
+        val skeleton = text.replace(string) { "\"" + " ".repeat(it.value.length - 2) + "\"" }
 
         fun line(at: Int) = text.substring(0, at).count { it == '\n' } + 1
 
@@ -229,7 +229,7 @@ class CopyInResourcesTests {
         val previewsFrom = previews.find(code.text)?.range?.first ?: code.text.length
         val allowedHere = allowed[path].orEmpty().map { "\"$it\"" }
         val copied = sites.flatMap { site ->
-            site.at.findAll(code.text).filter { it.range.first < previewsFrom && !(site.rule == "copy argument" && code.calledBy(it.range.first, animation)) }
+            site.at.findAll(code.skeleton).filter { it.range.first < previewsFrom && !(site.rule == "copy argument" && code.calledBy(it.range.first, animation)) }
                 .flatMap { at -> code.extents(site, at).flatMap(code::values) }
                 .filter { it.value !in allowedHere }.map { code.line(it.range.first) to site.rule }.toList()
         }
@@ -330,6 +330,18 @@ class CopyInResourcesTests {
         )
         assertEquals(calls.map { (call, given) -> Triple(1, call.second, given) }, calls.map { messages(Code(it.first.first)).single() })
         assertEquals(emptyList<Triple<Int, List<String>, Int>>(), messages(Code("Words.Message(said, words)\ncontext.getString(key, null)")))
+    }
+
+    @Test fun copySitesComeFromCodeOutsideLiterals() {
+        val snippets = listOf(
+            "val path = \"/v1/calls/\$callId/text?label=\" + encode(label, \"UTF-8\")" to emptyList(),
+            "val path = \"\"\"/v1/calls/\$callId/text?title=\"\"\" + encode(title, \"UTF-8\")" to emptyList(),
+            "val syntax = \"Text(\\\"Save\\\")\"" to emptyList(),
+            "val query = \"?label=\"; Text(\"Save\")" to listOf(1 to "Text"),
+            "val query = \"?title=\"\nval title = \"Saved\"" to listOf(2 to "copy argument"),
+            "val query = \"\"\"\n?description=\n\"\"\"\nIcon(Icons.Default.Close, contentDescription = \"Close\")" to listOf(4 to "contentDescription"),
+        )
+        assertEquals(snippets.map { it.second }, snippets.map { offences("snippet.kt", it.first) })
     }
 
     @Test fun theRulesTellCopyFromCode() {

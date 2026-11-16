@@ -299,6 +299,15 @@ device checks, build with `-Pwindmill.apiBase=http://10.0.2.2:8096` and use `Pix
 Follow [the backend runbook](../../backend/RUNNING.md) with a separate database loaded from
 `schema.sql`, on port 8096.
 
+Changes to Kotlin in `:app`, `:platform` or `:gym` run the app's source checks alongside the changed
+module's focused tests. These checks read all three modules, including library code with no screen.
+From `apps/android`, run them before the full build:
+
+```sh
+./gradlew :app:testDebugUnitTest --tests '*CopyInResourcesTests' \
+  --tests '*ObservabilityDocTests' --tests '*ThemeRolesTests' --max-workers=4
+```
+
 Install an APK built from `android-v0.11.0` with the same test signing key, log finished and
 unfinished workouts signed out, then install this build over its data and sign in: the workouts
 arrive as imports with their IDs and frozen routine lineage. Check crash/restart and

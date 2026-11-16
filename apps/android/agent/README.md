@@ -48,6 +48,7 @@ From `apps/android`, `:platform:testDebugUnitTest --tests '*Coach*Tests'` runs e
 transport and guarded host. It also consumes the AI fixtures, checks credential isolation, strict
 SSE, delayed record deletion and seat changes. `:agent:test` checks the pure policies and released
 runner; `:sync-engine:testDebugUnitTest` checks the runtime's live freshness along with sync.
+Platform client changes also run the [app's source checks](../README.md#local-verification).
 
 The opt-in process probe is `works.windmill.platform.ai.CoachServiceProbe`. Build
 `:platform:coachProbeClasspath`, then launch Java with the contents of
