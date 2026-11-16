@@ -280,7 +280,16 @@ class Fixture:
 
     def stop(self, process):
         if process.poll() is None:
-            os.killpg(process.pid, signal.SIGKILL)
+            listing = subprocess.run(["ps", "-axo", "pid=,ppid="], capture_output=True, text=True, timeout=5, check=True)
+            parents = {int(pid): int(parent) for pid, parent in (line.split() for line in listing.stdout.splitlines())}
+            descendants = [process.pid]
+            for parent in descendants:
+                descendants.extend(pid for pid, owner in parents.items() if owner == parent)
+            for pid in reversed(descendants):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
         process.wait(timeout=10)
 
     def run_case(self, scenario):

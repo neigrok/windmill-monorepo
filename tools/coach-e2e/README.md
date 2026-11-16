@@ -23,7 +23,8 @@ python3 tools/coach-e2e/run.py \
 ```
 
 The scratch directory must be empty. The harness bounds each client process to 60 seconds and each
-provider barrier to 90 seconds. Run the whole command under the build coordinator's bounded gate
+provider barrier to 90 seconds. It kills the driver's complete process tree before recovery, including
+native test runners that start their own process group. Run the whole command under the build coordinator's bounded gate
 when another task shares the machine.
 
 Six cases cover two rounds with a read and a write, a transient refusal with an identical retry,
