@@ -88,6 +88,9 @@ Copy is read through a translator from catalogs; English is the only locale.
 
 ## Run and build
 
+Use the Node major selected by [web CI](../.github/workflows/web.yml), and check `node --version`
+before installing or running the suite. Newer Node globals can conflict with the browser test harness.
+
 ```sh
 npm run dev      # localhost:5173; development API defaults to localhost:8088
 npm test         # complete Node test suite

@@ -134,9 +134,9 @@ installation routes already answer keep their meaning:
 | 400 | `invalid_request` | The body is not the one above, the `use` is not one the backend knows, or the network address cannot be read |
 | 401 | `unauthenticated` | No session and no installation credential, or a session that has ended |
 | 401 | `invalid_installation` | The installation credential is not one the backend issued |
-| 403 | `untrusted-origin` | A cookie request has no allow-listed Origin |
+| 403 | `untrusted-origin` | A cookie request lacks an allow-listed Origin, or a presented Origin is untrusted |
 | 409 | `device_bound` | The installation alone asked, and it is bound to an account: sign in |
-| 415 | `unsupported-media-type` | A cookie request's Content-Type is not JSON |
+| 415 | `unsupported-media-type` | The request's Content-Type is not JSON |
 | 426 | `client-update-required` | The version of this use is retired |
 | 429 | `rate_limited` | The address or the principal asked too often |
 | 503 | `anonymous_ai_unavailable` | Signed-out AI is switched off on this server |

@@ -117,8 +117,10 @@ export class AiClient {
           const response = await this.transport.request({ method: 'PUT', path: `/v1/pictures/${picture.pictureId}`, bytes: new Uint8Array(picture.bytes), mediaType: picture.mediaType, pass });
           if (generation !== this.generation) return { failure: { source: 'pass', code: null, admission, allowance: null } };
           if (response.status !== 204) {
+            if (!CODES.has(response.body?.code)) return failed('wire', 'invalid-answer');
+            if (response.body?.allowance !== null && response.body?.allowance !== undefined) validateAllowance(response.body.allowance);
             if (response.body?.code === 'pass_expired' && !refresh) { refresh = true; forcePass = true; continue operation; }
-            return failed('text', CODES.has(response.body?.code) ? response.body.code : 'invalid-answer', response.body?.allowance ?? null);
+            return failed('text', response.body.code, response.body?.allowance ?? null);
           }
           this.uploads.add(picture.pictureId);
         }

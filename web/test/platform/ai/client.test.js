@@ -129,14 +129,18 @@ test('allowance uses its complete wire shape and repairs one expired pass', asyn
   }
 });
 
-test('allowance refusals reject unknown codes and malformed allowance data', async () => {
-  for (const body of [{ code: 'private-user-content', allowance: null }, { code: 'subject_exhausted', allowance: { bogus: true } }]) {
+test('allowance and picture refusals reject unknown codes and malformed allowance data', async () => {
+  for (const boundary of ['allowance', 'picture']) for (const body of [{ code: 'private-user-content', allowance: null }, { code: 'subject_exhausted', allowance: { bogus: true } }]) {
     const reports = [];
     const client = new AiClient({ telemetry: { failure: (operation) => reports.push(operation) }, transport: {
       pass: async () => ({ status: 200, body: { pass: 'private', expiresIn: 600000 } }),
       request: async () => ({ status: 429, body }),
     } });
-    assert.deepEqual(await client.allowance({ use: 'vector.coach', version: 1 }),
+    const result = boundary === 'allowance' ? await client.allowance({ use: 'vector.coach', version: 1 }) : await client.text({
+      callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, label: 'other', use: 'vector.coach', version: 1,
+      pictures: [{ pictureId: 'PPPPPPPPPPPPPPPPPPPPPP', mediaType: 'image/png', bytes: [137, 80, 78, 71, 13, 10, 26, 10] }], onText() {},
+    });
+    assert.deepEqual(result,
       { failure: { source: 'wire', code: 'invalid-answer', admission: 'none', allowance: null } });
     assert.deepEqual(reports, ['ai-call']);
   }
