@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './shell/App.jsx';
+import { initializeNavigation } from './shell/navigation.js';
 import { ErrorBoundary } from './design-system/feedback/ErrorBoundary.jsx';
 import { reportError } from './telemetry/beacon.js';
 // beforeinstallprompt fires once per page load, before the chip's route mounts, so arm it at boot.
@@ -31,6 +32,8 @@ if ('serviceWorker' in navigator) {
   if (document.readyState === 'complete') offlineShell();
   else window.addEventListener('load', offlineShell, { once: true });
 }
+
+initializeNavigation();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

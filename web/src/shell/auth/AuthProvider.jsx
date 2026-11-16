@@ -4,6 +4,7 @@ import { API_BASE } from '../apiBase.js';
 import { fetchMe, logout } from './AuthClient.js';
 import { closeAccount as requestAccountClosure, listSessions } from './AccountClient.js';
 import { DeviceSeat } from './accountChange.js';
+import { requestNavigation } from '../navigation.js';
 import { PRODUCTS } from '../products.js';
 import { syncSession } from '../../platform/sync/session.js';
 import { captureError } from '../../telemetry/sentry.js';
@@ -70,6 +71,7 @@ export default function AuthProvider({ children }) {
   const channel = useRef(null);
   const pending = useRef(null);
   const signOutResult = useRef(null);
+  const signOutRequest = useRef(null);
   const queue = useRef(Promise.resolve());
   const enqueue = useCallback((run) => {
     const next = queue.current.then(run);
@@ -100,21 +102,21 @@ export default function AuthProvider({ children }) {
     channel.current?.postMessage({ type: 'signed-out' });
     signOutResult.current?.resolve(true); signOutResult.current = null;
   }, [settle]);
-  const cleanupDevice = useCallback(async (engine, next = null) => {
+  const cleanupDevice = useCallback(async (engine, next = null, navigation = null) => {
     const change = engine.device.meta.deviceCleanup;
     if (!change) return;
     roomOwnership.current.blocked = true;
     flushSync(() => setRoomChanging(true));
-    await seat.finishDeviceCleanup({ previous: change.previous, next });
+    await seat.finishDeviceCleanup({ previous: change.previous, next, ...(navigation ? { navigation } : {}) });
     await engine.write(null, (device) => {
       if (device.meta.deviceCleanup?.previous === change.previous && device.meta.deviceCleanup?.generation === change.generation)
         delete device.meta.deviceCleanup;
     });
   }, [seat]);
-  const finishSignOut = useCallback(async (options, next = null) => {
+  const finishSignOut = useCallback(async (options, next = null, navigation = null) => {
     const engine = syncSession.engine;
     const result = await engine.finishSignOut({ ...options, deviceCleanup: true });
-    if (result.complete) await cleanupDevice(engine, next);
+    if (result.complete) await cleanupDevice(engine, next, navigation);
     return result;
   }, [cleanupDevice]);
   const finishClosure = useCallback(async () => {
@@ -235,18 +237,24 @@ export default function AuthProvider({ children }) {
     });
   }, [enqueue, bind, finishClosure, seat, cleanupDevice, confirmRoom]);
   const signOut = useCallback(() => {
-    if (signOutResult.current) return signOutResult.current.promise;
-    let resolve;
-    const promise = new Promise((done) => { resolve = done; });
-    signOutResult.current = { promise, resolve, account: syncSession.engine.device.activeReplica.meta.account };
-    enqueue(async () => {
-      setBusy(true); setError(false);
-      try {
-        setQuestion(await syncSession.engine.beginSignOut());
-        track('sync_signout', { outcome: 'pending' });
-      } finally { setBusy(false); }
-    }).catch(() => { signOutResult.current = null; resolve(false); });
-    return promise;
+    if (signOutRequest.current) return signOutRequest.current;
+    const admitted = requestNavigation({ key: 'auth:sign-out', context: { kind: 'sign-out' }, run: (navigation) => {
+      let resolve;
+      const promise = new Promise((done) => { resolve = done; });
+      signOutResult.current = { resolve, navigation, account: syncSession.engine.device.activeReplica.meta.account };
+      enqueue(async () => {
+        setBusy(true); setError(false);
+        try {
+          setQuestion(await syncSession.engine.beginSignOut());
+          track('sync_signout', { outcome: 'pending' });
+        } finally { setBusy(false); }
+      }).catch(() => { signOutResult.current = null; resolve(false); });
+      return promise;
+    } });
+    const result = admitted.then((outcome) => outcome.status === 'completed' && outcome.value);
+    signOutRequest.current = result;
+    result.finally(() => { if (signOutRequest.current === result) signOutRequest.current = null; });
+    return result;
   }, [enqueue]);
   const closeAccount = useCallback((account) => enqueue(async () => {
     setBusy(true); setError(false);
@@ -287,11 +295,11 @@ export default function AuthProvider({ children }) {
             || (engine.device.meta.deviceCleanup && engine.device.meta.deviceCleanup.previous !== previous))
             throw new Error('account-changed-during-signout');
           if (active.state === 'anon') {
-            await cleanupDevice(engine);
+            await cleanupDevice(engine, null, signOutResult.current?.navigation);
             signedOut();
             return;
           }
-          const result = await finishSignOut({ choice, counted: question.counted });
+          const result = await finishSignOut({ choice, counted: question.counted }, null, signOutResult.current?.navigation);
           if (!result.complete) { setQuestion(result); return; }
           signedOut();
         }

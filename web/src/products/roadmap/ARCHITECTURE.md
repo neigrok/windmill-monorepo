@@ -212,6 +212,14 @@ says whether a door can lead there. A dangling one (`Not found`) and a step that
 door on any surface: the pill has no chevron and opens the step, the Tree row is not a button, and no Open tree, swipe
 or toast action is offered. Such a step keeps its tree's mark and its loop's words.
 
+Roadmap reads only the shell's accepted location. Step addresses, same-URL selection entries and tree
+visits share its index; native Back/Forward targets do not reach room subscribers before acceptance.
+Step opening/closing, view switches, tree doors, sheet destinations and current-tree deletion enter
+through one shell navigation request before changing local state, history metadata or events. Nested
+adapters receive that request's transaction. Tree entry writes the old entry's metadata, the destination
+and its arrival metadata before publishing. Stale-step removal and a transferred local tree's identity
+remap are system replacements. The product currently registers no navigation guard.
+
 `room/useTreeVisit.js` goes in and comes back. Going in pushes `#/app/<treeId>`, or the share's `#/t/<treeId>` for a
 subtree gone into from a share; the entry of the tree gone into names the roadmap the person came from, and the entry
 they left keeps the step they went through, and whether that step owns the tree (a subtree's visit, above). Both are history state, never

@@ -1011,7 +1011,13 @@ test('Chromium: Back and Escape close kinds before selection, and finished selec
     assert.equal(await page.evaluate(() => history.state?.boardSelection ?? null), null);
     await page.locator('.st-board-card[data-step-id="bowline"]').click();
     await page.waitForFunction(() => window.selectionAddress.id === 'bowline');
-    assert.deepEqual(await page.evaluate(() => history.state), { boardStep: { trail: ['bowline'], pushed: 1 } });
+    const entry = await page.evaluate(() => history.state);
+    const { windmillHistory, windmillNavigation, ...productState } = entry;
+    assert.deepEqual(productState, { boardStep: { trail: ['bowline'], pushed: 1 } });
+    assert.deepEqual(windmillNavigation, { href: '/board-view-test#/t/selection', previous: null });
+    assert.equal(windmillHistory.position, 2);
+    assert.equal(typeof windmillHistory.entryId, 'string');
+    assert.equal(typeof windmillHistory.chain, 'string');
     await page.evaluate(() => window.selectionAddress.close());
     await page.waitForFunction(() => window.selectionAddress.id === null);
     assert.equal(await page.evaluate(() => location.hash), '#/t/selection');

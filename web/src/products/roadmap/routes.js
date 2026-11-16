@@ -1,4 +1,5 @@
 import { lazy } from 'react';
+import { readNavigation, replaceLocation } from '../../shell/navigation.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
 import { noteForked } from './persistence/ViewPrefs.js';
 import { confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
@@ -70,12 +71,14 @@ function render({ hash, pathname, search }) {
 }
 
 // Explicit sign-out and account replacement wipe stamped work; a session lapse never calls this hook.
-async function forgetDevice({ next }) {
+async function forgetDevice({ next, navigation }) {
   // Sweep BEFORE confirming the arriving owner, or unstamped work is attributed to them.
   const { forgetDeviceTrees } = await import('./sync/localTrees.js');
   await forgetDeviceTrees();
   confirmDeviceOwner(next ?? null);
-  if (typeof window !== 'undefined' && window.location.hash.startsWith('#/app/')) window.location.hash = '#/app';
+  if (typeof window === 'undefined' || !readNavigation().hash.startsWith('#/app/')) return;
+  if (navigation) navigation.navigate('#/app', { replace: true });
+  else replaceLocation('#/app');
 }
 
 export const roadmapRoutes = {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { requestNavigation } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
 import { coverBeneath, useCoveredLayer } from '../step/composerFocus.js';
 import { ViewPrefs, boardCanShow, clearBorn, initialView, peekBorn, viewToShow } from '../persistence/ViewPrefs.js';
@@ -61,17 +62,21 @@ export function useRoomView({ treeId, tree, loading, loadError, who, linkedStep,
     if (boardActive) scene.stop(); else scene.start();
   }, [scene, boardActive]);
 
-  const switchView = useCallback((next, { keepFocus = false } = {}) => {
-    if (next === 'tree' && !graphAvailable) return;
-    if (next !== shownView) onLeave();
-    if (next === 'board') setBoardCrashed(false);
-    setView(next);
-    viewPrefs.setLastView(treeId, next);
-    track('roadmap_view_switch', { view: next === 'board' ? 'board' : 'graph' });
-    onSwitched(next);
-    switchFocusRef.current = !keepFocus;
-    const active = document.activeElement;
-    switchOptionRef.current = active?.classList.contains('st-board-switch-option') ? active : null;
+  const switchView = useCallback((next, { keepFocus = false, transaction = null } = {}) => {
+    const run = () => {
+      if (next === 'tree' && !graphAvailable) return;
+      if (next !== shownView) onLeave();
+      if (next === 'board') setBoardCrashed(false);
+      setView(next);
+      viewPrefs.setLastView(treeId, next);
+      track('roadmap_view_switch', { view: next === 'board' ? 'board' : 'graph' });
+      onSwitched(next);
+      switchFocusRef.current = !keepFocus;
+      const active = document.activeElement;
+      switchOptionRef.current = active?.classList.contains('st-board-switch-option') ? active : null;
+    };
+    if (transaction) return run();
+    return requestNavigation({ key: `view:${next}`, run });
   }, [treeId, shownView, onLeave, onSwitched, viewPrefs, graphAvailable]);
 
   // A switch keeps focus on the option it pressed; a key or a crash lands on the option the row now shows pressed.

@@ -9,6 +9,7 @@ import { forkTree } from '../persistence/TreeRegistry.js';
 import { reportUnexpectedFailure } from '../reportFailure.js';
 import { noteForked } from '../persistence/ViewPrefs.js';
 import { prefersReducedMotion } from '../theme.js';
+import { replaceEntry } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
 import { t } from '../i18n/index.js';
 import './fork-door.css';
@@ -105,7 +106,7 @@ export function ForkDoor({ open, presentation = 'sheet', treeId, signedIn = fals
         noteForked();
         // Rewrite the URL to the hash route, then reload: a /t/:id pathname would stay pinned read-only,
         // and the scene must be born in editor mode.
-        window.history.replaceState(null, '', `/#/app/${forkedId}`);
+        replaceEntry(`/#/app/${forkedId}`, null);
         window.location.reload();
       })
       .catch((err) => {

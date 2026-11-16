@@ -1,3 +1,5 @@
+import { pushEntry } from '../../shell/navigation.js';
+
 // Where the canvas opens, and the one rule that decides it: a hop marks itself; a marked entry opens
 // on tonight. A dated URL is a real deep link — someone who is sent #/journal/2026-07-14 lands on
 // that day — but an in-canvas echo hop writes a day into the address bar too, and that day was never
@@ -40,11 +42,8 @@ export function openPosition(hash, entry) {
   return day;
 }
 
-// A hop is a real history entry — the browser Back button is how the trail is walked back — so this
-// is pushState and never replaceState. pushState fires no `hashchange`, and the shell routes off
-// `hashchange`/`popstate` (shell/App.jsx), so the hop announces itself with the popstate the shell
-// is already listening for.
+// A hop is a real indexed entry; its intentional state reset preserves the Journal hop mark alone.
 export function hopToHash(hash) {
-  window.history.pushState({ [HOP_MARK]: true }, '', hash);
+  pushEntry(hash, { [HOP_MARK]: true });
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
