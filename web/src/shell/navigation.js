@@ -85,9 +85,11 @@ export function createNavigationCoordinator(browser, { report = (operation) => c
     stamp(actual, true);
     publish();
   };
-  const travel = (delta, target, restore = false) => new Promise((resolve) => {
-    if (!delta) { resolve(true); return; }
-    const held = { target, restore, resolve, timer: null };
+  const travel = (delta, target, restore = false) => {
+    let resolve;
+    const promise = new Promise((done) => { resolve = done; });
+    const source = snapshot();
+    const held = { target, source, restore, resolve, promise, timer: null };
     flight = held;
     held.timer = setTimeout(() => {
       if (flight !== held) return;
@@ -99,50 +101,104 @@ export function createNavigationCoordinator(browser, { report = (operation) => c
       report(restore ? 'navigation-restore' : 'navigation-traverse');
       retainUnknown();
     }
-  });
+    return promise;
+  };
   const transaction = (intent) => {
+    let working = accepted;
+    let applied = working;
     let changed = false;
+    const mutations = [];
     const active = () => !intent || (!intent.settled && (!intent.managed || pending === intent));
+    const read = () => {
+      if (!intent?.managed && !changed && mutations.length === 0) working = applied = accepted;
+      return working;
+    };
+    const replay = () => {
+      if (!active()) return false;
+      read();
+      if (flight) return false;
+      while (active()) {
+        const actual = snapshot();
+        if (!sameIndex(indexOf(actual), indexOf(applied))) {
+          if (intent?.managed && comparable(applied, actual)) {
+            intent.origin = applied;
+            observed = actual;
+            restore(intent);
+          } else {
+            retainUnknown();
+            if (intent) cancel(intent);
+          }
+          return false;
+        }
+        const mutation = mutations[0];
+        if (!mutation) return true;
+        const { entry, push } = mutation;
+        browser.history[push ? 'pushState' : 'replaceState'](entry.state, '', entry.href);
+        mutations.shift();
+        applied = entry;
+        observed = entry;
+        changed = true;
+      }
+      return false;
+    };
     const write = (href, state, push) => {
       if (!active()) return;
-      const current = snapshot();
+      const current = read();
       const index = indexOf(current);
       const next = push ? { chain: index.chain, position: index.position + 1, entryId: identity() } : index;
-      browser.history[push ? 'pushState' : 'replaceState']({ ...state, windmillHistory: next }, '', new URL(href, current.href).href);
-      observed = snapshot();
-      changed = true;
+      const url = new URL(href, current.href);
+      working = { href: url.href, pathname: url.pathname, search: url.search, hash: url.hash,
+        state: { ...state, windmillHistory: next }, revision };
+      mutations.push({ entry: working, push });
+      replay();
     };
-    const tx = {
-      read: () => snapshot(),
+    const api = {
+      read,
       pushEntry: (href, state) => write(href, state, true),
       replaceEntry: (href, state) => write(href, state, false),
       updateState: (update) => {
-        const current = snapshot();
+        const current = read();
         write(current.href, typeof update === 'function' ? update(current.state) : update, false);
       },
       navigate: (href, { replace = false } = {}) => {
-        const current = snapshot();
+        const current = read();
         const url = new URL(href, current.href);
         const path = url.pathname + url.search + url.hash;
         if (!replace && path === pathOf(current)) return;
         const previous = replace ? current.state?.windmillNavigation?.previous ?? null : pathOf(current);
         write(url.href, { ...(replace ? current.state : {}), windmillNavigation: { href: path, previous } }, !replace);
       },
-      traverse: async (delta) => {
+      traverse: async (delta, target) => {
+        while (active()) {
+          if (replay()) break;
+          if (!flight || !await flight.promise) return false;
+        }
         if (!active()) return false;
-        const current = snapshot();
-        const moved = await travel(delta, { chain: indexOf(current).chain, position: indexOf(current).position + delta });
-        if (moved) changed = true;
-        return moved;
+        if (!delta) return true;
+        const index = indexOf(applied);
+        const reached = await travel(delta, target ?? { chain: index.chain, position: index.position + delta });
+        if (!reached || !active()) return false;
+        working = applied = reached;
+        changed = true;
+        return true;
       },
-      flush: () => { if (changed) { changed = false; publish(); } },
     };
-    return tx;
+    return {
+      api,
+      origin: () => applied,
+      replay,
+      discard: () => { mutations.length = 0; working = applied; },
+      flush: () => {
+        if (!replay()) return false;
+        if (changed) { changed = false; publish(); }
+        return true;
+      },
+    };
   };
   const reconcile = (run) => {
     const tx = transaction(null);
     try {
-      const result = run(tx);
+      const result = run(tx.api);
       tx.flush();
       return result;
     } catch (error) { report('navigation-reconcile'); throw error; }
@@ -152,21 +208,28 @@ export function createNavigationCoordinator(browser, { report = (operation) => c
     if (intent.managed) phase = 'committing';
     intent.committing = true;
     const tx = transaction(intent);
+    intent.transaction = tx;
     const finish = (value) => {
       if (intent.settled || (intent.managed && pending !== intent)) return;
+      try {
+        if (!tx.flush()) { intent.resume = () => finish(value); return; }
+      } catch { fail(); return; }
       intent.settled = true;
       if (pending === intent) { pending = null; phase = 'idle'; }
-      tx.flush();
       intent.resolve({ status: 'completed', value });
     };
+    intent.resume = () => {
+      try { tx.replay(); } catch { fail(); }
+    };
     const fail = () => {
-      if (intent.settled || (intent.managed && pending !== intent)) return;
       report('navigation-commit');
-      tx.flush();
+      if (intent.settled || (intent.managed && pending !== intent)) return;
+      tx.discard();
+      try { tx.flush(); } catch { /* The commit failure already has a static report. */ }
       cancel(intent);
     };
     try {
-      const value = intent.run(tx);
+      const value = intent.run(tx.api);
       if (value && typeof value.then === 'function') value.then(finish, fail);
       else finish(value);
     } catch { fail(); }
@@ -184,7 +247,11 @@ export function createNavigationCoordinator(browser, { report = (operation) => c
           if (flight) { intent.proceedAfterRestore = true; return; }
           commit(intent);
         },
-        cancel: () => cancel(intent),
+        cancel: () => {
+          if (pending !== intent || intent.settled || intent.decided) return;
+          intent.decided = true;
+          cancel(intent);
+        },
       });
     } catch { report('navigation-guard'); cancel(intent); }
   };
@@ -197,8 +264,8 @@ export function createNavigationCoordinator(browser, { report = (operation) => c
     phase = 'restoring';
     const delta = indexOf(intent.origin).position - indexOf(observed).position;
     travel(delta, indexOf(intent.origin), true).then((restored) => {
-      if (!restored || pending !== intent) return;
-      if (intent.committing) { phase = 'committing'; return; }
+      if (!restored || pending !== intent || flight) return;
+      if (intent.committing) { phase = 'committing'; intent.resume(); return; }
       if (intent.proceedAfterRestore) commit(intent);
       else ask(intent);
     });
@@ -206,13 +273,24 @@ export function createNavigationCoordinator(browser, { report = (operation) => c
   const follow = (event) => {
     const next = snapshot();
     if (sameEntry(next, observed)) return;
+    const previous = observed;
     observed = next;
     if (failedRetention) { retainUnknown(); return; }
     if (flight) {
       const target = flight.target;
-      if (!comparable(accepted, next)) { retainUnknown(); return; }
-      if (indexOf(next).chain !== target.chain || indexOf(next).position !== target.position
-        || (target.entryId && indexOf(next).entryId !== target.entryId)) return;
+      const index = indexOf(next);
+      if (!comparable(flight.source, next) || !comparable(previous, next) || index.chain !== target.chain
+        || (index.position === target.position && target.entryId && index.entryId !== target.entryId)) {
+        retainUnknown(); return;
+      }
+      if (index.position !== target.position) {
+        const distance = target.position - index.position;
+        if (flight.restore && !sameIndex(indexOf(previous), index)) {
+          try { browser.history.go(distance); }
+          catch { report('navigation-restore'); retainUnknown(); }
+        }
+        return;
+      }
       const done = clearFlight();
       const deferred = reconciliations;
       reconciliations = [];
@@ -222,12 +300,12 @@ export function createNavigationCoordinator(browser, { report = (operation) => c
           try { reconcile(entry.run); } catch { /* The system boundary already reported this failure. */ }
         }
       }
-      done.resolve(true);
+      done.resolve(next);
       if (!pending) phase = 'idle';
       return;
     }
     if (pending) {
-      pending.origin ??= accepted;
+      pending.origin = pending.transaction?.origin() ?? pending.origin ?? accepted;
       if (!comparable(pending.origin, next)) { retainUnknown(); return; }
       if (!sameEntry(pending.origin, next)) restore(pending);
       return;
@@ -236,10 +314,8 @@ export function createNavigationCoordinator(browser, { report = (operation) => c
       if (!comparable(accepted, next)) { retainUnknown(); return; }
       const origin = accepted;
       const target = next;
-      const intent = makeIntent(`history:${indexOf(target).entryId}`, async () => {
-        const moved = await travel(indexOf(target).position - indexOf(snapshot()).position, indexOf(target));
-        if (moved && pending === intent) publish();
-      });
+      const intent = makeIntent(`history:${indexOf(target).entryId}`,
+        (tx) => tx.traverse(indexOf(target).position - indexOf(origin).position, indexOf(target)));
       intent.origin = origin;
       pending = intent;
       restore(intent);
@@ -267,7 +343,8 @@ export function createNavigationCoordinator(browser, { report = (operation) => c
       guard = owner;
       return () => {
         if (guard !== owner) return;
-        if (pending?.owner === owner && (phase === 'awaiting-decision' || (phase === 'restoring' && !pending.committing))) cancel(pending);
+        if (pending?.owner === owner && (phase === 'awaiting-decision' || phase === 'restoring')
+          && !pending.decided && !pending.committing) cancel(pending);
         guard = null;
       };
     },

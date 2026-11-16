@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { navigate, previousLocation, initializeNavigation, replaceLocation, returnToPreviousLocation } from '../../src/shell/navigation.js';
+import { navigate, previousLocation, initializeNavigation, replaceEntry, replaceLocation, returnToPreviousLocation } from '../../src/shell/navigation.js';
 import { elementsOf, loadScreen, renderHook } from '../products/gym/harness.mjs';
 
 function browser(t, href = '/app/gym?week=2#/gym/session/session-17') {
@@ -85,7 +85,7 @@ test('native legacy hash doors retain their source through pathname upgrades and
 test('direct entry and malformed or external predecessor metadata use the app fallback', async (t) => {
   const { win } = browser(t, '/app/connect');
   for (const previous of [null, 'https://example.com', '//example.com', '//[', '/\\example.com', '/\n/example.com']) {
-    win.history.replaceState({ windmillNavigation: { href: '/app/connect', previous } }, '', '/app/connect');
+    replaceEntry('/app/connect', { windmillNavigation: { href: '/app/connect', previous } });
     assert.equal(previousLocation(), null);
     await returnToPreviousLocation();
     assert.equal(win.location.href, 'https://windmill.works/app');
@@ -105,6 +105,7 @@ test('Back and Escape share return behavior in both chrome modes, including focu
       const event = { type: 'keydown', key: 'Escape', button: 0, preventDefault() { this.defaultPrevented = true; } };
       if (action === 'click') back.props.onClick(event);
       else win.dispatchEvent(event);
+      await new Promise((resolve) => setImmediate(resolve));
       assert.equal(event.defaultPrevented, true);
       assert.equal(win.location.href, 'https://windmill.works/app/gym?week=2#/gym/session/session-17');
       view.unmount();

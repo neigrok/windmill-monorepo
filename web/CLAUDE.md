@@ -16,33 +16,46 @@ points. Tests mirror `src/` under `test/`.
 
 ## Navigation
 
-`shell/navigation.js` owns the accepted location and history state. It initializes before React mounts;
-route consumers subscribe with `readNavigation`/`subscribeNavigation`, never native URL events.
-Indexed entries carry additive `windmillHistory: { chain, position, entryId }`; replacements retain
-identity and pushes allocate it. `windmillNavigation` retains the account-page predecessor separately.
+`shell/navigation.js` owns the accepted location and history state. It initializes before React
+mounts; route consumers subscribe with `readNavigation`/`subscribeNavigation`, never native URL
+events. Indexed entries carry additive `windmillHistory: { chain, position, entryId }`; replacements
+retain identity and pushes allocate it. `windmillNavigation` retains the account-page predecessor
+separately.
 
 A voluntary action uses `requestNavigation({ key, run })`. An unblocked action runs synchronously;
-its promise resolves to `{ status: 'completed', value }` or `{ status: 'cancelled' }`. The first pending
-key wins while a guard is registered; the same key shares its promise and other requests are cancelled.
-With no registered guard, an asynchronous action does not lock later navigation: each caller retains
-its existing stale-completion checks. `run` receives the explicit
-transaction for its entire compound action, including history metadata, selection, view changes and
-tracking. Its writes publish together when the action completes. Nested work receives that transaction;
-there is no ambient bypass. System reconciliation uses `replaceLocation`, `replaceEntry` or
-`updateNavigationState`; intentional raw state resets remain resets apart from the history index.
-A system rewrite requested during a transient native traversal is bound to the accepted entry and
-consumed only when that entry is restored. Unknown acceptance, failed restoration or an approved
-departure discards that stale rewrite; the data or security cleanup itself remains immediate.
+its promise resolves to `{ status: 'completed', value }` or `{ status: 'cancelled' }`. The first
+pending key wins while a guard is registered; the same key shares its promise and other requests are
+cancelled. With no registered guard, an asynchronous action does not lock later navigation: each
+caller retains its existing stale-completion checks. Before its first history write, an unguarded
+transaction reads the latest accepted entry, including its predecessor and state. `run` receives the
+explicit transaction for its entire compound action, including history metadata, selection, view
+changes and tracking. Its writes publish together when the action completes. Nested work receives
+that transaction; there is no ambient bypass. Each transaction owns its working snapshot. During
+native restoration, its writes and completion wait behind the physical restoration barrier; exact
+entry identity is checked before each write and publication. Once the origin returns, queued
+mutations replay in order and publish once. Unknown or failed restoration revokes those mutations
+without delaying separate data or security cleanup. System reconciliation uses `replaceLocation`,
+`replaceEntry` or `updateNavigationState`; intentional raw state resets remain resets apart from the
+history index. A system rewrite requested during a transient native traversal is bound to the
+accepted entry and consumed only when that entry is restored. Unknown acceptance, failed restoration
+or an approved departure discards that stale rewrite; the data or security cleanup itself remains
+immediate.
 
 A product can register one identity-bound guard with `blocked`, `onBlocked` and synchronous
 `onUnrestorableNavigation`. Releasing that registration cancels its unanswered decision; an admitted
-action can finish after its original view unmounts. No product currently registers one. Indexed native Back/Forward restores
-the accepted entry before asking, retains the first destination, and uses positional traversal without
-replacing Forward history. An unknown native entry invalidates the pending decision, retains the
-product's draft through its callback before publication, and starts a fresh chain. A failed retention
-callback withholds publication; restoration timeouts use the same retention boundary. The classic
-History API cannot preserve the original position for an unindexed entry. Voluntary sign-out enters
-through admission before any sync cleanup; forced account replacement remains outside it.
+action can finish after its original view unmounts. No product currently registers one. Indexed
+native Back/Forward restores the accepted entry before asking, retains the first destination, and
+uses positional traversal without replacing Forward history. Every newly observed indexed
+displacement can correct the remaining distance to that immutable origin, under one deadline. Paired
+events at the same entry are coalesced; no event proves that the browser's traversal queue has
+drained, and later events still reconcile. Continued interference can reach the retained-draft
+timeout fallback. Proceed and Cancel share one decision latch; public Cancel cannot revoke an action
+after Proceed. An unexpected asynchronous failure still reports if native fallback has already
+revoked its navigation capability. An unknown native entry invalidates the pending decision, retains
+the product's draft through its callback before publication, and starts a fresh chain. A failed
+retention callback withholds publication; restoration timeouts use the same retention boundary. The
+classic History API cannot preserve the original position for an unindexed entry. Voluntary sign-out
+enters through admission before any sync cleanup; forced account replacement remains outside it.
 
 ## Localization
 

@@ -29,7 +29,7 @@ for (const [engine, launcher] of [['Chromium', chromium], ['WebKit', webkit]]) {
       </script>`);
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    t.after(() => new Promise((resolve) => server.close(resolve)));
+    t.after(() => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }));
     const browser = await launcher.launch({ headless: true });
     t.after(() => browser.close());
     const page = await browser.newPage();
