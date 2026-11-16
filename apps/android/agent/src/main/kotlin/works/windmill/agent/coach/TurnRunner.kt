@@ -28,8 +28,9 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
 
     suspend fun seatWillChange() {
         val turn = synchronized(admission) {
+            val turn = active?.also { it.seatChanged = true; it.wait.invalidate() }
             ai.clearPass()
-            active?.also { it.seatChanged = true; it.wait.stop() }
+            turn
         } ?: return
         try {
             mutations.withLock {

@@ -272,6 +272,64 @@ class CoachBoundaryTests {
         }
     }
 
+    @Test fun anInvalidatedTurnCannotEnterTheClientUnderTheNewSeatsCredentials() = runBlocking {
+        withTimeout(3000) {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val reports = Reports()
+            val requests = mutableListOf<AiRequest>()
+            val passes = mutableListOf<String>()
+            var identity = "old"
+            val client = CoachAiClient(object : AiTransport {
+                override suspend fun pass(body: Json): AiResponse {
+                    passes += identity
+                    return AiResponse(200, Json.objectOf("pass" to Json.of(identity), "expiresIn" to Json.of(600000)))
+                }
+                override suspend fun request(request: AiRequest): AiResponse {
+                    requests += request
+                    return AiResponse(200, events = flow { emit(event(1, fixture().member("textEvents").arr()[3])) })
+                }
+            }, reports)
+            val boundary = object : AiClient by client {
+                override suspend fun text(callId: String, request: Json, pictures: List<Picture>, label: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer {
+                    entered.complete(Unit); release.await()
+                    return client.text(callId, request, pictures, label, use, version, stop, onText)
+                }
+            }
+            val host = ProbeHost(Json.objectOf(), null, mutableListOf(), mutableListOf())
+            val runner = TurnRunner(host, boundary, reports, CoachRuntime(CoachBackgroundLease { AutoCloseable {} }))
+            val old = async { runner.run(TurnInput("old", Seat(SeatKind.bound, "old"), "old question", emptyList()), profile()) }
+            entered.await(); runner.seatWillChange(); identity = "new"; release.complete(Unit)
+            assertEquals(TurnEnd(EndState.interrupted, ""), old.await())
+            assertEquals(emptyList<String>(), passes)
+            assertEquals(emptyList<AiRequest>(), requests)
+            assertEquals(TurnEnd(EndState.completed, ""), runner.run(TurnInput("new", Seat(SeatKind.bound, "new"), "new question", emptyList()), profile()))
+            assertEquals(listOf("new"), passes)
+            assertEquals(listOf("new"), requests.map { it.pass })
+            assertEquals(Json.parse("""[{"role":"user","parts":[{"text":"Question: new question"}]}]"""), Json.parse(requests.single().body!!).member("messages"))
+            assertEquals(emptyList<FailureOperation>(), reports.failures)
+        }
+    }
+
+    @Test fun malformedRefusalAllowancesAreOneBoundedWireDefectAtBothDoors() = runBlocking {
+        for (picture in listOf(false, true)) for (code in listOf("subject_exhausted", "pass_expired")) {
+            val reports = Reports()
+            val paths = mutableListOf<String>()
+            val client = CoachAiClient(object : AiTransport {
+                override suspend fun pass(body: Json) = AiResponse(200, Json.objectOf("pass" to Json.of("pass"), "expiresIn" to Json.of(600000)))
+                override suspend fun request(request: AiRequest): AiResponse {
+                    paths += request.path
+                    return AiResponse(429, Json.objectOf("code" to Json.of(code), "allowance" to Json.objectOf("bogus" to Json.of(true))))
+                }
+            }, reports)
+            val answer = if (picture) client.text("AAAAAAAAAAAAAAAAAAAAAA", Json.objectOf(), listOf(Picture("BBBBBBBBBBBBBBBBBBBBBB", "image/png", byteArrayOf(1))), "other", "vector.coach", 1, StopSignal()) {}
+                else client.allowance("vector.coach", 1).second
+            assertEquals(AiAnswer.Failure(AiFailure("wire", "invalid-answer", Admission.none)), answer)
+            assertEquals(listOf(FailureOperation.aiCall), reports.failures)
+            assertEquals(listOf(if (picture) "/v1/pictures/BBBBBBBBBBBBBBBBBBBBBB" else "/v1/allowance"), paths)
+        }
+    }
+
     @Test fun passCacheExpiresAtRefreshBoundaryAndSeatChangeDropsThePass() = runBlocking {
         var now = 0L; var passes = 0
         val requests = mutableListOf<AiRequest>()

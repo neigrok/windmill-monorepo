@@ -121,6 +121,8 @@ interface AiClient {
 // Stop wakes retry waits. It never cancels an admitted provider call or the host's pending commit.
 class StopSignal {
     private val signal = CompletableDeferred<Unit>()
+    @Volatile var invalidated = false; private set
+    fun invalidate() { invalidated = true; stop() }
     val stopped get() = signal.isCompleted
     fun stop() { signal.complete(Unit) }
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)

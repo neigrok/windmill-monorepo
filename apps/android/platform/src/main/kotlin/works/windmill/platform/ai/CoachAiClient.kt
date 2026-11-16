@@ -58,10 +58,14 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
         }
     }
 
-    override suspend fun text(callId: String, request: Json, pictures: List<Picture>, label: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer =
-        operation(callId, request.jcs, pictures, label, use, version, stop, onText, false)
+    override suspend fun text(callId: String, request: Json, pictures: List<Picture>, label: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer {
+        val currentGeneration = generation
+        if (stop.invalidated) return AiAnswer.Failure(AiFailure("pass", null, Admission.none))
+        val body = request.jcs
+        return operation(currentGeneration, callId, body, pictures, label, use, version, stop, onText, false)
+    }
     override suspend fun result(callId: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit): AiAnswer =
-        operation(callId, null, emptyList(), "", use, version, stop, onText, true)
+        operation(generation, callId, null, emptyList(), "", use, version, stop, onText, true)
 
     suspend fun allowance(use: String, version: Long): Pair<Json?, AiAnswer.Failure?> {
         val currentGeneration = generation
@@ -74,8 +78,10 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                     if (currentGeneration != generation) return null to AiAnswer.Failure(AiFailure("pass", null, Admission.none))
                     if (response.status == 200) { AiWire.allowance(response.body!!); return response.body to null }
                     val code = response.body?.get("code")?.str()
+                    val allowance = response.body?.get("allowance")?.orNull()
+                    allowance?.let(AiWire::allowance)
                     if (code == "pass_expired" && !refreshed) refreshed = true
-                    else return null to failure("text", code?.takeIf { it in codes } ?: "invalid-answer", Admission.none, response.body?.get("allowance")?.orNull())
+                    else return null to failure("text", code?.takeIf { it in codes } ?: "invalid-answer", Admission.none, allowance)
                 }
             }
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -83,7 +89,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
             if (currentGeneration != generation || error is AiTransportFailure && error.code == "seat-changed")
                 return null to AiAnswer.Failure(AiFailure("pass", null, Admission.none))
             val lost = error is AiTransportFailure && error.code in setOf("offline", "lost")
-            return null to failure(if (error is AiTransportFailure) "transport" else "wire", if (lost) null else "invalid-answer", Admission.none)
+            return null to failure(if (error is AiTransportFailure && error.code != "invalid-answer") "transport" else "wire", if (lost) null else "invalid-answer", Admission.none)
         }
     }
 
@@ -92,9 +98,8 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
         return AiAnswer.Failure(AiFailure(source, code, admission, allowance))
     }
 
-    private suspend fun operation(callId: String, body: String?, pictures: List<Picture>, label: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit, recover: Boolean): AiAnswer {
+    private suspend fun operation(currentGeneration: Long, callId: String, body: String?, pictures: List<Picture>, label: String, use: String, version: Long, stop: StopSignal, onText: suspend (String) -> Unit, recover: Boolean): AiAnswer {
         require(Regex("[A-Za-z0-9_-]{22,64}").matches(callId))
-        val currentGeneration = generation
         var start: Long? = if (recover) now() else null
         var admission = if (recover) Admission.admitted else Admission.none
         var lost = recover
@@ -108,20 +113,24 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
         fun promote(value: Admission) { if (value > admission) admission = value }
         fun seatChanged() = AiAnswer.Failure(AiFailure("pass", null, admission))
         operation@ while (true) {
-            if (currentGeneration != generation) return seatChanged()
+            if (currentGeneration != generation || stop.invalidated) return seatChanged()
             if (retry > 0 && now() >= start!! + if (lost) 1_200_000 else 30_000) return if (lost) failure("result", "answer-timeout", admission) else lastFailure!!
             try {
                 val (pass, refusal) = credential(use, version, currentGeneration, forcePass)
+                if (currentGeneration != generation || stop.invalidated) return seatChanged()
                 forcePass = false
                 if (refusal != null) return AiAnswer.Failure(refusal.failure.copy(admission = admission))
                 for (picture in pictures) {
                     if (synchronized(state) { picture.pictureId in uploads }) continue
+                    if (currentGeneration != generation || stop.invalidated) return seatChanged()
                     transport.request(AiRequest("PUT", "/v1/pictures/${picture.pictureId}", pass!!, bytes = picture.bytes, mediaType = picture.mediaType)).use { response ->
-                        if (currentGeneration != generation) return seatChanged()
+                        if (currentGeneration != generation || stop.invalidated) return seatChanged()
                         if (response.status != 204) {
                             val code = response.body?.get("code")?.str()
+                            val allowance = response.body?.get("allowance")?.orNull()
+                            allowance?.let(AiWire::allowance)
                             if (code == "pass_expired" && !refresh) { refresh = true; forcePass = true }
-                            else return failure("text", code?.takeIf { it in codes } ?: "invalid-answer", admission, response.body?.get("allowance")?.orNull())
+                            else return failure("text", code?.takeIf { it in codes } ?: "invalid-answer", admission, allowance)
                         } else synchronized(state) { if (currentGeneration == generation) uploads += picture.pictureId }
                     }
                     if (forcePass) continue@operation
@@ -129,16 +138,18 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                 val read = recover || cursor > 0
                 val path = if (read) "/v1/calls/$callId/result" + if (cursor > 0) "?after=$cursor" else "" else "/v1/calls/$callId/text?label=" + URLEncoder.encode(label, "UTF-8").replace("+", "%20")
                 if (start == null) start = now()
+                if (currentGeneration != generation || stop.invalidated) return seatChanged()
                 val response = try { transport.request(AiRequest(if (read) "GET" else "PUT", path, pass!!, if (read) null else body, timeoutMs = maxOf(1, start!! + 1_200_000 - now()))) }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) {
+                    if (currentGeneration != generation || stop.invalidated) return seatChanged()
                     promote(Admission.possible); lost = true
                     if (error !is AiTransportFailure || error.code !in setOf("offline", "lost")) return failure("transport", "invalid-answer", admission)
                     null
                 }
                 var repaired = false
                 response?.use {
-                    if (currentGeneration != generation) return seatChanged()
+                    if (currentGeneration != generation || stop.invalidated) return seatChanged()
                     if (response.status != 200) {
                         val code = response.body?.get("code")?.str()
                         if (code !in codes) return failure("wire", "invalid-answer", admission)
@@ -160,7 +171,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                         promote(Admission.possible)
                         try {
                             val terminal = response.events?.firstOrNull { event ->
-                                if (currentGeneration != generation) throw AiTransportFailure("seat-changed")
+                                if (currentGeneration != generation || stop.invalidated) throw AiTransportFailure("seat-changed")
                                 AiWire.event(event)
                                 val id = event.member("id").long(1)
                                 if (id <= cursor) return@firstOrNull false
@@ -187,7 +198,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 if (callbackFailure === error || error is HostUnavailable) throw error
-                if (error is AiTransportFailure && error.code == "seat-changed") return seatChanged()
+                if (currentGeneration != generation || stop.invalidated || error is AiTransportFailure && error.code == "seat-changed") return seatChanged()
                 if (error is AiTransportFailure && error.code in setOf("offline", "lost")) return failure("transport", null, admission)
                 return failure("wire", "invalid-answer", admission)
             }
