@@ -10,7 +10,7 @@ import SyncCore
       .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let directory = root.appending(path: "packages/api-contract/agent/turns")
     let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.pathExtension == "json" }.sorted { $0.path < $1.path }
-    #expect(files.count >= 50)
+    #expect(files.count >= 54)
     for file in files {
       let story = try JSON(parsing: Array(Data(contentsOf: file)))
       let harness = try StoryHarness(story)

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Agent
 import SyncCore
 
@@ -21,7 +22,7 @@ nonisolated public struct AiCredentials: Sendable {
 
 @MainActor public final class AiSystemClock: AiClock {
   public init() {}
-  public var nowMs: Int64 { Int64(ProcessInfo.processInfo.systemUptime * 1_000) }
+  public var nowMs: Int64 { Int64(clock_gettime_nsec_np(CLOCK_MONOTONIC) / 1_000_000) }
   public func wait(ms: Int64) async throws { try await Task.sleep(for: .milliseconds(ms)) }
 }
 
@@ -218,6 +219,7 @@ nonisolated public struct AiCredentials: Sendable {
     } catch let failure as AiFailure { throw failure }
     catch let failure as HostFailure { throw failure }
     catch {
+      try fence(epoch)
       if error as? AiTransportFailure != .offline { diagnostics.failure(operation: "ai-pass", kind: "transport") }
       throw AiFailure(source: .pass, code: error as? AiTransportFailure == .offline ? "offline" : "invalid-answer")
     }
@@ -232,6 +234,7 @@ nonisolated public struct AiCredentials: Sendable {
         response = try await transport.send(AiRequest(method: method, path: path,
           headers: ["Authorization": "Bearer " + token, "Content-Type": contentType], body: data))
       } catch {
+        try fence(epoch)
         if error as? AiTransportFailure != .offline { diagnostics.failure(operation: "ai-call", kind: "transport") }
         throw AiFailure(source: .transport, code: error as? AiTransportFailure == .offline ? "offline" : "invalid-answer")
       }
@@ -281,7 +284,7 @@ nonisolated public struct AiCredentials: Sendable {
   static let transientCodes: Set<String> = ["busy", "paused", "rate_limited", "concurrency_exhausted", "accounting_unavailable", "provider_unavailable"]
   static let defectCodes: Set<String> = ["invalid_request", "too_large", "provider_rejected", "funding_required", "conflict", "call_unknown"]
   static func validID(_ value: String) -> Bool {
-    value.utf8.count == 22 && value.utf8.allSatisfy { (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 95 }
+    (22...64).contains(value.utf8.count) && value.utf8.allSatisfy { (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 95 }
   }
   static func validate(_ event: AiEvent) throws {
     let value = try event.data.asObject()
