@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
+import { navigationBrowser } from '../../../shell/navigationBrowser.mjs';
 import { browserWith, elementsOf, loadScreen, renderHook, textOf } from '../../gym/harness.mjs';
 
 function door(t, { status, indexedDB }) {
@@ -12,7 +13,9 @@ function door(t, { status, indexedDB }) {
     }
   });
   browserWith();
-  Object.assign(globalThis.window.location, { hash: '#/app/new', pathname: '/app/roadmap', search: '' });
+  const { localStorage } = window;
+  const { browser } = navigationBrowser(t, { href: '/app/roadmap#/app/new', install: false });
+  globalThis.window = Object.assign(browser, { localStorage });
   globalThis.window.innerWidth = 1440;
   globalThis.window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
   Object.defineProperty(globalThis, 'indexedDB', { configurable: true, writable: true, value: indexedDB });
