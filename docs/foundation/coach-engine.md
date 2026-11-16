@@ -140,6 +140,7 @@ installation routes already answer keep their meaning:
 | 426 | `client-update-required` | The version of this use is retired |
 | 429 | `rate_limited` | The address or the principal asked too often |
 | 503 | `anonymous_ai_unavailable` | Signed-out AI is switched off on this server |
+| 503 | `unavailable` | The backend failed to issue a pass; a technical failure under `ai-pass` |
 
 Issuing an installation credential and binding it to an account stay the backend's routes they are
 ([phone-hosted Coach abilities](mobile/gym_coach.md) §8). A binding is stated to the AI service by

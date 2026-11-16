@@ -240,6 +240,10 @@ def stories():
         finish(s,state,'',rounds=0); out.append(s)
     s=story('pass-door-refused'); opened(s); begin(s,0,'',[first(s)]); s['expected']['requests']=[]
     s['service']['passes']=[{'status':401,'code':'unauthenticated'}]; finish(s,'failed','','unauthenticated',withdraw=True); out.append(s)
+    s=story('pass-door-unavailable'); opened(s); begin(s,0,'',[first(s)]); s['expected']['requests']=[]
+    s['service']['passes']=[{'status':503,'code':'unavailable'}]
+    s['expected']['telemetry'].append({'kind':'failure','operation':'ai-pass'})
+    finish(s,'failed','','unavailable',withdraw=True); out.append(s)
     encoded = json.dumps(tool_story('call-id-widths', [{}]))
     for before, after in zip(CALLS[:2], ['A' * 24, 'B' * 64]):
         encoded = encoded.replace(before, after)
