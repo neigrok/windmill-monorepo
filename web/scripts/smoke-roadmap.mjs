@@ -172,8 +172,9 @@ async function switchToBoard(page, role) {
 
 async function openFirstStep(page) {
   const card = boardCards(page).first();
-  const title = (await card.locator('.st-board-card-title').innerText()).trim();
-  await card.click();
+  const titleLabel = card.locator('.st-board-card-title');
+  const title = (await titleLabel.innerText()).trim();
+  await titleLabel.click();
   await stepDocument(page).waitFor();
   await page.evaluate(settleVisuals);
   const shown = (await stepDocument(page).innerText()).trim();
