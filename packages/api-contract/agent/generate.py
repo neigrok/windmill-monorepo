@@ -203,6 +203,11 @@ def stories():
     s['service']['exchanges']=[exchange(broken=True),exchange(refusal=refusal('subject_exhausted'))]
     s['expected']['requests'] *= 2; s['expected']['waitsMs']=[1000]
     finish(s,'failed','','subject_exhausted',duration=1000); out.append(s)
+    for code in ['paused', 'provider_unavailable']:
+        s=story('lost-then-' + code); opened(s); begin(s,0,'',[first(s)])
+        s['service']['exchanges']=[exchange(broken=True),exchange(refusal=refusal(code))]
+        s['expected']['requests'] *= 2; s['expected']['waitsMs']=[1000]
+        finish(s,'failed','',code,duration=1000); out.append(s)
     s=story('answer-deadline'); opened(s); begin(s,0,'',[first(s)])
     s['service']['exchanges']=[exchange(broken=True,repeat=153)]
     s['expected']['requests'] *= 153; s['expected']['waitsMs']=[1000,2000,4000]+[8000]*149+[1000]
