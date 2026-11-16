@@ -26,8 +26,8 @@ import SyncCore
     transport.answer(["pass": "new-pass", "expiresIn": 600000])
     await transport.pending()
     #expect(transport.requests[2].headers == ["Authorization": "Bearer new-pass", "Content-Type": "application/json"])
-    transport.answer(["code": "ok"])
-    #expect(try await fresh.value == ["code": "ok"])
+    transport.answer(try Self.allowance())
+    #expect(try await fresh.value == Self.allowance())
     #expect(diagnostics.failures == [])
   }
 
@@ -49,8 +49,8 @@ import SyncCore
         await transport.pending()
       }
       #expect(transport.requests.last?.path == "/v1/allowance")
-      transport.answer(["code": "ok"])
-      #expect(try await call.value == ["code": "ok"])
+      transport.answer(try Self.allowance())
+      #expect(try await call.value == Self.allowance())
     }
     #expect(transport.requests.map(\.path) == ["/v1/ai/passes", "/v1/allowance", "/v1/allowance", "/v1/ai/passes", "/v1/allowance"])
     client.seatWillChange()
@@ -66,6 +66,50 @@ import SyncCore
     await transport.pending(); client.seatWillChange(); transport.answer(["code": "subject_exhausted"])
     await #expect(throws: HostFailure.self) { try await call.value }
     #expect(client.lastAllowance == nil)
+  }
+
+  @Test func offlinePassAndPictureRequestsStayQuietAndMapToOffline() async throws {
+    let profile = try Self.profile()
+    for picture in [false, true] {
+      let diagnostics = PolicyDiagnostics()
+      let transport = OfflineAiTransport(picture: picture)
+      let client = ServiceAiClient(transport: transport, clock: PolicyClock(), diagnostics: diagnostics, credentials: { _ in AiCredentials() })
+      do {
+        if picture { try await client.upload([Picture(pictureId: String(repeating: "P", count: 22), mediaType: "image/png", bytes: [137, 80, 78, 71])], profile: profile, seat: Seat(kind: .anon, key: "seat")) }
+        else { _ = try await client.allowance(profile: profile, seat: Seat(kind: .anon, key: "seat")) }
+        Issue.record("Offline request succeeded")
+      } catch let error as AiFailure {
+        #expect(error.source == .transport)
+        #expect(error.code == nil)
+        #expect(Access.forFailure(error) == .offline)
+      }
+      #expect(diagnostics.failures == [])
+    }
+  }
+
+  @Test func aLostPassBodyIsOfflineAndAnOldSeatsMalformedBodyIsFenced() async throws {
+    let profile = try Self.profile()
+    let diagnostics = PolicyDiagnostics()
+    let lost = AiResponse(status: 200, contentType: "application/json", bytes: AsyncThrowingStream { $0.finish(throwing: AiTransportFailure.offline) })
+    let client = ServiceAiClient(transport: ValidationTransport([lost]), clock: PolicyClock(), diagnostics: diagnostics, credentials: { _ in AiCredentials() })
+    do { _ = try await client.allowance(profile: profile, seat: Seat(kind: .anon, key: "seat")); Issue.record("Lost pass succeeded") }
+    catch let error as AiFailure { #expect(error.source == .transport); #expect(error.code == nil) }
+    #expect(diagnostics.failures == [])
+    let body = AsyncThrowingStream<[UInt8], Error>.makeStream()
+    let transport = ValidationTransport([AiResponse(status: 200, contentType: "application/json", bytes: body.stream)])
+    let staleClient = ServiceAiClient(transport: transport, clock: PolicyClock(), diagnostics: diagnostics, credentials: { _ in AiCredentials() })
+    let pending = Task { try await staleClient.allowance(profile: profile, seat: Seat(kind: .anon, key: "old")) }
+    while transport.requests.isEmpty { await Task.yield() }
+    staleClient.seatWillChange()
+    body.continuation.yield(Array("invalid JSON".utf8)); body.continuation.finish()
+    await #expect(throws: HostFailure.self) { try await pending.value }
+    #expect(diagnostics.failures == [])
+  }
+
+  static func allowance() throws -> JSON {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    return try JSON(parsing: Array(Data(contentsOf: root.appending(path: "packages/api-contract/ai/wire/fixtures.json")))).field("allowance")
   }
 
   static func profile() throws -> Profile {
@@ -106,4 +150,13 @@ import SyncCore
 @MainActor final class PolicyDiagnostics: AiDiagnostics {
   var failures: [String] = []
   func failure(operation: String, kind: String) { failures.append(operation) }
+}
+
+@MainActor final class OfflineAiTransport: AiTransport {
+  let picture: Bool
+  init(picture: Bool) { self.picture = picture }
+  func send(_ request: AiRequest) async throws -> AiResponse {
+    if picture && request.path == "/v1/ai/passes" { return ValidationTransport.pass() }
+    throw AiTransportFailure.offline
+  }
 }

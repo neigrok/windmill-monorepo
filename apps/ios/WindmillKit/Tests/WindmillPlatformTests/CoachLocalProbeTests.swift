@@ -72,6 +72,7 @@ import SyncCore
   func acquire() async throws {}
   func release() {}
   func failure(operation: String, kind: String) { failures.append(operation) }
+  func hostFailure() { failure(operation: "agent-host", kind: "host") }
   func ability(name: String, code: String?) {}
   func turn(state: TurnEnd.State, seat: Seat.Kind, code: String?, rounds: Int, abilityCalls: Int, refusals: Int, answerBytes: Int, durationMs: Int64) {}
 

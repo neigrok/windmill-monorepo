@@ -22,7 +22,9 @@ live sync connection and corrected server time; it never consults a wall clock i
 limits, execution/write volume, product and Stop in that order. Only admitted executions consume
 volume; successful executions consume group slots. Product refusal sentences are carried as JSON
 error content. Telemetry contains bounded ability names, refusal labels and turn counts, never
-questions, results, credentials, seat keys or call identifiers.
+questions, results, credentials, seat keys or call identifiers. `Telemetry.hostFailure()` has no
+payload: the integration routes it to static failure operation `agent-host` for unexpected host,
+storage and runtime failures. Expected record deletion, stale seats and host refusals stay quiet.
 
 The package boundary test rejects product nouns and every import except SyncCore.
 

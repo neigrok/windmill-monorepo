@@ -26,7 +26,7 @@ import SyncCore
       #expect(parsed[0].id == 1)
       #expect(try parsed[0].name == value.field("event").string)
       #expect(parsed[0].data == value.field("data"))
-      try ServiceAiClient.validate(parsed[0])
+      try AiWire.event(parsed[0])
     }
     var parser = AiEventParser()
     let bytes = Array("id: 3\nevent: text\ndata: {\"delta\":\"é🙂\"}\n\n".utf8)

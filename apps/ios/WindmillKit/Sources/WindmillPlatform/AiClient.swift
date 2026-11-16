@@ -4,6 +4,13 @@ import Agent
 import SyncCore
 
 nonisolated struct AiDeliveryFailure: Error { let error: any Error }
+nonisolated struct AiDeadlineFailure: Error {}
+
+final class AiRoundBudget {
+  let deadline: Int64
+  var admission: Admission
+  init(deadline: Int64, admission: Admission) { self.deadline = deadline; self.admission = admission }
+}
 
 nonisolated public struct AiCredentials: Sendable {
   public let session: String?
@@ -14,6 +21,13 @@ nonisolated public struct AiCredentials: Sendable {
 @MainActor public protocol AiClock: AnyObject {
   var nowMs: Int64 { get }
   func wait(ms: Int64) async throws
+  func waitUntil(_ deadline: Int64) async throws
+}
+
+extension AiClock {
+  public func waitUntil(_ deadline: Int64) async throws {
+    try await Task.sleep(for: .milliseconds(max(0, deadline - nowMs)))
+  }
 }
 
 @MainActor public protocol AiDiagnostics: AnyObject {
@@ -58,8 +72,10 @@ nonisolated public struct AiCredentials: Sendable {
   public func allowance(profile: Profile, seat: Seat) async throws -> JSON {
     let epoch = generation
     let response = try await authorized(method: "GET", path: "/v1/allowance", profile: profile, seat: seat, epoch: epoch)
-    let value = try await body(response, operation: "ai-call")
+    guard response.status == 200 else { throw defect("invalid-answer", source: .wire) }
+    let value = try await body(response, operation: "ai-call", epoch: epoch)
     try fence(epoch)
+    do { try AiWire.allowance(value) } catch { throw defect("invalid-answer", source: .wire) }
     lastAllowance = value
     return value
   }
@@ -90,13 +106,37 @@ nonisolated public struct AiCredentials: Sendable {
   func round(id: String, body: [UInt8]?, profile: Profile, seat: Seat, pictures: [Picture], recover: Bool,
              receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
     guard Self.validID(id) else { throw defect("invalid_request", source: .wire) }
-    stop = false
     let epoch = generation
-    let deadline = clock.nowMs + 1_200_000
+    stop = false
+    let budget = AiRoundBudget(deadline: clock.nowMs + 1_200_000, admission: recover ? .admitted : .none)
+    do {
+      let operation: @Sendable () async throws -> Void = { @MainActor [self] in
+        try await exchange(id: id, body: body, profile: profile, seat: seat, pictures: pictures,
+          recover: recover, budget: budget, epoch: epoch, receive: receive)
+      }
+      let expiry: @Sendable () async throws -> Void = { @MainActor [self] in
+        try await clock.waitUntil(budget.deadline)
+        throw AiDeadlineFailure()
+      }
+      try await withThrowingTaskGroup(of: Void.self) { group in
+        group.addTask(operation: operation)
+        group.addTask(operation: expiry)
+        defer { group.cancelAll() }
+        _ = try await group.next()
+      }
+    } catch is AiDeadlineFailure {
+      throw AiFailure(source: .transport, code: "answer-timeout", admission: budget.admission)
+    }
+  }
+
+  func exchange(id: String, body: [UInt8]?, profile: Profile, seat: Seat, pictures: [Picture], recover: Bool,
+                budget: AiRoundBudget, epoch: UInt64, receive: @escaping @MainActor (AiEvent) async throws -> Void) async throws {
+    let deadline = budget.deadline
     var refusalDeadline: Int64?
     var lastRefusal: AiFailure?
     var cursor: Int64 = 0
-    var admission: Admission = recover ? .admitted : .none
+    var admission = budget.admission
+    defer { budget.admission = admission }
     var attempt = 0
     var passRefresh = false
     var pictureRefresh = false
@@ -111,12 +151,16 @@ nonisolated public struct AiCredentials: Sendable {
       let label = profile.label.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+#?"))) ?? ""
       let path = method == "GET" ? "/v1/calls/\(id)/result" + (cursor > 0 ? "?after=\(cursor)" : "") : "/v1/calls/\(id)/text?label=\(label)"
       let source: AiFailure.Source = method == "GET" ? .result : .text
+      var attemptSent = false
       do {
         let token = try await token(profile: profile, seat: seat, epoch: epoch)
+        guard clock.nowMs < deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: admission) }
+        attemptSent = true
         let response = try await transport.send(AiRequest(method: method, path: path,
           headers: ["Authorization": "Bearer " + token, "Content-Type": "application/json", "Accept": "text/event-stream"],
           body: method == "PUT" ? body : nil))
         try fence(epoch)
+        guard clock.nowMs < deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: max(admission, .possible)) }
         if !(200..<300).contains(response.status) {
           let failure = try await refusal(response, source: source, admission: admission, epoch: epoch)
           try fence(epoch)
@@ -132,7 +176,7 @@ nonisolated public struct AiCredentials: Sendable {
           if Self.defectCodes.contains(failure.code ?? "") || failure.code?.hasPrefix("pass_") == true || failure.code == "picture_gone" {
             throw defect(failure.code ?? "invalid-answer", source: source, admission: admission)
           }
-          let transient = Self.transientCodes.contains(failure.code ?? "")
+          let transient = (lost ? Self.recoveryRetryCodes : Self.transientCodes).contains(failure.code ?? "")
           if !transient { throw result }
           if refusalDeadline == nil { refusalDeadline = clock.nowMs + 30_000 }
           let until = lost ? deadline : min(deadline, refusalDeadline!)
@@ -142,19 +186,20 @@ nonisolated public struct AiCredentials: Sendable {
           attempt += 1
           continue
         }
-        guard response.contentType.lowercased().hasPrefix("text/event-stream") else {
+        guard response.status == 200, response.contentType.lowercased().split(separator: ";").first?.trimmingCharacters(in: .whitespaces) == "text/event-stream" else {
           throw defect("invalid-answer", source: .wire, admission: max(admission, .possible))
         }
         var parser = AiEventParser()
         for try await chunk in response.bytes {
           try fence(epoch)
+          guard clock.nowMs < deadline else { throw AiFailure(source: .transport, code: "answer-timeout", admission: max(admission, .possible)) }
           let events: [AiEvent]
           do { events = try parser.append(chunk) }
           catch { throw defect("invalid-answer", source: .wire, admission: max(admission, .possible)) }
           for event in events {
+            do { try AiWire.event(event, callID: id) }
+            catch { throw defect("invalid-answer", source: .wire, admission: max(admission, .possible)) }
             guard event.id > cursor else { continue }
-            do { try Self.validate(event) }
-            catch { throw defect("invalid-answer", source: .wire, admission: .admitted) }
             if event.name == "failed", let code = try event.data.asObject()["code"]?.asString(), Self.defectCodes.contains(code) {
               diagnostics.failure(operation: "ai-call", kind: "refusal")
             }
@@ -172,8 +217,8 @@ nonisolated public struct AiCredentials: Sendable {
         throw AiFailure(source: failure.source, code: failure.code, admission: max(admission, failure.admission), allowance: failure.allowance)
       } catch let failure as HostFailure { throw failure }
       catch {
+        if attemptSent { admission = max(admission, .possible) }
         try fence(epoch)
-        admission = max(admission, .possible)
         if error as? AiTransportFailure != .offline { diagnostics.failure(operation: "ai-call", kind: "transport") }
       }
       askAgain = true; lost = true
@@ -198,22 +243,29 @@ nonisolated public struct AiCredentials: Sendable {
   func token(profile: Profile, seat: Seat, epoch: UInt64) async throws -> String {
     if let pass, pass.seat == seat, pass.use == profile.name, pass.version == profile.version,
        pass.expiresAt - clock.nowMs >= 60_000 { return pass.token }
-    let auth = try credentials(seat)
-    var headers = ["Content-Type": "application/json", "Accept": "application/json"]
-    if let session = auth.session { headers["Authorization"] = "Bearer " + session }
-    if let installation = auth.installation { headers["X-Windmill-Installation"] = installation }
-    let request = JSON.object(.init(uniqueKeysWithValues: [("client", .string("ios")),
-      ("use", .string(profile.name)), ("version", .number(.init(profile.version)))]))
     let start = clock.nowMs
     do {
+      let auth = try credentials(seat)
+      var headers = ["Content-Type": "application/json", "Accept": "application/json"]
+      if let session = auth.session { headers["Authorization"] = "Bearer " + session }
+      if let installation = auth.installation { headers["X-Windmill-Installation"] = installation }
+      let request = JSON.object(.init(uniqueKeysWithValues: [("client", .string("ios")),
+        ("use", .string(profile.name)), ("version", .number(.init(profile.version)))]))
       let response = try await transport.send(AiRequest(method: "POST", path: "/v1/ai/passes", headers: headers, body: request.jcs))
       try fence(epoch)
       if !(200..<300).contains(response.status) { throw try await refusal(response, source: .pass, admission: .none, epoch: epoch) }
-      let value = try await body(response, operation: "ai-pass").asObject()
+      guard response.status == 200 else { throw defect("invalid-answer", source: .pass) }
+      let body = try await body(response, operation: "ai-pass", epoch: epoch)
+      let value: JSON.Object
+      do { value = try AiWire.fields(body, "pass expiresIn") } catch { throw defect("invalid-answer", source: .pass) }
       try fence(epoch)
-      let token = try value.member("pass").asString()
-      let expires = try value.member("expiresIn").asInteger()
-      guard !token.isEmpty, expires > 0, expires <= 600_000 else { throw AiTransportFailure.invalidResponse }
+      let token: String
+      let expires: Int64
+      do {
+        token = try value.member("pass").asString()
+        expires = try value.member("expiresIn").asInteger()
+        guard !token.isEmpty, expires > 0, expires <= 600_000 else { throw AiTransportFailure.invalidResponse }
+      } catch { throw defect("invalid-answer", source: .pass) }
       pass = Pass(token: token, expiresAt: start + expires, seat: seat, use: profile.name, version: profile.version)
       return token
     } catch let failure as AiFailure { throw failure }
@@ -221,7 +273,7 @@ nonisolated public struct AiCredentials: Sendable {
     catch {
       try fence(epoch)
       if error as? AiTransportFailure != .offline { diagnostics.failure(operation: "ai-pass", kind: "transport") }
-      throw AiFailure(source: .pass, code: error as? AiTransportFailure == .offline ? "offline" : "invalid-answer")
+      throw AiFailure(source: error as? AiTransportFailure == .offline ? .transport : .pass, code: error as? AiTransportFailure == .offline ? nil : "invalid-answer")
     }
   }
 
@@ -236,7 +288,7 @@ nonisolated public struct AiCredentials: Sendable {
       } catch {
         try fence(epoch)
         if error as? AiTransportFailure != .offline { diagnostics.failure(operation: "ai-call", kind: "transport") }
-        throw AiFailure(source: .transport, code: error as? AiTransportFailure == .offline ? "offline" : "invalid-answer")
+        throw AiFailure(source: .transport, code: error as? AiTransportFailure == .offline ? nil : "invalid-answer")
       }
       try fence(epoch)
       if (200..<300).contains(response.status) { return response }
@@ -250,56 +302,62 @@ nonisolated public struct AiCredentials: Sendable {
     throw defect("pass_expired", source: .text)
   }
 
-  func body(_ response: AiResponse, operation: String) async throws -> JSON {
+  func body(_ response: AiResponse, operation: String, epoch: UInt64) async throws -> JSON {
     var bytes: [UInt8] = []
     do {
+      guard response.contentType.lowercased().split(separator: ";").first?.trimmingCharacters(in: .whitespaces) == "application/json" else { throw AiTransportFailure.invalidResponse }
       for try await chunk in response.bytes {
+        try fence(epoch)
         bytes += chunk
         guard bytes.count <= 2_000_000 else { throw AiTransportFailure.invalidResponse }
       }
+      try fence(epoch)
       return try JSON(parsing: bytes)
     } catch {
-      diagnostics.failure(operation: operation, kind: "wire")
-      throw AiFailure(source: .wire, code: "invalid-answer")
+      try fence(epoch)
+      if error as? AiTransportFailure == .offline { throw AiFailure(source: .transport, code: nil) }
+      let transportFailure = error as? AiTransportFailure == .transport
+      diagnostics.failure(operation: operation, kind: transportFailure ? "transport" : "wire")
+      throw AiFailure(source: transportFailure ? .transport : .wire, code: "invalid-answer")
     }
   }
 
   func refusal(_ response: AiResponse, source: AiFailure.Source, admission: Admission, epoch: UInt64) async throws -> AiFailure {
     if source == .pass && response.status == 404 { return AiFailure(source: source, code: "not-found", admission: admission) }
-    let value = try await body(response, operation: source == .pass ? "ai-pass" : "ai-call").asObject()
-    guard let code = try value["code"]?.asString() else { throw defect("invalid-answer", source: .wire, admission: admission) }
+    let body = try await body(response, operation: source == .pass ? "ai-pass" : "ai-call", epoch: epoch)
     try fence(epoch)
-    guard AiFailure.codes.contains(code) else { throw defect("invalid-answer", source: source, admission: admission) }
-    let allowance = value["allowance"].flatMap { $0 == .null ? nil : $0 }
+    let code: String
+    let allowance: JSON?
+    do {
+      let value = try AiWire.fields(body, source == .pass ? "error code" : "code allowance")
+      code = try value.member("code").asString()
+      if source == .pass {
+        _ = try value.member("error").asString()
+        guard AiWire.passStatus[code] == response.status else { throw AiTransportFailure.invalidResponse }
+        allowance = nil
+      } else {
+        guard AiWire.refusalStatus[code] == response.status else { throw AiTransportFailure.invalidResponse }
+        try AiWire.allowance(value.member("allowance"), nullable: true)
+        allowance = value["allowance"].flatMap { $0 == .null ? nil : $0 }
+      }
+    } catch { throw defect("invalid-answer", source: source == .pass ? .pass : .wire, admission: admission) }
     if let allowance { lastAllowance = allowance }
-    if source == .pass && Self.defectCodes.contains(code) { diagnostics.failure(operation: "ai-pass", kind: "refusal") }
+    if source == .pass && (Self.defectCodes.contains(code) || ["untrusted-origin", "unsupported-media-type", "unavailable"].contains(code)) { diagnostics.failure(operation: "ai-pass", kind: "refusal") }
     return AiFailure(source: source, code: code, admission: admission, allowance: allowance)
   }
 
-  func fence(_ epoch: UInt64) throws { if epoch != generation { throw HostFailure.staleSeat } }
+  func fence(_ epoch: UInt64) throws {
+    if epoch != generation { throw HostFailure.staleSeat }
+    try Task.checkCancellation()
+  }
   func defect(_ code: String, source: AiFailure.Source, admission: Admission = .none) -> AiFailure {
     diagnostics.failure(operation: source == .pass ? "ai-pass" : "ai-call", kind: "wire")
     return AiFailure(source: source, code: code, admission: admission)
   }
+  static let recoveryRetryCodes: Set<String> = ["rate_limited", "busy", "accounting_unavailable"]
   static let transientCodes: Set<String> = ["busy", "paused", "rate_limited", "concurrency_exhausted", "accounting_unavailable", "provider_unavailable"]
   static let defectCodes: Set<String> = ["invalid_request", "too_large", "provider_rejected", "funding_required", "conflict", "call_unknown"]
   static func validID(_ value: String) -> Bool {
     (22...64).contains(value.utf8.count) && value.utf8.allSatisfy { (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 95 }
-  }
-  static func validate(_ event: AiEvent) throws {
-    let value = try event.data.asObject()
-    switch event.name {
-    case "started": _ = try value.member("callId").asString(); _ = try value.member("served").asString(); _ = try value.member("maxTokens").asInteger()
-    case "text": _ = try value.member("delta").asString()
-    case "toolCall": _ = try value.member("id").asString(); _ = try value.member("name").asString(); _ = try value.member("input")
-    case "ended":
-      guard ["completed", "tool_calls", "truncated", "declined"].contains(try value.member("stop").asString()) else { throw AiTransportFailure.invalidResponse }
-      let message = try value.member("message").asObject()
-      guard try message.member("role").asString() == "assistant" else { throw AiTransportFailure.invalidResponse }
-      _ = try message.member("parts").asArray()
-    case "failed":
-      guard AiFailure.codes.contains(try value.member("code").asString()) else { throw AiTransportFailure.invalidResponse }
-    default: throw AiTransportFailure.invalidResponse
-    }
   }
 }

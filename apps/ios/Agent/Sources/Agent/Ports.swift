@@ -99,7 +99,7 @@ public struct AiFailure: Error, Sendable {
     "free_day_exhausted", "free_month_exhausted", "funding_required", "invalid_request", "pass_audience",
     "pass_expired", "pass_malformed", "pass_missing", "pass_signature", "paused", "picture_gone",
     "provider_rejected", "provider_unavailable", "provider_failed", "rate_limited", "result_gone",
-    "subject_exhausted", "too_large", "unauthenticated", "invalid_installation", "client-update-required",
+    "subject_exhausted", "too_large", "unauthenticated", "unavailable", "invalid_installation", "client-update-required",
     "anonymous_ai_unavailable", "not-found", "offline", "invalid-answer", "answer-timeout", "model-call-limit", "stopped",
   ]
   public enum Source: String, Sendable { case pass, text, result, transport, wire }
@@ -139,6 +139,7 @@ public struct AiEvent: Sendable {
 }
 
 @MainActor public protocol Telemetry: AnyObject {
+  func hostFailure()
   func ability(name: String, code: String?)
   func turn(state: TurnEnd.State, seat: Seat.Kind, code: String?, rounds: Int, abilityCalls: Int,
             refusals: Int, answerBytes: Int, durationMs: Int64)

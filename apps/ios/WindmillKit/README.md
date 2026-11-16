@@ -13,7 +13,11 @@ to the pass door. Text, result, allowance and picture requests carry only the pa
 
 Each round retains one serialized body and call ID. Lost streams retry PUT before their first event
 and GET afterward, with monotonic event cursors and incremental UTF-8 parsing. Recovery uses GET
-only. Retry waits are bounded by the thirty-second refusal and twenty-minute recovery deadlines.
+only. Refusal retries stop at thirty seconds. Each round has one twenty-minute deadline spanning
+pass acquisition, requests, streamed reads and recovery waits; expiry cancels its suspended task.
+After a lost answer, only rate-limited, busy and accounting-unavailable refusals retry.
+Every event, terminal, allowance and refusal is validated before delivery, including exact fields,
+nonnegative decimal money, allowance arithmetic and the started event's requested call ID.
 Admission certainty never moves backward. A pass-expired or picture-gone repair runs once under
 the same ID. A seat change cancels local transport, clears cached allowance and cannot authorize
 late replies to publish under another seat.
@@ -26,7 +30,8 @@ writes only the state. `freshness` is unavailable before a clock sample/live sco
 after a clock jump, or during disconnect, background, auth pause or seat transition.
 
 The engine's telemetry port reports ability outcomes and turn state, seat kind, bounded code,
-round/execution/refusal counts, answer bytes and duration. `AiDiagnostics` reports wire defects and
+round/execution/refusal counts, answer bytes and duration. `Telemetry.hostFailure()` reports unexpected
+host and runtime failures under static operation `agent-host`; expected record/seat refusals stay quiet. `AiDiagnostics` reports wire defects and
 unexpected transport errors under static `ai-call` or `ai-pass`; expected refusals remain outcomes.
 Product integration supplies the Sentry and first-party event sinks described in
 [iOS observability](../../../docs/IOS_OBSERVABILITY.md). No SDK key, request, pass, call ID, raw error

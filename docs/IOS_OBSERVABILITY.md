@@ -436,7 +436,11 @@ the app's existing Coach event and failure routes above remain its current wirin
 receives one ability outcome with a profile-allowlisted name (unknown names become `unoffered`)
 and bounded refusal code, and one turn outcome with state, seat kind, bounded code, rounds,
 admitted executions, gate refusals, answer bytes and elapsed milliseconds. Host-returned codes
-outside the profile and engine allowlists become `unknown` in telemetry.
+outside the profile and engine allowlists become `unknown` in telemetry. Its `hostFailure()` port
+carries no data and must report static operation `agent-host`: unexpected host/storage/runtime
+failures at open, recovery, marks, visible text, ability checks/execution or completion use this port.
+Expected record-gone, stale-seat and host refusals produce no Issue. These failures are distinct
+from AI wire defects.
 
 `AiDiagnostics` receives only static operation `ai-call` or `ai-pass` and kind `wire`, `refusal` or
 `transport`. It reports malformed answers, unexpected transport failures and defect refusal codes.
@@ -444,4 +448,7 @@ Offline connections and actionable refusals create no Issue. A pass-expired answ
 a second reports a defect. Picture repair follows the same once-only rule. Passes, installation and
 session credentials, seat keys, call IDs, prompts, questions, text deltas, assistant carry and tool
 inputs/results never enter these ports. The shared-story tests assert complete telemetry traces;
-platform tests assert delayed old-seat replies cannot publish allowance or authorize another seat.
+platform tests reject malformed event, allowance, pass and refusal shapes before delivery, assert
+delayed old-seat replies cannot publish allowance or authorize another seat, and prove a suspended
+response ends at the whole-round deadline. Host fault tests assert only `agent-host`, with no raw
+error text. Offline pass and picture requests map to the offline outcome without an Issue.

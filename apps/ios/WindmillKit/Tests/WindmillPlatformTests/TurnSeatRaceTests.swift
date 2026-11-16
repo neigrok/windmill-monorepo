@@ -94,6 +94,7 @@ import SyncCore
   func check(_ check: GateCheck, call: ToolCall, lease: HostLease) async throws -> String? { try checkLease(lease); return nil }
   func execute(_ call: ToolCall, callId: String, lease: HostLease) async throws -> ToolOutcome { try checkLease(lease); return .success("") }
   func checkLease(_ lease: HostLease) throws { if lease.seat.key != seat { failures += 1; throw HostFailure.staleSeat } }
+  func hostFailure() { failures += 1 }
   func ability(name: String, code: String?) {}
   func turn(state: TurnEnd.State, seat: Seat.Kind, code: String?, rounds: Int, abilityCalls: Int, refusals: Int, answerBytes: Int, durationMs: Int64) {}
 }

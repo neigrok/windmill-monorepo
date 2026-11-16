@@ -1,5 +1,7 @@
 import SyncCore
 
+struct HostBoundaryFailure: Error {}
+
 public struct Recovery: Sendable {
   public let lease: HostLease
   public let mark: Mark
@@ -101,7 +103,10 @@ public struct Recovery: Sendable {
       for _ in 0..<profile.modelCalls {
         try checkSeat()
         if stopRequested { return await finish(.stopped) }
-        let callId = try runtime.callID()
+        let callId: String
+        do { callId = try runtime.callID() }
+        catch let failure as HostFailure { throw failure }
+        catch { telemetry.hostFailure(); throw HostBoundaryFailure() }
         let mark = Mark(turnId: input.turnId, callId: callId, textBytesBeforeRound: text.utf8.count)
         try await mutate { [self] in try await host.beginRound(mark, text: text, lease: open.lease) }
         try checkSeat()
@@ -151,9 +156,13 @@ public struct Recovery: Sendable {
               refusals += 1
               outcome = .refusal(refusal)
             } else {
-              abilityCalls += 1
-              if profile.tools.first(where: { $0.name == call.name })?.countsAsWrite == true { writes += 1 }
-              outcome = try await mutate { [self] in try await host.execute(call, callId: callId, lease: open.lease) }
+              outcome = try await mutate { [self] in
+                try checkSeat()
+                if stopRequested { refusals += 1; return .refusal("stopped") }
+                abilityCalls += 1
+                if profile.tools.first(where: { $0.name == call.name })?.countsAsWrite == true { writes += 1 }
+                return try await host.execute(call, callId: callId, lease: open.lease)
+              }
               if case .success = outcome {
                 for group in profile.groups where group.tools.contains(call.name) { groupSuccesses[group.name, default: 0] += 1 }
               }
@@ -181,6 +190,10 @@ public struct Recovery: Sendable {
       if seatChange { return await finish(.interrupted) }
       if failure.code == "stopped" { return await finish(.stopped) }
       return await finish(.failed, code: failure.code, withdraw: rounds <= 1 && failure.admission == .none)
+    } catch is HostBoundaryFailure {
+      return await finish(.failed, code: "invalid-answer")
+    } catch HostFailure.refused(let code) {
+      return await finish(.failed, code: code)
     } catch {
       client.invalidAnswer()
       return await finish(.failed, code: "invalid-answer")
@@ -205,7 +218,7 @@ public struct Recovery: Sendable {
       let prefixBytes = Array(text.utf8.prefix(recovery.mark.textBytesBeforeRound))
       let prefix = String(decoding: prefixBytes, as: UTF8.self)
       guard Array(prefix.utf8) == prefixBytes, recovery.mark.textBytesBeforeRound <= text.utf8.count else {
-        client.invalidAnswer()
+        telemetry.hostFailure()
         return await finish(.interrupted)
       }
       var roundText = ""
@@ -230,7 +243,10 @@ public struct Recovery: Sendable {
       default: return await finish(.interrupted)
       }
     } catch HostFailure.recordGone { return await finish(.interrupted, gone: true) }
-    catch { return await finish(.interrupted) }
+    catch is HostBoundaryFailure { return await finish(.interrupted) }
+    catch is HostFailure { return await finish(.interrupted) }
+    catch is AiFailure { return await finish(.interrupted) }
+    catch { client.invalidAnswer(); return await finish(.interrupted) }
   }
 
   func releaseWork() {
@@ -249,23 +265,29 @@ public struct Recovery: Sendable {
   func gate(_ call: ToolCall, profile: Profile, lease: HostLease) async throws -> String? {
     guard let tool = profile.tools.first(where: { $0.name == call.name }) else { return "not-offered" }
     for rule in [GateCheck.seat, .shape] {
-      if let code = try await host.check(rule, call: call, lease: lease) { return code }
+      if let code = try await hostWork({ [self] in try await host.check(rule, call: call, lease: lease) }) { return code }
       try checkSeat()
     }
     for group in profile.groups where group.tools.contains(call.name) {
       if groupSuccesses[group.name, default: 0] >= group.maxSuccesses { return group.code }
     }
     if abilityCalls >= profile.abilityCalls || tool.countsAsWrite && writes >= profile.writes { return "coach-turn-volume" }
-    if let code = try await host.check(.product, call: call, lease: lease) { return code }
+    if let code = try await hostWork({ [self] in try await host.check(.product, call: call, lease: lease) }) { return code }
     try checkSeat()
     return stopRequested ? "stopped" : nil
   }
 
   func mutate<T: Sendable>(_ body: @escaping @MainActor () async throws -> T) async throws -> T {
     let previous = mutation
-    let task = Task { @MainActor in await previous?.value; return try await body() }
+    let task = Task { @MainActor [self] in await previous?.value; return try await hostWork(body) }
     mutation = Task { _ = try? await task.value }
     return try await task.value
+  }
+
+  func hostWork<T: Sendable>(_ body: @MainActor () async throws -> T) async throws -> T {
+    do { return try await body() }
+    catch let failure as HostFailure { throw failure }
+    catch { telemetry.hostFailure(); throw HostBoundaryFailure() }
   }
 
   func bounded(_ code: String?) -> String? { code.map { telemetryCodes.contains($0) ? $0 : "unknown" } }
@@ -285,7 +307,8 @@ public struct Recovery: Sendable {
           else { try await host.end(end, lease: lease) }
         } catch HostFailure.recordGone { removed = true }
         catch HostFailure.staleSeat { removed = true }
-        catch { client.invalidAnswer() }
+        catch is HostFailure {}
+        catch { telemetry.hostFailure() }
       }
       if let input {
         telemetry.turn(state: end.state, seat: input.seat.kind, code: bounded(code), rounds: rounds,

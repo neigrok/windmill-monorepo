@@ -9,11 +9,15 @@ import SyncCore
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let directory = root.appending(path: "packages/api-contract/agent/turns")
+    let wire = try JSON(parsing: Array(Data(contentsOf: root.appending(path: "packages/api-contract/ai/wire/fixtures.json"))))
+    let refusalStatus = try Dictionary(uniqueKeysWithValues: wire.field("refusals").array.map {
+      (try $0.field("body").field("code").string, Int(try $0.field("status").integer))
+    })
     let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.pathExtension == "json" }.sorted { $0.path < $1.path }
-    #expect(files.count >= 54)
+    #expect(files.count >= 60)
     for file in files {
       let story = try JSON(parsing: Array(Data(contentsOf: file)))
-      let harness = try StoryHarness(story)
+      let harness = try StoryHarness(story, refusalStatus: refusalStatus)
       let actual = try await harness.run()
       #expect(actual == story.field("expected"), "\(file.lastPathComponent)\nactual: \(actual.jcsText)\nexpected: \(story.field("expected").jcsText)")
     }
@@ -29,6 +33,7 @@ extension JSON {
 
 @MainActor final class StoryHarness: ToolHost, TurnRuntime, AiClock, Telemetry, AiDiagnostics, AiTransport {
   let story: JSON
+  let refusalStatus: [String: Int]
   let profile: Profile
   let input: TurnInput
   var nowMs: Int64
@@ -53,8 +58,9 @@ extension JSON {
   var client: ServiceAiClient!
   var barrier: Task<Void, Never>?
 
-  init(_ story: JSON) throws {
+  init(_ story: JSON, refusalStatus: [String: Int]) throws {
     self.story = story
+    self.refusalStatus = refusalStatus
     profile = try Profile(story.field("profile"))
     let value = story.field("input")
     input = TurnInput(turnId: try value.field("turnId").string,
@@ -137,9 +143,9 @@ extension JSON {
     hostCalls.append(["op": "withdraw"]); marks.append(.null); exists = false
   }
   func check(_ check: GateCheck, call: ToolCall, lease: HostLease) async throws -> String? {
+    hostCalls.append(["op": "check", "rule": .string(check.rawValue), "call": Self.json(call)])
     try await control("check:\(call.id):\(check.rawValue)")
     try guardLease(lease)
-    hostCalls.append(["op": "check", "rule": .string(check.rawValue), "call": Self.json(call)])
     let code = story.field("host").field("checks").field(call.id).field(check.rawValue)
     return try code == .null ? nil : code.string
   }
@@ -164,6 +170,7 @@ extension JSON {
     try Task.checkCancellation()
     nowMs += ms
   }
+  func hostFailure() { failure(operation: "agent-host", kind: "host") }
   func ability(name: String, code: String?) {
     if !toolCalls.isEmpty {
       let call = toolCalls.removeFirst()
@@ -182,7 +189,9 @@ extension JSON {
       let passes = try story.field("service").field("passes").array
       let value = passes[min(passIndex, passes.count - 1)]
       passIndex += 1
-      return response(status: Int((try? value.field("status").integer) ?? 200), type: "application/json", chunks: [value.jcs])
+      let status = Int((try? value.field("status").integer) ?? 200)
+      let body: JSON = status == 200 ? value : ["code": value.field("code"), "error": "Pass refused"]
+      return response(status: status, type: "application/json", chunks: [body.jcs])
     }
     let body = try request.body.map { request.path.hasPrefix("/v1/pictures/") ? JSON.array($0.map { JSON($0) }) : try JSON(parsing: $0) } ?? .null
     requests.append(["method": .string(request.method), "path": .string(request.path), "body": body])
@@ -199,7 +208,7 @@ extension JSON {
     repeats += 1
     if repeats >= Int(try exchange.field("repeat").integer) { exchangeIndex += 1; repeats = 0 }
     if exchange.field("refusal") != .null {
-      return response(status: 429, type: "application/json", chunks: [exchange.field("refusal").jcs])
+      return response(status: refusalStatus[try exchange.field("refusal").field("code").string] ?? 500, type: "application/json", chunks: [exchange.field("refusal").jcs])
     }
     let events = try exchange.field("events").array
     let stream = AsyncThrowingStream<[UInt8], Error>(unfolding: { @MainActor [self, cursor = StoryCursor()] in
