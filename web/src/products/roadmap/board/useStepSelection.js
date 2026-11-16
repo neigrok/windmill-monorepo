@@ -248,7 +248,7 @@ export function useStepSelection({ tree, board, shown, doneExpanded, active, ena
 
   const starterId = state.visit && SELECTING.has(state.phase) ? state.visit.id : null;
   const restoreId = state.visit && (SELECTING.has(state.phase) || state.focus) ? state.last : null;
-  // A selection that takes every root the roadmap has left offers no Delete, as the Graph's selection bars do.
+  // The phone bar explains a missing delete handler as the selection taking every remaining root.
   const selectionDeletable = derived.selection !== null && deletable(tree, derived.selection.ids);
   return { selection: derived.selection, starterId, restoreId, announcement: state.announcement, ...handlers, deleteSelected: selectionDeletable ? handlers.deleteSelected : null };
 }
