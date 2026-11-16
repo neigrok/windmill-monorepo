@@ -28,8 +28,12 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
         val response = try { transport.pass(Json.objectOf("client" to Json.of("android"), "use" to Json.of(use), "version" to Json.of(version))) }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {
-            if (error !is AiTransportFailure || error.code !in setOf("offline", "lost")) report(FailureOperation.aiPass)
-            return@withLock null to AiAnswer.Failure(AiFailure("pass", null, Admission.none)) }
+            if (expectedGeneration != generation) throw AiTransportFailure("seat-changed")
+            if (error is AiTransportFailure && error.code in setOf("offline", "lost"))
+                return@withLock null to AiAnswer.Failure(AiFailure("transport", null, Admission.none))
+            report(FailureOperation.aiPass)
+            return@withLock null to AiAnswer.Failure(AiFailure("pass", null, Admission.none))
+        }
         response.use {
             synchronized(state) {
                 if (expectedGeneration != generation) throw AiTransportFailure("seat-changed")
@@ -75,7 +79,12 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                 }
             }
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) { return null to failure(if (error is AiTransportFailure) "transport" else "wire", if (error is AiTransportFailure && error.code == "offline") null else "invalid-answer", Admission.none) }
+        catch (error: Exception) {
+            if (currentGeneration != generation || error is AiTransportFailure && error.code == "seat-changed")
+                return null to AiAnswer.Failure(AiFailure("pass", null, Admission.none))
+            val lost = error is AiTransportFailure && error.code in setOf("offline", "lost")
+            return null to failure(if (error is AiTransportFailure) "transport" else "wire", if (lost) null else "invalid-answer", Admission.none)
+        }
     }
 
     private fun failure(source: String, code: String?, admission: Admission, allowance: Json? = null): AiAnswer.Failure {

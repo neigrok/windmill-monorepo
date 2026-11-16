@@ -239,6 +239,39 @@ class CoachBoundaryTests {
         }
     }
 
+    @Test fun passDoorConnectionLossIsOfflineAndLateOldPassErrorsAreQuiet() = runBlocking {
+        for (code in listOf("offline", "lost")) {
+            val reports = Reports()
+            val client = CoachAiClient(object : AiTransport {
+                override suspend fun pass(body: Json): AiResponse = throw AiTransportFailure(code)
+                override suspend fun request(request: AiRequest): AiResponse = error("unexpected-request")
+            }, reports)
+            val result = client.allowance("vector.coach", 1)
+            assertEquals(AiFailure("transport", null, Admission.none), result.second!!.failure)
+            assertEquals("offline", accessState(result.second!!.failure))
+            assertEquals(emptyList<FailureOperation>(), reports.failures)
+        }
+        withTimeout(3000) {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val reports = Reports()
+            var passes = 0
+            val client = CoachAiClient(object : AiTransport {
+                override suspend fun pass(body: Json): AiResponse {
+                    if (++passes == 1) { entered.complete(Unit); release.await(); throw AiTransportFailure("transport") }
+                    return AiResponse(200, Json.objectOf("pass" to Json.of("new-pass"), "expiresIn" to Json.of(600000)))
+                }
+                override suspend fun request(request: AiRequest): AiResponse = AiResponse(200, fixture().member("allowance"))
+            }, reports)
+            val old = async { client.allowance("vector.coach", 1) }
+            entered.await(); client.clearPass()
+            assertEquals(fixture().member("allowance"), client.allowance("vector.coach", 1).first)
+            release.complete(Unit)
+            assertEquals(AiFailure("pass", null, Admission.none), old.await().second!!.failure)
+            assertEquals(emptyList<FailureOperation>(), reports.failures)
+        }
+    }
+
     @Test fun passCacheExpiresAtRefreshBoundaryAndSeatChangeDropsThePass() = runBlocking {
         var now = 0L; var passes = 0
         val requests = mutableListOf<AiRequest>()
